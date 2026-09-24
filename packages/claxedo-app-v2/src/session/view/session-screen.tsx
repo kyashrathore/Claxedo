@@ -21,22 +21,31 @@ import { createSessionScreenKeydownHandler } from "./session-screen-keydown"
 import { turnActive } from "./timeline"
 import "./session-screen.css"
 
-function ChildNotice(props: { readonly t: SessionScreenText; readonly onBack: () => void }) {
+function ChildNotice(props: { readonly t: SessionScreenText; readonly readOnly: boolean; readonly onBack: () => void }) {
   return (
     <div class="w-full px-3 py-2 text-center text-12-regular text-text-weaker">
       <span>{props.t("sessionScreen.child.promptDisabled")} </span>
-      <button
-        type="button"
-        class="text-text-weak underline-offset-2 transition-colors hover:text-text-base hover:underline"
-        onClick={() => props.onBack()}
-      >
-        {props.t("sessionScreen.child.backToParent")}
-      </button>
+      <Show when={!props.readOnly}>
+        <button
+          type="button"
+          class="text-text-weak underline-offset-2 transition-colors hover:text-text-base hover:underline"
+          onClick={() => props.onBack()}
+        >
+          {props.t("sessionScreen.child.backToParent")}
+        </button>
+      </Show>
     </div>
   )
 }
 
-function SessionBody(props: { readonly view: SessionView; readonly paneId: string; readonly active: boolean }) {
+type SessionSurfaceProps = {
+  readonly sessionRef: SessionRef
+  readonly active: boolean
+  /** A surface that embeds another session to read it, such as a subagent's panel tab: no composer, no keys. */
+  readonly readOnly?: boolean
+}
+
+function SessionBody(props: { readonly view: SessionView; readonly active: boolean; readonly readOnly: boolean }) {
   const t = useSessionScreenText()
   const server = useServer()
   const stores = useSessionStores()
@@ -63,15 +72,16 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
   const composers = useComposerStore()
   let body: HTMLDivElement | undefined
   const draft = () => composers.draft(sessionComposerKey(props.view.ref))
+  const driving = () => props.active && !props.readOnly
   const handleKeyDown = createSessionScreenKeydownHandler({
-    active: () => props.active,
+    active: driving,
     dialogActive: () => dialog.active,
     inputEl: () => body?.querySelector<HTMLDivElement>('[data-component="prompt-input"]') ?? undefined,
     composerBlocked: () => props.view.requests().length > 0 || !!parentId(),
     prompt: { cursor: () => draft().cursor, length: () => promptText(draft().prompt).length },
     markScrollGesture: () => scroll.props.onMarkScrollGesture(),
   })
-  createMessageLinks({ view: () => props.view, users: createMemo(() => userMessages(props.view)), scroll, active: () => props.active, commands: useCommands(), t })
+  createMessageLinks({ view: () => props.view, users: createMemo(() => userMessages(props.view)), scroll, active: driving, commands: useCommands(), t })
   document.addEventListener("keydown", handleKeyDown)
   onCleanup(() => document.removeEventListener("keydown", handleKeyDown))
   const setDock = createDockFollow(scroll)
@@ -92,7 +102,7 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
               <TodoDockSlot view={props.view} dock={todo} />
             </Show>
             <div class="relative z-10" style={{ "margin-top": `${-lift()}px` }}>
-              <Show when={!parentId()} fallback={<ChildNotice t={t} onBack={toParent} />}>
+              <Show when={!parentId() && !props.readOnly} fallback={<ChildNotice t={t} readOnly={props.readOnly} onBack={toParent} />}>
                 <Composer
                   composerKey={sessionComposerKey(props.view.ref)}
                   placementId={props.view.ref.placementId}
@@ -112,22 +122,22 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
   )
 }
 
-export function SessionScreen(props: PaneProps<SessionRef>) {
+export function SessionSurface(props: SessionSurfaceProps) {
   const t = useSessionScreenText()
   const phone = usePhone()
   const stores = useSessionStores()
-  const view = createMemo(() => stores.open(props.state))
+  const view = createMemo(() => stores.open(props.sessionRef))
   const failure = () => {
     const state = view().state()
     return state.kind === "failed" ? state : undefined
   }
   return (
-    <section data-component="session-screen" data-session-id={props.state.sessionId} aria-label={view().row()?.title ?? t("sessionScreen.untitled")}>
+    <section data-component="session-screen" data-session-id={props.sessionRef.sessionId} aria-label={view().row()?.title ?? t("sessionScreen.untitled")}>
       <FailureBoundary title={t("sessionScreen.failed")} retryLabel={t("sessionScreen.action.retry")}>
-        <Switch fallback={<SessionBody view={view()} paneId={props.paneId} active={props.active} />}>
+        <Switch fallback={<SessionBody view={view()} active={props.active} readOnly={props.readOnly === true} />}>
           <Match when={view().state().kind === "missing"}>
             <div class="flex h-full items-center justify-center px-4 text-text-weak">
-              <div data-testid="session-unavailable" data-session-id={props.state.sessionId}>
+              <div data-testid="session-unavailable" data-session-id={props.sessionRef.sessionId}>
                 Session unavailable
               </div>
             </div>
@@ -143,10 +153,14 @@ export function SessionScreen(props: PaneProps<SessionRef>) {
             )}
           </Match>
           <Match when={view().state().kind === "loading" && !view().conversation()}>
-            <SessionTimelineSkeleton centered={!phone()} sessionId={props.state.sessionId} />
+            <SessionTimelineSkeleton centered={!phone()} sessionId={props.sessionRef.sessionId} />
           </Match>
         </Switch>
       </FailureBoundary>
     </section>
   )
+}
+
+export function SessionScreen(props: PaneProps<SessionRef>) {
+  return <SessionSurface sessionRef={props.state} active={props.active} />
 }

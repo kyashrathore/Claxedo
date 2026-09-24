@@ -16,7 +16,7 @@ The pane that shows one session: the moved timeline (`timeline/`, owned by the t
 | Following the end of a streaming turn, the jump button state, message selection from the nav rail, paging older history | `auto-scroll.ts`, `timeline-scroll.ts`, `history-paging.ts`, `scroll-anchor.ts` |
 | Which dock shows: the first open request (permission or question), the goal, the todo list | `session-docks.tsx`, `docks/` |
 | Editing a queued prompt: the held record's text is loaded into the composer; sending it cancels the held record | `queue-edit.ts` |
-| The old-kit contexts the moved renderers still read (`DialogProvider`, `MarkedProvider`, `FileComponentProvider`) | `transcript-kit.tsx`, until the transcript swaps them for v2 twins |
+| The old-kit contexts the moved renderers still read (`DialogProvider`, `MarkedProvider`, `FileComponentProvider`) | `TranscriptKitProviders` from `@/transcript`, until the transcript swaps them for v2 twins |
 
 ## State machines
 

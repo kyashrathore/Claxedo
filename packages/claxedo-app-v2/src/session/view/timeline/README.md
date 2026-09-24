@@ -22,7 +22,7 @@ Today's component reached into the app through context hooks: the SDK client, th
 | `useTranscriptTypography().typography` | `transcriptTypography` |
 | `useLanguage().t` | `t: TimelineTranslate`, typed on the 38 keys the timeline uses (`TimelineTextKey`) |
 | `usePlatform()` | `platform`: `openLink`, `openPath?`, `showItemInFolder?`, `renderMermaid?` |
-| `useClaxedoState().workspacePanel.open(...)` with `workspaceDir`, `targetPaneId`, `navigator: null` | `openFocus(focus)`: the host opens `file` (as a tab), `browser`, `plan` and `subagent` focuses in its own pane |
+| `useClaxedoState().workspacePanel.open(...)` with `workspaceDir`, `targetPaneId`, `navigator: null` | `openFocus(focus)`: the host opens each focus as a workspace-panel tab; a `subagent` tab belongs to the session holding the pane |
 | `layout.showContent(layout.openSession(...))` at phone width | `openSessionInPane(sessionId, label?)` |
 | `sdk.client.find.files({ query, dirs: "false" })` | `findFiles(query, signal)`: exact-path candidates; resolves to `[]` on a failed lookup, never rejects |
 | `sdk.client.session.update` / `.delete`, then `updateDirectorySession` / `removeDirectorySessionTree` | `sessionActions.rename`, `.archive`, `.remove`: the store reconciles from the server's events; a rejection's `message` (or `data.message`) is shown in a toast |

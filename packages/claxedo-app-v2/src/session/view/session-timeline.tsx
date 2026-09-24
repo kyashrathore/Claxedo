@@ -3,12 +3,12 @@ import { usePhone } from "@/lib/viewport"
 import { sessionId } from "@/server"
 import type { SessionView } from "@/session"
 import { sessionPath } from "@/shell"
-import { DataProvider, type TranscriptUserMessage } from "@/transcript"
+import { DataProvider, TranscriptKitProviders, type TranscriptUserMessage } from "@/transcript"
 import { MessageTimeline, type TimelineHost } from "./timeline"
 import type { TimelineScroll } from "./timeline-scroll"
-import { TranscriptKitProviders } from "./transcript-kit"
 import { subagentViews } from "./subagent-views"
 import { useSessionScreenText } from "./text"
+import "./transcript-kit.css"
 
 const EMPTY_DATA = { session: [], session_status: {}, session_diff: {}, message: {}, part: {} }
 
