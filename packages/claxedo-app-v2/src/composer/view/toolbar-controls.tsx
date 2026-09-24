@@ -1,14 +1,12 @@
 import { type Accessor, type JSX, Show } from "solid-js"
-import type { PickerState } from "@/features/session/ui/model/model-list"
-import { AgentHarnessSelector } from "@/features/session/ui/controls/agent-harness-selector"
-import type { HarnessSelectionController } from "@/features/session/harness/controller"
-import { PromptAddMenu } from "@/features/session/composer/ui/add-menu"
-import { PromptPermissionControl } from "@/features/session/composer/ui/permission-control"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
-import type { PermissionModeGroups } from "@/features/session/composer/permission-mode"
-import type { PermissionModeOption } from "@/features/session/permission/modes"
-import type { SessionRef } from "@/platform/identity/session-ref"
+import type { HarnessScopeInput, HarnessSelectionController } from "../harness/controller"
+import type { PermissionModeGroups } from "../permission/permission-mode"
+import type { PermissionModeOption } from "../permission/modes"
+import { AgentHarnessSelector } from "./agent-harness-selector"
+import { PromptAddMenu } from "./add-menu"
+import { PromptPermissionControl } from "./permission-control"
 
 /**
  * The composer's bottom row. Two clusters instead of one left-aligned strip:
@@ -46,11 +44,8 @@ export function PromptToolbarControls(props: {
   mode: Accessor<"normal" | "shell">
   harnessPending: Accessor<boolean>
   harnessController: Accessor<HarnessSelectionController | undefined>
-  harnessDirectory: Accessor<string | undefined>
-  harnessSessionId: Accessor<string | undefined>
-  sessionRef: Accessor<SessionRef | undefined>
-  surfaceId: Accessor<string | undefined>
-  draftId: Accessor<string | undefined>
+  harnessScope: Accessor<string>
+  harnessScopeInput: Accessor<HarnessScopeInput>
   active: Accessor<boolean>
   controlStyle: Accessor<JSX.CSSProperties>
   sessionLocked: Accessor<boolean>
@@ -58,9 +53,6 @@ export function PromptToolbarControls(props: {
   agentNames: Accessor<string[]>
   currentAgentName: Accessor<string>
   onAgentSelect: (value: string) => void
-  providerLoading: Accessor<boolean>
-  modelLabel: Accessor<string>
-  model: Accessor<PickerState>
 }) {
   const addDisabled = () => props.mode() !== "normal" || props.harnessPending()
 
@@ -121,15 +113,11 @@ export function PromptToolbarControls(props: {
           {(controller) => (
             <AgentHarnessSelector
               harnessController={controller()}
-              directory={props.harnessDirectory()}
-              sessionId={props.harnessSessionId()}
-              sessionRef={props.sessionRef()}
-              surfaceId={props.surfaceId()}
-              draftId={props.draftId()}
+              scope={props.harnessScope()}
+              scopeInput={props.harnessScopeInput()}
               active={props.active()}
               triggerStyle={props.controlStyle()}
               sessionLocked={props.sessionLocked()}
-              providerModel={props.model}
             />
           )}
         </Show>

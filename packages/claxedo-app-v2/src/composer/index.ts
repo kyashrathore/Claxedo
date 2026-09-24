@@ -20,6 +20,7 @@ export { createComposerStore, ComposerStoreContext, useComposerStore, draftCompo
 export type { ComposerKey, ComposerStore } from "./store"
 export { ComposerStoreProvider } from "./provider"
 export { Composer } from "./view/composer"
+export { ComposerNoticeProvider, ComposerNoticeRow, createComposerNoticeChannel } from "./view/composer-notice"
 export type { ComposerProps } from "./setup"
 export { asAppError } from "./errors"
 export { useErrorCopy } from "./error-copy"

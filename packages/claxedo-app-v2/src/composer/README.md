@@ -16,16 +16,20 @@ The prompt editor and everything that turns a draft into one `PromptInput` for `
 
 ## State machines
 
-- **Composer send**: `editing → sending(clientRequestId) → accepted | rejected(error)`; `edited` returns to `editing`. A rejected send shows its `AppError` by class (`composer.error.<class>`), with a retry when the error is retryable. Nothing retries on its own.
-- **Attachment**: `reading → ready(part) | failed(error)`. A ready part joins the draft at the cursor; a failed one stays listed until dismissed or the next add.
+- **Composer send**: `editing → sending(clientRequestId) → accepted | rejected(error)`; `edited` returns to `editing`. A rejected send raises today's toast ("Failed to send prompt" and the error's message) and keeps the draft. Nothing retries on its own. A draft's first send reports its boot phase (`Booting <harness>...`, then `Sending first message...`) on the Send button.
+- **Attachment**: `reading → ready(part) | failed(error)`. A reading file shows a "Reading <file>…" row above the card; a ready part joins the draft at the cursor; a failed one raises today's toast and leaves the list.
 - **Editor interaction** (`controller.ts`): the editor mode (`normal | shell`), the popover (`closed | at(query) | slash(query)`) and the history position.
+
+## View
+
+`view/frame.tsx` is today's `PromptInputFrame` with its toolbar (`+` menu, permission chip, harness → model chip), Send control, drag overlay, context chips, image tiles and `/`/`@` popover, all moved from today's app; `view/composer.tsx` feeds it from the controller, the draft store and the harness store. The Send control reads `submit-block-reason.ts`: an empty idle draft, a missing model, a harness that is not ready. With a blank draft during a turn it is Stop.
 
 ## Invariants
 
 - The draft is the only copy of what the user typed; the contenteditable is rendered from it and parsed back into it on input.
 - `!` at the start of an empty prompt enters shell mode; the text is sent as a prompt beginning with `!` because today's contract has no shell route.
 - `/goal` arms goal mode; `/goal <objective>` and an armed send carry `goal: { objective }`. Only a harness whose `goalMode` is not `none` offers it.
-- Slash entries come from the shell's command registry plus `/goal`; `@` entries come from the placement's file search (`server.queries.files.search`) and the shell's mention sources. Both registries are read through the shell's `useShellRegistries()`.
+- Slash entries are the palette's commands that carry a slash alias (`useCommands().slashOptions()`), including the composer's own `/goal`; `@` entries come from the placement's file search (`server.queries.files.search`) and the shell's mention sources (`useShellRegistries()`). The `+` menu's Commands and Context open their popover without touching the draft.
 - No second copy of server data: the composer reads session status and requests through `SessionView` only. The harness store keeps only what today's app keeps: per-scope picks in memory and the draft default in localStorage.
 
 ## Flows

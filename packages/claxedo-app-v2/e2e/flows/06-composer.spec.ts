@@ -9,7 +9,7 @@ test("06 composer: a marked image, an @file pill and a slash command popover all
   await stack.acp.write("ack", { steps: [{ kind: "text", text: "Received the attachments" }] })
   const session = await api.createSession(workspace.directory, { title: "Composer", harness: SCRIPTED_ACP_HARNESS })
   await app.goto(`${stack.url}/w/${workspace.id}/s/${session.id}`)
-  const prompt = app.getByRole("textbox", { name: "Prompt" })
+  const prompt = app.getByRole("textbox", { name: "Ask anything, / for commands, @ for context..." })
 
   await prompt.click()
   await app.keyboard.type("/")
@@ -54,7 +54,7 @@ test("06 a new session starts on the folder's harness, then on the harness last 
   const workspace = await stack.daemon.makeWorkspace("defaults")
   const existing = await api.createSession(workspace.directory, { title: "Existing", harness: SCRIPTED_ACP_HARNESS })
   await app.goto(`${stack.url}/w/${workspace.id}/s/${existing.id}`)
-  await expect(app.getByRole("textbox", { name: "Prompt" })).toBeVisible()
+  await expect(app.getByRole("textbox", { name: "Ask anything, / for commands, @ for context..." })).toBeVisible()
   const openDraft = async () => {
     if (isMobile) await app.getByRole("button", { name: "Open menu" }).click()
     await app.getByRole("button", { name: "New session" }).click()
@@ -69,7 +69,7 @@ test("06 a new session starts on the folder's harness, then on the harness last 
   await app.getByRole("button", { name: "Scripted ACP" }).click()
   await expect(picker).toHaveAttribute("data-harness", "scripted-acp")
   await app.keyboard.press("Escape")
-  const prompt = draft.getByRole("textbox", { name: "Prompt" })
+  const prompt = draft.getByRole("textbox", { name: "Ask anything, / for commands, @ for context..." })
   await prompt.fill("Start on the scripted agent")
   await prompt.press("Enter")
   await expect(draft).toHaveCount(0)
@@ -77,7 +77,7 @@ test("06 a new session starts on the folder's harness, then on the harness last 
   expect(JSON.stringify(created)).toContain('"harness":{"id":"scripted-acp","access":"connection"}')
 
   await app.reload()
-  await expect(app.getByRole("textbox", { name: "Prompt" }).first()).toBeVisible()
+  await expect(app.getByRole("textbox", { name: "Ask anything, / for commands, @ for context..." }).first()).toBeVisible()
   const next = await openDraft()
   await expect(next.locator('[data-action="prompt-harness-model"]')).toHaveAttribute("data-harness", "scripted-acp")
 })

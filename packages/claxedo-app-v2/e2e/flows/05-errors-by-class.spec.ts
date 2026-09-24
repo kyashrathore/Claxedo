@@ -15,13 +15,13 @@ for (const failure of MODEL_FAILURES) {
     const session = await api.createSession(workspace.directory, { title: `Error ${failure.status}`, harness: PI })
     stack.scripted.scriptError({ marker: failure.marker, status: failure.status, message: failure.message })
     await app.goto(`${stack.url}/w/${workspace.id}/s/${session.id}`)
-    const prompt = app.getByRole("textbox", { name: "Prompt" })
+    const prompt = app.getByRole("textbox", { name: "Ask anything, / for commands, @ for context..." })
     await prompt.fill(`Reply with exactly this one token: ${failure.marker}`)
     await prompt.press("Enter")
 
     await expect(app.getByText(failure.copy).first()).toBeVisible()
     expect(stack.scripted.requests.some((request) => JSON.stringify(request).includes(failure.marker))).toBe(true)
-    await expect(app.getByRole("button", { name: "Send", exact: true })).toBeVisible()
+    await expect(app.getByRole("button", { name: "Type a message to get started", exact: true })).toBeVisible()
     await expect
       .poll(async () => {
         const messages = await api.messages(workspace.directory, session.id)
@@ -35,13 +35,14 @@ test("05 errors by class: a send the server cannot receive shows the network cla
   const workspace = await stack.daemon.makeWorkspace("error-network")
   const session = await api.createSession(workspace.directory, { title: "Network", harness: SCRIPTED_ACP_HARNESS })
   await app.goto(`${stack.url}/w/${workspace.id}/s/${session.id}`)
-  const prompt = app.getByRole("textbox", { name: "Prompt" })
+  const prompt = app.getByRole("textbox", { name: "Ask anything, / for commands, @ for context..." })
   await expect(prompt).toBeVisible()
   await stack.daemon.close()
   await prompt.fill("This prompt never reaches the server")
   await prompt.press("Enter")
 
-  await expect(app.getByRole("alert").filter({ hasText: "The server could not be reached" })).toBeVisible()
+  await expect(app.getByText("Failed to send prompt")).toBeVisible()
+  await expect(app.getByText(/The server could not be reached/)).toBeVisible()
   await expect(prompt).toContainText("This prompt never reaches the server")
   await stack.daemon.restart()
   const messages = await api.messages(workspace.directory, session.id)

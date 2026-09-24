@@ -1,10 +1,12 @@
 import { createEffect, on } from "solid-js"
 import type { ControllerContext } from "./controller-context"
-import { promptImages, promptText } from "./model"
+import { emptyPrompt, promptImages, promptText } from "./model"
 import { getCursorPosition, setCursorPosition } from "./editor/dom"
 import { parsePromptEditor, renderPromptEditor } from "./editor/serialization"
 
-export function createEditorSync(context: ControllerContext, updatePopover: (value: string, cursor: number) => void) {
+const NON_EMPTY_TEXT = /[^\s\u200B]/
+
+export function createEditorSync(context: ControllerContext, updatePopover: (value: string, cursor: number) => void, reset: () => void) {
   const { input, draft, text } = context
   let localInput = false
   createEffect(
@@ -28,8 +30,15 @@ export function createEditorSync(context: ControllerContext, updatePopover: (val
       if (!editor) return
       const parsed = parsePromptEditor(editor)
       const cursor = getCursorPosition(editor)
+      const images = promptImages(draft().prompt)
+      if (!NON_EMPTY_TEXT.test(promptText(parsed)) && parsed.every((part) => part.type === "text") && images.length === 0) {
+        reset()
+        if (promptText(draft().prompt)) input.store.setPrompt(input.key(), emptyPrompt(), 0)
+        input.edited()
+        return
+      }
       localInput = true
-      input.store.setPrompt(input.key(), [...parsed, ...promptImages(draft().prompt)], cursor)
+      input.store.setPrompt(input.key(), [...parsed, ...images], cursor)
       input.edited()
       updatePopover(promptText(parsed), cursor)
     },

@@ -12,7 +12,7 @@ test("09 subagents: a subagent the agent creates opens in its own pane and leads
   })
   const session = await api.createSession(workspace.directory, { title: "Delegation", harness: SCRIPTED_ACP_HARNESS })
   await app.goto(`${stack.url}/w/${workspace.id}/s/${session.id}`)
-  const prompt = app.getByRole("textbox", { name: "Prompt" })
+  const prompt = app.getByRole("textbox", { name: "Ask anything, / for commands, @ for context..." })
   await prompt.fill(`Delegate the search. ${acpScriptToken("delegate")}`)
   await prompt.press("Enter")
   await expect(app.getByText("The parent read the researcher's answer")).toBeVisible()

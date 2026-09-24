@@ -20,7 +20,7 @@ test("03 send a turn: the reply streams in with its tool groups, diff, todo list
   const session = await api.createSession(workspace.directory, { title: "Send a turn", harness: SCRIPTED_ACP_HARNESS })
 
   await app.goto(`${stack.url}/w/${workspace.id}/s/${session.id}`)
-  const prompt = app.getByRole("textbox", { name: "Prompt" })
+  const prompt = app.getByRole("textbox", { name: "Ask anything, / for commands, @ for context..." })
   await prompt.fill(`Write the notes. ${acpScriptToken("turn")}`)
   await prompt.press("Enter")
 
@@ -36,7 +36,7 @@ test("03 send a turn: the reply streams in with its tool groups, diff, todo list
   await expect(app.getByText("notes.md").first()).toBeVisible()
   await app.getByRole("button", { name: /^Explored/ }).click()
   await expect(app.getByText("README.md").first()).toBeVisible()
-  await expect(app.getByRole("button", { name: "Send", exact: true })).toBeVisible()
+  await expect(app.getByRole("button", { name: "Type a message to get started", exact: true })).toBeVisible()
 
   const messages = await api.messages(workspace.directory, session.id)
   expect(assistantText(messages)).toContain("Done. The sum is")
@@ -46,11 +46,11 @@ test("03 a new session's first send creates the session and its draft pane becom
   const workspace = await stack.daemon.makeWorkspace("draft")
   const existing = await api.createSession(workspace.directory, { title: "Existing", harness: SCRIPTED_ACP_HARNESS })
   await app.goto(`${stack.url}/w/${workspace.id}/s/${existing.id}`)
-  await expect(app.getByRole("textbox", { name: "Prompt" })).toBeVisible()
+  await expect(app.getByRole("textbox", { name: "Ask anything, / for commands, @ for context..." })).toBeVisible()
   if (isMobile) await app.getByRole("button", { name: "Open menu" }).click()
   await app.getByRole("button", { name: "New session" }).click()
   const draft = app.getByRole("region", { name: "New session", exact: true })
-  const prompt = draft.getByRole("textbox", { name: "Prompt" })
+  const prompt = draft.getByRole("textbox", { name: "Ask anything, / for commands, @ for context..." })
   await prompt.fill("Start the draft session")
   await prompt.press("Enter")
 

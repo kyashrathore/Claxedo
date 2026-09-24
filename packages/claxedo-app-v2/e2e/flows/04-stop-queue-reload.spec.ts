@@ -8,7 +8,7 @@ async function openHeldSession(stack: Stack, api: ClaxedoApi, app: Page, name: s
   })
   const session = await api.createSession(workspace.directory, { title: "Held turn", harness: SCRIPTED_ACP_HARNESS })
   await app.goto(`${stack.url}/w/${workspace.id}/s/${session.id}`)
-  const prompt = app.getByRole("textbox", { name: "Prompt" })
+  const prompt = app.getByRole("textbox", { name: "Ask anything, / for commands, @ for context..." })
   await prompt.fill(`Start the long task. ${acpScriptToken("held")}`)
   await prompt.press("Enter")
   await expect(app.getByText("Started the long task")).toBeVisible()
@@ -26,7 +26,7 @@ function userTexts(messages: Awaited<ReturnType<ClaxedoApi["messages"]>>) {
 test("04 stop: the running turn ends and the composer can send again", async ({ stack, api, app }) => {
   const { workspace, session } = await openHeldSession(stack, api, app, "stop")
   await app.getByRole("button", { name: "Stop", exact: true }).click()
-  await expect(app.getByRole("button", { name: "Send", exact: true })).toBeVisible()
+  await expect(app.getByRole("button", { name: "Type a message to get started", exact: true })).toBeVisible()
   await expect(app.getByText("Finished the long task")).toHaveCount(0)
   await expect.poll(async () => (await api.status(workspace.directory))[session.id]?.type ?? "idle").toBe("idle")
 })

@@ -1,7 +1,7 @@
 import { For, Show, type Accessor, type JSX } from "solid-js"
 import { Icon } from "@opencode-ai/ui/icon"
 import { MenuV2 } from "@opencode-ai/ui/v2/menu-v2"
-import { COMPOSER_MENU_CLASS } from "@/features/session/composer/ui/menu-metrics"
+import { COMPOSER_MENU_CLASS } from "./menu-metrics"
 
 /** The agent pair that the "Plan mode" toggle stands in for. When a workspace
  * exposes exactly these two, a single checkbox reads better than a two-option

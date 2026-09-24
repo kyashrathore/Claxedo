@@ -2,8 +2,8 @@ import { type Accessor, type JSX, Show, createEffect, createSignal, onCleanup } 
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { SessionStatusStage, type SessionStatusStage as SessionStatusStageValue } from "@/features/session/ui/components/session-status-stage"
-import type { SubmitBlock } from "@/features/session/composer/submit-block-reason"
+import { SessionStatusStage, type SessionStatusStage as SessionStatusStageValue } from "./session-status-stage"
+import type { SubmitBlock } from "../submit-block-reason"
 
 export function PromptSubmitControl(props: {
   stage: Accessor<SessionStatusStageValue>

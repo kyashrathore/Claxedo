@@ -14,7 +14,7 @@ for (const goal of GOALS) {
     const workspace = await stack.daemon.makeWorkspace(`goal-${goal.cli}`)
     const session = await api.createSession(workspace.directory, { title: `Goal ${goal.cli}`, harness: { id: goal.cli, access: "native" } })
     await app.goto(`${stack.url}/w/${workspace.id}/s/${session.id}`)
-    const prompt = app.getByRole("textbox", { name: "Prompt" })
+    const prompt = app.getByRole("textbox", { name: "Ask anything, / for commands, @ for context..." })
     await prompt.fill("/goal Write GOALDONE into notes.md")
     await prompt.press("Enter")
 

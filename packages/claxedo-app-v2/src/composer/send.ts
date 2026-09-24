@@ -1,4 +1,4 @@
-import { createMemo, type Accessor } from "solid-js"
+import { createMemo, createSignal, type Accessor } from "solid-js"
 import type { HarnessInfo, PromptAttachment, PromptInput } from "@/server"
 import type { SessionView } from "@/session"
 import { formatCommentNote, formatImageMarkNote } from "@/lib/comment-note"
@@ -131,12 +131,17 @@ function createArmGoal(input: SendInput) {
   }
 }
 
-async function deliver(input: SendInput, draft: Draft, goal: GoalIntent, clientRequestId: string): Promise<SessionView> {
+export type BootPhase = "booting" | "sending"
+
+async function deliver(input: SendInput, draft: Draft, goal: GoalIntent, clientRequestId: string, setBoot: (phase: BootPhase | undefined) => void): Promise<SessionView> {
   const key = input.key()
   const delivery = input.working() ? "queue" : undefined
   const submission = await input.submission()
   const prompt = await buildPromptInput({ draft, mode: input.mode(), submission, goal, delivery })
-  const view = input.view() ?? (await required(input.createSession)(submission))
+  const existing = input.view()
+  if (!existing) setBoot("booting")
+  const view = existing ?? (await required(input.createSession)(submission))
+  if (!existing) setBoot("sending")
   await view.send({ ...prompt, clientRequestId })
   input.store.addHistory(key, input.mode(), draft.prompt, historyComments(draft))
   input.store.reset(key)
@@ -146,6 +151,7 @@ async function deliver(input: SendInput, draft: Draft, goal: GoalIntent, clientR
 export function createComposerSend(input: SendInput) {
   const state = machine<SendState, SendEvent>({ kind: "editing" }, sendTransition)
   const sending = createMemo(() => state.state().kind === "sending")
+  const [boot, setBoot] = createSignal<BootPhase>()
   const armGoal = createArmGoal(input)
   const stop = createStop(input.view)
   const send = async () => {
@@ -156,16 +162,19 @@ export function createComposerSend(input: SendInput) {
     const clientRequestId = randomId()
     state.send({ type: "sendStarted", clientRequestId })
     try {
-      const view = await deliver(input, draft, goal, clientRequestId)
+      const view = await deliver(input, draft, goal, clientRequestId, setBoot)
       state.send({ type: "sendAccepted", clientRequestId })
       input.afterAccepted?.(view)
     } catch (error) {
       state.send({ type: "sendRejected", error: asAppError(error) })
+    } finally {
+      setBoot(undefined)
     }
   }
   return {
     state: state.state,
     sending,
+    boot,
     send,
     armGoal,
     disarmGoal: () => input.store.setGoalArmed(input.key(), false),

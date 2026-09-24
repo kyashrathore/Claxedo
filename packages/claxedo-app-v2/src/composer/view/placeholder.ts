@@ -1,9 +1,11 @@
+import type { ComposerTextKey } from "../i18n"
+
 type PromptPlaceholderInput = {
   mode: "normal" | "shell"
   commentCount: number
   example: string
   suggest: boolean
-  t: (key: string, params?: Record<string, string>) => string
+  t: (key: ComposerTextKey, params?: Record<string, string>) => string
 }
 
 export function promptPlaceholder(input: PromptPlaceholderInput) {

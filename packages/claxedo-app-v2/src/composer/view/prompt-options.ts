@@ -11,7 +11,7 @@
 // Nothing in this file is reactive: no Solid imports, no signals. That is the
 // point — it is all data in, data out, which is why it can be shared and tested
 // directly.
-import type { AtOption, SlashCommand } from "@/features/session/composer/ui/slash-popover"
+import type { AtOption, SlashCommand } from "./slash-popover"
 
 export type PromptAgentRow = {
   name: string
