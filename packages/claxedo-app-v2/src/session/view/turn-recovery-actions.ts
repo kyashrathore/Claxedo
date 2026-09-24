@@ -4,7 +4,7 @@ import type { SessionErrorClass } from "./timeline"
 export type TurnRecoveryActions = {
   readonly startNewSession: () => void
   readonly openProviders: () => void
-  readonly chooseModel: () => void
+  readonly switchModelAndResend: (text: string) => Promise<void>
   readonly resend: (text: string) => void
 }
 
@@ -18,7 +18,7 @@ function promptText(view: SessionView, userMessageId: string) {
 export function recoverTurn(view: SessionView, actions: TurnRecoveryActions, kind: SessionErrorClass, userMessageId: string) {
   if (kind === "session") return actions.startNewSession()
   if (kind === "credential") return actions.openProviders()
-  if (kind === "model" || kind === "usage_limit") return actions.chooseModel()
   const text = promptText(view, userMessageId)
+  if (kind === "model" || kind === "usage_limit") return actions.switchModelAndResend(text)
   if (text) actions.resend(text)
 }
