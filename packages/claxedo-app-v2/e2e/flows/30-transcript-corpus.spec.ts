@@ -9,6 +9,7 @@ const TURN_TIMEOUT = 30_000
 const TALL_VIEWPORT = 1600
 const LATEST_TURN_READ = /[?&]view=latest-turn\b/
 const CLOCK_TIME = /\b\d{1,2}:\d{2}\s?(?:AM|PM)\b/g
+const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g
 
 type Target = { readonly directory: string; readonly sessionId: string }
 
@@ -24,17 +25,6 @@ function inWorkspace<T>(value: T, directory: string): T {
   return JSON.parse(JSON.stringify(value).replaceAll("{{workspace}}", directory)) as T
 }
 
-const BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-
-function ascendingMessageIds(): () => string {
-  let counter = 0
-  return () => {
-    const ordered = (BigInt(Date.now()) * 4096n + BigInt(++counter)) & 0xffffffffffffn
-    const random = Array.from(crypto.getRandomValues(new Uint8Array(14)), (byte) => BASE62[byte % 62]).join("")
-    return `msg_${ordered.toString(16).padStart(12, "0")}${random}`
-  }
-}
-
 function turnSettled(messages: readonly MessageRow[], users: number): boolean {
   const userCount = messages.filter((message) => message.info.role === "user").length
   const last = messages.at(-1)?.info
@@ -43,14 +33,14 @@ function turnSettled(messages: readonly MessageRow[], users: number): boolean {
   return time?.completed !== undefined || last.error !== undefined
 }
 
-async function playTurn(stack: Stack, api: ClaxedoApi, target: Target, turn: CaseTurn & { readonly name: string; readonly messageId: string }, users: number) {
+async function playTurn(stack: Stack, api: ClaxedoApi, target: Target, turn: CaseTurn & { readonly name: string }, users: number) {
   await stack.acp.write(turn.name, { steps: [...turn.steps] })
   const text = `${turn.prompt} ${acpScriptToken(turn.name)}`
   if (!turn.steps.some((step) => step.kind === "error")) {
-    await api.prompt(target.directory, target.sessionId, text, { messageId: turn.messageId })
+    await api.prompt(target.directory, target.sessionId, text)
     return
   }
-  await api.promptAsync(target.directory, target.sessionId, text, { messageId: turn.messageId })
+  await api.promptAsync(target.directory, target.sessionId, text)
   await expect
     .poll(async () => turnSettled(await api.messages(target.directory, target.sessionId), users), { timeout: TURN_TIMEOUT })
     .toBe(true)
@@ -62,16 +52,14 @@ async function arrange(stack: Stack, api: ClaxedoApi, corpusCase: CorpusCase) {
   const session = await api.createSession(workspace.directory, { title: corpusCase.title, harness: SCRIPTED_ACP_HARNESS })
   const target = { directory: workspace.directory, sessionId: session.id }
   const turns = inWorkspace(corpusCase.replay.turns, workspace.directory)
-  const nextId = ascendingMessageIds()
   for (const [index, turn] of turns.entries()) {
-    await playTurn(stack, api, target, { ...turn, name: `${corpusCase.id}-${index}`, messageId: nextId() }, index + 1)
+    await playTurn(stack, api, target, { ...turn, name: `${corpusCase.id}-${index}` }, index + 1)
   }
   return { workspace, target, turns: turns.length }
 }
 
 function sessionUrl(stack: Stack, workspaceId: string, sessionId: string): string {
-  const route = sessionRoute(workspaceId, sessionId)
-  return `${stack.url}${route}`
+  return `${stack.url}${sessionRoute(workspaceId, sessionId)}`
 }
 
 function turnRows(app: Page): Locator {
@@ -100,19 +88,38 @@ async function rowsBox(app: Page): Promise<RowsBox | undefined> {
   })
 }
 
+function backgroundSubagents(app: Page): Locator {
+  return app.getByRole("region", { name: "Background subagents" })
+}
+
+async function withBackground(app: Page, rows: RowsBox | undefined): Promise<RowsBox | undefined> {
+  const background = (await backgroundSubagents(app).count()) > 0 ? await backgroundSubagents(app).boundingBox() : null
+  if (!rows || !background) return rows
+  const top = Math.min(rows.y, Math.floor(background.y))
+  const bottom = Math.max(rows.y + rows.height, Math.ceil(background.y + background.height))
+  return { x: rows.x, y: top, width: rows.width, height: bottom - top }
+}
+
 async function compareStage(app: Page, corpusCase: CorpusCase, stage: string) {
   await app.mouse.move(0, 0)
-  const box = await rowsBox(app)
+  const box = await withBackground(app, await rowsBox(app))
   expect(box, `${corpusCase.id} renders its turn rows at ${stage}`).toBeDefined()
   if (!box) return
-  await expect.soft(app).toHaveScreenshot([corpusCase.id, `${stage}.png`], { clip: box, animations: "disabled", caret: "hide" })
+  await expect.soft(app).toHaveScreenshot([corpusCase.id, `${stage}.png`], {
+    clip: box,
+    animations: "disabled",
+    caret: "hide",
+    mask: [app.locator('[data-component="agent-glyph"]')],
+  })
   const shown = await shownRows(app)
   const trees: string[] = []
   for (const [index, visible] of shown.entries()) {
     trees.push(`row ${index}:\n${visible ? await turnRows(app).nth(index).ariaSnapshot() : "(empty)"}`)
   }
   const top = await scroller(app).first().evaluate((element) => Math.round(element.scrollTop))
-  const tree = `scrollTop: ${top}\n${trees.join("\n")}\n`.replace(CLOCK_TIME, "<time>")
+  const background = (await backgroundSubagents(app).count()) > 0 ? await backgroundSubagents(app).ariaSnapshot() : "(none)"
+  const tree = `scrollTop: ${top}\nbackground subagents:\n${background}\n${trees.join("\n")}\n`.replace(CLOCK_TIME, "<time>")
+    .replace(UUID, "<id>")
   expect.soft(tree).toMatchSnapshot([corpusCase.id, `${stage}-tree.txt`])
 }
 
