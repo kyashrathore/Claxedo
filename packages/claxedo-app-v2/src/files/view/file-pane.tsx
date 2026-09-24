@@ -4,13 +4,12 @@ import { useTranslator } from "@/i18n"
 import { FailureNotice } from "@/lib/failure"
 import type { FileContent } from "@/server"
 import type { PaneProps } from "@/shell"
-import type { FileRevealHandle } from "@/transcript"
+import { File, type FileRevealHandle } from "@/transcript"
 import { useFilesApi } from "../api"
 import { dictionary } from "../i18n"
 import { fetchView, fileView, type FilePaneState } from "../model"
 import { basename } from "../path"
 import { imagePreviewUrl } from "../preview"
-import { CodeEngine } from "./code-engine"
 import { PlaceholderRows } from "./placeholder"
 
 const REVEAL_WINDOW_MS = 5000
@@ -90,7 +89,6 @@ function FileBody(props: {
 }
 
 function FileText(props: { readonly path: string; readonly text: string; readonly line?: number }): JSX.Element {
-  const t = useTranslator(dictionary)
   let handle: FileRevealHandle | null = null
   const revealUntil = performance.now() + REVEAL_WINDOW_MS
   const reveal = () => {
@@ -99,18 +97,14 @@ function FileText(props: { readonly path: string; readonly text: string; readonl
   }
   const file = createMemo(() => ({ name: basename(props.path), contents: props.text }))
   return (
-    <CodeEngine label={t("files.loading")}>
-      {(File) => (
-        <File
-          mode="text"
-          file={file()}
-          overflow="wrap"
-          class="select-text"
-          reveal={{ register: (next) => (handle = next) }}
-          onRendered={reveal}
-          selectedLines={props.line === undefined ? null : { start: props.line, end: props.line }}
-        />
-      )}
-    </CodeEngine>
+    <File
+      mode="text"
+      file={file()}
+      overflow="wrap"
+      class="select-text"
+      reveal={{ register: (next) => (handle = next) }}
+      onRendered={reveal}
+      selectedLines={props.line === undefined ? null : { start: props.line, end: props.line }}
+    />
   )
 }

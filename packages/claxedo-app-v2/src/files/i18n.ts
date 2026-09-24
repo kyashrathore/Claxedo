@@ -13,7 +13,6 @@ const en = {
   "files.loadFailed": "The files could not be loaded",
   "files.searchFailed": "The search failed",
   "files.readFailed": "The file could not be read",
-  "files.engineFailed": "The code viewer could not load",
   "files.noPlacement": "Open a project to browse its files",
   "files.missing": "This file does not exist in the workspace",
   "files.binary": "Binary file, no preview",
