@@ -29,7 +29,7 @@ test("03 send a turn: the reply streams in with its tool groups, diff, todo list
   await expect(app.getByRole("math").first()).toBeVisible()
   await expect(app.getByRole("button", { name: "Open diagram full screen" })).toBeVisible()
   await expect(app.getByRole("img", { name: "image.png" })).toBeVisible()
-  await expect(app.getByRole("region", { name: "1 of 1 todos completed", exact: true })).toBeVisible()
+  await expect(app.getByLabel("1 of 1 todos completed", { exact: true })).toBeVisible()
   const work = app.getByRole("button", { name: "Edited 1 file · ran 1 command · fetched 1 page · search" })
   await work.click()
   await expect(app.getByText("git status").first()).toBeVisible()

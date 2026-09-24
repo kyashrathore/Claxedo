@@ -5,11 +5,11 @@ import { FailureBoundary, FailureNotice } from "@/lib/failure"
 import { sessionId, useServer, type SessionRef } from "@/server"
 import { useSessionStores, type SessionView } from "@/session"
 import { sessionPath, useShellRoute, type PaneProps } from "@/shell"
-import { Button, useDialog } from "@/ui"
+import { useDialog } from "@/ui"
 import { useWorkbench } from "@/workbench"
 import { PlanDialog } from "./plan-dialog"
 import { createQueueEdit } from "./queue-edit"
-import { SessionDocks } from "./session-docks"
+import { createTodoDock, SessionDocks, TodoDockSlot } from "./session-docks"
 import { SessionTimeline } from "./session-timeline"
 import { useSessionScreenText, type SessionScreenText } from "./text"
 import { createTimelineHost } from "./timeline-host"
@@ -31,11 +31,15 @@ function Loading(props: { readonly t: SessionScreenText }) {
 
 function ChildNotice(props: { readonly t: SessionScreenText; readonly onBack: () => void }) {
   return (
-    <div data-slot="session-child-notice">
-      <span>{props.t("sessionScreen.child.promptDisabled")}</span>
-      <Button size="small" variant="ghost" onClick={() => props.onBack()}>
+    <div class="w-full px-3 py-2 text-center text-12-regular text-text-weaker">
+      <span>{props.t("sessionScreen.child.promptDisabled")} </span>
+      <button
+        type="button"
+        class="text-text-weak underline-offset-2 transition-colors hover:text-text-base hover:underline"
+        onClick={() => props.onBack()}
+      >
         {props.t("sessionScreen.child.backToParent")}
-      </Button>
+      </button>
     </div>
   )
 }
@@ -63,6 +67,8 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
     return status.kind !== "unknown" && turnActive(status)
   }
   const scroll = createTimelineScroll({ view: () => props.view, active: () => props.active, working })
+  const todo = createTodoDock(() => props.view)
+  const lift = () => (todo.open() ? 36 : 0)
   const setDock = createDockFollow(scroll)
   return (
     <div data-slot="session-screen-body">
@@ -76,18 +82,23 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
       >
         <div data-slot="session-screen-dock" class="w-full px-3 pointer-events-auto md:max-w-192 md:mx-auto 2xl:max-w-[880px]">
           <SessionDocks view={props.view} />
-          <Show when={!parentId()} fallback={<ChildNotice t={t} onBack={toParent} />}>
-            <Show when={props.view.requests().length === 0}>
-              <Composer
-                composerKey={sessionComposerKey(props.view.ref)}
-                placementId={props.view.ref.placementId}
-                view={props.view}
-                sessionHarness={props.view.row()?.harness}
-                attachmentWorkspace={true}
-                afterAccepted={queueEdit.accepted}
-                queuedEdit={queueEdit.edit}
-              />
+          <Show when={props.view.requests().length === 0}>
+            <Show when={todo.open()}>
+              <TodoDockSlot view={props.view} dock={todo} />
             </Show>
+            <div class="relative z-10" style={{ "margin-top": `${-lift()}px` }}>
+              <Show when={!parentId()} fallback={<ChildNotice t={t} onBack={toParent} />}>
+                <Composer
+                  composerKey={sessionComposerKey(props.view.ref)}
+                  placementId={props.view.ref.placementId}
+                  view={props.view}
+                  sessionHarness={props.view.row()?.harness}
+                  attachmentWorkspace={true}
+                  afterAccepted={queueEdit.accepted}
+                  queuedEdit={queueEdit.edit}
+                />
+              </Show>
+            </div>
           </Show>
         </div>
       </div>
