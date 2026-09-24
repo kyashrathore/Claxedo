@@ -10,6 +10,7 @@ import { dictionary } from "../i18n"
 import { ShellLayoutProvider } from "../layout"
 import { CommandsProvider } from "../palette/commands"
 import { CommandPalette } from "../palette/palette"
+import { PlacementProviders } from "../placement-providers"
 import { useShellRegistries } from "../registries"
 import { useShellRoute } from "../router"
 import { sidebarModeOf, type ShellRoute } from "../routes"
@@ -52,17 +53,19 @@ function ScopedShell(props: { readonly scope: string; readonly mainSidebar: JSX.
   const workbench = createWorkbenchStore(preferenceKey("workbench", props.scope), registries.paneKinds.list)
   return (
     <WorkbenchProvider store={workbench}>
-      <ShellLayoutProvider scope={props.scope}>
-        <CommandsProvider>
-          <RouteSync />
-          <ShellCommands />
-          <ThemeBridge />
-          <ConnectionBanner />
-          <ShellBody route={routing.route()} mainSidebar={props.mainSidebar} />
-          <CommandPalette />
-          <Overlays />
-        </CommandsProvider>
-      </ShellLayoutProvider>
+      <PlacementProviders>
+        <ShellLayoutProvider scope={props.scope}>
+          <CommandsProvider>
+            <RouteSync />
+            <ShellCommands />
+            <ThemeBridge />
+            <ConnectionBanner />
+            <ShellBody route={routing.route()} mainSidebar={props.mainSidebar} />
+            <CommandPalette />
+            <Overlays />
+          </CommandsProvider>
+        </ShellLayoutProvider>
+      </PlacementProviders>
     </WorkbenchProvider>
   )
 }
