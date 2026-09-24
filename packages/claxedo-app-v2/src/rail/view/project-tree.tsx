@@ -42,6 +42,10 @@ export function ProjectTree(): JSX.Element {
     const route = routing.route()
     return route.kind === "session" ? route.sessionId : undefined
   }
+  const activeTerminalId = () => {
+    const route = routing.route()
+    return route.kind === "terminal" ? route.terminalId : undefined
+  }
   const now = createNow(() => stores.list.rows())
   const select = (section: ProjectSection) => {
     if (section.placementId) routing.navigate(draftPath(section.placementId))
@@ -71,6 +75,7 @@ export function ProjectTree(): JSX.Element {
                     rows={rowsOf(current())}
                     active={!!current().projectId && current().projectId === activeProjectId()}
                     activeSessionId={activeSessionId()}
+                    activeTerminalId={activeTerminalId()}
                     now={now}
                     list={stores.list}
                     onSelect={select}

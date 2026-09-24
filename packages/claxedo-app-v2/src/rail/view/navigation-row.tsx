@@ -6,6 +6,7 @@ const ROW_SHELL_CLASS =
   "relative flex items-center gap-2 min-h-7 py-0.5 pr-2.5 mx-1 text-left outline-none rounded-md hover:bg-surface-base-hover/40"
 
 export type NavigationRowProps = {
+  readonly class?: string
   readonly data?: Readonly<Record<string, string | undefined>>
   readonly classList?: Readonly<Record<string, boolean | undefined>>
   readonly label: string
@@ -21,7 +22,7 @@ export function NavigationRow(props: NavigationRowProps): JSX.Element {
     <div
       {...props.data}
       data-active={props.active ? "true" : "false"}
-      class={ROW_SHELL_CLASS}
+      class={props.class ? `${ROW_SHELL_CLASS} ${props.class}` : ROW_SHELL_CLASS}
       classList={props.classList}
       onPointerEnter={props.engagement.handlers.onPointerEnter}
       onPointerLeave={props.engagement.handlers.onPointerLeave}
