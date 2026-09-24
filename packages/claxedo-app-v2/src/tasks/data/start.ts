@@ -3,7 +3,7 @@ import type { ConfigurationSlot, Preset, SessionReference, StartPreview, Task, T
 import { useTranslator, type DomainTranslate } from "@/i18n"
 import { uuid } from "@/lib/uuid"
 import { dictionary, type TasksKey } from "../i18n"
-import { useOpenTaskSession } from "../links"
+import { useOpenPresetSettings, useOpenTaskSession } from "../links"
 import { SLOT_KEYS, groupLinksBySlot, openableSlot, slotAttempt } from "../model"
 import type { TasksStore } from "../store"
 import {
@@ -43,6 +43,7 @@ export type TaskStartOffer = {
   readonly onStart: (choice: StartChoice) => void
   readonly onContinue?: () => void
   readonly onOpen?: () => void
+  readonly onOpenPresetSettings: () => void
 }
 
 function createStartCalls() {
@@ -162,6 +163,7 @@ function createBusy() {
 export function useTaskStartOffers(store: TasksStore) {
   const commands = useStartCommands()
   const presets = usePresetList(() => false)
+  const openPresetSettings = useOpenPresetSettings()
   const { busyTaskId, busyWhile } = createBusy()
   const defaultPresetId = (offered: readonly Preset[]) => {
     const last = store.state.lastPresetId
@@ -183,7 +185,16 @@ export function useTaskStartOffers(store: TasksStore) {
       if (!outcome.ok) store.refuseStart(taskId, outcome.message)
     })
   const offerFor = (task: Task | TaskSummary, options: StartOfferOptions = {}) =>
-    buildOffer({ task, options, presets, store, busy: busyTaskId() === task.id, defaultPresetId, start })
+    buildOffer({
+      task,
+      options,
+      presets,
+      store,
+      busy: busyTaskId() === task.id,
+      defaultPresetId,
+      start,
+      openPresetSettings,
+    })
   return { busyTaskId, busyWhile, offerFor, openLatestSession }
 }
 
@@ -195,6 +206,7 @@ function buildOffer(input: {
   readonly busy: boolean
   readonly defaultPresetId: (offered: readonly Preset[]) => string | undefined
   readonly start: (task: Task | TaskSummary, choice: StartChoice, continueFromPrevious?: boolean) => Promise<void>
+  readonly openPresetSettings: () => void
 }): TaskStartOffer {
   const { task, options, presets } = input
   const slot = options.slot
@@ -213,5 +225,6 @@ function buildOffer(input: {
     onStart: (choice) => void input.start(task, choice),
     onContinue: continued && slot ? () => void input.start(task, { presetId: continued.id, slot }, true) : undefined,
     onOpen: options.onOpen,
+    onOpenPresetSettings: input.openPresetSettings,
   }
 }
