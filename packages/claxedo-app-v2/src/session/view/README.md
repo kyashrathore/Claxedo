@@ -4,8 +4,8 @@ The pane that shows one session: the moved timeline (`timeline/`, owned by the t
 
 ## Exports (`index.ts`)
 
-- `sessionPaneKind`: pane kind `session`, state `SessionRef`, routed at `/w/:placementId/s/:sessionId`.
-- `draftSessionPaneKind`: pane kind `draftSession`, state `{ projectId, placementId, draftId }`, no route. Its composer creates the session on the first send (`SessionList.create`, with the harness and model chosen in the draft), sends, and then replaces its own pane with a `session` pane (`useWorkbench().replacePane`).
+- `sessionPaneKind`: pane kind `session`, state `SessionRef`, routed at `/w/:placementId/session/:sessionId`.
+- `draftSessionPaneKind`: pane kind `draftSession`, state `{ projectId, placementId }`, routed at `/w/:placementId/session`. A workspace has one draft, as in today's app: New Session, the landing and a reload all show the same draft with its unsent text (the composer keys it `draft:<placementId>`). Its composer creates the session on the first send (`SessionList.create`, with the harness and model chosen in the draft), sends, and then replaces its own pane with a `session` pane (`useWorkbench().replacePane`).
 
 ## Owned concepts
 
