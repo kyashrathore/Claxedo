@@ -19,7 +19,6 @@ export const dictionary = {
   "shell.key.insert": "Insert",
   "shell.key.esc": "ESC",
   "shell.settings": "การตั้งค่า",
-  "shell.close": "ปิด",
   "shell.loading": "กำลังโหลด",
   "shell.scheme.system": "ระบบ",
   "shell.scheme.light": "สว่าง",

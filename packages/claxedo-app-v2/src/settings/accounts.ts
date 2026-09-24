@@ -1,55 +1,25 @@
 import { HARNESS_IDS, HARNESS_TABLE, harnessBindingIds, type HarnessId } from "@claxedo/agent-runtime-contract"
-import type { QuotaWindow } from "@claxedo/usage-contract"
-
-export type ProviderVerdict = "ok" | "auth_failed" | "no_billing" | "rate_capped" | "expired" | "unknown"
-
-export type AccountDelivery = { readonly local: boolean; readonly cloud: boolean; readonly reason?: string }
+import type { Account, AccountDelivery, AccountVerdict, MachineLogin } from "@/server"
 
 export type AccountReach = "local-and-cloud" | "local-only"
 
-export type StoredAccount = {
-  readonly id: string
-  readonly providerId: string
-  readonly label?: string
-  readonly kind?: string
-  readonly accountId?: string
-  readonly health?: string
-  readonly lastValidatedAt?: number
-  readonly usage?: readonly QuotaWindow[]
-  readonly usageAt?: number
-  readonly delivery?: AccountDelivery
-  readonly isActive: boolean
-  readonly expiresAt?: number
-}
-
-export type MachineLogin = {
-  readonly harness: string
-  readonly providerIds: readonly string[]
-  readonly serves?: readonly string[]
-  readonly state: "signed_in" | "signed_out" | "absent" | "unknown"
-  readonly email?: string
-  readonly plan?: string
-  readonly org?: string
-  readonly usage?: readonly QuotaWindow[]
-  readonly usageAt?: number
-  readonly detail?: string
-}
+type QuotaWindow = NonNullable<Account["usage"]>[number]
 
 export type AccountsSnapshot = {
-  readonly stored: readonly StoredAccount[]
-  readonly effective: ReadonlyMap<string, StoredAccount> | undefined
+  readonly stored: readonly Account[]
+  readonly effective: ReadonlyMap<string, Account> | undefined
   readonly machineLogins: readonly MachineLogin[]
   readonly scannedAt: number
 }
 
 export type LiveCheck = {
   readonly at: number
-  readonly verdict?: ProviderVerdict
+  readonly verdict?: AccountVerdict
   readonly usage?: readonly QuotaWindow[]
   readonly reason?: string
 }
 
-export type HarnessAccount = StoredAccount & { readonly ids: readonly string[] }
+export type HarnessAccount = Account & { readonly ids: readonly string[] }
 
 export type Harness = {
   readonly id: HarnessId
@@ -85,28 +55,28 @@ export function accountReach(delivery: AccountDelivery | undefined): AccountReac
 
 const OPAQUE_ACCOUNT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-export function accountIdentity(row: StoredAccount): { text: string; readable: boolean } | undefined {
+export function accountIdentity(row: Account): { text: string; readable: boolean } | undefined {
   if (row.accountId === undefined) return undefined
   const fingerprint = /^fp_[0-9a-f]{8}(….+)$/.exec(row.accountId)
   if (fingerprint?.[1]) return { text: fingerprint[1], readable: true }
   return { text: row.accountId, readable: !OPAQUE_ACCOUNT_ID.test(row.accountId) }
 }
 
-export function accountLabel(row: StoredAccount): string {
+export function accountLabel(row: Account): string {
   if (row.label && row.label !== row.providerId) return row.label
   const identity = accountIdentity(row)
   return identity?.readable ? identity.text : (row.kind ?? row.providerId)
 }
 
-function mergeGroup(ordered: readonly StoredAccount[]): HarnessAccount | undefined {
+function mergeGroup(ordered: readonly Account[]): HarnessAccount | undefined {
   const first = ordered[0]
   if (first === undefined) return undefined
-  const pick = <K extends keyof StoredAccount>(key: K) => ordered.find((row) => row[key] !== undefined)?.[key]
+  const pick = <K extends keyof Account>(key: K) => ordered.find((row) => row[key] !== undefined)?.[key]
   const usageRead = ordered.find((row) => row.usage !== undefined)
   return {
     ...first,
     ids: ordered.map((row) => row.id),
-    isActive: ordered.every((row) => row.isActive),
+    active: ordered.every((row) => row.active),
     ...(pick("health") === undefined ? {} : { health: pick("health") }),
     ...(pick("lastValidatedAt") === undefined ? {} : { lastValidatedAt: pick("lastValidatedAt") }),
     ...(pick("expiresAt") === undefined ? {} : { expiresAt: pick("expiresAt") }),
@@ -115,8 +85,8 @@ function mergeGroup(ordered: readonly StoredAccount[]): HarnessAccount | undefin
   }
 }
 
-export function harnessAccounts(harness: Harness, rows: readonly StoredAccount[]): HarnessAccount[] {
-  const groups = new Map<string, StoredAccount[]>()
+export function harnessAccounts(harness: Harness, rows: readonly Account[]): HarnessAccount[] {
+  const groups = new Map<string, Account[]>()
   for (const row of rows) {
     if (!harness.providerIds.includes(row.providerId)) continue
     const identity = row.accountId ?? row.id
@@ -130,10 +100,10 @@ export function harnessAccounts(harness: Harness, rows: readonly StoredAccount[]
     const merged = mergeGroup(ordered)
     return merged ? [merged] : []
   })
-  return [...accounts.filter((account) => account.isActive), ...accounts.filter((account) => !account.isActive)]
+  return [...accounts.filter((account) => account.active), ...accounts.filter((account) => !account.active)]
 }
 
-export function accountInUse(harness: Harness, effective: ReadonlyMap<string, StoredAccount>) {
+export function accountInUse(harness: Harness, effective: ReadonlyMap<string, Account>) {
   for (const id of harness.providerIds) {
     const row = effective.get(id)
     if (row) return row
@@ -153,7 +123,7 @@ export function partialMachineLogin(login: MachineLogin) {
   return bindings.some((id) => !serves.includes(id))
 }
 
-export function strandedBinding(login: MachineLogin, harness: Harness, effective: ReadonlyMap<string, StoredAccount> | undefined) {
+export function strandedBinding(login: MachineLogin, harness: Harness, effective: ReadonlyMap<string, Account> | undefined) {
   const serves = login.serves
   if (serves === undefined || !effective) return false
   const inUse = accountInUse(harness, effective)
@@ -166,7 +136,7 @@ export function selectedAccountKey(harness: Harness, snapshot: AccountsSnapshot)
   const inUse = snapshot.effective ? accountInUse(harness, snapshot.effective) : undefined
   const match = inUse ? rows.find((row) => row.ids.includes(inUse.id)) : undefined
   if (match) return match.id
-  const active = rows.find((row) => row.isActive)
+  const active = rows.find((row) => row.active)
   if (active) return active.id
   return machineLoginOf(harness, snapshot) ? MACHINE_LOGIN_KEY : undefined
 }
@@ -180,6 +150,6 @@ export function storedCheck(row: HarnessAccount, live: LiveCheck | undefined): L
   return { at, ...(verdict === undefined ? {} : { verdict }), ...(row.usage === undefined ? {} : { usage: row.usage }) }
 }
 
-export function isVerdict(value: string): value is ProviderVerdict {
+export function isVerdict(value: string): value is AccountVerdict {
   return value === "ok" || value === "auth_failed" || value === "no_billing" || value === "rate_capped" || value === "expired" || value === "unknown"
 }

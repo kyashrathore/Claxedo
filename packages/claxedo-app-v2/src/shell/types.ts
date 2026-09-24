@@ -51,6 +51,17 @@ export type AnyPaneKind = {
   readonly toRoute?: (state: never) => PaneRoute | undefined
 }
 
+export type PanelViewProps = {
+  readonly placementId: PlacementId
+  readonly sessionId: string
+  readonly parentSessionId?: string
+}
+
+export type PanelView = {
+  readonly kind: "context" | "subagent"
+  readonly view: Component<PanelViewProps>
+}
+
 export type SettingsSection = {
   readonly id: string
   readonly title: () => string
@@ -119,6 +130,7 @@ export type Registry<Entry> = {
 export type ShellRegistries = {
   readonly pages: Registry<PageEntry>
   readonly paneKinds: Registry<AnyPaneKind>
+  readonly panelViews: Registry<PanelView>
   readonly settingsSections: Registry<SettingsSection>
   readonly sidebarItems: Registry<SidebarItem>
   readonly overlays: Registry<OverlayEntry>

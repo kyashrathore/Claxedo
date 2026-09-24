@@ -147,6 +147,17 @@ export const SCREENS: readonly Screen[] = [
     },
   },
   {
+    id: "panel-browser",
+    phase: "seeded",
+    sizes: ["1280"],
+    path: sessionPath,
+    steps: async (context) => {
+      await openPanel(context)
+      await context.page.getByRole("button", { name: "Add workspace tab" }).click()
+      await context.page.getByRole("menuitem", { name: "Browser" }).click()
+    },
+  },
+  {
     id: "panel-maximized",
     phase: "seeded",
     sizes: ["1280"],

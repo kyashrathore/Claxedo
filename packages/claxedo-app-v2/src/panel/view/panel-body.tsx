@@ -1,10 +1,12 @@
 import { createEffect, createSignal, Match, Show, Switch, type JSX } from "solid-js"
+import { Dynamic } from "solid-js/web"
 import { MarkedProvider } from "@opencode-ai/ui/context/marked"
 import { BrowserTabView } from "@/browser"
 import { FileTab, FilesNavigator } from "@/files"
 import { useTranslator } from "@/i18n"
 import { ReviewTab, SourceControlView } from "@/review"
 import type { PlacementId } from "@/server"
+import { useShellRegistries, type PanelView } from "@/shell"
 import { Markdown } from "@/transcript"
 import { filePathFromTab } from "../focus"
 import { dictionary } from "../i18n"
@@ -31,6 +33,8 @@ function NavigatorViews(props: { readonly placementId: PlacementId }): JSX.Eleme
       <Show when={filesVisited()}>
         <div class="absolute inset-0" classList={{ hidden: view() !== "files" }}>
           <FilesNavigator
+            placementId={props.placementId}
+            active={view() === "files"}
             activePath={activeFilePath(panel)}
             onOpenFile={(path) => panel.show({ kind: "file", path })}
           />
@@ -81,9 +85,41 @@ function NavigatorColumn(props: { readonly placementId: PlacementId }): JSX.Elem
   )
 }
 
+function RegisteredView(props: {
+  readonly kind: PanelView["kind"]
+  readonly placementId: PlacementId
+  readonly sessionId: string
+  readonly parentSessionId?: string
+}): JSX.Element {
+  const registries = useShellRegistries()
+  const view = () => registries.panelViews.list().find((entry) => entry.kind === props.kind)?.view
+  return (
+    <Show when={view()}>
+      {(component) => (
+        <div class="absolute inset-0 h-full min-h-0 overflow-hidden">
+          <Dynamic
+            component={component()}
+            placementId={props.placementId}
+            sessionId={props.sessionId}
+            parentSessionId={props.parentSessionId}
+          />
+        </div>
+      )}
+    </Show>
+  )
+}
+
 function ActiveTab(props: { readonly placementId: PlacementId }): JSX.Element {
   const panel = usePanel()
   const tab = () => panel.activeTab()
+  const context = () => {
+    const current = tab()
+    return current.kind === "context" ? current : undefined
+  }
+  const subagent = () => {
+    const current = tab()
+    return current.kind === "subagent" ? current : undefined
+  }
   const browser = () => {
     const current = tab()
     return current.kind === "browser" ? current : undefined
@@ -125,6 +161,19 @@ function ActiveTab(props: { readonly placementId: PlacementId }): JSX.Element {
           <div class="absolute inset-0 h-full min-h-0 overflow-hidden">
             <BrowserTabView url={current().url} navigationVersion={current().navigationVersion} />
           </div>
+        )}
+      </Match>
+      <Match when={context()}>
+        {(current) => <RegisteredView kind="context" placementId={props.placementId} sessionId={current().sessionId} />}
+      </Match>
+      <Match when={subagent()}>
+        {(current) => (
+          <RegisteredView
+            kind="subagent"
+            placementId={props.placementId}
+            sessionId={current().sessionId}
+            parentSessionId={current().parentSessionId}
+          />
         )}
       </Match>
       <Match when={plan()}>

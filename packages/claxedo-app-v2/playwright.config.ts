@@ -13,6 +13,7 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   reporter: [["list"], ["html", { outputFolder: "e2e/report", open: "never" }]],
   use: {
+    ignoreHTTPSErrors: true,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "retain-on-failure",

@@ -1,8 +1,7 @@
 import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, test } from "../harness"
 
 test("00 desktop smoke: the desktop boots the app on its embedded server and a scripted ACP turn round-trips", { tag: "@desktop" }, async ({ desktop }) => {
-  const root = desktop.app === "v2" ? desktop.window.getByRole("main") : desktop.window.locator("[data-claxedo]")
-  await expect(root).toBeVisible()
+  await expect(desktop.window.getByRole("heading", { level: 1, name: "Start with a project" })).toBeVisible()
 
   const api = desktop.api
   const workspace = await desktop.makeWorkspace("desktop-smoke")

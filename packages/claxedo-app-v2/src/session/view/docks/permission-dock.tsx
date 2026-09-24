@@ -1,9 +1,9 @@
-import { useErrorCopy } from "@/composer"
 import { For, Show } from "solid-js"
 import type { AgentPermission, AgentPermissionReply } from "@claxedo/agent-runtime-contract"
 import type { AgentRequestReply } from "@/server"
 import { DockPrompt } from "@/transcript"
-import { Button, Icon } from "@/ui"
+import { Button } from "@opencode-ai/ui/button"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { isRecord } from "@/lib/record"
 import type { SessionScreenTextKey } from "../i18n"
 import { useSessionScreenText } from "../text"
@@ -123,10 +123,10 @@ function PermissionFooter(props: {
               <Button variant="ghost" size="normal" disabled={props.busy} onClick={() => props.onDecide("reject")}>
                 {t("sessionScreen.permission.deny")}
               </Button>
-              <Button variant="neutral" size="normal" disabled={props.busy} onClick={() => props.onDecide("always")}>
+              <Button variant="secondary" size="normal" disabled={props.busy} onClick={() => props.onDecide("always")}>
                 {t("sessionScreen.permission.allowAlways")}
               </Button>
-              <Button variant="contrast" size="normal" disabled={props.busy} onClick={() => props.onDecide("once")}>
+              <Button variant="primary" size="normal" disabled={props.busy} onClick={() => props.onDecide("once")}>
                 {t("sessionScreen.permission.allowOnce")}
               </Button>
             </>
@@ -135,7 +135,7 @@ function PermissionFooter(props: {
           {(options) => (
             <For each={options()}>
               {(option) => (
-                <Button variant="neutral" size="normal" title={option.description} disabled={props.busy} onClick={() => props.onDecide({ optionId: option.id })}>
+                <Button variant="secondary" size="normal" title={option.description} disabled={props.busy} onClick={() => props.onDecide({ optionId: option.id })}>
                   {option.label}
                 </Button>
               )}
@@ -153,7 +153,6 @@ export function PermissionDock(props: {
   onStop?: () => Promise<void>
 }) {
   const t = useSessionScreenText()
-  const errorCopy = useErrorCopy()
   const reply = createRequestReply(props.onReply)
   const stop = createDockAction<"stop">()
   const facts = () => permissionFacts(props.request)
@@ -187,7 +186,7 @@ export function PermissionDock(props: {
       }
     >
       <Show when={reply.error() ?? stop.error()}>
-        {(error) => <div role="alert" data-slot="permission-error" data-error-class={error().class} title={error().message}>{errorCopy(error())}</div>}
+        {(error) => <div role="alert" data-slot="permission-error" data-error-class={error().class}>{error().message}</div>}
       </Show>
       <Show when={hint()}>
         <div data-slot="permission-row">

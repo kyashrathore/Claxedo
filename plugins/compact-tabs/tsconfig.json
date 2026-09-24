@@ -1,6 +1,0 @@
-{
-  "extends": "../../packages/claxedo-app-v2/tsconfig.json",
-  "include": [
-    "src"
-  ]
-}

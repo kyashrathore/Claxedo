@@ -48,7 +48,7 @@ Add a screen in `e2e/parity/screens.ts`: its id (use the inventory's screen name
 One spec per user flow, named `e2e/flows/NN-flow-name.spec.ts`, where `NN` is the flow number from the plan. The spec imports everything from `../harness`:
 
 ```ts
-import { acpScriptToken, assistantText, expect, frameType, SCRIPTED_ACP_HARNESS, test } from "../harness"
+import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test } from "../harness"
 
 test("03 send a turn: text and a tool card stream", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("turn")
@@ -60,9 +60,8 @@ test("03 send a turn: text and a tool card stream", async ({ stack, api, app }) 
     ],
   })
   const session = await api.createSession(workspace.directory, { title: "Turn", harness: SCRIPTED_ACP_HARNESS })
-  await app.goto(`${stack.url}/…`)
-  await app.getByRole("textbox", { name: "Ask anything" }).fill(`Read the README. ${acpScriptToken("turn")}`)
-  await app.keyboard.press("Enter")
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  await sendPrompt(app, `Read the README. ${acpScriptToken("turn")}`)
   await expect(app.getByText("The README says turn.")).toBeVisible()
   expect(assistantText(await api.messages(workspace.directory, session.id))).toContain("The README says turn.")
 })
@@ -71,6 +70,7 @@ test("03 send a turn: text and a tool card stream", async ({ stack, api, app }) 
 Rules the checks enforce:
 
 - Arrange through the API, act through the UI, assert what the user sees and one fact read back from the server.
+- One path for both apps: v1's accessible names and routes (`UI` and `sessionRoute` in `harness/ui-names.ts`) and v1's composer (`sendPrompt`). A flow may branch on the viewport where v1 itself differs by size, never on the app. On v2 a flow fails at the first step where v2 still differs from v1.
 - Select by role and accessible name, then by the frozen hook list. No CSS-class selectors.
 - No sleeps and no `waitForTimeout`. Wait on a visible state, an `expect.poll`, or `stream.waitFor`.
 - Every spec has a recorded red run: run it with `CLAXEDO_E2E_RED=1` (the ACP agent errors every turn, and model turns are refused at the egress guard) or script the failure explicitly (`{ kind: "error" }`, `scripted.scriptError(...)`) and paste the failing assertion into the commit message.
@@ -78,20 +78,21 @@ Rules the checks enforce:
 
 ## Fixture API
 
-`test` extends Playwright's `test` with three fixtures, all per test:
+`test` extends Playwright's `test` with these fixtures, all per test:
 
 | Fixture | Type | What it is |
 | --- | --- | --- |
 | `stack` | `Stack` | The running stack: `app` (`"v1" \| "v2"`), `url` (the daemon, which also serves the app), `dataDir`, `daemon`, `scripted`, `egress`, `acp`, `events()`, `close()` |
 | `api` | `ClaxedoApi` | An HTTP client for the daemon at `stack.url` |
 | `app` | `Page` | Playwright's page, already at `stack.url/` |
+| `signed` | `SignedStack` | A stack signed through its own issuer, behind HTTPS (below); a signed flow uses it with Playwright's `page` instead of `stack` |
 
 ### `stack.daemon`
 
 | Member | Meaning |
 | --- | --- |
-| `makeWorkspace(name)` | A fresh git repository with one commit, registered with the daemon; returns `{ id, directory }` |
-| `restart()` | Stops and relaunches the daemon on the same port and data directory (reload-recovery flows) |
+| `makeWorkspace(name, projectName?)` | A fresh git repository with one commit, registered with the daemon and recorded as a project named `projectName` (the folder's name when omitted); returns `{ id, directory, projectId }` |
+| `restart({ signed? })` | Stops and relaunches the daemon on the same port and data directory (reload-recovery flows); `signed` relaunches it signed, as the `signed` fixture does |
 | `log()` | Everything the daemon wrote to stdout and stderr |
 | `acpScriptDir`, `dataDir`, `url`, `port` | Paths and address |
 
@@ -143,11 +144,28 @@ Opens the stream the app reads (`/api/wr/events`) and records every frame. `fram
 
 `resolveWorkspace`, `setHarness`, `createSession` (optional `model`), `session`, `sessions`, `deleteSession`, `prompt` (waits for the turn; optional `model`), `promptAsync`, `abort`, `messages`, `status`, `permissions`, `replyPermission`, `questions`, `replyQuestion`, `rejectQuestion`, `providerCatalog(nativeHarness)`, `health`. Every call takes the workspace `directory` first, because that is how today's routes are scoped. A non-2xx answer throws `ApiError` with the status and body. `assistantText(messages)` joins the assistant text parts.
 
-`createProject(name, directory)` records a project for a folder. A stack with no project opens the onboarding screen at `/`, so a flow that starts on the shell creates one first.
+`createProject(name, directory)` records a project for another folder. A stack with no project opens the onboarding screen at `/`; `makeWorkspace` records one, so a flow that made a workspace starts on the shell.
 
 ### Accessibility
 
-`expectNoAxeViolations(page, screen)` runs axe on the page and expects nothing; v2 flows use it. `expectWithinV1Baseline(page, surface)` expects no rule outside today's app's `packages/claxedo-app/e2e/playwright/a11y-baseline.json` for that surface (`home`, `session-page`, `settings-surface`, `command-palette`, `prompt-input-focused`); v1 paths use it, and only on those surfaces. Both first wait (`settled`) until no animation that ends within 5 s is running, so a fade-in is not measured half-drawn.
+`expectWithinV1Baseline(page, surface)` runs axe and expects no rule outside today's app's `packages/claxedo-app/e2e/playwright/a11y-baseline.json` for that surface (`home`, `session-page`, `settings-surface`, `command-palette`, `prompt-input-focused`), on both apps: v2 renders v1's markup, so v1's baseline is its bar. It first waits (`settled`) until no animation that ends within 5 s is running, so a fade-in is not measured half-drawn.
+
+### `signed` (the signed self-hosted stack)
+
+The same daemon, signed through the self-hosted server's embedded Better Auth issuer, which both apps sign in to with an email and a password. The issuer serves the browser's sign-in descriptor only on an HTTPS public origin, so the stack puts an HTTPS front on a port from the run's range: a self-signed certificate made with `openssl`, forwarding requests and websockets to the daemon. The config sets `ignoreHTTPSErrors`. The app is built for that origin into `dist-e2e-signed/` once per worker.
+
+The stack starts unsigned, so the machine-wide setup (the scripted providers, Pi by default, the scripted ACP connection) runs the way a machine is used before anyone signs in. Then it restarts signed, signs up the owner, and restarts again with the owner as the deployment operator (`CLAXEDO_OPERATOR_SUBJECTS`), the only account that may record a folder project on a signed box. A signed box also signs its session stream leases, so the stack generates an Ed25519 pair for `CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM` and `…_PUBLIC_KEY_PEM`; without it `/api/wr/events` answers 503.
+
+| Member | Meaning |
+| --- | --- |
+| `url` | The HTTPS origin the browser uses |
+| `stack` | The stack underneath: `daemon`, `scripted`, `egress`, `acp`, `dataDir`, … |
+| `owner` | The operator's `Account` |
+| `signUp(name)` | Another account (`<name>@claxedo.test`, a random password) with the scripted provider keys stored for it |
+| `signIn(page, account)` | Signs in through v1's `/login` form and waits until the page leaves it |
+| `makeWorkspace(name, projectName?)` | As `stack.daemon.makeWorkspace`, recorded by the owner (project first, then the signed resolve) |
+
+An `Account` is `{ name, email, password, subject, api, transport }`. Its `api` sends the account's bearer token straight to the daemon, reserves each session before creating it and stamps every prompt with a message id, which a signed server requires.
 
 ### `desktop` (the Electron app)
 
@@ -160,7 +178,7 @@ The embedded server admits only its application: Electron main stamps a capabili
 | `window` | The shell window (`index.local.html`) |
 | `electron` | Playwright's `ElectronApplication`, for the main process and other windows |
 | `api` | `ClaxedoApi` for the embedded server, sent through `window` |
-| `url`, `dataDir`, `scripted`, `egress`, `acp`, `makeWorkspace(name)`, `log()` | As on `stack` |
+| `url`, `dataDir`, `scripted`, `egress`, `acp`, `makeWorkspace(name, projectName?)`, `log()` | As on `stack` |
 
 `bun run dev:v2` in `packages/claxedo-desktop` runs the desktop in development with the v2 renderer. Packaging v2 (`package:mac:v2`) waits on a v2 build without the auth vendor client, which the desktop's unsigned boundary check requires.
 
@@ -200,6 +218,9 @@ e2e/
     git.ts               git with a test identity; one-commit repositories
     git-remote.ts        a bare repository served over dumb HTTP
     local-pages.ts       loopback HTML pages for the browser tab
+    signed-stack.ts      the signed stack: HTTPS front, the owner and other accounts, sign-in
+    tls-front.ts         an HTTPS origin in front of the daemon (self-signed)
+    proxy.ts             request and websocket forwarding to a daemon
     api.ts               ClaxedoApi
     stream.ts            the /api/wr/events reader
     app.ts               --app selection and the dist-e2e build

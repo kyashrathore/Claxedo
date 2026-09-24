@@ -19,7 +19,6 @@ export const dictionary = {
   "shell.key.insert": "Insert",
   "shell.key.esc": "ESC",
   "shell.settings": "设置",
-  "shell.close": "关闭",
   "shell.loading": "加载中",
   "shell.scheme.system": "系统",
   "shell.scheme.light": "浅色",

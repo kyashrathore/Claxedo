@@ -8,7 +8,6 @@ export type SessionScreenTextKey =
   | "sessionScreen.subagent.task"
   | "sessionScreen.draft.title"
   | "sessionScreen.action.retry"
-  | "sessionScreen.missing"
   | "sessionScreen.failed"
   | "sessionScreen.action.dismiss"
   | "sessionScreen.action.back"
@@ -65,6 +64,10 @@ export type SessionScreenTextKey =
   | "sessionScreen.goal.metric.timeUsed"
   | "sessionScreen.child.promptDisabled"
   | "sessionScreen.child.backToParent"
+  | "command.message.previous"
+  | "command.message.previous.description"
+  | "command.message.next"
+  | "command.message.next.description"
 
 export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.loading": "Loading messages...",
@@ -73,7 +76,6 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.subagent.task": "Delegated task",
   "sessionScreen.draft.title": "New session",
   "sessionScreen.action.retry": "Retry",
-  "sessionScreen.missing": "This session no longer exists.",
   "sessionScreen.failed": "Could not load this session.",
   "sessionScreen.action.dismiss": "Dismiss",
   "sessionScreen.action.back": "Back",
@@ -168,4 +170,8 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.timeline.ui.sessionTurn.diffs.showLess": "Show less",
   "sessionScreen.timeline.ui.sessionTurn.diffs.changed": "changed",
   "sessionScreen.timeline.ui.sessionTurn.status.thinking": "Thinking",
+  "command.message.previous": "Previous message",
+  "command.message.previous.description": "Go to the previous user message",
+  "command.message.next": "Next message",
+  "command.message.next.description": "Go to the next user message",
 }

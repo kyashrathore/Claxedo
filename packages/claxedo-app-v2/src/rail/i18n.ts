@@ -49,6 +49,16 @@ const en = {
   "rail.renameFailed": "The session could not be renamed",
   "rail.archiveFailed": "The session could not be archived",
   "rail.deleteFailed": "The session could not be deleted",
+  "rail.workbenchPanes": "Workbench panes",
+  "rail.closeTab": "Close {{title}}",
+  "rail.global": "Global",
+  "rail.untitled": "Untitled session",
+  "rail.card.status": "Status",
+  "rail.card.working": "Working",
+  "rail.card.waiting": "Waiting for you",
+  "rail.card.failed": "Last turn failed",
+  "rail.card.project": "Project",
+  "rail.card.workspace": "Workspace",
 } as const
 
 export type RailKey = keyof typeof en

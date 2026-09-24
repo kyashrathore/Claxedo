@@ -64,16 +64,20 @@ export function NavigationRowStatusGutter(props: { readonly status: NavigationSt
   )
 }
 
-export function NavigationStatusMark(props: { readonly status: NavigationStatus }): JSX.Element {
+export function NavigationStatusMark(props: { readonly status: NavigationStatus; readonly surface?: "sidebar" | "switcher" }): JSX.Element {
+  const data = () => (props.surface === "switcher" ? { "data-switcher-status": props.status } : { "data-sidebar-status": props.status })
   return (
     <Switch>
       <Match when={props.status === "working"}>
-        <span aria-hidden="true" data-sidebar-status={props.status} class="flex size-4 shrink-0 translate-y-[0.5px] items-center justify-center">
-          <span class="size-[10px] rounded-full border-[1.5px] border-icon-weak-base border-t-transparent animate-spin motion-reduce:animate-none" />
+        <span aria-hidden="true" {...data()} class="flex size-4 shrink-0 translate-y-[0.5px] items-center justify-center">
+          <span
+            class="rounded-full border-[1.5px] border-icon-weak-base border-t-transparent animate-spin motion-reduce:animate-none"
+            classList={{ "size-[8.5px]": props.surface === "switcher", "size-[10px]": props.surface !== "switcher" }}
+          />
         </span>
       </Match>
       <Match when={props.status !== "idle"}>
-        <span aria-hidden="true" data-sidebar-status={props.status} class="size-1.5 shrink-0 rounded-full bg-icon-interactive-base" />
+        <span aria-hidden="true" {...data()} class="size-1.5 shrink-0 rounded-full bg-icon-interactive-base" />
       </Match>
     </Switch>
   )
