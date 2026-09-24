@@ -51,7 +51,11 @@ function createConsoleLog(bridge: BrowserBridge | undefined, paneId: string) {
   return { entries, clear: () => setEntries([]) }
 }
 
-function actionCall(bridge: BrowserBridge, paneId: string, action: BrowserAction): (() => Promise<BrowserResult>) | undefined {
+function actionCall(
+  bridge: BrowserBridge,
+  paneId: string,
+  action: BrowserAction,
+): (() => Promise<BrowserResult>) | undefined {
   switch (action) {
     case "back": {
       const call = bridge.goBack

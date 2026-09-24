@@ -18,7 +18,11 @@ export function FilesTab(): JSX.Element {
   const files = useFiles()
   return (
     <div data-testid="files-tab" class="flex size-full min-h-0 flex-col bg-background-base">
-      <Show when={files.placementId()} keyed fallback={<p class="px-3 py-6 text-center text-sm text-text-muted">{t("files.noPlacement")}</p>}>
+      <Show
+        when={files.placementId()}
+        keyed
+        fallback={<p class="px-3 py-6 text-center text-sm text-text-muted">{t("files.noPlacement")}</p>}
+      >
         {(placementId) => (
           <>
             <div class="shrink-0 border-b border-border-muted px-2 py-2">
@@ -69,12 +73,20 @@ function SearchResults(props: { readonly placementId: PlacementId; readonly quer
       </Match>
       <Match when={failed()}>
         {(error) => (
-          <FailureNotice title={t("files.searchFailed")} message={error().message} retryLabel={t("files.retry")} onRetry={() => void results.refetch()} />
+          <FailureNotice
+            title={t("files.searchFailed")}
+            message={error().message}
+            retryLabel={t("files.retry")}
+            onRetry={() => void results.refetch()}
+          />
         )}
       </Match>
       <Match when={paths()}>
         {(found) => (
-          <Show when={found().length > 0} fallback={<p class="px-3 py-6 text-center text-sm text-text-muted">{t("files.noResults")}</p>}>
+          <Show
+            when={found().length > 0}
+            fallback={<p class="px-3 py-6 text-center text-sm text-text-muted">{t("files.noResults")}</p>}
+          >
             <ul class="flex flex-col gap-0.5 p-1" aria-label={t("files.results")}>
               <For each={found()}>
                 {(path) => (

@@ -13,7 +13,14 @@ export function BrowserTabView(): JSX.Element {
   const tab = useBrowserTab()
   const deliver = usePickDelivery()
   return (
-    <Show when={tab()} fallback={<p class="flex h-full items-center justify-center px-4 text-center text-sm text-text-muted">{t("browser.noPlacement")}</p>}>
+    <Show
+      when={tab()}
+      fallback={
+        <p class="flex h-full items-center justify-center px-4 text-center text-sm text-text-muted">
+          {t("browser.noPlacement")}
+        </p>
+      }
+    >
       {(current) => (
         <div data-testid="browser-tab" class="flex h-full min-h-0 w-full flex-col bg-background-base text-text-base">
           <Toolbar tab={current()} deliver={deliver} />

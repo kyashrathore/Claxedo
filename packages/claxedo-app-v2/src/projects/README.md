@@ -7,7 +7,8 @@ Owns: the project record as the app sees it, its placements, the add-project flo
 - **Project**: a server record with an id (`Project` from `@/server`). The list comes from the server through `server.queries.projects.list()`; nothing is read from browser storage.
 - **Placement**: where a project runs, a folder, a worktree or a cloud workspace (`Placement`). A placement has its own id; a session belongs to one placement. A folder path is display data, never a key, a route parameter or an identity. Only `src/server/` turns a placement into a directory.
 - **Source**: what the project is made from, a repository URL, a repository from a connected code host, or a folder on a machine. A folder is offered only when the server reports `thisMachine`.
-- **Draft** (`ProjectDraft`): the answers the add flow collects (name, source, harness, placement choice) before anything is created.
+- **Draft** (`ProjectDraft`): the answers the add flow collects (name, source, harness, and the reader's explicit placement pick) before anything is created.
+- **Placement options** (`placement-options.ts`): the machines and the cloud a new project could run on, derived from `capabilities()`, `queries.machines.list()` and the source. The flow's `placement()` is the explicit pick while it is still selectable, otherwise the first selectable option; nothing writes that default back into the draft.
 
 ## Data
 

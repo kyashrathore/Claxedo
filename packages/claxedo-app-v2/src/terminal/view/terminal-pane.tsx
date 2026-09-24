@@ -58,7 +58,10 @@ export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
     store.recreate(terminalId).then(
       (terminal) => terminals.open({ placementId, terminalId: terminal.id }, props.paneId),
       (error: unknown) => {
-        console.error("Terminal could not be recreated", { terminalId, error: asAppError(error, "Terminal recreate failed") })
+        console.error("Terminal could not be recreated", {
+          terminalId,
+          error: asAppError(error, "Terminal recreate failed"),
+        })
         showToast({ title: t("terminal.createFailed") })
       },
     )
@@ -88,7 +91,12 @@ export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
         </div>
         <Show when={overlay()}>
           <div class="absolute inset-0 bg-background-base">
-            <TerminalStatus connection={connection.state()} missing={missing()} onRetry={() => mount?.retry()} onRecreate={recreate} />
+            <TerminalStatus
+              connection={connection.state()}
+              missing={missing()}
+              onRetry={() => mount?.retry()}
+              onRecreate={recreate}
+            />
           </div>
         </Show>
       </div>

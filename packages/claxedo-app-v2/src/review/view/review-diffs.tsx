@@ -1,6 +1,6 @@
 import { createMemo, Match, Show, Switch, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { fetchView, PlaceholderRows } from "@/files"
+import { CodeEngine, fetchView, PlaceholderRows } from "@/files"
 import { useTranslator } from "@/i18n"
 import { FailureNotice } from "@/lib/failure"
 import type { DiffSummary, PlacementId } from "@/server"
@@ -36,7 +36,12 @@ export function ReviewDiffs(props: { readonly placementId: PlacementId }): JSX.E
       </Match>
       <Match when={failed()}>
         {(error) => (
-          <FailureNotice title={t("review.loadFailed")} message={error().message} retryLabel={t("review.retry")} onRetry={() => void query.refetch()} />
+          <FailureNotice
+            title={t("review.loadFailed")}
+            message={error().message}
+            retryLabel={t("review.retry")}
+            onRetry={() => void query.refetch()}
+          />
         )}
       </Match>
       <Match when={summaries()}>
@@ -50,7 +55,11 @@ export function ReviewDiffs(props: { readonly placementId: PlacementId }): JSX.E
   )
 }
 
-function DiffDocument(props: { readonly placementId: PlacementId; readonly summaries: readonly DiffSummary[] }): JSX.Element {
+function DiffDocument(props: {
+  readonly placementId: PlacementId
+  readonly summaries: readonly DiffSummary[]
+}): JSX.Element {
+  const t = useTranslator(dictionary)
   const review = useReview()
   const comments = useReviewComments()
   const content = createDiffContent({
@@ -62,21 +71,23 @@ function DiffDocument(props: { readonly placementId: PlacementId; readonly summa
   const codeViewComments = createCodeViewComments({ comments, diffs: content.diffs })
   const summaryOf = (file: string) => props.summaries.find((summary) => summary.file === file)
   return (
-    <ReviewCodeView
-      class="min-h-0 flex-1"
-      diffs={content.diffs()}
-      diffStyle={review.style()}
-      open={review.open()}
-      onToggleOpen={review.toggleOpen}
-      renderHeader={(file) => (
-        <Show when={summaryOf(file)}>{(summary) => <FileHeader diff={summary()} />}</Show>
+    <CodeEngine label={t("review.loading")}>
+      {() => (
+        <ReviewCodeView
+          class="min-h-0 flex-1"
+          diffs={content.diffs()}
+          diffStyle={review.style()}
+          open={review.open()}
+          onToggleOpen={review.toggleOpen}
+          renderHeader={(file) => <Show when={summaryOf(file)}>{(summary) => <FileHeader diff={summary()} />}</Show>}
+          onDiffContentRequired={content.request}
+          customFiles={content.custom()}
+          renderCustomBody={(file) => <DiffBody body={content.body(file)} onForce={() => review.force(file)} />}
+          comments={comments.enabled() ? codeViewComments : undefined}
+          selectedLines={comments.enabled() ? codeViewComments.selectedLines() : null}
+        />
       )}
-      onDiffContentRequired={content.request}
-      customFiles={content.custom()}
-      renderCustomBody={(file) => <DiffBody body={content.body(file)} onForce={() => review.force(file)} />}
-      comments={comments.enabled() ? codeViewComments : undefined}
-      selectedLines={comments.enabled() ? codeViewComments.selectedLines() : null}
-    />
+    </CodeEngine>
   )
 }
 
@@ -91,7 +102,10 @@ function EmptyChanges(props: { readonly placementId: PlacementId }): JSX.Element
     return bases.data?.defaultRef
   })
   return (
-    <div data-testid="review-empty" class="flex flex-col items-center gap-3 px-3 py-6 text-center text-sm text-text-muted">
+    <div
+      data-testid="review-empty"
+      class="flex flex-col items-center gap-3 px-3 py-6 text-center text-sm text-text-muted"
+    >
       <span>{t("review.empty")}</span>
       <Show when={offer()}>
         {(base) => (

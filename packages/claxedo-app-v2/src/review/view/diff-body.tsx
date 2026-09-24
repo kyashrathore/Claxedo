@@ -32,7 +32,12 @@ export function DiffBody(props: { readonly body: DiffBodyState; readonly onForce
       </Match>
       <Match when={props.body.kind === "failed" && props.body}>
         {(failed) => (
-          <FailureNotice title={t("review.diff.failed")} message={errorText(failed().error)} retryLabel={t("review.retry")} onRetry={failed().retry} />
+          <FailureNotice
+            title={t("review.diff.failed")}
+            message={errorText(failed().error)}
+            retryLabel={t("review.retry")}
+            onRetry={failed().retry}
+          />
         )}
       </Match>
       <Match when={props.body.kind === "loading"}>

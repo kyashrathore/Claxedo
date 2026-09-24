@@ -51,7 +51,10 @@ function guardOf(summary: DiffSummary, forced: (file: string) => boolean): DiffB
 }
 
 function createRequestedFiles(scopeKey: Accessor<string>) {
-  const [requested, setRequested] = createSignal<{ readonly key: string; readonly files: readonly string[] }>({ key: "", files: [] })
+  const [requested, setRequested] = createSignal<{ readonly key: string; readonly files: readonly string[] }>({
+    key: "",
+    files: [],
+  })
   const files = () => (requested().key === scopeKey() ? requested().files : [])
   const request = (next: readonly string[]) => {
     const merged = [...new Set([...next, ...files()])].slice(0, MAX_REQUESTED_FILES)
@@ -68,8 +71,12 @@ export function createDiffContent(input: DiffContentInput): DiffContent {
     const summary = summaryOf(file)
     return summary ? guardOf(summary, input.forced) : undefined
   }
-  const fetched = createMemo(() => requested.files().filter((file) => summaryOf(file) !== undefined && guard(file) === undefined))
-  const results = useQueries(() => ({ queries: fetched().map((file) => api.diffFile(input.placementId, input.scope(), file)) }))
+  const fetched = createMemo(() =>
+    requested.files().filter((file) => summaryOf(file) !== undefined && guard(file) === undefined),
+  )
+  const results = useQueries(() => ({
+    queries: fetched().map((file) => api.diffFile(input.placementId, input.scope(), file)),
+  }))
   const resultOf = (file: string) => {
     const index = fetched().indexOf(file)
     return index === -1 ? undefined : results[index]
@@ -84,7 +91,10 @@ export function createDiffContent(input: DiffContentInput): DiffContent {
   }
   return {
     diffs: createMemo(() => input.summaries().map((summary) => withContent(summary, resultOf(summary.file)?.data))),
-    custom: createMemo(() => new Set(input.summaries().flatMap((summary) => (body(summary.file).kind === "ready" ? [] : [summary.file])))),
+    custom: createMemo(
+      () =>
+        new Set(input.summaries().flatMap((summary) => (body(summary.file).kind === "ready" ? [] : [summary.file]))),
+    ),
     body,
     request: requested.request,
   }

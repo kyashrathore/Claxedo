@@ -40,7 +40,11 @@ export function FileTreeRow(props: {
       <Show when={directory()} fallback={<span class="w-3.5 shrink-0" />}>
         <Icon name={props.expanded ? "chevron-down" : "chevron-right"} size="small" class="shrink-0 text-icon-muted" />
       </Show>
-      <FileIcon node={{ path: props.node.path, type: props.node.kind }} expanded={props.expanded === true} class="size-4 shrink-0" />
+      <FileIcon
+        node={{ path: props.node.path, type: props.node.kind }}
+        expanded={props.expanded === true}
+        class="size-4 shrink-0"
+      />
       <span
         class="min-w-0 flex-1 truncate"
         classList={{

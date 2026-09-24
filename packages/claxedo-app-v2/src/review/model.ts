@@ -31,7 +31,12 @@ function isAppError(value: unknown): value is AppError {
 
 export function asAppError(error: unknown): AppError {
   if (isAppError(error)) return error
-  return { class: "internal", message: error instanceof Error ? error.message : String(error), retryable: false, cause: error }
+  return {
+    class: "internal",
+    message: error instanceof Error ? error.message : String(error),
+    retryable: false,
+    cause: error,
+  }
 }
 
 const GIT_ERROR_KEYS: Readonly<Record<string, ReviewKey>> = {

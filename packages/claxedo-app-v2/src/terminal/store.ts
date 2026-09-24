@@ -2,7 +2,15 @@ import { onCleanup, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
 import { machine, type Machine } from "@/lib/machine"
 import { uuid } from "@/lib/uuid"
-import type { PlacementId, Server, ServerEvent, Terminal, TerminalAgentStatus, TerminalId, TerminalsApi } from "@/server"
+import type {
+  PlacementId,
+  Server,
+  ServerEvent,
+  Terminal,
+  TerminalAgentStatus,
+  TerminalId,
+  TerminalsApi,
+} from "@/server"
 import { terminalsApi } from "./api"
 import { asAppError, transitionLoad, type TerminalLoad, type TerminalLoadEvent, type TerminalRow } from "./model"
 import { nextTerminalNumber } from "./titles"
@@ -53,10 +61,16 @@ function applyTerminalEvent(rows: TerminalRows, placementId: PlacementId, event:
     if (event.placementId === placementId) rows.remove(event.terminalId)
     return
   }
-  if (event.type === "terminalAgentStatusChanged" && event.placementId === placementId) rows.setAgentStatus(event.terminalId, event.status)
+  if (event.type === "terminalAgentStatusChanged" && event.placementId === placementId)
+    rows.setAgentStatus(event.terminalId, event.status)
 }
 
-function loadTerminalList(api: TerminalsApi, placementId: PlacementId, rows: TerminalRows, load: Machine<TerminalLoad, TerminalLoadEvent>): void {
+function loadTerminalList(
+  api: TerminalsApi,
+  placementId: PlacementId,
+  rows: TerminalRows,
+  load: Machine<TerminalLoad, TerminalLoadEvent>,
+): void {
   load.send({ type: "started" })
   api.list(placementId).then(
     (list) => {
@@ -92,7 +106,13 @@ export function createTerminalStore(input: TerminalStoreInput): TerminalStore {
     recreate: async (terminalId) => {
       const previous = rows.find(terminalId)
       const sessionId = previous?.sessionId
-      const terminal = await api.create({ placementId, title: previous?.title ?? numberedTitle(), createRequestId: uuid(), previousTerminalId: terminalId, ...(sessionId ? { sessionId } : {}) })
+      const terminal = await api.create({
+        placementId,
+        title: previous?.title ?? numberedTitle(),
+        createRequestId: uuid(),
+        previousTerminalId: terminalId,
+        ...(sessionId ? { sessionId } : {}),
+      })
       rows.remove(terminalId)
       rows.upsert(terminal)
       return terminal

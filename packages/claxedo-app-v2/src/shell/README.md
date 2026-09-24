@@ -19,7 +19,7 @@ Id-only: `/` (home), `/w/:placementId/s/:sessionId`, `/w/:placementId/t/:termina
 
 ## Placement providers (`placement-providers.tsx`)
 
-The domains whose state is kept per placement (terminal, files, review, browser) get their providers here, under the commands provider inside the workbench. Files, review and browser take `useShellRoute().placementId` and `useWorkbench().openByKind` as props; the terminal reads the route, the workbench and the commands itself. The review commands are added to the `commands` registry while the shell is mounted. The composer's draft store sits above the workbench, inside the principal's scope, so another principal starts with no drafts.
+The domains whose state is kept per placement (terminal, files, review, browser) mount their providers here with no props, under the commands provider inside the workbench; each reads the placement from `useShellRoute().placementId` and opens panes through `useWorkbench()`. The composer's draft store sits above the workbench and the panel, inside the principal's scope, so another principal starts with no drafts.
 
 ## First run (`first-run.tsx`)
 
