@@ -118,7 +118,15 @@ export function Composer(props: ComposerProps) {
       onCompositionStart={() => controller.setComposing(true)}
       onCompositionEnd={() => controller.setComposing(false)}
       onEditorBlur={() => controller.setFocused(false)}
-      onEditorKeyDown={(event) => controller.onKeyDown(event)}
+      onEditorKeyDown={(event) => {
+        if (event.key === "Escape" && props.queuedEdit?.active() && popover() === null && mode() === "normal") {
+          event.preventDefault()
+          event.stopPropagation()
+          props.queuedEdit.cancel()
+          return
+        }
+        controller.onKeyDown(event)
+      }}
       focusEditor={() => controller.focusEditor()}
       popover={popover()}
       documentPicker={false}

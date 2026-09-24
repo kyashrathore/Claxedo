@@ -106,4 +106,5 @@ export const ja: Partial<Record<ComposerTextKey, string>> = {
   "command.category.session": "セッション",
   "prompt.toast.promptSendFailed.title": "プロンプトの送信に失敗しました",
   "common.requestFailed": "リクエスト失敗",
+  "prompt.toast.goalStopFailed.title": "ゴールを停止できませんでした",
 }

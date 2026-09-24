@@ -106,4 +106,5 @@ export const tr: Partial<Record<ComposerTextKey, string>> = {
   "command.category.session": "Oturum",
   "prompt.toast.promptSendFailed.title": "Komut gönderilemedi",
   "common.requestFailed": "İstek başarısız",
+  "prompt.toast.goalStopFailed.title": "Hedef durdurulamadı",
 }

@@ -85,6 +85,7 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
                 sessionHarness={props.view.row()?.harness}
                 attachmentWorkspace={true}
                 afterAccepted={queueEdit.accepted}
+                queuedEdit={queueEdit.edit}
               />
             </Show>
           </Show>

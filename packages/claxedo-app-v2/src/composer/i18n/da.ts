@@ -99,4 +99,5 @@ export const da: Partial<Record<ComposerTextKey, string>> = {
   "command.category.file": "Fil",
   "prompt.toast.promptSendFailed.title": "Kunne ikke sende forespørgsel",
   "common.requestFailed": "Forespørgsel mislykkedes",
+  "prompt.toast.goalStopFailed.title": "Målet kunne ikke stoppes",
 }

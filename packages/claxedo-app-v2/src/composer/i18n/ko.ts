@@ -106,4 +106,5 @@ export const ko: Partial<Record<ComposerTextKey, string>> = {
   "command.category.session": "세션",
   "prompt.toast.promptSendFailed.title": "프롬프트 전송 실패",
   "common.requestFailed": "요청 실패",
+  "prompt.toast.goalStopFailed.title": "목표를 중지할 수 없습니다",
 }

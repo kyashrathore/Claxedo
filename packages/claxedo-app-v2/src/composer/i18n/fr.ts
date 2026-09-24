@@ -100,4 +100,5 @@ export const fr: Partial<Record<ComposerTextKey, string>> = {
   "command.category.file": "Fichier",
   "prompt.toast.promptSendFailed.title": "Échec de l'envoi du message",
   "common.requestFailed": "La demande a échoué",
+  "prompt.toast.goalStopFailed.title": "Impossible d'arrêter l'objectif",
 }
