@@ -1,8 +1,7 @@
 import fs from "node:fs"
-import { createServer, request as forwardRequest, type IncomingMessage, type Server, type ServerResponse } from "node:http"
-import net from "node:net"
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import path from "node:path"
-import type { Duplex } from "node:stream"
+import { forward, forwardUpgrade } from "../harness/proxy"
 
 export type AppOrigin = { url: string; close(): Promise<void> }
 
@@ -35,38 +34,6 @@ function isDocument(request: IncomingMessage, pathname: string) {
 function sendFile(response: ServerResponse, file: string) {
   response.writeHead(200, { "content-type": TYPES[path.extname(file)] ?? "application/octet-stream", "cache-control": "no-store" })
   fs.createReadStream(file).pipe(response)
-}
-
-function forwardedHeaders(request: IncomingMessage, daemon: URL) {
-  const headers: Record<string, string | string[]> = {}
-  for (const [name, value] of Object.entries(request.headers)) if (value !== undefined) headers[name] = value
-  headers.host = daemon.host
-  return headers
-}
-
-function forward(request: IncomingMessage, response: ServerResponse, daemon: URL) {
-  const upstream = forwardRequest(
-    { host: daemon.hostname, port: daemon.port, method: request.method, path: request.url, headers: forwardedHeaders(request, daemon) },
-    (reply) => {
-      response.writeHead(reply.statusCode ?? 502, reply.headers)
-      reply.pipe(response)
-    },
-  )
-  upstream.on("error", (error) => (response.headersSent ? response.destroy(error) : response.writeHead(502).end(error.message)))
-  request.pipe(upstream)
-}
-
-function forwardUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer, daemon: URL) {
-  const upstream = net.connect(Number(daemon.port), daemon.hostname, () => {
-    const headers = Object.entries(forwardedHeaders(request, daemon)).flatMap(([name, value]) =>
-      (Array.isArray(value) ? value : [value]).map((item) => `${name}: ${item}`),
-    )
-    upstream.write([`${request.method} ${request.url} HTTP/1.1`, ...headers, "", ""].join("\r\n"))
-    if (head.length > 0) upstream.write(head)
-    socket.pipe(upstream).pipe(socket)
-  })
-  upstream.on("error", () => socket.destroy())
-  socket.on("error", () => upstream.destroy())
 }
 
 function listen(server: Server, port: number) {
