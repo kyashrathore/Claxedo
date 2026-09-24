@@ -80,6 +80,14 @@ export function extendWindow<S extends ListData>(data: S, window: FetchedWindow)
   return pruneTombstones(next, window.sentAt)
 }
 
+export function refreshWindow<S extends ListData>(data: S, window: FetchedWindow): S {
+  const tail = windowTailOf(window, data.windowTail)
+  const keepsWindow = compareOrder(data.windowTail, tail) >= 0
+  let next: S = keepsWindow ? data : { ...data, windowTail: tail, nextCursor: window.nextCursor }
+  for (const row of window.rows) next = mergeRow(next, row)
+  return pruneTombstones(next, window.sentAt)
+}
+
 function dropMissingFromWindow<S extends ListData>(data: S, fetched: ReadonlySet<SessionId>): S {
   const entries = new Map(data.entries)
   const statuses = new Map<SessionId, StatusEntry>(data.statuses)
