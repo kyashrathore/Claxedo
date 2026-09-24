@@ -1,10 +1,10 @@
 import type { Machine } from "@/lib/machine"
 import { resolveWorkspaceFileFocus, type WorkspaceFileFocusTarget } from "@/lib/workspace-file-focus"
-import type { PlacementId, Server, TerminalId } from "@/server"
+import { toAppError, type PlacementId, type Server, type TerminalId } from "@/server"
 import type { RendererBudget } from "../backend/renderer-budget"
 import type { TerminalBackend, TerminalBackendOptions } from "../backend/types"
 import { attachTerminal, type Attachment } from "../attach"
-import { asAppError, type TerminalConnection, type TerminalConnectionEvent, type TerminalRow } from "../model"
+import { type TerminalConnection, type TerminalConnectionEvent, type TerminalRow } from "../model"
 import { isLikelyTui } from "../resize"
 import { monoFontFamily, observeTheme, terminalColors } from "./terminal-colors"
 
@@ -64,7 +64,7 @@ function reportStartFailure(input: TerminalMountInput, error: unknown): void {
   input.connection.send({
     type: "failed",
     failure: "start",
-    error: asAppError(error, "Terminal backend failed to start"),
+    error: toAppError(error),
   })
 }
 

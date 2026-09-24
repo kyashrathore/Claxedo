@@ -1,15 +1,16 @@
-import type {
-  AppError,
-  PlacementId,
-  Server,
-  TerminalFrame,
-  TerminalId,
-  TerminalStream,
-  TerminalStreamClose,
+import {
+  toAppError,
+  type AppError,
+  type PlacementId,
+  type Server,
+  type TerminalFrame,
+  type TerminalId,
+  type TerminalStream,
+  type TerminalStreamClose,
 } from "@/server"
 import type { Machine } from "@/lib/machine"
 import type { TerminalBackend } from "./backend/types"
-import { asAppError, closeError, type TerminalConnection, type TerminalConnectionEvent } from "./model"
+import { closeError, type TerminalConnection, type TerminalConnectionEvent } from "./model"
 import { createWriteQueue, type WriteQueue } from "./write-queue"
 import { capabilityResponses } from "./capability-responder"
 import { stripTerminalReplies } from "./input-reply-filter"
@@ -74,7 +75,7 @@ function restoreFrame(state: AttachState, frame: Extract<TerminalFrame, { kind: 
       emit(state, {
         type: "failed",
         failure: "restore",
-        error: asAppError(error, "Terminal checkpoint restore failed"),
+        error: toAppError(error),
       })
     },
   )
@@ -113,8 +114,7 @@ function recover(state: AttachState, close: TerminalStreamClose): void {
   const error = closeError(close)
   emit(state, { type: "closed", error })
   decideAfterClose(state, error).catch((cause: unknown) => {
-    if (!state.disposed)
-      emit(state, { type: "failed", failure: "closed", error: asAppError(cause, "Terminal presence check failed") })
+    if (!state.disposed) emit(state, { type: "failed", failure: "closed", error: toAppError(cause) })
   })
 }
 
@@ -150,8 +150,7 @@ async function connectStream(state: AttachState): Promise<void> {
     if (state.disposed) return stream.close()
     state.stream = stream
   } catch (error) {
-    if (!state.disposed)
-      recover(state, { code: ABNORMAL_CLOSE, reason: asAppError(error, "Terminal attach failed").message })
+    if (!state.disposed) recover(state, { code: ABNORMAL_CLOSE, reason: toAppError(error).message })
   }
 }
 
