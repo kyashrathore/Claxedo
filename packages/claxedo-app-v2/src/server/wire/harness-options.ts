@@ -1,12 +1,9 @@
 import { ServerError } from "../errors"
 import type { HarnessModel, HarnessOptions, ModelChoice } from "../types"
+import { isRecord } from "../../lib/record"
 
 type ConfigOption = { readonly category?: unknown; readonly type?: unknown; readonly currentValue?: unknown; readonly selectOptions?: unknown; readonly options?: unknown }
 type Choice = { readonly id: string; readonly name: string; readonly connected: boolean; readonly efforts: readonly string[] }
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value)
-}
 
 function strings(value: unknown): readonly string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []

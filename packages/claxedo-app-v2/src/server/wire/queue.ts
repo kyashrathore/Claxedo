@@ -1,8 +1,5 @@
 import type { QueuedPrompt, QueuedPromptControl, QueuedPromptPart, QueuedPromptSteering } from "../types"
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value)
-}
+import { isRecord } from "../../lib/record"
 
 function text(value: unknown) {
   return typeof value === "string" ? value : undefined

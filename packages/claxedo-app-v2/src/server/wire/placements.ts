@@ -1,6 +1,7 @@
 import { machineId, placementId, projectId, type MachineId } from "../ids"
 import type { RuntimeRoute } from "../transport"
 import type { Placement } from "../types"
+import { isRecord } from "../../lib/record"
 
 export type PlacementRecord = {
   readonly placement: Placement
@@ -19,10 +20,6 @@ export type BootstrapCatalog = {
 }
 
 export const UNENROLLED_MACHINE = "this-machine"
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value)
-}
 
 function text(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined
