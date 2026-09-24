@@ -178,6 +178,9 @@ export function SessionScreen(props: PaneProps<SessionRef>) {
       data-session-presentation={floating() ? "floating" : undefined}
       aria-label={view().row()?.title ?? t("sessionScreen.untitled")}
     >
+      <Show when={!view().row()?.parentSessionId}>
+        <h1 class="sr-only">{view().row()?.title || t("sessionScreen.untitled")}</h1>
+      </Show>
       <FailureBoundary title={t("sessionScreen.failed")} retryLabel={t("sessionScreen.action.retry")}>
         <Switch fallback={<SessionBody view={view()} paneId={props.paneId} active={props.active} floating={floating()} />}>
           <Match when={view().state().kind === "missing"}>
