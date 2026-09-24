@@ -1,6 +1,6 @@
 import type { AgentPresentationSession } from "@claxedo/agent-runtime-contract"
 import type { SessionsApi } from "./api"
-import { ServerError, isNotFound } from "./errors"
+import { ServerError } from "./errors"
 import { sessionId, type RequestId } from "./ids"
 import { sessionPath, type SessionContext } from "./session-context"
 import { controlGoal, startGoal } from "./session-goal"
@@ -42,20 +42,15 @@ async function replyToRequest(context: SessionContext, ref: SessionRef, id: Requ
   const where = await context.workspaces.route(ref)
   const questionPath = (action: "reply" | "reject") => withQuery(`/question/${encodeURIComponent(id)}/${action}`, { sessionId: ref.sessionId })
   const permissionPath = sessionPath(ref, `/permissions/${encodeURIComponent(id)}`)
+  if (answer.kind === "permission") {
+    await transport.runtimeJson<unknown>(where, permissionPath, jsonInit("POST", permissionReplyBody(answer.reply)))
+    return
+  }
   if (answer.kind === "question") {
     await transport.runtimeJson<unknown>(where, questionPath("reply"), jsonInit("POST", { answers: answer.answers }))
     return
   }
-  if (answer.kind === "permission" || answer.request === "permission") {
-    await transport.runtimeJson<unknown>(where, permissionPath, jsonInit("POST", permissionReplyBody(answer)))
-    return
-  }
-  try {
-    await transport.runtimeJson<unknown>(where, questionPath("reject"), { method: "POST" })
-  } catch (error) {
-    if (!isNotFound(error)) throw error
-    await transport.runtimeJson<unknown>(where, permissionPath, jsonInit("POST", permissionReplyBody(answer)))
-  }
+  await transport.runtimeJson<unknown>(where, questionPath("reject"), { method: "POST" })
 }
 
 async function sendPrompt(context: SessionContext, ref: SessionRef, input: PromptInput, messageId: string): Promise<PromptDelivery> {

@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/solid-query"
 import { integrationQueries } from "./integrations"
+import { sandboxProviderQueries } from "./sandbox-providers"
 import { folderQueries } from "./folders"
 import { fetchQuery } from "./fetch-query"
 import { accountQueries } from "./accounts"
@@ -52,6 +53,7 @@ export function createQueries(transport: Transport, workspaces: Workspaces): Ser
     harnesses: harnessQueries(transport, workspaces),
     folders: folderQueries(transport),
     integrations: integrationQueries(transport),
+    sandboxProviders: sandboxProviderQueries(transport),
   }
 }
 

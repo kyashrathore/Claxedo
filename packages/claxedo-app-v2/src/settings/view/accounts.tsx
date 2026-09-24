@@ -1,8 +1,8 @@
-import { createMemo, createSignal, For, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Show, type JSX } from "solid-js"
 import { Button, ProviderIcon, RadioGroup } from "@/ui"
 import { useTranslator } from "@/i18n"
 import { formatRelativeTime } from "@/lib/relative-time"
-import { harnessAccounts, harnesses, machineLoginOf, selectedAccountKey, type AccountsSnapshot, type Harness } from "../accounts"
+import { harnessAccounts, harnesses, harnessRunnable, machineLoginOf, selectedAccountKey, type AccountsSnapshot, type Harness } from "../accounts"
 import { useWindowName } from "@/usage"
 import { dictionary } from "../i18n"
 import { useAccounts, type Accounts } from "../store"
@@ -52,6 +52,27 @@ export function AccountsSection() {
         {(current) => <For each={harnesses}>{(harness) => <HarnessCard harness={harness} snapshot={current()} accounts={accounts} />}</For>}
       </Show>
     </div>
+  )
+}
+
+export function HarnessAccountCards(props: { readonly scanning: JSX.Element; readonly onReady: (ready: boolean) => void }) {
+  const accounts = useAccounts()
+  const snapshot = (): AccountsSnapshot | undefined => {
+    const load = accounts.load()
+    return load.kind === "ready" ? load.snapshot : undefined
+  }
+  createEffect(() => {
+    const current = snapshot()
+    props.onReady(current !== undefined && harnesses.some((harness) => harnessRunnable(harness, current, accounts.liveChecks())))
+  })
+  return (
+    <Show when={snapshot()} fallback={props.scanning}>
+      {(current) => (
+        <div class="flex flex-col gap-6">
+          <For each={harnesses}>{(harness) => <HarnessCard harness={harness} snapshot={current()} accounts={accounts} />}</For>
+        </div>
+      )}
+    </Show>
   )
 }
 

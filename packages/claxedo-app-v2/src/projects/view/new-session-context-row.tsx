@@ -3,6 +3,7 @@ import { projectId, useServer, type Placement, type PlacementId, type Project, t
 import { ClaxedoIcon as Icon, useDialog } from "@/ui"
 import { useProjectsText } from "../i18n"
 import { pickProjectFolderWith } from "../pick-project-folder"
+import { primaryPlacement } from "../open"
 import { useProjectList } from "../project-list"
 import { inCatalogOrder } from "../project-order"
 import { useProjects } from "../store"
@@ -10,11 +11,6 @@ import { createDraftContext, registerDraftContext, type DraftTarget } from "../d
 import { useBranchChip, useEnvironmentChip, useWorkspaceChip } from "./context-chips"
 import { SessionContextRow, type ContextChip, type ContextChipAvatar } from "./context-row"
 import { ProjectCreateForm } from "./project-create-form"
-
-function primaryPlacement(placements: readonly Placement[], project: ProjectId): Placement | undefined {
-  const own = placements.filter((placement) => placement.projectId === project)
-  return own.find((placement) => placement.kind === "folder") ?? own[0]
-}
 
 function projectDetail(project: Project, placements: readonly Placement[]): string {
   const hosted = placements.some((placement) => placement.projectId === project.id && placement.kind === "cloud")
