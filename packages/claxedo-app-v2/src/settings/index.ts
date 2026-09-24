@@ -3,6 +3,7 @@ import { useTranslator } from "@/i18n"
 import { organizationSettingsSection } from "@/access"
 import { usageSettingsSection } from "@/usage"
 import { dictionary, type Keys } from "./i18n"
+import { NotificationsSection, SoundsSection } from "./view/alerts"
 import { AppearanceSection } from "./view/appearance"
 import { ConnectionsSection } from "./view/connections"
 import { LanguageSection } from "./view/language"
@@ -29,5 +30,7 @@ export const settingsSections: readonly SettingsSection[] = [
   section("connections", "settings.section.connections", "account", 40, ConnectionsSection),
   section("language", "settings.section.language", "app", 50, LanguageSection),
   section("appearance", "settings.section.appearance", "app", 60, AppearanceSection),
+  section("notifications", "settings.section.notifications", "app", 62, NotificationsSection),
+  section("sounds", "settings.section.sounds", "app", 64, SoundsSection),
   section("keybindings", "settings.section.keybindings", "app", 70, KeybindingsSection),
 ]

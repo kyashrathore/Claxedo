@@ -2,6 +2,7 @@ import { createContext, createEffect, useContext, type JSX } from "solid-js"
 import type { Store } from "solid-js/store"
 import { persistedStore, preferenceKey } from "@/lib/persisted"
 import { isRecord } from "@/lib/record"
+import { DEFAULT_SOUND, isSoundChoice, type AlertKind, type AlertPreferences, type SoundChoice } from "@/notifications"
 import { codeFontFamily, uiFontFamily } from "./fonts"
 
 export type ContrastScheme = "light" | "dark"
@@ -31,6 +32,9 @@ export type Preferences = {
   readonly setTranscript: <K extends keyof TranscriptPreferences>(key: K, value: TranscriptPreferences[K]) => void
   readonly appearance: Store<AppearancePreferences>
   readonly setAppearance: <K extends keyof AppearancePreferences>(key: K, value: AppearancePreferences[K]) => void
+  readonly alerts: Store<AlertPreferences>
+  readonly setAlertNotify: (kind: AlertKind, value: boolean) => void
+  readonly setAlertSound: (kind: AlertKind, value: SoundChoice) => void
 }
 
 export const TRANSCRIPT_DEFAULTS: TranscriptPreferences = {
@@ -84,6 +88,26 @@ function readAppearance(value: unknown): AppearancePreferences | undefined {
   }
 }
 
+export const ALERT_DEFAULTS: AlertPreferences = {
+  notify: { agent: true, permissions: true, errors: true },
+  sound: { agent: DEFAULT_SOUND, permissions: DEFAULT_SOUND, errors: DEFAULT_SOUND },
+}
+
+function readAlerts(value: unknown): AlertPreferences | undefined {
+  if (!isRecord(value)) return undefined
+  const notify = isRecord(value.notify) ? value.notify : {}
+  const sound = isRecord(value.sound) ? value.sound : {}
+  const flag = (kind: AlertKind) => (typeof notify[kind] === "boolean" ? notify[kind] : ALERT_DEFAULTS.notify[kind])
+  const choice = (kind: AlertKind) => {
+    const stored = sound[kind]
+    return isSoundChoice(stored) ? stored : ALERT_DEFAULTS.sound[kind]
+  }
+  return {
+    notify: { agent: flag("agent"), permissions: flag("permissions"), errors: flag("errors") },
+    sound: { agent: choice("agent"), permissions: choice("permissions"), errors: choice("errors") },
+  }
+}
+
 function writeFont(token: string, font: string, family: (font: string) => string): void {
   const root = document.documentElement.style
   if (font.trim()) root.setProperty(token, family(font))
@@ -96,6 +120,7 @@ export function PreferencesProvider(props: { readonly children: JSX.Element }): 
   const [contrast, setContrast] = persistedStore(preferenceKey("appearance", "contrast"), CONTRAST_DEFAULTS, readContrast)
   const [transcript, setTranscript] = persistedStore(preferenceKey("general", "transcript"), TRANSCRIPT_DEFAULTS, readTranscript)
   const [appearance, setAppearance] = persistedStore(preferenceKey("appearance", "fonts"), APPEARANCE_DEFAULTS, readAppearance)
+  const [alerts, setAlerts] = persistedStore(preferenceKey("alerts"), ALERT_DEFAULTS, readAlerts)
   createEffect(() => writeFont("--font-family-sans", appearance.uiFont, uiFontFamily))
   createEffect(() => writeFont("--font-family-mono", appearance.codeFont, codeFontFamily))
   createEffect(() => {
@@ -110,6 +135,9 @@ export function PreferencesProvider(props: { readonly children: JSX.Element }): 
     setTranscript: (key, value) => setTranscript({ [key]: value }),
     appearance,
     setAppearance: (key, value) => setAppearance({ [key]: value }),
+    alerts,
+    setAlertNotify: (kind, value) => setAlerts({ notify: { ...alerts.notify, [kind]: value } }),
+    setAlertSound: (kind, value) => setAlerts({ sound: { ...alerts.sound, [kind]: value } }),
   }
   return <PreferencesContext.Provider value={preferences}>{props.children}</PreferencesContext.Provider>
 }
