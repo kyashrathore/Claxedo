@@ -16,6 +16,7 @@ export function useActivePlacement(): () => PlacementId | undefined {
   const listed = createMemo(() => {
     const placements = server.placements.list()
     for (const entry of projects.list()) {
+      if (!entry.project.available) continue
       const id = entry.project.id
       const owned = placements.filter((placement) => placement.projectId === id)
       const primary = owned.find((placement) => placement.kind === "folder") ?? owned[0]

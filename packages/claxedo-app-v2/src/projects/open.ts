@@ -1,25 +1,19 @@
 import { useNavigate } from "@solidjs/router"
 import { failureMessage } from "@/lib/failure"
-import { uuid } from "@/lib/uuid"
 import { useServer, type PlacementId } from "@/server"
-import { draftSessionPaneKind } from "@/session/view"
-import { homePath, sessionPath } from "@/shell"
+import { draftPath, sessionPath } from "@/shell"
 import { showToast } from "@/ui"
-import { useWorkbench } from "@/workbench"
 import type { ProjectCreated } from "./add-project"
 import { useProjectsText } from "./i18n"
 import { projectSettingsPath } from "./routes"
 
 export function usePlacementOpener(): (placementId: PlacementId) => void {
   const server = useServer()
-  const workbench = useWorkbench()
   const navigate = useNavigate()
   const t = useProjectsText()
   return (placementId) => {
-    const placement = server.placements.byId(placementId)
-    if (!placement) return void showToast({ title: t("projects.placement.openFailed") })
-    workbench.openPane(draftSessionPaneKind, { projectId: placement.projectId, placementId, draftId: uuid() })
-    navigate(homePath)
+    if (!server.placements.byId(placementId)) return void showToast({ title: t("projects.placement.openFailed") })
+    navigate(draftPath(placementId))
   }
 }
 
