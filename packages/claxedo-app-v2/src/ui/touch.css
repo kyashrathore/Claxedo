@@ -79,9 +79,29 @@
       width: 16px;
     }
 
+    .ui-resize-handle::before {
+      content: "";
+      position: absolute;
+      inset-block: 0;
+      inset-inline: calc((16px - var(--touch-target)) / 2);
+    }
+
     .ui-resize-handle[data-direction="vertical"] {
       width: auto;
       height: 16px;
+    }
+
+    .ui-resize-handle[data-direction="vertical"]::before {
+      inset-inline: 0;
+      inset-block: calc((16px - var(--touch-target)) / 2);
+    }
+
+    .ui-tabs-trigger {
+      min-width: var(--touch-target);
+    }
+
+    [data-component="tabs"][data-variant="normal"][data-orientation="horizontal"] .ui-tabs-trigger-wrapper {
+      min-height: calc(var(--touch-target) + 1px);
     }
   }
 
