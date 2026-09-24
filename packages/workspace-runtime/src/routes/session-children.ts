@@ -1,5 +1,6 @@
+import type { SubagentObservation } from "@claxedo/agent-runtime-contract"
 import { createHmac, randomUUID } from "crypto"
-import { createSubagentAdmissionBoundary, type SubagentAdmissionStore, type SubagentObservation } from "@claxedo/agent-sdk-runtime"
+import { createSubagentAdmissionBoundary, type SubagentAdmissionStore } from "@claxedo/agent-sdk-runtime"
 import type { AgentMessage, AgentSession, RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
 import type { SubagentStatus, SubagentWake } from "@claxedo/agent-event-runtime"
 import { asRecord } from "@claxedo/helpers/guards"

@@ -1,15 +1,8 @@
+import type { PlaceholderEnvironment, ProviderProjection, ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
 import { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { Log } from "../log"
-import {
-  isAgentHarnessId,
-  providerProjectionRecord,
-  type HarnessConnectionDescriptor,
-  type PlaceholderEnvironment,
-  type ProviderProjection,
-  type ProviderProjectionSource,
-  type SessionHarness,
-} from "@claxedo/agent-sdk-runtime"
+import { isAgentHarnessId, providerProjectionRecord, type HarnessConnectionDescriptor, type SessionHarness } from "@claxedo/agent-sdk-runtime"
 import { isRecord } from "@claxedo/helpers/guards"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"

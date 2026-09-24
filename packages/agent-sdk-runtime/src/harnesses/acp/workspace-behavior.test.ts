@@ -1,10 +1,10 @@
+import type { SessionConfig } from "@claxedo/agent-runtime-contract"
 import { describe, expect, it } from "bun:test"
 import type { WithInternals } from "../../test-utils/class-internals"
 import { committedStartTurn } from "../../test-utils/fake-runtime-store"
 import type { AgentRuntimeTurnStartInput } from "../shared/runtime-store"
 import { executionBinding } from "../../test-utils/execution-binding"
 import { AcpHarnessAdapter } from "./index"
-import type { SessionConfig } from "../../index"
 import { RequestError } from "@agentclientprotocol/sdk"
 
 class LifecycleTestAdapter extends AcpHarnessAdapter {

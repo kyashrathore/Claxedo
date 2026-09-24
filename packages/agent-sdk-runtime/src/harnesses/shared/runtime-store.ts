@@ -1,3 +1,4 @@
+import type { SessionConfig, SessionConfigUpdate, SubagentObservation } from "@claxedo/agent-runtime-contract"
 import type { CompatEvent, CompatPromptFormat } from "../../compat-events"
 import type {
   AgentExecutionBinding,
@@ -9,9 +10,9 @@ import type {
   RecoveryTarget,
 } from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
-import type { AgentSession, AgentTurnOutcome, PromptInput, SessionConfig, SessionConfigUpdate } from "../../index"
+import type { AgentSession, AgentTurnOutcome, PromptInput } from "../../index"
 import type { RuntimeAppendSource } from "./turn-projection"
-import type { AdmittedSubagentObservation, SubagentObservation } from "../../subagent-admission"
+import type { AdmittedSubagentObservation } from "../../subagent-admission"
 
 export class AgentRuntimeStaleTurnError extends Error {
   readonly code = "session_turn_fence_stale"

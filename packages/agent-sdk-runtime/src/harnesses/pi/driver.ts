@@ -1,3 +1,4 @@
+import type { ProviderProjection, SessionTitleRequest } from "@claxedo/agent-runtime-contract"
 import {
   assertPiProvidersBindable,
   piProviderOverrides,
@@ -25,12 +26,11 @@ import {
   type SdkRuntimeDriverHost,
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
-import { providerProjectionRecord, type ProviderProjection } from "../../provider-projection"
+import { providerProjectionRecord } from "../../provider-projection"
 import { PiJsonLines, PiRpcProcess, type PiRpcMessage } from "./rpc-process"
 import { listPiCatalogModels } from "./catalog"
 import { requirePiExecutable, verifyPiExecutable, piCommand } from "./executable"
 import { ensurePiTitleExtension, generatePiTitle, setPiSessionName } from "./title-extension"
-import type { SessionTitleRequest } from "../../title-generation"
 import { cleanupFromRetirement, createTurnStop, createTurnStopRecord } from "../shared/cancellation-facts"
 import { controlRequestDeadline, modelRequestDeadline } from "../shared/request-deadline"
 import { RecoveryCodedError, retirementSettled, volatileLaunchOwnership, type LaunchOwnershipStore, type RetirementResult } from "../../launch"

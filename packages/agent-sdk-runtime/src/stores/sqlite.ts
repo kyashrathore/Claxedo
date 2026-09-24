@@ -1,8 +1,8 @@
+import type { SessionConfigUpdate, SubagentObservation } from "@claxedo/agent-runtime-contract"
 import fs from "fs"
 import path from "path"
 import { createRequire } from "module"
 import type { CompatEvent } from "../compat-events"
-import type { SessionConfigUpdate } from "../index"
 import type { AgentRuntimeStore } from "../runtime"
 import { recoveryScopeKey, recoveryTargetSessionId } from "../harnesses/shared/runtime-store"
 import type {
@@ -30,7 +30,6 @@ import {
   type AgentSessionStarts,
   type RecoveryOperation,
 } from "@claxedo/agent-runtime-contract"
-import type { SubagentObservation } from "../subagent-admission"
 import { sqliteSessionStarts } from "./session-start"
 
 type SqliteStatement = {

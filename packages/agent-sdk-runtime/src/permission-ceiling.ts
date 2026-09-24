@@ -1,4 +1,5 @@
-import type { AgentPermissionMode, AutoLevel } from "./adapter-contract"
+import type { AgentPermissionMode, AutoLevel } from "@claxedo/agent-runtime-contract"
+
 
 /**
  * The one ordering of {@link AutoLevel}: how much runs without asking. It is

@@ -1,3 +1,4 @@
+import type { SessionConfig, SessionConfigUpdate, SessionHandoff, SessionHandoffSource, SubagentObservation } from "@claxedo/agent-runtime-contract"
 import { randomBytes } from "crypto"
 import fs from "fs"
 import { createRequire } from "module"
@@ -27,23 +28,7 @@ import {
   sessionModelGroupJson,
 } from "@claxedo/agent-sdk-runtime"
 import { sqliteSessionStarts } from "@claxedo/agent-sdk-runtime/stores/session-start"
-import type {
-  AdmittedSubagentObservation,
-  AgentMessage,
-  AgentMessageAuthor,
-  AgentPermission,
-  AgentQuestion,
-  AgentTurnOutcome,
-  PromptFormat,
-  PromptInput,
-  SessionConfig,
-  SessionConfigUpdate,
-  SessionHandoff,
-  SessionHandoffSource,
-  SessionHarness,
-  SessionModelGroup,
-  SubagentObservation,
-} from "@claxedo/agent-sdk-runtime"
+import type { AdmittedSubagentObservation, AgentMessage, AgentMessageAuthor, AgentPermission, AgentQuestion, AgentTurnOutcome, PromptFormat, PromptInput, SessionHarness, SessionModelGroup } from "@claxedo/agent-sdk-runtime"
 import type { AgentSessionTitleSource, AgentExecutionBinding, AgentSessionCommand, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
 import { RECOVERY_OPERATION_RETENTION_MS, parseRecoveryOperation, type RecoveryOperation } from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot, SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"

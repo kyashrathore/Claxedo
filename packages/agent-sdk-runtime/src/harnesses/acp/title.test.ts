@@ -1,7 +1,7 @@
+import type { SessionTitleRequest } from "@claxedo/agent-runtime-contract"
 import { describe, expect, test } from "bun:test"
 import path from "node:path"
 import { generateAcpTitle } from "./title"
-import type { SessionTitleRequest } from "../../title-generation"
 
 function request(): SessionTitleRequest {
   return {

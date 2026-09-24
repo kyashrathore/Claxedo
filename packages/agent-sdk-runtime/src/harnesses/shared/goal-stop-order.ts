@@ -1,4 +1,5 @@
-import type { AgentGoalMutationFailure, AgentGoalMutationResult } from "../../adapter-contract"
+import type { AgentGoalMutationFailure, AgentGoalMutationResult } from "@claxedo/agent-runtime-contract"
+
 import { RecoveryCodedError, type RequestDeadline } from "../../launch"
 import { stoppedWaiting } from "./sdk-runtime-cancellation"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"

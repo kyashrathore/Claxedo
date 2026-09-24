@@ -1,5 +1,5 @@
+import type { ProviderProjection } from "@claxedo/agent-runtime-contract"
 import { HARNESS_TABLE, type HarnessId } from "@claxedo/agent-runtime-contract"
-import type { ProviderProjection } from "./provider-projection"
 
 /**
  * The projection a harness runs its next turn on, or nothing when no account is

@@ -1,3 +1,4 @@
+import type { SessionConfig, SessionConfigUpdate } from "@claxedo/agent-runtime-contract"
 import { describe, expect, it, spyOn } from "bun:test"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -6,16 +7,7 @@ import { RuntimeStore } from "../store"
 import { NO_HARNESS_EFFORT } from "@claxedo/agent-runtime-contract"
 import { Hono } from "hono"
 import { fetchDouble } from "../test-support/fetch-double"
-import type {
-  AgentMessage,
-  AgentRuntime,
-  AgentRuntimeStreamEvent,
-  AgentSession,
-  PromptInput,
-  RuntimeDirectory,
-  SessionConfig,
-  SessionConfigUpdate,
-} from "@claxedo/agent-sdk-runtime"
+import type { AgentMessage, AgentRuntime, AgentRuntimeStreamEvent, AgentSession, PromptInput, RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
 import { AgentRuntimeGoalError } from "@claxedo/agent-sdk-runtime"
 import type {
   AgentHarnessAdapter,

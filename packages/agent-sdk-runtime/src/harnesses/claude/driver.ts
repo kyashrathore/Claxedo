@@ -1,3 +1,4 @@
+import type { ProviderBinding } from "@claxedo/agent-runtime-contract"
 import {
   createAgentEventRuntime,
   type AgentEventRuntime,
@@ -49,7 +50,7 @@ import {
   type SdkRuntimeDriverHost,
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
-import { liveProviderBinding, providerProjectionKey, providerProjectionRecord, type ProviderBinding } from "../../provider-projection"
+import { liveProviderBinding, providerProjectionKey, providerProjectionRecord } from "../../provider-projection"
 import { createNativeGoalStore, nativeGoalCommand } from "../shared/native-goal-store"
 import {
   deliverPromptAttachments,

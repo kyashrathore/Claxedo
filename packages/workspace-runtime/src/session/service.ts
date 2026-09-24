@@ -1,3 +1,4 @@
+import type { SessionConfig } from "@claxedo/agent-runtime-contract"
 import { assistantMessageIdForTurn } from "@claxedo/agent-event-runtime/contracts"
 import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/projections/client-presentation"
 import { defaultSessionModel, firstTurnErrorData, isAgentRuntimeTurnConflictError, resolveTurnSystem } from "@claxedo/agent-sdk-runtime"
@@ -8,17 +9,7 @@ import {
   type AgentRuntimeError,
   type RecoveryTurnTarget,
 } from "@claxedo/agent-runtime-contract"
-import type {
-  AgentMessage,
-  AgentRuntime,
-  AgentRuntimeStreamEvent,
-  AgentRuntimeTurnStartInput,
-  PromptDelivery,
-  PromptDeliveryRequest,
-  PromptInput,
-  RuntimeDirectory,
-  SessionConfig,
-} from "@claxedo/agent-sdk-runtime"
+import type { AgentMessage, AgentRuntime, AgentRuntimeStreamEvent, AgentRuntimeTurnStartInput, PromptDelivery, PromptDeliveryRequest, PromptInput, RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import {
   buildAssistantMessage,

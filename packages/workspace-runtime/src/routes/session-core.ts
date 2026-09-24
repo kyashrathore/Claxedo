@@ -1,23 +1,10 @@
+import type { AgentGoalMutationResult, AgentPermissionMode, AgentPermissionModeState, AutoLevel, SessionConfig } from "@claxedo/agent-runtime-contract"
 import { randomUUID } from "node:crypto"
 import { Hono, type Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { toolImageResponse } from "./tool-image"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
-import type {
-  AgentMessage,
-  AgentPermission,
-  AgentQuestion,
-  AgentRuntime,
-  AgentRuntimeRecovery,
-  AgentSession,
-  RuntimeDirectory,
-  SessionConfig,
-  SessionConfigRequestUpdate,
-  SessionModelGroup,
-  HarnessCapabilities,
-  AgentGoalMutationResult,
-  RecoveryCaller,
-} from "@claxedo/agent-sdk-runtime"
+import type { AgentMessage, AgentPermission, AgentQuestion, AgentRuntime, AgentRuntimeRecovery, AgentSession, RuntimeDirectory, SessionConfigRequestUpdate, SessionModelGroup, HarnessCapabilities, RecoveryCaller } from "@claxedo/agent-sdk-runtime"
 import type { AgentExecutionBinding, AgentSessionStartBinding, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
 import {
   parseRecoveryRequest,
@@ -82,15 +69,7 @@ import {
 } from "../session-config"
 import { MAX_ACTIVE_CHILDREN_PER_PARENT, type ChildSessionHost } from "./session-children"
 import type { SessionDeliveryOwner, QueuedPromptAction, QueuedPromptRequester } from "../session/delivery-owner"
-import {
-  narrowerPermissionLevel,
-  permissionCeilingAdmits,
-  permissionModeLevel,
-  widestPermissionModeUnder,
-  type AgentPermissionMode,
-  type AgentPermissionModeState,
-  type AutoLevel,
-} from "@claxedo/agent-sdk-runtime"
+import { narrowerPermissionLevel, permissionCeilingAdmits, permissionModeLevel, widestPermissionModeUnder } from "@claxedo/agent-sdk-runtime"
 import { arr, bool, num, rec, str } from "../json-value"
 import { disposeRuntimeSessionDocuments, flushRuntimeSessionDocuments } from "./document-hydration"
 import { errorBody } from "./error-body"

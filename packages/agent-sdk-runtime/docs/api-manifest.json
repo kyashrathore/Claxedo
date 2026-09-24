@@ -1,7 +1,7 @@
 {
   "package": "@claxedo/agent-sdk-runtime",
   "version": "0.10.0",
-  "rootPolicy": "stable AgentRuntime facade and shared runtime types",
+  "rootPolicy": "Stable AgentRuntime facade; shared harness data types live in @claxedo/agent-runtime-contract",
   "stabilityLabels": {
     "stable": "Intended public API for external hosts.",
     "integration": "Public harness/transport adapter API. Import from explicit subpaths.",
@@ -11,7 +11,7 @@
   "entrypoints": {
     "@claxedo/agent-sdk-runtime": {
       "status": "stable",
-      "purpose": "AgentRuntime facade and shared runtime types."
+      "purpose": "AgentRuntime facade and runtime services."
     },
     "@claxedo/agent-sdk-runtime/adapters": {
       "status": "advanced",
@@ -107,25 +107,25 @@
     "recipes": "docs/recipes.md"
   },
   "declarationHashes": {
-    "@claxedo/agent-sdk-runtime": "da6339ee20ea8750a45e4661fdd27e5934514e91e8d38b0d4834fcd6059a66d4",
-    "@claxedo/agent-sdk-runtime/compat-events": "384634a327ee0428d4bed10d4225c002440d4e19f199807ac5ceb31ee874ad06",
+    "@claxedo/agent-sdk-runtime": "ca578bf8ecaf55e9d60c7b5fbb7b0351e2fd78ca2456b0f01bdd2b6c6fd3e264",
+    "@claxedo/agent-sdk-runtime/compat-events": "65a84e13c8047078d51a4246884964de0feba488c4f69f991a31d812401f50f7",
     "@claxedo/agent-sdk-runtime/status": "1cdf36244f79cd16df67b7183738572553a75282907cad9aefe54d2e487574a3",
-    "@claxedo/agent-sdk-runtime/capabilities": "50b51b4bbe46ef5084927acd955ce5166d456ba2f4265dc87cd9e6441a0273f2",
-    "@claxedo/agent-sdk-runtime/runtime-event-hub": "cf583a03a18b5b2cf44c54ca2852eebb9233ce4995a8cfdb0167d5a0972a5b78",
+    "@claxedo/agent-sdk-runtime/capabilities": "4330325eca22966c3b63d6312cdac4f8b618daef0ba82c0326cca0a56e8b87da",
+    "@claxedo/agent-sdk-runtime/runtime-event-hub": "f5d1bbec95d9c8dd7e98a2009c63f548a3361248a5198065c65c8138514f618a",
     "@claxedo/agent-sdk-runtime/sse": "4fa1dc17b98bee5189e96b860160be0ed0206a02ab1c40587f56356870585870",
-    "@claxedo/agent-sdk-runtime/provider-projection": "33dbad94d6acff40035217f18ba011dc95ef78a4af1d9d9bb27e6776e1207bba",
+    "@claxedo/agent-sdk-runtime/provider-projection": "782d8969102fba96a662f3b7800572b884ac38179b49ab7c5d9a761c8053ec44",
     "@claxedo/agent-sdk-runtime/mcp-resolver": "9ee49e91a385d15d6b2b82b8b9fa9045676c2f51dba06f59b65ba5c1c06f7ecf",
-    "@claxedo/agent-sdk-runtime/subagent-admission": "377da920568eab258c741197b342ed681bde82012c9ac481f02ec7ea990daadd",
-    "@claxedo/agent-sdk-runtime/harnesses": "a23c4f964f96fdc33d87ef2fa517bc7a0c34a46820b93520f392efc5d2adea7e",
-    "@claxedo/agent-sdk-runtime/harnesses/acp": "acabfb5268b6bf127f7fcd3bcc0d4bdd199a33656a0414a56ad0994ce383201c",
-    "@claxedo/agent-sdk-runtime/harnesses/claude": "b2d77bfa16162efe4b30ae4f355b9f41f3702e9dfb56e1a82f7efc493d8c5bb3",
-    "@claxedo/agent-sdk-runtime/harnesses/codex": "89fb085233af3e3f46f433b8d78121d9aca401acea396794e9da3c32b6018922",
-    "@claxedo/agent-sdk-runtime/harnesses/cursor": "ccb8466d8a26afd6e046e9203223c3a0c7bda65f5870de326ae15ceabcd771ef",
-    "@claxedo/agent-sdk-runtime/harnesses/pi": "d83deaea9442fcc50a181384051a5076a5ef2261dde26833705bf4c10d5429b1",
-    "@claxedo/agent-sdk-runtime/adapters": "502923b3abecd34a844b6dc3a816f2231edaf6cb438dcc0020fed90e33100108",
-    "@claxedo/agent-sdk-runtime/message-page": "da6339ee20ea8750a45e4661fdd27e5934514e91e8d38b0d4834fcd6059a66d4",
-    "@claxedo/agent-sdk-runtime/stores/memory": "228fb43b24538def3daee83b8b137d2577a3d0c0cc21ca5234a5e80b216cd238",
-    "@claxedo/agent-sdk-runtime/stores/sqlite": "44538c30cc5f1d893e4ce5807b75ff68166590968702b206a8d9600b744931f9",
+    "@claxedo/agent-sdk-runtime/subagent-admission": "43bf61b7656e51f3e5b4831dfd50381657f2d722dcbdbb440abafc40b22cf315",
+    "@claxedo/agent-sdk-runtime/harnesses": "21d416dc105cff6a0cc0d95f3daa7c6f72fb37c3a11bb9f6ecc72749eb9615f8",
+    "@claxedo/agent-sdk-runtime/harnesses/acp": "f844ed02b718f5119530de02d0216bd409798ea45efcebf682377fd2915058ae",
+    "@claxedo/agent-sdk-runtime/harnesses/claude": "1dce6293029467f53fb6ec6238ac25dc18364dbe7d2a84ef4025410db6a5dca3",
+    "@claxedo/agent-sdk-runtime/harnesses/codex": "7d55b3edf9d26dbbde45ddde9556461555b27e9925f0e22a1189e94112b7ad4c",
+    "@claxedo/agent-sdk-runtime/harnesses/cursor": "06ea307b09b0b907b26fabe00d81f72e148c2e82b8c778817a976f089f8320cb",
+    "@claxedo/agent-sdk-runtime/harnesses/pi": "c9b3a2facdb50650096dfda723b97ab29c2e6ec30179c0879025df65137ca73c",
+    "@claxedo/agent-sdk-runtime/adapters": "423a81356e758b99e1cd3255c8b5f82a733a48ec8c3379f77a546ce4ef0fbefe",
+    "@claxedo/agent-sdk-runtime/message-page": "ca578bf8ecaf55e9d60c7b5fbb7b0351e2fd78ca2456b0f01bdd2b6c6fd3e264",
+    "@claxedo/agent-sdk-runtime/stores/memory": "10f37648c72c813c6e17a70c753090e5f86a16a95d9cff89ab037774353338a2",
+    "@claxedo/agent-sdk-runtime/stores/sqlite": "110549e6ca293ad8fd28de061d2ed5cd98ba01d7322e43b5dae5e837d618e244",
     "@claxedo/agent-sdk-runtime/launch": "f43072aaec8619e6ca03f61f487bcd9c37e952033fcc43991ff90cc7e40655ac",
     "@claxedo/agent-sdk-runtime/launch-gate-child": "afec65c73d13c49ba01624719bbcad89235bf3f6af78751d6a71b7554e0c6051",
     "@claxedo/agent-sdk-runtime/stores/session-start": "5dde19cfbf0617660f969558643d9ca3182448722f5c2d6a47dd0103d2beb311"
@@ -278,18 +278,6 @@
       "import": "@claxedo/agent-sdk-runtime",
       "kind": "class",
       "purpose": "Raised when a placeholder's lifetime ran out before the harness was spawned, so the vendor's 401 is never attributed to the stored account."
-    },
-    "SessionConfig": {
-      "status": "stable",
-      "import": "@claxedo/agent-sdk-runtime",
-      "kind": "type",
-      "purpose": "Host-visible harness/model/agent selection state."
-    },
-    "SessionConfigUpdate": {
-      "status": "stable",
-      "import": "@claxedo/agent-sdk-runtime",
-      "kind": "type",
-      "purpose": "Partial session config update; undefined leaves fields unchanged, null clears nullable fields, values replace fields."
     },
     "UnknownHostSubagentKeyError": {
       "import": "@claxedo/agent-sdk-runtime",

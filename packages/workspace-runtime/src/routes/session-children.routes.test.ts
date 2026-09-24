@@ -1,6 +1,7 @@
+import type { AgentPermissionMode, AgentPermissionModeState, SessionConfig } from "@claxedo/agent-runtime-contract"
 import { describe, expect, test } from "bun:test"
 import { NO_HARNESS_EFFORT, type RecoveryFacts } from "@claxedo/agent-runtime-contract"
-import type { AgentMessage, AgentPermissionMode, AgentPermissionModeState, AgentSession, SessionConfig } from "@claxedo/agent-sdk-runtime"
+import type { AgentMessage, AgentSession } from "@claxedo/agent-sdk-runtime"
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import { MemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
 import { Hono } from "hono"

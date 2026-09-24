@@ -1,3 +1,4 @@
+import type { SessionTitleRequest } from "@claxedo/agent-runtime-contract"
 import type { StopReason } from "@agentclientprotocol/sdk"
 import { randomUUID } from "crypto"
 import {
@@ -37,7 +38,6 @@ import {
 } from "./helpers"
 import { AcpProcessManager } from "./process-manager"
 import { generateAcpTitle } from "./title"
-import type { SessionTitleRequest } from "../../title-generation"
 import { acpTurnFailure, ACP_CONTEXT_REBUILT, AcpSessionUncertainError, missingAcpSession, renderAcpRecoveryContext, uncertainAcpSession } from "./recovery"
 import { cancelPendingPermissions, type PermissionReplyPort } from "./permission-reply"
 import { createTurnStopRecord, observeStopAttempt, type TurnStopRecord } from "../shared/cancellation-facts"

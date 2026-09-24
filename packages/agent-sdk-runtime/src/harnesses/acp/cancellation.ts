@@ -1,5 +1,5 @@
+import type { AdapterCancelOutcome } from "@claxedo/agent-runtime-contract"
 import type { RecoveryErrorCode } from "@claxedo/agent-runtime-contract"
-import type { AdapterCancelOutcome } from "../../adapter-contract"
 import { stoppedWaiting } from "../shared/sdk-runtime-cancellation"
 import type { ACPProcess } from "./process"
 import { cancelPendingPermissions, type PermissionReplyPort } from "./permission-reply"

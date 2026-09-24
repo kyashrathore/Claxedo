@@ -1,13 +1,9 @@
+import type { ProviderBinding, ProviderProjection } from "@claxedo/agent-runtime-contract"
 import { credentialBrokerErrorCode } from "@claxedo/agent-runtime-contract"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import {
-  providerBinding,
-  providerProjectionKey,
-  type ProviderBinding,
-  type ProviderProjection,
-} from "../../provider-projection"
+import { providerBinding, providerProjectionKey } from "../../provider-projection"
 
 /** The provider id the brokered config declares and every brokered thread selects. */
 export const CODEX_BROKER_PROVIDER = "broker"

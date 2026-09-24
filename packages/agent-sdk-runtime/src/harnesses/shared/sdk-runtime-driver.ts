@@ -1,26 +1,16 @@
+import type { AgentPermissionModeState, GoalCapabilities, ProviderProjection, SessionConfig, SessionTitleRequest, SubagentObservation } from "@claxedo/agent-runtime-contract"
 import type { AgentEventRuntime, RawHarnessEvent, RuntimeGoalSnapshot, SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
-import type { GoalCapabilities } from "../../capabilities"
-import type {
-  AgentConfigOption,
-  PromptInput,
-  SessionConfig,
-} from "../../index"
+import type { AgentConfigOption, PromptInput } from "../../index"
 import type {
   AgentQuestionAnswer,
   AgentTodo,
   HarnessEffortLevels,
   HarnessInstructionChannel,
 } from "@claxedo/agent-runtime-contract"
-import type {
-  AgentGoalResource,
-  AgentHarnessAdapterHealth,
-  AgentHarnessAdapterProcessOptions,
-  AgentPermissionModeState,
-} from "../../adapter-contract"
+import type { AgentGoalResource, AgentHarnessAdapterHealth, AgentHarnessAdapterProcessOptions } from "../../adapter-contract"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
 import type { NativeSdkHarnessId } from "@claxedo/agent-runtime-contract"
 import type { AgentProcessObserver } from "../../process-observer"
-import type { SubagentObservation } from "../../subagent-admission"
 import type { AgentSessionBinding } from "./agent-session-index"
 import type { RuntimeEventRoute, ChildProjectionTarget } from "./child-event-routing"
 import type { AgentRuntimeStoreCore } from "./runtime-store"
@@ -29,8 +19,6 @@ import type { SessionTurnLifecycle } from "./turn-lifecycle"
 import type { TurnStopRecord } from "./cancellation-facts"
 import type { OutsideTurnUsage } from "./outside-turn-usage"
 import type { RequestDeadline } from "../../launch"
-import type { ProviderProjection } from "../../provider-projection"
-import type { SessionTitleRequest } from "../../title-generation"
 
 export type SdkRuntimeRunnerType = NativeSdkHarnessId
 export type SdkRuntimeStore = AgentRuntimeStoreCore
@@ -81,7 +69,7 @@ export type ActiveTurn = {
   /** What this turn's owner observed while stopping it, read after it settles. */
   stops?: TurnStopRecord
   /** Present only while this turn's protocol can accept another user message. */
-  steer?: (input: PromptInput) => Promise<import("../../adapter-contract").SteerResult>
+  steer?: (input: PromptInput) => Promise<import("@claxedo/agent-runtime-contract").SteerResult>
 }
 
 /**

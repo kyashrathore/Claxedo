@@ -1,11 +1,7 @@
+import type { SubagentObservation } from "@claxedo/agent-runtime-contract"
 import { describe, expect, test } from "bun:test"
 import type { SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
-import {
-  createMemorySubagentAdmissionStore,
-  createSubagentAdmissionBoundary,
-  UnknownHostSubagentKeyError,
-  type SubagentObservation,
-} from "./subagent-admission"
+import { createMemorySubagentAdmissionStore, createSubagentAdmissionBoundary, UnknownHostSubagentKeyError } from "./subagent-admission"
 
 function harness() {
   const store = createMemorySubagentAdmissionStore()

@@ -147,8 +147,8 @@ active persisted snapshot must become visibly blocked rather than complete.
   and `runtime.health` are the user-facing resource namespaces.
 - `PromptInput` is the normalized message submission shape used across
   transports internally.
-- `SessionConfig` and `SessionConfigUpdate` describe harness/model/agent
-  selection as host-visible state.
+- `SessionConfig` and `SessionConfigUpdate` from `@claxedo/agent-runtime-contract`
+  describe harness/model/agent selection as host-visible state.
 
 Adapter classes are implementation plumbing behind harness factories. Public
 host code should use the runtime facade first.

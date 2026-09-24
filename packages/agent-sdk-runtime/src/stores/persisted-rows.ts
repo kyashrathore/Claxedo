@@ -1,3 +1,4 @@
+import type { SessionConfig, SubagentObservation } from "@claxedo/agent-runtime-contract"
 import type {
   AgentContentPart,
   AgentQuestionInfo,
@@ -5,8 +6,7 @@ import type {
   AgentTodo,
 } from "@claxedo/agent-runtime-contract"
 import { asRecord, isRecord } from "@claxedo/agent-runtime-contract"
-import type { SessionConfig, SessionHarness } from "../index"
-import type { SubagentObservation } from "../subagent-admission"
+import type { SessionHarness } from "../index"
 import type { MessageRow, PermissionRow, QuestionRow, SessionRow } from "./memory"
 
 /**

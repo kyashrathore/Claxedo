@@ -1,7 +1,7 @@
+import type { SessionTitleRequest } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/agent-runtime-contract"
 import type { PromptInput } from "../../index"
 import { Log } from "../../log"
-import type { SessionTitleRequest } from "../../title-generation"
 import { newSessionTimeoutMs } from "./helpers"
 import type { ACPProcess, SessionUpdate } from "./process"
 

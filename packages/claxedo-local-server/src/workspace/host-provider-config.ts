@@ -1,3 +1,4 @@
+import type { ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
 /**
  * The provider rows the owner pushed to this machine, held in memory only.
  *
@@ -10,7 +11,6 @@
 import {
   parseHostProviderConfig,
 } from "@claxedo/server-core/credentials/host-provider-config"
-import type { ProviderProjectionSource } from "@claxedo/agent-sdk-runtime"
 
 type HeldProviderConfig = { revision: number; providers: Record<string, ProviderProjectionSource> }
 

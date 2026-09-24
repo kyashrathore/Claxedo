@@ -1,7 +1,7 @@
+import type { SessionTitleRequest } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/helpers/guards"
 import { controlRequestDeadline, modelRequestDeadline } from "../shared/request-deadline"
 import { Log } from "../../log"
-import type { SessionTitleRequest } from "../../title-generation"
 import { text, type JsonRecord } from "../shared/sdk-runtime-adapter"
 import type { RequestDeadline } from "../../launch"
 

@@ -1,3 +1,4 @@
+import type { SubagentObservation } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/agent-runtime-contract"
 export function transcriptText(messages: unknown[]) {
   return messages.flatMap((message) => readableTranscriptText(message)).filter(Boolean).join("\n\n")
@@ -64,7 +65,6 @@ export function subagentOutcome(observation: SubagentObservation) {
   }
   return undefined
 }
-import type { SubagentObservation } from "../../subagent-admission"
 import type { SdkRuntimeTranscriptRegistrar } from "./sdk-runtime-driver"
 
 export type OpenedSubagentTranscript =

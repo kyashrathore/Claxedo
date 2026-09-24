@@ -1,5 +1,5 @@
+import type { SessionTitleRequest } from "@claxedo/agent-runtime-contract"
 import { requireAgentExecutionBinding, type AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
-import type { SessionTitleRequest } from "../../title-generation"
 import type { AgentRuntimeStoreCore } from "./runtime-store"
 import type { SdkRuntimeDriver } from "./sdk-runtime-driver"
 import { Log } from "../../log"

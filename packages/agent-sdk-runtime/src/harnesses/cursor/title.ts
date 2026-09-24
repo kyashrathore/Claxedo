@@ -1,6 +1,6 @@
+import type { SessionTitleRequest } from "@claxedo/agent-runtime-contract"
 import type { ModelSelection, SDKMessage } from "@cursor/sdk"
 import { Log } from "../../log"
-import type { SessionTitleRequest } from "../../title-generation"
 
 const log = Log.create({ service: "cursor-title" })
 

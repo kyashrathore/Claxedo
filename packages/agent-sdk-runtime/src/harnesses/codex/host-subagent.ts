@@ -1,5 +1,5 @@
+import type { SubagentObservation } from "@claxedo/agent-runtime-contract"
 import { hostSubagentBinding, hostSubagentObservation, isHostSubagentTool } from "@claxedo/agent-event-runtime"
-import type { SubagentObservation } from "../../subagent-admission"
 import { text } from "../shared/sdk-runtime-values"
 
 /**

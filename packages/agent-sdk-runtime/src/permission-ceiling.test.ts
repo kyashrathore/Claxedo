@@ -1,3 +1,4 @@
+import type { AgentPermissionMode } from "@claxedo/agent-runtime-contract"
 import { describe, expect, test } from "bun:test"
 import {
   comparePermissionLevels,
@@ -8,7 +9,6 @@ import {
   widestPermissionModeUnder,
 } from "./permission-ceiling"
 import { CLAUDE_PERMISSION_MODES, CODEX_PERMISSION_MODES, CURSOR_PERMISSION_MODES } from "./harnesses/shared/permission-modes"
-import type { AgentPermissionMode } from "./adapter-contract"
 
 const mode = (table: readonly AgentPermissionMode[], id: string) => table.find((entry) => entry.id === id)
 

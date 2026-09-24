@@ -1,3 +1,4 @@
+import type { SessionConfig, SessionConfigUpdate, SubagentObservation } from "@claxedo/agent-runtime-contract"
 import {
   buildAssistantMessage,
   messageUpdated,
@@ -22,7 +23,7 @@ import { acceptsSessionTitle, boundSessionTitleSource } from "../session-title"
 import { sameSessionStartBinding, SessionStartStore } from "./session-start"
 import { chunk } from "../status"
 import { firstTurnErrorData } from "../first-turn-error"
-import type { AgentTurnOutcome, SessionConfig, SessionConfigUpdate } from "../index"
+import type { AgentTurnOutcome } from "../index"
 import type { AgentRuntimeStore } from "../runtime"
 import type {
   AgentRuntimeAppendEventInput,
@@ -36,11 +37,7 @@ import type {
   AgentRuntimeTurnStartOutput,
 } from "../harnesses/shared/runtime-store"
 import { AgentRuntimeStaleTurnError, recoveryScopeKey, recoveryTargetSessionId } from "../harnesses/shared/runtime-store"
-import {
-  createMemorySubagentAdmissionStore,
-  type AdmittedSubagentObservation,
-  type SubagentObservation,
-} from "../subagent-admission"
+import { createMemorySubagentAdmissionStore, type AdmittedSubagentObservation } from "../subagent-admission"
 
 export type SessionRow = {
   scope?: "workspace"

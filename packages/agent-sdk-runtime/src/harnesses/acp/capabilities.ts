@@ -1,4 +1,5 @@
-import type { SessionConfig } from "../../index"
+import type { SessionConfig } from "@claxedo/agent-runtime-contract"
+
 import { harnessCapabilities, type HarnessCapabilities } from "../../capabilities"
 import { NO_HARNESS_EFFORT } from "@claxedo/agent-runtime-contract"
 import { acpEffortLevels, type AcpConfigOptions } from "./session"

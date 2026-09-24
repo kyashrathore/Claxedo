@@ -1,3 +1,4 @@
+import type { AdapterCancelOutcome, AgentPermissionModeState, SessionConfig, SessionConfigUpdate } from "@claxedo/agent-runtime-contract"
 /**
  * ACP harness adapter
  *
@@ -27,27 +28,8 @@ import {
   type AgentSessionStartBinding,
 } from "@claxedo/agent-runtime-contract"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
-import type {
-  AgentAgent,
-  AgentCommand,
-  AgentMessage,
-  AgentPermission,
-  AgentSession,
-  SessionConfig,
-  SessionConfigUpdate,
-} from "../../index"
-import type {
-  AdapterCancelOutcome,
-  AgentHarnessAdapter,
-  AgentHarnessAdapterHealth,
-  AgentHarnessAdapterHealthContext,
-  AgentInteractionResult,
-  AgentGoalResource,
-  AgentHarnessAdapterProcessOptions,
-  AgentConfigOptions,
-  AgentPermissionModeState,
-  AgentSessionCreateOptions,
-} from "../../adapter-contract"
+import type { AgentAgent, AgentCommand, AgentMessage, AgentPermission, AgentSession } from "../../index"
+import type { AgentHarnessAdapter, AgentHarnessAdapterHealth, AgentHarnessAdapterHealthContext, AgentInteractionResult, AgentGoalResource, AgentHarnessAdapterProcessOptions, AgentConfigOptions, AgentSessionCreateOptions } from "../../adapter-contract"
 import {  type HarnessCapabilities, type HarnessCapabilityContext } from "../../capabilities"
 import { acpRuntimeHealth } from "./health"
 import {

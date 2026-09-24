@@ -1,4 +1,5 @@
-import type { AgentSession, SessionConfig, SessionConfigUpdate } from "../../index"
+import type { SessionConfig, SessionConfigUpdate } from "@claxedo/agent-runtime-contract"
+import type { AgentSession } from "../../index"
 import type { AgentRuntimeStoreCore } from "./runtime-store"
 
 export function acceptedSessionUpdate(
