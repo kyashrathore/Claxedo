@@ -1,22 +1,37 @@
-import type { CommandEntry } from "@/shell/types"
-import { TERMINAL_PANE_KIND, terminalPaneState } from "./pane"
-import { useTerminalContext } from "./store"
-import { t } from "./i18n"
+import { useTranslator } from "@/i18n"
+import type { PlacementId } from "@/server"
+import { useCommands } from "@/shell"
+import { showToast } from "@/ui"
+import type { Terminals } from "./context"
+import { dictionary } from "./i18n"
+import { asAppError } from "./model"
 
-export function useTerminalCommands(): readonly CommandEntry[] {
-  const context = useTerminalContext()
-  return [
+export function useNewTerminalCommand(terminals: Terminals): void {
+  const commands = useCommands()
+  const t = useTranslator(dictionary)
+
+  const openNew = async (placementId: PlacementId) => {
+    const terminal = await terminals.store(placementId).create()
+    terminals.open({ placementId, terminalId: terminal.id })
+  }
+
+  const run = () => {
+    const placementId = terminals.placementId()
+    if (!placementId) return
+    openNew(placementId).catch((error: unknown) => {
+      console.error("Terminal could not be created", { placementId, error: asAppError(error, "Terminal create failed") })
+      showToast({ title: t("terminal.createFailed") })
+    })
+  }
+
+  commands.register("terminal", () => [
     {
       id: "terminal.new",
-      title: () => t("terminal.command.new"),
-      keybinding: "mod+shift+`",
-      when: () => context.placementId() !== undefined,
-      run: async () => {
-        const placementId = context.placementId()
-        if (!placementId) return
-        const terminal = await context.store(placementId).create()
-        context.openPane(TERMINAL_PANE_KIND, terminalPaneState({ placementId, terminalId: terminal.id }))
-      },
+      title: t("terminal.command.new"),
+      category: t("terminal.title"),
+      keybind: "mod+shift+`",
+      disabled: terminals.placementId() === undefined,
+      onSelect: run,
     },
-  ]
+  ])
 }

@@ -129,8 +129,16 @@ export function createSessionTranscript(server: Server, ref: SessionRef, deps: T
     phase.send({ type: "readLanded" })
   }
 
-  async function readSnapshot(): Promise<void> {
-    if (isReading(phase.state())) return
+  let inFlight: Promise<void> | undefined
+
+  function readSnapshot(): Promise<void> {
+    inFlight ??= readOnce().finally(() => {
+      inFlight = undefined
+    })
+    return inFlight
+  }
+
+  async function readOnce(): Promise<void> {
     phase.send({ type: "readStarted" })
     const sentAt = Date.now()
     try {

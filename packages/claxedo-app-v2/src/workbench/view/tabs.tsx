@@ -3,15 +3,13 @@ import { useTranslator } from "@/i18n"
 import { useDragSource } from "../drag/drag-source"
 import { dictionary } from "../i18n"
 import { useWorkbench } from "../provider"
+import { createContentTitle } from "./content-title"
 
 function Tab(props: { contentId: string }): JSX.Element {
   const wb = useWorkbench()
   const t = useTranslator(dictionary)
-  const opened = () => wb.content(props.contentId)
-  const title = () => {
-    const pane = opened()
-    return pane ? pane.kind.title(pane.state as never) : props.contentId
-  }
+  const contentTitle = createContentTitle(wb, () => props.contentId)
+  const title = () => contentTitle() ?? props.contentId
   const selected = () => wb.selectors.focusedContent() === props.contentId
 
   return (
@@ -19,6 +17,7 @@ function Tab(props: { contentId: string }): JSX.Element {
       class="workbench-tab"
       role="presentation"
       data-selected={selected() ? "true" : undefined}
+      data-workspace-tab-kind={wb.content(props.contentId)?.kind.kind}
       ref={(el) => {
         onCleanup(useDragSource(wb.drag, el, { contentId: () => props.contentId, sourceKind: "tab", label: title, touchAction: "pan-x" }))
       }}
@@ -29,9 +28,13 @@ function Tab(props: { contentId: string }): JSX.Element {
         aria-selected={selected()}
         tabindex={selected() ? 0 : -1}
         class="workbench-tab-button"
+        aria-keyshortcuts="Delete"
         onClick={() => wb.navigation.show(props.contentId)}
         onAuxClick={(event) => {
           if (event.button === 1) wb.closeContent(props.contentId)
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Delete") wb.closeContent(props.contentId)
         }}
       >
         <span class="workbench-tab-title">{title()}</span>
@@ -39,7 +42,10 @@ function Tab(props: { contentId: string }): JSX.Element {
       <button
         type="button"
         class="workbench-tab-close"
-        aria-label={t("workbench.closeTab", { title: title() })}
+        aria-hidden="true"
+        tabindex="-1"
+        title={t("workbench.closeTab", { title: title() })}
+        data-testid="workspace-tab-close"
         onClick={() => wb.closeContent(props.contentId)}
       >
         <span aria-hidden="true">×</span>

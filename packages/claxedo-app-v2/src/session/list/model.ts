@@ -67,6 +67,8 @@ export type ListState = ListData &
     | { readonly kind: "failed"; readonly error: AppError }
   )
 
+export type RereadMode = "replace" | "refresh"
+
 export type ListEvent =
   | ServerListEvent
   | { readonly type: "fetchStarted" }
@@ -76,7 +78,7 @@ export type ListEvent =
   | { readonly type: "moreFetched"; readonly window: FetchedWindow }
   | { readonly type: "moreFailed"; readonly error: AppError }
   | { readonly type: "rereadStarted" }
-  | { readonly type: "rereadFetched"; readonly window: FetchedWindow }
+  | { readonly type: "rereadFetched"; readonly window: FetchedWindow; readonly mode: RereadMode }
   | { readonly type: "rereadFailed"; readonly error: AppError }
   | { readonly type: "rowRead"; readonly row: SessionRow }
   | { readonly type: "statusRead"; readonly ref: SessionRef; readonly status: SessionStatus; readonly sentAt: number }
@@ -123,9 +125,15 @@ export function compareOrder(a: OrderKey, b: OrderKey): number {
 
 export const insideWindow = (key: OrderKey, tail: OrderKey): boolean => compareOrder(key, tail) <= 0
 
+function laterHumanTurn(current: SessionRow, incoming: SessionRow): number | undefined {
+  if (current.lastHumanTurnAt === undefined) return incoming.lastHumanTurnAt
+  if (incoming.lastHumanTurnAt === undefined) return current.lastHumanTurnAt
+  return Math.max(current.lastHumanTurnAt, incoming.lastHumanTurnAt)
+}
+
 export function newerRow(current: SessionRow, incoming: SessionRow): SessionRow | undefined {
   if (incoming.updatedAt < current.updatedAt) return undefined
-  if (current.lastHumanTurnAt === undefined) return incoming
-  if (incoming.lastHumanTurnAt !== undefined && incoming.lastHumanTurnAt >= current.lastHumanTurnAt) return incoming
-  return { ...incoming, lastHumanTurnAt: current.lastHumanTurnAt }
+  const lastHumanTurnAt = laterHumanTurn(current, incoming)
+  if (incoming.createdAt === current.createdAt && incoming.lastHumanTurnAt === lastHumanTurnAt) return incoming
+  return { ...incoming, createdAt: current.createdAt, ...(lastHumanTurnAt === undefined ? {} : { lastHumanTurnAt }) }
 }

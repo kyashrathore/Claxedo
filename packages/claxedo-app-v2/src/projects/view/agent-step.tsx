@@ -1,14 +1,14 @@
 import { For, Show, type Component } from "solid-js"
 import { A } from "@solidjs/router"
+import { useServer } from "@/server"
 import { RadioGroup, RadioItem } from "@/ui"
-import { useProjectsServer } from "../api"
 import type { AddProjectFlow } from "../add-project"
 import { useProjectsText } from "../i18n"
 import { settingsAccountsPath } from "../routes"
 
 export const AgentStep: Component<{ flow: AddProjectFlow }> = (props) => {
   const t = useProjectsText()
-  const server = useProjectsServer()
+  const server = useServer()
   const harnesses = () => server.capabilities()?.harnesses ?? []
 
   return (

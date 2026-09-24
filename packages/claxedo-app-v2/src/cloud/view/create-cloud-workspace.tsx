@@ -1,6 +1,6 @@
 import { createSignal, Show, type Component } from "solid-js"
+import { toAppError } from "@/server"
 import { Button, TextInput } from "@/ui"
-import { failureReason } from "../api"
 import { useCloudText } from "../i18n"
 import type { CloudWorkspaces } from "../store"
 
@@ -24,7 +24,7 @@ export const CreateCloudWorkspace: Component<{ cloud: CloudWorkspaces }> = (prop
       setName("")
       setBranch("")
     } catch (cause) {
-      setFailure(failureReason(cause))
+      setFailure(toAppError(cause).message)
     } finally {
       setCreating(false)
     }

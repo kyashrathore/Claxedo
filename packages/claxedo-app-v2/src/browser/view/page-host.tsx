@@ -1,6 +1,8 @@
-import { Match, Show, Switch, onCleanup } from "solid-js"
+import { Match, Show, Switch, onCleanup, type JSX } from "solid-js"
+import { useTranslator } from "@/i18n"
 import type { BrowserBridge, BrowserWebview } from "../bridge"
-import { t } from "../i18n"
+import { dictionary } from "../i18n"
+import type { PickDelivery } from "../pick-to-composer"
 import type { BrowserTab } from "../tab"
 import { watchTheme } from "./guest-theme"
 import { PageState } from "./page-state"
@@ -8,23 +10,23 @@ import { attachWebviewEvents } from "./webview-events"
 
 const AGENT_BROWSER_PARTITION = "persist:agent-browser"
 
-export function PageHost(props: { readonly tab: BrowserTab }) {
+export function PageHost(props: { readonly tab: BrowserTab; readonly deliver: PickDelivery }): JSX.Element {
   return (
     <>
       <Show when={props.tab.bridge} fallback={<WebPreview tab={props.tab} />}>
-        {(bridge) => <DesktopPage tab={props.tab} bridge={bridge()} />}
+        {(bridge) => <DesktopPage tab={props.tab} bridge={bridge()} deliver={props.deliver} />}
       </Show>
       <PageState tab={props.tab} />
     </>
   )
 }
 
-function DesktopPage(props: { readonly tab: BrowserTab; readonly bridge: BrowserBridge }) {
+function DesktopPage(props: { readonly tab: BrowserTab; readonly bridge: BrowserBridge; readonly deliver: PickDelivery }): JSX.Element {
   let detach: (() => void) | undefined
 
   const attach = (element: BrowserWebview) => {
     props.tab.attachWebview(element)
-    const offEvents = attachWebviewEvents({ element, tab: props.tab, bridge: props.bridge })
+    const offEvents = attachWebviewEvents({ element, tab: props.tab, bridge: props.bridge, deliver: props.deliver })
     const offTheme = watchTheme(element)
     detach = () => {
       offEvents()
@@ -35,15 +37,19 @@ function DesktopPage(props: { readonly tab: BrowserTab; readonly bridge: Browser
   onCleanup(() => {
     detach?.()
     props.tab.attachWebview(undefined)
-    void props.bridge.unregister(props.tab.paneId).then((result) => {
-      if (!result.ok) console.warn("browser: unregister failed", props.tab.paneId, result.error)
-    })
+    props.bridge.unregister(props.tab.paneId).then(
+      (result) => {
+        if (!result.ok) console.warn("Browser page could not be unregistered", { paneId: props.tab.paneId, error: result.error })
+      },
+      (error: unknown) => console.warn("Browser page could not be unregistered", { paneId: props.tab.paneId, error }),
+    )
   })
 
   return <webview ref={attach} src="about:blank" partition={AGENT_BROWSER_PARTITION} class="absolute inset-0 h-full w-full" />
 }
 
-function WebPreview(props: { readonly tab: BrowserTab }) {
+function WebPreview(props: { readonly tab: BrowserTab }): JSX.Element {
+  const t = useTranslator(dictionary)
   const url = () => props.tab.state().url
   const blocked = () => typeof location !== "undefined" && location.protocol === "https:" && url().startsWith("http:")
   return (
@@ -53,8 +59,8 @@ function WebPreview(props: { readonly tab: BrowserTab }) {
       </Match>
       <Match when={blocked()}>
         <div class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background-base p-6 text-center">
-          <div class="text-12-medium text-text-base">{t("browser.mixedContent.title")}</div>
-          <div class="text-12-regular text-text-weak">{t("browser.mixedContent.hint")}</div>
+          <div class="text-sm font-medium text-text-base">{t("browser.mixedContent.title")}</div>
+          <div class="text-sm text-text-muted">{t("browser.mixedContent.hint")}</div>
         </div>
       </Match>
       <Match when={true}>

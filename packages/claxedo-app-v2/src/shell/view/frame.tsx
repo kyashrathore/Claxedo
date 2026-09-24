@@ -73,7 +73,7 @@ function PhoneHome(props: { readonly sidebar: SidebarProps }): JSX.Element {
   const t = useTranslator(dictionary)
   return (
     <>
-      <TopBar center={<span class="shell-topbar-title">{t("shell.home")}</span>} showSidebarToggle={false} showPanelToggle={false} />
+      <TopBar center={<h1 class="shell-topbar-title">{t("shell.home")}</h1>} showSidebarToggle={false} showPanelToggle={false} />
       <div class="shell-center-body shell-phone-home" data-testid="phone-home">
         <SidebarContent {...props.sidebar} />
       </div>

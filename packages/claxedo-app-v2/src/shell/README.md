@@ -6,7 +6,7 @@ Owns: the app frame and nothing a feature knows about. Three regions and one pag
 
 - **Sidebar** (left): `main` mode shows what `AppShell` receives as `mainSidebar` (the rail); `settings` mode shows `SettingsSidebar`, the sections from the `settingsSections` registry grouped by `account`, `workspace`, `app`. The URL decides the mode: a page whose entry says `sidebar: "settings"` switches it.
 - **Center**: the workbench of split panes (`src/workbench/`), or the one **page tab** when the URL names a `PageEntry` (Settings, Marketplace, Tasks, Pages, projects, plugin pages). The page tab cannot split or drag; opening another page reuses it; its state is the URL.
-- **Workspace panel** (right): the `panelTabs` registry, filtered by each tab's `when()`, with the active tab and width kept per scope (the focused session's project, or `default`).
+- **Workspace panel** (right): the `panelTabs` registry, filtered by each tab's `when()`, with the active tab and width kept per scope: the current placement (`placementOf(route)`), or `default` when the URL names none. A focused pane with no route, such as a file, leaves the URL and so the scope on the last placement.
 - **Top bar**: the sidebar and panel toggles, the workbench tab strip on a wide screen, the pane switcher on a phone, the page header for a page.
 
 ## State machines
@@ -15,7 +15,15 @@ Owns: the app frame and nothing a feature knows about. Three regions and one pag
 
 ## Routes (`routes.ts`)
 
-Id-only: `/` (home), `/w/:placementId/s/:sessionId`, `/w/:placementId/t/:terminalId`, `/settings/:section?`, each page's own `path`, and the `routes` registry for full-screen screens outside the shell (auth, onboarding) which match first. `RouteSync` opens the session or terminal the URL names in the workbench and mirrors the focused pane back into the URL with `replace`.
+Id-only: `/` (home), `/w/:placementId/s/:sessionId`, `/w/:placementId/t/:terminalId`, `/settings/:section?`, each page's own `path`, and the `routes` registry for full-screen screens outside the shell (auth, onboarding) which match first. `RouteSync` opens the session or terminal the URL names in the workbench and mirrors the focused pane back into the URL with `replace`, so the URL is the one home of the current placement: `useShellRoute().placementId()`.
+
+## Placement providers (`placement-providers.tsx`)
+
+The domains whose state is kept per placement (terminal, files, review, browser) get their providers here, under the commands provider inside the workbench. Files, review and browser take `useShellRoute().placementId` and `useWorkbench().openByKind` as props; the terminal reads the route, the workbench and the commands itself. The review commands are added to the `commands` registry while the shell is mounted. The composer's draft store sits above the workbench, inside the principal's scope, so another principal starts with no drafts.
+
+## First run (`first-run.tsx`)
+
+On the home route, when the projects list has loaded and is empty (`onboardingNeeded`), the shell replaces the URL with the onboarding screen. Loading and failed lists never redirect.
 
 ## Registries (`registries.ts`, `registry.ts`)
 
@@ -28,10 +36,6 @@ Kept from the old app: registrations with owners, keybinding parsing and display
 ## Phone
 
 Below 768 px the sidebar is a drawer and the workspace panel a sheet (both Kobalte dialogs), the top bar shows the pane switcher, and the home route shows the sidebar content full screen. The frame never scrolls horizontally.
-
-## Placeholders
-
-`placeholders/` holds stand-ins for exports other lanes have not landed: the server, the session stores and the session pane kind. Each is deleted when the real export lands.
 
 ## Flows
 

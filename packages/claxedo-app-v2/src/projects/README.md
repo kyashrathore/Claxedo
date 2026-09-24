@@ -22,7 +22,7 @@ Owns: the project record as the app sees it, its placements, the add-project flo
 
 `useProjectCommands()` gives `rename` and `remove`, which call `server.projects`. Events invalidate the queries through the adapter's event table; this domain never writes the query cache.
 
-`api.ts` types the query options this domain needs that the adapter has not landed yet (`queries.projects`, `queries.machines`, `queries.codeHost`) as a cast over `Server`; the cast goes when the adapter exports them.
+The repository picker reads `queries.codeHost.connections()` and `queries.codeHost.repositories(connectionId)`. Failures become `AppError`s through the adapter's `toAppError`.
 
 ## State machines
 

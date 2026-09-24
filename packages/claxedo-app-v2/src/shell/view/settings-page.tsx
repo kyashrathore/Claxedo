@@ -16,7 +16,15 @@ export function SettingsPage(props: PageProps): JSX.Element {
   })
   return (
     <div class="settings-page" data-testid="settings-page">
-      <Show when={section()} fallback={<p class="settings-page-empty">{t("shell.settingsEmpty")}</p>}>
+      <Show
+        when={section()}
+        fallback={
+          <>
+            <h1 class="settings-section-title">{t("shell.settings")}</h1>
+            <p class="settings-page-empty">{t("shell.settingsEmpty")}</p>
+          </>
+        }
+      >
         {(active) => (
           <section class="settings-section" data-section={active().id} aria-labelledby={`settings-title-${active().id}`}>
             <h1 id={`settings-title-${active().id}`} class="settings-section-title">{active().title()}</h1>

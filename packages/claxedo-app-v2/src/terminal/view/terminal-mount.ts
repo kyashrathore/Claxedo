@@ -1,15 +1,12 @@
-import type { PlacementId, Server, TerminalId } from "@/server"
 import type { Machine } from "@/lib/machine"
-import type { Json } from "@/shell/types"
-import type { TerminalBackend } from "../backend/types"
+import { resolveWorkspaceFileFocus, type WorkspaceFileFocusTarget } from "@/lib/workspace-file-focus"
+import type { PlacementId, Server, TerminalId } from "@/server"
 import type { RendererBudget } from "../backend/renderer-budget"
+import type { TerminalBackend, TerminalBackendOptions } from "../backend/types"
 import { attachTerminal, type Attachment } from "../attach"
-import { fileLinkTarget } from "../links"
-import type { TerminalConnection, TerminalConnectionEvent, TerminalRow } from "../model"
+import { asAppError, type TerminalConnection, type TerminalConnectionEvent, type TerminalRow } from "../model"
 import { isLikelyTui } from "../resize"
-import type { OpenPane } from "../store"
 import { monoFontFamily, observeTheme, terminalColors } from "./terminal-colors"
-import { t } from "../i18n"
 
 export type TerminalMountInput = {
   readonly host: HTMLDivElement
@@ -19,77 +16,80 @@ export type TerminalMountInput = {
   readonly row: () => TerminalRow | undefined
   readonly connection: Machine<TerminalConnection, TerminalConnectionEvent>
   readonly renderers: RendererBudget
-  readonly openPane: OpenPane
+  readonly openFile: (target: WorkspaceFileFocusTarget) => void
   readonly onBackend: (backend: TerminalBackend) => void
 }
 
 export type TerminalMount = {
+  readonly send: (data: string) => void
   readonly retry: () => void
   readonly dispose: () => void
 }
 
-function filePaneState(placementId: PlacementId, target: { path: string; line?: number; col?: number }): Json {
+type Attached = { readonly attachment: Attachment; readonly stopTheme: () => void }
+
+function backendOptions(input: TerminalMountInput, likelyAgent: boolean): TerminalBackendOptions {
   return {
-    placementId,
-    path: target.path,
-    ...(target.line === undefined ? {} : { line: target.line }),
-    ...(target.col === undefined ? {} : { col: target.col }),
+    theme: terminalColors(),
+    fontFamily: monoFontFamily(),
+    renderers: input.renderers,
+    image: likelyAgent ? "paste" : "path",
+    onUrlClick: (_event, url) => window.open(url, "_blank", "noopener,noreferrer"),
+    onFileLinkClick: (path, line, col) => {
+      const target = resolveWorkspaceFileFocus(path, input.row()?.cwd ?? "")
+      if (target) input.openFile({ path: target.path, line: line ?? target.line, col: col ?? target.col })
+    },
   }
 }
 
-function reportResizeFailure(terminalId: TerminalId, error: unknown): void {
-  console.error(t("terminal.resizeFailed"), { terminalId, error })
+function attachBackend(input: TerminalMountInput, backend: TerminalBackend, likelyTui: boolean): Attached {
+  input.onBackend(backend)
+  const stopTheme = observeTheme(() => backend.setTheme(terminalColors()))
+  const attachment = attachTerminal({
+    server: input.server,
+    placementId: input.placementId,
+    terminalId: input.terminalId,
+    backend,
+    host: input.host,
+    connection: input.connection,
+    likelyTui,
+    onPublishFailed: (error) => console.error("Terminal size could not be published", { terminalId: input.terminalId, error }),
+  })
+  backend.focus()
+  return { attachment, stopTheme }
 }
 
 export function mountTerminal(input: TerminalMountInput): TerminalMount {
   let disposed = false
   let backend: TerminalBackend | undefined
-  let attachment: Attachment | undefined
-  let stopTheme: (() => void) | undefined
+  let attached: Attached | undefined
   const likelyAgent = isLikelyTui({ command: input.row()?.command, title: input.row()?.title })
 
   const start = async () => {
     const { createBackend } = await import("#terminal-backend")
     if (disposed) return
-    const created = await createBackend(input.host, {
-      theme: terminalColors(),
-      fontFamily: monoFontFamily(),
-      renderers: input.renderers,
-      image: likelyAgent ? "paste" : "path",
-      onUrlClick: (_event, url) => window.open(url, "_blank", "noopener,noreferrer"),
-      onFileLinkClick: (path, line, col) => {
-        const target = fileLinkTarget(path, input.row()?.cwd, line, col)
-        if (target) input.openPane("file", filePaneState(input.placementId, target))
-      },
-    })
-    if (disposed) {
-      created.dispose()
-      return
-    }
+    const created = await createBackend(input.host, backendOptions(input, likelyAgent))
+    if (disposed) return created.dispose()
     backend = created
-    input.onBackend(created)
-    stopTheme = observeTheme(() => created.setTheme(terminalColors()))
-    attachment = attachTerminal({
-      server: input.server,
-      placementId: input.placementId,
-      terminalId: input.terminalId,
-      backend: created,
-      host: input.host,
-      connection: input.connection,
-      likelyTui: likelyAgent,
-      onPublishFailed: (error) => reportResizeFailure(input.terminalId, error),
-    })
-    created.focus()
+    attached = attachBackend(input, created, likelyAgent)
   }
-
-  void start()
+  const boot = () =>
+    start().catch((error: unknown) => {
+      if (!disposed) input.connection.send({ type: "failed", failure: "start", error: asAppError(error, "Terminal backend failed to start") })
+    })
+  void boot()
 
   return {
-    retry: () => attachment?.retry(),
+    send: (data) => attached?.attachment.send(data),
+    retry: () => {
+      if (attached) return attached.attachment.retry()
+      input.connection.send({ type: "retry" })
+      void boot()
+    },
     dispose: () => {
       disposed = true
-      attachment?.dispose()
-      stopTheme?.()
+      attached?.attachment.dispose()
+      attached?.stopTheme()
       backend?.dispose()
       backend = undefined
     },

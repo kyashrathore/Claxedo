@@ -1,13 +1,17 @@
+import { browserPanelTab } from "@/browser"
+import { filePaneKind, filesPanelTab } from "@/files"
+import { onboardingRoute } from "@/onboarding"
 import { addProjectPage, projectPage } from "@/projects"
-import { sessionPaneKind } from "./placeholders/session-pane"
+import { changesPanelTab } from "@/review"
+import { draftSessionPaneKind, sessionPaneKind } from "@/session/view"
+import { terminalPaneKind } from "@/terminal"
 import type { FirstPartyEntries } from "./registries"
-import type { AnyPaneKind } from "./types"
 import { settingsPage } from "./view/settings-page"
 
 export const firstParty: FirstPartyEntries = {
   pages: [settingsPage, projectPage, addProjectPage],
-  paneKinds: [sessionPaneKind as AnyPaneKind],
-  panelTabs: [],
+  paneKinds: [sessionPaneKind, draftSessionPaneKind, filePaneKind, terminalPaneKind],
+  panelTabs: [filesPanelTab, changesPanelTab, browserPanelTab],
   settingsSections: [],
   sidebarItems: [],
   overlays: [],
@@ -15,5 +19,5 @@ export const firstParty: FirstPartyEntries = {
   mentions: [],
   themes: [],
   iconSkins: [],
-  routes: [],
+  routes: [onboardingRoute],
 }
