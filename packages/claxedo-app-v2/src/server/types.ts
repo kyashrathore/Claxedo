@@ -120,6 +120,7 @@ export type PromptAttachment =
 
 export type PromptInput = {
   readonly clientRequestId: string
+  readonly messageId?: string
   readonly text: string
   readonly attachments: readonly PromptAttachment[]
   readonly agent?: string
@@ -134,6 +135,43 @@ export type SessionCreateInput = {
   readonly harness?: string
   readonly model?: ModelChoice
   readonly title?: string
+}
+
+export type SessionStatusReport = {
+  readonly ref: SessionRef
+  readonly status: SessionStatus
+  readonly requests: readonly AgentRequest[]
+}
+
+export type SessionStatusRead = {
+  readonly reports: readonly SessionStatusReport[]
+  readonly unreported: SessionStatus
+}
+
+export type QueuedPromptPart = { readonly type: string; readonly text?: string; readonly filename?: string }
+
+export type QueuedPromptSteering = {
+  readonly mode: "start" | "steer"
+  readonly operationId: string
+  readonly state: "dispatching" | "accepted" | "unknown" | "rejected"
+  readonly message?: string
+}
+
+export type QueuedPrompt = {
+  readonly seq: number
+  readonly messageId?: string
+  readonly queuedAt: number
+  readonly parts: readonly QueuedPromptPart[]
+  readonly held: boolean
+  readonly steering?: QueuedPromptSteering
+}
+
+export type QueuedPromptAction = "cancel" | "steer" | "hold" | "release"
+
+export type QueuedPromptControl = {
+  readonly ok: boolean
+  readonly status?: "pending" | "unknown"
+  readonly message?: string
 }
 
 export type OrgRole = "owner" | "admin" | "member"
