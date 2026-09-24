@@ -11,11 +11,6 @@ function childHeading(id: string): HTMLElement | null {
   )
 }
 
-/**
- * The child's heading only exists once its first messages render, so each frame
- * re-asks until it is there and gives up rather than waiting on a child that never
- * resolves; a second open cancels the first so two waits never fight over focus.
- */
 function focusChildHeading(id: () => string): void {
   let handle: number | undefined
   const cancel = () => {
