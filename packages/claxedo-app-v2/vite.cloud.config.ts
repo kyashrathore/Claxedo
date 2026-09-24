@@ -186,6 +186,7 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
     },
     worker: {
       format: "es",
+      plugins: () => [claxedoWorkspaceSource(), solidPlugin()],
     },
     optimizeDeps: {
       exclude: ["@pierre/diffs", "@pierre/theming"],

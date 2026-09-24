@@ -1,6 +1,6 @@
 import { catchError, createRoot } from "solid-js"
 import type { PluginApi } from "@claxedo/plugin-api"
-import { failureReason } from "./boundary"
+import { failureReason } from "./failure"
 import { buildIdOf, type PluginBuild } from "./model"
 import { createRegistrationSink, type RegistrationSink } from "./registrations"
 

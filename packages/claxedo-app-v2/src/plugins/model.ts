@@ -2,7 +2,9 @@ import type { PluginCapability, PluginDefinition, PluginManifest } from "@claxed
 import type { Translations } from "@/i18n"
 import { machine, unreachable, type Machine } from "@/lib/machine"
 
-export type PluginOrigin = { readonly kind: "bundled" } | { readonly kind: "live"; readonly hash: string }
+export type PluginOrigin =
+  | { readonly kind: "bundled" }
+  | { readonly kind: "live"; readonly hash: string; readonly buildError?: string }
 
 export type PluginBuild = {
   readonly manifest: PluginManifest
@@ -110,7 +112,7 @@ export function pluginMachine(): Machine<PluginState, PluginEvent> {
   return machine<PluginState, PluginEvent>({ kind: "off" }, transition)
 }
 
-export function failedBuild(state: PluginState): string | undefined {
+export function failedBuildId(state: PluginState): string | undefined {
   return state.kind === "failed" ? state.failure.build : undefined
 }
 
