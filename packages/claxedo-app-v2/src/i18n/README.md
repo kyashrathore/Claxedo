@@ -34,7 +34,7 @@ Lookup order: the current locale, then English, then the key itself. Templates u
 
 ## Locale
 
-`I18nProvider` sits under the session stores and above the theme in `src/app.tsx`. The locale is detected from `navigator.languages` on first run and persisted under `claxedo:locale`. Changing it sets `<html lang>` to the locale's `intlTag`.
+`I18nProvider` sits under the auth provider and above the theme, the router and the server scope in `src/app.tsx`, so the locale survives a sign-in or sign-out that rebuilds the server scope. The locale is detected from `navigator.languages` on first run and persisted under `claxedo:locale`. Changing it sets `<html lang>` to the locale's `intlTag`.
 
 The manifest is `locales.ts`: seventeen codes (`en`, `zh`, `zht`, `ko`, `de`, `es`, `fr`, `da`, `ja`, `pl`, `ru`, `bs`, `ar`, `no`, `br`, `th`, `tr`). `br` is the code the old app persisted for Brazilian Portuguese; its `intlTag` is `pt-BR`. Traditional Chinese is chosen for a `Hant` script tag or a TW, HK or MO region.
 
