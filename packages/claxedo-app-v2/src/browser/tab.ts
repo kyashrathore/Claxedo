@@ -127,6 +127,49 @@ function createNavigation(bridge: BrowserBridge | undefined, paneId: string, not
   return { history, refreshHistory }
 }
 
+type PageContext = {
+  readonly bridge: BrowserBridge | undefined
+  readonly paneId: string
+  readonly send: (event: BrowserTabEvent) => void
+  readonly notify: (notice: BrowserNotice | undefined) => void
+  readonly select: (selection: BrowserSelection | undefined) => void
+}
+
+async function navigatePage(page: PageContext, registered: boolean, url: string): Promise<void> {
+  page.select(undefined)
+  page.send({ type: "navigate", url })
+  if (!page.bridge || !registered) return
+  try {
+    const result = await page.bridge.navigate(page.paneId, url)
+    if (!result.ok) page.send({ type: "failed", reason: result.error ?? url })
+  } catch (error) {
+    page.send({ type: "failed", reason: error instanceof Error ? error.message : String(error) })
+  }
+}
+
+function sendPickerMode(page: PageContext, element: BrowserWebview | undefined, on: boolean): void {
+  if (!element?.send) {
+    page.notify({ key: page.bridge ? "browser.notice.pageNotReady" : "browser.notice.desktopOnly" })
+    return
+  }
+  try {
+    element.send(GUEST_PICKER_MODE_CHANNEL, on ? "comment" : "off")
+  } catch (error) {
+    console.error("Browser picker mode could not reach the page", { paneId: page.paneId, error })
+    page.notify({ key: "browser.notice.pageNotReady" })
+    return
+  }
+  page.send({ type: on ? "startPicking" : "stopPicking" })
+  if (!on) page.select(undefined)
+}
+
+function guardedAction(host: ActionHost, action: BrowserAction): Promise<void> {
+  return runAction(host, action).catch((error: unknown) => {
+    console.error("Browser action failed", { paneId: host.paneId, action, error })
+    host.notify({ key: "browser.notice.actionFailed" })
+  })
+}
+
 export function createBrowserTab(placementId: PlacementId, bridge: BrowserBridge | undefined): BrowserTab {
   const paneId = `browser:${placementId}`
   const machine = createBrowserTabMachine("")
@@ -137,38 +180,8 @@ export function createBrowserTab(placementId: PlacementId, bridge: BrowserBridge
   const [webview, setWebview] = createSignal<BrowserWebview | undefined>()
   const [registered, setRegistered] = createSignal(false)
   const navigation = createNavigation(bridge, paneId, notify)
-
-  const navigate = async (url: string) => {
-    select(undefined)
-    machine.send({ type: "navigate", url })
-    if (!bridge || !registered()) return
-    try {
-      const result = await bridge.navigate(paneId, url)
-      if (!result.ok) machine.send({ type: "failed", reason: result.error ?? url })
-    } catch (error) {
-      machine.send({ type: "failed", reason: error instanceof Error ? error.message : String(error) })
-    }
-  }
-
-  const setPicking = (on: boolean) => {
-    const element = webview()
-    if (!element?.send) {
-      notify({ key: bridge ? "browser.notice.pageNotReady" : "browser.notice.desktopOnly" })
-      return
-    }
-    try {
-      element.send(GUEST_PICKER_MODE_CHANNEL, on ? "comment" : "off")
-    } catch (error) {
-      console.error("Browser picker mode could not reach the page", { paneId, error })
-      notify({ key: "browser.notice.pageNotReady" })
-      return
-    }
-    machine.send({ type: on ? "startPicking" : "stopPicking" })
-    if (!on) select(undefined)
-  }
-
+  const page: PageContext = { bridge, paneId, send: machine.send, notify, select }
   const host: ActionHost = { bridge, paneId, send: machine.send, notify, refreshHistory: navigation.refreshHistory }
-
   return {
     placementId,
     paneId,
@@ -192,12 +205,8 @@ export function createBrowserTab(placementId: PlacementId, bridge: BrowserBridge
     },
     registered,
     markRegistered: () => setRegistered(true),
-    navigate,
-    setPicking,
-    act: (action) =>
-      runAction(host, action).catch((error: unknown) => {
-        console.error("Browser action failed", { paneId, action, error })
-        notify({ key: "browser.notice.actionFailed" })
-      }),
+    navigate: (url) => navigatePage(page, registered(), url),
+    setPicking: (on) => sendPickerMode(page, webview(), on),
+    act: (action) => guardedAction(host, action),
   }
 }
