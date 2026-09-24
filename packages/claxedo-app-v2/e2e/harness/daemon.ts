@@ -1,10 +1,10 @@
 import { spawn } from "node:child_process"
 import fs from "node:fs/promises"
-import { createRequire } from "node:module"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { waitForHealth } from "./health"
 import { isolatedEnv } from "./isolated-env"
+import { REPO_ROOT, SERVER_DIR, TSX_LOADER } from "./node-loader"
 import { writeScriptedModelCatalog } from "./model-catalog"
 import { captureOutput, stopProcess, type OwnedProcess } from "./process"
 import type { ScriptedModelServer } from "./scripted-model-server"
@@ -13,13 +13,9 @@ import { directTransport } from "./transport"
 import { makeWorkspace, type Workspace } from "./workspaces"
 
 export type { Workspace }
-const REPO_ROOT = path.resolve(import.meta.dirname, "../../../..")
-const SERVER_DIR = path.join(REPO_ROOT, "packages/claxedo-server")
+
 const SERVER_ENTRY = path.join(SERVER_DIR, "src/deployments/self-hosted-node/index.ts")
 const TEXT_IMPORTS = pathToFileURL(path.join(REPO_ROOT, "packages/workspace-runtime/src/text-imports.mjs")).href
-const TSX_LOADER = pathToFileURL(
-  path.join(path.dirname(createRequire(path.join(SERVER_DIR, "package.json")).resolve("tsx/package.json")), "dist/loader.mjs"),
-).href
 
 export type Daemon = {
   url: string

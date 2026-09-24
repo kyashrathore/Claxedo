@@ -43,9 +43,9 @@ export function sourceMtime(app: AppChoice) {
   return Math.max(...SOURCE_ENTRIES.map((entry) => newestMtime(path.join(pkg, entry))))
 }
 
-function buildIsCurrent(app: AppChoice, mtime: number, serverUrl: string) {
-  const stamp = path.join(appDistDir(app), BUILD_STAMP)
-  if (!fs.existsSync(stamp) || !fs.existsSync(path.join(appDistDir(app), "index.html"))) return false
+function buildIsCurrent(distDir: string, mtime: number, serverUrl: string) {
+  const stamp = path.join(distDir, BUILD_STAMP)
+  if (!fs.existsSync(stamp) || !fs.existsSync(path.join(distDir, "index.html"))) return false
   const recorded = JSON.parse(fs.readFileSync(stamp, "utf8")) as { sourceMtime?: number; serverUrl?: string }
   return typeof recorded.sourceMtime === "number" && recorded.sourceMtime >= mtime && recorded.serverUrl === serverUrl
 }
@@ -65,13 +65,13 @@ export async function ensureWorkspacePackagesBuilt() {
 
 export type AppBuild = { distDir: string; built: boolean; ms: number }
 
-export async function ensureAppBuilt(app: AppChoice, input: { serverUrl: string }): Promise<AppBuild> {
+export async function ensureAppBuilt(app: AppChoice, input: { serverUrl: string; outDir?: string }): Promise<AppBuild> {
   const started = Date.now()
-  const distDir = appDistDir(app)
+  const distDir = input.outDir ?? appDistDir(app)
   const mtime = sourceMtime(app)
-  if (buildIsCurrent(app, mtime, input.serverUrl)) return { distDir, built: false, ms: Date.now() - started }
+  if (buildIsCurrent(distDir, mtime, input.serverUrl)) return { distDir, built: false, ms: Date.now() - started }
   if (app === "v1") await ensureWorkspacePackagesBuilt()
-  const build = await run(`${app} build`, "node", ["./node_modules/vite/bin/vite.js", "build", "--config", "vite.cloud.config.ts", "--outDir", DIST_DIR], {
+  const build = await run(`${app} build`, "node", ["./node_modules/vite/bin/vite.js", "build", "--config", "vite.cloud.config.ts", "--outDir", distDir, "--emptyOutDir"], {
     cwd: appPackageDir(app),
     env: {
       ...process.env,
