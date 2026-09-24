@@ -1,6 +1,6 @@
 import { ErrorBoundary, type Component, type JSX } from "solid-js"
 import { Dynamic } from "solid-js/web"
-import { Button } from "@/ui"
+import { Button } from "@opencode-ai/ui/button"
 import { failureReason } from "./failure"
 import { usePluginsText } from "./i18n"
 import "./view/plugins.css"
