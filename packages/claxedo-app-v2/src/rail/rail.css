@@ -59,6 +59,10 @@
   padding: 4px 8px;
 }
 
+.rail-search-input {
+  width: 100%;
+}
+
 .rail-note {
   padding: 12px 18px;
   color: var(--v2-text-text-muted, #8a8686);
