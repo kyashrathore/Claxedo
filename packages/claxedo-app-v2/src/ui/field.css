@@ -34,7 +34,7 @@
     align-items: center;
   }
 
-  [data-component="v2-field"] [data-slot="v2-field-label"] .v2-tooltip-trigger {
+  [data-component="v2-field"] [data-slot="v2-field-label"] .ui-tooltip-trigger {
     display: inline-flex;
     flex: none;
     width: 16px;
