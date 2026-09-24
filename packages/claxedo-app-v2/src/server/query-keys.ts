@@ -15,6 +15,7 @@ export const queryKeys = {
   usageAll: (server: string) => ["server", server, "usage"] as const,
   marketplace: (server: string, projectId: ProjectId | undefined) => ["server", server, "marketplace", projectId ?? ""] as const,
   marketplaceAll: (server: string) => ["server", server, "marketplace"] as const,
+  marketplaceSources: (server: string) => ["server", server, "plugin-sources"] as const,
   tasks: (server: string) => ["server", server, "tasks", "availability"] as const,
   documents: (server: string) => ["server", server, "documents", "availability"] as const,
   cloud: (server: string) => ["server", server, "cloud"] as const,

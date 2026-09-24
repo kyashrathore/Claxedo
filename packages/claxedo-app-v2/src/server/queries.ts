@@ -63,7 +63,7 @@ export function invalidationKeys(server: string, event: ServerEvent): readonly (
     case "cloudWorkspaceChanged":
       return [queryKeys.bootstrap(server), queryKeys.placements(server), queryKeys.projects(server), queryKeys.machines(server), queryKeys.cloud(server)]
     case "pluginsChanged":
-      return [queryKeys.marketplaceAll(server)]
+      return [queryKeys.marketplaceAll(server), queryKeys.marketplaceSources(server)]
     case "documentsChanged":
       return [queryKeys.documents(server)]
     case "usageChanged":

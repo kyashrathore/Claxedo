@@ -19,7 +19,7 @@ import type {
   WorktreeCreateInput,
 } from "./git-types"
 import type { PlacementId, ProjectId, RequestId, TerminalId } from "./ids"
-import type { MarketplaceCatalog } from "./marketplace-types"
+import type { MarketplaceCatalog, PluginActivationInput, PluginChange, PluginSourceInput, PluginSourceRecord } from "./marketplace-types"
 import type {
   Terminal,
   TerminalAgentStatus,
@@ -119,6 +119,13 @@ export type AccountsApi = {
   readonly addKey: (input: AccountKeyInput) => Promise<string>
 }
 
+export type MarketplaceApi = {
+  readonly setActivation: (input: PluginActivationInput) => Promise<PluginChange>
+  readonly update: (pluginInstanceId: string, revision: number) => Promise<PluginChange>
+  readonly addSource: (input: PluginSourceInput) => Promise<PluginSourceRecord>
+  readonly removeSource: (id: string) => Promise<void>
+}
+
 export type ServerQueries = {
   readonly projects: {
     readonly list: () => FetchQuery<readonly Project[]>
@@ -135,7 +142,10 @@ export type ServerQueries = {
     readonly machineLogins: () => FetchQuery<readonly MachineLogin[]>
   }
   readonly usage: { readonly summary: (input: UsageRequest) => FetchQuery<UsageSummary> }
-  readonly marketplace: { readonly catalog: (projectId?: ProjectId) => FetchQuery<MarketplaceCatalog> }
+  readonly marketplace: {
+    readonly catalog: (projectId?: ProjectId) => FetchQuery<MarketplaceCatalog>
+    readonly sources: () => FetchQuery<readonly PluginSourceRecord[]>
+  }
   readonly tasks: { readonly availability: () => FetchQuery<FeatureAvailability> }
   readonly documents: { readonly availability: () => FetchQuery<FeatureAvailability> }
   readonly codeHost: {
@@ -171,5 +181,6 @@ export type Server = {
   readonly git: GitApi
   readonly cloud: CloudApi
   readonly accounts: AccountsApi
+  readonly marketplace: MarketplaceApi
   readonly queries: ServerQueries
 }

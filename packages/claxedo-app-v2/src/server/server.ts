@@ -8,6 +8,7 @@ import { isRetryable, toAppError } from "./errors"
 import { createEventIntake } from "./event-intake"
 import type { ConnectionState } from "./events"
 import { createGitApi } from "./git"
+import { createMarketplaceApi } from "./marketplace"
 import type { ProjectId } from "./ids"
 import type { Server, ServerQueries } from "./api"
 import { createProjectsApi } from "./projects"
@@ -84,6 +85,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     git: createGitApi(transport, workspaces),
     cloud: createCloudApi(transport, workspaces, project),
     accounts: createAccountsApi(transport, queryClient),
+    marketplace: createMarketplaceApi(transport, queryClient),
   }
 }
 
