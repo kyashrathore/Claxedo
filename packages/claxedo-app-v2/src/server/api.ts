@@ -111,6 +111,10 @@ export type CloudApi = {
   readonly remove: (id: PlacementId) => Promise<void>
 }
 
+export type LivePluginsApi = {
+  readonly remove: (pluginId: string) => Promise<void>
+}
+
 export type ServerQueries = {
   readonly projects: {
     readonly list: () => FetchQuery<readonly Project[]>
@@ -158,5 +162,7 @@ export type Server = {
   readonly terminals: TerminalsApi
   readonly git: GitApi
   readonly cloud: CloudApi
+  readonly livePlugins: LivePluginsApi
   readonly queries: ServerQueries
+  readonly request: (path: string, init?: RequestInit) => Promise<Response>
 }

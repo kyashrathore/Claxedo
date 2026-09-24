@@ -17,6 +17,7 @@ The only module that knows today's server: its routes, its OpenCode-shaped paylo
 - Status (`status.ts`): the one owner of session status. A session that is not running is failed when its `lastTurn` failed, else idle; a placement read takes `lastTurn` from its root sessions (`GET /session?roots=true`). Fed by `session.status`, `session.idle` and `session.error` frames; a turn error named `MessageAbortedError` is a cancelled turn, not a failure. An idle that follows a failure is held and settled from the session's `lastTurn` (a refused delete aborts the turn with an error, but the turn is recorded as completed). No timer invents a status.
 - Capabilities (`capabilities.ts`): one value from the bootstrap declaration, each harness's availability and the tasks and documents probes (`availability.ts`). Claude, Codex and Cursor are available when their machine login is signed in or a stored credential serves one of their providers; Pi when its provider catalog lists a connected provider; OpenCode on a loopback daemon. Capabilities carry no model lists: models come from harness options per placement, and opencode's provider catalog alone is 2.3 MB. Each source is read on its own; a failed one makes only its harness or feature unavailable, with the reason in `unavailableReason`. A loopback daemon is this machine even before enrollment, and its placements carry this machine's id.
 - Queries (`queries.ts` and one file per area): TanStack Query options for fetched data. Keys come only from `query-keys.ts`. Events invalidate through `invalidationKeys`. `setQueryData` is used only for a mutation's own result.
+- Plugin host calls: `request` is an authenticated request to the server for the routes a plugin's manifest names (the plugin host checks the manifest first); `livePlugins.remove` (`live-plugins.ts`) unregisters a live plugin through `/api/claxedo/live-plugins/:id`. Hosted operations are not the adapter's: they need the account layer.
 - Terminals (`terminals.ts`, `wire/terminals.ts`): the runtime's pty routes and socket. Text frames are output; a binary frame whose first byte is 0 carries `{cursor, checkpoint?}`; other binary frames are output decoded as one UTF-8 stream. A malformed meta frame closes the socket with 1002.
 
 ## State machines
@@ -37,7 +38,7 @@ The only module that knows today's server: its routes, its OpenCode-shaped paylo
 
 - `ServerEvent` gained `sessionsChanged`, `placementsChanged`, `documentsChanged`, `usageChanged`, `cloudWorkspaceChanged` and the terminal events.
 - `AgentRequestReply`'s `dismiss` arm gained an optional `request` kind.
-- `Server` gained `queries` and `cloud`; `PlacementsApi` gained `list`; `SessionStatusRead` gained `failures`; `ServerQueries` gained `harnesses.options`; `HarnessInfo` gained `unavailableReason`; `PromptInput` gained `delivery`, and `prompt` answers the `PromptDelivery`.
+- `Server` gained `queries` and `cloud`; `PlacementsApi` gained `list`; `SessionStatusRead` gained `failures`; `ServerQueries` gained `harnesses.options`; `HarnessInfo` gained `unavailableReason`; `PromptInput` gained `delivery`, and `prompt` answers the `PromptDelivery`; `Server` gained `request` and `livePlugins`.
 
 ## Known limits
 
