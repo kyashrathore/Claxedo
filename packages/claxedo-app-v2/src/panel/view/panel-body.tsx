@@ -31,6 +31,8 @@ function NavigatorViews(props: { readonly placementId: PlacementId }): JSX.Eleme
       <Show when={filesVisited()}>
         <div class="absolute inset-0" classList={{ hidden: view() !== "files" }}>
           <FilesNavigator
+            placementId={props.placementId}
+            active={view() === "files"}
             activePath={activeFilePath(panel)}
             onOpenFile={(path) => panel.show({ kind: "file", path })}
           />

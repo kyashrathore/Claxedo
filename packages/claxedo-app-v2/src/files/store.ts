@@ -12,6 +12,7 @@ type PlacementFiles = {
 export type Files = {
   readonly placementId: Accessor<PlacementId | undefined>
   readonly expanded: (dir: string) => boolean
+  readonly expandedDirs: () => readonly string[]
   readonly setExpanded: (dir: string, expanded: boolean) => void
   readonly search: () => string
   readonly setSearch: (query: string) => void
@@ -37,6 +38,7 @@ export function FilesProvider(props: ParentProps): JSX.Element {
   const files: Files = {
     placementId,
     expanded: (dir) => current().expanded[dir] === true,
+    expandedDirs: () => Object.keys(current().expanded).filter((dir) => current().expanded[dir] === true),
     setExpanded: (dir, expanded) =>
       write((previous) => ({ ...previous, expanded: { ...previous.expanded, [dir]: expanded } })),
     search: () => current().search,
