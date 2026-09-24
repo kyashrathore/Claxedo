@@ -119,3 +119,23 @@ test("06 typing anywhere on the session starts a message in the composer", async
   await expect(prompt).toBeFocused()
   await expect(prompt).toHaveText("x")
 })
+
+test("06 a file dropped on the transcript is attached to the composer", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("drop")
+  await stack.acp.write("drop", { steps: [{ kind: "text", text: "A reply to drop files onto" }] })
+  const session = await api.createSession(workspace.directory, { title: "Drop", harness: SCRIPTED_ACP_HARNESS })
+  await app.goto(`${stack.url}/w/${workspace.id}/s/${session.id}`)
+  const prompt = app.getByRole("textbox", { name: "Ask anything, / for commands, @ for context..." })
+  await prompt.fill(`Say something ${acpScriptToken("drop")}`)
+  await prompt.press("Enter")
+  const reply = app.getByText("A reply to drop files onto")
+  await expect(reply).toBeVisible()
+  const transfer = await app.evaluateHandle(() => {
+    const data = new DataTransfer()
+    data.items.add(new File([new Uint8Array([137, 80, 78, 71])], "dropped.png", { type: "image/png" }))
+    return data
+  })
+  await reply.dispatchEvent("dragover", { dataTransfer: transfer })
+  await reply.dispatchEvent("drop", { dataTransfer: transfer })
+  await expect(app.getByRole("button", { name: "Remove attachment" })).toBeVisible()
+})
