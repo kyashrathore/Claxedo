@@ -184,7 +184,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
   const phone = usePhone()
   const stores = useSessionStores()
   const panel = usePanel()
-  const floating = () => !props.readOnly && panel.maximized() && props.active
+  const floating = () => !props.readOnly && panel.open() && panel.fullWidth() && props.active
   const view = createMemo(() => stores.open(props.sessionRef))
   const failure = () => {
     const state = view().state()
