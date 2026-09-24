@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js"
 import { Composer, promptText, sessionComposerKey, useComposerStore } from "@/composer"
-import { useElapsed } from "@/lib/delay"
+import { usePhone } from "@/lib/viewport"
 import { FailureBoundary, FailureNotice } from "@/lib/failure"
 import { sessionId, useServer, type SessionRef } from "@/server"
 import { useSessionStores, type SessionView } from "@/session"
@@ -16,20 +16,10 @@ import { useSessionScreenText, type SessionScreenText } from "./text"
 import { createTimelineHost } from "./timeline-host"
 import { createTimelineScroll } from "./timeline-scroll"
 import { createDockFollow } from "./dock-follow"
+import { SessionTimelineSkeleton } from "./session-timeline-skeleton"
 import { createSessionScreenKeydownHandler } from "./session-screen-keydown"
 import { turnActive } from "./timeline"
 import "./session-screen.css"
-
-function Loading(props: { readonly t: SessionScreenText }) {
-  const elapsed = useElapsed()
-  return (
-    <Show when={elapsed()}>
-      <p role="status" data-slot="session-screen-loading">
-        {props.t("sessionScreen.loading")}
-      </p>
-    </Show>
-  )
-}
 
 function ChildNotice(props: { readonly t: SessionScreenText; readonly onBack: () => void }) {
   return (
@@ -124,6 +114,7 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
 
 export function SessionScreen(props: PaneProps<SessionRef>) {
   const t = useSessionScreenText()
+  const phone = usePhone()
   const stores = useSessionStores()
   const view = createMemo(() => stores.open(props.state))
   const failure = () => {
@@ -135,9 +126,11 @@ export function SessionScreen(props: PaneProps<SessionRef>) {
       <FailureBoundary title={t("sessionScreen.failed")} retryLabel={t("sessionScreen.action.retry")}>
         <Switch fallback={<SessionBody view={view()} paneId={props.paneId} active={props.active} />}>
           <Match when={view().state().kind === "missing"}>
-            <p role="alert" data-slot="session-screen-missing">
-              {t("sessionScreen.missing")}
-            </p>
+            <div class="flex h-full items-center justify-center px-4 text-text-weak">
+              <div data-testid="session-unavailable" data-session-id={props.state.sessionId}>
+                Session unavailable
+              </div>
+            </div>
           </Match>
           <Match when={failure()}>
             {(state) => (
@@ -150,7 +143,7 @@ export function SessionScreen(props: PaneProps<SessionRef>) {
             )}
           </Match>
           <Match when={view().state().kind === "loading" && !view().conversation()}>
-            <Loading t={t} />
+            <SessionTimelineSkeleton centered={!phone()} sessionId={props.state.sessionId} />
           </Match>
         </Switch>
       </FailureBoundary>

@@ -33,11 +33,3 @@
 [data-slot="session-docks"]:empty {
   display: none;
 }
-
-[data-slot="session-screen-loading"],
-[data-slot="session-screen-missing"] {
-  margin: auto;
-  padding: 24px 16px;
-  color: var(--v2-text-text-weak, var(--v2-text-text-base));
-  font-size: var(--font-size-compact);
-}

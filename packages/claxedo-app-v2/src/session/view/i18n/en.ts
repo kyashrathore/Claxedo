@@ -9,7 +9,6 @@ export type SessionScreenTextKey =
   | "sessionScreen.plan.title"
   | "sessionScreen.draft.title"
   | "sessionScreen.action.retry"
-  | "sessionScreen.missing"
   | "sessionScreen.failed"
   | "sessionScreen.action.dismiss"
   | "sessionScreen.action.back"
@@ -79,7 +78,6 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.plan.title": "Plan",
   "sessionScreen.draft.title": "New session",
   "sessionScreen.action.retry": "Retry",
-  "sessionScreen.missing": "This session no longer exists.",
   "sessionScreen.failed": "Could not load this session.",
   "sessionScreen.action.dismiss": "Dismiss",
   "sessionScreen.action.back": "Back",
