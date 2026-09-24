@@ -79,7 +79,7 @@ Finish a task with `claxedo plugin check` passing. Do not add a build step, a bu
 | `api.server.operation` | `(name, input?) => Promise<Result>` | A control-plane operation the manifest names |
 | `api.context` | `{ pluginId, pluginVersion, platform, locale, currentProjectId(), currentSession(), signal }` | Where the plugin runs; `signal` aborts when the plugin is disposed |
 | `api.ui.toast` | `({ kind, title, description? }) => void` | A toast |
-| `api.ui.confirm` | `({ title, description?, confirmLabel?, destructive? }) => Promise<boolean>` | A confirmation dialog |
+| `api.ui.confirm` | `({ title, description?, confirmLabel?, cancelLabel? }) => Promise<boolean>` | A confirmation dialog |
 | `api.i18n.t` | `(key, params?) => string` | A translated string |
 
 `projects.list`, `projects.currentId`, `workbench.tabs`, `sessions.status`, `context.currentProjectId` and `context.currentSession` are Solid accessors: read them inside JSX, memos or effects and they track.
