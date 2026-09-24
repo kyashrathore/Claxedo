@@ -20,7 +20,6 @@ export const dictionary = {
   "settings.keybindings.search": "搜索快捷键",
   "settings.keybindings.empty": "未找到快捷键",
   "settings.keybindings.group.general": "通用",
-  "settings.section.general": "通用",
   "settings.general.reasoningSummaries": "显示推理摘要",
   "settings.general.reasoningSummaries.description": "在时间线中显示模型推理摘要",
   "settings.general.shellToolPartsExpanded": "展开 shell 工具部分",
@@ -33,4 +32,10 @@ export const dictionary = {
   "settings.appearance.codeFont.description": "自定义代码块使用的字体",
   "settings.appearance.screenReader": "屏幕阅读器模式",
   "settings.appearance.screenReader.description": "在新终端中公开可访问的屏幕阅读器缓冲区",
+  "settings.section.language": "语言",
+  "settings.appearance.group.colors": "颜色",
+  "settings.appearance.group.fonts": "字体",
+  "settings.appearance.group.transcript": "对话记录",
+  "settings.appearance.group.panel": "工作区面板",
+  "settings.appearance.group.terminal": "终端",
 }

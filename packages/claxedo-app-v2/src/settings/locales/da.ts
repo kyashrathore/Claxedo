@@ -20,7 +20,6 @@ export const dictionary = {
   "settings.keybindings.search": "Søg genveje",
   "settings.keybindings.empty": "Ingen genveje fundet",
   "settings.keybindings.group.general": "Generelt",
-  "settings.section.general": "Generelt",
   "settings.general.reasoningSummaries": "Vis tænkeoversigter",
   "settings.general.reasoningSummaries.description": "Vis model tænkeoversigter i tidslinjen",
   "settings.general.shellToolPartsExpanded": "Udvid shell-værktøjsdele",
@@ -33,4 +32,9 @@ export const dictionary = {
   "settings.appearance.codeFont.description": "Tilpas skrifttypen, der bruges i kodeblokke",
   "settings.appearance.screenReader": "Skærmlæsertilstand",
   "settings.appearance.screenReader.description": "Vis en tilgængelig skærmlæserbuffer i nye terminaler",
+  "settings.section.language": "Sprog",
+  "settings.appearance.group.colors": "Farver",
+  "settings.appearance.group.fonts": "Skrifttyper",
+  "settings.appearance.group.transcript": "Udskrift",
+  "settings.appearance.group.panel": "Arbejdsområdepanel",
 }

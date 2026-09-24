@@ -20,7 +20,6 @@ export const dictionary = {
   "settings.keybindings.search": "Поиск горячих клавиш",
   "settings.keybindings.empty": "Горячие клавиши не найдены",
   "settings.keybindings.group.general": "Основные",
-  "settings.section.general": "Основные",
   "settings.general.reasoningSummaries": "Показывать сводки рассуждений",
   "settings.general.reasoningSummaries.description": "Отображать сводки рассуждений модели в ленте",
   "settings.general.shellToolPartsExpanded": "Разворачивать элементы инструмента shell",
@@ -33,4 +32,10 @@ export const dictionary = {
   "settings.appearance.codeFont.description": "Настройте шрифт, используемый в блоках кода",
   "settings.appearance.screenReader": "Режим экранного диктора",
   "settings.appearance.screenReader.description": "Предоставьте доступный буфер экранного диктора в новых терминалах",
+  "settings.section.language": "Язык",
+  "settings.appearance.group.colors": "Цвета",
+  "settings.appearance.group.fonts": "Шрифты",
+  "settings.appearance.group.transcript": "Расшифровка",
+  "settings.appearance.group.panel": "Панель рабочей области",
+  "settings.appearance.group.terminal": "Терминал",
 }

@@ -20,7 +20,6 @@ export const dictionary = {
   "settings.keybindings.search": "Pretraži prečice",
   "settings.keybindings.empty": "Nema pronađenih prečica",
   "settings.keybindings.group.general": "Opšte",
-  "settings.section.general": "Opšte",
   "settings.general.reasoningSummaries": "Prikaži sažetke rasuđivanja",
   "settings.general.reasoningSummaries.description": "Prikaži sažetke rasuđivanja modela na vremenskoj traci",
   "settings.general.shellToolPartsExpanded": "Proširi dijelove shell alata",
@@ -33,4 +32,9 @@ export const dictionary = {
   "settings.appearance.codeFont.description": "Prilagodi font koji se koristi u blokovima koda",
   "settings.appearance.screenReader": "Način čitača ekrana",
   "settings.appearance.screenReader.description": "Omogući pristupačan međuspremnik čitača ekrana u novim terminalima",
+  "settings.section.language": "Jezik",
+  "settings.appearance.group.colors": "Boje",
+  "settings.appearance.group.fonts": "Fontovi",
+  "settings.appearance.group.transcript": "Transkript",
+  "settings.appearance.group.panel": "Panel radnog prostora",
 }

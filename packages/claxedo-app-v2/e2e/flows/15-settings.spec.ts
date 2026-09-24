@@ -1,10 +1,11 @@
 import type { Page } from "@playwright/test"
 import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI, type Stack } from "../harness"
 
-type Section = { readonly v1Row: string; readonly heading: string; readonly v2Link: string }
+type Section = { readonly v1Row: string; readonly heading: string; readonly v2Link?: string; readonly v2Step?: string }
 
-const GENERAL: Section = { v1Row: "General", heading: "General", v2Link: "Appearance" }
-const TRANSCRIPT: Section = { v1Row: "General", heading: "General", v2Link: "General" }
+const V2_SETTINGS = "v2 approved: v2's settings sidebar and layout (DECISIONS Owner, 16:45)"
+const NO_GENERAL = "v2 approved: no General section; its rows live in Language and Appearance (DECISIONS Owner, 00:55)"
+const GENERAL: Section = { v1Row: "General", heading: "General", v2Link: "Appearance", v2Step: NO_GENERAL }
 const SHORTCUTS: Section = { v1Row: "Shortcuts", heading: "Keyboard shortcuts", v2Link: "Keyboard shortcuts" }
 const MODELS: Section = { v1Row: "Models", heading: "Models", v2Link: "Models" }
 const SECTIONS: readonly Section[] = [
@@ -12,11 +13,9 @@ const SECTIONS: readonly Section[] = [
   SHORTCUTS,
   { v1Row: "Orgs & Teams", heading: "Orgs & Teams", v2Link: "Organization" },
   MODELS,
-  { v1Row: "Terminals", heading: "Terminals", v2Link: "Terminals" },
+  { v1Row: "Terminals", heading: "Terminals", v2Step: "v2 approved: no Terminals section (DECISIONS Owner, 00:50)" },
   { v1Row: "Machines", heading: "Machines", v2Link: "Machines" },
 ]
-const V2_SETTINGS = "v2 approved: v2's settings sidebar and layout (DECISIONS Owner, 16:45)"
-
 function picker(app: Page, label: string) {
   return app.getByRole("group", { name: label }).getByRole("button")
 }
@@ -38,16 +37,23 @@ async function credentialNamed(url: string, label: string): Promise<Credential |
   return (await credentials(url)).find((row) => row.provider_id === "cursor-sdk" && row.label === label)
 }
 
-async function revealRail(app: Page, isMobile: boolean) {
-  if (isMobile) await app.getByRole("button", { name: UI.openRail }).click()
+async function revealRail(stack: Stack, app: Page, isMobile: boolean) {
+  if (!isMobile) return
+  const open = app.getByRole("button", { name: UI.openRail })
+  if (stack.app === "v1" || (await open.isVisible())) await open.click()
 }
 
 async function openSection(stack: Stack, app: Page, isMobile: boolean, section: Section) {
-  await revealRail(app, isMobile)
+  await revealRail(stack, app, isMobile)
   if (stack.app === "v2") {
-    await test.step(V2_SETTINGS, async () => {
-      await app.getByRole("link", { name: section.v2Link, exact: true }).click()
-      await expect(app.getByRole("heading", { level: 1, name: section.v2Link })).toBeVisible()
+    const link = section.v2Link
+    await test.step(section.v2Step ?? V2_SETTINGS, async () => {
+      if (!link) {
+        await expect(app.getByRole("link", { name: section.v1Row, exact: true })).toHaveCount(0)
+        return
+      }
+      await app.getByRole("link", { name: link, exact: true }).click()
+      await expect(app.getByRole("heading", { level: 1, name: link })).toBeVisible()
     })
     return
   }
@@ -56,7 +62,7 @@ async function openSection(stack: Stack, app: Page, isMobile: boolean, section: 
 }
 
 async function openSettings(stack: Stack, app: Page, isMobile: boolean) {
-  await revealRail(app, isMobile)
+  await revealRail(stack, app, isMobile)
   await app.getByRole("button", { name: UI.signedOutAccount }).click()
   await app.getByRole("menuitem", { name: "Settings" }).click()
   if (stack.app === "v2") await openSection(stack, app, isMobile, GENERAL)
@@ -135,7 +141,6 @@ test("15 settings: Expand shell tool parts opens a turn's shell output in the tr
   const route = `${stack.url}${sessionRoute(workspace.id, session.id)}`
   await app.goto(route)
   await openSettings(stack, app, isMobile)
-  await openSection(stack, app, isMobile, TRANSCRIPT)
   const toggle = app.locator('[data-action="settings-feed-shell-tool-parts-expanded"]')
   await expect(toggle.getByRole("switch")).not.toBeChecked()
   await toggle.click()

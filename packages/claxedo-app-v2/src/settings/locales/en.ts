@@ -70,7 +70,6 @@ export const dictionary = {
   "settings.sandbox.defaultUpdated": "Default sandbox provider updated",
   "settings.sandbox.readOnly": "Signed hosted sessions can view local sandbox providers but cannot change local credentials.",
   "settings.sandbox.missing": "{{provider}} is active but has no credentials. Cloud environments will fail to create until you add them.",
-  "settings.section.general": "General",
   "settings.general.reasoningSummaries": "Show reasoning summaries",
   "settings.general.reasoningSummaries.description": "Display model reasoning summaries in the timeline",
   "settings.general.shellToolPartsExpanded": "Expand shell tool parts",
@@ -89,4 +88,10 @@ export const dictionary = {
   "settings.appearance.terminalFont.description": "Customise the font used in the terminal",
   "settings.appearance.screenReader": "Screen reader mode",
   "settings.appearance.screenReader.description": "Expose an accessible screen-reader buffer in new terminals",
+  "settings.section.language": "Language",
+  "settings.appearance.group.colors": "Colors",
+  "settings.appearance.group.fonts": "Fonts",
+  "settings.appearance.group.transcript": "Transcript",
+  "settings.appearance.group.panel": "Workspace panel",
+  "settings.appearance.group.terminal": "Terminal",
 } as const

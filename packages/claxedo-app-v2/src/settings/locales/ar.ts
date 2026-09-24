@@ -20,7 +20,6 @@ export const dictionary = {
   "settings.keybindings.search": "البحث في الاختصارات",
   "settings.keybindings.empty": "لم يتم العثور على اختصارات",
   "settings.keybindings.group.general": "عام",
-  "settings.section.general": "عام",
   "settings.general.reasoningSummaries": "إظهار ملخصات الاستنتاج",
   "settings.general.reasoningSummaries.description": "عرض ملخصات استنتاج النموذج في الشريط الزمني",
   "settings.general.shellToolPartsExpanded": "توسيع أجزاء أداة shell",
@@ -33,4 +32,10 @@ export const dictionary = {
   "settings.appearance.codeFont.description": "خصّص الخط المستخدم في كتل التعليمات البرمجية",
   "settings.appearance.screenReader": "وضع قارئ الشاشة",
   "settings.appearance.screenReader.description": "وفّر مخزنًا مؤقتًا يمكن لقارئ الشاشة الوصول إليه في الطرفيات الجديدة",
+  "settings.section.language": "اللغة",
+  "settings.appearance.group.colors": "الألوان",
+  "settings.appearance.group.fonts": "الخطوط",
+  "settings.appearance.group.transcript": "السجل",
+  "settings.appearance.group.panel": "لوحة مساحة العمل",
+  "settings.appearance.group.terminal": "الطرفية",
 }

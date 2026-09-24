@@ -20,7 +20,6 @@ export const dictionary = {
   "settings.keybindings.search": "단축키 검색",
   "settings.keybindings.empty": "단축키를 찾을 수 없습니다",
   "settings.keybindings.group.general": "일반",
-  "settings.section.general": "일반",
   "settings.general.reasoningSummaries": "추론 요약 표시",
   "settings.general.reasoningSummaries.description": "타임라인에 모델 추론 요약 표시",
   "settings.general.shellToolPartsExpanded": "shell 도구 파트 펼치기",
@@ -33,4 +32,10 @@ export const dictionary = {
   "settings.appearance.codeFont.description": "코드 블록에 사용되는 글꼴을 사용자 지정",
   "settings.appearance.screenReader": "스크린 리더 모드",
   "settings.appearance.screenReader.description": "새 터미널에서 접근 가능한 스크린 리더 버퍼를 노출하세요",
+  "settings.section.language": "언어",
+  "settings.appearance.group.colors": "색상",
+  "settings.appearance.group.fonts": "글꼴",
+  "settings.appearance.group.transcript": "대화 기록",
+  "settings.appearance.group.panel": "작업 공간 패널",
+  "settings.appearance.group.terminal": "터미널",
 }

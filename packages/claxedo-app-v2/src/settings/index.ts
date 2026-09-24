@@ -5,7 +5,7 @@ import { usageSettingsSection } from "@/usage"
 import { dictionary, type Keys } from "./i18n"
 import { AppearanceSection } from "./view/appearance"
 import { ConnectionsSection } from "./view/connections"
-import { GeneralSection } from "./view/general"
+import { LanguageSection } from "./view/language"
 import { KeybindingsSection } from "./view/keybindings"
 
 const title = (key: Keys) => () => useTranslator(dictionary)(key)
@@ -27,7 +27,7 @@ export const settingsSections: readonly SettingsSection[] = [
   usageSettingsSection,
   organizationSettingsSection,
   section("connections", "settings.section.connections", "account", 40, ConnectionsSection),
-  section("general", "settings.section.general", "app", 50, GeneralSection),
+  section("language", "settings.section.language", "app", 50, LanguageSection),
   section("appearance", "settings.section.appearance", "app", 60, AppearanceSection),
   section("keybindings", "settings.section.keybindings", "app", 70, KeybindingsSection),
 ]
