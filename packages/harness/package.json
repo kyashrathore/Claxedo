@@ -18,7 +18,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "bun test src"
+    "check": "bun scripts/check.ts",
+    "test": "bun run check && bun test src scripts"
   },
   "dependencies": {
     "@claxedo/agent-event-runtime": "workspace:*",
@@ -27,6 +28,7 @@
   "devDependencies": {
     "@tsconfig/node-lts": "22.0.4",
     "@types/bun": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "typescript-5": "npm:typescript@5.9.3"
   }
 }
