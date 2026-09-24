@@ -1,7 +1,8 @@
 import { createSignal, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { failureMessage } from "@/lib/failure"
-import { Button, Dialog, showToast, TextInput, useDialog } from "@/ui"
+import { Dialog, showToast, TextInput, useDialog } from "@/ui"
+import { Button } from "@opencode-ai/ui/button"
 import { dictionary } from "../i18n"
 
 function useSubmit(run: () => Promise<void>, failureTitle: () => string) {
@@ -31,10 +32,10 @@ export function RenameSessionDialog(props: { readonly title: string; readonly on
       <form class="flex min-w-[340px] flex-col gap-4" onSubmit={(event) => void form.submit(event)}>
         <TextInput aria-label={t("rail.renameLabel")} value={title()} onInput={(event) => setTitle(event.currentTarget.value)} autofocus />
         <div class="flex justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={form.cancel}>
+          <Button type="button" variant="ghost" size="large" onClick={form.cancel}>
             {t("rail.cancel")}
           </Button>
-          <Button type="submit" disabled={form.busy() || title().trim().length === 0}>
+          <Button type="submit" variant="primary" size="large" disabled={form.busy() || title().trim().length === 0}>
             {t("rail.save")}
           </Button>
         </div>
@@ -53,10 +54,10 @@ export function DeleteSessionDialog(props: { readonly title: string; readonly on
           <span class="text-14-regular text-text-strong">{t("rail.deleteConfirm", { name: props.title })}</span>
         </div>
         <div class="flex justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={form.cancel}>
+          <Button type="button" variant="ghost" size="large" onClick={form.cancel}>
             {t("rail.cancel")}
           </Button>
-          <Button type="submit" variant="danger" disabled={form.busy()}>
+          <Button type="submit" variant="primary" size="large" disabled={form.busy()}>
             {t("rail.deleteButton")}
           </Button>
         </div>
