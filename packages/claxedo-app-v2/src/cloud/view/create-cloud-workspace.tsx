@@ -1,5 +1,6 @@
 import { createSignal, Show, type Component } from "solid-js"
-import { toAppError } from "@/server"
+import { createFlow, runFlow } from "@/lib/flow"
+import { toAppError, type CloudWorkspace } from "@/server"
 import { Button, TextInput } from "@/ui"
 import { useCloudText } from "../i18n"
 import type { CloudWorkspaces } from "../store"
@@ -8,26 +9,21 @@ export const CreateCloudWorkspace: Component<{ cloud: CloudWorkspaces }> = (prop
   const t = useCloudText()
   const [name, setName] = createSignal("")
   const [branch, setBranch] = createSignal("")
-  const [creating, setCreating] = createSignal(false)
-  const [failure, setFailure] = createSignal<string>()
+  const creation = createFlow<"creating", CloudWorkspace>()
+  const creating = () => creation.state().kind === "running"
+  const failure = () => {
+    const state = creation.state()
+    return state.kind === "failed" ? state.error.message : undefined
+  }
 
   const submit = async (event: SubmitEvent) => {
     event.preventDefault()
     if (creating()) return
-    setCreating(true)
-    setFailure(undefined)
-    try {
-      await props.cloud.create({
-        ...(name().trim() ? { name: name().trim() } : {}),
-        ...(branch().trim() ? { branch: branch().trim() } : {}),
-      })
-      setName("")
-      setBranch("")
-    } catch (cause) {
-      setFailure(toAppError(cause).message)
-    } finally {
-      setCreating(false)
-    }
+    const input = { ...(name().trim() ? { name: name().trim() } : {}), ...(branch().trim() ? { branch: branch().trim() } : {}) }
+    await runFlow(creation, "creating", () => props.cloud.create(input), toAppError)
+    if (creation.state().kind !== "done") return
+    setName("")
+    setBranch("")
   }
 
   return (
