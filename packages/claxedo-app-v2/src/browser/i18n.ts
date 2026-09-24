@@ -1,0 +1,54 @@
+const en = {
+  "browser.tab": "Browser",
+  "browser.back": "Go back",
+  "browser.forward": "Go forward",
+  "browser.reload": "Reload",
+  "browser.hardReload": "Hard reload",
+  "browser.address": "Address",
+  "browser.address.placeholder": "Enter a URL",
+  "browser.pick": "Pick an element",
+  "browser.pick.short": "Pick",
+  "browser.pick.stop": "Stop picking",
+  "browser.picking.hint": "Click an element on the page. Press Escape to stop.",
+  "browser.pick.label": "{{tag}} on {{host}}",
+  "browser.screenshot.label": "Screenshot of {{host}}",
+  "browser.console": "Console",
+  "browser.console.show": "Show console",
+  "browser.console.hide": "Hide console",
+  "browser.console.clear": "Clear console",
+  "browser.console.empty": "No console output yet.",
+  "browser.actions": "More browser actions",
+  "browser.screenshot": "Take screenshot",
+  "browser.devTools": "Open DevTools",
+  "browser.copyUrl": "Copy URL",
+  "browser.clearCookies": "Clear cookies",
+  "browser.notice.dismiss": "Dismiss",
+  "browser.notice.desktopOnly": "This needs the Claxedo desktop app.",
+  "browser.notice.pageNotReady": "The page is not ready yet.",
+  "browser.notice.copyFailed": "The URL could not be copied.",
+  "browser.notice.copied": "URL copied.",
+  "browser.notice.screenshotFailed": "The screenshot could not be captured.",
+  "browser.notice.screenshotAdded": "Screenshot added to the prompt.",
+  "browser.notice.cookiesCleared": "Cookies cleared for the agent browser.",
+  "browser.notice.pickAdded": "Element added to the prompt.",
+  "browser.empty.title": "No page open",
+  "browser.empty.hint": "Enter a URL above to preview it.",
+  "browser.web.hint": "Console and element picking need the Claxedo desktop app.",
+  "browser.mixedContent.title": "This page needs HTTPS.",
+  "browser.mixedContent.hint": "Hosted Claxedo blocks insecure embedded content.",
+  "browser.failed.title": "The page could not be loaded.",
+  "browser.retry": "Retry",
+  "browser.loading": "Loading…",
+  "browser.noPlacement": "Open a project to use the browser.",
+  "browser.preview.title": "Page preview",
+} as const
+
+export type BrowserStringKey = keyof typeof en
+
+export const browserStrings = { en } as const
+
+export function t(key: BrowserStringKey, params?: Readonly<Record<string, string>>): string {
+  const text: string = en[key]
+  if (!params) return text
+  return text.replace(/\{\{(\w+)\}\}/g, (match, name: string) => params[name] ?? match)
+}
