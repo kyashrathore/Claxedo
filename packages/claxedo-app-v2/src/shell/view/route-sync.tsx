@@ -21,6 +21,7 @@ export function RouteSync(): JSX.Element {
   const layout = useShellLayout()
 
   createEffect(on(routing.route, () => layout.send({ type: "navigated" }), { defer: true }))
+  createEffect(on(workbench.selectors.focusedContent, () => layout.send({ type: "navigated" }), { defer: true }))
 
   createEffect(() => {
     const route = routing.route()
