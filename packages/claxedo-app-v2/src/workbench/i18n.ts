@@ -2,7 +2,7 @@ import type { Translations } from "@/i18n"
 
 export const dictionary = {
   en: {
-    "workbench.closePane": "Close pane",
+    "workbench.closePane": "Close Pane",
     "workbench.resize": "Resize panes",
     "workbench.dragPane": "Drag to move pane",
     "workbench.empty": "Nothing is open",
