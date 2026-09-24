@@ -24,7 +24,6 @@ import { Overlays } from "./overlays"
 import { RouteSync } from "./route-sync"
 import { SettingsSidebar } from "./settings-sidebar"
 import { ShellCommands } from "./shell-commands"
-import { ThemeBridge } from "./theme-bridge"
 
 export type AppShellProps = { readonly mainSidebar: JSX.Element }
 
@@ -64,8 +63,7 @@ function ScopedShell(props: { readonly scope: string; readonly mainSidebar: JSX.
                 <FirstRunRedirect />
                 <RouteSync />
                 <ShellCommands />
-                <ThemeBridge />
-                <ConnectionBanner />
+                  <ConnectionBanner />
                 <ShellBody route={routing.route()} mainSidebar={props.mainSidebar} />
                 <CommandPalette />
                 <Overlays />

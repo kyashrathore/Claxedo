@@ -7,7 +7,9 @@ import { createServer, ServerProvider, type AuthSource } from "@/server"
 import { SessionStoresProvider } from "@/session"
 import { AppShell, createShellRegistries, ShellRegistriesContext, ShellRouter, type ShellRouterComponent } from "@/shell"
 import { firstParty } from "@/shell/registry"
-import { DialogProvider, ThemeProvider } from "@/ui"
+import { DialogProvider } from "@/ui"
+import { syncIconLibraryWithTheme } from "@opencode-ai/ui/icon"
+import { ThemeProvider } from "@opencode-ai/ui/theme"
 
 export type AppProps = { readonly router?: ShellRouterComponent; readonly serverUrl?: string }
 
@@ -51,7 +53,7 @@ export function App(props: AppProps): JSX.Element {
     <AuthProvider adapter={browserAuthAdapter}>
       <ShellRegistriesContext.Provider value={registries}>
         <I18nProvider>
-          <ThemeProvider>
+          <ThemeProvider defaultTheme="codex" onThemeApplied={syncIconLibraryWithTheme}>
             <ShellRouter router={props.router}>
               <SignedServer serverUrl={props.serverUrl}>
                 <AppShell mainSidebar={<MainSidebar />} />

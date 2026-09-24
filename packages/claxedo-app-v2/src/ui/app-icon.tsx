@@ -15,7 +15,7 @@ import warp from "./app-icon/warp.png"
 import xcode from "./app-icon/xcode.png"
 import zedDark from "./app-icon/zed-dark.svg"
 import zed from "./app-icon/zed.svg"
-import { useTheme } from "./theme/provider"
+import { useTheme } from "@opencode-ai/ui/theme"
 import "./app-icon.css"
 
 const icons = {
