@@ -7,9 +7,7 @@ import { marketplacePage, tasksPage } from "@/rail"
 import { settingsSections } from "@/settings"
 import { draftSessionPaneKind, sessionPaneKind, subagentPanelView } from "@/session"
 import { terminalCreatorPaneKind, terminalPaneKind } from "@/terminal"
-import type { FirstPartyEntries } from "./registries"
-import { pageTabPaneKind } from "./view/page-tab"
-import { settingsPage } from "./view/settings-page"
+import { pageTabPaneKind, settingsPage, type FirstPartyEntries } from "@/shell"
 
 export const firstParty: FirstPartyEntries = {
   pages: [settingsPage, tasksPage, marketplacePage],

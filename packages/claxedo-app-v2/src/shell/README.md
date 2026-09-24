@@ -49,7 +49,7 @@ Rules in those sheets that code cannot explain:
 
 `/` is never a screen of its own, as in today's app. When the projects list has loaded and is empty (`onboardingNeeded`), the shell replaces the URL with the onboarding screen; loading and failed lists never redirect. Otherwise it replaces `/` with the draft of the active workspace: the placement of the restored focused pane, else the folder placement of the first project `useProjectList()` lists.
 
-## Registries (`registries.ts`, `registry.ts`)
+## Registries (`registries.ts`; the first-party entries in `src/registry.ts`)
 
 One `Registry<Entry>` per region and concept: `pages`, `paneKinds`, `panelViews` (the workspace panel's "context" and "subagent" tab views, registered by the domains that own them so `src/panel` never imports them), `settingsSections`, `sidebarItems`, `overlays`, `commands`, `mentions`, `themes`, `iconSkins`, `routes`. `registry.ts` holds the static first-party arrays that import each domain's exports; plugins `add()` entries while they are on and dispose them when off.
 
