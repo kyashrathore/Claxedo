@@ -1,6 +1,5 @@
 import { createSignal, For, onCleanup, Show } from "solid-js"
-import { Select } from "@opencode-ai/ui/select"
-import { Button, TextField } from "@/ui"
+import { Button, Select, TextField } from "@/ui"
 import { useTranslator } from "@/i18n"
 import { useServer, type ConnectionScope, type Integration, type IntegrationConnectInput } from "@/server"
 import { connectError, connectMachine, createConnectForm, grantError } from "../connections"

@@ -1,8 +1,7 @@
 import { For, Show, createSignal, type JSX } from "solid-js"
-import { Select } from "@opencode-ai/ui/select"
 import { TASK_STATUSES, type TaskStatus } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
-import { Button, Switch, Tag, IconButton, Popover } from "@/ui"
+import { Button, Switch, Tag, IconButton, Popover, Select } from "@/ui"
 import { dictionary } from "../i18n"
 import type { TaskProject } from "../links"
 import {
