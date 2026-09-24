@@ -4,7 +4,7 @@ import { sessionId as toSessionId, type Server, type SessionRef, type SessionSta
 import type { SessionRowView, SessionStatusView, SessionStores, SessionView } from "@/session"
 import { homePath, sessionPath, type ShellRouting } from "@/shell"
 import type { WorkbenchStore } from "@/workbench"
-import type { TimelineFocus, TimelineHost, TimelineSessionRow, TimelineSettings } from "./timeline"
+import { useTranscriptTypography, type TimelineFocus, type TimelineHost, type TimelineSessionRow, type TimelineSettings } from "./timeline"
 import type { SessionScreenText } from "./text"
 
 export type TimelineHostInput = {
@@ -67,6 +67,7 @@ async function findFiles(input: TimelineHostInput, query: string): Promise<reado
 export function createTimelineHost(input: TimelineHostInput): TimelineHost {
   const { view, server } = input
   const sessions = createMemo(() => timelineRows(input.stores.list.rows()))
+  const transcriptTypography = useTranscriptTypography()
   return {
     sessionKey: () => view.ref.sessionId,
     sessionId: () => view.ref.sessionId,
@@ -79,7 +80,7 @@ export function createTimelineHost(input: TimelineHostInput): TimelineHost {
     status: () => shownStatus(view.status()),
     turnSettlePending: view.turnSettlePending,
     settings,
-    transcriptTypography: () => ({ pairing: "default" }),
+    transcriptTypography,
     t: (key, params) => input.t(`sessionScreen.timeline.${key}`, params),
     platform: { openLink },
     openFocus: (focus) => openFocus(input, focus),
