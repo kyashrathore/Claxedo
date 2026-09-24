@@ -1,57 +1,47 @@
-import { For, Show } from "solid-js"
-import { t } from "../i18n"
-import type { BrowserConsoleEntry } from "../model"
+import { For, Show, type JSX } from "solid-js"
+import { useTranslator } from "@/i18n"
+import { Button } from "@/ui"
+import { dictionary } from "../i18n"
+import type { BrowserConsoleEntry, BrowserConsoleLevel } from "../model"
 import type { BrowserTab } from "../tab"
-import { toolbarButtonClass } from "./toolbar"
 
 const VISIBLE_ENTRIES = 100
 
-function ConsoleRow(props: { readonly entry: BrowserConsoleEntry }) {
-  const level = () => props.entry.level
+const LEVEL_CLASS: Record<BrowserConsoleLevel, string> = {
+  error: "text-danger-fg",
+  warn: "text-warning-fg",
+  debug: "text-text-muted",
+  info: "text-text-muted",
+  log: "text-text-base",
+}
+
+function ConsoleRow(props: { readonly entry: BrowserConsoleEntry }): JSX.Element {
   return (
-    <li class="flex items-start gap-2 px-2 py-1 font-mono text-12-regular">
-      <span
-        class="w-12 shrink-0 uppercase tracking-wider"
-        classList={{
-          "text-surface-critical-strong": level() === "error",
-          "text-surface-warning-strong": level() === "warn",
-          "text-text-weak": level() === "debug" || level() === "info",
-          "text-text-base": level() === "log",
-        }}
-      >
-        {level()}
-      </span>
+    <li class="flex items-start gap-2 px-2 py-1 font-mono text-xs">
+      <span class={`w-12 shrink-0 uppercase tracking-wider ${LEVEL_CLASS[props.entry.level]}`}>{props.entry.level}</span>
       <span class="min-w-0 flex-1 whitespace-pre-wrap break-words text-text-base">{props.entry.args.join(" ")}</span>
     </li>
   )
 }
 
-export function ConsoleDrawer(props: { readonly tab: BrowserTab }) {
+export function ConsoleDrawer(props: { readonly tab: BrowserTab }): JSX.Element {
+  const t = useTranslator(dictionary)
   const entries = () => props.tab.log()
   const visible = () => entries().slice(-VISIBLE_ENTRIES)
   return (
     <Show when={props.tab.consoleOpen()}>
-      <section aria-label={t("browser.console")} class="flex max-h-[40%] min-h-32 flex-col border-t border-border-weak-base bg-background-base">
-        <div class="flex h-8 shrink-0 items-center justify-between px-2">
-          <div class="flex items-center gap-2 text-12-medium text-text-base">
+      <section aria-label={t("browser.console")} class="flex max-h-[40%] min-h-32 shrink-0 flex-col border-t border-border-muted bg-background-base">
+        <div class="flex h-9 shrink-0 items-center justify-between px-2">
+          <div class="flex items-center gap-2 text-sm font-medium text-text-base">
             <span>{t("browser.console")}</span>
-            <span class="tabular-nums text-text-weak">{entries().length}</span>
+            <span class="tabular-nums text-text-muted">{entries().length}</span>
           </div>
-          <button
-            type="button"
-            class={toolbarButtonClass}
-            aria-label={t("browser.console.clear")}
-            disabled={entries().length === 0}
-            onClick={() => props.tab.clearLog()}
-          >
+          <Button variant="ghost" size="small" disabled={entries().length === 0} onClick={() => props.tab.clearLog()}>
             {t("browser.console.clear")}
-          </button>
+          </Button>
         </div>
-        <Show
-          when={entries().length > 0}
-          fallback={<div class="flex flex-1 items-center justify-center px-3 py-4 text-12-regular text-text-weak">{t("browser.console.empty")}</div>}
-        >
-          <ul class="flex-1 divide-y divide-border-weak-base overflow-auto">
+        <Show when={entries().length > 0} fallback={<p class="flex flex-1 items-center justify-center px-3 py-4 text-sm text-text-muted">{t("browser.console.empty")}</p>}>
+          <ul class="flex-1 divide-y divide-border-muted overflow-auto">
             <For each={visible()}>{(entry) => <ConsoleRow entry={entry} />}</For>
           </ul>
         </Show>

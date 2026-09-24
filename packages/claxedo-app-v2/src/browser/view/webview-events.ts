@@ -1,3 +1,4 @@
+import { uuid } from "@/lib/uuid"
 import type { BrowserBridge, BrowserWebview } from "../bridge"
 import {
   GUEST_PICK_CHANNEL,
@@ -7,7 +8,7 @@ import {
   readGuestPickPayload,
   type GuestPickPayload,
 } from "../guest"
-import { t } from "../i18n"
+import type { PickDelivery } from "../pick-to-composer"
 import type { BrowserTab } from "../tab"
 import { sameOrigin } from "../url"
 import { sendThemeTokens } from "./guest-theme"
@@ -18,6 +19,7 @@ export type WebviewHost = {
   readonly element: BrowserWebview
   readonly tab: BrowserTab
   readonly bridge: BrowserBridge
+  readonly deliver: PickDelivery
 }
 
 function errorMessage(error: unknown) {
@@ -47,7 +49,7 @@ function readArguments(event: Event): unknown[] | undefined {
 async function register(host: WebviewHost): Promise<boolean> {
   const read = host.element.getWebContentsId
   if (!read) {
-    host.tab.send({ type: "failed", reason: t("browser.notice.pageNotReady") })
+    host.tab.send({ type: "failed", reason: "The page has no web contents id" })
     return false
   }
   const result = await host.bridge.register(host.tab.paneId, read.call(host.element))
@@ -96,8 +98,8 @@ async function submitPick(host: WebviewHost, payload: GuestPickPayload, pageUrl:
   const selection = host.tab.selection()
   if (!selection || selection.selector !== payload.selector || selection.url !== pageUrl) return
   const screenshotDataUrl = await captureScreenshot(host.element)
-  host.tab.addPick({
-    id: crypto.randomUUID(),
+  const delivered = host.deliver({
+    id: uuid(),
     pageUrl,
     selector: payload.selector,
     tagName: payload.tagName ?? "element",
@@ -107,7 +109,7 @@ async function submitPick(host: WebviewHost, payload: GuestPickPayload, pageUrl:
     screenshotDataUrl,
   })
   host.tab.setPicking(false)
-  host.tab.notify(t("browser.notice.pickAdded"))
+  host.tab.notify({ key: delivered ? "browser.notice.pickAdded" : "browser.notice.needSession" })
 }
 
 function onGuestMessage(host: WebviewHost, event: Event) {
@@ -122,7 +124,10 @@ function onGuestMessage(host: WebviewHost, event: Event) {
     host.tab.select({ selector: payload.selector, url: pageUrl })
     return
   }
-  void submitPick(host, payload, pageUrl).catch((error: unknown) => host.tab.notify(errorMessage(error)))
+  submitPick(host, payload, pageUrl).catch((error: unknown) => {
+    console.error("Browser pick could not be added", { pageUrl, error })
+    host.tab.notify({ key: "browser.notice.actionFailed" })
+  })
 }
 
 export function attachWebviewEvents(host: WebviewHost): () => void {
@@ -130,7 +135,7 @@ export function attachWebviewEvents(host: WebviewHost): () => void {
   const domReady = () => {
     const initial = first
     first = false
-    void onDomReady(host, initial).catch((error: unknown) => host.tab.send({ type: "failed", reason: errorMessage(error) }))
+    onDomReady(host, initial).catch((error: unknown) => host.tab.send({ type: "failed", reason: errorMessage(error) }))
   }
   const listeners: ReadonlyArray<readonly [string, (event: Event) => void]> = [
     ["dom-ready", domReady],

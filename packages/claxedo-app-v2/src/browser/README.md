@@ -1,36 +1,25 @@
 # Browser
 
-The Browser panel tab: preview a URL next to the session, navigate, read the page's console, pick an element and send it to the composer.
+Owns: the Browser panel tab. It previews a URL for the current placement: on the desktop in a `<webview>` driven through the preload's `window.api.browser` bridge, on the web in a sandboxed iframe. It also owns the console and picking an element into the prompt.
 
 ## Owned concepts
 
-- **Browser tab**: one per placement, kept in `BrowserProvider` (at most 4, least recently used evicted). It owns the URL, the console log, the navigation history, the current element selection and the picks waiting for the composer. It lives across panel-tab switches; the page host (the `<webview>` or the iframe) is recreated on each mount and re-registered with the desktop bridge.
-- **Bridge**: the desktop preload's `window.api.browser` (`bridge.ts`). Absent on the web. Every call answers `{ ok, error? }`; a failed navigation becomes the `failed` state, a failed secondary action becomes the tab's notice line.
-- **Pick**: an element the user chose on the page and commented on, plus an optional viewport screenshot. `usePickToComposer()` turns picks into `PromptAttachment`s (a text attachment with the page URL, selector, snippet and comment; an image attachment for the screenshot). The composer renders `items()`, calls `remove(id)` on a chip's close and `take()` on send.
+- **Browser tab** (`tab.ts`): one per placement, created by `BrowserProvider` and kept for the scoped shell's lifetime (at most 4 placements, least recently used first out). It holds the URL, history, console entries (the last 2000) and the current notice, so switching panel tabs keeps them; the page itself reloads when the tab is shown again.
+- **Bridge** (`bridge.ts`): the desktop's `window.api.browser`, read once. Without it the tab is the web preview: an iframe with an empty `sandbox`, never same-origin, and no console or picking.
+- **Guest page** (`guest.ts`, `view/guest-theme.ts`): the messages the webview's guest preload sends (a hovered element, a submitted pick) and the theme tokens the app sends it.
+- **Pick** (`pick-to-composer.ts`): an element the user chose on the page and commented on, with a viewport screenshot. It goes straight into the focused session's composer draft: a text context item with the page URL, selector, snippet and comment, plus the screenshot as an image. A page screenshot from the actions menu goes the same way. With no session in the URL nothing is added, and the notice says to open one.
+- **Notice** (`model.ts`): a translated message key, or a bridge's own error text.
 
-## Machine
+## State machines
 
-`BrowserTabState`: `loading(url)` → `ready(url)` → `picking(url)` → `ready(url)`, and `failed(url, reason)` from any state.
+- **Browser tab** (`model.ts`): `loading(url) → ready(url)`, `ready ↔ picking` (Escape or the pick button stops picking), and `failed(url, reason)` from a failed load or bridge call, with Retry. `moved` updates the URL of an in-page navigation without leaving the state.
 
-Events: `navigate(url)` (a load starts: an address-bar commit, back, forward, reload or the guest's `did-navigate`), `moved(url)` (an in-page hash or history change; keeps `picking`), `loaded(url)` (`dom-ready` or the iframe's `load`; ends `picking`), `startPicking`/`stopPicking` (only from `ready`/`picking`), `failed(reason)` (`did-fail-load` on the main frame, a bridge refusal, a register failure).
+## Invariants
 
-## Hosts
-
-- **Desktop**: an Electron `<webview>` on the `persist:agent-browser` partition. On its first `dom-ready` per mount the tab registers its web contents with the bridge, then navigates to the tab's URL (so a URL typed before registration, or one kept from a previous mount, is honoured). Navigation, history and secondary actions go through the bridge, keyed by `browser:<placementId>`. Theme tokens are pushed to the guest preload on `dom-ready` and on every theme change.
-- **Web**: a sandboxed `<iframe sandbox="" referrerPolicy="no-referrer">`. Navigation is the iframe's `src`; HTTP pages under an HTTPS app are refused as mixed content. No console, no picking: the controls that need the bridge are disabled and say so.
-
-## Picking
-
-The guest preload's react-grab overlay sends `claxedo-browser-pick` when an element is chosen and `claxedo-browser-comment-submit` when the comment is confirmed, over webview-direct IPC (`ipc-message`). Messages count only while the tab is `picking`, every field is re-validated and size-capped in `guest.ts`, `frameUrl` must share the page's origin, and a submit must name the element picked on the page still on screen. The picker mode is set in the guest with `claxedo-picker:set-mode`. Escape stops picking.
-
-## Data
-
-Nothing here is server data, so there is no `api.ts`: the tab talks to the desktop bridge only. The console log is capped at 2000 entries (the drawer renders the last 100). `store.tsx` is a `.tsx` because the provider is a component.
-
-## Placeholders
-
-`i18n.ts` holds the English dictionary and a local `t` until the shell's i18n provider lands. Plain elements stand in for the kit's buttons and inputs until `src/ui` merges.
+- Picks are never stored here; the composer draft is their only home.
+- Every bridge call's failure becomes the failed state or a notice, and is logged with its pane id.
+- `BrowserProvider` mounts inside the scoped shell and reads the placement from the URL.
 
 ## Flows
 
-Flow 27: preview a local URL, navigate, console, pick an element → attached to the prompt (desktop).
+Flow 27 (preview a local URL, navigate, console, pick an element into the prompt) and flow 33 (phone).

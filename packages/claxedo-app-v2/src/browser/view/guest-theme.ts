@@ -2,12 +2,12 @@ import type { BrowserWebview } from "../bridge"
 import { GUEST_THEME_CHANNEL } from "../guest"
 
 const TOKEN_SOURCES = {
-  bg: "--background-strong",
-  fg: "--text-strong",
-  muted: "--text-weak",
-  border: "--border-base",
-  accent: "--text-interactive-base",
-  "accent-hover": "--border-interactive-hover",
+  bg: "--v2-background-bg-base",
+  fg: "--v2-text-text-base",
+  muted: "--v2-text-text-muted",
+  border: "--v2-border-border-base",
+  accent: "--v2-text-text-accent",
+  "accent-hover": "--v2-text-text-accent-hover",
 } as const
 
 export function themeTokens(): Record<string, string> {

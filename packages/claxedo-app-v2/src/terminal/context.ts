@@ -1,7 +1,7 @@
 import { createContext, useContext, type Accessor } from "solid-js"
+import type { WorkspaceFileFocusTarget } from "@/lib/workspace-file-focus"
 import type { PlacementId } from "@/server"
 import type { RendererBudget } from "./backend/renderer-budget"
-import type { FileLinkTarget } from "./links"
 import type { TerminalPaneState } from "./model"
 import type { TerminalStore } from "./store"
 
@@ -12,7 +12,7 @@ export type Terminals = {
   readonly retain: (placementId: PlacementId) => () => void
   readonly defaultTitle: () => string
   readonly open: (state: TerminalPaneState, paneId?: string) => void
-  readonly openFile: (placementId: PlacementId, target: FileLinkTarget) => void
+  readonly openFile: (placementId: PlacementId, target: WorkspaceFileFocusTarget) => void
 }
 
 export const TerminalsContext = createContext<Terminals>()
