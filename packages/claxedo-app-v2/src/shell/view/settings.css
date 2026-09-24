@@ -1,0 +1,71 @@
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  overflow: auto;
+}
+
+.settings-nav-back,
+.settings-nav-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  color: var(--v2-text-text-muted, #8a8686);
+  border-radius: 6px;
+}
+
+.settings-nav-back:hover,
+.settings-nav-row:hover {
+  background: var(--v2-overlay-simple-overlay-hover, rgb(255 255 255 / 6%));
+}
+
+.settings-nav-row[aria-current="page"] {
+  color: var(--v2-text-text-base, #e8e4e4);
+  background: var(--v2-background-bg-layer-03, #221e1e);
+}
+
+.settings-nav-title {
+  padding: 12px 10px 4px;
+  font-size: var(--font-size-large, 15px);
+  font-weight: var(--font-weight-medium, 500);
+}
+
+.settings-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 8px;
+}
+
+.settings-nav-group-title {
+  padding: 4px 10px;
+  font-size: var(--font-size-x-small, 11px);
+  color: var(--v2-text-text-faint, #6a6666);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.settings-page {
+  flex: 1;
+  min-height: 0;
+  padding: 24px;
+  overflow: auto;
+}
+
+.settings-section {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.settings-section-title {
+  margin-bottom: 16px;
+  font-size: var(--font-size-x-large, 20px);
+  font-weight: var(--font-weight-medium, 500);
+}
+
+.settings-page-empty {
+  color: var(--v2-text-text-muted, #8a8686);
+}
