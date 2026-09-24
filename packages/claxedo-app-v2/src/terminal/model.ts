@@ -71,17 +71,6 @@ export function transitionLoad(state: TerminalLoad, event: TerminalLoadEvent): T
   }
 }
 
-export function isAppError(value: unknown): value is AppError {
-  if (!value || typeof value !== "object") return false
-  const record = value as Record<string, unknown>
-  return typeof record.class === "string" && typeof record.message === "string" && typeof record.retryable === "boolean"
-}
-
-export function asAppError(cause: unknown, message: string): AppError {
-  if (isAppError(cause)) return cause
-  return { class: "internal", message, retryable: false, cause }
-}
-
 export function closeError(close: TerminalStreamClose): AppError {
   return {
     class: "network",
