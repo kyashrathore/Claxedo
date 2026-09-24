@@ -5,6 +5,7 @@ import { Button } from "@/ui"
 import { usePluginsText } from "../i18n"
 import { usePluginHost } from "../provider"
 import { PluginRow } from "./plugin-row"
+import "./plugins.css"
 
 function PluginsSettings(): JSX.Element {
   const host = usePluginHost()
@@ -22,6 +23,9 @@ function PluginsSettings(): JSX.Element {
             {t("plugins.safeMode.leave")}
           </Button>
         </div>
+      </Show>
+      <Show when={host.liveListError()}>
+        {(reason) => <p role="alert">{t("plugins.list.failed", { reason: reason() })}</p>}
       </Show>
       <Show when={host.plugins().length > 0} fallback={<p>{t("plugins.settings.empty")}</p>}>
         <ul class="plugins-settings-list" aria-labelledby="plugins-settings-title">
