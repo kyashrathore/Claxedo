@@ -1,7 +1,7 @@
 import { For, Show, type JSX } from "solid-js"
 import { useI18n } from "@/i18n"
 import type { SettingsSection } from "@/shell"
-import { Button } from "@/ui"
+import { Button } from "@opencode-ai/ui/button"
 import { usePluginsText } from "../i18n"
 import { usePluginHost } from "../provider"
 import { PluginRow } from "./plugin-row"
@@ -19,7 +19,7 @@ function PluginsSettings(): JSX.Element {
       <Show when={host.safeMode()}>
         <div role="status" class="plugins-settings-safe-mode">
           <span>{t("plugins.safeMode")}</span>
-          <Button type="button" variant="outline" size="small" onClick={() => host.leaveSafeMode()}>
+          <Button type="button" variant="secondary" size="small" onClick={() => host.leaveSafeMode()}>
             {t("plugins.safeMode.leave")}
           </Button>
         </div>
