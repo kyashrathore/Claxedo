@@ -2,13 +2,16 @@ import type { AppError, PlacementId, Server, TerminalFrame, TerminalId, Terminal
 import type { Machine } from "@/lib/machine"
 import type { TerminalBackend } from "./backend/types"
 import { asAppError, closeError, type TerminalConnection, type TerminalConnectionEvent } from "./model"
-import { createWriteQueue } from "./write-queue"
+import { createWriteQueue, type WriteQueue } from "./write-queue"
 import { capabilityResponses } from "./capability-responder"
 import { stripTerminalReplies } from "./input-reply-filter"
-import { createReconnectTimer, decideReconnect, isRetriableClose } from "./reconnect"
-import { createResizePublisher } from "./resize"
+import { createReconnectTimer, decideReconnect, isRetriableClose, type ReconnectTimer } from "./reconnect"
+import { createResizePublisher, type ResizePublisher } from "./resize"
 
-const OVERLOAD_CLOSE_CODE = 4000
+const NORMAL_CLOSE = 1000
+const ABNORMAL_CLOSE = 1006
+const POLICY_CLOSE = 1008
+const OVERLOAD_CLOSE = 4000
 
 export type AttachInput = {
   readonly server: Server
@@ -27,163 +30,159 @@ export type Attachment = {
   readonly dispose: () => void
 }
 
-export function attachTerminal(input: AttachInput): Attachment {
-  const { server, placementId, terminalId, backend, connection } = input
-  let cursor = 0
-  let replayReady = false
-  let disposed = false
-  let stream: TerminalStream | undefined
-  const timer = createReconnectTimer()
-  const send = (event: TerminalConnectionEvent) => connection.send(event)
+type AttachState = {
+  readonly input: AttachInput
+  readonly queue: WriteQueue
+  readonly resize: ResizePublisher
+  readonly timer: ReconnectTimer
+  cursor: number
+  replayReady: boolean
+  disposed: boolean
+  stream: TerminalStream | undefined
+}
 
-  const queue = createWriteQueue({
-    write: (chunk, done) => backend.write(chunk, done),
-    onOverload: () => {
-      stream?.close()
-      send({ type: "failed", failure: "overload", error: { class: "internal", message: "Terminal output overloaded the write queue", retryable: false } })
+function emit(state: AttachState, event: TerminalConnectionEvent): void {
+  state.input.connection.send(event)
+}
+
+function overload(state: AttachState): void {
+  state.stream?.close()
+  const error: AppError = { class: "internal", message: "Terminal output overloaded the write queue", retryable: false }
+  emit(state, { type: "failed", failure: "overload", error })
+}
+
+function restoreFrame(state: AttachState, frame: Extract<TerminalFrame, { kind: "cursor" }>): void {
+  if (!frame.checkpoint) return state.queue.flushPending()
+  state.queue.beginRestore()
+  state.input.backend.restoreCheckpoint(frame.checkpoint).then(
+    () => {
+      if (state.disposed) return
+      state.queue.flushPending()
+      state.input.backend.fit()
     },
+    (error: unknown) => {
+      if (state.disposed) return
+      state.stream?.close()
+      emit(state, { type: "failed", failure: "restore", error: asAppError(error, "Terminal checkpoint restore failed") })
+    },
+  )
+}
+
+function receiveFrame(state: AttachState, frame: TerminalFrame): void {
+  if (state.disposed) return
+  if (frame.kind === "cursor") {
+    state.cursor = frame.cursor
+    state.replayReady = true
+    return restoreFrame(state, frame)
+  }
+  state.cursor += frame.data.length
+  if (state.replayReady) {
+    for (const response of capabilityResponses(frame.data, () => state.input.backend.getDefaultColors())) state.stream?.send(response)
+  }
+  state.queue.push(frame.data)
+}
+
+async function decideAfterClose(state: AttachState, error: AppError): Promise<void> {
+  const current = state.input.connection.state()
+  const attempt = current.kind === "detached" ? current.attempt : 1
+  const presence = await state.input.server.terminals.presence(state.input.placementId, state.input.terminalId)
+  if (state.disposed) return
+  const decision = decideReconnect({ presence, attempt })
+  if (decision.kind === "gone") return emit(state, { type: "gone" })
+  if (decision.kind === "giveUp") return emit(state, { type: "failed", failure: "closed", error })
+  state.timer.schedule(decision.delayMs, () => {
+    emit(state, { type: "retry" })
+    void connectStream(state)
   })
+}
 
-  const resize = createResizePublisher({
-    backend,
-    host: input.host,
-    likelyTui: input.likelyTui,
-    publish: (size) => server.terminals.update(placementId, terminalId, { size }),
-    onPublishFailed: input.onPublishFailed,
+function recover(state: AttachState, close: TerminalStreamClose): void {
+  const error = closeError(close)
+  emit(state, { type: "closed", error })
+  decideAfterClose(state, error).catch((cause: unknown) => {
+    if (!state.disposed) emit(state, { type: "failed", failure: "closed", error: asAppError(cause, "Terminal presence check failed") })
   })
+}
 
-  const restore = (frame: Extract<TerminalFrame, { kind: "cursor" }>) => {
-    if (!frame.checkpoint) {
-      queue.flushPending()
-      return
-    }
-    queue.beginRestore()
-    backend.restoreCheckpoint(frame.checkpoint).then(
-      () => {
-        if (disposed) return
-        queue.flushPending()
-        backend.fit()
-      },
-      (error: unknown) => {
-        if (disposed) return
-        stream?.close()
-        send({ type: "failed", failure: "restore", error: asAppError(error, "Terminal checkpoint restore failed") })
-      },
-    )
-  }
+function handleClose(state: AttachState, close: TerminalStreamClose): void {
+  if (state.disposed) return
+  state.stream = undefined
+  if (close.code === NORMAL_CLOSE) return emit(state, { type: "exited" })
+  if (close.code === POLICY_CLOSE) return emit(state, { type: "gone" })
+  if (close.code === OVERLOAD_CLOSE) return
+  if (!isRetriableClose(close.code)) return emit(state, { type: "failed", failure: "closed", error: closeError(close) })
+  recover(state, close)
+}
 
-  const onFrame = (frame: TerminalFrame) => {
-    if (disposed) return
-    if (frame.kind === "cursor") {
-      cursor = frame.cursor
-      replayReady = true
-      restore(frame)
-      return
-    }
-    cursor += frame.data.length
-    if (replayReady) {
-      for (const response of capabilityResponses(frame.data, () => backend.getDefaultColors())) stream?.send(response)
-    }
-    queue.push(frame.data)
-  }
+function opened(state: AttachState): void {
+  if (state.disposed) return
+  emit(state, { type: "opened" })
+  state.resize.onOpen()
+}
 
-  const decide = async (error: AppError) => {
-    const state = connection.state()
-    const attempt = state.kind === "detached" ? state.attempt : 1
-    const presence = await server.terminals.presence(placementId, terminalId)
-    if (disposed) return
-    const decision = decideReconnect({ presence, attempt })
-    if (decision.kind === "gone") {
-      send({ type: "gone" })
-      return
-    }
-    if (decision.kind === "giveUp") {
-      send({ type: "failed", failure: "closed", error })
-      return
-    }
-    timer.schedule(decision.delayMs, () => {
-      send({ type: "retry" })
-      void connect()
+async function connectStream(state: AttachState): Promise<void> {
+  if (state.disposed) return
+  state.replayReady = false
+  const { server, placementId, terminalId } = state.input
+  try {
+    const stream = await server.terminals.attach({
+      placementId,
+      terminalId,
+      cursor: state.cursor,
+      onOpen: () => opened(state),
+      onFrame: (frame) => receiveFrame(state, frame),
+      onClose: (close) => handleClose(state, close),
     })
+    if (state.disposed) return stream.close()
+    state.stream = stream
+  } catch (error) {
+    if (!state.disposed) recover(state, { code: ABNORMAL_CLOSE, reason: asAppError(error, "Terminal attach failed").message })
   }
+}
 
-  const recover = (close: TerminalStreamClose) => {
-    const error = closeError(close)
-    send({ type: "closed", error })
-    decide(error).catch((cause: unknown) => {
-      if (!disposed) send({ type: "failed", failure: "closed", error: asAppError(cause, "Terminal presence check failed") })
-    })
+function createAttachState(input: AttachInput): AttachState {
+  const state: AttachState = {
+    input,
+    queue: createWriteQueue({ write: (chunk, done) => input.backend.write(chunk, done), onOverload: () => overload(state) }),
+    resize: createResizePublisher({
+      backend: input.backend,
+      host: input.host,
+      likelyTui: input.likelyTui,
+      publish: (size) => input.server.terminals.update(input.placementId, input.terminalId, { size }),
+      onPublishFailed: input.onPublishFailed,
+    }),
+    timer: createReconnectTimer(),
+    cursor: 0,
+    replayReady: false,
+    disposed: false,
+    stream: undefined,
   }
+  return state
+}
 
-  const onClose = (close: TerminalStreamClose) => {
-    if (disposed) return
-    stream = undefined
-    if (close.code === 1000) {
-      send({ type: "exited" })
-      return
-    }
-    if (close.code === 1008) {
-      send({ type: "gone" })
-      return
-    }
-    if (close.code === OVERLOAD_CLOSE_CODE) return
-    if (!isRetriableClose(close.code)) {
-      send({ type: "failed", failure: "closed", error: closeError(close) })
-      return
-    }
-    recover(close)
-  }
-
-  const connect = async () => {
-    if (disposed) return
-    replayReady = false
-    try {
-      const opened = await server.terminals.attach({
-        placementId,
-        terminalId,
-        cursor,
-        onOpen: () => {
-          if (disposed) return
-          send({ type: "opened" })
-          resize.onOpen()
-        },
-        onFrame,
-        onClose,
-      })
-      if (disposed) {
-        opened.close()
-        return
-      }
-      stream = opened
-    } catch (error) {
-      if (disposed) return
-      recover({ code: 1006, reason: asAppError(error, "Terminal attach failed").message })
-    }
-  }
-
-  const disposeInput = backend.onData((data) => {
+export function attachTerminal(input: AttachInput): Attachment {
+  const state = createAttachState(input)
+  const disposeInput = input.backend.onData((data) => {
     const filtered = stripTerminalReplies(data)
-    if (filtered) stream?.send(filtered)
+    if (filtered) state.stream?.send(filtered)
   })
-
-  void connect()
-
+  void connectStream(state)
   return {
-    send: (data) => stream?.send(data),
+    send: (data) => state.stream?.send(data),
     retry: () => {
-      if (disposed) return
-      timer.cancel()
-      send({ type: "retry" })
-      void connect()
+      if (state.disposed) return
+      state.timer.cancel()
+      emit(state, { type: "retry" })
+      void connectStream(state)
     },
     dispose: () => {
-      disposed = true
-      timer.cancel()
+      state.disposed = true
+      state.timer.cancel()
       disposeInput()
-      resize.dispose()
-      queue.dispose()
-      stream?.close()
-      stream = undefined
+      state.resize.dispose()
+      state.queue.dispose()
+      state.stream?.close()
+      state.stream = undefined
     },
   }
 }

@@ -218,6 +218,19 @@ export type HarnessInfo = {
   readonly goalMode: "native" | "evaluated" | "none"
 }
 
+export type HarnessModel = {
+  readonly model: ModelChoice
+  readonly name: string
+  readonly connected: boolean
+  readonly efforts: readonly string[]
+}
+
+export type HarnessOptions = {
+  readonly models: readonly HarnessModel[]
+  readonly current?: ModelChoice
+  readonly efforts: readonly string[]
+}
+
 export type Capabilities = {
   readonly principal: Principal
   readonly signedIn: boolean

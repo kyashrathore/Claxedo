@@ -1,10 +1,8 @@
 import { placementId as toPlacementId } from "@/server"
-import type { Json, PaneKind } from "@/shell/types"
+import type { Json, PaneKind } from "@/shell"
 import type { FilePaneState } from "./model"
 import { basename } from "./path"
 import { FilePane } from "./view/file-pane"
-
-export const FILE_PANE_KIND = "file"
 
 function optionalNumber(value: Json | undefined): number | undefined {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined
@@ -30,7 +28,7 @@ function decodeFilePaneState(value: Json): FilePaneState | undefined {
 }
 
 export const filePaneKind: PaneKind<FilePaneState> = {
-  kind: FILE_PANE_KIND,
+  kind: "file",
   title: (state) => basename(state.path),
   icon: "file",
   view: FilePane,

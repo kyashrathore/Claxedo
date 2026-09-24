@@ -87,7 +87,7 @@ export function Composer(props: ComposerProps) {
           onRemove={(id) => composer.store.removeImage(composer.key(), id)}
         />
         <ComposerEditor composer={composer} placeholder={placeholder()} />
-        <ComposerToolbar composer={composer} locked={props.lockedHarness !== undefined} />
+        <ComposerToolbar composer={composer} locked={props.view !== undefined} />
       </form>
     </div>
   )

@@ -16,71 +16,80 @@ export type ResizeCoordinator = {
   dispose(): void
 }
 
+type CoordinatorState = {
+  readonly deps: ResizeCoordinatorDeps
+  timer: number | undefined
+  frame: number | undefined
+  suspended: boolean
+  disposed: boolean
+  pendingWhileSuspended: boolean
+  last: { cols: number; rows: number }
+}
+
+function clearScheduled(state: CoordinatorState): void {
+  if (state.timer !== undefined) window.clearTimeout(state.timer)
+  if (state.frame !== undefined) cancelAnimationFrame(state.frame)
+  state.timer = undefined
+  state.frame = undefined
+}
+
+function settle(state: CoordinatorState): void {
+  clearScheduled(state)
+  if (state.disposed) return
+  if (state.suspended) {
+    state.pendingWhileSuspended = true
+    return
+  }
+  const { width, height } = state.deps.measure()
+  if (width < MIN_CONTAINER_PX || height < MIN_CONTAINER_PX) return
+  state.deps.fit()
+  state.deps.refresh()
+  const next = state.deps.size()
+  if (next.cols === state.last.cols && next.rows === state.last.rows) return
+  state.last = next
+  state.deps.notify(next.cols, next.rows)
+}
+
+function schedule(state: CoordinatorState): void {
+  if (state.disposed) return
+  if (state.timer !== undefined) window.clearTimeout(state.timer)
+  state.timer = window.setTimeout(() => settle(state), SETTLE_MS)
+  state.frame ??= requestAnimationFrame(() => settle(state))
+}
+
 export function createResizeCoordinator(deps: ResizeCoordinatorDeps): ResizeCoordinator {
-  let timer: number | undefined
-  let frame: number | undefined
-  let suspended = false
-  let disposed = false
-  let pendingWhileSuspended = false
-  let last = deps.size()
-
-  const clear = () => {
-    if (timer !== undefined) window.clearTimeout(timer)
-    if (frame !== undefined) cancelAnimationFrame(frame)
-    timer = undefined
-    frame = undefined
+  const state: CoordinatorState = {
+    deps,
+    timer: undefined,
+    frame: undefined,
+    suspended: false,
+    disposed: false,
+    pendingWhileSuspended: false,
+    last: deps.size(),
   }
-
-  const settle = () => {
-    clear()
-    if (disposed) return
-    if (suspended) {
-      pendingWhileSuspended = true
-      return
-    }
-    const { width, height } = deps.measure()
-    if (width < MIN_CONTAINER_PX || height < MIN_CONTAINER_PX) return
-    deps.fit()
-    deps.refresh()
-    const next = deps.size()
-    if (next.cols === last.cols && next.rows === last.rows) return
-    last = next
-    deps.notify(next.cols, next.rows)
-  }
-
-  const schedule = () => {
-    if (disposed) return
-    if (timer !== undefined) window.clearTimeout(timer)
-    timer = window.setTimeout(settle, SETTLE_MS)
-    frame ??= requestAnimationFrame(settle)
-  }
-
   return {
     request() {
-      if (disposed) return
-      if (suspended) {
-        pendingWhileSuspended = true
-        return
-      }
-      schedule()
+      if (state.disposed) return
+      if (state.suspended) state.pendingWhileSuspended = true
+      else schedule(state)
     },
     flush() {
-      if (!disposed) settle()
+      if (!state.disposed) settle(state)
     },
     suspend() {
-      suspended = true
-      if (timer !== undefined || frame !== undefined) pendingWhileSuspended = true
-      clear()
+      state.suspended = true
+      if (state.timer !== undefined || state.frame !== undefined) state.pendingWhileSuspended = true
+      clearScheduled(state)
     },
     resume() {
-      suspended = false
-      if (!pendingWhileSuspended) return
-      pendingWhileSuspended = false
-      schedule()
+      state.suspended = false
+      if (!state.pendingWhileSuspended) return
+      state.pendingWhileSuspended = false
+      schedule(state)
     },
     dispose() {
-      disposed = true
-      clear()
+      state.disposed = true
+      clearScheduled(state)
     },
   }
 }

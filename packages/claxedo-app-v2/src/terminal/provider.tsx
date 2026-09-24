@@ -1,7 +1,8 @@
 import { onCleanup, type JSX, type ParentProps } from "solid-js"
-import { filePaneKind, useActivePlacement } from "@/files"
+import { filePaneKind } from "@/files"
 import { useTranslator } from "@/i18n"
 import { useServer } from "@/server"
+import { useShellRoute } from "@/shell"
 import { useWorkbench } from "@/workbench"
 import { createRendererBudget } from "./backend/renderer-budget"
 import { useNewTerminalCommand } from "./commands"
@@ -22,7 +23,7 @@ export function TerminalProvider(props: ParentProps): JSX.Element {
   )
   onCleanup(cache.dispose)
   const terminals: Terminals = {
-    placementId: useActivePlacement(),
+    placementId: useShellRoute().placementId,
     renderers: createRendererBudget(),
     store: cache.storeFor,
     retain: cache.retain,

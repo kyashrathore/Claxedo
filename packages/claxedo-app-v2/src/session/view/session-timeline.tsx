@@ -4,8 +4,8 @@ import { sessionId } from "@/server"
 import type { SessionView } from "@/session"
 import { sessionPath } from "@/shell"
 import { DataProvider, type TranscriptUserMessage } from "@/transcript"
-import { MessageTimeline, turnActive, type TimelineHost } from "./timeline"
-import { createTimelineScroll } from "./timeline-scroll"
+import { MessageTimeline, type TimelineHost } from "./timeline"
+import type { TimelineScroll } from "./timeline-scroll"
 import { TranscriptKitProviders } from "./transcript-kit"
 
 const EMPTY_DATA = { session: [], session_status: {}, session_diff: {}, message: {}, part: {} }
@@ -19,16 +19,12 @@ export function SessionTimeline(props: {
   readonly view: SessionView
   readonly host: TimelineHost
   readonly active: boolean
+  readonly scroll: TimelineScroll
   readonly onNavigateParent: () => void
 }) {
   const phone = usePhone()
   const users = createMemo(() => userMessages(props.view))
-  const working = () => {
-    const status = props.view.status()
-    return status.kind !== "unknown" && turnActive(status)
-  }
-  const scroll = createTimelineScroll({ view: () => props.view, active: () => props.active, working })
-  const current = () => users().find((message) => message.id === scroll.selected())
+  const current = () => users().find((message) => message.id === props.scroll.selected())
   return (
     <TranscriptKitProviders>
       <DataProvider
@@ -39,7 +35,7 @@ export function SessionTimeline(props: {
       >
         <Show when={props.view.conversation()}>
           <MessageTimeline
-            {...scroll.props}
+            {...props.scroll.props}
             host={props.host}
             active={() => props.active}
             centered={!phone()}
