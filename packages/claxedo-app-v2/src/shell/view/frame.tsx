@@ -1,6 +1,6 @@
 import { Match, Show, Switch, type JSX } from "solid-js"
 import { WorkspaceArea } from "@/panel"
-import { Workbench } from "@/workbench"
+import { useWorkbench, Workbench } from "@/workbench"
 import { useShellLayout } from "../layout"
 import type { RouteParams } from "../routes"
 import type { PageEntry } from "../types"
@@ -31,12 +31,27 @@ function CenterHeader(props: { readonly center: CenterContent; readonly tabs: JS
   )
 }
 
+function PanesRegion(): JSX.Element {
+  const layout = useShellLayout()
+  const workbench = useWorkbench()
+  const railHidden = () => (layout.phone() ? !layout.sidebarShown() : !layout.sidebarPinned())
+  const closeFocused = (paneId: string, contentId: string | null) => {
+    if (railHidden() && contentId) return workbench.closeContent(contentId)
+    workbench.split.close(paneId, { destroyContent: false })
+  }
+  return (
+    <Region name="center">
+      <Workbench onCloseFocusedPane={closeFocused} />
+    </Region>
+  )
+}
+
 function CenterRegion(props: { readonly center: CenterContent; readonly tabs: JSX.Element }): JSX.Element {
   return (
     <>
       <CenterHeader center={props.center} tabs={props.tabs} />
       <div class="shell-center-body">
-        <Show when={props.center.kind === "page" ? props.center : undefined} fallback={<Region name="center"><Workbench /></Region>}>
+        <Show when={props.center.kind === "page" ? props.center : undefined} fallback={<PanesRegion />}>
           {(page) => <PageView page={page().page} params={page().params} />}
         </Show>
       </div>
