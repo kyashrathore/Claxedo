@@ -1,64 +1,58 @@
 import { createSignal, Show, type Component } from "solid-js"
 import type { AppError, Project } from "@/server"
+import { Button, Dialog, DialogBody, DialogFooter, DialogHeader, DialogTitleGroup, useDialog } from "@/ui"
 import { appErrorOf } from "../api"
-import { projectsText } from "../i18n"
+import { useProjectsText, type ProjectsText } from "../i18n"
 import { useProjectCommands } from "../store"
-import { buttonAttrs } from "./button-attrs"
-import { Modal } from "./modal"
 
-function removalMessage(error: AppError): string {
-  return error.class === "conflict" ? `${error.message} ${projectsText("projects.remove.cloudFirst")}` : error.message
+function removalMessage(t: ProjectsText, error: AppError): string {
+  return error.class === "conflict" ? `${error.message} ${t("projects.remove.cloudFirst")}` : error.message
 }
 
-export const RemoveProjectDialog: Component<{
-  project: Project | undefined
-  onClose: () => void
-  onRemoved: (project: Project) => void
-}> = (props) => {
+export const RemoveProjectDialog: Component<{ project: Project; onRemoved: () => void }> = (props) => {
+  const t = useProjectsText()
+  const dialog = useDialog()
   const commands = useProjectCommands()
   const [removing, setRemoving] = createSignal(false)
   const [failure, setFailure] = createSignal<string>()
 
   const remove = async () => {
-    const project = props.project
-    if (!project || removing()) return
+    if (removing()) return
     setRemoving(true)
     setFailure(undefined)
     try {
-      await commands.remove(project.id)
-      props.onRemoved(project)
-      props.onClose()
+      await commands.remove(props.project.id)
+      dialog.close()
+      props.onRemoved()
     } catch (cause) {
-      setFailure(removalMessage(appErrorOf(cause)))
+      setFailure(removalMessage(t, appErrorOf(cause)))
     } finally {
       setRemoving(false)
     }
   }
 
   return (
-    <Modal open={props.project !== undefined} title={projectsText("projects.remove.title")} onClose={props.onClose}>
-      <Show when={props.project}>
-        {(project) => (
-          <div class="flex flex-col gap-4" data-testid="remove-project">
-            <p class="m-0 text-sm">{projectsText("projects.remove.confirm", { name: project().name })}</p>
-            <Show when={failure()}>
-              {(message) => (
-                <p class="projects-alert" role="alert">
-                  {message()}
-                </p>
-              )}
-            </Show>
-            <div class="flex justify-end gap-2">
-              <button type="button" {...buttonAttrs("ghost")} onClick={props.onClose}>
-                {projectsText("projects.cancel")}
-              </button>
-              <button type="button" {...buttonAttrs("danger")} disabled={removing()} onClick={() => void remove()}>
-                {projectsText("projects.remove")}
-              </button>
-            </div>
-          </div>
+    <Dialog>
+      <DialogHeader closeLabel={t("projects.close")}>
+        <DialogTitleGroup title={t("projects.remove.title")} description={t("projects.remove.confirm", { name: props.project.name })} />
+      </DialogHeader>
+      <Show when={failure()}>
+        {(message) => (
+          <DialogBody>
+            <p class="projects-alert m-0" role="alert" data-testid="remove-project-failure">
+              {message()}
+            </p>
+          </DialogBody>
         )}
       </Show>
-    </Modal>
+      <DialogFooter>
+        <Button type="button" variant="ghost" onClick={() => dialog.close()}>
+          {t("projects.cancel")}
+        </Button>
+        <Button type="button" variant="danger" disabled={removing()} onClick={() => void remove()}>
+          {t("projects.remove")}
+        </Button>
+      </DialogFooter>
+    </Dialog>
   )
 }
