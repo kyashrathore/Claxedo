@@ -164,3 +164,8 @@ A **Settings → Projects** section lists the projects and holds their managemen
 ## Orchestrator, 03:05: no time-based "Still working…" hints (COMP-040)
 - v1 shows "Still working…" at 20 s, "taking a while" at 45 s and "unresponsive" at 5 min of a turn. Those are client timers guessing at status.
 - **v2 does not port them.** It shows the harness's real state instead: the health peek's "The agent stopped responding", and `session.status`. That follows the session rule "status is never guessed".
+
+## Owner, 02:15 + bench 02:50: no DOM keep-alive for hidden session panes
+- The owner's rule: if keeping hidden panes mounted doesn't buy much, remove it to prevent memory bloat.
+- **Measured on packaged v2:** unmounting hidden panes costs +8.5 ms per return to a visited session (16 → 24.5 ms median) and saves ~12 MiB of JS heap and ~680 DOM nodes with 8 small sessions open, more on heavy sessions.
+- **Decision:** hidden session, draft and page panes unmount; the data store and timeline snapshots stay. Terminals stay mounted (xterm state).
