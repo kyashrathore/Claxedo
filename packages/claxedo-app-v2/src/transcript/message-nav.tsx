@@ -15,7 +15,7 @@ import {
   splitProps,
 } from "solid-js"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
-import { useI18n } from "@opencode-ai/ui/context/i18n"
+import { useTranscriptI18n } from "./i18n"
 
 export type MessageNavPreview = {
   user?: string
@@ -51,7 +51,7 @@ export function MessageNav<M extends MessageNavMessage>(
     getPreview?: (message: M) => MessageNavPreview
   },
 ) {
-  const i18n = useI18n()
+  const i18n = useTranscriptI18n()
   const [local, others] = splitProps(props, [
     "messages",
     "current",
@@ -83,7 +83,7 @@ export function MessageNav<M extends MessageNavMessage>(
   }
 
   const fallbackLabel = (message: M) =>
-    local.getLabel?.(message) ?? message.summary?.title ?? i18n.t("ui.messageNav.newMessage")
+    local.getLabel?.(message) ?? message.summary?.title ?? i18n.t("transcript.messageNav.newMessage")
 
   const activePreviewMessage = createMemo(() => {
     const id = activePreview()
@@ -260,7 +260,7 @@ export function MessageNav<M extends MessageNavMessage>(
                 >
                   <Show
                     when={local.getLabel?.(message) ?? message.summary?.title}
-                    fallback={i18n.t("ui.messageNav.newMessage")}
+                    fallback={i18n.t("transcript.messageNav.newMessage")}
                   >
                     {local.getLabel?.(message) ?? message.summary?.title}
                   </Show>

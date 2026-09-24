@@ -1,4 +1,4 @@
-import type { UiI18n, UiI18nKey } from "@opencode-ai/ui/context/i18n"
+import type { TranscriptI18n, TranscriptTextKey } from "./i18n"
 import { asArray, asFiniteNumber, asRecord, nonEmptyString } from "@claxedo/helpers/guards"
 import { jsonRecord } from "@claxedo/helpers"
 import { readRecoveryPayloadLine, isRecoveryOutcome, parseRecoveryOutcome, turnStopped } from "@claxedo/agent-runtime-contract"
@@ -13,43 +13,43 @@ export const CLAXEDO_MCP_SERVER = "claxedo"
  * server on the input to prove it addressed this server.
  */
 export const CLAXEDO_TOOL_TITLE_KEYS = {
-  task_list: "ui.claxedoTool.task_list",
-  task_get: "ui.claxedoTool.task_get",
-  task_create: "ui.claxedoTool.task_create",
-  task_edit: "ui.claxedoTool.task_edit",
-  task_start: "ui.claxedoTool.task_start",
-  session_create: "ui.claxedoTool.session_create",
-  sessions_list: "ui.claxedoTool.sessions_list",
-  session_get: "ui.claxedoTool.session_get",
-  session_transcript: "ui.claxedoTool.session_transcript",
-  session_send: "ui.claxedoTool.session_send",
-  session_cancel_turn: "ui.claxedoTool.session_cancel_turn",
-  session_handoff: "ui.claxedoTool.session_handoff",
-  session_rename: "ui.claxedoTool.session_rename",
-  session_delete: "ui.claxedoTool.session_delete",
-  session_changes: "ui.claxedoTool.session_changes",
-  documents_list: "ui.claxedoTool.documents_list",
-  documents_open: "ui.claxedoTool.documents_open",
-  processes: "ui.claxedoTool.processes",
-  process_start: "ui.claxedoTool.process_start",
-  process_stop: "ui.claxedoTool.process_stop",
-  process_logs: "ui.claxedoTool.process_logs",
-  subagent_capabilities: "ui.claxedoTool.subagent_capabilities",
-  create_subagent: "ui.claxedoTool.create_subagent",
-  subagent_status: "ui.claxedoTool.subagent_status",
-  subagent_list: "ui.claxedoTool.subagent_list",
-  subagent_cancel: "ui.claxedoTool.subagent_cancel",
-  sessions_board: "ui.claxedoTool.sessions_board",
-  permission_reply: "ui.claxedoTool.permission_reply",
-  question_reply: "ui.claxedoTool.question_reply",
-  question_reject: "ui.claxedoTool.question_reject",
-  wait_for_attention: "ui.claxedoTool.wait_for_attention",
-  workspaces_list: "ui.claxedoTool.workspaces_list",
-  workspace_status: "ui.claxedoTool.workspace_status",
-  workspace_checkpoint: "ui.claxedoTool.workspace_checkpoint",
-  workspace_restore: "ui.claxedoTool.workspace_restore",
-  workspace_lifecycle: "ui.claxedoTool.workspace_lifecycle",
-} as const satisfies Record<string, UiI18nKey>
+  task_list: "transcript.claxedoTool.task_list",
+  task_get: "transcript.claxedoTool.task_get",
+  task_create: "transcript.claxedoTool.task_create",
+  task_edit: "transcript.claxedoTool.task_edit",
+  task_start: "transcript.claxedoTool.task_start",
+  session_create: "transcript.claxedoTool.session_create",
+  sessions_list: "transcript.claxedoTool.sessions_list",
+  session_get: "transcript.claxedoTool.session_get",
+  session_transcript: "transcript.claxedoTool.session_transcript",
+  session_send: "transcript.claxedoTool.session_send",
+  session_cancel_turn: "transcript.claxedoTool.session_cancel_turn",
+  session_handoff: "transcript.claxedoTool.session_handoff",
+  session_rename: "transcript.claxedoTool.session_rename",
+  session_delete: "transcript.claxedoTool.session_delete",
+  session_changes: "transcript.claxedoTool.session_changes",
+  documents_list: "transcript.claxedoTool.documents_list",
+  documents_open: "transcript.claxedoTool.documents_open",
+  processes: "transcript.claxedoTool.processes",
+  process_start: "transcript.claxedoTool.process_start",
+  process_stop: "transcript.claxedoTool.process_stop",
+  process_logs: "transcript.claxedoTool.process_logs",
+  subagent_capabilities: "transcript.claxedoTool.subagent_capabilities",
+  create_subagent: "transcript.claxedoTool.create_subagent",
+  subagent_status: "transcript.claxedoTool.subagent_status",
+  subagent_list: "transcript.claxedoTool.subagent_list",
+  subagent_cancel: "transcript.claxedoTool.subagent_cancel",
+  sessions_board: "transcript.claxedoTool.sessions_board",
+  permission_reply: "transcript.claxedoTool.permission_reply",
+  question_reply: "transcript.claxedoTool.question_reply",
+  question_reject: "transcript.claxedoTool.question_reject",
+  wait_for_attention: "transcript.claxedoTool.wait_for_attention",
+  workspaces_list: "transcript.claxedoTool.workspaces_list",
+  workspace_status: "transcript.claxedoTool.workspace_status",
+  workspace_checkpoint: "transcript.claxedoTool.workspace_checkpoint",
+  workspace_restore: "transcript.claxedoTool.workspace_restore",
+  workspace_lifecycle: "transcript.claxedoTool.workspace_lifecycle",
+} as const satisfies Record<string, TranscriptTextKey>
 
 export type ClaxedoToolName = keyof typeof CLAXEDO_TOOL_TITLE_KEYS
 
@@ -133,20 +133,20 @@ export type ClaxedoToolViewInput = {
   name: string
   input: Record<string, unknown> | undefined
   output: string | undefined
-  i18n: UiI18n
+  i18n: TranscriptI18n
   /** A session's title when the transcript already knows it, so a link can read as one. */
   sessionTitle?: (sessionId: string) => string | undefined
 }
 
-const TASK_STATUS_KEYS: Record<string, UiI18nKey> = {
-  backlog: "ui.claxedoTool.status.backlog",
-  todo: "ui.claxedoTool.status.todo",
-  doing: "ui.claxedoTool.status.doing",
-  needs_you: "ui.claxedoTool.status.needs_you",
-  done: "ui.claxedoTool.status.done",
+const TASK_STATUS_KEYS: Record<string, TranscriptTextKey> = {
+  backlog: "transcript.claxedoTool.status.backlog",
+  todo: "transcript.claxedoTool.status.todo",
+  doing: "transcript.claxedoTool.status.doing",
+  needs_you: "transcript.claxedoTool.status.needs_you",
+  done: "transcript.claxedoTool.status.done",
 }
 
-export function taskStatusLabel(status: string, i18n: UiI18n) {
+export function taskStatusLabel(status: string, i18n: TranscriptI18n) {
   const key = TASK_STATUS_KEYS[status]
   return key ? i18n.t(key) : status.replaceAll("_", " ")
 }
@@ -154,7 +154,7 @@ export function taskStatusLabel(status: string, i18n: UiI18n) {
 /** Rows a task list shows before folding the rest behind a count. */
 export const TASK_LIST_ROW_CAP = 8
 
-export function claxedoToolTitle(name: string, i18n: UiI18n) {
+export function claxedoToolTitle(name: string, i18n: TranscriptI18n) {
   if (isClaxedoToolName(name)) return i18n.t(CLAXEDO_TOOL_TITLE_KEYS[name])
   return sentence(name)
 }
@@ -166,7 +166,7 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
   const base: ClaxedoToolView = { name, title: claxedoToolTitle(name, i18n), facts: [], rows: [] }
   const session = (id: string | undefined, label?: string): ClaxedoLink | undefined =>
     id ? { kind: "session", id, label: label ?? view.sessionTitle?.(id) ?? clampLabel(id, 28) } : undefined
-  const count = (n: number, one: UiI18nKey, other: UiI18nKey) => `${n} ${i18n.t(n === 1 ? one : other)}`
+  const count = (n: number, one: TranscriptTextKey, other: TranscriptTextKey) => `${n} ${i18n.t(n === 1 ? one : other)}`
 
   switch (name) {
     case "task_create": {
@@ -181,10 +181,10 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
         ...base,
         ...(link ? { link } : { subject: nonEmptyString(args.title) }),
         status,
-        ...(result?.replayed === true ? { note: i18n.t("ui.claxedoTool.note.replayed") } : {}),
+        ...(result?.replayed === true ? { note: i18n.t("transcript.claxedoTool.note.replayed") } : {}),
         facts: [
-          ...(parent ? [cardFact(i18n.t("ui.claxedoTool.fact.parent"), taskLink(parent))] : []),
-          ...linkFact(i18n.t("ui.claxedoTool.fact.createdFrom"), session(nonEmptyString(from?.sessionId))),
+          ...(parent ? [cardFact(i18n.t("transcript.claxedoTool.fact.parent"), taskLink(parent))] : []),
+          ...linkFact(i18n.t("transcript.claxedoTool.fact.createdFrom"), session(nonEmptyString(from?.sessionId))),
         ],
       }
     }
@@ -197,7 +197,7 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
         ...base,
         ...(link ? { link } : { subject: nonEmptyString(args.title) }),
         ...(nonEmptyString(task?.status) ? { status: nonEmptyString(task?.status) } : {}),
-        ...(result?.replayed === true ? { note: i18n.t("ui.claxedoTool.note.replayed") } : {}),
+        ...(result?.replayed === true ? { note: i18n.t("transcript.claxedoTool.note.replayed") } : {}),
         facts: [],
       }
     }
@@ -214,17 +214,17 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
         link: taskLink(nonEmptyString(task?.id) ?? nonEmptyString(args.task), nonEmptyString(task?.key), nonEmptyString(task?.title)),
         ...(preset ? { subject: preset } : {}),
         ...(result?.created === false
-          ? { note: i18n.t("ui.claxedoTool.note.alreadyRunning") }
+          ? { note: i18n.t("transcript.claxedoTool.note.alreadyRunning") }
           : args.continue === true
-            ? { note: i18n.t("ui.claxedoTool.note.continued") }
+            ? { note: i18n.t("transcript.claxedoTool.note.continued") }
             : {}),
         facts: [
-          ...linkFact(i18n.t("ui.claxedoTool.fact.session"), started),
-          ...(preset ? [cardFact(i18n.t("ui.claxedoTool.fact.preset"), preset)] : []),
-          ...(slot ? [cardFact(i18n.t("ui.claxedoTool.fact.slot"), slot)] : []),
-          ...(attempt !== undefined ? [cardFact(i18n.t("ui.claxedoTool.fact.attempt"), String(attempt))] : []),
-          ...(placement ? [cardFact(i18n.t("ui.claxedoTool.fact.placement"), placement)] : []),
-          ...(destination ? [cardFact(i18n.t("ui.claxedoTool.fact.destination"), destination, { mono: true })] : []),
+          ...linkFact(i18n.t("transcript.claxedoTool.fact.session"), started),
+          ...(preset ? [cardFact(i18n.t("transcript.claxedoTool.fact.preset"), preset)] : []),
+          ...(slot ? [cardFact(i18n.t("transcript.claxedoTool.fact.slot"), slot)] : []),
+          ...(attempt !== undefined ? [cardFact(i18n.t("transcript.claxedoTool.fact.attempt"), String(attempt))] : []),
+          ...(placement ? [cardFact(i18n.t("transcript.claxedoTool.fact.placement"), placement)] : []),
+          ...(destination ? [cardFact(i18n.t("transcript.claxedoTool.fact.destination"), destination, { mono: true })] : []),
         ],
       }
     }
@@ -238,11 +238,11 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
         link: taskLink(nonEmptyString(task?.id) ?? nonEmptyString(args.task), nonEmptyString(task?.key), nonEmptyString(task?.title)),
         ...(nonEmptyString(task?.status) ? { status: nonEmptyString(task?.status) } : {}),
         facts: [
-          ...(parent ? [cardFact(i18n.t("ui.claxedoTool.fact.parent"), taskLink(parent))] : []),
+          ...(parent ? [cardFact(i18n.t("transcript.claxedoTool.fact.parent"), taskLink(parent))] : []),
           ...(children
-            ? [cardFact(i18n.t("ui.claxedoTool.fact.subtasks"), count(asFiniteNumber(children.total) ?? 0, "ui.common.subtask.one", "ui.common.subtask.other"))]
+            ? [cardFact(i18n.t("transcript.claxedoTool.fact.subtasks"), count(asFiniteNumber(children.total) ?? 0, "transcript.common.subtask.one", "transcript.common.subtask.other"))]
             : []),
-          ...(result ? [cardFact(i18n.t("ui.claxedoTool.fact.sessions"), count(links.length, "ui.common.session.one", "ui.common.session.other"))] : []),
+          ...(result ? [cardFact(i18n.t("transcript.claxedoTool.fact.sessions"), count(links.length, "transcript.common.session.one", "transcript.common.session.other"))] : []),
         ],
       }
     }
@@ -257,13 +257,13 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
       const hidden = Math.max(0, tasks.length - TASK_LIST_ROW_CAP)
       return {
         ...base,
-        ...(result ? { subject: count(tasks.length, "ui.common.task.one", "ui.common.task.other") } : {}),
+        ...(result ? { subject: count(tasks.length, "transcript.common.task.one", "transcript.common.task.other") } : {}),
         ...(filter ? { status: filter } : {}),
         rows: tasks.slice(0, TASK_LIST_ROW_CAP),
         ...(hidden > 0
-          ? { more: i18n.t("ui.claxedoTool.more", { count: hidden }) }
+          ? { more: i18n.t("transcript.claxedoTool.more", { count: hidden }) }
           : nonEmptyString(result?.nextCursor)
-            ? { more: i18n.t("ui.claxedoTool.moreAvailable") }
+            ? { more: i18n.t("transcript.claxedoTool.moreAvailable") }
             : {}),
       }
     }
@@ -274,10 +274,10 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
       return {
         ...base,
         ...(id ? { link: session(id, title) } : title ? { subject: title } : {}),
-        ...(result?.prompted === true ? { note: i18n.t("ui.claxedoTool.note.prompted") } : {}),
+        ...(result?.prompted === true ? { note: i18n.t("transcript.claxedoTool.note.prompted") } : {}),
         facts: [
-          ...(nonEmptyString(worktree?.name) ? [cardFact(i18n.t("ui.claxedoTool.fact.worktree"), nonEmptyString(worktree?.name)!)] : []),
-          ...(nonEmptyString(worktree?.directory) ? [cardFact(i18n.t("ui.claxedoTool.fact.path"), nonEmptyString(worktree?.directory)!, { mono: true })] : []),
+          ...(nonEmptyString(worktree?.name) ? [cardFact(i18n.t("transcript.claxedoTool.fact.worktree"), nonEmptyString(worktree?.name)!)] : []),
+          ...(nonEmptyString(worktree?.directory) ? [cardFact(i18n.t("transcript.claxedoTool.fact.path"), nonEmptyString(worktree?.directory)!, { mono: true })] : []),
         ],
       }
     }
@@ -287,9 +287,9 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
         ...base,
         link: session(nonEmptyString(args.session)),
         ...(result
-          ? { note: i18n.t(result.admitted === false ? "ui.claxedoTool.note.notAdmitted" : "ui.claxedoTool.note.admitted") }
+          ? { note: i18n.t(result.admitted === false ? "transcript.claxedoTool.note.notAdmitted" : "transcript.claxedoTool.note.admitted") }
           : {}),
-        facts: message ? [cardFact(i18n.t("ui.claxedoTool.fact.message"), clampLabel(message, 160))] : [],
+        facts: message ? [cardFact(i18n.t("transcript.claxedoTool.fact.message"), clampLabel(message, 160))] : [],
       }
     }
     case "session_rename":
@@ -309,11 +309,11 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
       return { ...base, link: session(nonEmptyString(args.session)), ...prose(view.output) }
     case "sessions_list": {
       const sessions = asArray(result?.workspaces).flatMap((row) => asArray(asRecord(row)?.sessions))
-      return { ...base, ...(result ? { subject: count(sessions.length, "ui.common.session.one", "ui.common.session.other") } : {}) }
+      return { ...base, ...(result ? { subject: count(sessions.length, "transcript.common.session.one", "transcript.common.session.other") } : {}) }
     }
     case "documents_list": {
       const documents = asArray(result?.documents)
-      return { ...base, ...(result ? { subject: count(documents.length, "ui.common.document.one", "ui.common.document.other") } : {}) }
+      return { ...base, ...(result ? { subject: count(documents.length, "transcript.common.document.one", "transcript.common.document.other") } : {}) }
     }
     case "documents_open": {
       const path = nonEmptyString(result?.path)
@@ -321,8 +321,8 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
         ...base,
         subject: nonEmptyString(result?.name) ?? nonEmptyString(args.document),
         facts: [
-          ...(path ? [cardFact(i18n.t("ui.claxedoTool.fact.path"), path, { mono: true })] : []),
-          ...linkFact(i18n.t("ui.claxedoTool.fact.session"), session(nonEmptyString(result?.session))),
+          ...(path ? [cardFact(i18n.t("transcript.claxedoTool.fact.path"), path, { mono: true })] : []),
+          ...linkFact(i18n.t("transcript.claxedoTool.fact.session"), session(nonEmptyString(result?.session))),
         ],
       }
     }
@@ -336,7 +336,7 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
         ...(result
           ? {
               note: i18n.t(
-                result.state === "unresolved" ? "ui.claxedoTool.note.stopUnverified" : "ui.claxedoTool.note.stopped",
+                result.state === "unresolved" ? "transcript.claxedoTool.note.stopUnverified" : "transcript.claxedoTool.note.stopped",
               ),
             }
           : {}),
@@ -381,7 +381,7 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
  * An answer the contract cannot parse is not a cancellation this row may read,
  * so it says nothing about the turn instead of guessing from loose fields.
  */
-function noteOf(i18n: UiI18n, key: UiI18nKey | undefined) {
+function noteOf(i18n: TranscriptI18n, key: TranscriptTextKey | undefined) {
   return key ? { note: i18n.t(key) } : {}
 }
 
@@ -390,13 +390,13 @@ function cancellationNote(answer: unknown) {
   const outcome = parseRecoveryOutcome(answer)
   if (outcome.kind === "refused") {
     return outcome.refusal.kind === "generation_conflict"
-      ? ("ui.claxedoTool.note.notRunning" as const)
-      : ("ui.claxedoTool.note.notStopped" as const)
+      ? ("transcript.claxedoTool.note.notRunning" as const)
+      : ("transcript.claxedoTool.note.notStopped" as const)
   }
-  if (!turnStopped(outcome)) return "ui.claxedoTool.note.notStopped" as const
+  if (!turnStopped(outcome)) return "transcript.claxedoTool.note.notStopped" as const
   return outcome.operation.facts.cleanup.value === "verified_clear"
-    ? ("ui.claxedoTool.note.stopped" as const)
-    : ("ui.claxedoTool.note.cleanupUnverified" as const)
+    ? ("transcript.claxedoTool.note.stopped" as const)
+    : ("transcript.claxedoTool.note.cleanupUnverified" as const)
 }
 
 function taskLink(id: string | undefined, key?: string, title?: string): ClaxedoLink {
