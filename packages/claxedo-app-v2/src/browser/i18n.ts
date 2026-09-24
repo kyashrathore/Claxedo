@@ -1,3 +1,5 @@
+import type { Translations } from "@/i18n"
+
 const en = {
   "browser.tab": "Browser",
   "browser.back": "Go back",
@@ -31,6 +33,8 @@ const en = {
   "browser.notice.screenshotAdded": "Screenshot added to the prompt.",
   "browser.notice.cookiesCleared": "Cookies cleared for the agent browser.",
   "browser.notice.pickAdded": "Element added to the prompt.",
+  "browser.notice.needSession": "Open a session to add picks to its prompt.",
+  "browser.notice.actionFailed": "The browser action failed.",
   "browser.empty.title": "No page open",
   "browser.empty.hint": "Enter a URL above to preview it.",
   "browser.web.hint": "Console and element picking need the Claxedo desktop app.",
@@ -41,14 +45,8 @@ const en = {
   "browser.loading": "Loading…",
   "browser.noPlacement": "Open a project to use the browser.",
   "browser.preview.title": "Page preview",
-} as const
-
-export type BrowserStringKey = keyof typeof en
-
-export const browserStrings = { en } as const
-
-export function t(key: BrowserStringKey, params?: Readonly<Record<string, string>>): string {
-  const text: string = en[key]
-  if (!params) return text
-  return text.replace(/\{\{(\w+)\}\}/g, (match, name: string) => params[name] ?? match)
 }
+
+export type BrowserKey = keyof typeof en
+
+export const dictionary = { en } satisfies Translations<BrowserKey>
