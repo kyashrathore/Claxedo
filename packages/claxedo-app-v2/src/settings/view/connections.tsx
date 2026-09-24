@@ -1,18 +1,10 @@
 import { createSignal, For, Show } from "solid-js"
 import { useQuery, useQueryClient } from "@tanstack/solid-query"
+import { useServer, type Connection, type ConnectionScope, type Integration, type IntegrationsCatalog } from "@/server"
 import type { HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
 import { Button, showToast, Tag } from "@/ui"
 import { useTranslator } from "@/i18n"
-import {
-  disconnectConnection,
-  loadAgentConnections,
-  loadConnections,
-  removeAgentConnection,
-  reverifyConnection,
-  type Connection,
-  type ConnectionScope,
-  type Integration,
-} from "../connections"
+import { loadAgentConnections, removeAgentConnection, verifyFailedMessage } from "../connections"
 import { dictionary, type Keys } from "../i18n"
 import { ConnectForm } from "./connect-form"
 import { SettingsEmpty, SettingsGroup, SettingsIntro, SettingsList, SettingsNote } from "./section"
@@ -30,17 +22,20 @@ const reason = (error: unknown) => (error instanceof Error ? error.message : Str
 export function ConnectionsSection() {
   const t = useTranslator(dictionary)
   const queryClient = useQueryClient()
-  const catalog = useQuery(() => ({ queryKey: ["settings", "connections"], queryFn: loadConnections, staleTime: Infinity }))
+  const server = useServer()
+  const catalog = useQuery(() => server.queries.integrations.catalog())
   const agents = useQuery(() => ({ queryKey: ["settings", "agent-connections"], queryFn: loadAgentConnections, staleTime: Infinity }))
-  const [connecting, setConnecting] = createSignal<{ integration: Integration; scope?: ConnectionScope }>()
+  const [connecting, setConnecting] = createSignal<Connecting>()
   const [busy, setBusy] = createSignal<string>()
-  const reload = () => queryClient.invalidateQueries({ queryKey: ["settings", "connections"] })
+  const reverify = async (id: string) => {
+    const outcome = await server.integrations.reverify(id)
+    if (!outcome.ok) throw new Error(verifyFailedMessage(outcome.verifyReason))
+  }
 
   const act = async (id: string, task: () => Promise<void>, done: string) => {
     setBusy(id)
     try {
       await task()
-      await reload()
       showToast({ title: done })
     } catch (error) {
       showToast({ title: t("settings.common.requestFailed"), description: reason(error) })
@@ -59,49 +54,72 @@ export function ConnectionsSection() {
           {(data) => (
             <SettingsList>
               <For each={data().integrations}>
-                {(integration) => {
-                  const connections = () => data().connections.filter((entry) => entry.integrationId === integration.id)
-                  return (
-                    <div class="settings-fields" data-integration={integration.id}>
-                      <div class="settings-inline">
-                        <span class="settings-row-title">{integration.name}</span>
-                        <For each={integration.capabilities}>{(capability) => <Tag>{capability}</Tag>}</For>
-                        <span style={{ flex: 1 }} />
-                        <Button size="small" icon="plus-small" onClick={() => setConnecting({ integration })}>
-                          {connections().length > 0 ? t("settings.connections.add") : t("settings.common.connect")}
-                        </Button>
-                      </div>
-                      <Show when={connecting()?.integration.id === integration.id ? connecting() : undefined}>
-                        {(open) => (
-                          <ConnectForm
-                            integration={integration}
-                            personalScopeEnabled={data().personalScopeEnabled}
-                            initialScope={open().scope}
-                            onConnected={() => { setConnecting(undefined); void reload() }}
-                            onCancel={() => setConnecting(undefined)}
-                          />
-                        )}
-                      </Show>
-                      <For each={connections()}>
-                        {(entry) => (
-                          <ConnectionRow
-                            connection={entry}
-                            personalScope={data().personalScopeEnabled}
-                            busy={busy() === entry.id}
-                            onReconnect={() => setConnecting({ integration, scope: entry.scope })}
-                            onReverify={() => void act(entry.id, () => reverifyConnection(entry.id), `${integration.name} verified`)}
-                            onDisconnect={() => void act(entry.id, () => disconnectConnection(entry.id), `${integration.name} disconnected`)}
-                          />
-                        )}
-                      </For>
-                    </div>
-                  )
-                }}
+                {(integration) => (
+                  <IntegrationBlock
+                    integration={integration}
+                    catalog={data()}
+                    connecting={connecting()}
+                    busy={busy()}
+                    onConnecting={setConnecting}
+                    onReverify={(entry) => void act(entry.id, () => reverify(entry.id), `${integration.name} verified`)}
+                    onDisconnect={(entry) => void act(entry.id, () => server.integrations.disconnect(entry.id), `${integration.name} disconnected`)}
+                  />
+                )}
               </For>
             </SettingsList>
           )}
         </Show>
       </SettingsGroup>
+    </div>
+  )
+}
+
+type Connecting = { integration: Integration; scope?: ConnectionScope }
+
+function IntegrationBlock(props: {
+  readonly integration: Integration
+  readonly catalog: IntegrationsCatalog
+  readonly connecting: Connecting | undefined
+  readonly busy: string | undefined
+  readonly onConnecting: (next: Connecting | undefined) => void
+  readonly onReverify: (entry: Connection) => void
+  readonly onDisconnect: (entry: Connection) => void
+}) {
+  const t = useTranslator(dictionary)
+  const connections = () => props.catalog.connections.filter((entry) => entry.integrationId === props.integration.id)
+  return (
+    <div class="settings-fields" data-integration={props.integration.id}>
+      <div class="settings-inline">
+        <span class="settings-row-title">{props.integration.name}</span>
+        <For each={props.integration.capabilities}>{(capability) => <Tag>{capability}</Tag>}</For>
+        <span style={{ flex: 1 }} />
+        <Button size="small" icon="plus-small" onClick={() => props.onConnecting({ integration: props.integration })}>
+          {connections().length > 0 ? t("settings.connections.add") : t("settings.common.connect")}
+        </Button>
+      </div>
+      <Show when={props.connecting?.integration.id === props.integration.id ? props.connecting : undefined}>
+        {(open) => (
+          <ConnectForm
+            integration={props.integration}
+            personalScopeEnabled={props.catalog.personalScopeEnabled}
+            initialScope={open().scope}
+            onConnected={() => props.onConnecting(undefined)}
+            onCancel={() => props.onConnecting(undefined)}
+          />
+        )}
+      </Show>
+      <For each={connections()}>
+        {(entry) => (
+          <ConnectionRow
+            connection={entry}
+            personalScope={props.catalog.personalScopeEnabled}
+            busy={props.busy === entry.id}
+            onReconnect={() => props.onConnecting({ integration: props.integration, scope: entry.scope })}
+            onReverify={() => props.onReverify(entry)}
+            onDisconnect={() => props.onDisconnect(entry)}
+          />
+        )}
+      </For>
     </div>
   )
 }

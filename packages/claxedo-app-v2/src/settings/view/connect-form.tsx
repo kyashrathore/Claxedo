@@ -1,14 +1,8 @@
 import { createSignal, For, onCleanup, Show } from "solid-js"
 import { Button, Select, TextInput } from "@/ui"
 import { useTranslator } from "@/i18n"
-import {
-  awaitOAuthAttempt,
-  connectMachine,
-  createConnectForm,
-  startConnect,
-  type ConnectionScope,
-  type Integration,
-} from "../connections"
+import { useServer, type ConnectionScope, type Integration, type IntegrationConnectInput } from "@/server"
+import { connectError, connectMachine, createConnectForm, grantError } from "../connections"
 import { dictionary } from "../i18n"
 
 const SCOPES: readonly ConnectionScope[] = ["team", "personal"]
@@ -21,6 +15,7 @@ export function ConnectForm(props: {
   readonly onCancel: () => void
 }) {
   const t = useTranslator(dictionary)
+  const server = useServer()
   const state = connectMachine()
   const [form, setForm] = createConnectForm(props.initialScope ?? "team")
   const [alive, setAlive] = createSignal(true)
@@ -29,19 +24,24 @@ export function ConnectForm(props: {
   const oauthMethod = () => props.integration.methods.includes("oauth")
   const scopeLabel = (scope: ConnectionScope) => t(scope === "personal" ? "settings.connections.scope.personal" : "settings.connections.scope.team")
 
+  const connectInput = (mode: "key" | "oauth", confirmReplace: boolean): IntegrationConnectInput => {
+    const options = { ...(props.personalScopeEnabled ? { scope: form.scope } : {}), ...(confirmReplace ? { confirmReplace: true } : {}) }
+    if (mode === "oauth") return { ...options, method: "oauth" }
+    const fields = Object.fromEntries(props.integration.prompts.filter((prompt) => !prompt.secret).map((prompt) => [prompt.id, form.fields[prompt.id] ?? ""]))
+    return { ...options, method: "key", secret: form.secret, fields }
+  }
   const submit = async (mode: "key" | "oauth", confirmReplace: boolean) => {
     if (mode === "key" && !form.secret.trim()) return state.send({ type: "failed", error: t("settings.connections.secretRequired") })
     state.send({ type: "submit", mode })
-    const result = await startConnect({ integration: props.integration, mode, form, personalScope: props.personalScopeEnabled, confirmReplace })
+    const result = await server.integrations.connect(props.integration.id, connectInput(mode, confirmReplace))
     if (!alive()) return
-    if (result.kind === "exists") return state.send({ type: "exists" })
-    if (result.kind === "failed") return state.send({ type: "failed", error: result.error })
+    if (result.kind === "failed") return state.send(result.reason === "exists" ? { type: "exists" } : { type: "failed", error: connectError(result) })
     if (result.kind === "connected") return finish()
-    state.send({ type: "authorize", url: result.attempt.url, ...(result.attempt.userCode ? { userCode: result.attempt.userCode } : {}) })
-    window.open(result.attempt.url, "_blank", "noopener")
-    const outcome = await awaitOAuthAttempt(result.attempt, alive)
+    state.send({ type: "authorize", url: result.grant.url, ...(result.grant.userCode ? { userCode: result.grant.userCode } : {}) })
+    window.open(result.grant.url, "_blank", "noopener")
+    const outcome = await server.integrations.awaitGrant(result.grant, alive)
     if (outcome.kind === "connected") finish()
-    else if (outcome.kind === "failed") state.send({ type: "failed", error: outcome.error })
+    else if (outcome.kind === "failed") state.send({ type: "failed", error: grantError(outcome.reason) })
   }
   const finish = () => {
     state.send({ type: "connected" })
