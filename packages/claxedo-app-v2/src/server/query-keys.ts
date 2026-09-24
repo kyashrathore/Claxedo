@@ -28,6 +28,7 @@ export const queryKeys = {
   harnessLogins: (server: string) => ["server", server, "harnessLogins"] as const,
   codeHostAll: (server: string) => ["server", server, "codeHost"] as const,
   integrations: (server: string) => ["server", server, "integrations"] as const,
+  agentConnections: (server: string) => ["server", server, "agent-connections"] as const,
   sandboxProviders: (server: string) => ["server", server, "sandboxProviders"] as const,
   providerAuth: (server: string, harness: string) => ["server", server, "providerAuth", harness] as const,
   providerCatalogs: (server: string) => ["server", server, "providerCatalog"] as const,
