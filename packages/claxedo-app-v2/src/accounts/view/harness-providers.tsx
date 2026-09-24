@@ -67,8 +67,8 @@ function CatalogNote(props: { readonly harness: string; readonly machine: string
   const vars = () => ({ harness: harnessDisplayLabel(props.harness), workspace: props.machine })
   return (
     <SettingsEmpty>
-      <Show when={props.error} fallback={<span data-component={`${props.harness}-catalog-empty`}>{t("settings.providers.catalog.empty", vars())}</span>}>
-        {(reason) => <span data-component={`${props.harness}-catalog-error`}>{t("settings.providers.catalog.error", { ...vars(), reason: reason() })}</span>}
+      <Show when={props.error} fallback={<span>{t("settings.providers.catalog.empty", vars())}</span>}>
+        {(reason) => <span>{t("settings.providers.catalog.error", { ...vars(), reason: reason() })}</span>}
       </Show>
     </SettingsEmpty>
   )
@@ -94,7 +94,7 @@ export function HarnessProvidersSection(props: { readonly providers: HarnessProv
     return key ? t(key) : undefined
   }
   return (
-    <div class="flex flex-col gap-3" data-component={`${harness()}-providers-section`}>
+    <div class="flex flex-col gap-3">
       <Show when={catalog().error() || (!catalog().loading() && catalog().resolved() && items().length === 0)}>
         <CatalogNote harness={harness()} machine={props.providers.machine()} error={catalog().error()} />
       </Show>
