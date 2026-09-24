@@ -1,4 +1,4 @@
-import { onCleanup, type Accessor } from "solid-js"
+import { batch, onCleanup, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
 import { machine, type Machine } from "@/lib/machine"
 import { uuid } from "@/lib/uuid"
@@ -22,7 +22,7 @@ export type TerminalStore = {
   readonly rows: () => readonly TerminalRow[]
   readonly row: (terminalId: TerminalId) => TerminalRow | undefined
   readonly create: (launch?: TerminalLaunch) => Promise<Terminal>
-  readonly recreate: (terminalId: TerminalId) => Promise<Terminal>
+  readonly drop: (terminalId: TerminalId) => void
   readonly close: (terminalId: TerminalId) => Promise<void>
   readonly loadAgentStatus: (terminalId: TerminalId) => Promise<void>
 }
@@ -75,11 +75,16 @@ function loadTerminalList(
   rows: TerminalRows,
   load: Machine<TerminalLoad, TerminalLoadEvent>,
 ): void {
+  const known = rows.all().map((row) => row.id)
   load.send({ type: "started" })
   api.list(placementId).then(
     (list) => {
-      for (const row of list) rows.upsert(row)
-      load.send({ type: "loaded" })
+      const listed = new Set(list.map((row) => row.id))
+      batch(() => {
+        for (const terminalId of known) if (!listed.has(terminalId)) rows.remove(terminalId)
+        for (const row of list) rows.upsert(row)
+        load.send({ type: "loaded" })
+      })
     },
     (error: unknown) => {
       const failure = toAppError(error)
@@ -89,37 +94,20 @@ function loadTerminalList(
   )
 }
 
-type TerminalActionsInput = {
-  readonly api: TerminalsApi
-  readonly placementId: PlacementId
-  readonly rows: TerminalRows
-  readonly numberedTitle: () => string
-}
-
-async function recreateTerminal(input: TerminalActionsInput, terminalId: TerminalId): Promise<Terminal> {
-  const previous = input.rows.find(terminalId)
-  const sessionId = previous?.sessionId
-  const terminal = await input.api.create({
-    placementId: input.placementId,
-    title: previous?.title ?? input.numberedTitle(),
-    createRequestId: uuid(),
-    previousTerminalId: terminalId,
-    ...(sessionId ? { sessionId } : {}),
-  })
-  input.rows.remove(terminalId)
-  input.rows.upsert(terminal)
-  return terminal
-}
-
 export function createTerminalStore(input: TerminalStoreInput): TerminalStore {
   const { server, placementId } = input
   const api = terminalsApi(server)
   const rows = createTerminalRows()
   const load = machine<TerminalLoad, TerminalLoadEvent>({ kind: "idle" }, transitionLoad)
-  onCleanup(server.subscribe((event) => applyTerminalEvent(rows, placementId, event)))
+  onCleanup(
+    server.subscribe((event) => {
+      const gap = event.type === "streamGap" && (event.placementId === undefined || event.placementId === placementId)
+      if (gap) loadTerminalList(api, placementId, rows, load)
+      else applyTerminalEvent(rows, placementId, event)
+    }),
+  )
   loadTerminalList(api, placementId, rows, load)
   const numberedTitle = () => input.numberedTitle(nextTerminalNumber(rows.all()))
-  const actions: TerminalActionsInput = { api, placementId, rows, numberedTitle }
   return {
     placementId,
     load: load.state,
@@ -132,9 +120,11 @@ export function createTerminalStore(input: TerminalStoreInput): TerminalStore {
       rows.upsert(terminal)
       return terminal
     },
-    recreate: (terminalId) => recreateTerminal(actions, terminalId),
+    drop: rows.remove,
     close: async (terminalId) => {
-      await api.remove(placementId, terminalId)
+      await api.remove(placementId, terminalId).catch((cause: unknown) => {
+        if (toAppError(cause).class !== "not_found") throw cause
+      })
       rows.remove(terminalId)
     },
     loadAgentStatus: async (terminalId) => {

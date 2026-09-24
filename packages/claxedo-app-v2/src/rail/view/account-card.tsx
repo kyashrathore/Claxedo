@@ -67,7 +67,7 @@ function IdentityMark(props: { readonly view: AccountView; readonly size: "trigg
   )
 }
 
-export function AccountCard(): JSX.Element {
+export function AccountCard(props: { readonly anchor: () => HTMLElement | undefined }): JSX.Element {
   const t = useTranslator(dictionary)
   const auth = useAuth()
   const routing = useShellRoute()
@@ -84,7 +84,7 @@ export function AccountCard(): JSX.Element {
   const signIn = () => settle(auth.signIn({ redirectUrl: window.location.href }), t("rail.account.signInFailed"))
   const signOut = () => settle(auth.signOut(), t("rail.account.signOutFailed"))
   return (
-    <DropdownMenu placement="top-start" gutter={6} sameWidth>
+    <DropdownMenu placement="top-start" gutter={6} sameWidth getAnchorRect={(trigger) => (props.anchor() ?? trigger)?.getBoundingClientRect()}>
       <DropdownMenu.Trigger
         ref={(element: HTMLButtonElement) => (trigger = element)}
         aria-label={view().label}

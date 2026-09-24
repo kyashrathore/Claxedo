@@ -86,7 +86,15 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
   return {
     sessions: createSessionsApi(transport, workspaces, status),
     projects: createProjectsApi(transport, queryClient, workspaces.refresh),
-    placements: { byId: workspaces.byId, list: workspaces.list, createWorktree: createWorktreeCreator(transport, workspaces) },
+    placements: {
+      byId: workspaces.byId,
+      list: workspaces.list,
+      load: async () => {
+        await workspaces.load()
+        return workspaces.list()
+      },
+      createWorktree: createWorktreeCreator(transport, workspaces),
+    },
     terminals: createTerminalsApi(transport, workspaces),
     git: createGitApi(transport, workspaces, queryClient),
     cloud: createCloudApi(transport, workspaces, project),

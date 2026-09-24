@@ -2,7 +2,7 @@ import { createMemo, type Accessor } from "solid-js"
 import type { Panel } from "@/panel"
 import { sessionId as toSessionId, type Server, type SessionRef, type SessionStatus } from "@/server"
 import type { SessionRowView, SessionStatusView, SessionStores, SessionView } from "@/session"
-import { homePath, sessionPath, type ShellRouting } from "@/shell"
+import { sessionPath, type ShellRouting } from "@/shell"
 import type { WorkbenchStore } from "@/workbench"
 import { useTranscriptTypography, type TimelineFocus, type TimelineHost, type TimelineSessionRow, type TimelineSettings } from "./timeline"
 import type { SessionScreenText } from "./text"
@@ -15,7 +15,7 @@ export type TimelineHostInput = {
   readonly workbench: WorkbenchStore
   readonly routing: ShellRouting
   readonly t: SessionScreenText
-  readonly panel: Pick<Panel, "show">
+  readonly panel: Pick<Panel, "show" | "sessionId">
 }
 
 const settings: TimelineSettings = {
@@ -23,7 +23,6 @@ const settings: TimelineSettings = {
   shellToolPartsExpanded: () => false,
   editToolPartsExpanded: () => false,
   timelineShowTurnTokens: () => false,
-  showSessionProgressBar: () => true,
 }
 
 function timelineRows(rows: readonly SessionRowView[]): readonly TimelineSessionRow[] {
@@ -48,11 +47,7 @@ function refFor(view: SessionView, id: string): SessionRef {
 }
 
 function openFocus(input: TimelineHostInput, focus: TimelineFocus): void {
-  if (focus.kind === "subagent") {
-    input.workbench.openRoute({ kind: "session", ...refFor(input.view, focus.sessionId) })
-    return
-  }
-  input.panel.show(focus)
+  input.panel.show(focus.kind === "subagent" ? { ...focus, parentSessionId: input.panel.sessionId() } : focus)
 }
 
 async function findFiles(input: TimelineHostInput, query: string): Promise<readonly string[]> {
@@ -86,14 +81,8 @@ export function createTimelineHost(input: TimelineHostInput): TimelineHost {
     openFocus: (focus) => openFocus(input, focus),
     openSessionInPane: (id) => void input.workbench.openRoute({ kind: "session", ...refFor(view, id) }),
     findFiles: (query) => findFiles(input, query),
-    sessionActions: {
-      rename: (id, title) => server.sessions.rename(refFor(view, id), title),
-      archive: (id) => server.sessions.archive(refFor(view, id), true),
-      remove: (id) => server.sessions.remove(refFor(view, id)),
-    },
     navigation: {
       toSession: (id) => input.routing.navigate(sessionPath(refFor(view, id))),
-      toRoot: () => input.routing.navigate(homePath),
     },
   }
 }

@@ -87,4 +87,13 @@ export const th: Partial<Record<ComposerTextKey, string>> = {
   "prompt.imageMarks.mark": "เครื่องหมาย {{number}}",
   "common.cancel": "ยกเลิก",
   "common.save": "บันทึก",
+  "model.input.text": "ข้อความ",
+  "model.input.image": "รูปภาพ",
+  "model.input.audio": "เสียง",
+  "model.input.video": "วิดีโอ",
+  "model.input.pdf": "PDF",
+  "model.tooltip.reasoning.allowed": "อนุญาตการใช้เหตุผล",
+  "model.tooltip.reasoning.none": "ไม่มีการใช้เหตุผล",
+  "model.tooltip.context": "ขีดจำกัดบริบท {{limit}}",
+  "model.tooltip.allows": "อนุญาต: {{inputs}}",
 }

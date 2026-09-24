@@ -4,16 +4,37 @@ import type { SessionRowView } from "@/session"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { createHoverEngagement } from "../hover-engagement"
 import { dictionary } from "../i18n"
-import { navigationStatus, sessionAge } from "../model"
+import { navigationStatus, sessionAge, type SessionMarker } from "../model"
 import { NavigationRow, NavigationRowStatusGutter } from "./navigation-row"
 import { SessionRowMenu, type SessionRowMenuActions } from "./session-row-menu"
 import "../session-navigation.css"
 
 export type SessionRowProps = SessionRowMenuActions & {
   readonly row: SessionRowView
+  readonly marker: SessionMarker | undefined
+  readonly projectLabel: string
   readonly active: boolean
   readonly now: Accessor<number>
   readonly onActivate: (row: SessionRowView) => void
+  readonly prepareDrag?: () => string | undefined
+}
+
+const MARKER_ICON = { cloud: "cloud", machine: "server", worktree: "worktree" } as const
+
+function MarkerIcon(props: { readonly marker: SessionMarker; readonly projectLabel: string }): JSX.Element {
+  const t = useTranslator(dictionary)
+  const label = () => {
+    const { kind, name, path } = props.marker
+    if (kind === "cloud") return `${t("rail.marker.cloud")} · ${name}`
+    if (kind === "machine") return `${t("rail.marker.machine")} · ${name}`
+    const base = t("rail.marker.worktree", { project: props.projectLabel, name })
+    return path && path !== name ? `${base} · ${path}` : base
+  }
+  return (
+    <span data-icon-interaction="passive" role="img" aria-label={label()} title={label()} class="shrink-0 text-icon-weak-base/80 leading-none">
+      <Icon name={MARKER_ICON[props.marker.kind]} size="small" />
+    </span>
+  )
 }
 
 function ArchiveButton(props: { readonly row: SessionRowView; readonly engaged: boolean; readonly onArchive: (row: SessionRowView) => Promise<void> }): JSX.Element {
@@ -61,12 +82,14 @@ export function SessionRow(props: SessionRowProps): JSX.Element {
       onActivate={() => props.onActivate(props.row)}
       onContextMenu={openMenu}
       engagement={engagement}
+      prepareDrag={props.prepareDrag}
     >
       <NavigationRowStatusGutter status={status()} />
       <div class="relative z-[1] pointer-events-none flex items-center gap-1.5 flex-1 min-w-0 overflow-hidden">
         <span data-slot="session-navigation-title" class="ui-session-navigation-title text-compact leading-tight truncate flex-1 min-w-0">
           {props.row.title}
         </span>
+        <Show when={props.marker}>{(marker) => <MarkerIcon marker={marker()} projectLabel={props.projectLabel} />}</Show>
       </div>
       <div class="size-6 shrink-0 relative z-10 flex items-center justify-end self-stretch">
         <span data-slot="session-navigation-time" class="ui-session-navigation-time flex items-center justify-end text-xs tabular-nums">

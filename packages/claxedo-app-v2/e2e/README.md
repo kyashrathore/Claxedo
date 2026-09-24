@@ -13,7 +13,7 @@ bun run e2e -- --app=v2 e2e/flows/00-harness-smoke.spec.ts
 CLAXEDO_E2E_RED=1 bun run e2e -- --app=v2    # red run: the ACP agent fails every turn, model keys stay on the vendors' hosts
 ```
 
-`--app` picks which package the daemon serves: `v1` is `packages/claxedo-app`, `v2` is this package. Global setup builds `packages/agent-sdk-runtime`'s launch gate child when it is missing (and `@claxedo/helpers` first, which that bundle needs), reserves the daemon port for the run (the first free port in `CLAXEDO_E2E_PORT_RANGE`, default 46100–46199, or `CLAXEDO_E2E_DAEMON_PORT`), then builds the chosen app into its `dist-e2e/` with `VITE_CLAXEDO_SERVER_URL` set to that daemon, the way a deployed bundle knows its server. The build is reused until a source file is newer than the stamp or the port changes (v2 builds in about 1.5 s; v1 in about 14 s, after `bun run build:packages` on a fresh checkout). Everything after `--app` goes to `playwright test`, so `--project`, `--grep`, `--headed`, `--debug` and file paths all work.
+`--app` picks which package the daemon serves: `v1` is `packages/claxedo-app`, `v2` is this package. Global setup builds the workspace dists it and the daemon import when they are missing (`@claxedo/helpers`, `@claxedo/agent-runtime-contract`, whose dist the pinned-Pi step imports, and `packages/agent-sdk-runtime`'s launch gate child), reserves the daemon port for the run (the first free port in `CLAXEDO_E2E_PORT_RANGE`, default 46100–46199, or `CLAXEDO_E2E_DAEMON_PORT`), then builds the chosen app into its `dist-e2e/` with `VITE_CLAXEDO_SERVER_URL` set to that daemon, the way a deployed bundle knows its server. The build is reused until a source file is newer than the stamp or the port changes (v2 builds in about 1.5 s; v1 in about 14 s, after `bun run build:packages` on a fresh checkout). Everything after `--app` goes to `playwright test`, so `--project`, `--grep`, `--headed`, `--debug` and file paths all work.
 
 The runner pins `--workers=1` (the machine is shared). Run one suite at a time per worktree: every run builds the app into the same `dist-e2e/` for its own daemon port. Give every concurrent run on the machine its own `CLAXEDO_E2E_PORT_RANGE`: the app is built for the daemon port, so a run whose daemon port is held by another process fails at start instead of talking to someone else's server. Each spec gets its own daemon on the run's daemon port, its own data directory, scripted model server and ACP script directory, and every process is stopped when the spec ends; a second stack in the same spec takes the next free port. `CLAXEDO_E2E_KEEP_DATA=1` keeps the data directory for diagnosis. When a spec fails, the daemon log is attached to the Playwright report (`e2e/report/`).
 
@@ -144,7 +144,7 @@ Opens the stream the app reads (`/api/wr/events`) and records every frame. `fram
 
 ### `api` (`ClaxedoApi`)
 
-`resolveWorkspace`, `setHarness`, `createSession` (optional `model`), `session`, `sessions`, `deleteSession`, `prompt` (waits for the turn; optional `model`), `promptAsync`, `abort`, `messages`, `status`, `permissions`, `replyPermission`, `questions`, `replyQuestion`, `rejectQuestion`, `providerCatalog(nativeHarness)`, `health`. Every call takes the workspace `directory` first, because that is how today's routes are scoped. A non-2xx answer throws `ApiError` with the status and body. `assistantText(messages)` joins the assistant text parts.
+`resolveWorkspace`, `setHarness`, `defaultModel(directory, nativeHarness)` (the harness's current model, for a session v1 will send in), `createSession` (optional `model`), `session`, `sessions`, `deleteSession`, `prompt` (waits for the turn; optional `model`), `promptAsync`, `abort`, `messages`, `status`, `permissions`, `replyPermission`, `questions`, `replyQuestion`, `rejectQuestion`, `providerCatalog(nativeHarness)`, `health`. Every call takes the workspace `directory` first, because that is how today's routes are scoped. A non-2xx answer throws `ApiError` with the status and body. `assistantText(messages)` joins the assistant text parts.
 
 `createProject(name, directory)` records a project for another folder. A stack with no project opens the onboarding screen at `/`; `makeWorkspace` records one, so a flow that made a workspace starts on the shell.
 
@@ -168,6 +168,29 @@ The stack starts unsigned, so the machine-wide setup (the scripted providers, Pi
 | `makeWorkspace(name, projectName?)` | As `stack.daemon.makeWorkspace`, recorded by the owner (project first, then the signed resolve) |
 
 An `Account` is `{ name, email, password, subject, api, transport }`. Its `api` sends the account's bearer token straight to the daemon, reserves each session before creating it and stamps every prompt with a message id, which a signed server requires.
+
+### Signed stack: next steps
+
+Flows 21, 22, 23 and 36 are on hold (owner, 19:08). What the signed stack lacks for them, and the options:
+
+- v1 shows its "Share session" control only for a signed session it reaches as central, through the relay (`session-header.tsx:78-90`). On this stack v1 reaches the owner's folder workspaces as local, so the control never mounts, and a second account's reads are refused with 403 `relay_actor_unverified`.
+- **A: the relay in the harness.** Start `@claxedo/workspace-relay` on a lane port, set `CLAXEDO_WORKSPACE_RELAY_URL`, the resolver token and the keys, and enroll the box as a host, so its workspaces are central. All harness code; the browser still signs in through `/login`. Largest: it re-derives part of `packages/claxedo-server/src/signed-browser-relay-fixture.mjs`.
+- **B: an embedded-issuer mode in that fixture.** It already runs a relay, a host tunnel and a registered host, but signs browsers in only through the test bypass v2 does not have. Less code, but it edits a server test fixture v1's signed-web specs share.
+- **C: flow 21 first. Ruled out (orchestrator, safety line).** The desktop would sign in to this stack through its own sign-in (system browser, loopback callback), which the embedded issuer serves, with no relay. But the isolated desktop still reaches this Mac's login keychain: in the `desktop` fixture, with `HOME` in the spec's data directory, `safeStorage.isEncryptionAvailable()` answers true, so a sign-in would write its storage key into the owner's real keychain. No desktop sign-in flow runs until the fixture cuts the keychain.
+
+So the recommendation is A.
+
+### Keychain: what the desktop fixture does not isolate
+
+Moving `HOME` hides the login keychain from the `security` tool (it answers 44), but not from Electron's `safeStorage`, which goes through the Security framework and the user's own keychain search list. Any desktop flow that stores a credential through `safeStorage` would touch the owner's keychain. Today no flow does.
+
+### v1 known bugs (flow 31)
+
+Flow 31 is v2's gate for the session list's races. On `--app=v1` it reads v1's rail through the same hooks, and four of its seven cases fail on bugs v1 has; v2 should pass all seven:
+- **A delete lands during a fetch:** a row deleted while its page's read is held comes back when that page lands.
+- **A session is archived while a turn runs:** the archived session stays in the rail while it works.
+- **A thousand sessions:** a row loaded by paging shows no Working mark while the server reports it working.
+- **The app reconnects after missed events:** a session deleted while the streams were held stays listed, and one retitled then keeps its old title.
 
 ### `desktop` (the Electron app)
 
@@ -205,6 +228,7 @@ e2e/
     scripted-providers.ts  routes anthropic and openai to the scripted model server
     model-catalog.ts     the OpenCode catalog snapshot
     launch-gate-child.ts builds the runtime's launch gate child
+    workspace-dists.ts   builds a workspace package's dist when it is missing
     desktop-build.ts     builds packages/claxedo-desktop for the chosen app when stale
     desktop.ts           launches the Electron app isolated, with its scripted world
     scripted-world.ts    prepares a server: scripted providers, Pi by default, the scripted ACP agent

@@ -4,10 +4,12 @@ import { useClock } from "@/lib/clock"
 import { useProjectList } from "@/projects"
 import { useServer } from "@/server"
 import { useSessionStores, type SessionRowView } from "@/session"
-import { draftPath, localSessionPath, sessionPath, useShellRoute } from "@/shell"
-import { useTerminals } from "@/terminal"
+import { draftPath, sessionLinkPath, useShellRoute } from "@/shell"
+import { sessionPaneKind } from "@/session/view"
+import { terminalPaneKind, useTerminals } from "@/terminal"
+import { useWorkbench } from "@/workbench"
 import { dictionary } from "../i18n"
-import { rowsByProject, siblingAfterArchive } from "../model"
+import { rowsByProject, sessionMarker, siblingAfterArchive, type RailRow } from "../model"
 import { projectSection, type ProjectSection } from "../project-sections"
 import { ProjectBlock } from "./project-block"
 import { createSessionActions } from "./session-actions"
@@ -37,12 +39,14 @@ export function ProjectTree(): JSX.Element {
     return route.kind === "terminal" ? route.terminalId : undefined
   }
   const now = useClock()
-  const onThisMachine = (row: SessionRowView) => {
-    const placement = server.placements.byId(row.ref.placementId)
-    const machine = server.capabilities()?.thisMachine?.id
-    return !!placement && !!machine && placement.kind !== "cloud" && placement.machineId === machine
-  }
-  const openSession = (row: SessionRowView) => routing.navigate(onThisMachine(row) ? localSessionPath(row.ref.sessionId) : sessionPath(row.ref))
+  const workbench = useWorkbench()
+  const prepareDrag = (row: RailRow) =>
+    row.kind === "session"
+      ? workbench.open(sessionPaneKind, row.session.ref, false)
+      : workbench.open(terminalPaneKind, { placementId: row.terminal.placementId, terminalId: row.terminal.terminalId }, false)
+  const markerOf = (row: SessionRowView) => sessionMarker(server.placements.byId(row.ref.placementId), server.capabilities()?.thisMachine?.id)
+  const openSession = (row: SessionRowView) =>
+    routing.navigate(sessionLinkPath(row.ref, server.placements.byId(row.ref.placementId), server.capabilities()?.thisMachine?.id))
   const select = (section: ProjectSection) => {
     if (section.placementId) routing.navigate(draftPath(section.placementId))
   }
@@ -77,6 +81,8 @@ export function ProjectTree(): JSX.Element {
                     onSelect={select}
                     onNewTerminal={(section) => section.placementId && terminals.startNew(section.placementId)}
                     onActivate={openSession}
+                    markerOf={markerOf}
+                    prepareDrag={prepareDrag}
                     onRename={actions.onRename}
                     onArchive={(row) => archive(current(), row)}
                     onDelete={actions.onDelete}

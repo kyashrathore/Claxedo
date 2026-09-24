@@ -1,6 +1,6 @@
 import { placementId, sessionId, terminalId } from "@/server"
-import type { PlacementId, SessionId, SessionRef, TerminalId } from "@/server"
-import type { PageEntry, RouteEntry } from "./types"
+import type { MachineId, Placement, PlacementId, SessionId, SessionRef, TerminalId } from "@/server"
+import type { PageEntry, PaneRoute, RouteEntry } from "./types"
 
 export type RouteParams = Readonly<Record<string, string>>
 
@@ -26,6 +26,16 @@ export function sessionPath(ref: Pick<SessionRef, "placementId" | "sessionId">):
 
 export function localSessionPath(session: SessionId): string {
   return `/s/${encodeURIComponent(session)}`
+}
+
+/** A session in a folder or worktree on this machine is linked by its id alone; any other through its workspace. */
+export function sessionLinkPath(
+  ref: Pick<SessionRef, "placementId" | "sessionId">,
+  placement: Placement | undefined,
+  thisMachine: MachineId | undefined,
+): string {
+  const local = !!placement && !!thisMachine && placement.kind !== "cloud" && placement.machineId === thisMachine
+  return local ? localSessionPath(ref.sessionId) : sessionPath(ref)
 }
 
 export function terminalPath(placement: PlacementId, terminal: TerminalId): string {
@@ -106,6 +116,10 @@ export function parseRoute(
 
 export function placementOf(route: ShellRoute): PlacementId | undefined {
   return route.kind === "draft" || route.kind === "session" || route.kind === "terminal" ? route.placementId : undefined
+}
+
+export function panePlacementOf(route: PaneRoute | undefined): PlacementId | undefined {
+  return route && route.kind !== "pageTab" ? route.placementId : undefined
 }
 
 export function sidebarModeOf(route: ShellRoute): "main" | "settings" {

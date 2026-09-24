@@ -1,5 +1,5 @@
 import { formatCompactAge } from "@/lib/relative-time"
-import type { ProjectId } from "@/server"
+import type { MachineId, Placement, ProjectId } from "@/server"
 import type { SessionRowView } from "@/session"
 import type { TerminalItem } from "@/terminal"
 
@@ -52,4 +52,16 @@ export function railRows(terminals: readonly TerminalItem[], sessions: readonly 
     ...terminals.map((terminal): RailRow => ({ kind: "terminal", key: `terminal:${terminal.placementId}:${terminal.terminalId}`, terminal })),
     ...sessions.map((session): RailRow => ({ kind: "session", key: `session:${session.ref.sessionId}`, session })),
   ]
+}
+
+export type SessionMarkerKind = "cloud" | "machine" | "worktree"
+
+export type SessionMarker = { readonly kind: SessionMarkerKind; readonly name: string; readonly path: string | undefined }
+
+export function sessionMarker(placement: Placement | undefined, thisMachine: MachineId | undefined): SessionMarker | undefined {
+  if (!placement) return undefined
+  const name = placement.label
+  if (placement.kind === "cloud") return { kind: "cloud", name, path: undefined }
+  if (placement.machineId && placement.machineId !== thisMachine) return { kind: "machine", name, path: undefined }
+  return placement.kind === "worktree" ? { kind: "worktree", name, path: placement.path } : undefined
 }

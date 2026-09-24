@@ -510,7 +510,7 @@ export function HarnessModelPicker<H>(props: {
             <SectionPanel class="flex min-h-0 flex-1 flex-col">
               <Show
                 when={props.modelError?.()}
-                fallback={<ModelList model={props.model()} onSelect={() => setOpen(false)} />}
+                fallback={<ModelList model={props.model()} tooltips={false} onSelect={() => setOpen(false)} />}
               >
                 {(failure) => (
                   <div data-slot="harness-picker-model-error" class="flex min-h-0 flex-1 flex-col items-start gap-2 px-3 py-4">

@@ -27,6 +27,7 @@ export function createMessageLinks(input: {
       if (message) return seek(message)
       if (!input.view().hasOlder()) return
       await input.view().loadOlder()
+      if (input.view().olderState().kind === "failed") return
     }
   }
   const followHash = () => void seekHash().catch((error: unknown) => console.error("The linked message could not be opened", error))

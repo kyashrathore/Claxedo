@@ -1,6 +1,7 @@
 import { isRuntimeGoalStatus } from "@claxedo/agent-runtime-contract"
 import { ServerError } from "../errors"
 import type { GoalAction, SessionGoal, SessionGoalState } from "../types"
+import { isRecord } from "../../lib/record"
 
 export const GOAL_UNAVAILABLE = "goal_runtime_unavailable"
 
@@ -12,10 +13,6 @@ export const GOAL_ACTION_ROUTES: Readonly<Record<GoalAction, { readonly method: 
 }
 
 const GOAL_ACTIONS: Readonly<Record<string, GoalAction>> = { pause: "pause", resume: "resume", delete: "remove" }
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value)
-}
 
 export function goalFromWire(value: unknown): SessionGoal | undefined {
   if (!isRecord(value)) return undefined

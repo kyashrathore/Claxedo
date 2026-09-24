@@ -1,10 +1,9 @@
 import type { Page } from "@playwright/test"
-import { appChoice, expect, type ClaxedoApi, type Stack } from "../harness"
+import { expect, type ClaxedoApi, type Stack } from "../harness"
 
 type RailRow = { readonly sessionId: string; readonly title: string; readonly status: string }
 type ListItem = { readonly sessionId: string; readonly title: string }
-type Bounds = { readonly through?: string; readonly timeout?: number }
-type CaseRail = { readonly rows: RailRow[]; readonly ids: ReadonlySet<string> }
+type Bounds = { readonly timeout?: number }
 
 export type Checked = {
   readonly stack: Stack
@@ -12,63 +11,38 @@ export type Checked = {
   readonly directory: string
   readonly directories: readonly string[]
   readonly known: Set<string>
+  readonly directoryOf: Map<string, string>
 }
 
-export const PAGE_SIZE = 50
+export const PAGE_SIZE = 5
 const SERVER_PAGE = 100
-const STATUS_COMPARED = appChoice() === "v2"
+const RAIL_STATUS: Readonly<Record<string, string>> = { permission: "Waiting on you", working: "Working" }
+const SERVER_RAIL_STATUS: Readonly<Record<string, string>> = { "Waiting on you": "Waiting on you", Working: "Working", Retrying: "Working" }
 
-export function railLinks(app: Page) {
-  return app.getByRole("region", { name: "Sessions" }).getByRole("link")
+export function railRow(app: Page, title: string) {
+  return app.getByTestId("rail-sidebar-session-row").filter({ has: app.getByRole("button", { name: title, exact: true }) })
 }
 
 export async function railRows(app: Page): Promise<RailRow[]> {
-  if (!STATUS_COMPARED) {
-    return await app.getByTestId("rail-sidebar-session-row").evaluateAll((rows) =>
-      rows.map((row) => ({
-        sessionId: row.getAttribute("data-session-id") ?? "",
-        title: row.querySelector("[data-slot=session-navigation-title]")?.textContent?.trim() ?? "",
-        status: "",
-      })),
-    )
-  }
-  const list = app.getByRole("region", { name: "Sessions" }).getByRole("list")
-  if ((await list.count()) === 0) return []
-  return await list.evaluate(scrollVirtualRows)
+  const rows = await app.getByTestId("rail-sidebar-session-row").evaluateAll((elements) =>
+    elements.map((row) => ({
+      sessionId: row.getAttribute("data-session-id") ?? "",
+      title: row.querySelector("[data-slot=session-navigation-title]")?.textContent?.trim() ?? "",
+      mark: row.querySelector("[data-sidebar-status]")?.getAttribute("data-sidebar-status") ?? "",
+    })),
+  )
+  return rows.map(({ sessionId, title, mark }) => ({ sessionId, title, status: RAIL_STATUS[mark] ?? "" }))
 }
 
-async function scrollVirtualRows(list: Element): Promise<RailRow[]> {
-  const scroller = list.parentElement
-  if (!scroller) return []
-  const painted = () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
-  const seen = new Map<string, RailRow>()
-  scroller.scrollTop = 0
-  await painted()
-  for (;;) {
-    for (const link of list.querySelectorAll("a[data-session-id]")) {
-      const sessionId = link.getAttribute("data-session-id") ?? ""
-      const status = link.querySelector("[role=img]")?.getAttribute("aria-label") ?? ""
-      if (!seen.has(sessionId)) seen.set(sessionId, { sessionId, title: link.textContent?.trim() ?? "", status })
-    }
-    const before = scroller.scrollTop
-    scroller.scrollTop = before + scroller.clientHeight
-    if (scroller.scrollTop === before) break
-    await painted()
-  }
-  scroller.scrollTop = 0
-  return [...seen.values()]
-}
-
-async function listHeight(app: Page): Promise<number> {
-  return await app.getByRole("region", { name: "Sessions" }).getByRole("list").evaluate((list) => list.scrollHeight)
-}
-
-export async function loadEveryPage(app: Page) {
-  const more = app.getByRole("button", { name: "Load more" })
-  while (await more.isVisible()) {
-    const before = await listHeight(app)
-    await more.click()
-    await expect.poll(() => listHeight(app), { message: "a page of rows landed" }).toBeGreaterThan(before)
+export async function loadPagesUntil(app: Page, sessionId: string) {
+  const rows = app.getByTestId("rail-sidebar-session-row")
+  const target = app.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${sessionId}"]`)
+  const more = app.locator('[data-testid="rail-sidebar-session-load-more"]:enabled')
+  while ((await target.count()) === 0) {
+    const before = await rows.count()
+    await expect(more.first(), `a Load more button remains while ${sessionId} is not loaded`).toBeVisible()
+    await more.first().click()
+    await expect.poll(() => rows.count(), { message: "a page of rows landed" }).toBeGreaterThan(before)
   }
 }
 
@@ -82,32 +56,23 @@ async function listPage(stack: Stack, cursor: string | undefined): Promise<{ ite
   return { items: body.items ?? [], nextCursor: body.nextCursor }
 }
 
-async function serverWindow(stack: Stack, through: string | undefined): Promise<ListItem[]> {
+async function serverList(stack: Stack): Promise<ListItem[]> {
   const items: ListItem[] = []
   let cursor: string | undefined
   do {
     const page = await listPage(stack, cursor)
     items.push(...page.items)
     cursor = page.nextCursor
-    const end = through === undefined ? PAGE_SIZE : items.findIndex((item) => item.sessionId === through) + 1
-    if (end > 0 && end <= items.length) return items.slice(0, end)
   } while (cursor)
   return items
 }
 
 export async function caseOrder(checked: Checked): Promise<string[]> {
-  const items: ListItem[] = []
-  let cursor: string | undefined
-  do {
-    const page = await listPage(checked.stack, cursor)
-    items.push(...page.items)
-    cursor = page.nextCursor
-  } while (cursor)
+  const items = await serverList(checked.stack)
   return items.filter((item) => checked.known.has(item.sessionId)).map((item) => item.sessionId)
 }
 
 function statusLabel(wire: string | undefined, waiting: boolean, lastTurnFailed: boolean): string {
-  if (!STATUS_COMPARED) return ""
   if (waiting) return "Waiting on you"
   if (wire === "busy") return "Working"
   if (wire === "retry") return "Retrying"
@@ -137,28 +102,43 @@ async function caseFacts(checked: Checked) {
   }
 }
 
-async function serverRail(checked: Checked, bounds: Bounds = {}): Promise<CaseRail> {
-  const [items, facts] = await Promise.all([serverWindow(checked.stack, bounds.through), caseFacts(checked)])
-  const rows = items
-    .filter((item) => facts.ids.has(item.sessionId))
-    .map((item) => ({ sessionId: item.sessionId, title: item.title, status: facts.statusOf(item.sessionId) }))
-  return { rows, ids: facts.ids }
+function projectOf(checked: Checked, sessionId: string) {
+  return checked.directoryOf.get(sessionId) ?? checked.directory
+}
+
+function loadedPages(rows: number) {
+  return Math.max(PAGE_SIZE, Math.ceil(rows / PAGE_SIZE) * PAGE_SIZE)
+}
+
+async function expectedRail(checked: Checked, visible: readonly RailRow[]) {
+  const [items, facts] = await Promise.all([serverList(checked.stack), caseFacts(checked)])
+  const known = items.filter((item) => facts.ids.has(item.sessionId))
+  return checked.directories.map((directory) => {
+    const shown = visible.filter((row) => facts.ids.has(row.sessionId) && projectOf(checked, row.sessionId) === directory)
+    const expected = known
+      .filter((item) => projectOf(checked, item.sessionId) === directory)
+      .slice(0, loadedPages(shown.length))
+      .map((item) => ({ sessionId: item.sessionId, title: item.title, status: SERVER_RAIL_STATUS[facts.statusOf(item.sessionId)] ?? "" }))
+    const bySession = (left: RailRow, right: RailRow) => left.sessionId.localeCompare(right.sessionId)
+    return { shown: shown.toSorted(bySession), expected: expected.toSorted(bySession) }
+  })
 }
 
 export async function expectRailEqualsServer(app: Page, checked: Checked, bounds: Bounds = {}): Promise<readonly RailRow[]> {
   let matched: readonly RailRow[] = []
   const compare = async () => {
-    const [visible, server] = await Promise.all([railRows(app), serverRail(checked, bounds)])
-    const mine = visible.filter((row) => server.ids.has(row.sessionId))
-    matched = mine
-    return JSON.stringify(mine) === JSON.stringify(server.rows) ? "equal" : JSON.stringify({ visible: mine, server: server.rows }, null, 1)
+    const visible = await railRows(app)
+    const projects = await expectedRail(checked, visible)
+    matched = visible.filter((row) => checked.directories.includes(projectOf(checked, row.sessionId)))
+    const equal = projects.every((project) => JSON.stringify(project.shown) === JSON.stringify(project.expected))
+    return equal ? "equal" : JSON.stringify(projects, null, 1)
   }
-  const message = "the rail's rows equal the server's list and statuses, row by row"
+  const message = "each project's rail rows equal the server's list and statuses for the pages it loaded"
   await expect.poll(compare, { message, timeout: bounds.timeout }).toBe("equal")
   return matched
 }
 
 export async function expectServerStatus(checked: Checked, sessionId: string, label: string) {
   const status = async () => (await caseFacts(checked)).statusOf(sessionId)
-  await expect.poll(status, { message: `the server reports ${label}` }).toBe(STATUS_COMPARED ? label : "")
+  await expect.poll(status, { message: `the server reports ${label}` }).toBe(label)
 }

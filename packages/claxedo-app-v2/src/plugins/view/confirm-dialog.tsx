@@ -1,6 +1,7 @@
 import type { JSX } from "solid-js"
 import type { Confirmation } from "@claxedo/plugin-api"
-import { Button, Dialog, DialogFooter, DialogHeader, DialogTitleGroup, type useDialog } from "@/ui"
+import { Show } from "solid-js"
+import { Button, Dialog, type useDialog } from "@/ui"
 import { usePluginsText } from "../i18n"
 
 type Dialogs = ReturnType<typeof useDialog>
@@ -8,18 +9,20 @@ type Dialogs = ReturnType<typeof useDialog>
 function ConfirmDialog(props: { readonly confirmation: Confirmation; readonly decide: (confirmed: boolean) => void }): JSX.Element {
   const t = usePluginsText()
   return (
-    <Dialog>
-      <DialogHeader closeLabel={t("plugins.close")}>
-        <DialogTitleGroup title={props.confirmation.title} description={props.confirmation.description ?? ""} />
-      </DialogHeader>
-      <DialogFooter>
-        <Button type="button" variant="ghost" onClick={() => props.decide(false)}>
-          {props.confirmation.cancelLabel ?? t("plugins.cancel")}
-        </Button>
-        <Button type="button" variant={props.confirmation.destructive ? "danger" : "neutral"} onClick={() => props.decide(true)}>
-          {props.confirmation.confirmLabel ?? t("plugins.confirm")}
-        </Button>
-      </DialogFooter>
+    <Dialog title={props.confirmation.title} fit>
+      <div class="flex min-w-[340px] max-w-[440px] flex-col gap-4">
+        <Show when={props.confirmation.description}>
+          {(description) => <p class="whitespace-pre-line text-13-regular text-text-weak">{description()}</p>}
+        </Show>
+        <div class="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={() => props.decide(false)}>
+            {props.confirmation.cancelLabel ?? t("plugins.cancel")}
+          </Button>
+          <Button type="button" variant={props.confirmation.destructive ? "danger" : "neutral"} onClick={() => props.decide(true)}>
+            {props.confirmation.confirmLabel ?? t("plugins.confirm")}
+          </Button>
+        </div>
+      </div>
     </Dialog>
   )
 }

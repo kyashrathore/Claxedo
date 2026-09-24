@@ -86,4 +86,11 @@ export const tr: Partial<Record<ComposerTextKey, string>> = {
   "prompt.imageMarks.mark": "işaret {{number}}",
   "common.cancel": "İptal",
   "common.save": "Kaydet",
+  "model.input.text": "metin",
+  "model.input.image": "görsel",
+  "model.input.audio": "ses",
+  "model.tooltip.reasoning.allowed": "Akıl yürütme destekler",
+  "model.tooltip.reasoning.none": "Akıl yürütme yok",
+  "model.tooltip.context": "Bağlam limiti {{limit}}",
+  "model.tooltip.allows": "Kabul eder: {{inputs}}",
 }

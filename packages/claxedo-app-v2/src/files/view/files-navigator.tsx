@@ -1,9 +1,9 @@
-import { createEffect, createMemo, createSignal, onCleanup, Show, type JSX } from "solid-js"
+import { createEffect, createMemo, createSignal, on, onCleanup, Show, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { useTranslator } from "@/i18n"
 import type { PlacementId } from "@/server"
-import { ClaxedoIcon as Icon, DelayedLoading } from "@/ui"
+import { ClaxedoIcon as Icon, DelayedLoading, ScrollView } from "@/ui"
 import { useFilesApi } from "../api"
 import { dictionary } from "../i18n"
 import { buildKinds } from "../model"
@@ -26,30 +26,31 @@ function revealActivePath(input: {
   readonly expand: (dir: string) => void
   readonly scroller: () => HTMLDivElement | undefined
 }): void {
-  createEffect(() => {
-    const path = input.path()
-    if (!path || !input.active()) return
-    const segments = path.split("/").slice(0, -1)
-    for (const [index] of segments.entries()) input.expand(segments.slice(0, index + 1).join("/"))
-    const reveal = () => {
-      const row = input.scroller()?.querySelector(`[data-file-tree-path="${CSS.escape(path)}"]`)
-      row?.scrollIntoView({ block: "nearest" })
-      return !!row
-    }
-    let observer: MutationObserver | undefined
-    const frame = requestAnimationFrame(() => {
-      const scroller = input.scroller()
-      if (reveal() || !scroller) return
-      observer = new MutationObserver(() => {
-        if (reveal()) observer?.disconnect()
+  createEffect(
+    on([input.path, input.active], ([path, active]) => {
+      if (!path || !active) return
+      const segments = path.split("/").slice(0, -1)
+      for (const [index] of segments.entries()) input.expand(segments.slice(0, index + 1).join("/"))
+      const reveal = () => {
+        const row = input.scroller()?.querySelector(`[data-file-tree-path="${CSS.escape(path)}"]`)
+        row?.scrollIntoView({ block: "nearest" })
+        return !!row
+      }
+      let observer: MutationObserver | undefined
+      const frame = requestAnimationFrame(() => {
+        const scroller = input.scroller()
+        if (reveal() || !scroller) return
+        observer = new MutationObserver(() => {
+          if (reveal()) observer?.disconnect()
+        })
+        observer.observe(scroller, { childList: true, subtree: true })
       })
-      observer.observe(scroller, { childList: true, subtree: true })
-    })
-    onCleanup(() => {
-      cancelAnimationFrame(frame)
-      observer?.disconnect()
-    })
-  })
+      onCleanup(() => {
+        cancelAnimationFrame(frame)
+        observer?.disconnect()
+      })
+    }),
+  )
 }
 
 function SearchRow(): JSX.Element {
@@ -112,7 +113,7 @@ export function FilesNavigator(props: FilesNavigatorProps): JSX.Element {
   return (
     <div data-testid="workspace-files-navigator" data-mode="files" class="flex size-full min-h-0 flex-col">
       <SearchRow />
-      <div class="min-h-0 flex-1 overflow-auto" ref={setScroller}>
+      <ScrollView class="min-h-0 flex-1" viewportRef={setScroller}>
         <Show when={searchPending()}>
           <div class="flex h-24 items-center justify-center">
             <DelayedLoading>
@@ -136,7 +137,7 @@ export function FilesNavigator(props: FilesNavigatorProps): JSX.Element {
             onFileClick={(node) => props.onOpenFile(node.path)}
           />
         </div>
-      </div>
+      </ScrollView>
     </div>
   )
 }

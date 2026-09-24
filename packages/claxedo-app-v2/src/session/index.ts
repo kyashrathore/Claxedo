@@ -5,6 +5,7 @@ import type {
   AppError,
   FileDiff,
   GoalAction,
+  PlacementId,
   PromptInput,
   RequestId,
   SessionCreateInput,
@@ -43,9 +44,9 @@ export type LoadMoreState =
 export type SessionList = {
   readonly state: Accessor<SessionListState>
   readonly rows: Accessor<readonly SessionRowView[]>
-  readonly hasMore: Accessor<boolean>
+  readonly hasMore: (placementIds: readonly PlacementId[]) => boolean
   readonly moreState: Accessor<LoadMoreState>
-  readonly loadMore: () => Promise<void>
+  readonly loadMore: (placementIds: readonly PlacementId[]) => Promise<void>
   readonly reload: () => Promise<void>
   readonly create: (input: SessionCreateInput) => Promise<SessionRef>
 }

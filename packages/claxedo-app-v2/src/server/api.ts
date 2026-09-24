@@ -54,6 +54,7 @@ import type {
   QueuedPromptControl,
   SessionCreateInput,
   SessionGoal,
+  SessionListInput,
   SessionPage,
   SessionRef,
   SessionRow,
@@ -65,10 +66,11 @@ import type {
 import type { UsageRequest, UsageSummary } from "./usage-types"
 
 export type SessionsApi = {
-  readonly list: (input: { readonly cursor?: string; readonly limit: number }) => Promise<SessionPage>
+  readonly list: (input: SessionListInput) => Promise<SessionPage>
   readonly snapshot: (ref: SessionRef) => Promise<SessionSnapshot>
   readonly older: (ref: SessionRef, cursor: string) => Promise<TranscriptPage>
   readonly latestTurn: (ref: SessionRef) => Promise<TranscriptPage>
+  readonly turn: (ref: SessionRef, turnId: string) => Promise<TranscriptPage>
   readonly create: (input: SessionCreateInput) => Promise<SessionRow>
   readonly prompt: (ref: SessionRef, input: PromptInput) => Promise<PromptDelivery>
   readonly stop: (ref: SessionRef) => Promise<void>
@@ -93,6 +95,7 @@ export type ProjectsApi = {
 export type PlacementsApi = {
   readonly byId: (id: PlacementId) => Placement | undefined
   readonly list: () => readonly Placement[]
+  readonly load: () => Promise<readonly Placement[]>
   readonly createWorktree: (projectId: ProjectId, input: WorktreeCreateInput) => Promise<Placement>
 }
 

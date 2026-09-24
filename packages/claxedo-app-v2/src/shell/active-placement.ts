@@ -3,6 +3,7 @@ import { useProjectList } from "@/projects"
 import { useServer, type PlacementId } from "@/server"
 import { useWorkbench } from "@/workbench"
 import { useShellRoute } from "./router"
+import { panePlacementOf } from "./routes"
 
 export function useActivePlacement(): () => PlacementId | undefined {
   const server = useServer()
@@ -11,7 +12,7 @@ export function useActivePlacement(): () => PlacementId | undefined {
   const projects = useProjectList()
   const focused = createMemo(() => {
     const content = workbench.selectors.focusedContent()
-    return content ? workbench.routeOf(content)?.placementId : undefined
+    return content ? panePlacementOf(workbench.routeOf(content)) : undefined
   })
   const listed = createMemo(() => {
     const placements = server.placements.list()

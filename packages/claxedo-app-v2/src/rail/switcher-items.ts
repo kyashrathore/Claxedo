@@ -1,6 +1,7 @@
 import { createMemo, type Accessor } from "solid-js"
 import { useProjectList } from "@/projects"
 import { useServer, type ProjectId } from "@/server"
+import { panePlacementOf } from "@/shell"
 import { useSessionStores } from "@/session"
 import { useWorkbench } from "@/workbench"
 import { navigationStatus, type NavigationStatus } from "./model"
@@ -41,7 +42,8 @@ export function useSwitcherItems(): Accessor<readonly SwitcherItem[]> {
       const opened = workbench.content(contentId)
       if (!opened) return []
       const route = workbench.routeOf(contentId)
-      const placement = route ? server.placements.byId(route.placementId) : undefined
+      const placementId = panePlacementOf(route)
+      const placement = placementId ? server.placements.byId(placementId) : undefined
       const row = route?.kind === "session" ? stores.list.rows().find((candidate) => candidate.ref.sessionId === route.sessionId) : undefined
       return [
         {

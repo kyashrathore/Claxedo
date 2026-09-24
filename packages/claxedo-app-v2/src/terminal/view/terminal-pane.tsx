@@ -1,10 +1,9 @@
 import "./terminal-pane.css"
-import { Show, createMemo, createSignal, onCleanup, onMount, type JSX } from "solid-js"
+import { Show, createEffect, createMemo, createSignal, onCleanup, onMount, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { machine } from "@/lib/machine"
-import { toAppError, useServer } from "@/server"
+import { useServer } from "@/server"
 import type { PaneProps } from "@/shell"
-import { showToast } from "@/ui"
 import type { TerminalBackend } from "../backend/types"
 import { useTerminalRuntime } from "../context"
 import { dictionary } from "../i18n"
@@ -30,8 +29,7 @@ export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
   const connection = machine<TerminalConnection, TerminalConnectionEvent>({ kind: "connecting" }, transitionConnection)
   const [backend, setBackend] = createSignal<TerminalBackend>()
   const [focused, setFocused] = createSignal(false)
-  const missing = () => store.load().kind === "ready" && row() === undefined
-  const overlay = () => missing() || connection.state().kind !== "attached"
+  const overlay = () => connection.state().kind !== "attached"
   let host!: HTMLDivElement
   let mount: TerminalMount | undefined
 
@@ -53,18 +51,9 @@ export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
   })
   onCleanup(() => mount?.dispose())
 
-  const recreate = () => {
-    store.recreate(terminalId).then(
-      (terminal) => terminals.open({ placementId, terminalId: terminal.id }, props.paneId),
-      (error: unknown) => {
-        console.error("Terminal could not be recreated", {
-          terminalId,
-          error: toAppError(error),
-        })
-        showToast({ title: t("terminal.createFailed") })
-      },
-    )
-  }
+  createEffect(() => {
+    if (connection.state().kind === "ended") store.drop(terminalId)
+  })
 
   return (
     <section
@@ -93,9 +82,7 @@ export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
           <div class="absolute inset-0 bg-background-base">
             <TerminalStatus
               connection={connection.state()}
-              missing={missing()}
               onRetry={() => mount?.retry()}
-              onRecreate={recreate}
             />
           </div>
         </Show>

@@ -117,11 +117,13 @@ export type AgentRequest =
 export type AgentRequestReply =
   | { readonly kind: "permission"; readonly reply: AgentPermissionReply }
   | { readonly kind: "question"; readonly answers: readonly AgentQuestionAnswer[] }
-  | { readonly kind: "dismiss"; readonly request?: "permission" | "question" }
+  | { readonly kind: "dismiss" }
 
 export type Todo = AgentTodo
 export type FileDiff = AgentSnapshotFileDiff
 export type Subagent = AgentSubagentUpdate
+
+export type SessionListInput = { readonly placementId: PlacementId; readonly cursor?: string; readonly limit: number }
 
 export type SessionPage = { readonly rows: readonly SessionRow[]; readonly nextCursor?: string }
 

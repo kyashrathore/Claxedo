@@ -3,7 +3,7 @@ import { useTranslator } from "@/i18n"
 import type { SessionList, SessionRowView } from "@/session"
 import type { TerminalItem } from "@/terminal"
 import { dictionary } from "../i18n"
-import { railRows, SESSION_GROUP_PAGE_SIZE } from "../model"
+import { railRows, SESSION_GROUP_PAGE_SIZE, type RailRow, type SessionMarker } from "../model"
 import type { ProjectSection } from "../project-sections"
 import { ProjectHeader } from "./project-header"
 import { ProjectRows } from "./project-rows"
@@ -22,13 +22,16 @@ export type ProjectBlockProps = SessionRowMenuActions & {
   readonly onSelect: (section: ProjectSection) => void
   readonly onNewTerminal: (section: ProjectSection) => void
   readonly onActivate: (row: SessionRowView) => void
+  readonly markerOf: (row: SessionRowView) => SessionMarker | undefined
+  readonly prepareDrag: (row: RailRow) => string | undefined
 }
 
 function createProjectPaging(props: ProjectBlockProps) {
   const [visible, setVisible] = createSignal(SESSION_GROUP_PAGE_SIZE)
   const loaded = () => props.list.state().kind === "live" || props.list.state().kind === "rereading"
   const shown = createMemo(() => props.rows.slice(0, visible()))
-  const more = () => props.rows.length > visible() || (props.list.hasMore() && props.rows.length >= visible())
+  const hasMore = () => props.list.hasMore(props.section.placementIds)
+  const more = () => props.rows.length > visible() || (hasMore() && props.rows.length >= visible())
   return {
     shown,
     more,
@@ -41,7 +44,7 @@ function createProjectPaging(props: ProjectBlockProps) {
     loadMore: () => {
       const next = visible() + SESSION_GROUP_PAGE_SIZE
       setVisible(next)
-      if (props.rows.length < next && props.list.hasMore()) void props.list.loadMore()
+      if (props.rows.length < next && hasMore()) void props.list.loadMore(props.section.placementIds)
     },
   }
 }
@@ -75,6 +78,9 @@ function ProjectSessions(
         rows={railRows(props.terminals, props.paging.shown())}
         activeSessionId={props.activeSessionId}
         activeTerminalId={props.activeTerminalId}
+        markerOf={props.markerOf}
+        prepareDrag={props.prepareDrag}
+        projectLabel={props.section.label}
         now={props.now}
         onActivate={props.onActivate}
         onRename={props.onRename}

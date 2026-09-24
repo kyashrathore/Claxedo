@@ -1,9 +1,10 @@
 import { Match, Show, Switch, type JSX } from "solid-js"
 import { WorkspaceArea } from "@/panel"
-import { Workbench } from "@/workbench"
+import { useWorkbench, Workbench } from "@/workbench"
 import { useShellLayout } from "../layout"
 import type { RouteParams } from "../routes"
 import type { PageEntry } from "../types"
+import { pageTabPaneKind } from "./page-tab"
 import { PageView } from "./page-view"
 import { Region } from "./region"
 import { Sidebar, type SidebarProps } from "./sidebar"
@@ -18,16 +19,36 @@ export type ShellFrameProps = {
 }
 
 function CenterHeader(props: { readonly center: CenterContent; readonly tabs: JSX.Element }): JSX.Element {
+  const workbench = useWorkbench()
   const page = () => (props.center.kind === "page" ? props.center.page : undefined)
+  const onPageTab = () => {
+    const focused = workbench.selectors.focusedContent()
+    return focused !== null && workbench.content(focused)?.kind.kind === pageTabPaneKind.kind
+  }
   return (
     <Switch fallback={<WorkbenchHeader global={false} tabs={props.tabs} />}>
       <Match when={page()?.sidebar === "settings"}>
         <SettingsHeader />
       </Match>
-      <Match when={page()}>
+      <Match when={page() || onPageTab()}>
         <WorkbenchHeader global tabs={props.tabs} />
       </Match>
     </Switch>
+  )
+}
+
+function PanesRegion(): JSX.Element {
+  const layout = useShellLayout()
+  const workbench = useWorkbench()
+  const railHidden = () => (layout.phone() ? !layout.sidebarShown() : !layout.sidebarPinned())
+  const closeFocused = (paneId: string, contentId: string | null) => {
+    if (railHidden() && contentId) return workbench.closeContent(contentId)
+    workbench.split.close(paneId, { destroyContent: false })
+  }
+  return (
+    <Region name="center">
+      <Workbench onCloseFocusedPane={closeFocused} />
+    </Region>
   )
 }
 
@@ -36,7 +57,7 @@ function CenterRegion(props: { readonly center: CenterContent; readonly tabs: JS
     <>
       <CenterHeader center={props.center} tabs={props.tabs} />
       <div class="shell-center-body">
-        <Show when={props.center.kind === "page" ? props.center : undefined} fallback={<Region name="center"><Workbench /></Region>}>
+        <Show when={props.center.kind === "page" ? props.center : undefined} fallback={<PanesRegion />}>
           {(page) => <PageView page={page().page} params={page().params} />}
         </Show>
       </div>

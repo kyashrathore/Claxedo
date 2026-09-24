@@ -1,0 +1,18 @@
+scrollTop: 0
+background subagents:
+(none)
+row 0:
+- text: Show the sum. acp-script:math-and-mermaid-0 Build · <time>
+- button "Copy message"
+row 1:
+- button "Worked for 0s"
+row 2:
+- paragraph: "The sum is:"
+- paragraph:
+  - math: a + b = c a+b=c
+- img: A B
+- button "Open diagram full screen"
+- button "Copy"
+- paragraph: That is the diagram.
+- button "Copy response"
+- text: Build · 0s

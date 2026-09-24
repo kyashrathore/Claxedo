@@ -9,13 +9,7 @@ const en = {
   "terminal.connecting": "Connecting to the terminal",
   "terminal.reconnecting": "Reconnecting, attempt {{attempt}} of {{max}}",
   "terminal.retry": "Retry",
-  "terminal.gone.title": "This terminal is no longer running",
-  "terminal.gone.description": "Its history is kept. Start a new shell to continue in the same place.",
-  "terminal.recreate": "Recreate terminal",
-  "terminal.exited.title": "The shell exited",
-  "terminal.exited.code": "Exit code {{code}}",
   "terminal.close": "Close terminal",
-  "terminal.missing": "This terminal no longer exists",
   "terminal.overload":
     "The terminal produced too much output too quickly and was disconnected to keep the app responsive.",
   "terminal.restoreFailed": "The terminal's screen could not be restored.",

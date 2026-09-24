@@ -4,7 +4,7 @@ Owns: the split-pane layout of the center region, the contents shown in its pane
 
 ## Concepts
 
-- **Content**: one open thing, identified by `contentId = <kind>:<encoded state>`, so the same session opened twice is one content. Its `PaneKind` (from the shell's `paneKinds` registry) draws it, titles it, and encodes and decodes its state.
+- **Content**: one open thing, identified by `contentId = <kind>:<encoded state>`, so the same session opened twice is one content. Opening matches a saved content by its re-encoded state too, so a content saved under an older encoding (a draft once carried a `draftId`) is the one that gets focused, not a second tab. A `singleton` kind has one content, `contentId = <kind>`: opening it again replaces that content's state and focuses it. Its `PaneKind` (from the shell's `paneKinds` registry) draws it, titles it, and encodes and decodes its state.
 - **Pane**: a leaf of the split tree that holds one content or nothing.
 - **Layout** (`WorkbenchState`, kept from the old app): panes, the split tree, the alive content ids, their recency, the focused pane, and per-content layout snapshots that `navigation.show` restores when a content that was part of a split is shown again.
 - **Retention**: hidden contents stay mounted, up to `MAX_MOUNTED_CONTENTS` (8), chosen by recency. A hidden slot is `content-visibility: hidden` and `inert`, so it costs no layout and is invisible to the accessibility tree.

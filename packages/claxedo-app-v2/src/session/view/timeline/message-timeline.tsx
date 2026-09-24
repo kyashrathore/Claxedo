@@ -1,5 +1,4 @@
 import { asRecord, readString } from "@/lib/record"
-import { requestErrorMessage } from "./request-error-message"
 import { sameArrayItems, samePartsRecord, sameTurnOutcome } from "./timeline-row-equality"
 import {
   batch,
@@ -21,7 +20,6 @@ import {
 import { createStore } from "solid-js/store"
 import { createVirtualizer, defaultRangeExtractor, elementScroll } from "@tanstack/solid-virtual"
 import { observeElementOffsetReconnectAware, observeElementRectDeduped } from "./message-timeline-observe-offset"
-import { Button } from "@opencode-ai/ui/button"
 import {
   assistantMessageSettled,
   ContextToolGroup,
@@ -37,10 +35,6 @@ import {
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { isPhoneWidth } from "@/lib/viewport"
 import { ClaxedoIcon as Icon } from "@/ui"
-import { ClaxedoIconButton as IconButton } from "@/ui"
-import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
-import { Dialog } from "@opencode-ai/ui/dialog"
-import { InlineInput } from "@opencode-ai/ui/inline-input"
 import { ClaxedoSessionRetry } from "./claxedo-session-retry"
 import { TimelineErrorPresentation } from "./first-turn-recovery-card"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
@@ -56,16 +50,10 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { Binary } from "@opencode-ai/ui/utils/binary"
 import { getFilename } from "@opencode-ai/ui/utils/path"
 import { createTimelineListGestures } from "./message-timeline-list-gestures"
-import { openTitleEditorPatch, resolveTitleSave } from "./session-title-editor"
-import { nextSiblingAfterRemoval, sessionRemovalNavigation } from "./session-archive"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useData } from "@/transcript"
-import { createResizeObserver } from "@solid-primitives/resize-observer"
-import { messageAgentColor } from "./agent-color"
 import { sessionTitle } from "./session-title"
 import { latchSessionTitle, type LatchedSessionTitle } from "./session-title-latch"
 import { createActivePaneProjection } from "./active-pane-projection"
-import { createTimelineWorkingStatus } from "./timeline-working-status"
 import { MessageComment, Timeline } from "./message-timeline.data"
 import { ImageMarkBadge } from "@/lib/image-mark-badge"
 import { TimelineRow, type TimelineRowMap } from "./timeline-row-model"
@@ -164,13 +152,10 @@ const taskDescription = (part: PartType, sessionID: string) => {
   return undefined
 }
 
-const pace = (width: number) => Math.round(Math.max(1200, Math.min(3200, (Math.max(width, 360) * 2000) / 900)))
-
 export function MessageTimeline(props: MessageTimelineProps) {
   const host = props.host
   const data = useData()
   const transcriptStyle = createMemo(() => transcriptTypographyStyle(resolveTranscriptTypography(host.transcriptTypography())))
-  const dialog = useDialog()
   const ownerSessionKey = host.sessionKey()
   const cached = readTimelineMountSnapshot(ownerSessionKey, host.seededTurnFoldableCounts)
   const savedScroll = cached?.scroll
@@ -375,12 +360,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const directorySessionRows = createActivePaneProjection({ active: props.active, read: host.sessions, initial: [] as readonly TimelineSessionRow[] })
   const directorySession = (sessionID: string | undefined) =>
     sessionID ? directorySessionRows().find((session) => session.id === sessionID) : undefined
-  const directoryAgents = createActivePaneProjection({
-    active: props.active,
-    read: () => data.store.agent ?? [],
-    initial: [] as NonNullable<typeof data.store.agent>,
-  })
-  const tint = createMemo(() => messageAgentColor(sessionMessages(), directoryAgents()))
   const hostCallIds = createMemo(() => subagentHostCallIds(sessionConversation()?.parts ?? {}))
   const resolveAmbientSubagents = () => {
     const id = sessionID()
@@ -392,9 +371,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
     read: resolveAmbientSubagents,
     initial: [] as ReturnType<typeof resolveAmbientSubagents>,
   })
-
-  const animatedWorkingStatus = createTimelineWorkingStatus({ active: props.active, working })
-  const workingStatus = () => props.progressBlocked?.() ? "hidden" : animatedWorkingStatus()
 
   const activeMessageID = createMemo(() => {
     const messages = sessionMessages()
@@ -431,14 +407,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const latchedTitle = createMemo<LatchedSessionTitle | undefined>((previous) => latchSessionTitle(previous, { sessionKey: host.sessionKey(), title: titleSource() }))
   const titleLabel = createMemo(() => sessionTitle(latchedTitle()?.title))
   const parentID = createMemo(() => props.parentId)
-  const parent = createMemo(() => {
-    const id = parentID()
-    if (!id) return undefined
-    return directorySession(id)
-  })
   const parentConversation = host.parentConversation
   const parentMessages = createMemo(() => parentConversation()?.messages ?? emptyMessages)
-  const parentTitle = createMemo(() => sessionTitle(parent()?.title) ?? host.t("command.session.new"))
   const getMsgParts = (msgId: string) => sessionConversation()?.parts[msgId] ?? emptyParts
   const getParentMsgParts = (msgId: string) => parentConversation()?.parts[msgId] ?? emptyParts
   const turnPreview = (message: UserMessage) =>
@@ -464,7 +434,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
     if (value) return value
     return host.t("command.session.new")
   })
-  const showHeader = createMemo(() => !props.hideTitle?.() && !!(latchedTitle() || parentID()))
 
   // Per-message inputs are equality-gated so a streaming part event (which
   // produces a new conversation snapshot + a new assistantMessagesByParent Map
@@ -752,9 +721,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
       const offset = virtualizer.getOffsetForIndex(index, "start")
       if (!offset) return false
       const box = root.getBoundingClientRect()
-      const sticky = root.querySelector("[data-session-title]")
-      const stickyBottom = sticky instanceof HTMLElement ? sticky.getBoundingClientRect().bottom : box.top
-      const inset = sessionMessageScrollInset({ rootTop: box.top, stickyBottom })
+      const inset = sessionMessageScrollInset({ rootTop: box.top, stickyBottom: box.top })
       virtualizer.scrollToOffset(Math.max(0, offset[0] - inset), { behavior })
       return true
     })
@@ -857,33 +824,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
     props.setHistoryAnchor?.({ capture: () => {}, restore: () => {} })
   })
 
-  const [title, setTitle] = createStore({
-    draft: "",
-    editing: false,
-    menuOpen: false,
-    pendingRename: false,
-  })
-  let titleRef: HTMLInputElement | undefined
-
-  const [bar, setBar] = createStore({
-    ms: pace(640),
-  })
-
-  let head: HTMLDivElement | undefined
-
-  // Width comes from the observer's `contentRect`: re-reading `head.clientWidth`
-  // forced a layout from inside the callback. Took this stack from 123 layout
-  // invalidations to 0, but the flow's total held at ~522 -- insertion bound.
-  const updateTitleMetrics = (width?: number) => {
-    const measured = width ?? head?.clientWidth ?? 0
-    if (measured <= 0) return
-    const next = pace(measured)
-    if (next === bar.ms) return
-    setBar("ms", next)
-  }
-
-  createResizeObserver(() => head, ({ width }) => updateTitleMetrics(width))
-
   const bindListRoot = (root: HTMLDivElement) => {
     if (root === listRoot()) return
     setListRoot(root)
@@ -902,38 +842,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
     props.setScrollRef(undefined)
   })
 
-  const errorMessage = (err: unknown) => requestErrorMessage(err, host.t("common.requestFailed"))
-
-  const [titlePending, setTitlePending] = createSignal(false)
-  const renameSession = async (id: string, value: string) => {
-    setTitlePending(true)
-    try {
-      await host.sessionActions.rename(id, value)
-      setTitle("editing", false)
-    } catch (err) {
-      showToast({
-        title: host.t("common.requestFailed"),
-        description: errorMessage(err),
-      })
-    } finally {
-      setTitlePending(false)
-    }
-  }
-
-  createEffect(
-    on(
-      host.sessionKey,
-      () =>
-        setTitle({
-          draft: "",
-          editing: false,
-          menuOpen: false,
-          pendingRename: false,
-        }),
-      { defer: true },
-    ),
-  )
-
   createEffect(
     on(
       () => [parentID(), childTaskDescription()] as const,
@@ -945,134 +853,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
       { defer: true },
     ),
   )
-
-  const openTitleEditor = () => {
-    const patch = openTitleEditorPatch({
-      hasSession: !!sessionID(),
-      isChild: !!parentID(),
-      currentTitle: titleLabel(),
-    })
-    if (!patch) return
-    setTitle(patch)
-    requestAnimationFrame(() => {
-      titleRef?.focus()
-      titleRef?.select()
-    })
-  }
-
-  const closeTitleEditor = () => {
-    if (titlePending()) return
-    setTitle("editing", false)
-  }
-
-  const saveTitleEditor = () => {
-    const id = sessionID()
-    if (!id) return
-    if (titlePending()) return
-
-    const decision = resolveTitleSave({ draft: title.draft, currentTitle: titleLabel() })
-    if (!decision.commit) {
-      setTitle("editing", false)
-      return
-    }
-
-    void renameSession(id, decision.title)
-  }
-
-  const navigateAfterSessionRemoval = (sessionID: string, parentID?: string, nextSessionID?: string) => {
-    const nav = sessionRemovalNavigation({
-      currentSessionID: host.sessionId(),
-      targetSessionID: sessionID,
-      parentID,
-      nextSessionID,
-    })
-    if (nav.kind === "parent" || nav.kind === "next") {
-      host.navigation.toSession(nav.sessionID)
-      return
-    }
-    if (nav.kind === "root") host.navigation.toRoot()
-  }
-
-  const archiveSession = async (sessionID: string) => {
-    const session = directorySession(sessionID)
-    if (!session) return
-
-    const nextSession = nextSiblingAfterRemoval(directorySessionRows(), sessionID)
-
-    await host.sessionActions
-      .archive(sessionID)
-      .then(() => {
-        navigateAfterSessionRemoval(sessionID, session.parentId, nextSession?.id)
-      })
-      .catch((err) => {
-        showToast({
-          title: host.t("common.requestFailed"),
-          description: errorMessage(err),
-        })
-      })
-  }
-
-  const deleteSession = async (sessionID: string) => {
-    const session = directorySession(sessionID)
-    if (!session) return false
-
-    const nextSession = nextSiblingAfterRemoval(
-      directorySessionRows().filter((s) => !s.parentId && !s.archived),
-      sessionID,
-    )
-
-    const result = await host.sessionActions
-      .remove(sessionID)
-      .then(() => true)
-      .catch((err) => {
-        showToast({
-          title: host.t("session.delete.failed.title"),
-          description: errorMessage(err),
-        })
-        return false
-      })
-
-    if (!result) return false
-
-    navigateAfterSessionRemoval(sessionID, session.parentId, nextSession?.id)
-    props.onSessionDeleted?.(sessionID)
-    return true
-  }
-
-  const navigateParent = () => {
-    if (!parentID()) return
-    props.onNavigateParent()
-  }
-
-  function DialogDeleteSession(props: { sessionID: string; title?: string }) {
-    const name = createMemo(
-      () => sessionTitle(props.title) ?? host.t("command.session.new"),
-    )
-    const handleDelete = async () => {
-      await deleteSession(props.sessionID)
-      dialog.close()
-    }
-
-    return (
-      <Dialog title={host.t("session.delete.title")} fit>
-        <div class="flex flex-col gap-4">
-          <div class="flex flex-col gap-1">
-            <span class="text-14-regular text-text-strong">
-              {host.t("session.delete.confirm", { name: name() })}
-            </span>
-          </div>
-          <div class="flex justify-end gap-2">
-            <Button variant="ghost" size="large" onClick={() => dialog.close()}>
-              {host.t("common.cancel")}
-            </Button>
-            <Button variant="primary" size="large" onClick={handleDelete}>
-              {host.t("session.delete.button")}
-            </Button>
-          </div>
-        </div>
-      </Dialog>
-    )
-  }
 
   const turnAssistantMessages = (userMessageID: string) =>
     assistantMessagesByParent().get(userMessageID) ?? emptyAssistantMessages
@@ -1700,165 +1480,9 @@ export function MessageTimeline(props: MessageTimelineProps) {
         onPointerMove={listGestures.onPointerMove}
         onScroll={listGestures.onScroll}
         class="relative min-w-0 w-full h-full"
-        style={{
-          ...transcriptStyle(),
-          "--sticky-accordion-top": showHeader() ? "48px" : "0px",
-        }}
+        style={transcriptStyle()}
       >
-        <Show when={showHeader()}>
-          <div
-            ref={(el) => {
-              head = el
-              updateTitleMetrics()
-            }}
-            data-session-title
-            classList={{
-              "sticky top-0 z-30 bg-[linear-gradient(to_bottom,var(--background-stronger)_48px,transparent)]": true,
-              "w-full": true,
-              "pb-4": true,
-              "pl-2 pr-3 md:pl-4 md:pr-3": true,
-              "md:max-w-[var(--transcript-measure,48rem)] md:mx-auto 2xl:max-w-[var(--transcript-measure,880px)]": props.centered,
-            }}
-          >
-            <Show when={workingStatus() !== "hidden" && host.settings.showSessionProgressBar()}>
-              <div data-component="session-progress" class="ui-session-progress" data-state={workingStatus()} aria-hidden="true">
-                <div
-                  data-component="session-progress-bar"
-                  style={{
-                    background: tint() ?? "var(--icon-interactive-base)",
-                    animation: `session-progress-whip ${bar.ms}ms infinite`,
-                  }}
-                />
-              </div>
-            </Show>
-            <div class="h-12 w-full flex items-center justify-between gap-2">
-              <div class="flex items-center gap-1 min-w-0 flex-1 pr-3">
-                <div class="flex items-center min-w-0 grow-1">
-                  <Show when={parentID()}>
-                    <button
-                      type="button"
-                      data-slot="session-title-parent"
-                      class="min-w-0 max-w-[40%] truncate text-14-medium text-text-weak transition-colors hover:text-text-base"
-                      onClick={navigateParent}
-                    >
-                      {parentTitle()}
-                    </button>
-                    <span
-                      data-slot="session-title-separator"
-                      class="px-2 text-14-medium text-text-weak"
-                      aria-hidden="true"
-                    >
-                      /
-                    </span>
-                  </Show>
-                  <Show when={childTitle() || title.editing}>
-                    <Show
-                      when={title.editing}
-                      fallback={
-                        <h1
-                          data-slot="session-title-child"
-                          data-subagent-child-heading={parentID() ? "" : undefined}
-                          tabIndex={parentID() ? -1 : undefined}
-                          class="text-14-medium text-text-strong truncate grow-1 min-w-0"
-                          onDblClick={openTitleEditor}
-                        >
-                          {childTitle()}
-                        </h1>
-                      }
-                    >
-                      <InlineInput
-                        ref={(el) => {
-                          titleRef = el
-                        }}
-                        data-slot="session-title-child"
-                        value={title.draft}
-                        disabled={titlePending()}
-                        class="text-14-medium text-text-strong grow-1 min-w-0 rounded-md pl-1 -ml-1"
-                        style={{ "--inline-input-shadow": "var(--shadow-xs-border-select)" }}
-                        onInput={(event) => setTitle("draft", event.currentTarget.value)}
-                        onKeyDown={(event) => {
-                          event.stopPropagation()
-                          if (event.key === "Enter") {
-                            event.preventDefault()
-                             saveTitleEditor()
-                            return
-                          }
-                          if (event.key === "Escape") {
-                            event.preventDefault()
-                            closeTitleEditor()
-                          }
-                        }}
-                        onBlur={closeTitleEditor}
-                      />
-                    </Show>
-                  </Show>
-                </div>
-              </div>
-              <Show when={sessionID()} keyed>
-                {(id) => (
-                  <div class="shrink-0 flex items-center gap-3">
-                    <Show when={!parentID()}>
-                      <DropdownMenu
-                        gutter={4}
-                        placement="bottom-end"
-                        open={title.menuOpen}
-                        onOpenChange={(open) => {
-                          setTitle("menuOpen", open)
-                          if (open) return
-                        }}
-                      >
-                        <DropdownMenu.Trigger
-                          as={IconButton}
-                          icon="three-dots"
-                          variant="ghost"
-                          class="size-6 rounded-md data-[expanded]:bg-surface-base-active"
-                          aria-label={host.t("common.moreOptions")}
-                          aria-expanded={title.menuOpen}
-                        />
-                        <DropdownMenu.Portal>
-                          <DropdownMenu.Content
-                            style={{ "min-width": "160px" }}
-                            onCloseAutoFocus={(event) => {
-                              if (title.pendingRename) {
-                                event.preventDefault()
-                                setTitle("pendingRename", false)
-                                openTitleEditor()
-                              }
-                            }}
-                          >
-                            <DropdownMenu.Item
-                              onSelect={() => {
-                                setTitle("pendingRename", true)
-                                setTitle("menuOpen", false)
-                              }}
-                            >
-                              <Icon name="edit" size="small" />
-                              <DropdownMenu.ItemLabel>{host.t("common.rename")}</DropdownMenu.ItemLabel>
-                            </DropdownMenu.Item>
-                            <DropdownMenu.Item onSelect={() => void archiveSession(id)}>
-                              <Icon name="archive" size="small" />
-                              <DropdownMenu.ItemLabel>{host.t("common.archive")}</DropdownMenu.ItemLabel>
-                            </DropdownMenu.Item>
-                            <DropdownMenu.Separator />
-                            <DropdownMenu.Item
-                              onSelect={() => dialog.show(() => <DialogDeleteSession sessionID={id} title={titleLabel()} />)}
-                            >
-                              <Icon name="trash" size="small" />
-                              <DropdownMenu.ItemLabel>{host.t("common.delete")}</DropdownMenu.ItemLabel>
-                            </DropdownMenu.Item>
-                          </DropdownMenu.Content>
-                        </DropdownMenu.Portal>
-                      </DropdownMenu>
-                    </Show>
-                  </div>
-                )}
-              </Show>
-            </div>
-          </div>
-        </Show>
-        {/* A surface that hides the title row names the child itself; this heading
-            stays so opening a subagent tab still has somewhere to land focus. */}
-        <Show when={!showHeader() && parentID()}>
+        <Show when={parentID()}>
           <h1 data-subagent-child-heading tabIndex={-1} class="sr-only">
             {childTitle()}
           </h1>

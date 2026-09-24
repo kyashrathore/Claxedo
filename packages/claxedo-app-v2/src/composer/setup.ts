@@ -21,6 +21,7 @@ import { submitBlockReason } from "./submit-block-reason"
 import { registerPromptModeCommands } from "./view/mode-commands"
 import { createComposerPermissionSurface } from "./permission/permission-mode-wiring"
 import { harnessModesUnavailable } from "./role-gate"
+import { createRecovery, type ComposerRecovery } from "./recovery"
 
 export type ComposerProps = {
   readonly composerKey: ComposerKey
@@ -34,6 +35,7 @@ export type ComposerProps = {
   readonly queuedEdit?: { readonly active: () => boolean; readonly cancel: () => void }
   readonly dropZone?: () => HTMLElement | undefined
   readonly collapsible?: boolean
+  readonly registerRecovery?: (recovery: ComposerRecovery) => void
   readonly openImageMarks?: (image: ImagePart, focusIndex?: number) => void
 }
 
@@ -199,6 +201,9 @@ export function createComposer(props: ComposerProps) {
   const reader = createReaderFor({ props, store, key, refs, selection, setDragging, late })
   const controller = createControllerFor({ key, store, refs, working, suggestions, send, commands })
   late.controller = controller
+  props.registerRecovery?.(
+    createRecovery({ store, key, controller: selection.controller, scopeInput: selection.scopeInput, send: () => send.send(), dialog: useDialog(), t }),
+  )
   registerPromptModeCommands({
     register: (scope, options) => commands.register(scope, options),
     mode: () => controller.state.mode,

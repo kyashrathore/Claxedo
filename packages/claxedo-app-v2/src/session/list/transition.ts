@@ -1,5 +1,5 @@
 import { unreachable } from "@/lib/machine"
-import type { FetchedWindow, ListData, ListEvent, ListState, MorePhase, RereadMode, ServerListEvent } from "./model"
+import { hasMorePages, windowRows, type FetchedWindow, type ListData, type ListEvent, type ListState, type MorePhase, type RereadMode, type ServerListEvent } from "./model"
 import {
   closeSession,
   confirmCreate,
@@ -24,8 +24,7 @@ function data(state: ListState): ListData {
     statuses: state.statuses,
     unreported: state.unreported,
     open: state.open,
-    windowTail: state.windowTail,
-    nextCursor: state.nextCursor,
+    windows: state.windows,
   }
 }
 
@@ -62,9 +61,8 @@ const WINDOWING: Record<"extend" | RereadMode, (data: ListData, window: FetchedW
 
 function live(base: ListData, window: FetchedWindow, held: readonly ServerListEvent[], mode: "extend" | RereadMode): ListState {
   const windowed = WINDOWING[mode](base, window)
-  const withStatuses = window.statuses
-    ? statusesRead(windowed, window.statuses, window.sentAt, window.rows)
-    : fillUnreported(windowed, window.rows)
+  const rows = windowRows(window)
+  const withStatuses = window.statuses ? statusesRead(windowed, window.statuses, window.sentAt, rows) : fillUnreported(windowed, rows)
   const replayed = held.reduce(applyServerEvent, withStatuses)
   return { ...replayed, kind: "live", more: MORE_IDLE }
 }
@@ -78,7 +76,7 @@ function fetchEvent(state: ListState, event: ListEvent): ListState | undefined {
     case "fetchFailed":
       return state.kind === "fetching" ? { ...data(state), kind: "failed", error: event.error } : state
     case "moreStarted":
-      if (state.kind !== "live" || state.more.kind === "loading" || state.nextCursor === undefined) return state
+      if (state.kind !== "live" || state.more.kind === "loading" || !hasMorePages(state, event.placementIds)) return state
       return { ...state, more: { kind: "loading", held: [] } }
     case "moreFetched":
       if (state.kind !== "live" || state.more.kind !== "loading") return state

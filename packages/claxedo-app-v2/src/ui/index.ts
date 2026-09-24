@@ -20,18 +20,8 @@ export {
   setReviewToolbarSlot,
 } from "./controls/portal-slot"
 export { Collapsible, type CollapsibleProps } from "./collapsible"
-export {
-  Dialog,
-  DialogBody,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTitleGroup,
-  type DialogProps,
-  type DialogHeaderProps,
-  type DialogTitleGroupProps,
-} from "./dialog"
-export { DialogProvider, useDialog } from "./dialog-host"
+export { Dialog, type DialogProps } from "@opencode-ai/ui/dialog"
+export { DialogProvider, useDialog } from "@opencode-ai/ui/context/dialog"
 export { DiffChanges } from "./diff-changes"
 export { Divider, type DividerProps } from "./divider"
 export { DockShell, DockShellForm, DockTray, type DockTrayProps } from "./dock-surface"
@@ -73,6 +63,7 @@ export { ProviderIcon, providerIconNames, providerIconSprite, type ProviderIconP
 export { RadioGroup, RadioItem, type RadioGroupProps, type RadioItemProps } from "./radio"
 export { ResizeHandle, type ResizeHandleProps } from "./resize-handle"
 export { ScrollView, type ScrollViewProps } from "./scroll-view"
+export { ScrollThumb, type ScrollThumbProps } from "./scroll-thumb"
 export { canScrollKey, isScrollKeyTarget, scrollKey, scrollKeyOwner, type ScrollKeyAction } from "./scroll-view-keys"
 export { type ScrollViewThumbVisibility } from "./scroll-view-thumb"
 export {
@@ -91,6 +82,6 @@ export { Tag, type TagProps } from "./tag"
 export { TextInput, type TextInputProps } from "./text-input"
 export { TextShimmer } from "./text-shimmer"
 export { Textarea, type TextareaProps } from "./textarea"
-export { Toast, showToast, toaster, type ToastAction, type ToastOptions, type ToastRegionProps } from "./toast"
-export { Tooltip, type TooltipProps } from "./tooltip"
+export { Toast, showToast, toaster, type ToastAction, type ToastOptions, type ToastRegionProps, type ToastVariant } from "@opencode-ai/ui/toast"
+export { Tooltip, type TooltipProps } from "@opencode-ai/ui/tooltip"
 export { Wordmark } from "./wordmark"

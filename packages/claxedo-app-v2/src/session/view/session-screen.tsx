@@ -1,11 +1,11 @@
 import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js"
-import { Composer, promptText, sessionComposerKey, useComposerStore } from "@/composer"
+import { Composer, promptText, sessionComposerKey, useComposerStore, type ComposerRecovery } from "@/composer"
 import { usePhone } from "@/lib/viewport"
 import { FailureBoundary, FailureNotice } from "@/lib/failure"
 import { sessionId, useServer, type SessionRef } from "@/server"
 import { usePanel } from "@/panel"
 import { useSessionStores, type SessionView } from "@/session"
-import { sessionPath, useCommands, useShellRoute, type PaneProps } from "@/shell"
+import { draftPath, sessionPath, settingsPath, useCommands, useShellRoute, type PaneProps } from "@/shell"
 import { useDialog } from "@/ui"
 import { useWorkbench } from "@/workbench"
 import { createQueueEdit } from "./queue-edit"
@@ -18,27 +18,42 @@ import { createTimelineScroll } from "./timeline-scroll"
 import { createDockFollow } from "./dock-follow"
 import { SessionTimelineSkeleton } from "./session-timeline-skeleton"
 import { createSessionScreenKeydownHandler } from "./session-screen-keydown"
+import { recoverTurn } from "./turn-recovery-actions"
 import { floatingPeekStep, type FloatingPeekState } from "./floating-peek"
 import { PreviousMessagesRow, turnActive } from "./timeline"
 import "./session-screen.css"
 import "./session-floating.css"
 
-function ChildNotice(props: { readonly t: SessionScreenText; readonly onBack: () => void }) {
+function ChildNotice(props: { readonly t: SessionScreenText; readonly readOnly: boolean; readonly onBack: () => void }) {
   return (
     <div class="w-full px-3 py-2 text-center text-12-regular text-text-weaker">
       <span>{props.t("sessionScreen.child.promptDisabled")} </span>
-      <button
-        type="button"
-        class="text-text-weak underline-offset-2 transition-colors hover:text-text-base hover:underline"
-        onClick={() => props.onBack()}
-      >
-        {props.t("sessionScreen.child.backToParent")}
-      </button>
+      <Show when={!props.readOnly}>
+        <button
+          type="button"
+          class="text-text-weak underline-offset-2 transition-colors hover:text-text-base hover:underline"
+          onClick={() => props.onBack()}
+        >
+          {props.t("sessionScreen.child.backToParent")}
+        </button>
+      </Show>
     </div>
   )
 }
 
-function SessionBody(props: { readonly view: SessionView; readonly paneId: string; readonly active: boolean; readonly floating: boolean }) {
+type SessionSurfaceProps = {
+  readonly sessionRef: SessionRef
+  readonly active: boolean
+  /** A surface that embeds another session to read it, such as a subagent's panel tab: no composer, no keys. */
+  readonly readOnly?: boolean
+}
+
+function SessionBody(props: {
+  readonly view: SessionView
+  readonly active: boolean
+  readonly readOnly: boolean
+  readonly floating: boolean
+}) {
   const t = useSessionScreenText()
   const server = useServer()
   const stores = useSessionStores()
@@ -79,15 +94,24 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
   const composers = useComposerStore()
   let body: HTMLDivElement | undefined
   const draft = () => composers.draft(sessionComposerKey(props.view.ref))
+  const driving = () => props.active && !props.readOnly
   const handleKeyDown = createSessionScreenKeydownHandler({
-    active: () => props.active,
+    active: driving,
     dialogActive: () => dialog.active,
     inputEl: () => body?.querySelector<HTMLDivElement>('[data-component="prompt-input"]') ?? undefined,
     composerBlocked: () => props.view.requests().length > 0 || !!parentId(),
     prompt: { cursor: () => draft().cursor, length: () => promptText(draft().prompt).length },
     markScrollGesture: () => scroll.props.onMarkScrollGesture(),
   })
-  createMessageLinks({ view: () => props.view, users, scroll, active: () => props.active, commands: useCommands(), t })
+  createMessageLinks({ view: () => props.view, users, scroll, active: driving, commands: useCommands(), t })
+  let recovery: ComposerRecovery | undefined
+  const recover = (kind: Parameters<typeof recoverTurn>[2], userMessageId: string) =>
+    recoverTurn(props.view, {
+      startNewSession: () => routing.navigate(draftPath(props.view.ref.placementId)),
+      openProviders: () => routing.navigate(settingsPath("models")),
+      switchModelAndResend: async (text) => recovery?.switchModelAndResend(text),
+      resend: (text) => recovery?.resend(text),
+    }, kind, userMessageId)
   document.addEventListener("keydown", handleKeyDown)
   onCleanup(() => document.removeEventListener("keydown", handleKeyDown))
   const setDock = createDockFollow(scroll)
@@ -110,7 +134,7 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
           data-session-transcript-collapsed={transcriptCollapsed() ? "true" : undefined}
           classList={{ "session-floating-timeline": props.floating, "session-floating-timeline-collapsed": transcriptCollapsed() }}
         >
-          <SessionTimeline view={props.view} host={host} active={props.active} scroll={scroll} onNavigateParent={toParent} />
+          <SessionTimeline view={props.view} host={host} active={props.active} scroll={scroll} onRecover={recover} />
         </div>
       </div>
       <div
@@ -126,7 +150,7 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
               <TodoDockSlot view={props.view} dock={todo} />
             </Show>
             <div class="relative z-10" style={{ "margin-top": `${-lift()}px` }}>
-              <Show when={!parentId()} fallback={<ChildNotice t={t} onBack={toParent} />}>
+              <Show when={!parentId() && !props.readOnly} fallback={<ChildNotice t={t} readOnly={props.readOnly} onBack={toParent} />}>
                 <Composer
                   composerKey={sessionComposerKey(props.view.ref)}
                   placementId={props.view.ref.placementId}
@@ -140,6 +164,7 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
                   queuedEdit={queueEdit.edit}
                   dropZone={() => body}
                   collapsible={props.floating}
+                  registerRecovery={(next) => (recovery = next)}
                 />
               </Show>
             </div>
@@ -150,13 +175,13 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
   )
 }
 
-export function SessionScreen(props: PaneProps<SessionRef>) {
+export function SessionSurface(props: SessionSurfaceProps) {
   const t = useSessionScreenText()
   const phone = usePhone()
   const stores = useSessionStores()
   const panel = usePanel()
-  const floating = () => panel.maximized() && props.active
-  const view = createMemo(() => stores.open(props.state))
+  const floating = () => !props.readOnly && panel.maximized() && props.active
+  const view = createMemo(() => stores.open(props.sessionRef))
   const failure = () => {
     const state = view().state()
     return state.kind === "failed" ? state : undefined
@@ -164,15 +189,18 @@ export function SessionScreen(props: PaneProps<SessionRef>) {
   return (
     <section
       data-component="session-screen"
-      data-session-id={props.state.sessionId}
+      data-session-id={props.sessionRef.sessionId}
       data-session-presentation={floating() ? "floating" : undefined}
       aria-label={view().row()?.title ?? t("sessionScreen.untitled")}
     >
+      <Show when={!props.readOnly && !view().row()?.parentSessionId}>
+        <h1 class="sr-only">{view().row()?.title || t("sessionScreen.untitled")}</h1>
+      </Show>
       <FailureBoundary title={t("sessionScreen.failed")} retryLabel={t("sessionScreen.action.retry")}>
-        <Switch fallback={<SessionBody view={view()} paneId={props.paneId} active={props.active} floating={floating()} />}>
+        <Switch fallback={<SessionBody view={view()} active={props.active} readOnly={props.readOnly === true} floating={floating()} />}>
           <Match when={view().state().kind === "missing"}>
             <div class="flex h-full items-center justify-center px-4 text-text-weak">
-              <div data-testid="session-unavailable" data-session-id={props.state.sessionId}>
+              <div data-testid="session-unavailable" data-session-id={props.sessionRef.sessionId}>
                 Session unavailable
               </div>
             </div>
@@ -188,10 +216,14 @@ export function SessionScreen(props: PaneProps<SessionRef>) {
             )}
           </Match>
           <Match when={view().state().kind === "loading" && !view().conversation()}>
-            <SessionTimelineSkeleton centered={!phone()} sessionId={props.state.sessionId} />
+            <SessionTimelineSkeleton centered={!phone()} sessionId={props.sessionRef.sessionId} />
           </Match>
         </Switch>
       </FailureBoundary>
     </section>
   )
+}
+
+export function SessionScreen(props: PaneProps<SessionRef>) {
+  return <SessionSurface sessionRef={props.state} active={props.active} />
 }

@@ -14,6 +14,7 @@ export type PageEntry = {
   readonly icon: string
   readonly sidebar: "main" | "settings"
   readonly order?: number
+  readonly tab?: boolean
   readonly view: Component<PageProps>
 }
 
@@ -28,9 +29,11 @@ export type PaneRoute =
       readonly sessionId: SessionId
     }
   | { readonly kind: "terminal"; readonly placementId: PlacementId; readonly terminalId: TerminalId }
+  | { readonly kind: "pageTab"; readonly path: string }
 
 export type PaneKind<State = Json> = {
   readonly kind: string
+  readonly singleton?: boolean
   readonly title: (state: State) => string
   readonly icon?: string
   readonly view: Component<PaneProps<State>>
@@ -42,6 +45,7 @@ export type PaneKind<State = Json> = {
 
 export type AnyPaneKind = {
   readonly kind: string
+  readonly singleton?: boolean
   readonly title: (state: never) => string
   readonly icon?: string
   readonly view: Component<PaneProps<never>>

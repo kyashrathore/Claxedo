@@ -159,7 +159,16 @@ These pass: typecheck, adapter-boundary, no-directory-identity, access-boundary,
   - At the swap, move the v1 kit components v2 actually uses into `src/ui`, delete v2's duplicates, and drop both kit dependencies.
   - Until then, `packages/ui` can't change, because today's app shares it.
 
-**Repo gate:** `bun run test:architecture-ratchets` gives 12 pass, 1 fail. The agent-plugins retirement ratchet flags three retired tokens in `packages/claxedo-app-v2/e2e/corpus/seeds/transcript-lab-fixture.json`, and lane transcript was fixing it at the stop.
+**Repo gates** (checked 23:20):
+- **`bun run test:architecture-ratchets`: the retirement and product-boundary steps pass.**
+  - The transcript seed no longer names retired contracts.
+  - The local-server closure ceiling rose to exactly 73/30 source and 102/31 runtime, for the daemon's live plugins; `verify:closure` passes in full.
+- **The helpers step fails, with 4,390 findings.**
+  - About 3,200 are in `src/legacy`, and nearly all the rest pair v2's copies with v1's originals.
+  - They clear when `src/legacy` is deleted and v1 goes at the swap.
+  - The 8 real ones in live v2, local `isRecord` copies, are fixed (3e2ea6eb3a).
+
+**One kit, progress:** toasts (876dad469b) and Tooltip (54257ea3ec) are now the kit's, with v2's copies deleted. Dialog and Button are next, one surface per commit.
 
 ### 4. Less LOC
 
@@ -253,6 +262,20 @@ At 19:08 the owner said: finish in-progress work; start no new work.
 - **Editing files with Pierre.** The owner asked for it, and no server write route exists yet.
 - **Flows not yet written:** 17–25, 28, 32, 34–36. The signed flows need the self-hosted Node signed fixture.
 - **Stopped lanes with WIP:** live plugins, hosted projects on D1, the checks lane.
+
+## Deletion candidates
+
+**The dead revert path.** No harness declares `revert`, v2 passes no `actions` to MessageTimeline, and v1 never renders these (DECISIONS 23:55). Delete the whole list together, or bring it back together with a harness that declares revert. Line numbers are as of 27781bb17e.
+- `src/transcript/message-part.tsx`:
+  - 205-211: `UserActions.revert` and `fork`. `openAttachment` in the same type is live and stays.
+  - 1213-1224: the `revert()` handler.
+  - 1329-1344: the "Revert message" button.
+- `src/session/view/timeline/message-timeline.tsx`: 1185, 1289-1296 (`undoTurn`), 1303.
+- `src/session/view/timeline/message-timeline-turn-rows.tsx`: 87, 99-105 and 119-133 (the "Undo" button).
+- `src/session/view/timeline/message-timeline-props.ts:9` and `timeline-user-message.tsx:10,16`: the `actions` prop.
+- The i18n keys `ui.message.revertMessage` and `transcript.message.revertMessage`. Check dynamic key readers first.
+
+**`src/legacy`,** 153k lines: v1's copy, the porting source. Delete it when nothing is left to port.
 
 ## Next steps, in order
 

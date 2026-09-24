@@ -1,3 +1,13 @@
+:root {
+  --terminal-scrollbar-thumb: #d8d8d8;
+  --terminal-scrollbar-thumb-active: #ababab;
+}
+
+html[data-color-scheme="dark"] {
+  --terminal-scrollbar-thumb: #282828;
+  --terminal-scrollbar-thumb-active: #5c5c5c;
+}
+
 .xterm {
   height: 100%;
   width: 100%;
@@ -26,11 +36,11 @@
 .xterm .xterm-scrollable-element > .xterm-scrollbar > .xterm-slider {
   width: 4px !important;
   left: 1px !important;
-  border-radius: var(--radius-pill) !important;
-  background: var(--border-weak-base) !important;
+  border-radius: var(--radius-3) !important;
+  background: var(--terminal-scrollbar-thumb) !important;
 }
 
 .xterm .xterm-scrollable-element > .xterm-scrollbar > .xterm-slider:hover,
 .xterm .xterm-scrollable-element > .xterm-scrollbar > .xterm-slider.xterm-active {
-  background: var(--border-strong-base) !important;
+  background: var(--terminal-scrollbar-thumb-active) !important;
 }

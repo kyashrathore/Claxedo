@@ -6,6 +6,7 @@ import type { TranscriptConversation } from "@/transcript"
 import { createTranscriptContext, type TranscriptContext, type TranscriptDeps } from "./context"
 import { NO_PARTS, lastUserMessageId } from "./conversation"
 import { applyServerEvent } from "./events"
+import { settleTurn } from "./settle"
 import { isPendingMessage, searchById } from "./merge"
 import { isReading, type SessionPhase } from "./model"
 import { loadOlder } from "./older"
@@ -86,7 +87,10 @@ export function createSessionTranscript(server: Server, ref: SessionRef, deps: T
   void context.subagents.read()
   return {
     ...sessionView(context),
-    apply: (event) => applyServerEvent(context, event),
+    apply: (event) => {
+      applyServerEvent(context, event)
+      if (event.type === "statusChanged" && event.status.kind === "idle") void settleTurn(context)
+    },
     gap: () => {
       void readSnapshot(context)
       void context.queue.reread()

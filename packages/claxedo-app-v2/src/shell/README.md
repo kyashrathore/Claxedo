@@ -15,7 +15,7 @@ Owns: the app frame and nothing a feature knows about. Three regions and their h
 
 ## Routes (`routes.ts`)
 
-Today's app's shapes, id-only: `/` (home), `/w/:placementId/session` (the placement's new-session draft), `/w/:placementId/session/:sessionId`, `/s/:sessionId` (a session on this machine, as today's rail links it; the router resolves its placement through the resolver RouteSync registers from the session list, and until then the route is `localSession`), `/w/:placementId/terminal/:terminalId`, `/settings/:section?`, each page's own `path`, and the `routes` registry for full-screen screens outside the shell (auth, onboarding) which match first. `RouteSync` opens the draft, session or terminal the URL names in the workbench (through the pane kinds' `fromRoute`) and mirrors the focused pane back into the URL with `replace` (through `toRoute`), unless the URL already names that session, so the URL is the one home of the current placement: `useShellRoute().placementId()`.
+Today's app's shapes, id-only: `/` (home), `/w/:placementId/session` (the placement's new-session draft), `/w/:placementId/session/:sessionId`, `/s/:sessionId` (a session on this machine, as today's rail links it; the router resolves its placement through the resolver RouteSync registers from the session list, and until then the route is `localSession`), `/w/:placementId/terminal/:terminalId`, `/settings/:section?`, each page's own `path`, and the `routes` registry for full-screen screens outside the shell (auth, onboarding) which match first. `RouteSync` opens the draft, session or terminal the URL names in the workbench (through the pane kinds' `fromRoute`) and mirrors the focused pane back into the URL with `replace` (through `toRoute`), unless the URL already names that session, so the URL is the one home of the current placement: `useShellRoute().placementId()`. With nothing focused on a placement's route it opens that placement's draft. A page registered with `tab: true` (the rail's Tasks and Marketplace) opens in today's one shared page tab instead of the center: the singleton `pageTab` pane kind (`view/page-tab.tsx`) keeps the page's path, so opening another tab page reuses it, the compact tabs show it as a global tab, and the header over it is the page header without the panel toggle. Closing it as the last tab goes home.
 
 ## Placement providers (`placement-providers.tsx`)
 
@@ -43,7 +43,7 @@ Kept from the old app: registrations with owners, keybinding parsing and display
 
 ## Phone
 
-Below 768 px the rail itself becomes today's drawer: fixed at the left, 280 px, sliding in over 300 ms above a light scrim that closes it, opened and closed by the fixed "Open navigation sidebar" button over the header's left end. The frame never scrolls horizontally.
+Below 768 px the rail itself becomes a drawer that fills the viewport (an owner ruling over today's 280 px drawer beside a scrim), sliding in from the left over 300 ms, opened and closed by the fixed "Open navigation sidebar" button over the header's left end. The header there holds New Session only; New Terminal is desktop-only. The frame never scrolls horizontally.
 
 ## Flows
 
