@@ -1,6 +1,6 @@
 import { onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
-import { scrollTopFromThumbPointer } from "./scroll-view-keys"
+import { scrollTopFromThumbPointer } from "@opencode-ai/ui/scroll-view"
 
 export type ScrollViewThumbVisibility = "hover" | "scroll"
 
