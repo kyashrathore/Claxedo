@@ -76,4 +76,10 @@ export const bs: Partial<Record<ComposerTextKey, string>> = {
   "prompt.toast.promptSendFailed.title": "Neuspješno slanje upita",
   "common.requestFailed": "Zahtjev nije uspio",
   "prompt.toast.goalStopFailed.title": "Cilj nije moguće zaustaviti",
+  "prompt.imageMarks.title": "Označi sliku",
+  "prompt.imageMarks.hint": "Povucite da uokvirite područje ili kliknite da postavite pribadaču, zatim dodajte komentar.",
+  "prompt.imageMarks.delete": "Izbriši oznaku",
+  "prompt.imageMarks.mark": "oznaka {{number}}",
+  "common.cancel": "Otkaži",
+  "common.save": "Sačuvaj",
 }
