@@ -63,10 +63,6 @@ export function SessionList(): JSX.Element {
     const route = routing.route()
     return route.kind === "session" ? route.sessionId : undefined
   })
-  const placementId = createMemo(() => {
-    const route = routing.route()
-    return route.kind === "session" || route.kind === "terminal" ? route.placementId : undefined
-  })
   const loadMore = () => stores.list.loadMore().catch((error: unknown) => console.error("Loading more sessions failed", error))
   return (
     <section class="rail-sessions" aria-labelledby="rail-sessions-title">
@@ -74,7 +70,7 @@ export function SessionList(): JSX.Element {
         <h2 id="rail-sessions-title" class="rail-title">
           {t("rail.sessions")}
         </h2>
-        <Show when={placementId()}>
+        <Show when={routing.placementId()}>
           {(placement) => (
             <IconButton icon="new-session" variant="ghost" size="small" aria-label={t("rail.newSession")} data-testid="new-session" onClick={() => actions.create(placement())} />
           )}
