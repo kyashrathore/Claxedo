@@ -1,4 +1,3 @@
-[data-component="todo-dock"],
 [data-component="goal-dock"] {
   min-width: 0;
   border: 1px solid var(--v2-border-border-muted);
@@ -6,7 +5,6 @@
   background: var(--v2-background-bg-base);
 }
 
-[data-slot="todo-dock-toggle"],
 [data-slot="goal-dock-toggle"] {
   display: flex;
   width: 100%;
@@ -24,20 +22,17 @@
   cursor: default;
 }
 
-[data-slot="todo-dock-toggle"]:focus-visible,
 [data-slot="goal-dock-toggle"]:focus-visible {
   outline: 2px solid var(--v2-border-border-focus);
   outline-offset: -2px;
 }
 
-[data-slot="todo-dock-count"],
 [data-slot="goal-dock-title"] {
   flex: none;
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-medium);
 }
 
-[data-slot="todo-dock-preview"],
 [data-slot="goal-dock-preview"] {
   min-width: 0;
   flex: 1 1 auto;
@@ -48,33 +43,11 @@
   color: var(--v2-text-text-muted);
 }
 
-[data-slot="todo-dock-chevron"],
 [data-slot="goal-dock-chevron"] {
   display: inline-flex;
   margin-left: auto;
   color: var(--v2-icon-icon-muted);
   transition: transform 160ms ease;
-}
-
-[data-component="todo-dock"]:not([data-collapsed]) [data-slot="todo-dock-chevron"] {
-  transform: rotate(180deg);
-}
-
-[data-slot="todo-dock-list"] {
-  display: flex;
-  max-height: 168px;
-  flex-direction: column;
-  gap: 6px;
-  margin: 0;
-  padding: 0 12px 12px;
-  overflow-y: auto;
-  list-style: none;
-}
-
-[data-slot="todo-dock-item"][data-state="completed"],
-[data-slot="todo-dock-item"][data-state="cancelled"] {
-  color: var(--v2-text-text-muted);
-  text-decoration: line-through;
 }
 
 [data-slot="goal-dock-status"] {
