@@ -37,6 +37,8 @@ const en = {
   "terminal.key.up": "Up arrow",
   "terminal.key.right": "Right arrow",
   "terminal.command.new": "New terminal",
+  "terminal.command.new.description": "Create a new terminal tab",
+  "terminal.command.toggle": "Toggle terminal",
   "terminal.pane": "Terminal pane",
 }
 

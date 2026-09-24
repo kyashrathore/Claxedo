@@ -26,7 +26,7 @@ Owns: terminal panes, the one attach path to a runtime PTY, terminal links, the 
 
 ## Commands
 
-`terminal.new` (`mod+shift+\``) creates a terminal in the current placement and opens it.
+`terminal.new` ("New terminal", `ctrl+alt+t`) closes the workspace panel, creates a terminal in the current placement and opens it. `terminal.toggle` ("Toggle terminal", `ctrl+\``) closes the focused terminal, or opens a new one when none has focus.
 
 ## Flows
 
