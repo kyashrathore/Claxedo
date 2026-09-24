@@ -1,7 +1,7 @@
 import type { AgentPresentationSession, AgentSession, RecoveryOutcome, RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
 import { isRecoveryOutcome, turnStopped } from "@claxedo/agent-runtime-contract"
 import { ServerError, isNotFound, responseError } from "./errors"
-import type { RequestId } from "./ids"
+import { sessionId, type RequestId } from "./ids"
 import type { StatusOwner } from "./status"
 import { jsonInit, withQuery, type RuntimeRoute, type Transport } from "./transport"
 import type { SessionsApi } from "./index"
@@ -131,14 +131,9 @@ export function createSessionsApi(input: {
     const where = workspaces.routeFor(options.placementId)
     const placement = workspaces.byId(options.placementId)
     if (!placement) throw new ServerError({ class: "not_found", message: `Placement ${options.placementId} is not in the catalog` })
-    const body = {
-      agent: "build",
-      ...(options.model ? { model: { providerID: options.model.providerId, modelID: options.model.modelId } } : {}),
-      ...(options.model?.variant ? { variant: options.model.variant } : {}),
-    }
+    const body = options.title ? { title: options.title } : {}
     const created = await transport.runtimeJson<{ id: string }>(where, withQuery("/session", harnessQuery(options.harness)), jsonInit("POST", body))
-    const ref: SessionRef = { projectId: placement.projectId, placementId: options.placementId, sessionId: created.id as SessionRef["sessionId"] }
-    if (options.title) await transport.runtimeJson<unknown>(where, sessionPath(ref), jsonInit("PATCH", { title: options.title }))
+    const ref: SessionRef = { projectId: placement.projectId, placementId: options.placementId, sessionId: sessionId(created.id) }
     return sessionRowFromSession(await readRow(ref), ref)
   }
 

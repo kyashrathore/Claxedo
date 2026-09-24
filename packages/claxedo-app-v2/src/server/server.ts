@@ -1,9 +1,7 @@
 import { QueryClient } from "@tanstack/solid-query"
-import { createSignal, onCleanup, type ParentProps } from "solid-js"
-import { batch } from "solid-js"
+import { batch, createSignal } from "solid-js"
 import { createCapabilities } from "./capabilities"
 import type { ServerConfig } from "./config"
-import { ServerContext } from "./context"
 import { isRetryable } from "./errors"
 import type { ConnectionState, ServerEvent } from "./events"
 import type { Server } from "./index"
@@ -107,7 +105,7 @@ export function createServer(config: ServerConfig): ServerHandle {
     },
     sessions,
     projects,
-    placements: { byId: workspaces.byId },
+    placements: { byId: workspaces.byId, list: workspaces.list },
     queries: createQueries(transport, workspaces),
     retryConnection: streams.retry,
     ready,
@@ -118,21 +116,4 @@ export function createServer(config: ServerConfig): ServerHandle {
       queryClient.clear()
     },
   }
-}
-
-export function ServerProvider(props: ParentProps<{ readonly server: Server }>) {
-  const handle = props.server as Partial<ServerHandle>
-  if (typeof window !== "undefined" && handle.retryConnection) {
-    const retry = () => handle.retryConnection?.()
-    const visible = () => {
-      if (document.visibilityState === "visible") retry()
-    }
-    window.addEventListener("online", retry)
-    document.addEventListener("visibilitychange", visible)
-    onCleanup(() => {
-      window.removeEventListener("online", retry)
-      document.removeEventListener("visibilitychange", visible)
-    })
-  }
-  return <ServerContext.Provider value={props.server}>{props.children}</ServerContext.Provider>
 }

@@ -31,7 +31,8 @@ export type { FeatureAvailability } from "./tasks"
 export type { UsageRequest, UsageSummary } from "./usage"
 export { ServerError, isRetryable, toAppError } from "./errors"
 export { ServerContext, useServer } from "./context"
-export { createServer, ServerProvider, type ServerHandle } from "./server"
+export { createServer, type ServerHandle } from "./server"
+export { ServerProvider } from "./provider"
 
 export type SessionsApi = {
   readonly list: (input: { readonly cursor?: string; readonly limit: number }) => Promise<SessionPage>
@@ -54,6 +55,7 @@ export type ProjectsApi = {
 
 export type PlacementsApi = {
   readonly byId: (id: PlacementId) => Placement | undefined
+  readonly list: () => readonly Placement[]
 }
 
 export type Server = {

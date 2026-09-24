@@ -70,6 +70,7 @@ export function createWorkspaces(input: { readonly transport: Transport; readonl
 
   return {
     byId: (id) => byId(id)?.placement,
+    list: () => records().map((record) => record.placement),
     address: {
       placementFor: (directory, workspaceId) => {
         const record = byDirectory(directory, workspaceId)
@@ -82,6 +83,7 @@ export function createWorkspaces(input: { readonly transport: Transport; readonl
     load,
     refresh: async () => {
       await queryClient.invalidateQueries({ queryKey: key })
+      await load()
     },
   }
 }
