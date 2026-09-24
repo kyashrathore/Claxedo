@@ -95,19 +95,23 @@ test("08 Stop settles a pending question: the dock goes away and nothing is left
   await expect.poll(pending).toBe(0)
 })
 
-test("08 a failed read of pending requests shows its Retry card over the transcript, and Retry clears it", async ({ stack, api, app }) => {
+test("08 a failed read of pending requests leaves the transcript on screen", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("requests-read")
   const session = await api.createSession(workspace.directory, { title: "Requests read", harness: SCRIPTED_ACP_HARNESS })
   await api.prompt(workspace.directory, session.id, "Reply with exactly this one token: RQX")
   let failing = true
-  await app.route(/\/question(\?|$)/, (route) =>
-    failing ? route.abort("connectionrefused") : route.fallback(),
-  )
+  await app.route(/\/question(\?|$)/, (route) => (failing ? route.abort("connectionrefused") : route.fallback()))
   await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
-  const card = app.getByRole("alert").filter({ hasText: "Could not load pending permissions or questions. Retry to continue." })
-  await expect(card).toBeVisible()
   await expect(app.getByText("RQX", { exact: true })).toBeVisible()
-  failing = false
-  await card.getByRole("button", { name: "Retry" }).click()
-  await expect(card).toHaveCount(0)
+  const card = app.getByRole("alert").filter({ hasText: "Could not load pending permissions or questions. Retry to continue." })
+  if (stack.app === "v2") {
+    await test.step("v2 approved: the failed read shows its Retry card, and Retry clears it (DECISIONS Orchestrator, 00:35)", async () => {
+      await expect(card).toBeVisible()
+      failing = false
+      await card.getByRole("button", { name: "Retry" }).click()
+      await expect(card).toHaveCount(0)
+    })
+  } else {
+    await expect(card).toHaveCount(0)
+  }
 })
