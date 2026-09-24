@@ -4,6 +4,7 @@ import type { Account, AccountCheck, AccountKeyInput, EffectiveAccounts, Machine
 import type { CloudCreateInput, CloudWorkspace, CodeHostConnection, CodeHostRepository } from "./cloud-types"
 import type { ConnectionState, ServerEvent } from "./events"
 import type { IntegrationQueries, IntegrationsApi } from "./integrations"
+import type { SandboxProviderQueries, SandboxProvidersApi } from "./sandbox-providers"
 import type { FolderQueries, FoldersApi } from "./folders"
 import type { HarnessConfigApi } from "./harness-config"
 import type {
@@ -168,6 +169,7 @@ export type ServerQueries = {
   readonly cloud: { readonly list: () => FetchQuery<readonly CloudWorkspace[]> }
   readonly folders: FolderQueries
   readonly integrations: IntegrationQueries
+  readonly sandboxProviders: SandboxProviderQueries
   readonly harnesses: {
     readonly options: (placementId: PlacementId, harness: string) => FetchQuery<HarnessOptions>
     readonly logins: () => FetchQuery<readonly HarnessLogin[]>
@@ -202,6 +204,7 @@ export type Server = {
   readonly marketplace: MarketplaceApi
   readonly folders: FoldersApi
   readonly integrations: IntegrationsApi
+  readonly sandboxProviders: SandboxProvidersApi
   readonly livePlugins: LivePluginsApi
   readonly harnessConfig: HarnessConfigApi
   readonly queries: ServerQueries

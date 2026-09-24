@@ -1,29 +1,29 @@
 # Onboarding
 
-Owns: the first run. A full-screen route (`/welcome`) the shell shows when the server lists no project, drawing the add-project steps as a three-step wizard.
+Owns: the first run. Today's app's first-project canvas and its three-step wizard (Project, AI, Where it runs), shown when the server lists no project.
 
 ## Concepts
 
-- **Route entry**: `onboardingRoute`, the shell `RouteEntry` for `/welcome`, listed in the shell's `routes` registry.
+- **Route entry**: `onboardingRoute`, the shell `RouteEntry` for `/welcome`, listed in the shell's `routes` registry. `FirstProjectCanvas` is its view: the blueprint field, glow and vignette behind the wizard column.
 - **Needed?**: `onboardingNeeded(projects)` is true when the project list is ready and empty. The shell's home route sends the reader to `onboardingPath` when it is.
+- **Product**: the wizard waits for `server.capabilities()`. A server that declares `thisMachine` is a desktop (local execution); any other is a hosted plane. Ledes, step 2, step 3's rows and the finish button follow that.
 
 ## State
 
-The wizard has one state per step plus done: `project`, `agent`, `placement`, `done(projectId)`. It is derived (`onboardingState`) from the add-project machine in `@/projects`, which owns the steps, the draft and creation; this domain adds no second machine over the same flow. A created project opens through `useCreatedProjectOpener` from `@/projects`.
+`createOnboardingWizard` (`wizard.ts`) holds the current step, the visited steps, the draft (`{source, name?}`), each step's readiness, the step 3 choice and the finish state. Nothing is written before Finish except a sandbox provider key saved in step 3.
+
+- Step 1 is `ProjectCreateForm` from `@/projects` with `submitLabel` Continue; its submit stores the draft and moves to step 2.
+- Step 2 lists the account cards per harness and reports whether one login can run a turn. Machine logins are read only when this step first opens, because that read starts the harness CLIs.
+- Step 3 offers Just this machine (desktop, preselected), A cloud sandbox (a desktop saves a provider key through `server.sandboxProviders`) and Another machine (the two CLI commands).
+- Finish on a desktop creates the project (`createOrOpenFolderProject`: a folder that already is a project opens that project) and opens the draft of its folder placement at `/w/<placement>/session`. On a hosted plane it creates the project and its first cloud workspace, then opens that workspace's draft. A failure is shown in the footer's reason line.
 
 ## Rules the view keeps
 
-- No page scroll: the route is `100dvh` with `overflow: hidden`; only the card body scrolls.
-- The card animates its height between steps (`animateHeightChanges`, Web Animations, off under `prefers-reduced-motion`).
-- The footer (Back, Skip, Next or Create) stays visible below the scrolling panels.
-- Back keeps state: visited step panels stay mounted and hidden.
-- One scan: the AI step lists the harnesses the server reports in `capabilities().harnesses`; nothing is re-scanned by the view.
-- The AI step reuses the Models rows once `@/settings` exports them; until then it lists the harnesses with a link to Settings → Accounts.
-
-## Phone
-
-One column, 16 px gutters, the steps list wraps, every control is a kit component with a 44 px hit area.
+- The canvas scrolls only when the window is shorter than headline, lede and card footer; otherwise only the card body scrolls.
+- The card animates its height between steps (`animateHeightChanges` from `@/ui`, off under `prefers-reduced-motion`).
+- Back keeps state: visited step panels stay mounted and hidden, and any move clears the failure line.
+- Step 1 has no footer; steps 2 and 3 show the reason line, Back, Skip for now (step 2, desktop, not ready), then Next or the finish button.
 
 ## Flows
 
-- Flow 1 (`e2e/flows/01-first-run.spec.ts`): first run on an unsigned machine: detect agents, add a folder project, first prompt. It runs on the local web in both apps; the desktop variant waits for a desktop fixture in the harness.
+- Flow 1 (`e2e/flows/01-first-run.spec.ts`): first run on an unsigned machine: choose a folder, see the accounts, keep Just this machine, open the project, first prompt. It runs on the local web in both apps.
