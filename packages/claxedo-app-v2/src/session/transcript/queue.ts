@@ -1,9 +1,12 @@
 import { createSignal, type Accessor, type Setter } from "solid-js"
-import type { AppError, QueuedPrompt, QueuedPromptAction, Server, SessionRef } from "@/server"
+import type { AppError, PromptInput, QueuedPrompt, QueuedPromptAction, Server, SessionRef } from "@/server"
 import type { QueuedMessage, QueuedMessages } from "../view/timeline/model"
 import { toAppError } from "../requests"
 
-export type QueueInternal = QueuedMessages & { readonly reread: () => Promise<void> }
+export type QueueInternal = QueuedMessages & {
+  readonly reread: () => Promise<void>
+  readonly replace: (seq: number, input: PromptInput) => Promise<boolean>
+}
 
 type Field<T> = { readonly get: Accessor<T>; readonly set: Setter<T> }
 
@@ -65,6 +68,15 @@ async function control(context: QueueContext, seq: number, action: QueuedPromptA
   }
 }
 
+async function replace(context: QueueContext, seq: number, input: PromptInput): Promise<boolean> {
+  const messageId = context.items.get().find((item) => item.seq === seq)?.messageId
+  if (!messageId) return false
+  const replaced = await context.server.sessions.replaceQueued(context.ref, seq, input, messageId)
+  context.editing.set(undefined)
+  await reread(context)
+  return replaced
+}
+
 async function beginEdit(context: QueueContext, record: QueuedMessage): Promise<void> {
   if (await control(context, record.seq, "hold")) context.editing.set(record.seq)
 }
@@ -93,5 +105,6 @@ export function createQueue(server: Server, ref: SessionRef, onRead: (items: rea
     beginEdit: (record) => void beginEdit(context, record),
     cancelEdit: (seq) => void control(context, seq, "release"),
     reread: () => reread(context),
+    replace: (seq, input) => replace(context, seq, input),
   }
 }

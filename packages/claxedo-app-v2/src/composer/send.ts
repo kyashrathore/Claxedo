@@ -104,6 +104,7 @@ type SendInput = {
   view: Accessor<SessionView | undefined>
   createSession?: (submission: Submission) => Promise<SessionView>
   afterAccepted?: (view: SessionView) => void
+  queuedReplace: () => ((input: PromptInput) => Promise<boolean>) | undefined
   focusEditor: () => void
   goalStopFailed: (error: unknown) => void
 }
@@ -151,6 +152,12 @@ async function deliver(input: SendInput, draft: Draft, goal: GoalIntent, clientR
   const submission = await input.submission()
   const prompt = await buildPromptInput({ draft, submission, goal, delivery })
   const existing = input.view()
+  const replace = goal.kind === "submit" ? undefined : input.queuedReplace()
+  if (existing && replace && (await replace(prompt))) {
+    input.store.reset(key)
+    input.normalMode()
+    return existing
+  }
   if (!existing) setBoot("booting")
   const view = existing ?? (await required(input.createSession)(submission))
   if (!existing) setBoot("sending")
