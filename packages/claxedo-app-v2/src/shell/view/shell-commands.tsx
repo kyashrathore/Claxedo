@@ -1,6 +1,5 @@
 import type { JSX } from "solid-js"
 import { useI18n, useTranslator } from "@/i18n"
-import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme"
 import { dictionary } from "../i18n"
 import { useShellLayout } from "../layout"
 import { useCommands } from "../palette/commands"
@@ -10,8 +9,7 @@ import { useShellRoute } from "../router"
 import { draftPath, fillPattern, homePath, settingsPath } from "../routes"
 import { useActivePlacement } from "../active-placement"
 import { NEW_SESSION_COMMAND } from "./scope-buttons"
-
-const colorSchemes: readonly ColorScheme[] = ["system", "light", "dark"]
+import { useThemeCommands } from "./theme-commands"
 
 export function ShellCommands(): JSX.Element {
   const t = useTranslator(dictionary)
@@ -20,17 +18,10 @@ export function ShellCommands(): JSX.Element {
   const layout = useShellLayout()
   const routing = useShellRoute()
   const registries = useShellRegistries()
-  const theme = useTheme()
   const active = useActivePlacement()
   const newSession = () => {
     const placement = active()
     if (placement) routing.navigate(draftPath(placement))
-  }
-
-  const schemeLabel = (scheme: ColorScheme) => t(`shell.scheme.${scheme}`)
-  const cycleScheme = () => {
-    const index = colorSchemes.indexOf(theme.colorScheme())
-    theme.setColorScheme(colorSchemes[(index + 1) % colorSchemes.length])
   }
 
   const layoutCommands = (): CommandOption[] => [
@@ -41,21 +32,7 @@ export function ShellCommands(): JSX.Element {
     { id: "shell.settings.open", title: t("shell.command.settings"), category: t("shell.category.settings"), keybind: "mod+,", onSelect: () => routing.navigate(settingsPath()) },
   ]
 
-  const themeCommands = (): CommandOption[] => [
-    { id: "shell.scheme.cycle", title: t("shell.command.schemeCycle"), category: t("shell.category.theme"), onSelect: cycleScheme },
-    ...colorSchemes.map((scheme) => ({
-      id: `shell.scheme.${scheme}`,
-      title: t("shell.command.scheme", { scheme: schemeLabel(scheme) }),
-      category: t("shell.category.theme"),
-      onSelect: () => theme.setColorScheme(scheme),
-    })),
-    ...theme.ids().map((id) => ({
-      id: `shell.theme.${id}`,
-      title: t("shell.command.theme", { name: theme.name(id) }),
-      category: t("shell.category.theme"),
-      onSelect: () => theme.setTheme(id),
-    })),
-  ]
+  const themeCommands = useThemeCommands()
 
   const languageCommands = (): CommandOption[] =>
     i18n.locales.map((entry) => ({
