@@ -1,7 +1,7 @@
 import { acpScriptToken, assistantText, expect, frameType, SCRIPTED_ACP_HARNESS, test } from "../harness"
 
 test("00 harness smoke: the stack boots, the app renders, a scripted ACP turn round-trips", async ({ stack, api, app }) => {
-  const root = stack.app === "v2" ? app.getByTestId("app-v2-root") : app.locator("[data-claxedo]")
+  const root = stack.app === "v2" ? app.getByRole("navigation", { name: "Projects and sessions" }) : app.locator("[data-claxedo]")
   await expect(root).toBeVisible()
 
   const workspace = await stack.daemon.makeWorkspace("smoke")

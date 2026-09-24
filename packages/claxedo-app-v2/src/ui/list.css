@@ -1,0 +1,197 @@
+@property --bottom-fade {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@layer components {
+  @keyframes list-scroll-fade {
+    0%,
+    90% {
+      --bottom-fade: 20px;
+    }
+    100% {
+      --bottom-fade: 0px;
+    }
+  }
+
+  .ui-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow: hidden;
+  }
+
+  .ui-list .ui-list-search-wrapper {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    align-self: stretch;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+
+  .ui-list .ui-list-search {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .ui-list .ui-list-search .ui-text-input {
+    flex: 1;
+    width: auto;
+  }
+
+  .ui-list .ui-list-scroll {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    mask: linear-gradient(to bottom, #ffff calc(100% - var(--bottom-fade)), #0000);
+    animation: list-scroll-fade;
+    animation-timeline: --list-scroll;
+    scroll-timeline: --list-scroll y;
+    scrollbar-width: none;
+  }
+
+  .ui-list .ui-list-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
+  .ui-list [data-slot="list-empty-state"] {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    align-self: stretch;
+    gap: 8px;
+    padding: 32px 24px;
+  }
+
+  .ui-list [data-slot="list-message"] {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    max-width: 100%;
+    color: var(--v2-text-text-muted);
+    font-size: var(--font-size-compact);
+    line-height: var(--line-height-20);
+    letter-spacing: var(--letter-spacing-ui);
+    white-space: nowrap;
+  }
+
+  .ui-list [data-slot="list-filter"] {
+    color: var(--v2-text-text-base);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ui-list [data-slot="list-group"] {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .ui-list [data-slot="list-group"]:last-child {
+    padding-bottom: 8px;
+  }
+
+  .ui-list .ui-list-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    align-self: stretch;
+    height: 28px;
+    padding: 0 8px;
+    background: var(--v2-background-bg-base);
+    color: var(--v2-text-text-faint);
+    font-size: var(--font-size-x-small);
+    font-weight: var(--font-weight-medium);
+    letter-spacing: var(--letter-spacing-micro-wide);
+    user-select: none;
+  }
+
+  .ui-list [data-slot="list-items"] {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ui-list .ui-list-item,
+  .ui-list .ui-list-item-add {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 28px;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    color: var(--v2-text-text-base);
+    font-size: var(--font-size-compact);
+    font-weight: var(--font-weight-body);
+    line-height: var(--line-height-20);
+    letter-spacing: var(--letter-spacing-ui);
+    text-align: left;
+    scroll-margin-top: 28px;
+    cursor: default;
+  }
+
+  .ui-list .ui-list-item-selected-icon,
+  .ui-list .ui-list-item-active-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-left: auto;
+    color: var(--v2-icon-icon-base);
+  }
+
+  .ui-list .ui-list-item-active-icon {
+    display: none;
+  }
+
+  .ui-list .ui-list-item-extra-icon {
+    color: var(--v2-icon-icon-muted);
+  }
+
+  .ui-list .ui-list-item-divider {
+    position: absolute;
+    right: var(--list-divider-inset, 8px);
+    bottom: 0;
+    left: var(--list-divider-inset, 8px);
+    height: 1px;
+    background: var(--v2-border-border-muted);
+    pointer-events: none;
+  }
+
+  .ui-list .ui-list-item[data-active="true"] {
+    background: var(--v2-overlay-simple-overlay-hover);
+  }
+
+  .ui-list .ui-list-item[data-active="true"] .ui-list-item-active-icon {
+    display: inline-flex;
+  }
+
+  .ui-list .ui-list-item[data-active="true"] .ui-list-item-extra-icon {
+    color: var(--v2-icon-icon-base);
+  }
+
+  .ui-list .ui-list-item:active {
+    background: var(--v2-overlay-simple-overlay-pressed);
+  }
+
+  .ui-list .ui-list-item:focus-visible {
+    outline: none;
+  }
+
+  .ui-list .ui-list-item-add .ui-text-input {
+    width: 100%;
+  }
+}
