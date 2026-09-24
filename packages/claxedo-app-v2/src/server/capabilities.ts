@@ -2,43 +2,50 @@ import { AGENT_HARNESS_IDS, HARNESS_EFFORT_LEVELS, HARNESS_TABLE } from "@claxed
 import { createSignal, type Accessor } from "solid-js"
 import { probeAvailability } from "./availability"
 import { DOCUMENTS_PATH } from "./documents"
-import { responseError } from "./errors"
+import { responseError, toAppError } from "./errors"
 import { thisMachine, thisMachineId } from "./machines"
 import { TASKS_PRESETS_PATH } from "./tasks"
 import { withQuery, type Transport } from "./transport"
-import type { Capabilities, HarnessInfo, ModelChoice } from "./types"
+import type { Capabilities, HarnessInfo } from "./types"
 import type { Workspaces } from "./workspaces"
 import { accountFromWire } from "./wire/accounts"
 import { MACHINE_LOGINS_PATH, machineLoginsFromWire, type MachineLogin } from "./wire/machine-logins"
-import { providerCatalogFromWire } from "./wire/providers"
+import { connectedProvidersFromWire, PROVIDERS_PATH } from "./wire/providers"
 
 export type CapabilitiesOwner = {
   readonly value: Accessor<Capabilities | undefined>
   readonly load: () => Promise<void>
 }
 
-const PROVIDERS_PATH = "/api/claxedo/agent-config/providers"
+type Read<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly reason: string }
+type Availability = { readonly available: boolean; readonly reason?: string }
+
 const CREDENTIALS_PATH = "/api/claxedo/credentials"
 const MACHINE_LOGINS_UNSUPPORTED = 501
-const CATALOG_HARNESSES: readonly string[] = ["pi", "opencode"]
 const GOAL_MODES: Readonly<Record<string, HarnessInfo["goalMode"]>> = { claude: "evaluated", codex: "native" }
 
-function harnessInfo(id: string, available: boolean, models: readonly ModelChoice[]): HarnessInfo {
+async function settle<T>(what: string, read: Promise<T>): Promise<Read<T>> {
+  try {
+    return { ok: true, value: await read }
+  } catch (error) {
+    const failure = toAppError(error)
+    console.error(`${what} could not be read`, failure)
+    return { ok: false, reason: failure.message }
+  }
+}
+
+function harnessInfo(id: string, availability: Availability): HarnessInfo {
   const entry = (HARNESS_TABLE as Readonly<Record<string, { readonly label: string } | undefined>>)[id]
   return {
     id,
     name: entry?.label ?? id.charAt(0).toUpperCase() + id.slice(1),
-    available,
-    models,
+    available: availability.available,
+    ...(availability.reason ? { unavailableReason: availability.reason } : {}),
+    models: [],
     efforts: [...HARNESS_EFFORT_LEVELS],
     permissionModes: [],
     goalMode: GOAL_MODES[id] ?? "none",
   }
-}
-
-async function catalogHarness(transport: Transport, id: string): Promise<HarnessInfo> {
-  const catalog = providerCatalogFromWire(await transport.json<unknown>(withQuery(PROVIDERS_PATH, { nativeHarness: id })))
-  return harnessInfo(id, catalog.connected.length > 0, catalog.models)
 }
 
 async function machineLogins(transport: Transport): Promise<readonly MachineLogin[]> {
@@ -54,18 +61,31 @@ async function storedProviders(transport: Transport): Promise<ReadonlySet<string
   return new Set(accounts.filter((account) => account.active).map((account) => account.providerId))
 }
 
+async function piConnected(transport: Transport): Promise<readonly string[]> {
+  return connectedProvidersFromWire(await transport.json<unknown>(withQuery(PROVIDERS_PATH, { nativeHarness: "pi" })))
+}
+
+function loginAvailability(id: string, logins: Read<readonly MachineLogin[]>, stored: Read<ReadonlySet<string>>): Availability {
+  if (!logins.ok) return { available: false, reason: logins.reason }
+  const login = logins.value.find((row) => row.harness === id)
+  if (!login) return { available: false, reason: `This server reports no ${id} login` }
+  if (login.signedIn || (stored.ok && login.providerIds.some((provider) => stored.value.has(provider)))) return { available: true }
+  return { available: false, reason: `${id} is signed out` }
+}
+
 async function readHarnesses(transport: Transport): Promise<readonly HarnessInfo[]> {
-  const [logins, stored, catalogs] = await Promise.all([
-    machineLogins(transport),
-    storedProviders(transport),
-    Promise.all(CATALOG_HARNESSES.map((id) => catalogHarness(transport, id))),
+  const [logins, stored, pi] = await Promise.all([
+    settle("Machine logins", machineLogins(transport)),
+    settle("Stored credentials", storedProviders(transport)),
+    settle("The pi provider catalog", piConnected(transport)),
   ])
-  return AGENT_HARNESS_IDS.map((id) => {
-    const catalog = catalogs.find((harness) => harness.id === id)
-    if (catalog) return catalog
-    const login = logins.find((row) => row.harness === id)
-    return harnessInfo(id, !!login && (login.signedIn || login.providerIds.some((provider) => stored.has(provider))), [])
-  })
+  const availability = (id: string): Availability => {
+    if (id === "opencode") return transport.loopback ? { available: true } : { available: false, reason: "OpenCode runs on a machine" }
+    if (id !== "pi") return loginAvailability(id, logins, stored)
+    if (!pi.ok) return { available: false, reason: pi.reason }
+    return pi.value.length > 0 ? { available: true } : { available: false, reason: "No provider is connected for pi" }
+  }
+  return AGENT_HARNESS_IDS.map((id) => harnessInfo(id, availability(id)))
 }
 
 export function createCapabilities(transport: Transport, workspaces: Workspaces): CapabilitiesOwner {
@@ -74,8 +94,8 @@ export function createCapabilities(transport: Transport, workspaces: Workspaces)
     const declaration = (await workspaces.load()).declaration
     const [harnesses, tasks, documents] = await Promise.all([
       readHarnesses(transport),
-      probeAvailability(transport, TASKS_PRESETS_PATH),
-      probeAvailability(transport, DOCUMENTS_PATH),
+      settle("Tasks", probeAvailability(transport, TASKS_PRESETS_PATH)),
+      settle("Documents", probeAvailability(transport, DOCUMENTS_PATH)),
     ])
     const signedIn = declaration.issuesSessions
     const machine = thisMachine(declaration, transport.loopback)
@@ -85,8 +105,8 @@ export function createCapabilities(transport: Transport, workspaces: Workspaces)
       ...(machine ? { thisMachine: machine } : {}),
       harnesses,
       features: {
-        tasks: tasks.kind === "available",
-        documents: documents.kind === "available",
+        tasks: tasks.ok && tasks.value.kind === "available",
+        documents: documents.ok && documents.value.kind === "available",
         cloud: signedIn,
         remoteAccess: transport.loopback,
         marketplace: true,
