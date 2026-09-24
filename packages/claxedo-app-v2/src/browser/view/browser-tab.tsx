@@ -7,6 +7,7 @@ import { ConsoleDrawer } from "./console"
 import { PageHost } from "./page-host"
 import { PickerShield } from "./picker"
 import { Toolbar } from "./toolbar"
+import { useNoticeToasts } from "./toolbar-actions"
 
 export type BrowserTabViewProps = { readonly url?: string; readonly navigationVersion?: number }
 
@@ -14,6 +15,7 @@ export function BrowserTabView(props: BrowserTabViewProps): JSX.Element {
   const t = useTranslator(dictionary)
   const tab = useBrowserTab()
   const deliver = usePickDelivery()
+  useNoticeToasts(tab)
   createEffect(
     on(
       () => [tab(), props.url, props.navigationVersion] as const,
@@ -32,13 +34,21 @@ export function BrowserTabView(props: BrowserTabViewProps): JSX.Element {
       }
     >
       {(current) => (
-        <div data-testid="browser-tab" class="flex h-full min-h-0 w-full flex-col bg-background-base text-text-base">
-          <Toolbar tab={current()} deliver={deliver} />
-          <div class="relative min-h-0 flex-1">
-            <PageHost tab={current()} deliver={deliver} />
-            <PickerShield tab={current()} />
+        <div
+          class="flex h-full min-h-0 w-full flex-col overflow-hidden bg-background-base"
+          data-component="workspace-browser-panel"
+          data-testid="workspace-browser-panel"
+        >
+          <div class="flex h-full w-full flex-col bg-background-base text-text-base">
+            <Toolbar tab={current()} />
+            <div class="relative flex-1">
+              <div data-testid="browser-pane-webview-host" class="absolute inset-0">
+                <PageHost tab={current()} deliver={deliver} />
+                <PickerShield tab={current()} />
+              </div>
+            </div>
+            <ConsoleDrawer tab={current()} />
           </div>
-          <ConsoleDrawer tab={current()} />
         </div>
       )}
     </Show>
