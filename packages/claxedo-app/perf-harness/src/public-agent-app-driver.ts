@@ -333,7 +333,32 @@ function withTimingEvidence(receipt: ReadinessReceipt, observedAt: number): Read
   }
 }
 
-async function makeDefaultDependencies(): Promise<DriverDependencies> {
+/**
+ * Today's app and the v2 rebuild are packaged from one checkout and driven by
+ * this one driver through the same readiness hooks; the argument only names the
+ * registered application the framework compares.
+ */
+export const APPLICATIONS = {
+  claxedo: { id: "claxedo", name: "Claxedo" },
+  "claxedo-v2": { id: "claxedo-v2", name: "Claxedo v2" },
+} as const
+
+export type ApplicationId = keyof typeof APPLICATIONS
+
+function isApplicationId(value: string | undefined): value is ApplicationId {
+  return value !== undefined && Object.hasOwn(APPLICATIONS, value)
+}
+
+export function parseApplicationArgument(argv: readonly string[]): ApplicationId {
+  if (argv.length === 0) return "claxedo"
+  const [flag, value, ...rest] = argv
+  if (flag !== "--application" || !isApplicationId(value) || rest.length > 0)
+    throw new Error(`Claxedo driver accepts only --application ${Object.keys(APPLICATIONS).join("|")}, got ${JSON.stringify(argv)}`)
+  return value
+}
+
+async function makeDefaultDependencies(applicationId: ApplicationId): Promise<DriverDependencies> {
+  const application = APPLICATIONS[applicationId]
   const repoRoot = path.resolve(import.meta.dir, "../../../..")
   const executable = await discoverPackagedExecutable()
   const desktopPackage: unknown = JSON.parse(
@@ -417,14 +442,14 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
   return {
     hello: {
       protocolVersion: 1,
-      application: { id: "claxedo", name: "Claxedo", version: desktopVersion, buildDigestSha256 },
+      application: { id: application.id, name: application.name, version: desktopVersion, buildDigestSha256 },
       driver: { name: "claxedo-reference", version: "1", sourceCommit, digestSha256: driverDigestSha256 },
       sourceEventFormats: ["opencode-event-v1", "opencode-event-v2"],
       materializationModes: ["native-opencode"],
       guiFramework: "electron",
     },
     prepare: async (params) => {
-      const runRoot = path.join(path.resolve(params.runDirectory), "driver-state", "claxedo")
+      const runRoot = path.join(path.resolve(params.runDirectory), "driver-state", application.id)
       attemptsRoot = path.join(runRoot, "attempts")
       const cacheRoot = params.workspaceFixtureManifest ? undefined : process.env.AGENT_APP_BENCHMARK_STATE_CACHE
       const privateRoot = cacheRoot ?? runRoot
@@ -954,7 +979,7 @@ function executeParams(params: unknown): ExecuteParams {
 }
 
 export async function runClaxedoPublicDriver() {
-  const driver = createClaxedoPublicDriver(await makeDefaultDependencies())
+  const driver = createClaxedoPublicDriver(await makeDefaultDependencies(parseApplicationArgument(Bun.argv.slice(2))))
   const handlers: DriverHandlers = {
     hello: async () => driver.hello(),
     prepare: async (params) => driver.prepare(prepareParams(params)),
