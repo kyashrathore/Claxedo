@@ -27,7 +27,7 @@ async function openPanelTab(app: Page, name: string): Promise<Locator> {
   const toggle = app.getByRole("button", { name: "Toggle workspace panel" })
   await expect(toggle).toBeVisible()
   if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click()
-  await app.getByRole("tab", { name }).click()
+  await app.getByRole("tablist", { name: "Workspace panel tabs" }).getByRole("tab", { name }).click()
   return app.getByRole("tabpanel", { name })
 }
 
