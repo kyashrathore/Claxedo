@@ -1,6 +1,6 @@
 import type { Accessor } from "solid-js"
 import type { QueryClient } from "@tanstack/solid-query"
-import type { Account } from "./account-types"
+import type { Account, AccountCheck, AccountKeyInput, EffectiveAccounts, MachineLogin } from "./account-types"
 import type { CloudCreateInput, CloudWorkspace, CodeHostConnection, CodeHostRepository } from "./cloud-types"
 import type { ConnectionState, ServerEvent } from "./events"
 import type {
@@ -110,6 +110,15 @@ export type CloudApi = {
   readonly remove: (id: PlacementId) => Promise<void>
 }
 
+export type AccountsApi = {
+  readonly select: (ids: readonly string[]) => Promise<void>
+  readonly selectMachineLogin: (providerIds: readonly string[]) => Promise<void>
+  readonly remove: (ids: readonly string[]) => Promise<void>
+  readonly check: (id: string) => Promise<AccountCheck>
+  readonly checkMachineLogin: (harness: string) => Promise<readonly MachineLogin[]>
+  readonly addKey: (input: AccountKeyInput) => Promise<string>
+}
+
 export type ServerQueries = {
   readonly projects: {
     readonly list: () => FetchQuery<readonly Project[]>
@@ -120,7 +129,11 @@ export type ServerQueries = {
     readonly byProject: (projectId: ProjectId) => FetchQuery<readonly Placement[]>
   }
   readonly machines: { readonly list: () => FetchQuery<readonly Machine[]> }
-  readonly accounts: { readonly list: () => FetchQuery<readonly Account[]> }
+  readonly accounts: {
+    readonly list: () => FetchQuery<readonly Account[]>
+    readonly effective: () => FetchQuery<EffectiveAccounts>
+    readonly machineLogins: () => FetchQuery<readonly MachineLogin[]>
+  }
   readonly usage: { readonly summary: (input: UsageRequest) => FetchQuery<UsageSummary> }
   readonly marketplace: { readonly catalog: (projectId?: ProjectId) => FetchQuery<MarketplaceCatalog> }
   readonly tasks: { readonly availability: () => FetchQuery<FeatureAvailability> }
@@ -157,5 +170,6 @@ export type Server = {
   readonly terminals: TerminalsApi
   readonly git: GitApi
   readonly cloud: CloudApi
+  readonly accounts: AccountsApi
   readonly queries: ServerQueries
 }

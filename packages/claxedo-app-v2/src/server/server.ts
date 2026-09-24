@@ -1,5 +1,6 @@
 import { QueryClient } from "@tanstack/solid-query"
 import { createSignal } from "solid-js"
+import { createAccountsApi } from "./accounts"
 import { createCapabilities, type CapabilitiesOwner } from "./capabilities"
 import { createCloudApi } from "./cloud"
 import type { ServerConfig } from "./config"
@@ -82,6 +83,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     terminals: createTerminalsApi(transport, workspaces),
     git: createGitApi(transport, workspaces),
     cloud: createCloudApi(transport, workspaces, project),
+    accounts: createAccountsApi(transport, queryClient),
   }
 }
 

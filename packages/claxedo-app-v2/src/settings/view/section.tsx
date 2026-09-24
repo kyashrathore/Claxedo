@@ -11,12 +11,13 @@ export function SettingsIntro(props: { readonly description?: string; readonly a
 }
 
 export function SettingsGroup(props: { readonly title?: string; readonly description?: string; readonly action?: JSX.Element; readonly children: JSX.Element }) {
+  const titleId = createUniqueId()
   return (
-    <section class="settings-group">
+    <section class="settings-group" role={props.title ? "group" : undefined} aria-labelledby={props.title ? titleId : undefined}>
       <Show when={props.title || props.action}>
         <div class="settings-group-head">
           <div>
-            <Show when={props.title}>{(title) => <h2 class="settings-group-title">{title()}</h2>}</Show>
+            <Show when={props.title}>{(title) => <h2 id={titleId} class="settings-group-title">{title()}</h2>}</Show>
             <Show when={props.description}>{(text) => <p class="settings-description">{text()}</p>}</Show>
           </div>
           {props.action}
