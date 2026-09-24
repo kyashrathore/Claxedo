@@ -103,4 +103,5 @@ export const zh: Partial<Record<ComposerTextKey, string>> = {
   "command.category.file": "文件",
   "command.category.session": "会话",
   "prompt.toast.promptSendFailed.title": "发送提示失败",
+  "common.requestFailed": "请求失败",
 }

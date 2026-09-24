@@ -165,10 +165,10 @@ export function Composer(props: ComposerProps) {
         composer.send.disarmGoal()
         controller.focusEditor()
       }}
-      approveEnabled={() => false}
-      permissionGroups={() => undefined}
-      permissionCurrent={() => undefined}
-      onPermissionSelect={() => undefined}
+      approveEnabled={() => props.readOnly !== true}
+      permissionGroups={composer.permissionMode.groups}
+      permissionCurrent={composer.permissionMode.current}
+      onPermissionSelect={composer.permissionMode.select}
       harnessController={() => composer.harnessController}
       harnessScope={composer.key}
       harnessScopeInput={composer.harnessScopeInput}

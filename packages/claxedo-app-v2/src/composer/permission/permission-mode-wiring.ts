@@ -1,37 +1,22 @@
 import { asRecord, readString } from "@/lib/record"
-import { createResource, createSignal, onCleanup, type Accessor } from "solid-js"
-import { showToast } from "@opencode-ai/ui/toast"
-import {
-  fetchSessionPermissionModesByTransport,
-  setSessionPermissionModeByTransport,
-} from "@/features/session/store/session-transport"
-import type { AgentRuntimeDirectory } from "@/platform/runtime/agent/agent-runtime-client"
-import { applyPermissionMode } from "@/features/session/permission/apply"
-import { createComposerAutoAccept } from "./auto-accept"
+import { createResource, createSignal, type Accessor } from "solid-js"
+import type { HarnessConfigApi, PlacementId, SessionRef } from "@/server"
+import { showToast } from "@/ui"
+import { harnessSelectionValue, isHarnessSelection, type HarnessSelection } from "@/lib/harness-selection"
+import { applyPermissionMode, type SessionPermissionWriter } from "./apply"
+import type { HarnessId } from "./mechanisms"
 import { createComposerPermissionMode } from "./permission-mode"
-import type { HarnessId } from "@/platform/identity/session-ref"
-import { isHarnessSelection, type HarnessSelection } from "@/platform/identity/harness-selection"
-import {
-  type HarnessModeReport,
-  type PermissionSelection,
-} from "@/features/session/permission/modes"
-import type { SessionPermissionWriter } from "@/features/session/permission/apply"
-import type { SessionRef, WorkspaceSessionBacking } from "@/platform/identity/session-ref"
-import { fastSessionSwitchQuietDelay } from "@/platform/runtime/session-switch"
+import type { HarnessModeReport, PermissionSelection } from "./modes"
 
 /**
  * The I/O half of the composer's permission-mode picker: fetching what the
  * harness offers, writing a choice back, and reconciling the two.
- *
- * Split out of `composer.tsx` because that file is at the architecture guard's
- * 800-line hard cap, which cannot be allowlisted. The seam is a real one rather
- * than a size dodge — everything here is transport and reconciliation, while
- * `createComposerPermissionMode` next door is pure derivation over what this
- * returns and is tested without any of it.
  */
 export function createComposerPermissionModeWiring(input: {
-  sessionId: () => string | undefined
-  directory: () => AgentRuntimeDirectory
+  api: HarnessConfigApi
+  placementId: () => PlacementId | undefined
+  /** The open session whose own modes answer; absent for a draft or a held harness pick. */
+  sessionRef: () => SessionRef | undefined
   /**
    * The harness the composer currently targets. Part of the resource KEY, not
    * just context: switching harness must invalidate the previous answer, or the
@@ -51,66 +36,19 @@ export function createComposerPermissionModeWiring(input: {
    * a policy that can never be applied because there is no agent to apply it to.
    */
   harnessUnavailable?: () => string | undefined
-  claxedoServerUrl: () => string
-  signedControlPlane: () => boolean
-  workspace: () => WorkspaceSessionBacking | undefined
-  sessionRef: () => SessionRef | undefined
   requestFailedTitle: () => string
 }) {
-  /**
-   * The session ref travels on every path, local included: a draft has no
-   * session id for the runtime to resolve an adapter from, so the ref's tool
-   * sandbox is the only thing that places `GET /permission/modes` on the
-   * loopback runtime. Workspace scope is added only where a workspace exists.
-   */
-  const transportScope = () => {
-    const workspace = input.workspace()
-    return {
-      claxedoServerUrl: input.claxedoServerUrl(),
-      signedControlPlane: input.signedControlPlane(),
-      ...(workspace ? { workspaceId: workspace.workspaceId, hostKind: workspace.kind } : {}),
-      sessionRef: input.sessionRef(),
-    }
-  }
-  /**
-   * Two-argument `createResource` on purpose: the one-argument form runs once
-   * and then never re-runs when the session id arrives, which is the
-   * kept-mounted-dialog trap this codebase has hit before. A draft becoming a
-   * session must re-fetch, because the harness can only report its live state
-   * once there is a session.
-   */
   const resourceKey = () => JSON.stringify({
-    sessionID: input.sessionId() ?? "",
-    directory: input.directory(),
+    sessionID: input.sessionRef()?.sessionId ?? "",
+    placementId: input.placementId() ?? "",
     harness: input.harness() ?? null,
-    selection: input.harnessSelection?.() ?? input.sessionRef()?.harness ?? null,
+    selection: input.harnessSelection?.() ?? null,
   })
   const answered = (unsupported: string): HarnessModeReport => ({
     modes: [],
     unsupported,
     appliesFrom: "next-turn",
   })
-  let cancelQuietWait: (() => void) | undefined
-  const waitForQuietWindow = (delay: number) => {
-    cancelQuietWait?.()
-    if (delay <= 0) return Promise.resolve(true)
-    return new Promise<boolean>((resolve) => {
-      let settled = false
-      const finish = (ready: boolean) => {
-        if (settled) return
-        settled = true
-        if (cancelQuietWait === cancel) cancelQuietWait = undefined
-        resolve(ready)
-      }
-      const timer = setTimeout(() => finish(true), delay)
-      const cancel = () => {
-        clearTimeout(timer)
-        finish(false)
-      }
-      cancelQuietWait = cancel
-    })
-  }
-  onCleanup(() => cancelQuietWait?.())
   const [resource, { refetch, mutate }] = createResource(
     // A DRAFT still fetches, with an empty session id, so the
     // picker can show the harness's real modes before the first message rather
@@ -119,34 +57,20 @@ export function createComposerPermissionModeWiring(input: {
     // The source is a serialized string, not an object literal, deliberately:
     // createResource compares sources with `===`, so a fresh object would
     // refetch on every upstream signal wobble even when the resolved values
-    // are identical. Serializing keeps the refetch keyed to the
-    // session/directory/harness actually changing (or an explicit
-    // `refetch()`) while dropping the byte-identical repeats. The request
-    // itself stays `no-store` — nothing here caches a response.
+    // are identical.
     resourceKey,
     async (sourceKey) => {
-      // `sourceKey` is this module's own `JSON.stringify`, but it comes back as
-      // JSON — read the three fields rather than asserting the shape back.
       const parsed = asRecord(JSON.parse(sourceKey))
       const selection = parsed ? parsed.selection : undefined
-      const source = {
-        sessionID: readString(parsed, "sessionID") ?? "",
-        directory: readString(parsed, "directory") ?? "",
-        selection: isHarnessSelection(selection) ? selection : null,
-      }
-      if (!source.sessionID && !source.selection) return undefined
-      // Every new source/refetch cancels the previous wait. Owner cleanup also
-      // resolves it false, so disposed surfaces never escape into transport I/O.
-      const delay = fastSessionSwitchQuietDelay({ sessionId: source.sessionID })
-      if (!await waitForQuietWindow(delay)) return undefined
-      return (
-        await fetchSessionPermissionModesByTransport({
-          ...transportScope(),
-          directory: source.directory,
-          sessionID: source.sessionID,
-          ...(source.selection ? { harness: source.selection } : {}),
-        })
-      ).data
+      const sessionID = readString(parsed, "sessionID") ?? ""
+      const placementId = input.placementId()
+      const ref = input.sessionRef()
+      if (!placementId || (!sessionID && !isHarnessSelection(selection))) return undefined
+      return await input.api.permissionModes({
+        placementId,
+        ...(sessionID && ref ? { ref } : {}),
+        ...(isHarnessSelection(selection) ? { harness: harnessSelectionValue(selection) } : {}),
+      })
     },
   )
 
@@ -158,13 +82,8 @@ export function createComposerPermissionModeWiring(input: {
    * real answer, or it renders as a spinner that never resolves.
    *
    * A failed fetch leaves `latest` undefined, so without this branch a dead
-   * backend is indistinguishable from a slow one and renders as a spinner that
-   * never resolves — the same defect as the "Waiting for … to report its modes"
-   * bug this whole feature replaced, one layer higher.
+   * backend is indistinguishable from a slow one.
    *
-   * A scope-keyed cache retains the last answer during refetch.
-   */
-  /**
    * The active mode belongs to a session, not just a harness. Retain answers
    * only for the same complete request scope while refreshing.
    */
@@ -172,7 +91,7 @@ export function createComposerPermissionModeWiring(input: {
 
   const report = (): HarnessModeReport | undefined => {
     // Checked before the fetch result, because the fetch succeeds either way.
-    // The directory-scoped route answers from the recorded table without ever
+    // The placement-scoped read answers from the recorded table without ever
     // asking the agent, so a broken harness still returns a full, plausible
     // list — and a list is the one thing that must not be shown here.
     const unavailable = input.harnessUnavailable?.()
@@ -189,8 +108,7 @@ export function createComposerPermissionModeWiring(input: {
     }
     // In flight: show this scope's cached answer if we have one, and undefined
     // otherwise. Deliberately not `resource.latest` — that keeps the previous
-    // harness's list on screen across a switch, which is the stale-read the
-    // harness key exists to prevent.
+    // harness's list on screen across a switch.
     return cache.get(key)
   }
 
@@ -209,24 +127,19 @@ export function createComposerPermissionModeWiring(input: {
   const writer = (): SessionPermissionWriter => ({
     setPermissionMode: async (call) => {
       const key = resourceKey()
-      const result = await setSessionPermissionModeByTransport({
-        ...transportScope(),
-        directory: input.directory(),
-        sessionID: call.sessionID,
-        modeId: call.modeId,
-      })
+      const ref = input.sessionRef()
+      if (!ref || ref.sessionId !== call.sessionID) throw new Error("The session is no longer open")
+      const result = await input.api.setPermissionMode(ref, call.modeId)
       if (key === resourceKey()) {
         // The write returns the agent's complete read-back. Install that answer
         // before clearing the optimistic choice, including when it was clamped.
-        if (result.data) {
-          cache.set(key, result.data)
-          mutate(result.data)
-        }
+        cache.set(key, result)
+        mutate(result)
         setPending(undefined)
         void refetch()
       }
       // The harness's answer, which can name a different mode than the request.
-      return { currentModeId: result.data?.currentModeId }
+      return { currentModeId: result.currentModeId }
     },
   })
 
@@ -234,7 +147,6 @@ export function createComposerPermissionModeWiring(input: {
     setPending(undefined)
     const detail = error instanceof Error ? error.message : String(error)
     showToast({
-      variant: "error",
       title: input.requestFailedTitle(),
       // Says the change did not happen. Silence here would leave the user
       // believing a policy is in force that the harness never accepted.
@@ -253,44 +165,26 @@ export function createComposerPermissionModeWiring(input: {
     harnessUnavailable: () => input.harnessUnavailable?.() }
 }
 
-/**
- * The composer's whole permission surface composed in one place: transport
- * wiring, the auto-accept switch, and the mode picker derived from both.
- * Lives here for the same reason the wiring does — `composer.tsx` sits at the
- * 800-line hard cap, and this composition is policy over this module's seam.
- */
+/** The composer's permission picker composed over its wiring. */
 export function createComposerPermissionSurface(input: {
-  sessionId: () => string | undefined
-  resolvedSessionId: () => string | undefined
-  directory: () => AgentRuntimeDirectory
+  api: HarnessConfigApi
+  placementId: () => PlacementId | undefined
+  sessionRef: () => SessionRef | undefined
   harness: Accessor<HarnessId | undefined>
   harnessSelection?: Accessor<HarnessSelection | undefined>
   harnessUnavailable: () => string | undefined
-  claxedoServerUrl: () => string
-  signedControlPlane: () => boolean
-  workspace: () => WorkspaceSessionBacking | undefined
-  sessionRef: () => SessionRef | undefined
   requestFailedTitle: () => string
-  permission: Parameters<typeof createComposerAutoAccept>[0]["permission"]
 }) {
   const permissionModeWiring = createComposerPermissionModeWiring({
-    sessionId: input.sessionId,
-    directory: input.directory,
+    api: input.api,
+    placementId: input.placementId,
+    sessionRef: input.sessionRef,
     harness: input.harness,
     harnessSelection: input.harnessSelection,
     harnessUnavailable: input.harnessUnavailable,
-    claxedoServerUrl: input.claxedoServerUrl,
-    signedControlPlane: input.signedControlPlane,
-    workspace: input.workspace,
-    sessionRef: input.sessionRef,
     requestFailedTitle: input.requestFailedTitle,
   })
 
-  const autoAccept = createComposerAutoAccept({
-    permission: input.permission,
-    sessionId: input.sessionId,
-    directory: input.directory,
-  })
   const permissionMode = createComposerPermissionMode({
     harness: input.harness,
     report: permissionModeWiring.report,
@@ -301,8 +195,8 @@ export function createComposerPermissionSurface(input: {
       applyPermissionMode({ delivery: option.delivery, sessionID, client: permissionModeWiring.writer() }),
     // Drops the optimistic value as well as toasting — see `reportError`.
     onDeliveryError: ({ error }) => permissionModeWiring.reportError(error),
-    sessionId: input.resolvedSessionId,
+    sessionId: () => input.sessionRef()?.sessionId,
   })
 
-  return { permissionModeWiring, autoAccept, permissionMode }
+  return { permissionModeWiring, permissionMode }
 }

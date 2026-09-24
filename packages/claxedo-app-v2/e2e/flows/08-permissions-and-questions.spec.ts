@@ -1,4 +1,4 @@
-import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, test } from "../harness"
+import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, test, installedCli } from "../harness"
 
 test("08 a permission prompt blocks the composer until it is allowed from its dock", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("permission")
@@ -46,4 +46,24 @@ test("08 a question is answered from its dock and the agent receives the answer"
   await expect(prompt).toBeVisible()
   expect(assistantText(await api.messages(workspace.directory, session.id))).toContain("Answer: Blue")
   expect((await api.questions(workspace.directory)).filter((row) => row.sessionID === session.id)).toHaveLength(0)
+})
+
+test("08 the permission chip shows the mode the harness reports and delivers a pick to the session", async ({ stack, api, app, isMobile }) => {
+  test.skip(isMobile, "the chip collapses to its shield on phone")
+  const availability = await installedCli("claude")
+  test.skip(!availability.available, availability.available ? "" : availability.reason)
+  const workspace = await stack.daemon.makeWorkspace("permission-mode")
+  const session = await api.createSession(workspace.directory, { title: "Permission mode", harness: { id: "claude", access: "native" } })
+  await app.goto(`${stack.url}/w/${workspace.id}/s/${session.id}`)
+
+  const chip = app.locator('[data-action="prompt-permission-mode"]')
+  await expect(chip).toHaveText("Auto")
+  await chip.click()
+  const menu = app.getByRole("menu")
+  await expect(menu.getByText("Claude", { exact: true })).toBeVisible()
+  await expect(menu.getByText("Use a model classifier to approve/deny permission prompts")).toBeVisible()
+  const saved = app.waitForResponse((response) => response.request().method() === "PUT" && response.url().includes("/permission-mode"))
+  await menu.getByRole("menuitem", { name: /^Plan/ }).click()
+  expect((await saved).ok()).toBe(true)
+  await expect(chip).toHaveText("Plan")
 })

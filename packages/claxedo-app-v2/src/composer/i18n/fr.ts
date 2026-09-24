@@ -99,4 +99,5 @@ export const fr: Partial<Record<ComposerTextKey, string>> = {
   "prompt.action.attachFile": "Joindre un fichier",
   "command.category.file": "Fichier",
   "prompt.toast.promptSendFailed.title": "Échec de l'envoi du message",
+  "common.requestFailed": "La demande a échoué",
 }
