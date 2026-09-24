@@ -1,7 +1,7 @@
 import { For, Show, type JSX } from "solid-js"
 import { useI18n, useTranslator } from "@/i18n"
 import { formatRelativeTime } from "@/lib/relative-time"
-import { ProviderIcon } from "@/ui"
+import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { dictionary, type UsageKey } from "../i18n"
 import { usedPercent, type QuotaAccount, type QuotaWindow } from "../model"
 import "./usage.css"
@@ -59,7 +59,7 @@ export function QuotaWindows(props: { readonly accounts: readonly QuotaAccount[]
           {(account) => (
             <article class="usage-card" aria-label={accountLabel(account)}>
               <header class="usage-card-head">
-                <ProviderIcon id={HARNESS_ICON[account.harness] ?? account.harness} />
+                <ProviderIcon id={HARNESS_ICON[account.harness] ?? account.harness} class="size-4 shrink-0 icon-strong-base" />
                 <span class="usage-card-title">{accountLabel(account)}</span>
                 <Show when={account.plan}>{(plan) => <span class="usage-card-meta">{plan()}</span>}</Show>
                 <Show when={account.inUse}>
