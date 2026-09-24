@@ -110,47 +110,40 @@ function caretAfterBreak(range: Range, node: Node) {
   range.setStartAfter(node)
 }
 
-export function setCursorPosition(parent: HTMLElement, position: number) {
-  let remaining = position
-  let node = parent.firstChild
-  while (node) {
-    const length = getNodeLength(node)
-    const isText = node.nodeType === Node.TEXT_NODE
-    const isPill = isPillNode(node)
-    const isBreak = isBreakNode(node)
-
-    if (isText && remaining <= length) {
-      const range = document.createRange()
-      range.setStart(node, remaining)
-      placeCaret(range)
-      return
-    }
-
-    if ((isPill || isBreak) && remaining <= length) {
-      const range = document.createRange()
-      if (remaining === 0) range.setStartBefore(node)
-      if (remaining > 0 && isPill) range.setStartAfter(node)
-      if (remaining > 0 && isBreak) caretAfterBreak(range, node)
-      placeCaret(range)
-      return
-    }
-
-    remaining -= length
-    node = node.nextSibling
-  }
-
-  const fallbackRange = document.createRange()
+function caretAtEnd(parent: HTMLElement) {
+  const range = document.createRange()
   const last = parent.lastChild
-  if (last && last.nodeType === Node.TEXT_NODE) {
-    fallbackRange.setStart(last, last.textContent ? last.textContent.length : 0)
-  }
-  if (!last || last.nodeType !== Node.TEXT_NODE) {
-    fallbackRange.selectNodeContents(parent)
-  }
-  fallbackRange.collapse(false)
+  if (last && last.nodeType === Node.TEXT_NODE) range.setStart(last, last.textContent ? last.textContent.length : 0)
+  else range.selectNodeContents(parent)
+  range.collapse(false)
   const selection = window.getSelection()
   selection?.removeAllRanges()
-  selection?.addRange(fallbackRange)
+  selection?.addRange(range)
+}
+
+function caretInNode(node: Node, remaining: number): Range | undefined {
+  const range = document.createRange()
+  if (node.nodeType === Node.TEXT_NODE) {
+    range.setStart(node, remaining)
+    return range
+  }
+  const pill = isPillNode(node)
+  if (!pill && !isBreakNode(node)) return undefined
+  if (remaining === 0) range.setStartBefore(node)
+  else if (pill) range.setStartAfter(node)
+  else caretAfterBreak(range, node)
+  return range
+}
+
+export function setCursorPosition(parent: HTMLElement, position: number) {
+  let remaining = position
+  for (let node = parent.firstChild; node; node = node.nextSibling) {
+    const length = getNodeLength(node)
+    const range = remaining <= length ? caretInNode(node, remaining) : undefined
+    if (range) return placeCaret(range)
+    remaining -= length
+  }
+  caretAtEnd(parent)
 }
 
 export function setRangeEdge(parent: HTMLElement, range: Range, edge: "start" | "end", offset: number) {
