@@ -20,18 +20,8 @@ export {
   setReviewToolbarSlot,
 } from "./controls/portal-slot"
 export { Collapsible, type CollapsibleProps } from "./collapsible"
-export {
-  Dialog,
-  DialogBody,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTitleGroup,
-  type DialogProps,
-  type DialogHeaderProps,
-  type DialogTitleGroupProps,
-} from "./dialog"
-export { DialogProvider, useDialog } from "./dialog-host"
+export { Dialog, type DialogProps } from "@opencode-ai/ui/dialog"
+export { DialogProvider, useDialog } from "@opencode-ai/ui/context/dialog"
 export { DiffChanges } from "./diff-changes"
 export { Divider, type DividerProps } from "./divider"
 export { DockShell, DockShellForm, DockTray, type DockTrayProps } from "./dock-surface"
