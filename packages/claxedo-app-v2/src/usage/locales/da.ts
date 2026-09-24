@@ -7,4 +7,5 @@ export const dictionary = {
   "usage.quota.windowResets": "nulstilles om {{reset}}",
   "usage.window.weekly": "Ugentligt",
   "usage.window.weeklyOpus": "Ugentligt · Opus",
+  "usage.quota.checking": "Tjekker dine agenter…",
 }

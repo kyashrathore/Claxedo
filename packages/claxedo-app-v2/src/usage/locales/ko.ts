@@ -8,4 +8,5 @@ export const dictionary = {
   "usage.window.session": "세션",
   "usage.window.weekly": "주간",
   "usage.window.weeklyOpus": "주간 · Opus",
+  "usage.quota.checking": "에이전트를 확인하는 중…",
 }
