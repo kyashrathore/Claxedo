@@ -17,7 +17,13 @@ export type { Workspace }
 const SERVER_ENTRY = path.join(SERVER_DIR, "src/deployments/self-hosted-node/index.ts")
 const TEXT_IMPORTS = pathToFileURL(path.join(REPO_ROOT, "packages/workspace-runtime/src/text-imports.mjs")).href
 
-export type SignedDaemon = { publicOrigin: string; secret: string; distDir: string; operators: readonly string[] }
+export type SignedDaemon = {
+  publicOrigin: string
+  secret: string
+  distDir: string
+  operators: readonly string[]
+  runtimeKeys: { privatePem: string; publicPem: string }
+}
 
 export type Daemon = {
   url: string
@@ -68,6 +74,8 @@ function signedEnv(signed: SignedDaemon): NodeJS.ProcessEnv {
     CLAXEDO_EMBEDDED_AUTH_SECRET: signed.secret,
     CLAXEDO_APP_DIST_DIR: signed.distDir,
     CLAXEDO_OPERATOR_SUBJECTS: signed.operators.join(","),
+    CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: signed.runtimeKeys.privatePem,
+    CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: signed.runtimeKeys.publicPem,
   }
 }
 
