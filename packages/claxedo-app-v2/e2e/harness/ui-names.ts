@@ -2,6 +2,7 @@ export const UI = {
   composer: "Ask anything, / for commands, @ for context...",
   sendIdle: "Type a message to get started",
   send: "Send",
+  stop: "Stop",
   newSession: "New Session",
   rail: "Projects and sessions",
   hideSidebar: "Hide Sidebar",
