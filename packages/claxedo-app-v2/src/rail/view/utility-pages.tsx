@@ -1,6 +1,6 @@
-import type { JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { MarketplacePage } from "@/marketplace"
+import { TASKS_PAGE_PATH, TasksPage } from "@/tasks"
 import type { PageEntry } from "@/shell"
 import { dictionary } from "../i18n"
 
@@ -13,25 +13,17 @@ function titled(key: TitleKey): () => string {
   return () => useTranslator(dictionary)(key)
 }
 
-function PageTitle(props: { readonly title: () => string }): JSX.Element {
-  return (
-    <div class="h-full overflow-auto px-6 py-5">
-      <h1 class="text-base font-medium text-text-strong">{props.title()}</h1>
-    </div>
-  )
-}
-
 const tasksTitle = titled("rail.tasks")
 const marketplaceTitle = titled("rail.marketplace")
 
 export const tasksPage: PageEntry = {
   id: "tasks",
-  path: TASKS_PATH,
+  path: TASKS_PAGE_PATH,
   title: tasksTitle,
   icon: "checklist",
   sidebar: "main",
   tab: true,
-  view: () => <PageTitle title={tasksTitle} />,
+  view: TasksPage,
 }
 
 export const marketplacePage: PageEntry = {

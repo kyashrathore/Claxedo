@@ -24,6 +24,7 @@ import type {
   WorktreeCreateInput,
 } from "./git-types"
 import type { PlacementId, ProjectId, RequestId, TerminalId } from "./ids"
+import type { TasksClient } from "@claxedo/tasks/client"
 import type {
   MachineInstalled,
   MarketplaceCatalog,
@@ -152,6 +153,25 @@ export type MarketplaceApi = {
   readonly removeSource: (id: string) => Promise<void>
 }
 
+export type TaskListKey = {
+  readonly projectId: string
+  readonly status: string | null
+  readonly parent: "any" | "root"
+  readonly includeArchived: boolean
+}
+
+export type TasksApi = {
+  readonly client: TasksClient
+  readonly keys: {
+    readonly scope: readonly unknown[]
+    readonly capabilities: readonly unknown[]
+    readonly presets: (includeArchived: boolean) => readonly unknown[]
+    readonly list: (filter: TaskListKey) => readonly unknown[]
+    readonly detail: (taskId: string) => readonly unknown[]
+    readonly children: (taskId: string) => readonly unknown[]
+  }
+}
+
 export type LivePluginsApi = {
   readonly remove: (pluginId: string) => Promise<void>
 }
@@ -221,6 +241,7 @@ export type Server = {
   readonly cloud: CloudApi
   readonly accounts: AccountsApi
   readonly marketplace: MarketplaceApi
+  readonly tasks: TasksApi
   readonly folders: FoldersApi
   readonly integrations: IntegrationsApi
   readonly sandboxProviders: SandboxProvidersApi
