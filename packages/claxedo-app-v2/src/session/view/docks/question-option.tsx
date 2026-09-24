@@ -1,5 +1,5 @@
 import { Show } from "solid-js"
-import { Icon } from "@/ui"
+import { ClaxedoIcon as Icon } from "@/ui"
 
 export function QuestionMark(props: { multi: boolean; picked: boolean; onClick?: (event: MouseEvent) => void }) {
   return (
