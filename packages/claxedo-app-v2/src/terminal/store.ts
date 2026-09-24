@@ -134,7 +134,9 @@ export function createTerminalStore(input: TerminalStoreInput): TerminalStore {
     },
     recreate: (terminalId) => recreateTerminal(actions, terminalId),
     close: async (terminalId) => {
-      await api.remove(placementId, terminalId)
+      await api.remove(placementId, terminalId).catch((cause: unknown) => {
+        if (toAppError(cause).class !== "not_found") throw cause
+      })
       rows.remove(terminalId)
     },
     loadAgentStatus: async (terminalId) => {

@@ -1,6 +1,6 @@
 # Projects
 
-Owns: the project as the app sees it, its placements, the add-project flow, Settings → Projects (v1's Edit dialog and remove), v1's project list data for the rail, and the routes that name a project or a placement by id.
+Owns: the project as the app sees it, its placements, the create-project form (the composer's Project chip and the first run's step 1), Settings → Projects (v1's Edit dialog and remove), v1's project list data for the rail, and the routes that name a project or a placement by id.
 
 ## Concepts
 
@@ -26,19 +26,11 @@ Owns: the project as the app sees it, its placements, the add-project flow, Sett
 
 The repository picker reads `queries.codeHost.connections()` and `queries.codeHost.repositories(connectionId)`. Failures become `AppError`s through the adapter's `toAppError`.
 
-## State machines
-
-**Add project** (`model.ts`): `choosingSource → choosingAgent → choosingPlacement → creating → created(projectId, placementId?)`, with `failed(error)` from `creating`. Events: `sourceChosen`, `agentChosen`, `back`, `createRequested`, `projectRecorded`, `projectCreated`, `createFailed`.
-
-The flow is hosted first: name and source, then the AI, then where it runs. On every deployment the record is created first through the projects route, then its placement: a cloud workspace through `@/cloud`, or the placement the server registered for the chosen machine. The panels of visited steps stay mounted and hidden, so Back keeps what the user entered.
-
-Once the record exists, `choosingPlacement`, `creating` and `failed` carry its `projectId`. Retrying places that project again and never posts a second record, and Back stops at the placement step (`canGoBack`), because the name and source now belong to a server record.
-
 ## Routes
 
 - `/settings/projects`: Settings → Projects (`projectsSettingsSection`), every project; `?project=<id>` shows that project's settings.
 - Opening an existing placement (`usePlacementOpener`) opens a draft session pane for it and goes home, as the rail's New session does; the server session starts with the draft's first send.
-- A created project (`useCreatedProjectOpener`) starts its first session in the new placement with the harness chosen in the AI step, and goes to `/w/:placementId/s/:sessionId`. The onboarding screen renders outside the workbench, and the session is what carries that harness. A created project with no placement opens its settings; a failed session create is shown as a toast.
+- `primaryPlacement(placements, projectId)` is the placement a project opens in: its folder, else its first placement. The chip and the first run open a new project's draft there.
 
 `PageEntry.title()` calls `useProjectsText()` and must run under the shell's `I18nProvider`.
 
@@ -69,4 +61,4 @@ Every control is a kit component or a 44 px row; pages are one column with no ho
 
 - Flow 2: local add of a folder and a clone, an edit in Settings → Projects read back by id, remove, a deep link by id.
 - Flow 32: hosted-first add on signed web, the id read back, a deep link by id.
-- Flow 1 uses the same steps inside `@/onboarding`.
+- Flow 1 uses `ProjectCreateForm` as step 1 of `@/onboarding`.

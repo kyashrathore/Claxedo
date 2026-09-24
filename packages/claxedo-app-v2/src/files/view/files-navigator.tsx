@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, onCleanup, Show, type JSX } from "solid-js"
+import { createEffect, createMemo, createSignal, on, onCleanup, Show, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { useTranslator } from "@/i18n"
@@ -26,30 +26,31 @@ function revealActivePath(input: {
   readonly expand: (dir: string) => void
   readonly scroller: () => HTMLDivElement | undefined
 }): void {
-  createEffect(() => {
-    const path = input.path()
-    if (!path || !input.active()) return
-    const segments = path.split("/").slice(0, -1)
-    for (const [index] of segments.entries()) input.expand(segments.slice(0, index + 1).join("/"))
-    const reveal = () => {
-      const row = input.scroller()?.querySelector(`[data-file-tree-path="${CSS.escape(path)}"]`)
-      row?.scrollIntoView({ block: "nearest" })
-      return !!row
-    }
-    let observer: MutationObserver | undefined
-    const frame = requestAnimationFrame(() => {
-      const scroller = input.scroller()
-      if (reveal() || !scroller) return
-      observer = new MutationObserver(() => {
-        if (reveal()) observer?.disconnect()
+  createEffect(
+    on([input.path, input.active], ([path, active]) => {
+      if (!path || !active) return
+      const segments = path.split("/").slice(0, -1)
+      for (const [index] of segments.entries()) input.expand(segments.slice(0, index + 1).join("/"))
+      const reveal = () => {
+        const row = input.scroller()?.querySelector(`[data-file-tree-path="${CSS.escape(path)}"]`)
+        row?.scrollIntoView({ block: "nearest" })
+        return !!row
+      }
+      let observer: MutationObserver | undefined
+      const frame = requestAnimationFrame(() => {
+        const scroller = input.scroller()
+        if (reveal() || !scroller) return
+        observer = new MutationObserver(() => {
+          if (reveal()) observer?.disconnect()
+        })
+        observer.observe(scroller, { childList: true, subtree: true })
       })
-      observer.observe(scroller, { childList: true, subtree: true })
-    })
-    onCleanup(() => {
-      cancelAnimationFrame(frame)
-      observer?.disconnect()
-    })
-  })
+      onCleanup(() => {
+        cancelAnimationFrame(frame)
+        observer?.disconnect()
+      })
+    }),
+  )
 }
 
 function SearchRow(): JSX.Element {

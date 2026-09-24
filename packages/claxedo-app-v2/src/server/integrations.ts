@@ -2,6 +2,7 @@ import type { QueryClient } from "@tanstack/solid-query"
 import { readArray, readBoolean, readField, readFiniteNumber, readString } from "../lib/record"
 import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
+import { ask } from "./answer"
 import { jsonInit, type Transport } from "./transport"
 import type { FetchQuery } from "./types"
 
@@ -73,11 +74,7 @@ export function codeHostIntegrations(catalog: IntegrationsCatalog | undefined): 
 
 function httpsLink(value: string | undefined) {
   if (!value) return undefined
-  try {
-    return new URL(value).protocol === "https:" ? value : undefined
-  } catch {
-    return undefined
-  }
+  return URL.canParse(value) && new URL(value).protocol === "https:" ? value : undefined
 }
 
 function promptOf(value: unknown): IntegrationPrompt[] {
@@ -140,10 +137,10 @@ function connectBody(input: IntegrationConnectInput) {
 }
 
 async function connect(transport: Transport, integrationId: string, input: IntegrationConnectInput): Promise<IntegrationConnectOutcome> {
-  const response = await transport.request(`${INTEGRATIONS_PATH}/${encodeURIComponent(integrationId)}/connect`, jsonInit("POST", connectBody(input))).catch(() => undefined)
-  if (!response) return { kind: "failed", reason: "unreachable" }
-  const body = await response.json().catch(() => undefined)
-  if (!response.ok) return failureOf(response.status, body)
+  const answer = await ask(transport, `${INTEGRATIONS_PATH}/${encodeURIComponent(integrationId)}/connect`, jsonInit("POST", connectBody(input)))
+  if (answer.kind === "unreachable") return { kind: "failed", reason: "unreachable" }
+  const body = answer.body
+  if (!answer.ok) return failureOf(answer.status, body)
   const url = readString(body, "url")
   const attemptId = readString(body, "attemptId")
   if (input.method !== "oauth") return { kind: "connected" }
@@ -155,10 +152,10 @@ async function connect(transport: Transport, integrationId: string, input: Integ
 type AttemptState = { readonly state: "pending"; readonly intervalMs?: number } | { readonly state: "complete" } | { readonly state: IntegrationFailure }
 
 async function readAttempt(transport: Transport, attemptId: string): Promise<AttemptState> {
-  const response = await transport.request(`${INTEGRATIONS_PATH}/attempts/${encodeURIComponent(attemptId)}`).catch(() => undefined)
-  if (!response) return { state: "pending" }
-  if (!response.ok) return { state: "gone" }
-  const body = await response.json().catch(() => undefined)
+  const answer = await ask(transport, `${INTEGRATIONS_PATH}/attempts/${encodeURIComponent(attemptId)}`)
+  if (answer.kind === "unreachable") return { state: "pending" }
+  if (!answer.ok) return { state: "gone" }
+  const body = answer.body
   const status = readString(body, "status")
   if (status === "pending") {
     const intervalMs = readFiniteNumber(body, "intervalMs")
@@ -186,9 +183,10 @@ async function awaitGrant(transport: Transport, grant: IntegrationGrant, alive: 
 }
 
 async function reverify(transport: Transport, connectionId: string) {
-  const response = await transport.request(`${INTEGRATIONS_PATH}/connections/${encodeURIComponent(connectionId)}/reverify`, jsonInit("POST"))
-  const body = await response.json().catch(() => undefined)
-  if (response.ok && readBoolean(body, "ok") === true) return { ok: true } as const
+  const answer = await ask(transport, `${INTEGRATIONS_PATH}/connections/${encodeURIComponent(connectionId)}/reverify`, jsonInit("POST"))
+  if (answer.kind === "unreachable") throw answer.error
+  const body = answer.body
+  if (answer.ok && readBoolean(body, "ok") === true) return { ok: true } as const
   const verifyReason = readString(body, "reason")
   return verifyReason ? ({ ok: false, verifyReason } as const) : ({ ok: false } as const)
 }

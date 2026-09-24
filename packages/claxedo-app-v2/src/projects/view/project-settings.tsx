@@ -7,7 +7,7 @@ import { SettingsGroup, SettingsList, SettingsNote, SettingsRow } from "@/settin
 import { Button, Icon, useDialog } from "@/ui"
 import { useProjectsText } from "../i18n"
 import { usePlacementOpener } from "../open"
-import { sourceLabel } from "../model"
+import { sourceLabel } from "../project-source"
 import { getAvatarColors } from "../project-avatar"
 import { projectSettingsPath } from "../routes"
 import { useProject } from "../store"

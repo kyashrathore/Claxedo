@@ -20,6 +20,7 @@ const section = (id: string, key: Keys, group: SettingsSection["group"], order: 
 
 export type { ContrastLevels, ContrastScheme, Preferences } from "./preferences"
 export { CONTRAST_DEFAULTS, PreferencesProvider, usePreferences } from "./preferences"
+export { HarnessAccountCards } from "./view/accounts"
 export { SettingsEmpty, SettingsGroup, SettingsIntro, SettingsList, SettingsNote, SettingsRow } from "./view/section"
 
 export const settingsSections: readonly SettingsSection[] = [
