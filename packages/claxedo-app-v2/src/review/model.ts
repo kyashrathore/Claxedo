@@ -24,9 +24,9 @@ const GIT_ERROR_KEYS: Readonly<Record<string, ReviewKey>> = {
   git_timeout: "review.error.git_timeout",
 }
 
-export type ErrorCopy = { readonly key: ReviewKey; readonly params: { readonly message: string } }
+export type GitErrorCopy = { readonly key: ReviewKey; readonly params: { readonly message: string } }
 
-export function errorCopy(error: AppError): ErrorCopy | undefined {
+export function gitErrorCopy(error: AppError): GitErrorCopy | undefined {
   const key = error.code === undefined ? undefined : GIT_ERROR_KEYS[error.code]
   return key === undefined ? undefined : { key, params: { message: error.message } }
 }

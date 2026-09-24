@@ -15,7 +15,7 @@ Owns: the Changes panel tab. It shows the diff of a placement for a scope, turns
 
 - **Diff load**: the summary query drawn as `loading`, `failed` (with retry) or `ready`; `ready` with no files offers the branch diff against the default base.
 - **File body** (`diff-content.ts`): `media`, `large`, `loading`, `failed` (with retry) or `ready`.
-- **Flows** (`model.ts`): commit `idle → running(staging | committing) → done(hash) | failed(error)`, push `idle → running(pushing) → done(remote, branch) | failed(error)`, worktree `idle → running(creating) → done(placement) | failed(error)`. Git error codes (`git_empty_message`, `git_nothing_staged`, `git_conflict`, `git_push_rejected`, `git_timeout`) have their own copy.
+- **Flows** (`model.ts`): commit `idle → running(staging | committing) → done(hash) | failed(error)`, push `idle → running(pushing) → done(remote, branch) | failed(error)`, worktree `idle → running(creating) → done(placement) | failed(error)`. Git error codes (`git_empty_message`, `git_nothing_staged`, `git_conflict`, `git_push_rejected`, `git_timeout`) have their own copy (`gitErrorCopy`); any other failure shows the app's copy for its error class (`useErrorCopy()` from `src/i18n`).
 
 ## Invariants
 
