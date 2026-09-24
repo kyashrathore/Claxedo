@@ -39,6 +39,11 @@ The only module that knows today's server: its routes, its OpenCode-shaped paylo
 - `AgentRequestReply`'s `dismiss` arm gained an optional `request` kind.
 - `Server` gained `queries` and `cloud`; `PlacementsApi` gained `list`; `SessionStatusRead` gained `failures`; `ServerQueries` gained `harnesses.options`.
 
+## Known limits
+
+- The hosted `/api/control/session-list` needs a workspace id or a project id, so the one flat list works only against a daemon; a hosted list needs one read per project, merged by `lastHumanTurnAt`.
+- The relay path (remote placements off loopback) and the hosted control plane are not exercised by the probe.
+
 ## Proof
 
 `CLAXEDO_E2E_PORT_RANGE=46800-46899 bun e2e/probes/adapter-smoke.ts` runs the adapter against a real daemon started by the e2e harness, through a TCP proxy it can cut: projects, placements, files, git, terminals, harness options, create, snapshot, a streamed turn, list, statuses, queue, stop, resume by `Last-Event-ID` and a forced replay gap.
