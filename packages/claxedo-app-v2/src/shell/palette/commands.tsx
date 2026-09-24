@@ -23,7 +23,7 @@ import {
   type CommandSource,
 } from "./registrations"
 
-export const PALETTE_ID = "shell.palette"
+export const PALETTE_ID = "command.palette"
 const DEFAULT_PALETTE_KEYBIND = "mod+shift+p"
 const EDITABLE_KEYBIND_IDS = new Set(["terminal.toggle", "terminal.new", "file.attach"])
 
@@ -36,6 +36,7 @@ export type Commands = {
   readonly keybind: (id: string) => string
   readonly keybindParts: (id: string) => string[]
   readonly setKeybind: (id: string, config: string | undefined) => void
+  readonly overridden: () => boolean
   readonly options: () => CommandOption[]
   readonly slashOptions: () => CommandOption[]
   readonly has: (id: string) => boolean
@@ -148,6 +149,7 @@ export function CommandsProvider(props: { readonly children: JSX.Element }): JSX
     },
     options,
     slashOptions,
+    overridden: () => Object.keys(overrides).length > 0,
     has: (id) => registered().ids.has(id),
     showPalette: () => run(OPEN_FILE_COMMAND, "palette"),
     keybinds: (enabled) => setStore("suspendCount", (count) => Math.max(0, count + (enabled ? -1 : 1))),

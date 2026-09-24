@@ -16,7 +16,7 @@ Owns: the settings sections the shell's settings page shows. The shell owns the 
 
 ## Keyboard shortcuts
 
-Rows are the palette's registered commands (`commands.options()` filtered by `commands.has`, which drops the palette's "suggested" copies) plus the palette itself (`shell.palette`), grouped by each command's category. Recording suspends the palette's own keybindings (`commands.keybinds(false)`) until a key is pressed or Escape cancels; the recorded binding is stored with `commands.setKeybind`, so the shell stays the one home of overrides.
+Rows are the palette's registered commands (`commands.options()` filtered by `commands.has`, which drops the palette's "suggested" copies) plus the palette itself (`command.palette`, as today), grouped by each command's category. Recording suspends the palette's own keybindings (`commands.keybinds(false)`) until a key is pressed or Escape cancels; the recorded binding is stored with `commands.setKeybind`, so the shell stays the one home of overrides.
 
 ## Strings
 
