@@ -12,7 +12,7 @@ function panePath(route: PaneRoute): string {
 }
 
 function showsPanes(route: ShellRoute): boolean {
-  return route.kind === "home" || route.kind === "draft" || route.kind === "session" || route.kind === "terminal"
+  return route.kind === "draft" || route.kind === "session" || route.kind === "terminal"
 }
 
 function paneRouteOf(route: ShellRoute, projectOf: (route: Extract<ShellRoute, { placementId: unknown }>) => ProjectId | undefined): PaneRoute | undefined {

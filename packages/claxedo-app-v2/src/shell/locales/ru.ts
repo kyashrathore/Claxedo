@@ -19,7 +19,6 @@ export const dictionary = {
   "shell.key.insert": "Insert",
   "shell.key.esc": "ESC",
   "shell.settings": "Настройки",
-  "shell.close": "Закрыть",
   "shell.loading": "Загрузка",
   "shell.scheme.system": "Системная",
   "shell.scheme.light": "Светлая",
