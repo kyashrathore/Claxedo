@@ -11,7 +11,7 @@ import {
 // check in). `ClaxedoIconV2` is still the one used there because it carries the
 // COMPACT size scale — a 14px check in the 16px indicator slot — rather than
 // the shared primitive's 16px.
-import { ClaxedoIcon as Icon, ClaxedoIconV2 as BareIcon } from "@/ui/controls/claxedo-icon"
+import { ClaxedoIcon as Icon, ClaxedoIconV2 as BareIcon } from "@/ui"
 
 /** Runtime-reported modes, their delivery caveats, and explicit unavailable states. */
 export function PromptPermissionControl(props: {

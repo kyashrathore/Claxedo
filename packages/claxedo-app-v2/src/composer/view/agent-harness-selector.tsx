@@ -3,7 +3,7 @@ import { Show, createEffect, createMemo, createResource, createSignal, untrack, 
 import { useNavigate } from "@solidjs/router"
 import { useServer } from "@/server"
 import { settingsPath } from "@/shell"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
+import { ClaxedoIcon as Icon } from "@/ui"
 import type { PickerState } from "./model-list"
 import { HarnessModelPicker } from "./harness-model-picker"
 import { publishComposerNotice, type ComposerNotice } from "./composer-notice"
