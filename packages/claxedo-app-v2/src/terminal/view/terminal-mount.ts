@@ -1,9 +1,9 @@
 import type { PlacementId, Server, TerminalId } from "@/server"
 import type { Machine } from "@/lib/machine"
+import { resolveWorkspaceFileFocus, type WorkspaceFileFocusTarget } from "@/lib/workspace-file-focus"
 import type { TerminalBackend } from "../backend/types"
 import type { RendererBudget } from "../backend/renderer-budget"
 import { attachTerminal, type Attachment } from "../attach"
-import { fileLinkTarget, type FileLinkTarget } from "../links"
 import { asAppError, type TerminalConnection, type TerminalConnectionEvent, type TerminalRow } from "../model"
 import { isLikelyTui } from "../resize"
 import { monoFontFamily, observeTheme, terminalColors } from "./terminal-colors"
@@ -16,7 +16,7 @@ export type TerminalMountInput = {
   readonly row: () => TerminalRow | undefined
   readonly connection: Machine<TerminalConnection, TerminalConnectionEvent>
   readonly renderers: RendererBudget
-  readonly openFile: (target: FileLinkTarget) => void
+  readonly openFile: (target: WorkspaceFileFocusTarget) => void
   readonly onBackend: (backend: TerminalBackend) => void
 }
 
@@ -64,8 +64,8 @@ export function mountTerminal(input: TerminalMountInput): TerminalMount {
       image: likelyAgent ? "paste" : "path",
       onUrlClick: (_event, url) => window.open(url, "_blank", "noopener,noreferrer"),
       onFileLinkClick: (path, line, col) => {
-        const target = fileLinkTarget(path, input.row()?.cwd, line, col)
-        if (target) input.openFile(target)
+        const target = resolveWorkspaceFileFocus(path, input.row()?.cwd ?? "")
+        if (target) input.openFile({ path: target.path, line: line ?? target.line, col: col ?? target.col })
       },
     })
     if (disposed) {
