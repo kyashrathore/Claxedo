@@ -1,0 +1,15 @@
+scrollTop: 0
+background subagents:
+(none)
+row 0:
+- text: Try the task. acp-script:failed-turn-0 Build · <time>
+- button "Copy message"
+row 1:
+- paragraph: Starting the task.
+- button "Copy response"
+- text: Build · 0s
+row 2:
+- status:
+  - text: That turn didn't complete The agent returned an error before completing this turn. Check the details below, then resend the last prompt.
+  - 'button "Internal error: Scripted turn failure"'
+  - button "Resend last prompt"

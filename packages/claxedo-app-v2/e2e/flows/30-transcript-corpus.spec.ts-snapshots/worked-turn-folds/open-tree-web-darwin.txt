@@ -1,0 +1,12 @@
+scrollTop: 0
+background subagents:
+(none)
+row 0:
+- text: Check the project. acp-script:worked-turn-folds-0 Build · <time>
+- button "Copy message"
+row 1:
+- button "Worked for 0s"
+row 2:
+- paragraph: All checked here.
+- button "Copy response"
+- text: Build · 0s
