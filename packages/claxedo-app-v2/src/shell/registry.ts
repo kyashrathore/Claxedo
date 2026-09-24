@@ -1,3 +1,4 @@
+import { authRoutes } from "@/auth"
 import { browserPanelTab } from "@/browser"
 import { filePaneKind, filesPanelTab } from "@/files"
 import { onboardingRoute } from "@/onboarding"
@@ -20,5 +21,5 @@ export const firstParty: FirstPartyEntries = {
   mentions: [],
   themes: [],
   iconSkins: [],
-  routes: [onboardingRoute],
+  routes: [onboardingRoute, ...authRoutes],
 }
