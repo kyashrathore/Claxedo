@@ -1,8 +1,7 @@
 import { Show, type Component } from "solid-js"
 import { createFlow, runFlow } from "@/lib/flow"
 import { toAppError, type AppError, type ProjectId } from "@/server"
-import { Dialog, useDialog } from "@/ui"
-import { Button } from "@opencode-ai/ui/button"
+import { Dialog, useDialog, Button } from "@/ui"
 import { useProjectsText, type ProjectsText } from "../i18n"
 import { useProjectCommands } from "../store"
 

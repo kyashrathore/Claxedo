@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/solid-query"
 import { readString } from "../lib/record"
+import { ask } from "./answer"
 import { ServerError } from "./errors"
 import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
@@ -8,6 +9,7 @@ import type { FetchQuery } from "./types"
 
 const AUTH_PATH = "/api/claxedo/agent-config/providers/auth"
 const CREDENTIALS_PATH = "/api/claxedo/credentials"
+const CUSTOM_PATH = "/api/claxedo/agent-config/providers/custom"
 
 export type ProviderAuthMethod = { readonly type: string; readonly label: string; readonly command?: string }
 
@@ -17,6 +19,17 @@ export type ProviderAuthorization = { readonly url: string; readonly method: "au
 
 export type ProviderKeyInput = { readonly providerId: string; readonly label: string; readonly secret: string }
 
+export type CustomProviderConfig = {
+  readonly providerID: string
+  readonly name: string
+  readonly baseURL: string
+  readonly env: readonly string[]
+  readonly headers: Readonly<Record<string, string>>
+  readonly models: Readonly<Record<string, { readonly name: string }>>
+}
+
+export type CustomProviderDraft = { readonly config: CustomProviderConfig; readonly key?: string }
+
 export type ProviderConnectQueries = { readonly authMethods: (harness: string) => FetchQuery<ProviderAuthMethods> }
 
 export type ProviderConnectApi = {
@@ -25,6 +38,8 @@ export type ProviderConnectApi = {
   readonly saveKey: (input: ProviderKeyInput) => Promise<void>
   readonly reconnect: (credentialId: string, secret: string) => Promise<void>
   readonly saveHostedKey: (input: { readonly providerId: string; readonly harness: string; readonly key: string }) => Promise<void>
+  readonly disconnect: (harness: string, providerId: string) => Promise<void>
+  readonly saveCustomProvider: (draft: CustomProviderDraft) => Promise<void>
 }
 
 function methodsOf(value: unknown): ProviderAuthMethod[] {
@@ -75,6 +90,17 @@ export function createProviderConnectApi(transport: Transport, queryClient: Quer
     },
     saveHostedKey: async (input) => {
       await transport.json<unknown>(withQuery(`/auth/${encodeURIComponent(input.providerId)}`, { harness: input.harness }), jsonInit("PUT", { auth: { key: input.key } }))
+      await changed()
+    },
+    saveCustomProvider: async (draft) => {
+      const config = draft.config
+      if (draft.key) await transport.json<unknown>(CREDENTIALS_PATH, jsonInit("PUT", { provider_id: config.providerID, kind: "api_key", source: "managed", label: config.name, secret: draft.key }))
+      await transport.json<unknown>(withQuery(CUSTOM_PATH, { nativeHarness: "opencode" }), jsonInit("PUT", config))
+      await changed()
+    },
+    disconnect: async (harness, providerId) => {
+      await ask(transport, `${CREDENTIALS_PATH}/provider/${encodeURIComponent(providerId)}`, { method: "DELETE" })
+      await transport.json<unknown>(withQuery(`/auth/${encodeURIComponent(providerId)}`, { harness }), { method: "DELETE" })
       await changed()
     },
   }

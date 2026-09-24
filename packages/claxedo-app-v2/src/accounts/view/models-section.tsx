@@ -1,13 +1,16 @@
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { createSignal, For, Show } from "solid-js"
+import { harnessDisplayLabel } from "@/lib/harness-catalog"
+import { hasManagedProviderCredentials, NATIVE_HARNESS_IDS } from "@/lib/harness-selection"
 import { SettingsIntro } from "@/settings"
 import type { SettingsSection } from "@/shell"
 import { useAccountsText } from "../i18n"
 import { harnesses, type Harness } from "../model"
 import { useAccounts, type Accounts } from "../store"
 import { AgentHarnessAccounts, MachineScanStatus } from "./harness-accounts"
+import { createHarnessProviders, HarnessProvidersSection } from "./harness-providers"
 
-function HarnessTabs(props: { readonly onAdd: (() => void) | undefined }) {
+function HarnessTabs(props: { readonly harness: string; readonly onAdd: (() => void) | undefined }) {
   const t = useAccountsText()
   return (
     <div class="flex items-center gap-1" role="tablist" data-component="models-harness-tabs">
@@ -18,7 +21,7 @@ function HarnessTabs(props: { readonly onAdd: (() => void) | undefined }) {
       <Show when={props.onAdd}>
         {(open) => (
           <button type="button" class="rounded-md border-none bg-transparent px-1 py-0.5 text-12-regular text-text-interactive-base" data-action="agent-add-account" onClick={() => open()()}>
-            {t("settings.providers.agents.addAccount")}
+            {props.harness === "opencode" ? t("provider.custom.title") : t("settings.providers.agents.addAccount")}
           </button>
         )}
       </Show>
@@ -26,7 +29,19 @@ function HarnessTabs(props: { readonly onAdd: (() => void) | undefined }) {
   )
 }
 
-function HarnessSection(props: { readonly harness: Harness; readonly accounts: Accounts }) {
+function CatalogAccounts(props: { readonly harness: string; readonly onAddCustomRef: (open: () => void) => void }) {
+  const providers = createHarnessProviders(() => props.harness)
+  return <HarnessProvidersSection providers={providers} onAddCustomRef={props.onAddCustomRef} />
+}
+
+type ModelsHarness = { readonly id: string; readonly label: string; readonly cli?: Harness }
+
+const MODELS_HARNESSES: readonly ModelsHarness[] = [
+  ...harnesses.map((harness) => ({ id: harness.id, label: harness.label, cli: harness })),
+  ...NATIVE_HARNESS_IDS.filter(hasManagedProviderCredentials).map((id) => ({ id, label: harnessDisplayLabel(id) })),
+]
+
+function HarnessSection(props: { readonly harness: ModelsHarness; readonly accounts: Accounts }) {
   const [addAccount, setAddAccount] = createSignal<() => void>()
   return (
     <section class="flex flex-col gap-4" data-component={`models-section-${props.harness.id}`}>
@@ -37,8 +52,10 @@ function HarnessSection(props: { readonly harness: Harness; readonly accounts: A
         </div>
       </div>
       <div class="flex flex-col gap-4">
-        <HarnessTabs onAdd={addAccount()} />
-        <AgentHarnessAccounts harness={props.harness} accounts={props.accounts} headerless onAddAccountRef={(open) => setAddAccount(() => open)} />
+        <HarnessTabs harness={props.harness.id} onAdd={addAccount()} />
+        <Show when={props.harness.cli} fallback={<CatalogAccounts harness={props.harness.id} onAddCustomRef={(open) => setAddAccount(() => open)} />}>
+          {(cli) => <AgentHarnessAccounts harness={cli()} accounts={props.accounts} headerless onAddAccountRef={(open) => setAddAccount(() => open)} />}
+        </Show>
       </div>
     </section>
   )
@@ -52,7 +69,7 @@ function ModelsSection() {
       <SettingsIntro description={t("settings.models.description")} />
       <MachineScanStatus accounts={accounts} />
       <div class="flex flex-col gap-10">
-        <For each={harnesses}>{(harness) => <HarnessSection harness={harness} accounts={accounts} />}</For>
+        <For each={MODELS_HARNESSES}>{(harness) => <HarnessSection harness={harness} accounts={accounts} />}</For>
       </div>
     </div>
   )

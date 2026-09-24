@@ -1,10 +1,10 @@
 import { For, Match, Switch, type Accessor, type Component } from "solid-js"
 import { unreachable } from "@/lib/machine"
 import type { Placement, ProjectId } from "@/server"
-import { Button } from "@opencode-ai/ui/button"
 import { useProjectsText, type ProjectsText } from "../i18n"
 import { usePlacementOpener } from "../open"
 import { useProjectPlacements } from "../store"
+import { Button } from "@/ui"
 
 export function placementKindLabel(t: ProjectsText, placement: Placement): string {
   switch (placement.kind) {

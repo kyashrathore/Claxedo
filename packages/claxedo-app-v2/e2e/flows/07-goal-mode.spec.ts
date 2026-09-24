@@ -32,3 +32,15 @@ for (const goal of GOALS) {
     release()
   })
 }
+
+test("07 a session whose harness has no Goals opens normally, with no Goal dock", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("no-goal")
+  const session = await api.createSession(workspace.directory, { title: "No Goal", harness: { id: "opencode", access: "native" } })
+  const state = await fetch(`${stack.url}/session/${session.id}/goal/state?directory=${encodeURIComponent(workspace.directory)}`)
+  expect(state.status).toBe(200)
+  expect(await state.json()).toMatchObject({ capabilities: { implemented: false }, goal: null })
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
+  await expect(app.getByText("Could not load this session")).toHaveCount(0)
+  await expect(app.getByRole("region", { name: "Goal", exact: true })).toHaveCount(0)
+})
