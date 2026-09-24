@@ -102,6 +102,7 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
                   attachmentWorkspace={true}
                   afterAccepted={queueEdit.accepted}
                   queuedEdit={queueEdit.edit}
+                dropZone={() => body}
                 />
               </Show>
             </div>

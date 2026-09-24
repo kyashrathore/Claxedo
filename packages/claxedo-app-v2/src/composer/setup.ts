@@ -32,6 +32,8 @@ export type ComposerProps = {
   readonly createSession?: (submission: Submission) => Promise<SessionView>
   readonly afterAccepted?: (view: SessionView) => void
   readonly queuedEdit?: { readonly active: () => boolean; readonly cancel: () => void }
+  /** The pane that takes dropped files for this composer; the composer itself when absent. */
+  readonly dropZone?: () => HTMLElement | undefined
   readonly openImageMarks?: (image: ImagePart, focusIndex?: number) => void
 }
 
@@ -144,7 +146,7 @@ function createReaderFor(input: {
     key: input.key,
     store: input.store,
     editor: input.refs.editor,
-    zone: input.refs.root,
+    zone: () => input.props.dropZone?.() ?? input.refs.root(),
     isDialogActive: () => !!dialog.active,
     target: () => {
       const current = input.selection.harness()

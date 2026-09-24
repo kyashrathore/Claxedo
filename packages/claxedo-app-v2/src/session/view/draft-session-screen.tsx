@@ -20,6 +20,7 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
   const workbench = useWorkbench()
   const key = () => draftComposerKey(props.state.placementId, props.state.draftId)
   const notice = createComposerNoticeChannel()
+  let pane: HTMLDivElement | undefined
   const createSession = async (submission: Submission): Promise<SessionView> => {
     const ref = await stores.list.create({ placementId: props.state.placementId, harness: submission.harness, model: submission.model })
     return stores.open(ref)
@@ -27,7 +28,7 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
   return (
     <section data-component="session-screen" data-variant="draft" aria-label={t("sessionScreen.draft.title")}>
       <ComposerNoticeProvider channel={notice}>
-        <div data-component="session-new-design" class="relative size-full overflow-hidden bg-background-base">
+        <div ref={pane} data-component="session-new-design" class="relative size-full overflow-hidden bg-background-base">
           <div class="absolute inset-x-0 top-[34%] flex justify-center px-6">
             <div data-component="session-new-design-content" class="w-full max-w-[720px]">
               <div class="mb-5 flex justify-center">
@@ -42,6 +43,7 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
                     attachmentWorkspace={true}
                     createSession={createSession}
                     afterAccepted={(view) => workbench.replacePane(props.paneId, sessionPaneKind, view.ref)}
+                    dropZone={() => pane}
                   />
                 </div>
               </div>
