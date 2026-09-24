@@ -1,9 +1,10 @@
 import type { Page } from "@playwright/test"
-import { expect, sessionRoute, test, UI, type Stack } from "../harness"
+import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI, type Stack } from "../harness"
 
 type Section = { readonly v1Row: string; readonly heading: string; readonly v2Link: string }
 
 const GENERAL: Section = { v1Row: "General", heading: "General", v2Link: "Appearance" }
+const TRANSCRIPT: Section = { v1Row: "General", heading: "General", v2Link: "General" }
 const SHORTCUTS: Section = { v1Row: "Shortcuts", heading: "Keyboard shortcuts", v2Link: "Keyboard shortcuts" }
 const MODELS: Section = { v1Row: "Models", heading: "Models", v2Link: "Models" }
 const SECTIONS: readonly Section[] = [
@@ -118,6 +119,31 @@ test("15 settings: color scheme, a rebound shortcut and its reset, every section
   await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
   await app.keyboard.press("ControlOrMeta+Shift+KeyP")
   await expect(palette).toBeVisible()
+})
+
+test("15 settings: Expand shell tool parts opens a turn's shell output in the transcript", async ({ stack, api, app, isMobile }) => {
+  const workspace = await stack.daemon.makeWorkspace("transcript-settings")
+  await stack.acp.write("shell", {
+    steps: [
+      { kind: "tool", tool: "execute", title: "git status", input: { command: "git status" }, text: "shell-output-clean" },
+      { kind: "tool", tool: "read", title: "Read README.md", locations: [{ path: `${workspace.directory}/README.md` }], text: "readme\n" },
+      { kind: "text", text: "The shell ran" },
+    ],
+  })
+  const session = await api.createSession(workspace.directory, { title: "Shell", harness: SCRIPTED_ACP_HARNESS })
+  await api.prompt(workspace.directory, session.id, `Run it. ${acpScriptToken("shell")}`)
+  const route = `${stack.url}${sessionRoute(workspace.id, session.id)}`
+  await app.goto(route)
+  await openSettings(stack, app, isMobile)
+  await openSection(stack, app, isMobile, TRANSCRIPT)
+  const toggle = app.locator('[data-action="settings-feed-shell-tool-parts-expanded"]')
+  await expect(toggle.getByRole("switch")).not.toBeChecked()
+  await toggle.click()
+  await expect(toggle.getByRole("switch")).toBeChecked()
+  await app.goto(route)
+  await expect(app.getByText("The shell ran")).toBeVisible()
+  await app.getByRole("button", { name: UI.workedFor }).click()
+  await expect(app.getByText("shell-output-clean")).toBeVisible()
 })
 
 test("15 settings: Models lists each agent's accounts and this computer's logins", async ({ stack, app, isMobile }) => {

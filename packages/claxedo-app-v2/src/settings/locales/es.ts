@@ -20,4 +20,10 @@ export const dictionary = {
   "settings.keybindings.search": "Buscar atajos",
   "settings.keybindings.empty": "No se encontraron atajos",
   "settings.keybindings.group.general": "General",
+  "settings.general.reasoningSummaries": "Mostrar resúmenes de razonamiento",
+  "settings.general.reasoningSummaries.description": "Mostrar resúmenes del razonamiento del modelo en la línea de tiempo",
+  "settings.general.shellToolPartsExpanded": "Expandir partes de la herramienta shell",
+  "settings.general.shellToolPartsExpanded.description": "Mostrar las partes de la herramienta shell expandidas por defecto en la línea de tiempo",
+  "settings.general.editToolPartsExpanded": "Expandir partes de la herramienta de edición",
+  "settings.general.editToolPartsExpanded.description": "Mostrar las partes de las herramientas de edición, escritura y parcheado expandidas por defecto en la línea de tiempo",
 }

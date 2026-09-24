@@ -104,6 +104,10 @@
   max-width: 60%;
 }
 
+.settings-row-control .v2-select {
+  max-width: 100%;
+}
+
 .settings-empty {
   padding: 24px 16px;
   text-align: center;
@@ -214,11 +218,11 @@
 }
 
 @media (max-width: 640px) {
-  .settings-row {
+  .settings-row:has(> .settings-row-control[data-width="wide"]) {
     flex-wrap: wrap;
   }
 
-  .settings-row-control {
+  .settings-row-control[data-width="wide"] {
     max-width: 100%;
     width: 100%;
   }

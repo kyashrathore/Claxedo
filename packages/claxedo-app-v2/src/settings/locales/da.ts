@@ -20,4 +20,11 @@ export const dictionary = {
   "settings.keybindings.search": "Søg genveje",
   "settings.keybindings.empty": "Ingen genveje fundet",
   "settings.keybindings.group.general": "Generelt",
+  "settings.section.general": "Generelt",
+  "settings.general.reasoningSummaries": "Vis tænkeoversigter",
+  "settings.general.reasoningSummaries.description": "Vis model tænkeoversigter i tidslinjen",
+  "settings.general.shellToolPartsExpanded": "Udvid shell-værktøjsdele",
+  "settings.general.shellToolPartsExpanded.description": "Vis shell-værktøjsdele udvidet som standard i tidslinjen",
+  "settings.general.editToolPartsExpanded": "Udvid edit-værktøjsdele",
+  "settings.general.editToolPartsExpanded.description": "Vis edit-, write- og patch-værktøjsdele udvidet som standard i tidslinjen",
 }

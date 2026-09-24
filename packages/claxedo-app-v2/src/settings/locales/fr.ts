@@ -20,4 +20,11 @@ export const dictionary = {
   "settings.keybindings.search": "Rechercher des raccourcis",
   "settings.keybindings.empty": "Aucun raccourci trouvé",
   "settings.keybindings.group.general": "Général",
+  "settings.section.general": "Général",
+  "settings.general.reasoningSummaries": "Afficher les résumés de raisonnement",
+  "settings.general.reasoningSummaries.description": "Afficher les résumés de raisonnement du modèle dans la chronologie",
+  "settings.general.shellToolPartsExpanded": "Développer les parties de l'outil shell",
+  "settings.general.shellToolPartsExpanded.description": "Afficher les parties de l'outil shell développées par défaut dans la chronologie",
+  "settings.general.editToolPartsExpanded": "Développer les parties de l'outil edit",
+  "settings.general.editToolPartsExpanded.description": "Afficher les parties des outils edit, write et patch développées par défaut dans la chronologie",
 }

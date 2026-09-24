@@ -20,4 +20,11 @@ export const dictionary = {
   "settings.keybindings.search": "Поиск горячих клавиш",
   "settings.keybindings.empty": "Горячие клавиши не найдены",
   "settings.keybindings.group.general": "Основные",
+  "settings.section.general": "Основные",
+  "settings.general.reasoningSummaries": "Показывать сводки рассуждений",
+  "settings.general.reasoningSummaries.description": "Отображать сводки рассуждений модели в ленте",
+  "settings.general.shellToolPartsExpanded": "Разворачивать элементы инструмента shell",
+  "settings.general.shellToolPartsExpanded.description": "Показывать элементы инструмента shell в ленте развернутыми по умолчанию",
+  "settings.general.editToolPartsExpanded": "Разворачивать элементы инструмента edit",
+  "settings.general.editToolPartsExpanded.description": "Показывать элементы инструментов edit, write и patch в ленте развернутыми по умолчанию",
 }

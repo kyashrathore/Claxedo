@@ -20,4 +20,11 @@ export const dictionary = {
   "settings.keybindings.search": "Søk etter snarveier",
   "settings.keybindings.empty": "Ingen snarveier funnet",
   "settings.keybindings.group.general": "Generelt",
+  "settings.section.general": "Generelt",
+  "settings.general.reasoningSummaries": "Vis resonneringssammendrag",
+  "settings.general.reasoningSummaries.description": "Vis sammendrag av modellresonnering i tidslinjen",
+  "settings.general.shellToolPartsExpanded": "Utvid shell-verktøydeler",
+  "settings.general.shellToolPartsExpanded.description": "Vis shell-verktøydeler utvidet som standard i tidslinjen",
+  "settings.general.editToolPartsExpanded": "Utvid edit-verktøydeler",
+  "settings.general.editToolPartsExpanded.description": "Vis edit-, write- og patch-verktøydeler utvidet som standard i tidslinjen",
 }

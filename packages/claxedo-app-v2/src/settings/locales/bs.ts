@@ -20,4 +20,11 @@ export const dictionary = {
   "settings.keybindings.search": "Pretraži prečice",
   "settings.keybindings.empty": "Nema pronađenih prečica",
   "settings.keybindings.group.general": "Opšte",
+  "settings.section.general": "Opšte",
+  "settings.general.reasoningSummaries": "Prikaži sažetke rasuđivanja",
+  "settings.general.reasoningSummaries.description": "Prikaži sažetke rasuđivanja modela na vremenskoj traci",
+  "settings.general.shellToolPartsExpanded": "Proširi dijelove shell alata",
+  "settings.general.shellToolPartsExpanded.description": "Prikaži dijelove shell alata podrazumijevano proširene na vremenskoj traci",
+  "settings.general.editToolPartsExpanded": "Proširi dijelove alata za uređivanje",
+  "settings.general.editToolPartsExpanded.description": "Prikaži dijelove alata za uređivanje, pisanje i patch podrazumijevano proširene na vremenskoj traci",
 }
