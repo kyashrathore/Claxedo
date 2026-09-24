@@ -1,4 +1,5 @@
 import type { Component, JSX } from "solid-js"
+import type { PlacementId, ProjectId, SessionId, TerminalId } from "@/server"
 
 export type Json = null | boolean | number | string | readonly Json[] | { readonly [key: string]: Json }
 
@@ -18,6 +19,15 @@ export type PageEntry = {
 
 export type PaneProps<State> = { readonly state: State; readonly paneId: string; readonly active: boolean }
 
+export type PaneRoute =
+  | {
+      readonly kind: "session"
+      readonly projectId: ProjectId
+      readonly placementId: PlacementId
+      readonly sessionId: SessionId
+    }
+  | { readonly kind: "terminal"; readonly placementId: PlacementId; readonly terminalId: TerminalId }
+
 export type PaneKind<State = Json> = {
   readonly kind: string
   readonly title: (state: State) => string
@@ -25,6 +35,19 @@ export type PaneKind<State = Json> = {
   readonly view: Component<PaneProps<State>>
   readonly encode: (state: State) => Json
   readonly decode: (value: Json) => State | undefined
+  readonly fromRoute?: (route: PaneRoute) => State | undefined
+  readonly toRoute?: (state: State) => PaneRoute | undefined
+}
+
+export type AnyPaneKind = {
+  readonly kind: string
+  readonly title: (state: never) => string
+  readonly icon?: string
+  readonly view: Component<PaneProps<never>>
+  readonly encode: (state: never) => Json
+  readonly decode: (value: Json) => unknown
+  readonly fromRoute?: (route: PaneRoute) => unknown
+  readonly toRoute?: (state: never) => PaneRoute | undefined
 }
 
 export type PanelTab = {
@@ -81,12 +104,19 @@ export type MentionSource = {
 export type ThemeEntry = {
   readonly id: string
   readonly name: string
+  readonly appearance?: "light" | "dark"
   readonly tokens: Readonly<Record<string, string>>
 }
 
 export type IconSkin = {
   readonly id: string
   readonly icons: Readonly<Record<string, () => JSX.Element>>
+}
+
+export type RouteEntry = {
+  readonly id: string
+  readonly path: string
+  readonly view: Component<PageProps>
 }
 
 export type Registry<Entry> = {
@@ -96,7 +126,7 @@ export type Registry<Entry> = {
 
 export type ShellRegistries = {
   readonly pages: Registry<PageEntry>
-  readonly paneKinds: Registry<PaneKind<never>>
+  readonly paneKinds: Registry<AnyPaneKind>
   readonly panelTabs: Registry<PanelTab>
   readonly settingsSections: Registry<SettingsSection>
   readonly sidebarItems: Registry<SidebarItem>
@@ -105,4 +135,5 @@ export type ShellRegistries = {
   readonly mentions: Registry<MentionSource>
   readonly themes: Registry<ThemeEntry>
   readonly iconSkins: Registry<IconSkin>
+  readonly routes: Registry<RouteEntry>
 }
