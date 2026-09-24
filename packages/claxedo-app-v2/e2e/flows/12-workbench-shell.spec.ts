@@ -58,9 +58,10 @@ test("12 New Session again focuses the workspace's one draft tab", async ({ stac
   const draftTab = () => panes(app).getByRole("button", { name: /^New [Ss]ession$/ })
 
   await app.goto(`${stack.url}${sessionRoute(workspace.id, first.id)}`)
-  await app.getByRole("button", { name: "New Session", exact: true }).click()
+  const newSession = () => app.getByRole("main").getByRole("button", { name: UI.newSession, exact: true }).last()
+  await newSession().click()
   await app.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "First", exact: true }).click()
-  await app.getByRole("button", { name: "New Session", exact: true }).click()
+  await newSession().click()
   await app.getByRole("button", { name: UI.hideSidebar }).click()
   await expect(panes(app).getByRole("button", { name: "First", exact: true })).toBeVisible()
   await expect(draftTab()).toHaveCount(1)
@@ -84,8 +85,28 @@ test("12 New Session again focuses the workspace's one draft tab", async ({ stac
         localStorage.setItem(key, JSON.stringify(saved))
       })
       await app.goto(`${stack.url}${sessionRoute(workspace.id, first.id)}`)
-      await app.getByRole("button", { name: "New Session", exact: true }).click()
+      await newSession().click()
       await expect(draftTab()).toHaveCount(1)
     })
   }
+})
+
+test("12 closing every tab leaves the workspace's new-session composer, and New Session keeps it", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("bench", "Bench")
+  const first = await api.createSession(workspace.directory, { title: "First", harness: SCRIPTED_ACP_HARNESS })
+  const composer = app.getByRole("textbox", { name: UI.composer })
+
+  const newSession = () => app.getByRole("main").getByRole("button", { name: UI.newSession, exact: true }).last()
+
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, first.id)}`)
+  await expect(composer).toBeVisible()
+  await newSession().click()
+  await app.getByRole("button", { name: UI.hideSidebar }).click()
+  await panes(app).getByRole("button", { name: "Close First" }).click()
+  await panes(app).getByRole("button", { name: /^Close New Session$/i }).click()
+
+  await expect(composer).toBeVisible()
+  await newSession().click()
+  await expect(composer).toBeVisible()
+  await expect(app).toHaveURL(new RegExp(`/w/${workspace.id}(/session)?$`))
 })
