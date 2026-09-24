@@ -6,7 +6,7 @@ import { useDialog } from "@/ui"
 import type { ImagePart } from "./model"
 import { promptImages } from "./model"
 import { useComposerStore, type ComposerKey } from "./store"
-import { useComposerServices } from "./services"
+import { useShellRegistries } from "./shell-registries-placeholder"
 import { useComposerText } from "./text"
 import { createAttachmentReader, type DraggingType } from "./attachments/reader"
 import { createComposerController, createComposerRefs } from "./controller"
@@ -28,7 +28,7 @@ export type ComposerProps = {
 
 export function createComposer(props: ComposerProps) {
   const store = useComposerStore()
-  const services = useComposerServices()
+  const registries = useShellRegistries()
   const server = useServer()
   const dialog = useDialog()
   const t = useComposerText()
@@ -55,7 +55,7 @@ export function createComposer(props: ComposerProps) {
   const [dragging, setDragging] = createSignal<DraggingType>(null)
 
   const suggestions = createSuggestions({
-    services,
+    registries,
     placementId: () => props.placementId,
     query,
     goalAvailable,
@@ -89,7 +89,6 @@ export function createComposer(props: ComposerProps) {
     },
     setDraggingType: setDragging,
     focusEditor: () => focus(),
-    readClipboardImage: services.readClipboardImage,
   })
 
   const runCommand = (item: SlashItem) => {

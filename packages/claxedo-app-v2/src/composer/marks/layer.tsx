@@ -1,6 +1,7 @@
 import { For, Show } from "solid-js"
+import { MARK_COLOR, MARK_TEXT_COLOR } from "@/lib/image-mark-badge"
 import type { ImageMark } from "../model"
-import { MARK_COLOR, MARK_TEXT_COLOR, badgeCenter, isPin, markStyle, type Size } from "./marks"
+import { badgeCenter, isPin, markStyle, type Size } from "./marks"
 
 export function ImageMarkLayer(props: {
   size: Size

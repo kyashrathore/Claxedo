@@ -4,7 +4,7 @@ import fuzzysort from "fuzzysort"
 import type { PlacementId } from "@/server"
 import { useServer } from "@/server"
 import type { CommandEntry, MentionEntry } from "@/shell/types"
-import type { ComposerServices } from "./services"
+import type { ComposerRegistries } from "./shell-registries-placeholder"
 
 export type AtItem =
   | { kind: "file"; id: string; path: string; directory: boolean }
@@ -19,7 +19,7 @@ export type SuggestionQuery = { kind: "closed" } | { kind: "at"; query: string }
 const AT_LIMIT = 10
 
 export function createSuggestions(input: {
-  services: ComposerServices
+  registries: ComposerRegistries
   placementId: Accessor<PlacementId | undefined>
   query: Accessor<SuggestionQuery>
   goalAvailable: Accessor<boolean>
@@ -43,7 +43,7 @@ export function createSuggestions(input: {
   })
 
   const [mentions] = createResource(
-    () => (atQuery() === undefined ? undefined : { query: atQuery() ?? "", sources: input.services.mentions() }),
+    () => (atQuery() === undefined ? undefined : { query: atQuery() ?? "", sources: input.registries.mentions.list() }),
     async ({ query, sources }) => {
       const lists = await Promise.all(sources.map((source) => source.search(query)))
       return lists.flat()
@@ -63,8 +63,8 @@ export function createSuggestions(input: {
   const slashItems = createMemo((): SlashItem[] => {
     const query = slashQuery()
     if (query === undefined) return []
-    const commands = input.services
-      .commands()
+    const commands = input.registries.commands
+      .list()
       .filter((entry) => !entry.when || entry.when())
       .map((entry): SlashItem => ({ kind: "command", id: entry.id, trigger: entry.id, title: entry.title(), keybinding: entry.keybinding, entry }))
     const all: SlashItem[] = input.goalAvailable()

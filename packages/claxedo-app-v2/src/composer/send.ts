@@ -1,10 +1,12 @@
 import { createMemo, type Accessor } from "solid-js"
 import type { HarnessInfo, PromptAttachment, PromptInput } from "@/server"
 import type { SessionView } from "@/session"
+import { formatCommentNote, formatImageMarkNote } from "@/lib/comment-note"
 import { machine } from "@/lib/machine"
 import type { Draft, EditorMode, HistoryComment, Selection, SendEvent, SendState } from "./model"
 import { promptFilled, promptImages, promptText, randomId, sendTransition } from "./model"
 import { flattenMarkedImages } from "./marks/flatten"
+import { numberImageMarks } from "./marks/marks"
 import { asAppError } from "./errors"
 import type { ComposerKey, ComposerStore } from "./store"
 
@@ -48,6 +50,23 @@ export function historyComments(draft: Draft): HistoryComment[] {
   })
 }
 
+function noteAttachments(draft: Draft): PromptAttachment[] {
+  const comments = draft.context.flatMap((item): PromptAttachment[] => {
+    if (item.type === "text") return [{ kind: "text", text: item.text, label: item.label }]
+    const comment = item.comment?.trim()
+    if (!comment) return []
+    const text = formatCommentNote({ path: item.path, selection: item.selection, comment })
+    return [{ kind: "text", text, label: commentLabel(item.path, item.selection) }]
+  })
+  const marks = numberImageMarks(promptImages(draft.prompt)).flatMap((entry): PromptAttachment[] => {
+    const comment = entry.mark.comment.trim()
+    if (!comment) return []
+    const note = { filename: entry.filename, number: entry.number, comment }
+    return [{ kind: "text", text: formatImageMarkNote(note), label: `${entry.filename} #${entry.number}` }]
+  })
+  return [...comments, ...marks]
+}
+
 export async function buildPromptInput(input: {
   draft: Draft
   mode: EditorMode
@@ -57,14 +76,14 @@ export async function buildPromptInput(input: {
   const images = await flattenMarkedImages(promptImages(input.draft.prompt))
   const text = promptText(input.draft.prompt).trim()
   const files = input.draft.prompt.flatMap((part): PromptAttachment[] => (part.type === "file" ? [{ kind: "file", path: part.path }] : []))
-  const comments = input.draft.context.flatMap((item): PromptAttachment[] => {
-    if (item.type === "text") return [{ kind: "text", text: item.text, label: item.label }]
-    return item.comment?.trim() ? [{ kind: "text", text: item.comment, label: commentLabel(item.path, item.selection) }] : []
-  })
   return {
     clientRequestId: randomId(),
     text: input.mode === "shell" ? `!${text}` : text,
-    attachments: [...images.map((image): PromptAttachment => ({ kind: "image", dataUrl: image.dataUrl, name: image.filename, mime: image.mime })), ...files, ...comments],
+    attachments: [
+      ...images.map((image): PromptAttachment => ({ kind: "image", dataUrl: image.dataUrl, name: image.filename, mime: image.mime })),
+      ...files,
+      ...noteAttachments(input.draft),
+    ],
     model: input.selection.model,
     effort: input.selection.effort,
     permissionMode: input.selection.permissionMode,

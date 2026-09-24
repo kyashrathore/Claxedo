@@ -11,9 +11,6 @@ export type NumberedImageMark = {
   mark: ImageMark
 }
 
-export const MARK_COLOR = "#e5484d"
-export const MARK_TEXT_COLOR = "#ffffff"
-
 export function numberImageMarks(images: readonly Pick<ImagePart, "id" | "filename" | "marks">[]) {
   const result: NumberedImageMark[] = []
   for (const image of images) {

@@ -20,7 +20,6 @@ type ReaderInput = {
   target: () => AttachmentTarget
   setDraggingType: (type: DraggingType) => void
   focusEditor: () => void
-  readClipboardImage?: () => Promise<File | null>
 }
 
 function dataUrl(file: File, mime: string) {
@@ -100,13 +99,6 @@ export function createAttachmentReader(input: ReaderInput) {
     }
 
     const plainText = clipboard.getData("text/plain") ?? ""
-    if (input.readClipboardImage && !plainText) {
-      const file = await input.readClipboardImage()
-      if (file) {
-        await add(file)
-        return
-      }
-    }
     if (!plainText) return
     insertText(normalizePaste(plainText))
   }

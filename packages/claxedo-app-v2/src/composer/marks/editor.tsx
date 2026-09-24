@@ -4,7 +4,8 @@ import { Button, Dialog, DialogBody, DialogFooter, DialogHeader, DialogTitle, Li
 import type { ImageMark, ImagePart } from "../model"
 import { useComposerText } from "../text"
 import { ImageMarkLayer } from "./layer"
-import { MARK_COLOR, markFromDrag, markStyle, type Point, type Size } from "./marks"
+import { MARK_COLOR } from "@/lib/image-mark-badge"
+import { markFromDrag, markStyle, type Point, type Size } from "./marks"
 import { commentBoxPosition, createMarkDraft, shownSize } from "./editor-geometry"
 
 export type ImageMarkEditorProps = {

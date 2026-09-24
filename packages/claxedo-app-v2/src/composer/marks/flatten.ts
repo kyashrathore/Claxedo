@@ -1,5 +1,6 @@
+import { MARK_COLOR, MARK_TEXT_COLOR } from "@/lib/image-mark-badge"
 import type { ImagePart } from "../model"
-import { MARK_COLOR, MARK_TEXT_COLOR, badgeCenter, firstMarkNumber, isPin, markStyle } from "./marks"
+import { badgeCenter, firstMarkNumber, isPin, markStyle } from "./marks"
 
 async function loadImage(src: string) {
   const image = new Image()

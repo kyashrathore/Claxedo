@@ -1,8 +1,8 @@
 import { For, Show } from "solid-js"
 import { FileIcon, IconButton, Tooltip } from "@/ui"
+import { ImageMarkBadge } from "@/lib/image-mark-badge"
 import type { ContextItem, FileContextItem } from "../model"
 import type { NumberedImageMark } from "../marks/marks"
-import { ImageMarkBadge } from "../marks/badge"
 
 function fileLabel(path: string) {
   const index = path.lastIndexOf("/")

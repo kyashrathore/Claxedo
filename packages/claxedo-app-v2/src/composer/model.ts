@@ -1,14 +1,10 @@
 import type { AppError, ModelChoice } from "@/server"
+import type { FileSelection } from "@/lib/file-selection"
 import type { Transition } from "@/lib/machine"
 import { unreachable } from "@/lib/machine"
 import { uuid } from "@/lib/uuid"
 
-export type FileSelection = {
-  readonly startLine: number
-  readonly startChar: number
-  readonly endLine: number
-  readonly endChar: number
-}
+export type { FileSelection }
 
 export type LineRange = {
   readonly start: number
