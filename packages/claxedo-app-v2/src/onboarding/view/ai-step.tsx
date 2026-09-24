@@ -26,7 +26,7 @@ function CatalogSection(props: { readonly providers: HarnessProviders; readonly 
 function Scanning() {
   const t = useOnboardingText()
   return (
-    <p class="flex items-center gap-2 py-2 text-12-regular text-text-weak" data-slot="onboarding-ai-scanning">
+    <p class="flex items-center gap-2 py-2 text-12-regular text-text-weak">
       <Spinner class="size-4" />
       <span>{t("onboarding.ai.scanning")}</span>
     </p>
@@ -36,7 +36,7 @@ function Scanning() {
 function CatalogChoice(props: { readonly catalogs: readonly HarnessProviders[]; readonly chosen: string | undefined; readonly onChoose: (id: string) => void }) {
   const t = useOnboardingText()
   return (
-    <span class="flex items-center gap-1.5 text-11-medium text-text-weak" data-slot="onboarding-ai-catalog">
+    <span class="flex items-center gap-1.5 text-11-medium text-text-weak">
       <span>{t("onboarding.ai.catalog")}</span>
       <For each={props.catalogs}>
         {(entry, position) => (
@@ -68,7 +68,7 @@ function MachineLogins(props: { readonly onReady: (ready: boolean) => void }) {
   createEffect(() => props.onReady(accounts.runnable() || connected()))
   const chosenCatalog = () => catalogs.find((entry) => entry.harness() === chosen())
   return (
-    <div class="flex flex-col gap-4" data-slot="onboarding-ai-logins">
+    <div class="flex flex-col gap-4">
       <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <span class="text-12-medium text-text-weak">{t("onboarding.ai.logins")}</span>
         <CatalogChoice catalogs={catalogs} chosen={chosen()} onChoose={(id) => setChosen(chosen() === id ? undefined : id)} />
@@ -87,7 +87,7 @@ function HostedLogins(props: { readonly onReady: (ready: boolean) => void }) {
   const { catalogs, connected } = useCatalogs(HOSTED_HARNESSES)
   createEffect(() => props.onReady(connected()))
   return (
-    <div class="flex flex-col gap-6" data-slot="onboarding-ai-logins">
+    <div class="flex flex-col gap-6">
       <For each={catalogs}>{(providers) => <CatalogSection providers={providers} />}</For>
     </div>
   )

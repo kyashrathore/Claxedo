@@ -25,7 +25,7 @@ function executionRows(t: OnboardingText, localExecution: boolean): ExecutionRow
 function ConnectMachine(props: { readonly localExecution: boolean }) {
   const t = useOnboardingText()
   return (
-    <div class="flex flex-col gap-3" data-slot="onboarding-machine">
+    <div class="flex flex-col gap-3">
       <p class="text-13-regular text-text-weak">{t("onboarding.execution.machine.intro")}</p>
       <TextField label={t("onboarding.execution.machine.invite")} value={INVITE_COMMAND} readOnly copyable />
       <TextField label={t("onboarding.execution.machine.connect")} value={CONNECT_COMMAND} readOnly copyable />
@@ -49,7 +49,7 @@ export function ExecutionStep(props: {
   })
   createEffect(() => props.onReady(ready()))
   return (
-    <div class="flex flex-col gap-4" data-slot="onboarding-execution">
+    <div class="flex flex-col gap-4">
       <div role="radiogroup" aria-label={t("onboarding.execution.label")} class="flex flex-col gap-2">
         <For each={executionRows(t, props.localExecution)}>
           {(row) => (
@@ -68,7 +68,7 @@ export function ExecutionStep(props: {
         </For>
       </div>
       <Show when={props.choice === "cloud"}>
-        <Show when={props.localExecution} fallback={<p class="text-13-regular text-text-weak" data-slot="onboarding-cloud-hosted">{t("onboarding.execution.cloud.hosted")}</p>}>
+        <Show when={props.localExecution} fallback={<p class="text-13-regular text-text-weak">{t("onboarding.execution.cloud.hosted")}</p>}>
           <SandboxProviderKey onReady={setKeyReady} />
         </Show>
       </Show>
