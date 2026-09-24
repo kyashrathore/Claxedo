@@ -3,10 +3,8 @@
 // the composer, forwards explicit scroll keys as scroll gestures, and focuses
 // the composer with caret restoration for typing keys. Key classification
 // itself lives in session-keydown.ts; this wires it to the live screen.
-import { setCursorPosition } from "@/features/session/composer/ui/editor-dom"
-import { promptLength } from "@/features/session/composer/ui/history"
-import { classifySessionKeydown, isEditableTagName } from "@/features/session/ui/session-keydown"
-import type { usePrompt } from "@/features/session/providers/prompt"
+import { setCursorPosition } from "@/composer"
+import { classifySessionKeydown, isEditableTagName } from "./session-keydown"
 
 export function createSessionScreenKeydownHandler(input: {
   active: () => boolean
@@ -14,7 +12,7 @@ export function createSessionScreenKeydownHandler(input: {
   dialogActive: () => unknown
   inputEl: () => HTMLDivElement | undefined
   composerBlocked: () => boolean
-  prompt: Pick<ReturnType<typeof usePrompt>, "cursor" | "current">
+  prompt: { readonly cursor: () => number | undefined; readonly length: () => number }
   markScrollGesture: () => void
 }) {
   const isEditableTarget = (target: EventTarget | null | undefined) => {
@@ -67,7 +65,7 @@ export function createSessionScreenKeydownHandler(input: {
       el.focus()
       // Blur may have destroyed the DOM selection (editor re-renders) — restore
       // the caret the composer persisted into the prompt store.
-      setCursorPosition(el, input.prompt.cursor() ?? promptLength(input.prompt.current()))
+      setCursorPosition(el, input.prompt.cursor() ?? input.prompt.length())
     }
   }
 }

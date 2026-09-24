@@ -1,11 +1,12 @@
-import { createEffect, createMemo, createSignal, Match, on, Show, Switch } from "solid-js"
-import { Composer, sessionComposerKey } from "@/composer"
+import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js"
+import { Composer, promptText, sessionComposerKey, useComposerStore } from "@/composer"
 import { useElapsed } from "@/lib/delay"
 import { FailureBoundary, FailureNotice } from "@/lib/failure"
 import { sessionId, useServer, type SessionRef } from "@/server"
 import { usePanel } from "@/panel"
 import { useSessionStores, type SessionView } from "@/session"
 import { sessionPath, useShellRoute, type PaneProps } from "@/shell"
+import { useDialog } from "@/ui"
 import { useWorkbench } from "@/workbench"
 import { createQueueEdit } from "./queue-edit"
 import { createTodoDock, SessionDocks, TodoDockSlot } from "./session-docks"
@@ -14,6 +15,7 @@ import { useSessionScreenText, type SessionScreenText } from "./text"
 import { createTimelineHost } from "./timeline-host"
 import { createTimelineScroll } from "./timeline-scroll"
 import { createDockFollow } from "./dock-follow"
+import { createSessionScreenKeydownHandler } from "./session-screen-keydown"
 import { turnActive } from "./timeline"
 import "./session-screen.css"
 
@@ -50,6 +52,7 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
   const workbench = useWorkbench()
   const routing = useShellRoute()
   const panel = usePanel()
+  const dialog = useDialog()
   const parentId = () => props.view.row()?.parentSessionId
   const [parent, setParent] = createSignal<SessionView>()
   createEffect(on(parentId, (id) => setParent(id ? stores.open({ ...props.view.ref, sessionId: sessionId(id) }) : undefined)))
@@ -66,9 +69,22 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
   const scroll = createTimelineScroll({ view: () => props.view, active: () => props.active, working })
   const todo = createTodoDock(() => props.view)
   const lift = () => (todo.open() ? 36 : 0)
+  const composers = useComposerStore()
+  let body: HTMLDivElement | undefined
+  const draft = () => composers.draft(sessionComposerKey(props.view.ref))
+  const handleKeyDown = createSessionScreenKeydownHandler({
+    active: () => props.active,
+    dialogActive: () => dialog.active,
+    inputEl: () => body?.querySelector<HTMLDivElement>('[data-component="prompt-input"]') ?? undefined,
+    composerBlocked: () => props.view.requests().length > 0 || !!parentId(),
+    prompt: { cursor: () => draft().cursor, length: () => promptText(draft().prompt).length },
+    markScrollGesture: () => scroll.props.onMarkScrollGesture(),
+  })
+  document.addEventListener("keydown", handleKeyDown)
+  onCleanup(() => document.removeEventListener("keydown", handleKeyDown))
   const setDock = createDockFollow(scroll)
   return (
-    <div data-slot="session-screen-body">
+    <div ref={body} data-slot="session-screen-body">
       <div data-slot="session-screen-timeline">
         <SessionTimeline view={props.view} host={host} active={props.active} scroll={scroll} onNavigateParent={toParent} />
       </div>
