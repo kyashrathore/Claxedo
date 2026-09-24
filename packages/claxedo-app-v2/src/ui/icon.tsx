@@ -19,8 +19,8 @@ export interface IconProps extends ComponentProps<"svg"> {
   size?: IconSize
 }
 
-const spriteId = "claxedo-icon-sprite"
-const symbolId = (name: IconName) => `claxedo-icon-${name}`
+const spriteId = "v2-icon-sprite"
+const symbolId = (name: IconName) => `v2-icon-${name}`
 
 function ensureSprite() {
   if (document.getElementById(spriteId)) return
