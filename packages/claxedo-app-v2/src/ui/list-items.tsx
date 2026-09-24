@@ -20,7 +20,7 @@ export function ListGroupHeader(props: { scroll: () => HTMLDivElement | undefine
   })
 
   return (
-    <div data-slot="list-header" class="ui-list-header" data-stuck={state.stuck} ref={(element) => setState("header", element)}>
+    <div data-slot="v2-list-header" class="v2-list-header" data-stuck={state.stuck} ref={(element) => setState("header", element)}>
       {props.children}
     </div>
   )
@@ -41,8 +41,8 @@ export function ListItem(props: {
   return (
     <button
       type="button"
-      data-slot="list-item"
-      class="ui-list-item"
+      data-slot="v2-list-item"
+      class="v2-list-item"
       data-key={props.itemKey}
       data-active={props.active}
       data-selected={props.selected}
@@ -55,19 +55,19 @@ export function ListItem(props: {
     >
       {props.children}
       <Show when={props.selected}>
-        <span data-slot="list-item-selected-icon" class="ui-list-item-selected-icon">
+        <span data-slot="v2-list-item-selected-icon" class="v2-list-item-selected-icon">
           <Icon name="check-small" />
         </span>
       </Show>
       <Show when={props.activeIcon}>
         {(icon) => (
-          <span data-slot="list-item-active-icon" class="ui-list-item-active-icon">
+          <span data-slot="v2-list-item-active-icon" class="v2-list-item-active-icon">
             <Icon name={icon()} />
           </span>
         )}
       </Show>
       <Show when={props.divider}>
-        <span data-slot="list-item-divider" class="ui-list-item-divider" />
+        <span data-slot="v2-list-item-divider" class="v2-list-item-divider" />
       </Show>
     </button>
   )
@@ -81,13 +81,13 @@ export function ListEmpty(props: { loading: boolean; filter: string; emptyMessag
     return (
       <>
         <span>No results for </span>
-        <span data-slot="list-filter">"{props.filter}"</span>
+        <span data-slot="v2-list-filter">"{props.filter}"</span>
       </>
     )
   }
   return (
-    <div data-slot="list-empty-state">
-      <div data-slot="list-message">{message()}</div>
+    <div data-slot="v2-list-empty-state">
+      <div data-slot="v2-list-message">{message()}</div>
     </div>
   )
 }

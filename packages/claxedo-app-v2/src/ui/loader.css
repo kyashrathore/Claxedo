@@ -1,5 +1,5 @@
 @layer components {
-  .ui-loader {
+  .v2-loader {
     --_duration: 900ms;
     display: block;
     flex-shrink: 0;
@@ -8,12 +8,12 @@
     transform-origin: center;
   }
 
-  [data-component="loader"] [data-slot="loader-background"] {
+  [data-component="v2-loader"] [data-slot="v2-loader-background"] {
     stroke: currentColor;
     opacity: 0.2;
   }
 
-  [data-component="loader"] [data-slot="loader-progress"] {
+  [data-component="v2-loader"] [data-slot="v2-loader-progress"] {
     stroke: currentColor;
     stroke-linecap: round;
     transform: rotate(-90deg);
@@ -27,7 +27,7 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .ui-loader {
+    .v2-loader {
       animation: none;
     }
   }

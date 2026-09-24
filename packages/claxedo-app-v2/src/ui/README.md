@@ -1,13 +1,12 @@
 # UI kit
 
-The one kit of the Claxedo app: v2 components and v2 tokens, nothing from `packages/ui` or `packages/session-ui`. App code imports from `@/ui` only; `data-slot` and `ui-*` classes stay inside this folder.
+v2's own components and tokens. Surfaces ported from today's app render with today's kit (`@opencode-ai/ui`), and today's global CSS (`src/shell/styles`) styles the kit's selectors for the whole page, so every `data-component`, `data-slot` and class name here carries the `v2-` prefix (`[data-component="v2-dialog"]`, `.v2-button`): an unprefixed name would take the kit's rules, and a kit dialog would take these. Names stay inside this folder.
 
 ## Owned concepts
 
 - **Tokens.** `tokens/colors.css` holds the primitive ramps (`--v2-grey-*`, `--v2-blue-*`, `--v2-alpha-*`, …). `tokens/theme.css` holds the semantic tokens (`--v2-background-*`, `--v2-text-*`, `--v2-icon-*`, `--v2-border-*`, `--v2-overlay-*`, `--v2-state-*`, `--v2-elevation-*`) for the light set (`:root`, `[data-color-scheme="light"]`) and the dark set (`[data-color-scheme="dark"]`). `tokens/type.css` holds fonts, the type scale, radii and the few shadows components compose from.
 - **Global styles.** `styles.css` is the app's one stylesheet entry (imported once by `src/main.tsx`): layer order, Tailwind (`@theme` maps every utility to a token), the base reset (`base.css`) and the touch rules (`touch.css`).
-- **Color scheme and themes.** `theme/` owns the color-scheme preference (`light`, `dark`, `system`; `system` follows `prefers-color-scheme` live), the active theme id (`claxedo` by default) and the registry a plugin theme joins through `registerTheme`. It paints `data-theme`, `data-color-scheme`, `color-scheme` and the `theme-color` meta on `<html>`. `public/claxedo-theme-preload.js` repeats that paint before the first frame from `localStorage` (`claxedo-theme`, `claxedo-color-scheme`, `claxedo-theme-css-<mode>`), so nothing flashes.
-- **Icons.** One icon library. `icon.tsx` renders a glyph from `icon/*-glyphs.ts` through one inline sprite; `file-icon.tsx`, `provider-icon.tsx` and `app-icon.tsx` render the file-type, provider and editor artwork from lazily loaded sprites and images. The Codex skin is not here; it becomes a plugin.
+- **Icons.** One icon library. `icon.tsx` renders a glyph from `icon/*-glyphs.ts` through one inline sprite; `file-icon.tsx`, `provider-icon.tsx` and `app-icon.tsx` render the file-type, provider and editor artwork from lazily loaded sprites and images.
 - **Dialog host.** `dialog-host.tsx` owns the dialog stack: `DialogProvider` renders it, `useDialog()` shows, pushes and closes.
 
 ## Phone
@@ -16,7 +15,7 @@ Every component works at 390 px with a coarse pointer: `touch.css` gives compact
 
 ## Origin
 
-Upstream's v2 library (anomalyco/opencode `packages/ui/src/v2` at 1d6c3c0e29) is the source of `Accordion`, `Avatar`, `Button`, `Checkbox`, `Dialog`, `DiffChanges`, `Divider`, `Field`, the file-tree styles, `Icon`, `IconButton`, `InlineInput`, `Keybind`, `LineComment` and `LineCommentEditor`, `Loader`, `Menu`, `ProgressCircle`, `ProjectAvatar`, `RadioGroup`, `SegmentedControl`, `Select`, `SplitButton`, `Switch`, `TabStateIndicator`, `Tabs`, `Tag` (upstream's `Badge`), `TextInput`, `TextShimmer`, `Textarea`, `Toast`, `Tooltip`, `Wordmark`, the tokens and the base styles. Upstream has no twin for the rest, so it is Claxedo's own, restyled onto the v2 tokens: `AppIcon`, `Card`, `Collapsible`, `DialogProvider` with `useDialog`, `DockShell` and `DockTray`, `FileIcon`, `ImagePreview`, `List` with `useFilteredList`, `Popover`, `ProviderIcon`, `ResizeHandle`, `ScrollView`, and the color-scheme and theme runtime in `theme/`. Upstream has no prompt-input frame in this library; the composer builds its own from `Textarea` and `DockShell`.
+Upstream's v2 library (anomalyco/opencode `packages/ui/src/v2` at 1d6c3c0e29) is the source of `Accordion`, `Avatar`, `Button`, `Checkbox`, `Dialog`, `DiffChanges`, `Divider`, `Field`, the file-tree styles, `Icon`, `IconButton`, `InlineInput`, `Keybind`, `LineComment` and `LineCommentEditor`, `Loader`, `Menu`, `ProgressCircle`, `ProjectAvatar`, `RadioGroup`, `SegmentedControl`, `Select`, `SplitButton`, `Switch`, `TabStateIndicator`, `Tabs`, `Tag` (upstream's `Badge`), `TextInput`, `TextShimmer`, `Textarea`, `Toast`, `Tooltip`, `Wordmark`, the tokens and the base styles. Upstream has no twin for the rest, so it is Claxedo's own, restyled onto the v2 tokens: `AppIcon`, `Card`, `Collapsible`, `DialogProvider` with `useDialog`, `DockShell` and `DockTray`, `FileIcon`, `ImagePreview`, `List` with `useFilteredList`, `Popover`, `ProviderIcon`, `ResizeHandle` and `ScrollView`. Upstream has no prompt-input frame in this library; the composer builds its own from `Textarea` and `DockShell`.
 
 ## Components
 
@@ -62,7 +61,6 @@ Upstream's v2 library (anomalyco/opencode `packages/ui/src/v2` at 1d6c3c0e29) is
 | `TextInput` | input props, `leadingIcon?`, `showCopyButton?`, `showClearButton?`, `copyLabel?`, `clearLabel?`, `onCopyClick?`, `onClearClick?`, `numeric?`, `invalid?`, `appearance?: base \| large` |
 | `TextShimmer` | `text: string`, `class?`, `as?`, `active?`, `offset?` |
 | `Textarea` | textarea props, `invalid?` |
-| `ThemeProvider`, `useTheme()` | `useTheme()` returns `{ colorScheme(), mode(), themeId(), themes(), setColorScheme(scheme), setTheme(id), registerTheme(record), unregisterTheme(id) }` |
 | `Toast` (`.Region`, `.Icon`, `.Content`, `.Title`, `.Description`, `.Actions`, `.CloseButton`), `showToast`, `toaster` | `showToast(options \| string)`: `title?`, `description?`, `icon?`, `duration?`, `persistent?`, `actions?: { label, variant?, onClick }[]`; mount one `Toast.Region` |
 | `Tooltip` | Kobalte tooltip props, `value: JSX.Element`, `class?`, `contentClass?`, `contentStyle?`, `inactive?`, `forceOpen?` |
 | `Wordmark` | `class?`; the Claxedo pixel wordmark |

@@ -13,26 +13,26 @@ function CollapsibleRoot(props: CollapsibleProps) {
   const [local, others] = splitProps(props, ["class", "classList", "variant"])
   return (
     <Kobalte
-      data-component="collapsible"
+      data-component="v2-collapsible"
       data-variant={local.variant || "normal"}
-      classList={{ "ui-collapsible": true, ...local.classList, [local.class ?? ""]: !!local.class }}
+      classList={{ "v2-collapsible": true, ...local.classList, [local.class ?? ""]: !!local.class }}
       {...others}
     />
   )
 }
 
 function CollapsibleTrigger(props: ComponentProps<typeof Kobalte.Trigger>) {
-  return <Kobalte.Trigger data-slot="collapsible-trigger" {...props} classList={{ "ui-collapsible-trigger": true }} />
+  return <Kobalte.Trigger data-slot="v2-collapsible-trigger" {...props} classList={{ "v2-collapsible-trigger": true }} />
 }
 
 function CollapsibleContent(props: ComponentProps<typeof Kobalte.Content>) {
-  return <Kobalte.Content {...({ staticPresence: true } as Record<string, unknown>)} data-slot="collapsible-content" {...props} />
+  return <Kobalte.Content {...({ staticPresence: true } as Record<string, unknown>)} data-slot="v2-collapsible-content" {...props} />
 }
 
 function CollapsibleArrow(props: ComponentProps<"div">) {
   return (
-    <div data-slot="collapsible-arrow" {...props} classList={{ "ui-collapsible-arrow": true }}>
-      <span data-slot="collapsible-arrow-icon" class="ui-collapsible-arrow-icon">
+    <div data-slot="v2-collapsible-arrow" {...props} classList={{ "v2-collapsible-arrow": true }}>
+      <span data-slot="v2-collapsible-arrow-icon" class="v2-collapsible-arrow-icon">
         <Icon name="chevron-down" size="small" />
       </span>
     </div>

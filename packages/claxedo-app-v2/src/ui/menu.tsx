@@ -5,7 +5,7 @@ import "./menu.css"
 
 const ChevronRight: Component = () => (
   <svg
-    data-slot="menu-item-chevron"
+    data-slot="v2-menu-item-chevron"
     width="16"
     height="16"
     viewBox="0 0 16 16"
@@ -38,9 +38,9 @@ function ItemBody(
 ) {
   return (
     <>
-      <span data-slot="menu-item-content">{props.children}</span>
-      <Show when={props.shortcut}>{(shortcut) => <span data-slot="menu-item-shortcut">{shortcut()}</span>}</Show>
-      <Show when={props.badge}>{(badge) => <span data-slot="menu-item-badge">{badge()}</span>}</Show>
+      <span data-slot="v2-menu-item-content">{props.children}</span>
+      <Show when={props.shortcut}>{(shortcut) => <span data-slot="v2-menu-item-shortcut">{shortcut()}</span>}</Show>
+      <Show when={props.badge}>{(badge) => <span data-slot="v2-menu-item-badge">{badge()}</span>}</Show>
       {props.trailing}
     </>
   )
@@ -54,7 +54,7 @@ export interface MenuItemProps extends ComponentProps<typeof DropdownMenu.Item> 
 function MenuItem(props: ParentProps<MenuItemProps>) {
   const [s, r] = splitProps(props, ["class", "classList", "children", "shortcut", "badge"])
   return (
-    <DropdownMenu.Item {...r} data-component="menu-item" classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}>
+    <DropdownMenu.Item {...r} data-component="v2-menu-item" classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}>
       <ItemBody shortcut={s.shortcut} badge={s.badge}>
         {s.children}
       </ItemBody>
@@ -72,14 +72,14 @@ function MenuCheckboxItem(props: ParentProps<MenuCheckboxItemProps>) {
   return (
     <DropdownMenu.CheckboxItem
       {...r}
-      data-component="menu-item"
+      data-component="v2-menu-item"
       classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
     >
       <ItemBody
         shortcut={s.shortcut}
         badge={s.badge}
         trailing={
-          <DropdownMenu.ItemIndicator data-slot="menu-item-indicator" forceMount>
+          <DropdownMenu.ItemIndicator data-slot="v2-menu-item-indicator" forceMount>
             <CheckMark />
           </DropdownMenu.ItemIndicator>
         }
@@ -100,14 +100,14 @@ function MenuRadioItem(props: ParentProps<MenuRadioItemProps>) {
   return (
     <DropdownMenu.RadioItem
       {...r}
-      data-component="menu-item"
+      data-component="v2-menu-item"
       classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
     >
       <ItemBody
         shortcut={s.shortcut}
         badge={s.badge}
         trailing={
-          <DropdownMenu.ItemIndicator data-slot="menu-item-indicator" forceMount>
+          <DropdownMenu.ItemIndicator data-slot="v2-menu-item-indicator" forceMount>
             <CheckMark />
           </DropdownMenu.ItemIndicator>
         }
@@ -128,7 +128,7 @@ function MenuSubTrigger(props: ParentProps<MenuSubTriggerProps>) {
   return (
     <DropdownMenu.SubTrigger
       {...r}
-      data-component="menu-item"
+      data-component="v2-menu-item"
       classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
     >
       <ItemBody shortcut={s.shortcut} badge={s.badge} trailing={<ChevronRight />}>
@@ -143,7 +143,7 @@ function MenuSubContent(props: ComponentProps<typeof DropdownMenu.SubContent>) {
   return (
     <DropdownMenu.SubContent
       {...r}
-      data-component="menu-content"
+      data-component="v2-menu-content"
       classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
     />
   )
@@ -154,7 +154,7 @@ function MenuGroupLabel(props: ComponentProps<typeof DropdownMenu.GroupLabel>) {
   return (
     <DropdownMenu.GroupLabel
       {...r}
-      data-slot="menu-group-label"
+      data-slot="v2-menu-group-label"
       classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
     />
   )
@@ -165,7 +165,7 @@ function MenuSeparator(props: ComponentProps<typeof DropdownMenu.Separator>) {
   return (
     <DropdownMenu.Separator
       {...r}
-      data-slot="menu-separator"
+      data-slot="v2-menu-separator"
       classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
     />
   )
@@ -176,7 +176,7 @@ function MenuContent(props: ComponentProps<typeof DropdownMenu.Content>) {
   return (
     <DropdownMenu.Content
       {...r}
-      data-component="menu-content"
+      data-component="v2-menu-content"
       classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
     />
   )
@@ -195,7 +195,7 @@ function MenuContextContent(props: ComponentProps<typeof ContextMenu.Content>) {
   return (
     <ContextMenu.Content
       {...r}
-      data-component="menu-content"
+      data-component="v2-menu-content"
       classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
     />
   )

@@ -10,20 +10,20 @@ export interface ImagePreviewProps {
 
 export function ImagePreview(props: ImagePreviewProps) {
   return (
-    <div data-component="image-preview" class="ui-image-preview">
-      <div data-slot="image-preview-container">
-        <Kobalte.Content data-slot="image-preview-content">
-          <div data-slot="image-preview-header">
+    <div data-component="v2-image-preview" class="v2-image-preview">
+      <div data-slot="v2-image-preview-container">
+        <Kobalte.Content data-slot="v2-image-preview-content">
+          <div data-slot="v2-image-preview-header">
             <Kobalte.CloseButton
-              data-slot="image-preview-close"
+              data-slot="v2-image-preview-close"
               as={IconButton}
               icon="close"
               variant="ghost"
               aria-label={props.closeLabel ?? "Close"}
             />
           </div>
-          <div data-slot="image-preview-body">
-            <img src={props.src} alt={props.alt ?? "Preview"} data-slot="image-preview-image" />
+          <div data-slot="v2-image-preview-body">
+            <img src={props.src} alt={props.alt ?? "Preview"} data-slot="v2-image-preview-image" />
           </div>
         </Kobalte.Content>
       </div>

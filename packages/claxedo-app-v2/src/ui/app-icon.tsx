@@ -52,13 +52,13 @@ export function AppIcon(props: AppIconProps) {
   const source = () => (theme.mode() === "dark" ? (darkIcons[local.id] ?? icons[local.id]) : icons[local.id])
   return (
     <img
-      data-component="app-icon"
+      data-component="v2-app-icon"
       {...rest}
       src={source()}
       alt={local.alt ?? ""}
       draggable={local.draggable ?? false}
       classList={{
-        "ui-app-icon": true,
+        "v2-app-icon": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}

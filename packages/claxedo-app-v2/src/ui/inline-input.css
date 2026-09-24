@@ -1,5 +1,5 @@
 @layer components {
-  .ui-inline-input {
+  .v2-inline-input {
     box-sizing: border-box;
     display: flex;
     flex-direction: row;
@@ -23,37 +23,37 @@
       box-shadow 85ms ease-out;
   }
 
-  .ui-inline-input[data-appearance="large"] {
+  .v2-inline-input[data-appearance="large"] {
     height: 32px;
   }
 
-  .ui-inline-input:where(:hover):not([data-disabled], [data-invalid]):not(:focus-within) {
+  .v2-inline-input:where(:hover):not([data-disabled], [data-invalid]):not(:focus-within) {
     background:
       linear-gradient(0deg, var(--v2-overlay-simple-overlay-hover), var(--v2-overlay-simple-overlay-hover)),
       linear-gradient(180deg, var(--v2-alpha-light-2) 0%, var(--v2-alpha-light-0) 100%), var(--v2-background-bg-base);
   }
 
-  [data-component="inline-input"]:where(:hover):not([data-disabled], [data-invalid]):not(:focus-within)
-    .ui-inline-input-prefix {
+  [data-component="v2-inline-input"]:where(:hover):not([data-disabled], [data-invalid]):not(:focus-within)
+    .v2-inline-input-prefix {
     background: transparent;
   }
 
-  .ui-inline-input:where(:focus-within):not([data-disabled], [data-invalid]) {
+  .v2-inline-input:where(:focus-within):not([data-disabled], [data-invalid]) {
     outline-color: var(--v2-border-border-focus);
     box-shadow: none;
   }
 
-  .ui-inline-input:where([data-invalid]):not([data-disabled]) {
+  .v2-inline-input:where([data-invalid]):not([data-disabled]) {
     outline-color: var(--v2-state-fg-danger);
     box-shadow: none;
   }
 
-  .ui-inline-input:where([data-disabled]) {
+  .v2-inline-input:where([data-disabled]) {
     opacity: 0.5;
     cursor: not-allowed;
   }
 
-  [data-component="inline-input"] .ui-inline-input-prefix {
+  [data-component="v2-inline-input"] .v2-inline-input-prefix {
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
@@ -72,17 +72,17 @@
     transition: background 85ms ease-out;
   }
 
-  [data-component="inline-input"]:where([data-disabled]) .ui-inline-input-prefix {
+  [data-component="v2-inline-input"]:where([data-disabled]) .v2-inline-input-prefix {
     cursor: not-allowed;
   }
 
-  [data-component="inline-input"][data-label-width] .ui-inline-input-prefix {
+  [data-component="v2-inline-input"][data-label-width] .v2-inline-input-prefix {
     width: var(--inline-input-label-width);
     min-width: var(--inline-input-label-width);
     max-width: var(--inline-input-label-width);
   }
 
-  [data-component="inline-input"] .ui-inline-input-prefix-text {
+  [data-component="v2-inline-input"] .v2-inline-input-prefix-text {
     display: block;
     width: 100%;
     overflow: hidden;
@@ -98,11 +98,11 @@
     user-select: none;
   }
 
-  [data-component="inline-input"][data-numeric] .ui-inline-input-prefix-text {
+  [data-component="v2-inline-input"][data-numeric] .v2-inline-input-prefix-text {
     font-variant-numeric: tabular-nums;
   }
 
-  [data-component="inline-input"] [data-slot="inline-input-divider"] {
+  [data-component="v2-inline-input"] [data-slot="v2-inline-input-divider"] {
     flex: none;
     align-self: stretch;
     width: 0.5px;
@@ -110,7 +110,7 @@
     background: var(--v2-border-border-base);
   }
 
-  [data-component="inline-input"] .ui-inline-input-field {
+  [data-component="v2-inline-input"] .v2-inline-input-field {
     display: flex;
     flex-direction: row;
     align-items: center;
@@ -121,12 +121,12 @@
     gap: 8px;
   }
 
-  [data-component="inline-input"][data-appearance="large"] .ui-inline-input-field {
+  [data-component="v2-inline-input"][data-appearance="large"] .v2-inline-input-field {
     padding-top: 6px;
     padding-bottom: 6px;
   }
 
-  [data-component="inline-input"] [data-slot="inline-input-value"] {
+  [data-component="v2-inline-input"] [data-slot="v2-inline-input-value"] {
     display: flex;
     flex-direction: row;
     align-items: center;
@@ -135,7 +135,7 @@
     min-height: 0;
   }
 
-  [data-component="inline-input"] .ui-inline-input-input {
+  [data-component="v2-inline-input"] .v2-inline-input-input {
     display: block;
     width: 100%;
     min-width: 0;
@@ -154,16 +154,16 @@
     font-variation-settings: "slnt" 0;
   }
 
-  [data-component="inline-input"] .ui-inline-input-input::placeholder {
+  [data-component="v2-inline-input"] .v2-inline-input-input::placeholder {
     color: var(--v2-text-text-faint);
     user-select: none;
   }
 
-  [data-component="inline-input"][data-numeric] .ui-inline-input-input {
+  [data-component="v2-inline-input"][data-numeric] .v2-inline-input-input {
     font-variant-numeric: tabular-nums;
   }
 
-  [data-component="inline-input"] .ui-inline-input-icon-button {
+  [data-component="v2-inline-input"] .v2-inline-input-icon-button {
     display: flex;
     flex-direction: row;
     justify-content: center;
@@ -181,46 +181,46 @@
     outline: none;
   }
 
-  [data-component="inline-input"]
-    .ui-inline-input-icon-button:is(:hover, [data-state="hover"]):not(:disabled) {
+  [data-component="v2-inline-input"]
+    .v2-inline-input-icon-button:is(:hover, [data-state="hover"]):not(:disabled) {
     background-color: var(--v2-overlay-simple-overlay-hover);
   }
 
-  [data-component="inline-input"]
-    .ui-inline-input-icon-button:is(:active, [data-state="pressed"]):not(:disabled) {
+  [data-component="v2-inline-input"]
+    .v2-inline-input-icon-button:is(:active, [data-state="pressed"]):not(:disabled) {
     background-color: var(--v2-overlay-simple-overlay-pressed);
   }
 
-  [data-component="inline-input"] .ui-inline-input-icon-button:focus {
+  [data-component="v2-inline-input"] .v2-inline-input-icon-button:focus {
     outline: none;
   }
 
-  [data-component="inline-input"] .ui-inline-input-icon-button:focus-visible {
+  [data-component="v2-inline-input"] .v2-inline-input-icon-button:focus-visible {
     outline: 2px solid var(--v2-border-border-focus);
     outline-offset: 1px;
   }
 
-  [data-component="inline-input"]:where([data-disabled]) .ui-inline-input-icon-button {
+  [data-component="v2-inline-input"]:where([data-disabled]) .v2-inline-input-icon-button {
     cursor: not-allowed;
     pointer-events: none;
   }
 
-  [data-component="inline-input"] [data-slot="inline-input-icon-button"] .ui-icon-svg {
+  [data-component="v2-inline-input"] [data-slot="v2-inline-input-icon-button"] .v2-icon-svg {
     display: block;
     flex: none;
     color: currentColor;
   }
 
-  [data-component="inline-input"][data-invalid]:not([data-disabled]) .ui-inline-input-prefix-text {
+  [data-component="v2-inline-input"][data-invalid]:not([data-disabled]) .v2-inline-input-prefix-text {
     color: var(--v2-text-text-muted);
   }
 
-  [data-component="inline-input"][data-invalid]:not([data-disabled]) .ui-inline-input-input {
+  [data-component="v2-inline-input"][data-invalid]:not([data-disabled]) .v2-inline-input-input {
     color: var(--v2-state-fg-danger);
     caret-color: var(--v2-state-fg-danger);
   }
 
-  [data-component="inline-input"][data-invalid]:not([data-disabled]) .ui-inline-input-input::placeholder {
+  [data-component="v2-inline-input"][data-invalid]:not([data-disabled]) .v2-inline-input-input::placeholder {
     color: var(--v2-state-fg-danger);
     opacity: 1;
   }

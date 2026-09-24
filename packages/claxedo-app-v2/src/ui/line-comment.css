@@ -1,5 +1,5 @@
 @layer components {
-  [data-component="line-comment"] {
+  [data-component="v2-line-comment"] {
     box-sizing: border-box;
     font-family: var(--v2-font-family-sans);
     font-variant-numeric: tabular-nums;
@@ -8,19 +8,19 @@
     max-width: 400px;
   }
 
-  [data-component="line-comment"] *,
-  [data-component="line-comment"] *::before,
-  [data-component="line-comment"] *::after {
+  [data-component="v2-line-comment"] *,
+  [data-component="v2-line-comment"] *::before,
+  [data-component="v2-line-comment"] *::after {
     box-sizing: border-box;
   }
 
-  [data-component="line-comment"] [data-slot="line-comment-shell"] {
+  [data-component="v2-line-comment"] [data-slot="v2-line-comment-shell"] {
     background: var(--v2-background-bg-layer-01);
     border-radius: var(--radius-md);
     box-shadow: var(--v2-elevation-raised);
   }
 
-  [data-component="line-comment"][data-variant="display"] [data-slot="line-comment-shell"] {
+  [data-component="v2-line-comment"][data-variant="display"] [data-slot="v2-line-comment-shell"] {
     display: flex;
     flex-direction: row;
     align-items: flex-start;
@@ -28,7 +28,7 @@
     gap: 8px;
   }
 
-  [data-component="line-comment"][data-variant="display"] [data-slot="line-comment-column"] {
+  [data-component="v2-line-comment"][data-variant="display"] [data-slot="v2-line-comment-column"] {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
@@ -37,7 +37,7 @@
     min-width: 0;
   }
 
-  [data-component="line-comment"][data-variant="display"] [data-slot="line-comment-text"] {
+  [data-component="v2-line-comment"][data-variant="display"] [data-slot="v2-line-comment-text"] {
     margin: 0;
     width: 100%;
     font-size: var(--font-size-compact);
@@ -49,7 +49,7 @@
     font-variation-settings: "slnt" 0;
   }
 
-  [data-component="line-comment"][data-variant="display"] [data-slot="line-comment-meta"] {
+  [data-component="v2-line-comment"][data-variant="display"] [data-slot="v2-line-comment-meta"] {
     font-size: var(--font-size-x-small);
     font-style: normal;
     font-weight: var(--font-weight-medium);
@@ -59,14 +59,14 @@
     font-variation-settings: "slnt" 0;
   }
 
-  [data-component="line-comment"][data-variant="display"] [data-slot="line-comment-tools"] {
+  [data-component="v2-line-comment"][data-variant="display"] [data-slot="v2-line-comment-tools"] {
     display: flex;
     flex-direction: row;
     align-items: flex-start;
     flex-shrink: 0;
   }
 
-  [data-slot="line-comment-overflow"] {
+  [data-slot="v2-line-comment-overflow"] {
     display: inline-flex;
     flex-direction: row;
     justify-content: center;
@@ -84,29 +84,29 @@
     outline: none;
   }
 
-  [data-slot="line-comment-overflow"]:focus {
+  [data-slot="v2-line-comment-overflow"]:focus {
     outline: none;
   }
 
-  [data-slot="line-comment-overflow"]:focus-visible {
+  [data-slot="v2-line-comment-overflow"]:focus-visible {
     outline: 2px solid var(--v2-border-border-focus);
     outline-offset: 2px;
   }
 
-  [data-slot="line-comment-overflow"]:is(:hover, [data-state="hover"]) {
+  [data-slot="v2-line-comment-overflow"]:is(:hover, [data-state="hover"]) {
     background-color: var(--v2-overlay-simple-overlay-hover);
   }
 
-  [data-slot="line-comment-overflow"]:is(:active, [data-state="pressed"]) {
+  [data-slot="v2-line-comment-overflow"]:is(:active, [data-state="pressed"]) {
     background-color: var(--v2-overlay-simple-overlay-pressed);
   }
 
-  [data-slot="line-comment-overflow"] svg {
+  [data-slot="v2-line-comment-overflow"] svg {
     display: block;
     flex-shrink: 0;
   }
 
-  [data-component="line-comment"][data-variant="editor"] [data-slot="line-comment-shell"] {
+  [data-component="v2-line-comment"][data-variant="editor"] [data-slot="v2-line-comment-shell"] {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
@@ -114,7 +114,7 @@
     gap: 12px;
   }
 
-  [data-component="line-comment"][data-variant="editor"] [data-slot="line-comment-field"] {
+  [data-component="v2-line-comment"][data-variant="editor"] [data-slot="v2-line-comment-field"] {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
@@ -123,7 +123,7 @@
     min-width: 0;
   }
 
-  [data-component="line-comment"][data-variant="editor"] [data-slot="line-comment-label"] {
+  [data-component="v2-line-comment"][data-variant="editor"] [data-slot="v2-line-comment-label"] {
     display: flex;
     flex-direction: row;
     align-items: center;
@@ -137,7 +137,7 @@
     user-select: none;
   }
 
-  [data-component="line-comment"][data-variant="editor"] .ui-line-comment-textarea {
+  [data-component="v2-line-comment"][data-variant="editor"] .v2-line-comment-textarea {
     display: block;
     width: 100%;
     min-width: 0;
@@ -159,16 +159,16 @@
     outline: none;
   }
 
-  [data-component="line-comment"][data-variant="editor"] .ui-line-comment-textarea::placeholder {
+  [data-component="v2-line-comment"][data-variant="editor"] .v2-line-comment-textarea::placeholder {
     color: var(--v2-text-text-faint);
     user-select: none;
   }
 
-  [data-component="line-comment"][data-variant="editor"] .ui-line-comment-textarea:focus {
+  [data-component="v2-line-comment"][data-variant="editor"] .v2-line-comment-textarea:focus {
     border-color: var(--v2-border-border-focus);
   }
 
-  [data-component="line-comment"][data-variant="editor"] [data-slot="line-comment-footer"] {
+  [data-component="v2-line-comment"][data-variant="editor"] [data-slot="v2-line-comment-footer"] {
     display: flex;
     flex-direction: row;
     align-items: center;
@@ -177,7 +177,7 @@
     min-width: 0;
   }
 
-  [data-component="line-comment"][data-variant="editor"] [data-slot="line-comment-footer-meta"] {
+  [data-component="v2-line-comment"][data-variant="editor"] [data-slot="v2-line-comment-footer-meta"] {
     flex: 1 1 auto;
     min-width: 0;
     font-size: var(--font-size-x-small);
@@ -189,7 +189,7 @@
     font-variation-settings: "slnt" 0;
   }
 
-  [data-component="line-comment"][data-variant="editor"] [data-slot="line-comment-footer-actions"] {
+  [data-component="v2-line-comment"][data-variant="editor"] [data-slot="v2-line-comment-footer-actions"] {
     display: flex;
     flex-direction: row;
     align-items: center;
@@ -197,7 +197,7 @@
     flex-shrink: 0;
   }
 
-  [data-component="line-comment"][data-variant="editor"] [data-slot="line-comment-mention-list"] {
+  [data-component="v2-line-comment"][data-variant="editor"] [data-slot="v2-line-comment-mention-list"] {
     display: flex;
     flex-direction: column;
     gap: 4px;
@@ -210,7 +210,7 @@
     background: var(--v2-background-bg-layer-02);
   }
 
-  [data-component="line-comment"][data-variant="editor"] .ui-line-comment-mention-item {
+  [data-component="v2-line-comment"][data-variant="editor"] .v2-line-comment-mention-item {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -225,11 +225,11 @@
     cursor: pointer;
   }
 
-  [data-component="line-comment"][data-variant="editor"] .ui-line-comment-mention-item[data-active] {
+  [data-component="v2-line-comment"][data-variant="editor"] .v2-line-comment-mention-item[data-active] {
     background: var(--v2-background-bg-layer-03);
   }
 
-  [data-component="line-comment"][data-variant="editor"] [data-slot="line-comment-mention-path"] {
+  [data-component="v2-line-comment"][data-variant="editor"] [data-slot="v2-line-comment-mention-path"] {
     display: flex;
     align-items: center;
     min-width: 0;
@@ -237,7 +237,7 @@
     line-height: var(--line-height-16);
   }
 
-  [data-component="line-comment"][data-variant="editor"] [data-slot="line-comment-mention-dir"] {
+  [data-component="v2-line-comment"][data-variant="editor"] [data-slot="v2-line-comment-mention-dir"] {
     min-width: 0;
     color: var(--v2-text-text-muted);
     white-space: nowrap;
@@ -245,7 +245,7 @@
     text-overflow: ellipsis;
   }
 
-  [data-component="line-comment"][data-variant="editor"] [data-slot="line-comment-mention-file"] {
+  [data-component="v2-line-comment"][data-variant="editor"] [data-slot="v2-line-comment-mention-file"] {
     color: var(--v2-text-text-base);
     white-space: nowrap;
   }

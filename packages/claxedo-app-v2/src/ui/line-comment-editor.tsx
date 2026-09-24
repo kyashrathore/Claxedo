@@ -27,18 +27,18 @@ function MentionRow(props: { item: MentionItem; mentions: MentionSuggestions }) 
   return (
     <button
       type="button"
-      data-slot="line-comment-mention-item"
-      class="ui-line-comment-mention-item"
+      data-slot="v2-line-comment-mention-item"
+      class="v2-line-comment-mention-item"
       data-active={props.mentions.list.active() === props.item.path ? "" : undefined}
       onMouseDown={(event) => event.preventDefault()}
       onMouseEnter={() => props.mentions.list.setActive(props.item.path)}
       onClick={() => props.mentions.select(props.item)}
     >
       <FileIcon node={{ path: props.item.path, type: "file" }} class="shrink-0 size-4" />
-      <div data-slot="line-comment-mention-path">
-        <span data-slot="line-comment-mention-dir">{directoryOf(props.item.path)}</span>
+      <div data-slot="v2-line-comment-mention-path">
+        <span data-slot="v2-line-comment-mention-dir">{directoryOf(props.item.path)}</span>
         <Show when={fileOf(props.item.path)}>
-          <span data-slot="line-comment-mention-file">{fileOf(props.item.path)}</span>
+          <span data-slot="v2-line-comment-mention-file">{fileOf(props.item.path)}</span>
         </Show>
       </div>
     </button>
@@ -48,7 +48,7 @@ function MentionRow(props: { item: MentionItem; mentions: MentionSuggestions }) 
 function MentionList(props: { mentions: MentionSuggestions }) {
   return (
     <Show when={props.mentions.open() && props.mentions.list.flat().length > 0}>
-      <div data-slot="line-comment-mention-list">
+      <div data-slot="v2-line-comment-mention-list">
         <For each={props.mentions.list.flat().slice(0, 10)}>{(item) => <MentionRow item={item} mentions={props.mentions} />}</For>
       </div>
     </Show>
@@ -105,17 +105,17 @@ export function LineCommentEditor(props: LineCommentEditorProps) {
   return (
     <div
       {...rest}
-      data-component="line-comment"
+      data-component="v2-line-comment"
       data-variant="editor"
       classList={{ ...local.classList, [local.class ?? ""]: !!local.class }}
     >
-      <div data-slot="line-comment-shell">
-        <div data-slot="line-comment-field">
-          <div data-slot="line-comment-label">{local.heading ?? "Comment"}</div>
+      <div data-slot="v2-line-comment-shell">
+        <div data-slot="v2-line-comment-field">
+          <div data-slot="v2-line-comment-label">{local.heading ?? "Comment"}</div>
           <textarea
             ref={(element) => (textarea = element)}
-            data-slot="line-comment-textarea"
-            class="ui-line-comment-textarea"
+            data-slot="v2-line-comment-textarea"
+            class="v2-line-comment-textarea"
             rows={local.rows ?? 3}
             placeholder={local.placeholder ?? "Add context for this change"}
             value={local.value}
@@ -129,9 +129,9 @@ export function LineCommentEditor(props: LineCommentEditorProps) {
           />
           <MentionList mentions={mentions} />
         </div>
-        <div data-slot="line-comment-footer">
-          <div data-slot="line-comment-footer-meta">{local.selection}</div>
-          <div data-slot="line-comment-footer-actions">
+        <div data-slot="v2-line-comment-footer">
+          <div data-slot="v2-line-comment-footer-meta">{local.selection}</div>
+          <div data-slot="v2-line-comment-footer-actions">
             <Button type="button" size="normal" variant="neutral" onClick={() => local.onCancel()}>
               {local.cancelLabel ?? "Cancel"}
             </Button>

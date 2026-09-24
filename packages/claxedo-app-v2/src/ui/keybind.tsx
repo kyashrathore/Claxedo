@@ -11,7 +11,7 @@ export function Keybind(props: KeybindProps) {
   return (
     <div
       {...rest}
-      data-component="keybind"
+      data-component="v2-keybind"
       data-variant={local.variant || "neutral"}
       classList={{
         ...local.classList,
@@ -20,8 +20,8 @@ export function Keybind(props: KeybindProps) {
     >
       <For each={local.keys}>
         {(key) => (
-          <div data-slot="keybind-key" class="ui-keybind-key">
-            <span data-slot="keybind-label" class="ui-keybind-label">{key}</span>
+          <div data-slot="v2-keybind-key" class="v2-keybind-key">
+            <span data-slot="v2-keybind-label" class="v2-keybind-label">{key}</span>
           </div>
         )}
       </For>

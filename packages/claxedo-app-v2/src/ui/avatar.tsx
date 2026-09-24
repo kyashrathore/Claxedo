@@ -37,11 +37,11 @@ export function Avatar(props: AvatarProps) {
   return (
     <div
       {...rest}
-      data-component="avatar"
+      data-component="v2-avatar"
       data-size={split.size || "large"}
       data-kind={split.kind || "user"}
       data-has-image={src ? "" : undefined}
-      classList={{ "ui-avatar": true,
+      classList={{ "v2-avatar": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}
@@ -52,7 +52,7 @@ export function Avatar(props: AvatarProps) {
       }}
     >
       <Show when={src} fallback={first(split.fallback)}>
-        {(src) => <img src={src()} draggable={false} data-slot="avatar-image" />}
+        {(src) => <img src={src()} draggable={false} data-slot="v2-avatar-image" />}
       </Show>
     </div>
   )

@@ -97,10 +97,10 @@ export function ResizeHandle(props: ResizeHandleProps) {
   return (
     <div
       {...rest}
-      data-component="resize-handle"
+      data-component="v2-resize-handle"
       data-direction={local.direction}
       data-edge={edge()}
-      classList={{ "ui-resize-handle": true, ...local.classList, [local.class ?? ""]: !!local.class }}
+      classList={{ "v2-resize-handle": true, ...local.classList, [local.class ?? ""]: !!local.class }}
       onPointerDown={onPointerDown}
     />
   )
