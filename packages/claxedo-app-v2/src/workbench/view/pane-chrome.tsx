@@ -4,14 +4,13 @@ import { useDragSource } from "../drag/drag-source"
 import { dictionary } from "../i18n"
 import { useWorkbench } from "../provider"
 import type { Pane } from "../types"
+import { createContentTitle } from "./content-title"
 
 export function PaneChrome(props: { pane: Pane; style: JSX.CSSProperties; closable: boolean }): JSX.Element {
   const wb = useWorkbench()
   const t = useTranslator(dictionary)
-  const title = () => {
-    const opened = props.pane.contentId ? wb.content(props.pane.contentId) : undefined
-    return opened ? opened.kind.title(opened.state as never) : ""
-  }
+  const contentTitle = createContentTitle(wb, () => props.pane.contentId)
+  const title = () => contentTitle() ?? ""
 
   return (
     <Show when={props.pane.contentId}>

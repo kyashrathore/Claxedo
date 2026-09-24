@@ -3,15 +3,13 @@ import { useTranslator } from "@/i18n"
 import { useDragSource } from "../drag/drag-source"
 import { dictionary } from "../i18n"
 import { useWorkbench } from "../provider"
+import { createContentTitle } from "./content-title"
 
 function Tab(props: { contentId: string }): JSX.Element {
   const wb = useWorkbench()
   const t = useTranslator(dictionary)
-  const opened = () => wb.content(props.contentId)
-  const title = () => {
-    const pane = opened()
-    return pane ? pane.kind.title(pane.state as never) : props.contentId
-  }
+  const contentTitle = createContentTitle(wb, () => props.contentId)
+  const title = () => contentTitle() ?? props.contentId
   const selected = () => wb.selectors.focusedContent() === props.contentId
 
   return (
