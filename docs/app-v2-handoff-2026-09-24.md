@@ -263,6 +263,13 @@ At 19:08 the owner said: finish in-progress work; start no new work.
 - **Flows not yet written:** 17–25, 28, 32, 34–36. The signed flows need the self-hosted Node signed fixture.
 - **Stopped lanes with WIP:** live plugins, hosted projects on D1, the checks lane.
 
+## Server gaps found by the parity work
+
+- **Harness health is pull-only.** v1's composer health peek ("The agent stopped responding / Check again") polls `/api/wr/health` every 20 s during a turn, because no event carries `degraded` or `harness_process_lost`. Publish a health change when a driver records a process error, for example a `harness.health` event, and the peek's timer can go.
+- **Fixed in the runtime today (take effect after a daemon restart or rebuild):**
+  - a stopped turn publishes the questions and permissions it settles (2b7f71a178);
+  - a harness without Goals reports them as not implemented, so its sessions open (09caeef9dd).
+
 ## Deletion candidates
 
 **The dead revert path.** No harness declares `revert`, v2 passes no `actions` to MessageTimeline, and v1 never renders these (DECISIONS 23:55). Delete the whole list together, or bring it back together with a harness that declares revert. Line numbers are as of 27781bb17e.
