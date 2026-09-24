@@ -1,4 +1,4 @@
-import { expect, installedCli, test, type CliName } from "../harness"
+import { type CliName, expect, installedCli, sendPrompt, sessionRoute, test } from "../harness"
 
 test.skip(({ isMobile }) => isMobile, "flow 7 runs at desktop width")
 
@@ -13,10 +13,8 @@ for (const goal of GOALS) {
     test.skip(!availability.available, availability.available ? "" : availability.reason)
     const workspace = await stack.daemon.makeWorkspace(`goal-${goal.cli}`)
     const session = await api.createSession(workspace.directory, { title: `Goal ${goal.cli}`, harness: { id: goal.cli, access: "native" } })
-    await app.goto(`${stack.url}/w/${workspace.id}/s/${session.id}`)
-    const prompt = app.getByRole("textbox", { name: "Prompt" })
-    await prompt.fill("/goal Write GOALDONE into notes.md")
-    await prompt.press("Enter")
+    await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+    await sendPrompt(app, "/goal Write GOALDONE into notes.md")
 
     const dock = app.getByRole("region", { name: "Goal", exact: true })
     await expect(dock).toBeVisible()
