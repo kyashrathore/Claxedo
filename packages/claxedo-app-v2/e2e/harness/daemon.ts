@@ -27,7 +27,7 @@ export type Daemon = {
   dataDir: string
   acpScriptDir: string
   log: () => string
-  makeWorkspace: (name: string) => Promise<Workspace>
+  makeWorkspace: (name: string, projectName?: string) => Promise<Workspace>
   restart: () => Promise<void>
   close: () => Promise<void>
 }
@@ -93,7 +93,7 @@ export async function startDaemon(input: DaemonInput): Promise<Daemon> {
     dataDir: input.dataDir,
     acpScriptDir: dirs.acpScriptDir,
     log: () => owned.log(),
-    makeWorkspace: (name) => makeWorkspace(directTransport, url, dirs.workspaces, name),
+    makeWorkspace: (name, projectName) => makeWorkspace(directTransport, url, dirs.workspaces, name, projectName),
     restart: async () => {
       await stopProcess(owned.child)
       owned = launchDaemon(env, input.dataDir)

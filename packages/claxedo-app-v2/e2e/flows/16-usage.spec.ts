@@ -7,15 +7,6 @@ type UsageRead = {
   readonly quota: { readonly status: string; readonly error?: string; readonly refreshing?: true; readonly snapshot?: { readonly accounts: readonly QuotaRead[] } }
 }
 
-async function createProject(url: string, name: string, directory: string): Promise<void> {
-  const response = await fetch(new URL("/api/claxedo/projects", url), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name, source: { kind: "directory", directory } }),
-  })
-  expect(response.status).toBe(201)
-}
-
 async function usage(url: string, view: "quota" | "claxedo"): Promise<UsageRead> {
   const now = Date.now()
   const query = new URLSearchParams({ since: String(now - 86_400_000), until: String(now + 86_400_000), timezone: "UTC", view, group: "provider", limit: "25" })
@@ -26,8 +17,7 @@ async function usage(url: string, view: "quota" | "claxedo"): Promise<UsageRead>
 
 test("16 usage: quota windows and the turns Claxedo ran", async ({ stack, api, app }) => {
   test.skip(stack.app === "v1", "the v1 path of this baseline flow is not written yet")
-  const workspace = await stack.daemon.makeWorkspace("usage")
-  await createProject(stack.url, "Usage", workspace.directory)
+  const workspace = await stack.daemon.makeWorkspace("usage", "Usage")
   const session = await api.createSession(workspace.directory, { title: "Metered", harness: SCRIPTED_ACP_HARNESS })
   await api.prompt(workspace.directory, session.id, "Count this turn")
   await expect.poll(async () => (await usage(stack.url, "claxedo")).claxedo.totals.turnCount).toBe(1)

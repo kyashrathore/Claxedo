@@ -1,10 +1,13 @@
 import { appChoice, ensureAppBuilt } from "./app"
 import { ensureLaunchGateChild } from "./launch-gate-child"
+import { ensurePinnedPi } from "./pinned-pi"
 import { DAEMON_PORT_ENV, fixedDaemonPort, releasePort, reservePort } from "./ports"
 
 export async function prepareHarness() {
   const gate = await ensureLaunchGateChild()
   console.log(`[harness] launch gate child ${gate.built ? `built in ${gate.ms} ms` : "already built"}`)
+  const pi = await ensurePinnedPi()
+  console.log(`[harness] Pi ${pi.version} ${pi.installed ? "installed" : "already installed"} for the stack`)
   const app = appChoice()
   const daemonPort = fixedDaemonPort() ?? (await reservePort())
   releasePort(daemonPort)

@@ -31,8 +31,7 @@ async function openFromPalette(app: Page, command: string): Promise<void> {
 test.skip(({ isMobile }) => isMobile, "flow 12 runs at desktop width; flow 33 covers the phone")
 
 test("12 workbench and shell: tabs, split, drag, the palette, and settings in the one page tab", async ({ stack, api, app }) => {
-  const workspace = await stack.daemon.makeWorkspace("bench")
-  await api.createProject("Bench", workspace.directory)
+  const workspace = await stack.daemon.makeWorkspace("bench", "Bench")
   const first = await api.createSession(workspace.directory, { title: "First", harness: SCRIPTED_ACP_HARNESS })
   const second = await api.createSession(workspace.directory, { title: "Second", harness: SCRIPTED_ACP_HARNESS })
   const titles = await Promise.all([first, second].map(async (session) => (await api.session(workspace.directory, session.id)).title))

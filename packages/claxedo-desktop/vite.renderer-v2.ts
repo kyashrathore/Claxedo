@@ -26,6 +26,10 @@ function withoutManualChunks(output: RendererOutput): RendererOutput {
   return { ...output, manualChunks: undefined }
 }
 
+function localServerUrl() {
+  return process.env.VITE_CLAXEDO_SERVER_URL?.trim() || "http://127.0.0.1:2593"
+}
+
 export function createElectronRendererV2(env: ConfigEnv): UserConfig {
   const app = appV2Config(env)
   return {
@@ -34,7 +38,13 @@ export function createElectronRendererV2(env: ConfigEnv): UserConfig {
     base: "./",
     publicDir: normalize(path.join(appV2Dir, "public")),
     plugins: [...(app.plugins ?? []), rendererDocumentCsp(env.mode)],
-    server: { host: "127.0.0.1" },
+    server: {
+      host: "127.0.0.1",
+      proxy: {
+        "/api/claxedo/credentials": { target: localServerUrl(), changeOrigin: true },
+        "/api/claxedo/integrations": { target: localServerUrl(), changeOrigin: true },
+      },
+    },
     resolve: { ...app.resolve, alias: appV2Aliases(app) },
     build: {
       ...app.build,

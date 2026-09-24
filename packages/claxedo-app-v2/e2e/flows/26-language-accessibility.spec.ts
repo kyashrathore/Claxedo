@@ -14,8 +14,7 @@ import {
 type Arranged = { readonly workspace: Workspace; readonly session: SessionRow }
 
 async function arrange(stack: Stack, api: ClaxedoApi): Promise<Arranged> {
-  const workspace = await stack.daemon.makeWorkspace("language")
-  await api.createProject("Language", workspace.directory)
+  const workspace = await stack.daemon.makeWorkspace("language", "Language")
   const session = await api.createSession(workspace.directory, { title: "Sprache", harness: SCRIPTED_ACP_HARNESS })
   return { workspace, session }
 }

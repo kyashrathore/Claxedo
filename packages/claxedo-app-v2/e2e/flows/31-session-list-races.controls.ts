@@ -1,4 +1,3 @@
-import path from "node:path"
 import type { Page, Route } from "@playwright/test"
 import {
   acpScriptToken,
@@ -130,7 +129,6 @@ export async function startHeldTurn(checked: Checked, sessionId: string, hold: s
 
 async function createInWorkspace(stack: Stack, api: ClaxedoApi, titles: readonly string[]) {
   const workspace: Workspace = await stack.daemon.makeWorkspace("races")
-  await api.createProject(path.basename(workspace.directory), workspace.directory)
   const create = (title: string) => api.createSession(workspace.directory, { title, harness: SCRIPTED_ACP_HARNESS })
   const sessions = [await create(titles[0])]
   for (let start = 1; start < titles.length; start += 50) {

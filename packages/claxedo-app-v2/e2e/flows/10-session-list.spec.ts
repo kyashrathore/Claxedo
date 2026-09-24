@@ -84,8 +84,7 @@ async function renameAndSearch(api: ClaxedoApi, app: Page, directory: string, se
 }
 
 test("10 session list: flat order, live status, rename, search, archive and delete, read back from the server", async ({ stack, api, app }) => {
-  const workspace = await stack.daemon.makeWorkspace("list")
-  await api.createProject("List", workspace.directory)
+  const workspace = await stack.daemon.makeWorkspace("list", "List")
   const create = (title: string) => api.createSession(workspace.directory, { title, harness: SCRIPTED_ACP_HARNESS })
   const alpha = await create("Alpha")
   const bravo = await create("Bravo")

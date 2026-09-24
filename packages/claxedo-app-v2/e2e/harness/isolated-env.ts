@@ -1,6 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { egressProxyEnv } from "./egress-guard"
+import { PINNED_PI } from "./pinned-pi"
 
 const INHERITED = ["PATH", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "USER", "LOGNAME", "SHELL", "TZ", "CI"] as const
 
@@ -28,6 +29,7 @@ export async function isolatedEnv(home: string, guardUrl: string): Promise<NodeJ
     GIT_CONFIG_NOSYSTEM: "1",
     GIT_TERMINAL_PROMPT: "0",
     ...AGENTS_STAY_OFFLINE,
+    PI_EXECUTABLE: PINNED_PI,
     ...egressProxyEnv(guardUrl),
   }
 }
