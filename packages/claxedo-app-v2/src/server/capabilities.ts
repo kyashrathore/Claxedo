@@ -8,6 +8,7 @@ import { TASKS_PRESETS_PATH } from "./tasks"
 import { withQuery, type Transport } from "./transport"
 import type { Capabilities, HarnessInfo } from "./types"
 import type { Workspaces } from "./workspaces"
+import type { BootstrapDeclaration } from "./wire/placements"
 import { accountFromWire } from "./wire/accounts"
 import { MACHINE_LOGINS_PATH, machineLoginsFromWire, type MachineLogin } from "./wire/machine-logins"
 import { connectedProvidersFromWire, PROVIDERS_PATH } from "./wire/providers"
@@ -19,10 +20,16 @@ export type CapabilitiesOwner = {
 
 type Read<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly reason: string }
 type Availability = { readonly available: boolean; readonly reason?: string }
+type Sources = {
+  readonly stored: Read<ReadonlySet<string>>
+  readonly pi: Read<readonly string[]>
+  readonly logins?: Read<readonly MachineLogin[]>
+}
 
 const CREDENTIALS_PATH = "/api/claxedo/credentials"
 const MACHINE_LOGINS_UNSUPPORTED = 501
 const GOAL_MODES: Readonly<Record<string, HarnessInfo["goalMode"]>> = { claude: "evaluated", codex: "native" }
+const CLI_PROVIDERS = HARNESS_TABLE as Readonly<Record<string, { readonly label: string; readonly providerIds: readonly string[] } | undefined>>
 
 async function settle<T>(what: string, read: Promise<T>): Promise<Read<T>> {
   try {
@@ -35,10 +42,9 @@ async function settle<T>(what: string, read: Promise<T>): Promise<Read<T>> {
 }
 
 function harnessInfo(id: string, availability: Availability): HarnessInfo {
-  const entry = (HARNESS_TABLE as Readonly<Record<string, { readonly label: string } | undefined>>)[id]
   return {
     id,
-    name: entry?.label ?? id.charAt(0).toUpperCase() + id.slice(1),
+    name: CLI_PROVIDERS[id]?.label ?? id.charAt(0).toUpperCase() + id.slice(1),
     available: availability.available,
     ...(availability.reason ? { unavailableReason: availability.reason } : {}),
     models: [],
@@ -65,57 +71,53 @@ async function piConnected(transport: Transport): Promise<readonly string[]> {
   return connectedProvidersFromWire(await transport.json<unknown>(withQuery(PROVIDERS_PATH, { nativeHarness: "pi" })))
 }
 
-function loginAvailability(id: string, logins: Read<readonly MachineLogin[]>, stored: Read<ReadonlySet<string>>): Availability {
-  if (!logins.ok) return { available: false, reason: logins.reason }
-  const login = logins.value.find((row) => row.harness === id)
+function cliAvailability(id: string, sources: Sources): Availability {
+  const stored = sources.stored.ok ? sources.stored.value : new Set<string>()
+  if ((CLI_PROVIDERS[id]?.providerIds ?? []).some((provider) => stored.has(provider))) return { available: true }
+  if (!sources.logins) return { available: false, reason: `Checking this machine's ${id} login` }
+  if (!sources.logins.ok) return { available: false, reason: sources.logins.reason }
+  const login = sources.logins.value.find((row) => row.harness === id)
   if (!login) return { available: false, reason: `This server reports no ${id} login` }
-  if (login.signedIn || (stored.ok && login.providerIds.some((provider) => stored.value.has(provider)))) return { available: true }
+  if (login.signedIn || login.providerIds.some((provider) => stored.has(provider))) return { available: true }
   return { available: false, reason: `${id} is signed out` }
 }
 
-async function readHarnesses(transport: Transport): Promise<readonly HarnessInfo[]> {
-  const [logins, stored, pi] = await Promise.all([
-    settle("Machine logins", machineLogins(transport)),
-    settle("Stored credentials", storedProviders(transport)),
-    settle("The pi provider catalog", piConnected(transport)),
-  ])
-  const availability = (id: string): Availability => {
-    if (id === "opencode") return transport.loopback ? { available: true } : { available: false, reason: "OpenCode runs on a machine" }
-    if (id !== "pi") return loginAvailability(id, logins, stored)
-    if (!pi.ok) return { available: false, reason: pi.reason }
-    return pi.value.length > 0 ? { available: true } : { available: false, reason: "No provider is connected for pi" }
+function harnessesFrom(sources: Sources, loopback: boolean): readonly HarnessInfo[] {
+  return AGENT_HARNESS_IDS.map((id) => {
+    if (id === "opencode") return harnessInfo(id, loopback ? { available: true } : { available: false, reason: "OpenCode runs on a machine" })
+    if (id !== "pi") return harnessInfo(id, cliAvailability(id, sources))
+    if (!sources.pi.ok) return harnessInfo(id, { available: false, reason: sources.pi.reason })
+    return harnessInfo(id, sources.pi.value.length > 0 ? { available: true } : { available: false, reason: "No provider is connected for pi" })
+  })
+}
+
+function capabilitiesOf(declaration: BootstrapDeclaration, loopback: boolean, harnesses: readonly HarnessInfo[], features: { readonly tasks: boolean; readonly documents: boolean }): Capabilities {
+  const signedIn = declaration.issuesSessions
+  const machine = thisMachine(declaration, loopback)
+  return {
+    principal: { kind: "machine", machineId: thisMachineId(declaration) },
+    signedIn,
+    ...(machine ? { thisMachine: machine } : {}),
+    harnesses,
+    features: { ...features, cloud: signedIn, remoteAccess: loopback, marketplace: true, terminals: loopback, browser: loopback, sharing: signedIn, livePlugins: loopback },
   }
-  return AGENT_HARNESS_IDS.map((id) => harnessInfo(id, availability(id)))
 }
 
 export function createCapabilities(transport: Transport, workspaces: Workspaces): CapabilitiesOwner {
   const [value, setValue] = createSignal<Capabilities | undefined>(undefined)
   const load = async () => {
     const declaration = (await workspaces.load()).declaration
-    const [harnesses, tasks, documents] = await Promise.all([
-      readHarnesses(transport),
+    const logins = settle("Machine logins", machineLogins(transport))
+    const [stored, pi, tasks, documents] = await Promise.all([
+      settle("Stored credentials", storedProviders(transport)),
+      settle("The pi provider catalog", piConnected(transport)),
       settle("Tasks", probeAvailability(transport, TASKS_PRESETS_PATH)),
       settle("Documents", probeAvailability(transport, DOCUMENTS_PATH)),
     ])
-    const signedIn = declaration.issuesSessions
-    const machine = thisMachine(declaration, transport.loopback)
-    setValue({
-      principal: { kind: "machine", machineId: thisMachineId(declaration) },
-      signedIn,
-      ...(machine ? { thisMachine: machine } : {}),
-      harnesses,
-      features: {
-        tasks: tasks.ok && tasks.value.kind === "available",
-        documents: documents.ok && documents.value.kind === "available",
-        cloud: signedIn,
-        remoteAccess: transport.loopback,
-        marketplace: true,
-        terminals: transport.loopback,
-        browser: transport.loopback,
-        sharing: signedIn,
-        livePlugins: transport.loopback,
-      },
-    })
+    const features = { tasks: tasks.ok && tasks.value.kind === "available", documents: documents.ok && documents.value.kind === "available" }
+    setValue(capabilitiesOf(declaration, transport.loopback, harnessesFrom({ stored, pi }, transport.loopback), features))
+    const read = await logins
+    setValue(capabilitiesOf(declaration, transport.loopback, harnessesFrom({ stored, pi, logins: read }, transport.loopback), features))
   }
   return { value, load }
 }

@@ -81,7 +81,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     projects: createProjectsApi(transport, queryClient, workspaces.refresh),
     placements: { byId: workspaces.byId, list: workspaces.list, createWorktree: createWorktreeCreator(transport, workspaces) },
     terminals: createTerminalsApi(transport, workspaces),
-    git: createGitApi(transport, workspaces),
+    git: createGitApi(transport, workspaces, queryClient),
     cloud: createCloudApi(transport, workspaces, project),
     livePlugins: createLivePluginsApi(transport),
     request: transport.request,
