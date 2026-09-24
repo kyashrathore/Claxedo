@@ -24,9 +24,7 @@ function setEntry<S extends ListData>(data: S, id: SessionId, entry: ListEntry):
 }
 
 function keptSend(send: PendingSend | undefined, row: SessionRow): PendingSend | undefined {
-  if (!send || row.lastHumanTurnAt === undefined) return send
-  const confirmed = send.humanTurnBefore === undefined || row.lastHumanTurnAt > send.humanTurnBefore
-  return confirmed ? undefined : send
+  return send && row.updatedAt <= send.updatedBefore ? send : undefined
 }
 
 export function mergeRow<S extends ListData>(data: S, row: SessionRow): S {
@@ -132,7 +130,7 @@ export function confirmCreate<S extends ListData>(data: S, clientRequestId: stri
 export function startSend<S extends ListData>(data: S, sessionId: SessionId, clientRequestId: string, at: number): S {
   const entry = data.entries.get(sessionId)
   if (entry?.kind !== "confirmed") return data
-  return setEntry(data, sessionId, { ...entry, pendingSend: { clientRequestId, at, humanTurnBefore: entry.row.lastHumanTurnAt } })
+  return setEntry(data, sessionId, { ...entry, pendingSend: { clientRequestId, at, updatedBefore: entry.row.updatedAt } })
 }
 
 export function failSend<S extends ListData>(data: S, sessionId: SessionId, clientRequestId: string): S {
