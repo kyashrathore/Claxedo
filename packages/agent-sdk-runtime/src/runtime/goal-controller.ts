@@ -1,8 +1,8 @@
 import { agentRuntimeEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import type { RuntimeDirectory } from "../index"
 import type { AgentGoalMutationResult, AgentGoalResource, AgentHarnessAdapter } from "../adapter-contract"
-import { requireGoalResource } from "../adapter-contract"
-import { GoalCapabilityError, requireGoalAction, type GoalAction, type GoalCapabilities } from "../capabilities"
+import { hasGoalResource, requireGoalResource } from "../adapter-contract"
+import { GoalCapabilityError, goalCapabilities, requireGoalAction, type GoalAction, type GoalCapabilities } from "../capabilities"
 import { normalizeDirectory } from "./execution-binding"
 import { createGoalStartAdmission } from "./goal-start-admission"
 import type { RecoveryTurnCapture } from "./recovery"
@@ -32,6 +32,15 @@ export interface RuntimeGoalControllerInput {
  * adapters apply on the hub side — keeps a mutation that is also mirrored onto
  * the hub from publishing the same state twice.
  */
+const NO_GOAL_RESOURCE = goalCapabilities({
+  implemented: false,
+  available: false,
+  unavailableReason: "This harness does not expose the Goal resource",
+  actions: [],
+  recovery: "blocked",
+  optionalFields: [],
+})
+
 export function createRuntimeGoalController(input: RuntimeGoalControllerInput) {
   const startAdmissions = createGoalStartAdmission()
   const publishedSignatures = new Map<string, string>()
@@ -64,7 +73,7 @@ export function createRuntimeGoalController(input: RuntimeGoalControllerInput) {
     )
   })
 
-  const readContext = async (sessionId: string, requestedDirectory?: RuntimeDirectory) => {
+  const sessionContext = async (sessionId: string, requestedDirectory?: RuntimeDirectory) => {
     const session = input.store.getSession(sessionId)
     if (!session) {
       throw new AgentRuntimeGoalError("goal_session_not_found", `Session ${sessionId} not found`)
@@ -74,6 +83,11 @@ export function createRuntimeGoalController(input: RuntimeGoalControllerInput) {
       throw new AgentRuntimeGoalError("goal_scope_mismatch", `Session ${sessionId} does not belong to this directory`)
     }
     const adapter = await input.adapterForSession(sessionId)
+    return { adapter, directory }
+  }
+
+  const readContext = async (sessionId: string, requestedDirectory?: RuntimeDirectory) => {
+    const { adapter, directory } = await sessionContext(sessionId, requestedDirectory)
     const coarse = await adapter.readHarnessCapabilities(directory, { sessionId })
     let resource: AgentGoalResource
     try {
@@ -145,6 +159,8 @@ export function createRuntimeGoalController(input: RuntimeGoalControllerInput) {
     },
     resource: {
       async capabilities(sessionId: string, directory?: RuntimeDirectory): Promise<GoalCapabilities> {
+        const { adapter } = await sessionContext(sessionId, directory)
+        if (!hasGoalResource(adapter)) return NO_GOAL_RESOURCE
         return (await capableContext(sessionId, directory)).capabilities
       },
       async read(sessionId: string, directory?: RuntimeDirectory): Promise<RuntimeGoalSnapshot | null> {
