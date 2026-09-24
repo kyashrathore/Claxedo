@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "notifications.responseReady": "回复已就绪",
   "notifications.sessionError": "会话错误",
   "notifications.sessionError.fallback": "发生错误",
