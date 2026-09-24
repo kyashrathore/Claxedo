@@ -66,7 +66,7 @@ function sessionView(context: TranscriptContext): SessionView {
     requests: () => deps.requests.openFor(ref.sessionId),
     requestsError: () => deps.requests.readErrorFor(ref.sessionId),
     requestState: deps.requests.stateOf,
-    todos: () => data.todos,
+    todos: context.todos.list,
     diff: () => data.diff,
     subagents: context.subagents.list,
     goal: goal.goal,
@@ -87,7 +87,6 @@ export function createSessionTranscript(server: Server, ref: SessionRef, deps: T
   const context = createTranscriptContext(server, ref, deps)
   void readSnapshot(context)
   void context.queue.reread()
-  void context.subagents.read()
   return {
     ...sessionView(context),
     apply: (event) => {
@@ -97,7 +96,7 @@ export function createSessionTranscript(server: Server, ref: SessionRef, deps: T
     gap: () => {
       void readSnapshot(context)
       void context.queue.reread()
-      void context.subagents.read()
+      context.subagents.reread()
     },
     dispose: context.deltas.drop,
   }

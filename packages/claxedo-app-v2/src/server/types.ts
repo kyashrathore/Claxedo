@@ -141,18 +141,18 @@ export type SessionGoalState = {
   readonly available: boolean
 }
 
-export type SessionRequestsRead =
-  | { readonly kind: "read"; readonly requests: readonly AgentRequest[] }
-  | { readonly kind: "failed"; readonly error: AppError }
-
-export type SessionSnapshot = {
+export type SessionSurface = {
   readonly row: SessionRow
-  readonly status: SessionStatus
   readonly transcript: TranscriptPage
-  readonly requests: SessionRequestsRead
-  readonly todos: readonly Todo[]
   readonly diff: readonly FileDiff[]
-  readonly goal: SessionGoalState
+}
+
+export type SessionReads = {
+  readonly surface: Promise<SessionSurface>
+  readonly status: Promise<SessionStatus>
+  readonly requests: Promise<readonly AgentRequest[]>
+  readonly todos: Promise<readonly Todo[]>
+  readonly goal: Promise<SessionGoalState>
 }
 
 export type ModelChoice = { readonly providerId: string; readonly modelId: string; readonly variant?: string }
