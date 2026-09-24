@@ -9,6 +9,7 @@ import {
 } from "./scripts/package-structure"
 import { CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME } from "./src/shared/compile-cache"
 import { resolveTargetOsArch } from "./scripts/target-platform"
+import { desktopProduct, parseDesktopRenderer } from "./src/shared/desktop-product"
 
 const channel = (() => {
   const raw = process.env.CLAXEDO_CHANNEL
@@ -256,13 +257,13 @@ const getBase = (): Configuration => ({
 
 function getConfig() {
   const base = getBase()
+  const product = desktopProduct(channel, parseDesktopRenderer(process.env.CLAXEDO_DESKTOP_RENDERER))
 
   switch (channel) {
     case "beta": {
       return {
         ...base,
-        appId: "ai.claxedo.desktop.beta",
-        productName: "Claxedo Beta",
+        ...product,
         // Per-variant artifact names and a separate update feed: `channel:
         // "beta"` makes electron-builder emit beta.yml / beta-mac.yml /
         // beta-linux.yml and stamps that feed into the packaged app-update.yml,
@@ -277,8 +278,7 @@ function getConfig() {
     case "prod": {
       return {
         ...base,
-        appId: "ai.claxedo.desktop",
-        productName: "Claxedo",
+        ...product,
         protocols: { name: "Claxedo", schemes: ["claxedo"] },
         // "latest" is the installed base's feed — latest.yml / latest-mac.yml /
         // latest-linux.yml — kept deliberately so stable clients keep updating.
@@ -291,8 +291,7 @@ function getConfig() {
       // here answers a config rather than dropping off the end.
       return {
         ...base,
-        appId: "ai.claxedo.desktop.dev",
-        productName: "Claxedo Dev",
+        ...product,
         rpm: { packageName: "claxedo-dev" },
       }
     }

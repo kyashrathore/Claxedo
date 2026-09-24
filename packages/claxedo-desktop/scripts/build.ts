@@ -3,6 +3,7 @@
 import * as path from "node:path"
 
 import { requireLocalServerBundle } from "./local-server"
+import { parseDesktopRenderer } from "../src/shared/desktop-product"
 
 const root = path.resolve(import.meta.dir, "..")
 
@@ -42,7 +43,7 @@ if (await proc.exited !== 0) {
 const copied = copyWorkspaceRuntimeTemplates(path.join(root, "out/templates"))
 console.log(`[build] copied workspace-runtime templates from ${copied.src} to ${copied.dest}`)
 
-const boundaryManifests = verifyDesktopBoundaryManifestSet(root)
+const boundaryManifests = verifyDesktopBoundaryManifestSet(root, parseDesktopRenderer(Bun.env.CLAXEDO_DESKTOP_RENDERER))
 console.log(`[build] product boundary manifests: ${boundaryManifests.join(", ")}`)
 
 write()
