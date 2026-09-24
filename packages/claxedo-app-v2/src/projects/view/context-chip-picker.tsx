@@ -10,13 +10,13 @@ const FOOTER_ROW =
   "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-13-regular text-text-weak transition-colors duration-150 hover:bg-[var(--overlay-surface-hover)] hover:text-text-base"
 
 function ChipAvatar(props: { avatar: ContextChipAvatar }) {
-  return <ProjectAvatar data-slot="context-chip-avatar" fallback={props.avatar.fallback} src={props.avatar.src} variant="outline" />
+  return <ProjectAvatar class="context-chip-avatar" fallback={props.avatar.fallback} src={props.avatar.src} variant="outline" />
 }
 
 function ChipTrigger(props: { chip: ContextChip }) {
   return (
     <Kobalte.Trigger
-      data-slot={props.chip.slot}
+      data-chip={props.chip.slot}
       type="button"
       aria-label={props.chip.ariaLabel}
       disabled={props.chip.disabled}
@@ -43,7 +43,7 @@ function ChipOptionRow(props: { option: ContextChipOption }) {
   return (
     <>
       <Show when={props.option.avatar}>{(avatar) => <ChipAvatar avatar={avatar()} />}</Show>
-      <div data-slot="context-chip-row" class="flex min-w-0 flex-1 flex-col items-start">
+      <div class="context-chip-row flex min-w-0 flex-1 flex-col items-start">
         <span class="truncate">{props.option.label}</span>
         <Show when={props.option.detail}>
           <span class="truncate text-v2-text-text-faint">{props.option.detail}</span>
