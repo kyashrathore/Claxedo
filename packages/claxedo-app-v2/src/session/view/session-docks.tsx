@@ -1,4 +1,5 @@
-import { createMemo, createSignal, Match, Show, Switch } from "solid-js"
+import { createMemo, Match, Show, Switch, untrack } from "solid-js"
+import { persistedSignal, preferenceKey, tabStorage } from "@/lib/persisted"
 import type { AgentRequest, AgentRequestReply, GoalAction } from "@/server"
 import type { SessionView } from "@/session"
 import { PermissionDock } from "./docks/permission-dock"
@@ -44,11 +45,11 @@ export function SessionDocks(props: { readonly view: SessionView }) {
   )
 }
 
-const collapsedTodos = new Map<string, boolean>()
+const readCollapsed = (value: unknown) => (typeof value === "boolean" ? value : undefined)
 
 export function createTodoDock(view: () => SessionView) {
-  const key = () => view().ref.sessionId
-  const [collapsed, setCollapsed] = createSignal(collapsedTodos.get(key()) ?? false)
+  const key = preferenceKey("session", untrack(() => view().ref.sessionId), "todo-collapsed")
+  const [collapsed, setCollapsed] = persistedSignal(key, false, readCollapsed, tabStorage())
   const open = () => {
     const list = view().todos()
     const done = list.length > 0 && list.every((todo) => todo.status === "completed" || todo.status === "cancelled")
@@ -58,11 +59,7 @@ export function createTodoDock(view: () => SessionView) {
   return {
     open,
     collapsed,
-    toggle: () => {
-      const next = !collapsed()
-      collapsedTodos.set(key(), next)
-      setCollapsed(next)
-    },
+    toggle: () => setCollapsed((value) => !value),
   }
 }
 

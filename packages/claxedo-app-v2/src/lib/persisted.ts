@@ -12,6 +12,10 @@ function preferenceStorage(): Storage | undefined {
   return typeof localStorage === "object" ? localStorage : undefined
 }
 
+export function tabStorage(): Storage | undefined {
+  return typeof sessionStorage === "object" ? sessionStorage : undefined
+}
+
 function deserializer<T>(key: string, read: PreferenceReader<T>, initial: T) {
   return (raw: string): T => {
     let parsed: unknown
@@ -30,9 +34,13 @@ function deserializer<T>(key: string, read: PreferenceReader<T>, initial: T) {
   }
 }
 
-export function persistedSignal<T>(key: string, initial: T, read: PreferenceReader<T>): Signal<T> {
+export function persistedSignal<T>(
+  key: string,
+  initial: T,
+  read: PreferenceReader<T>,
+  storage: Storage | undefined = preferenceStorage(),
+): Signal<T> {
   const signal = createSignal<T>(initial)
-  const storage = preferenceStorage()
   if (!storage) return signal
   const [get, set] = makePersisted<T, Signal<T>>(signal, {
     name: key,
