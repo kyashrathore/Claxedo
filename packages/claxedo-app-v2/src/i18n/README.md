@@ -42,6 +42,10 @@ The manifest is `locales.ts`: seventeen codes (`en`, `zh`, `zht`, `ko`, `de`, `e
 
 `src/legacy/platform/i18n/<locale>.ts` holds the old flat dictionaries. Copy the keys a domain still uses into its `i18n.ts` under new domain-prefixed names, for every language that has them. Keys for deleted features are not carried.
 
+## Error copy
+
+`useErrorCopy()` returns `(error: AppError) => { title, message, retry }`: the one table from an error class (`auth`, `rate_limit`, `network`, `not_found`, `conflict`, `invalid`, `internal`) to what the user reads, in all seventeen locales (`errors/<locale>.ts`). A domain may put copy for its own error codes in front of it (review does for git codes), but the class copy lives only here.
+
 ## Flows
 
 Flow 26 switches the language and checks the main screens.
