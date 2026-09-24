@@ -62,6 +62,7 @@ function sessionView(context: TranscriptContext): SessionView {
     conversation: (): TranscriptConversation | undefined => (phase.state().kind === "loading" ? undefined : data),
     turnSettlePending: (userMessageId) => isReading(phase.state()) && lastUserId() === userMessageId,
     queue,
+    replaceQueued: (seq, input) => context.queue.replace(seq, input),
     requests: () => deps.requests.openFor(ref.sessionId),
     requestsError: () => deps.requests.readErrorFor(ref.sessionId),
     requestState: deps.requests.stateOf,

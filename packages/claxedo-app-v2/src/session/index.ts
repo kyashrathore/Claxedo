@@ -80,6 +80,7 @@ export type SessionView = {
   readonly conversation: Accessor<TranscriptConversation | undefined>
   readonly turnSettlePending: (userMessageId: string) => boolean
   readonly queue: QueuedMessages
+  readonly replaceQueued: (seq: number, input: PromptInput) => Promise<boolean>
   readonly requests: Accessor<readonly AgentRequest[]>
   readonly requestsError: Accessor<AppError | undefined>
   readonly requestState: (requestId: RequestId) => RequestState
