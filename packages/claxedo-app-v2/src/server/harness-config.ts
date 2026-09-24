@@ -7,8 +7,6 @@ import type { SessionRef } from "./types"
 import type { Workspaces } from "./workspaces"
 import { harnessIdentity, harnessSelectionQuery } from "./wire/harness-selection"
 import { permissionModeStateFromWire, type PermissionModeState } from "./wire/permission-modes"
-import { providerCatalogFromWire, type ProviderCatalog } from "./wire/provider-catalog"
-import { PROVIDERS_PATH } from "./wire/providers"
 
 const HARNESS_PATH = "/api/claxedo/agent-config/harness"
 const HARNESS_OPTIONS_PATH = "/api/claxedo/agent-config/harness/options"
@@ -36,8 +34,6 @@ export type HarnessConfigApi = {
   readonly sessionConfig: (ref: SessionRef) => Promise<Response>
   readonly updateSessionConfig: (ref: SessionRef, patch: SessionConfigPatch) => Promise<Response>
   readonly connections: () => Promise<HarnessConnectionsCatalog>
-  /** The catalog a catalog harness picks models from; `providerId` asks for that provider's whole model set. */
-  readonly providers: (harness: string, providerId?: string) => Promise<ProviderCatalog>
   /** A session's own modes, or for a draft the modes `harness` offers in the placement. */
   readonly permissionModes: (input: { readonly placementId: PlacementId; readonly ref?: SessionRef; readonly harness?: string }) => Promise<PermissionModeState>
   readonly setPermissionMode: (ref: SessionRef, modeId: string) => Promise<PermissionModeState>
@@ -86,7 +82,5 @@ export function createHarnessConfigApi(transport: Transport, workspaces: Workspa
       if (!response.ok) throw await responseError(response, "Permission mode")
       return permissionModeStateFromWire(await response.json())
     },
-    providers: async (harness, providerId) =>
-      providerCatalogFromWire(await transport.json<unknown>(withQuery(PROVIDERS_PATH, { nativeHarness: harness, provider: providerId })), harness),
   }
 }

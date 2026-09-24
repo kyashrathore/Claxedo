@@ -1,7 +1,6 @@
 import { Match, Show, Switch, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { Button } from "@opencode-ai/ui/button"
-import { Spinner } from "@opencode-ai/ui/spinner"
+import { Button, Spinner } from "@/ui"
 import { dictionary, type TerminalKey } from "../i18n"
 import type { TerminalConnection, TerminalFailure } from "../model"
 import { MAX_RECONNECT_ATTEMPTS } from "../reconnect"

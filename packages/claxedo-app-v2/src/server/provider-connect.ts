@@ -5,6 +5,7 @@ import { ServerError } from "./errors"
 import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
 import { jsonInit, withQuery, type Transport } from "./transport"
+import { customProviderBody } from "./wire/custom-provider"
 import type { FetchQuery } from "./types"
 
 const AUTH_PATH = "/api/claxedo/agent-config/providers/auth"
@@ -20,7 +21,7 @@ export type ProviderAuthorization = { readonly url: string; readonly method: "au
 export type ProviderKeyInput = { readonly providerId: string; readonly label: string; readonly secret: string }
 
 export type CustomProviderConfig = {
-  readonly providerID: string
+  readonly providerId: string
   readonly name: string
   readonly baseURL: string
   readonly env: readonly string[]
@@ -72,7 +73,10 @@ export function providerConnectQueries(transport: Transport): ProviderConnectQue
 
 export function createProviderConnectApi(transport: Transport, queryClient: QueryClient): ProviderConnectApi {
   const server = transport.serverUrl
-  const changed = () => queryClient.invalidateQueries({ queryKey: queryKeys.accounts(server) })
+  const changed = async () => {
+    await queryClient.invalidateQueries({ queryKey: queryKeys.accounts(server) })
+    await queryClient.invalidateQueries({ queryKey: queryKeys.providerCatalogs(server) })
+  }
   const oauthPath = (providerId: string, step: "authorize" | "callback") => `/provider/${encodeURIComponent(providerId)}/oauth/${step}`
   return {
     authorize: async (providerId, method) => authorizationOf(await transport.json<unknown>(oauthPath(providerId, "authorize"), jsonInit("POST", { method }))),
@@ -94,8 +98,8 @@ export function createProviderConnectApi(transport: Transport, queryClient: Quer
     },
     saveCustomProvider: async (draft) => {
       const config = draft.config
-      if (draft.key) await transport.json<unknown>(CREDENTIALS_PATH, jsonInit("PUT", { provider_id: config.providerID, kind: "api_key", source: "managed", label: config.name, secret: draft.key }))
-      await transport.json<unknown>(withQuery(CUSTOM_PATH, { nativeHarness: "opencode" }), jsonInit("PUT", config))
+      if (draft.key) await transport.json<unknown>(CREDENTIALS_PATH, jsonInit("PUT", { provider_id: config.providerId, kind: "api_key", source: "managed", label: config.name, secret: draft.key }))
+      await transport.json<unknown>(withQuery(CUSTOM_PATH, { nativeHarness: "opencode" }), jsonInit("PUT", customProviderBody(config)))
       await changed()
     },
     disconnect: async (harness, providerId) => {

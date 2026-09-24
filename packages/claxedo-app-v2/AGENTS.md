@@ -60,7 +60,7 @@ Directives a tool reads are not comments and stay, with no prose added: `// @ts-
 
 - Use Claxedo names only, outside `src/server/wire/`:
   - `sessionId`, not `sessionID` (same for message, part, provider, model, call and project ids);
-  - `@claxedo/*`, never `@opencode-ai/*`;
+  - `@claxedo/*`, never `@opencode-ai/*` outside `src/ui`: today's kit (`@opencode-ai/ui`, `@opencode-ai/session-ui`) is the look, and code reaches it only through `@/ui`;
   - no `oc-` prefixes, no `globalSDK` or `globalSync`, no OpenCode event names, no `directory` routing.
 - Name the domain concept, not the mechanism: `SessionRow`, `TurnStatus`, `startTurn`.
 - Events are past tense (`turnFinished`); commands are imperative (`startTurn`).

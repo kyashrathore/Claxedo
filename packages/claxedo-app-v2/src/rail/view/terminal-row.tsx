@@ -1,6 +1,6 @@
 import { createEffect, createMemo, on, onCleanup, Show, type Accessor, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import type { PlacementId, TerminalAgentStatus } from "@/server"
+import { useServer, type PlacementId, type TerminalAgentStatus } from "@/server"
 import { useTerminals, type TerminalItem } from "@/terminal"
 import { createHoverEngagement } from "../hover-engagement"
 import { railDictionary } from "../i18n"
@@ -74,14 +74,16 @@ export function RailTerminalRow(props: { readonly row: TerminalItem; readonly ac
 
 export function useProjectTerminals(placementIds: () => readonly PlacementId[]): Accessor<readonly TerminalItem[]> {
   const terminals = useTerminals()
+  const server = useServer()
+  const reachable = createMemo(() => placementIds().filter((placementId) => server.placements.byId(placementId)?.reachable === true))
   createEffect(
     on(
-      () => placementIds().join("\n"),
+      () => reachable().join("\n"),
       () => {
-        const releases = placementIds().map((placementId) => terminals.retain(placementId))
+        const releases = reachable().map((placementId) => terminals.retain(placementId))
         onCleanup(() => releases.forEach((release) => release()))
       },
     ),
   )
-  return createMemo(() => placementIds().flatMap((placementId) => terminals.items(placementId)))
+  return createMemo(() => reachable().flatMap((placementId) => terminals.items(placementId)))
 }

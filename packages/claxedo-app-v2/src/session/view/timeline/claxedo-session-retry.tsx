@@ -1,6 +1,5 @@
 import { Show } from "solid-js"
-import { Card } from "@opencode-ai/ui/card"
-import { Spinner } from "@opencode-ai/ui/spinner"
+import { Card, Spinner } from "@/ui"
 import type { AgentRuntimeStatus } from "@claxedo/agent-runtime-contract"
 import type { SessionStatus } from "@/server"
 import { SessionRetry as UpstreamSessionRetry } from "@/transcript"

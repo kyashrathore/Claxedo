@@ -1,4 +1,4 @@
-import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
+import { ProviderIcon } from "@/ui"
 import { createMemo, createSignal, For, Match, Show, Switch, type JSX } from "solid-js"
 import { useModelVisibility } from "@/composer"
 import type { HarnessSelection } from "@/lib/harness-selection"
@@ -22,7 +22,7 @@ const LINK = "rounded-md border-none bg-transparent px-1 py-0.5 text-12-regular 
 function HarnessTabs(props: { readonly tab: HarnessTab; readonly onTab: (tab: HarnessTab) => void; readonly actions: JSX.Element }) {
   const t = useAccountsText()
   return (
-    <div class="flex items-center gap-1" role="tablist" data-component="models-harness-tabs">
+    <div class="flex items-center gap-1" role="tablist">
       <For each={TABS}>
         {(value) => (
           <button
@@ -56,7 +56,7 @@ function AccountsTab(props: { readonly harness: ModelsHarness; readonly accounts
       <Match when={props.harness.cli}>{(cli) => <AgentHarnessAccounts harness={cli()} accounts={props.accounts} headerless onAddAccountRef={props.onAddRef} />}</Match>
       <Match when={props.harness.kind === "connection"}>
         <SettingsEmpty>
-          <span data-component="models-accounts-external">{t("settings.models.accounts.connection", { harness: props.harness.label })}</span>
+          <span>{t("settings.models.accounts.connection", { harness: props.harness.label })}</span>
         </SettingsEmpty>
       </Match>
     </Switch>
@@ -89,7 +89,7 @@ export function HarnessSection(props: { readonly harness: ModelsHarness; readonl
     </>
   )
   return (
-    <section class="flex flex-col gap-4" data-component={`models-section-${props.harness.slug}`}>
+    <section class="flex flex-col gap-4">
       <div class="flex items-baseline justify-between gap-4">
         <div class="flex items-center gap-2">
           <ProviderIcon id={props.harness.slug} class="size-4 shrink-0 icon-strong-base" />

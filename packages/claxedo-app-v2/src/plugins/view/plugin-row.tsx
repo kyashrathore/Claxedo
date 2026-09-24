@@ -1,7 +1,6 @@
 import { createSignal, Show, type JSX } from "solid-js"
 import { unreachable } from "@/lib/machine"
-import { Switch, Tag } from "@/ui"
-import { Button } from "@opencode-ai/ui/button"
+import { Switch, Tag, Button } from "@/ui"
 import { failureReason } from "../failure"
 import { usePluginsText, type PluginsKey, type PluginsText } from "../i18n"
 import { failureOf, type PluginState, type PluginSummary } from "../model"

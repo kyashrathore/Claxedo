@@ -239,6 +239,9 @@ Updated 21:40, after the owner switched accounts and the lanes resumed.
 
 ## Owner questions still open
 
+- **Teams inside an org:** v1's Settings → Orgs & Teams (org create and switch, teams, members) uses the hosted org-team API. On a local build it shows only "Bearer token is required". v2 keeps its Organization section and adds v1's sign-in and error states. Team management waits on this decision; the plan recommends dropping teams.
+- **Machines remote access:** enable, pause and revoke, the device QR code, and machine rename or revoke need v1's `machineRemoteAccess` platform port. That's the desktop Host Connector, or an HTTP binding on hosted. Not ported; v1's local build binds none either.
+
 - **`/welcome`:** the owner asked "why remove /welcome?" (02:30). The v1 inventory row PROJ-001 says v1 has no `/welcome` route and draws the first-project canvas at `/`. projects-app's 7c245ba6e1 did that and is reverted until the owner rules. Keeping `/welcome` is fine if the owner prefers it.
 - **Browser Back after a rail click:** v2 returns to the previous session, while v1 stays on the current one. Keep v2's or match v1?
 - **The daemon restart on 2598** that picks up the two runtime fixes (Stop settles questions; no-Goal harnesses). It ends open terminals and running turns.
@@ -288,6 +291,7 @@ At 19:08 the owner said: finish in-progress work; start no new work.
 ## Server gaps found by the parity work
 
 - **Harness health is pull-only.** v1's composer health peek ("The agent stopped responding / Check again") polls `/api/wr/health` every 20 s during a turn, because no event carries `degraded` or `harness_process_lost`. Publish a health change when a driver records a process error, for example a `harness.health` event, and the peek's timer can go.
+- **The provider catalog route always answers with the whole catalog.** `GET /api/claxedo/agent-config/providers?nativeHarness=opencode` (`claxedo-local-server/src/agent-config/routes/provider-routes.ts`) returns models.dev's full list, 2,325,904 bytes and 1.6 s cold on the owner's machine, and ignores the `provider` parameter both apps send for one provider's detail, so a detail read costs the same as the index. v2 now reads the catalog once per harness through one cached query (`server.queries.providerCatalogs`), and skips the detail read whenever the index already holds a provider's models, as it always does here. The remaining 1.6 s first read needs the server: honor `provider` to return that provider alone, and add a summary form (connected providers with their models, the rest with ids and names) for the pickers.
 - **Fixed in the runtime today (take effect after a daemon restart or rebuild):**
   - a stopped turn publishes the questions and permissions it settles (2b7f71a178);
   - a harness without Goals reports them as not implemented, so its sessions open (09caeef9dd).

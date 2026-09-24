@@ -62,10 +62,10 @@ const en = {
 
 export type OnboardingKey = keyof typeof en
 
-export const dictionary = {
+const onboardingDictionary = {
   en,
 } satisfies Translations<OnboardingKey>
 
 export type OnboardingText = DomainTranslate<OnboardingKey>
 
-export const useOnboardingText = (): OnboardingText => useTranslator(dictionary)
+export const useOnboardingText = (): OnboardingText => useTranslator(onboardingDictionary)

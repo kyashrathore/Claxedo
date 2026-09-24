@@ -1,6 +1,5 @@
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js"
-import { Button } from "@opencode-ai/ui/button"
-import { ClaxedoIcon as Icon } from "@/ui"
+import { ClaxedoIcon as Icon, Button } from "@/ui"
 import type { ComposerSetup } from "../setup"
 
 export const HARNESS_HEALTH_POLL_INTERVAL_MS = 20_000

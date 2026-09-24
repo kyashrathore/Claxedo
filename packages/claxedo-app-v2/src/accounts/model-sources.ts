@@ -72,7 +72,7 @@ function useHarnessModels(selection: HarnessSelection, placement: Accessor<Setti
 
 function useCatalogModels(harness: string): Accessor<ModelSource> {
   const server = useServer()
-  const catalog = createProviderCatalog({ api: server.harnessConfig, harness: () => harness })
+  const catalog = createProviderCatalog({ server, harness: () => harness })
   const [hydrating, setHydrating] = createSignal(true)
   const providers = createMemo(() => catalogProviders([...catalog.all().values()], catalog.connected().map((item) => item.id), "", []))
   let hydrated = ""

@@ -1,8 +1,6 @@
 import { createEffect, type JSX } from "solid-js"
-import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useTranslator } from "@/i18n"
-import { ClaxedoIcon as Icon, showToast } from "@/ui"
+import { ClaxedoIcon as Icon, showToast, DropdownMenu, Tooltip } from "@/ui"
 import { dictionary } from "../i18n"
 import type { BrowserTab } from "../tab"
 

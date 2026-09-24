@@ -47,7 +47,7 @@ async function readPage(context: ReadContext, target: PageTarget): Promise<Fetch
 }
 
 async function firstPageTargets(context: ReadContext): Promise<PageTarget[]> {
-  return (await context.server.placements.load()).map((placement) => ({ placementId: placement.id }))
+  return (await context.server.placements.load()).filter((placement) => placement.reachable).map((placement) => ({ placementId: placement.id }))
 }
 
 async function readWindow(context: ReadContext, targets: readonly PageTarget[], withStatuses: boolean): Promise<FetchedWindow> {

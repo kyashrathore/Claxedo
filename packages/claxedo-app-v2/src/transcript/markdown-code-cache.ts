@@ -1,4 +1,4 @@
-import { checksum } from "@opencode-ai/ui/utils/encode"
+import { checksum } from "@/ui"
 import type { MarkdownToken } from "./markdown-worker-protocol"
 
 /**

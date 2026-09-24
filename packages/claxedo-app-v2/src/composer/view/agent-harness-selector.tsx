@@ -152,7 +152,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   // right catalog; an empty id disables the query while no catalog harness is
   // selected, so a Claude or connection draft never fetches a catalog.
   const visibility = useModelVisibility()
-  const catalogProviders = createProviderCatalog({ api: server.harnessConfig, harness: () => catalogHarnessId(harness()) ?? "" })
+  const catalogProviders = createProviderCatalog({ server, harness: () => catalogHarnessId(harness()) ?? "" })
   const catalogRows = createMemo(() => {
     const connected = new Set(catalogProviders.connected().map((provider) => provider.id))
     const rows = [...catalogProviders.all().values()].flatMap((provider) =>
@@ -271,11 +271,11 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     const currentHarness = harness()
     if (!currentHarness) return []
     const defaults = catalogProviders.default()
-    if (isCatalogHarness(currentHarness)) return catalogRows().rows.filter((item) => visibility.visible({ providerID: item.provider.id, modelID: item.id }, { defaults, group: item.provider.id }))
+    if (isCatalogHarness(currentHarness)) return catalogRows().rows.filter((item) => visibility.visible({ providerId: item.provider.id, modelId: item.id }, { defaults, group: item.provider.id }))
     const selectedId = selection().selectedModel
     return selection().models.flatMap((item) => {
       const provider = harnessModelPickerProvider(currentHarness, item)
-      if (item.id !== selectedId && !visibility.visible({ providerID: provider.id, modelID: item.id }, { defaults, group: modelGroupKey(provider.id, item.id) })) return []
+      if (item.id !== selectedId && !visibility.visible({ providerId: provider.id, modelId: item.id }, { defaults, group: modelGroupKey(provider.id, item.id) })) return []
       return [{
         id: item.id,
         name: item.name,

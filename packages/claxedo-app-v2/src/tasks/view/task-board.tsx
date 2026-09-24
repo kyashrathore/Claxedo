@@ -1,5 +1,5 @@
 import { For, Show, createSignal, type Accessor, type JSX } from "solid-js"
-import { IconButton } from "@opencode-ai/ui/icon-button"
+import { IconButton } from "@/ui"
 import { isTaskCreateStatus, type TaskCreateStatus, type TaskStatus, type TaskSummary } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
 import type { MorePages } from "../data/queries"

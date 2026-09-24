@@ -1,5 +1,5 @@
 export type { ProjectsKey, ProjectsText } from "./i18n"
-export { dictionary as projectsDictionary, useProjectsText } from "./i18n"
+export { useProjectsText } from "./i18n"
 export { draftProjectName, sourceLabel } from "./project-source"
 export { primaryPlacement, usePlacementOpener } from "./open"
 export { inCatalogOrder } from "./project-order"
