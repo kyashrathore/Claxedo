@@ -5,12 +5,13 @@ import { FailureBoundary, FailureNotice } from "@/lib/failure"
 import { sessionId, useServer, type SessionRef } from "@/server"
 import { usePanel } from "@/panel"
 import { useSessionStores, type SessionView } from "@/session"
-import { sessionPath, useShellRoute, type PaneProps } from "@/shell"
+import { sessionPath, useCommands, useShellRoute, type PaneProps } from "@/shell"
 import { useDialog } from "@/ui"
 import { useWorkbench } from "@/workbench"
 import { createQueueEdit } from "./queue-edit"
 import { createTodoDock, SessionDocks, TodoDockSlot } from "./session-docks"
-import { SessionTimeline } from "./session-timeline"
+import { SessionTimeline, userMessages } from "./session-timeline"
+import { createMessageLinks } from "./message-links"
 import { useSessionScreenText, type SessionScreenText } from "./text"
 import { createTimelineHost } from "./timeline-host"
 import { createTimelineScroll } from "./timeline-scroll"
@@ -80,6 +81,7 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
     prompt: { cursor: () => draft().cursor, length: () => promptText(draft().prompt).length },
     markScrollGesture: () => scroll.props.onMarkScrollGesture(),
   })
+  createMessageLinks({ view: () => props.view, users: createMemo(() => userMessages(props.view)), scroll, active: () => props.active, commands: useCommands(), t })
   document.addEventListener("keydown", handleKeyDown)
   onCleanup(() => document.removeEventListener("keydown", handleKeyDown))
   const setDock = createDockFollow(scroll)

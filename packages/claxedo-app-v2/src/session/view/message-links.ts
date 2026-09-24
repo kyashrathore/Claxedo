@@ -1,0 +1,64 @@
+import { createEffect, on, onCleanup, type Accessor } from "solid-js"
+import type { SessionView } from "@/session"
+import type { Commands } from "@/shell"
+import type { TranscriptUserMessage } from "@/transcript"
+import type { SessionScreenText } from "./text"
+import type { TimelineScroll } from "./timeline-scroll"
+
+const MESSAGE_HASH = /^#message-(.+)$/
+
+export function createMessageLinks(input: {
+  readonly view: Accessor<SessionView>
+  readonly users: Accessor<TranscriptUserMessage[]>
+  readonly scroll: TimelineScroll
+  readonly active: Accessor<boolean>
+  readonly commands: Commands
+  readonly t: SessionScreenText
+}) {
+  const seek = (message: TranscriptUserMessage | undefined) => {
+    if (message) input.scroll.props.onMessageSelect?.(message)
+  }
+  const seekHash = async () => {
+    const raw = MESSAGE_HASH.exec(location.hash)?.[1]
+    if (!raw) return
+    const id = decodeURIComponent(raw)
+    for (;;) {
+      const message = input.users().find((candidate) => candidate.id === id)
+      if (message) return seek(message)
+      if (!input.view().hasOlder()) return
+      await input.view().loadOlder()
+    }
+  }
+  const followHash = () => void seekHash().catch((error: unknown) => console.error("The linked message could not be opened", error))
+  createEffect(on(() => input.users().length > 0, (ready) => ready && followHash()))
+  window.addEventListener("hashchange", followHash)
+  onCleanup(() => window.removeEventListener("hashchange", followHash))
+
+  const byOffset = (offset: -1 | 1) => {
+    const list = input.users()
+    if (list.length === 0) return
+    const index = list.findIndex((message) => message.id === input.scroll.selected())
+    const from = index >= 0 ? index : list.length
+    seek(list[Math.max(0, Math.min(list.length - 1, from + offset))])
+  }
+  input.commands.register(
+    "session.messages",
+    () => [
+      {
+        id: "message.previous",
+        title: input.t("command.message.previous"),
+        description: input.t("command.message.previous.description"),
+        keybind: "mod+arrowup",
+        onSelect: () => byOffset(-1),
+      },
+      {
+        id: "message.next",
+        title: input.t("command.message.next"),
+        description: input.t("command.message.next.description"),
+        keybind: "mod+arrowdown",
+        onSelect: () => byOffset(1),
+      },
+    ],
+    { owner: { isVisible: input.active, isFocused: input.active } },
+  )
+}
