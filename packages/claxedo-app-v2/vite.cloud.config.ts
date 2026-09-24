@@ -249,6 +249,10 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
           replacement: `${shikiThemesDist}index.mjs`,
         },
         {
+          find: "@claxedo/app-v2/ui",
+          replacement: normalizePath(fileURLToPath(new URL("./src/ui/index.ts", import.meta.url))),
+        },
+        {
           find: "lru_map",
           replacement: normalizePath(fileURLToPath(new URL("./src/transcript/diff/lru-map.ts", import.meta.url))),
         },

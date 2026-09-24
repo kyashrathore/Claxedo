@@ -9,7 +9,7 @@ import { useDialog } from "@/ui"
 import { useWorkbench } from "@/workbench"
 import { activatePlugin } from "./activation"
 import { pluginServerCalls } from "./api"
-import { createApiFactory, createOverlayTracker, type HostServices } from "./bindings"
+import { createApiFactory, createClaims, createOverlayTracker, type HostServices } from "./bindings"
 import { bundledPlugins } from "./bundled"
 import { createPluginHost, type PluginHost } from "./host"
 import { dictionary } from "./i18n"
@@ -44,6 +44,7 @@ function useHostServices(): HostServices {
     projects: () => projects.data ?? [],
     overlays: createOverlayTracker(commands),
     calls: pluginServerCalls(),
+    claims: createClaims(),
   }
 }
 
