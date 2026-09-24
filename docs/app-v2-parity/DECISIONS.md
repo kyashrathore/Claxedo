@@ -137,3 +137,8 @@ A **Settings → Projects** section lists the projects and holds their managemen
 ## Orchestrator, 00:35: request-read failures (SESS-071)
 - v1 designed a "Could not load pending permissions or questions" card with Retry. It can't be reached: its SDK list returns `{data: undefined}` instead of throwing, so v1 shows no card and re-reads /permission, /question and /session/status in a hot loop (3,828 requests each in 14 s).
 - **v2 shows v1's card.** The request read fails on its own, the transcript stays visible, Retry re-reads, and there is no loop. Flow 08's case branches on this entry.
+
+## Owner, 00:50: settings content
+- **No "Terminals" section in v2.**
+- **Settings content sections are free to be redesigned for the best UX** ("I don't think we had best UI in v1, just take your liberty"). Every v1 settings feature and its behavior stays: options, effects and persistence. The look inside the settings content is v2's own design, within v2's settings shell (16:45).
+- Settings flows assert behavior; a step about v1's markup branches on this entry. Lane transcript-3 owns src/settings.
