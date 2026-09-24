@@ -3,7 +3,7 @@ import type { HarnessInfo, PromptAttachment, PromptInput } from "@/server"
 import type { SessionView } from "@/session"
 import { formatCommentNote, formatImageMarkNote } from "@/lib/comment-note"
 import { machine } from "@/lib/machine"
-import type { Draft, EditorMode, HistoryComment, Selection, SendEvent, SendState, StopEvent, StopState } from "./model"
+import type { Draft, EditorMode, HistoryComment, SendEvent, SendState, StopEvent, StopState, Submission } from "./model"
 import { promptFilled, promptImages, promptText, randomId, sendTransition, stopTransition } from "./model"
 import { flattenMarkedImages } from "./marks/flatten"
 import { numberImageMarks } from "./marks/marks"
@@ -70,7 +70,7 @@ function noteAttachments(draft: Draft): PromptAttachment[] {
 export async function buildPromptInput(input: {
   draft: Draft
   mode: EditorMode
-  selection: Selection
+  submission: Submission
   goal: GoalIntent
   delivery: PromptInput["delivery"]
 }): Promise<PromptInput> {
@@ -85,9 +85,9 @@ export async function buildPromptInput(input: {
       ...files,
       ...noteAttachments(input.draft),
     ],
-    model: input.selection.model,
-    effort: input.selection.effort,
-    permissionMode: input.selection.permissionMode,
+    model: input.submission.model,
+    effort: input.submission.effort,
+    serviceTier: input.submission.serviceTier,
     goal: input.goal.kind === "submit" ? { objective: input.goal.objective } : undefined,
     delivery: input.delivery,
   }
@@ -97,11 +97,11 @@ type SendInput = {
   key: Accessor<ComposerKey>
   store: ComposerStore
   mode: Accessor<EditorMode>
-  selection: Accessor<Selection>
+  submission: () => Promise<Submission>
   working: Accessor<boolean>
   goalMode: Accessor<HarnessInfo["goalMode"] | undefined>
   view: Accessor<SessionView | undefined>
-  createSession?: () => Promise<SessionView>
+  createSession?: (submission: Submission) => Promise<SessionView>
   afterAccepted?: (view: SessionView) => void
   focusEditor: () => void
 }
@@ -134,8 +134,9 @@ function createArmGoal(input: SendInput) {
 async function deliver(input: SendInput, draft: Draft, goal: GoalIntent, clientRequestId: string): Promise<SessionView> {
   const key = input.key()
   const delivery = input.working() ? "queue" : undefined
-  const prompt = await buildPromptInput({ draft, mode: input.mode(), selection: input.selection(), goal, delivery })
-  const view = input.view() ?? (await required(input.createSession)())
+  const submission = await input.submission()
+  const prompt = await buildPromptInput({ draft, mode: input.mode(), submission, goal, delivery })
+  const view = input.view() ?? (await required(input.createSession)(submission))
   await view.send({ ...prompt, clientRequestId })
   input.store.addHistory(key, input.mode(), draft.prompt, historyComments(draft))
   input.store.reset(key)

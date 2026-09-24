@@ -55,7 +55,8 @@ test("03 a new session's first send creates the session and its draft pane becom
   await prompt.press("Enter")
 
   await expect(draft).toHaveCount(0)
-  await expect(app.getByRole("tab", { name: "Start the draft session" })).toBeVisible()
+  if (isMobile) await expect(app.getByRole("button", { name: "Switch pane" })).not.toContainText("New session")
+  else await expect(app.getByRole("tab", { name: "New session" })).toHaveCount(0)
   await expect(app.getByText("Start the draft session", { exact: true }).first()).toBeVisible()
   const created = (await api.sessions(workspace.directory)).find((row) => row.id !== existing.id)
   expect(created).toBeDefined()

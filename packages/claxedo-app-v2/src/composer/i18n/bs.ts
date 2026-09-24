@@ -25,7 +25,6 @@ export const bs: Partial<Record<ComposerTextKey, string>> = {
   "composer.action.dismiss": "Odbaci",
   "composer.action.cancel": "Otkaži",
   "composer.action.save": "Sačuvaj",
-  "composer.picker.agent": "Agent",
   "composer.attachment.remove": "Ukloni prilog",
   "composer.attachment.refused.title": "{{harness}} ne može primiti ovaj prilog",
   "composer.attachment.refused.description": "{{harness}} nema ulaz upita za {{mime}}, a ova sesija nema folder radnog prostora u kojem bi datoteka ostala.",
@@ -39,4 +38,9 @@ export const bs: Partial<Record<ComposerTextKey, string>> = {
   "composer.marks.remove": "Ukloni oznaku",
   "composer.key.esc": "ESC",
   "composer.error.title": "Neuspješno slanje upita",
+  "dialog.model.search.placeholder": "Pretraži modele",
+  "dialog.model.empty": "Nema rezultata za modele",
+  "command.provider.connect": "Poveži provajdera",
+  "model.tag.free": "Besplatno",
+  "model.tag.latest": "Najnovije",
 }

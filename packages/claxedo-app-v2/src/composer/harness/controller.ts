@@ -1,23 +1,12 @@
 import type { HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
-import type { ModelKey } from "@/features/session/composer/model-strategy"
-import type { SessionRef } from "@/platform/identity/session-ref"
+import type { ModelKey } from "./model-key"
 import type { HarnessModelChoice, HarnessReadiness } from "./selection"
 import type { HarnessConnectionState, HarnessModelOption, HarnessType } from "./profile"
 import type { DraftDefaultLabels } from "./draft-defaults"
 import type { DraftDefaultResult, DraftDefaultAuthority, ResolveDraftDefaultInput } from "./draft-default-policy"
-import type { PreparedRuntimeSessionConfig } from "./prepared-session"
+import type { HarnessScopeInput } from "./store-policy"
 
-export type HarnessScopeInput = {
-  directory?: string
-  sessionId?: string
-  sessionRef?: SessionRef
-}
-
-export type HarnessSessionClaimInput = HarnessScopeInput & {
-  headers?: Record<string, string>
-  harness: HarnessType
-  sessionConfig: PreparedRuntimeSessionConfig
-}
+export type { HarnessScopeInput } from "./store-policy"
 
 export type HarnessSelectionControllerStore = {
   canOmitModel?(scope: string): boolean
@@ -66,7 +55,6 @@ export type HarnessSelectionControllerStore = {
 }
 
 export type HarnessSubmitControllerStore = HarnessSelectionControllerStore & {
-  claimSession(scope: string, input: HarnessSessionClaimInput): Promise<{ id: string } | undefined>
   promote(from: string, to: string): void
   harnessReadyForSubmit(scope: string): boolean
   harnessModelKeyForSubmit(scope: string): ModelKey | undefined
@@ -160,8 +148,6 @@ export function createHarnessSubmitController(store: HarnessSubmitControllerStor
     modelKeyForSubmit: (scope: string) => store?.harnessModelKeyForSubmit(scope),
     settledModel: (scope: string) => store?.settledModel?.(scope) ?? Promise.resolve(),
     serviceTierForSubmit: (scope: string) => store?.harnessServiceTierForSubmit(scope),
-    claimSession: (scope: string, input: HarnessSessionClaimInput) =>
-      store?.claimSession(scope, input) ?? Promise.resolve(undefined),
     setHarness: (scope: string, type: HarnessType, input?: HarnessScopeInput) =>
       store?.setHarness(scope, type, input) ?? Promise.resolve(),
     promote: (from: string, to: string) => store?.promote(from, to),

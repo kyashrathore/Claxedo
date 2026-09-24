@@ -1,6 +1,6 @@
 import { applyHarnessOptionsResponse, type HarnessOptionsStatePatch } from "./options-state"
 import { harnessSelectionId, optionsResponse, type HarnessType, type OptionsResponse } from "./profile"
-import { sameHarnessSelection } from "@/platform/identity/harness-selection"
+import { sameHarnessSelection } from "@/lib/harness-selection"
 import type { DraftDefaultApplication, ResolveDraftDefaultInput } from "./draft-default-policy"
 
 export type HarnessOptionsLoaderCache = {

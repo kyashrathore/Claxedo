@@ -13,7 +13,7 @@ import {
 import { harnessMode, type HarnessReadiness } from "./selection"
 import type { DraftDefault } from "./draft-defaults"
 import type { DraftDefaultAuthority, DraftDefaultResult } from "./draft-default-policy"
-import { isCatalogHarnessId } from "@/platform/identity/harness-selection"
+import { isCatalogHarnessId } from "@/lib/harness-selection"
 
 export type HarnessStoreState = {
   harnessMode: "harness" | "unknown"

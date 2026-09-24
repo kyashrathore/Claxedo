@@ -1,12 +1,9 @@
 import { For, Show, createMemo, createSignal, type Accessor, type JSX } from "solid-js"
 import { Popover as Kobalte } from "@kobalte/core/popover"
 import { Button } from "@opencode-ai/ui/button"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
-import { useLanguage } from "@/platform/i18n/provider"
-import { loadManageModelsDialog } from "@/features/session/app-ports"
-import { ModelList, type PickerState } from "@/features/session/ui/model/model-list"
-import { COMPOSER_MENU_CLASS } from "@/features/session/composer/ui/menu-metrics"
+import { ModelList, type PickerState } from "./model-list"
+import { COMPOSER_MENU_CLASS } from "./menu-metrics"
 
 /**
  * One chip, one popover, three questions — harness, model, effort.
@@ -31,9 +28,9 @@ import { COMPOSER_MENU_CLASS } from "@/features/session/composer/ui/menu-metrics
  *      column becomes a visible spine down the open section;
  *   3. the panel fades and slides in from the header it hangs off.
  *
- * The model section hosts the REAL `ModelList` — same search, provider
- * grouping, tags and `model_selected` commit point as the standalone picker,
- * including its manage-models action and Settings → Providers redirect. Nothing forks.
+ * The model section hosts the REAL `ModelList` — its search, provider
+ * grouping and tags, and its Settings → Providers redirect for a model that
+ * is not connected.
  */
 
 type HarnessModelPickerSection = "harness" | "model"
@@ -285,42 +282,6 @@ function EffortSlider(props: {
   )
 }
 
-/**
- * The model list plus its in-header manage action. Extracted so the Model
- * section can swap the WHOLE list out for a failure state — the two are
- * alternatives, never stacked.
- */
-function ModelListPanel(props: {
-  model: Accessor<PickerState>
-  onSelect: () => void
-  manage?: () => void
-  manageLabel: string
-}) {
-  return (
-    <ModelList
-      model={props.model()}
-      tooltips={false}
-      surface="composer"
-      onSelect={props.onSelect}
-      action={props.manage ? (
-        /* Inside the field, opposite the magnifier and wearing its treatment —
-           same `--overlay-icon` tint, same 20px glyph — so the two read as a
-           matched pair bracketing the input. The search row's 10px inline
-           padding lands it symmetrically against the lens. */
-        <button
-          type="button"
-          data-slot="harness-picker-manage"
-          aria-label={props.manageLabel}
-          title={props.manageLabel}
-          class="flex shrink-0 items-center text-[var(--overlay-icon)] outline-none transition-colors duration-100 hover:text-[var(--overlay-text)] focus-visible:text-[var(--overlay-text)]"
-          onClick={props.manage}
-        >
-          <Icon name="sliders" size="small" class="size-5 -m-0.5 shrink-0" />
-        </button>
-      ) : undefined}
-    />
-  )
-}
 
 export function HarnessModelPicker<H>(props: {
   /** Harness section. */
@@ -359,12 +320,6 @@ export function HarnessModelPicker<H>(props: {
    * which is a different and wronger claim than "loading them failed".
    */
   modelError?: Accessor<{ message: string; detail?: string; action?: { label: string; run: () => void } } | undefined>
-  /**
-   * Whether this harness's model catalog can be managed from here. Runtime-
-   * reported catalogs do not show this action when their provider owns model
-   * selection externally.
-   */
-  showManageModels: Accessor<boolean>
 
   /** Effort slider. An empty well when the harness offers no variants. */
   showEffort: Accessor<boolean>
@@ -393,8 +348,6 @@ export function HarnessModelPicker<H>(props: {
     readyForSubmit: boolean
   }>
 }) {
-  const language = useLanguage()
-  const dialog = useDialog()
   const [open, setOpen] = createSignal(false)
   // Opens on the model list: the harness is almost always already right, and
   // making the common case cost a click is how these menus get slow.
@@ -425,13 +378,6 @@ export function HarnessModelPicker<H>(props: {
     const current = props.currentVariant()
     return current && current !== "default" ? props.variantLabel(current) : undefined
   })
-
-  const handleManage = () => {
-    setOpen(false)
-    void loadManageModelsDialog().then((x) => {
-      void dialog.show(() => <x.DialogManageModels />)
-    })
-  }
 
   return (
     <Kobalte
@@ -564,14 +510,7 @@ export function HarnessModelPicker<H>(props: {
             <SectionPanel class="flex min-h-0 flex-1 flex-col">
               <Show
                 when={props.modelError?.()}
-                fallback={
-                  <ModelListPanel
-                    model={props.model}
-                    onSelect={() => setOpen(false)}
-                    manage={props.showManageModels() ? handleManage : undefined}
-                    manageLabel={language.t("dialog.model.manage")}
-                  />
-                }
+                fallback={<ModelList model={props.model()} onSelect={() => setOpen(false)} />}
               >
                 {(failure) => (
                   <div data-slot="harness-picker-model-error" class="flex min-h-0 flex-1 flex-col items-start gap-2 px-3 py-4">

@@ -10,7 +10,6 @@ import {
   harnessChangeKey,
   type HarnessScopeInput,
 } from "./store-policy"
-import type { WorkspaceBoot } from "./harness-config-runtime"
 
 export type HarnessSwitcherCache = {
   getPending(key: string): Promise<void> | undefined
@@ -20,27 +19,21 @@ export type HarnessSwitcherCache = {
 }
 
 export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(input: {
-  base: string
   seed(scope: string): void
-  dropPrepared(scope: string): void
   applyPatch(scope: string, patch: HarnessStorePatch): void
   holdHarness(scope: string, patch: HarnessStorePatch): void
   restoreHeldHarness(scope: string, type: HarnessType): boolean
   beginDraftHarnessChoice?(scope: string, type: HarnessType, params?: ScopeInput): void
   rememberDraftHarness(scope: string, type: HarnessType, params?: ScopeInput): void
-  refresh(directory?: string, harnessType?: string, opts?: { draft?: boolean }): Promise<void>
   fetchConfigOptions(scope: string, type: HarnessType, params?: ScopeInput): void
   hasConfigOptions?(type: HarnessType): Promise<boolean>
-  runtime: {
-    workspace(params?: ScopeInput): Promise<WorkspaceBoot | undefined>
-  }
   cache: HarnessSwitcherCache
 }) {
   const revisions = new Map<string, number>()
   let nextRevision = 0
 
-  const setHarness = (scope: string, type: HarnessType, params?: ScopeInput, binary?: string) => {
-    const key = harnessChangeKey({ serverUrl: input.base, ...params }, type, binary)
+  const setHarness = (scope: string, type: HarnessType, params?: ScopeInput) => {
+    const key = harnessChangeKey(params ?? {}, type)
     const pending = input.cache.getPending(key)
     if (pending) return pending
 
@@ -66,7 +59,6 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
     active: () => boolean,
   ) => {
     input.seed(scope)
-    input.dropPrepared(scope)
     const draft = !params?.sessionId || params.sessionId === "new"
     if (!draft && input.restoreHeldHarness(scope, type)) return
     if (draft) {
@@ -99,13 +91,9 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
     params: ScopeInput | undefined,
     active: () => boolean,
   ) => {
-    await input.runtime.workspace(params).catch(() => undefined)
-    if (!active()) return false
     const configOptions = await hasConfigOptions(scope, type)
     if (configOptions === undefined || !active()) return false
     if (!configOptions) {
-      await input.refresh(params?.directory, undefined, { draft: true })
-      if (!active()) return false
       input.applyPatch(scope, {
         ...(type.kind === "connection" ? { selectedModel: "default", dynamicModels: [] } : {}),
         optionsSource: "empty",
@@ -116,9 +104,7 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
       return true
     }
     input.fetchConfigOptions(scope, type, params)
-    await input.refresh(params?.directory, undefined, { draft: true })
-    if (!active()) return false
-    return true
+    return active()
   }
 
   return {

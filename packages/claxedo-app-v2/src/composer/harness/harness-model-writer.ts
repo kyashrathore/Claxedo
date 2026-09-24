@@ -1,9 +1,9 @@
-import { sessionResourceUrl } from "./harness-config-routes"
 import {
   sessionModelSyncKey,
   type HarnessScopeInput,
 } from "./store-policy"
-import type { ModelKey } from "@/features/session/composer/model-strategy"
+import type { SessionRef } from "@/server"
+import type { ModelKey } from "./model-key"
 import type { DraftDefaultLabels } from "./draft-defaults"
 
 export type SessionModelSyncState = {
@@ -23,7 +23,6 @@ export function syncHarnessSessionModel(input: {
   key: string
   model: string
   request: () => Promise<Response>
-  publishConfig?: (config: unknown) => void
   cache: HarnessSessionModelSyncCache
 }) {
   const current = input.cache.getState(input.key) ?? {}
@@ -39,10 +38,8 @@ export function syncHarnessSessionModel(input: {
   const run = input.request()
     .then(async (res) => {
       if (!res.ok) throw new Error((await res.text().catch(() => "")) || `Failed to update session model (${res.status})`)
-      const config = await res.json().catch(() => undefined)
       const latest = input.cache.getState(input.key)
       if (latest?.desired !== input.model) return
-      if (config !== undefined) input.publishConfig?.(config)
       input.cache.setState(input.key, {
         ...latest,
         synced: input.model,
@@ -55,7 +52,6 @@ export function syncHarnessSessionModel(input: {
 }
 
 export function createHarnessModelWriter<ScopeInput extends HarnessScopeInput>(input: {
-  base: string
   seed(scope: string): void
   acceptsDraftModel(scope: string, model: ModelKey): boolean
   currentModel(scope: string): ModelKey | undefined
@@ -65,36 +61,21 @@ export function createHarnessModelWriter<ScopeInput extends HarnessScopeInput>(i
   /** Effort levels and their default belong to the model, so a new one re-asks the harness. */
   reloadOptions(scope: string, params?: ScopeInput): Promise<void> | void
   rememberDraftModel(scope: string, model: ModelKey, input?: ScopeInput, labels?: DraftDefaultLabels): void
-  publishSessionConfig(input: ScopeInput, config: unknown): void
-  dropPrepared(scope: string): void
   runtime: {
-    harnessSessionFetch(params?: ScopeInput): typeof fetch
+    setSessionModel(ref: SessionRef, model: ModelKey): Promise<Response>
   }
   cache: HarnessSessionModelSyncCache
 }) {
   const syncSessionModel = async (params: ScopeInput | undefined, model: ModelKey) => {
-    const key = sessionModelSyncKey({ serverUrl: input.base, ...params })
-    if (!key) return undefined
+    const ref = params?.sessionRef
+    const key = params ? sessionModelSyncKey(params) : undefined
+    if (!ref || !key) return undefined
     const syncValue = `${model.providerID}/${model.modelID}`
     return syncHarnessSessionModel({
       key,
       model: syncValue,
       cache: input.cache,
-      publishConfig: (config) => input.publishSessionConfig(params!, config),
-      request: () =>
-        input.runtime.harnessSessionFetch(params)(
-          sessionResourceUrl({
-            serverUrl: input.base,
-            resource: "config",
-            sessionID: params!.sessionId!,
-            directory: params!.directory!,
-          }),
-          {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ model }),
-          },
-        ),
+      request: () => input.runtime.setSessionModel(ref, model),
     })
   }
 
@@ -108,7 +89,6 @@ export function createHarnessModelWriter<ScopeInput extends HarnessScopeInput>(i
     const changed = previous?.providerID !== model.providerID || previous.modelID !== model.modelID
     if (!params?.sessionId || params.sessionId === "new") {
       input.rememberDraftModel(scope, model, params, labels)
-      input.dropPrepared(scope)
       if (changed) await input.reloadOptions(scope, params)
       return
     }

@@ -1,8 +1,7 @@
-import type { ModelKey } from "@/features/session/composer/model-strategy"
-import type { PanePreferenceStorage } from "@/features/session/preferences/pane"
-import { Persist } from "@/platform/persistence/persist"
-import { harnessSelectionKey, isHarnessSelection, type HarnessSelection } from "@/platform/identity/harness-selection"
-import { isCatalogHarnessId } from "@/platform/identity/harness-selection"
+import { checksum } from "@opencode-ai/ui/utils/encode"
+import type { ModelKey } from "./model-key"
+import { harnessSelectionKey, isHarnessSelection, type HarnessSelection } from "@/lib/harness-selection"
+import { isCatalogHarnessId } from "@/lib/harness-selection"
 import { asRecord } from "@/lib/record"
 
 const VERSION = 3
@@ -49,13 +48,43 @@ export type DraftDefaultScope = {
   fallbackWorkspaceKey?: string
 }
 
-type DraftDefaultStorage = PanePreferenceStorage & {
+export type DraftDefaultStorage = {
+  getItem: (key: string) => string | null
+  setItem: (key: string, value: string) => void
   removeItem?: (key: string) => void
 }
 
+/** Today's app files the record under this key, so a draft default carries over between the two. */
 export function draftDefaultStorageKey(input: Omit<DraftDefaultScope, "fallbackWorkspaceKey">) {
-  const target = Persist.serverWorkspace(input.serverUrl, input.workspaceKey, KEY)
-  return `${target.storage ?? "default"}:${target.key}`
+  return `${serverWorkspaceStorage(input.serverUrl, input.workspaceKey)}:workspace:${KEY}`
+}
+
+function serverWorkspaceStorage(serverUrl: string, dir: string) {
+  const scoped = scopeUrl(serverUrl)
+  const serverHead =
+    scoped
+      .replace(/^https?:\/\//, "")
+      .replace(/\/+$/, "")
+      .replace(/[^a-z0-9.-]/gi, "-")
+      .slice(0, 24) || "server"
+  const serverSum = checksum(scoped) ?? "0"
+  const dirHead = (dir.slice(0, 12) || "workspace").replace(/[^a-zA-Z0-9._-]/g, "-")
+  const dirSum = checksum(dir) ?? "0"
+  return `claxedo.server.${serverHead}.${serverSum}.workspace.${dirHead}.${dirSum}.dat`
+}
+
+function scopeUrl(url: string) {
+  try {
+    const next = new URL(url)
+    if (next.hostname === "127.0.0.1") next.hostname = "localhost"
+    return next.toString().replace(/\/+$/, "")
+  } catch {
+    return url
+      .trim()
+      .replace(/^http:\/\/127\.0\.0\.1\b/i, "http://localhost")
+      .replace(/^https:\/\/127\.0\.0\.1\b/i, "https://localhost")
+      .replace(/\/+$/, "")
+  }
 }
 
 export function decodeDraftDefaultRecord(input: string | null) {

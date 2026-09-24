@@ -3,6 +3,7 @@ import type { QueryClient } from "@tanstack/solid-query"
 import type { Account } from "./account-types"
 import type { CloudCreateInput, CloudWorkspace, CodeHostConnection, CodeHostRepository } from "./cloud-types"
 import type { ConnectionState, ServerEvent } from "./events"
+import type { HarnessConfigApi } from "./harness-config"
 import type {
   DiffFile,
   DiffScope,
@@ -169,6 +170,7 @@ export type Server = {
   readonly git: GitApi
   readonly cloud: CloudApi
   readonly livePlugins: LivePluginsApi
+  readonly harnessConfig: HarnessConfigApi
   readonly queries: ServerQueries
   readonly request: (path: string, init?: RequestInit) => Promise<Response>
 }

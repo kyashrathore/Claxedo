@@ -1,34 +1,30 @@
-import { resolveDraftDefault as resolveDraftDefaultPolicy } from "@/features/session/harness/draft-default-policy"
-import { Show, createEffect, createMemo, createResource, createSignal, onCleanup, untrack, type Accessor, type JSX } from "solid-js"
+import { resolveDraftDefault as resolveDraftDefaultPolicy } from "../harness/draft-default-policy"
+import { Show, createEffect, createMemo, createResource, createSignal, untrack, type JSX } from "solid-js"
+import { useNavigate } from "@solidjs/router"
+import { useServer } from "@/server"
+import { settingsPath } from "@/shell"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
-import { type PickerItem, type PickerState } from "@/features/session/ui/model/model-list"
-import { HarnessModelPicker } from "@/features/session/composer/ui/harness-model-picker"
-import { publishComposerNotice, type ComposerNotice } from "@/features/session/composer/ui/composer-notice"
-import { resolveHarnessNotice } from "@/features/session/composer/ui/harness-notice"
-import { catalogHarnessId, harnessDisplayLabel, harnessModelPickerProvider, harnessSelectionId, isCatalogHarness, isNativeHarness, type HarnessType } from "@/features/session/harness/profile"
-import { connectionAllowsNoModel } from "@/features/session/harness/selection"
-import type { HarnessSelectionController } from "@/features/session/harness/controller"
-import type { SessionRef } from "@/platform/identity/session-ref"
+import type { PickerState } from "./model-list"
+import { HarnessModelPicker } from "./harness-model-picker"
+import { publishComposerNotice, type ComposerNotice } from "./composer-notice"
+import { resolveHarnessNotice } from "./harness-notice"
+import { catalogHarnessId, harnessDisplayLabel, harnessModelPickerProvider, harnessSelectionId, isCatalogHarness, isNativeHarness, type HarnessType } from "../harness/profile"
+import { connectionAllowsNoModel } from "../harness/selection"
+import type { HarnessScopeInput, HarnessSelectionController } from "../harness/controller"
 import { shouldApplyHarnessSelection } from "./agent-harness-selection-guard"
-import { watchHarnessReprobe } from "@/features/session/harness/harness-reprobe"
-import { panePreferenceScope } from "@/features/session/preferences/pane"
+import { watchHarnessReprobe } from "../harness/harness-reprobe"
 import {
   createModelSelectionController,
   modelKeyFromPickerSelection,
-} from "@/features/session/commands/model-selection"
-import { useProviders } from "@/features/session/app-ports"
-import { hydrateConnectedProviderDetails } from "@/features/session/providers/models"
-import { useNavigate } from "@solidjs/router"
-import { settingsRoute } from "@/platform/settings/route"
-import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
+} from "../harness/model-selection"
+import { createProviderCatalog, hydrateConnectedProviderDetails } from "../harness/provider-catalog"
 import {
   NATIVE_HARNESS_IDS,
   connectionHarness,
   nativeHarness,
   sameHarnessSelection,
-} from "@/platform/identity/harness-selection"
-import { createHarnessConnectionsCatalog } from "@/platform/query/connection-catalog"
-import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
+} from "@/lib/harness-selection"
+import { createHarnessConnectionsCatalog } from "../harness/connection-catalog"
 const BUILTIN_HARNESS_OPTIONS: HarnessType[] = NATIVE_HARNESS_IDS.map(nativeHarness)
 
 function harnessOptionGroup(input: HarnessType) {
@@ -75,43 +71,24 @@ interface AgentHarnessSelectorProps {
   triggerStyle?: JSX.CSSProperties
   /** Whether the current session already exists. Existing sessions hand off through session config. */
   sessionLocked?: boolean
-  directory?: string
-  sessionId?: string
-  sessionRef?: SessionRef
-  surfaceId?: string
-  draftId?: string
+  /** The composer's key: the harness store files this pane's selection under it. */
+  scope: string
+  scopeInput: HarnessScopeInput
   active?: boolean
   harnessController: HarnessSelectionController
-  /** Canonical provider picker state for the embedded OpenCode catalog. */
-  providerModel?: Accessor<PickerState>
 }
 
 export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const navigate = useNavigate()
-  const connections = createHarnessConnectionsCatalog({ base: getClaxedoServerUrl(), request: authFetch })
+  const server = useServer()
+  const connections = createHarnessConnectionsCatalog({ api: server.harnessConfig })
   const connectionRows = createMemo(() => {
     const catalog = connections.data()
     return catalog?.status === "supported" ? catalog.connections : []
   })
-  const refreshConnections = () => {
-    let cancelled = false
-    let attempts = 0
-    let retry: ReturnType<typeof setTimeout> | undefined
-    const refresh = async () => {
-      attempts += 1
-      await connections.refresh()
-      if (cancelled || !connections.error() || attempts >= 3) return
-      retry = setTimeout(() => void refresh(), attempts * 500)
-    }
-    void refresh()
-    return () => {
-      cancelled = true
-      if (retry) clearTimeout(retry)
-    }
-  }
   createEffect(() => {
     if (props.active === false) return
-    onCleanup(refreshConnections())
+    void connections.refresh()
   })
   const harnessOptions = createMemo<HarnessType[]>(() => [
     ...BUILTIN_HARNESS_OPTIONS,
@@ -127,59 +104,27 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
       )
     return harnessDisplayLabel(input.harnessId)
   }
-  const sessionId = createMemo(() => {
-    const next = props.sessionId
-    return next
-  })
-  const sessionRef = createMemo(() => props.sessionRef)
-  const directory = createMemo(() => {
-    const next = props.directory
-    return next
-  })
-  const surfaceId = createMemo(() => {
-    const next = props.surfaceId
-    return next
-  })
-  const draftId = createMemo(() => {
-    return props.draftId
-  })
+  const scopeInput = createMemo(() => props.scopeInput)
+  const placementId = createMemo(() => scopeInput().placementId)
+  const sessionId = createMemo(() => scopeInput().sessionId)
   const sessionLocked = createMemo(() => {
     const next = !!props.sessionLocked
     return next
   })
-  const scope = createMemo(() => {
-    const next = panePreferenceScope({
-      directory: directory(),
-      sessionId: sessionId(),
-      surfaceId: surfaceId(),
-      draftId: draftId(),
-    })
-    return next
-  })
+  const scope = createMemo(() => props.scope)
 
   createEffect(() => {
     const nextScope = scope()
-    const nextDirectory = directory()
-    const nextSessionId = sessionId()
-    const nextSessionRef = sessionRef()
+    const nextInput = scopeInput()
     if (props.active === false) {
       return
     }
-    if (!nextDirectory) {
+    if (!nextInput.placementId) {
       return
     }
-    const timer = setTimeout(
-      () =>
-        untrack(() => {
-          void props.harnessController.hydrate(nextScope, {
-            directory: nextDirectory,
-            sessionId: nextSessionId,
-            sessionRef: nextSessionRef,
-          })
-        }),
-      50,
-    )
-    onCleanup(() => clearTimeout(timer))
+    untrack(() => {
+      void props.harnessController.hydrate(nextScope, nextInput)
+    })
   })
 
   const style = (off: boolean) => {
@@ -205,7 +150,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   // Keyed per harness id, so switching between catalog harnesses re-reads the
   // right catalog; an empty id disables the query while no catalog harness is
   // selected, so a Claude or connection draft never fetches a catalog.
-  const catalogProviders = useProviders(() => catalogHarnessId(harness()) ?? "")
+  const catalogProviders = createProviderCatalog({ api: server.harnessConfig, harness: () => catalogHarnessId(harness()) ?? "" })
   const catalogRows = createMemo(() => {
     const connected = new Set(catalogProviders.connected().map((provider) => provider.id))
     const rows = [...catalogProviders.all().values()].flatMap((provider) =>
@@ -275,12 +220,11 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     const connectedModels = catalogRows().rows.filter((row) => row.connected)
     if (connectedModels.length !== 1) return
     const only = connectedModels[0]
-    const dir = directory()
-    if (!dir) return
+    if (!placementId()) return
     void props.harnessController.setModel(
       scope(),
       { providerID: only.provider.id, modelID: only.id },
-      { directory: dir, sessionId: sessionId() },
+      scopeInput(),
       { provider: only.provider.name, model: only.name },
     )
   })
@@ -299,22 +243,17 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   watchHarnessReprobe({
     active: () => {
       if (props.active === false) return false
-      // Track scope/directory/session so a route change restarts with a fresh cap.
+      // Track scope/placement/session so a route change restarts with a fresh cap.
       const nextScope = scope()
-      const nextDirectory = directory()
+      const nextPlacement = placementId()
       sessionId()
-      return !!nextScope && !!nextDirectory && isPolling()
+      return !!nextScope && !!nextPlacement && isPolling()
     },
     // reprobe/onExhausted fire from the loop's timer callback, outside any
     // reactive computation, so these reads create no tracked dependencies.
     reprobe: () => {
-      const nextDirectory = directory()
-      if (!nextDirectory) return
-      void props.harnessController.reprobe(scope(), {
-        directory: nextDirectory,
-        sessionId: sessionId(),
-        sessionRef: sessionRef(),
-      })
+      if (!placementId()) return
+      void props.harnessController.reprobe(scope(), scopeInput())
     },
     onExhausted: () => props.harnessController.markUnavailable(scope()),
   })
@@ -329,30 +268,9 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const rows = createMemo<Item[]>(() => {
     const currentHarness = harness()
     if (!currentHarness) return []
-    // OpenCode's provider catalog is fetched for OpenCode explicitly and stays
-    // authoritative when the workspace is reached through the relay: the
-    // generic provider picker owns the selection and current value, but its
-    // directory-scoped list may legitimately be empty while a provisioned
-    // machine is still coming up.
-    if (isCatalogHarness(currentHarness)) {
-      const providerModel = props.providerModel?.()
-      return catalogRows().rows.filter((item) =>
-        providerModel?.visible(
-          { providerID: item.provider.id, modelID: item.id },
-          catalogProviders.default(),
-        ) ?? true
-      )
-    }
-    const providerModel = props.providerModel?.()
-    const selectedId = selection().selectedModel
+    if (isCatalogHarness(currentHarness)) return catalogRows().rows
     return selection().models.flatMap((item) => {
       const provider = harnessModelPickerProvider(currentHarness, item)
-      // The selected model stays listed even when hidden in Settings: a trigger
-      // that cannot find its own value has nothing to show.
-      const hidden = item.id !== selectedId
-        && providerModel !== undefined
-        && !providerModel.visible({ providerID: provider.id, modelID: item.id }, catalogProviders.default())
-      if (hidden) return []
       return [{
         id: item.id,
         name: item.name,
@@ -367,26 +285,6 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     const next = rows().find((item) => item.id === selected?.modelID && item.provider.id === selected.providerID)
       ?? (harness() && isCatalogHarness(harness()) ? undefined : rows().find((item) => item.id === selection().selectedModel))
     return next
-  })
-  // OpenCode submits through the provider catalog, while the unified selector keeps
-  // the per-pane harness choice in the harness controller. Project every valid
-  // OpenCode harness selection into the provider picker as well so defaults and
-  // hydration have the same submit owner as an explicit model-row click.
-  createEffect(() => {
-    const currentHarness = harness()
-    if (!currentHarness || !isCatalogHarness(currentHarness)) return
-    const selected = selection().selectedModelKey
-    const providerModel = props.providerModel?.()
-    if (!selected || !providerModel) return
-    const row = rows().find((item) =>
-      item.connected !== false &&
-      item.id === selected.modelID &&
-      item.provider.id === selected.providerID
-    )
-    if (!row) return
-    const current = providerModel.current()
-    if (current?.id === selected.modelID && current.provider.id === selected.providerID) return
-    providerModel.set(selected, { recent: false })
   })
   const modelSelection = createMemo(() =>
     createModelSelectionController({
@@ -404,22 +302,18 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         return props.harnessController.setModel(
           scope(),
           command.model,
-          {
-            directory: directory(),
-            sessionId: sessionId(),
-          },
+          scopeInput(),
           hit ? { provider: hit.provider.name, model: hit.name } : undefined,
         )
       },
     }),
   )
   const openProviders = () => {
-    navigate(settingsRoute("models"))
+    navigate(settingsPath("models"))
   }
   const model = createMemo<PickerState>(() => ({
-    list: () => rows() as PickerItem[],
-    current: () => picked() as PickerItem | undefined,
-    visible: () => true,
+    list: rows,
+    current: picked,
     set: (item, options) => {
       const modelKey = modelKeyFromPickerSelection(item)
       if (!modelKey) return
@@ -428,9 +322,6 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
       if (hit.connected === false) {
         openProviders()
         return
-      }
-      if (harness() && isCatalogHarness(harness())) {
-        props.providerModel?.().set({ providerID: hit.provider.id, modelID: hit.id }, options)
       }
       void modelSelection().set({
         scope: {
@@ -540,10 +431,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
             void catalogProviders.refresh()
             return
           }
-          void props.harnessController.reprobe(scope(), {
-            directory: directory(),
-            sessionId: sessionId(),
-          })
+          void props.harnessController.reprobe(scope(), scopeInput())
         },
       },
     }
@@ -564,20 +452,15 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
           })
           openedViaMenu = false
           if (!apply || !r) return
-          phCapture("harness_selected", { ...identityProps(), surface: "composer", harness: harnessSelectionId(r), targetKind: r.kind })
           setSwitchingHarness(r)
           const switchScope = scope()
-          const switchDirectory = directory()
-          const switchSession = sessionId()
+          const switchInput = scopeInput()
           void Promise.resolve(
-            props.harnessController.setHarness(switchScope, r, {
-              directory: switchDirectory,
-              sessionId: switchSession,
-            }),
+            props.harnessController.setHarness(switchScope, r, switchInput),
           ).then(async () => {
             if (!isCatalogHarness(r)) return undefined
             await catalogProviders.refresh()
-            if (scope() !== switchScope || directory() !== switchDirectory || sessionId() !== switchSession) return undefined
+            if (scope() !== switchScope || scopeInput() !== switchInput) return undefined
             if (catalogProviders.error()) return undefined
             const catalog = catalogRows()
             const result = resolveDraftDefaultPolicy({
@@ -588,10 +471,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
               providerDefaults: catalogProviders.default(),
             })
             if (!result.model) return undefined
-            return props.harnessController.setModel(switchScope, result.model, {
-              directory: switchDirectory,
-              sessionId: switchSession,
-            }, (() => {
+            return props.harnessController.setModel(switchScope, result.model, switchInput, (() => {
               const hit = catalog.rows.find((item) => item.provider.id === result.model?.providerID && item.id === result.model.modelID)
               return hit ? { provider: hit.provider.name, model: hit.name } : undefined
             })())
@@ -659,7 +539,6 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         harnessHint={() => (sessionLocked() ? "Continue this conversation with another harness" : undefined)}
         harnessIcon={(option) => <HarnessOptionIcon harness={option} />}
         onHarnessSelect={applyHarness}
-        showManageModels={() => !!harness() && isCatalogHarness(harness())}
         modelError={() => {
           // The same resolved notice the composer row shows, rendered inside
           // the Model section too. The row explains the failure globally; the

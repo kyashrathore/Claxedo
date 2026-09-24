@@ -1,4 +1,4 @@
-import { Composer, draftComposerKey, useComposerStore } from "@/composer"
+import { Composer, draftComposerKey, type Submission } from "@/composer"
 import type { PlacementId, ProjectId } from "@/server"
 import { useServer } from "@/server"
 import { useSessionStores, type SessionView } from "@/session"
@@ -18,13 +18,11 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
   const t = useSessionScreenText()
   const server = useServer()
   const stores = useSessionStores()
-  const composers = useComposerStore()
   const workbench = useWorkbench()
   const key = () => draftComposerKey(props.state.placementId, props.state.draftId)
   const placement = () => server.placements.byId(props.state.placementId)
-  const createSession = async (): Promise<SessionView> => {
-    const selection = composers.selection(key())
-    const ref = await stores.list.create({ placementId: props.state.placementId, harness: selection.harness, model: selection.model })
+  const createSession = async (submission: Submission): Promise<SessionView> => {
+    const ref = await stores.list.create({ placementId: props.state.placementId, harness: submission.harness, model: submission.model })
     return stores.open(ref)
   }
   return (

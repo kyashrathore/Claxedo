@@ -6,7 +6,7 @@
 // and rendering each independently would stack "Unavailable ● Retry" in the
 // same row.
 import type { ComposerNoticeTone } from "./composer-notice"
-import type { HarnessConnectionState } from "../../harness/profile"
+import type { HarnessConnectionState } from "../harness/profile"
 
 export type HarnessNoticeInput = {
   /** Display name of the active harness, e.g. "Cursor". */

@@ -25,7 +25,6 @@ export const ja: Partial<Record<ComposerTextKey, string>> = {
   "composer.action.dismiss": "閉じる",
   "composer.action.cancel": "キャンセル",
   "composer.action.save": "保存",
-  "composer.picker.agent": "エージェント",
   "composer.attachment.remove": "添付ファイルを削除",
   "composer.attachment.refused.title": "{{harness}} はこの添付ファイルを扱えません",
   "composer.attachment.refused.description": "{{harness}} には {{mime}} を渡す入力がなく、このセッションにはファイルを置くワークスペースフォルダもありません。",
@@ -39,4 +38,9 @@ export const ja: Partial<Record<ComposerTextKey, string>> = {
   "composer.marks.remove": "マークを削除",
   "composer.key.esc": "ESC",
   "composer.error.title": "プロンプトの送信に失敗しました",
+  "dialog.model.search.placeholder": "モデルを検索",
+  "dialog.model.empty": "モデルが見つかりません",
+  "command.provider.connect": "プロバイダーに接続",
+  "model.tag.free": "無料",
+  "model.tag.latest": "最新",
 }

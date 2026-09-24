@@ -1,5 +1,5 @@
 import type { HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
-import type { ModelKey } from "@/features/session/composer/model-strategy"
+import type { ModelKey } from "./model-key"
 import {
   harnessDisplayLabel,
   harnessSelectionId,

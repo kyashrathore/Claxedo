@@ -25,7 +25,6 @@ export const zht: Partial<Record<ComposerTextKey, string>> = {
   "composer.action.dismiss": "忽略",
   "composer.action.cancel": "取消",
   "composer.action.save": "儲存",
-  "composer.picker.agent": "代理程式",
   "composer.attachment.remove": "移除附件",
   "composer.attachment.refused.title": "{{harness}} 無法使用此附件",
   "composer.attachment.refused.description": "{{harness}} 沒有接收 {{mime}} 的提示輸入，而此工作階段也沒有可保存該檔案的工作區資料夾。",
@@ -39,4 +38,9 @@ export const zht: Partial<Record<ComposerTextKey, string>> = {
   "composer.marks.remove": "移除標記",
   "composer.key.esc": "ESC",
   "composer.error.title": "傳送提示失敗",
+  "dialog.model.search.placeholder": "搜尋模型",
+  "dialog.model.empty": "找不到模型",
+  "command.provider.connect": "連接提供者",
+  "model.tag.free": "免費",
+  "model.tag.latest": "最新",
 }

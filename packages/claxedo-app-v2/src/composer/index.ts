@@ -11,8 +11,8 @@ export type {
   LineRange,
   Prompt,
   PromptPart,
-  Selection,
   SendState,
+  Submission,
   TextPart,
 } from "./model"
 export { emptyPrompt, promptText } from "./model"

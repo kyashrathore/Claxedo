@@ -25,7 +25,6 @@ export const fr: Partial<Record<ComposerTextKey, string>> = {
   "composer.action.dismiss": "Ignorer",
   "composer.action.cancel": "Annuler",
   "composer.action.save": "Enregistrer",
-  "composer.picker.agent": "Agent",
   "composer.attachment.remove": "Supprimer la pièce jointe",
   "composer.attachment.refused.title": "{{harness}} ne peut pas utiliser cette pièce jointe",
   "composer.attachment.refused.description": "{{harness}} n'a pas d'entrée de prompt pour {{mime}}, et cette session n'a pas de dossier d'espace de travail pour conserver le fichier.",
@@ -39,4 +38,9 @@ export const fr: Partial<Record<ComposerTextKey, string>> = {
   "composer.marks.remove": "Retirer le repère",
   "composer.key.esc": "ESC",
   "composer.error.title": "Échec de l'envoi du message",
+  "dialog.model.search.placeholder": "Rechercher des modèles",
+  "dialog.model.empty": "Aucun résultat de modèle",
+  "command.provider.connect": "Connecter un fournisseur",
+  "model.tag.free": "Gratuit",
+  "model.tag.latest": "Dernier",
 }

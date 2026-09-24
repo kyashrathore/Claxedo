@@ -4,10 +4,10 @@ import {
   isHarnessSelection,
   type HarnessSelection,
   type NativeHarnessId,
-} from "@/platform/identity/harness-selection"
-import { harnessDisplayLabel } from "@/platform/identity/harness-catalog"
+} from "@/lib/harness-selection"
+import { harnessDisplayLabel } from "@/lib/harness-catalog"
 
-export { harnessDisplayLabel } from "@/platform/identity/harness-catalog"
+export { harnessDisplayLabel } from "@/lib/harness-catalog"
 
 export type HarnessType = HarnessSelection
 export type OptionsSource = "harness" | "catalog" | "empty"

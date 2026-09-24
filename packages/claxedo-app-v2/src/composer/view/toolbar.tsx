@@ -1,7 +1,7 @@
 import { Show } from "solid-js"
 import { Icon, IconButton, Keybind, Menu, Tooltip } from "@/ui"
 import type { ComposerSetup } from "../setup"
-import { buildPickers, Pickers } from "./pickers"
+import { AgentHarnessSelector } from "./agent-harness-selector"
 
 function AddMenu(props: { composer: ComposerSetup }) {
   const t = () => props.composer.t
@@ -66,9 +66,9 @@ function GoalChip(props: { composer: ComposerSetup }) {
 function SendButton(props: { composer: ComposerSetup }) {
   const t = () => props.composer.t
   const stopping = () => props.composer.working()
-  const disabled = () => !stopping() && (props.composer.controller.blank() || props.composer.disabled() || props.composer.send.sending())
+  const disabled = () => !stopping() && (props.composer.submitBlock() !== null || props.composer.disabled() || props.composer.send.sending())
   return (
-    <Tooltip placement="top" inactive={disabled()} value={t()(stopping() ? "composer.action.stop" : "composer.action.send")}>
+    <Tooltip placement="top" value={props.composer.submitBlock()?.copy ?? t()(stopping() ? "composer.action.stop" : "composer.action.send")}>
       <IconButton
         type="button"
         icon={stopping() ? "stop" : "arrow-up"}
@@ -90,22 +90,20 @@ function SendButton(props: { composer: ComposerSetup }) {
 
 export function ComposerToolbar(props: { composer: ComposerSetup; locked: boolean }) {
   const composer = () => props.composer
-  const pickers = () =>
-    buildPickers({
-      harnesses: composer().harnesses(),
-      harness: composer().harness(),
-      locked: props.locked,
-      selection: composer().selection(),
-      t: composer().t,
-      onSelect: (patch) => composer().store.setSelection(composer().key(), patch),
-    })
   return (
     <div data-slot="composer-toolbar">
       <AddMenu composer={composer()} />
       <Show when={composer().draft().goalArmed}>
         <GoalChip composer={composer()} />
       </Show>
-      <Pickers pickers={pickers()} phoneTitle={composer().t("composer.picker.agent")} />
+      <div data-slot="composer-selection-controls" class="ml-auto flex min-w-0 items-center gap-1">
+        <AgentHarnessSelector
+          harnessController={composer().harnessController}
+          scope={composer().key()}
+          scopeInput={composer().harnessScopeInput()}
+          sessionLocked={props.locked}
+        />
+      </div>
       <SendButton composer={composer()} />
     </div>
   )
