@@ -1,10 +1,11 @@
 import type { Accessor } from "solid-js"
 import type { QueryClient } from "@tanstack/solid-query"
-import type { Account, AccountCheck, AccountKeyInput, EffectiveAccounts, MachineLogin } from "./account-types"
+import type { Account, AccountCheck, EffectiveAccounts, MachineLogin } from "./account-types"
 import type { CloudCreateInput, CloudWorkspace, CodeHostConnection, CodeHostRepository } from "./cloud-types"
 import type { ConnectionState, ServerEvent } from "./events"
 import type { IntegrationQueries, IntegrationsApi } from "./integrations"
 import type { SandboxProviderQueries, SandboxProvidersApi } from "./sandbox-providers"
+import type { ProviderConnectApi, ProviderConnectQueries } from "./provider-connect"
 import type { FolderQueries, FoldersApi } from "./folders"
 import type { HarnessConfigApi } from "./harness-config"
 import type {
@@ -129,7 +130,7 @@ export type AccountsApi = {
   readonly remove: (ids: readonly string[]) => Promise<void>
   readonly check: (id: string) => Promise<AccountCheck>
   readonly checkMachineLogin: (harness: string) => Promise<readonly MachineLogin[]>
-  readonly addKey: (input: AccountKeyInput) => Promise<string>
+  readonly rescan: () => Promise<void>
 }
 
 export type MarketplaceApi = {
@@ -173,6 +174,7 @@ export type ServerQueries = {
   readonly folders: FolderQueries
   readonly integrations: IntegrationQueries
   readonly sandboxProviders: SandboxProviderQueries
+  readonly providerConnect: ProviderConnectQueries
   readonly harnesses: {
     readonly options: (placementId: PlacementId, harness: string) => FetchQuery<HarnessOptions>
     readonly logins: () => FetchQuery<readonly HarnessLogin[]>
@@ -208,6 +210,7 @@ export type Server = {
   readonly folders: FoldersApi
   readonly integrations: IntegrationsApi
   readonly sandboxProviders: SandboxProvidersApi
+  readonly providerConnect: ProviderConnectApi
   readonly livePlugins: LivePluginsApi
   readonly harnessConfig: HarnessConfigApi
   readonly queries: ServerQueries

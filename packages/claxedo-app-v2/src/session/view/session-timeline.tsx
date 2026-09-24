@@ -60,6 +60,7 @@ export function SessionTimeline(props: {
             parentId={props.view.row()?.parentSessionId}
             onFirstTurnRecovery={props.onRecover}
             queued={props.view.queue}
+            progressBlocked={() => !!props.view.requestsError()}
           />
         </Show>
       </DataProvider>

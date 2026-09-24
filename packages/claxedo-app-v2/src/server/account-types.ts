@@ -44,4 +44,3 @@ export type AccountVerdict = "ok" | "auth_failed" | "no_billing" | "rate_capped"
 
 export type AccountCheck = { readonly verdict: AccountVerdict; readonly usage?: readonly QuotaWindow[] }
 
-export type AccountKeyInput = { readonly providerId: string; readonly label: string; readonly secret: string }

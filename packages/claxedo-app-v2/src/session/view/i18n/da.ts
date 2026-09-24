@@ -85,4 +85,5 @@ export const da: Partial<Record<SessionScreenTextKey, string>> = {
   "command.message.previous.description": "Gå til den forrige brugerbesked",
   "command.message.next": "Næste besked",
   "command.message.next.description": "Gå til den næste brugerbesked",
+  "sessionScreen.requests.loadFailed": "Kunne ikke indlæse ventende tilladelser eller spørgsmål. Prøv igen for at fortsætte.",
 }

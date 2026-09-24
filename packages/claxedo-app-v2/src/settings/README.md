@@ -6,14 +6,13 @@ Owns: the settings sections the shell's settings page shows. The shell owns the 
 
 | Section | Group | Draws | Owner of the data |
 | --- | --- | --- | --- |
-| Accounts | account | each agent's accounts and this machine's logins, with the one in use | the server (`server.queries.accounts`) |
 | Usage | account | quota windows and usage through Claxedo | `src/usage/` |
 | Organization | account | the org and your role | `src/access/` |
 | Connections | account | GitHub and MCP connections | the server |
 | Appearance | app | language, color scheme and theme | the i18n provider (`useI18n`) and the kit (`useTheme`) |
 | Keyboard shortcuts | app | every command's shortcut; record, clear with Backspace, reset all | the shell palette's overrides (`useCommands`) |
 
-`settingsSections` includes the Usage and Organization sections from their own domains, so the shell registers one array.
+`settingsSections` includes the Usage and Organization sections from their own domains. Settings → Models comes from `@/accounts` and is registered by the shell next to this array.
 
 ## Keyboard shortcuts
 
@@ -25,4 +24,4 @@ Rows are the palette's registered commands (`commands.options()` filtered by `co
 
 ## Flows
 
-15 (settings: theme and keyboard shortcuts on every section; accounts to follow).
+15 (settings: theme and keyboard shortcuts on every section; its Models test belongs to `@/accounts`).

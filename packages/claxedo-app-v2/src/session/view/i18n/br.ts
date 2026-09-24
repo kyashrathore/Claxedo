@@ -85,4 +85,5 @@ export const br: Partial<Record<SessionScreenTextKey, string>> = {
   "command.message.previous.description": "Ir para a mensagem de usuário anterior",
   "command.message.next": "Próxima mensagem",
   "command.message.next.description": "Ir para a próxima mensagem de usuário",
+  "sessionScreen.requests.loadFailed": "Não foi possível carregar as permissões ou perguntas pendentes. Tente novamente para continuar.",
 }

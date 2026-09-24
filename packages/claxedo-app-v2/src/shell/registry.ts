@@ -1,3 +1,4 @@
+import { modelsSettingsSection } from "@/accounts"
 import { authRoutes } from "@/auth"
 import { onboardingRoute } from "@/onboarding"
 import { pluginsSettingsSection } from "@/plugins"
@@ -14,7 +15,7 @@ export const firstParty: FirstPartyEntries = {
   pages: [settingsPage, tasksPage, marketplacePage],
   paneKinds: [sessionPaneKind, draftSessionPaneKind, terminalPaneKind, terminalCreatorPaneKind, pageTabPaneKind],
   panelViews: [subagentPanelView],
-  settingsSections: [...settingsSections, projectsSettingsSection, pluginsSettingsSection],
+  settingsSections: [...settingsSections, modelsSettingsSection, projectsSettingsSection, pluginsSettingsSection],
   sidebarItems: [],
   overlays: [],
   commands: [],
