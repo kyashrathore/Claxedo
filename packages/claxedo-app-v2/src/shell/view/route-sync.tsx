@@ -25,13 +25,13 @@ export function RouteSync(): JSX.Element {
   createEffect(() => {
     const route = routing.route()
     if (route.kind === "terminal") {
-      workbench.openRoute({ kind: "terminal", placementId: route.placementId, terminalId: route.terminalId })
+      untrack(() => workbench.openRoute({ kind: "terminal", placementId: route.placementId, terminalId: route.terminalId }))
       return
     }
     if (route.kind !== "session") return
     const placement = server.placements.byId(route.placementId)
     if (!placement) return
-    workbench.openRoute({ kind: "session", projectId: placement.projectId, placementId: route.placementId, sessionId: route.sessionId })
+    untrack(() => workbench.openRoute({ kind: "session", projectId: placement.projectId, placementId: route.placementId, sessionId: route.sessionId }))
   })
 
   createEffect(() => {

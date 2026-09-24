@@ -1,14 +1,16 @@
 import { useTranslator } from "@/i18n"
 import { failureMessage } from "@/lib/failure"
+import { uuid } from "@/lib/uuid"
 import { useServer, type PlacementId } from "@/server"
-import { useSessionStores, type SessionRowView } from "@/session"
-import { sessionPath, useShellRoute } from "@/shell"
+import type { SessionRowView } from "@/session"
+import { draftSessionPaneKind } from "@/session/view"
 import { showToast, useDialog } from "@/ui"
+import { useWorkbench } from "@/workbench"
 import { dictionary } from "../i18n"
 import { DeleteSessionDialog, RenameSessionDialog } from "./session-dialogs"
 
 export type SessionActions = {
-  readonly create: (placementId: PlacementId) => void
+  readonly startDraft: (placementId: PlacementId) => void
   readonly rename: (row: SessionRowView) => void
   readonly archive: (row: SessionRowView) => void
   readonly remove: (row: SessionRowView) => void
@@ -17,16 +19,17 @@ export type SessionActions = {
 export function createSessionActions(): SessionActions {
   const t = useTranslator(dictionary)
   const server = useServer()
-  const stores = useSessionStores()
+  const workbench = useWorkbench()
   const dialog = useDialog()
-  const routing = useShellRoute()
   const report = (title: string) => (error: unknown) => showToast({ title, description: failureMessage(error) })
   return {
-    create: (placementId) => {
-      stores.list
-        .create({ placementId })
-        .then((ref) => routing.navigate(sessionPath(ref)))
-        .catch(report(t("rail.createFailed")))
+    startDraft: (placementId) => {
+      const placement = server.placements.byId(placementId)
+      if (!placement) {
+        showToast({ title: t("rail.createFailed") })
+        return
+      }
+      workbench.openPane(draftSessionPaneKind, { projectId: placement.projectId, placementId, draftId: uuid() })
     },
     rename: (row) => dialog.show(() => <RenameSessionDialog title={row.title} onSubmit={(title) => server.sessions.rename(row.ref, title)} />),
     archive: (row) => {
