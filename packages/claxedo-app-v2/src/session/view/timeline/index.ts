@@ -7,7 +7,6 @@ export type {
   TimelineHost,
   TimelineNavigation,
   TimelinePlatform,
-  TimelineSessionActions,
   TimelineSessionRow,
   TimelineSettings,
   TimelineTextKey,
@@ -29,13 +28,10 @@ export {
   type SessionErrorClass,
 } from "./turn-recovery"
 export { providerErrorDetail, providerLabel, providerUsageLimitDetail, stripRelayPrefix } from "./provider-error-detail"
-export { agentColor, messageAgentColor } from "./agent-color"
 export { sessionTitle } from "./session-title"
 export { latchSessionTitle, type LatchedSessionTitle } from "./session-title-latch"
 export { createActivePaneProjection } from "./active-pane-projection"
 export { subagentHostCallIds } from "./subagent-parts"
 export { sessionMessageScrollInset } from "./session-message-scroll-position"
-export { nextSiblingAfterRemoval, sessionRemovalNavigation } from "./session-archive"
-export { requestErrorMessage } from "./request-error-message"
 export { messageAuthor, MessageAuthorAvatar, MessageAuthorLane } from "./message-author"
 export * from "./message-gesture"

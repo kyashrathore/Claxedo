@@ -5,7 +5,6 @@ import type { QueuedMessages, TimelineHost } from "./model"
 
 export type MessageTimelineProps = {
   host: TimelineHost
-  onSessionDeleted?: (sessionId: string) => void
   active: () => boolean
   actions?: UserActions
   scroll: { overflow: boolean; bottom: boolean; jump: boolean }
@@ -26,7 +25,6 @@ export type MessageTimelineProps = {
   historyShift: boolean
   userMessages: TranscriptUserMessage[]
   hiddenTurnCount?: Accessor<number>
-  hideTitle?: Accessor<boolean>
   onRevealPreviousMessages?: () => void
   navMessages?: TranscriptUserMessage[]
   currentMessage?: TranscriptUserMessage
@@ -40,6 +38,5 @@ export type MessageTimelineProps = {
   firstTurnRecovery?: boolean
   title: () => string | undefined
   parentId?: string
-  onNavigateParent: () => void
   queued?: QueuedMessages
 }
