@@ -29,10 +29,12 @@ test("11 long transcript: older turns page in above the reader and the nav rail 
       { timeout: 30_000 },
     )
     .toBeGreaterThan(0)
-  await app.getByRole("button", { name: "Scroll to latest message" }).click()
+  await app.getByRole("button", { name: `${TURNS}. New message`, exact: true }).click()
   await expect(latest).toBeInViewport()
   await app.getByRole("button", { name: "1. New message", exact: true }).click()
   await expect(app.getByText("Turn 1:", { exact: false }).first()).toBeInViewport()
+  await app.getByRole("button", { name: "Scroll to latest message" }).click()
+  await expect(latest).toBeInViewport()
 
   const messages = await api.messages(workspace.directory, session.id)
   expect(messages.filter((message) => message.info.role === "user")).toHaveLength(TURNS)
