@@ -60,7 +60,7 @@ async function liveStatus(stack: Stack, api: ClaxedoApi, app: Page, directory: s
   const pending = (await api.permissions(directory)).filter((permission) => permission.sessionID === session.id)
   expect(pending).toHaveLength(1)
   await api.replyPermission(directory, session.id, pending[0].id, "once")
-  await expect(mark).not.toHaveAttribute("data-sidebar-status", /^(working|permission)$/)
+  await expect(row(app, "Bravo").locator('[data-sidebar-status="working"], [data-sidebar-status="permission"]')).toHaveCount(0)
   expect(assistantText(await api.messages(directory, session.id))).toContain("Edited the README.")
 }
 
