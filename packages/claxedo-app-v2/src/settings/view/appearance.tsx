@@ -23,13 +23,13 @@ export function AppearanceSection() {
       <SettingsGroup>
         <SettingsList>
           <SettingsRow title={t("settings.appearance.language")} description={t("settings.appearance.language.description")}>
-            <Select options={i18n.locales.map((entry) => entry.code)} current={i18n.locale()} value={(code) => code} label={localeLabel} onSelect={(code) => code && i18n.setLocale(code)} aria-label={t("settings.appearance.language")} />
+            <Select options={i18n.locales.map((entry) => entry.code)} current={i18n.locale()} value={(code) => code} label={localeLabel} onSelect={(code) => code && i18n.setLocale(code)} />
           </SettingsRow>
           <SettingsRow title={t("settings.appearance.colorScheme")} description={t("settings.appearance.colorScheme.description")}>
-            <Select options={[...SCHEMES]} current={theme.colorScheme()} value={(scheme) => scheme} label={(scheme) => t(SCHEME_KEY[scheme])} onSelect={(scheme) => scheme && theme.setColorScheme(scheme)} aria-label={t("settings.appearance.colorScheme")} />
+            <Select options={[...SCHEMES]} current={theme.colorScheme()} value={(scheme) => scheme} label={(scheme) => t(SCHEME_KEY[scheme])} onSelect={(scheme) => scheme && theme.setColorScheme(scheme)} />
           </SettingsRow>
           <SettingsRow title={t("settings.appearance.theme")} description={t("settings.appearance.theme.description")}>
-            <Select options={theme.themes().map((entry) => entry.id)} current={theme.themeId()} value={(id) => id} label={themeName} onSelect={(id) => id && theme.setTheme(id)} aria-label={t("settings.appearance.theme")} />
+            <Select options={theme.themes().map((entry) => entry.id)} current={theme.themeId()} value={(id) => id} label={themeName} onSelect={(id) => id && theme.setTheme(id)} />
           </SettingsRow>
         </SettingsList>
       </SettingsGroup>
