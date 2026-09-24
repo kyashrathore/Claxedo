@@ -69,6 +69,7 @@ export type SessionsApi = {
   readonly snapshot: (ref: SessionRef) => Promise<SessionSnapshot>
   readonly older: (ref: SessionRef, cursor: string) => Promise<TranscriptPage>
   readonly latestTurn: (ref: SessionRef) => Promise<TranscriptPage>
+  readonly turn: (ref: SessionRef, turnId: string) => Promise<TranscriptPage>
   readonly create: (input: SessionCreateInput) => Promise<SessionRow>
   readonly prompt: (ref: SessionRef, input: PromptInput) => Promise<PromptDelivery>
   readonly stop: (ref: SessionRef) => Promise<void>

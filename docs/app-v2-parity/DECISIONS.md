@@ -113,3 +113,23 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - v1's "Open changes / Open files" strip on the session's right edge (TOOL-003, SHELL-605) goes. The owner: "alone doesn't make any sense".
 - Changes and Files open from the workspace panel toggle and its tabs.
 - Flow 14 branches on this entry.
+
+## Owner, 23:05: phone (below 768px)
+- The sidebar drawer is full screen.
+- No header "New terminal" button on phone.
+- **Workspace panel:**
+  - no Files or Review navigator toggles;
+  - always in full mode, so the session composer floats over it;
+  - no maximize button;
+  - no "+" to add a Browser or File tab.
+- Lanes: shell-4 (drawer, header), tools-3 (panel). Flow 33 branches on this entry.
+
+## Owner, 22:28: scrollbars better than v1
+- v1 shows the native scrollbar in Review and none in the Files tree (`scrollbar-width: none`), and its terminal thumb is barely visible under the Codex tokens.
+- **v2:** the kit's thin overlay thumb in Review and the Files tree, and a visible terminal thumb on its own token.
+- Lane: tools-3.
+
+## Orchestrator, 23:55: revert is not ported (SESS-061..063)
+- v1 gates Revert message, the diff summary's Undo and the rolled-back dock on a harness declaring `revert`/`unrevert`.
+- No harness in workspace-runtime or agent-sdk-runtime declares either (opencode sets both false), so v1 never renders them.
+- **v2 does not port them.** The moved timeline's dead half (UserActions.revert, the Revert button, Undo) is a deletion candidate. It goes, or comes back, together with a harness that declares revert.

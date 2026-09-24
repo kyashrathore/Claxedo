@@ -9,6 +9,7 @@ import { isPermissionWire, isQuestionWire, permissionRequest, questionRequest } 
 import { sessionRefFor, sessionRowFromSession, type Address } from "./session-row"
 import { sessionStatusFromTurnError, sessionStatusFromWire } from "./status"
 import { terminalEvent } from "./terminals"
+import { isRecord } from "../../lib/record"
 
 export type Frame = {
   readonly directory?: string
@@ -16,10 +17,6 @@ export type Frame = {
   readonly type: string
   readonly properties?: Record<string, unknown>
   readonly raw: Record<string, unknown>
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value)
 }
 
 function text(value: unknown): string | undefined {

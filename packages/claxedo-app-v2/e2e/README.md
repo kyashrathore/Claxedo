@@ -144,7 +144,7 @@ Opens the stream the app reads (`/api/wr/events`) and records every frame. `fram
 
 ### `api` (`ClaxedoApi`)
 
-`resolveWorkspace`, `setHarness`, `createSession` (optional `model`), `session`, `sessions`, `deleteSession`, `prompt` (waits for the turn; optional `model`), `promptAsync`, `abort`, `messages`, `status`, `permissions`, `replyPermission`, `questions`, `replyQuestion`, `rejectQuestion`, `providerCatalog(nativeHarness)`, `health`. Every call takes the workspace `directory` first, because that is how today's routes are scoped. A non-2xx answer throws `ApiError` with the status and body. `assistantText(messages)` joins the assistant text parts.
+`resolveWorkspace`, `setHarness`, `defaultModel(directory, nativeHarness)` (the harness's current model, for a session v1 will send in), `createSession` (optional `model`), `session`, `sessions`, `deleteSession`, `prompt` (waits for the turn; optional `model`), `promptAsync`, `abort`, `messages`, `status`, `permissions`, `replyPermission`, `questions`, `replyQuestion`, `rejectQuestion`, `providerCatalog(nativeHarness)`, `health`. Every call takes the workspace `directory` first, because that is how today's routes are scoped. A non-2xx answer throws `ApiError` with the status and body. `assistantText(messages)` joins the assistant text parts.
 
 `createProject(name, directory)` records a project for another folder. A stack with no project opens the onboarding screen at `/`; `makeWorkspace` records one, so a flow that made a workspace starts on the shell.
 
@@ -171,12 +171,26 @@ An `Account` is `{ name, email, password, subject, api, transport }`. Its `api` 
 
 ### Signed stack: next steps
 
-Flows 21, 22, 23 and 36 are on hold (owner, 19:08). What the signed stack lacks for them, and the options, with the recommendation C, then A:
+Flows 21, 22, 23 and 36 are on hold (owner, 19:08). What the signed stack lacks for them, and the options:
 
 - v1 shows its "Share session" control only for a signed session it reaches as central, through the relay (`session-header.tsx:78-90`). On this stack v1 reaches the owner's folder workspaces as local, so the control never mounts, and a second account's reads are refused with 403 `relay_actor_unverified`.
 - **A: the relay in the harness.** Start `@claxedo/workspace-relay` on a lane port, set `CLAXEDO_WORKSPACE_RELAY_URL`, the resolver token and the keys, and enroll the box as a host, so its workspaces are central. All harness code; the browser still signs in through `/login`. Largest: it re-derives part of `packages/claxedo-server/src/signed-browser-relay-fixture.mjs`.
 - **B: an embedded-issuer mode in that fixture.** It already runs a relay, a host tunnel and a registered host, but signs browsers in only through the test bypass v2 does not have. Less code, but it edits a server test fixture v1's signed-web specs share.
-- **C: flow 21 first.** The desktop signs in to this stack through its own sign-in (system browser, loopback callback), which the embedded issuer serves; no relay. The desktop needs `CLAXEDO_CORE_ORIGIN` set to the stack's HTTPS origin and `NODE_EXTRA_CA_CERTS` for its certificate. Risk: the isolated desktop still reaches this Mac's login keychain (`safeStorage.isEncryptionAvailable()` is true), so a sign-in would write its key there.
+- **C: flow 21 first. Ruled out (orchestrator, safety line).** The desktop would sign in to this stack through its own sign-in (system browser, loopback callback), which the embedded issuer serves, with no relay. But the isolated desktop still reaches this Mac's login keychain: in the `desktop` fixture, with `HOME` in the spec's data directory, `safeStorage.isEncryptionAvailable()` answers true, so a sign-in would write its storage key into the owner's real keychain. No desktop sign-in flow runs until the fixture cuts the keychain.
+
+So the recommendation is A.
+
+### Keychain: what the desktop fixture does not isolate
+
+Moving `HOME` hides the login keychain from the `security` tool (it answers 44), but not from Electron's `safeStorage`, which goes through the Security framework and the user's own keychain search list. Any desktop flow that stores a credential through `safeStorage` would touch the owner's keychain. Today no flow does.
+
+### v1 known bugs (flow 31)
+
+Flow 31 is v2's gate for the session list's races. On `--app=v1` it reads v1's rail through the same hooks, and four of its seven cases fail on bugs v1 has; v2 should pass all seven:
+- **A delete lands during a fetch:** a row deleted while its page's read is held comes back when that page lands.
+- **A session is archived while a turn runs:** the archived session stays in the rail while it works.
+- **A thousand sessions:** a row loaded by paging shows no Working mark while the server reports it working.
+- **The app reconnects after missed events:** a session deleted while the streams were held stays listed, and one retitled then keeps its old title.
 
 ### `desktop` (the Electron app)
 

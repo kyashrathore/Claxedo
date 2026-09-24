@@ -55,7 +55,7 @@ bun run e2e -- --app=v1 e2e/flows/30-transcript-corpus.spec.ts --update-snapshot
 bun run e2e -- --app=v2 e2e/flows/30-transcript-corpus.spec.ts --update-snapshots=none
 ```
 
-The baseline lands in `e2e/flows/30-transcript-corpus.spec.ts-snapshots/`, per project (`web`, `phone`) and platform, and is not committed: font rendering differs per machine, so both runs happen on the same machine. A v2 run without a recorded baseline fails and names the command. Differences land in `e2e/results/` as expected, actual and diff images.
+The baseline lands in `e2e/flows/30-transcript-corpus.spec.ts-snapshots/`, per project (`web`, `phone`) and platform. The macOS web baseline is committed. Font rendering differs per machine, so re-record it on the machine that compares, and record a platform or project that has none; a v2 run without a recorded baseline fails and names the command. Differences land in `e2e/results/` as expected, actual and diff images.
 
 ## What must match
 

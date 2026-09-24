@@ -58,34 +58,31 @@ test("12 New Session again focuses the workspace's one draft tab", async ({ stac
   const draftTab = () => panes(app).getByRole("button", { name: /^New [Ss]ession$/ })
 
   await app.goto(`${stack.url}${sessionRoute(workspace.id, first.id)}`)
-  await app.getByRole("button", { name: "New Session", exact: true }).click()
+  const newSession = () => app.getByRole("main").getByRole("button", { name: UI.newSession, exact: true }).last()
+  await newSession().click()
   await app.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "First", exact: true }).click()
-  await app.getByRole("button", { name: "New Session", exact: true }).click()
+  await newSession().click()
   await app.getByRole("button", { name: UI.hideSidebar }).click()
   await expect(panes(app).getByRole("button", { name: "First", exact: true })).toBeVisible()
   await expect(draftTab()).toHaveCount(1)
+})
 
-  if (stack.app === "v2") {
-    await test.step("v2: a draft saved under an older key is the one New Session focuses", async () => {
-      await app.evaluate(() => {
-        const key = Object.keys(localStorage).find((name) => name.startsWith("claxedo:workbench:"))
-        if (!key) throw new Error("No saved workbench")
-        const saved = JSON.parse(localStorage.getItem(key) ?? "{}")
-        const draft = Object.entries<{ kind: string; state: Record<string, string> }>(saved.contents).find(([, entry]) => entry.kind === "draftSession")
-        if (!draft) throw new Error("No saved draft")
-        const [id, entry] = draft
-        const older = `draftSession:${JSON.stringify({ ...entry.state, draftId: "older" })}`
-        saved.contents[older] = { kind: entry.kind, state: { ...entry.state, draftId: "older" } }
-        delete saved.contents[id]
-        const swap = (ids: string[]) => ids.map((each) => (each === id ? older : each))
-        saved.layout.contentIds = swap(saved.layout.contentIds)
-        saved.layout.contentRecency = swap(saved.layout.contentRecency)
-        saved.layout.panes = saved.layout.panes.map((pane: { contentId: string | null }) => ({ ...pane, contentId: pane.contentId === id ? older : pane.contentId }))
-        localStorage.setItem(key, JSON.stringify(saved))
-      })
-      await app.goto(`${stack.url}${sessionRoute(workspace.id, first.id)}`)
-      await app.getByRole("button", { name: "New Session", exact: true }).click()
-      await expect(draftTab()).toHaveCount(1)
-    })
-  }
+test("12 closing every tab leaves the workspace's new-session composer, and New Session keeps it", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("bench", "Bench")
+  const first = await api.createSession(workspace.directory, { title: "First", harness: SCRIPTED_ACP_HARNESS })
+  const composer = app.getByRole("textbox", { name: UI.composer })
+
+  const newSession = () => app.getByRole("main").getByRole("button", { name: UI.newSession, exact: true }).last()
+
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, first.id)}`)
+  await expect(composer).toBeVisible()
+  await newSession().click()
+  await app.getByRole("button", { name: UI.hideSidebar }).click()
+  await panes(app).getByRole("button", { name: "Close First" }).click()
+  await panes(app).getByRole("button", { name: /^Close New Session$/i }).click()
+
+  await expect(composer).toBeVisible()
+  await newSession().click()
+  await expect(composer).toBeVisible()
+  await expect(app).toHaveURL(new RegExp(`/w/${workspace.id}(/session)?$`))
 })

@@ -57,7 +57,7 @@ export function SidebarContent(
       data-mode={props.mode}
       data-open={open() ? "true" : "false"}
       aria-label={t("shell.navigation")}
-      class="h-full flex flex-col bg-background-base overflow-hidden z-[50] pointer-events-auto claxedo-rail-sidebar-panel transition-[opacity,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] max-md:!w-[280px] max-md:opacity-100 max-md:pointer-events-auto"
+      class="h-full flex flex-col bg-background-base overflow-hidden z-[50] pointer-events-auto claxedo-rail-sidebar-panel transition-[opacity,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] max-md:!w-full max-md:opacity-100 max-md:pointer-events-auto"
       classList={{ "opacity-100": open(), "md:opacity-0 md:pointer-events-none": !open() }}
       style={{ width: props.width === undefined ? undefined : `${props.width}px`, "border-right": "1px solid var(--shell-border-sidebar, var(--border-weaker-base))" }}
       onMouseLeave={() => props.onMouseLeave?.()}
@@ -102,11 +102,8 @@ export function Sidebar(props: SidebarProps): JSX.Element {
   return (
     <>
       <PhoneOpener />
-      <Show when={drawerOpen()}>
-        <div data-testid="mobile-sidebar-scrim" class="fixed inset-0 bg-background-stronger/70 z-[90] md:hidden" onClick={() => layout.send({ type: "hideSidebar" })} />
-      </Show>
       <div
-        class="relative flex flex-col w-[var(--claxedo-sidebar-width)] shrink-0 overflow-hidden transition-[width] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] max-md:fixed max-md:top-0 max-md:left-0 max-md:bottom-0 max-md:z-[100] max-md:!w-[280px] max-md:pointer-events-auto max-md:transition-[translate,transform] max-md:duration-300 max-md:ease-in-out"
+        class="relative flex flex-col w-[var(--claxedo-sidebar-width)] shrink-0 overflow-hidden transition-[width] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] max-md:fixed max-md:inset-0 max-md:z-[100] max-md:!w-auto max-md:pointer-events-auto max-md:transition-[translate,transform] max-md:duration-300 max-md:ease-in-out"
         classList={{
           "pointer-events-none": !expanded(),
           "pointer-events-auto": expanded(),

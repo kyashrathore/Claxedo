@@ -15,7 +15,7 @@ export type TimelineHostInput = {
   readonly workbench: WorkbenchStore
   readonly routing: ShellRouting
   readonly t: SessionScreenText
-  readonly panel: Pick<Panel, "show">
+  readonly panel: Pick<Panel, "show" | "sessionId">
 }
 
 const settings: TimelineSettings = {
@@ -48,11 +48,7 @@ function refFor(view: SessionView, id: string): SessionRef {
 }
 
 function openFocus(input: TimelineHostInput, focus: TimelineFocus): void {
-  if (focus.kind === "subagent") {
-    input.workbench.openRoute({ kind: "session", ...refFor(input.view, focus.sessionId) })
-    return
-  }
-  input.panel.show(focus)
+  input.panel.show(focus.kind === "subagent" ? { ...focus, parentSessionId: input.panel.sessionId() } : focus)
 }
 
 async function findFiles(input: TimelineHostInput, query: string): Promise<readonly string[]> {

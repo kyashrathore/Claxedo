@@ -109,6 +109,21 @@ test("13 terminal: a terminal closed in the rail or dead after a restart leaves 
   await expect(compactTabs(app).filter({ hasText: /Terminal/ })).toHaveCount(0)
   await app.getByRole("button", { name: "Show Sidebar" }).click()
 
+  if (stack.app === "v2") {
+    await test.step("v2: a shell that exits leaves the rail, its pane and the compact tabs", async () => {
+      const exitedId = await newShell(app)
+      await expect(terminalPane(app, exitedId)).toHaveAttribute("data-terminal-connected", "true")
+      await app.getByRole("textbox", { name: "Terminal input" }).focus()
+      await app.keyboard.type("exit")
+      await app.keyboard.press("Enter")
+      await expect(terminalPane(app, exitedId)).toHaveCount(0)
+      await expect(app.getByRole("button", { name: /^Close terminal: / })).toHaveCount(0)
+      await app.getByRole("button", { name: "Hide Sidebar" }).click()
+      await expect(compactTabs(app).filter({ hasText: /Terminal/ })).toHaveCount(0)
+      await app.getByRole("button", { name: "Show Sidebar" }).click()
+    })
+  }
+
   const deadId = await newShell(app)
   await app.goto("about:blank")
   const url = new URL(`/api/wr/pty/${encodeURIComponent(deadId)}`, stack.url)
@@ -120,4 +135,17 @@ test("13 terminal: a terminal closed in the rail or dead after a restart leaves 
   await app.getByRole("button", { name: "Hide Sidebar" }).click()
   await expect(compactTabs(app).first()).toBeVisible()
   await expect(compactTabs(app).filter({ hasText: /Terminal/ })).toHaveCount(0)
+
+  if (stack.app === "v2") {
+    await test.step("v2: a daemon restart ends the open terminal in the rail, its pane and the compact tabs", async () => {
+      await app.getByRole("button", { name: "Show Sidebar" }).click()
+      const restartedId = await newShell(app)
+      await expect(terminalPane(app, restartedId)).toHaveAttribute("data-terminal-connected", "true")
+      await stack.daemon.restart()
+      await expect(terminalPane(app, restartedId)).toHaveCount(0, { timeout: 30_000 })
+      await expect(app.getByRole("button", { name: /^Close terminal: / })).toHaveCount(0)
+      await app.getByRole("button", { name: "Hide Sidebar" }).click()
+      await expect(compactTabs(app).filter({ hasText: /Terminal/ })).toHaveCount(0)
+    })
+  }
 })
