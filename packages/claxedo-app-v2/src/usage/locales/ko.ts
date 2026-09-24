@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "usage.quota.title": "할당량 기간",
   "usage.quota.empty": "여기에 플랜을 보고하는 연결된 계정이 없습니다.",
   "usage.quota.inUse": "사용 중",

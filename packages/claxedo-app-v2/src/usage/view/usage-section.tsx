@@ -4,7 +4,7 @@ import { useElapsed } from "@/lib/delay"
 import type { UsageSummary } from "@/server"
 import { SegmentedControl, SegmentedControlItem, Button } from "@/ui"
 import { useUsageSummary } from "../api"
-import { dictionary, type UsageKey } from "../i18n"
+import { usageDictionary, type UsageKey } from "../i18n"
 import type { UsageDays, UsageGroup, UsageMetric, UsageOptions, UsageView } from "../model"
 import { ClaxedoUsage } from "./claxedo-usage"
 import { QuotaWindows } from "./quota-windows"
@@ -26,7 +26,7 @@ const METRICS: readonly Choice<UsageMetric>[] = [{ value: "tokens", label: "usag
 const GROUPS: readonly Choice<UsageGroup>[] = [{ value: "provider", label: "usage.group.provider" }, { value: "model", label: "usage.group.model" }]
 
 function Choices<Value extends string>(props: { readonly label: string; readonly choices: readonly Choice<Value>[]; readonly value: Value; readonly onChange: (value: Value) => void }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(usageDictionary)
   const pick = (value: string | null) => props.choices.find((choice) => choice.value === value)?.value
   return (
     <SegmentedControl class="segmented-control--fit" aria-label={props.label} value={props.value} onChange={(value) => { const next = pick(value); if (next) props.onChange(next) }}>
@@ -36,7 +36,7 @@ function Choices<Value extends string>(props: { readonly label: string; readonly
 }
 
 function QuotaContent(props: { readonly summary: UsageSummary }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(usageDictionary)
   const unavailable = () => (props.summary.quota.status === "available" ? undefined : (props.summary.quota.error ?? t("usage.quota.unavailable")))
   return (
     <>
@@ -53,7 +53,7 @@ function QuotaContent(props: { readonly summary: UsageSummary }): JSX.Element {
 }
 
 export function UsageSection(): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(usageDictionary)
   const [options, setOptions] = createSignal<UsageOptions>({ view: "quota", days: 7, metric: "tokens", group: "provider" })
   const [cursors, setCursors] = createSignal<readonly (string | undefined)[]>([])
   const usage = useUsageSummary(options)

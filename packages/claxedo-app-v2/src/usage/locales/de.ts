@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "usage.quota.title": "Kontingentfenster",
   "usage.quota.empty": "Kein verbundenes Konto meldet hier einen Tarif.",
   "usage.quota.inUse": "In Verwendung",
