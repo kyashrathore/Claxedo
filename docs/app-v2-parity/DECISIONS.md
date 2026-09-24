@@ -113,3 +113,13 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - v1's "Open changes / Open files" strip on the session's right edge (TOOL-003, SHELL-605) goes. The owner: "alone doesn't make any sense".
 - Changes and Files open from the workspace panel toggle and its tabs.
 - Flow 14 branches on this entry.
+
+## Owner, 23:05: phone (below 768px)
+- The sidebar drawer is full screen.
+- No header "New terminal" button on phone.
+- **Workspace panel:**
+  - no Files or Review navigator toggles;
+  - always in full mode, so the session composer floats over it;
+  - no maximize button;
+  - no "+" to add a Browser or File tab.
+- Lanes: shell-4 (drawer, header), tools-3 (panel). Flow 33 branches on this entry.
