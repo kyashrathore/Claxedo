@@ -70,6 +70,7 @@ function sessionView(context: TranscriptContext): SessionView {
     subagents: context.subagents.list,
     goal: goal.goal,
     goalActions: goal.actions,
+    goalAvailable: goal.available,
     controlGoal: goal.control,
     hasOlder: () => context.olderCursor() !== undefined,
     olderState: older.state,

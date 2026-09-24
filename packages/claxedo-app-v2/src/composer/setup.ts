@@ -7,7 +7,7 @@ import { showToast, useDialog } from "@/ui"
 import type { ImagePart, Submission } from "./model"
 import { promptImages } from "./model"
 import { useComposerStore, type ComposerKey, type ComposerStore } from "./store"
-import { useCommands, useShellRegistries, type Commands } from "@/shell"
+import { settingsPath, useCommands, useShellRegistries, useShellRoute, type Commands } from "@/shell"
 import { useComposerText } from "./text"
 import { createAttachmentReader, type DraggingType } from "./attachments/reader"
 import { createComposerController, type ComposerController } from "./controller"
@@ -19,6 +19,8 @@ import { createHarnessSelectionController, createHarnessSubmitController, type H
 import { harnessProfile, harnessSelectionId, type HarnessType } from "./harness/profile"
 import { submitBlockReason } from "./submit-block-reason"
 import { registerPromptModeCommands } from "./view/mode-commands"
+import { registerModelCommand, showModelDialog } from "./view/model-command"
+import { harnessModelItems } from "./harness/model-items"
 import { createComposerPermissionSurface } from "./permission/permission-mode-wiring"
 import { harnessModesUnavailable } from "./role-gate"
 import { createRecovery, type ComposerRecovery } from "./recovery"
@@ -108,6 +110,11 @@ function createHarnessSelection(props: ComposerProps, key: Accessor<ComposerKey>
 
 type HarnessSelection = ReturnType<typeof createHarnessSelection>
 
+function goalCapable(props: ComposerProps, selection: HarnessSelection): boolean {
+  if (props.view) return props.view.goalAvailable() !== false
+  return (selection.harness()?.goalMode ?? "none") !== "none"
+}
+
 function sessionWorking(view: SessionView | undefined): boolean {
   const kind = view?.status().kind
   return kind === "working" || kind === "retrying" || kind === "recovering"
@@ -122,7 +129,7 @@ function createSendFor(props: ComposerProps, store: ComposerStore, key: Accessor
     mode: () => late.controller?.state.mode ?? "normal",
     normalMode: () => late.controller?.setMode("normal"),
     submission: selection.submission,
-    goalMode: () => selection.harness()?.goalMode,
+    goalCapable: () => goalCapable(props, selection),
     view: () => props.view,
     createSession: props.createSession,
     afterAccepted: (view) => {
@@ -192,7 +199,7 @@ export function createComposer(props: ComposerProps) {
   const refs = createComposerRefs()
   const selection = createHarnessSelection(props, key, t)
   const working = createMemo(() => sessionWorking(props.view))
-  const goalAvailable = createMemo(() => (selection.harness()?.goalMode ?? "none") !== "none")
+  const goalAvailable = createMemo(() => goalCapable(props, selection))
   const [query, setQuery] = createSignal<SuggestionQuery>({ kind: "closed" })
   const [dragging, setDragging] = createSignal<DraggingType>(null)
   const registries = useShellRegistries()
@@ -202,9 +209,30 @@ export function createComposer(props: ComposerProps) {
   const reader = createReaderFor({ props, store, key, refs, selection, setDragging, late })
   const controller = createControllerFor({ key, store, refs, working, suggestions, send, commands })
   late.controller = controller
+  const dialog = useDialog()
+  const routing = useShellRoute()
   props.registerRecovery?.(
-    createRecovery({ store, key, controller: selection.controller, scopeInput: selection.scopeInput, send: () => send.send(), dialog: useDialog(), t }),
+    createRecovery({ store, key, controller: selection.controller, scopeInput: selection.scopeInput, send: () => send.send(), dialog, t }),
   )
+  registerModelCommand({
+    register: (scope, options) => commands.register(scope, options),
+    available: () => !!selection.selection().harness,
+    open: () => {
+      const scope = key()
+      const snapshot = selection.controller.read(scope)
+      showModelDialog(
+        dialog,
+        { title: t("dialog.model.select.title"), connect: t("command.provider.connect") },
+        {
+          items: harnessModelItems(snapshot),
+          current: snapshot.selectedModelKey,
+          choose: (model) => void selection.controller.setModel(scope, model, selection.scopeInput()),
+        },
+        () => routing.navigate(settingsPath("models")),
+      )
+    },
+    labels: { title: t("command.model.choose"), description: t("command.model.choose.description"), category: t("command.category.model") },
+  })
   registerPromptModeCommands({
     register: (scope, options) => commands.register(scope, options),
     mode: () => controller.state.mode,

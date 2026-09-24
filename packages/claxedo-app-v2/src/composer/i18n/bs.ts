@@ -89,4 +89,7 @@ export const bs: Partial<Record<ComposerTextKey, string>> = {
   "model.tooltip.reasoning.none": "Bez rasuđivanja",
   "model.tooltip.context": "Limit konteksta {{limit}}",
   "model.tooltip.allows": "Podržava: {{inputs}}",
+  "dialog.model.select.title": "Odaberi model",
+  "command.model.choose": "Odaberi model",
+  "command.model.choose.description": "Odaberi drugi model",
 }

@@ -88,6 +88,7 @@ export type SessionView = {
   readonly subagents: Accessor<readonly SessionSubagent[]>
   readonly goal: Accessor<SessionGoal | undefined>
   readonly goalActions: Accessor<readonly GoalAction[]>
+  readonly goalAvailable: Accessor<boolean | undefined>
   readonly controlGoal: (action: GoalAction) => Promise<void>
   readonly hasOlder: Accessor<boolean>
   readonly olderState: Accessor<OlderState>

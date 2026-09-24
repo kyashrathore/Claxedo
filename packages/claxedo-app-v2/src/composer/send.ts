@@ -1,5 +1,5 @@
 import { createMemo, createSignal, type Accessor } from "solid-js"
-import type { HarnessInfo, PromptAttachment, PromptInput } from "@/server"
+import type { PromptAttachment, PromptInput } from "@/server"
 import type { SessionView } from "@/session"
 import { formatCommentNote, formatImageMarkNote } from "@/lib/comment-note"
 import { machine } from "@/lib/machine"
@@ -12,11 +12,11 @@ import type { ComposerKey, ComposerStore } from "./store"
 
 export type GoalIntent = { kind: "none" } | { kind: "arm" } | { kind: "submit"; objective: string }
 
-export function goalIntent(text: string, armed: boolean, goalMode: HarnessInfo["goalMode"] | undefined): GoalIntent {
+export function goalIntent(text: string, armed: boolean, goalCapable: boolean): GoalIntent {
   const trimmed = text.trim()
   const slash = /^\/goal(?:\s+([\s\S]*))?$/.exec(trimmed)
   if (slash) {
-    if (goalMode === "none" || goalMode === undefined) return { kind: "none" }
+    if (!goalCapable) return { kind: "none" }
     const objective = slash[1]?.trim() ?? ""
     return objective ? { kind: "submit", objective } : { kind: "arm" }
   }
@@ -100,7 +100,7 @@ type SendInput = {
   normalMode: () => void
   submission: () => Promise<Submission>
   working: Accessor<boolean>
-  goalMode: Accessor<HarnessInfo["goalMode"] | undefined>
+  goalCapable: Accessor<boolean>
   view: Accessor<SessionView | undefined>
   createSession?: (submission: Submission) => Promise<SessionView>
   afterAccepted?: (view: SessionView) => void
@@ -170,7 +170,7 @@ export function createComposerSend(input: SendInput) {
   const send = async () => {
     const draft = input.store.draft(input.key())
     if (sending() || !promptFilled(draft)) return
-    const goal = goalIntent(promptText(draft.prompt), draft.goalArmed, input.goalMode())
+    const goal = goalIntent(promptText(draft.prompt), draft.goalArmed, input.goalCapable())
     if (goal.kind === "arm") return armGoal()
     const clientRequestId = randomId()
     state.send({ type: "sendStarted", clientRequestId })
