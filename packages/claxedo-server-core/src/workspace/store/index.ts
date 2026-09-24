@@ -841,6 +841,16 @@ export async function upsertProjectRecord(input: { id: string; name: string; env
   return next
 }
 
+/** Forgets a project record; the workspace rows that carried its id are the caller's to retire. */
+export async function deleteProjectRecord(id: string) {
+  await boot()
+  const key = trimToUndefined(id)
+  if (!key || !projectsById.delete(key)) return false
+  await save()
+  notifyWorkspaceChanges()
+  return true
+}
+
 /** The environment every cloud sandbox of the project starts with. */
 export async function projectEnv(projectId: string | undefined): Promise<Record<string, string> | undefined> {
   return (await getProjectRecord(projectId))?.env

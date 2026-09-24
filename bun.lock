@@ -253,6 +253,7 @@
         "zod": "4.4.3",
       },
       "devDependencies": {
+        "@agentclientprotocol/sdk": "1.3.0",
         "@anthropic-ai/sdk": "0.115.0",
         "@axe-core/playwright": "4.12.1",
         "@claxedo/agent-sdk-runtime": "workspace:*",
@@ -432,6 +433,8 @@
         "@claxedo/host-serving": "workspace:*",
         "@claxedo/mcp": "workspace:*",
         "@claxedo/opencode-server-adapter": "workspace:*",
+        "@claxedo/plugin-api": "workspace:*",
+        "@claxedo/plugin-build": "workspace:*",
         "@claxedo/sandbox-contract": "workspace:*",
         "@claxedo/server-core": "workspace:*",
         "@claxedo/tasks": "workspace:*",

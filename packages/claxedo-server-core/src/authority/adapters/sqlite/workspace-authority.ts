@@ -1544,6 +1544,26 @@ export function createSqliteWorkspaceAuthority(
         .run(Date.now(), Date.now(), args.workspaceId)
       return { deleted: true }
     },
+    async deleteProject(auth: SignedControlPlaneAuth, args) {
+      const db = database()
+      const who = user(auth)
+      const project = projectByPublicId(db, args.projectId)
+      if (!project) return { deleted: false }
+      if (!authorizeProjectForUser(db, project, who, "owner")) throw new Error("Project not found")
+      // The row itself goes, not a `deleted_at` mark: `ensureProject` matches a
+      // registration to a project by (org, repo_key) with no deleted filter, so
+      // a retired row would hand its old id to the next project made for the
+      // same folder and hide it from the store that minted a new one.
+      const now = Date.now()
+      db.transaction(() => {
+        db.prepare(`UPDATE workspaces SET deleted_at = ?, updated_at = ? WHERE project_id = ? AND deleted_at IS NULL`)
+          .run(now, now, project.project_id)
+        db.prepare(`DELETE FROM team_project_grants WHERE project_id = ?`).run(project.project_id)
+        db.prepare(`DELETE FROM project_memberships WHERE project_id = ?`).run(project.project_id)
+        db.prepare(`DELETE FROM projects WHERE project_id = ?`).run(project.project_id)
+      })()
+      return { deleted: true }
+    },
     // --- machine-wide enrollment -------------------------------------------
     //
     // The retired per-workspace host-link methods did these four things per

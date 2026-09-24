@@ -437,6 +437,15 @@ export type WorkspaceAuthority = {
     args: { workspaceId: string },
   ) => Promise<{ recorded: boolean; second_device_open_at: number }>
   deleteWorkspace: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<unknown>
+  /**
+   * Retires a project and every placement filed under it, for its owner.
+   * Optional because only an authority that keeps project rows beside a
+   * server's own project store answers it: the self-hosted app files each
+   * local project there at creation, and a row left behind would claim the
+   * same repository for the retired id and hide the next project made for
+   * that folder. `deleted: false` is a project the authority never held.
+   */
+  deleteProject?: (auth: SignedControlPlaneAuth, args: { projectId: string }) => Promise<{ deleted: boolean }>
   createCloudWorkspace: (
     auth: SignedControlPlaneAuth,
     args: {
