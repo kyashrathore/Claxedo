@@ -193,7 +193,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
       data-session-presentation={floating() ? "floating" : undefined}
       aria-label={view().row()?.title ?? t("sessionScreen.untitled")}
     >
-      <Show when={!view().row()?.parentSessionId}>
+      <Show when={!props.readOnly && !view().row()?.parentSessionId}>
         <h1 class="sr-only">{view().row()?.title || t("sessionScreen.untitled")}</h1>
       </Show>
       <FailureBoundary title={t("sessionScreen.failed")} retryLabel={t("sessionScreen.action.retry")}>
