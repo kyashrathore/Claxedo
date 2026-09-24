@@ -12,7 +12,7 @@ import { useSessionScreenText } from "./text"
 
 const EMPTY_DATA = { session: [], session_status: {}, session_diff: {}, message: {}, part: {} }
 
-function userMessages(view: SessionView): TranscriptUserMessage[] {
+export function userMessages(view: SessionView): TranscriptUserMessage[] {
   const messages = view.conversation()?.messages ?? []
   return messages.filter((message): message is TranscriptUserMessage => message.role === "user")
 }

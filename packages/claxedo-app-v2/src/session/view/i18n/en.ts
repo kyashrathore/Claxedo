@@ -66,6 +66,10 @@ export type SessionScreenTextKey =
   | "sessionScreen.goal.metric.timeUsed"
   | "sessionScreen.child.promptDisabled"
   | "sessionScreen.child.backToParent"
+  | "command.message.previous"
+  | "command.message.previous.description"
+  | "command.message.next"
+  | "command.message.next.description"
 
 export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.loading": "Loading messages...",
@@ -170,4 +174,8 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.timeline.ui.sessionTurn.diffs.showLess": "Show less",
   "sessionScreen.timeline.ui.sessionTurn.diffs.changed": "changed",
   "sessionScreen.timeline.ui.sessionTurn.status.thinking": "Thinking",
+  "command.message.previous": "Previous message",
+  "command.message.previous.description": "Go to the previous user message",
+  "command.message.next": "Next message",
+  "command.message.next.description": "Go to the next user message",
 }

@@ -53,3 +53,19 @@ test("11 long transcript: a file path in a reply opens the file in its own tab",
   await expect(app.getByText("filelink", { exact: true }).first()).toBeVisible()
   expect(assistantText(await api.messages(workspace.directory, session.id))).toContain("README.md")
 })
+
+test("11 long transcript: a #message link opens at that turn and mod+arrows move between turns", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("links")
+  const session = await api.createSession(workspace.directory, { title: "Links", harness: SCRIPTED_ACP_HARNESS })
+  for (let turn = 1; turn <= 12; turn += 1) {
+    await api.prompt(workspace.directory, session.id, `Link turn ${turn}: Reply with exactly this one token: L${String(turn).padStart(2, "0")}X`)
+  }
+  const users = (await api.messages(workspace.directory, session.id)).filter((message) => message.info.role === "user")
+  await app.goto(`${stack.url}/w/${workspace.id}/s/${session.id}#message-${users[1]!.info.id}`)
+  await expect(app.getByText("Link turn 2:", { exact: false }).first()).toBeInViewport()
+  await app.evaluate(() => {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+  })
+  await app.keyboard.press("ControlOrMeta+ArrowDown")
+  await expect(app.getByText("Link turn 3:", { exact: false }).first()).toBeInViewport()
+})
