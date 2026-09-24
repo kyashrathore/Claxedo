@@ -15,7 +15,7 @@ Every component works at 390 px with a coarse pointer: `touch.css` gives compact
 
 ## Origin
 
-Upstream's v2 library (anomalyco/opencode `packages/ui/src/v2` at 1d6c3c0e29) is the source of `Field`, `Icon`, `Loader`, `SegmentedControl`, `Select` (with the menu styles its listbox uses), `TextInput`, the tokens and the base styles. `ProviderIcon` and `ScrollView` are Claxedo's own, restyled onto the v2 tokens. Everything else a surface draws is today's kit (`@opencode-ai/ui`), imported directly.
+Upstream's v2 library (anomalyco/opencode `packages/ui/src/v2` at 1d6c3c0e29) is the source of `Field`, `Icon`, `SegmentedControl`, `Select` (with the menu styles its listbox uses), `TextInput`, the tokens and the base styles. `ProviderIcon` and `ScrollView` are Claxedo's own, restyled onto the v2 tokens. Everything else a surface draws is today's kit (`@opencode-ai/ui`), imported directly.
 
 ## Components
 
@@ -26,7 +26,6 @@ Upstream's v2 library (anomalyco/opencode `packages/ui/src/v2` at 1d6c3c0e29) is
 | `DialogProvider`, `useDialog()` (the kit's) | `useDialog()` returns `{ active, show(element, onClose?), push(element, onClose?), close() }` |
 | `Field` (`.Label`, `.Prefix`, `.Suffix`, `.Control`) | `invalid?`; `Label` adds `tooltip?: string` |
 | `Icon` | `name: IconName`, `size?: small(14) \| normal(16) \| medium(18) \| large(20)`, svg props; `iconNames`, `isIconName(value)` |
-| `Loader` | svg props (`width`, `height` default 16) |
 | `ProviderIcon` | `id: string` (unknown ids draw `synthetic`), svg props; `providerIconNames` |
 | `ScrollView` | div props, `viewportRef?`, `label?`, `thumbVisibility?: hover \| scroll`, `thumbContainer?`, `thumbHoverTarget?`; `scrollKey`, `canScrollKey`, `scrollKeyOwner`, `isScrollKeyTarget` are the keyboard rules |
 | `SegmentedControl`, `SegmentedControlItem` | `value?`, `defaultValue?`, `onChange?(value \| null)`, `allowDeselect?`, `disabled?`; item: `value`, `children`. Width is 232 px with equal segments; the class `segmented-control--full-width` fills the container, and `segmented-control--fit` sizes each segment to its label |

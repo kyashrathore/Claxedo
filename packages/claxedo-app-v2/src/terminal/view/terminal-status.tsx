@@ -1,7 +1,7 @@
 import { Match, Show, Switch, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { Loader } from "@/ui"
 import { Button } from "@opencode-ai/ui/button"
+import { Spinner } from "@opencode-ai/ui/spinner"
 import { dictionary, type TerminalKey } from "../i18n"
 import type { TerminalConnection, TerminalFailure } from "../model"
 import { MAX_RECONNECT_ATTEMPTS } from "../reconnect"
@@ -51,7 +51,7 @@ export function TerminalStatus(props: {
           data-testid="terminal-connecting"
           class="terminal-delayed flex h-full items-center justify-center text-icon-muted"
         >
-          <Loader width={24} height={24} />
+          <Spinner class="size-6" />
         </div>
       </Match>
       <Match when={props.connection.kind === "detached" && props.connection}>
