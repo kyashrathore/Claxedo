@@ -1,8 +1,8 @@
-import { createMemo, Match, Show, Switch } from "solid-js"
+import { createEffect, createMemo, createSignal, Match, on, Show, Switch } from "solid-js"
 import { Composer, sessionComposerKey } from "@/composer"
 import { useElapsed } from "@/lib/delay"
 import { FailureBoundary, FailureNotice } from "@/lib/failure"
-import { useServer, type SessionRef } from "@/server"
+import { sessionId, useServer, type SessionRef } from "@/server"
 import { useSessionStores, type SessionView } from "@/session"
 import { sessionPath, useShellRoute, type PaneProps } from "@/shell"
 import { Button, useDialog } from "@/ui"
@@ -46,8 +46,10 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
   const dialog = useDialog()
   const openPlan = (plan: Parameters<typeof PlanDialog>[0]["plan"]) =>
     dialog.show(() => <PlanDialog plan={plan} fallbackTitle={t("sessionScreen.plan.title")} />)
-  const host = createTimelineHost({ view: props.view, stores, server, workbench, routing, t, openPlan })
   const parentId = () => props.view.row()?.parentSessionId
+  const [parent, setParent] = createSignal<SessionView>()
+  createEffect(on(parentId, (id) => setParent(id ? stores.open({ ...props.view.ref, sessionId: sessionId(id) }) : undefined)))
+  const host = createTimelineHost({ view: props.view, parent, stores, server, workbench, routing, t, openPlan })
   const toParent = () => {
     const parent = parentId()
     if (parent) routing.navigate(sessionPath({ placementId: props.view.ref.placementId, sessionId: parent }))
