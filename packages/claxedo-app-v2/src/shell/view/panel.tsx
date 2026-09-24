@@ -4,6 +4,7 @@ import { useTranslator } from "@/i18n"
 import { dictionary } from "../i18n"
 import { useShellLayout } from "../layout"
 import { byOrder } from "../registries"
+import { useShellRoute } from "../router"
 import { PANEL_MAX_WIDTH, PANEL_MIN_WIDTH } from "../store"
 import type { PanelTab } from "../types"
 import { RegistryIcon } from "./icon"
@@ -57,11 +58,23 @@ export function PanelContent(props: PanelProps): JSX.Element {
 export function Panel(props: PanelProps): JSX.Element {
   const t = useTranslator(dictionary)
   const layout = useShellLayout()
+  const routing = useShellRoute()
   const width = () => layout.panel(props.scope).width
+  const sessionId = () => {
+    const route = routing.route()
+    return route.kind === "session" ? route.sessionId : ""
+  }
   return (
     <Show when={layout.panelShown()}>
       <ResizeHandle label={t("shell.panelResize")} edge="left" width={width} min={PANEL_MIN_WIDTH} max={PANEL_MAX_WIDTH} onResize={(next) => layout.setPanelWidth(props.scope, next)} />
-      <aside class="shell-panel" aria-label={t("shell.panel")} data-testid="workspace-panel" style={{ width: `${width()}px` }}>
+      <aside
+        class="shell-panel"
+        aria-label={t("shell.panel")}
+        data-testid="workspace-panel-shell"
+        data-open="true"
+        data-workspace-panel-session-id={sessionId()}
+        style={{ width: `${width()}px` }}
+      >
         <PanelContent tabs={props.tabs} scope={props.scope} />
       </aside>
     </Show>

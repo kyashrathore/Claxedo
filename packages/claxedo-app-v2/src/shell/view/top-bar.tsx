@@ -26,7 +26,7 @@ export function TopBar(props: { readonly center: JSX.Element; readonly showPanel
           variant="ghost"
           aria-label={t("shell.panelToggle")}
           aria-expanded={layout.panelShown()}
-          data-testid="panel-toggle"
+          data-testid="workspace-panel-toggle"
           onClick={() => layout.send({ type: "togglePanel" })}
         />
       </Show>
