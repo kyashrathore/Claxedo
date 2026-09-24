@@ -335,12 +335,13 @@ function withTimingEvidence(receipt: ReadinessReceipt, observedAt: number): Read
 
 /**
  * Today's app and the v2 rebuild are packaged from one checkout and driven by
- * this one driver through the same readiness hooks; the argument only names the
- * registered application the framework compares.
+ * this one driver through the same readiness hooks. v2 has no hover prefetch by
+ * design, so its open-file case starts surface-cold and data-cold instead of
+ * data-warm; every end condition is the same.
  */
 export const APPLICATIONS = {
-  claxedo: { id: "claxedo", name: "Claxedo" },
-  "claxedo-v2": { id: "claxedo-v2", name: "Claxedo v2" },
+  claxedo: { id: "claxedo", name: "Claxedo", hoverPrefetch: true },
+  "claxedo-v2": { id: "claxedo-v2", name: "Claxedo v2", hoverPrefetch: false },
 } as const
 
 export type ApplicationId = keyof typeof APPLICATIONS
@@ -529,6 +530,7 @@ async function makeDefaultDependencies(applicationId: ApplicationId): Promise<Dr
         benchmarkCase,
         fixture: workspaceFixture,
         preset,
+        hoverPrefetch: application.hoverPrefetch,
       })
     },
     executeSessionNavigation: async (benchmarkCase, source, destination, preset) => {
