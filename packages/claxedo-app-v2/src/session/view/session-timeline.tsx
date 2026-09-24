@@ -22,7 +22,6 @@ export function SessionTimeline(props: {
   readonly host: TimelineHost
   readonly active: boolean
   readonly scroll: TimelineScroll
-  readonly onNavigateParent: () => void
   readonly onRecover: (kind: SessionErrorClass, userMessageId: string) => unknown
 }) {
   const phone = usePhone()
@@ -58,9 +57,7 @@ export function SessionTimeline(props: {
             currentMessage={current()}
             anchor={(id) => `message-${id}`}
             title={() => props.view.row()?.title}
-            hideTitle={() => true}
             parentId={props.view.row()?.parentSessionId}
-            onNavigateParent={props.onNavigateParent}
             onFirstTurnRecovery={props.onRecover}
             queued={props.view.queue}
           />
