@@ -2,7 +2,7 @@ import { For, Show, type JSX } from "solid-js"
 import { useI18n, useTranslator } from "@/i18n"
 import type { UsageSummary } from "@/server"
 import { Button } from "@/ui"
-import { dictionary } from "../i18n"
+import { usageDictionary } from "../i18n"
 import { totalTokens, type BreakdownRow, type UsageGroup, type UsageMetric } from "../model"
 
 export type BreakdownPaging = {
@@ -20,7 +20,7 @@ function useFormats() {
 }
 
 function Totals(props: { readonly summary: UsageSummary }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(usageDictionary)
   const format = useFormats()
   const totals = () => props.summary.claxedo.totals
   const items = () => [
@@ -47,7 +47,7 @@ function Totals(props: { readonly summary: UsageSummary }): JSX.Element {
 }
 
 function BreakdownTable(props: { readonly rows: readonly BreakdownRow[]; readonly group: UsageGroup; readonly metric: UsageMetric }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(usageDictionary)
   const format = useFormats()
   const measure = (row: BreakdownRow) => (props.metric === "cost" ? format.cost(row.estimatedUsd) : format.count(totalTokens(row)))
   return (
@@ -75,7 +75,7 @@ function BreakdownTable(props: { readonly rows: readonly BreakdownRow[]; readonl
 }
 
 function DailyBars(props: { readonly summary: UsageSummary; readonly metric: UsageMetric }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(usageDictionary)
   const format = useFormats()
   const days = () => {
     const current = props.summary.claxedo
@@ -104,7 +104,7 @@ export function ClaxedoUsage(props: {
   readonly metric: UsageMetric
   readonly paging: BreakdownPaging
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(usageDictionary)
   const rows = () => props.summary.breakdown?.rows ?? []
   const unavailable = () => (props.summary.claxedo.status === "available" ? undefined : (props.summary.claxedo.error ?? t("usage.claxedo.unavailable")))
   return (

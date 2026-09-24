@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "settings.section.keybindings": "ทางลัด",
   "settings.section.appearance": "รูปลักษณ์",
   "settings.common.cancel": "ยกเลิก",

@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "usage.quota.title": "Окна квоты",
   "usage.quota.empty": "Ни один подключённый аккаунт не сообщает здесь о тарифе.",
   "usage.quota.inUse": "Используется",

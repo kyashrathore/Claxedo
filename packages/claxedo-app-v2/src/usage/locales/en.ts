@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "usage.title": "Usage",
   "usage.view": "Usage view",
   "usage.view.quota": "Usage limits",

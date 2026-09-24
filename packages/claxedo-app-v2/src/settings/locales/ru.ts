@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "settings.section.keybindings": "Горячие клавиши",
   "settings.section.appearance": "Внешний вид",
   "settings.common.cancel": "Отмена",

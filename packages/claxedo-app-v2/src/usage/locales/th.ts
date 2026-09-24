@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "usage.quota.title": "ช่วงโควตา",
   "usage.quota.empty": "ไม่มีบัญชีที่เชื่อมต่อรายงานแผนที่นี่",
   "usage.quota.inUse": "กำลังใช้งาน",

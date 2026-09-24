@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "usage.quota.title": "نوافذ الحصة",
   "usage.quota.empty": "لا يبلّغ أي حساب متصل عن خطة هنا.",
   "usage.quota.inUse": "قيد الاستخدام",
