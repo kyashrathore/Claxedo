@@ -11,7 +11,7 @@ import type { Workspaces } from "./workspaces"
 const GIT_PATH = "/api/wr/git"
 const DIFF_PATH = "/api/wr/diff"
 
-export function diffQuery(scope: DiffScope): Record<string, string> {
+function diffQuery(scope: DiffScope): Record<string, string> {
   switch (scope.kind) {
     case "uncommitted":
     case "staged":

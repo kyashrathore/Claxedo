@@ -6,7 +6,7 @@ import type { FetchQuery, Machine } from "./types"
 import type { Workspaces } from "./workspaces"
 import { UNENROLLED_MACHINE, type BootstrapDeclaration } from "./wire/placements"
 
-export const MACHINE_ONLINE_WINDOW_MS = 120_000
+const MACHINE_ONLINE_WINDOW_MS = 120_000
 
 const DEVICES_PATH = "/api/claxedo/remote-access/devices"
 

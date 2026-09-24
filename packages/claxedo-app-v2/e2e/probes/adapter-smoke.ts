@@ -190,10 +190,15 @@ async function turnChecks(probe: Probe, placement: Placement) {
       const working = log.mark()
       const read = await server.sessions.statuses()
       const reported = read.reports.find((report) => report.ref.sessionId === ref.sessionId)?.status.kind
+      const delivery = await server.sessions.prompt(ref, { clientRequestId: crypto.randomUUID(), text: "Later.", attachments: [], delivery: "queue" })
       const queued = await server.sessions.queue(ref)
+      const first = queued[0]
+      if (delivery !== "queue" || !first) throw new Error(`delivery=${delivery}, queued=${queued.length}`)
+      const cancelled = await server.sessions.controlQueued(ref, first.seq, "cancel")
+      const left = await server.sessions.queue(ref)
       await server.sessions.stop(ref)
       const settled = await log.next("settled", working, isStatus(ref.sessionId, ["idle", "failed"]))
-      return `statuses: ${reported} (failures=${read.failures.length}), queued=${queued.length}, after stop=${settled.status.kind}`
+      return `statuses: ${reported} (failures=${read.failures.length}), delivery=${delivery}, queued=${queued.length}, cancel ok=${cancelled.ok}, left=${left.length}, after stop=${settled.status.kind}`
     } finally {
       await stack.acp.release("held")
     }
