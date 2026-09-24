@@ -14,7 +14,7 @@
 // rejected. This preserves the intended power-user flow (open the menu, arrow,
 // Enter) while blocking silent mutation.
 
-import { sameHarnessSelection, type HarnessSelection } from "@/platform/identity/harness-selection"
+import { sameHarnessSelection, type HarnessSelection } from "@/lib/harness-selection"
 
 export function shouldApplyHarnessSelection(input: {
   next: HarnessSelection | undefined

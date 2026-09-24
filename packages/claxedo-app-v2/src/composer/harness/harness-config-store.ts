@@ -1,45 +1,20 @@
-import { useQuery } from "@tanstack/solid-query"
-import { useShellQueryOptions as useQueryOptions } from "@/features/session/app-ports"
-import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
-import { createHarnessConfigRuntime } from "./harness-config-runtime"
-import { createPreparedRuntimeSessionStore } from "./harness-prepared-runtime-session"
-import { createHarnessRuntimeSessionActions } from "./harness-runtime-session-actions"
-import { createHarnessOptionsLoader } from "./harness-options-loader"
-import { createHarnessHydrator } from "./harness-hydrator"
-import { createHarnessSwitcher } from "./harness-switcher"
-import { createHarnessModelWriter } from "./harness-model-writer"
+import type { Server } from "@/server"
+import { createHarnessConnectionsCatalog } from "./connection-catalog"
+import { createHarnessOptionsLoader, type HarnessOptionsLoaderCache } from "./harness-options-loader"
+import { createHarnessHydrator, type HarnessHydratorCache } from "./harness-hydrator"
+import { createHarnessSwitcher, type HarnessSwitcherCache } from "./harness-switcher"
+import { createHarnessModelWriter, type HarnessSessionModelSyncCache, type SessionModelSyncState } from "./harness-model-writer"
 import { createHarnessStore } from "./harness-store"
-import {
-  createHarnessHydratorQueryCache,
-  createHarnessOptionsQueryCache,
-  createHarnessSwitcherQueryCache,
-  createPreparedRuntimeSessionQueryCache,
-  createSessionModelSyncQueryCache,
-} from "./harness-query-cache"
 import { createHarnessStatusActions } from "./harness-status-actions"
-import { useDirectorySessionCacheActions } from "../data/sync/directory-session-cache"
-import { useGlobalBootstrapActions } from "@/features/session/app-ports"
-import {
-  harnessWorkspaceRuntimeRef,
-  type HarnessScopeInput,
-} from "./store-policy"
-import { decodeHarnessState, isCatalogHarness } from "./profile"
+import type { HarnessScopeInput } from "./store-policy"
+import { decodeHarnessState, harnessHasConfigOptions, harnessSelectionId, isCatalogHarness } from "./profile"
 import { harnessHealthReadiness } from "./store-state"
-import type {
-  HarnessType,
-  OptionsResponse,
-} from "./profile"
-import type { DraftDefaultLabels } from "./draft-defaults"
-import type { ModelKey } from "@/features/session/composer/model-strategy"
+import type { HarnessType, OptionsResponse } from "./profile"
+import type { DraftDefaultLabels, DraftDefaultStorage } from "./draft-defaults"
+import type { ModelKey } from "./model-key"
 import type { ResolveDraftDefaultInput } from "./draft-default-policy"
-import { sessionPaneWorkspaceKey } from "@/platform/runtime/session-workspace"
-import type { PreparedRuntimeSessionConfig } from "./prepared-session"
-import { setSessionConfigRawQueryData } from "../store/session-config-query-cache"
-import { createHarnessConnectionsCatalog } from "@/platform/query/connection-catalog"
-import { harnessHasConfigOptions } from "./profile"
 
 type ScopeInput = HarnessScopeInput
-type ClaimInput = ScopeInput & { harness: HarnessType; sessionConfig: PreparedRuntimeSessionConfig; headers?: Record<string, string> }
 
 function record(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
@@ -54,14 +29,64 @@ async function errorMessage(res: Response, fallback: string) {
   return fallback
 }
 
-export function createHarnessConfigStore() {
-  const globalBootstrapActions = useGlobalBootstrapActions()
-  const directorySessionCacheActions = useDirectorySessionCacheActions()
-  const queryOptions = useQueryOptions()
-  const projectsQuery = useQuery(() => queryOptions.projects())
-  const base = getClaxedoServerUrl()
-  const request = authFetch
-  const connectionCatalog = createHarnessConnectionsCatalog({ base, request })
+function pendingSlots<Value>() {
+  const slots = new Map<string, Value>()
+  return {
+    get: (key: string) => slots.get(key),
+    set: (key: string, value: Value) => void slots.set(key, value),
+    remove: (key: string, value: Value) => {
+      if (slots.get(key) === value) slots.delete(key)
+    },
+  }
+}
+
+function createScopeCaches() {
+  const seq = new Map<string, number>()
+  const tries = new Map<string, number>()
+  const seen = new Map<string, string>()
+  const hydrations = pendingSlots<Promise<void>>()
+  const switches = pendingSlots<Promise<void>>()
+  const syncStates = new Map<string, SessionModelSyncState>()
+  const syncs = pendingSlots<Promise<void>>()
+  const options: HarnessOptionsLoaderCache = {
+    nextSeq: (scope) => {
+      const next = (seq.get(scope) ?? 0) + 1
+      seq.set(scope, next)
+      return next
+    },
+    getSeq: (scope) => seq.get(scope),
+    getTries: (scope) => tries.get(scope),
+    setTries: (scope, value) => void tries.set(scope, value),
+    clearTries: (scope) => void tries.delete(scope),
+  }
+  const hydrator: HarnessHydratorCache<ScopeInput> = {
+    getSeen: (scope) => seen.get(scope),
+    setSeen: (scope, key) => void seen.set(scope, key),
+    clearSeen: (scope) => void seen.delete(scope),
+    getPending: hydrations.get,
+    setPending: hydrations.set,
+    removePending: hydrations.remove,
+    fetchSessionConfig: (_params, run) => run(),
+  }
+  const switcher: HarnessSwitcherCache = {
+    getPending: switches.get,
+    setPending: switches.set,
+    removePending: switches.remove,
+    clearOptionsTries: options.clearTries,
+  }
+  const sessionModel: HarnessSessionModelSyncCache = {
+    getState: (key) => syncStates.get(key),
+    setState: (key, value) => void syncStates.set(key, value),
+    getPending: (key, model) => syncs.get(`${key}\n${model}`),
+    setPending: (key, model, value) => syncs.set(`${key}\n${model}`, value),
+    removePending: (key, model, value) => syncs.remove(`${key}\n${model}`, value),
+  }
+  return { options, hydrator, switcher, sessionModel }
+}
+
+export function createHarnessConfigStore(server: Server, storage: DraftDefaultStorage) {
+  const api = server.harnessConfig
+  const connectionCatalog = createHarnessConnectionsCatalog({ api })
   let connectionRefresh: Promise<void> | undefined
   const hasConfigOptions = async (type: HarnessType) => {
     if (type.kind === "native") return harnessHasConfigOptions(type)
@@ -77,31 +102,19 @@ export function createHarnessConfigStore() {
     }
     return row.capabilities.configOptions
   }
-  const harnessRuntime = createHarnessConfigRuntime({
-    base,
-    request,
-    projects: () => projectsQuery.data ?? [],
-  })
-  const harnessStore = createHarnessStore(localStorage)
-  const runtimeSessionActions = createHarnessRuntimeSessionActions({
-    base,
-    runtime: harnessRuntime,
-  })
-
-  const preparedRuntimeSessions = createPreparedRuntimeSessionStore<ClaimInput>({
-    canUseRuntimeSession: runtimeSessionActions.canUseRuntimeSession,
-    state: harnessStore.touch,
-    create: runtimeSessionActions.create,
-    remove: runtimeSessionActions.remove,
-    setPrepareError: (scope, err) => {
-      harnessStore.setConfigError(scope, err instanceof Error ? err.message : "Failed to initialize harness")
-      harnessStore.setReadiness(scope, "error")
-    },
-    cache: createPreparedRuntimeSessionQueryCache(base),
-  })
+  const harnessStore = createHarnessStore(storage)
+  const caches = createScopeCaches()
 
   const optionsLoader = createHarnessOptionsLoader<ScopeInput>({
-    fetch: harnessRuntime.configOptionsFetch,
+    fetch: (type, params, model) => {
+      if (!params?.placementId) return Promise.resolve(Response.json({ options: [], source: "empty", stale: false } satisfies OptionsResponse))
+      return api.options({
+        placementId: params.placementId,
+        harness: harnessSelectionId(type),
+        ...(params.sessionId ? { sessionId: params.sessionId } : {}),
+        ...(model ? { model } : {}),
+      })
+    },
     currentHarness: (scope) => harnessStore.state(scope)?.harness,
     selectedModel: (scope) => harnessStore.state(scope)?.selectedModel,
     selectedThoughtLevel: (scope) => harnessStore.state(scope)?.selectedThoughtLevel,
@@ -117,11 +130,11 @@ export function createHarnessConfigStore() {
       return state ? { readiness: state.readiness, configError: state.configError } : undefined
     },
     errorMessage,
-    cache: createHarnessOptionsQueryCache(base),
+    cache: caches.options,
   })
 
   // A held pick's options are the picked harness's, which only the
-  // directory-scoped route answers: the session route serves the harness the
+  // placement-scoped read answers: the session read serves the harness the
   // session still runs.
   async function fetchConfigOptions(
     scope: string,
@@ -136,19 +149,9 @@ export function createHarnessConfigStore() {
     state: harnessStore.state,
     fetchConfigOptions,
     hasConfigOptions,
-    bootstrap: async (params) => {
-      await globalBootstrapActions.bootstrap(params)
-    },
-    ensureDirectory: async (params) => {
-      await directorySessionCacheActions.ensure(params)
-    },
-    refreshDirectory: async (params) => {
-      await directorySessionCacheActions.refresh(params)
-    },
   })
 
   const hydrator = createHarnessHydrator<ScopeInput>({
-    base,
     seed: harnessStore.seed,
     state: harnessStore.state,
     beginDraftDefault: (scope, input) => {
@@ -165,25 +168,15 @@ export function createHarnessConfigStore() {
     },
     fetchConfigOptions,
     hasConfigOptions,
-    refresh: statusActions.refresh,
-    workspaceRuntime: (input) => !!harnessWorkspaceRuntimeRef(input, projectsQuery.data ?? []),
-    runtime: harnessRuntime,
-    cache: createHarnessHydratorQueryCache(base),
+    runtime: {
+      placementKind: (placementId) => server.placements.byId(placementId)?.kind,
+      folderHarness: (placementId) => api.folderHarness(placementId),
+      sessionConfig: api.sessionConfig,
+    },
+    cache: caches.hydrator,
   })
 
-  const publishSessionConfig = (input: ScopeInput, config: unknown) => {
-    if (!input.sessionId || !input.directory || config === undefined) return
-    setSessionConfigRawQueryData({
-      sessionID: input.sessionId,
-      directory: input.directory,
-      serverUrl: base,
-      sessionRef: input.sessionRef,
-      workspaceId: input.sessionRef?.workspaceId,
-    }, config)
-  }
-
   const modelWriter = createHarnessModelWriter<ScopeInput>({
-    base,
     seed: harnessStore.seed,
     acceptsDraftModel: harnessStore.acceptsDraftModel,
     currentModel: (scope) => {
@@ -202,22 +195,14 @@ export function createHarnessConfigStore() {
     rememberDraftModel: (scope, model, input, labels) => {
       rememberDraftModel(scope, model, input, labels)
     },
-    publishSessionConfig,
-    dropPrepared: (scope) => {
-      void preparedRuntimeSessions.drop(scope)
+    runtime: {
+      setSessionModel: (ref, model) => api.updateSessionConfig(ref, { model: { providerID: model.providerID, modelID: model.modelID } }),
     },
-    runtime: harnessRuntime,
-    cache: createSessionModelSyncQueryCache(),
+    cache: caches.sessionModel,
   })
 
-  const setModel = modelWriter.setModel
-
   const switcher = createHarnessSwitcher<ScopeInput>({
-    base,
     seed: harnessStore.seed,
-    dropPrepared: (scope) => {
-      void preparedRuntimeSessions.drop(scope)
-    },
     applyPatch: harnessStore.applyPatch,
     holdHarness: harnessStore.holdHarness,
     restoreHeldHarness: harnessStore.restoreHeldHarness,
@@ -228,13 +213,11 @@ export function createHarnessConfigStore() {
     rememberDraftHarness: (scope, type, input) => {
       rememberDraftHarness(scope, type, input)
     },
-    refresh: statusActions.refresh,
     fetchConfigOptions: (scope, type, input) => {
       void fetchConfigOptions(scope, type, input)
     },
     hasConfigOptions,
-    runtime: harnessRuntime,
-    cache: createHarnessSwitcherQueryCache(base),
+    cache: caches.switcher,
   })
 
   const setHarness: typeof switcher.setHarness = (scope, type, input) => {
@@ -242,19 +225,11 @@ export function createHarnessConfigStore() {
     return switcher.setHarness(scope, type, input)
   }
 
-  const claimSession = preparedRuntimeSessions.claim
-
   function draftDefaultIdentity(input?: ScopeInput) {
-    if (!input?.directory || (input.sessionId && input.sessionId !== "new")) return undefined
-    const workspaceKey = sessionPaneWorkspaceKey({
-      directory: input.directory,
-      projects: projectsQuery.data ?? [],
-    })
-    return {
-      serverUrl: base,
-      workspaceKey,
-      ...(workspaceKey !== input.directory ? { fallbackWorkspaceKey: input.directory } : {}),
-    }
+    if (!input?.placementId || (input.sessionId && input.sessionId !== "new")) return undefined
+    const workspaceKey = api.workspaceKey(input.placementId)
+    if (!workspaceKey) return undefined
+    return { serverUrl: api.serverUrl, workspaceKey }
   }
 
   const rememberDraftHarness = (scope: string, type: HarnessType, input?: ScopeInput) => {
@@ -283,10 +258,10 @@ export function createHarnessConfigStore() {
   // Probe the bound runtime without changing persisted harness/model identity.
   // Hydration alone cannot detect a runtime that exits after the session loads.
   const probeHarnessHealth = async (scope: string, input?: ScopeInput) => {
-    if (!input?.directory || harnessStore.heldHarness(scope)) return
+    if (!input?.placementId || harnessStore.heldHarness(scope)) return
     const current = harnessStore.read(scope)
     if (!current.harness) return
-    const res = await harnessRuntime.harnessHealthFetch(input).catch(() => undefined)
+    const res = await api.folderHarness(input.placementId, input.sessionId).catch(() => undefined)
     if (!res?.ok) return
     const data = decodeHarnessState(await res.json().catch(() => undefined))
     if (!data) return
@@ -303,19 +278,34 @@ export function createHarnessConfigStore() {
     if (next) harnessStore.setReadiness(scope, next)
   }
 
+  /** A harness held in the picker becomes the session's own before the prompt is sent; a failed switch leaves the draft unsent. */
+  const commitHeldHarness = async (scope: string, input: ScopeInput) => {
+    const held = harnessStore.heldHarness(scope)
+    const ref = input.sessionRef
+    if (!held || !ref) return
+    const model = harnessStore.harnessModelKeyForSubmit(scope)
+    const res = await api.updateSessionConfig(ref, {
+      harness: harnessSelectionId(held),
+      ...(model ? { model: { providerID: model.providerID, modelID: model.modelID } } : {}),
+      ...(model?.variant ? { variant: model.variant } : {}),
+    })
+    if (!res.ok) throw new Error((await res.text().catch(() => "")) || `session config save failed: ${res.status}`)
+    harnessStore.releaseHeldHarness(scope)
+  }
+
   return {
     hydrate: hydrator.hydrate,
+    commitHeldHarness,
     reprobe: hydrator.reprobe,
     probeHealth: probeHarnessHealth,
     // Give up on a harness that never left "polling": surface the terminal
     // "error" readiness so the selector shows the "Unavailable" affordance and
     // submit stays blocked (harnessReadyForSubmit is false for "error").
     markUnavailable: (scope: string) => harnessStore.setReadiness(scope, "error"),
-    claimSession,
     promote: harnessStore.promote,
     rememberDraftModel,
     resolveDraftDefault: resolveCurrentDraftDefault,
-    setModel,
+    setModel: modelWriter.setModel,
     setHarness,
     heldHarness: harnessStore.heldHarness,
     releaseHeldHarness: harnessStore.releaseHeldHarness,
@@ -352,3 +342,5 @@ export function createHarnessConfigStore() {
     harnessReadyForSubmit: harnessStore.harnessReadyForSubmit,
   }
 }
+
+export type HarnessConfigStore = ReturnType<typeof createHarnessConfigStore>

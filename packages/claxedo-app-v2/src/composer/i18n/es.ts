@@ -25,7 +25,6 @@ export const es: Partial<Record<ComposerTextKey, string>> = {
   "composer.action.dismiss": "Descartar",
   "composer.action.cancel": "Cancelar",
   "composer.action.save": "Guardar",
-  "composer.picker.agent": "Agente",
   "composer.attachment.remove": "Eliminar adjunto",
   "composer.attachment.refused.title": "{{harness}} no puede usar este adjunto",
   "composer.attachment.refused.description": "{{harness}} no tiene una entrada de prompt para {{mime}}, y esta sesión no tiene una carpeta de espacio de trabajo donde guardar el archivo.",
@@ -39,4 +38,9 @@ export const es: Partial<Record<ComposerTextKey, string>> = {
   "composer.marks.remove": "Quitar marca",
   "composer.key.esc": "ESC",
   "composer.error.title": "Fallo al enviar prompt",
+  "dialog.model.search.placeholder": "Buscar modelos",
+  "dialog.model.empty": "Sin resultados de modelos",
+  "command.provider.connect": "Conectar proveedor",
+  "model.tag.free": "Gratis",
+  "model.tag.latest": "Último",
 }

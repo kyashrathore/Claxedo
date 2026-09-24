@@ -1,4 +1,4 @@
-import type { HarnessReadiness } from "@/features/session/harness/selection"
+import type { HarnessReadiness } from "./harness/selection"
 
 /** Which authority refuses the send: the workspace's role, or the session's share. */
 export type SubmitAuthorityBlock = "workspace-role" | "session-share"

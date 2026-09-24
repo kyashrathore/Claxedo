@@ -25,7 +25,6 @@ export const pl: Partial<Record<ComposerTextKey, string>> = {
   "composer.action.dismiss": "Odrzuć",
   "composer.action.cancel": "Anuluj",
   "composer.action.save": "Zapisz",
-  "composer.picker.agent": "Agent",
   "composer.attachment.remove": "Usuń załącznik",
   "composer.attachment.refused.title": "{{harness}} nie obsługuje tego załącznika",
   "composer.attachment.refused.description": "{{harness}} nie ma wejścia promptu dla {{mime}}, a ta sesja nie ma folderu przestrzeni roboczej, w którym plik mógłby pozostać.",
@@ -39,4 +38,9 @@ export const pl: Partial<Record<ComposerTextKey, string>> = {
   "composer.marks.remove": "Usuń oznaczenie",
   "composer.key.esc": "ESC",
   "composer.error.title": "Nie udało się wysłać zapytania",
+  "dialog.model.search.placeholder": "Szukaj modeli",
+  "dialog.model.empty": "Brak wyników modelu",
+  "command.provider.connect": "Połącz dostawcę",
+  "model.tag.free": "Darmowy",
+  "model.tag.latest": "Najnowszy",
 }

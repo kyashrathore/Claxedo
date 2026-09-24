@@ -9,6 +9,7 @@ import { isRetryable, toAppError } from "./errors"
 import { createEventIntake } from "./event-intake"
 import type { ConnectionState } from "./events"
 import { createGitApi } from "./git"
+import { createHarnessConfigApi } from "./harness-config"
 import { createLivePluginsApi } from "./live-plugins"
 import type { ProjectId } from "./ids"
 import type { Server, ServerQueries } from "./api"
@@ -88,6 +89,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     folders: createFoldersApi(transport),
     engineProjects: createEngineProjectsApi(transport),
     livePlugins: createLivePluginsApi(transport),
+    harnessConfig: createHarnessConfigApi(transport, workspaces),
     request: transport.request,
   }
 }

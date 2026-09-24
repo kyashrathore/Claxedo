@@ -1,4 +1,4 @@
-import type { ModelKey } from "@/features/session/composer/model-strategy"
+import type { ModelKey } from "./model-key"
 
 export type ModelSelectionSource = "ui" | "agent"
 

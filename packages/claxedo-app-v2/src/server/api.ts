@@ -5,6 +5,7 @@ import type { CloudCreateInput, CloudWorkspace, CodeHostConnection, CodeHostRepo
 import type { ConnectionState, ServerEvent } from "./events"
 import type { EngineProjectsApi, EngineProjectsQueries } from "./engine-projects"
 import type { FolderQueries, FoldersApi } from "./folders"
+import type { HarnessConfigApi } from "./harness-config"
 import type {
   DiffFile,
   DiffScope,
@@ -175,6 +176,7 @@ export type Server = {
   readonly folders: FoldersApi
   readonly engineProjects: EngineProjectsApi
   readonly livePlugins: LivePluginsApi
+  readonly harnessConfig: HarnessConfigApi
   readonly queries: ServerQueries
   readonly request: (path: string, init?: RequestInit) => Promise<Response>
 }

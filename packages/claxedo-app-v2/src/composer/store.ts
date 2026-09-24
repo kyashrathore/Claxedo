@@ -12,7 +12,6 @@ import type {
   ImageMark,
   Prompt,
   PromptPart,
-  Selection,
 } from "./model"
 import { emptyDraft, emptyPrompt, promptText } from "./model"
 import { prependHistoryEntry } from "./editor/history"
@@ -27,11 +26,10 @@ export const draftComposerKey = (placementId: PlacementId, draftId: string): Com
 type Entry = {
   draft: Draft
   history: History
-  selection: Selection
   attachments: AttachmentState[]
 }
 
-const emptyEntry = (): Entry => ({ draft: emptyDraft(), history: { normal: [], shell: [] }, selection: {}, attachments: [] })
+const emptyEntry = (): Entry => ({ draft: emptyDraft(), history: { normal: [], shell: [] }, attachments: [] })
 
 function createEntryTable() {
   const [entries, setEntries] = createStore<Record<ComposerKey, Entry>>({})
@@ -131,10 +129,6 @@ function draftActions(table: EntryTable) {
 function entryActions(table: EntryTable) {
   const { ensure, setEntries } = table
   return {
-    setSelection: (key: ComposerKey, patch: Selection) => {
-      ensure(key)
-      setEntries(key, "selection", (current) => ({ ...current, ...patch }))
-    },
     addHistory: (key: ComposerKey, mode: EditorMode, prompt: Prompt, comments: HistoryComment[]) => {
       ensure(key)
       setEntries(key, "history", mode, (list) => prependHistoryEntry(list, prompt, comments))
@@ -155,7 +149,6 @@ export function createComposerStore() {
   return {
     retain: table.retain,
     draft: (key: ComposerKey) => table.entry(key).draft,
-    selection: (key: ComposerKey) => table.entry(key).selection,
     attachments: (key: ComposerKey) => table.entry(key).attachments,
     history: (key: ComposerKey, mode: EditorMode): HistoryEntry[] => table.entry(key).history[mode],
     ...promptActions(table),

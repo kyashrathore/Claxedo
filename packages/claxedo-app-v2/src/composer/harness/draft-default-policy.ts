@@ -1,7 +1,7 @@
-import type { ModelKey } from "@/features/session/composer/model-strategy"
+import type { ModelKey } from "./model-key"
 import type { HarnessType } from "./profile"
-import { sameHarnessSelection } from "@/platform/identity/harness-selection"
-import { isCatalogHarnessId } from "@/platform/identity/harness-selection"
+import { sameHarnessSelection } from "@/lib/harness-selection"
+import { isCatalogHarnessId } from "@/lib/harness-selection"
 
 export type DraftDefaultPair = {
   readonly harness: HarnessType

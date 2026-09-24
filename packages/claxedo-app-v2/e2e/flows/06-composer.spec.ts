@@ -50,3 +50,35 @@ test("06 composer: a marked image, an @file pill and a slash command popover all
   expect(sent).toContain("README.md")
   expect(sent).toContain("the logo corner")
 })
+
+test("06 a new session starts on the folder's harness, then on the harness last used for a draft in the workspace", async ({ stack, api, app, isMobile }) => {
+  const workspace = await stack.daemon.makeWorkspace("defaults")
+  const existing = await api.createSession(workspace.directory, { title: "Existing", harness: SCRIPTED_ACP_HARNESS })
+  await app.goto(`${stack.url}/w/${workspace.id}/s/${existing.id}`)
+  await expect(app.getByRole("textbox", { name: "Prompt" })).toBeVisible()
+  const openDraft = async () => {
+    if (isMobile) await app.getByRole("button", { name: "Open menu" }).click()
+    await app.getByRole("button", { name: "New session" }).click()
+    return app.getByRole("region", { name: "New session", exact: true })
+  }
+
+  const draft = await openDraft()
+  const picker = draft.locator('[data-action="prompt-harness-model"]')
+  await expect(picker).toHaveAttribute("data-harness", "pi")
+  await picker.click()
+  await app.getByRole("button", { name: /^Harness/ }).click()
+  await app.getByRole("button", { name: "Scripted ACP" }).click()
+  await expect(picker).toHaveAttribute("data-harness", "scripted-acp")
+  await app.keyboard.press("Escape")
+  const prompt = draft.getByRole("textbox", { name: "Prompt" })
+  await prompt.fill("Start on the scripted agent")
+  await prompt.press("Enter")
+  await expect(draft).toHaveCount(0)
+  const created = (await api.sessions(workspace.directory)).find((row) => row.id !== existing.id)
+  expect(JSON.stringify(created)).toContain('"harness":{"id":"scripted-acp","access":"connection"}')
+
+  await app.reload()
+  await expect(app.getByRole("textbox", { name: "Prompt" }).first()).toBeVisible()
+  const next = await openDraft()
+  await expect(next.locator('[data-action="prompt-harness-model"]')).toHaveAttribute("data-harness", "scripted-acp")
+})

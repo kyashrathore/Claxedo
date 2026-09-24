@@ -1,9 +1,8 @@
 import { batch } from "solid-js"
 import { createStore, unwrap } from "solid-js/store"
-import type { PanePreferenceStorage } from "@/features/session/preferences/pane"
-import type { ModelKey } from "@/features/session/composer/model-strategy"
+import type { ModelKey } from "./model-key"
 import { harnessHasConfigOptions, isCatalogHarness, type HarnessType } from "./profile"
-import { sameHarnessSelection } from "@/platform/identity/harness-selection"
+import { sameHarnessSelection } from "@/lib/harness-selection"
 import {
   connectionAllowsNoModel,
   draftConnectionAllowsNoModel,
@@ -29,9 +28,10 @@ import {
   createDraftDefaultPreferences,
   type DraftDefaultLabels,
   type DraftDefaultScope,
+  type DraftDefaultStorage,
 } from "./draft-defaults"
 
-export function createHarnessStore(storage: PanePreferenceStorage) {
+export function createHarnessStore(storage: DraftDefaultStorage) {
   const [store, setStore] = createStore<Record<string, HarnessStoreState>>({})
   const draftDefaults = createDraftDefaultPreferences(storage)
   const initialByScope = new Map<string, HarnessStoreState>()

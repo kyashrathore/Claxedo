@@ -15,41 +15,16 @@ import {
 } from "./store-state"
 import {
   shouldFetchConfigOptionsForScope,
-  shouldRefreshDirectoryAfterHarnessStatus,
   type HarnessScopeInput,
 } from "./store-policy"
-import { sameHarnessSelection } from "@/platform/identity/harness-selection"
-
-type HarnessDirectory = NonNullable<HarnessScopeInput["directory"]>
+import { sameHarnessSelection } from "@/lib/harness-selection"
 
 export function createHarnessStatusActions<ScopeInput extends HarnessScopeInput>(input: {
   applyPatch(scope: string, patch: HarnessStorePatch): void
   state(scope: string): HarnessStoreState | undefined
   fetchConfigOptions(scope: string, type: HarnessType, params?: ScopeInput): Promise<unknown> | void
   hasConfigOptions?(type: HarnessType): Promise<boolean>
-  bootstrap(params: { harnessType?: string }): Promise<void>
-  ensureDirectory(params: { directory: HarnessDirectory; harnessType?: string; quiet: boolean }): Promise<void>
-  refreshDirectory(params: { directory: HarnessDirectory; harnessType?: string }): Promise<void>
 }) {
-  const refresh = async (directory?: HarnessScopeInput["directory"], harnessType?: string, opts?: { draft?: boolean }) => {
-    if (!directory) {
-      await input.bootstrap({ harnessType })
-      return
-    }
-    if (opts?.draft) {
-      await input.ensureDirectory({
-        directory,
-        harnessType,
-        quiet: true,
-      })
-      return
-    }
-    await input.refreshDirectory({
-      directory,
-      harnessType,
-    })
-  }
-
   const applyStatus = async (scope: string, data: HarnessState, params?: ScopeInput) => {
     const current = input.state(scope)
     const want = desiredHarness(data) ?? input.state(scope)?.harness
@@ -88,14 +63,10 @@ export function createHarnessStatusActions<ScopeInput extends HarnessScopeInput>
     } else if (!hasConfigOptions && !hardFailedHarness(data)) {
       input.applyPatch(scope, readyHarnessHydrationPatch(want, false))
     }
-    if (params?.directory && shouldRefreshDirectoryAfterHarnessStatus(params)) {
-      await refresh(params.directory, want.kind === "native" ? want.harnessId : undefined, { draft: true })
-    }
   }
 
   return {
     applyStatus,
-    refresh,
     setPollingHydration: (scope: string, type?: HarnessType) => input.applyPatch(scope, pollingHarnessHydrationPatch(type)),
     setReadyHydration: (scope: string, type: HarnessType, hasConfigOptions?: boolean) =>
       input.applyPatch(scope, readyHarnessHydrationPatch(type, hasConfigOptions)),

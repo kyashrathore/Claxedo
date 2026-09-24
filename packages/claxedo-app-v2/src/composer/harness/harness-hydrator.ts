@@ -8,18 +8,12 @@ import {
 import type { HarnessStoreState } from "./store-state"
 import type { DraftDefault } from "./draft-defaults"
 import type { DraftDefaultApplication } from "./draft-default-policy"
+import type { PlacementId, PlacementKind, SessionRef } from "@/server"
 import {
   harnessStateFromSessionConfig,
-  refreshHarnessTypeForScope,
   shouldHydrateDraftFromHarnessStatus,
   type HarnessScopeInput,
 } from "./store-policy"
-import {
-  harnessConfigUrl,
-  sessionResourceUrl,
-} from "./harness-config-routes"
-import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
-import { isRelayHostKind, type RelayHostKind, type WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 
 export type HarnessHydratorCache<ScopeInput extends HarnessScopeInput> = {
   getSeen(scope: string): string | undefined
@@ -28,17 +22,10 @@ export type HarnessHydratorCache<ScopeInput extends HarnessScopeInput> = {
   getPending(scope: string): Promise<void> | undefined
   setPending(scope: string, value: Promise<void>): void
   removePending(scope: string, value: Promise<void>): void
-  fetchSessionConfig(
-    params: HydratedSessionInput<ScopeInput>,
-    run: () => Promise<unknown>,
-  ): Promise<unknown>
+  fetchSessionConfig(params: ScopeInput, run: () => Promise<unknown>): Promise<unknown>
 }
 
-type HydratedSessionInput<ScopeInput extends HarnessScopeInput> =
-  ScopeInput & Required<Pick<HarnessScopeInput, "directory" | "sessionId">>
-
 export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(input: {
-  base: string
   seed(scope: string): void
   state(scope: string): HarnessStoreState | undefined
   beginDraftDefault?(scope: string, params?: ScopeInput): {
@@ -52,21 +39,10 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
   setCapabilityError?(scope: string, message: string): void
   fetchConfigOptions(scope: string, type: HarnessType, params?: ScopeInput): Promise<unknown> | void
   hasConfigOptions?(type: HarnessType): Promise<boolean>
-  refresh(directory?: string, harnessType?: string, opts?: { draft?: boolean }): Promise<void>
-  workspaceRuntime(params?: ScopeInput): boolean
   runtime: {
-    useLocalHarnessConfig(params?: ScopeInput): boolean
-    hostKind?(params?: ScopeInput): WorkspaceHostKind | null | undefined
-    /**
-     * The workspace record itself, for a `workspace:` ref the inventory has not
-     * described yet. A draft's harness comes from the machine serving the
-     * workspace, so the draft cannot decide until the workspace is known.
-     */
-    workspace?(params?: ScopeInput): Promise<{ kind?: WorkspaceHostKind | null; workspaceId?: string } | undefined>
-    /** The relay-backed workspace the inventory already describes for a scope. */
-    workspaceRef?(params?: ScopeInput): { workspaceId: string; kind: RelayHostKind } | undefined
-    harnessSessionFetch(params?: ScopeInput): typeof fetch
-    localHarnessConfigFetch(params?: ScopeInput): typeof fetch
+    placementKind(placementId: PlacementId): PlacementKind | undefined
+    folderHarness(placementId: PlacementId): Promise<Response>
+    sessionConfig(ref: SessionRef): Promise<Response>
   }
   cache: HarnessHydratorCache<ScopeInput>
 }) {
@@ -83,33 +59,15 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
     }
   }
 
-  const status = async (
-    params?: ScopeInput,
-    known?: { workspaceRuntime: boolean; workspaceId?: string },
-  ): Promise<HarnessState | undefined> => {
-    // A central SessionRef is itself a runtime route. It deliberately has no
-    // local/workspace runtime classification, but harnessSessionFetch maps its
-    // session resource request through the central runtime API.
-    if (
-      !input.runtime.useLocalHarnessConfig(params) &&
-      !(known?.workspaceRuntime ?? input.workspaceRuntime(params))
-    ) return undefined
-    const directory = params?.directory
-    if (!params || !directory) return undefined
+  const status = async (params?: ScopeInput): Promise<HarnessState | undefined> => {
+    const placementId = params?.placementId
+    if (!params || !placementId) return undefined
     const sessionId = params.sessionId
     if (sessionId && sessionId !== "new") {
-      // Built rather than asserted: the two guards above are exactly what
-      // `HydratedSessionInput` requires, so the hydrated scope states them.
-      const hydrated: HydratedSessionInput<ScopeInput> = { ...params, directory, sessionId }
-      const config = await input.cache.fetchSessionConfig(hydrated, async () => {
-        const res = await input.runtime.harnessSessionFetch(params)(
-          sessionResourceUrl({
-            serverUrl: input.base,
-            sessionID: sessionId,
-            directory,
-            resource: "config",
-          }),
-        )
+      const ref = params.sessionRef
+      if (!ref) return undefined
+      const config = await input.cache.fetchSessionConfig(params, async () => {
+        const res = await input.runtime.sessionConfig(ref)
         if (!res.ok) return null
         return await res.json().catch(() => null)
       })
@@ -117,9 +75,9 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
       if (hit) return hit
       // A successful object response is not a transport retry. If it violates
       // the existing-session config contract by omitting harness identity, keep
-      // the authoritative SessionRef identity visible and settle as unavailable
+      // the harness the session's row names visible and settle as unavailable
       // instead of polling forever or exposing the seeded OpenCode selection.
-      const refType = params.sessionRef?.harness
+      const refType = params.sessionHarness
       if (refType && config !== null && typeof config === "object" && !Array.isArray(config)) {
         return {
           type: refType,
@@ -135,14 +93,7 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
       // an unrelated OpenCode selection after a transient config failure.
       return undefined
     }
-    const res = await input.runtime.localHarnessConfigFetch(params)(
-      harnessConfigUrl({
-        serverUrl: input.base,
-        directory: params.directory,
-        ...(known?.workspaceId ? { workspaceId: known.workspaceId } : {}),
-        sessionId: params.sessionId,
-      }),
-    )
+    const res = await input.runtime.folderHarness(placementId)
     if (!res.ok) return undefined
     return decodeHarnessState(await res.json())
   }
@@ -167,7 +118,8 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
     const active = () => generations.get(scope) === generation
 
     const run = (async () => {
-      if (!params?.directory) return
+      const placementId = params?.placementId
+      if (!params || !placementId) return
       if (!params.sessionId || params.sessionId === "new") {
         if (draftDefault?.saved) {
           if (!active()) return
@@ -177,15 +129,11 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
           if (configOptions === undefined) return
           if (configOptions) await input.fetchConfigOptions(scope, type, params)
           else input.setReadyHydration(scope, type, false)
-          await input.refresh(params.directory, refreshHarnessTypeForScope({ directory: params.directory, harness: type }), { draft: true })
           if (active()) input.cache.setSeen(scope, key)
           return
         }
-        const useLocalHarnessConfig = input.runtime.useLocalHarnessConfig(params)
-        const backing = await draftWorkspaceBacking(params, useLocalHarnessConfig)
-        if (!active()) return
-        if (shouldHydrateDraftFromHarnessStatus({ useLocalHarnessConfig, ...backing })) {
-          const data = await status(params, backing).catch(() => undefined)
+        if (shouldHydrateDraftFromHarnessStatus({ placementKind: input.runtime.placementKind(placementId) })) {
+          const data = await status(params).catch(() => undefined)
           if (!active()) return
           if (data) {
             await applyAndMarkSeen(scope, data, params, key, active)
@@ -200,7 +148,6 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
           if (configOptions) await input.fetchConfigOptions(scope, type, params)
           else input.setReadyHydration(scope, type, false)
         }
-        await input.refresh(params.directory, type ? refreshHarnessTypeForScope({ directory: params.directory, harness: type }) : undefined, { draft: true })
         if (active()) input.cache.setSeen(scope, key)
         return
       }
@@ -209,9 +156,9 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
       if (!data) {
         // A missing/failed config is not evidence that the existing session
         // belongs to a different harness. Keep it retryable and, when the
-        // SessionRef already carries authoritative harness identity, expose
-        // that identity while the model/config is still connecting.
-        input.setPollingHydration(scope, params.sessionRef?.harness)
+        // session's row names its harness, expose that harness while the
+        // model/config is still connecting.
+        input.setPollingHydration(scope, params.sessionHarness)
         return
       }
       await applyAndMarkSeen(scope, data, params, key, active)
@@ -224,31 +171,6 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
       if (generations.get(scope) === generation) generations.delete(scope)
       input.cache.removePending(scope, run)
     })
-  }
-
-  /**
-   * What serves a draft's workspace. The inventory answers synchronously once
-   * loaded; a `workspace:` ref it has not described yet is resolved from the
-   * record, because a draft hydrated before its workspace is known would
-   * commit the seed harness and never ask again.
-   */
-  const draftWorkspaceBacking = async (params: ScopeInput, useLocalHarnessConfig: boolean) => {
-    const ref = input.runtime.workspaceRef?.(params)
-    const known = ref?.kind ?? input.runtime.hostKind?.(params)
-    if (known || useLocalHarnessConfig || !workspaceIdFromRef(params.directory)) {
-      return {
-        workspaceRuntime: input.workspaceRuntime(params),
-        hostKind: known,
-        ...(ref ? { workspaceId: ref.workspaceId } : {}),
-      }
-    }
-    const resolved = await input.runtime.workspace?.(params).catch(() => undefined)
-    const kind = resolved?.kind
-    return {
-      workspaceRuntime: input.workspaceRuntime(params) || isRelayHostKind(kind),
-      hostKind: kind,
-      ...(resolved?.workspaceId ? { workspaceId: resolved.workspaceId } : {}),
-    }
   }
 
   const applyAndMarkSeen = async (
@@ -274,7 +196,7 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
   }
 
   // An explicit user selection owns the scope immediately. Any hydration
-  // already waiting on status/refresh must not apply its older server snapshot
+  // already waiting on its status read must not apply its older server snapshot
   // after that click and silently restore the previous harness.
   const cancel = (scope: string) => {
     generations.delete(scope)
@@ -290,21 +212,7 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
 
 function stamp(input?: HarnessScopeInput) {
   if (input?.sessionId && input.sessionId !== "new") {
-    const ref = input.sessionRef
-    if (!ref) return `session:${input.sessionId}`
-    const sandbox = ref.toolSandbox
-    const backing = sandbox?.kind === "workspace"
-      ? `${sandbox.workspaceId}:${sandbox.hosting}:${sandbox.hostId ?? ""}`
-      : sandbox?.kind === "local" ? sandbox.cwd : ""
-    return [
-      `session:${input.sessionId}`,
-      ref.host,
-      ref.workspaceId ?? "",
-      ref.cwd ?? "",
-      sandbox?.kind ?? "",
-      backing,
-      ref.harness ? JSON.stringify(ref.harness) : "",
-    ].join("\n")
+    return [`session:${input.sessionId}`, input.placementId ?? "", input.sessionHarness ? JSON.stringify(input.sessionHarness) : ""].join("\n")
   }
-  return `${input?.directory ?? ""}\nnew`
+  return `${input?.placementId ?? ""}\nnew`
 }

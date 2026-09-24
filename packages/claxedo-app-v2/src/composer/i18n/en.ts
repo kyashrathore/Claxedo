@@ -26,12 +26,6 @@ export type ComposerTextKey =
   | "composer.action.dismiss"
   | "composer.action.cancel"
   | "composer.action.save"
-  | "composer.picker.agent"
-  | "composer.picker.model"
-  | "composer.picker.effort"
-  | "composer.picker.permissionMode"
-  | "composer.picker.default"
-  | "composer.picker.unavailable"
   | "composer.attachment.remove"
   | "composer.attachment.reading"
   | "composer.attachment.refused.title"
@@ -53,6 +47,11 @@ export type ComposerTextKey =
   | "composer.error.conflict"
   | "composer.error.invalid"
   | "composer.error.internal"
+  | "dialog.model.search.placeholder"
+  | "dialog.model.empty"
+  | "command.provider.connect"
+  | "model.tag.free"
+  | "model.tag.latest"
 
 export const composerEnglish: Record<ComposerTextKey, string> = {
   "composer.placeholder.normal": "Ask anything...",
@@ -82,12 +81,6 @@ export const composerEnglish: Record<ComposerTextKey, string> = {
   "composer.action.dismiss": "Dismiss",
   "composer.action.cancel": "Cancel",
   "composer.action.save": "Save",
-  "composer.picker.agent": "Agent",
-  "composer.picker.model": "Model",
-  "composer.picker.effort": "Effort",
-  "composer.picker.permissionMode": "Permission mode",
-  "composer.picker.default": "Default",
-  "composer.picker.unavailable": "Not installed",
   "composer.attachment.remove": "Remove attachment",
   "composer.attachment.reading": "Reading {{filename}}…",
   "composer.attachment.refused.title": "{{harness}} cannot take this attachment",
@@ -109,4 +102,9 @@ export const composerEnglish: Record<ComposerTextKey, string> = {
   "composer.error.conflict": "Someone else changed this session first. Reload it and retry.",
   "composer.error.invalid": "The request was rejected as invalid.",
   "composer.error.internal": "Something went wrong on the server.",
+  "dialog.model.search.placeholder": "Search models",
+  "dialog.model.empty": "No model results",
+  "command.provider.connect": "Connect provider",
+  "model.tag.free": "Free",
+  "model.tag.latest": "Latest",
 }
