@@ -118,7 +118,7 @@ function SessionBody(props: {
   return (
     <div ref={body} data-slot="session-screen-body" classList={{ "session-floating-overlay": props.floating }}>
       <div data-slot="session-screen-transcript" classList={{ "session-floating-tab": props.floating }}>
-        <Show when={props.floating}>
+        <Show when={props.floating && users().length > 0}>
           <div class="session-floating-peek">
             <PreviousMessagesRow
               count={users().length}
