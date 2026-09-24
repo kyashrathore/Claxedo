@@ -1,29 +1,35 @@
 import { Show, type JSX } from "solid-js"
-import { t } from "../i18n"
+import { useActiveSession } from "@/files"
+import { useTranslator } from "@/i18n"
+import { useReviewCommands } from "../commands"
+import { dictionary } from "../i18n"
 import { useReview } from "../store"
-import { ChangedFiles } from "./changed-files"
 import { CommitBox } from "./commit-box"
-import { PendingComments } from "./pending-comments"
+import { ReviewDiffs } from "./review-diffs"
 import { ScopePicker } from "./scope-picker"
 import { StatusLine } from "./status-line"
 import { Worktrees } from "./worktrees"
 
 export function ChangesTab(): JSX.Element {
+  const t = useTranslator(dictionary)
   const review = useReview()
+  const session = useActiveSession()
+  useReviewCommands(review)
   return (
-    <div data-component="changes-tab" class="flex size-full min-h-0 flex-col overflow-auto bg-background-base">
-      <Show
-        when={review.placementId()}
-        fallback={<div class="px-3 py-6 text-center text-12-regular text-text-weak">{t("review.noPlacement")}</div>}
-      >
+    <div data-testid="changes-tab" class="flex size-full min-h-0 flex-col bg-background-base">
+      <Show when={review.placementId()} keyed fallback={<p class="px-3 py-6 text-center text-sm text-text-muted">{t("review.noPlacement")}</p>}>
         {(placementId) => (
           <>
-            <ScopePicker placementId={placementId()} />
-            <StatusLine placementId={placementId()} />
-            <ChangedFiles placementId={placementId()} />
-            <PendingComments />
-            <CommitBox placementId={placementId()} />
-            <Worktrees placementId={placementId()} />
+            <StatusLine placementId={placementId} />
+            <ScopePicker placementId={placementId} />
+            <Show when={!session()}>
+              <p class="shrink-0 px-3 py-1 text-xs text-text-muted">{t("review.comment.needSession")}</p>
+            </Show>
+            <div class="flex min-h-0 flex-1 flex-col">
+              <ReviewDiffs placementId={placementId} />
+            </div>
+            <CommitBox placementId={placementId} />
+            <Worktrees placementId={placementId} />
           </>
         )}
       </Show>

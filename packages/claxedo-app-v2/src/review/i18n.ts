@@ -1,3 +1,4 @@
+import type { Translations } from "@/i18n"
 import { dict as zh } from "./locales/zh"
 import { dict as zht } from "./locales/zht"
 import { dict as ko } from "./locales/ko"
@@ -15,7 +16,7 @@ import { dict as br } from "./locales/br"
 import { dict as th } from "./locales/th"
 import { dict as tr } from "./locales/tr"
 
-export const en = {
+const en = {
   "review.tab": "Changes",
   "review.noPlacement": "Open a project to review its changes",
   "review.scope.label": "Compare",
@@ -36,39 +37,31 @@ export const en = {
   "review.showBranchDiff": "Show branch diff vs {{base}}",
   "review.loading": "Loading changes",
   "review.retry": "Retry",
-  "review.openFile": "Open file",
-  "review.expand": "Show diff",
-  "review.collapse": "Hide diff",
+  "review.loadFailed": "The changes could not be loaded",
+  "review.diff.failed": "This diff could not be loaded",
+  "review.style.label": "Diff style",
   "review.change.added": "Added",
-  "review.change.modified": "Modified",
   "review.change.deleted": "Deleted",
-  "review.change.renamed": "Renamed",
-  "review.change.untracked": "Untracked",
-  "review.change.conflicted": "Conflicted",
   "review.diff.loading": "Loading diff",
   "review.diff.media": "No text diff for this file",
-  "review.diff.empty": "No diff content",
   "review.largeDiff.title": "Diff too large to render",
   "review.largeDiff.meta": "Limit: {{limit}} changed lines. Current: {{current}} changed lines.",
   "review.largeDiff.renderAnyway": "Render anyway",
   "review.style.unified": "Unified",
   "review.style.split": "Split",
   "review.style.toggle": "Toggle diff style",
-  "review.comment.placeholder": "Add comment",
-  "review.comment.add": "Add comment",
-  "review.comment.cancel": "Cancel",
-  "review.comment.line": "line {{line}}",
-  "review.comment.lines": "lines {{start}}-{{end}}",
-  "review.comment.on": "Comment on {{target}}",
-  "review.comment.pending": "Comments for the agent",
   "review.comment.remove": "Remove comment",
+  "review.comment.submit": "Comment",
+  "review.comment.save": "Save",
+  "review.comment.edit": "Edit",
+  "review.comment.more": "Comment options",
+  "review.comment.needSession": "Open a session to comment on lines for its agent",
   "review.commit.message": "Message (⌘⏎ to commit)",
   "review.commit": "Commit",
   "review.commit.files": "Files to commit",
   "review.commit.staging": "Staging…",
   "review.commit.committing": "Committing…",
   "review.commit.done": "Committed {{hash}}",
-  "review.commit.nothing": "Select at least one file",
   "review.push": "Push",
   "review.publish": "Publish Branch",
   "review.push.pushing": "Pushing…",
@@ -87,32 +80,8 @@ export const en = {
   "review.worktrees.create": "Create worktree",
   "review.worktrees.creating": "Creating…",
   "review.worktrees.created": "Created {{label}}",
-} as const
+}
 
 export type ReviewKey = keyof typeof en
 
-export const reviewDictionaries: Readonly<Record<string, Readonly<Partial<Record<ReviewKey, string>>>>> = {
-  en,
-  zh,
-  zht,
-  ko,
-  de,
-  es,
-  fr,
-  da,
-  ja,
-  pl,
-  ru,
-  bs,
-  ar,
-  no,
-  br,
-  th,
-  tr,
-}
-
-export function t(key: ReviewKey, params?: Readonly<Record<string, string | number>>): string {
-  const template: string = en[key]
-  if (!params) return template
-  return template.replace(/\{\{(\w+)\}\}/g, (match, name: string) => (name in params ? String(params[name]) : match))
-}
+export const dictionary = { en, ar, br, bs, da, de, es, fr, ja, ko, no, pl, ru, th, tr, zh, zht } satisfies Translations<ReviewKey>

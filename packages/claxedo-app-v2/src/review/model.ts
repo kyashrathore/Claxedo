@@ -1,8 +1,6 @@
 import { machine, unreachable, type Machine } from "@/lib/machine"
-import type { AppError, DiffScope, GitPushResult, Placement, PromptAttachment } from "@/server"
-import { basename } from "@/files"
+import type { AppError, DiffScope, GitPushResult, Placement } from "@/server"
 import type { ReviewKey } from "./i18n"
-import { t } from "./i18n"
 
 export const defaultScope: DiffScope = { kind: "uncommitted" }
 
@@ -14,19 +12,9 @@ export function scopeEquals(a: DiffScope, b: DiffScope): boolean {
 
 export type DiffStyle = "unified" | "split"
 
-export type LineSide = "additions" | "deletions"
-
-export type LineComment = {
-  readonly id: string
-  readonly file: string
-  readonly start: number
-  readonly end: number
-  readonly side: LineSide
-  readonly text: string
-  readonly preview?: string
+export function readDiffStyle(value: unknown): DiffStyle | undefined {
+  return value === "unified" || value === "split" ? value : undefined
 }
-
-export type LineCommentInput = Omit<LineComment, "id">
 
 const ERROR_CLASSES = new Set(["auth", "rate_limit", "network", "not_found", "conflict", "invalid", "internal"])
 
@@ -54,9 +42,11 @@ const GIT_ERROR_KEYS: Readonly<Record<string, ReviewKey>> = {
   git_timeout: "review.error.git_timeout",
 }
 
-export function errorText(error: AppError): string {
+export type ErrorCopy = { readonly key: ReviewKey; readonly params: { readonly message: string } }
+
+export function errorCopy(error: AppError): ErrorCopy | undefined {
   const key = error.code === undefined ? undefined : GIT_ERROR_KEYS[error.code]
-  return key === undefined ? error.message : t(key, { message: error.message })
+  return key === undefined ? undefined : { key, params: { message: error.message } }
 }
 
 export type Flow<Step extends string, Result> =
@@ -115,18 +105,3 @@ export async function runFlow<Step extends string, Result>(
 export type CommitFlow = Flow<"staging" | "committing", { readonly hash: string }>
 export type PushFlow = Flow<"pushing", GitPushResult>
 export type WorktreeFlow = Flow<"creating", Placement>
-
-export function commentRangeLabel(comment: Pick<LineComment, "start" | "end">): string {
-  if (comment.start === comment.end) return t("review.comment.line", { line: comment.start })
-  return t("review.comment.lines", { start: comment.start, end: comment.end })
-}
-
-export function commentLabel(comment: LineComment): string {
-  return `${basename(comment.file)}:${comment.start}`
-}
-
-export function commentAttachment(comment: LineComment): PromptAttachment {
-  const range = comment.start === comment.end ? `${comment.start}` : `${comment.start}-${comment.end}`
-  const quoted = comment.preview ? `\n${comment.preview}` : ""
-  return { kind: "text", label: commentLabel(comment), text: `${comment.file}:${range}${quoted}\n\n${comment.text}` }
-}

@@ -1,11 +1,12 @@
-import type { PanelTab } from "@/shell/types"
-import { t } from "./i18n"
+import { useTranslator } from "@/i18n"
+import type { PanelTab } from "@/shell"
+import { dictionary } from "./i18n"
 import { ChangesTab } from "./view/changes-tab"
 
 export const changesPanelTab: PanelTab = {
   id: "changes",
-  title: () => t("review.tab"),
-  icon: "git-branch",
+  title: () => useTranslator(dictionary)("review.tab"),
+  icon: "changes",
   order: 20,
   view: ChangesTab,
 }
