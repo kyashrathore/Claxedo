@@ -6,7 +6,7 @@ Owns: the app frame and nothing a feature knows about. Three regions and one pag
 
 - **Sidebar** (left): `main` mode shows what `AppShell` receives as `mainSidebar` (the rail); `settings` mode shows `SettingsSidebar`, the sections from the `settingsSections` registry grouped by `account`, `workspace`, `app`. The URL decides the mode: a page whose entry says `sidebar: "settings"` switches it.
 - **Center**: the workbench of split panes (`src/workbench/`), or the one **page tab** when the URL names a `PageEntry` (Settings, Marketplace, Tasks, Pages, projects, plugin pages). The page tab cannot split or drag; opening another page reuses it; its state is the URL.
-- **Workspace panel** (right): the `panelTabs` registry, filtered by each tab's `when()`, with the active tab and width kept per scope (the focused session's project, or `default`).
+- **Workspace panel** (right): the `panelTabs` registry, filtered by each tab's `when()`, with the active tab and width kept per scope: the current placement (`placementOf(route)`), or `default` when the URL names none. A focused pane with no route, such as a file, leaves the URL and so the scope on the last placement.
 - **Top bar**: the sidebar and panel toggles, the workbench tab strip on a wide screen, the pane switcher on a phone, the page header for a page.
 
 ## State machines
@@ -19,7 +19,11 @@ Id-only: `/` (home), `/w/:placementId/s/:sessionId`, `/w/:placementId/t/:termina
 
 ## Placement providers (`placement-providers.tsx`)
 
-The domains whose state is kept per placement (files, review, browser) get their providers here, inside the workbench, fed `useShellRoute().placementId` and `useWorkbench().openByKind`. Their commands are added to the `commands` registry while the shell is mounted.
+The domains whose state is kept per placement (terminal, files, review, browser) get their providers here, inside the workbench, fed `useShellRoute().placementId` and `useWorkbench().openByKind`. Their commands are added to the `commands` registry while the shell is mounted. The composer's draft store sits above the workbench, inside the principal's scope, so another principal starts with no drafts.
+
+## First run (`first-run.tsx`)
+
+On the home route, when the projects list has loaded and is empty (`onboardingNeeded`), the shell replaces the URL with the onboarding screen. Loading and failed lists never redirect.
 
 ## Registries (`registries.ts`, `registry.ts`)
 
@@ -35,7 +39,7 @@ Below 768 px the sidebar is a drawer and the workspace panel a sheet (both Kobal
 
 ## Placeholders
 
-`placeholders/` holds stand-ins for exports other lanes have not landed: the server and the session pane kind. Each is deleted when the real export lands.
+`placeholders/` holds the stand-in server until the adapter's `createServer` lands.
 
 ## Flows
 
