@@ -81,6 +81,7 @@ export type SessionView = {
   readonly turnSettlePending: (userMessageId: string) => boolean
   readonly queue: QueuedMessages
   readonly requests: Accessor<readonly AgentRequest[]>
+  readonly requestsError: Accessor<AppError | undefined>
   readonly requestState: (requestId: RequestId) => RequestState
   readonly todos: Accessor<readonly Todo[]>
   readonly diff: Accessor<readonly FileDiff[]>

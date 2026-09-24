@@ -85,4 +85,5 @@ export const th: Partial<Record<SessionScreenTextKey, string>> = {
   "command.message.previous.description": "ไปที่ข้อความผู้ใช้ก่อนหน้า",
   "command.message.next": "ข้อความถัดไป",
   "command.message.next.description": "ไปที่ข้อความผู้ใช้ถัดไป",
+  "sessionScreen.requests.loadFailed": "ไม่สามารถโหลดคำขอสิทธิ์หรือคำถามที่รอดำเนินการได้ ลองอีกครั้งเพื่อดำเนินการต่อ",
 }

@@ -138,11 +138,15 @@ export type SessionGoalState = {
   readonly actions: readonly GoalAction[]
 }
 
+export type SessionRequestsRead =
+  | { readonly kind: "read"; readonly requests: readonly AgentRequest[] }
+  | { readonly kind: "failed"; readonly error: AppError }
+
 export type SessionSnapshot = {
   readonly row: SessionRow
   readonly status: SessionStatus
   readonly transcript: TranscriptPage
-  readonly requests: readonly AgentRequest[]
+  readonly requests: SessionRequestsRead
   readonly todos: readonly Todo[]
   readonly diff: readonly FileDiff[]
   readonly goal: SessionGoalState

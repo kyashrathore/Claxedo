@@ -9,6 +9,7 @@ export type SessionScreenTextKey =
   | "sessionScreen.draft.title"
   | "sessionScreen.action.retry"
   | "sessionScreen.failed"
+  | "sessionScreen.requests.loadFailed"
   | "sessionScreen.action.dismiss"
   | "sessionScreen.action.back"
   | "sessionScreen.action.next"
@@ -78,6 +79,7 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.draft.title": "New Session",
   "sessionScreen.action.retry": "Retry",
   "sessionScreen.failed": "Could not load this session.",
+  "sessionScreen.requests.loadFailed": "Could not load pending permissions or questions. Retry to continue.",
   "sessionScreen.action.dismiss": "Dismiss",
   "sessionScreen.action.back": "Back",
   "sessionScreen.action.next": "Next",

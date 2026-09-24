@@ -63,6 +63,7 @@ function sessionView(context: TranscriptContext): SessionView {
     turnSettlePending: (userMessageId) => isReading(phase.state()) && lastUserId() === userMessageId,
     queue,
     requests: () => deps.requests.openFor(ref.sessionId),
+    requestsError: () => deps.requests.readErrorFor(ref.sessionId),
     requestState: deps.requests.stateOf,
     todos: () => data.todos,
     diff: () => data.diff,
