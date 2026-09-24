@@ -1,4 +1,5 @@
-import { Match, Show, Switch, type JSX } from "solid-js"
+import { Match, onCleanup, Show, Switch, type JSX } from "solid-js"
+import { useDragSource, useWorkbench } from "@/workbench"
 import type { HoverEngagement } from "../hover-engagement"
 import type { NavigationStatus } from "../model"
 
@@ -14,12 +15,26 @@ export type NavigationRowProps = {
   readonly onActivate: () => void
   readonly onContextMenu?: (event: MouseEvent) => void
   readonly engagement: HoverEngagement
+  readonly prepareDrag?: () => string | undefined
   readonly children: JSX.Element
 }
 
 export function NavigationRow(props: NavigationRowProps): JSX.Element {
+  const workbench = useWorkbench()
+  const drag = (element: HTMLElement) => {
+    const prepare = props.prepareDrag
+    if (!prepare) return
+    const dispose = useDragSource(workbench.drag, element, {
+      contentId: prepare,
+      sourceKind: "navigation-row",
+      label: () => props.label,
+      onDropMissed: () => props.onActivate(),
+    })
+    onCleanup(dispose)
+  }
   return (
     <div
+      ref={drag}
       {...props.data}
       data-active={props.active ? "true" : "false"}
       class={props.class ? `${ROW_SHELL_CLASS} ${props.class}` : ROW_SHELL_CLASS}

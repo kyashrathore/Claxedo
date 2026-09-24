@@ -5,7 +5,7 @@ import { useServer } from "@/server"
 import { useShellRoute } from "@/shell"
 import { useWorkbench } from "@/workbench"
 import { createRendererBudget } from "./backend/renderer-budget"
-import { useEndTerminalOnClose } from "./close"
+import { useCloseEndedTerminals, useEndTerminalOnClose } from "./close"
 import { useNewTerminalCommand } from "./commands"
 import { TerminalsContext, type Terminals } from "./context"
 import { dictionary } from "./i18n"
@@ -39,5 +39,6 @@ export function TerminalProvider(props: ParentProps): JSX.Element {
   }
   useNewTerminalCommand(terminals)
   useEndTerminalOnClose(terminals)
+  useCloseEndedTerminals(terminals)
   return <TerminalsContext.Provider value={terminals}>{props.children}</TerminalsContext.Provider>
 }

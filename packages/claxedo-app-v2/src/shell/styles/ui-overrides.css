@@ -568,10 +568,6 @@ html[data-theme="codex"] [data-testid="rail-sidebar"] > :first-child {
   border-bottom-color: var(--shell-border-sidebar);
 }
 
-html[data-theme="codex"] .session-envcard.is-floating {
-  background: var(--shell-surface-composer);
-}
-
 html[data-theme="codex"] [data-testid="global-navigation"] {
   border-bottom-color: var(--shell-border-sidebar);
 }

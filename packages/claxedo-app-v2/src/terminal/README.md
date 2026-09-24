@@ -15,11 +15,11 @@ Owns: terminal panes, the one attach path to a runtime PTY, terminal links, the 
 ## State machines
 
 - **Connection** (`model.ts`): `connecting → attached`. A retriable close moves to `detached(attempt)`, which reconnects on its own with a 1 s to 16 s backoff for six attempts, after checking the terminal still exists. `failed(failure)` waits for the user: the attempts ran out, the stream closed for good, the output overloaded, the checkpoint could not be restored, or the backend could not start. `gone` means the runtime no longer has the PTY; `exited(code)` means the shell ended. Both offer to recreate the terminal in the same pane.
-- **List load** (`model.ts`): `idle → loading → ready | failed`. A pane whose terminal is absent from a `ready` list shows that the terminal no longer exists.
+- **List load** (`model.ts`): `idle → loading → ready | failed`. The store's rows are the one list of live terminals: the rail lists them, and `useCloseEndedTerminals` (`close.ts`) closes every workbench content (pane or compact tab) whose terminal is absent from a `ready` list, as v1 drops dead terminals. That covers a content restored after the daemon restarted and a shell that exited.
 
 ## Invariants
 
-- Closing a terminal tab ends its PTY: the provider listens to the workbench's `onClosed` for the `terminal` kind and removes the terminal on the server. Replacing a gone terminal's pane fires the same hook, and the server's `not_found` answer for it is the expected end state. A failure to end it is logged and shown.
+- Closing a terminal tab ends its PTY: the provider listens to the workbench's `onClosed` for the `terminal` kind and removes the terminal on the server. The store treats the server's `not_found` answer as ended and drops the row, so closing a terminal that already died clears it from the rail too. A failure to end it is logged and shown.
 - `TerminalProvider` mounts once inside the scoped shell, under the commands provider, because it reads the route, the workbench and the command registry. It owns the stores, at most 8 placements, and never evicts a placement a mounted pane retains.
 - The placement a new terminal opens in is the one the URL names.
 - Status copy comes from the failure reason, never from an error's message.

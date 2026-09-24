@@ -102,7 +102,7 @@ export function Composer(props: ComposerProps) {
       newSession={() => !props.view}
       mode={mode}
       dirty={dirty}
-      collapsed={() => false}
+      collapsed={() => !!props.collapsible && !controller.state.focused && !dirty() && composer.draft().context.length === 0 && popover() === null}
       draggingType={() => (composer.dragging() === "files" ? "image" : composer.dragging() === "mention" ? "@mention" : null)}
       designPlaceholder={designPlaceholder}
       handleRootFocusIn={() => undefined}

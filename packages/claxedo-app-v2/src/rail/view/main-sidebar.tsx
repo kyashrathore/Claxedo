@@ -27,6 +27,7 @@ function UsageButton(): JSX.Element {
 }
 
 export function MainSidebar(): JSX.Element {
+  let foot: HTMLDivElement | undefined
   return (
     <>
       <div
@@ -37,9 +38,9 @@ export function MainSidebar(): JSX.Element {
         <ProjectTree />
       </div>
       <div class="px-2.5 py-2">
-        <div class="flex items-center gap-1 border-t border-border-weak-base/15 pt-2">
+        <div ref={foot} class="flex items-center gap-1 border-t border-border-weak-base/15 pt-2">
           <div class="min-w-0 flex-1">
-            <AccountCard />
+            <AccountCard anchor={() => foot} />
           </div>
           <UsageButton />
         </div>

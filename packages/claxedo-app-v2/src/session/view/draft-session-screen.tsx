@@ -1,5 +1,5 @@
 import { Composer, ComposerNoticeProvider, ComposerNoticeRow, createComposerNoticeChannel, draftComposerKey, type Submission } from "@/composer"
-import { NewSessionContextRow } from "@/projects"
+import { NewSessionContextRow, resolveDraftPlacement } from "@/projects"
 import type { PlacementId, ProjectId } from "@/server"
 import { useSessionStores, type SessionView } from "@/session"
 import type { PaneProps } from "@/shell"
@@ -23,7 +23,7 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
   const notice = createComposerNoticeChannel()
   let pane: HTMLDivElement | undefined
   const createSession = async (submission: Submission): Promise<SessionView> => {
-    const ref = await stores.list.create({ placementId: props.state.placementId, harness: submission.harness, model: submission.model })
+    const ref = await stores.list.create({ placementId: await resolveDraftPlacement(props.state), harness: submission.harness, model: submission.model })
     return stores.open(ref)
   }
   return (
