@@ -140,6 +140,7 @@
   --radius-5xl: 1.125rem;
   --radius-pill: 9999px;
 
+  --shadow-thumb: 0 1px 2px rgb(0 0 0 / 0.18);
   --shadow-xs:
     0 1px 2px -0.5px light-dark(hsl(0 0% 0% / 0.04), hsl(0 0% 0% / 0.06)),
     0 0.5px 1.5px 0 light-dark(hsl(0 0% 0% / 0.025), hsl(0 0% 0% / 0.08)),
