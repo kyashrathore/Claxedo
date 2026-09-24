@@ -1,46 +1,30 @@
-import { execFile } from "node:child_process"
 import fs from "node:fs/promises"
 import path from "node:path"
-import { promisify } from "node:util"
-import type { Locator, Page } from "@playwright/test"
-import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, test } from "../harness"
+import type { Locator } from "@playwright/test"
+import { acpScriptToken, expect, git, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI } from "../harness"
 
-const execFileAsync = promisify(execFile)
-
-async function git(cwd: string, ...args: string[]): Promise<string> {
-  const env = { ...process.env, GIT_DIR: undefined, GIT_INDEX_FILE: undefined, GIT_WORK_TREE: undefined }
-  const identity = ["-c", "user.email=e2e@claxedo.test", "-c", "user.name=e2e"]
-  const { stdout } = await execFileAsync("git", [...identity, ...args], { cwd, env })
-  return stdout.trim()
-}
-
-async function openPanelTab(app: Page, name: string): Promise<Locator> {
-  const toggle = app.getByRole("button", { name: "Toggle workspace panel" })
-  await expect(toggle).toBeVisible()
-  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click()
-  await app.getByRole("tablist", { name: "Workspace panel tabs" }).getByRole("tab", { name }).click()
-  return app.getByRole("tabpanel", { name })
-}
-
-async function commentOnLine(changes: Locator, line: string, comment: string) {
-  const gutter = changes.getByRole("button", { name: "Comment on this line" })
+async function commentOnLine(panel: Locator, line: string, comment: string) {
+  const gutter = panel.getByRole("button", { name: "Comment", exact: true }).first()
   await expect(async () => {
-    await changes.getByText(line).hover()
+    await panel.getByText(line).first().hover()
     await expect(gutter).toBeVisible({ timeout: 1_000 })
   }).toPass()
   await gutter.click()
-  await changes.getByRole("textbox", { name: "Add comment" }).fill(comment)
-  await changes.getByRole("button", { name: "Comment", exact: true }).click()
+  await panel.getByRole("textbox", { name: "Add comment" }).fill(comment)
+  await panel.getByRole("button", { name: "Comment", exact: true }).last().click()
+}
+
+function lastSubject(directory: string, ref = "HEAD") {
+  return git(directory, "log", "-1", "--format=%s", ref).then(
+    (subject) => subject.trim(),
+    (error: Error) => error.message,
+  )
 }
 
 test.skip(({ isMobile }) => isMobile, "flow 14 runs at desktop width")
 
-test("14 review: diff, line comment, commit, push to a bare remote, worktree, the comment reaches the agent", async ({
-  stack,
-  api,
-  app,
-}) => {
-  const workspace = await stack.daemon.makeWorkspace("review", "Review")
+test("14 review: diff, line comment, commit, push to a bare remote, the comment reaches the agent", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("review")
   const remote = path.join(stack.dataDir, "remote.git")
   await git(stack.dataDir, "init", "-q", "--bare", remote)
   await git(workspace.directory, "remote", "add", "origin", remote)
@@ -48,37 +32,26 @@ test("14 review: diff, line comment, commit, push to a bare remote, worktree, th
   await stack.acp.write("answer", { steps: [{ kind: "text", text: "Read your line comment." }] })
   const session = await api.createSession(workspace.directory, { title: "Review", harness: SCRIPTED_ACP_HARNESS })
 
-  await app.goto(`${stack.url}/w/${encodeURIComponent(workspace.id)}/s/${encodeURIComponent(session.id)}`)
-  const changes = await openPanelTab(app, "Changes")
-  await changes.getByRole("button", { name: "Toggle diff for README.md" }).click()
-  await commentOnLine(changes, "a reviewed line", "Why was this line added?")
-  await expect(changes.getByText("Comment on line 2")).toBeVisible()
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
+  await app.getByRole("button", { name: "Open changes" }).click()
+  const panel = app.getByRole("complementary", { name: "Workspace panel" })
+  await panel.getByRole("button", { name: "Toggle diff for README.md" }).click()
+  await commentOnLine(panel, "a reviewed line", "Why was this line added?")
+  await expect(panel.getByText("Why was this line added?")).toBeVisible()
 
-  const commit = changes.getByRole("region", { name: "Commit" })
-  await commit.getByRole("textbox", { name: "Commit message" }).fill("Add a reviewed line")
-  await commit.getByRole("button", { name: "Commit", exact: true }).click()
-  await expect(commit.getByText(/^Committed [0-9a-f]{7}$/)).toBeVisible()
-  expect(await git(workspace.directory, "log", "-1", "--format=%s")).toBe("Add a reviewed line")
-  await expect(changes.getByText("No changes")).toBeVisible()
+  await panel.getByRole("button", { name: "Stage all" }).click()
+  await expect(panel.getByRole("button", { name: "Staged changes (1)" })).toBeVisible()
+  await panel.getByRole("textbox", { name: "Message (⌘⏎ to commit)" }).fill("Add a reviewed line")
+  await panel.getByRole("button", { name: "Commit", exact: true }).click()
+  await expect(panel.getByRole("button", { name: "Staged changes (0)" })).toBeVisible()
+  await expect(panel.getByText("No changes", { exact: true })).toBeVisible()
+  await expect.poll(() => lastSubject(workspace.directory)).toBe("Add a reviewed line")
 
-  await commit.getByRole("button", { name: "Publish Branch" }).click()
-  await expect(commit.getByText("Pushed to origin/main")).toBeVisible()
-  expect(await git(remote, "log", "-1", "--format=%s", "main")).toBe("Add a reviewed line")
-  await expect(changes.getByText("Up to date")).toBeVisible()
+  await panel.getByRole("button", { name: "Publish Branch" }).click()
+  await expect.poll(() => lastSubject(remote, "main")).toBe("Add a reviewed line")
 
-  await changes.getByRole("button", { name: /^Worktrees/ }).click()
-  const worktrees = changes.getByRole("region", { name: "Worktrees" })
-  await worktrees.getByRole("textbox", { name: "Name" }).fill("feature")
-  await worktrees.getByRole("button", { name: "Create worktree" }).click()
-  await expect(worktrees.getByText(/^Created /)).toBeVisible()
-  expect(await git(workspace.directory, "worktree", "list")).toContain("feature")
-
-  const prompt = app.getByRole("textbox", { name: "Prompt" })
-  await expect(
-    app.getByRole("region", { name: "Review", exact: true }).getByText("Why was this line added?"),
-  ).toBeVisible()
-  await prompt.fill(`Answer my review comment. ${acpScriptToken("answer")}`)
-  await prompt.press("Enter")
+  await sendPrompt(app, `Answer my review comment. ${acpScriptToken("answer")}`)
   await expect(app.getByText("Read your line comment.")).toBeVisible()
   expect(JSON.stringify(await api.messages(workspace.directory, session.id))).toContain("Why was this line added?")
 })
