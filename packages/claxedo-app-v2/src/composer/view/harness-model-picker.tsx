@@ -1,7 +1,6 @@
 import { For, Show, createMemo, createSignal, type Accessor, type JSX } from "solid-js"
 import { Popover as Kobalte } from "@kobalte/core/popover"
-import { Button } from "@opencode-ai/ui/button"
-import { ClaxedoIcon as Icon } from "@/ui"
+import { ClaxedoIcon as Icon, Button } from "@/ui"
 import { ModelList, type PickerState } from "./model-list"
 import { COMPOSER_MENU_CLASS } from "./menu-metrics"
 

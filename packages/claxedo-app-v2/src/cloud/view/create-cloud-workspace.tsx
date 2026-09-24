@@ -1,8 +1,7 @@
 import { createSignal, Show, type Component } from "solid-js"
 import { createFlow, runFlow } from "@/lib/flow"
 import { toAppError, type CloudWorkspace } from "@/server"
-import { Button } from "@/ui"
-import { TextField } from "@opencode-ai/ui/text-field"
+import { Button, TextField } from "@/ui"
 import { useCloudText } from "../i18n"
 import type { CloudWorkspaces } from "../store"
 

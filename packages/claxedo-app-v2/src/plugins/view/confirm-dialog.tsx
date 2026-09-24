@@ -1,8 +1,7 @@
 import type { JSX } from "solid-js"
 import type { Confirmation } from "@claxedo/plugin-api"
 import { Show } from "solid-js"
-import { Dialog, type useDialog } from "@/ui"
-import { Button } from "@opencode-ai/ui/button"
+import { Dialog, type useDialog, Button } from "@/ui"
 import { usePluginsText } from "../i18n"
 
 type Dialogs = ReturnType<typeof useDialog>

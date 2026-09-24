@@ -21,6 +21,7 @@ const exemptPackages = [
   "/node_modules/@claxedo/agent-event-runtime/",
 ]
 const slotOutsideKit = "uses data-slot outside src/ui; only the kit's components carry slots"
+const kitStyledComponents = new Set(["icon", "icon-button"])
 
 type Lookup = { readonly declarations: readonly ts.Declaration[]; readonly reference: boolean }
 
@@ -130,8 +131,22 @@ function retiredText(node: ts.Node, events: ReadonlySet<string>, inKit: boolean)
 
 function retiredAttribute(node: ts.JsxAttribute, inKit: boolean): string | undefined {
   const name = ts.isIdentifier(node.name) ? node.name.text : undefined
-  if (name === "data-component") return "uses the data-component hook; app code uses kit components"
+  if (name === "data-component" && !(inKit && kitStyledComponents.has(componentName(node) ?? ""))) return "uses the data-component hook; app code uses kit components"
   return name === "data-slot" && !inKit ? slotOutsideKit : undefined
+}
+
+function componentName(node: ts.JsxAttribute): string | undefined {
+  const value = node.initializer
+  if (!value) return undefined
+  if (ts.isStringLiteral(value)) return value.text
+  const expression = ts.isJsxExpression(value) ? value.expression : undefined
+  if (!expression) return undefined
+  if (ts.isStringLiteral(expression)) return expression.text
+  if (ts.isConditionalExpression(expression)) {
+    const branches = [expression.whenTrue, expression.whenFalse].filter(ts.isStringLiteral)
+    return branches[0]?.text
+  }
+  return undefined
 }
 
 main()

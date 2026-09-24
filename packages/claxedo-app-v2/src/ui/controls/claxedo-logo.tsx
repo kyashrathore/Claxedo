@@ -27,7 +27,6 @@ export const ClaxedoSplash = (props: Pick<ComponentProps<"svg">, "ref" | "class"
   return (
     <svg
       ref={props.ref}
-      data-component="claxedo-splash"
       classList={{ [props.class ?? ""]: !!props.class }}
       viewBox="44 44 432 432"
       fill="none"
@@ -41,7 +40,6 @@ export const ClaxedoSplash = (props: Pick<ComponentProps<"svg">, "ref" | "class"
 export const ClaxedoLogo = (props: { class?: string }) => {
   return (
     <svg
-      data-component="claxedo-logo"
       classList={{ [props.class ?? ""]: !!props.class }}
       viewBox="44 44 432 432"
       fill="none"

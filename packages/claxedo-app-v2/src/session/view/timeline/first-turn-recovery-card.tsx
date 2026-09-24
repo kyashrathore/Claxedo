@@ -1,9 +1,6 @@
 import { createSignal, Show, type ParentProps } from "solid-js"
-import { Button } from "@opencode-ai/ui/button"
-import { Card } from "@opencode-ai/ui/card"
-import { ClaxedoIcon as Icon } from "@/ui"
+import { ClaxedoIcon as Icon, Button, Card, Tooltip } from "@/ui"
 import { ClaxedoIconButton as IconButton } from "@/ui"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { sessionRecovery, sessionRecoveryDescription, type SessionErrorClass } from "./turn-recovery"
 
 // Raw-detail disclosure: collapsed by default, chevron-gated, copyable when open.

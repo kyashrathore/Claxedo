@@ -1,7 +1,5 @@
 import type { ParentProps } from "solid-js"
-import { DialogProvider } from "@opencode-ai/ui/context/dialog"
-import { FileComponentProvider } from "@opencode-ai/ui/context/file"
-import { MarkedProvider } from "@opencode-ai/ui/context/marked"
+import { DialogProvider, FileComponentProvider, MarkedProvider } from "@/ui"
 import { File } from "./file"
 
 export function TranscriptKitProviders(props: ParentProps) {

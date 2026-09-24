@@ -1,6 +1,5 @@
 import { Show } from "solid-js"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { SemanticIcon, type SemanticIconConcept } from "@/ui"
+import { SemanticIcon, type SemanticIconConcept, Tooltip } from "@/ui"
 import type { WorkspacePanelNavigator } from "../workspace-tabs"
 
 type WorkspacePanelButtonProps = {

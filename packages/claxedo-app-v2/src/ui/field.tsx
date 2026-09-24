@@ -86,7 +86,7 @@ function FieldRoot(props: ParentProps<FieldProps>) {
     if (!(control instanceof HTMLInputElement) && !(control instanceof HTMLTextAreaElement)) return
 
     const shellNode = control.closest(
-      "[data-component='v2-text-input'], [data-component='v2-textarea'], [data-component='v2-inline-input']",
+      ".v2-text-input",
     )
     const shell = shellNode instanceof HTMLElement ? shellNode : null
 
@@ -125,9 +125,9 @@ function FieldRoot(props: ParentProps<FieldProps>) {
       <div
         {...rest}
         ref={rootRef}
-        data-component="v2-field"
         data-invalid={local.invalid ? "" : undefined}
         classList={{
+          "v2-field": true,
           ...local.classList,
           [local.class ?? ""]: !!local.class,
         }}

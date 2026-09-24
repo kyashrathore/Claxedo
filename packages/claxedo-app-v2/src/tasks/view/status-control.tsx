@@ -1,6 +1,5 @@
 import { For, type JSX } from "solid-js"
-import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
-import { Icon } from "@opencode-ai/ui/icon"
+import { DropdownMenu, Icon } from "@/ui"
 import { TASK_STATUSES, isTaskStatus, type TaskStatus } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
 import { dictionary } from "../i18n"

@@ -1,9 +1,8 @@
 import { For, Match, splitProps, Switch, type ComponentProps, type JSX, type ParentProps } from "solid-js"
 import { Dynamic } from "solid-js/web"
-import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { useTranslator } from "@/i18n"
 import type { FileNode } from "@/server"
-import { DelayedLoading } from "@/ui"
+import { DelayedLoading, FileIcon } from "@/ui"
 import { dictionary } from "../i18n"
 import type { ChangeKind } from "../model"
 

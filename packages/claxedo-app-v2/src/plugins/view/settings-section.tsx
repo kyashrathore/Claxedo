@@ -1,7 +1,7 @@
 import { For, Show, type JSX } from "solid-js"
 import { useI18n } from "@/i18n"
 import type { SettingsSection } from "@/shell"
-import { Button } from "@opencode-ai/ui/button"
+import { Button } from "@/ui"
 import { usePluginsText } from "../i18n"
 import { usePluginHost } from "../provider"
 import { PluginRow } from "./plugin-row"

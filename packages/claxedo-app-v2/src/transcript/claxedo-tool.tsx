@@ -1,7 +1,6 @@
 import { createMemo, For, Show } from "solid-js"
-import { Icon, type IconProps } from "@opencode-ai/ui/icon"
+import { Icon, type IconProps, TextShimmer } from "@/ui"
 import { useTranscriptI18n } from "./i18n"
-import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
 import { useData } from "./data"
 import { BasicTool } from "./basic-tool"
 import { claxedoToolName, claxedoToolView, taskStatusLabel, type ClaxedoLink } from "./claxedo-tool-view"

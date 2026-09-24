@@ -1,7 +1,5 @@
 import { createSignal, onCleanup, onMount, Show } from "solid-js"
-import { FileIcon } from "@opencode-ai/ui/file-icon"
-import { getFilenameTruncated } from "@opencode-ai/ui/utils/path"
-import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
+import { FileIcon, getFilenameTruncated, TooltipV2 } from "@/ui"
 import { AttachmentCardV2 } from "./attachment-card-v2"
 
 export function CommentCardV2(props: {
