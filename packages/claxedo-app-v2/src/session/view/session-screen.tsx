@@ -19,7 +19,6 @@ import { createDockFollow } from "./dock-follow"
 import { SessionTimelineSkeleton } from "./session-timeline-skeleton"
 import { createSessionScreenKeydownHandler } from "./session-screen-keydown"
 import { recoverTurn } from "./turn-recovery-actions"
-import { EnvironmentRail, type EnvironmentNavigator } from "./environment-rail"
 import { floatingPeekStep, type FloatingPeekState } from "./floating-peek"
 import { PreviousMessagesRow, turnActive } from "./timeline"
 import "./session-screen.css"
@@ -168,11 +167,6 @@ export function SessionScreen(props: PaneProps<SessionRef>) {
   const panel = usePanel()
   const floating = () => panel.maximized() && props.active
   const view = createMemo(() => stores.open(props.state))
-  const envcard = () => props.active && !panel.open() && view().state().kind !== "missing" && !failure()
-  const openNavigator = (navigator: EnvironmentNavigator) => {
-    panel.show({ kind: "review" })
-    if (panel.navigator() !== navigator) panel.toggleNavigator(navigator)
-  }
   const failure = () => {
     const state = view().state()
     return state.kind === "failed" ? state : undefined
@@ -182,7 +176,6 @@ export function SessionScreen(props: PaneProps<SessionRef>) {
       data-component="session-screen"
       data-session-id={props.state.sessionId}
       data-session-presentation={floating() ? "floating" : undefined}
-      data-session-envcard={envcard() ? "collapsed" : undefined}
       aria-label={view().row()?.title ?? t("sessionScreen.untitled")}
     >
       <FailureBoundary title={t("sessionScreen.failed")} retryLabel={t("sessionScreen.action.retry")}>
@@ -209,9 +202,6 @@ export function SessionScreen(props: PaneProps<SessionRef>) {
           </Match>
         </Switch>
       </FailureBoundary>
-      <Show when={envcard()}>
-        <EnvironmentRail onOpen={openNavigator} />
-      </Show>
     </section>
   )
 }
