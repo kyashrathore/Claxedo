@@ -38,6 +38,8 @@ async function commentOnLine(changes: Locator, line: string, comment: string) {
   await changes.getByRole("button", { name: "Comment", exact: true }).click()
 }
 
+test.skip(({ isMobile }) => isMobile, "flow 14 runs at desktop width")
+
 test("14 review: diff, line comment, commit, push to a bare remote, worktree, the comment reaches the agent", async ({
   stack,
   api,

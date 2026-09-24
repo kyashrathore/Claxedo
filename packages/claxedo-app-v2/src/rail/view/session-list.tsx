@@ -72,7 +72,7 @@ export function SessionList(): JSX.Element {
         </h2>
         <Show when={routing.placementId()}>
           {(placement) => (
-            <IconButton icon="new-session" variant="ghost" size="small" aria-label={t("rail.newSession")} data-testid="new-session" onClick={() => actions.create(placement())} />
+            <IconButton icon="new-session" variant="ghost" size="small" aria-label={t("rail.newSession")} data-testid="new-session" onClick={() => actions.startDraft(placement())} />
           )}
         </Show>
       </div>

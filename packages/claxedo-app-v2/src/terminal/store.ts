@@ -2,17 +2,18 @@ import { onCleanup, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
 import { machine, type Machine } from "@/lib/machine"
 import { uuid } from "@/lib/uuid"
-import type {
-  PlacementId,
-  Server,
-  ServerEvent,
-  Terminal,
-  TerminalAgentStatus,
-  TerminalId,
-  TerminalsApi,
+import {
+  toAppError,
+  type PlacementId,
+  type Server,
+  type ServerEvent,
+  type Terminal,
+  type TerminalAgentStatus,
+  type TerminalId,
+  type TerminalsApi,
 } from "@/server"
 import { terminalsApi } from "./api"
-import { asAppError, transitionLoad, type TerminalLoad, type TerminalLoadEvent, type TerminalRow } from "./model"
+import { transitionLoad, type TerminalLoad, type TerminalLoadEvent, type TerminalRow } from "./model"
 import { nextTerminalNumber } from "./titles"
 
 export type TerminalStore = {
@@ -78,7 +79,7 @@ function loadTerminalList(
       load.send({ type: "loaded" })
     },
     (error: unknown) => {
-      const failure = asAppError(error, "Terminal list failed to load")
+      const failure = toAppError(error)
       console.error("Terminal list failed to load", { placementId, error: failure })
       load.send({ type: "failed", error: failure })
     },

@@ -1,5 +1,5 @@
 import { machine, unreachable, type Machine } from "@/lib/machine"
-import type { AppError, DiffScope, GitPushResult, Placement } from "@/server"
+import { toAppError, type AppError, type DiffScope, type GitPushResult, type Placement } from "@/server"
 import type { ReviewKey } from "./i18n"
 
 export const defaultScope: DiffScope = { kind: "uncommitted" }
@@ -14,29 +14,6 @@ export type DiffStyle = "unified" | "split"
 
 export function readDiffStyle(value: unknown): DiffStyle | undefined {
   return value === "unified" || value === "split" ? value : undefined
-}
-
-const ERROR_CLASSES = new Set(["auth", "rate_limit", "network", "not_found", "conflict", "invalid", "internal"])
-
-function isAppError(value: unknown): value is AppError {
-  if (typeof value !== "object" || value === null) return false
-  const record = value as { readonly class?: unknown; readonly message?: unknown; readonly retryable?: unknown }
-  return (
-    typeof record.class === "string" &&
-    ERROR_CLASSES.has(record.class) &&
-    typeof record.message === "string" &&
-    typeof record.retryable === "boolean"
-  )
-}
-
-export function asAppError(error: unknown): AppError {
-  if (isAppError(error)) return error
-  return {
-    class: "internal",
-    message: error instanceof Error ? error.message : String(error),
-    retryable: false,
-    cause: error,
-  }
 }
 
 const GIT_ERROR_KEYS: Readonly<Record<string, ReviewKey>> = {
@@ -103,7 +80,7 @@ export async function runFlow<Step extends string, Result>(
     const result = await run((next) => flow.send({ type: "step", step: next }))
     flow.send({ type: "done", result })
   } catch (error) {
-    flow.send({ type: "failed", error: asAppError(error) })
+    flow.send({ type: "failed", error: toAppError(error) })
   }
 }
 
