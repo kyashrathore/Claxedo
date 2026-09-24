@@ -47,6 +47,9 @@ export type SessionScreenTextKey =
   | "sessionScreen.todo.progress"
   | "sessionScreen.todo.collapse"
   | "sessionScreen.todo.expand"
+  | "sessionScreen.environment.label"
+  | "sessionScreen.environment.openChanges"
+  | "sessionScreen.environment.openFiles"
   | "sessionScreen.goal.title"
   | "sessionScreen.goal.status.active"
   | "sessionScreen.goal.status.paused"
@@ -115,6 +118,9 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.todo.progress": "{{done}} of {{total}} todos completed",
   "sessionScreen.todo.collapse": "Collapse",
   "sessionScreen.todo.expand": "Expand",
+  "sessionScreen.environment.label": "Session environment",
+  "sessionScreen.environment.openChanges": "Open changes",
+  "sessionScreen.environment.openFiles": "Open files",
   "sessionScreen.goal.title": "Goal",
   "sessionScreen.goal.status.active": "Active",
   "sessionScreen.goal.status.paused": "Paused",
