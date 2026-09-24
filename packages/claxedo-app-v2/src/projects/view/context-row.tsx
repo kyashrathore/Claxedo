@@ -1,5 +1,6 @@
 import { Index, type JSX } from "solid-js"
 import { ContextChipPicker } from "./context-chip-picker"
+import "./context-row.css"
 
 export type ContextChipAvatar = {
   fallback: string
@@ -42,9 +43,8 @@ export type ContextChip = {
 export function SessionContextRow(props: { chips: ContextChip[] }) {
   return (
     <div
-      data-component="session-context-row"
       data-claxedo-compact-touch
-      class="flex min-w-0 items-center gap-0.5 overflow-hidden rounded-t-xl border border-b-0 border-v2-border-border-muted bg-v2-background-bg-deep px-1.5 pt-1 pb-3"
+      class="session-context-row flex min-w-0 items-center gap-0.5 overflow-hidden rounded-t-xl border border-b-0 border-v2-border-border-muted bg-v2-background-bg-deep px-1.5 pt-1 pb-3"
     >
       <Index each={props.chips}>{(chip) => <ContextChipPicker chip={chip()} />}</Index>
     </div>
