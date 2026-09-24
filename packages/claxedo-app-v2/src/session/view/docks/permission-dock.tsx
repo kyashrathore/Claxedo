@@ -1,3 +1,4 @@
+import { useErrorCopy } from "@/composer"
 import { For, Show } from "solid-js"
 import type { AgentPermission, AgentPermissionReply } from "@claxedo/agent-runtime-contract"
 import type { AgentRequestReply } from "@/server"
@@ -152,6 +153,7 @@ export function PermissionDock(props: {
   onStop?: () => Promise<void>
 }) {
   const t = useSessionScreenText()
+  const errorCopy = useErrorCopy()
   const reply = createRequestReply(props.onReply)
   const stop = createDockAction<"stop">()
   const facts = () => permissionFacts(props.request)
@@ -185,7 +187,7 @@ export function PermissionDock(props: {
       }
     >
       <Show when={reply.error() ?? stop.error()}>
-        {(error) => <div role="alert" data-slot="permission-error">{error().message}</div>}
+        {(error) => <div role="alert" data-slot="permission-error" data-error-class={error().class} title={error().message}>{errorCopy(error())}</div>}
       </Show>
       <Show when={hint()}>
         <div data-slot="permission-row">
