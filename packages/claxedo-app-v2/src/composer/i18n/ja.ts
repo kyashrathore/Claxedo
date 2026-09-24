@@ -94,4 +94,8 @@ export const ja: Partial<Record<ComposerTextKey, string>> = {
   "model.tooltip.reasoning.none": "推論なし",
   "model.tooltip.context": "コンテキスト上限 {{limit}}",
   "model.tooltip.allows": "対応: {{inputs}}",
+  "dialog.model.select.title": "モデルを選択",
+  "command.model.choose": "モデルを選択",
+  "command.model.choose.description": "別のモデルを選択",
+  "command.category.model": "モデル",
 }

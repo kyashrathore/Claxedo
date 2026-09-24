@@ -85,6 +85,13 @@ export function promptAgentOptions(agents: PromptAgentRow[]) {
     .map((agent): AtOption => ({ type: "agent", name: agent.id ?? agent.name, display: agent.name }))
 }
 
+const SLASH_ORDER = ["goal", "new", "open", "steps", "model", "mcp", "agent", "undo", "redo", "compact", "fork"]
+
+const slashRank = (trigger: string) => {
+  const rank = SLASH_ORDER.indexOf(trigger)
+  return rank === -1 ? SLASH_ORDER.length : rank
+}
+
 export function promptSlashCommands(input: {
   commandOptions: PromptCommandOption[]
   customCommands?: PromptCustomCommand[]
@@ -99,6 +106,7 @@ export function promptSlashCommands(input: {
       keybind: opt.keybind,
       type: "builtin" as const,
     }))
+    .sort((a, b) => slashRank(a.trigger) - slashRank(b.trigger))
 
   const goalReserved = builtin.some((command) => command.trigger.toLowerCase() === "goal")
   const custom = (input.customCommands ?? []).filter((cmd) => !(goalReserved && cmd.name.toLowerCase() === "goal")).map((cmd) => ({

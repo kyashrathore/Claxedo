@@ -94,4 +94,8 @@ export const ru: Partial<Record<ComposerTextKey, string>> = {
   "model.tooltip.reasoning.none": "Без рассуждения",
   "model.tooltip.context": "Лимит контекста {{limit}}",
   "model.tooltip.allows": "Разрешено: {{inputs}}",
+  "dialog.model.select.title": "Выбрать модель",
+  "command.model.choose": "Выбрать модель",
+  "command.model.choose.description": "Выбрать другую модель",
+  "command.category.model": "Модель",
 }

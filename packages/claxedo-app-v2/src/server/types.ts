@@ -136,6 +136,7 @@ export type GoalAction = "pause" | "resume" | "remove" | "stop"
 export type SessionGoalState = {
   readonly goal: SessionGoal | undefined
   readonly actions: readonly GoalAction[]
+  readonly available: boolean
 }
 
 export type SessionRequestsRead =

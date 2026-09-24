@@ -1,7 +1,7 @@
 import type { Accessor } from "solid-js"
 import type { useDialog } from "@/ui"
 import type { HarnessScopeInput, createHarnessSelectionController } from "./harness/controller"
-import { harnessRecoveryModels } from "./harness/recovery-models"
+import { harnessRecoveryModels } from "./harness/model-items"
 import type { ComposerKey, ComposerStore } from "./store"
 import type { useComposerText } from "./text"
 import { chooseRecoveryModel } from "./view/recovery-model-dialog"

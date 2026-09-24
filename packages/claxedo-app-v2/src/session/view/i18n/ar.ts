@@ -86,4 +86,6 @@ export const ar: Partial<Record<SessionScreenTextKey, string>> = {
   "command.message.next": "الرسالة التالية",
   "command.message.next.description": "انتقل إلى رسالة المستخدم التالية",
   "sessionScreen.requests.loadFailed": "تعذّر تحميل الأذونات أو الأسئلة المعلّقة. أعد المحاولة للمتابعة.",
+  "command.session.new": "جلسة جديدة",
+  "command.category.session": "جلسة",
 }
