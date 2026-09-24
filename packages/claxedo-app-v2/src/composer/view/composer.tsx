@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal } from "solid-js"
+import { createEffect, createMemo, createSignal, Show } from "solid-js"
 import { useCommands } from "@/shell"
 import { useDialog } from "@/ui"
 import type { FileContextItem, ImagePart } from "../model"
@@ -17,6 +17,7 @@ import { promptAtOptionKey } from "./prompt-options"
 import type { AtOption } from "./slash-popover"
 import { createPromptToolbarMotion } from "./toolbar-motion"
 import { createComposerToasts, ReadingNotices } from "./notice"
+import { SessionHealthPeek } from "./health-peek"
 
 function atOption(item: AtItem): AtOption {
   if (item.kind === "file") return { type: "file", path: item.path, display: item.path }
@@ -91,6 +92,9 @@ export function Composer(props: ComposerProps) {
 
   return (
     <>
+    <Show when={props.view}>
+      <SessionHealthPeek composer={composer} active={() => props.active?.() ?? false} />
+    </Show>
     <ReadingNotices composer={composer} />
     <PromptInputFrame
       rootRef={composer.refs.setRoot}
