@@ -128,6 +128,15 @@ function ReviewEmpty(props: { readonly placementId: PlacementId; readonly select
   )
 }
 
+function createPaintAccounting(files: () => readonly string[]) {
+  const loaded = createMemo(() => files())
+  const identity = createMemo(() => JSON.stringify([...loaded()].sort()))
+  const [hunks, setHunks] = createSignal(0)
+  const [rows, setRows] = createSignal(0)
+  createEffect(on(identity, () => setHunks(0), { defer: true }))
+  return { loaded, identity, hunks, rows, setRows, painted: () => setHunks((count) => count + 1) }
+}
+
 function ReviewDiffList(props: {
   readonly placementId: PlacementId
   readonly summaries: readonly DiffSummary[]
@@ -147,16 +156,24 @@ function ReviewDiffList(props: {
   const codeViewComments = createCodeViewComments({ comments, diffs: content.diffs })
   const [frame, setFrame] = createSignal<HTMLDivElement>()
   const [scroller, setScroller] = createSignal<HTMLDivElement>()
+  const paint = createPaintAccounting(() => content.diffs().map((diff) => diff.file))
   return (
     <div
       ref={setFrame}
       class="relative h-full min-h-0"
       data-review-diff-style={review.style()}
       data-review-open-diff-count={review.open().length}
+      data-review-loaded-diff-count={paint.loaded().length}
+      data-review-loaded-diff-identity={paint.identity()}
+      data-review-rendered-hunks={paint.hunks()}
+      data-review-rendered-files={paint.rows()}
+      data-review-total-files={props.summaries.length}
     >
       <ReviewCodeView
         class="claxedo-workspace-review h-full [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         scrollRef={setScroller}
+        onDiffRendered={paint.painted}
+        onRenderedRows={paint.setRows}
         diffs={content.diffs()}
         diffStyle={review.style()}
         open={review.open()}
