@@ -2,13 +2,14 @@ import fs from "node:fs"
 import path from "node:path"
 import type { Locator, Page } from "@playwright/test"
 import type { CaseInteraction, CaseTurn, CorpusCase } from "../corpus/case"
-import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, test, type ClaxedoApi, type MessageRow, type Stack } from "../harness"
+import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, type ClaxedoApi, type MessageRow, type Stack } from "../harness"
 
 const CASES_DIR = path.join(import.meta.dirname, "..", "corpus", "cases")
 const TURN_TIMEOUT = 30_000
 const TALL_VIEWPORT = 1600
 const LATEST_TURN_READ = /[?&]view=latest-turn\b/
 const CLOCK_TIME = /\b\d{1,2}:\d{2}\s?(?:AM|PM)\b/g
+const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g
 
 type Target = { readonly directory: string; readonly sessionId: string }
 
@@ -70,8 +71,7 @@ async function arrange(stack: Stack, api: ClaxedoApi, corpusCase: CorpusCase) {
 }
 
 function sessionUrl(stack: Stack, workspaceId: string, sessionId: string): string {
-  const route = stack.app === "v1" ? `/w/${workspaceId}/session/${sessionId}` : `/w/${workspaceId}/s/${sessionId}`
-  return `${stack.url}${route}`
+  return `${stack.url}${sessionRoute(workspaceId, sessionId)}`
 }
 
 function turnRows(app: Page): Locator {
@@ -100,19 +100,38 @@ async function rowsBox(app: Page): Promise<RowsBox | undefined> {
   })
 }
 
+function backgroundSubagents(app: Page): Locator {
+  return app.getByRole("region", { name: "Background subagents" })
+}
+
+async function withBackground(app: Page, rows: RowsBox | undefined): Promise<RowsBox | undefined> {
+  const background = (await backgroundSubagents(app).count()) > 0 ? await backgroundSubagents(app).boundingBox() : null
+  if (!rows || !background) return rows
+  const top = Math.min(rows.y, Math.floor(background.y))
+  const bottom = Math.max(rows.y + rows.height, Math.ceil(background.y + background.height))
+  return { x: rows.x, y: top, width: rows.width, height: bottom - top }
+}
+
 async function compareStage(app: Page, corpusCase: CorpusCase, stage: string) {
   await app.mouse.move(0, 0)
-  const box = await rowsBox(app)
+  const box = await withBackground(app, await rowsBox(app))
   expect(box, `${corpusCase.id} renders its turn rows at ${stage}`).toBeDefined()
   if (!box) return
-  await expect.soft(app).toHaveScreenshot([corpusCase.id, `${stage}.png`], { clip: box, animations: "disabled", caret: "hide" })
+  await expect.soft(app).toHaveScreenshot([corpusCase.id, `${stage}.png`], {
+    clip: box,
+    animations: "disabled",
+    caret: "hide",
+    mask: [app.locator('[data-component="agent-glyph"]')],
+  })
   const shown = await shownRows(app)
   const trees: string[] = []
   for (const [index, visible] of shown.entries()) {
     trees.push(`row ${index}:\n${visible ? await turnRows(app).nth(index).ariaSnapshot() : "(empty)"}`)
   }
   const top = await scroller(app).first().evaluate((element) => Math.round(element.scrollTop))
-  const tree = `scrollTop: ${top}\n${trees.join("\n")}\n`.replace(CLOCK_TIME, "<time>")
+  const background = (await backgroundSubagents(app).count()) > 0 ? await backgroundSubagents(app).ariaSnapshot() : "(none)"
+  const tree = `scrollTop: ${top}\nbackground subagents:\n${background}\n${trees.join("\n")}\n`.replace(CLOCK_TIME, "<time>")
+    .replace(UUID, "<id>")
   expect.soft(tree).toMatchSnapshot([corpusCase.id, `${stage}-tree.txt`])
 }
 
