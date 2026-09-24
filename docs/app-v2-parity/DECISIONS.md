@@ -160,3 +160,7 @@ A **Settings → Projects** section lists the projects and holds their managemen
 ## Owner, 02:40: keep /welcome, keep Back
 - **`/welcome` stays** as the first-project route. PROJ-001, v1's canvas at `/`, is not taken; projects-app's 7c245ba6e1 is reverted (d19c7962fc).
 - **Back stays as v2 has it:** browser Back after a rail click returns to the previous session. The settings Back stays too.
+
+## Orchestrator, 03:05: no time-based "Still working…" hints (COMP-040)
+- v1 shows "Still working…" at 20 s, "taking a while" at 45 s and "unresponsive" at 5 min of a turn. Those are client timers guessing at status.
+- **v2 does not port them.** It shows the harness's real state instead: the health peek's "The agent stopped responding", and `session.status`. That follows the session rule "status is never guessed".
