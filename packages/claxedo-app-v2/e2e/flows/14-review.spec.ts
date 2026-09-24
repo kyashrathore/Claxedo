@@ -14,15 +14,6 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
   return stdout.trim()
 }
 
-async function createServerProject(url: string, name: string, directory: string) {
-  const response = await fetch(new URL("/api/claxedo/projects", url), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name, source: { kind: "directory", directory } }),
-  })
-  expect(response.status).toBe(201)
-}
-
 async function openPanelTab(app: Page, name: string): Promise<Locator> {
   const toggle = app.getByRole("button", { name: "Toggle workspace panel" })
   await expect(toggle).toBeVisible()
@@ -49,12 +40,11 @@ test("14 review: diff, line comment, commit, push to a bare remote, worktree, th
   api,
   app,
 }) => {
-  const workspace = await stack.daemon.makeWorkspace("review")
+  const workspace = await stack.daemon.makeWorkspace("review", "Review")
   const remote = path.join(stack.dataDir, "remote.git")
   await git(stack.dataDir, "init", "-q", "--bare", remote)
   await git(workspace.directory, "remote", "add", "origin", remote)
   await fs.appendFile(path.join(workspace.directory, "README.md"), "a reviewed line\n")
-  await createServerProject(stack.url, "Review", workspace.directory)
   await stack.acp.write("answer", { steps: [{ kind: "text", text: "Read your line comment." }] })
   const session = await api.createSession(workspace.directory, { title: "Review", harness: SCRIPTED_ACP_HARNESS })
 
