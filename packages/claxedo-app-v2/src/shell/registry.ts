@@ -1,6 +1,7 @@
 import { browserPanelTab } from "@/browser"
 import { filePaneKind, filesPanelTab } from "@/files"
 import { onboardingRoute } from "@/onboarding"
+import { pluginsSettingsSection } from "@/plugins"
 import { addProjectPage, projectPage } from "@/projects"
 import { changesPanelTab } from "@/review"
 import { settingsSections } from "@/settings"
@@ -13,7 +14,7 @@ export const firstParty: FirstPartyEntries = {
   pages: [settingsPage, projectPage, addProjectPage],
   paneKinds: [sessionPaneKind, draftSessionPaneKind, filePaneKind, terminalPaneKind],
   panelTabs: [filesPanelTab, changesPanelTab, browserPanelTab],
-  settingsSections: [...settingsSections],
+  settingsSections: [...settingsSections, pluginsSettingsSection],
   sidebarItems: [],
   overlays: [],
   commands: [],
