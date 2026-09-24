@@ -4,12 +4,11 @@ import { queryKeys } from "./query-keys"
 import type { Transport } from "./transport"
 import type { FetchQuery, Machine } from "./types"
 import type { Workspaces } from "./workspaces"
-import type { BootstrapDeclaration } from "./wire/placements"
+import { UNENROLLED_MACHINE, type BootstrapDeclaration } from "./wire/placements"
 
 export const MACHINE_ONLINE_WINDOW_MS = 120_000
 
 const DEVICES_PATH = "/api/claxedo/remote-access/devices"
-const UNENROLLED_MACHINE = "this-machine"
 
 type DeviceRow = { readonly host_id: string; readonly display_name: string; readonly last_seen_at: number }
 
