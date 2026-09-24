@@ -319,6 +319,10 @@ function isGoalResource(value: unknown): value is AgentGoalResource {
   return GOAL_RESOURCE_METHODS.every((method) => typeof value[method] === "function")
 }
 
+export function hasGoalResource(adapter: AgentHarnessAdapter): boolean {
+  return isGoalResource(adapter.goals)
+}
+
 export function requireGoalResource(adapter: AgentHarnessAdapter): AgentGoalResource {
   if (!isGoalResource(adapter.goals)) {
     throw new GoalCapabilityError("This harness does not expose the Goal resource")
