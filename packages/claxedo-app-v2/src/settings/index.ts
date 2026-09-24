@@ -1,6 +1,7 @@
 import type { SettingsSection } from "@/shell"
 import { useTranslator } from "@/i18n"
 import { organizationSettingsSection } from "@/access"
+import { usageSettingsSection } from "@/usage"
 import { dictionary, type Keys } from "./i18n"
 import { AccountsSection } from "./view/accounts"
 import { AppearanceSection } from "./view/appearance"
@@ -19,6 +20,7 @@ const section = (id: string, key: Keys, group: SettingsSection["group"], order: 
 
 export const settingsSections: readonly SettingsSection[] = [
   section("accounts", "settings.section.accounts", "account", 10, AccountsSection),
+  usageSettingsSection,
   organizationSettingsSection,
   section("connections", "settings.section.connections", "account", 40, ConnectionsSection),
   section("appearance", "settings.section.appearance", "app", 60, AppearanceSection),
