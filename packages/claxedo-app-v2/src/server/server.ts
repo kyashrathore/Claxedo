@@ -3,7 +3,7 @@ import { createSignal } from "solid-js"
 import { createAccountsApi } from "./accounts"
 import { createCapabilities, type CapabilitiesOwner } from "./capabilities"
 import { createCloudApi } from "./cloud"
-import { createCodeHostsApi } from "./code-hosts"
+import { createIntegrationsApi } from "./integrations"
 import { createFoldersApi } from "./folders"
 import type { ServerConfig } from "./config"
 import { isRetryable, toAppError } from "./errors"
@@ -91,7 +91,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     accounts: createAccountsApi(transport, queryClient),
     marketplace: createMarketplaceApi(transport, queryClient),
     folders: createFoldersApi(transport),
-    codeHosts: createCodeHostsApi(transport, queryClient),
+    integrations: createIntegrationsApi(transport, queryClient),
     livePlugins: createLivePluginsApi(transport),
     harnessConfig: createHarnessConfigApi(transport, workspaces),
     request: transport.request,

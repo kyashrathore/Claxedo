@@ -3,7 +3,7 @@ import type { QueryClient } from "@tanstack/solid-query"
 import type { Account, AccountCheck, AccountKeyInput, EffectiveAccounts, MachineLogin } from "./account-types"
 import type { CloudCreateInput, CloudWorkspace, CodeHostConnection, CodeHostRepository } from "./cloud-types"
 import type { ConnectionState, ServerEvent } from "./events"
-import type { CodeHostQueries, CodeHostsApi } from "./code-hosts"
+import type { IntegrationQueries, IntegrationsApi } from "./integrations"
 import type { FolderQueries, FoldersApi } from "./folders"
 import type { HarnessConfigApi } from "./harness-config"
 import type {
@@ -167,7 +167,7 @@ export type ServerQueries = {
   }
   readonly cloud: { readonly list: () => FetchQuery<readonly CloudWorkspace[]> }
   readonly folders: FolderQueries
-  readonly codeHosts: CodeHostQueries
+  readonly integrations: IntegrationQueries
   readonly harnesses: {
     readonly options: (placementId: PlacementId, harness: string) => FetchQuery<HarnessOptions>
     readonly logins: () => FetchQuery<readonly HarnessLogin[]>
@@ -201,7 +201,7 @@ export type Server = {
   readonly accounts: AccountsApi
   readonly marketplace: MarketplaceApi
   readonly folders: FoldersApi
-  readonly codeHosts: CodeHostsApi
+  readonly integrations: IntegrationsApi
   readonly livePlugins: LivePluginsApi
   readonly harnessConfig: HarnessConfigApi
   readonly queries: ServerQueries
