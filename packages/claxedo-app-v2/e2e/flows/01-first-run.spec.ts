@@ -35,27 +35,19 @@ function pageOverflows(app: Page) {
   })
 }
 
-async function chooseFolder(app: Page, fromHome: readonly string[]) {
-  await app.getByRole("button", { name: "Choose folder" }).click()
-  const picker = app.getByRole("dialog", { name: "Choose a folder" })
-  for (const name of fromHome) await picker.getByRole("button", { name, exact: true }).click()
-  await picker.getByRole("button", { name: "Choose this folder" }).click()
-  await expect(picker).toHaveCount(0)
-}
-
-async function onboardV2(app: Page): Promise<Locator> {
+async function onboardV2(app: Page, folder: string): Promise<Locator> {
   await expect(app).toHaveURL(/\/welcome$/)
   await expect(app.getByRole("heading", { level: 1, name: "Start with a project" })).toBeVisible()
   await app.getByRole("textbox", { name: "Name", exact: true }).fill("First project")
   await app.getByRole("button", { name: "Folder on this machine" }).click()
-  await chooseFolder(app, ["folders", "first"])
+  await app.getByRole("textbox", { name: "Folder", exact: true }).fill(folder)
   await app.getByRole("button", { name: "Next", exact: true }).click()
   await expect(app.getByRole("heading", { level: 1, name: "Connect an AI" })).toBeVisible()
   const agents = app.getByRole("radiogroup", { name: "Which AI runs the work" })
   await expect(agents.getByRole("radio", { name: /^Pi/ })).toBeEnabled()
   await app.getByRole("button", { name: "Back", exact: true }).click()
   await expect(app.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("First project")
-  await expect(app.getByText(/\/folders\/first$/)).toBeVisible()
+  await expect(app.getByRole("textbox", { name: "Folder", exact: true })).toHaveValue(folder)
   await app.getByRole("button", { name: "Next", exact: true }).click()
   await agents.getByText("Pi", { exact: true }).click()
   await expect(agents.getByRole("radio", { name: /^Pi/ })).toBeChecked()
@@ -89,7 +81,7 @@ test("01 first run: onboarding detects the agents, adds a folder project, and th
     test.skip(!claude.available, claude.available ? "" : claude.reason)
   }
   const folder = await gitFolder(path.join(stack.dataDir, "folders"), "first")
-  const prompt = stack.app === "v2" ? await onboardV2(app) : await onboardV1(app, path.join("folders", "first"))
+  const prompt = stack.app === "v2" ? await onboardV2(app, folder) : await onboardV1(app, path.join("folders", "first"))
   await prompt.click()
   await prompt.pressSequentially(`Reply with exactly this one token: ${MARKER}`)
   await expect(app.getByRole("button", { name: "Send", exact: true })).toBeEnabled()
@@ -97,11 +89,9 @@ test("01 first run: onboarding detects the agents, adds a folder project, and th
   await expect(app.getByText(MARKER, { exact: true })).toBeVisible()
 
   const projects = await serverProjects(stack.url)
-  expect(projects).toHaveLength(1)
-  const directory = projects[0]?.directory ?? ""
-  expect(await fs.realpath(directory)).toBe(folder)
+  expect(projects.map((project) => project.directory)).toEqual([folder])
   if (stack.app === "v2") expect(projects[0]?.name).toBe("First project")
-  const sessions = await api.sessions(directory)
+  const sessions = await api.sessions(folder)
   expect(sessions).toHaveLength(1)
-  expect(assistantText(await api.messages(directory, sessions[0]?.id ?? ""))).toContain(MARKER)
+  expect(assistantText(await api.messages(folder, sessions[0]?.id ?? ""))).toContain(MARKER)
 })

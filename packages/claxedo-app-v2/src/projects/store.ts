@@ -1,6 +1,6 @@
 import { createMemo, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { useServer, type AppError, type FetchQuery, type Machine, type Placement, type Project, type ProjectId, type Server } from "@/server"
+import { useServer, type AppError, type Machine, type Placement, type Project, type ProjectId } from "@/server"
 
 export type Loaded<T> =
   | { readonly kind: "loading" }
@@ -12,12 +12,6 @@ export type ProjectView =
   | { readonly kind: "ready"; readonly project: Project }
   | { readonly kind: "missing" }
   | { readonly kind: "failed"; readonly error: AppError }
-
-export type Folder = { readonly name: string; readonly path: string }
-
-export type FolderListing = { readonly path: string; readonly home: string; readonly parent?: string; readonly folders: readonly Folder[] }
-
-type FolderServer = Server & { readonly queries: { readonly folders: { readonly list: (path?: string) => FetchQuery<FolderListing> } } }
 
 type QueryLike<T> = { readonly data: T | undefined; readonly error: AppError | null; readonly isPending: boolean }
 
@@ -62,10 +56,4 @@ export function useProjectCommands() {
     rename: (id: ProjectId, name: string) => server.projects.update(id, { name }),
     remove: (id: ProjectId) => server.projects.remove(id),
   }
-}
-
-export function useFolderListing(path: Accessor<string | undefined>): Accessor<Loaded<FolderListing>> {
-  const server = useServer() as FolderServer
-  const query = useQuery(() => server.queries.folders.list(path()))
-  return createMemo(() => loaded(query))
 }

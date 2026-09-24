@@ -88,20 +88,11 @@ async function projectsList(app: Page) {
   return list
 }
 
-async function chooseFolder(app: Page, fromHome: readonly string[]) {
-  await app.getByRole("button", { name: "Choose folder" }).click()
-  const picker = app.getByRole("dialog", { name: "Choose a folder" })
-  for (const name of fromHome) await picker.getByRole("button", { name, exact: true }).click()
-  await expect(picker.getByRole("textbox", { name: "Folder path" })).toHaveValue(new RegExp(`/${fromHome.join("/")}$`))
-  await picker.getByRole("button", { name: "Choose this folder" }).click()
-  await expect(picker).toHaveCount(0)
-}
-
-async function addFolderProject(app: Page, name: string, fromHome: readonly string[]) {
+async function addFolderProject(app: Page, name: string, folder: string) {
   await (await projectsList(app)).getByRole("button", { name: "New project" }).click()
   await app.getByRole("textbox", { name: "Name", exact: true }).fill(name)
   await app.getByRole("button", { name: "Folder on this machine" }).click()
-  await chooseFolder(app, fromHome)
+  await app.getByRole("textbox", { name: "Folder", exact: true }).fill(folder)
   await finishAddOnThisMachine(app)
 }
 
@@ -133,11 +124,11 @@ test("02 projects, local: add a folder and a clone, rename, remove, each read ba
   const remote = await gitRemote(root, "beta")
   try {
     await app.goto(`${stack.url}/`)
-    await addFolderProject(app, "Alpha", ["folders", "alpha"])
+    await addFolderProject(app, "Alpha", alphaFolder)
     await app.goto(`${stack.url}/`)
     await expect((await projectsList(app)).getByRole("button", { name: "Existing", exact: true })).toBeVisible()
-    const alpha = (await serverProjects(stack.url)).find((project) => project.name === "Alpha")
-    expect(await fs.realpath(alpha?.directory ?? "")).toBe(alphaFolder)
+    const alpha = (await serverProjects(stack.url)).find((project) => project.directory === alphaFolder)
+    expect(alpha?.name).toBe("Alpha")
     const alphaId = alpha?.id ?? ""
 
     await app.goto(`${stack.url}/p/${encodeURIComponent(alphaId)}`)
@@ -145,7 +136,7 @@ test("02 projects, local: add a folder and a clone, rename, remove, each read ba
     expect((await serverProject(stack.url, alphaId)).project?.name).toBe("Alpha renamed")
     await app.getByRole("button", { name: "Open", exact: true }).click()
     await expect(app.getByRole("region", { name: "New session" })).toBeVisible()
-    expect(await api.sessions(alpha?.directory ?? "")).toHaveLength(1)
+    expect(await api.sessions(alphaFolder)).toHaveLength(1)
 
     await app.goto(`${stack.url}/`)
     await cloneProject(app, remote.url)

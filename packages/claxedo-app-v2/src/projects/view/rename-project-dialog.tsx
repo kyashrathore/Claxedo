@@ -26,12 +26,12 @@ export const RenameProjectDialog: Component<{ project: Project }> = (props) => {
   }
 
   return (
-    <Dialog fit>
+    <Dialog>
       <DialogHeader closeLabel={t("projects.close")}>
         <DialogTitle>{t("projects.rename.title")}</DialogTitle>
       </DialogHeader>
       <form onSubmit={(event) => void submit(event)} data-testid="rename-project">
-        <DialogBody class="flex flex-col gap-3 px-4">
+        <DialogBody class="flex flex-col gap-3">
           <Field>
             <Field.Label>{t("projects.rename.name")}</Field.Label>
             <Field.Control>
