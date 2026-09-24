@@ -48,12 +48,21 @@ export function coalesceEvents(events: readonly ServerEvent[]): ServerEvent[] {
   return out.filter((event): event is ServerEvent => event !== undefined)
 }
 
+const HIDDEN_PAGE_FLUSH_MS = 250
+
 function nextFrame(run: () => void) {
-  if (typeof requestAnimationFrame === "function") {
-    requestAnimationFrame(() => run())
+  if (typeof requestAnimationFrame !== "function") {
+    setTimeout(run, 16)
     return
   }
-  setTimeout(run, 16)
+  const timer = setTimeout(() => {
+    cancelAnimationFrame(frame)
+    run()
+  }, HIDDEN_PAGE_FLUSH_MS)
+  const frame = requestAnimationFrame(() => {
+    clearTimeout(timer)
+    run()
+  })
 }
 
 export function createCoalescer(emit: (events: readonly ServerEvent[]) => void, schedule: (run: () => void) => void = nextFrame): Coalescer {

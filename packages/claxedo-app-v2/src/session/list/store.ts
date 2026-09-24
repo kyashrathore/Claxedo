@@ -1,5 +1,5 @@
-import { createMemo, createSignal, type Accessor } from "solid-js"
-import { machine } from "@/lib/machine"
+import { createMemo } from "solid-js"
+import { machine, type Machine } from "@/lib/machine"
 import { uuid } from "@/lib/uuid"
 import {
   sessionId as asSessionId,
@@ -12,15 +12,13 @@ import {
   type SessionRef,
   type SessionRow,
   type SessionStatus,
-  type SessionStatusRead,
 } from "@/server"
 import type { LoadMoreState, SessionList, SessionListState, SessionStatusView } from "@/session"
 import { toAppError, type RequestsInternal } from "../requests"
-import { initialListState, type FetchedWindow, type ListState, type RereadMode } from "./model"
+import { initialListState, type ListEvent, type ListState } from "./model"
+import { createListReads, type ListReads } from "./reads"
 import { transition } from "./transition"
 import { createRowViewCache, UNKNOWN_STATUS, visibleRows } from "./visible-rows"
-
-export const PAGE_SIZE = 50
 
 export type SessionListInternal = SessionList & {
   readonly start: () => void
@@ -66,130 +64,61 @@ function pendingRow(ref: SessionRef, input: SessionCreateInput, at: number): Ses
   return { ref, title: input.title ?? "", createdAt: at, updatedAt: at, harness: input.harness }
 }
 
+async function createSession(server: Server, list: Machine<ListState, ListEvent>, input: SessionCreateInput): Promise<SessionRef> {
+  const placement = server.placements.byId(input.placementId)
+  if (!placement) throw unknownPlacement(input.placementId)
+  const clientRequestId = uuid()
+  const ref: SessionRef = { projectId: placement.projectId, placementId: placement.id, sessionId: asSessionId(`pending:${clientRequestId}`) }
+  list.send({ type: "createStarted", clientRequestId, row: pendingRow(ref, input, Date.now()) })
+  try {
+    const created = await server.sessions.create(input)
+    list.send({ type: "createConfirmed", clientRequestId, row: created })
+    return created.ref
+  } catch (cause) {
+    list.send({ type: "createFailed", clientRequestId })
+    throw toAppError(cause)
+  }
+}
+
+function applyServerEvent(list: Machine<ListState, ListEvent>, reads: ListReads, event: ServerEvent): void {
+  switch (event.type) {
+    case "sessionUpserted":
+      return list.send(event)
+    case "sessionRemoved":
+      return list.send({ type: "sessionRemoved", ref: event.ref, at: Date.now() })
+    case "statusChanged":
+      return list.send({ type: "statusChanged", ref: event.ref, status: event.status, at: Date.now() })
+    case "streamGap":
+      return reads.requestReread("replace")
+    case "sessionsChanged":
+      return reads.requestReread("refresh")
+    default:
+      return
+  }
+}
+
+function rowOf(state: ListState, sessionId: SessionId): SessionRow | undefined {
+  const entry = state.entries.get(sessionId)
+  return entry && entry.kind !== "tombstone" ? entry.row : undefined
+}
+
 export function createSessionList(server: Server, requests: RequestsInternal): SessionListInternal {
   const list = machine(initialListState, transition)
-  const state = list.state
-  const send = list.send
+  const reads = createListReads(server, requests, list)
   const cache = createRowViewCache()
-  const [followUp, setFollowUp] = createSignal<RereadMode>()
-  const rows = createMemo(() => visibleRows(state(), requests.openBySession(), cache))
-  const shown: Accessor<SessionListState> = createMemo(() => publicState(state()))
-  const more: Accessor<LoadMoreState> = createMemo(() => moreState(state()))
-
-  function readRequests(fetched: readonly SessionRow[], read: SessionStatusRead, sentAt: number): void {
-    const reported = new Set(read.reports.map((report) => report.ref.sessionId))
-    requests.applyReads(read.reports, sentAt)
-    for (const row of fetched) if (!reported.has(row.ref.sessionId)) requests.read(row.ref, [], sentAt)
-  }
-
-  async function readWindow(cursor: string | undefined, withStatuses: boolean): Promise<FetchedWindow> {
-    const sentAt = Date.now()
-    const [page, statuses] = await Promise.all([
-      server.sessions.list({ cursor, limit: PAGE_SIZE }),
-      withStatuses ? server.sessions.statuses() : undefined,
-    ])
-    if (statuses) readRequests(page.rows, statuses, sentAt)
-    return { rows: page.rows, nextCursor: page.nextCursor, sentAt, statuses }
-  }
-
-  function afterRead(): void {
-    const mode = followUp()
-    if (!mode) return
-    setFollowUp(undefined)
-    void reread(mode)
-  }
-
-  async function fetchFirst(): Promise<void> {
-    send({ type: "fetchStarted" })
-    try {
-      send({ type: "fetched", window: await readWindow(undefined, true) })
-    } catch (cause) {
-      send({ type: "fetchFailed", error: toAppError(cause) })
-    }
-    afterRead()
-  }
-
-  async function loadMore(): Promise<void> {
-    const current = state()
-    if (current.kind !== "live" || current.more.kind === "loading" || current.nextCursor === undefined) return
-    send({ type: "moreStarted" })
-    try {
-      send({ type: "moreFetched", window: await readWindow(current.nextCursor, false) })
-    } catch (cause) {
-      send({ type: "moreFailed", error: toAppError(cause) })
-    }
-    afterRead()
-  }
-
-  async function reread(mode: RereadMode): Promise<void> {
-    const kind = state().kind
-    if (kind !== "live" && kind !== "failed") return
-    send({ type: "rereadStarted" })
-    try {
-      send({ type: "rereadFetched", window: await readWindow(undefined, true), mode })
-    } catch (cause) {
-      send({ type: "rereadFailed", error: toAppError(cause) })
-    }
-    afterRead()
-  }
-
-  function requestReread(mode: RereadMode): void {
-    const current = state()
-    const reading = current.kind === "fetching" || current.kind === "rereading" || (current.kind === "live" && current.more.kind === "loading")
-    if (!reading) return void reread(mode)
-    setFollowUp((pending) => (pending === "replace" ? pending : mode))
-  }
-
-  async function create(input: SessionCreateInput): Promise<SessionRef> {
-    const placement = server.placements.byId(input.placementId)
-    if (!placement) throw unknownPlacement(input.placementId)
-    const clientRequestId = uuid()
-    const ref: SessionRef = { projectId: placement.projectId, placementId: placement.id, sessionId: asSessionId(`pending:${clientRequestId}`) }
-    send({ type: "createStarted", clientRequestId, row: pendingRow(ref, input, Date.now()) })
-    try {
-      const created = await server.sessions.create(input)
-      send({ type: "createConfirmed", clientRequestId, row: created })
-      return created.ref
-    } catch (cause) {
-      send({ type: "createFailed", clientRequestId })
-      throw toAppError(cause)
-    }
-  }
-
-  function apply(event: ServerEvent): void {
-    switch (event.type) {
-      case "sessionUpserted":
-        return send(event)
-      case "sessionRemoved":
-        return send({ type: "sessionRemoved", ref: event.ref, at: Date.now() })
-      case "statusChanged":
-        return send({ type: "statusChanged", ref: event.ref, status: event.status, at: Date.now() })
-      case "streamGap":
-        return requestReread("replace")
-      case "sessionsChanged":
-        return requestReread("refresh")
-      default:
-        return
-    }
-  }
-
-  function rowOf(sessionId: SessionId): SessionRow | undefined {
-    const entry = state().entries.get(sessionId)
-    return entry && entry.kind !== "tombstone" ? entry.row : undefined
-  }
-
+  const { state, send } = list
   return {
-    state: shown,
-    rows,
+    state: createMemo(() => publicState(state())),
+    rows: createMemo(() => visibleRows(state(), requests.openBySession(), cache)),
     hasMore: () => state().nextCursor !== undefined,
-    moreState: more,
-    loadMore,
-    reload: () => reread("replace"),
-    create,
-    start: () => void fetchFirst(),
-    rowOf,
+    moreState: createMemo(() => moreState(state())),
+    loadMore: reads.loadMore,
+    reload: () => reads.reread("replace"),
+    create: (input) => createSession(server, list, input),
+    start: () => void reads.fetchFirst(),
+    rowOf: (sessionId) => rowOf(state(), sessionId),
     statusOf: (sessionId) => state().statuses.get(sessionId)?.status ?? UNKNOWN_STATUS,
-    apply,
+    apply: (event) => applyServerEvent(list, reads, event),
     readRow: (row) => send({ type: "rowRead", row }),
     readStatus: (ref, status, sentAt) => send({ type: "statusRead", ref, status, sentAt }),
     opened: (sessionId) => send({ type: "sessionOpened", sessionId }),

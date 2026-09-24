@@ -13,49 +13,56 @@ export type OpenSessions = {
   readonly disposeAll: () => void
 }
 
+type OpenState = {
+  readonly entries: Map<SessionId, OpenEntry>
+  readonly limit: number
+  readonly owner: Owner | null
+  readonly make: (ref: SessionRef) => SessionTranscript
+  readonly onEvicted: (sessionId: SessionId) => void
+}
+
+function evict(open: OpenState, sessionId: SessionId, entry: OpenEntry): void {
+  open.entries.delete(sessionId)
+  entry.view.dispose()
+  entry.dispose()
+  open.onEvicted(sessionId)
+}
+
+function evictBeyondLimit(open: OpenState): void {
+  for (const [sessionId, entry] of open.entries) {
+    if (open.entries.size <= open.limit) return
+    evict(open, sessionId, entry)
+  }
+}
+
+function get(open: OpenState, ref: SessionRef): SessionTranscript {
+  const hit = open.entries.get(ref.sessionId)
+  if (hit) {
+    open.entries.delete(ref.sessionId)
+    open.entries.set(ref.sessionId, hit)
+    return hit.view
+  }
+  const entry = createRoot((dispose) => ({ view: open.make(ref), dispose }), open.owner)
+  open.entries.set(ref.sessionId, entry)
+  evictBeyondLimit(open)
+  return entry.view
+}
+
 export function createOpenSessions(
   limit: number,
   owner: Owner | null,
   make: (ref: SessionRef) => SessionTranscript,
   onEvicted: (sessionId: SessionId) => void,
 ): OpenSessions {
-  const entries = new Map<SessionId, OpenEntry>()
-
-  function evict(sessionId: SessionId, entry: OpenEntry): void {
-    entries.delete(sessionId)
-    entry.view.dispose()
-    entry.dispose()
-    onEvicted(sessionId)
-  }
-
-  function evictBeyondLimit(): void {
-    for (const [sessionId, entry] of entries) {
-      if (entries.size <= limit) return
-      evict(sessionId, entry)
-    }
-  }
-
-  function get(ref: SessionRef): SessionTranscript {
-    const hit = entries.get(ref.sessionId)
-    if (hit) {
-      entries.delete(ref.sessionId)
-      entries.set(ref.sessionId, hit)
-      return hit.view
-    }
-    const entry = createRoot((dispose) => ({ view: make(ref), dispose }), owner)
-    entries.set(ref.sessionId, entry)
-    evictBeyondLimit()
-    return entry.view
-  }
-
+  const open: OpenState = { entries: new Map(), limit, owner, make, onEvicted }
   return {
-    get,
-    byId: (sessionId) => entries.get(sessionId)?.view,
+    get: (ref) => get(open, ref),
+    byId: (sessionId) => open.entries.get(sessionId)?.view,
     forEach: (visit) => {
-      for (const entry of entries.values()) visit(entry.view)
+      for (const entry of open.entries.values()) visit(entry.view)
     },
     disposeAll: () => {
-      for (const [sessionId, entry] of [...entries]) evict(sessionId, entry)
+      for (const [sessionId, entry] of [...open.entries]) evict(open, sessionId, entry)
     },
   }
 }

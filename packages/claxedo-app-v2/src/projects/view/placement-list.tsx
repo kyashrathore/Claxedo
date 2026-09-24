@@ -26,7 +26,7 @@ function placementDetail(t: ProjectsText, placement: Placement): string {
 export const PlacementList: Component<{ projectId: Accessor<ProjectId> }> = (props) => {
   const t = useProjectsText()
   const placements = useProjectPlacements(props.projectId)
-  const opener = usePlacementOpener()
+  const open = usePlacementOpener()
   const local = () => {
     const state = placements()
     return state.kind === "ready" ? state.data.filter((placement) => placement.kind !== "cloud") : []
@@ -59,7 +59,7 @@ export const PlacementList: Component<{ projectId: Accessor<ProjectId> }> = (pro
                     <span class="truncate text-sm">{placement.label}</span>
                     <span class="projects-hint truncate">{placementDetail(t, placement)}</span>
                   </div>
-                  <Button variant="outline" onClick={() => opener.openPlacement(placement.id)}>
+                  <Button variant="outline" onClick={() => open(placement.id)}>
                     {t("projects.placement.open")}
                   </Button>
                 </li>
