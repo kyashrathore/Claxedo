@@ -1,11 +1,11 @@
 import { Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { ClaxedoIcon as Icon, type ClaxedoIconProps } from "@/ui/controls/claxedo-icon"
 import { ProjectAvatar } from "@opencode-ai/ui/v2/project-avatar-v2"
 import { dictionary } from "../i18n"
 import type { NavigationStatus } from "../model"
 import type { SwitcherItem } from "../switcher-items"
 import { NavigationStatusMark } from "./navigation-row"
+import { ClaxedoIcon as Icon, type ClaxedoIconProps } from "@/ui"
 
 function orGlobal(value: string | undefined, global: string): string {
   return value?.trim() || global

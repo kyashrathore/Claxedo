@@ -27,7 +27,7 @@ export type WorkbenchStore = WorkbenchApi &
   readonly layout: Accessor<WorkbenchState>
   readonly content: (contentId: string) => OpenedPane | undefined
   readonly open: <State>(kind: PaneKind<State>, state: State, focus?: boolean) => string
-  readonly openRoute: (route: PaneRoute) => string | undefined
+  readonly openRoute: (route: PaneRoute, focus?: boolean) => string | undefined
   readonly routeOf: (contentId: string) => PaneRoute | undefined
   readonly closeContent: (contentId: string) => void
   readonly move: (tabId: string, index: number) => void
@@ -158,10 +158,10 @@ function createOpen(input: {
   }
 }
 
-function openRoute(kinds: readonly AnyPaneKind[], open: Open, route: PaneRoute): string | undefined {
+function openRoute(kinds: readonly AnyPaneKind[], open: Open, route: PaneRoute, focus: boolean): string | undefined {
   for (const kind of kinds) {
     const state = kind.fromRoute?.(route)
-    if (state !== undefined) return open(kind as PaneKind<unknown>, state)
+    if (state !== undefined) return open(kind as PaneKind<unknown>, state, focus)
   }
   return undefined
 }
@@ -186,7 +186,7 @@ export function createWorkbenchStore(key: string, kinds: Accessor<readonly AnyPa
     layout,
     content,
     open,
-    openRoute: (route) => openRoute(kinds(), open, route),
+    openRoute: (route, focus = true) => openRoute(kinds(), open, route, focus),
     routeOf: (contentId) => {
       const opened = content(contentId)
       return opened?.kind.toRoute?.(opened.state as never)

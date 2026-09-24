@@ -4,8 +4,7 @@ import { useTranslator } from "@/i18n"
 import { failureMessage } from "@/lib/failure"
 import type { SessionRowView } from "@/session"
 import { sessionPath } from "@/shell"
-import { showToast } from "@/ui"
-import { ClaxedoIcon as Icon, type ClaxedoIconProps } from "@/ui/controls/claxedo-icon"
+import { showToast, ClaxedoIcon as Icon, type ClaxedoIconProps } from "@/ui"
 import { dictionary } from "../i18n"
 
 export type SessionRowMenuActions = {

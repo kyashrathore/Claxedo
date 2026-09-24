@@ -1,12 +1,12 @@
 import { Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { useTerminals } from "@/terminal"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { dictionary } from "../i18n"
 import { useActivePlacement } from "../active-placement"
 import { useShellLayout } from "../layout"
 import { useCommands } from "../palette/commands"
+import { ClaxedoIcon as Icon } from "@/ui"
 
 export const NEW_SESSION_COMMAND = "session.new"
 

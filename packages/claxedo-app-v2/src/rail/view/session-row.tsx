@@ -1,13 +1,13 @@
 import { createSignal, Show, type Accessor, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import type { SessionRowView } from "@/session"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { createHoverEngagement } from "../hover-engagement"
 import { dictionary } from "../i18n"
 import { navigationStatus, sessionAge, type SessionMarker } from "../model"
 import { NavigationRow, NavigationRowStatusGutter } from "./navigation-row"
 import { SessionRowMenu, type SessionRowMenuActions } from "./session-row-menu"
 import "../session-navigation.css"
+import { ClaxedoIcon as Icon } from "@/ui"
 
 export type SessionRowProps = SessionRowMenuActions & {
   readonly row: SessionRowView

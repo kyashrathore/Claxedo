@@ -1,6 +1,5 @@
 import type { JSX } from "solid-js"
-import { ClaxedoIcon, type ClaxedoIconName, type ClaxedoIconProps } from "@/ui/controls/claxedo-icon"
-import { appIconNames } from "@/ui/icons/catalog"
+import { ClaxedoIcon, type ClaxedoIconName, type ClaxedoIconProps, appIconNames } from "@/ui"
 
 export const fallbackIconName: ClaxedoIconName = "page"
 
