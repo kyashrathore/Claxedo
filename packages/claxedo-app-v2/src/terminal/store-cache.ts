@@ -19,7 +19,10 @@ function evictOver(entries: Map<PlacementId, Entry>, cap: number, keep: Placemen
   }
 }
 
-export function createTerminalStoreCache(cap: number, create: (placementId: PlacementId) => TerminalStore): TerminalStoreCache {
+export function createTerminalStoreCache(
+  cap: number,
+  create: (placementId: PlacementId) => TerminalStore,
+): TerminalStoreCache {
   const entries = new Map<PlacementId, Entry>()
   const evict = (keep: PlacementId) => evictOver(entries, cap, keep)
 

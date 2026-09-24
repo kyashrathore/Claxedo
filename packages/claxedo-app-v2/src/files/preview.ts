@@ -12,7 +12,16 @@ const IMAGE_MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
   svg: "image/svg+xml",
 }
 
-const MEDIA_EXTENSIONS = new Set([...Object.keys(IMAGE_MIME_BY_EXTENSION), "mp3", "wav", "ogg", "m4a", "mp4", "webm", "mov"])
+const MEDIA_EXTENSIONS = new Set([
+  ...Object.keys(IMAGE_MIME_BY_EXTENSION),
+  "mp3",
+  "wav",
+  "ogg",
+  "m4a",
+  "mp4",
+  "webm",
+  "mov",
+])
 
 export function extensionOf(path: string): string {
   return path.split(".").pop()?.toLowerCase() ?? ""

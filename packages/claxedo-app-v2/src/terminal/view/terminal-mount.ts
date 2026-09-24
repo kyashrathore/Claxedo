@@ -53,10 +53,19 @@ function attachBackend(input: TerminalMountInput, backend: TerminalBackend, like
     host: input.host,
     connection: input.connection,
     likelyTui,
-    onPublishFailed: (error) => console.error("Terminal size could not be published", { terminalId: input.terminalId, error }),
+    onPublishFailed: (error) =>
+      console.error("Terminal size could not be published", { terminalId: input.terminalId, error }),
   })
   backend.focus()
   return { attachment, stopTheme }
+}
+
+function reportStartFailure(input: TerminalMountInput, error: unknown): void {
+  input.connection.send({
+    type: "failed",
+    failure: "start",
+    error: asAppError(error, "Terminal backend failed to start"),
+  })
 }
 
 export function mountTerminal(input: TerminalMountInput): TerminalMount {
@@ -75,7 +84,7 @@ export function mountTerminal(input: TerminalMountInput): TerminalMount {
   }
   const boot = () =>
     start().catch((error: unknown) => {
-      if (!disposed) input.connection.send({ type: "failed", failure: "start", error: asAppError(error, "Terminal backend failed to start") })
+      if (!disposed) reportStartFailure(input, error)
     })
   void boot()
 

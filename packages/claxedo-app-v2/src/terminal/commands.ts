@@ -19,7 +19,10 @@ export function useNewTerminalCommand(terminals: Terminals): void {
     const placementId = terminals.placementId()
     if (!placementId) return
     openNew(placementId).catch((error: unknown) => {
-      console.error("Terminal could not be created", { placementId, error: asAppError(error, "Terminal create failed") })
+      console.error("Terminal could not be created", {
+        placementId,
+        error: asAppError(error, "Terminal create failed"),
+      })
       showToast({ title: t("terminal.createFailed") })
     })
   }
