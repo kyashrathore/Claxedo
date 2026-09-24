@@ -53,7 +53,8 @@ test("01 first run: onboarding detects the agents, adds a folder project, and th
   await expect(app.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("First project")
   await expect(app.getByRole("textbox", { name: "Folder", exact: true })).toHaveValue(folder)
   await app.getByRole("button", { name: "Next", exact: true }).click()
-  await agents.getByRole("radio", { name: /^Pi/ }).check()
+  await agents.getByText("Pi", { exact: true }).click()
+  await expect(agents.getByRole("radio", { name: /^Pi/ })).toBeChecked()
   await app.getByRole("button", { name: "Next", exact: true }).click()
 
   await expect(app.getByRole("heading", { level: 1, name: "Where it runs" })).toBeVisible()

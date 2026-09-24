@@ -1,44 +1,28 @@
 import { unreachable } from "@/lib/machine"
-import type { PlacementId, ProjectId } from "@/server"
-
-export type CloudWorkspaceState =
-  | { readonly kind: "provisioning"; readonly step: string }
-  | { readonly kind: "starting" }
-  | { readonly kind: "ready" }
-  | { readonly kind: "stopping" }
-  | { readonly kind: "stopped" }
-  | { readonly kind: "failed"; readonly reason: string }
-
-export type CloudWorkspace = {
-  readonly id: PlacementId
-  readonly projectId: ProjectId
-  readonly name: string
-  readonly branch?: string
-  readonly status: CloudWorkspaceState
-}
+import type { CloudWorkspaceStatus } from "@/server"
 
 export type CloudWorkspaceEvent =
   | { readonly type: "startRequested" }
   | { readonly type: "stopRequested" }
   | { readonly type: "commandFailed"; readonly reason: string }
 
-export function canStart(state: CloudWorkspaceState): boolean {
+export function canStart(state: CloudWorkspaceStatus): boolean {
   return state.kind === "stopped" || state.kind === "failed"
 }
 
-export function canStop(state: CloudWorkspaceState): boolean {
+export function canStop(state: CloudWorkspaceStatus): boolean {
   return state.kind === "ready" || state.kind === "starting" || state.kind === "provisioning"
 }
 
-export function isBusy(state: CloudWorkspaceState): boolean {
+export function isBusy(state: CloudWorkspaceStatus): boolean {
   return state.kind === "provisioning" || state.kind === "starting" || state.kind === "stopping"
 }
 
-export function failureOf(state: CloudWorkspaceState): string | undefined {
+export function failureOf(state: CloudWorkspaceStatus): string | undefined {
   return state.kind === "failed" ? state.reason : undefined
 }
 
-export function cloudWorkspaceTransition(state: CloudWorkspaceState, event: CloudWorkspaceEvent): CloudWorkspaceState {
+export function cloudWorkspaceTransition(state: CloudWorkspaceStatus, event: CloudWorkspaceEvent): CloudWorkspaceStatus {
   switch (event.type) {
     case "startRequested":
       return canStart(state) ? { kind: "starting" } : state

@@ -6,7 +6,8 @@ import { documentQueries } from "./documents"
 import type { ServerEvent } from "./events"
 import { fileQueries } from "./files"
 import { gitQueries } from "./git"
-import type { ServerQueries } from "./index"
+import { harnessQueries } from "./harness-options"
+import type { ServerQueries } from "./api"
 import type { ProjectId } from "./ids"
 import { machineQueries } from "./machines"
 import { marketplaceQueries } from "./marketplace"
@@ -46,6 +47,7 @@ export function createQueries(transport: Transport, workspaces: Workspaces): Ser
     cloud: cloud.cloud,
     files: fileQueries(transport, workspaces),
     git: gitQueries(transport, workspaces),
+    harnesses: harnessQueries(transport, workspaces),
   }
 }
 

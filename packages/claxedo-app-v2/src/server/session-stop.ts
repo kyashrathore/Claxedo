@@ -1,6 +1,7 @@
 import type { RecoveryOutcome, RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
 import { isRecoveryOutcome, turnStopped } from "@claxedo/agent-runtime-contract"
 import { ServerError } from "./errors"
+import { sessionPath } from "./session-context"
 import { jsonInit, type RuntimeRoute, type Transport } from "./transport"
 import type { SessionRef } from "./types"
 
@@ -24,7 +25,7 @@ function stopRefused(outcome: RecoveryOutcome): ServerError {
 }
 
 export async function stopTurn(transport: Transport, where: RuntimeRoute, ref: SessionRef): Promise<void> {
-  const path = `/session/${encodeURIComponent(ref.sessionId)}/recovery`
+  const path = sessionPath(ref, "/recovery")
   const inspected = await transport.runtimeJson<{ target?: RecoveryTurnTarget } | RecoveryOutcome>(where, path)
   if (isRecoveryOutcome(inspected)) throw stopRefused(inspected)
   const target = inspected.target

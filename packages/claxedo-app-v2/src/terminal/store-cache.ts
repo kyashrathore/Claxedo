@@ -10,17 +10,18 @@ export type TerminalStoreCache = {
   readonly dispose: () => void
 }
 
+function evictOver(entries: Map<PlacementId, Entry>, cap: number, keep: PlacementId): void {
+  for (const [placementId, entry] of entries) {
+    if (entries.size <= cap) return
+    if (placementId === keep || entry.retained > 0) continue
+    entry.dispose()
+    entries.delete(placementId)
+  }
+}
+
 export function createTerminalStoreCache(cap: number, create: (placementId: PlacementId) => TerminalStore): TerminalStoreCache {
   const entries = new Map<PlacementId, Entry>()
-
-  const evict = (keep: PlacementId) => {
-    for (const [placementId, entry] of entries) {
-      if (entries.size <= cap) return
-      if (placementId === keep || entry.retained > 0) continue
-      entry.dispose()
-      entries.delete(placementId)
-    }
-  }
+  const evict = (keep: PlacementId) => evictOver(entries, cap, keep)
 
   const entryFor = (placementId: PlacementId): Entry => {
     const existing = entries.get(placementId)

@@ -1,10 +1,11 @@
+import { sessionPath } from "./session-context"
 import { jsonInit, type Transport } from "./transport"
 import type { QueuedPrompt, QueuedPromptAction, QueuedPromptControl, SessionRef } from "./types"
 import type { Workspaces } from "./workspaces"
 import { queuedPromptControlFromWire, queuedPromptFromWire } from "./wire/queue"
 
 function queuePath(ref: SessionRef, suffix = "") {
-  return `/session/${encodeURIComponent(ref.sessionId)}/queue${suffix}`
+  return sessionPath(ref, `/queue${suffix}`)
 }
 
 export function createSessionQueue(transport: Transport, workspaces: Workspaces) {

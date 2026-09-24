@@ -1,5 +1,5 @@
 import { ServerError } from "./errors"
-import type { PlacementsApi } from "./index"
+import type { PlacementsApi } from "./api"
 import { jsonInit, withQuery, type Transport } from "./transport"
 import type { Workspaces } from "./workspaces"
 

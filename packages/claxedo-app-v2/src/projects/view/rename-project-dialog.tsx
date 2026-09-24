@@ -1,7 +1,6 @@
 import { createSignal, Show, type Component } from "solid-js"
-import type { Project } from "@/server"
+import { toAppError, type Project } from "@/server"
 import { Button, Dialog, DialogBody, DialogFooter, DialogHeader, DialogTitle, Field, TextInput, useDialog } from "@/ui"
-import { appErrorOf } from "../api"
 import { useProjectsText } from "../i18n"
 import { useProjectCommands } from "../store"
 
@@ -23,7 +22,7 @@ export const RenameProjectDialog: Component<{ project: Project }> = (props) => {
       await commands.rename(props.project.id, next)
       dialog.close()
     } catch (cause) {
-      setFailure(appErrorOf(cause).message)
+      setFailure(toAppError(cause).message)
     } finally {
       setSaving(false)
     }

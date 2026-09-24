@@ -1,4 +1,5 @@
 import { machine, unreachable, type Machine } from "@/lib/machine"
+import type { BrowserKey } from "./i18n"
 
 export type BrowserTabState =
   | { readonly kind: "loading"; readonly url: string }
@@ -72,3 +73,5 @@ export type PickedElement = {
 export type BrowserHistory = { readonly canGoBack: boolean; readonly canGoForward: boolean }
 
 export type BrowserAction = "back" | "forward" | "reload" | "hardReload" | "devTools" | "clearCookies"
+
+export type BrowserNotice = { readonly key: BrowserKey } | { readonly text: string }

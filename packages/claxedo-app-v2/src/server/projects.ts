@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/solid-query"
 import { fetchQuery } from "./fetch-query"
 import type { ProjectId } from "./ids"
-import type { ProjectsApi } from "./index"
+import type { ProjectsApi } from "./api"
 import { queryKeys } from "./query-keys"
 import { jsonInit, type Transport } from "./transport"
 import type { FetchQuery, Project } from "./types"

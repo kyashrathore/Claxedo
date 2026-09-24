@@ -1,5 +1,5 @@
 import { fetchQuery } from "./fetch-query"
-import type { CloudApi } from "./index"
+import type { CloudApi } from "./api"
 import { ServerError } from "./errors"
 import type { PlacementId, ProjectId } from "./ids"
 import { queryKeys } from "./query-keys"

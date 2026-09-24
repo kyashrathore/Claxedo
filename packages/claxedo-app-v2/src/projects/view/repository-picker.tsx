@@ -1,8 +1,7 @@
 import { createMemo, createSignal, For, Match, Show, Switch, type Component } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import type { ProjectSource } from "@/server"
+import { useServer, type CodeHostConnection, type ProjectSource } from "@/server"
 import { Field, RadioGroup, RadioItem, Select, TextInput } from "@/ui"
-import { useProjectsServer, type CodeHostConnection } from "../api"
 import { useProjectsText } from "../i18n"
 
 type RepositorySource = Extract<ProjectSource, { kind: "repository" | "connectedRepository" }>
@@ -41,7 +40,7 @@ const RepositoryList: Component<{
   onPick: (fullName: string) => void
 }> = (props) => {
   const t = useProjectsText()
-  const server = useProjectsServer()
+  const server = useServer()
   const repositories = useQuery(() => server.queries.codeHost.repositories(props.connection.id))
   const [query, setQuery] = createSignal("")
   const matches = createMemo(() => {
@@ -90,7 +89,7 @@ export const RepositoryPicker: Component<{
   onSource: (source: ProjectSource | undefined) => void
 }> = (props) => {
   const t = useProjectsText()
-  const server = useProjectsServer()
+  const server = useServer()
   const connections = useQuery(() => server.queries.codeHost.connections())
   const usable = createMemo(() => (connections.data ?? []).filter((connection) => connection.status !== "broken"))
   const [chosenId, setChosenId] = createSignal<string>()

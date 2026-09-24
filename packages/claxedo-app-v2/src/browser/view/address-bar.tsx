@@ -1,58 +1,45 @@
-import { createEffect, createSignal } from "solid-js"
-import { t } from "../i18n"
+import { createSignal, type JSX } from "solid-js"
+import { useTranslator } from "@/i18n"
+import { TextInput } from "@/ui"
+import { dictionary } from "../i18n"
 import type { BrowserTab } from "../tab"
 import { normalizeAddressBarInput, visibleUrl } from "../url"
 
-export function AddressBar(props: { readonly tab: BrowserTab }) {
-  const live = () => visibleUrl(props.tab.state().url)
-  const [draft, setDraft] = createSignal(live())
-  const [focused, setFocused] = createSignal(false)
-
-  createEffect(() => {
-    const url = live()
-    if (!focused()) setDraft(url)
-  })
+export function AddressBar(props: { readonly tab: BrowserTab }): JSX.Element {
+  const t = useTranslator(dictionary)
+  const [draft, setDraft] = createSignal<string>()
+  const shown = () => draft() ?? visibleUrl(props.tab.state().url)
 
   const commit = () => {
-    const url = normalizeAddressBarInput(draft())
+    const url = normalizeAddressBarInput(shown())
     if (!url) return
     setDraft(url)
     if (url !== props.tab.state().url) void props.tab.navigate(url)
   }
 
-  const reset = (input: HTMLInputElement) => {
-    setDraft(live())
-    input.blur()
-  }
-
   return (
-    <div
-      class="flex min-w-48 flex-1 basis-40 items-center rounded-md border bg-surface-base px-2 focus-within:border-border-strong-base focus-within:bg-background-base"
-      classList={{
-        "border-border-weak-base": props.tab.state().kind !== "picking",
-        "border-border-active": props.tab.state().kind === "picking",
-      }}
-    >
-      <input
+    <div class="min-w-48 flex-1 basis-40" data-picking={props.tab.state().kind === "picking" ? "" : undefined}>
+      <TextInput
         type="text"
         aria-label={t("browser.address")}
         placeholder={t("browser.address.placeholder")}
-        value={draft()}
+        value={shown()}
         spellcheck={false}
         autocomplete="off"
-        class="h-7 min-w-0 flex-1 bg-transparent text-12-regular text-text-base outline-none placeholder:text-text-weak pointer-coarse:h-11"
         onInput={(event) => setDraft(event.currentTarget.value)}
         onFocus={(event) => {
-          setFocused(true)
+          setDraft(visibleUrl(props.tab.state().url))
           event.currentTarget.select()
         }}
-        onBlur={() => setFocused(false)}
+        onBlur={() => setDraft(undefined)}
         onKeyDown={(event) => {
           if (event.key === "Enter") {
             event.preventDefault()
             commit()
+            event.currentTarget.blur()
           } else if (event.key === "Escape") {
-            reset(event.currentTarget)
+            setDraft(undefined)
+            event.currentTarget.blur()
           }
         }}
       />
