@@ -7,6 +7,7 @@ import { NotificationsSection, SoundsSection } from "./view/alerts"
 import { AppearanceSection } from "./view/appearance"
 import { ConnectionsSection } from "./view/connections"
 import { LanguageSection } from "./view/language"
+import { MachinesSection } from "./view/machines"
 import { KeybindingsSection } from "./view/keybindings"
 
 const title = (key: Keys) => () => useTranslator(dictionary)(key)
@@ -28,6 +29,7 @@ export const settingsSections: readonly SettingsSection[] = [
   usageSettingsSection,
   organizationSettingsSection,
   section("connections", "settings.section.connections", "account", 40, ConnectionsSection),
+  section("machines", "settings.section.machines", "account", 45, MachinesSection),
   section("language", "settings.section.language", "app", 50, LanguageSection),
   section("appearance", "settings.section.appearance", "app", 60, AppearanceSection),
   section("notifications", "settings.section.notifications", "app", 62, NotificationsSection),

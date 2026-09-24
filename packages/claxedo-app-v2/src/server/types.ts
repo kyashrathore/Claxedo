@@ -36,6 +36,7 @@ export type Machine = {
   readonly ownerId?: UserId
   readonly online: boolean
   readonly isThisMachine: boolean
+  readonly enrolled: boolean
 }
 
 export type PlacementKind = "folder" | "worktree" | "cloud"

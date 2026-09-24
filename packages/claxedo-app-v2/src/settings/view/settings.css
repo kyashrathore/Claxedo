@@ -236,3 +236,69 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+
+.settings-add-machine {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.settings-instructions {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-self: stretch;
+  padding: 16px;
+  border: 1px dashed var(--v2-border-border-muted);
+  border-radius: var(--radius-lg);
+}
+
+.settings-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-step {
+  display: flex;
+  gap: 12px;
+}
+
+.settings-step-number {
+  width: 16px;
+  flex-shrink: 0;
+  color: var(--v2-text-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-step-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.settings-command {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 4px 4px 8px;
+  border: 1px solid var(--v2-border-border-muted);
+  border-radius: var(--radius-md);
+  background: var(--v2-background-bg-layer-01);
+}
+
+.settings-command code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--font-size-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

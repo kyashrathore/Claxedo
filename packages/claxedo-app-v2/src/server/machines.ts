@@ -23,6 +23,7 @@ function machineFromDevice(row: DeviceRow, self: string | undefined, now: number
     name: row.display_name,
     online: now - row.last_seen_at < MACHINE_ONLINE_WINDOW_MS,
     isThisMachine: self !== undefined && self === row.host_id,
+    enrolled: true,
   }
 }
 
@@ -32,7 +33,7 @@ export function thisMachineId(declaration: BootstrapDeclaration) {
 
 export function thisMachine(declaration: BootstrapDeclaration, loopback: boolean): Machine | undefined {
   if (!loopback) return undefined
-  return { id: thisMachineId(declaration), name: "This machine", online: true, isThisMachine: true }
+  return { id: thisMachineId(declaration), name: "This machine", online: true, isThisMachine: true, enrolled: declaration.enrollmentId !== undefined }
 }
 
 async function listMachines(transport: Transport, workspaces: Workspaces): Promise<readonly Machine[]> {
