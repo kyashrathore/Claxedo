@@ -1,4 +1,4 @@
-import type { AnyPaneKind, Json, PaneKind } from "@/shell"
+import type { AnyPaneKind, PaneKind } from "@/shell"
 import { reducers } from "./reducers/index"
 import { selectors } from "./selectors"
 import type { WorkbenchState } from "./types"
@@ -9,26 +9,16 @@ export type PaneApi = {
   readonly panes: () => readonly PaneView[]
   readonly activePane: () => PaneView | undefined
   readonly openPane: <State>(kind: PaneKind<State>, state: State) => string
-  readonly openByKind: (kind: string, state: Json, options?: { readonly paneId?: string }) => string
   readonly replacePane: <State>(paneId: string, kind: PaneKind<State>, state: State) => void
   readonly closePane: (paneId: string) => void
 }
 
 export type PaneApiHost = {
-  readonly kinds: () => readonly AnyPaneKind[]
   readonly layout: () => WorkbenchState
   readonly content: (contentId: string) => { readonly kind: AnyPaneKind; readonly state: unknown } | undefined
   readonly open: <State>(kind: PaneKind<State>, state: State, focus?: boolean) => string
   readonly apply: (mutation: (layout: WorkbenchState) => WorkbenchState) => void
   readonly closeContent: (contentId: string) => void
-}
-
-function decodeByKind(kinds: readonly AnyPaneKind[], kindId: string, value: Json): { readonly kind: PaneKind<unknown>; readonly state: unknown } {
-  const kind = kinds.find((candidate) => candidate.kind === kindId)
-  if (!kind) throw new Error(`Pane kind "${kindId}" is not registered`)
-  const state = kind.decode(value)
-  if (state === undefined) throw new Error(`Pane kind "${kindId}" rejected the state it was given`)
-  return { kind: kind as PaneKind<unknown>, state }
 }
 
 export function createPaneApi(host: PaneApiHost): PaneApi {
@@ -57,12 +47,6 @@ export function createPaneApi(host: PaneApiHost): PaneApi {
       return panes().find((pane) => pane.paneId === focused)
     },
     openPane,
-    openByKind: (kindId, value, options) => {
-      const { kind, state } = decodeByKind(host.kinds(), kindId, value)
-      if (!options?.paneId) return openPane(kind, state)
-      replacePane(options.paneId, kind, state)
-      return options.paneId
-    },
     replacePane,
     closePane: (paneId) => {
       const pane = host.layout().panes.find((candidate) => candidate.id === paneId)
