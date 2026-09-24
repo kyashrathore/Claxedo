@@ -1,7 +1,8 @@
 import type { JSX } from "solid-js"
 import type { Confirmation } from "@claxedo/plugin-api"
 import { Show } from "solid-js"
-import { Button, Dialog, type useDialog } from "@/ui"
+import { Dialog, type useDialog } from "@/ui"
+import { Button } from "@opencode-ai/ui/button"
 import { usePluginsText } from "../i18n"
 
 type Dialogs = ReturnType<typeof useDialog>
@@ -18,7 +19,7 @@ function ConfirmDialog(props: { readonly confirmation: Confirmation; readonly de
           <Button type="button" variant="ghost" onClick={() => props.decide(false)}>
             {props.confirmation.cancelLabel ?? t("plugins.cancel")}
           </Button>
-          <Button type="button" variant={props.confirmation.destructive ? "danger" : "neutral"} onClick={() => props.decide(true)}>
+          <Button type="button" variant="primary" onClick={() => props.decide(true)}>
             {props.confirmation.confirmLabel ?? t("plugins.confirm")}
           </Button>
         </div>
