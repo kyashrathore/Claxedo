@@ -36,14 +36,16 @@ function storeScriptedKey(transport: HttpTransport, daemonUrl: string, providerI
   )
 }
 
+export async function storeScriptedKeys(transport: HttpTransport, daemonUrl: string) {
+  for (const providerId of SCRIPTED_PROVIDER_IDS) await storeScriptedKey(transport, daemonUrl, providerId)
+}
+
 export async function connectScriptedProviders(
   transport: HttpTransport,
   daemonUrl: string,
   scripted: ScriptedModelServer,
   input: { red: boolean },
 ) {
-  for (const providerId of SCRIPTED_PROVIDER_IDS) {
-    if (!input.red) await routeToScripted(transport, daemonUrl, providerId, scripted)
-    await storeScriptedKey(transport, daemonUrl, providerId)
-  }
+  if (!input.red) for (const providerId of SCRIPTED_PROVIDER_IDS) await routeToScripted(transport, daemonUrl, providerId, scripted)
+  await storeScriptedKeys(transport, daemonUrl)
 }

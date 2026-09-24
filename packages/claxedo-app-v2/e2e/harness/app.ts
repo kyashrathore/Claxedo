@@ -26,6 +26,10 @@ export function appDistDir(app: AppChoice) {
   return path.join(appPackageDir(app), DIST_DIR)
 }
 
+export function signedDistDir(app: AppChoice) {
+  return path.join(appPackageDir(app), `${DIST_DIR}-signed`)
+}
+
 export function newestMtime(entry: string): number {
   if (!fs.existsSync(entry)) return 0
   const stat = fs.statSync(entry)
