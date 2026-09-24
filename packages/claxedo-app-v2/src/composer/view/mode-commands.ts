@@ -1,7 +1,4 @@
 import type { Accessor } from "solid-js"
-import { harnessProfile } from "@/features/session/harness/profile"
-import type { createHarnessSubmitController } from "@/features/session/harness/controller"
-import { composerHarnessId, isComposerHarnessMode, type ComposerMode } from "../mode"
 
 export type PromptComposerEditMode = "normal" | "shell"
 
@@ -70,28 +67,4 @@ export function registerPromptModeCommands(input: {
       onSelect: () => input.setMode("normal"),
     },
   ])
-}
-
-/** The composer's harness-selection reads: one derivation for mode, type, ref, and display name. */
-export function createSubmitHarnessSelection(input: {
-  composerMode: () => ComposerMode
-  harnessController: Pick<ReturnType<typeof createHarnessSubmitController>, "isHarnessMode" | "harness">
-}) {
-  const selectedHarnessMode = (scope: string) => {
-    const mode = input.composerMode()
-    if (mode.kind === "session") return isComposerHarnessMode(mode)
-    return input.harnessController.isHarnessMode(scope) || isComposerHarnessMode(mode)
-  }
-  const selectedHarnessType = (scope: string) => {
-    const mode = input.composerMode()
-    if (mode.kind === "session") return composerHarnessId(mode)
-    const harness = input.harnessController.harness(scope)
-    return harness ?? composerHarnessId(mode)
-  }
-  const selectedHarnessRef = selectedHarnessType
-  const selectedHarnessDisplayName = (scope: string) => {
-    const harness = selectedHarnessType(scope)
-    return harness ? harnessProfile(harness).displayName : "Select harness"
-  }
-  return { selectedHarnessMode, selectedHarnessType, selectedHarnessRef, selectedHarnessDisplayName }
 }

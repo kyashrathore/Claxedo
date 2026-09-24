@@ -8,6 +8,7 @@ import { ImageMarkLayer } from "./layer"
 import type { Size } from "./marks"
 import { commentBoxPosition, createMarkDraft, shownSize, type MarkDraft } from "./editor-geometry"
 import { createMarkSurface, type MarkSurface } from "./surface"
+import "./editor.css"
 
 export type ImageMarkEditorProps = {
   image: ImagePart

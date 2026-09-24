@@ -1,11 +1,11 @@
 import { For, Show, type Accessor, type JSX } from "solid-js"
 import { MenuV2 } from "@opencode-ai/ui/v2/menu-v2"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { COMPOSER_MENU_CLASS } from "@/features/session/composer/ui/menu-metrics"
-import type { PermissionModeGroups, PermissionModeRow } from "@/features/session/composer/permission-mode"
+import { COMPOSER_MENU_CLASS } from "./menu-metrics"
+import type { PermissionModeGroups, PermissionModeRow } from "../permission/permission-mode"
 import {
   type PermissionModeOption,
-} from "@/features/session/permission/modes"
+} from "../permission/modes"
 // Both icon exports render a single `<svg>`, so both satisfy the menu's
 // indicator contract (`[data-slot="menu-v2-item-indicator"] > svg` animates the
 // check in). `ClaxedoIconV2` is still the one used there because it carries the

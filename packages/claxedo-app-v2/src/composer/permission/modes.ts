@@ -1,8 +1,8 @@
-import type { HarnessId } from "@/platform/identity/session-ref"
+import type { HarnessId } from "./mechanisms"
 import {
   harnessPermissionLabel,
   permissionMechanism,
-} from "@/features/session/permission/mechanisms"
+} from "./mechanisms"
 
 /** Picker options come from the runtime report; local auto-answer is a separate preference. */
 

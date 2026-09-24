@@ -28,7 +28,7 @@ import {
   type JSX,
 } from "solid-js"
 
-export type ComposerNoticeTone = "critical" | "warning"
+export type ComposerNoticeTone = "critical" | "warning" | "info"
 
 export type ComposerNotice = {
   /** Which condition produced this, for `data-notice` and tests. */
@@ -112,6 +112,7 @@ export function ComposerNoticeRow(props: { notice: ComposerNotice | undefined; c
             classList={{
               "bg-surface-critical-strong": notice().tone === "critical",
               "bg-surface-warning-strong": notice().tone === "warning",
+              "bg-icon-weak-base": notice().tone === "info",
             }}
           />
           {/* Title over description, not side by side. On one line a long detail

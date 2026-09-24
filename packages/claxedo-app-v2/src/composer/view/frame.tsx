@@ -1,12 +1,12 @@
 import { Show, type Accessor, type Component, type JSX } from "solid-js"
+import type { ComposerTextKey } from "../i18n"
 import { DockShellForm } from "@opencode-ai/ui/dock-surface"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
-import type { PickerState } from "@/features/session/ui/model/model-list"
-import type { ImageAttachmentPart } from "@/features/session/providers/prompt"
-import { PromptContextItems } from "@/features/session/composer/ui/context-items"
-import { PromptDragOverlay } from "@/features/session/composer/ui/drag-overlay"
-import { PromptImageAttachments } from "@/features/session/composer/ui/image-attachments"
-import { firstMarkNumber, type NumberedImageMark } from "@/features/session/image-marks/marks"
+import type { ImagePart as ImageAttachmentPart } from "../model"
+import { PromptContextItems } from "./context-items"
+import { PromptDragOverlay } from "./drag-overlay"
+import { PromptImageAttachments } from "./image-attachments"
+import { firstMarkNumber, type NumberedImageMark } from "../marks/marks"
 import {
   PromptPopover,
   PROMPT_POPOVER_LISTBOX_ID,
@@ -14,21 +14,20 @@ import {
   promptSlashOptionId,
   type AtOption,
   type SlashCommand,
-} from "@/features/session/composer/ui/slash-popover"
+} from "./slash-popover"
 import {
   ComposerNoticeProvider,
   ComposerNoticeRow,
   createComposerNoticeChannel,
   useComposerNoticeChannel,
-} from "@/features/session/composer/ui/composer-notice"
-import { PromptSubmitControl } from "@/features/session/composer/ui/submit-control"
-import type { SubmitBlock } from "@/features/session/composer/submit-block-reason"
-import { PromptToolbarControls } from "@/features/session/composer/ui/toolbar-controls"
-import type { SessionStatusStage as SessionStatusStageValue } from "@/features/session/ui/components/session-status-stage"
-import type { HarnessSelectionController } from "@/features/session/harness/controller"
-import type { PermissionModeGroups } from "@/features/session/composer/permission-mode"
-import type { PermissionModeOption } from "@/features/session/permission/modes"
-import type { SessionRef } from "@/platform/identity/session-ref"
+} from "./composer-notice"
+import { PromptSubmitControl } from "./submit-control"
+import type { SubmitBlock } from "../submit-block-reason"
+import { PromptToolbarControls } from "./toolbar-controls"
+import type { SessionStatusStage as SessionStatusStageValue } from "./session-status-stage"
+import type { HarnessScopeInput, HarnessSelectionController } from "../harness/controller"
+import type { PermissionModeGroups } from "../permission/permission-mode"
+import type { PermissionModeOption } from "../permission/modes"
 
 type PromptInputMode = "normal" | "shell"
 type PromptDraggingType = "image" | "@mention" | null
@@ -97,11 +96,8 @@ export const PromptInputFrame: Component<{
   permissionCurrent: Accessor<PermissionModeOption | undefined>
   onPermissionSelect: (option: PermissionModeOption) => void
   harnessController: Accessor<HarnessSelectionController | undefined>
-  harnessDirectory: Accessor<string | undefined>
-  harnessSessionId: Accessor<string | undefined>
-  sessionRef: Accessor<SessionRef | undefined>
-  surfaceId: Accessor<string | undefined>
-  draftId: Accessor<string | undefined>
+  harnessScope: Accessor<string>
+  harnessScopeInput: Accessor<HarnessScopeInput>
   active: Accessor<boolean>
   controlStyle: Accessor<JSX.CSSProperties>
   sessionLocked: Accessor<boolean>
@@ -109,9 +105,6 @@ export const PromptInputFrame: Component<{
   agentNames: Accessor<string[]>
   currentAgentName: Accessor<string>
   onAgentSelect: (value: string) => void
-  providerLoading: Accessor<boolean>
-  modelLabel: Accessor<string>
-  model: Accessor<PickerState>
   statusStage: Accessor<SessionStatusStageValue>
   stoppable: Accessor<boolean>
   abort: VoidFunction
@@ -125,7 +118,7 @@ export const PromptInputFrame: Component<{
   submitBlock: Accessor<SubmitBlock | null>
   onChooseModel: VoidFunction
   workspaceRoleBlocked: Accessor<boolean>
-  t: (key: string) => string
+  t: (key: ComposerTextKey) => string
 }> = (props) => {
   // `aria-activedescendant` target: the currently-highlighted option in the open
   // popover, or undefined when nothing is active / the popover is closed.
@@ -370,11 +363,8 @@ export const PromptInputFrame: Component<{
           mode={props.mode}
           harnessPending={props.harnessPending}
           harnessController={props.harnessController}
-          harnessDirectory={props.harnessDirectory}
-          harnessSessionId={props.harnessSessionId}
-          sessionRef={props.sessionRef}
-          surfaceId={props.surfaceId}
-          draftId={props.draftId}
+          harnessScope={props.harnessScope}
+          harnessScopeInput={props.harnessScopeInput}
           active={props.active}
           controlStyle={props.controlStyle}
           sessionLocked={props.sessionLocked}
@@ -382,9 +372,6 @@ export const PromptInputFrame: Component<{
           agentNames={props.agentNames}
           currentAgentName={props.currentAgentName}
           onAgentSelect={props.onAgentSelect}
-          providerLoading={props.providerLoading}
-          modelLabel={props.modelLabel}
-          model={props.model}
         />
         <PromptSubmitControl
           stage={props.statusStage}

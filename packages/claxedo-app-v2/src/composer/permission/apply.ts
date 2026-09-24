@@ -1,4 +1,4 @@
-import type { PermissionModeDelivery } from "@/features/session/permission/modes"
+import type { PermissionModeDelivery } from "./modes"
 
 /**
  * The one call needed to deliver a session permission mode, narrowed to a port so

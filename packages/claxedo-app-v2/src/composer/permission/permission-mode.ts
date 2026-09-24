@@ -1,6 +1,6 @@
 import { createMemo, type Accessor } from "solid-js"
-import type { BuiltinHarnessId, HarnessId } from "@/platform/identity/session-ref"
-import { harnessDisplayLabel } from "@/platform/identity/harness-catalog"
+import type { BuiltinHarnessId, HarnessId } from "./mechanisms"
+import { harnessDisplayLabel } from "@/lib/harness-catalog"
 import {
   defaultPermissionSelection,
   findPermissionModeOption,
@@ -8,8 +8,8 @@ import {
   type HarnessModeReport,
   type PermissionModeOption,
   type PermissionSelection,
-} from "@/features/session/permission/modes"
-import { permissionModeDeliverable, type PermissionModeApplied } from "@/features/session/permission/apply"
+} from "./modes"
+import { permissionModeDeliverable, type PermissionModeApplied } from "./apply"
 
 /**
  * A single row as the picker renders it: the mode, plus whether it can actually be

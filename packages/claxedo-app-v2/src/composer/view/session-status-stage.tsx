@@ -1,27 +1,3 @@
-// Rubric A2: surfaces the optimistic-status timeout stage to the user.
-//
-// The dispatcher in `session/store/session-status-dispatcher.ts` escalates
-// prompt session status metadata from `undefined` →
-// `"redispatch"` → `"pending"` → `"long"` → `"failed"` based on how long
-// an optimistic busy state has gone without a server-source update.
-//
-// This component is a passive consumer of that stage. It renders next to
-// the composer submit button and:
-//
-// - hides itself for `undefined` / `"redispatch"` (the upstream busy spinner
-//   on the submit button is sufficient),
-// - shows a quiet "Still working…" hint at `"pending"`,
-// - shows a "This is taking a while" warning + Cancel button at `"long"`,
-// - shows "Session is unresponsive" + Cancel at `"failed"`.
-//
-// Cancel calls `onCancel` (wired to the composer's Stop, which submits a
-// `cancel_turn` recovery operation against the running turn). Retry is
-// optional and only meaningful at the `"failed"` stage: when provided,
-// the composer hoists "last submitted prompt" state (text + parts + agent
-// + model + variant + attachments) and re-runs its submit pipeline. This
-// leaf component only renders the button and forwards the click; the
-// callback owner decides whether a retry is safe (no-op when nothing was
-// ever submitted from this composer instance).
 import { Match, Show, Switch } from "solid-js"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
