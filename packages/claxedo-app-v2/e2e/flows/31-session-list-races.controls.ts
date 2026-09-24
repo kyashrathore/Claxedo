@@ -145,6 +145,13 @@ export async function setup(stack: Stack, api: ClaxedoApi, app: Page, titles: re
   if (options.open ?? true) await app.goto(`${stack.url}/`)
   const sessions = created.flatMap((workspace) => workspace.sessions)
   const directories = created.map((workspace) => workspace.directory)
-  const checked: Checked = { stack, api, directory: directories[0], directories, known: new Set(sessions.map((session) => session.id)) }
+  const checked: Checked = {
+    stack,
+    api,
+    directory: directories[0],
+    directories,
+    known: new Set(sessions.map((session) => session.id)),
+    directoryOf: new Map(sessions.map((session) => [session.id, session.directory])),
+  }
   return { sessions, checked }
 }

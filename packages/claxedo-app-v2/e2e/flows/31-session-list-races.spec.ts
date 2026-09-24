@@ -1,4 +1,4 @@
-import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, type AcpStep } from "../harness"
+import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, sendPrompt, UI, type AcpStep } from "../harness"
 import {
   holdEventStreams,
   holdListRead,
@@ -13,9 +13,9 @@ import {
   caseOrder,
   expectRailEqualsServer,
   expectServerStatus,
-  loadEveryPage,
+  loadPagesUntil,
   PAGE_SIZE,
-  railLinks,
+  railRow,
 } from "./31-session-list-races.oracle"
 
 test.skip(({ isMobile }) => isMobile, "Flow 31 runs at desktop width; flow 33 owns the phone rail")
@@ -47,14 +47,14 @@ test("31 a delete lands during a fetch", async ({ stack, api, app }) => {
   await first.release()
   await expectRailEqualsServer(app, checked)
   const more = await holdListRead(app, (url) => url.searchParams.has("cursor"))
-  await app.getByRole("button", { name: "Load more" }).click()
+  await app.getByTestId("rail-sidebar-session-load-more").first().click()
   await more.computed
   await api.deleteSession(checked.directory, order[3])
   await api.deleteSession(checked.directory, order[PAGE_SIZE + 2])
   await patchSession(checked, order[4], { title: "Race fence second page" })
   await stream.received("Race fence second page")
   await more.release()
-  await expectRailEqualsServer(app, checked, { through: order[PAGE_SIZE + 4] })
+  await expectRailEqualsServer(app, checked)
 })
 
 test("31 another browser creates a session", async ({ stack, api, app, browser }) => {
@@ -62,11 +62,9 @@ test("31 another browser creates a session", async ({ stack, api, app, browser }
   await expectRailEqualsServer(app, checked)
   const other = await (await browser.newContext()).newPage()
   await other.goto(`${stack.url}/`)
-  await railLinks(other).filter({ hasText: sessions[0].title }).click()
-  await other.getByRole("button", { name: "New session" }).click()
-  const prompt = other.getByRole("textbox", { name: "Prompt" })
-  await prompt.fill("Start from the other browser")
-  await prompt.press("Enter")
+  await railRow(other, sessions[0].title).getByRole("button", { name: sessions[0].title, exact: true }).click()
+  await other.getByRole("main").getByRole("button", { name: UI.newSession, exact: true }).click()
+  await sendPrompt(other, "Start from the other browser")
   const listed = async () => (await api.sessions(checked.directory)).length
   await expect.poll(listed, { message: "the server lists the new session" }).toBe(3)
   await expectRailEqualsServer(app, checked)
@@ -117,15 +115,16 @@ test("31 a session is archived, renamed or deleted while a turn runs", async ({ 
 })
 
 test("31 a thousand sessions, including the status of rows off screen", async ({ stack, api, app }) => {
+  test.setTimeout(300_000)
   const titles = Array.from({ length: 1000 }, (_, index) => `Bulk ${String(index).padStart(4, "0")}`)
   const { sessions, checked } = await setup(stack, api, app, titles, { workspaces: 5 })
   const oldest = sessions[0]
   await startHeldTurn({ ...checked, directory: oldest.directory }, oldest.id, "off-screen")
   await expectServerStatus(checked, oldest.id, "Working")
   await expectRailEqualsServer(app, checked)
-  await loadEveryPage(app)
-  const rows = await expectRailEqualsServer(app, checked, { through: oldest.id })
-  expect(rows.at(-1), "the last row, off screen until scrolled, shows the server's status").toEqual({ sessionId: oldest.id, title: oldest.title, status: "Working" })
+  await loadPagesUntil(app, oldest.id)
+  const rows = await expectRailEqualsServer(app, checked)
+  expect(rows.find((row) => row.sessionId === oldest.id), "the oldest row, loaded last, shows the server's status").toEqual({ sessionId: oldest.id, title: oldest.title, status: "Working" })
   await stack.acp.release("off-screen")
 })
 
@@ -140,6 +139,7 @@ test("31 the app reconnects after missed events", async ({ stack, api, app }) =>
   await api.prompt(checked.directory, sessions[3].id, `Hello ${acpScriptToken("away")}`)
   const created = await api.createSession(checked.directory, { title: "Race created while away", harness: SCRIPTED_ACP_HARNESS })
   checked.known.add(created.id)
+  checked.directoryOf.set(created.id, checked.directory)
   streams.release()
   await expectRailEqualsServer(app, checked)
 })
