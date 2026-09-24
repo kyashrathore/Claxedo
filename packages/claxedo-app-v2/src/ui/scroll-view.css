@@ -1,5 +1,5 @@
 @layer components {
-  .scroll-view {
+  .v2-scroll-view {
     position: relative;
     display: flex;
     flex-direction: column;
@@ -7,7 +7,7 @@
     overflow: hidden;
   }
 
-  .scroll-view-viewport {
+  .v2-scroll-view-viewport {
     flex: 1 1 auto;
     min-height: 0;
     width: 100%;
@@ -16,11 +16,11 @@
     outline: none;
   }
 
-  .scroll-view-viewport::-webkit-scrollbar {
+  .v2-scroll-view-viewport::-webkit-scrollbar {
     display: none;
   }
 
-  .scroll-view-thumb {
+  .v2-scroll-view-thumb {
     position: absolute;
     top: 0;
     right: 0;
@@ -34,7 +34,7 @@
     pointer-events: auto;
   }
 
-  .scroll-view-thumb::after {
+  .v2-scroll-view-thumb::after {
     content: "";
     position: absolute;
     top: 0;
@@ -47,12 +47,12 @@
     transition: background-color 150ms ease;
   }
 
-  .scroll-view-thumb:hover::after,
-  .scroll-view-thumb[data-dragging="true"]::after {
+  .v2-scroll-view-thumb:hover::after,
+  .v2-scroll-view-thumb[data-dragging="true"]::after {
     background-color: var(--v2-icon-icon-muted);
   }
 
-  .scroll-view-thumb[data-visible="true"] {
+  .v2-scroll-view-thumb[data-visible="true"] {
     opacity: 1;
   }
 }

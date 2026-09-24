@@ -10,7 +10,7 @@ export function Divider(props: DividerProps) {
       {...rest}
       role="separator"
       aria-orientation="horizontal"
-      data-component="divider"
+      data-component="v2-divider"
       classList={{
         ...local.classList,
         [local.class ?? ""]: !!local.class,

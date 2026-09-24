@@ -23,10 +23,10 @@ export function FileIcon(props: FileIconProps) {
   createEffect(() => fileIconSprite.ensure(name()))
   return (
     <svg
-      data-component="file-icon"
+      data-component="v2-file-icon"
       {...rest}
       classList={{
-        "ui-file-icon": true,
+        "v2-file-icon": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}

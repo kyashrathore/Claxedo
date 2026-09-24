@@ -1,5 +1,5 @@
 @layer components {
-  .ui-tag {
+  .v2-tag {
     box-sizing: border-box;
     display: inline-flex;
     flex-direction: row;
@@ -23,11 +23,11 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .ui-tag[data-high-contrast] {
+  .v2-tag[data-high-contrast] {
     border-color: var(--v2-border-border-strong);
   }
 
-  .ui-tag[data-variant="accent"] {
+  .v2-tag[data-variant="accent"] {
     border: 0;
     background: var(--v2-background-bg-accent);
     color: var(--v2-text-text-contrast);

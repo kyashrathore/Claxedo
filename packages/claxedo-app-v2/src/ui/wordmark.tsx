@@ -34,7 +34,7 @@ export function Wordmark(props: Pick<ComponentProps<"svg">, "class">) {
       fill="none"
       role="img"
       aria-label="Claxedo"
-      data-component="wordmark"
+      data-component="v2-wordmark"
       classList={{ [props.class ?? ""]: !!props.class }}
     >
       <g opacity="0.6" mask={`url(#${mask})`}>

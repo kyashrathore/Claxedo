@@ -1,5 +1,5 @@
 @layer components {
-  [data-component="keybind"] {
+  [data-component="v2-keybind"] {
     box-sizing: border-box;
     font-variant-numeric: tabular-nums;
     display: inline-flex;
@@ -10,13 +10,13 @@
     flex-shrink: 0;
   }
 
-  [data-component="keybind"] *,
-  [data-component="keybind"] *::before,
-  [data-component="keybind"] *::after {
+  [data-component="v2-keybind"] *,
+  [data-component="v2-keybind"] *::before,
+  [data-component="v2-keybind"] *::after {
     box-sizing: border-box;
   }
 
-  [data-component="keybind"] .ui-keybind-key {
+  [data-component="v2-keybind"] .v2-keybind-key {
     display: flex;
     flex-direction: row;
     justify-content: center;
@@ -30,15 +30,15 @@
     flex-grow: 0;
   }
 
-  [data-component="keybind"][data-variant="neutral"] .ui-keybind-key {
+  [data-component="v2-keybind"][data-variant="neutral"] .v2-keybind-key {
     background: var(--v2-background-bg-layer-03);
   }
 
-  [data-component="keybind"][data-variant="ghost"] .ui-keybind-key {
+  [data-component="v2-keybind"][data-variant="ghost"] .v2-keybind-key {
     background: transparent;
   }
 
-  [data-component="keybind"] .ui-keybind-label {
+  [data-component="v2-keybind"] .v2-keybind-label {
     display: flex;
     flex-direction: row;
     justify-content: center;
@@ -62,11 +62,11 @@
     user-select: none;
   }
 
-  [data-component="keybind"][data-variant="neutral"] .ui-keybind-label {
+  [data-component="v2-keybind"][data-variant="neutral"] .v2-keybind-label {
     color: var(--v2-text-text-muted);
   }
 
-  [data-component="keybind"][data-variant="ghost"] .ui-keybind-label {
+  [data-component="v2-keybind"][data-variant="ghost"] .v2-keybind-label {
     color: var(--v2-text-text-faint);
   }
 

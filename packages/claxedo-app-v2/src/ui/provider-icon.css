@@ -1,5 +1,5 @@
 @layer components {
-  .ui-provider-icon {
+  .v2-provider-icon {
     display: block;
     flex-shrink: 0;
     width: 16px;

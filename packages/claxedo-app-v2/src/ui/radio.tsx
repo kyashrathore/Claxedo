@@ -14,7 +14,7 @@ export function RadioGroup(props: RadioGroupProps) {
   return (
     <Kobalte
       {...others}
-      data-component="radio"
+      data-component="v2-radio"
       classList={{
         ...local.classList,
         [local.class ?? ""]: !!local.class,
@@ -22,16 +22,16 @@ export function RadioGroup(props: RadioGroupProps) {
     >
       <Show when={local.label}>
         {(label) => (
-          <Kobalte.Label data-slot="radio-label" classList={{ "sr-only": local.hideLabel }}>
+          <Kobalte.Label data-slot="v2-radio-label" classList={{ "sr-only": local.hideLabel }}>
             {label()}
           </Kobalte.Label>
         )}
       </Show>
       <Show when={local.description}>
-        {(description) => <Kobalte.Description data-slot="radio-description">{description()}</Kobalte.Description>}
+        {(description) => <Kobalte.Description data-slot="v2-radio-description">{description()}</Kobalte.Description>}
       </Show>
-      <div data-slot="radio-items">{local.children}</div>
-      <Kobalte.ErrorMessage data-slot="radio-error" class="ui-radio-error" />
+      <div data-slot="v2-radio-items">{local.children}</div>
+      <Kobalte.ErrorMessage data-slot="v2-radio-error" class="v2-radio-error" />
     </Kobalte>
   )
 }
@@ -47,23 +47,23 @@ export function RadioItem(props: RadioItemProps) {
   return (
     <Kobalte.Item
       {...others}
-      data-slot="radio-item"
+      data-slot="v2-radio-item"
       classList={{
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}
     >
-      <Kobalte.ItemInput data-slot="radio-item-input" />
-      <div data-slot="radio-item-control-stack">
-        <Kobalte.ItemControl data-slot="radio-item-control" class="ui-radio-item-control">
-          <Kobalte.ItemIndicator data-slot="radio-item-indicator" />
+      <Kobalte.ItemInput data-slot="v2-radio-item-input" />
+      <div data-slot="v2-radio-item-control-stack">
+        <Kobalte.ItemControl data-slot="v2-radio-item-control" class="v2-radio-item-control">
+          <Kobalte.ItemIndicator data-slot="v2-radio-item-indicator" />
         </Kobalte.ItemControl>
       </div>
-      <Kobalte.ItemLabel data-slot="radio-item-label" classList={{ "sr-only": local.hideLabel }}>
-        <div data-slot="radio-item-text">
-          <span data-slot="radio-item-label-text" class="ui-radio-item-label-text">{local.label}</span>
+      <Kobalte.ItemLabel data-slot="v2-radio-item-label" classList={{ "sr-only": local.hideLabel }}>
+        <div data-slot="v2-radio-item-text">
+          <span data-slot="v2-radio-item-label-text" class="v2-radio-item-label-text">{local.label}</span>
           <Show when={local.description}>
-            {(description) => <span data-slot="radio-item-description" class="ui-radio-item-description">{description()}</span>}
+            {(description) => <span data-slot="v2-radio-item-description" class="v2-radio-item-description">{description()}</span>}
           </Show>
         </div>
       </Kobalte.ItemLabel>

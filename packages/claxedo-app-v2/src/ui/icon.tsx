@@ -36,13 +36,13 @@ export function Icon(props: IconProps) {
   onMount(ensureSprite)
   return (
     <svg
-      data-component="icon"
-      data-slot="icon-svg"
+      data-component="v2-icon"
+      data-slot="v2-icon-svg"
       data-icon={local.name}
       data-size={local.size || "normal"}
       classList={{
-        "ui-icon": true,
-        "ui-icon-svg": true,
+        "v2-icon": true,
+        "v2-icon-svg": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}
