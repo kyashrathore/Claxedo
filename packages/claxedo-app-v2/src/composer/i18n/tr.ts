@@ -25,7 +25,6 @@ export const tr: Partial<Record<ComposerTextKey, string>> = {
   "composer.action.dismiss": "Kapat",
   "composer.action.cancel": "İptal",
   "composer.action.save": "Kaydet",
-  "composer.picker.agent": "Ajan",
   "composer.attachment.remove": "Eki kaldır",
   "composer.attachment.refused.title": "{{harness}} bu eki kullanamıyor",
   "composer.attachment.refused.description": "{{harness}} için {{mime}} alan bir istem girişi yok ve bu oturumun dosyayı tutacak bir çalışma alanı klasörü de yok.",
@@ -39,4 +38,9 @@ export const tr: Partial<Record<ComposerTextKey, string>> = {
   "composer.marks.remove": "İşareti kaldır",
   "composer.key.esc": "ESC",
   "composer.error.title": "Komut gönderilemedi",
+  "dialog.model.search.placeholder": "Model ara",
+  "dialog.model.empty": "Model sonucu yok",
+  "command.provider.connect": "Sağlayıcı bağla",
+  "model.tag.free": "Ücretsiz",
+  "model.tag.latest": "En yeni",
 }

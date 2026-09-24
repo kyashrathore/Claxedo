@@ -4,6 +4,19 @@ export { Avatar, type AvatarProps } from "./avatar"
 export { Button, type ButtonProps } from "./button"
 export { Card, type CardProps, type CardTitleProps, type CardVariant } from "./card"
 export { Checkbox, type CheckboxProps } from "./checkbox"
+export { ClaxedoIcon, type ClaxedoIconName, type ClaxedoIconProps } from "./controls/claxedo-icon"
+export { ClaxedoIconButton, type ClaxedoIconButtonProps } from "./controls/claxedo-icon-button"
+export { DelayedLoading } from "./controls/delayed-loading"
+export {
+  browserToolbarSlot,
+  fileHeaderActionsSlot,
+  reviewControlsSlot,
+  reviewToolbarSlot,
+  setBrowserToolbarSlot,
+  setFileHeaderActionsSlot,
+  setReviewControlsSlot,
+  setReviewToolbarSlot,
+} from "./controls/portal-slot"
 export { Collapsible, type CollapsibleProps } from "./collapsible"
 export {
   Dialog,
@@ -67,6 +80,7 @@ export {
   type SegmentedControlItemProps,
 } from "./segmented-control"
 export { Select, type SelectProps } from "./select"
+export { SemanticIcon, type SemanticIconConcept } from "./semantic-icon"
 export { SplitButton, SplitButtonAction, SplitButtonMenuTrigger } from "./split-button"
 export { Switch, type SwitchProps } from "./switch"
 export { TabStateIndicator } from "./tab-state-indicator"

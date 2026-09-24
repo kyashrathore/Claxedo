@@ -1,2 +1,2 @@
 export { BrowserProvider } from "./store"
-export { browserPanelTab } from "./panel-tab"
+export { BrowserTabView, type BrowserTabViewProps } from "./view/browser-tab"

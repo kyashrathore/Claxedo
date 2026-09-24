@@ -1,6 +1,6 @@
 # Browser
 
-Owns: the Browser panel tab. It previews a URL for the current placement: on the desktop in a `<webview>` driven through the preload's `window.api.browser` bridge, on the web in a sandboxed iframe. It also owns the console and picking an element into the prompt.
+Owns: the workspace panel's Browser tab. It previews a URL for the current placement: on the desktop in a `<webview>` driven through the preload's `window.api.browser` bridge, on the web in a sandboxed iframe. It also owns the console and picking an element into the prompt.
 
 ## Owned concepts
 

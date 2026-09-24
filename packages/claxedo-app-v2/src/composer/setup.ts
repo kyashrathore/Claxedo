@@ -2,8 +2,9 @@ import { createEffect, createMemo, createSignal, on, onCleanup, type Accessor } 
 import type { PlacementId } from "@/server"
 import { useServer } from "@/server"
 import type { SessionView } from "@/session"
+import { connectionHarness, nativeHarness, NATIVE_HARNESS_IDS, type NativeHarnessId } from "@/lib/harness-selection"
 import { useDialog } from "@/ui"
-import type { ImagePart } from "./model"
+import type { ImagePart, Submission } from "./model"
 import { promptImages } from "./model"
 import { useComposerStore, type ComposerKey, type ComposerStore } from "./store"
 import { useShellRegistries } from "@/shell"
@@ -13,7 +14,10 @@ import { createComposerController, type ComposerController } from "./controller"
 import { createComposerRefs, type ComposerRefs } from "./refs"
 import { createComposerSend } from "./send"
 import { createSuggestions, type SlashItem, type SuggestionQuery } from "./suggestions"
-import { pickHarness, selectionChanged, selectionFor, sessionHarness } from "./selection"
+import { useHarnessConfig } from "./harness/context"
+import { createHarnessSelectionController, createHarnessSubmitController, type HarnessScopeInput } from "./harness/controller"
+import { harnessSelectionId, type HarnessType } from "./harness/profile"
+import { submitBlockReason } from "./submit-block-reason"
 
 export type ComposerProps = {
   readonly composerKey: ComposerKey
@@ -22,26 +26,54 @@ export type ComposerProps = {
   readonly sessionHarness?: string
   readonly attachmentWorkspace: boolean
   readonly readOnly?: boolean
-  readonly createSession?: () => Promise<SessionView>
+  readonly createSession?: (submission: Submission) => Promise<SessionView>
   readonly afterAccepted?: (view: SessionView) => void
   readonly openImageMarks?: (image: ImagePart, focusIndex?: number) => void
 }
 
 type Late = { controller?: ComposerController }
 
-function createHarnessSelection(props: ComposerProps, store: ComposerStore, key: Accessor<ComposerKey>) {
+function harnessOfId(id: string): HarnessType {
+  const native = NATIVE_HARNESS_IDS.find((candidate): candidate is NativeHarnessId => candidate === id)
+  return native ? nativeHarness(native) : connectionHarness(id)
+}
+
+function createHarnessSelection(props: ComposerProps, key: Accessor<ComposerKey>) {
   const server = useServer()
-  const harnesses = createMemo(() => server.capabilities()?.harnesses ?? [])
-  const selection = () => store.selection(key())
-  const harness = createMemo(() =>
-    props.view ? sessionHarness(harnesses(), props.sessionHarness) : pickHarness(harnesses(), selection().harness),
-  )
-  createEffect(() => {
-    if (props.view) return
-    const next = selectionFor(harness(), selection())
-    if (selectionChanged(next, selection())) store.setSelection(key(), next)
+  const store = useHarnessConfig()
+  const controller = createHarnessSelectionController(store)
+  const submit = createHarnessSubmitController(store)
+  const scopeInput = createMemo<HarnessScopeInput>(() => {
+    const view = props.view
+    if (!view) return { placementId: props.placementId }
+    return {
+      placementId: view.ref.placementId,
+      sessionId: view.ref.sessionId,
+      sessionRef: view.ref,
+      ...(props.sessionHarness ? { sessionHarness: harnessOfId(props.sessionHarness) } : {}),
+    }
   })
-  return { harnesses, selection, harness, sendSelection: () => (harness() ? selection() : {}) }
+  const selection = createMemo(() => controller.read(key()))
+  const harness = createMemo(() => {
+    const type = submit.heldHarness(key()) ?? selection().harness
+    return type ? server.capabilities()?.harnesses.find((info) => info.id === harnessSelectionId(type)) : undefined
+  })
+  const submission = async (): Promise<Submission> => {
+    const scope = key()
+    await submit.settledModel(scope)
+    const held = submit.heldHarness(scope)
+    const model = submit.modelKeyForSubmit(scope)
+    const tier = submit.serviceTierForSubmit(scope)
+    await store.commitHeldHarness(scope, scopeInput())
+    const type = held ?? submit.harness(scope)
+    return {
+      ...(type ? { harness: harnessSelectionId(type) } : {}),
+      ...(model ? { model: { providerId: model.providerID, modelId: model.modelID } } : {}),
+      ...(model?.variant ? { effort: model.variant } : {}),
+      ...(tier ? { serviceTier: tier } : {}),
+    }
+  }
+  return { controller, submit, scopeInput, selection, harness, submission }
 }
 
 type HarnessSelection = ReturnType<typeof createHarnessSelection>
@@ -62,7 +94,7 @@ function createSendFor(props: ComposerProps, store: ComposerStore, key: Accessor
     store,
     working: () => sessionWorking(props.view),
     mode: () => late.controller?.state.mode ?? "normal",
-    selection: selection.sendSelection,
+    submission: selection.submission,
     goalMode: () => selection.harness()?.goalMode,
     view: () => props.view,
     createSession: props.createSession,
@@ -129,7 +161,7 @@ export function createComposer(props: ComposerProps) {
   createEffect(on(key, (current) => onCleanup(store.retain(current))))
   const late: Late = {}
   const refs = createComposerRefs()
-  const selection = createHarnessSelection(props, store, key)
+  const selection = createHarnessSelection(props, key)
   const working = createMemo(() => sessionWorking(props.view))
   const goalAvailable = createMemo(() => (selection.harness()?.goalMode ?? "none") !== "none")
   const [query, setQuery] = createSignal<SuggestionQuery>({ kind: "closed" })
@@ -142,15 +174,36 @@ export function createComposer(props: ComposerProps) {
   late.controller = controller
   createEffect(() => setQuery(controller.suggestionQuery()))
   const draft = () => store.draft(key())
+  const submitBlock = createMemo(() => {
+    const state = selection.selection()
+    const harnessMode = !!state.harness
+    return submitBlockReason({
+      authorityBlock: undefined,
+      harnessMode,
+      draftConnectionAllowsNoModel: state.canCreateWithoutModel,
+      harnessReadiness: state.readiness,
+      harnessConfigError: !!state.configError,
+      harnessOptionsLoading: state.optionsLoading,
+      harnessReadyForSubmit: selection.submit.readyForSubmit(key()),
+      needsModelSelection: state.draftDefaultState === "choose-model" || state.draftDefaultState === "saved-model-unavailable",
+      modelBlocked: !harnessMode,
+      modelBlockLabel: undefined,
+      providerLoading: false,
+      booting: false,
+      stoppable: working(),
+      blank: controller.blank(),
+    })
+  })
   const shared = { t, key, store, refs, send, reader, suggestions, controller, dragging, draft, working, goalAvailable }
   return {
     ...shared,
     harness: selection.harness,
-    harnesses: selection.harnesses,
-    selection: selection.selection,
+    harnessController: selection.controller,
+    harnessScopeInput: selection.scopeInput,
+    submitBlock,
     images: createMemo(() => promptImages(draft().prompt)),
     attachments: () => store.attachments(key()),
-    disabled: () => props.readOnly === true || selection.harness()?.available === false,
+    disabled: () => props.readOnly === true,
   }
 }
 

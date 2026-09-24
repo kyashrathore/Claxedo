@@ -1,26 +1,10 @@
-import { execFile } from "node:child_process"
 import fs from "node:fs/promises"
 import path from "node:path"
-import { promisify } from "node:util"
 import type { Locator, Page } from "@playwright/test"
-import { assistantText, expect, installedCli, test } from "../harness"
+import { assistantText, expect, gitFolder, installedCli, test } from "../harness"
 
-const execFileAsync = promisify(execFile)
 const SESSION_URL = /\/w\/[^/]+\/s\/[^/?]+$/
 const MARKER = "FIRSTRUN1"
-
-async function gitFolder(root: string, name: string): Promise<string> {
-  const directory = path.join(root, name)
-  await fs.mkdir(directory, { recursive: true })
-  await fs.writeFile(path.join(directory, "README.md"), `${name}\n`)
-  const env = { ...process.env, GIT_DIR: undefined, GIT_INDEX_FILE: undefined, GIT_WORK_TREE: undefined }
-  const git = (...args: string[]) =>
-    execFileAsync("git", ["-c", "user.email=e2e@claxedo.test", "-c", "user.name=e2e", ...args], { cwd: directory, env })
-  await git("init", "-q")
-  await git("add", "README.md")
-  await git("commit", "-q", "-m", "init")
-  return fs.realpath(directory)
-}
 
 async function serverProjects(url: string): Promise<{ id: string; name: string; directory?: string | null }[]> {
   const response = await fetch(new URL("/api/claxedo/projects", url))
@@ -35,19 +19,27 @@ function pageOverflows(app: Page) {
   })
 }
 
-async function onboardV2(app: Page, folder: string): Promise<Locator> {
+async function chooseFolder(app: Page, typed: string, name: string) {
+  await app.getByRole("button", { name: "Browse" }).click()
+  const dialog = app.getByRole("dialog", { name: "New Project" })
+  await dialog.getByRole("textbox", { name: "Search folders" }).fill(typed)
+  await dialog.getByRole("button", { name: new RegExp(` ${name} /$`) }).click()
+  await expect(dialog).toHaveCount(0)
+}
+
+async function onboardV2(app: Page): Promise<Locator> {
   await expect(app).toHaveURL(/\/welcome$/)
   await expect(app.getByRole("heading", { level: 1, name: "Start with a project" })).toBeVisible()
   await app.getByRole("textbox", { name: "Name", exact: true }).fill("First project")
   await app.getByRole("button", { name: "Folder on this machine" }).click()
-  await app.getByRole("textbox", { name: "Folder", exact: true }).fill(folder)
+  await chooseFolder(app, "~/folders/first", "first")
   await app.getByRole("button", { name: "Next", exact: true }).click()
   await expect(app.getByRole("heading", { level: 1, name: "Connect an AI" })).toBeVisible()
   const agents = app.getByRole("radiogroup", { name: "Which AI runs the work" })
   await expect(agents.getByRole("radio", { name: /^Pi/ })).toBeEnabled()
   await app.getByRole("button", { name: "Back", exact: true }).click()
   await expect(app.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("First project")
-  await expect(app.getByRole("textbox", { name: "Folder", exact: true })).toHaveValue(folder)
+  await expect(app.getByRole("textbox", { name: "Folder", exact: true })).toHaveValue(/\/folders\/first$/)
   await app.getByRole("button", { name: "Next", exact: true }).click()
   await agents.getByText("Pi", { exact: true }).click()
   await expect(agents.getByRole("radio", { name: /^Pi/ })).toBeChecked()
@@ -81,7 +73,7 @@ test("01 first run: onboarding detects the agents, adds a folder project, and th
     test.skip(!claude.available, claude.available ? "" : claude.reason)
   }
   const folder = await gitFolder(path.join(stack.dataDir, "folders"), "first")
-  const prompt = stack.app === "v2" ? await onboardV2(app, folder) : await onboardV1(app, path.join("folders", "first"))
+  const prompt = stack.app === "v2" ? await onboardV2(app) : await onboardV1(app, path.join("folders", "first"))
   await prompt.click()
   await prompt.pressSequentially(`Reply with exactly this one token: ${MARKER}`)
   await expect(app.getByRole("button", { name: "Send", exact: true })).toBeEnabled()
@@ -89,9 +81,11 @@ test("01 first run: onboarding detects the agents, adds a folder project, and th
   await expect(app.getByText(MARKER, { exact: true })).toBeVisible()
 
   const projects = await serverProjects(stack.url)
-  expect(projects.map((project) => project.directory)).toEqual([folder])
+  expect(projects).toHaveLength(1)
+  const directory = projects[0]?.directory ?? ""
+  expect(await fs.realpath(directory)).toBe(folder)
   if (stack.app === "v2") expect(projects[0]?.name).toBe("First project")
-  const sessions = await api.sessions(folder)
+  const sessions = await api.sessions(directory)
   expect(sessions).toHaveLength(1)
-  expect(assistantText(await api.messages(folder, sessions[0]?.id ?? ""))).toContain(MARKER)
+  expect(assistantText(await api.messages(directory, sessions[0]?.id ?? ""))).toContain(MARKER)
 })

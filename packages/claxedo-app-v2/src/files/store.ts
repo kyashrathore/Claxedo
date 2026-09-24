@@ -6,6 +6,7 @@ import { useShellRoute } from "@/shell"
 type PlacementFiles = {
   readonly expanded: Readonly<Record<string, boolean>>
   readonly search: string
+  readonly markdownSource: Readonly<Record<string, boolean>>
 }
 
 export type Files = {
@@ -14,11 +15,13 @@ export type Files = {
   readonly setExpanded: (dir: string, expanded: boolean) => void
   readonly search: () => string
   readonly setSearch: (query: string) => void
+  readonly markdownSource: (path: string) => boolean
+  readonly toggleMarkdownSource: (path: string) => void
 }
 
 const FilesContext = createContext<Files>()
 
-const emptyFiles: PlacementFiles = { expanded: {}, search: "" }
+const emptyFiles: PlacementFiles = { expanded: {}, search: "", markdownSource: {} }
 
 export function FilesProvider(props: ParentProps): JSX.Element {
   const placementId = useShellRoute().placementId
@@ -38,6 +41,12 @@ export function FilesProvider(props: ParentProps): JSX.Element {
       write((previous) => ({ ...previous, expanded: { ...previous.expanded, [dir]: expanded } })),
     search: () => current().search,
     setSearch: (search) => write((previous) => ({ ...previous, search })),
+    markdownSource: (path) => current().markdownSource[path] === true,
+    toggleMarkdownSource: (path) =>
+      write((previous) => ({
+        ...previous,
+        markdownSource: { ...previous.markdownSource, [path]: previous.markdownSource[path] !== true },
+      })),
   }
   return createComponent(FilesContext.Provider, {
     value: files,

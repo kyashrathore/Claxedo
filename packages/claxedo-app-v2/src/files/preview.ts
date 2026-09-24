@@ -27,6 +27,10 @@ export function extensionOf(path: string): string {
   return path.split(".").pop()?.toLowerCase() ?? ""
 }
 
+export function isMarkdownPath(path: string): boolean {
+  return /\.(md|markdown)$/i.test(path)
+}
+
 export function isMediaPath(path: string): boolean {
   return MEDIA_EXTENSIONS.has(extensionOf(path))
 }

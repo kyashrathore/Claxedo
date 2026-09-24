@@ -25,7 +25,6 @@ export const ko: Partial<Record<ComposerTextKey, string>> = {
   "composer.action.dismiss": "닫기",
   "composer.action.cancel": "취소",
   "composer.action.save": "저장",
-  "composer.picker.agent": "에이전트",
   "composer.attachment.remove": "첨부 파일 제거",
   "composer.attachment.refused.title": "{{harness}}에서 이 첨부 파일을 사용할 수 없습니다",
   "composer.attachment.refused.description": "{{harness}}에는 {{mime}}을 전달할 입력이 없고, 이 세션에는 파일을 보관할 작업 공간 폴더도 없습니다.",
@@ -39,4 +38,9 @@ export const ko: Partial<Record<ComposerTextKey, string>> = {
   "composer.marks.remove": "표시 제거",
   "composer.key.esc": "ESC",
   "composer.error.title": "프롬프트 전송 실패",
+  "dialog.model.search.placeholder": "모델 검색",
+  "dialog.model.empty": "모델 결과 없음",
+  "command.provider.connect": "공급자 연결",
+  "model.tag.free": "무료",
+  "model.tag.latest": "최신",
 }

@@ -25,7 +25,6 @@ export const th: Partial<Record<ComposerTextKey, string>> = {
   "composer.action.dismiss": "ปิด",
   "composer.action.cancel": "ยกเลิก",
   "composer.action.save": "บันทึก",
-  "composer.picker.agent": "เอเจนต์",
   "composer.attachment.remove": "เอาไฟล์แนบออก",
   "composer.attachment.refused.title": "{{harness}} ใช้ไฟล์แนบนี้ไม่ได้",
   "composer.attachment.refused.description": "{{harness}} ไม่มีช่องรับข้อมูลพรอมต์สำหรับ {{mime}} และเซสชันนี้ก็ไม่มีโฟลเดอร์พื้นที่ทำงานสำหรับเก็บไฟล์",
@@ -39,4 +38,9 @@ export const th: Partial<Record<ComposerTextKey, string>> = {
   "composer.marks.remove": "นำเครื่องหมายออก",
   "composer.key.esc": "ESC",
   "composer.error.title": "ไม่สามารถส่งพร้อมท์",
+  "dialog.model.search.placeholder": "ค้นหาโมเดล",
+  "dialog.model.empty": "ไม่พบผลลัพธ์โมเดล",
+  "command.provider.connect": "เชื่อมต่อผู้ให้บริการ",
+  "model.tag.free": "ฟรี",
+  "model.tag.latest": "ล่าสุด",
 }

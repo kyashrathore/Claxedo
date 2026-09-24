@@ -1,4 +1,4 @@
-import { Show, type JSX } from "solid-js"
+import { createEffect, on, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { dictionary } from "../i18n"
 import { usePickDelivery } from "../pick-to-composer"
@@ -8,10 +8,20 @@ import { PageHost } from "./page-host"
 import { PickerShield } from "./picker"
 import { Toolbar } from "./toolbar"
 
-export function BrowserTabView(): JSX.Element {
+export type BrowserTabViewProps = { readonly url?: string; readonly navigationVersion?: number }
+
+export function BrowserTabView(props: BrowserTabViewProps): JSX.Element {
   const t = useTranslator(dictionary)
   const tab = useBrowserTab()
   const deliver = usePickDelivery()
+  createEffect(
+    on(
+      () => [tab(), props.url, props.navigationVersion] as const,
+      ([current, url, version]) => {
+        if (current && url && version !== undefined) current.navigateOnce(url, version)
+      },
+    ),
+  )
   return (
     <Show
       when={tab()}

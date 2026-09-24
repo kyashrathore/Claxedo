@@ -35,6 +35,7 @@ export function promptBody(input: PromptInput, messageId: string) {
     ...(input.model?.variant !== undefined ? { variant: input.model.variant } : {}),
     ...(input.effort !== undefined ? { variant: input.effort } : {}),
     ...(input.permissionMode !== undefined ? { permissionMode: input.permissionMode } : {}),
+    ...(input.serviceTier !== undefined ? { serviceTier: input.serviceTier } : {}),
     ...(input.delivery ? { delivery: input.delivery } : {}),
     parts: [{ type: "text", text: input.text } as WirePart, ...input.attachments.map(attachmentPart)],
   }

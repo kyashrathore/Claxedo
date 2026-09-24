@@ -6,7 +6,6 @@ export type SessionScreenTextKey =
   | "sessionScreen.untitled"
   | "sessionScreen.subagent.label"
   | "sessionScreen.subagent.task"
-  | "sessionScreen.plan.title"
   | "sessionScreen.draft.title"
   | "sessionScreen.action.retry"
   | "sessionScreen.missing"
@@ -72,7 +71,6 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.untitled": "Session",
   "sessionScreen.subagent.label": "Subagent",
   "sessionScreen.subagent.task": "Delegated task",
-  "sessionScreen.plan.title": "Plan",
   "sessionScreen.draft.title": "New session",
   "sessionScreen.action.retry": "Retry",
   "sessionScreen.missing": "This session no longer exists.",

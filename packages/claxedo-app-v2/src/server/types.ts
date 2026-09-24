@@ -151,6 +151,7 @@ export type PromptInput = {
   readonly model?: ModelChoice
   readonly effort?: string
   readonly permissionMode?: string
+  readonly serviceTier?: string
   readonly goal?: { readonly objective: string }
   readonly delivery?: PromptDeliveryRequest
 }

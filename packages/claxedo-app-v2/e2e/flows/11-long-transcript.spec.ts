@@ -1,4 +1,4 @@
-import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, test } from "../harness"
+import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test } from "../harness"
 
 test.skip(({ isMobile }) => isMobile, "flow 11 runs at desktop width")
 
@@ -10,7 +10,7 @@ test("11 long transcript: older turns page in above the reader and the nav rail 
   for (let turn = 1; turn <= TURNS; turn += 1) {
     await api.prompt(workspace.directory, session.id, `Turn ${turn}: Reply with exactly this one token: T${String(turn).padStart(2, "0")}X`)
   }
-  await app.goto(`${stack.url}/w/${workspace.id}/s/${session.id}`)
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
   const latest = app.getByText(`Turn ${TURNS}:`, { exact: false }).first()
   await expect(latest).toBeVisible()
   await expect(app.getByText("Turn 1:", { exact: false })).toHaveCount(0)
@@ -40,16 +40,17 @@ test("11 long transcript: older turns page in above the reader and the nav rail 
   expect(messages.filter((message) => message.info.role === "user")).toHaveLength(TURNS)
 })
 
-test("11 long transcript: a file path in a reply opens the file in its own tab", async ({ stack, api, app }) => {
+test("11 long transcript: a file path in a reply opens the file in the workspace panel", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("filelink")
   await stack.acp.write("file", { steps: [{ kind: "text", text: "The project name is written in `README.md`" }] })
   const session = await api.createSession(workspace.directory, { title: "File link", harness: SCRIPTED_ACP_HARNESS })
   await api.prompt(workspace.directory, session.id, `Where is the name? ${acpScriptToken("file")}`)
 
-  await app.goto(`${stack.url}/w/${workspace.id}/s/${session.id}`)
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
   await expect(app.getByText("The project name is written in", { exact: false })).toBeVisible()
   await app.getByText("README.md", { exact: true }).click()
-  await expect(app.getByRole("tab", { name: "README.md" })).toBeVisible()
-  await expect(app.getByText("filelink", { exact: true }).first()).toBeVisible()
+  const panel = app.getByRole("complementary", { name: "Workspace panel" })
+  await expect(panel.getByRole("button", { name: "README.md", exact: true })).toBeVisible()
+  await expect(panel.getByText("filelink", { exact: true }).first()).toBeVisible()
   expect(assistantText(await api.messages(workspace.directory, session.id))).toContain("README.md")
 })
