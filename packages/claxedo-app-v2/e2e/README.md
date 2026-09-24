@@ -110,6 +110,12 @@ Opens the stream the app reads (`/api/wr/events`) and records every frame. `fram
 
 `resolveWorkspace`, `setHarness`, `createSession`, `session`, `sessions`, `deleteSession`, `prompt` (waits for the turn), `promptAsync`, `abort`, `messages`, `status`, `permissions`, `replyPermission`, `questions`, `replyQuestion`, `rejectQuestion`, `health`. Every call takes the workspace `directory` first, because that is how today's routes are scoped. A non-2xx answer throws `ApiError` with the status and body. `assistantText(messages)` joins the assistant text parts.
 
+`createProject(name, directory)` records a project for a folder. A stack with no project opens the onboarding screen at `/`, so a flow that starts on the shell creates one first.
+
+### Accessibility
+
+`expectNoAxeViolations(page, screen)` runs axe on the page and expects nothing; v2 flows use it. `expectWithinV1Baseline(page, surface)` expects no rule outside today's app's `packages/claxedo-app/e2e/playwright/a11y-baseline.json` for that surface (`home`, `session-page`, `settings-surface`, `command-palette`, `prompt-input-focused`); v1 paths use it, and only on those surfaces. Both first wait (`settled`) until no animation that ends within 5 s is running, so a fade-in is not measured half-drawn.
+
 ### Real CLIs
 
 `installedCli("claude" | "codex")` returns `{ available: true, path, version }` or `{ available: false, reason }`. Override the binary with `CLAXEDO_E2E_CLAUDE_BIN` / `CLAXEDO_E2E_CODEX_BIN`. Native sessions use `harness: { id: "claude", access: "native" }` or `{ id: "codex", access: "native" }`.
