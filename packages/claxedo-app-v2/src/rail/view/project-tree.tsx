@@ -7,7 +7,7 @@ import { useSessionStores, type SessionRowView } from "@/session"
 import { draftPath, localSessionPath, sessionPath, useShellRoute } from "@/shell"
 import { useTerminals } from "@/terminal"
 import { dictionary } from "../i18n"
-import { rowsByProject, siblingAfterArchive } from "../model"
+import { rowsByProject, sessionMarker, siblingAfterArchive } from "../model"
 import { projectSection, type ProjectSection } from "../project-sections"
 import { ProjectBlock } from "./project-block"
 import { createSessionActions } from "./session-actions"
@@ -42,6 +42,7 @@ export function ProjectTree(): JSX.Element {
     const machine = server.capabilities()?.thisMachine?.id
     return !!placement && !!machine && placement.kind !== "cloud" && placement.machineId === machine
   }
+  const markerOf = (row: SessionRowView) => sessionMarker(server.placements.byId(row.ref.placementId), server.capabilities()?.thisMachine?.id)
   const openSession = (row: SessionRowView) => routing.navigate(onThisMachine(row) ? localSessionPath(row.ref.sessionId) : sessionPath(row.ref))
   const select = (section: ProjectSection) => {
     if (section.placementId) routing.navigate(draftPath(section.placementId))
@@ -77,6 +78,7 @@ export function ProjectTree(): JSX.Element {
                     onSelect={select}
                     onNewTerminal={(section) => section.placementId && terminals.startNew(section.placementId)}
                     onActivate={openSession}
+                    markerOf={markerOf}
                     onRename={actions.onRename}
                     onArchive={(row) => archive(current(), row)}
                     onDelete={actions.onDelete}

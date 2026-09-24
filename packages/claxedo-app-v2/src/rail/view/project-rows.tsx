@@ -1,6 +1,6 @@
 import { createMemo, For, Match, Show, Switch, type Accessor, type JSX } from "solid-js"
 import type { SessionRowView } from "@/session"
-import type { RailRow } from "../model"
+import type { RailRow, SessionMarker } from "../model"
 import { SessionRow } from "./session-row"
 import type { SessionRowMenuActions } from "./session-row-menu"
 import { TerminalRow } from "./terminal-row"
@@ -11,6 +11,8 @@ export type ProjectRowsProps = SessionRowMenuActions & {
   readonly activeTerminalId: string | undefined
   readonly now: Accessor<number>
   readonly onActivate: (row: SessionRowView) => void
+  readonly markerOf: (row: SessionRowView) => SessionMarker | undefined
+  readonly projectLabel: string
 }
 
 function Row(props: ProjectRowsProps & { readonly row: RailRow }): JSX.Element {
@@ -23,6 +25,8 @@ function Row(props: ProjectRowsProps & { readonly row: RailRow }): JSX.Element {
         {(session) => (
           <SessionRow
             row={session()}
+            marker={props.markerOf(session())}
+            projectLabel={props.projectLabel}
             active={props.activeSessionId === session().ref.sessionId}
             now={props.now}
             onActivate={props.onActivate}
