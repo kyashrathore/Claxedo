@@ -101,6 +101,10 @@ The daemon runs `packages/claxedo-server`'s self-hosted entry from the spec's da
 
 A bare repository with one commit (`README.md` holding `<name>-source`), served over dumb HTTP from the spec's data directory on a port from the run's range: `{ url, source, close }`. Clone it the way a user would paste a URL; it closes with the stack. `git(cwd, ...args)` and `gitFolder(root, name)` run git with a test identity and make a fresh one-commit repository.
 
+### `stack.localPages(pages)`
+
+A loopback web server on a port from the run's range that answers each path in `pages` (path to HTML) and 404 for anything else: `{ url, requested, close }`. `requested` lists every path asked for, in order, so a spec can prove what the app loaded. It closes with the stack. Flow 27 links its pages from an agent reply, because v1 opens loopback links in the workspace panel's browser tab.
+
 ### `stack.acp`
 
 The scripted ACP agent is installed as the harness connection `scripted-acp` (`SCRIPTED_ACP_HARNESS = { id: "scripted-acp", access: "connection" }`). The daemon spawns it per workspace; each prompt looks for the last `acp-script:<name>` token in the prompt text and plays `<name>.json` from the spec's script directory. A prompt without a token gets the marker convention below or `ok`.
@@ -190,9 +194,12 @@ e2e/
     pinned-pi.ts         the runtime's pinned Pi for every stack
     usage-pricing.ts     token-tracker's bundled price list, seeded into the stack's home
     stand-ins/           agent CLIs the stack must not run for real (cursor-agent)
-  parity/                bun run e2e:parity: v1 and v2 side by side (origin, seed, screens, settle, compare, report)
+    ui-names.ts          v1's accessible names and routes, which every flow uses on both apps
+    composer.ts          sendPrompt: type into v1's composer and send once it accepts
+    a11y.ts              the axe sweep and the v1 baseline it is held to
     git.ts               git with a test identity; one-commit repositories
     git-remote.ts        a bare repository served over dumb HTTP
+    local-pages.ts       loopback HTML pages for the browser tab
     api.ts               ClaxedoApi
     stream.ts            the /api/wr/events reader
     app.ts               --app selection and the dist-e2e build
@@ -200,5 +207,6 @@ e2e/
     installed-cli.ts     Claude / Codex CLI detection
     acp/                 the scripted ACP agent: script.ts (types), turn.ts (steps), agent.ts (the process)
     ports.ts, process.ts, health.ts
+  parity/                bun run e2e:parity: v1 and v2 side by side (origin, seed, screens, settle, compare, report)
   probes/                one-off probes (P0.7 harness status), not collected as flows
 ```
