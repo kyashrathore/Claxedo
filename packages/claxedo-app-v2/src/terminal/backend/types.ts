@@ -1,7 +1,6 @@
 import type { TerminalCheckpoint } from "@claxedo/workspace-runtime/client"
+import type { Disposer } from "@/shell"
 import type { RendererBudget } from "./renderer-budget"
-
-export type Disposer = () => void
 
 export type TerminalColors = {
   readonly background: string
