@@ -37,6 +37,7 @@ function createHarnessSelection(props: ComposerProps, store: ComposerStore, key:
     props.view ? sessionHarness(harnesses(), props.sessionHarness) : pickHarness(harnesses(), selection().harness),
   )
   createEffect(() => {
+    if (props.view) return
     const next = selectionFor(harness(), selection())
     if (selectionChanged(next, selection())) store.setSelection(key(), next)
   })
@@ -59,6 +60,7 @@ function createSendFor(props: ComposerProps, store: ComposerStore, key: Accessor
   return createComposerSend({
     key,
     store,
+    working: () => sessionWorking(props.view),
     mode: () => late.controller?.state.mode ?? "normal",
     selection: selection.sendSelection,
     goalMode: () => selection.harness()?.goalMode,

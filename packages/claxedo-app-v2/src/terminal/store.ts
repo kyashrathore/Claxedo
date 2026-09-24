@@ -23,6 +23,7 @@ export type TerminalStore = {
   readonly row: (terminalId: TerminalId) => TerminalRow | undefined
   readonly create: () => Promise<Terminal>
   readonly recreate: (terminalId: TerminalId) => Promise<Terminal>
+  readonly close: (terminalId: TerminalId) => Promise<void>
   readonly loadAgentStatus: (terminalId: TerminalId) => Promise<void>
 }
 
@@ -86,6 +87,28 @@ function loadTerminalList(
   )
 }
 
+type TerminalActionsInput = {
+  readonly api: TerminalsApi
+  readonly placementId: PlacementId
+  readonly rows: TerminalRows
+  readonly numberedTitle: () => string
+}
+
+async function recreateTerminal(input: TerminalActionsInput, terminalId: TerminalId): Promise<Terminal> {
+  const previous = input.rows.find(terminalId)
+  const sessionId = previous?.sessionId
+  const terminal = await input.api.create({
+    placementId: input.placementId,
+    title: previous?.title ?? input.numberedTitle(),
+    createRequestId: uuid(),
+    previousTerminalId: terminalId,
+    ...(sessionId ? { sessionId } : {}),
+  })
+  input.rows.remove(terminalId)
+  input.rows.upsert(terminal)
+  return terminal
+}
+
 export function createTerminalStore(input: TerminalStoreInput): TerminalStore {
   const { server, placementId } = input
   const api = terminalsApi(server)
@@ -94,6 +117,7 @@ export function createTerminalStore(input: TerminalStoreInput): TerminalStore {
   onCleanup(server.subscribe((event) => applyTerminalEvent(rows, placementId, event)))
   loadTerminalList(api, placementId, rows, load)
   const numberedTitle = () => input.numberedTitle(nextTerminalNumber(rows.all()))
+  const actions: TerminalActionsInput = { api, placementId, rows, numberedTitle }
   return {
     placementId,
     load: load.state,
@@ -104,19 +128,10 @@ export function createTerminalStore(input: TerminalStoreInput): TerminalStore {
       rows.upsert(terminal)
       return terminal
     },
-    recreate: async (terminalId) => {
-      const previous = rows.find(terminalId)
-      const sessionId = previous?.sessionId
-      const terminal = await api.create({
-        placementId,
-        title: previous?.title ?? numberedTitle(),
-        createRequestId: uuid(),
-        previousTerminalId: terminalId,
-        ...(sessionId ? { sessionId } : {}),
-      })
+    recreate: (terminalId) => recreateTerminal(actions, terminalId),
+    close: async (terminalId) => {
+      await api.remove(placementId, terminalId)
       rows.remove(terminalId)
-      rows.upsert(terminal)
-      return terminal
     },
     loadAgentStatus: async (terminalId) => {
       const status = await api.agentStatus(placementId, terminalId)

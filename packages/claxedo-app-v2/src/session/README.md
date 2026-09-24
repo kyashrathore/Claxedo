@@ -46,4 +46,4 @@ Fetched data never enters these stores and pushed data never enters the query ca
 
 ## Flows
 
-Flow 31 (`e2e/flows/31-session-list-races.spec.ts`): the race cases from the plan; at the end of each case the visible rail rows equal the server's list and statuses.
+Flow 31 (`e2e/flows/31-session-list-races.spec.ts`): the race cases from the plan; at the end of each case the visible rail rows equal the server's list and statuses. The cases share one daemon per worker and each works in its own workspaces and project (`31-session-list-races.controls.ts`); the comparison covers the case's own sessions, including the ones it deleted (`31-session-list-races.oracle.ts`). The reconnect case restarts that daemon, because only a restart drops the server's event log and so forces the replay gap of rule 4; it runs last.

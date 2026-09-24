@@ -1,5 +1,6 @@
 import { WorkerPoolManager } from "@pierre/diffs/worker"
 import ShikiWorkerUrl from "@pierre/diffs/worker/worker.js?worker&url"
+import { codeTheme } from "../code-theme"
 
 export type WorkerPoolStyle = "unified" | "split"
 
@@ -19,7 +20,7 @@ function createPool(lineDiffType: "none" | "word-alt") {
       poolSize: 2,
     },
     {
-      theme: "OpenCode",
+      theme: codeTheme.name,
       lineDiffType,
       preferredHighlighter: "shiki-wasm",
     },

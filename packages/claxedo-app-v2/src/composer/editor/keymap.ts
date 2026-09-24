@@ -92,78 +92,89 @@ function handleArrowHistory<TEvent extends EditorKeyEvent>(deps: EditorKeymapDep
   return deps.navigateHistory(direction)
 }
 
+type KeyHandler = <TEvent extends EditorKeyEvent>(deps: EditorKeymapDeps<TEvent>, event: TEvent) => boolean
+
+const plainCtrl = (event: EditorKeyEvent) => event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey
+
+const pickFiles: KeyHandler = (deps, event) => {
+  if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== "u") return false
+  event.preventDefault()
+  if (deps.mode() === "normal") deps.pick()
+  return true
+}
+
+const enterShell: KeyHandler = (deps, event) => {
+  if (event.key !== "!" || deps.mode() !== "normal" || getCursorPosition(deps.editor()) !== 0) return false
+  deps.setMode("shell")
+  event.preventDefault()
+  return true
+}
+
+const escape: KeyHandler = (deps, event) => {
+  if (event.key !== "Escape" || !handleEscape(deps, event)) return false
+  event.preventDefault()
+  event.stopPropagation()
+  return true
+}
+
+const leaveShell: KeyHandler = (deps, event) => {
+  if (deps.mode() !== "shell" || event.key !== "Backspace") return false
+  const { collapsed, cursorPosition, textLength } = deps.getCaretState()
+  if (!collapsed || cursorPosition !== 0 || textLength !== 0) return false
+  deps.setMode("normal")
+  event.preventDefault()
+  return true
+}
+
+const newline: KeyHandler = (deps, event) => {
+  if (event.key !== "Enter" || !event.shiftKey) return false
+  deps.addTextPart("\n")
+  event.preventDefault()
+  return true
+}
+
+const composingEnter: KeyHandler = (deps, event) => event.key === "Enter" && deps.isImeComposing(event)
+
+const popoverKeys: KeyHandler = (deps, event) => {
+  if (!deps.popover() || !handlePopoverKey(deps, event, plainCtrl(event))) return false
+  event.preventDefault()
+  return true
+}
+
+const cancelKey: KeyHandler = (deps, event) => {
+  if (!plainCtrl(event) || event.code !== "KeyG") return false
+  if (deps.popover()) {
+    deps.closePopover()
+    event.preventDefault()
+    return true
+  }
+  if (deps.stoppable()) {
+    deps.abort()
+    event.preventDefault()
+  }
+  return true
+}
+
+const historyArrows: KeyHandler = (deps, event) => {
+  if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return false
+  if (handleArrowHistory(deps, event)) event.preventDefault()
+  return true
+}
+
+const submit: KeyHandler = (deps, event) => {
+  if (event.key !== "Enter" || event.shiftKey) return false
+  event.preventDefault()
+  if (event.repeat || deps.booting() || (deps.working() && deps.blank())) return true
+  void deps.handleSubmit(event)
+  return true
+}
+
+const HANDLERS: readonly KeyHandler[] = [pickFiles, enterShell, escape, leaveShell, newline, composingEnter, popoverKeys, cancelKey, historyArrows, submit]
+
 export function createEditorKeyDown<TEvent extends EditorKeyEvent>(deps: EditorKeymapDeps<TEvent>) {
   return (event: TEvent) => {
-    if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "u") {
-      event.preventDefault()
-      if (deps.mode() !== "normal") return
-      deps.pick()
-      return
-    }
-
     if (event.key === "Backspace") moveBeforeZeroWidthSentinel()
-
-    if (event.key === "!" && deps.mode() === "normal" && getCursorPosition(deps.editor()) === 0) {
-      deps.setMode("shell")
-      event.preventDefault()
-      return
-    }
-
-    if (event.key === "Escape" && handleEscape(deps, event)) {
-      event.preventDefault()
-      event.stopPropagation()
-      return
-    }
-
-    if (deps.mode() === "shell") {
-      const { collapsed, cursorPosition, textLength } = deps.getCaretState()
-      if (event.key === "Backspace" && collapsed && cursorPosition === 0 && textLength === 0) {
-        deps.setMode("normal")
-        event.preventDefault()
-        return
-      }
-    }
-
-    if (event.key === "Enter" && event.shiftKey) {
-      deps.addTextPart("\n")
-      event.preventDefault()
-      return
-    }
-
-    if (event.key === "Enter" && deps.isImeComposing(event)) return
-
-    const ctrl = event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey
-
-    if (deps.popover() && handlePopoverKey(deps, event, ctrl)) {
-      event.preventDefault()
-      return
-    }
-
-    if (ctrl && event.code === "KeyG") {
-      if (deps.popover()) {
-        deps.closePopover()
-        event.preventDefault()
-        return
-      }
-      if (deps.stoppable()) {
-        deps.abort()
-        event.preventDefault()
-      }
-      return
-    }
-
-    if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-      if (handleArrowHistory(deps, event)) event.preventDefault()
-      return
-    }
-
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault()
-      if (event.repeat) return
-      if (deps.booting()) return
-      if (deps.working() && deps.blank()) return
-      void deps.handleSubmit(event)
-    }
+    for (const handler of HANDLERS) if (handler(deps, event)) return
   }
 }
 

@@ -1,6 +1,5 @@
 import { browserAuthAdapter } from "#browser-auth-adapter"
 import { createMemo, Show, type JSX, type ParentProps } from "solid-js"
-import { AccessProvider } from "@/access"
 import { AuthProvider, useAuth, type Auth, type AuthState } from "@/auth"
 import { I18nProvider } from "@/i18n"
 import { MainSidebar } from "@/rail"
@@ -25,11 +24,9 @@ function ServerScope(props: ParentProps<{ readonly auth: AuthSource }>): JSX.Ele
   const server = createServer({ auth: props.auth })
   return (
     <ServerProvider server={server}>
-      <AccessProvider>
-        <SessionStoresProvider>
-          <DialogProvider>{props.children}</DialogProvider>
-        </SessionStoresProvider>
-      </AccessProvider>
+      <SessionStoresProvider>
+        <DialogProvider>{props.children}</DialogProvider>
+      </SessionStoresProvider>
     </ServerProvider>
   )
 }

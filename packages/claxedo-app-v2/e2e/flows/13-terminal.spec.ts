@@ -12,6 +12,15 @@ async function createServerProject(url: string, name: string, directory: string)
   expect(response.status).toBe(201)
 }
 
+async function serverTerminalIds(serverUrl: string, directory: string): Promise<readonly string[]> {
+  const url = new URL("/api/wr/pty", serverUrl)
+  url.searchParams.set("directory", directory)
+  const response = await fetch(url)
+  expect(response.status).toBe(200)
+  const rows = (await response.json()) as readonly { readonly id: string }[]
+  return rows.map((row) => row.id)
+}
+
 type ReplayInput = { readonly path: string; readonly marker: string }
 
 async function ptyReplay(app: Page, directory: string, terminalId: string, marker: string): Promise<string> {
@@ -53,7 +62,7 @@ async function ptyReplay(app: Page, directory: string, terminalId: string, marke
 
 test.skip(({ isMobile }) => isMobile, "flow 13 runs at desktop width")
 
-test("13 terminal: run a command, its output replays from the server, reload reattaches", async ({
+test("13 terminal: run a command, its output replays from the server, reload reattaches, closing ends it", async ({
   stack,
   api,
   app,
@@ -85,4 +94,9 @@ test("13 terminal: run a command, its output replays from the server, reload rea
     "data-terminal-connection",
     "attached",
   )
+  expect(await serverTerminalIds(stack.url, workspace.directory)).toContain(terminalId)
+
+  await app.getByRole("tablist", { name: "Open panes" }).getByRole("tab", { name: "Terminal 1" }).press("Delete")
+  await expect(app.getByRole("region", { name: "Terminal pane" })).toHaveCount(0)
+  await expect.poll(() => serverTerminalIds(stack.url, workspace.directory)).not.toContain(terminalId)
 })
