@@ -31,7 +31,6 @@ export type ServerEvent =
   | { readonly type: "streamGap"; readonly placementId?: PlacementId }
   | { readonly type: "sessionsChanged"; readonly placementId?: PlacementId }
   | { readonly type: "placementsChanged" }
-  | { readonly type: "documentsChanged"; readonly placementId?: PlacementId }
   | { readonly type: "usageChanged" }
   | { readonly type: "cloudWorkspaceChanged"; readonly workspaceId: PlacementId; readonly status: CloudWorkspaceStatus }
   | { readonly type: "terminalCreated"; readonly terminal: Terminal }
