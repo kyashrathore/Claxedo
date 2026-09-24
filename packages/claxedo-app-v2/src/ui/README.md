@@ -6,6 +6,8 @@ v2's own components and tokens. Surfaces ported from today's app render with tod
 
 Owner ruling: v1's look is the kit. `@opencode-ai/ui` and `@opencode-ai/session-ui` may be imported only inside `src/ui`; everything else imports them from `@/ui`, which re-exports what the app uses. v1's token names are allowed, since they are the look. The only kit stylesheet imports outside `src/ui` are the three `@import`s at the top of `shell/styles/index.css` and the three v2 sheets `src/styles.ts` loads, listed exactly in `scripts/checks/v2-only.ts`.
 
+No `data-component` hooks outside what the kit's CSS reads: `scripts/checks/claxedo-names.ts` allows exactly `icon` and `icon-button` inside `src/ui` (the ClaxedoIcon and ClaxedoIconButton controls take the kit's icon and icon-button styles through them). v2's own components style themselves by class.
+
 ## Owned concepts
 
 - **Tokens.** `tokens/colors.css` holds the primitive ramps (`--v2-grey-*`, `--v2-blue-*`, `--v2-alpha-*`, …). `tokens/theme.css` holds the semantic tokens (`--v2-background-*`, `--v2-text-*`, `--v2-icon-*`, `--v2-border-*`, `--v2-overlay-*`, `--v2-state-*`, `--v2-elevation-*`) for the light set (`:root`, `[data-color-scheme="light"]`) and the dark set (`[data-color-scheme="dark"]`). `tokens/type.css` holds fonts, the type scale, radii and the few shadows components compose from.
