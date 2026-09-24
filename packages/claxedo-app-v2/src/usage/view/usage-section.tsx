@@ -28,10 +28,15 @@ function Choices<Value extends string>(props: { readonly label: string; readonly
 
 function QuotaContent(props: { readonly summary: UsageSummary }): JSX.Element {
   const t = useTranslator(dictionary)
+  const unavailable = () => (props.summary.quota.status === "available" ? undefined : (props.summary.quota.error ?? t("usage.quota.unavailable")))
   return (
-    <Show when={props.summary.quota.status === "available"} fallback={<p class="usage-note" data-tone="danger" role="alert">{props.summary.quota.error ?? t("usage.quota.unavailable")}</p>}>
+    <>
+      <Show when={props.summary.quota.refreshing}>
+        <p class="usage-note" role="status">{t("usage.quota.checking")}</p>
+      </Show>
+      <Show when={unavailable()}>{(message) => <p class="usage-note" data-tone="danger" role="alert">{message()}</p>}</Show>
       <QuotaWindows accounts={props.summary.quota.snapshot?.accounts ?? []} />
-    </Show>
+    </>
   )
 }
 
