@@ -20,4 +20,11 @@ export const dictionary = {
   "settings.keybindings.search": "Szukaj skrótów",
   "settings.keybindings.empty": "Nie znaleziono skrótów",
   "settings.keybindings.group.general": "Ogólne",
+  "settings.section.general": "Ogólne",
+  "settings.general.reasoningSummaries": "Pokaż podsumowania wnioskowania",
+  "settings.general.reasoningSummaries.description": "Wyświetlaj podsumowania wnioskowania modelu na osi czasu",
+  "settings.general.shellToolPartsExpanded": "Rozwijaj elementy narzędzia shell",
+  "settings.general.shellToolPartsExpanded.description": "Domyślnie pokazuj rozwinięte elementy narzędzia shell na osi czasu",
+  "settings.general.editToolPartsExpanded": "Rozwijaj elementy narzędzia edit",
+  "settings.general.editToolPartsExpanded.description": "Domyślnie pokazuj rozwinięte elementy narzędzi edit, write i patch na osi czasu",
 }

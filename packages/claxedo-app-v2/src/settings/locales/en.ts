@@ -70,4 +70,11 @@ export const dictionary = {
   "settings.sandbox.defaultUpdated": "Default sandbox provider updated",
   "settings.sandbox.readOnly": "Signed hosted sessions can view local sandbox providers but cannot change local credentials.",
   "settings.sandbox.missing": "{{provider}} is active but has no credentials. Cloud environments will fail to create until you add them.",
+  "settings.section.general": "General",
+  "settings.general.reasoningSummaries": "Show reasoning summaries",
+  "settings.general.reasoningSummaries.description": "Display model reasoning summaries in the timeline",
+  "settings.general.shellToolPartsExpanded": "Expand shell tool parts",
+  "settings.general.shellToolPartsExpanded.description": "Show shell tool parts expanded by default in the timeline",
+  "settings.general.editToolPartsExpanded": "Expand edit tool parts",
+  "settings.general.editToolPartsExpanded.description": "Show edit, write, and patch tool parts expanded by default in the timeline",
 } as const

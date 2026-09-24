@@ -20,4 +20,11 @@ export const dictionary = {
   "settings.keybindings.search": "البحث في الاختصارات",
   "settings.keybindings.empty": "لم يتم العثور على اختصارات",
   "settings.keybindings.group.general": "عام",
+  "settings.section.general": "عام",
+  "settings.general.reasoningSummaries": "إظهار ملخصات الاستنتاج",
+  "settings.general.reasoningSummaries.description": "عرض ملخصات استنتاج النموذج في الشريط الزمني",
+  "settings.general.shellToolPartsExpanded": "توسيع أجزاء أداة shell",
+  "settings.general.shellToolPartsExpanded.description": "إظهار أجزاء أداة shell موسعة بشكل افتراضي في الشريط الزمني",
+  "settings.general.editToolPartsExpanded": "توسيع أجزاء أداة edit",
+  "settings.general.editToolPartsExpanded.description": "إظهار أجزاء أدوات edit و write و patch موسعة بشكل افتراضي في الشريط الزمني",
 }

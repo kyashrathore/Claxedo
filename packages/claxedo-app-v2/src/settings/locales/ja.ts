@@ -20,4 +20,11 @@ export const dictionary = {
   "settings.keybindings.search": "ショートカットを検索",
   "settings.keybindings.empty": "ショートカットが見つかりません",
   "settings.keybindings.group.general": "一般",
+  "settings.section.general": "一般",
+  "settings.general.reasoningSummaries": "推論の要約を表示",
+  "settings.general.reasoningSummaries.description": "タイムラインにモデルの推論の要約を表示します",
+  "settings.general.shellToolPartsExpanded": "shell ツールパーツを展開",
+  "settings.general.shellToolPartsExpanded.description": "タイムラインで shell ツールパーツをデフォルトで展開して表示します",
+  "settings.general.editToolPartsExpanded": "edit ツールパーツを展開",
+  "settings.general.editToolPartsExpanded.description": "タイムラインで edit、write、patch ツールパーツをデフォルトで展開して表示します",
 }

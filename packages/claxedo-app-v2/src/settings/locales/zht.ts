@@ -20,4 +20,11 @@ export const dictionary = {
   "settings.keybindings.search": "搜尋快速鍵",
   "settings.keybindings.empty": "找不到快速鍵",
   "settings.keybindings.group.general": "一般",
+  "settings.section.general": "一般",
+  "settings.general.reasoningSummaries": "顯示推理摘要",
+  "settings.general.reasoningSummaries.description": "在時間軸中顯示模型推理摘要",
+  "settings.general.shellToolPartsExpanded": "展開 shell 工具區塊",
+  "settings.general.shellToolPartsExpanded.description": "在時間軸中預設展開 shell 工具區塊",
+  "settings.general.editToolPartsExpanded": "展開 edit 工具區塊",
+  "settings.general.editToolPartsExpanded.description": "在時間軸中預設展開 edit、write 和 patch 工具區塊",
 }

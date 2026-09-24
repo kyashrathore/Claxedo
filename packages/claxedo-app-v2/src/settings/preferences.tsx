@@ -7,9 +7,23 @@ export type ContrastScheme = "light" | "dark"
 
 export type ContrastLevels = Readonly<Record<ContrastScheme, number>>
 
+export type TranscriptPreferences = {
+  readonly showReasoningSummaries: boolean
+  readonly shellToolPartsExpanded: boolean
+  readonly editToolPartsExpanded: boolean
+}
+
 export type Preferences = {
   readonly contrast: Store<ContrastLevels>
   readonly setContrast: (scheme: ContrastScheme, level: number) => void
+  readonly transcript: Store<TranscriptPreferences>
+  readonly setTranscript: <K extends keyof TranscriptPreferences>(key: K, value: TranscriptPreferences[K]) => void
+}
+
+export const TRANSCRIPT_DEFAULTS: TranscriptPreferences = {
+  showReasoningSummaries: false,
+  shellToolPartsExpanded: false,
+  editToolPartsExpanded: false,
 }
 
 export const CONTRAST_DEFAULTS: ContrastLevels = { light: 40, dark: 100 }
@@ -27,10 +41,21 @@ function readContrast(value: unknown): ContrastLevels | undefined {
   return { light: level("light"), dark: level("dark") }
 }
 
+function readTranscript(value: unknown): TranscriptPreferences | undefined {
+  if (!isRecord(value)) return undefined
+  const flag = (key: keyof TranscriptPreferences) => (typeof value[key] === "boolean" ? value[key] : TRANSCRIPT_DEFAULTS[key])
+  return {
+    showReasoningSummaries: flag("showReasoningSummaries"),
+    shellToolPartsExpanded: flag("shellToolPartsExpanded"),
+    editToolPartsExpanded: flag("editToolPartsExpanded"),
+  }
+}
+
 const PreferencesContext = createContext<Preferences>()
 
 export function PreferencesProvider(props: { readonly children: JSX.Element }): JSX.Element {
-  const [contrast, setContrast] = persistedStore<ContrastLevels>(preferenceKey("appearance", "contrast"), CONTRAST_DEFAULTS, readContrast)
+  const [contrast, setContrast] = persistedStore(preferenceKey("appearance", "contrast"), CONTRAST_DEFAULTS, readContrast)
+  const [transcript, setTranscript] = persistedStore(preferenceKey("general", "transcript"), TRANSCRIPT_DEFAULTS, readTranscript)
   createEffect(() => {
     const style = document.documentElement.style
     style.setProperty("--claxedo-contrast-light", String(contrast.light))
@@ -39,6 +64,8 @@ export function PreferencesProvider(props: { readonly children: JSX.Element }): 
   const preferences: Preferences = {
     contrast,
     setContrast: (scheme, level) => setContrast(scheme === "light" ? { light: contrastLevel(level) } : { dark: contrastLevel(level) }),
+    transcript,
+    setTranscript: (key, value) => setTranscript({ [key]: value }),
   }
   return <PreferencesContext.Provider value={preferences}>{props.children}</PreferencesContext.Provider>
 }

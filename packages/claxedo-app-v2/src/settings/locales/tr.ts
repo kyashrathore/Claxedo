@@ -20,4 +20,11 @@ export const dictionary = {
   "settings.keybindings.search": "Kısayol ara",
   "settings.keybindings.empty": "Kısayol bulunamadı",
   "settings.keybindings.group.general": "Genel",
+  "settings.section.general": "Genel",
+  "settings.general.reasoningSummaries": "Akıl yürütme özetlerini göster",
+  "settings.general.reasoningSummaries.description": "Zaman çizelgesinde model akıl yürütme özetlerini görüntüle",
+  "settings.general.shellToolPartsExpanded": "Kabuk araç bileşenlerini genişlet",
+  "settings.general.shellToolPartsExpanded.description": "Zaman çizelgesinde kabuk araç bileşenlerini varsayılan olarak genişletilmiş göster",
+  "settings.general.editToolPartsExpanded": "Düzenleme araç bileşenlerini genişlet",
+  "settings.general.editToolPartsExpanded.description": "Zaman çizelgesinde düzenleme, yazma ve yama araç bileşenlerini varsayılan olarak genişletilmiş göster",
 }

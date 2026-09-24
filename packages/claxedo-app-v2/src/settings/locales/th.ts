@@ -20,4 +20,11 @@ export const dictionary = {
   "settings.keybindings.search": "ค้นหาทางลัด",
   "settings.keybindings.empty": "ไม่พบทางลัด",
   "settings.keybindings.group.general": "ทั่วไป",
+  "settings.section.general": "ทั่วไป",
+  "settings.general.reasoningSummaries": "แสดงสรุปการใช้เหตุผล",
+  "settings.general.reasoningSummaries.description": "แสดงสรุปการใช้เหตุผลของโมเดลในไทม์ไลน์",
+  "settings.general.shellToolPartsExpanded": "ขยายส่วนเครื่องมือ shell",
+  "settings.general.shellToolPartsExpanded.description": "แสดงส่วนเครื่องมือ shell แบบขยายตามค่าเริ่มต้นในไทม์ไลน์",
+  "settings.general.editToolPartsExpanded": "ขยายส่วนเครื่องมือ edit",
+  "settings.general.editToolPartsExpanded.description": "แสดงส่วนเครื่องมือ edit, write และ patch แบบขยายตามค่าเริ่มต้นในไทม์ไลน์",
 }

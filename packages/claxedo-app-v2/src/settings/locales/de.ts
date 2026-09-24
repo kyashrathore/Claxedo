@@ -20,4 +20,11 @@ export const dictionary = {
   "settings.keybindings.search": "Tastenkürzel suchen",
   "settings.keybindings.empty": "Keine Tastenkürzel gefunden",
   "settings.keybindings.group.general": "Allgemein",
+  "settings.section.general": "Allgemein",
+  "settings.general.reasoningSummaries": "Reasoning-Zusammenfassungen anzeigen",
+  "settings.general.reasoningSummaries.description": "Zusammenfassungen des Modell-Reasonings in der Timeline anzeigen",
+  "settings.general.shellToolPartsExpanded": "Shell-Tool-Abschnitte ausklappen",
+  "settings.general.shellToolPartsExpanded.description": "Shell-Tool-Abschnitte standardmäßig in der Timeline ausgeklappt anzeigen",
+  "settings.general.editToolPartsExpanded": "Edit-Tool-Abschnitte ausklappen",
+  "settings.general.editToolPartsExpanded.description": "Edit-, Write- und Patch-Tool-Abschnitte standardmäßig in der Timeline ausgeklappt anzeigen",
 }

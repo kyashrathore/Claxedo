@@ -20,4 +20,11 @@ export const dictionary = {
   "settings.keybindings.search": "단축키 검색",
   "settings.keybindings.empty": "단축키를 찾을 수 없습니다",
   "settings.keybindings.group.general": "일반",
+  "settings.section.general": "일반",
+  "settings.general.reasoningSummaries": "추론 요약 표시",
+  "settings.general.reasoningSummaries.description": "타임라인에 모델 추론 요약 표시",
+  "settings.general.shellToolPartsExpanded": "shell 도구 파트 펼치기",
+  "settings.general.shellToolPartsExpanded.description": "타임라인에서 기본적으로 shell 도구 파트를 펼친 상태로 표시합니다",
+  "settings.general.editToolPartsExpanded": "edit 도구 파트 펼치기",
+  "settings.general.editToolPartsExpanded.description": "타임라인에서 기본적으로 edit, write, patch 도구 파트를 펼친 상태로 표시합니다",
 }

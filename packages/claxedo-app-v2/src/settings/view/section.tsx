@@ -40,6 +40,7 @@ export function SettingsRow(props: {
   readonly title: JSX.Element
   readonly description?: JSX.Element
   readonly leading?: JSX.Element
+  readonly wide?: boolean
   readonly children?: JSX.Element
 }) {
   const titleId = createUniqueId()
@@ -54,7 +55,7 @@ export function SettingsRow(props: {
         </Show>
       </div>
       <Show when={props.children}>
-        <div class="settings-row-control" role="group" aria-labelledby={titleId} aria-describedby={props.description ? descriptionId : undefined}>
+        <div class="settings-row-control" data-width={props.wide ? "wide" : undefined} role="group" aria-labelledby={titleId} aria-describedby={props.description ? descriptionId : undefined}>
           {props.children}
         </div>
       </Show>
