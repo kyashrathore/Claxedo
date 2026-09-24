@@ -7,6 +7,7 @@ import { isRetryable, toAppError } from "./errors"
 import { createEventIntake } from "./event-intake"
 import type { ConnectionState } from "./events"
 import { createGitApi } from "./git"
+import { createLivePluginsApi } from "./live-plugins"
 import type { ProjectId } from "./ids"
 import type { Server, ServerQueries } from "./api"
 import { createProjectsApi } from "./projects"
@@ -82,6 +83,8 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     terminals: createTerminalsApi(transport, workspaces),
     git: createGitApi(transport, workspaces),
     cloud: createCloudApi(transport, workspaces, project),
+    livePlugins: createLivePluginsApi(transport),
+    request: transport.request,
   }
 }
 

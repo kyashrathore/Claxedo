@@ -128,6 +128,12 @@ async function connectAndPlace(probe: Probe): Promise<Placement> {
     ])
     return `machines=${machines.map((machine) => machine.name).join(",")} codeHosts=${hosts.length} accounts=${accounts.map((account) => account.providerId).join(",")} plugins=${catalog.candidates.length} cloud=${cloud.length}`
   })
+  await check("plugin host calls", async () => {
+    const health = await server.request("/api/claxedo/health")
+    const removal = await server.livePlugins.remove("probe-missing").then(() => "removed", (error: { class?: string }) => error.class)
+    if (!health.ok || removal !== "not_found") throw new Error(`health=${health.status} removal=${removal}`)
+    return `request health=${health.status}, removing an unknown live plugin → ${removal}`
+  })
   await check("projects: create from a folder and read back by id", async () => {
     const project = await server.projects.create({ source: { kind: "folder", path: workspace.directory } })
     const read = await server.queryClient.fetchQuery(server.queries.projects.byId(project.id))
