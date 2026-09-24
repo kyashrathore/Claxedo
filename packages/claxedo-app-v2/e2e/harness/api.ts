@@ -57,6 +57,12 @@ export class ClaxedoApi {
     return this.call<{ workspaceId: string }>("POST", "/api/workspace/resolve", { directory })
   }
 
+  createProject(name: string, directory: string) {
+    return this.call<{ project: { id: string; name: string } }>("POST", "/api/claxedo/projects", {
+      body: { name, source: { kind: "directory", directory } },
+    })
+  }
+
   setHarness(directory: string, selection: HarnessSelection) {
     return this.call<unknown>("POST", "/api/claxedo/agent-config/harness", { directory, body: { harness: selection } })
   }
