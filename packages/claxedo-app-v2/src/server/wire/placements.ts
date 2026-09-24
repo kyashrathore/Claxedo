@@ -11,6 +11,7 @@ export type PlacementRecord = {
 export type BootstrapDeclaration = {
   readonly hostAggregate: boolean
   readonly issuesSessions: boolean
+  readonly documents: boolean
   readonly enrollmentId?: string
 }
 
@@ -58,6 +59,7 @@ function placementRecord(project: Record<string, unknown>, key: string, row: Rec
       kind: kindOf(row, root),
       label: label(row, location),
       path: location,
+      reachable: row.reachable === true,
       ...(machine ? { machineId: machine } : {}),
     },
     route: { directory: remote ? `workspace:${id}` : directory, workspaceId: id, remote },
@@ -89,6 +91,7 @@ export function bootstrapCatalog(body: unknown): BootstrapCatalog {
     declaration: {
       hostAggregate: events.hostAggregate === true,
       issuesSessions: deployment.issuesSessions === true,
+      documents: deployment.documents === true,
       ...(enrollmentId ? { enrollmentId } : {}),
     },
     placements: placementsFromProjects(root.project, enrollmentId),

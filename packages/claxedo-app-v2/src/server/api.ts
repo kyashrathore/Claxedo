@@ -200,7 +200,6 @@ export type ServerQueries = {
     readonly machineInstalled: () => FetchQuery<MachineInstalled>
   }
   readonly tasks: { readonly availability: () => FetchQuery<FeatureAvailability> }
-  readonly documents: { readonly availability: () => FetchQuery<FeatureAvailability> }
   readonly codeHost: {
     readonly connections: () => FetchQuery<readonly CodeHostConnection[]>
     readonly repositories: (connectionId: string) => FetchQuery<readonly CodeHostRepository[]>

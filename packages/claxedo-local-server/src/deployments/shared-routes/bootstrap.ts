@@ -75,7 +75,7 @@ function declaresSessions(options: Options) {
 }
 
 function deployment(options: Options) {
-  return { issuesSessions: declaresSessions(options) }
+  return { issuesSessions: declaresSessions(options), documents: true }
 }
 
 function bootstrapHostIdentity(options: Options) {
@@ -158,6 +158,7 @@ function signedBootstrapProjects(workspaces: unknown[]) {
       // other way would put somebody else's workspace on this one.
       backing: asString(row?.backing) === "local-worktree" ? "local-worktree" : "cloud-vm",
       workspace_name: workspaceName,
+      reachable: true,
       directory,
       ...(remoteDirectory ? { remote_directory: remoteDirectory } : {}),
     }
