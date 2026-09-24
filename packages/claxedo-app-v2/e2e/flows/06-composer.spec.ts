@@ -107,3 +107,17 @@ test("06 a draft and the prompt history survive a reload, and a shell command is
   await expect(prompt).toBeVisible()
   await expect.poll(async () => JSON.stringify(await api.messages(workspace.directory, session.id))).toContain('"text":"echo shell-text"')
 })
+
+test("06 typing anywhere on the session starts a message in the composer", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("type-to-focus")
+  const session = await api.createSession(workspace.directory, { title: "Type to focus", harness: SCRIPTED_ACP_HARNESS })
+  await app.goto(`${stack.url}/w/${workspace.id}/s/${session.id}`)
+  const prompt = app.getByRole("textbox", { name: "Ask anything, / for commands, @ for context..." })
+  await expect(prompt).toBeVisible()
+  await app.evaluate(() => {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+  })
+  await app.keyboard.press("x")
+  await expect(prompt).toBeFocused()
+  await expect(prompt).toHaveText("x")
+})

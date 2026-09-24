@@ -16,6 +16,7 @@ export type {
   TextPart,
 } from "./model"
 export { emptyPrompt, promptText } from "./model"
+export { setCursorPosition } from "./editor/dom"
 export { createComposerStore, ComposerStoreContext, useComposerStore, draftComposerKey, sessionComposerKey } from "./store"
 export type { ComposerKey, ComposerStore } from "./store"
 export { ComposerStoreProvider } from "./provider"
