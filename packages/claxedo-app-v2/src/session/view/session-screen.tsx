@@ -169,6 +169,7 @@ function SessionBody(props: {
                   dropZone={() => body}
                   collapsible={props.floating}
                   registerRecovery={(next) => (recovery = next)}
+                  active={() => props.active}
                 />
               </Show>
             </div>

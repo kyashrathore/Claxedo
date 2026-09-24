@@ -87,6 +87,8 @@ export type ComposerTextKey =
   | "prompt.imageMarks.mark"
   | "common.cancel"
   | "common.save"
+  | "composer.health.stopped"
+  | "composer.health.checkAgain"
   | "composer.recovery.chooseModel"
   | "composer.recovery.noModels"
 
@@ -211,4 +213,6 @@ export const composerEnglish: Record<ComposerTextKey, string> = {
   "model.tooltip.reasoning.none": "No reasoning",
   "model.tooltip.context": "Context limit {{limit}}",
   "model.tooltip.allows": "Allows: {{inputs}}",
+  "composer.health.stopped": "The agent stopped responding",
+  "composer.health.checkAgain": "Check again",
 }
