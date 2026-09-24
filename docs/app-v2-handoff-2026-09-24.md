@@ -239,6 +239,9 @@ Updated 21:40, after the owner switched accounts and the lanes resumed.
 
 ## Owner questions still open
 
+- **Teams inside an org:** v1's Settings → Orgs & Teams (org create and switch, teams, members) uses the hosted org-team API. On a local build it shows only "Bearer token is required". v2 keeps its Organization section and adds v1's sign-in and error states. Team management waits on this decision; the plan recommends dropping teams.
+- **Machines remote access:** enable, pause and revoke, the device QR code, and machine rename or revoke need v1's `machineRemoteAccess` platform port. That's the desktop Host Connector, or an HTTP binding on hosted. Not ported; v1's local build binds none either.
+
 - **`/welcome`:** the owner asked "why remove /welcome?" (02:30). The v1 inventory row PROJ-001 says v1 has no `/welcome` route and draws the first-project canvas at `/`. projects-app's 7c245ba6e1 did that and is reverted until the owner rules. Keeping `/welcome` is fine if the owner prefers it.
 - **Browser Back after a rail click:** v2 returns to the previous session, while v1 stays on the current one. Keep v2's or match v1?
 - **The daemon restart on 2598** that picks up the two runtime fixes (Stop settles questions; no-Goal harnesses). It ends open terminals and running turns.
