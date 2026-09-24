@@ -1,6 +1,4 @@
 import { For, Show, createSignal, untrack, type JSX } from "solid-js"
-import { Checkbox } from "@opencode-ai/ui/checkbox"
-import { TextField } from "@opencode-ai/ui/text-field"
 import {
   CONFIGURATION_SLOTS,
   PRESET_PLACEMENTS,
@@ -9,7 +7,7 @@ import {
   type PresetPlacement,
 } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
-import { Button, Switch } from "@/ui"
+import { Button, Checkbox, Switch, TextField } from "@/ui"
 import { fieldReasonKey, type FieldReasons } from "../data/refusal"
 import { dictionary } from "../i18n"
 import { SLOT_KEYS } from "../model"
