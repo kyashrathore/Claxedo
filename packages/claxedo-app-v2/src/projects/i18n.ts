@@ -20,7 +20,7 @@ import zht from "./locales/zht"
 
 export type ProjectsKey = keyof typeof en
 
-export const projectsDictionary = { en, ar, br, bs, da, de, es, fr, ja, ko, no, pl, ru, th, tr, zh, zht } satisfies Translations<ProjectsKey>
+const projectsDictionary = { en, ar, br, bs, da, de, es, fr, ja, ko, no, pl, ru, th, tr, zh, zht } satisfies Translations<ProjectsKey>
 
 export type ProjectsText = DomainTranslate<ProjectsKey>
 

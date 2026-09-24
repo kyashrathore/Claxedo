@@ -20,7 +20,7 @@ import zht from "./locales/zht"
 
 export type AccountsKey = keyof typeof en
 
-export const accountsDictionary = { en, ar, br, bs, da, de, es, fr, ja, ko, no, pl, ru, th, tr, zh, zht } satisfies Translations<AccountsKey>
+const accountsDictionary = { en, ar, br, bs, da, de, es, fr, ja, ko, no, pl, ru, th, tr, zh, zht } satisfies Translations<AccountsKey>
 
 export type AccountsText = DomainTranslate<AccountsKey>
 
