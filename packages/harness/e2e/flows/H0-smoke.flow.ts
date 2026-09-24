@@ -6,7 +6,7 @@ import { ClaxedoApi, assistantText, type MessageRow } from "../harness/api"
 import { acpScriptToken } from "../harness/acp/script"
 import { SCRIPTED_ACP_HARNESS } from "../harness/acp/connection"
 import { startStack, type Stack } from "../harness/stack"
-import { frameType, type EventStream, type StreamFrame } from "../harness/stream"
+import { frameType, type EventStream } from "../harness/stream"
 
 type StoredToolState = {
   status?: string
@@ -31,7 +31,8 @@ function liveParts(stream: EventStream, sessionId: string) {
     if (delta?.sessionID !== sessionId || !delta.partID || !delta.field || typeof delta.delta !== "string") continue
     const part = parts.get(delta.partID)
     if (!part) continue
-    part[delta.field] = `${typeof part[delta.field] === "string" ? part[delta.field] : ""}${delta.delta}`
+    const previous = part[delta.field]
+    part[delta.field] = `${typeof previous === "string" ? previous : ""}${delta.delta}`
   }
   return parts
 }

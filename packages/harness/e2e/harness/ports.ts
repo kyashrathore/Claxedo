@@ -1,3 +1,4 @@
+import type { Server } from "node:http"
 import net from "node:net"
 
 function portRange() {
@@ -62,4 +63,11 @@ export function fixedDaemonPort(): number | undefined {
   const port = Number(value)
   if (!Number.isInteger(port)) throw new Error(`${DAEMON_PORT_ENV}="${value}" is not a port`)
   return port
+}
+
+export function listenOnLoopback(server: Server, port: number) {
+  return new Promise<void>((resolve, reject) => {
+    server.once("error", reject)
+    server.listen(port, "127.0.0.1", resolve)
+  })
 }

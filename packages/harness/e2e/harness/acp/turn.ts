@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import fs from "node:fs"
 import { RequestError, type AgentSideConnection, type PromptResponse, type SessionNotification } from "@agentclientprotocol/sdk"
+import { asString } from "@claxedo/helpers/guards"
 import { holdReleaseFile, type AcpScript, type AcpStep, type AcpToolStep } from "./script"
 
 export type TurnContext = {
@@ -110,7 +111,7 @@ async function playQuestion(context: TurnContext, step: Extract<AcpStep, { kind:
     },
   })
   const content = response.action === "accept" ? (response.content as Record<string, unknown> | undefined) : undefined
-  const answer = response.action === "accept" ? String(content?.answer ?? "") : response.action
+  const answer = response.action === "accept" ? asString(content?.answer) ?? "" : response.action
   await sendText(context, `Answer: ${answer}`)
 }
 
@@ -175,6 +176,8 @@ async function playStep(context: TurnContext, step: AcpStep): Promise<PromptResp
     case "stop":
       return { stopReason: step.reason }
   }
+  const unknownStep: never = step
+  throw new Error(`Unknown scripted ACP step ${JSON.stringify(unknownStep)}`)
 }
 
 export async function playScript(context: TurnContext, script: AcpScript): Promise<PromptResponse> {

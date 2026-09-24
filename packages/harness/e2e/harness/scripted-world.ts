@@ -22,7 +22,7 @@ async function installScriptedAcp(transport: HttpTransport, url: string, scriptD
 }
 
 export async function prepareScriptedServer(transport: HttpTransport, url: string, world: ScriptedWorld) {
-  await connectScriptedProviders(transport, url, world.scripted, { red: world.red })
+  await connectScriptedProviders(transport, url, world.scripted)
   await sendJson(transport, "POST", `${url}/api/claxedo/agent-config/harness`, { harness: { kind: "native", harnessId: "pi" } }, "Pi as the default harness")
   await installScriptedAcp(transport, url, world.acpScriptDir, world.red)
 }

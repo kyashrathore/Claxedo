@@ -4,7 +4,7 @@ import path from "node:path"
 import { promisify } from "node:util"
 
 const execFileAsync = promisify(execFile)
-const PACKAGES_DIR = path.resolve(import.meta.dirname, "../..")
+const PACKAGES_DIR = path.resolve(import.meta.dirname, "../../..")
 
 type WorkspaceDist = { dir: string; artifact: string; build: readonly string[] }
 

@@ -1,7 +1,8 @@
 import { createServer, type Server, type ServerResponse } from "node:http"
+import { listenOnLoopback } from "./ports"
 import { respondChat, respondMessages, respondResponses, writeErrorReply, type ScriptedReply, type StreamPacing } from "./scripted-model-replies"
+import { asRecord } from "@claxedo/helpers/guards"
 import {
-  asRecord,
   dialectFor,
   hasToolResult,
   isAutoModeClassifier,
@@ -120,13 +121,6 @@ async function writeReply(outgoing: ServerResponse, state: ServerState, sequence
   return respondMessages(outgoing, sequence, request.body, reply, state.pacing)
 }
 
-function listen(server: Server, port: number) {
-  return new Promise<void>((resolve, reject) => {
-    server.once("error", reject)
-    server.listen(port, "127.0.0.1", resolve)
-  })
-}
-
 function closeAll(server: Server) {
   return new Promise<void>((resolve) => {
     server.closeAllConnections()
@@ -160,7 +154,7 @@ export async function startScriptedModelServer(input: { port: number; red: boole
     requests.push({ dialect: request.dialect, path: requestPath, body: request.body, model: request.body.model ?? "scripted", prompt, reply, tools: modelTools(request.body) })
     await writeReply(outgoing, state, sequence, request, prompt, reply)
   })
-  await listen(server, input.port)
+  await listenOnLoopback(server, input.port)
   const url = `http://127.0.0.1:${input.port}`
   return {
     url,

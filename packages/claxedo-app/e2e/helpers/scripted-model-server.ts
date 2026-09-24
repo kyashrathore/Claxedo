@@ -43,6 +43,7 @@ import os from "node:os"
 import path from "node:path"
 import { asRecord } from "@claxedo/helpers/guards"
 import { SESSION_TITLE_SYSTEM_PROMPT } from "../../../agent-sdk-runtime/src/title-generation"
+import { frame, textDeltaChunks } from "../../../harness/e2e/harness/scripted-model-replies"
 import type {
   ContentBlock,
   Message,
@@ -321,7 +322,6 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
   }
 }
 
-
 /**
  * CODEX_CONFIG env value that redirects codex at the scripted endpoint.
  * codex ignores OPENAI_BASE_URL entirely in ChatGPT auth mode — a
@@ -426,13 +426,6 @@ export function claudeScriptedEnv(url: string, configDir: string) {
  * Splits a reply into at most `chunks` pieces, never producing an empty one —
  * a zero-length delta is not a partial reply, it is a frame that says nothing.
  */
-function textDeltaChunks(text: string, chunks: number) {
-  const pieces = Math.max(1, Math.min(chunks, text.length))
-  const size = Math.ceil(text.length / pieces)
-  const out: string[] = []
-  for (let at = 0; at < text.length; at += size) out.push(text.slice(at, at + size))
-  return out.length ? out : [text]
-}
 
 async function respondChat(
   outgoing: ServerResponse,
@@ -746,10 +739,6 @@ async function writeTextStream<T extends { type: string }>(
     outgoing.write(frame(event.type, event))
   }
   outgoing.end()
-}
-
-function frame(event: string, data: unknown) {
-  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
 }
 
 /**
