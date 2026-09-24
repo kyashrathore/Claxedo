@@ -12,7 +12,7 @@ import { Spinner } from "@opencode-ai/ui/spinner"
 import { dictionary } from "../i18n"
 
 const HELP_URL = "https://github.com/kyashrathore/Claxedo"
-const USAGE_SECTION = "usage"
+export const USAGE_SECTION = "usage"
 
 type AccountView = {
   readonly signed: boolean

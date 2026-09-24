@@ -1,6 +1,6 @@
 # Rail
 
-Owns: the main sidebar's content (`MainSidebar`), ported from today's app's rail: the global rows (Tasks, Marketplace, then any plugin's `sidebarItems`), the Projects tree with each project's sessions nested under it, v2's Settings row in the footer with today's account card below it (`AccountCard`); and the workbench header's compact tabs (`CompactSwitcher`). The shell draws the rail's frame around it (`src/shell/view/sidebar.tsx`: the `rail-sidebar` nav, its header strip with Hide/Pin Sidebar, the resize grip).
+Owns: the main sidebar's content (`MainSidebar`), ported from today's app's rail: the global rows (Tasks, Marketplace, then any plugin's `sidebarItems`), the Projects tree with each project's sessions nested under it, today's account card in the footer (`AccountCard`) with a Usage button beside it (the owner's 21:10 rail foot: no separate Settings row; Settings is in the account menu and on ⌘,); and the workbench header's compact tabs (`CompactSwitcher`). The shell draws the rail's frame around it (`src/shell/view/sidebar.tsx`: the `rail-sidebar` nav, its header strip with Hide/Pin Sidebar, the resize grip).
 
 ## Concepts
 
