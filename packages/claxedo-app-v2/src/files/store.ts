@@ -1,7 +1,7 @@
 import { createComponent, createContext, useContext, type Accessor, type JSX, type ParentProps } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { PlacementId } from "@/server"
-import { useActivePlacement } from "./location"
+import { useShellRoute } from "@/shell"
 
 type PlacementFiles = {
   readonly expanded: Readonly<Record<string, boolean>>
@@ -21,7 +21,7 @@ const FilesContext = createContext<Files>()
 const emptyFiles: PlacementFiles = { expanded: {}, search: "" }
 
 export function FilesProvider(props: ParentProps): JSX.Element {
-  const placementId = useActivePlacement()
+  const placementId = useShellRoute().placementId
   const [state, setState] = createStore<Record<string, PlacementFiles>>({})
   const current = () => {
     const id = placementId()

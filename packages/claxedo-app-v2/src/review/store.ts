@@ -1,6 +1,6 @@
 import { createComponent, createContext, useContext, type Accessor, type JSX, type ParentProps } from "solid-js"
 import { createStore } from "solid-js/store"
-import { useActivePlacement } from "@/files"
+import { useShellRoute } from "@/shell"
 import { persistedSignal, preferenceKey } from "@/lib/persisted"
 import type { DiffScope, PlacementId } from "@/server"
 import { defaultScope, readDiffStyle, type DiffStyle } from "./model"
@@ -38,7 +38,7 @@ function toggled(list: readonly string[], item: string): readonly string[] {
 }
 
 export function ReviewProvider(props: ParentProps): JSX.Element {
-  const placementId = useActivePlacement()
+  const placementId = useShellRoute().placementId
   const [state, setState] = createStore<Record<string, PlacementReview>>({})
   const [style, setStyle] = persistedSignal<DiffStyle>(preferenceKey("review", "diffStyle"), "unified", readDiffStyle)
   const current = () => {

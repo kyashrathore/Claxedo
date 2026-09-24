@@ -1,7 +1,7 @@
 export { FilesProvider } from "./store"
 export { filePaneKind } from "./pane"
 export { filesPanelTab } from "./panel-tab"
-export { useActivePlacement, useActiveSession } from "./location"
+export { useActiveSession } from "./location"
 export { basename, parentPath } from "./path"
 export { isMediaPath } from "./preview"
 export { fetchView, type FilePaneState } from "./model"

@@ -1,5 +1,5 @@
 import { createContext, createMemo, createRoot, onCleanup, useContext, type Accessor, type JSX, type ParentProps } from "solid-js"
-import { useActivePlacement } from "@/files"
+import { useShellRoute } from "@/shell"
 import type { PlacementId } from "@/server"
 import { readBrowserBridge } from "./bridge"
 import { createBrowserTab, type BrowserTab } from "./tab"
@@ -49,7 +49,7 @@ function createTabCache(cap: number) {
 }
 
 export function BrowserProvider(props: ParentProps): JSX.Element {
-  const placementId = useActivePlacement()
+  const placementId = useShellRoute().placementId
   const cache = createTabCache(TAB_CAP)
   onCleanup(cache.disposeAll)
   return (
