@@ -16,7 +16,7 @@ import {
 } from "@/server"
 import type { LoadMoreState, SessionList, SessionListState, SessionStatusView } from "@/session"
 import { toAppError, type RequestsInternal } from "../requests"
-import { initialListState, type FetchedWindow, type ListState } from "./model"
+import { initialListState, type FetchedWindow, type ListState, type RereadMode } from "./model"
 import { transition } from "./transition"
 import { createRowViewCache, UNKNOWN_STATUS, visibleRows } from "./visible-rows"
 
@@ -71,7 +71,7 @@ export function createSessionList(server: Server, requests: RequestsInternal): S
   const state = list.state
   const send = list.send
   const cache = createRowViewCache()
-  const [gapPending, setGapPending] = createSignal(false)
+  const [followUp, setFollowUp] = createSignal<RereadMode>()
   const rows = createMemo(() => visibleRows(state(), requests.openBySession(), cache))
   const shown: Accessor<SessionListState> = createMemo(() => publicState(state()))
   const more: Accessor<LoadMoreState> = createMemo(() => moreState(state()))
@@ -93,9 +93,10 @@ export function createSessionList(server: Server, requests: RequestsInternal): S
   }
 
   function afterRead(): void {
-    if (!gapPending()) return
-    setGapPending(false)
-    void reload()
+    const mode = followUp()
+    if (!mode) return
+    setFollowUp(undefined)
+    void reread(mode)
   }
 
   async function fetchFirst(): Promise<void> {
@@ -120,23 +121,23 @@ export function createSessionList(server: Server, requests: RequestsInternal): S
     afterRead()
   }
 
-  async function reload(): Promise<void> {
+  async function reread(mode: RereadMode): Promise<void> {
     const kind = state().kind
     if (kind !== "live" && kind !== "failed") return
     send({ type: "rereadStarted" })
     try {
-      send({ type: "rereadFetched", window: await readWindow(undefined, true) })
+      send({ type: "rereadFetched", window: await readWindow(undefined, true), mode })
     } catch (cause) {
       send({ type: "rereadFailed", error: toAppError(cause) })
     }
     afterRead()
   }
 
-  function gap(): void {
+  function requestReread(mode: RereadMode): void {
     const current = state()
     const reading = current.kind === "fetching" || current.kind === "rereading" || (current.kind === "live" && current.more.kind === "loading")
-    if (reading) setGapPending(true)
-    else void reload()
+    if (!reading) return void reread(mode)
+    setFollowUp((pending) => (pending === "replace" ? pending : mode))
   }
 
   async function create(input: SessionCreateInput): Promise<SessionRef> {
@@ -164,7 +165,9 @@ export function createSessionList(server: Server, requests: RequestsInternal): S
       case "statusChanged":
         return send({ type: "statusChanged", ref: event.ref, status: event.status, at: Date.now() })
       case "streamGap":
-        return gap()
+        return requestReread("replace")
+      case "sessionsChanged":
+        return requestReread("refresh")
       default:
         return
     }
@@ -181,7 +184,7 @@ export function createSessionList(server: Server, requests: RequestsInternal): S
     hasMore: () => state().nextCursor !== undefined,
     moreState: more,
     loadMore,
-    reload,
+    reload: () => reread("replace"),
     create,
     start: () => void fetchFirst(),
     rowOf,
