@@ -106,4 +106,5 @@ export const ru: Partial<Record<ComposerTextKey, string>> = {
   "command.category.session": "Сессия",
   "prompt.toast.promptSendFailed.title": "Не удалось отправить запрос",
   "common.requestFailed": "Запрос не выполнен",
+  "prompt.toast.goalStopFailed.title": "Не удалось остановить цель",
 }

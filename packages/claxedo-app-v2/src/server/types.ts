@@ -114,7 +114,7 @@ export type TranscriptPage = { readonly entries: readonly TranscriptEntry[]; rea
 
 export type SessionGoal = RuntimeGoalSnapshot
 
-export type GoalAction = "pause" | "resume" | "remove"
+export type GoalAction = "pause" | "resume" | "remove" | "stop"
 
 export type SessionGoalState = {
   readonly goal: SessionGoal | undefined

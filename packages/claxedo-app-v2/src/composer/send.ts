@@ -69,7 +69,6 @@ function noteAttachments(draft: Draft): PromptAttachment[] {
 
 export async function buildPromptInput(input: {
   draft: Draft
-  mode: EditorMode
   submission: Submission
   goal: GoalIntent
   delivery: PromptInput["delivery"]
@@ -79,7 +78,7 @@ export async function buildPromptInput(input: {
   const files = input.draft.prompt.flatMap((part): PromptAttachment[] => (part.type === "file" ? [{ kind: "file", path: part.path }] : []))
   return {
     clientRequestId: randomId(),
-    text: input.mode === "shell" ? `!${text}` : text,
+    text,
     attachments: [
       ...images.map((image): PromptAttachment => ({ kind: "image", dataUrl: image.dataUrl, name: image.filename, mime: image.mime })),
       ...files,
@@ -98,6 +97,7 @@ type SendInput = {
   key: Accessor<ComposerKey>
   store: ComposerStore
   mode: Accessor<EditorMode>
+  normalMode: () => void
   submission: () => Promise<Submission>
   working: Accessor<boolean>
   goalMode: Accessor<HarnessInfo["goalMode"] | undefined>
@@ -105,16 +105,27 @@ type SendInput = {
   createSession?: (submission: Submission) => Promise<SessionView>
   afterAccepted?: (view: SessionView) => void
   focusEditor: () => void
+  goalStopFailed: (error: unknown) => void
 }
 
-function createStop(view: Accessor<SessionView | undefined>) {
+async function stopTurn(view: SessionView, goalStopFailed: (error: unknown) => void) {
+  if (view.goal()?.status !== "active") return view.stop()
+  try {
+    await view.controlGoal("stop")
+  } catch (error) {
+    goalStopFailed(error)
+    await view.stop()
+  }
+}
+
+function createStop(view: Accessor<SessionView | undefined>, goalStopFailed: (error: unknown) => void) {
   const state = machine<StopState, StopEvent>({ kind: "idle" }, stopTransition)
   const stop = async () => {
     const current = view()
     if (!current || state.state().kind === "stopping") return
     state.send({ type: "stopStarted" })
     try {
-      await current.stop()
+      await stopTurn(current, goalStopFailed)
       state.send({ type: "stopFinished" })
     } catch (error) {
       state.send({ type: "stopFailed", error: asAppError(error) })
@@ -138,7 +149,7 @@ async function deliver(input: SendInput, draft: Draft, goal: GoalIntent, clientR
   const key = input.key()
   const delivery = input.working() ? "queue" : undefined
   const submission = await input.submission()
-  const prompt = await buildPromptInput({ draft, mode: input.mode(), submission, goal, delivery })
+  const prompt = await buildPromptInput({ draft, submission, goal, delivery })
   const existing = input.view()
   if (!existing) setBoot("booting")
   const view = existing ?? (await required(input.createSession)(submission))
@@ -146,6 +157,7 @@ async function deliver(input: SendInput, draft: Draft, goal: GoalIntent, clientR
   await view.send({ ...prompt, clientRequestId })
   input.store.addHistory(key, input.mode(), draft.prompt, historyComments(draft))
   input.store.reset(key)
+  input.normalMode()
   return view
 }
 
@@ -154,7 +166,7 @@ export function createComposerSend(input: SendInput) {
   const sending = createMemo(() => state.state().kind === "sending")
   const [boot, setBoot] = createSignal<BootPhase>()
   const armGoal = createArmGoal(input)
-  const stop = createStop(input.view)
+  const stop = createStop(input.view, input.goalStopFailed)
   const send = async () => {
     const draft = input.store.draft(input.key())
     if (sending() || !promptFilled(draft)) return

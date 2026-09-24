@@ -103,4 +103,5 @@ export const br: Partial<Record<ComposerTextKey, string>> = {
   "command.category.session": "Sessão",
   "prompt.toast.promptSendFailed.title": "Falha ao enviar prompt",
   "common.requestFailed": "Requisição falhou",
+  "prompt.toast.goalStopFailed.title": "Não foi possível parar o objetivo",
 }

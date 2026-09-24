@@ -102,4 +102,5 @@ export const bs: Partial<Record<ComposerTextKey, string>> = {
   "command.category.session": "Sesija",
   "prompt.toast.promptSendFailed.title": "Neuspješno slanje upita",
   "common.requestFailed": "Zahtjev nije uspio",
+  "prompt.toast.goalStopFailed.title": "Cilj nije moguće zaustaviti",
 }

@@ -107,4 +107,5 @@ export const th: Partial<Record<ComposerTextKey, string>> = {
   "command.category.session": "เซสชัน",
   "prompt.toast.promptSendFailed.title": "ไม่สามารถส่งพร้อมท์",
   "common.requestFailed": "คำขอล้มเหลว",
+  "prompt.toast.goalStopFailed.title": "ไม่สามารถหยุดเป้าหมายได้",
 }

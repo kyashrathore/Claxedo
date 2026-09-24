@@ -3,7 +3,7 @@ import type { PlacementId } from "@/server"
 import { useServer } from "@/server"
 import type { SessionView } from "@/session"
 import { connectionHarness, harnessSelectionValue, nativeHarness, NATIVE_HARNESS_IDS, type NativeHarnessId } from "@/lib/harness-selection"
-import { useDialog } from "@/ui"
+import { showToast, useDialog } from "@/ui"
 import type { ImagePart, Submission } from "./model"
 import { promptImages } from "./model"
 import { useComposerStore, type ComposerKey, type ComposerStore } from "./store"
@@ -31,6 +31,7 @@ export type ComposerProps = {
   readonly readOnly?: boolean
   readonly createSession?: (submission: Submission) => Promise<SessionView>
   readonly afterAccepted?: (view: SessionView) => void
+  readonly queuedEdit?: { readonly active: () => boolean; readonly cancel: () => void }
   readonly openImageMarks?: (image: ImagePart, focusIndex?: number) => void
 }
 
@@ -108,12 +109,13 @@ function sessionWorking(view: SessionView | undefined): boolean {
 }
 
 
-function createSendFor(props: ComposerProps, store: ComposerStore, key: Accessor<ComposerKey>, selection: HarnessSelection, late: Late) {
+function createSendFor(props: ComposerProps, store: ComposerStore, key: Accessor<ComposerKey>, selection: HarnessSelection, late: Late, t: ReturnType<typeof useComposerText>) {
   return createComposerSend({
     key,
     store,
     working: () => sessionWorking(props.view),
     mode: () => late.controller?.state.mode ?? "normal",
+    normalMode: () => late.controller?.setMode("normal"),
     submission: selection.submission,
     goalMode: () => selection.harness()?.goalMode,
     view: () => props.view,
@@ -123,6 +125,8 @@ function createSendFor(props: ComposerProps, store: ComposerStore, key: Accessor
       props.afterAccepted?.(view)
     },
     focusEditor: () => late.controller?.focusEditor(),
+    goalStopFailed: (error) =>
+      showToast({ title: t("prompt.toast.goalStopFailed.title"), description: error instanceof Error ? error.message : String(error) }),
   })
 }
 
@@ -189,7 +193,7 @@ export function createComposer(props: ComposerProps) {
   const registries = useShellRegistries()
   const commands = useCommands()
   const suggestions = createSuggestions({ registries, commandOptions: commands.slashOptions, placementId: () => props.placementId, query })
-  const send = createSendFor(props, store, key, selection, late)
+  const send = createSendFor(props, store, key, selection, late, t)
   const reader = createReaderFor({ props, store, key, refs, selection, setDragging, late })
   const controller = createControllerFor({ key, store, refs, working, suggestions, send, commands })
   late.controller = controller
