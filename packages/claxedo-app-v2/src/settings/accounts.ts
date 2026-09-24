@@ -153,3 +153,15 @@ export function storedCheck(row: HarnessAccount, live: LiveCheck | undefined): L
 export function isVerdict(value: string): value is AccountVerdict {
   return value === "ok" || value === "auth_failed" || value === "no_billing" || value === "rate_capped" || value === "expired" || value === "unknown"
 }
+
+export function harnessRunnable(harness: Harness, snapshot: AccountsSnapshot, live: Readonly<Record<string, LiveCheck>>): boolean {
+  const selected = selectedAccountKey(harness, snapshot)
+  if (selected === undefined) return false
+  if (selected === MACHINE_LOGIN_KEY) {
+    const login = machineLoginOf(harness, snapshot)
+    return login?.state === "signed_in" && !strandedBinding(login, harness, snapshot.effective)
+  }
+  const row = harnessAccounts(harness, snapshot.stored).find((account) => account.id === selected)
+  const verdict = row ? storedCheck(row, live[row.id])?.verdict : undefined
+  return row !== undefined && !(verdict !== undefined && isRefusal(verdict))
+}

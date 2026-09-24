@@ -25,6 +25,7 @@ export const queryKeys = {
   harnessLogins: (server: string) => ["server", server, "harnessLogins"] as const,
   codeHostAll: (server: string) => ["server", server, "codeHost"] as const,
   integrations: (server: string) => ["server", server, "integrations"] as const,
+  sandboxProviders: (server: string) => ["server", server, "sandboxProviders"] as const,
   codeHostConnections: (server: string) => ["server", server, "codeHost", "connections"] as const,
   codeHostRepositories: (server: string, connectionId: string) => ["server", server, "codeHost", "repositories", connectionId] as const,
   fileTree: (server: string, placementId: PlacementId, path: string) => ["server", server, "files", placementId, "tree", path] as const,

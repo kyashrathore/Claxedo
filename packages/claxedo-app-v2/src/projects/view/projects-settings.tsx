@@ -6,7 +6,7 @@ import { SettingsEmpty, SettingsIntro, SettingsList, SettingsNote } from "@/sett
 import type { SettingsSection } from "@/shell"
 import { Icon } from "@/ui"
 import { useProjectsText } from "../i18n"
-import { sourceLabel } from "../model"
+import { sourceLabel } from "../project-source"
 import { projectSettingsPath } from "../routes"
 import { useProjects } from "../store"
 import { ProjectSettings } from "./project-settings"
