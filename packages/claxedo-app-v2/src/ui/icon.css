@@ -1,0 +1,29 @@
+@layer components {
+  .ui-icon {
+    display: inline-block;
+    vertical-align: baseline;
+    flex-shrink: 0;
+    aspect-ratio: 1 / 1;
+    shape-rendering: geometricPrecision;
+  }
+
+  .ui-icon[data-size="small"] {
+    width: 14px;
+    height: 14px;
+  }
+
+  .ui-icon[data-size="normal"] {
+    width: 16px;
+    height: 16px;
+  }
+
+  .ui-icon[data-size="medium"] {
+    width: 18px;
+    height: 18px;
+  }
+
+  .ui-icon[data-size="large"] {
+    width: 20px;
+    height: 20px;
+  }
+}
