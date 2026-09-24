@@ -195,10 +195,12 @@ async function turnChecks(probe: Probe, placement: Placement) {
     await server.sessions.prompt(ref, { clientRequestId: crypto.randomUUID(), text: `Delegate. ${acpScriptToken("delegate")}`, attachments: [] })
     await log.next("subagentUpdated", from, (event): event is ServerEvent => event.type === "subagentUpdated" && event.ref.sessionId === ref.sessionId)
     await log.next("idle", from, isStatus(ref.sessionId, ["idle"]))
-    const child = (await server.sessions.subagents(ref)).find((subagent) => subagent.childSessionId)
-    if (!child?.childSessionId) throw new Error("no subagent names a child session")
+    const updates = await server.sessions.subagents(ref)
+    const child = updates.find((subagent) => subagent.childSessionId)
+    const spawn = updates.find((subagent) => subagent.toolCallRole === "spawn" && subagent.toolCallId)
+    if (!child?.childSessionId || !spawn) throw new Error(`no child session or spawn edge among ${updates.length} update(s)`)
     const snapshot = await server.sessions.snapshot({ ...ref, sessionId: child.childSessionId as typeof ref.sessionId })
-    return `${child.subagentKey} status=${child.status} child entries=${snapshot.transcript.entries.length}`
+    return `${child.subagentKey} status=${child.status} spawned by ${spawn.toolCallId} child entries=${snapshot.transcript.entries.length}`
   })
   await check("stop: a held turn is reported working, then cancelled", async () => {
     await stack.acp.write("held", { steps: [{ kind: "hold", name: "held" }, { kind: "text", text: "too late" }] })
