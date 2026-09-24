@@ -23,7 +23,7 @@ export type {
 export type { FirstPartyEntries } from "./registries"
 export { byOrder, createRegistry, createShellRegistries, ShellRegistriesContext, useShellRegistries } from "./registries"
 export type { RouteParams, ShellRoute } from "./routes"
-export { fillPattern, homePath, matchPattern, parseRoute, sessionPath, settingsPath, sidebarModeOf, terminalPath } from "./routes"
+export { fillPattern, homePath, matchPattern, parseRoute, placementOf, sessionPath, settingsPath, sidebarModeOf, terminalPath } from "./routes"
 export type { ShellRouting } from "./router"
 export { ShellRouter, useShellRoute } from "./router"
 export type { ShellLayoutEvent, ShellLayoutState, SideRegion, PhoneOverlay, WideRegions } from "./model"

@@ -2,6 +2,7 @@ import { onCleanup, type JSX } from "solid-js"
 import { BrowserProvider } from "@/browser"
 import { FilesProvider } from "@/files"
 import { ReviewProvider, reviewCommands, useReview } from "@/review"
+import { TerminalProvider } from "@/terminal"
 import { useWorkbench } from "@/workbench"
 import { useShellRegistries } from "./registries"
 import { useShellRoute } from "./router"
@@ -19,13 +20,15 @@ export function PlacementProviders(props: { readonly children: JSX.Element }): J
   const routing = useShellRoute()
   const workbench = useWorkbench()
   return (
-    <FilesProvider placementId={routing.placementId} openPane={workbench.openByKind}>
-      <ReviewProvider placementId={routing.placementId} openPane={workbench.openByKind}>
-        <BrowserProvider placementId={routing.placementId}>
-          <PlacementCommands />
-          {props.children}
-        </BrowserProvider>
-      </ReviewProvider>
-    </FilesProvider>
+    <TerminalProvider>
+      <FilesProvider placementId={routing.placementId} openPane={workbench.openByKind}>
+        <ReviewProvider placementId={routing.placementId} openPane={workbench.openByKind}>
+          <BrowserProvider placementId={routing.placementId}>
+            <PlacementCommands />
+            {props.children}
+          </BrowserProvider>
+        </ReviewProvider>
+      </FilesProvider>
+    </TerminalProvider>
   )
 }

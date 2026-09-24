@@ -1,11 +1,19 @@
 import { createMemo, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
-import type { AppError, PlacementId, ProjectId } from "@/server"
-import { failureReason, useCloudServer, type CloudCreateInput } from "./api"
-import { cloudWorkspaceTransition, type CloudWorkspace, type CloudWorkspaceEvent, type CloudWorkspaceState } from "./model"
+import {
+  toAppError,
+  useServer,
+  type AppError,
+  type CloudCreateInput,
+  type CloudWorkspace,
+  type CloudWorkspaceStatus,
+  type PlacementId,
+  type ProjectId,
+} from "@/server"
+import { cloudWorkspaceTransition, type CloudWorkspaceEvent } from "./model"
 
-export type CloudWorkspaceRow = CloudWorkspace & { readonly state: CloudWorkspaceState }
+export type CloudWorkspaceRow = CloudWorkspace & { readonly state: CloudWorkspaceStatus }
 
 export type CloudList =
   | { readonly kind: "loading" }
@@ -24,18 +32,18 @@ export type CloudPlacer = {
   readonly create: (input: { readonly projectId: ProjectId }) => Promise<{ readonly id: PlacementId }>
 }
 
-type Pending = { readonly event: CloudWorkspaceEvent; readonly at: CloudWorkspaceState["kind"] }
+type Pending = { readonly event: CloudWorkspaceEvent; readonly at: CloudWorkspaceStatus["kind"] }
 
-function rowState(workspace: CloudWorkspace, pending: Pending | undefined): CloudWorkspaceState {
+function rowState(workspace: CloudWorkspace, pending: Pending | undefined): CloudWorkspaceStatus {
   if (!pending || pending.at !== workspace.status.kind) return workspace.status
   return cloudWorkspaceTransition(workspace.status, pending.event)
 }
 
 export function useCloudWorkspaces(projectId: Accessor<ProjectId>, enabled: Accessor<boolean>): CloudWorkspaces {
-  const server = useCloudServer()
+  const server = useServer()
   const query = useQuery(() => ({ ...server.queries.cloud.list(), enabled: enabled() }))
   const [pending, setPending] = createStore<Record<string, Pending | undefined>>({})
-  const statusKind = (id: PlacementId): CloudWorkspaceState["kind"] =>
+  const statusKind = (id: PlacementId): CloudWorkspaceStatus["kind"] =>
     query.data?.find((workspace) => workspace.id === id)?.status.kind ?? "stopped"
 
   const command = async (id: PlacementId, event: CloudWorkspaceEvent | undefined, run: () => Promise<void>) => {
@@ -43,7 +51,7 @@ export function useCloudWorkspaces(projectId: Accessor<ProjectId>, enabled: Acce
     try {
       await run()
     } catch (cause) {
-      setPending(id, { event: { type: "commandFailed", reason: failureReason(cause) }, at: statusKind(id) })
+      setPending(id, { event: { type: "commandFailed", reason: toAppError(cause).message }, at: statusKind(id) })
     }
   }
 
@@ -68,6 +76,6 @@ export function useCloudWorkspaces(projectId: Accessor<ProjectId>, enabled: Acce
 }
 
 export function useCloudPlacer(): CloudPlacer {
-  const server = useCloudServer()
+  const server = useServer()
   return { create: (input) => server.cloud.create(input) }
 }
