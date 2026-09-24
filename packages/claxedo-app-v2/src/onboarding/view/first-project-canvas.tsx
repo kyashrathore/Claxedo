@@ -1,12 +1,11 @@
 import { Show } from "solid-js"
 import { pickProjectFolderWith } from "@/projects"
 import { useServer } from "@/server"
-import type { PageProps } from "@/shell"
 import { useDialog } from "@/ui"
 import { OnboardingWizard } from "./wizard"
 import "./first-project-canvas.css"
 
-export function FirstProjectCanvas(_props: PageProps) {
+export function FirstProjectCanvas() {
   const server = useServer()
   const dialog = useDialog()
   const capabilities = () => server.capabilities()

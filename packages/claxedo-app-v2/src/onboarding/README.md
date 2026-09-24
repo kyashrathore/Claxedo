@@ -4,8 +4,7 @@ Owns: the first run. Today's app's first-project canvas and its three-step wizar
 
 ## Concepts
 
-- **Route entry**: `onboardingRoute`, the shell `RouteEntry` for `/welcome`, listed in the shell's `routes` registry. `FirstProjectCanvas` is its view: the blueprint field, glow and vignette behind the wizard column.
-- **Needed?**: `onboardingNeeded(projects)` is true when the project list is ready and empty. The shell's home route sends the reader to `onboardingPath` when it is.
+- **Canvas**: `FirstProjectCanvas`, the page's `main`: the blueprint field, glow and vignette behind the wizard column. There is no route of its own, as in today's app: while `/` is the route and `onboardingNeeded(projects)` holds (the project list is ready and empty), the shell draws the canvas in place of the workbench and the URL stays `/`.
 - **Product**: the wizard waits for `server.capabilities()`. A server that declares `thisMachine` is a desktop (local execution); any other is a hosted plane. Ledes, step 2, step 3's rows and the finish button follow that.
 
 ## State

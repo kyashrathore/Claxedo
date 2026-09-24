@@ -1,6 +1,5 @@
 import { modelsSettingsSection } from "@/accounts"
 import { authRoutes } from "@/auth"
-import { onboardingRoute } from "@/onboarding"
 import { pluginsSettingsSection } from "@/plugins"
 import { projectsSettingsSection } from "@/projects"
 import { marketplacePage, tasksPage } from "@/rail"
@@ -22,5 +21,5 @@ export const firstParty: FirstPartyEntries = {
   mentions: [],
   themes: [],
   iconSkins: [],
-  routes: [onboardingRoute, ...authRoutes],
+  routes: [...authRoutes],
 }
