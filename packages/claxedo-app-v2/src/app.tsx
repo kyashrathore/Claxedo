@@ -6,6 +6,7 @@ import { ProjectListProvider } from "@/projects"
 import { MainSidebar } from "@/rail"
 import { createServer, ServerProvider, type AuthSource } from "@/server"
 import { SessionStoresProvider } from "@/session"
+import { PreferencesProvider } from "@/settings"
 import { AppShell, createShellRegistries, ShellRegistriesContext, ShellRouter, type ShellRouterComponent } from "@/shell"
 import { firstParty } from "@/shell/registry"
 import { DialogProvider } from "@/ui"
@@ -57,11 +58,13 @@ export function App(props: AppProps): JSX.Element {
       <ShellRegistriesContext.Provider value={registries}>
         <I18nProvider>
           <ThemeProvider defaultTheme="codex" onThemeApplied={syncIconLibraryWithTheme}>
-            <ShellRouter router={props.router}>
-              <SignedServer serverUrl={props.serverUrl}>
-                <AppShell mainSidebar={<MainSidebar />} />
-              </SignedServer>
-            </ShellRouter>
+            <PreferencesProvider>
+              <ShellRouter router={props.router}>
+                <SignedServer serverUrl={props.serverUrl}>
+                  <AppShell mainSidebar={<MainSidebar />} />
+                </SignedServer>
+              </ShellRouter>
+            </PreferencesProvider>
           </ThemeProvider>
         </I18nProvider>
       </ShellRegistriesContext.Provider>
