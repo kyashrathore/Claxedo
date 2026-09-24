@@ -1,5 +1,5 @@
 export type { AccountsKey, AccountsText } from "./i18n"
-export { dictionary as accountsDictionary, useAccountsText } from "./i18n"
+export { accountsDictionary, useAccountsText } from "./i18n"
 export { harnesses, type Harness } from "./model"
 export { useAccounts, type Accounts } from "./store"
 export { AgentHarnessAccounts } from "./view/harness-accounts"
