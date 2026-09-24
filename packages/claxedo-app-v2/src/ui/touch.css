@@ -20,7 +20,7 @@
 
     [data-component="v2-menu-item"],
     [data-slot="v2-menu-group-label"],
-    [data-component="v2-switch"],
+    [data-component="switch"],
     .v2-text-input,
     .v2-select:not([data-appearance="inline"]) {
       min-height: var(--touch-target);
