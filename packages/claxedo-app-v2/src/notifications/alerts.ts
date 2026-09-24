@@ -12,12 +12,14 @@ export type Alert = { readonly kind: AlertKind; readonly ref: SessionRef }
 
 type LastStatus = Map<string, SessionStatus["kind"]>
 
-const WORKING: ReadonlySet<SessionStatus["kind"]> = new Set(["working", "retrying", "recovering"])
+function working(kind: SessionStatus["kind"] | undefined): boolean {
+  return kind === "working" || kind === "retrying" || kind === "recovering"
+}
 
 function statusAlert(last: LastStatus, ref: SessionRef, status: SessionStatus): AlertKind | undefined {
   const previous = last.get(ref.sessionId)
   last.set(ref.sessionId, status.kind)
-  if (status.kind === "idle" && previous !== undefined && WORKING.has(previous)) return "agent"
+  if (status.kind === "idle" && working(previous)) return "agent"
   if (status.kind === "failed" && previous !== "failed") return "errors"
   return undefined
 }

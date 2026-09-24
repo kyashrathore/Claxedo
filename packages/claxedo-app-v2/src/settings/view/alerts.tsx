@@ -1,6 +1,6 @@
 import { For } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { playSound, requestSystemNotifications, SOUNDS, type AlertKind, type SoundChoice } from "@/notifications"
+import { createSoundPlayer, requestSystemNotifications, SOUNDS, type AlertKind, type SoundChoice } from "@/notifications"
 import { Select } from "@opencode-ai/ui/select"
 import { Switch } from "@/ui"
 import { settingsDictionary, type SettingsKey } from "../i18n"
@@ -53,6 +53,7 @@ export function NotificationsSection() {
 export function SoundsSection() {
   const t = useTranslator(settingsDictionary)
   const preferences = usePreferences()
+  const sound = createSoundPlayer()
   const label = (choice: SoundChoice) => (choice === "none" ? t("settings.sounds.none") : t("settings.sounds.alert01"))
   return (
     <div class="settings-body">
@@ -68,12 +69,12 @@ export function SoundsSection() {
                   value={(choice) => choice}
                   label={label}
                   onHighlight={(choice) => {
-                    if (choice) playSound(choice)
+                    if (choice) sound.play(choice)
                   }}
                   onSelect={(choice) => {
                     if (!choice) return
                     preferences.setAlertSound(row.kind, choice)
-                    playSound(choice)
+                    sound.play(choice)
                   }}
                   variant="secondary" size="small" triggerVariant="settings"
                 />
