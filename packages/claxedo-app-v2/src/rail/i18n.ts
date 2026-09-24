@@ -26,6 +26,8 @@ const en = {
   "rail.expandProject": "Expand project",
   "rail.newSessionTooltip": "New session",
   "rail.newSessionIn": "New session in {{project}}",
+  "rail.newTerminalTooltip": "New terminal…",
+  "rail.newTerminalIn": "New terminal in {{project}}…",
   "rail.archiveSession": "Archive {{title}}",
   "rail.sessionMenu": "Options for {{title}}",
   "rail.noMatches": "No sessions match the current view.",

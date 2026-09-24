@@ -13,6 +13,7 @@ export type ProjectHeaderProps = {
   readonly onToggle: () => void
   readonly onSelect: () => void
   readonly onNewSession: () => void
+  readonly onNewTerminal: () => void
 }
 
 function activateFromKeyboard(event: KeyboardEvent, action: () => void) {
@@ -45,20 +46,22 @@ function Disclosure(props: { readonly open: boolean; readonly active: boolean; r
   )
 }
 
-function HeaderActions(props: { readonly label: string; readonly engaged: boolean; readonly onNewSession: () => void }): JSX.Element {
+const ACTION_CLASS = "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+
+function HeaderActions(props: { readonly label: string; readonly engaged: boolean; readonly onNewSession: () => void; readonly onNewTerminal: () => void }): JSX.Element {
   const t = useTranslator(dictionary)
   return (
     <div
       data-icon-interaction="row-actions"
       class="flex items-center gap-0.5 shrink-0 opacity-0 group-hover/header:opacity-100 focus-within:opacity-100 transition-opacity duration-150"
-      style={{ width: "1.5rem", height: "1.5rem" }}
+      style={{ width: "3.125rem", height: "1.5rem" }}
       onClick={(event) => event.stopPropagation()}
     >
       <Show when={props.engaged}>
         <Tooltip placement="top" value={t("rail.newSessionTooltip")}>
           <button
             type="button"
-            class="flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+            class={ACTION_CLASS}
             aria-label={t("rail.newSessionIn", { project: props.label })}
             onClick={(event) => {
               event.stopPropagation()
@@ -66,6 +69,21 @@ function HeaderActions(props: { readonly label: string; readonly engaged: boolea
             }}
           >
             <Icon name="plus-small" size="small" />
+          </button>
+        </Tooltip>
+        <Tooltip placement="top" value={t("rail.newTerminalTooltip")}>
+          <button
+            type="button"
+            class={ACTION_CLASS}
+            aria-label={t("rail.newTerminalIn", { project: props.label })}
+            data-testid="rail-new-terminal"
+            data-scope="project"
+            onClick={(event) => {
+              event.stopPropagation()
+              props.onNewTerminal()
+            }}
+          >
+            <Icon name="terminal" size="small" />
           </button>
         </Tooltip>
       </Show>
@@ -97,7 +115,7 @@ export function ProjectHeader(props: ProjectHeaderProps): JSX.Element {
         </span>
       </div>
       <Show when={props.section.placementId}>
-        <HeaderActions label={props.section.label} engaged={engagement.engaged()} onNewSession={props.onNewSession} />
+        <HeaderActions label={props.section.label} engaged={engagement.engaged()} onNewSession={props.onNewSession} onNewTerminal={props.onNewTerminal} />
       </Show>
     </div>
   )
