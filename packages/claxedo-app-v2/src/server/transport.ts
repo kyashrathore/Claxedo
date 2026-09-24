@@ -64,56 +64,54 @@ function withoutRouteQuery(path: string) {
   return `${url.pathname}${url.search}`
 }
 
+async function fetchAuthorized(config: ServerConfig, url: string, init: RequestInit | undefined, fresh: boolean) {
+  try {
+    return await fetch(url, await authorizedInit(config, init, fresh))
+  } catch (error) {
+    throw toAppError(error)
+  }
+}
+
+async function send(config: ServerConfig, url: string, init?: RequestInit): Promise<Response> {
+  const response = await fetchAuthorized(config, url, init, false)
+  if (config.auth.kind !== "bearer" || !(await rejectedBearer(response))) return response
+  return fetchAuthorized(config, url, init, true)
+}
+
+async function readJson<T>(response: Response, label: string): Promise<T> {
+  if (!response.ok) throw await responseError(response, label)
+  if (response.status === 204) return undefined as T
+  return (await response.json()) as T
+}
+
+function workspaceProxyPath(route: RuntimeRoute, path: string) {
+  return `/workspaces/${encodeURIComponent(route.workspaceId)}${withoutRouteQuery(path)}`
+}
+
 export function createTransport(config: ServerConfig): Transport {
   const serverUrl = resolveServerUrl(config)
   const loopback = isLoopbackUrl(serverUrl)
-
-  const send = async (url: string, init?: RequestInit): Promise<Response> => {
-    let response: Response
-    try {
-      response = await fetch(url, await authorizedInit(config, init, false))
-    } catch (error) {
-      throw toAppError(error)
-    }
-    if (config.auth.kind !== "bearer" || !(await rejectedBearer(response))) return response
-    try {
-      return await fetch(url, await authorizedInit(config, init, true))
-    } catch (error) {
-      throw toAppError(error)
-    }
-  }
-
-  const request = (path: string, init?: RequestInit) => send(`${serverUrl}${path}`, init)
+  const request = (path: string, init?: RequestInit) => send(config, `${serverUrl}${path}`, init)
   const relay = createRelay(request)
-
   const runtime = (route: RuntimeRoute, path: string, init?: RequestInit) => {
     if (!route.remote) return request(withQuery(path, { directory: route.directory }), init)
-    const proxied = withoutRouteQuery(path)
-    if (loopback) return request(`/workspaces/${encodeURIComponent(route.workspaceId)}${proxied}`, init)
-    return relay.fetch(route.workspaceId, proxied, init)
+    if (loopback) return request(workspaceProxyPath(route, path), init)
+    return relay.fetch(route.workspaceId, withoutRouteQuery(path), init)
   }
-
   const runtimeSocket = async (route: RuntimeRoute, path: string): Promise<WebSocket> => {
     if (!route.remote) return new WebSocket(socketUrl(serverUrl, withQuery(path, { directory: route.directory })))
-    const proxied = withoutRouteQuery(path)
-    if (loopback) return new WebSocket(socketUrl(serverUrl, `/workspaces/${encodeURIComponent(route.workspaceId)}${proxied}`))
-    return relay.webSocket(route.workspaceId, proxied)
+    if (loopback) return new WebSocket(socketUrl(serverUrl, workspaceProxyPath(route, path)))
+    return relay.webSocket(route.workspaceId, withoutRouteQuery(path))
   }
-
-  const read = async <T>(response: Response, label: string): Promise<T> => {
-    if (!response.ok) throw await responseError(response, label)
-    if (response.status === 204) return undefined as T
-    return (await response.json()) as T
-  }
-
+  const label = (path: string, init?: RequestInit) => `${init?.method ?? "GET"} ${path}`
   return {
     serverUrl,
     loopback,
     request,
     runtime,
     runtimeSocket,
-    json: async (path, init) => read(await request(path, init), `${init?.method ?? "GET"} ${path}`),
-    runtimeJson: async (route, path, init) => read(await runtime(route, path, init), `${init?.method ?? "GET"} ${path}`),
+    json: async (path, init) => readJson(await request(path, init), label(path, init)),
+    runtimeJson: async (route, path, init) => readJson(await runtime(route, path, init), label(path, init)),
   }
 }
 

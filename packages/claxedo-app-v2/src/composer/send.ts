@@ -95,6 +95,7 @@ type SendInput = {
   key: Accessor<ComposerKey>
   store: ComposerStore
   mode: Accessor<EditorMode>
+  selection: Accessor<Selection>
   goalMode: Accessor<HarnessInfo["goalMode"] | undefined>
   view: Accessor<SessionView | undefined>
   createSession?: () => Promise<SessionView>
@@ -129,7 +130,7 @@ function createArmGoal(input: SendInput) {
 
 async function deliver(input: SendInput, draft: Draft, goal: GoalIntent, clientRequestId: string): Promise<SessionView> {
   const key = input.key()
-  const prompt = await buildPromptInput({ draft, mode: input.mode(), selection: input.store.selection(key), goal })
+  const prompt = await buildPromptInput({ draft, mode: input.mode(), selection: input.selection(), goal })
   const view = input.view() ?? (await required(input.createSession)())
   await view.send({ ...prompt, clientRequestId })
   input.store.addHistory(key, input.mode(), draft.prompt, historyComments(draft))

@@ -48,9 +48,11 @@ async function harnessInfo(transport: Transport, harness: (typeof HARNESSES)[num
   }
 }
 
-function thisMachine(declaration: BootstrapDeclaration): Machine | undefined {
-  if (!declaration.enrollmentId) return undefined
-  return { id: machineId(declaration.enrollmentId), name: "This machine", online: true, isThisMachine: true }
+const UNENROLLED_MACHINE = "this-machine"
+
+function thisMachine(declaration: BootstrapDeclaration, loopback: boolean): Machine | undefined {
+  if (!loopback) return undefined
+  return { id: machineId(declaration.enrollmentId ?? UNENROLLED_MACHINE), name: "This machine", online: true, isThisMachine: true }
 }
 
 export function createCapabilities(transport: Transport, workspaces: Workspaces): CapabilitiesOwner {
@@ -63,9 +65,9 @@ export function createCapabilities(transport: Transport, workspaces: Workspaces)
       probeAvailability(transport, DOCUMENTS_PATH),
     ])
     const signedIn = declaration.issuesSessions
-    const machine = thisMachine(declaration)
+    const machine = thisMachine(declaration, transport.loopback)
     setValue({
-      principal: { kind: "machine", machineId: machineId(declaration.enrollmentId ?? "this-machine") },
+      principal: { kind: "machine", machineId: machineId(declaration.enrollmentId ?? UNENROLLED_MACHINE) },
       signedIn,
       ...(machine ? { thisMachine: machine } : {}),
       harnesses,
