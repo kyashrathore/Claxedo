@@ -81,24 +81,3 @@ export function classifyQuestionKey(
 
   return { type: "none" }
 }
-
-type Edges = { top: number; bottom: number }
-
-export function questionPromptMaxHeight(input: {
-  stickyHeadBottom: number
-  dock: Edges
-  root: Edges
-  floatingArea?: Edges
-}): number | undefined {
-  const gap = 8
-  const floor = 240
-  if (input.floatingArea) {
-    const area = input.floatingArea.bottom - input.floatingArea.top
-    const dock = input.dock.bottom - input.dock.top
-    const root = input.root.bottom - input.root.top
-    return Math.max(floor, Math.floor(area - dock + root - gap))
-  }
-  if (!input.stickyHeadBottom) return undefined
-  const below = Math.max(0, input.dock.bottom - input.root.bottom)
-  return Math.max(floor, Math.floor(input.dock.bottom - input.stickyHeadBottom - gap - below))
-}
