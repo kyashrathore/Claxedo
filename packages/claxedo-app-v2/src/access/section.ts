@@ -1,4 +1,4 @@
-import type { SettingsSection } from "@/shell/types"
+import type { SettingsSection } from "@/shell"
 import { useTranslator } from "@/i18n"
 import { dictionary } from "./i18n"
 import { OrganizationSection } from "./view/organization"

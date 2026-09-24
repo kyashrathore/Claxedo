@@ -4,23 +4,26 @@ import { useTranslator } from "@/i18n"
 import { formatRelativeTime } from "@/lib/relative-time"
 import { harnessAccounts, harnesses, machineLoginOf, selectedAccountKey, type AccountsSnapshot, type Harness } from "../accounts"
 import { dictionary } from "../i18n"
-import { useSettings } from "../provider"
-import type { Accounts } from "../store"
+import { createAccounts, type Accounts } from "../store"
 import { machineLoginWords, storedAccountWords } from "./account-words"
 import { AccountRow } from "./account-row"
 import { AddKeyForm } from "./add-key"
-import { SettingsEmpty, SettingsGroup, SettingsHeading, SettingsList, SettingsNote } from "./section"
+import { SettingsEmpty, SettingsGroup, SettingsIntro, SettingsList, SettingsNote } from "./section"
 
 const HARNESS_ICON: Readonly<Record<string, string>> = { claude: "anthropic", codex: "openai", cursor: "cursor" }
 
 export function AccountsSection() {
   const t = useTranslator(dictionary)
-  const { accounts } = useSettings()
+  const accounts = createAccounts()
   const snapshot = (): AccountsSnapshot | undefined => {
     const state = accounts.state()
     if (state.kind === "ready") return state.snapshot
     if (state.kind === "scanning" || state.kind === "failed") return state.previous
     return undefined
+  }
+  const scanError = () => {
+    const state = accounts.state()
+    return state.kind === "failed" ? state.error : undefined
   }
   const scanLabel = () => {
     const state = accounts.state()
@@ -32,9 +35,8 @@ export function AccountsSection() {
   }
 
   return (
-    <div class="settings-page" data-component="settings-accounts">
-      <SettingsHeading
-        title={t("settings.accounts.title")}
+    <div class="settings-body" data-component="settings-accounts">
+      <SettingsIntro
         description={t("settings.accounts.description")}
         action={
           <span class="settings-inline">
@@ -45,8 +47,8 @@ export function AccountsSection() {
           </span>
         }
       />
-      <Show when={accounts.state().kind === "failed" ? accounts.state() : undefined}>
-        {(state) => <SettingsNote tone="danger">{t("settings.accounts.failed")}: {state().kind === "failed" ? state().error.message : ""}</SettingsNote>}
+      <Show when={scanError()}>
+        {(error) => <SettingsNote tone="danger">{t("settings.accounts.failed")}: {error().message}</SettingsNote>}
       </Show>
       <Show when={snapshot()} fallback={<SettingsEmpty>{scanLabel()}</SettingsEmpty>}>
         {(current) => <For each={harnesses}>{(harness) => <HarnessCard harness={harness} snapshot={current()} accounts={accounts} />}</For>}

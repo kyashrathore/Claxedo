@@ -2,39 +2,6 @@ import type { AppError } from "@/server"
 import { machine, unreachable, type Transition } from "@/lib/machine"
 import type { AccountsSnapshot } from "./accounts"
 
-export type SettingsSectionId =
-  | "accounts"
-  | "machines"
-  | "organization"
-  | "appearance"
-  | "keybindings"
-  | "terminals"
-  | "connections"
-  | "sandbox"
-  | "usage"
-
-export type ColorScheme = "system" | "light" | "dark"
-
-export type AppearancePreferences = {
-  readonly uiFont: string
-  readonly codeFont: string
-  readonly terminalFont: string
-  readonly terminalScreenReader: boolean
-  readonly reasoningSummaries: boolean
-  readonly shellToolPartsExpanded: boolean
-  readonly editToolPartsExpanded: boolean
-}
-
-export const defaultAppearance: AppearancePreferences = {
-  uiFont: "",
-  codeFont: "",
-  terminalFont: "",
-  terminalScreenReader: false,
-  reasoningSummaries: true,
-  shellToolPartsExpanded: false,
-  editToolPartsExpanded: true,
-}
-
 export type AccountsState =
   | { readonly kind: "idle" }
   | { readonly kind: "scanning"; readonly previous?: AccountsSnapshot }

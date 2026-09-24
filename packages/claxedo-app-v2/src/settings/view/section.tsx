@@ -1,14 +1,11 @@
 import { createUniqueId, Show, type JSX } from "solid-js"
 import "./settings.css"
 
-export function SettingsHeading(props: { readonly title: string; readonly description?: string; readonly action?: JSX.Element }) {
+export function SettingsIntro(props: { readonly description?: string; readonly action?: JSX.Element }) {
   return (
-    <div class="settings-heading" data-component="settings-heading">
-      <div class="settings-heading-text">
-        <h1 class="settings-title">{props.title}</h1>
-        <Show when={props.description}>{(text) => <p class="settings-description">{text()}</p>}</Show>
-      </div>
-      <Show when={props.action}>{(action) => <div class="settings-heading-action">{action()}</div>}</Show>
+    <div class="settings-intro" data-component="settings-intro">
+      <Show when={props.description}>{(text) => <p class="settings-description">{text()}</p>}</Show>
+      <Show when={props.action}>{(action) => <div class="settings-intro-action">{action()}</div>}</Show>
     </div>
   )
 }

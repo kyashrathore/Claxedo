@@ -10,7 +10,7 @@ export function resolveBrowserAuthBuildSelection(value: string | undefined): Bro
   if (value === "better-auth") {
     return {
       adapter: "better-auth",
-      module: "./src/platform/auth/better-auth-browser-auth.ts",
+      module: "./src/auth/better-auth-adapter.ts",
       manualChunks: { "vendor-better-auth": ["better-auth/client"] },
     }
   }

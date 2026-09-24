@@ -1,32 +1,35 @@
-.settings-page {
+.settings-body {
   display: flex;
   flex-direction: column;
   gap: 24px;
   width: 100%;
-  max-width: 880px;
-  margin: 0 auto;
-  padding: 0 16px 40px;
+  min-width: 0;
+  padding-bottom: 40px;
 }
 
-.settings-heading {
+.settings-intro {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  padding: 24px 0 8px;
+  gap: 12px 16px;
 }
 
-.settings-heading-text {
+.settings-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 0;
+  background: var(--v2-background-bg-base);
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 
-.settings-title {
-  font-size: var(--font-size-large);
-  font-weight: var(--font-weight-medium);
-  line-height: var(--line-height-heading);
+.settings-toolbar > :first-child {
+  flex: 1 1 200px;
+  min-width: 0;
 }
 
 .settings-description,
@@ -109,13 +112,6 @@
   background: var(--v2-background-bg-layer-01);
 }
 
-.settings-search {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  padding: 8px 0;
-  background: var(--v2-background-bg-base);
-}
 
 .settings-keybind {
   min-height: var(--touch-target, 44px);
