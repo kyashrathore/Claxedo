@@ -1,6 +1,6 @@
 import type { Locator, Page } from "@playwright/test"
 import type { AppChoice } from "../harness/app"
-import type { SeedData } from "./seed"
+import { ONBOARDING_FOLDER, type SeedData } from "./seed"
 
 export type SizeName = "1280" | "390"
 export type Size = { name: SizeName; width: number; height: number; touch: boolean }
@@ -57,6 +57,18 @@ async function revealRail({ page, size }: ScreenContext) {
   if (await opener.isVisible()) await opener.click()
 }
 
+async function chooseOnboardingFolder({ page }: ScreenContext) {
+  await page.getByRole("button", { name: "Choose folder" }).click()
+  await page.getByRole("textbox", { name: "Search folders" }).fill(ONBOARDING_FOLDER)
+  await page.getByRole("dialog", { name: "New Project" }).getByRole("button", { name: /onboarding/ }).click()
+  await page.getByRole("button", { name: "Continue" }).click()
+}
+
+async function openPanel({ page }: ScreenContext) {
+  await page.getByRole("button", { name: "Open workspace panel" }).click()
+  return page.getByRole("complementary", { name: "Workspace panel" })
+}
+
 function settingsSection(id: string, row: string): Screen {
   return {
     id: `settings-${id}`,
@@ -74,6 +86,16 @@ function settingsSection(id: string, row: string): Screen {
 
 export const SCREENS: readonly Screen[] = [
   { id: "welcome-project", phase: "fresh", path: () => "/" },
+  { id: "onboarding-ai", phase: "fresh", path: () => "/", steps: chooseOnboardingFolder },
+  {
+    id: "onboarding-where",
+    phase: "fresh",
+    path: () => "/",
+    steps: async (context) => {
+      await chooseOnboardingFolder(context)
+      await context.page.getByRole("button", { name: "Next", exact: true }).click()
+    },
+  },
   { id: "home", phase: "seeded", path: () => "/" },
   { id: "session", phase: "seeded", path: sessionPath },
   {
@@ -98,7 +120,31 @@ export const SCREENS: readonly Screen[] = [
     phase: "seeded",
     sizes: ["1280"],
     path: sessionPath,
-    steps: ({ page }) => page.getByRole("button", { name: "Open workspace panel" }).click(),
+    steps: async (context) => {
+      await openPanel(context)
+    },
+  },
+  {
+    id: "panel-file",
+    phase: "seeded",
+    sizes: ["1280"],
+    path: sessionPath,
+    steps: async (context) => {
+      const panel = await openPanel(context)
+      await panel.getByRole("treeitem", { name: /^README\.md/ }).click()
+    },
+  },
+  {
+    id: "add-menu",
+    phase: "seeded",
+    path: sessionPath,
+    steps: ({ page }) => page.getByRole("main").getByRole("button", { name: "Add", exact: true }).click(),
+  },
+  {
+    id: "model-picker",
+    phase: "seeded",
+    path: sessionPath,
+    steps: ({ page }) => page.getByRole("button", { name: /^Select harness and model/ }).click(),
   },
   settingsSection("general", "General"),
   settingsSection("shortcuts", "Shortcuts"),
