@@ -160,9 +160,7 @@ const en = {
   "tasks.preset.additionalConfigurations": "Additional configurations",
   "tasks.preset.labelsHint":
     "Labels describe intended use. They are settings you pick when starting a session, not stages that run on their own.",
-  "tasks.preset.harness": "Harness",
-  "tasks.preset.model": "Model",
-  "tasks.preset.effort": "Effort",
+  "tasks.preset.loadingProjects": "Loading projects…",
   "tasks.preset.addProjectFirst": "Add a project first: harness and model choices are read from a project's checkout.",
   "tasks.preset.instructions": "Instructions",
   "tasks.preset.instructionsLabel": "Preset instructions",
