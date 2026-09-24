@@ -3,6 +3,7 @@ import { createMemo, createSignal, Show, type Accessor, type JSX } from "solid-j
 import { useQuery } from "@tanstack/solid-query"
 import { toAppError, useServer, type Project, type ProjectSource } from "@/server"
 import { useProjectsText } from "../i18n"
+import { ConnectCodeHost } from "./project-create-connect"
 import { AccountSelect, createFormLook, RepositoryList, UrlField, type CreateFormLook } from "./project-create-repository"
 import { ClaxedoIcon as Icon } from "@/ui"
 
@@ -61,20 +62,23 @@ function NameField(props: { look: CreateFormLook; name: string; onName: (name: s
 
 function createRepositoryChoice(active: Accessor<boolean>) {
   const server = useServer()
+  const offered = useQuery(() => ({ ...server.queries.codeHosts.offered(), enabled: active() }))
   const connections = useQuery(() => ({ ...server.queries.codeHost.connections(), enabled: active() }))
+  const integration = () => offered.data?.[0]
   const usable = createMemo(() => (connections.data ?? []).filter((connection) => connection.status !== "broken"))
   const [chosenId, setChosenId] = createSignal<string>()
   const connection = createMemo(() => usable().find((item) => item.id === chosenId()) ?? usable()[0])
   const [entry, setEntry] = createSignal<"list" | "url">("list")
-  const view = (): "checking" | "url" | "list" => {
-    if (connections.isPending) return "checking"
-    return !connection() || entry() === "url" ? "url" : "list"
+  const view = (): "checking" | "url" | "connect" | "list" => {
+    if (offered.isPending || connections.isPending) return "checking"
+    if (!integration() || entry() === "url") return "url"
+    return connection() ? "list" : "connect"
   }
   const repositories = useQuery(() => {
     const id = connection()?.id ?? ""
     return { ...server.queries.codeHost.repositories(id), enabled: active() && view() === "list" && id !== "" }
   })
-  return { usable, connection, setChosenId, entry, setEntry, view, repositories }
+  return { integration, usable, connection, setChosenId, entry, setEntry, view, repositories }
 }
 
 type RepositoryChoice = ReturnType<typeof createRepositoryChoice>
@@ -92,11 +96,14 @@ function RepositorySection(props: {
   leadField?: (element: HTMLElement) => void
 }): JSX.Element {
   const t = useProjectsText()
-  const host = () => props.choice.connection()?.providerName
+  const host = () => props.choice.integration()?.name
   return (
     <div class="flex flex-col gap-3">
       <Show when={props.choice.view() === "checking"}>
         <span class={props.look.hint}>{t("projects.create.checking")}</span>
+      </Show>
+      <Show when={props.choice.view() === "connect" ? props.choice.integration() : undefined}>
+        {(integration) => <ConnectCodeHost look={props.look} integration={integration()} />}
       </Show>
       <Show when={props.choice.view() === "list" ? props.choice.connection() : undefined}>
         {(connection) => (
