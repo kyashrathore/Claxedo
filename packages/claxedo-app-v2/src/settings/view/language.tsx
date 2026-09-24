@@ -1,4 +1,4 @@
-import { Select } from "@/ui"
+import { Select } from "@opencode-ai/ui/select"
 import { useI18n, useTranslator, type Locale } from "@/i18n"
 import { dictionary } from "../i18n"
 import { SettingsGroup, SettingsList, SettingsRow } from "./section"
@@ -19,6 +19,7 @@ export function LanguageSection() {
               value={(code) => code}
               label={localeLabel}
               onSelect={(code) => code && i18n.setLocale(code)}
+              variant="secondary" size="small" triggerVariant="settings"
             />
           </SettingsRow>
         </SettingsList>
