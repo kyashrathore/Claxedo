@@ -1,6 +1,6 @@
 # Accounts
 
-Owns: the logins each agent harness runs on, and today's app's surfaces for them: Settings → Models (`modelsSettingsSection`, registered in the shell's settings sections) and the account cards the first run's AI step shows. Both render the same `AgentHarnessAccounts`.
+Owns: the logins each agent harness runs on, and today's app's surfaces for them: Settings → Models (`modelsSettingsSection`, registered in the shell's settings sections) and the first run's AI step. Both render the same `AgentHarnessAccounts` for the CLI harnesses (Claude Code, Codex, Cursor) and the same `HarnessProvidersSection` for the catalog harnesses (Pi, OpenCode).
 
 ## Data
 
@@ -9,6 +9,10 @@ Owns: the logins each agent harness runs on, and today's app's surfaces for them
 - A live check of a stored account is kept on the page (`liveChecks`) and outranks the verdict the server stored; a check that never reached the provider is kept as `unknown` with its reason.
 - `model.ts` holds the harness list (Claude Code, Codex, Cursor) and the rules: which row is selected (the server's effective read first, then the stored mark, then this computer's login), whether a login is refused or unavailable, whether this computer's login would strand a binding, and whether a harness can run a turn (`harnessRunnable`).
 - `account-words.ts` turns a row into what the row says: label, second line (verdict, plan windows), hint, alert and reach.
+
+## Catalog harnesses
+
+`createHarnessProviders(harness)` wraps the composer's `createProviderCatalog` over `server.harnessConfig.providers`: the providers the harness offers, the connected ones first, and each connected provider's detail loaded once so its source tag (Config, Environment, API key, Custom) can show. A catalog of more than 24 providers lists the connected and the popular ones until a search names others. Connect opens the same dialog in the engine's words ("Connect {vendor} for {engine}"); Disconnect, offered for API-key and custom providers, deletes the stored credential and the harness's auth entry (`server.providerConnect.disconnect`). OpenCode also takes a custom OpenAI-compatible provider (`DialogCustomProvider`, `server.providerConnect.saveCustomProvider`).
 
 ## Connect
 

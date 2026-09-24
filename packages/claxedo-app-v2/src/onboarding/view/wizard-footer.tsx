@@ -1,7 +1,7 @@
 import { Show } from "solid-js"
-import { Button } from "@opencode-ai/ui/button"
 import { useOnboardingText, type OnboardingText } from "../i18n"
 import type { OnboardingWizard } from "../wizard"
+import { Button } from "@/ui"
 
 function reason(t: OnboardingText, wizard: OnboardingWizard, localExecution: boolean): string | undefined {
   const failure = wizard.failure()

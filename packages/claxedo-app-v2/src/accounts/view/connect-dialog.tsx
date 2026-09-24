@@ -1,6 +1,5 @@
-import { Dialog } from "@opencode-ai/ui/dialog"
 import { connectSubject, connectVars } from "@/lib/harness-catalog"
-import { ClaxedoIconButton as IconButton, useDialog } from "@/ui"
+import { ClaxedoIconButton as IconButton, useDialog, Dialog } from "@/ui"
 import { CONTEXT_COPY, type ConnectFormInput } from "../connect-form"
 import { useAccountsText } from "../i18n"
 import { ProviderConnectForm } from "./connect-form"

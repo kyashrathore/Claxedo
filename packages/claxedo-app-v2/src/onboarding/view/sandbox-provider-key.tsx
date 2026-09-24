@@ -1,9 +1,9 @@
 import { For, Show } from "solid-js"
-import { Button } from "@opencode-ai/ui/button"
 import { SandboxDriverLogo } from "@/cloud"
 import type { SandboxProviderOption, SandboxProviderVerification } from "@/server"
 import { useOnboardingText, type OnboardingText } from "../i18n"
 import { canSaveSandboxKey, createSandboxKey, type SandboxKey } from "../sandbox-key"
+import { Button } from "@/ui"
 
 function verdictText(t: OnboardingText, provider: SandboxProviderOption, verdict: SandboxProviderVerification): string {
   if (verdict.state === "working") return t("onboarding.sandbox.working", { provider: provider.label })

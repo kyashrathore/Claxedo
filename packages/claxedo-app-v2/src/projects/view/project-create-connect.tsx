@@ -1,8 +1,8 @@
-import { Button } from "@opencode-ai/ui/button"
 import { createSignal, onCleanup, Show, type JSX } from "solid-js"
 import { useServer, type Integration, type IntegrationFailure, type IntegrationGrant } from "@/server"
 import { useProjectsText, type ProjectsText } from "../i18n"
 import type { CreateFormLook } from "./project-create-repository"
+import { Button } from "@/ui"
 
 const FAILURE_KEYS = {
   exists: "projects.connect.failure.exists",
