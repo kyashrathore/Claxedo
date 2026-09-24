@@ -7,7 +7,7 @@ import {
   cursorTurnPrompt,
   ingestCursorSdkMessage,
 } from "./driver"
-import type { AgentProcessDescriptor, AgentProcessObserver } from "../../process-observer"
+import type { AgentProcessDescriptor, AgentProcessObserver } from "@claxedo/process-ownership/process-observer"
 
 describe("Cursor SDK driver", () => {
   // The SDK freezes its backend URL once per process, and every test here is a

@@ -3,7 +3,7 @@ export type { ConnectionReadiness, HarnessConnectionCapabilities, HarnessConnect
 import type { AgentHarnessAdapter } from "./adapter-contract"
 import type { RuntimeEventHub } from "./runtime-event-hub"
 import type { AgentRuntimeStoreWithRecovery } from "./harnesses/shared/runtime-store"
-import type { AgentProcessObserver } from "./process-observer"
+import type { AgentProcessObserver } from "@claxedo/process-ownership/process-observer"
 
 /** Authenticated operator configuration. `config` is visible only to its installed provider. */
 export type HarnessConnectionDescriptor<TConfig = unknown> = {

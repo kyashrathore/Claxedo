@@ -1,7 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 
-import { isCreationIdentity, sameCreationIdentity, type CreationIdentity } from "@claxedo/agent-sdk-runtime/launch"
+import { isCreationIdentity, sameCreationIdentity, type CreationIdentity } from "@claxedo/process-ownership/launch"
 
 import { asRecord, isNonEmptyString, readUnknown } from "../shared/json-read"
 import { createDaemonFetch } from "./daemon-request"

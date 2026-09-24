@@ -3,7 +3,7 @@ import {
   verifyCreationIdentity,
   type CreationIdentity,
   type RetirementResult,
-} from "../../launch"
+} from "@claxedo/process-ownership/launch"
 
 /**
  * One unresolved retirement, held against the next launch.

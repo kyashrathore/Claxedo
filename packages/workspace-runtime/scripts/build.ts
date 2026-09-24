@@ -33,6 +33,8 @@ const LIBRARY_EXTERNALS = [
   "@claxedo/agent-runtime-contract/*",
   "@claxedo/agent-sdk-runtime",
   "@claxedo/agent-sdk-runtime/*",
+  "@claxedo/process-ownership",
+  "@claxedo/process-ownership/*",
   "@claxedo/agent-event-runtime",
   "@claxedo/agent-event-runtime/*",
 ]

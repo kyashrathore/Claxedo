@@ -1,6 +1,6 @@
 import type { PromptInput } from "../../index"
 import { isRuntimeGoalStatus, type RawHarnessEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
-import { harnessSpawnEnv } from "../shared/spawn-env"
+import { harnessSpawnEnv } from "@claxedo/process-ownership/spawn-env"
 import { asRecord } from "@claxedo/helpers/guards"
 import {
   errorMessage,
@@ -10,7 +10,7 @@ import {
 import { createTurnStop, type TurnStopRecord } from "../shared/cancellation-facts"
 import { controlRequestDeadline } from "../shared/request-deadline"
 import { deliverPromptAttachments, promptImageAttachments } from "../shared/prompt-attachments"
-import type { RequestDeadline } from "../../launch"
+import type { RequestDeadline } from "@claxedo/process-ownership/launch"
 import type { CodexAppServerProcess } from "./app-server-process"
 
 export type CodexTurnStop = {

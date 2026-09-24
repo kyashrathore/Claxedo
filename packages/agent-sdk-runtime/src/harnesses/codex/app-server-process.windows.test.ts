@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { existsSync } from "node:fs"
 import { installArgvRecordingShim, installUnresolvableShim } from "../../test-utils/windows-argv-recorder"
-import { volatileLaunchOwnership } from "../../launch"
+import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 import { CodexAppServerProcess } from "./app-server-process"
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))

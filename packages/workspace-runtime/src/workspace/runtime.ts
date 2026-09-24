@@ -1,8 +1,23 @@
 import type { SessionConfig, SessionConfigUpdate } from "@claxedo/agent-runtime-contract"
 import { Log } from "../log"
+import type { AgentProcessObserver } from "@claxedo/process-ownership/process-observer"
 import fs from "fs"
 import path from "path"
-import { connectionIdForHarness, createAcpConnectionProvider, createAgentRuntime, createConnectionProviderRegistry, type AgentRuntime, type AgentSession, type AgentMessage, type SessionHarness, type ConnectionProvider, type ConnectionSecretResolver, type HarnessConnectionDescriptor, type AgentProcessObserver, type AgentTurnOutcome, type AgentRuntimeRecovery } from "@claxedo/agent-sdk-runtime"
+import {
+  connectionIdForHarness,
+  createAcpConnectionProvider,
+  createAgentRuntime,
+  createConnectionProviderRegistry,
+  type AgentRuntime,
+  type AgentSession,
+  type AgentMessage,
+  type SessionHarness,
+  type ConnectionProvider,
+  type ConnectionSecretResolver,
+  type HarnessConnectionDescriptor,
+  type AgentTurnOutcome,
+  type AgentRuntimeRecovery,
+} from "@claxedo/agent-sdk-runtime"
 import {
   ClaudeHarnessAdapter,
   CodexHarnessAdapter,
@@ -51,7 +66,7 @@ import {
   mountWorkspacePty,
   type MountedWorkspaceEvents,
 } from "./core"
-import { volatileLaunchOwnership, type LaunchOwnershipOwner, type LaunchOwnershipStore } from "@claxedo/agent-sdk-runtime/launch"
+import { volatileLaunchOwnership, type LaunchOwnershipOwner, type LaunchOwnershipStore } from "@claxedo/process-ownership/launch"
 import type {
   RuntimeConfigApplyStatus,
   WorkspaceCheckpointBlocker,

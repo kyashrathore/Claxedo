@@ -198,21 +198,6 @@ export type { SdkModelEntry } from "./sdk-model-options"
 export { harnessEffortLevels } from "./harness-effort"
 export { createLiveModelSource } from "./live-model-source"
 export type { LiveModelSource } from "./live-model-source"
-export {
-  AGENT_PROCESS_ATTRIBUTION_SCENARIOS,
-  observeAgentProcess,
-  safeAgentProcessDescriptor,
-  type AgentProcessCapabilities,
-  type AgentProcessAttributionScenario,
-  type AgentProcessConfidence,
-  type AgentProcessDescriptor,
-  type AgentProcessLifecycle,
-  type AgentProcessLocality,
-  type AgentProcessObserver,
-  type AgentProcessObserverHandle,
-  type AgentProcessRole,
-} from "./process-observer"
-
 /**
  * Fixed at create, so a later edit cannot rewrite what an already-running
  * session was told or delegated under. An update naming one is refused rather

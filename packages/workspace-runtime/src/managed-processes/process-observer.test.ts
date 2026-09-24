@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 
 import { createProcessObserver, type ProcessObserverEvent } from "./process-observer"
-import type { RetirementResult } from "@claxedo/agent-sdk-runtime/launch"
+import type { RetirementResult } from "@claxedo/process-ownership/launch"
 
 /** What an owner reports when the leader exited and nothing it owned is left. */
 const retired: RetirementResult = { leader: "exited", descendants: "unknown", signals: [] }

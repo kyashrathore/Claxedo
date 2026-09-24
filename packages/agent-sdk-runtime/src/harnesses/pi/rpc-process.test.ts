@@ -3,7 +3,7 @@ import { PiJsonLines, PiRpcProcess } from "./rpc-process"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { volatileLaunchOwnership } from "../../launch"
+import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 
 /** This suite asserts protocol and retirement, not record durability. */
 const volatile = volatileLaunchOwnership()

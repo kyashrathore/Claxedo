@@ -2,7 +2,7 @@ import { isRecord } from "@claxedo/agent-runtime-contract"
 import type { ChildProcess } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { DEFAULT_RECOVERY_BUDGETS, type RecoveryBudgets } from "@claxedo/agent-runtime-contract"
-import { observeAgentProcess, type AgentProcessObserver, type AgentProcessObserverHandle } from "../../process-observer"
+import { observeAgentProcess, type AgentProcessObserver, type AgentProcessObserverHandle } from "@claxedo/process-ownership/process-observer"
 import { piCommand } from "./executable"
 import {
   launchOwnedProcess,
@@ -11,7 +11,7 @@ import {
   type OwnedLaunch,
   type RequestDeadline,
   type RetirementResult,
-} from "../../launch"
+} from "@claxedo/process-ownership/launch"
 
 export type PiRpcMessage = Record<string, unknown> & { type: string }
 

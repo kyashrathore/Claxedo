@@ -177,8 +177,13 @@ export const localServer: Policy = {
   //    destinations through the system resolver, because getaddrinfo honours
   //    /etc/hosts, mDNS and split-horizon DNS — the answers `git` will dial —
   //    and only a Node runtime has it (the hosted Worker resolves over DoH).
-  //    69/29, no headroom.
-  ceilings: { modules: 69, packages: 29 },
+  //  - `@claxedo/process-ownership/launch` through `app/local-daemon-lifecycle.ts`
+  //    (owner: local daemon lifecycle): creation identity and bounded retirement
+  //    keep daemon replacement tied to the process this machine launched.
+  //    It provides dependency-free data and OS reads, with no server, runtime
+  //    or store closure behind them.
+  //    69/30, no headroom.
+  ceilings: { modules: 69, packages: 30 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",
@@ -208,6 +213,7 @@ export const localServer: Policy = {
       { packageDir: "packages/sandbox-contract" },
       { packageDir: "packages/agent-runtime-contract" },
       { packageDir: "packages/agent-event-runtime" },
+      { packageDir: "packages/process-ownership" },
       { packageDir: "packages/agent-sdk-runtime" },
       { packageDir: "packages/opencode-server-adapter" },
       // The loopback credential broker the desktop composition mounts; its

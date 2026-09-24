@@ -9,9 +9,9 @@ import {
 import fs from "node:fs/promises"
 import { execFile } from "node:child_process"
 import { randomUUID } from "node:crypto"
-import { observeAgentProcess } from "../../process-observer"
+import { observeAgentProcess } from "@claxedo/process-ownership/process-observer"
 import { createEvaluatedGoalResource } from "../shared/evaluated-goal-resource"
-import { harnessSpawnEnv } from "../shared/spawn-env"
+import { harnessSpawnEnv } from "@claxedo/process-ownership/spawn-env"
 import { GOAL_PROMPT_TEXT, goalEvaluatorRequest, parseGoalEvaluation } from "../shared/goal-protocol"
 import path from "node:path"
 import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
@@ -33,7 +33,7 @@ import { requirePiExecutable, verifyPiExecutable, piCommand } from "./executable
 import { ensurePiTitleExtension, generatePiTitle, setPiSessionName } from "./title-extension"
 import { cleanupFromRetirement, createTurnStop, createTurnStopRecord } from "../shared/cancellation-facts"
 import { controlRequestDeadline, modelRequestDeadline } from "../shared/request-deadline"
-import { RecoveryCodedError, retirementSettled, volatileLaunchOwnership, type LaunchOwnershipStore, type RetirementResult } from "../../launch"
+import { RecoveryCodedError, retirementSettled, volatileLaunchOwnership, type LaunchOwnershipStore, type RetirementResult } from "@claxedo/process-ownership/launch"
 
 export type PiDriverOptions = {
   binary?: string

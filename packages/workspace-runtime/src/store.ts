@@ -48,7 +48,7 @@ import {
 } from "./compat-events"
 import { workspaceRuntimeStoreDir } from "./env"
 import { migrateLaunchOwnership, sqliteLaunchOwnership } from "./ownership/launch-ownership-sqlite"
-import type { LaunchOwnershipOwner } from "@claxedo/agent-sdk-runtime/launch"
+import type { LaunchOwnershipOwner } from "@claxedo/process-ownership/launch"
 import type { SessionRequestProvenance, SessionTurnOrigin, SessionWorkspaceAuthority } from "./session-access-policy"
 import { isRecord, num, rec, str } from "./json-value"
 

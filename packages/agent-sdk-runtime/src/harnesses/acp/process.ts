@@ -49,11 +49,11 @@ import { AcpSessionUncertainError } from "./recovery"
 import { normalizeACPGoal } from "./goal-response"
 import { createStartupRequestLease } from "./startup-request"
 import { ACP_SUBAGENT_CLIENT_CAPABILITIES, acpRootSessionId, receiveACPSubagentNotification, supportsACPSubagents, type ACPSubagentNotification } from "./subagents"
-import { createIdleReaper, type IdleReaper } from "../shared/process-lifecycle"
-import type { RetirementResult } from "../../launch"
+import { createIdleReaper, type IdleReaper } from "@claxedo/process-ownership/process-lifecycle"
+import type { RetirementResult } from "@claxedo/process-ownership/launch"
 import { createACPExitGate, type ACPExitGate } from "./process-retirement"
 import { fencedRetirement, type ACPTransport, type ACPTransportEnv, type ACPTransportFactory } from "./transport"
-import type { AgentProcessObserverHandle } from "../../process-observer"
+import type { AgentProcessObserverHandle } from "@claxedo/process-ownership/process-observer"
 
 const log = Log.create({ service: "acp-adapter" })
 

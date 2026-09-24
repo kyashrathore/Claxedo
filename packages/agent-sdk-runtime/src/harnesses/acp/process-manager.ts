@@ -4,7 +4,7 @@ import type { McpServer } from "@agentclientprotocol/sdk"
 import { Log } from "../../log"
 import { acpFirstPartyMcpServer, type FirstPartyMcpProvider } from "../../first-party-mcp"
 import { ACP_RECOVER } from "./recovery"
-import type { RetirementResult } from "../../launch"
+import type { RetirementResult } from "@claxedo/process-ownership/launch"
 import { ACPProcess } from "./process"
 import { createACPConnectionObservations, type ACPConnectionObservationUpdate } from "./connection-state"
 import { createSessionTurnLifecycle, type SessionTurnLifecycle } from "../shared/turn-lifecycle"
@@ -27,7 +27,7 @@ import {
 import {
   observeAgentProcess,
   type AgentProcessObserverHandle,
-} from "../../process-observer"
+} from "@claxedo/process-ownership/process-observer"
 import type { AcpHarnessAdapterOptions, AcpRuntimeStore } from "./index"
 
 const log = Log.create({ service: "acp-process-manager" })

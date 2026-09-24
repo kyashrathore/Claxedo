@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test"
 import fs from "node:fs/promises"
-import { LaunchRefusedError, volatileLaunchOwnership } from "../../launch"
+import { LaunchRefusedError, volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 import { removeTestTempDir } from "../shared/test-temp-dir"
 
 /** This suite asserts protocol and retirement, not record durability. */
@@ -48,7 +48,7 @@ import { installFakeCodexAppServer } from "../../test-utils/fake-codex-app-serve
 import { CodexHarnessAdapter } from "./index"
 import { createMemoryRuntimeStore } from "../../stores/memory"
 import type { WithInternals } from "../../test-utils/class-internals"
-import type { CreationIdentity, RetirementResult } from "../../launch"
+import type { CreationIdentity, RetirementResult } from "@claxedo/process-ownership/launch"
 
 const soon = () => ({ signal: new AbortController().signal, deadlineAt: Date.now() + 5_000 })
 

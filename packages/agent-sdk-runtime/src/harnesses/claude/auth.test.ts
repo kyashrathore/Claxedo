@@ -1,7 +1,7 @@
 import type { ProviderProjection } from "@claxedo/agent-runtime-contract"
 import { describe, expect, test } from "bun:test"
 import { claudeAuthEnv } from "./auth"
-import { harnessSpawnEnv } from "../shared/spawn-env"
+import { harnessSpawnEnv } from "@claxedo/process-ownership/spawn-env"
 import { harnessProjection } from "../../harness-projection"
 
 const key: ProviderProjection = {

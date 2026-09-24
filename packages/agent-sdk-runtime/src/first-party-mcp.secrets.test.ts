@@ -9,7 +9,7 @@ import type { SdkRuntimeTurnInput } from "./harnesses/shared/sdk-runtime-adapter
 import { createClaudeSdkDriver, type ClaudeSdkDriverOptions } from "./harnesses/claude/driver"
 import { createCursorSdkDriver } from "./harnesses/cursor/driver"
 import { ACPProcess } from "./harnesses/acp/process"
-import { createIdleReaper, type IdleReaper } from "./harnesses/shared/process-lifecycle"
+import { createIdleReaper, type IdleReaper } from "@claxedo/process-ownership/process-lifecycle"
 
 /**
  * The bearer is a per-session secret handed to a harness process. Every log

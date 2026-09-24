@@ -83,6 +83,7 @@
     "@claxedo/agent-event-runtime": "workspace:*",
     "@claxedo/agent-runtime-contract": "workspace:*",
     "@claxedo/agent-sdk-runtime": "workspace:*",
+    "@claxedo/process-ownership": "workspace:*",
     "@claxedo/channels": "workspace:*",
     "@claxedo/connections": "workspace:*",
     "@claxedo/egress-broker": "workspace:*",

@@ -10,7 +10,7 @@ import type {
 import type { AgentGoalResource, AgentHarnessAdapterHealth, AgentHarnessAdapterProcessOptions } from "../../adapter-contract"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
 import type { NativeSdkHarnessId } from "@claxedo/agent-runtime-contract"
-import type { AgentProcessObserver } from "../../process-observer"
+import type { AgentProcessObserver } from "@claxedo/process-ownership/process-observer"
 import type { AgentSessionBinding } from "./agent-session-index"
 import type { RuntimeEventRoute, ChildProjectionTarget } from "./child-event-routing"
 import type { AgentRuntimeStoreCore } from "./runtime-store"
@@ -18,7 +18,7 @@ import type { RuntimeAppendSource } from "./turn-projection"
 import type { SessionTurnLifecycle } from "./turn-lifecycle"
 import type { TurnStopRecord } from "./cancellation-facts"
 import type { OutsideTurnUsage } from "./outside-turn-usage"
-import type { RequestDeadline } from "../../launch"
+import type { RequestDeadline } from "@claxedo/process-ownership/launch"
 
 export type SdkRuntimeRunnerType = NativeSdkHarnessId
 export type SdkRuntimeStore = AgentRuntimeStoreCore

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
-import { reconcileLaunch, type CreationIdentity, type LaunchOwnerScope, type RetirementResult } from "@claxedo/agent-sdk-runtime/launch"
+import { reconcileLaunch, type CreationIdentity, type LaunchOwnerScope, type RetirementResult } from "@claxedo/process-ownership/launch"
 import { migrateLaunchOwnership, sqliteLaunchOwnership, type SqliteDatabase } from "./launch-ownership-sqlite"
 
 const generation = "gen-1"

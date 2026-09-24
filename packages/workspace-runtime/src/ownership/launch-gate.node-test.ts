@@ -16,7 +16,7 @@ import {
   volatileLaunchOwnership,
   launchOwnedProcess,
   LaunchRefusedError,
-} from "@claxedo/agent-sdk-runtime/launch"
+} from "@claxedo/process-ownership/launch"
 
 const scratch: string[] = []
 afterEach(async () => {

@@ -382,7 +382,7 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     stop: "unsupported",
     kill: "unsupported",
     source: {
-      file: "packages/agent-sdk-runtime/src/launch/retirement.ts",
+      file: "packages/process-ownership/src/launch/retirement.ts",
       callee: "spawn",
       calls: 1,
     },
@@ -396,7 +396,7 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     observation: "host-tree",
     stop: "supported",
     kill: "supported",
-    source: { file: "packages/agent-sdk-runtime/src/launch/launch-gate.ts", callee: "spawn", calls: 1 },
+    source: { file: "packages/process-ownership/src/launch/launch-gate.ts", callee: "spawn", calls: 1 },
   }),
   product({
     id: "harness-launch-payload",
@@ -406,7 +406,7 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     observation: "host-tree",
     stop: "supported",
     kill: "supported",
-    source: { file: "packages/agent-sdk-runtime/src/launch/launch-gate-child.ts", callee: "spawn", calls: 1 },
+    source: { file: "packages/process-ownership/src/launch/launch-gate-child.ts", callee: "spawn", calls: 1 },
   }),
   product({
     id: "launch-creation-identity-probe",
@@ -416,7 +416,7 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     observation: "lifecycle-only",
     stop: "unsupported",
     kill: "unsupported",
-    source: { file: "packages/agent-sdk-runtime/src/launch/identity.ts", callee: "execFileAsync", calls: 4 },
+    source: { file: "packages/process-ownership/src/launch/identity.ts", callee: "execFileAsync", calls: 4 },
   }),
   product({
     id: "launch-descendant-sweep-probe",
@@ -426,7 +426,7 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     observation: "lifecycle-only",
     stop: "unsupported",
     kill: "unsupported",
-    source: { file: "packages/agent-sdk-runtime/src/launch/descendants.ts", callee: "execFileAsync", calls: 2 },
+    source: { file: "packages/process-ownership/src/launch/descendants.ts", callee: "execFileAsync", calls: 2 },
   }),
   {
     id: "pinned-pi-install",

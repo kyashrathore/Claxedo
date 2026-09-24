@@ -1,5 +1,5 @@
 import type { SessionTitleRequest } from "@claxedo/agent-runtime-contract"
-import { createIdleReaper } from "../shared/process-lifecycle"
+import { createIdleReaper } from "@claxedo/process-ownership/process-lifecycle"
 import path from "path"
 import {
   createAgentEventRuntime,
@@ -53,7 +53,7 @@ import {
   startTurnWithThreadRecovery,
 } from "./protocol"
 import { createTurnStopRecord } from "../shared/cancellation-facts"
-import { retirementSettled, volatileLaunchOwnership, type LaunchOwnershipStore } from "../../launch"
+import { retirementSettled, volatileLaunchOwnership, type LaunchOwnershipStore } from "@claxedo/process-ownership/launch"
 import { createLaunchRetention } from "./launch-retention"
 
 export {

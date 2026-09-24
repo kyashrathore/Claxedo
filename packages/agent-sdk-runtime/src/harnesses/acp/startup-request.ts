@@ -1,4 +1,4 @@
-import { createIdleReaper, type IdleReaper } from "../shared/process-lifecycle"
+import { createIdleReaper, type IdleReaper } from "@claxedo/process-ownership/process-lifecycle"
 
 /** Owns cancellation and human-wait-aware timeout for one initialize or session/new request. */
 export function createStartupRequestLease(timeoutMs: number | undefined, idle: { release(): void }, method = "newSession", signal?: AbortSignal) {

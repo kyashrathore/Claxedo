@@ -10,7 +10,7 @@ import type { WorkspaceEventFramesTap } from "../routes/events"
 import type { RuntimeCredentialIssuer } from "../first-party-mcp/credential"
 import type { FirstPartyMcpServerEntry } from "../first-party-mcp/index"
 import type { ConnectionRuntimeStatus, RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
-import type { LaunchOwnershipRecord } from "@claxedo/agent-sdk-runtime/launch"
+import type { LaunchOwnershipRecord } from "@claxedo/process-ownership/launch"
 import type { LaunchOwnershipReconciliation } from "../ownership/reconcile-launch-ownership"
 
 export type WorkspaceConnectionState = ConnectionRuntimeStatus & { connectionId: string }

@@ -18,7 +18,7 @@ import {
   sessionAccessDenied,
   type SessionAccessPolicy,
 } from "../session-access-policy"
-import { volatileLaunchOwnership, type LaunchOwnershipStore } from "@claxedo/agent-sdk-runtime/launch"
+import { volatileLaunchOwnership, type LaunchOwnershipStore } from "@claxedo/process-ownership/launch"
 
 function dir(c: { req: { query: (k: string) => string | undefined; header: (k: string) => string | undefined } }): string {
   return assertTarget(c.req.query("directory") || c.req.header("x-claxedo-directory"))

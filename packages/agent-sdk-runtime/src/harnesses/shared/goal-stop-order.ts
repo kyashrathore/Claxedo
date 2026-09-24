@@ -1,6 +1,5 @@
 import type { AgentGoalMutationFailure, AgentGoalMutationResult } from "@claxedo/agent-runtime-contract"
-
-import { RecoveryCodedError, type RequestDeadline } from "../../launch"
+import { RecoveryCodedError, type RequestDeadline } from "@claxedo/process-ownership/launch"
 import { stoppedWaiting } from "./sdk-runtime-cancellation"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 

@@ -7,10 +7,10 @@ import {
   observeAgentProcess,
   type AgentProcessObserver,
   type AgentProcessObserverHandle,
-} from "../../process-observer"
+} from "@claxedo/process-ownership/process-observer"
 import { asRecord } from "@claxedo/helpers/guards"
 import { errorMessage, text, type JsonRecord } from "../shared/sdk-runtime-adapter"
-import { resolveHarnessCommand } from "../shared/windows-process"
+import { resolveHarnessCommand } from "@claxedo/process-ownership/windows-process"
 import {
   launchOwnedProcess,
   settleAtRequestDeadline,
@@ -20,7 +20,7 @@ import {
   type CreationIdentity,
   type RequestDeadline,
   type RetirementResult,
-} from "../../launch"
+} from "@claxedo/process-ownership/launch"
 
 const log = Log.create({ service: "codex-app-server-process" })
 

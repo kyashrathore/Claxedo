@@ -2,7 +2,7 @@ import path from "node:path"
 import { existsSync } from "node:fs"
 import { randomUUID } from "node:crypto"
 import { parseRecoveryOutcome, type RecoveryOutcome } from "@claxedo/agent-runtime-contract"
-import { verifyCreationIdentity } from "@claxedo/agent-sdk-runtime/launch"
+import { verifyCreationIdentity } from "@claxedo/process-ownership/launch"
 import {
   CLAXEDO_DAEMON_PROTOCOL,
   DAEMON_PROTOCOL_HEADER,
