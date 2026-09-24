@@ -13,7 +13,7 @@ bun run e2e -- --app=v2 e2e/flows/00-harness-smoke.spec.ts
 CLAXEDO_E2E_RED=1 bun run e2e -- --app=v2    # red run: the ACP agent fails every turn, model keys stay on the vendors' hosts
 ```
 
-`--app` picks which package the daemon serves: `v1` is `packages/claxedo-app`, `v2` is this package. Global setup builds `packages/agent-sdk-runtime`'s launch gate child when it is missing (and `@claxedo/helpers` first, which that bundle needs), reserves the daemon port for the run (the first free port in `CLAXEDO_E2E_PORT_RANGE`, default 46100–46199, or `CLAXEDO_E2E_DAEMON_PORT`), then builds the chosen app into its `dist-e2e/` with `VITE_CLAXEDO_SERVER_URL` set to that daemon, the way a deployed bundle knows its server. The build is reused until a source file is newer than the stamp or the port changes (v2 builds in about 1.5 s; v1 in about 14 s, after `bun run build:packages` on a fresh checkout). Everything after `--app` goes to `playwright test`, so `--project`, `--grep`, `--headed`, `--debug` and file paths all work.
+`--app` picks which package the daemon serves: `v1` is `packages/claxedo-app`, `v2` is this package. Global setup builds the workspace dists it and the daemon import when they are missing (`@claxedo/helpers`, `@claxedo/agent-runtime-contract`, whose dist the pinned-Pi step imports, and `packages/agent-sdk-runtime`'s launch gate child), reserves the daemon port for the run (the first free port in `CLAXEDO_E2E_PORT_RANGE`, default 46100–46199, or `CLAXEDO_E2E_DAEMON_PORT`), then builds the chosen app into its `dist-e2e/` with `VITE_CLAXEDO_SERVER_URL` set to that daemon, the way a deployed bundle knows its server. The build is reused until a source file is newer than the stamp or the port changes (v2 builds in about 1.5 s; v1 in about 14 s, after `bun run build:packages` on a fresh checkout). Everything after `--app` goes to `playwright test`, so `--project`, `--grep`, `--headed`, `--debug` and file paths all work.
 
 The runner pins `--workers=1` (the machine is shared). Run one suite at a time per worktree: every run builds the app into the same `dist-e2e/` for its own daemon port. Give every concurrent run on the machine its own `CLAXEDO_E2E_PORT_RANGE`: the app is built for the daemon port, so a run whose daemon port is held by another process fails at start instead of talking to someone else's server. Each spec gets its own daemon on the run's daemon port, its own data directory, scripted model server and ACP script directory, and every process is stopped when the spec ends; a second stack in the same spec takes the next free port. `CLAXEDO_E2E_KEEP_DATA=1` keeps the data directory for diagnosis. When a spec fails, the daemon log is attached to the Playwright report (`e2e/report/`).
 
@@ -205,6 +205,7 @@ e2e/
     scripted-providers.ts  routes anthropic and openai to the scripted model server
     model-catalog.ts     the OpenCode catalog snapshot
     launch-gate-child.ts builds the runtime's launch gate child
+    workspace-dists.ts   builds a workspace package's dist when it is missing
     desktop-build.ts     builds packages/claxedo-desktop for the chosen app when stale
     desktop.ts           launches the Electron app isolated, with its scripted world
     scripted-world.ts    prepares a server: scripted providers, Pi by default, the scripted ACP agent
