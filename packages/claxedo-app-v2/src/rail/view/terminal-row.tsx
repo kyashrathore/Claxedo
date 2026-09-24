@@ -18,7 +18,7 @@ const AGENT_STATUS: Readonly<Record<TerminalAgentStatus, NavigationStatus>> = {
 
 const TITLE_SUFFIX = { working: "rail.terminal.working", permission: "rail.terminal.needsInput", error: "rail.terminal.failed" } as const
 
-export function TerminalRow(props: { readonly row: TerminalItem; readonly active: boolean }): JSX.Element {
+export function TerminalRow(props: { readonly row: TerminalItem; readonly active: boolean; readonly prepareDrag?: () => string | undefined }): JSX.Element {
   const t = useTranslator(dictionary)
   const terminals = useTerminals()
   const engagement = createHoverEngagement()
@@ -36,6 +36,7 @@ export function TerminalRow(props: { readonly row: TerminalItem; readonly active
       active={props.active}
       onActivate={() => terminals.open(props.row.placementId, props.row.terminalId)}
       engagement={engagement}
+      prepareDrag={props.prepareDrag}
     >
       <NavigationRowGlyph>
         <Show

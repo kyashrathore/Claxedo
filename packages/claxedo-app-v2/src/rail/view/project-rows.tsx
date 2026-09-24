@@ -13,13 +13,14 @@ export type ProjectRowsProps = SessionRowMenuActions & {
   readonly onActivate: (row: SessionRowView) => void
   readonly markerOf: (row: SessionRowView) => SessionMarker | undefined
   readonly projectLabel: string
+  readonly prepareDrag: (row: RailRow) => string | undefined
 }
 
 function Row(props: ProjectRowsProps & { readonly row: RailRow }): JSX.Element {
   return (
     <Switch>
       <Match when={props.row.kind === "terminal" ? props.row.terminal : undefined}>
-        {(terminal) => <TerminalRow row={terminal()} active={props.activeTerminalId === terminal().terminalId} />}
+        {(terminal) => <TerminalRow row={terminal()} active={props.activeTerminalId === terminal().terminalId} prepareDrag={() => props.prepareDrag(props.row)} />}
       </Match>
       <Match when={props.row.kind === "session" ? props.row.session : undefined}>
         {(session) => (
@@ -33,6 +34,7 @@ function Row(props: ProjectRowsProps & { readonly row: RailRow }): JSX.Element {
             onRename={props.onRename}
             onArchive={props.onArchive}
             onDelete={props.onDelete}
+            prepareDrag={() => props.prepareDrag(props.row)}
           />
         )}
       </Match>

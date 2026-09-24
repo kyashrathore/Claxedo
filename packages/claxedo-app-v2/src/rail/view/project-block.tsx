@@ -3,7 +3,7 @@ import { useTranslator } from "@/i18n"
 import type { SessionList, SessionRowView } from "@/session"
 import type { TerminalItem } from "@/terminal"
 import { dictionary } from "../i18n"
-import { railRows, SESSION_GROUP_PAGE_SIZE, type SessionMarker } from "../model"
+import { railRows, SESSION_GROUP_PAGE_SIZE, type RailRow, type SessionMarker } from "../model"
 import type { ProjectSection } from "../project-sections"
 import { ProjectHeader } from "./project-header"
 import { ProjectRows } from "./project-rows"
@@ -23,6 +23,7 @@ export type ProjectBlockProps = SessionRowMenuActions & {
   readonly onNewTerminal: (section: ProjectSection) => void
   readonly onActivate: (row: SessionRowView) => void
   readonly markerOf: (row: SessionRowView) => SessionMarker | undefined
+  readonly prepareDrag: (row: RailRow) => string | undefined
 }
 
 function createProjectPaging(props: ProjectBlockProps) {
@@ -77,6 +78,7 @@ function ProjectSessions(
         activeSessionId={props.activeSessionId}
         activeTerminalId={props.activeTerminalId}
         markerOf={props.markerOf}
+        prepareDrag={props.prepareDrag}
         projectLabel={props.section.label}
         now={props.now}
         onActivate={props.onActivate}

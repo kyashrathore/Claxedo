@@ -16,6 +16,7 @@ export type SessionRowProps = SessionRowMenuActions & {
   readonly active: boolean
   readonly now: Accessor<number>
   readonly onActivate: (row: SessionRowView) => void
+  readonly prepareDrag?: () => string | undefined
 }
 
 const MARKER_ICON = { cloud: "cloud", machine: "server", worktree: "worktree" } as const
@@ -81,6 +82,7 @@ export function SessionRow(props: SessionRowProps): JSX.Element {
       onActivate={() => props.onActivate(props.row)}
       onContextMenu={openMenu}
       engagement={engagement}
+      prepareDrag={props.prepareDrag}
     >
       <NavigationRowStatusGutter status={status()} />
       <div class="relative z-[1] pointer-events-none flex items-center gap-1.5 flex-1 min-w-0 overflow-hidden">
