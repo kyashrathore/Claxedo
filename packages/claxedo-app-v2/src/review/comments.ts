@@ -77,8 +77,8 @@ export function useReviewComments(): ReviewComments {
     add: (input) => withKey((current) => composer.addContext(current, contextItemOf(uuid(), input))),
     update: (id, input) =>
       withKey((current) => {
-        composer.removeContext(current, contextKey(id))
-        composer.addContext(current, contextItemOf(id, input))
+        const next = contextItemOf(id, input)
+        composer.setContext(current, composer.draft(current).context.map((item) => (item.key === contextKey(id) ? next : item)))
       }),
     remove: (id) => withKey((current) => composer.removeContext(current, contextKey(id))),
   }
