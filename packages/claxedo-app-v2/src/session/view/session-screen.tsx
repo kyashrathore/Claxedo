@@ -70,7 +70,7 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
       <div
         ref={setDock}
         data-component="session-prompt-dock"
-        class="ui-session-prompt-dock w-full flex flex-col justify-center items-center pointer-events-none shrink-0 pb-3 bg-background-stronger"
+        class="ui-session-prompt-dock w-full flex flex-col justify-center items-center pointer-events-none shrink-0 pb-3"
       >
         <div data-slot="session-screen-dock" class="w-full px-3 pointer-events-auto md:max-w-192 md:mx-auto 2xl:max-w-[880px]">
           <SessionDocks view={props.view} />
