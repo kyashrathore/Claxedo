@@ -11,7 +11,19 @@ async function createProject(url: string, name: string, directory: string): Prom
   expect(response.status).toBe(201)
 }
 
+async function settled(app: Page): Promise<void> {
+  await app.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
+        .map((animation) => animation.finished.then(() => undefined, () => undefined)),
+    ),
+  )
+}
+
 async function sweep(app: Page, screen: string): Promise<void> {
+  await settled(app)
   const results = await new AxeBuilder({ page: app }).analyze()
   const violations = results.violations.map((violation) => `${screen}: ${violation.id} ${violation.nodes.map((node) => node.target.join(" ")).join(", ")}`)
   expect(violations).toEqual([])
@@ -40,6 +52,7 @@ test("33 phone: the rail as home, the drawer, the pane switcher and the sheet, n
   await home.getByRole("link", { name: /First$/ }).tap()
   await expect(app).toHaveURL(new RegExp(`/w/${workspace.id}/s/${first.id}$`))
   await expect(home).toHaveCount(0)
+  await expect(app.getByRole("heading", { level: 1, name: "First" })).toBeVisible()
   await expectNoHorizontalScroll(app)
   await sweep(app, "session")
 
