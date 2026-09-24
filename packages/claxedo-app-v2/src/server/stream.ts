@@ -1,7 +1,7 @@
-import { createParser } from "eventsource-parser"
-import { machine, unreachable } from "../lib/machine"
+import { createParser, type EventSourceMessage } from "eventsource-parser"
+import { machine, unreachable, type Machine } from "../lib/machine"
+import { responseError, ServerError, toAppError } from "./errors"
 import type { ConnectionState } from "./events"
-import { toAppError } from "./errors"
 
 export type StreamOptions = {
   readonly open: (init: { readonly headers: Headers; readonly signal: AbortSignal }) => Promise<Response>
@@ -23,6 +23,18 @@ type ConnectionEvent =
   | { readonly type: "opened" }
   | { readonly type: "dropped"; readonly reason: string; readonly maxAttempts: number }
   | { readonly type: "retry" }
+
+type StreamRun = {
+  readonly options: StreamOptions
+  readonly maxAttempts: number
+  readonly heartbeatTimeoutMs: number
+  readonly connection: Machine<ConnectionState, ConnectionEvent>
+  cursor: string | undefined
+  closed: boolean
+  attempt: AbortController | undefined
+  reconnectTimer: ReturnType<typeof setTimeout> | undefined
+  watchdog: ReturnType<typeof setTimeout> | undefined
+}
 
 export const RECONNECT_BASE_MS = 250
 export const RECONNECT_CEILING_MS = 15_000
@@ -50,115 +62,113 @@ export function connectionTransition(state: ConnectionState, event: ConnectionEv
   }
 }
 
-function frameOf(data: string): unknown {
+function send(run: StreamRun, event: ConnectionEvent) {
+  run.connection.send(event)
+  run.options.onState?.(run.connection.state())
+}
+
+function armWatchdog(run: StreamRun) {
+  if (run.watchdog) clearTimeout(run.watchdog)
+  run.watchdog = setTimeout(() => run.attempt?.abort(new ServerError({ class: "network", message: "No heartbeat within the timeout" })), run.heartbeatTimeoutMs)
+}
+
+function parsedFrame(data: string): unknown {
   try {
     return JSON.parse(data)
-  } catch {
+  } catch (error) {
+    console.error("The event stream sent a frame that is not JSON", { data, error })
     return undefined
   }
 }
 
-function frameType(frame: unknown) {
-  return frame && typeof frame === "object" ? (frame as { type?: unknown }).type : undefined
+function deliver(run: StreamRun, message: EventSourceMessage) {
+  if (message.id) run.cursor = message.id
+  armWatchdog(run)
+  const frame = parsedFrame(message.data)
+  const type = frame && typeof frame === "object" ? (frame as { type?: unknown }).type : undefined
+  if (frame === undefined || type === "heartbeat") return
+  if (type === "stream.replay-gap") return run.options.onGap()
+  run.options.onFrame(frame)
+}
+
+async function readBody(run: StreamRun, body: ReadableStream<Uint8Array>) {
+  const parser = createParser({ onEvent: (message) => deliver(run, message) })
+  const decoder = new TextDecoder()
+  const reader = body.getReader()
+  while (!run.closed) {
+    const next = await reader.read()
+    if (next.done) return
+    parser.feed(decoder.decode(next.value, { stream: true }))
+  }
+}
+
+function scheduleReconnect(run: StreamRun, reason: string) {
+  if (run.closed) return
+  send(run, { type: "dropped", reason, maxAttempts: run.maxAttempts })
+  const state = run.connection.state()
+  if (state.kind !== "reconnecting") return
+  run.reconnectTimer = setTimeout(() => {
+    run.reconnectTimer = undefined
+    void connect(run)
+  }, reconnectDelayMs(state.attempt - 1))
+}
+
+async function openResponse(run: StreamRun, controller: AbortController) {
+  const headers = new Headers({ Accept: "text/event-stream" })
+  if (run.cursor) headers.set("Last-Event-ID", run.cursor)
+  const response = await run.options.open({ headers, signal: controller.signal })
+  if (!response.ok) throw await responseError(response, "Event stream")
+  if (!response.body) throw new ServerError({ class: "internal", message: "The event stream answered without a body" })
+  return response.body
+}
+
+async function connect(run: StreamRun) {
+  if (run.closed) return
+  const controller = new AbortController()
+  run.attempt = controller
+  try {
+    const body = await openResponse(run, controller)
+    send(run, { type: "opened" })
+    armWatchdog(run)
+    await readBody(run, body)
+    scheduleReconnect(run, "The event stream ended")
+  } catch (error) {
+    if (!run.closed && run.attempt === controller) scheduleReconnect(run, toAppError(error).message)
+  } finally {
+    if (run.watchdog) clearTimeout(run.watchdog)
+    run.watchdog = undefined
+  }
+}
+
+function retry(run: StreamRun) {
+  const state = run.connection.state()
+  if (run.closed || state.kind === "connected" || state.kind === "connecting") return
+  if (state.kind === "reconnecting" && !run.reconnectTimer) return
+  if (run.reconnectTimer) clearTimeout(run.reconnectTimer)
+  run.reconnectTimer = undefined
+  if (state.kind === "offline") send(run, { type: "retry" })
+  void connect(run)
+}
+
+function close(run: StreamRun) {
+  run.closed = true
+  run.attempt?.abort(new ServerError({ class: "network", message: "The stream was closed" }))
+  if (run.reconnectTimer) clearTimeout(run.reconnectTimer)
+  if (run.watchdog) clearTimeout(run.watchdog)
 }
 
 export function openStream(options: StreamOptions): Stream {
-  const maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS
-  const heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? DEFAULT_HEARTBEAT_TIMEOUT_MS
-  const connection = machine<ConnectionState, ConnectionEvent>({ kind: "connecting" }, connectionTransition)
-  let cursor: string | undefined
-  let closed = false
-  let attempt: AbortController | undefined
-  let reconnectTimer: ReturnType<typeof setTimeout> | undefined
-  let watchdog: ReturnType<typeof setTimeout> | undefined
-
-  const send = (event: ConnectionEvent) => {
-    connection.send(event)
-    options.onState?.(connection.state())
+  const run: StreamRun = {
+    options,
+    maxAttempts: options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS,
+    heartbeatTimeoutMs: options.heartbeatTimeoutMs ?? DEFAULT_HEARTBEAT_TIMEOUT_MS,
+    connection: machine<ConnectionState, ConnectionEvent>({ kind: "connecting" }, connectionTransition),
+    cursor: undefined,
+    closed: false,
+    attempt: undefined,
+    reconnectTimer: undefined,
+    watchdog: undefined,
   }
-
-  const armWatchdog = () => {
-    if (watchdog) clearTimeout(watchdog)
-    watchdog = setTimeout(() => attempt?.abort(new Error("No heartbeat within the timeout")), heartbeatTimeoutMs)
-  }
-
-  const deliver = (message: { id?: string; data: string }) => {
-    if (message.id) cursor = message.id
-    armWatchdog()
-    const frame = frameOf(message.data)
-    const type = frameType(frame)
-    if (frame === undefined || type === "heartbeat") return
-    if (type === "stream.replay-gap") {
-      options.onGap()
-      return
-    }
-    options.onFrame(frame)
-  }
-
-  const readBody = async (body: ReadableStream<Uint8Array>) => {
-    const parser = createParser({ onEvent: deliver })
-    const decoder = new TextDecoder()
-    const reader = body.getReader()
-    while (!closed) {
-      const next = await reader.read()
-      if (next.done) return
-      parser.feed(decoder.decode(next.value, { stream: true }))
-    }
-  }
-
-  const scheduleReconnect = (reason: string) => {
-    if (closed) return
-    send({ type: "dropped", reason, maxAttempts })
-    const state = connection.state()
-    if (state.kind !== "reconnecting") return
-    reconnectTimer = setTimeout(() => {
-      reconnectTimer = undefined
-      void connect()
-    }, reconnectDelayMs(state.attempt - 1))
-  }
-
-  const connect = async () => {
-    if (closed) return
-    const controller = new AbortController()
-    attempt = controller
-    const headers = new Headers({ Accept: "text/event-stream" })
-    if (cursor) headers.set("Last-Event-ID", cursor)
-    try {
-      const response = await options.open({ headers, signal: controller.signal })
-      if (!response.ok || !response.body) throw toAppError(new Error(`The event stream answered ${response.status}`))
-      send({ type: "opened" })
-      armWatchdog()
-      await readBody(response.body)
-      if (!closed) scheduleReconnect("The event stream ended")
-    } catch (error) {
-      if (closed || attempt !== controller) return
-      scheduleReconnect(toAppError(error).message)
-    } finally {
-      if (watchdog) clearTimeout(watchdog)
-      watchdog = undefined
-    }
-  }
-
-  void connect()
-
-  return {
-    state: connection.state,
-    cursor: () => cursor,
-    retry: () => {
-      if (closed) return
-      const state = connection.state()
-      if (state.kind === "connected" || state.kind === "connecting") return
-      if (state.kind === "reconnecting" && !reconnectTimer) return
-      if (reconnectTimer) clearTimeout(reconnectTimer)
-      reconnectTimer = undefined
-      if (state.kind === "offline") send({ type: "retry" })
-      void connect()
-    },
-    close: () => {
-      closed = true
-      attempt?.abort(new Error("The stream was closed"))
-      if (reconnectTimer) clearTimeout(reconnectTimer)
-      if (watchdog) clearTimeout(watchdog)
-    },
-  }
+  void connect(run)
+  return { state: run.connection.state, cursor: () => run.cursor, retry: () => retry(run), close: () => close(run) }
 }
