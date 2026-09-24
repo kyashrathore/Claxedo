@@ -1,0 +1,71 @@
+.cloud-row {
+  display: flex;
+  min-height: 44px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  border: 1px solid var(--v2-border-border-base);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.cloud-status {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0 8px;
+  font-size: var(--v2-font-size-sm);
+  color: var(--v2-text-text-muted);
+  background: var(--v2-background-bg-layer-02);
+}
+
+.cloud-status[data-kind="ready"] {
+  color: var(--v2-state-fg-success);
+  background: var(--v2-state-bg-success);
+}
+
+.cloud-status[data-kind="failed"] {
+  color: var(--v2-state-fg-danger);
+  background: var(--v2-state-bg-danger);
+}
+
+.cloud-hint {
+  font-size: var(--v2-font-size-sm);
+  color: var(--v2-text-text-muted);
+}
+
+.cloud-alert {
+  font-size: var(--v2-font-size-sm);
+  color: var(--v2-state-fg-danger);
+}
+
+.cloud-field {
+  min-height: 44px;
+  width: 100%;
+  min-width: 0;
+  border-radius: 8px;
+  border: 1px solid var(--v2-border-border-base);
+  background: var(--v2-background-bg-layer-01);
+  padding: 0 12px;
+  font-size: var(--v2-font-size-base);
+  color: var(--v2-text-text-base);
+}
+
+.cloud-field:focus {
+  outline: 2px solid var(--v2-border-border-focus);
+  outline-offset: 1px;
+}
+
+.cloud-placeholder {
+  animation: cloud-appear 0s 150ms both;
+}
+
+@keyframes cloud-appear {
+  from {
+    visibility: hidden;
+  }
+  to {
+    visibility: visible;
+  }
+}
