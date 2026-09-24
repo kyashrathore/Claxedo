@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { createProviderCatalog, harnessModelPickerProvider } from "@/composer"
+import { createProviderCatalog, harnessModelPickerProvider, modelGroupKey } from "@/composer"
 import { isCatalogHarnessId, type HarnessSelection } from "@/lib/harness-selection"
 import { inCatalogOrder, primaryPlacement, useProjects } from "@/projects"
 import { toAppError, useServer, type HarnessModel, type PlacementId } from "@/server"
@@ -36,11 +36,6 @@ export function useSettingsScope(): Accessor<SettingsScope> {
     }
     return { loading: false }
   })
-}
-
-function modelGroupKey(providerId: string, sampleModelId: string | undefined): string {
-  const slash = sampleModelId?.indexOf("/") ?? -1
-  return slash > 0 && sampleModelId ? `${providerId}/${sampleModelId.slice(0, slash)}` : providerId
 }
 
 export function harnessGroups(selection: HarnessSelection, models: readonly HarnessModel[]): SourceGroup[] {

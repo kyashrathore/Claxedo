@@ -1,5 +1,5 @@
 import { createRoot } from "solid-js"
-import type { SetStoreFunction, Store } from "solid-js/store"
+import { produce, type SetStoreFunction, type Store } from "solid-js/store"
 import { isRecord } from "@/lib/record"
 import { persistedStore, preferenceKey } from "@/lib/persisted"
 import type { ModelKey } from "./model-key"
@@ -17,6 +17,11 @@ function visibilityMap(value: unknown): Record<string, Visibility> {
 
 function readVisibility(value: unknown): VisibilityRecord | undefined {
   return isRecord(value) ? { entries: visibilityMap(value.entries), groups: visibilityMap(value.groups) } : undefined
+}
+
+export function modelGroupKey(providerId: string, sampleModelId: string | undefined): string {
+  const slash = sampleModelId?.indexOf("/") ?? -1
+  return slash > 0 && sampleModelId ? `${providerId}/${sampleModelId.slice(0, slash)}` : providerId
 }
 
 const modelEntry = (model: ModelKey) => `${model.providerID}:${model.modelID}`
@@ -50,11 +55,12 @@ export function useModelVisibility() {
     setVisibility: (model: ModelKey, state: boolean) => setStore("entries", modelEntry(model), state ? "show" : "hide"),
     setGroupVisibility: (group: string, state: boolean, models: readonly ModelKey[]) => {
       setStore("groups", group, state ? "show" : "hide")
-      setStore("entries", (entries) => {
-        const next = { ...entries }
-        for (const model of models) delete next[modelEntry(model)]
-        return next
-      })
+      setStore(
+        "entries",
+        produce((entries) => {
+          for (const model of models) delete entries[modelEntry(model)]
+        }),
+      )
     },
   }
 }
