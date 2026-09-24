@@ -1,3 +1,4 @@
+import { createMemo, type Accessor } from "solid-js"
 import { filePaneKind } from "@/files"
 import { sessionId as toSessionId, type Server, type SessionRef, type SessionStatus } from "@/server"
 import type { SessionRowView, SessionStatusView, SessionStores, SessionView } from "@/session"
@@ -8,6 +9,7 @@ import type { SessionScreenText } from "./text"
 
 export type TimelineHostInput = {
   readonly view: SessionView
+  readonly parent: Accessor<SessionView | undefined>
   readonly stores: SessionStores
   readonly server: Server
   readonly workbench: WorkbenchStore
@@ -70,7 +72,7 @@ async function findFiles(input: TimelineHostInput, query: string): Promise<reado
 
 export function createTimelineHost(input: TimelineHostInput): TimelineHost {
   const { view, server } = input
-  const parent = () => view.row()?.parentSessionId
+  const sessions = createMemo(() => timelineRows(input.stores.list.rows()))
   return {
     sessionKey: () => view.ref.sessionId,
     sessionId: () => view.ref.sessionId,
@@ -78,11 +80,8 @@ export function createTimelineHost(input: TimelineHostInput): TimelineHost {
       return server.placements.byId(view.ref.placementId)?.path ?? ""
     },
     conversation: view.conversation,
-    parentConversation: () => {
-      const id = parent()
-      return id ? input.stores.open(refFor(view, id)).conversation() : undefined
-    },
-    sessions: () => timelineRows(input.stores.list.rows()),
+    parentConversation: () => input.parent()?.conversation(),
+    sessions,
     status: () => shownStatus(view.status()),
     turnSettlePending: view.turnSettlePending,
     settings,

@@ -1,6 +1,8 @@
 import { createMemo, Show } from "solid-js"
 import { usePhone } from "@/lib/viewport"
+import { sessionId } from "@/server"
 import type { SessionView } from "@/session"
+import { sessionPath } from "@/shell"
 import { DataProvider, type TranscriptUserMessage } from "@/transcript"
 import { MessageTimeline, turnActive, type TimelineHost } from "./timeline"
 import { createTimelineScroll } from "./timeline-scroll"
@@ -29,7 +31,12 @@ export function SessionTimeline(props: {
   const current = () => users().find((message) => message.id === scroll.selected())
   return (
     <TranscriptKitProviders>
-      <DataProvider data={EMPTY_DATA} directory={props.host.placementPath} onNavigateToSession={props.host.navigation.toSession}>
+      <DataProvider
+        data={EMPTY_DATA}
+        directory={props.host.placementPath}
+        onNavigateToSession={props.host.navigation.toSession}
+        onSessionHref={(id) => sessionPath({ placementId: props.view.ref.placementId, sessionId: sessionId(id) })}
+      >
         <Show when={props.view.conversation()}>
           <MessageTimeline
             {...scroll.props}

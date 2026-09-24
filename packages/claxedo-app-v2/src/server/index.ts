@@ -1,14 +1,12 @@
-import { createContext, useContext, type Accessor } from "solid-js"
+import type { Accessor } from "solid-js"
 import type { QueryClient } from "@tanstack/solid-query"
+import type { Account } from "./account-types"
+import type { CloudCreateInput, CloudWorkspace, CodeHostConnection, CodeHostRepository } from "./cloud-types"
 import type { ConnectionState, ServerEvent } from "./events"
-import type { PlacementId, ProjectId, RequestId, TerminalId } from "./ids"
 import type {
-  AgentRequestReply,
-  Capabilities,
   DiffFile,
   DiffScope,
   DiffSummary,
-  FetchQuery,
   FileContent,
   FileNode,
   GitBases,
@@ -18,7 +16,26 @@ import type {
   GitPushResult,
   GitRefs,
   GitStatus,
+  WorktreeCreateInput,
+} from "./git-types"
+import type { PlacementId, ProjectId, RequestId, TerminalId } from "./ids"
+import type { MarketplaceCatalog } from "./marketplace-types"
+import type {
+  Terminal,
+  TerminalAgentStatus,
+  TerminalAttachInput,
+  TerminalCreateInput,
+  TerminalPresence,
+  TerminalStream,
+  TerminalUpdateInput,
+} from "./terminal-types"
+import type {
+  AgentRequestReply,
+  Capabilities,
+  FeatureAvailability,
+  FetchQuery,
   GoalAction,
+  Machine,
   Placement,
   Project,
   ProjectSource,
@@ -33,20 +50,24 @@ import type {
   SessionRow,
   SessionSnapshot,
   SessionStatusRead,
-  Terminal,
-  TerminalAgentStatus,
-  TerminalAttachInput,
-  TerminalCreateInput,
-  TerminalPresence,
-  TerminalStream,
-  TerminalUpdateInput,
   TranscriptPage,
-  WorktreeCreateInput,
 } from "./types"
+import type { UsageRequest, UsageSummary } from "./usage-types"
 
 export type * from "./types"
+export type * from "./terminal-types"
+export type * from "./git-types"
+export type * from "./cloud-types"
+export type * from "./account-types"
+export type * from "./usage-types"
+export type * from "./marketplace-types"
 export type * from "./events"
 export * from "./ids"
+export type { AuthSource, ServerConfig } from "./config"
+export { ServerError, isAppError, isRetryable, toAppError } from "./errors"
+export { ServerContext, useServer } from "./context"
+export { createServer, type ServerHandle } from "./server"
+export { ServerProvider } from "./provider"
 
 export type SessionsApi = {
   readonly list: (input: { readonly cursor?: string; readonly limit: number }) => Promise<SessionPage>
@@ -74,6 +95,7 @@ export type ProjectsApi = {
 
 export type PlacementsApi = {
   readonly byId: (id: PlacementId) => Placement | undefined
+  readonly list: () => readonly Placement[]
   readonly createWorktree: (projectId: ProjectId, input: WorktreeCreateInput) => Promise<Placement>
 }
 
@@ -95,7 +117,33 @@ export type GitApi = {
   readonly push: (placementId: PlacementId, input: GitPushInput) => Promise<GitPushResult>
 }
 
+export type CloudApi = {
+  readonly create: (input: CloudCreateInput) => Promise<CloudWorkspace>
+  readonly start: (id: PlacementId) => Promise<void>
+  readonly stop: (id: PlacementId) => Promise<void>
+  readonly remove: (id: PlacementId) => Promise<void>
+}
+
 export type ServerQueries = {
+  readonly projects: {
+    readonly list: () => FetchQuery<readonly Project[]>
+    readonly byId: (id: ProjectId) => FetchQuery<Project>
+  }
+  readonly placements: {
+    readonly list: () => FetchQuery<readonly Placement[]>
+    readonly byProject: (projectId: ProjectId) => FetchQuery<readonly Placement[]>
+  }
+  readonly machines: { readonly list: () => FetchQuery<readonly Machine[]> }
+  readonly accounts: { readonly list: () => FetchQuery<readonly Account[]> }
+  readonly usage: { readonly summary: (input: UsageRequest) => FetchQuery<UsageSummary> }
+  readonly marketplace: { readonly catalog: (projectId?: ProjectId) => FetchQuery<MarketplaceCatalog> }
+  readonly tasks: { readonly availability: () => FetchQuery<FeatureAvailability> }
+  readonly documents: { readonly availability: () => FetchQuery<FeatureAvailability> }
+  readonly codeHost: {
+    readonly connections: () => FetchQuery<readonly CodeHostConnection[]>
+    readonly repositories: (connectionId: string) => FetchQuery<readonly CodeHostRepository[]>
+  }
+  readonly cloud: { readonly list: () => FetchQuery<readonly CloudWorkspace[]> }
   readonly files: {
     readonly tree: (placementId: PlacementId, path: string) => FetchQuery<readonly FileNode[]>
     readonly content: (placementId: PlacementId, path: string) => FetchQuery<FileContent>
@@ -109,9 +157,6 @@ export type ServerQueries = {
     readonly diff: (placementId: PlacementId, scope: DiffScope) => FetchQuery<readonly DiffSummary[]>
     readonly diffFile: (placementId: PlacementId, scope: DiffScope, file: string) => FetchQuery<DiffFile>
   }
-  readonly placements: {
-    readonly byProject: (projectId: ProjectId) => FetchQuery<readonly Placement[]>
-  }
 }
 
 export type Server = {
@@ -124,13 +169,6 @@ export type Server = {
   readonly placements: PlacementsApi
   readonly terminals: TerminalsApi
   readonly git: GitApi
+  readonly cloud: CloudApi
   readonly queries: ServerQueries
-}
-
-export const ServerContext = createContext<Server>()
-
-export function useServer(): Server {
-  const server = useContext(ServerContext)
-  if (!server) throw new Error("useServer needs a ServerContext provider above it")
-  return server
 }

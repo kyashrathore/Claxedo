@@ -1,3 +1,4 @@
+import { useErrorCopy } from "@/composer"
 import { For, Show, createUniqueId, onCleanup, onMount } from "solid-js"
 import type { AgentQuestion } from "@claxedo/agent-runtime-contract"
 import type { AgentRequestReply } from "@/server"
@@ -103,6 +104,7 @@ export function QuestionDock(props: {
   onStop?: () => Promise<void>
 }) {
   const t = useSessionScreenText()
+  const errorCopy = useErrorCopy()
   const textId = createUniqueId()
   const reply = createRequestReply(props.onReply)
   const stop = createDockAction<"stop">()
@@ -147,7 +149,7 @@ export function QuestionDock(props: {
       header={<QuestionHeader answers={answers} busy={busy()} />}
       footer={<QuestionFooter answers={answers} busy={busy()} stop={stop} onStop={props.onStop} onDismiss={dismiss} onNext={next} />}
     >
-      <Show when={reply.error() ?? stop.error()}>{(error) => <div role="alert" data-slot="question-error">{error().message}</div>}</Show>
+      <Show when={reply.error() ?? stop.error()}>{(error) => <div role="alert" data-slot="question-error" data-error-class={error().class} title={error().message}>{errorCopy(error())}</div>}</Show>
       <div id={textId} data-slot="question-text" class="ui-question-text">{answers.question()?.question}</div>
       <div data-slot="question-hint">{t(answers.multi() ? "sessionScreen.question.multiHint" : "sessionScreen.question.singleHint")}</div>
       <div data-slot="question-options" role={answers.multi() ? "group" : "radiogroup"} aria-labelledby={textId}>

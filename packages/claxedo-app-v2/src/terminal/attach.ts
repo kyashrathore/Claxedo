@@ -1,4 +1,4 @@
-import type { PlacementId, Server, TerminalFrame, TerminalId, TerminalStream, TerminalStreamClose } from "@/server"
+import type { AppError, PlacementId, Server, TerminalFrame, TerminalId, TerminalStream, TerminalStreamClose } from "@/server"
 import type { Machine } from "@/lib/machine"
 import type { TerminalBackend } from "./backend/types"
 import { asAppError, closeError, type TerminalConnection, type TerminalConnectionEvent } from "./model"
@@ -7,7 +7,6 @@ import { capabilityResponses } from "./capability-responder"
 import { stripTerminalReplies } from "./input-reply-filter"
 import { createReconnectTimer, decideReconnect, isRetriableClose } from "./reconnect"
 import { createResizePublisher } from "./resize"
-import { t } from "./i18n"
 
 const OVERLOAD_CLOSE_CODE = 4000
 
@@ -23,6 +22,7 @@ export type AttachInput = {
 }
 
 export type Attachment = {
+  readonly send: (data: string) => void
   readonly retry: () => void
   readonly dispose: () => void
 }
@@ -40,7 +40,7 @@ export function attachTerminal(input: AttachInput): Attachment {
     write: (chunk, done) => backend.write(chunk, done),
     onOverload: () => {
       stream?.close()
-      send({ type: "closed", error: { class: "internal", message: t("terminal.overload"), retryable: false } })
+      send({ type: "failed", failure: "overload", error: { class: "internal", message: "Terminal output overloaded the write queue", retryable: false } })
     },
   })
 
@@ -67,7 +67,7 @@ export function attachTerminal(input: AttachInput): Attachment {
       (error: unknown) => {
         if (disposed) return
         stream?.close()
-        send({ type: "closed", error: asAppError(error, t("terminal.restoreFailed")) })
+        send({ type: "failed", failure: "restore", error: asAppError(error, "Terminal checkpoint restore failed") })
       },
     )
   }
@@ -87,7 +87,7 @@ export function attachTerminal(input: AttachInput): Attachment {
     queue.push(frame.data)
   }
 
-  const decide = async () => {
+  const decide = async (error: AppError) => {
     const state = connection.state()
     const attempt = state.kind === "detached" ? state.attempt : 1
     const presence = await server.terminals.presence(placementId, terminalId)
@@ -97,7 +97,10 @@ export function attachTerminal(input: AttachInput): Attachment {
       send({ type: "gone" })
       return
     }
-    if (decision.kind === "giveUp") return
+    if (decision.kind === "giveUp") {
+      send({ type: "failed", failure: "closed", error })
+      return
+    }
     timer.schedule(decision.delayMs, () => {
       send({ type: "retry" })
       void connect()
@@ -105,9 +108,10 @@ export function attachTerminal(input: AttachInput): Attachment {
   }
 
   const recover = (close: TerminalStreamClose) => {
-    send({ type: "closed", error: closeError(close, t("terminal.connectionLost.description")) })
-    decide().catch((error: unknown) => {
-      if (!disposed) send({ type: "closed", error: asAppError(error, t("terminal.connectionLost.title")) })
+    const error = closeError(close)
+    send({ type: "closed", error })
+    decide(error).catch((cause: unknown) => {
+      if (!disposed) send({ type: "failed", failure: "closed", error: asAppError(cause, "Terminal presence check failed") })
     })
   }
 
@@ -124,7 +128,7 @@ export function attachTerminal(input: AttachInput): Attachment {
     }
     if (close.code === OVERLOAD_CLOSE_CODE) return
     if (!isRetriableClose(close.code)) {
-      send({ type: "closed", error: closeError(close, t("terminal.connectionLost.description")) })
+      send({ type: "failed", failure: "closed", error: closeError(close) })
       return
     }
     recover(close)
@@ -153,7 +157,7 @@ export function attachTerminal(input: AttachInput): Attachment {
       stream = opened
     } catch (error) {
       if (disposed) return
-      recover({ code: 1006, reason: asAppError(error, t("terminal.connectionLost.title")).message })
+      recover({ code: 1006, reason: asAppError(error, "Terminal attach failed").message })
     }
   }
 
@@ -165,6 +169,7 @@ export function attachTerminal(input: AttachInput): Attachment {
   void connect()
 
   return {
+    send: (data) => stream?.send(data),
     retry: () => {
       if (disposed) return
       timer.cancel()
