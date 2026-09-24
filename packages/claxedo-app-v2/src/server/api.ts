@@ -6,6 +6,7 @@ import type { ConnectionState, ServerEvent } from "./events"
 import type { IntegrationQueries, IntegrationsApi } from "./integrations"
 import type { SandboxProviderQueries, SandboxProvidersApi } from "./sandbox-providers"
 import type { ProviderConnectApi, ProviderConnectQueries } from "./provider-connect"
+import type { ProviderCatalogQueries, ProviderCatalogsApi } from "./provider-catalogs"
 import type { FolderQueries, FoldersApi } from "./folders"
 import type { HarnessConfigApi } from "./harness-config"
 import type {
@@ -190,6 +191,7 @@ export type ServerQueries = {
   readonly integrations: IntegrationQueries
   readonly sandboxProviders: SandboxProviderQueries
   readonly providerConnect: ProviderConnectQueries
+  readonly providerCatalogs: ProviderCatalogQueries
   readonly harnesses: {
     readonly options: (placementId: PlacementId, harness: string) => FetchQuery<HarnessOptions>
     readonly logins: () => FetchQuery<readonly HarnessLogin[]>
@@ -226,6 +228,7 @@ export type Server = {
   readonly integrations: IntegrationsApi
   readonly sandboxProviders: SandboxProvidersApi
   readonly providerConnect: ProviderConnectApi
+  readonly providerCatalogs: ProviderCatalogsApi
   readonly livePlugins: LivePluginsApi
   readonly harnessConfig: HarnessConfigApi
   readonly queries: ServerQueries

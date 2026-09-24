@@ -152,7 +152,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   // right catalog; an empty id disables the query while no catalog harness is
   // selected, so a Claude or connection draft never fetches a catalog.
   const visibility = useModelVisibility()
-  const catalogProviders = createProviderCatalog({ api: server.harnessConfig, harness: () => catalogHarnessId(harness()) ?? "" })
+  const catalogProviders = createProviderCatalog({ server, harness: () => catalogHarnessId(harness()) ?? "" })
   const catalogRows = createMemo(() => {
     const connected = new Set(catalogProviders.connected().map((provider) => provider.id))
     const rows = [...catalogProviders.all().values()].flatMap((provider) =>

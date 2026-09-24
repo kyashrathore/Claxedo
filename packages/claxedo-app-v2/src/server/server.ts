@@ -6,6 +6,7 @@ import { createCloudApi } from "./cloud"
 import { createIntegrationsApi } from "./integrations"
 import { createSandboxProvidersApi } from "./sandbox-providers"
 import { createProviderConnectApi } from "./provider-connect"
+import { createProviderCatalogsApi } from "./provider-catalogs"
 import { createFoldersApi } from "./folders"
 import type { ServerConfig } from "./config"
 import { isRetryable, toAppError } from "./errors"
@@ -104,6 +105,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     integrations: createIntegrationsApi(transport, queryClient),
     sandboxProviders: createSandboxProvidersApi(transport, queryClient),
     providerConnect: createProviderConnectApi(transport, queryClient),
+    providerCatalogs: createProviderCatalogsApi(transport, queryClient),
     livePlugins: createLivePluginsApi(transport),
     harnessConfig: createHarnessConfigApi(transport, workspaces),
     request: transport.request,
