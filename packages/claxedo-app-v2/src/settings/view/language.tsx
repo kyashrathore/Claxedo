@@ -1,14 +1,14 @@
 import { useI18n, useTranslator, type Locale } from "@/i18n"
-import { dictionary } from "../i18n"
+import { settingsDictionary } from "../i18n"
 import { SettingsGroup, SettingsList, SettingsRow } from "./section"
 import { Select } from "@/ui"
 
 export function LanguageSection() {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(settingsDictionary)
   const i18n = useI18n()
   const localeLabel = (code: Locale) => i18n.locales.find((entry) => entry.code === code)?.label ?? code
   return (
-    <div class="settings-body" data-component="settings-language">
+    <div class="settings-body">
       <SettingsGroup>
         <SettingsList>
           <SettingsRow title={t("settings.appearance.language")} description={t("settings.appearance.language.description")}>

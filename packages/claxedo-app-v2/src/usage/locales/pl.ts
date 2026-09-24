@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "usage.quota.title": "Okna limitu",
   "usage.quota.empty": "Żadne połączone konto nie zgłasza tutaj planu.",
   "usage.quota.inUse": "W użyciu",

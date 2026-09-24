@@ -105,14 +105,13 @@ async function connectAndPlace(probe: Probe): Promise<Placement> {
     if (!health.ok || removal !== "not_found") throw new Error(`health=${health.status} removal=${removal}`)
     return `request health=${health.status}, removing an unknown live plugin → ${removal}`
   })
-  await check("projects: create from a folder and read back by id", async () => {
-    const project = await server.projects.create({ source: { kind: "folder", path: workspace.directory } })
-    const read = await server.queryClient.fetchQuery(server.queries.projects.byId(project.id))
-    if (read.id !== project.id) throw new Error(`read back ${read.id}, created ${project.id}`)
-    return `project ${project.id} "${project.name}"`
-  })
   const placement = await waitFor("placement", () => server.placements.list().find((item) => item.path === workspace.directory))
   console.log(`PASS placements: ${placement.id} kind=${placement.kind} project=${placement.projectId}`)
+  await check("projects: the workspace's project reads back by id", async () => {
+    const read = await server.queryClient.fetchQuery(server.queries.projects.byId(placement.projectId))
+    if (read.id !== placement.projectId) throw new Error(`read back ${read.id}, placed under ${placement.projectId}`)
+    return `project ${read.id} "${read.name}"`
+  })
   await check("files and git queries", async () => {
     const found = await server.queryClient.fetchQuery(server.queries.files.search(placement.id, "README"))
     const git = await server.queryClient.fetchQuery(server.queries.git.status(placement.id))
@@ -139,7 +138,7 @@ async function turnChecks(probe: Probe, placement: Placement) {
   const row = await server.sessions.create({ placementId: placement.id, harness: SCRIPTED_ACP_HARNESS.id, title: "Adapter smoke" })
   const ref = row.ref
   console.log(`PASS create: session ${ref.sessionId} "${row.title}" on ${SCRIPTED_ACP_HARNESS.id}`)
-  await check("snapshot: fresh session", async () => {
+  await check("session reads: fresh session", async () => {
     const reads = server.sessions.read(ref)
     const [surface, status, goal] = await Promise.all([reads.surface, reads.status, reads.goal, reads.requests, reads.todos])
     return `status=${status.kind} entries=${surface.transcript.entries.length} goal actions=[${goal.actions.join(",")}]`
@@ -153,7 +152,7 @@ async function turnChecks(probe: Probe, placement: Placement) {
     if (!text.includes("ADAPTER_OK")) throw new Error(`no part carried the reply; saw: ${describe(log.seen.slice(from))}`)
     return describe(log.seen.slice(from))
   })
-  await check("snapshot and list after the turn", async () => {
+  await check("session surface and list after the turn", async () => {
     const snapshot = await surfaceOf(server, ref)
     if (!JSON.stringify(snapshot.transcript.entries).includes("ADAPTER_OK")) throw new Error("the latest-surface page lacks the reply")
     const page = await server.sessions.list({ placementId: ref.placementId, limit: 20 })
@@ -247,8 +246,9 @@ async function main() {
   await ensureAppBuilt(appChoice(), { serverUrl: "http://127.0.0.1:46800" })
   const stack = await startStack({ label: "adapter-smoke" })
   const proxy = await startTcpProxy(new URL(stack.url))
+  const workspace = await stack.daemon.makeWorkspace("adapter")
   const server = createServer({ serverUrl: proxy.url, auth: { kind: "none" }, maxReconnectAttempts: 40 })
-  const probe: Probe = { stack, proxy, server, log: eventLog(server), workspace: await stack.daemon.makeWorkspace("adapter") }
+  const probe: Probe = { stack, proxy, server, log: eventLog(server), workspace }
   try {
     const placement = await connectAndPlace(probe)
     const ref = await turnChecks(probe, placement)

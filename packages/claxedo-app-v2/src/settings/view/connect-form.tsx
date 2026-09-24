@@ -3,7 +3,7 @@ import { Button, Select, TextField } from "@/ui"
 import { useTranslator } from "@/i18n"
 import { useServer, type ConnectionScope, type Integration, type IntegrationConnectInput } from "@/server"
 import { connectError, connectMachine, createConnectForm, grantError } from "../connections"
-import { dictionary } from "../i18n"
+import { settingsDictionary } from "../i18n"
 
 const SCOPES: readonly ConnectionScope[] = ["team", "personal"]
 
@@ -14,7 +14,7 @@ export function ConnectForm(props: {
   readonly onConnected: () => void
   readonly onCancel: () => void
 }) {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(settingsDictionary)
   const server = useServer()
   const state = connectMachine()
   const [form, setForm] = createConnectForm(props.initialScope ?? "team")

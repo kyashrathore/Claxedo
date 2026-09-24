@@ -7,7 +7,7 @@ import {
   type PresetPlacement,
 } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
-import { Button, Switch, Checkbox, TextField } from "@/ui"
+import { Button, Checkbox, Switch, TextField } from "@/ui"
 import { fieldReasonKey, type FieldReasons } from "../data/refusal"
 import { dictionary } from "../i18n"
 import { SLOT_KEYS } from "../model"

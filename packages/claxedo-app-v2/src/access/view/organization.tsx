@@ -2,9 +2,9 @@ import { Match, Show, Switch } from "solid-js"
 import { useAuth } from "@/auth"
 import { useTranslator } from "@/i18n"
 import { useServer } from "@/server"
-import { showToast, Tag, Button } from "@/ui"
+import { Button, showToast, Tag } from "@/ui"
 import type { OrgRole } from "@/server"
-import { dictionary } from "../i18n"
+import { accessDictionary } from "../i18n"
 import { useAccess } from "../store"
 import "./access.css"
 
@@ -15,7 +15,7 @@ const ROLE_KEY = {
 } as const satisfies Record<OrgRole, string>
 
 function SignedOut() {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(accessDictionary)
   const auth = useAuth()
   const server = useServer()
   const offered = () => server.capabilities()?.signedIn === true && auth.unavailable() === null
@@ -41,7 +41,7 @@ function SignedOut() {
 }
 
 export function OrganizationSection() {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(accessDictionary)
   const access = useAccess()
   const user = () => {
     const who = access.principal()
@@ -49,7 +49,7 @@ export function OrganizationSection() {
   }
 
   return (
-    <div class="org-section" data-component="settings-organization">
+    <div class="org-section">
       <p class="org-intro">{t("access.org.description")}</p>
       <Show when={user()} fallback={<SignedOut />}>
         {(who) => (

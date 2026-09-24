@@ -1,7 +1,7 @@
 import { For, Show } from "solid-js"
-import { Switch, useTheme, type ColorScheme, Select, TextField } from "@/ui"
+import { Select, Switch, useTheme, type ColorScheme, TextField } from "@/ui"
 import { useTranslator } from "@/i18n"
-import { dictionary, type Keys } from "../i18n"
+import { settingsDictionary, type SettingsKey } from "../i18n"
 import { CODE_FONT_PLACEHOLDER, codeFontFamily, TERMINAL_FONT_PLACEHOLDER, terminalFontFamily, UI_FONT_PLACEHOLDER, uiFontFamily } from "../fonts"
 import { usePreferences, type AppearancePreferences, type NavigatorSide } from "../preferences"
 import { ContrastRow } from "./contrast"
@@ -21,12 +21,12 @@ const SIDES: readonly NavigatorSide[] = ["left", "right"]
 const SIDE_KEY = {
   left: "settings.appearance.navigatorSide.left",
   right: "settings.appearance.navigatorSide.right",
-} as const satisfies Record<NavigatorSide, Keys>
+} as const satisfies Record<NavigatorSide, SettingsKey>
 
 type FontRow = {
   readonly key: "uiFont" | "codeFont" | "terminalFont"
-  readonly title: Keys
-  readonly description: Keys
+  readonly title: SettingsKey
+  readonly description: SettingsKey
   readonly placeholder: string
   readonly family: (font: string) => string
   readonly action: string
@@ -50,7 +50,7 @@ function FontRows(props: {
   readonly appearance: AppearancePreferences
   readonly onChange: (key: FontRow["key"], value: string) => void
 }) {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(settingsDictionary)
   return (
     <For each={props.rows}>
       {(row) => (
@@ -78,14 +78,14 @@ function FontRows(props: {
 }
 
 export function AppearanceSection() {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(settingsDictionary)
   const theme = useTheme()
   const preferences = usePreferences()
   const setFont = (key: FontRow["key"], value: string) => preferences.setAppearance(key, value)
   const fontRows = (keys: readonly FontRow["key"][]) => FONT_ROWS.filter((row) => keys.includes(row.key))
 
   return (
-    <div class="settings-body" data-component="settings-appearance">
+    <div class="settings-body">
       <SettingsGroup title={t("settings.appearance.group.colors")}>
         <SettingsList>
           <SettingsRow title={t("settings.appearance.colorScheme")} description={t("settings.appearance.colorScheme.description")}>

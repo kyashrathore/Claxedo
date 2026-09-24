@@ -1,10 +1,12 @@
 import { createRoot } from "solid-js"
-import type { SetStoreFunction, Store } from "solid-js/store"
+import { produce, type SetStoreFunction, type Store } from "solid-js/store"
 import { isRecord } from "@/lib/record"
 import { persistedStore, preferenceKey } from "@/lib/persisted"
 import type { ModelRef } from "./model-visibility"
 
 type NameRecord = Record<string, string>
+
+const NAME_LIMIT = 100
 
 function readNames(value: unknown): NameRecord | undefined {
   if (!isRecord(value)) return undefined
@@ -25,7 +27,15 @@ export function useModelNames() {
   return {
     name: (model: ModelRef): string | undefined => store[nameKey(model)],
     remember: (model: ModelRef, name: string) => {
-      if (store[nameKey(model)] !== name) setStore(nameKey(model), name)
+      const key = nameKey(model)
+      if (store[key] === name && Object.keys(store).at(-1) === key) return
+      setStore(
+        produce((names) => {
+          delete names[key]
+          names[key] = name
+          for (const stale of Object.keys(names).slice(0, -NAME_LIMIT)) delete names[stale]
+        }),
+      )
     },
   }
 }

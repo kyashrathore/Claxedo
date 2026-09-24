@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "notifications.responseReady": "การตอบสนองพร้อม",
   "notifications.sessionError": "ข้อผิดพลาดเซสชัน",
   "notifications.sessionError.fallback": "เกิดข้อผิดพลาด",

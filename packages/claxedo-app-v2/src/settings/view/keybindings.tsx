@@ -3,7 +3,7 @@ import { makeEventListener } from "@solid-primitives/event-listener"
 import { PALETTE_ID, useCommands, type Commands } from "@/shell"
 import { showToast, Button, TextField } from "@/ui"
 import { useTranslator } from "@/i18n"
-import { dictionary } from "../i18n"
+import { settingsDictionary } from "../i18n"
 import { clearsKeybinding, filterRows, groupRows, keybindingFromEvent, type KeybindingRow } from "../keybindings"
 import { SettingsGroup, SettingsList } from "./section"
 
@@ -17,7 +17,7 @@ function keybindingRows(commands: Commands, labels: { readonly palette: string; 
 }
 
 export function KeybindingsSection() {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(settingsDictionary)
   const commands = useCommands()
   const [recording, setRecording] = createSignal<string>()
   const [query, setQuery] = createSignal("")
@@ -55,7 +55,7 @@ export function KeybindingsSection() {
   }
 
   return (
-    <div class="settings-body" data-component="settings-keybindings">
+    <div class="settings-body">
       <div class="settings-toolbar">
         <TextField label={t("settings.keybindings.search")} hideLabel placeholder={t("settings.keybindings.search")} value={query()} onChange={setQuery} />
         <Button size="small" variant="secondary" onClick={resetAll} disabled={!commands.overridden()}>{t("settings.keybindings.reset")}</Button>
@@ -77,7 +77,7 @@ export function KeybindingsSection() {
 }
 
 function KeybindingRowView(props: { readonly row: KeybindingRow; readonly recording: boolean; readonly onStart: () => void }) {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(settingsDictionary)
   const shown = () => (props.recording ? t("settings.keybindings.pressKeys") : props.row.keybind || t("settings.keybindings.unassigned"))
   return (
     <div class="settings-row">

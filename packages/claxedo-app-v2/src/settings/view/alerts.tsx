@@ -1,12 +1,12 @@
 import { For } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { playSound, requestSystemNotifications, SOUNDS, type AlertKind, type SoundChoice } from "@/notifications"
-import { Switch, Select } from "@/ui"
-import { dictionary, type Keys } from "../i18n"
+import { createSoundPlayer, requestSystemNotifications, SOUNDS, type AlertKind, type SoundChoice } from "@/notifications"
+import { Select, Switch } from "@/ui"
+import { settingsDictionary, type SettingsKey } from "../i18n"
 import { usePreferences } from "../preferences"
 import { SettingsGroup, SettingsList, SettingsRow } from "./section"
 
-type AlertRow = { readonly kind: AlertKind; readonly title: Keys; readonly notify: Keys; readonly sound: Keys }
+type AlertRow = { readonly kind: AlertKind; readonly title: SettingsKey; readonly notify: SettingsKey; readonly sound: SettingsKey }
 
 const ALERT_ROWS: readonly AlertRow[] = [
   { kind: "agent", title: "settings.alerts.agent", notify: "settings.notifications.agent.description", sound: "settings.sounds.agent.description" },
@@ -22,14 +22,14 @@ const ALERT_ROWS: readonly AlertRow[] = [
 const SOUND_CHOICES: readonly SoundChoice[] = ["none", ...SOUNDS.map((sound) => sound.id)]
 
 export function NotificationsSection() {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(settingsDictionary)
   const preferences = usePreferences()
   const change = (kind: AlertKind, checked: boolean) => {
     preferences.setAlertNotify(kind, checked)
     if (checked) void requestSystemNotifications()
   }
   return (
-    <div class="settings-body" data-component="settings-notifications">
+    <div class="settings-body">
       <SettingsGroup>
         <SettingsList>
           <For each={ALERT_ROWS}>
@@ -50,11 +50,12 @@ export function NotificationsSection() {
 }
 
 export function SoundsSection() {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(settingsDictionary)
   const preferences = usePreferences()
+  const sound = createSoundPlayer()
   const label = (choice: SoundChoice) => (choice === "none" ? t("settings.sounds.none") : t("settings.sounds.alert01"))
   return (
-    <div class="settings-body" data-component="settings-sounds">
+    <div class="settings-body">
       <SettingsGroup>
         <SettingsList>
           <For each={ALERT_ROWS}>
@@ -67,12 +68,12 @@ export function SoundsSection() {
                   value={(choice) => choice}
                   label={label}
                   onHighlight={(choice) => {
-                    if (choice) playSound(choice)
+                    if (choice) sound.play(choice)
                   }}
                   onSelect={(choice) => {
                     if (!choice) return
                     preferences.setAlertSound(row.kind, choice)
-                    playSound(choice)
+                    sound.play(choice)
                   }}
                   variant="secondary" size="small" triggerVariant="settings"
                 />

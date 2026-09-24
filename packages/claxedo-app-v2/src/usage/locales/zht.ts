@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "usage.quota.title": "配額週期",
   "usage.quota.empty": "沒有已連線的帳戶在此回報方案。",
   "usage.quota.inUse": "使用中",

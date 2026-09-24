@@ -1,11 +1,11 @@
 import { createSignal, For, Show } from "solid-js"
-import { useQuery, useQueryClient } from "@tanstack/solid-query"
+import { useQuery } from "@tanstack/solid-query"
 import { useServer, type Connection, type ConnectionScope, type Integration, type IntegrationsCatalog } from "@/server"
-import type { HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
+import type { HarnessConnectionRef, HarnessConnectionsCatalog } from "@claxedo/agent-runtime-contract"
 import { showToast, Tag, Button } from "@/ui"
 import { useTranslator } from "@/i18n"
-import { loadAgentConnections, removeAgentConnection, verifyFailedMessage } from "../connections"
-import { dictionary, type Keys } from "../i18n"
+import { verifyFailedMessage } from "../connections"
+import { settingsDictionary, type SettingsKey } from "../i18n"
 import { ConnectForm } from "./connect-form"
 import { SettingsEmpty, SettingsGroup, SettingsIntro, SettingsList, SettingsNote } from "./section"
 
@@ -13,18 +13,17 @@ const STATUS_KEY = {
   connected: "settings.connections.status.connected",
   degraded: "settings.connections.status.degraded",
   broken: "settings.connections.status.broken",
-} as const satisfies Record<Connection["status"], Keys>
+} as const satisfies Record<Connection["status"], SettingsKey>
 
 const STATUS_TONE = { connected: "success", degraded: "warning", broken: "danger" } as const
 
 const reason = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
 export function ConnectionsSection() {
-  const t = useTranslator(dictionary)
-  const queryClient = useQueryClient()
+  const t = useTranslator(settingsDictionary)
   const server = useServer()
   const catalog = useQuery(() => server.queries.integrations.catalog())
-  const agents = useQuery(() => ({ queryKey: ["settings", "agent-connections"], queryFn: loadAgentConnections, staleTime: Infinity }))
+  const agents = useQuery(() => server.queries.agentConnections.list())
   const [connecting, setConnecting] = createSignal<Connecting>()
   const [busy, setBusy] = createSignal<string>()
   const reverify = async (id: string) => {
@@ -45,9 +44,9 @@ export function ConnectionsSection() {
   }
 
   return (
-    <div class="settings-body" data-component="settings-connections">
+    <div class="settings-body">
       <SettingsIntro description={t("settings.connections.description")} />
-      <AgentConnections rows={agents.data} error={agents.error} loading={agents.isPending} onRemove={(row) => void act(row.connectionId, () => removeAgentConnection(row.connectionId).then(() => queryClient.invalidateQueries({ queryKey: ["settings", "agent-connections"] })), `${row.label} removed`)} busy={busy()} />
+      <AgentConnections rows={agents.data} error={agents.error} loading={agents.isPending} onRemove={(row) => void act(row.connectionId, () => server.agentConnections.remove(row.connectionId), `${row.label} removed`)} busy={busy()} />
       <SettingsGroup title={t("settings.connections.integrations")}>
         <Show when={catalog.error}>{(error) => <SettingsNote tone="danger">{reason(error())}</SettingsNote>}</Show>
         <Show when={catalog.data} fallback={<SettingsEmpty>{catalog.isPending ? t("settings.common.loading") : t("settings.connections.integrations.empty")}</SettingsEmpty>}>
@@ -85,7 +84,7 @@ function IntegrationBlock(props: {
   readonly onReverify: (entry: Connection) => void
   readonly onDisconnect: (entry: Connection) => void
 }) {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(settingsDictionary)
   const connections = () => props.catalog.connections.filter((entry) => entry.integrationId === props.integration.id)
   return (
     <div class="settings-fields" data-integration={props.integration.id}>
@@ -132,7 +131,7 @@ function ConnectionRow(props: {
   readonly onReverify: () => void
   readonly onDisconnect: () => void
 }) {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(settingsDictionary)
   const [confirming, setConfirming] = createSignal(false)
   return (
     <div class="settings-account" data-connection={props.connection.id} data-status={props.connection.status}>
@@ -162,13 +161,13 @@ function ConnectionRow(props: {
 }
 
 function AgentConnections(props: {
-  readonly rows: Awaited<ReturnType<typeof loadAgentConnections>> | undefined
+  readonly rows: HarnessConnectionsCatalog | undefined
   readonly error: unknown
   readonly loading: boolean
   readonly busy: string | undefined
   readonly onRemove: (row: HarnessConnectionRef) => void
 }) {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(settingsDictionary)
   const supported = () => (props.rows?.status === "supported" ? props.rows.connections : undefined)
   return (
     <SettingsGroup title={t("settings.connections.agents")} description={t("settings.connections.agents.description")}>

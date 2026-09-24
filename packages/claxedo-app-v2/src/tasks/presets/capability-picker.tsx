@@ -1,7 +1,7 @@
 import { For, Show, type JSX } from "solid-js"
-import { Checkbox, Icon } from "@/ui"
 import type { PresetPlacement } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
+import { Checkbox, Icon } from "@/ui"
 import { dictionary } from "../i18n"
 import type { CapabilityCatalog, CapabilityOption } from "./capabilities"
 import { isCapabilitySelected, toggleCapability, type CapabilitySelection, type PresetEditorDraft } from "./draft"
