@@ -29,6 +29,19 @@ Nothing a spec does reaches the internet or this Mac's accounts, and every spec 
 - **The egress guard.** Each stack runs a proxy that refuses every request and records it, and the daemon's `HTTP_PROXY`, `HTTPS_PROXY` and `ALL_PROXY` point at it (`NODE_USE_ENV_PROXY=1`, loopback excluded). `stack.egress.attempts` is the record. The `stack` fixture fails any spec that made an attempt outside `REFUSED_BACKGROUND_TARGETS`, the calls no switch reaches: the embedded OpenCode engine's model refresh, the machine-logins read's Cursor check, and Codex's start-up calls. Those are refused too, just not counted.
 - **Proof.** `00-isolation.spec.ts` sends Pi's default model through the app and chosen `openai` and `anthropic` models, Claude Code and Codex through the API; each must answer from the scripted server with no unexpected attempt, and Pi's connected providers must be exactly the scripted two. Its red run, `CLAXEDO_E2E_RED=1`, stores the keys without the custom providers, so the broker sends them to the vendors' hosts and every case fails on the refused attempts.
 
+## Parity: v1 against v2, screen by screen
+
+```sh
+CLAXEDO_E2E_PORT_RANGE=46100-46149 bun run e2e:parity                        # every screen, both sizes (about 3 min)
+CLAXEDO_E2E_PORT_RANGE=46100-46149 bun run e2e:parity -- --screens=session,palette --sizes=1280
+```
+
+One isolated stack serves both apps with the same data. Each app is built for its own port (into `e2e/parity/.builds/<app>`) and served same-origin, with every API, stream and socket request forwarded to the one daemon. Screens marked `fresh` are captured first, on the empty stack. Then the seed runs: a project "Parity" with a committed `src/app.ts` and an uncommitted README change, a session with a finished scripted turn (reasoning, read/search/shell tool cards, a diff, a todo, a reply with a code block), and a second session. The seeded screens follow.
+
+Every capture gets a fresh browser context at 1280×800, or 390×844 with touch: light scheme, reduced motion, `en-US`, UTC, device scale 1. It is taken once two frames 250 ms apart are identical. The output lands in `e2e/parity/out/`: `<screen>-<size>-v1.png`, `-v2.png`, `-side.png` (v1, v2, and the differing pixels in red), `results.json`, and `index.html`, most different first. A pixel counts as different when a channel differs by more than 24. The percentage understates a moved layout on a white page, so read the side-by-side.
+
+Add a screen in `e2e/parity/screens.ts`: its id (use the inventory's screen name), `fresh` or `seeded`, its sizes, its path per app, and its steps. Steps use v1's accessible names on both apps. A step that fails on v2 is reported in red: v2 lacks v1's control, which is a parity finding, not a tool bug.
+
 ## Writing a flow
 
 One spec per user flow, named `e2e/flows/NN-flow-name.spec.ts`, where `NN` is the flow number from the plan. The spec imports everything from `../harness`:
@@ -172,6 +185,9 @@ e2e/
     scripted-world.ts    prepares a server: scripted providers, Pi by default, the scripted ACP agent
     workspaces.ts        a fresh repository registered with a server
     transport.ts         HTTP straight to a server, or through a page
+    node-loader.ts       the tsx loader for scripts that run under node
+    pinned-pi.ts         the runtime's pinned Pi for every stack
+  parity/                bun run e2e:parity: v1 and v2 side by side (origin, seed, screens, settle, compare, report)
     git.ts               git with a test identity; one-commit repositories
     git-remote.ts        a bare repository served over dumb HTTP
     api.ts               ClaxedoApi
