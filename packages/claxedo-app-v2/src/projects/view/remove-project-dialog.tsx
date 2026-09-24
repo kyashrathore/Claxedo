@@ -1,7 +1,8 @@
 import { Show, type Component } from "solid-js"
 import { createFlow, runFlow } from "@/lib/flow"
 import { toAppError, type AppError, type ProjectId } from "@/server"
-import { Button, Dialog, useDialog } from "@/ui"
+import { Dialog, useDialog } from "@/ui"
+import { Button } from "@opencode-ai/ui/button"
 import { useProjectsText, type ProjectsText } from "../i18n"
 import { useProjectCommands } from "../store"
 
@@ -43,7 +44,7 @@ export const RemoveProjectDialog: Component<{ id: ProjectId; name: string; onRem
           <Button type="button" variant="ghost" onClick={() => dialog.close()}>
             {t("projects.cancel")}
           </Button>
-          <Button type="button" variant="danger" disabled={removing()} onClick={() => void remove()}>
+          <Button type="button" variant="primary" disabled={removing()} onClick={() => void remove()}>
             {t("projects.remove")}
           </Button>
         </div>
