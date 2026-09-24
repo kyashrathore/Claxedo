@@ -10,9 +10,6 @@
   src: url("/assets/JetBrainsMonoNerdFontMono-Regular.woff2") format("woff2");
   font-weight: normal;
   font-style: normal;
-  /* 1 MB terminal-only font: never let text wait on it. The mono fallback
-     paints immediately and swaps when the file lands (it only downloads once
-     a terminal actually renders with this family). */
   font-display: swap;
 }
 
@@ -65,15 +62,10 @@
     container-name: session-new-design;
   }
 
-  /* Chips in the context row size to their own content and truncate, so the
-     only responsive behaviour is swapping the placement chip's long detail line
-     for its short form. */
   [data-component="session-context-row"] [data-slot="self-hosted-compact-detail"] {
     display: none;
   }
 
-  /* The labelled row needs about 32rem at its natural size. Compact only once
-     the composer itself crosses that fit point, independent of the viewport. */
   @container session-new-design (max-width: 32rem) {
     [data-component="session-context-row"] [data-slot="self-hosted-detail"] {
       display: none;
@@ -84,8 +76,6 @@
     }
   }
 
-  /* Keep the chip strip on one line in the narrowest supported pane: the
-     project and worktree labels give up their text before the row wraps. */
   @container session-new-design (max-width: 20rem) {
     [data-component="session-context-row"] .ui-context-chip-label {
       display: none;
@@ -156,7 +146,7 @@
   [data-component="getting-started-actions"] {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem; /* gap-3 */
+    gap: 0.75rem;
   }
 
   [data-component="getting-started-actions"] > .ui-button {
@@ -184,58 +174,14 @@
   }
 }
 
-/* ── UNLAYERED ON PURPOSE ────────────────────────────────────────────────────
-   menu-v2.css, select.css and list.css all ship their own UNLAYERED rules, and
-   an unlayered rule beats anything in `@layer components` no matter how
-   specific. The composer's cross-primitive dropdown normalisation therefore has
-   to live outside the layer too, and the class is doubled so it also wins the
-   source-order tie against those stylesheets (Vite's injection order for
-   component CSS is not guaranteed relative to this file).
-   Keep this block last. */
-/* ── One dropdown language for the composer dock ─────────────────────────
-   The composer opens menus built on three different primitives that sit
-   directly next to each other: MenuV2 (the `+` menu), Select (the effort
-   menu), and List-in-a-Popover (the model popover and the context-row
-   pickers). Their stock metrics disagree on every axis — row height, row
-   padding, row gap, container padding, and min-width — so switching between
-   two adjacent triggers visibly changed the menu's rhythm and width.
-   This block pins all three to the same surface and row spec. */
-/* The clamp below is deliberately VIEWPORT-relative, not container-relative.
-   These menus are popper-positioned (see the `[data-popper-positioner]:has(...)`
-   rules in menu-v2.css / select-v2.css), so they float above the pane rather
-   than being laid out or clipped inside it — a 360px menu anchored in a 300px
-   pane is fine, off the right edge of the screen is not. Do not "align" this
-   with the `@container prompt-composer (max-width: 560px)` collapse further
-   down this file: that governs which CONTROLS fit in the dock, this governs
-   where a floating menu lands. Same phrase, "narrow composer", two different
-   boxes. */
 .claxedo-composer-menu.claxedo-composer-menu {
   width: min(360px, calc(100vw - 24px));
   min-width: 0;
   max-width: calc(100vw - 24px);
   padding: 4px;
   border-radius: var(--surface-overlay-radius, 8px);
-  /*
-   * One elevation for every composer menu. These four surfaces are built on
-   * three different primitives — MenuV2 for the permission menu, a Kobalte
-   * popover for the project/worktree pickers, Select for harness and model —
-   * and each brought its own chrome: MenuV2 paints `--v2-elevation-floating`
-   * with no border, the pickers had a hard 1px border and a `shadow-md` that
-   * resolved to transparent layers, and Select has a 1px border with the
-   * hairline `--shadow-xs-border`. Side by side in the same toolbar they read
-   * as three design languages. MenuV2's treatment is the reference; the token
-   * carries its own 0.5px ring, which is why the border goes rather than
-   * being restyled. Codex re-states this in its own layer with `!important`
-   * (see ui-overrides.css), so this is the non-Codex definition.
-   */
   border: var(--surface-overlay-border, 0);
   box-shadow: var(--surface-overlay-shadow, var(--v2-elevation-floating));
-  /*
-   * One surface too, for the same reason. MenuV2 paints
-   * `--v2-background-bg-layer-01` — a PAGE layer — so the permission menu came
-   * up grey next to pickers resolving `--overlay-surface`. Codex hides this by
-   * rebinding the v2 tokens on the component root; every other theme shows it.
-   */
   background: var(--overlay-surface);
 }
 
@@ -245,22 +191,12 @@
   box-shadow: var(--surface-card-shadow, var(--v2-elevation-raised));
 }
 
-/* The merged harness→model→effort picker. Narrower than the 360px default
-   because it holds one list at a time, never a row of controls; the padding is
-   a touch larger so the section headers do not sit on the surface edge. It
-   takes the shared class for SURFACE and ELEVATION — the whole point of
-   `.claxedo-composer-menu` — and overrides only its own geometry. */
 .claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-picker {
   width: min(304px, calc(100vw - 24px));
   min-width: 0;
   padding: 6px;
 }
 
-/* Disclosure motion. The panel enters FROM its header — a short downward slide
-   plus a fade — so the eye is told which row the content belongs to at the
-   moment it appears. Height is deliberately not animated: the popover is a
-   fixed 320px and the model list scrolls inside it, so there is no height to
-   animate and faking one would make the list jump while it settles. */
 @keyframes claxedo-harness-picker-panel {
   from {
     opacity: 0;
@@ -276,14 +212,6 @@
   animation: claxedo-harness-picker-panel 150ms cubic-bezier(0.2, 0, 0, 1);
 }
 
-/* The surface resizes as sections open and close — three headers when shut,
-   320px for a short list, 416px for the searchable model list — so that change
-   is animated rather than snapped.
-   `interpolate-size: allow-keywords` is what makes the closed state (height
-   `auto`, since it hugs its headers) animatable at all; without it a keyword
-   height is not an interpolable value and the box would jump on the way out.
-   Chromium-only, which is the whole target here, and it degrades to today's
-   instant resize anywhere it is missing. */
 .harness-picker-surface {
   interpolate-size: allow-keywords;
   transition: height 200ms cubic-bezier(0.2, 0, 0, 1);
@@ -295,21 +223,12 @@
   }
 }
 
-/* The effort row sits on the picker's bottom edge, so its outer corners are the
-   surface radius minus the surface's 6px padding: concentric with the popover
-   in every theme, whatever `--surface-overlay-radius` it sets. Corners facing
-   another control stay tight so the slider and the fast button read as one
-   strip. Colours are the overlay roles, never raised/base surfaces: inside an
-   overlay those resolve to the popover's own fill and the track would vanish. */
 .harness-picker-effort-row {
   --effort-outer-radius: max(calc(var(--surface-overlay-radius, 8px) - 6px), 4px);
   --effort-inner-radius: 4px;
   --effort-height: 28px;
   --effort-thumb: 22px;
   --effort-thumb-gap: 3px;
-  /* Thumb gap plus half the thumb, written as a literal: the slider reads it
-     back through getComputedStyle, which returns a custom property's text
-     unresolved, so a calc() here parses as 0 and clicks land a stop off. */
   --effort-stop-inset: 14px;
   display: flex;
   flex-shrink: 0;
@@ -344,8 +263,6 @@
   cursor: default;
 }
 
-/* Thumb centre = inset + ratio * (width - 2 * inset); the fill ends one gap past
-   the thumb's trailing edge, and every stop sits on the same travel. */
 .harness-picker-effort-fill {
   position: absolute;
   inset: 0 auto 0 0;
@@ -429,9 +346,6 @@
   }
 }
 
-/* The dock is frequently narrower than the viewport because workspace panes
-   surround it. Container queries make its controls collapse based on the space
-   they actually own, not on the browser window. */
 [data-component="composer-frame"] {
   container-name: prompt-composer;
   container-type: inline-size;
@@ -446,13 +360,6 @@
     gap: 2px;
   }
 
-  /* `prompt-harness-model` is deliberately NOT in this list. It used to be one
-     of three chips, so collapsing it to an icon was fine — the harness chip
-     beside it still named the setup. It is now the ONLY control for harness,
-     model and effort, and an unlabelled glyph leaves a narrow composer stating
-     nothing about what will answer the prompt. It keeps its label and truncates
-     instead; the rules below still strip its chevron and provider mark to buy
-     that label room. */
   [data-action="prompt-permission-mode"],
   [data-action="prompt-harness"],
   [data-action="prompt-model"],
@@ -491,14 +398,6 @@
   }
 }
 
-/* Collapsed composer (`PromptInputFrame` stamps `data-composer-collapsed`
-   while `composerCollapsed` holds): the editor row and the toolbar row fold
-   into one — `+`, permissions, the placeholder, model, send. The toolbar and
-   its control cluster become `display: contents` so their buttons join the
-   form's flex row, and `order` seats the editor between the two clusters; the
-   DOM (and so the tab order) stays editor-first, as in the two-row layout.
-   Attribute stamping beats `:focus-within` because the menus these buttons open
-   are portaled, and focus moving into one would fold the card under it. */
 [data-composer-collapsed] {
   display: flex;
   flex-direction: row;
@@ -534,9 +433,6 @@
   padding: 4px 8px;
 }
 
-/* Icon-only chips: 28px squares like the narrow-container collapse above, but
-   here the model chip folds too — the row is idle, and the full label comes
-   back with focus. */
 [data-composer-collapsed] [data-action="prompt-permission-mode"],
 [data-composer-collapsed] [data-action="prompt-harness-model"] {
   width: 28px;
@@ -553,7 +449,6 @@
   display: none;
 }
 
-/* Row spec, applied to whichever primitive's row is inside. */
 .claxedo-composer-menu.claxedo-composer-menu [data-component="menu-v2-item"],
 .claxedo-composer-menu.claxedo-composer-menu [data-slot="select-select-item"],
 .claxedo-composer-menu.claxedo-composer-menu [data-slot="list-item"] {
@@ -566,16 +461,10 @@
   font-weight: var(--font-weight-body);
 }
 
-/* List rows are flex columns with their own inner padding; neutralise it so
-   they match the single-line rhythm of the menu/select rows. */
 .claxedo-composer-menu.claxedo-composer-menu .ui-list-item {
   padding-block: 5px;
 }
 
-/* Two-line picker rows (label + path/detail). Left at the primitives' stock
-   1.5 line-height these came out 51px tall — nearly double the 28px rows of the
-   `+` and effort menus sitting right next to them, which is the "some slim,
-   some chunky" mismatch. Tightening the two lines lands the row at ~44px. */
 .claxedo-composer-menu.claxedo-composer-menu [data-slot="context-chip-row"] {
   gap: 1px;
 }
@@ -599,7 +488,6 @@
   padding: 0;
 }
 
-/* Group headers: MenuV2 group labels and List headers land on one style. */
 .claxedo-composer-menu.claxedo-composer-menu [data-slot="menu-v2-group-label"],
 .claxedo-composer-menu.claxedo-composer-menu .ui-list-header,
 .claxedo-composer-menu.claxedo-composer-menu .ui-select-section {
@@ -612,14 +500,10 @@
   background: transparent;
 }
 
-/* List group labels are sticky. Their background must remain opaque while the
-   model rows scroll underneath or the first row visually collides with the
-   provider title. */
 .claxedo-composer-menu.claxedo-composer-menu .ui-list-header {
   background: var(--overlay-surface);
 }
 
-/* The searchable pickers' filter field, aligned to the same 10px gutter. */
 .claxedo-composer-menu.claxedo-composer-menu [data-slot="list-search"] {
   padding: 4px 10px;
   border-radius: var(--radius-sm);
@@ -629,8 +513,6 @@
   padding: 0;
 }
 
-/* Permission choices carry their explanation inside the row. The item owns the
-   complete hover target; there is no tooltip wrapper to shrink it to its text. */
 .claxedo-composer-menu.claxedo-composer-menu [data-permission-mode-row] {
   height: auto;
   min-height: 48px;
@@ -638,8 +520,6 @@
   align-items: flex-start;
 }
 
-/* Context pickers keep search and creation controls stationary while only the
-   option list scrolls. */
 .claxedo-composer-menu.claxedo-composer-menu[data-context-chip-picker] .ui-list-scroll {
   max-height: 252px;
 }
@@ -648,16 +528,9 @@
   position: sticky;
   z-index: 2;
   bottom: 0;
-  /* The nested action owns hover/focus paint. Keeping this wrapper neutral
-     avoids a second rectangle around the project and worktree footer button. */
   background: var(--overlay-surface);
 }
 
-/* The project monogram is identification, not a filled status badge. Both the
-   context-row trigger and the picker rows get the same outline-only treatment,
-   but they sit on different surfaces: the trigger on the composer, the rows
-   inside the floating menu. Each follows its own surface's palette so the
-   outline stays visible and the letter stays readable in either place. */
 [data-component="session-context-row"]
   [data-slot="context-chip-avatar"]
   [data-slot="project-avatar-surface"] {
@@ -674,8 +547,6 @@
   color: var(--overlay-icon);
 }
 
-/* The selected project is already represented by the trigger and row highlight;
-   the trailing generic check/list glyph adds a second, unrelated state mark. */
 .claxedo-composer-menu.claxedo-composer-menu[data-context-chip-picker="context-chip-project"]
   .ui-list-item-selected-icon {
   display: none;
