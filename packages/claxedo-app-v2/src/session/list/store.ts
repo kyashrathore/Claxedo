@@ -63,7 +63,7 @@ const unknownPlacement = (placementId: PlacementId): AppError => ({
 })
 
 function pendingRow(ref: SessionRef, input: SessionCreateInput, at: number): SessionRow {
-  return { ref, title: input.title ?? "", createdAt: at, updatedAt: at, lastHumanTurnAt: at, harness: input.harness }
+  return { ref, title: input.title ?? "", createdAt: at, updatedAt: at, harness: input.harness }
 }
 
 export function createSessionList(server: Server, requests: RequestsInternal): SessionListInternal {

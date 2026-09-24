@@ -1,8 +1,17 @@
 import type { AgentRequest, SessionId } from "@/server"
 import type { SessionRowView, SessionStatusView } from "@/session"
-import { entryActivityAt, type ConfirmedEntry, type ListState, type PendingEntry } from "./model"
+import {
+  compareOrder,
+  entryActivityAt,
+  insideWindow,
+  orderKey,
+  type ConfirmedEntry,
+  type ListState,
+  type OrderKey,
+  type PendingEntry,
+} from "./model"
 
-type Shown = { readonly entry: ConfirmedEntry | PendingEntry; readonly activity: number }
+type Shown = { readonly entry: ConfirmedEntry | PendingEntry; readonly key: OrderKey }
 
 type CachedView = {
   readonly entry: ConfirmedEntry | PendingEntry
@@ -17,22 +26,16 @@ export const UNKNOWN_STATUS: SessionStatusView = { kind: "unknown" }
 
 export const createRowViewCache = (): RowViewCache => ({ current: new Map() })
 
-function byRecency(a: Shown, b: Shown): number {
-  if (a.activity !== b.activity) return b.activity - a.activity
-  if (a.entry.row.createdAt !== b.entry.row.createdAt) return b.entry.row.createdAt - a.entry.row.createdAt
-  return a.entry.row.ref.sessionId < b.entry.row.ref.sessionId ? -1 : 1
-}
-
 function shownEntries(state: ListState): Shown[] {
   const shown: Shown[] = []
   for (const entry of state.entries.values()) {
     if (entry.kind === "tombstone") continue
     if (entry.row.archivedAt !== undefined || entry.row.parentSessionId !== undefined) continue
-    const activity = entryActivityAt(entry)
-    if (entry.kind === "confirmed" && activity < state.windowTail) continue
-    shown.push({ entry, activity })
+    const key = orderKey(entry.row, entryActivityAt(entry))
+    if (entry.kind === "confirmed" && !insideWindow(key, state.windowTail)) continue
+    shown.push({ entry, key })
   }
-  return shown.sort(byRecency)
+  return shown.sort((a, b) => compareOrder(a.key, b.key))
 }
 
 function cachedView(
