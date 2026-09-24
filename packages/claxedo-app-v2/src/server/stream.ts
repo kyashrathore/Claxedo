@@ -1,5 +1,5 @@
 import { createParser } from "eventsource-parser"
-import { machine, unreachable } from "@/lib/machine"
+import { machine, unreachable } from "../lib/machine"
 import type { ConnectionState } from "./events"
 import { toAppError } from "./errors"
 
