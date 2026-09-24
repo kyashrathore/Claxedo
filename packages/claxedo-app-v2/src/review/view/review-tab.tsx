@@ -4,7 +4,7 @@ import { Spinner } from "@opencode-ai/ui/spinner"
 import { useTranslator, type DomainTranslate } from "@/i18n"
 import { useServer, type DiffSummary, type GitRefs, type PlacementId } from "@/server"
 import { ReviewCodeView, type ReviewCodeViewRevealTarget } from "@/transcript"
-import { ClaxedoLogo as Mark, DelayedLoading } from "@/ui"
+import { ClaxedoLogo as Mark, DelayedLoading, ScrollThumb } from "@/ui"
 import { useReviewApi } from "../api"
 import { useReviewComments } from "../comments"
 import { createDiffContent } from "../diff-content"
@@ -145,10 +145,18 @@ function ReviewDiffList(props: {
     forced: review.forced,
   })
   const codeViewComments = createCodeViewComments({ comments, diffs: content.diffs })
+  const [frame, setFrame] = createSignal<HTMLDivElement>()
+  const [scroller, setScroller] = createSignal<HTMLDivElement>()
   return (
-    <div class="contents" data-review-diff-style={review.style()} data-review-open-diff-count={review.open().length}>
+    <div
+      ref={setFrame}
+      class="relative h-full min-h-0"
+      data-review-diff-style={review.style()}
+      data-review-open-diff-count={review.open().length}
+    >
       <ReviewCodeView
-        class="claxedo-workspace-review h-full"
+        class="claxedo-workspace-review h-full [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        scrollRef={setScroller}
         diffs={content.diffs()}
         diffStyle={review.style()}
         open={review.open()}
@@ -185,6 +193,7 @@ function ReviewDiffList(props: {
           )
         }}
       />
+      <ScrollThumb scroller={scroller()} hoverTarget={frame()} />
     </div>
   )
 }
