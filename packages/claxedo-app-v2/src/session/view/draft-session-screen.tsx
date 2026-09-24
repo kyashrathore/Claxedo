@@ -1,9 +1,11 @@
 import { Composer, ComposerNoticeProvider, ComposerNoticeRow, createComposerNoticeChannel, draftComposerKey, type Submission } from "@/composer"
+import { NewSessionContextRow } from "@/projects"
 import type { PlacementId, ProjectId } from "@/server"
 import { useSessionStores, type SessionView } from "@/session"
 import type { PaneProps } from "@/shell"
 import { ClaxedoLogo } from "@/ui/controls/claxedo-logo"
 import { useWorkbench } from "@/workbench"
+import { draftSessionPaneKind } from "./draft-pane"
 import { sessionPaneKind } from "./session-pane"
 import { useSessionScreenText } from "./text"
 import "./session-screen.css"
@@ -35,6 +37,13 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
               </div>
               <div>
                 <ComposerNoticeRow notice={notice.current()} />
+                <div class="relative" classList={{ "z-10 -mt-2": !!notice.current() }}>
+                  <NewSessionContextRow
+                    projectId={props.state.projectId}
+                    placementId={props.state.placementId}
+                    onOpen={(target) => workbench.replacePane(props.paneId, draftSessionPaneKind, { ...target, draftId: props.state.draftId })}
+                  />
+                </div>
                 <div class="relative z-10 -mt-2">
                   <Composer
                     composerKey={key()}
