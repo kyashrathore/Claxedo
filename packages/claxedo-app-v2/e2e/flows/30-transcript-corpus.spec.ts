@@ -25,17 +25,6 @@ function inWorkspace<T>(value: T, directory: string): T {
   return JSON.parse(JSON.stringify(value).replaceAll("{{workspace}}", directory)) as T
 }
 
-const BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-
-function ascendingMessageIds(): () => string {
-  let counter = 0
-  return () => {
-    const ordered = (BigInt(Date.now()) * 4096n + BigInt(++counter)) & 0xffffffffffffn
-    const random = Array.from(crypto.getRandomValues(new Uint8Array(14)), (byte) => BASE62[byte % 62]).join("")
-    return `msg_${ordered.toString(16).padStart(12, "0")}${random}`
-  }
-}
-
 function turnSettled(messages: readonly MessageRow[], users: number): boolean {
   const userCount = messages.filter((message) => message.info.role === "user").length
   const last = messages.at(-1)?.info
@@ -44,14 +33,14 @@ function turnSettled(messages: readonly MessageRow[], users: number): boolean {
   return time?.completed !== undefined || last.error !== undefined
 }
 
-async function playTurn(stack: Stack, api: ClaxedoApi, target: Target, turn: CaseTurn & { readonly name: string; readonly messageId: string }, users: number) {
+async function playTurn(stack: Stack, api: ClaxedoApi, target: Target, turn: CaseTurn & { readonly name: string }, users: number) {
   await stack.acp.write(turn.name, { steps: [...turn.steps] })
   const text = `${turn.prompt} ${acpScriptToken(turn.name)}`
   if (!turn.steps.some((step) => step.kind === "error")) {
-    await api.prompt(target.directory, target.sessionId, text, { messageId: turn.messageId })
+    await api.prompt(target.directory, target.sessionId, text)
     return
   }
-  await api.promptAsync(target.directory, target.sessionId, text, { messageId: turn.messageId })
+  await api.promptAsync(target.directory, target.sessionId, text)
   await expect
     .poll(async () => turnSettled(await api.messages(target.directory, target.sessionId), users), { timeout: TURN_TIMEOUT })
     .toBe(true)
@@ -63,9 +52,8 @@ async function arrange(stack: Stack, api: ClaxedoApi, corpusCase: CorpusCase) {
   const session = await api.createSession(workspace.directory, { title: corpusCase.title, harness: SCRIPTED_ACP_HARNESS })
   const target = { directory: workspace.directory, sessionId: session.id }
   const turns = inWorkspace(corpusCase.replay.turns, workspace.directory)
-  const nextId = ascendingMessageIds()
   for (const [index, turn] of turns.entries()) {
-    await playTurn(stack, api, target, { ...turn, name: `${corpusCase.id}-${index}`, messageId: nextId() }, index + 1)
+    await playTurn(stack, api, target, { ...turn, name: `${corpusCase.id}-${index}` }, index + 1)
   }
   return { workspace, target, turns: turns.length }
 }

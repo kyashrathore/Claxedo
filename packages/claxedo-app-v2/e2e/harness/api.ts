@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto"
+import { ascendingMessageIds } from "./message-ids"
 import { directTransport, type HttpTransport } from "./transport"
 
 export class ApiError extends Error {
@@ -42,6 +43,8 @@ export function assistantText(messages: MessageRow[]) {
 }
 
 export class ClaxedoApi {
+  private readonly nextMessageId = ascendingMessageIds()
+
   constructor(
     readonly url: string,
     private readonly transport: HttpTransport = directTransport,
@@ -129,7 +132,7 @@ export class ClaxedoApi {
   }
 
   private turnId(messageId?: string) {
-    return messageId ?? (this.options.reserveSessions ? `msg_${randomUUID()}` : undefined)
+    return messageId ?? this.nextMessageId()
   }
 
   prompt(directory: string, id: string, text: string, options: { messageId?: string; model?: ModelChoice } = {}) {
