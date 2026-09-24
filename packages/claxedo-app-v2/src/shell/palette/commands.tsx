@@ -25,7 +25,7 @@ import {
 
 export const PALETTE_ID = "command.palette"
 const DEFAULT_PALETTE_KEYBIND = "mod+shift+p"
-const EDITABLE_KEYBIND_IDS = new Set(["terminal.toggle", "terminal.new", "file.attach"])
+const EDITABLE_KEYBIND_IDS: readonly string[] = ["terminal.toggle", "terminal.new", "file.attach"]
 
 export type Commands = {
   readonly register: {
@@ -104,7 +104,7 @@ export function CommandsProvider(props: { readonly children: JSX.Element }): JSX
     const option = keymap().get(signature)
     const modified = event.ctrlKey || event.metaKey || event.altKey
     const editable = isEditableTarget(event.target)
-    if (editable && !isPalette && !EDITABLE_KEYBIND_IDS.has(actionId(option?.id ?? "")) && !modified && event.key !== "Tab") return
+    if (editable && !isPalette && !EDITABLE_KEYBIND_IDS.includes(actionId(option?.id ?? "")) && !modified && event.key !== "Tab") return
     if (isPalette) {
       event.preventDefault()
       run(OPEN_FILE_COMMAND, "palette")

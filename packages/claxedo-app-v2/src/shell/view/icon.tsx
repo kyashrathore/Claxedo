@@ -3,10 +3,8 @@ import { ClaxedoIcon, type ClaxedoIconName, type ClaxedoIconProps, appIconNames 
 
 export const fallbackIconName: ClaxedoIconName = "page"
 
-const known = new Set<string>(appIconNames)
-
 function isIconName(name: string): name is ClaxedoIconName {
-  return known.has(name)
+  return (appIconNames as readonly string[]).includes(name)
 }
 
 export function iconNameOf(name: string): ClaxedoIconName {
