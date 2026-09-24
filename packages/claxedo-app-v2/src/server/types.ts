@@ -6,6 +6,7 @@ import type {
   AgentQuestion,
   AgentQuestionAnswer,
   AgentSnapshotFileDiff,
+  AgentSubagentUpdate,
   AgentTodo,
   RuntimeGoalSnapshot,
 } from "@claxedo/agent-runtime-contract"
@@ -105,6 +106,7 @@ export type AgentRequestReply =
 
 export type Todo = AgentTodo
 export type FileDiff = AgentSnapshotFileDiff
+export type Subagent = AgentSubagentUpdate
 
 export type SessionPage = { readonly rows: readonly SessionRow[]; readonly nextCursor?: string }
 
