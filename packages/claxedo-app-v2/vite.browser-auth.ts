@@ -1,4 +1,4 @@
-import type { BrowserAuthAdapterId } from "./src/platform/auth/browser-auth"
+import type { BrowserAuthAdapterId } from "./src/auth/browser-auth"
 
 export type BrowserAuthBuildSelection = {
   adapter: BrowserAuthAdapterId
