@@ -42,6 +42,10 @@ Once the record exists, `choosingPlacement`, `creating` and `failed` carry its `
 
 `PageEntry.title()` calls `useProjectsText()` and must run under the shell's `I18nProvider`.
 
+## Choosing a folder
+
+v1's folder dialog, on desktop and web alike (`view/select-directory.tsx`, moved from v1's `DialogSelectDirectory`, opened by `pickProjectFolderWith`): "Search folders", "Recent projects" above the folder rows, Tab completes the highlighted row, Enter picks. Its path rules live in `folder-paths.ts` and its search in `folder-search.ts`, both as v1 had them. Server calls go through the adapter: `queries.folders.paths()` and `queries.folders.children(directory)`, `server.folders.search(scope, query, limit)` and `server.folders.browsable()`. A failed call lists no folders, as in v1, and is logged with its folder and query.
+
 ## Views
 
 `ProjectsSidebarSection` lists projects for the rail with a per-row menu (rename, remove). `ProjectPage` shows the record, its local placements and the cloud workspaces section. Dialogs open through the kit's `useDialog()`, so the shell must mount `DialogProvider`.

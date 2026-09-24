@@ -11,7 +11,6 @@ import "./projects.css"
 
 export const AddProjectSteps: Component<{
   flow: AddProjectFlow
-  pickFolder?: () => Promise<string | undefined>
   panelsRef?: (element: HTMLDivElement) => void
 }> = (props) => {
   const t = useProjectsText()
@@ -27,7 +26,7 @@ export const AddProjectSteps: Component<{
       <ScrollView class="min-h-0 flex-1" label={t("projects.add.title")}>
         <div ref={props.panelsRef} data-slot="add-project-panels">
           <div hidden={step() !== "source"} data-step-panel="source">
-            <SourceStep flow={props.flow} {...(props.pickFolder ? { pickFolder: props.pickFolder } : {})} />
+            <SourceStep flow={props.flow} />
           </div>
           <Show when={reached() >= 1}>
             <div hidden={step() !== "agent"} data-step-panel="agent">

@@ -1,64 +1,11 @@
-import { execFile } from "node:child_process"
 import fs from "node:fs/promises"
-import http from "node:http"
 import path from "node:path"
-import { promisify } from "node:util"
 import type { Page } from "@playwright/test"
-import { expect, test } from "../harness"
+import { expect, gitFolder, test } from "../harness"
 
-const execFileAsync = promisify(execFile)
-const LANE_PORTS = { first: 47300, last: 47399 }
 const SESSION_URL = /\/w\/[^/]+\/s\/[^/?]+$/
 
 type ProjectRecord = { id: string; name: string; directory?: string | null; repoUrl?: string | null }
-
-async function git(cwd: string, ...args: string[]) {
-  const env = { ...process.env, GIT_DIR: undefined, GIT_INDEX_FILE: undefined, GIT_WORK_TREE: undefined }
-  await execFileAsync("git", ["-c", "user.email=e2e@claxedo.test", "-c", "user.name=e2e", ...args], { cwd, env })
-}
-
-async function gitFolder(root: string, name: string): Promise<string> {
-  const directory = path.join(root, name)
-  await fs.mkdir(directory, { recursive: true })
-  await fs.writeFile(path.join(directory, "README.md"), `${name}\n`)
-  await git(directory, "init", "-q")
-  await git(directory, "add", "README.md")
-  await git(directory, "commit", "-q", "-m", "init")
-  return fs.realpath(directory)
-}
-
-async function listenInLaneRange(server: http.Server): Promise<number> {
-  for (let port = LANE_PORTS.first; port <= LANE_PORTS.last; port += 1) {
-    const bound = await new Promise<boolean>((resolve) => {
-      server.once("error", () => resolve(false))
-      server.listen(port, "127.0.0.1", () => resolve(true))
-    })
-    if (bound) return port
-  }
-  throw new Error(`No free port in ${LANE_PORTS.first}-${LANE_PORTS.last}`)
-}
-
-async function gitRemote(root: string, name: string) {
-  const source = await gitFolder(root, `${name}-source`)
-  const served = path.join(root, "served")
-  const bare = path.join(served, `${name}.git`)
-  await git(root, "clone", "-q", "--bare", source, bare)
-  await git(bare, "update-server-info")
-  const server = http.createServer((request, response) => {
-    const requested = decodeURIComponent(new URL(request.url ?? "/", "http://remote").pathname)
-    const file = path.join(served, path.normalize(requested))
-    if (!file.startsWith(served + path.sep)) return void response.writeHead(404).end()
-    void fs.readFile(file).then(
-      (body) => response.writeHead(200).end(body),
-      () => response.writeHead(404).end(),
-    )
-  })
-  const port = await listenInLaneRange(server)
-  return {
-    url: `http://127.0.0.1:${port}/${name}.git`,
-    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
-  }
-}
 
 async function serverProjects(url: string): Promise<ProjectRecord[]> {
   const response = await fetch(new URL("/api/claxedo/projects", url))
@@ -88,11 +35,19 @@ async function projectsList(app: Page) {
   return list
 }
 
-async function addFolderProject(app: Page, name: string, folder: string) {
+async function chooseFolder(app: Page, typed: string, name: string) {
+  await app.getByRole("button", { name: "Browse" }).click()
+  const dialog = app.getByRole("dialog", { name: "New Project" })
+  await dialog.getByRole("textbox", { name: "Search folders" }).fill(typed)
+  await dialog.getByRole("button", { name: new RegExp(` ${name} /$`) }).click()
+  await expect(dialog).toHaveCount(0)
+}
+
+async function addFolderProject(app: Page, name: string, fromHome: string) {
   await (await projectsList(app)).getByRole("button", { name: "New project" }).click()
   await app.getByRole("textbox", { name: "Name", exact: true }).fill(name)
   await app.getByRole("button", { name: "Folder on this machine" }).click()
-  await app.getByRole("textbox", { name: "Folder", exact: true }).fill(folder)
+  await chooseFolder(app, `~/${fromHome}`, path.basename(fromHome))
   await finishAddOnThisMachine(app)
 }
 
@@ -121,36 +76,32 @@ test("02 projects, local: add a folder and a clone, rename, remove, each read ba
   const root = path.join(stack.dataDir, "folders")
   await api.createProject("Existing", await gitFolder(root, "existing"))
   const alphaFolder = await gitFolder(root, "alpha")
-  const remote = await gitRemote(root, "beta")
-  try {
-    await app.goto(`${stack.url}/`)
-    await addFolderProject(app, "Alpha", alphaFolder)
-    await app.goto(`${stack.url}/`)
-    await expect((await projectsList(app)).getByRole("button", { name: "Existing", exact: true })).toBeVisible()
-    const alpha = (await serverProjects(stack.url)).find((project) => project.directory === alphaFolder)
-    expect(alpha?.name).toBe("Alpha")
-    const alphaId = alpha?.id ?? ""
+  const remote = await stack.gitRemote("beta")
+  await app.goto(`${stack.url}/`)
+  await addFolderProject(app, "Alpha", "folders/alpha")
+  await app.goto(`${stack.url}/`)
+  await expect((await projectsList(app)).getByRole("button", { name: "Existing", exact: true })).toBeVisible()
+  const alpha = (await serverProjects(stack.url)).find((project) => project.name === "Alpha")
+  expect(await fs.realpath(alpha?.directory ?? "")).toBe(alphaFolder)
+  const alphaId = alpha?.id ?? ""
 
-    await app.goto(`${stack.url}/p/${encodeURIComponent(alphaId)}`)
-    await renameOnProjectPage(app, "Alpha", "Alpha renamed")
-    expect((await serverProject(stack.url, alphaId)).project?.name).toBe("Alpha renamed")
-    await app.getByRole("button", { name: "Open", exact: true }).click()
-    await expect(app.getByRole("region", { name: "New session" })).toBeVisible()
-    expect(await api.sessions(alphaFolder)).toHaveLength(1)
+  await app.goto(`${stack.url}/p/${encodeURIComponent(alphaId)}`)
+  await renameOnProjectPage(app, "Alpha", "Alpha renamed")
+  expect((await serverProject(stack.url, alphaId)).project?.name).toBe("Alpha renamed")
+  await app.getByRole("button", { name: "Open", exact: true }).click()
+  await expect(app.getByRole("region", { name: "New session" })).toBeVisible()
+  expect(await api.sessions(alpha?.directory ?? "")).toHaveLength(1)
 
-    await app.goto(`${stack.url}/`)
-    await cloneProject(app, remote.url)
-    const beta = (await serverProjects(stack.url)).find((project) => project.repoUrl === remote.url)
-    expect(beta?.name).toBe("beta")
-    expect(await fs.readFile(path.join(beta?.directory ?? "", "README.md"), "utf8")).toBe("beta-source\n")
+  await app.goto(`${stack.url}/`)
+  await cloneProject(app, remote.url)
+  const beta = (await serverProjects(stack.url)).find((project) => project.repoUrl === remote.url)
+  expect(beta?.name).toBe("beta")
+  expect(await fs.readFile(path.join(beta?.directory ?? "", "README.md"), "utf8")).toBe("beta-source\n")
 
-    await app.goto(`${stack.url}/`)
-    await (await projectsList(app)).getByRole("button", { name: "Alpha renamed", exact: true }).click()
-    await expect(app).toHaveURL(new RegExp(`/p/${encodeURIComponent(alphaId)}$`))
-    await removeOnProjectPage(app, "Alpha renamed")
-    expect((await serverProject(stack.url, alphaId)).status).toBe(404)
-    expect(await fs.readFile(path.join(alphaFolder, "README.md"), "utf8")).toBe("alpha\n")
-  } finally {
-    await remote.close()
-  }
+  await app.goto(`${stack.url}/`)
+  await (await projectsList(app)).getByRole("button", { name: "Alpha renamed", exact: true }).click()
+  await expect(app).toHaveURL(new RegExp(`/p/${encodeURIComponent(alphaId)}$`))
+  await removeOnProjectPage(app, "Alpha renamed")
+  expect((await serverProject(stack.url, alphaId)).status).toBe(404)
+  expect(await fs.readFile(path.join(alphaFolder, "README.md"), "utf8")).toBe("alpha\n")
 })
