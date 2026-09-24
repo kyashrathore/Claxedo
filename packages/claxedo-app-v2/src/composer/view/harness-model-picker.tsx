@@ -321,6 +321,7 @@ export function HarnessModelPicker<H>(props: {
   modelError?: Accessor<{ message: string; detail?: string; action?: { label: string; run: () => void } } | undefined>
 
   /** Effort slider. An empty well when the harness offers no variants. */
+  onOpen?: () => void
   showEffort: Accessor<boolean>
   variants: Accessor<string[]>
   currentVariant: Accessor<string | undefined>
@@ -383,6 +384,7 @@ export function HarnessModelPicker<H>(props: {
       open={open()}
       onOpenChange={(next) => {
         setOpen(next)
+        if (next) props.onOpen?.()
         // Reopen on the model list rather than wherever the last visit ended —
         // a menu that remembers a disclosure the user has since forgotten about
         // opens "wrong" far more often than it opens helpfully.
