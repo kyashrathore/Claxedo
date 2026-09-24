@@ -44,10 +44,14 @@ export function SidebarContent(
   props: SidebarProps & { readonly width?: number; readonly open?: boolean; readonly onMouseLeave?: () => void; readonly ref?: (element: HTMLElement) => void },
 ): JSX.Element {
   const t = useTranslator(dictionary)
+  const layout = useShellLayout()
   const open = () => props.open !== false
   return (
     <nav
       ref={(element) => props.ref?.(element)}
+      data-sidebar
+      data-claxedo-compact-touch
+      data-pinned={layout.sidebarPinned() ? "" : undefined}
       data-testid="rail-sidebar"
       data-surface="sidebar"
       data-mode={props.mode}
