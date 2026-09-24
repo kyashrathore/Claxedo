@@ -48,7 +48,8 @@
 .rail-title {
   padding: 12px 18px 4px;
   font-size: var(--font-size-x-small, 11px);
-  color: var(--v2-text-text-faint, #6a6666);
+  font-weight: var(--font-weight-medium, 500);
+  color: var(--v2-text-text-muted, #8a8686);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }

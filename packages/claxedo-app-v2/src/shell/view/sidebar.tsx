@@ -12,7 +12,7 @@ export type SidebarProps = {
   readonly settings: JSX.Element
 }
 
-export function SidebarContent(props: SidebarProps): JSX.Element {
+export function SidebarContent(props: SidebarProps & { readonly resize?: JSX.Element }): JSX.Element {
   const t = useTranslator(dictionary)
   return (
     <nav class="shell-sidebar-content" aria-label={t("shell.navigation")} data-mode={props.mode} data-testid="sidebar">
@@ -21,6 +21,7 @@ export function SidebarContent(props: SidebarProps): JSX.Element {
           {props.settings}
         </Show>
       </Region>
+      {props.resize}
     </nav>
   )
 }
@@ -31,16 +32,22 @@ export function Sidebar(props: SidebarProps): JSX.Element {
   return (
     <Show when={layout.sidebarShown()}>
       <div class="shell-sidebar" style={{ width: `${layout.sidebarWidth()}px` }}>
-        <SidebarContent mode={props.mode} main={props.main} settings={props.settings} />
+        <SidebarContent
+          mode={props.mode}
+          main={props.main}
+          settings={props.settings}
+          resize={
+            <ResizeHandle
+              label={t("shell.sidebarResize")}
+              edge="right"
+              width={layout.sidebarWidth}
+              min={SIDEBAR_MIN_WIDTH}
+              max={SIDEBAR_MAX_WIDTH}
+              onResize={layout.setSidebarWidth}
+            />
+          }
+        />
       </div>
-      <ResizeHandle
-        label={t("shell.sidebarResize")}
-        edge="right"
-        width={layout.sidebarWidth}
-        min={SIDEBAR_MIN_WIDTH}
-        max={SIDEBAR_MAX_WIDTH}
-        onResize={layout.setSidebarWidth}
-      />
     </Show>
   )
 }
