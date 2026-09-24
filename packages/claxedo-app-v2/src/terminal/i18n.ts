@@ -15,7 +15,6 @@ const en = {
   "terminal.exited.title": "The shell exited",
   "terminal.exited.code": "Exit code {{code}}",
   "terminal.close": "Close terminal",
-  "terminal.missing": "This terminal no longer exists",
   "terminal.overload":
     "The terminal produced too much output too quickly and was disconnected to keep the app responsive.",
   "terminal.restoreFailed": "The terminal's screen could not be restored.",

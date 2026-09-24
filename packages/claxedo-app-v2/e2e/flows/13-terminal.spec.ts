@@ -55,16 +55,24 @@ function terminalPane(app: Page, terminalId: string) {
   return app.locator(`[data-testid="terminal-pane"][data-terminal-id="${terminalId}"]`)
 }
 
+function compactTabs(app: Page) {
+  return app.getByRole("navigation", { name: "Workbench panes" }).getByTestId("compact-switcher-tab")
+}
+
+async function newShell(app: Page): Promise<string> {
+  await app.getByRole("button", { name: "New Terminal", exact: true }).click()
+  await app.getByRole("button", { name: /^Shell\b/ }).click()
+  await expect(app).toHaveURL(TERMINAL_URL)
+  return decodeURIComponent(new URL(app.url()).pathname.split("/").at(-1) ?? "")
+}
+
 test.skip(({ isMobile }) => isMobile, "flow 13 runs at desktop width")
 
 test("13 terminal: run a command, its output replays from the server, reload reattaches, closing leaves the draft", async ({ stack, app }) => {
   const workspace = await stack.daemon.makeWorkspace("terminal", "Terminal")
 
   await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
-  await app.getByRole("button", { name: "New Terminal", exact: true }).click()
-  await app.getByRole("button", { name: /^Shell\b/ }).click()
-  await expect(app).toHaveURL(TERMINAL_URL)
-  const terminalId = decodeURIComponent(new URL(app.url()).pathname.split("/").at(-1) ?? "")
+  const terminalId = await newShell(app)
   await expect(terminalPane(app, terminalId)).toHaveAttribute("data-terminal-connected", "true")
 
   await app.getByRole("textbox", { name: "Terminal input" }).focus()
@@ -87,4 +95,29 @@ test("13 terminal: run a command, its output replays from the server, reload rea
       await expect.poll(() => serverTerminalIds(stack.url, workspace.directory)).not.toContain(terminalId)
     })
   }
+})
+
+test("13 terminal: a terminal closed in the rail or dead after a restart leaves the compact tabs too", async ({ stack, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("terminal", "Terminal")
+  await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
+
+  await newShell(app)
+  await app.getByRole("button", { name: /^Close terminal: / }).click()
+  await expect(app.getByRole("button", { name: /^Close terminal: / })).toHaveCount(0)
+  await app.getByRole("button", { name: "Hide Sidebar" }).click()
+  await expect(compactTabs(app).first()).toBeVisible()
+  await expect(compactTabs(app).filter({ hasText: /Terminal/ })).toHaveCount(0)
+  await app.getByRole("button", { name: "Show Sidebar" }).click()
+
+  const deadId = await newShell(app)
+  await app.goto("about:blank")
+  const url = new URL(`/api/wr/pty/${encodeURIComponent(deadId)}`, stack.url)
+  url.searchParams.set("directory", workspace.directory)
+  expect((await fetch(url, { method: "DELETE" })).ok).toBe(true)
+  await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
+  await expect(app.getByRole("button", { name: "Hide Sidebar" })).toBeVisible()
+  await expect(app.getByRole("button", { name: /^Close terminal: / })).toHaveCount(0)
+  await app.getByRole("button", { name: "Hide Sidebar" }).click()
+  await expect(compactTabs(app).first()).toBeVisible()
+  await expect(compactTabs(app).filter({ hasText: /Terminal/ })).toHaveCount(0)
 })
