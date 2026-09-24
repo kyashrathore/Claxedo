@@ -1,6 +1,6 @@
 import { onCleanup, type JSX, type ParentProps } from "solid-js"
-import { filePaneKind } from "@/files"
 import { useTranslator } from "@/i18n"
+import { usePanel } from "@/panel"
 import { useServer } from "@/server"
 import { useShellRoute } from "@/shell"
 import { useWorkbench } from "@/workbench"
@@ -18,6 +18,7 @@ const STORE_CAP = 8
 export function TerminalProvider(props: ParentProps): JSX.Element {
   const server = useServer()
   const workbench = useWorkbench()
+  const panel = usePanel()
   const t = useTranslator(dictionary)
   const cache = createTerminalStoreCache(STORE_CAP, (placementId) =>
     createTerminalStore({ server, placementId, numberedTitle: (number) => t("terminal.title.numbered", { number }) }),
@@ -29,13 +30,12 @@ export function TerminalProvider(props: ParentProps): JSX.Element {
     store: cache.storeFor,
     retain: cache.retain,
     defaultTitle: () => t("terminal.title"),
+    newTitle: () => t("terminal.creator.tab"),
     open: (state, paneId) => {
       if (paneId) workbench.replacePane(paneId, terminalPaneKind, state)
       else workbench.openPane(terminalPaneKind, state)
     },
-    openFile: (placementId, target) => {
-      workbench.openPane(filePaneKind, { placementId, ...target })
-    },
+    openFile: (target) => panel.show({ kind: "file", ...target }),
   }
   useNewTerminalCommand(terminals)
   useEndTerminalOnClose(terminals)

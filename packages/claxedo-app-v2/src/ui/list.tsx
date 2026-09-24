@@ -80,7 +80,7 @@ export function List<T>(props: ListProps<T>) {
   }
 
   return (
-    <div data-component="list" classList={{ "ui-list": true, [props.class ?? ""]: !!props.class }}>
+    <div data-component="v2-list" classList={{ "v2-list": true, [props.class ?? ""]: !!props.class }}>
       <Show when={!!props.search}>
         <ListSearch
           search={search()}
@@ -93,7 +93,7 @@ export function List<T>(props: ListProps<T>) {
           inputRef={(element) => (input = element)}
         />
       </Show>
-      <div ref={state.setScroll} data-slot="list-scroll" class="ui-list-scroll">
+      <div ref={state.setScroll} data-slot="v2-list-scroll" class="v2-list-scroll">
         <Show
           when={list.flat().length > 0 || !!props.add}
           fallback={

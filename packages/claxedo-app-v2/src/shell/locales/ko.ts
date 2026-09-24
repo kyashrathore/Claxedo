@@ -1,5 +1,4 @@
 export const dictionary = {
-  "shell.palette.title": "명령 팔레트",
   "shell.palette.placeholder": "파일, 명령어 및 세션 검색",
   "shell.palette.empty": "결과 없음",
   "shell.palette.suggested": "추천",
@@ -19,7 +18,6 @@ export const dictionary = {
   "shell.key.insert": "Insert",
   "shell.key.esc": "ESC",
   "shell.settings": "설정",
-  "shell.close": "닫기",
   "shell.loading": "로딩 중",
   "shell.scheme.system": "시스템",
   "shell.scheme.light": "라이트",

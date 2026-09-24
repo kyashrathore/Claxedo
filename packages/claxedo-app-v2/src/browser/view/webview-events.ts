@@ -109,7 +109,7 @@ async function submitPick(host: WebviewHost, payload: GuestPickPayload, pageUrl:
     screenshotDataUrl,
   })
   host.tab.setPicking(false)
-  host.tab.notify({ key: delivered ? "browser.notice.pickAdded" : "browser.notice.needSession" })
+  host.tab.notify({ key: delivered ? "browser.toast.pickSent" : "browser.toast.pickLocal" })
 }
 
 function onGuestMessage(host: WebviewHost, event: Event) {
@@ -126,7 +126,7 @@ function onGuestMessage(host: WebviewHost, event: Event) {
   }
   submitPick(host, payload, pageUrl).catch((error: unknown) => {
     console.error("Browser pick could not be added", { pageUrl, error })
-    host.tab.notify({ key: "browser.notice.actionFailed" })
+    host.tab.notify({ key: "browser.toast.actionFailed" })
   })
 }
 

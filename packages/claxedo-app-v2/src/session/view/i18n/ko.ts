@@ -81,4 +81,8 @@ export const ko: Partial<Record<SessionScreenTextKey, string>> = {
   "sessionScreen.timeline.ui.sessionTurn.diffs.showAll": "모두 표시",
   "sessionScreen.timeline.ui.sessionTurn.diffs.showLess": "간략히 표시",
   "sessionScreen.timeline.ui.sessionTurn.status.thinking": "생각 중",
+  "command.message.previous": "이전 메시지",
+  "command.message.previous.description": "이전 사용자 메시지로 이동",
+  "command.message.next": "다음 메시지",
+  "command.message.next.description": "다음 사용자 메시지로 이동",
 }

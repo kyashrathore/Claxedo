@@ -1,14 +1,14 @@
 import { createEffect } from "solid-js"
 import type { ControllerContext } from "./controller-context"
 import type { ContextItem, PromptPart } from "./model"
-import { promptImages, randomId } from "./model"
+import { emptyPrompt, promptImages, randomId } from "./model"
 import type { AtItem, SlashItem } from "./suggestions"
 
 function atTrigger(text: string, cursor: number) {
   const before = text.slice(0, cursor)
-  const match = /(?:^|\s)@([^\s@]*)$/.exec(before)
+  const match = /@(\S*)$/.exec(before)
   if (!match) return undefined
-  return { query: match[1] ?? "", start: before.length - (match[1]?.length ?? 0) - 1 }
+  return { query: match[1] ?? "", start: before.length - match[0].length }
 }
 
 function slashTrigger(text: string) {
@@ -59,14 +59,16 @@ function replaceSpan(context: ControllerContext, start: number, end: number, par
 }
 
 export function selectAt(context: ControllerContext, item: AtItem): void {
-  const popover = context.state.popover
-  if (popover.kind !== "at") return
-  const end = popover.start + 1 + popover.query.length
+  if (context.state.popover.kind !== "at") return
+  const cursor = context.draft().cursor ?? context.text().length
+  const typed = atTrigger(context.text(), cursor)
+  const start = typed?.start ?? cursor
+  const end = cursor
   if (item.kind === "file") {
-    return replaceSpan(context, popover.start, end, [{ type: "file", path: item.path, content: `@${item.path}`, start: 0, end: 0 }])
+    return replaceSpan(context, start, end, [{ type: "file", path: item.path, content: `@${item.path}`, start: 0, end: 0 }])
   }
   const inserted = item.entry.insert()
-  if ("text" in inserted) return replaceSpan(context, popover.start, end, [{ type: "text", content: inserted.text, start: 0, end: 0 }])
+  if ("text" in inserted) return replaceSpan(context, start, end, [{ type: "text", content: inserted.text, start: 0, end: 0 }])
   const mention: ContextItem = {
     type: "text",
     key: `mention:${item.entry.id}:${randomId()}`,
@@ -74,13 +76,18 @@ export function selectAt(context: ControllerContext, item: AtItem): void {
     text: inserted.attachment.text,
   }
   context.input.store.addContext(context.input.key(), mention)
-  replaceSpan(context, popover.start, end, [{ type: "text", content: `@${inserted.attachment.label}`, start: 0, end: 0 }])
+  replaceSpan(context, start, end, [{ type: "text", content: `@${inserted.attachment.label}`, start: 0, end: 0 }])
 }
 
 export function selectSlash(context: ControllerContext, item: SlashItem): void {
   closePopover(context)
-  if (item.kind === "goal") return context.input.armGoal()
-  context.input.store.setPrompt(context.input.key(), promptImages(context.draft().prompt), 0)
+  if (item.type === "custom") {
+    const text = `/${item.trigger} `
+    context.input.store.setPrompt(context.input.key(), [{ type: "text", content: text, start: 0, end: text.length }], text.length)
+    requestAnimationFrame(() => context.focusEditor(text.length))
+    return
+  }
+  context.input.store.setPrompt(context.input.key(), emptyPrompt(), 0)
   context.input.runCommand(item)
 }
 
@@ -88,7 +95,7 @@ export function selectActive(context: ControllerContext): void {
   if (context.state.popover.kind === "closed") return
   const item = activeItems(context).find((candidate) => candidate.id === context.state.activeId)
   if (!item) return
-  if (item.kind === "file" || item.kind === "mention") selectAt(context, item)
+  if ("kind" in item) selectAt(context, item)
   else selectSlash(context, item)
 }
 
@@ -107,17 +114,10 @@ export function popoverKeyDown(context: ControllerContext, event: KeyboardEvent)
 }
 
 export function openCommands(context: ControllerContext): void {
-  const images = promptImages(context.draft().prompt)
-  context.input.store.setPrompt(context.input.key(), [{ type: "text", content: "/", start: 0, end: 1 }, ...images], 1)
   context.setState("popover", { kind: "slash", query: "" })
-  requestAnimationFrame(() => context.focusEditor(1))
 }
 
 export function openContext(context: ControllerContext): void {
-  const value = context.text()
-  const prefix = value && !value.endsWith(" ") ? `${value} @` : `${value}@`
-  const images = promptImages(context.draft().prompt)
-  context.input.store.setPrompt(context.input.key(), [{ type: "text", content: prefix, start: 0, end: prefix.length }, ...images], prefix.length)
-  context.setState("popover", { kind: "at", query: "", start: prefix.length - 1 })
-  requestAnimationFrame(() => context.focusEditor(prefix.length))
+  const cursor = context.draft().cursor ?? context.text().length
+  context.setState("popover", { kind: "at", query: "", start: cursor })
 }

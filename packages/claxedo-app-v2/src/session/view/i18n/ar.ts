@@ -81,4 +81,8 @@ export const ar: Partial<Record<SessionScreenTextKey, string>> = {
   "sessionScreen.timeline.ui.sessionTurn.diffs.showAll": "إظهار الكل",
   "sessionScreen.timeline.ui.sessionTurn.diffs.showLess": "إظهار أقل",
   "sessionScreen.timeline.ui.sessionTurn.status.thinking": "تفكير",
+  "command.message.previous": "الرسالة السابقة",
+  "command.message.previous.description": "انتقل إلى رسالة المستخدم السابقة",
+  "command.message.next": "الرسالة التالية",
+  "command.message.next.description": "انتقل إلى رسالة المستخدم التالية",
 }

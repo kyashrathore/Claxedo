@@ -1,5 +1,4 @@
 export const dictionary = {
-  "shell.palette.title": "Paleta poleceń",
   "shell.palette.placeholder": "Szukaj plików, poleceń i sesji",
   "shell.palette.empty": "Brak wyników",
   "shell.palette.suggested": "Sugerowane",
@@ -19,7 +18,6 @@ export const dictionary = {
   "shell.key.insert": "Insert",
   "shell.key.esc": "ESC",
   "shell.settings": "Ustawienia",
-  "shell.close": "Zamknij",
   "shell.loading": "Ładowanie",
   "shell.scheme.system": "Systemowy",
   "shell.scheme.light": "Jasny",

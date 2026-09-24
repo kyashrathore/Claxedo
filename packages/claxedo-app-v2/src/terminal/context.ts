@@ -11,14 +11,15 @@ export type Terminals = {
   readonly store: (placementId: PlacementId) => TerminalStore
   readonly retain: (placementId: PlacementId) => () => void
   readonly defaultTitle: () => string
+  readonly newTitle: () => string
   readonly open: (state: TerminalPaneState, paneId?: string) => void
-  readonly openFile: (placementId: PlacementId, target: WorkspaceFileFocusTarget) => void
+  readonly openFile: (target: WorkspaceFileFocusTarget) => void
 }
 
 export const TerminalsContext = createContext<Terminals>()
 
-export function useTerminals(): Terminals {
+export function useTerminalRuntime(): Terminals {
   const terminals = useContext(TerminalsContext)
-  if (!terminals) throw new Error("useTerminals needs a TerminalProvider above it")
+  if (!terminals) throw new Error("useTerminalRuntime needs a TerminalProvider above it")
   return terminals
 }

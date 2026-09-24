@@ -30,16 +30,16 @@ export function LineComment(props: LineCommentProps) {
   return (
     <div
       {...rest}
-      data-component="line-comment"
+      data-component="v2-line-comment"
       data-variant="display"
       classList={{ ...local.classList, [local.class ?? ""]: !!local.class }}
     >
-      <div data-slot="line-comment-shell">
-        <div data-slot="line-comment-column">
-          <div data-slot="line-comment-text">{local.comment}</div>
-          <div data-slot="line-comment-meta">{local.selection}</div>
+      <div data-slot="v2-line-comment-shell">
+        <div data-slot="v2-line-comment-column">
+          <div data-slot="v2-line-comment-text">{local.comment}</div>
+          <div data-slot="v2-line-comment-meta">{local.selection}</div>
         </div>
-        <Show when={local.actions}>{(actions) => <div data-slot="line-comment-tools">{actions()}</div>}</Show>
+        <Show when={local.actions}>{(actions) => <div data-slot="v2-line-comment-tools">{actions()}</div>}</Show>
       </div>
     </div>
   )

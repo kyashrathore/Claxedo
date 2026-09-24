@@ -14,26 +14,49 @@ The corpus is the proof that the transcript moved without changing: every case r
 
 ```json
 {
-  "id": "fold-count-never-drops-on-a-later-read",
-  "title": "A turn folded on a partial read keeps its fold count when the full read finds fewer groups",
-  "source": { "kind": "comment", "file": "src/session/view/timeline/message-timeline.data.ts", "line": 213 },
-  "partKinds": ["text", "tool:read", "tool:edit"],
-  "seed": { "fixture": "transcript-lab-fixture", "session": "cfdeploy", "turns": { "from": 10, "to": 14 } },
-  "status": "idle",
-  "replay": { "agent": "acp" },
-  "interactions": [{ "kind": "reload" }, { "kind": "scroll", "to": "top" }, { "kind": "prepend" }],
-  "invariant": "The fold row's count does not shrink after the reload's full read."
+  "id": "worked-turn-folds",
+  "title": "A settled turn with work folds under its Worked header",
+  "source": { "kind": "inventory", "ids": ["SESS-025", "SESS-038", "SESS-039", "SESS-040"] },
+  "partKinds": ["reasoning", "tool:read", "tool:execute", "text"],
+  "replay": {
+    "agent": "acp",
+    "turns": [
+      {
+        "prompt": "Check the project.",
+        "steps": [
+          { "kind": "reasoning", "text": "Looking around the project" },
+          { "kind": "tool", "tool": "read", "title": "Read README.md", "locations": [{ "path": "{{workspace}}/README.md" }], "text": "corpus\n" },
+          { "kind": "text", "text": "All checked here." }
+        ]
+      }
+    ]
+  },
+  "ready": "All checked here.",
+  "interactions": [{ "kind": "toggleFold", "turn": 0 }],
+  "invariant": "The turn opens folded under 'Worked for …' and unfolds into its work groups."
 }
 ```
 
-- `source` says where the case came from: a seed session, a fix commit, a comment, or a session-ui unit test.
-- `partKinds` lists what the transcript contains, so the corpus can be checked for every part kind the agents produce (`text`, `reasoning`, `tool:<name>`, `file`, `compaction`, `handoff`, `agent`, `question`, `permission`, ...).
-- `transcript` carries the messages and parts inline; `seed` points at a seed session and an optional turn range instead. A case has one of the two.
-- `status` is the session status the case ends in; `working` and `retrying` cases render the live rows.
-- `replay` names the route: the scripted ACP agent (the default), a real Claude or Codex CLI behind the scripted model server, or `unsupported` with the reason, for part kinds no route can produce yet. Unsupported cases still render from their inline transcript in both apps through a recorded session directory.
-- `interactions` run in order after the transcript is on screen; the comparison is taken after each one.
+- `source` says where the case came from: an inventory row (`inventory/session.md`), a seed session, a fix commit, a comment, or a session-ui unit test.
+- `partKinds` lists what the transcript contains, so the corpus can be checked for every part kind the agents produce.
+- `replay.turns` are played in order through the scripted ACP agent; each turn's `steps` are an `AcpStep[]` (see `e2e/README.md`), and `{{workspace}}` becomes the case's workspace folder. A turn with an `error` step is sent without waiting and settles when its assistant message completes or fails.
+- `ready` is text the last turn shows; the case waits for it before comparing.
+- Turns are sent with ascending message ids, as the app sends them: both apps order a transcript by message id, and the runtime gives a prompt without one a random id.
+- A session opens on the latest turn's text-only surface, then reads the whole turn. The case holds that full read until the first turn row paints, so both apps always paint the surface first; a turn with work then keeps its "Worked for …" header, as it does on a real machine, where the surface wins that race.
+- `interactions` run in order after the transcript is on screen (`scroll` to `top` or `bottom`, `toggleFold` of the n-th Worked header, `reload`); the comparison is taken after each one.
 - `invariant` is the sentence the case protects, so a failing comparison reads as a behavior, not a pixel.
+
+## Running
+
+Today's app is the baseline. Record it, then compare v2 against it:
+
+```sh
+bun run e2e -- --app=v1 e2e/flows/30-transcript-corpus.spec.ts --update-snapshots=all
+bun run e2e -- --app=v2 e2e/flows/30-transcript-corpus.spec.ts --update-snapshots=none
+```
+
+The baseline lands in `e2e/flows/30-transcript-corpus.spec.ts-snapshots/`, per project (`web`, `phone`) and platform, and is not committed: font rendering differs per machine, so both runs happen on the same machine. A v2 run without a recorded baseline fails and names the command. Differences land in `e2e/results/` as expected, actual and diff images.
 
 ## What must match
 
-Screenshots at desktop width and in the `phone` project, the accessibility tree of the timeline root, and `scrollTop` of the timeline's scroll element after every interaction. A difference needs the owner's sign-off, recorded next to the case.
+After opening and after every interaction, for every rendered turn (`[data-component="session-turn"]`, the moved timeline's own row in both apps): its screenshot and its accessibility tree, plus the count of rendered turns and the scroll element's `scrollTop`. The turn rows exclude the session title, which the owner removed from v2. A difference needs the owner's sign-off, recorded next to the case.

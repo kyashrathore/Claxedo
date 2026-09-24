@@ -55,7 +55,6 @@
     "@claxedo/agent-runtime-contract": "workspace:*",
     "@claxedo/helpers": "workspace:*",
     "@claxedo/plugin-api": "workspace:*",
-    "@claxedo/plugin-compact-tabs": "workspace:*",
     "@claxedo/plugin-pages": "workspace:*",
     "@claxedo/plugin-tasks": "workspace:*",
     "@claxedo/service-contract": "workspace:*",

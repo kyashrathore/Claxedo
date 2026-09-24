@@ -1,6 +1,6 @@
 # Workbench
 
-Owns: the split-pane layout of the center region, the contents shown in its panes, their persistence, tabs, drag-and-drop between panes, the keyboard chords, and the phone pane switcher.
+Owns: the split-pane layout of the center region, the contents shown in its panes, their persistence, drag-and-drop between panes, and the keyboard chords.
 
 ## Concepts
 
@@ -23,11 +23,11 @@ The store also hosts the drag controller (`drag/pointer-drag.ts`) so every drag 
 
 ## Routes
 
-A pane kind that can be addressed by URL implements `fromRoute` and `toRoute` on `PaneKind` (`src/shell/types.ts`). The shell calls `openRoute(paneRoute)` when the URL names a session or terminal, and `routeOf(contentId)` when the focused pane changes, to mirror it into the URL.
+A pane kind that can be addressed by URL implements `fromRoute` and `toRoute` on `PaneKind` (`src/shell/types.ts`). The shell calls `openRoute(paneRoute)` when the URL names a draft, session or terminal, and `routeOf(contentId)` when the focused pane changes, to mirror it into the URL.
 
 ## Phone
 
-Below 768 px of workbench width the layout projects to one full-bleed pane (`collapse-projection.ts`); the split tree is kept. The shell's top bar shows `WorkbenchPaneSwitcher` instead of the tab strip and the pane chrome.
+Below 768 px of workbench width the layout projects to one full-bleed pane (`collapse-projection.ts`); the split tree is kept, and the pane chrome hides.
 
 ## Keyboard
 
@@ -35,4 +35,4 @@ Below 768 px of workbench width the layout projects to one full-bleed pane (`col
 
 ## Flows
 
-Flow 12 (split, tabs, drag, palette, page tab) and flow 33 (phone).
+Flow 12 (split, drag, palette) and flow 33 (phone).

@@ -55,13 +55,28 @@ export type ProjectSource =
   | { readonly kind: "connectedRepository"; readonly connectionId: string; readonly fullName: string }
   | { readonly kind: "folder"; readonly path: string }
 
+export type ProjectIcon = { readonly override?: string; readonly color?: string }
+
+export type ProjectCommands = { readonly start?: string }
+
 export type Project = {
   readonly id: ProjectId
   readonly name: string
   readonly source?: ProjectSource
+  readonly directory?: string
+  readonly icon?: ProjectIcon
+  readonly commands?: ProjectCommands
+  readonly available: boolean
   readonly env: Readonly<Record<string, string>>
   readonly createdAt: number
   readonly updatedAt: number
+}
+
+export type ProjectUpdate = {
+  readonly name?: string
+  readonly env?: Readonly<Record<string, string>>
+  readonly icon?: ProjectIcon
+  readonly commands?: ProjectCommands
 }
 
 export type RetryAction = {
@@ -114,7 +129,7 @@ export type TranscriptPage = { readonly entries: readonly TranscriptEntry[]; rea
 
 export type SessionGoal = RuntimeGoalSnapshot
 
-export type GoalAction = "pause" | "resume" | "remove"
+export type GoalAction = "pause" | "resume" | "remove" | "stop"
 
 export type SessionGoalState = {
   readonly goal: SessionGoal | undefined

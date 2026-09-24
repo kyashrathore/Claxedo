@@ -6,6 +6,7 @@ import { jsonInit, withQuery, type Transport } from "./transport"
 import type { SessionRef } from "./types"
 import type { Workspaces } from "./workspaces"
 import { harnessIdentity, harnessSelectionQuery } from "./wire/harness-selection"
+import { permissionModeStateFromWire, type PermissionModeState } from "./wire/permission-modes"
 import { providerCatalogFromWire, type ProviderCatalog } from "./wire/provider-catalog"
 import { PROVIDERS_PATH } from "./wire/providers"
 
@@ -37,6 +38,9 @@ export type HarnessConfigApi = {
   readonly connections: () => Promise<HarnessConnectionsCatalog>
   /** The catalog a catalog harness picks models from; `providerId` asks for that provider's whole model set. */
   readonly providers: (harness: string, providerId?: string) => Promise<ProviderCatalog>
+  /** A session's own modes, or for a draft the modes `harness` offers in the placement. */
+  readonly permissionModes: (input: { readonly placementId: PlacementId; readonly ref?: SessionRef; readonly harness?: string }) => Promise<PermissionModeState>
+  readonly setPermissionMode: (ref: SessionRef, modeId: string) => Promise<PermissionModeState>
 }
 
 export function createHarnessConfigApi(transport: Transport, workspaces: Workspaces): HarnessConfigApi {
@@ -68,6 +72,19 @@ export function createHarnessConfigApi(transport: Transport, workspaces: Workspa
       const response = await transport.request(CONNECTIONS_PATH)
       if (!response.ok) throw await responseError(response, "Agent connections")
       return decodeHarnessConnectionsCatalog(await response.json())
+    },
+    permissionModes: async (input) => {
+      const path = input.ref
+        ? sessionPath(input.ref, "/permission-mode")
+        : withQuery("/permission/modes", input.harness ? harnessSelectionQuery(input.harness) : {})
+      const response = await transport.runtime(await workspaces.route(input.ref ?? input.placementId), path)
+      if (!response.ok) throw await responseError(response, "Permission modes")
+      return permissionModeStateFromWire(await response.json())
+    },
+    setPermissionMode: async (ref, modeId) => {
+      const response = await transport.runtime(await workspaces.route(ref), sessionPath(ref, "/permission-mode"), jsonInit("PUT", { modeId }))
+      if (!response.ok) throw await responseError(response, "Permission mode")
+      return permissionModeStateFromWire(await response.json())
     },
     providers: async (harness, providerId) =>
       providerCatalogFromWire(await transport.json<unknown>(withQuery(PROVIDERS_PATH, { nativeHarness: harness, provider: providerId })), harness),

@@ -1,7 +1,7 @@
 import { For, Index, Show, type Accessor } from "solid-js"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { IconButton } from "@/ui"
-import { Icon } from "@/ui"
+import { ClaxedoIconButton as IconButton } from "@/ui"
+import { ClaxedoIcon as Icon } from "@/ui"
 import { queuedMessageText, type QueuedMessage, type QueuedMessages, type TimelineTranslate } from "./model"
 
 /**

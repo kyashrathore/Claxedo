@@ -7,6 +7,7 @@ import type { RepoAddressResolver } from "@claxedo/sandbox-contract"
 import { dataDir } from "../platform/runtime/lib/paths"
 import type { SignedControlPlaneAuth } from "../platform/auth/auth"
 import {
+  cloudWorkspaceReady,
   deleteProjectRecord,
   deleteWorkspace,
   ensureWorkspace,
@@ -15,7 +16,9 @@ import {
   getProjectWorkspace,
   getWorkspaceByDirectory,
   listProjectRecords,
+  listProjects,
   listWorkspaces,
+  updateProjectMetadata,
   upsertProjectRecord,
 } from "../workspace/store/index"
 import { lastPathSegment } from "./repository-source"
@@ -121,19 +124,40 @@ export type LocalProjectStoreDeps = {
   unregisterProject?: (auth: SignedControlPlaneAuth, project: { projectId: string; workspaceIds: string[] }) => Promise<void>
 }
 
-async function projectView(id: string): Promise<ProjectRecord | undefined> {
-  const record = await getProjectRecord(id)
+type CatalogProject = Awaited<ReturnType<typeof listProjects>>[number]
+
+type StoredProject = NonNullable<Awaited<ReturnType<typeof getProjectRecord>>>
+
+/**
+ * A project is every entry of the workspace catalog, the list the engine's
+ * own project routes serve, plus any record not placed yet. Its name, icon
+ * and startup command are the catalog's (the root workspace's `project_*`
+ * fields, which those routes also write); the record adds the environment,
+ * and its name only lets creation refuse a taken one. It is available while
+ * one of its placements can be reached now: a folder that exists, or a cloud
+ * workspace whose sandbox is ready.
+ */
+async function projectView(id: string, catalog: CatalogProject | undefined, record: StoredProject | undefined): Promise<ProjectRecord | undefined> {
+  const known = record ?? (catalog && { name: catalog.name, created_at: catalog.time.created, updated_at: catalog.time.updated })
+  if (!known) return undefined
   const workspace = await getProjectWorkspace(id)
-  if (!record) return undefined
   return {
-    id: record.id,
-    name: record.name,
-    env: record.env ?? {},
+    id,
+    name: catalog?.name ?? known.name,
+    env: record?.env ?? {},
     directory: workspace?.directory ?? null,
     repoUrl: workspace?.repo_url ?? null,
-    created_at: record.created_at,
-    updated_at: record.updated_at,
+    ...(catalog?.icon ? { icon: catalog.icon } : {}),
+    ...(catalog?.commands ? { commands: catalog.commands } : {}),
+    available: Object.values(catalog?.workspaces ?? {}).some((placement) => placement.available && (placement.kind !== "cloud" || cloudWorkspaceReady(placement.id))),
+    created_at: known.created_at,
+    updated_at: Math.max(known.updated_at, catalog?.time.updated ?? 0),
   }
+}
+
+async function findProject(id: string) {
+  const catalog = (await listProjects()).find((project) => project.id === id)
+  return projectView(id, catalog, await getProjectRecord(id))
 }
 
 const nameTaken = async (name: string) => Boolean(await findProjectRecordByName(name))
@@ -182,19 +206,21 @@ export function localProjectStore(deps: LocalProjectStoreDeps = {}): ProjectStor
     folders: true,
 
     async list() {
+      const catalog = new Map((await listProjects()).map((project) => [project.id, project]))
+      const records = new Map((await listProjectRecords()).map((record) => [record.id, record]))
       const projects: ProjectRecord[] = []
-      for (const record of await listProjectRecords()) {
-        const view = await projectView(record.id)
+      for (const id of new Set([...records.keys(), ...catalog.keys()])) {
+        const view = await projectView(id, catalog.get(id), records.get(id))
         if (view) projects.push(view)
       }
-      return projects
+      return projects.sort((a, b) => a.created_at - b.created_at)
     },
 
-    get: projectView,
+    get: findProject,
 
     async byDirectory(directory) {
       const workspace = await getWorkspaceByDirectory(directory)
-      return workspace?.project_id ? projectView(workspace.project_id) : undefined
+      return workspace?.project_id ? findProject(workspace.project_id) : undefined
     },
 
     async create(input, caller) {
@@ -231,28 +257,40 @@ export function localProjectStore(deps: LocalProjectStoreDeps = {}): ProjectStor
         }
       }
       const record = await upsertProjectRecord({ id: workspace.project_id, name, env: input.env ?? {} })
-      return (await projectView(record.id))!
+      return (await findProject(record.id))!
     },
 
     async update(id, input: ProjectUpdateInput) {
-      const existing = await getProjectRecord(id)
-      if (!existing) return undefined
-      if (input.name) {
-        const clash = await findProjectRecordByName(input.name)
-        if (clash && clash.id !== id) throw new ProjectStoreError(409, "project_name_taken", `A project named "${input.name}" already exists`)
+      const current = await findProject(id)
+      if (!current) return undefined
+      const name = input.name?.trim()
+      if (name) {
+        const clash = await findProjectRecordByName(name)
+        if (clash && clash.id !== id) throw new ProjectStoreError(409, "project_name_taken", `A project named "${name}" already exists`)
       }
-      const record = await upsertProjectRecord({
-        id,
-        name: input.name ?? existing.name,
-        ...(input.env !== undefined ? { env: input.env } : {}),
-      })
-      return projectView(record.id)
+      if (name !== undefined || input.icon || input.commands) {
+        await updateProjectMetadata(id, {
+          ...(name !== undefined ? { name } : {}),
+          ...(input.icon ? { icon: input.icon } : {}),
+          ...(input.commands ? { commands: input.commands } : {}),
+        })
+      }
+      const record = await getProjectRecord(id)
+      if (input.env !== undefined || (record && name)) {
+        await upsertProjectRecord({
+          id,
+          name: name || record?.name || current.name,
+          ...(input.env !== undefined ? { env: input.env } : {}),
+        })
+      }
+      return findProject(id)
     },
 
     async remove(id, caller) {
       const unregister = signedOnly(caller, deps.unregisterProject, "Project unregistration")
-      if (!(await getProjectRecord(id))) return false
+      const record = await getProjectRecord(id)
       const placements = (await listWorkspaces()).filter((workspace) => workspace.project_id === id)
+      if (!record && placements.length === 0) return false
       if (placements.some((workspace) => workspace.kind === "cloud")) {
         throw new ProjectStoreError(409, "project_has_cloud_workspaces", "Delete the project's cloud workspaces before removing it")
       }
@@ -265,7 +303,7 @@ export function localProjectStore(deps: LocalProjectStoreDeps = {}): ProjectStor
         }
       }
       for (const workspace of placements) await deleteWorkspace(workspace.id)
-      await deleteProjectRecord(id)
+      if (record) await deleteProjectRecord(id)
       return true
     },
   }

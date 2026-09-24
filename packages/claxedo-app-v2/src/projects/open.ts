@@ -8,7 +8,7 @@ import { showToast } from "@/ui"
 import { useWorkbench } from "@/workbench"
 import type { ProjectCreated } from "./add-project"
 import { useProjectsText } from "./i18n"
-import { projectPath } from "./routes"
+import { projectSettingsPath } from "./routes"
 
 export function usePlacementOpener(): (placementId: PlacementId) => void {
   const server = useServer()
@@ -30,12 +30,12 @@ export function useCreatedProjectOpener(): (created: ProjectCreated) => void {
   const report = (error: unknown) => showToast({ title: t("projects.placement.openFailed"), description: failureMessage(error) })
   return (created) => {
     const placementId = created.placementId
-    if (!placementId) return navigate(projectPath(created.projectId))
+    if (!placementId) return navigate(projectSettingsPath(created.projectId))
     void server.sessions
       .create({ placementId, ...(created.harnessId ? { harness: created.harnessId } : {}) })
       .then((row) => navigate(sessionPath(row.ref)))
       .catch((error: unknown) => {
-        navigate(projectPath(created.projectId))
+        navigate(projectSettingsPath(created.projectId))
         report(error)
       })
   }

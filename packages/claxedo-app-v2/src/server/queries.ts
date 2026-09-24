@@ -1,5 +1,4 @@
 import type { QueryClient } from "@tanstack/solid-query"
-import { engineProjectQueries } from "./engine-projects"
 import { folderQueries } from "./folders"
 import { fetchQuery } from "./fetch-query"
 import { accountQueries } from "./accounts"
@@ -51,7 +50,6 @@ export function createQueries(transport: Transport, workspaces: Workspaces): Ser
     git: gitQueries(transport, workspaces),
     harnesses: harnessQueries(transport, workspaces),
     folders: folderQueries(transport),
-    engineProjects: engineProjectQueries(transport),
   }
 }
 
@@ -67,7 +65,7 @@ function invalidationKeys(server: string, event: ServerEvent): readonly (readonl
     case "cloudWorkspaceChanged":
       return [queryKeys.bootstrap(server), queryKeys.placements(server), queryKeys.projects(server), queryKeys.machines(server), queryKeys.cloud(server)]
     case "pluginsChanged":
-      return [queryKeys.marketplaceAll(server)]
+      return [queryKeys.marketplaceAll(server), queryKeys.marketplaceSources(server)]
     case "documentsChanged":
       return [queryKeys.documents(server)]
     case "usageChanged":

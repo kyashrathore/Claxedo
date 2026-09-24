@@ -18,6 +18,10 @@ const section = (id: string, key: Keys, group: SettingsSection["group"], order: 
   view,
 })
 
+export type { ContrastLevels, ContrastScheme, Preferences } from "./preferences"
+export { CONTRAST_DEFAULTS, PreferencesProvider, usePreferences } from "./preferences"
+export { SettingsEmpty, SettingsGroup, SettingsIntro, SettingsList, SettingsNote, SettingsRow } from "./view/section"
+
 export const settingsSections: readonly SettingsSection[] = [
   section("accounts", "settings.section.accounts", "account", 10, AccountsSection),
   usageSettingsSection,

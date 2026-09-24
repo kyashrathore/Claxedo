@@ -7,7 +7,7 @@ export function SelectSection<T>(props: SelectRootSectionComponentProps<SelectGr
   return (
     <Kobalte.Section>
       <Show when={props.section.rawValue.category}>
-        <div data-slot="menu-group-label">{props.section.rawValue.category}</div>
+        <div data-slot="v2-menu-group-label">{props.section.rawValue.category}</div>
       </Show>
     </Kobalte.Section>
   )
@@ -19,15 +19,15 @@ export function SelectItem<T>(
   return (
     <Kobalte.Item
       item={props.item}
-      data-component="menu-item"
+      data-component="v2-menu-item"
       onPointerEnter={() => props.onMove(props.item.rawValue)}
       onPointerMove={() => props.onMove(props.item.rawValue)}
       onFocus={() => props.onMove(props.item.rawValue)}
     >
-      <Kobalte.ItemLabel data-slot="menu-item-content" as="span">
+      <Kobalte.ItemLabel data-slot="v2-menu-item-content" as="span">
         {props.label(props.item.rawValue)}
       </Kobalte.ItemLabel>
-      <Kobalte.ItemIndicator data-slot="menu-item-indicator" forceMount>
+      <Kobalte.ItemIndicator data-slot="v2-menu-item-indicator" forceMount>
         <SelectCheck />
       </Kobalte.ItemIndicator>
     </Kobalte.Item>

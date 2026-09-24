@@ -81,6 +81,7 @@ export type Submission = {
   readonly model?: ModelChoice
   readonly effort?: string
   readonly serviceTier?: string
+  readonly permissionMode?: string
 }
 
 export const emptyPrompt = (): Prompt => [{ type: "text", content: "", start: 0, end: 0 }]

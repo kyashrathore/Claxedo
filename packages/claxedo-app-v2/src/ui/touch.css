@@ -1,119 +1,119 @@
 @layer touch {
   @media (pointer: coarse) {
-    .ui-button,
-    .ui-icon-button,
-    .ui-tabs-close-button,
-    .ui-segmented-control-item,
-    .ui-select[data-appearance="inline"],
-    .ui-text-input-icon-button,
-    .ui-inline-input-icon-button,
-    .ui-field-label-info,
-    [data-slot="dialog-close-button"],
-    [data-slot="toast-close-button"],
-    [data-slot="popover-close-button"],
-    [data-slot="image-preview-close"],
-    [data-slot="line-comment-overflow"],
-    .scroll-view-thumb {
+    .v2-button,
+    .v2-icon-button,
+    .v2-tabs-close-button,
+    .v2-segmented-control-item,
+    .v2-select[data-appearance="inline"],
+    .v2-text-input-icon-button,
+    .v2-inline-input-icon-button,
+    .v2-field-label-info,
+    [data-slot="v2-dialog-close-button"],
+    [data-slot="v2-toast-close-button"],
+    [data-slot="v2-popover-close-button"],
+    [data-slot="v2-image-preview-close"],
+    [data-slot="v2-line-comment-overflow"],
+    .v2-scroll-view-thumb {
       position: relative;
     }
 
-    .ui-button::before,
-    .ui-icon-button::before,
-    .ui-tabs-close-button::before,
-    .ui-segmented-control-item::before,
-    .ui-select[data-appearance="inline"]::before,
-    .ui-text-input-icon-button::before,
-    .ui-inline-input-icon-button::before,
-    .ui-field-label-info::before,
-    [data-slot="dialog-close-button"]::before,
-    [data-slot="toast-close-button"]::before,
-    [data-slot="popover-close-button"]::before,
-    [data-slot="image-preview-close"]::before,
-    [data-slot="line-comment-overflow"]::before,
-    .scroll-view-thumb::before {
+    .v2-button::before,
+    .v2-icon-button::before,
+    .v2-tabs-close-button::before,
+    .v2-segmented-control-item::before,
+    .v2-select[data-appearance="inline"]::before,
+    .v2-text-input-icon-button::before,
+    .v2-inline-input-icon-button::before,
+    .v2-field-label-info::before,
+    [data-slot="v2-dialog-close-button"]::before,
+    [data-slot="v2-toast-close-button"]::before,
+    [data-slot="v2-popover-close-button"]::before,
+    [data-slot="v2-image-preview-close"]::before,
+    [data-slot="v2-line-comment-overflow"]::before,
+    .v2-scroll-view-thumb::before {
       content: "";
       position: absolute;
       inset: min(0px, calc(50% - var(--touch-target) / 2));
     }
 
-    [data-component="menu-item"],
-    [data-slot="menu-group-label"],
-    .ui-list-item,
-    .ui-list-item-add,
-    .ui-collapsible-trigger,
-    .ui-accordion-trigger,
-    [data-slot="checkbox-row"],
-    [data-slot="radio-item"],
-    [data-component="switch"],
-    .ui-text-input,
-    .ui-inline-input,
-    .ui-select:not([data-appearance="inline"]),
-    .ui-tabs-trigger-wrapper,
-    [data-slot="file-tree-row"] {
+    [data-component="v2-menu-item"],
+    [data-slot="v2-menu-group-label"],
+    .v2-list-item,
+    .v2-list-item-add,
+    .v2-collapsible-trigger,
+    .v2-accordion-trigger,
+    [data-slot="v2-checkbox-row"],
+    [data-slot="v2-radio-item"],
+    [data-component="v2-switch"],
+    .v2-text-input,
+    .v2-inline-input,
+    .v2-select:not([data-appearance="inline"]),
+    .v2-tabs-trigger-wrapper,
+    [data-slot="v2-file-tree-row"] {
       min-height: var(--touch-target);
     }
 
-    .ui-inline-input [data-slot="inline-input-value"],
-    .ui-inline-input-input,
-    .ui-tabs-trigger {
+    .v2-inline-input [data-slot="v2-inline-input-value"],
+    .v2-inline-input-input,
+    .v2-tabs-trigger {
       height: 100%;
     }
 
-    [data-component="tabs"][data-orientation="horizontal"] .ui-tabs-list {
+    [data-component="v2-tabs"][data-orientation="horizontal"] .v2-tabs-list {
       height: auto;
       min-height: var(--touch-target);
     }
 
-    [data-component="split-button"],
-    [data-component="split-button-action"],
-    [data-component="split-button-menu-trigger"] {
+    [data-component="v2-split-button"],
+    [data-component="v2-split-button-action"],
+    [data-component="v2-split-button-menu-trigger"] {
       height: var(--touch-target);
     }
 
-    [data-component="split-button-action"],
-    [data-component="split-button-menu-trigger"] {
+    [data-component="v2-split-button-action"],
+    [data-component="v2-split-button-menu-trigger"] {
       width: var(--touch-target);
     }
 
-    .ui-resize-handle {
+    .v2-resize-handle {
       width: 16px;
     }
 
-    .ui-resize-handle::before {
+    .v2-resize-handle::before {
       content: "";
       position: absolute;
       inset-block: 0;
       inset-inline: calc((16px - var(--touch-target)) / 2);
     }
 
-    .ui-resize-handle[data-direction="vertical"] {
+    .v2-resize-handle[data-direction="vertical"] {
       width: auto;
       height: 16px;
     }
 
-    .ui-resize-handle[data-direction="vertical"]::before {
+    .v2-resize-handle[data-direction="vertical"]::before {
       inset-inline: 0;
       inset-block: calc((16px - var(--touch-target)) / 2);
     }
 
-    .ui-tabs-trigger {
+    .v2-tabs-trigger {
       min-width: var(--touch-target);
     }
 
-    [data-component="tabs"][data-variant="normal"][data-orientation="horizontal"] .ui-tabs-trigger-wrapper {
+    [data-component="v2-tabs"][data-variant="normal"][data-orientation="horizontal"] .v2-tabs-trigger-wrapper {
       min-height: calc(var(--touch-target) + 1px);
     }
   }
 
   @media (hover: none) {
-    .ui-collapsible-arrow,
-    .ui-resize-handle::after,
-    .ui-list-item-active-icon,
-    [data-slot="file-tree-guide"] {
+    .v2-collapsible-arrow,
+    .v2-resize-handle::after,
+    .v2-list-item-active-icon,
+    [data-slot="v2-file-tree-guide"] {
       opacity: 1;
     }
 
-    .ui-list-item .ui-list-item-active-icon {
+    .v2-list-item .v2-list-item-active-icon {
       display: inline-flex;
     }
   }

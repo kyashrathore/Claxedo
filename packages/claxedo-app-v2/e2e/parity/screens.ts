@@ -66,7 +66,13 @@ async function chooseOnboardingFolder({ page }: ScreenContext) {
 
 async function openPanel({ page }: ScreenContext) {
   await page.getByRole("button", { name: "Open workspace panel" }).click()
-  return page.getByRole("complementary", { name: "Workspace panel" })
+}
+
+async function openTreeFile(context: ScreenContext, ...names: string[]) {
+  await openPanel(context)
+  for (const name of names) {
+    await context.page.getByRole("treeitem", { name: new RegExp(`^${name.replaceAll(".", "\\.")}`) }).click()
+  }
 }
 
 function settingsSection(id: string, row: string): Screen {
@@ -116,25 +122,6 @@ export const SCREENS: readonly Screen[] = [
   { id: "at-popover", phase: "seeded", path: sessionPath, steps: (context) => typeInComposer(context, "@") },
   { id: "slash-popover", phase: "seeded", path: sessionPath, steps: (context) => typeInComposer(context, "/") },
   {
-    id: "panel",
-    phase: "seeded",
-    sizes: ["1280"],
-    path: sessionPath,
-    steps: async (context) => {
-      await openPanel(context)
-    },
-  },
-  {
-    id: "panel-file",
-    phase: "seeded",
-    sizes: ["1280"],
-    path: sessionPath,
-    steps: async (context) => {
-      const panel = await openPanel(context)
-      await panel.getByRole("treeitem", { name: /^README\.md/ }).click()
-    },
-  },
-  {
     id: "add-menu",
     phase: "seeded",
     path: sessionPath,
@@ -145,6 +132,69 @@ export const SCREENS: readonly Screen[] = [
     phase: "seeded",
     path: sessionPath,
     steps: ({ page }) => page.getByRole("button", { name: /^Select harness and model/ }).click(),
+  },
+  { id: "panel", phase: "seeded", path: sessionPath, steps: openPanel },
+  { id: "panel-file", phase: "seeded", path: sessionPath, steps: (context) => openTreeFile(context, "src", "app.ts") },
+  { id: "panel-markdown", phase: "seeded", sizes: ["1280"], path: sessionPath, steps: (context) => openTreeFile(context, "README.md") },
+  {
+    id: "panel-add-menu",
+    phase: "seeded",
+    sizes: ["1280"],
+    path: sessionPath,
+    steps: async (context) => {
+      await openPanel(context)
+      await context.page.getByRole("button", { name: "Add workspace tab" }).click()
+    },
+  },
+  {
+    id: "review-diff",
+    phase: "seeded",
+    sizes: ["1280"],
+    path: sessionPath,
+    steps: async (context) => {
+      await openPanel(context)
+      await context.page.getByRole("button", { name: "Toggle diff for README.md" }).click()
+    },
+  },
+  {
+    id: "review-compare-menu",
+    phase: "seeded",
+    sizes: ["1280"],
+    path: sessionPath,
+    steps: async (context) => {
+      await openPanel(context)
+      await context.page.getByTestId("review-compare-trigger").click()
+    },
+  },
+  {
+    id: "review-changes",
+    phase: "seeded",
+    path: sessionPath,
+    steps: async (context) => {
+      await openPanel(context)
+      await context.page.getByRole("button", { name: "Open Changes" }).click()
+    },
+  },
+  {
+    id: "panel-browser",
+    phase: "seeded",
+    sizes: ["1280"],
+    path: sessionPath,
+    steps: async (context) => {
+      await openPanel(context)
+      await context.page.getByRole("button", { name: "Add workspace tab" }).click()
+      await context.page.getByRole("menuitem", { name: "Browser" }).click()
+    },
+  },
+  {
+    id: "panel-maximized",
+    phase: "seeded",
+    sizes: ["1280"],
+    path: sessionPath,
+    steps: async (context) => {
+      await openPanel(context)
+      await context.page.getByRole("button", { name: "Maximize workspace panel" }).click()
+    },
   },
   settingsSection("general", "General"),
   settingsSection("shortcuts", "Shortcuts"),

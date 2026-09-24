@@ -3,7 +3,7 @@ import { Button, Icon, IconButton, RadioItem, Tooltip } from "@/ui"
 import { useTranslator } from "@/i18n"
 import { formatCompactAge } from "@/lib/relative-time"
 import { dictionary } from "../i18n"
-import type { AccountActivity } from "../model"
+import type { AccountActivity } from "../store"
 import type { AccountWords } from "./account-words"
 
 export function AccountRow(props: {
@@ -60,9 +60,9 @@ function RowActions(props: {
   const t = useTranslator(dictionary)
   return (
     <>
-      <IconButton icon="reload" size="small" variant="ghost" aria-label={t("settings.accounts.checkAccount")} disabled={props.busy("checking")} onClick={() => props.onCheck()} />
+      <IconButton icon="reload" size="small" variant="ghost" aria-label={t("settings.accounts.checkNamed", { account: props.account.label })} disabled={props.busy("checking")} onClick={() => props.onCheck()} />
       <Show when={!props.account.machine}>
-        <IconButton icon="trash" size="small" variant="ghost" aria-label={t("settings.accounts.removeAccount")} onClick={() => props.onConfirm()} />
+        <IconButton icon="trash" size="small" variant="ghost" aria-label={t("settings.accounts.removeNamed", { account: props.account.label })} onClick={() => props.onConfirm()} />
       </Show>
     </>
   )

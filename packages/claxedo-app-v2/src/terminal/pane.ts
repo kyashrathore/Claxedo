@@ -1,10 +1,10 @@
 import { placementId, terminalId } from "@/server"
 import type { Json, PaneKind } from "@/shell"
-import { useTerminals } from "./context"
+import { useTerminalRuntime } from "./context"
 import type { TerminalPaneState } from "./model"
 import { TerminalPane } from "./view/terminal-pane"
 
-function isJsonObject(value: Json): value is { readonly [key: string]: Json } {
+export function isJsonObject(value: Json): value is { readonly [key: string]: Json } {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
@@ -19,7 +19,7 @@ function decodeTerminalPaneState(value: Json): TerminalPaneState | undefined {
 export const terminalPaneKind: PaneKind<TerminalPaneState> = {
   kind: "terminal",
   title: (state) => {
-    const terminals = useTerminals()
+    const terminals = useTerminalRuntime()
     return terminals.store(state.placementId).row(state.terminalId)?.title ?? terminals.defaultTitle()
   },
   icon: "terminal",

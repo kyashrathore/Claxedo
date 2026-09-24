@@ -25,11 +25,11 @@ export function ProviderIcon(props: ProviderIconProps) {
   createEffect(() => providerIconSprite.ensure(resolved()))
   return (
     <svg
-      data-component="provider-icon"
+      data-component="v2-provider-icon"
       data-provider={resolved()}
       {...rest}
       classList={{
-        "ui-provider-icon": true,
+        "v2-provider-icon": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}

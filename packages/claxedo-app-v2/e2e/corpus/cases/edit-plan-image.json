@@ -1,0 +1,61 @@
+{
+  "id": "edit-plan-image",
+  "title": "An edit, a todo plan and an image in one turn",
+  "source": {
+    "kind": "inventory",
+    "ids": [
+      "SESS-037",
+      "SESS-041",
+      "SESS-043"
+    ]
+  },
+  "partKinds": [
+    "tool:edit",
+    "plan",
+    "image",
+    "text"
+  ],
+  "replay": {
+    "agent": "acp",
+    "turns": [
+      {
+        "prompt": "Write the notes.",
+        "steps": [
+          {
+            "kind": "diff",
+            "path": "{{workspace}}/notes.md",
+            "oldText": null,
+            "newText": "# Notes\n\nFirst line.\n"
+          },
+          {
+            "kind": "plan",
+            "entries": [
+              {
+                "content": "Write the notes",
+                "priority": "medium",
+                "status": "completed"
+              },
+              {
+                "content": "Review them",
+                "priority": "medium",
+                "status": "pending"
+              }
+            ]
+          },
+          {
+            "kind": "image",
+            "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+            "mimeType": "image/png"
+          },
+          {
+            "kind": "text",
+            "text": "Wrote the notes."
+          }
+        ]
+      }
+    ]
+  },
+  "ready": "Wrote the notes.",
+  "interactions": [],
+  "invariant": "The edit's diff card, the plan and the image render as today; the turn has no Worked header in today's app."
+}

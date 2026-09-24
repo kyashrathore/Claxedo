@@ -1,5 +1,4 @@
 export const dictionary = {
-  "shell.palette.title": "命令面板",
   "shell.palette.placeholder": "搜索文件、命令和会话",
   "shell.palette.empty": "未找到结果",
   "shell.palette.suggested": "建议",
@@ -19,7 +18,6 @@ export const dictionary = {
   "shell.key.insert": "Insert",
   "shell.key.esc": "ESC",
   "shell.settings": "设置",
-  "shell.close": "关闭",
   "shell.loading": "加载中",
   "shell.scheme.system": "系统",
   "shell.scheme.light": "浅色",

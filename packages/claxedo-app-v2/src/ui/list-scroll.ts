@@ -1,5 +1,5 @@
 export function findListItem(container: HTMLElement, key: string): HTMLElement | undefined {
-  for (const node of container.querySelectorAll<HTMLElement>('[data-slot="list-item"][data-key]')) {
+  for (const node of container.querySelectorAll<HTMLElement>('[data-slot="v2-list-item"][data-key]')) {
     if (node.getAttribute("data-key") === key) return node
   }
   return undefined

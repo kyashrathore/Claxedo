@@ -78,7 +78,7 @@ export function ScrollView(props: ScrollViewProps) {
 
   const renderThumb = () => (
     <div
-      class="scroll-view-thumb"
+      class="v2-scroll-view-thumb"
       data-visible={thumb.visible(local.thumbVisibility)}
       data-dragging={thumb.state.dragging}
       style={{ height: `${thumb.state.height}px`, transform: `translateY(${thumb.state.top}px)` }}
@@ -88,7 +88,7 @@ export function ScrollView(props: ScrollViewProps) {
 
   return (
     <div
-      class={`scroll-view ${local.class || ""}`}
+      class={`v2-scroll-view ${local.class || ""}`}
       style={local.style}
       onPointerEnter={() => hoversRoot() && thumb.setHovered(true)}
       onPointerLeave={() => hoversRoot() && thumb.setHovered(false)}
@@ -96,7 +96,7 @@ export function ScrollView(props: ScrollViewProps) {
     >
       <div
         ref={viewport}
-        class="scroll-view-viewport"
+        class="v2-scroll-view-viewport"
         data-scrollable
         tabIndex={0}
         role="region"

@@ -1,11 +1,11 @@
 @layer components {
-  [data-component="file-tree"] {
+  [data-component="v2-file-tree"] {
     display: flex;
     flex-direction: column;
     gap: 2px;
   }
 
-  [data-component="file-tree"] [data-slot="file-tree-row"] {
+  [data-component="v2-file-tree"] [data-slot="v2-file-tree-row"] {
     box-sizing: border-box;
     width: 100%;
     min-width: 0;
@@ -28,24 +28,24 @@
       color 120ms ease;
   }
 
-  [data-component="file-tree"] [data-slot="file-tree-row"][data-ignored] {
+  [data-component="v2-file-tree"] [data-slot="v2-file-tree-row"][data-ignored] {
     color: var(--v2-text-text-faint);
   }
 
-  [data-component="file-tree"] [data-slot="file-tree-row"]:hover {
+  [data-component="v2-file-tree"] [data-slot="v2-file-tree-row"]:hover {
     background-color: var(--v2-overlay-simple-overlay-hover);
   }
 
-  [data-component="file-tree"] [data-slot="file-tree-row"][data-selected] {
+  [data-component="v2-file-tree"] [data-slot="v2-file-tree-row"][data-selected] {
     color: var(--v2-text-text-base);
     background-color: var(--v2-overlay-simple-overlay-pressed);
   }
 
-  [data-component="file-tree"] [data-slot="file-tree-row"][data-selected]:hover {
+  [data-component="v2-file-tree"] [data-slot="v2-file-tree-row"][data-selected]:hover {
     background-color: var(--v2-overlay-simple-overlay-pressed);
   }
 
-  [data-component="file-tree"] [data-slot="file-tree-guide"] {
+  [data-component="v2-file-tree"] [data-slot="v2-file-tree-guide"] {
     position: absolute;
     top: 0;
     margin-top: -2px;
@@ -56,55 +56,55 @@
     opacity: 0;
   }
 
-  [data-component="file-tree"]:hover [data-slot="file-tree-guide"] {
+  [data-component="v2-file-tree"]:hover [data-slot="v2-file-tree-guide"] {
     opacity: 0.5;
   }
 
-  [data-component="file-tree"] .filetree-icon--mono {
+  [data-component="v2-file-tree"] .filetree-icon--mono {
     color: var(--v2-icon-icon-muted);
   }
 
-  [data-component="file-tree"] .filetree-iconpair .filetree-icon--color {
+  [data-component="v2-file-tree"] .filetree-iconpair .filetree-icon--color {
     opacity: 0;
   }
 
-  [data-component="file-tree"] [data-slot="file-tree-row"][data-selected] .filetree-iconpair .filetree-icon--color {
+  [data-component="v2-file-tree"] [data-slot="v2-file-tree-row"][data-selected] .filetree-iconpair .filetree-icon--color {
     opacity: 1;
   }
 
-  [data-component="file-tree"] [data-slot="file-tree-row"][data-selected] .filetree-iconpair .filetree-icon--mono {
+  [data-component="v2-file-tree"] [data-slot="v2-file-tree-row"][data-selected] .filetree-iconpair .filetree-icon--mono {
     opacity: 0;
   }
 
-  [data-component="file-tree"] [data-slot="file-tree-chevron"] {
+  [data-component="v2-file-tree"] [data-slot="v2-file-tree-chevron"] {
     color: var(--v2-text-text-muted);
   }
 
-  [data-component="file-tree"] [data-slot="file-tree-chevron"] svg {
+  [data-component="v2-file-tree"] [data-slot="v2-file-tree-chevron"] svg {
     transition: transform 120ms ease;
   }
 
-  [data-component="file-tree"] [data-slot="file-tree-chevron"]:not([data-expanded]) svg {
+  [data-component="v2-file-tree"] [data-slot="v2-file-tree-chevron"]:not([data-expanded]) svg {
     transform: rotate(-90deg);
   }
 
-  [data-component="file-tree"] [data-slot="file-tree-row"][data-selected] [data-slot="file-tree-chevron"] {
+  [data-component="v2-file-tree"] [data-slot="v2-file-tree-row"][data-selected] [data-slot="v2-file-tree-chevron"] {
     color: var(--v2-text-text-base);
   }
 
-  [data-component="file-tree"] .filetree-iconpair {
+  [data-component="v2-file-tree"] .filetree-iconpair {
     position: relative;
     display: inline-flex;
     width: 16px;
     height: 16px;
   }
 
-  [data-component="file-tree"] .filetree-iconpair .ui-file-icon {
+  [data-component="v2-file-tree"] .filetree-iconpair .v2-file-icon {
     position: absolute;
     inset: 0;
   }
 
-  [data-component="file-tree"] [data-slot="file-tree-change"] {
+  [data-component="v2-file-tree"] [data-slot="v2-file-tree-change"] {
     box-sizing: border-box;
     flex: none;
     display: flex;
@@ -125,15 +125,15 @@
       "lnum" on;
   }
 
-  [data-component="file-tree"] [data-slot="file-tree-change"][data-change="modified"] {
+  [data-component="v2-file-tree"] [data-slot="v2-file-tree-change"][data-change="modified"] {
     color: var(--v2-state-fg-info);
   }
 
-  [data-component="file-tree"] [data-slot="file-tree-change"][data-change="added"] {
+  [data-component="v2-file-tree"] [data-slot="v2-file-tree-change"][data-change="added"] {
     color: var(--v2-state-fg-success);
   }
 
-  [data-component="file-tree"] [data-slot="file-tree-change"][data-change="deleted"] {
+  [data-component="v2-file-tree"] [data-slot="v2-file-tree-change"][data-change="deleted"] {
     color: var(--v2-state-fg-danger);
   }
 

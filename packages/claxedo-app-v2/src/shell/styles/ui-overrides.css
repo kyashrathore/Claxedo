@@ -805,3 +805,90 @@ html[data-theme="codex"] .claxedo-workspace-review .ui-file-icon {
   height: 14px;
 }
 
+
+:root {
+  --claxedo-contrast-light: 40;
+  --claxedo-contrast-dark: 100;
+}
+
+html[data-theme="codex"][data-color-scheme="light"] {
+  --codex-surface: #ffffff;
+  --codex-ink: #0d0d0d;
+  --codex-contrast: var(--claxedo-contrast-light);
+  --codex-contrast-origin: 45;
+  --codex-control: color-mix(in srgb, var(--codex-surface), #ffffff calc(clamp(0, 0.09 + var(--codex-c) * 0.04, 1) * 100%));
+  --codex-elevated-secondary: color-mix(in srgb, var(--codex-surface), #ffffff calc(clamp(0, 0.08 + var(--codex-c) * 0.08, 1) * 100%));
+  --codex-border: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.06 + var(--codex-c) * 0.04, 1) * 100%), transparent);
+  --codex-border-light: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.04 + var(--codex-c) * 0.02, 1) * 100%), transparent);
+  --codex-border-heavy: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.09 + var(--codex-c) * 0.06, 1) * 100%), transparent);
+  --codex-hover: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.08 + var(--codex-c) * 0.04, 1) * 100%), transparent);
+  --codex-selected: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.04 + var(--codex-c) * 0.02, 1) * 100%), transparent);
+  --codex-pressed: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.16 + var(--codex-c) * 0.08, 1) * 100%), transparent);
+}
+
+html[data-theme="codex"][data-color-scheme="dark"] {
+  --codex-surface: #111111;
+  --codex-ink: #fcfcfc;
+  --codex-contrast: var(--claxedo-contrast-dark);
+  --codex-contrast-origin: 60;
+  --codex-control: color-mix(in srgb, var(--codex-surface), var(--codex-ink) calc(clamp(0, 0.06 + var(--codex-c) * 0.05, 1) * 100%));
+  --codex-elevated-secondary: color-mix(in srgb, var(--codex-surface), var(--codex-ink) calc(clamp(0, 0.04 + var(--codex-c) * 0.05, 1) * 100%));
+  --codex-border: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.06 + var(--codex-c) * 0.04, 1) * 100%), transparent);
+  --codex-border-light: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.03 + var(--codex-c) * 0.02, 1) * 100%), transparent);
+  --codex-border-heavy: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.12 + var(--codex-c) * 0.06, 1) * 100%), transparent);
+  --codex-hover: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.05 + var(--codex-c) * 0.03, 1) * 100%), transparent);
+  --codex-selected: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.04 + var(--codex-c) * 0.02, 1) * 100%), transparent);
+  --codex-pressed: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.07 + var(--codex-c) * 0.05, 1) * 100%), transparent);
+}
+
+html[data-theme="codex"] {
+  --codex-curve: calc(var(--codex-contrast) / 100 + (var(--codex-contrast) - var(--codex-contrast-origin)) / 60 * 0.7);
+  --codex-c: max(var(--codex-curve), calc(2 * var(--codex-curve) - var(--codex-contrast-origin) / 100));
+  --background-base: var(--codex-surface);
+  --background-stronger: var(--codex-surface);
+  --shell-surface-sidebar: var(--codex-surface);
+  --shell-surface-header: var(--codex-surface);
+  --settings-surface-content: var(--codex-surface);
+  --shell-surface-composer: var(--codex-control);
+  --control-surface: var(--codex-control);
+  --control-surface-active: var(--codex-control);
+  --tab-surface-selected: var(--codex-control);
+  --overlay-surface: var(--codex-control);
+  --overlay-surface-hover: var(--codex-hover);
+  --overlay-surface-input: var(--codex-selected);
+  --surface-raised-base: var(--codex-elevated-secondary);
+  --surface-raised-base-hover: var(--codex-hover);
+  --surface-raised-stronger-non-alpha: var(--codex-control);
+  --settings-surface-card: var(--codex-elevated-secondary);
+  --shell-surface-context-card: var(--codex-elevated-secondary);
+  --surface-base-hover: var(--codex-hover);
+  --row-surface-hover: var(--codex-hover);
+  --row-surface-selected: var(--codex-selected);
+  --border-weak-base: var(--codex-border);
+  --border-weaker-base: var(--codex-border-light);
+  --border-base: var(--codex-border-heavy);
+  --shell-border-sidebar: var(--codex-border-light);
+  --shell-border-header: var(--codex-border-light);
+  --composer-border: var(--codex-border);
+  --control-border: var(--codex-border-heavy);
+  --overlay-border: var(--codex-border);
+  --v2-background-bg-base: var(--codex-surface);
+  --v2-background-bg-deep: var(--codex-surface);
+  --v2-background-bg-layer-01: var(--codex-elevated-secondary);
+  --v2-background-bg-layer-02: var(--codex-control);
+  --v2-border-border-muted: var(--codex-border-light);
+  --v2-border-border-base: var(--codex-border);
+  --v2-border-border-strong: var(--codex-border-heavy);
+  --v2-overlay-simple-overlay-hover: var(--codex-hover);
+  --v2-overlay-simple-overlay-pressed: var(--codex-pressed);
+  background-color: var(--codex-surface) !important;
+}
+
+html[data-theme="codex"] .workbench-tab[data-selected="true"] {
+  background: var(--codex-control);
+}
+
+html[data-theme="codex"] [data-component="todo-dock"],
+html[data-theme="codex"] [data-component="goal-dock"] {
+  background: var(--codex-elevated-secondary);
+}

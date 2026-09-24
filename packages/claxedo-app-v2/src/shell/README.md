@@ -1,25 +1,25 @@
 # Shell
 
-Owns: the app frame and nothing a feature knows about. Three regions and one page tab, the shell layout machine, the router, the typed registries every domain and plugin fills, the command palette, and the phone behavior of the frame.
+Owns: the app frame and nothing a feature knows about. Three regions and their headers, the shell layout machine, the router, the typed registries every domain and plugin fills, the command palette, and the phone behavior of the frame.
 
 ## Regions
 
-- **Sidebar** (left): `main` mode shows what `AppShell` receives as `mainSidebar` (the rail); `settings` mode shows `SettingsSidebar`, the sections from the `settingsSections` registry grouped by `account`, `workspace`, `app`. The URL decides the mode: a page whose entry says `sidebar: "settings"` switches it.
-- **Center**: the workbench of split panes (`src/workbench/`), or the one **page tab** when the URL names a `PageEntry` (Settings, Marketplace, Tasks, Pages, projects, plugin pages). The page tab cannot split or drag; opening another page reuses it; its state is the URL.
-- **Workspace panel** (right): the `panelTabs` registry, filtered by each tab's `when()`, with the active tab and width kept per scope: the current placement (`placementOf(route)`), or `default` when the URL names none. A focused pane with no route, such as a file, leaves the URL and so the scope on the last placement.
-- **Top bar**: the sidebar and panel toggles, the workbench tab strip on a wide screen, the pane switcher on a phone, the page header for a page.
+- **Sidebar** (left): today's rail frame (`view/sidebar.tsx`): the `rail-sidebar` nav named "Projects and sessions", 260 px by default, with a 36 px header strip holding Hide Sidebar (Pin Sidebar while it peeks) and an 8 px resize grip on its right edge (220 to 520 px; dragging below 220 unpins it). Pinned, it sits in the row; unpinned, it is an overlay at the left that shows only while peeking and hides when the pointer leaves it. `main` mode shows what `AppShell` receives as `mainSidebar` (the rail); `settings` mode shows `SettingsSidebar`, the sections from the `settingsSections` registry grouped by `account`, `workspace`, `app`. The URL decides the mode: a page whose entry says `sidebar: "settings"` switches it.
+- **Center**: today's workbench column (`role=main`, `--background-stronger`, a 12 px top-left corner from 768 px): the workbench of split panes (`src/workbench/`), or the page the URL names (`PageEntry`: Settings, projects, plugin pages), drawn by `PageView` with no tab or close control; its state is the URL.
+- **Workspace panel** (right): `src/panel/`. The frame wraps the workbench column in its `WorkspaceArea`; the layout below decides whether it is shown.
+- **Headers** (`view/workbench-header.tsx`): today's 36 px workbench header. While the sidebar is unpinned its left end holds Show Sidebar (hovering it peeks the rail, except right after Hide Sidebar until the pointer leaves) and, between drag zones, the compact tabs `AppShell` receives as `compactTabs` (the rail's `CompactSwitcher`); its right end holds New Session and New Terminal (`view/scope-buttons.tsx`, which run the `session.new` and `terminal.new` commands) and, over panes, the panel's `PanelToggle` while the panel is closed. A page gets the same header without the panel toggle; a settings page gets today's settings header (Show Sidebar and a Settings pill, only while unpinned).
 
 ## State machines
 
-- **`ShellLayout`** (`model.ts`): `wide { sidebar, panel }` with each side region `open` or `collapsed`, or `phone { drawer, sheet }` with each overlay `open` or `closed`. Events: `viewportChanged`, `toggleSidebar`, `showSidebar`, `hideSidebar`, `togglePanel`, `showPanel`, `hidePanel`, `navigated` (closes the phone overlays). The wide regions persist as preferences (`store.ts`) under the principal's scope; phone overlays never persist.
+- **`ShellLayout`** (`model.ts`): `wide { sidebar, panel }` with the panel `open` or `collapsed` and the sidebar `open` (pinned), `collapsed` (unpinned) or `peeking` (unpinned and shown), or `phone { drawer, sheet }` with each overlay `open` or `closed`. Events: `viewportChanged`, `toggleSidebar`, `showSidebar`, `hideSidebar`, `peekSidebar` (only from `collapsed`), `unpeekSidebar` (only from `peeking`), `togglePanel`, `showPanel`, `hidePanel`, `navigated` (closes the phone overlays). The wide regions persist as preferences (`store.ts`) under the principal's scope, a peek as `collapsed`; phone overlays never persist.
 
 ## Routes (`routes.ts`)
 
-Id-only: `/` (home), `/w/:placementId/s/:sessionId`, `/w/:placementId/t/:terminalId`, `/settings/:section?`, each page's own `path`, and the `routes` registry for full-screen screens outside the shell (auth, onboarding) which match first. `RouteSync` opens the session or terminal the URL names in the workbench and mirrors the focused pane back into the URL with `replace`, so the URL is the one home of the current placement: `useShellRoute().placementId()`.
+Today's app's shapes, id-only: `/` (home), `/w/:placementId/session` (the placement's new-session draft), `/w/:placementId/session/:sessionId`, `/w/:placementId/terminal/:terminalId`, `/settings/:section?`, each page's own `path`, and the `routes` registry for full-screen screens outside the shell (auth, onboarding) which match first. `RouteSync` opens the draft, session or terminal the URL names in the workbench (through the pane kinds' `fromRoute`) and mirrors the focused pane back into the URL with `replace` (through `toRoute`), so the URL is the one home of the current placement: `useShellRoute().placementId()`.
 
 ## Placement providers (`placement-providers.tsx`)
 
-The domains whose state is kept per placement (terminal, files, review, browser) mount their providers here with no props, under the commands provider inside the workbench; each reads the placement from `useShellRoute().placementId` and opens panes through `useWorkbench()`. The composer's draft store sits above the workbench and the panel, inside the principal's scope, so another principal starts with no drafts.
+The workspace panel and the domains whose state is kept per placement (terminal, files, review, browser) mount their providers here with no props, under the commands provider inside the workbench; each reads the placement from `useShellRoute().placementId` and opens panes through `useWorkbench()`. The composer's draft store sits above the workbench and the panel, inside the principal's scope, so another principal starts with no drafts.
 
 ## Look (`styles/`)
 
@@ -27,23 +27,23 @@ The app wears today's app's look: `main.tsx` loads `styles/index.css` (the kit's
 
 ## Composition (`src/app.tsx`)
 
-`AuthProvider` → registries → `I18nProvider` → `ThemeProvider` → `ShellRouter` → the server scope → `AppShell`. The server scope (`ServerProvider`, `SessionStoresProvider`, `DialogProvider`) is keyed by the signed-in user: signed in, `createServer` gets a bearer token source from `useAuth().token`; signed out, expired or signing in, no auth. Only a change of user rebuilds it, so a token refresh does not. `App` takes an optional `router` (for example `MemoryRouter` for a `file://` renderer; the default is the history router) and an optional `serverUrl` (the desktop's embedded server, known only at runtime; without it `createServer` uses the build's `VITE_CLAXEDO_SERVER_URL` or the page origin).
+`AuthProvider` → registries → `I18nProvider` → `ThemeProvider` → `ShellRouter` → the server scope → `AppShell`. The server scope (`ServerProvider`, `SessionStoresProvider`, projects' `ProjectListProvider`, `DialogProvider`) is keyed by the signed-in user: signed in, `createServer` gets a bearer token source from `useAuth().token`; signed out, expired or signing in, no auth. Only a change of user rebuilds it, so a token refresh does not. `App` takes an optional `router` (for example `MemoryRouter` for a `file://` renderer; the default is the history router) and an optional `serverUrl` (the desktop's embedded server, known only at runtime; without it `createServer` uses the build's `VITE_CLAXEDO_SERVER_URL` or the page origin).
 
-## First run (`first-run.tsx`)
+## Home (`home-redirect.tsx`)
 
-On the home route, when the projects list has loaded and is empty (`onboardingNeeded`), the shell replaces the URL with the onboarding screen. Loading and failed lists never redirect.
+`/` is never a screen of its own, as in today's app. When the projects list has loaded and is empty (`onboardingNeeded`), the shell replaces the URL with the onboarding screen; loading and failed lists never redirect. Otherwise it replaces `/` with the draft of the active workspace: the placement of the restored focused pane, else the folder placement of the first project `useProjectList()` lists.
 
 ## Registries (`registries.ts`, `registry.ts`)
 
-One `Registry<Entry>` per region and concept: `pages`, `paneKinds`, `panelTabs`, `settingsSections`, `sidebarItems`, `overlays`, `commands`, `mentions`, `themes`, `iconSkins`, `routes`. `registry.ts` holds the static first-party arrays that import each domain's exports; plugins `add()` entries while they are on and dispose them when off.
+One `Registry<Entry>` per region and concept: `pages`, `paneKinds`, `panelViews` (the workspace panel's "context" and "subagent" tab views, registered by the domains that own them so `src/panel` never imports them), `settingsSections`, `sidebarItems`, `overlays`, `commands`, `mentions`, `themes`, `iconSkins`, `routes`. `registry.ts` holds the static first-party arrays that import each domain's exports; plugins `add()` entries while they are on and dispose them when off.
 
 ## Command palette (`palette/`)
 
-Kept from the old app: registrations with owners, keybinding parsing and display, user overrides persisted under `claxedo:keybinds`, fuzzy search grouped by category. The `commands` registry feeds it beside component registrations.
+Kept from the old app: registrations with owners, keybinding parsing and display, user overrides persisted under `claxedo:keybinds`. The `commands` registry feeds it beside component registrations. No keybinding fires while a dialog is open. The palette is today's `DialogSelectFile` (`select-file.tsx`), the one implementation for both modes: the palette keybinding (mod+shift+P) runs `file.open` with the source `palette`, which opens it in `all` mode (empty: the common commands, then recent files; typed: every command, the current project's sessions and file search, grouped); mod+P opens it in `files` mode (recent and root files, then file search). Its caller passes the placement and `onOpenFile`; the shell's `OpenFileCommand` opens the file as a workspace panel tab, and the panel's "+" → File passes its own.
 
 ## Phone
 
-Below 768 px the sidebar is a drawer and the workspace panel a sheet (both Kobalte dialogs), the top bar shows the pane switcher, and the home route shows the sidebar content full screen. The frame never scrolls horizontally.
+Below 768 px the rail itself becomes today's drawer: fixed at the left, 280 px, sliding in over 300 ms above a light scrim that closes it, opened and closed by the fixed "Open navigation sidebar" button over the header's left end. The frame never scrolls horizontally.
 
 ## Flows
 

@@ -3,8 +3,9 @@ import { Button, ProviderIcon, RadioGroup } from "@/ui"
 import { useTranslator } from "@/i18n"
 import { formatRelativeTime } from "@/lib/relative-time"
 import { harnessAccounts, harnesses, machineLoginOf, selectedAccountKey, type AccountsSnapshot, type Harness } from "../accounts"
+import { useWindowName } from "@/usage"
 import { dictionary } from "../i18n"
-import { createAccounts, type Accounts } from "../store"
+import { useAccounts, type Accounts } from "../store"
 import { machineLoginWords, storedAccountWords } from "./account-words"
 import { AccountRow } from "./account-row"
 import { AddKeyForm } from "./add-key"
@@ -14,24 +15,22 @@ const HARNESS_ICON: Readonly<Record<string, string>> = { claude: "anthropic", co
 
 export function AccountsSection() {
   const t = useTranslator(dictionary)
-  const accounts = createAccounts()
+  const accounts = useAccounts()
   const snapshot = (): AccountsSnapshot | undefined => {
-    const state = accounts.state()
-    if (state.kind === "ready") return state.snapshot
-    if (state.kind === "scanning" || state.kind === "failed") return state.previous
-    return undefined
+    const load = accounts.load()
+    return load.kind === "ready" ? load.snapshot : undefined
   }
-  const scanError = () => {
-    const state = accounts.state()
-    return state.kind === "failed" ? state.error : undefined
+  const loadError = () => {
+    const load = accounts.load()
+    if (load.kind === "failed") return load.error
+    return load.kind === "ready" ? load.refreshError : undefined
   }
   const scanLabel = () => {
-    const state = accounts.state()
-    if (state.kind === "idle" || (state.kind === "scanning" && !state.previous)) return t("settings.accounts.scanning")
-    if (state.kind === "scanning") return t("settings.accounts.rescanning")
-    if (state.kind === "failed") return t("settings.accounts.scanFailed")
-    const age = Date.now() - state.snapshot.scannedAt
-    return age < 60_000 ? t("settings.accounts.scannedNow") : t("settings.accounts.scannedAt", { when: formatRelativeTime(state.snapshot.scannedAt) })
+    const current = snapshot()
+    if (accounts.scanning()) return t(current ? "settings.accounts.rescanning" : "settings.accounts.scanning")
+    if (!current) return t(accounts.load().kind === "failed" ? "settings.accounts.scanFailed" : "settings.accounts.scanning")
+    const age = Date.now() - current.scannedAt
+    return age < 60_000 ? t("settings.accounts.scannedNow") : t("settings.accounts.scannedAt", { when: formatRelativeTime(current.scannedAt) })
   }
 
   return (
@@ -40,16 +39,15 @@ export function AccountsSection() {
         description={t("settings.accounts.description")}
         action={
           <span class="settings-inline">
-            <span class="settings-row-description" data-component="accounts-scanned-at">{scanLabel()}</span>
-            <Button size="small" variant="ghost" disabled={accounts.state().kind === "scanning"} onClick={() => void accounts.scan({ fresh: true })}>
+            <span class="settings-row-description">{scanLabel()}</span>
+            <Button size="small" variant="ghost" disabled={accounts.scanning()} onClick={() => accounts.rescan()}>
               {t("settings.accounts.rescan")}
             </Button>
           </span>
         }
       />
-      <Show when={scanError()}>
-        {(error) => <SettingsNote tone="danger">{t("settings.accounts.failed")}: {error().message}</SettingsNote>}
-      </Show>
+      <Show when={loadError()}>{(error) => <SettingsNote tone="danger">{t("settings.accounts.failed")}: {error().message}</SettingsNote>}</Show>
+      <Show when={accounts.failure()}>{(failure) => <SettingsNote tone="danger">{t("settings.accounts.actionFailed")}: {failure().error.message}</SettingsNote>}</Show>
       <Show when={snapshot()} fallback={<SettingsEmpty>{scanLabel()}</SettingsEmpty>}>
         {(current) => <For each={harnesses}>{(harness) => <HarnessCard harness={harness} snapshot={current()} accounts={accounts} />}</For>}
       </Show>
@@ -61,12 +59,11 @@ function HarnessCard(props: { readonly harness: Harness; readonly snapshot: Acco
   const t = useTranslator(dictionary)
   const [adding, setAdding] = createSignal(false)
   const selected = createMemo(() => selectedAccountKey(props.harness, props.snapshot))
+  const windowName = useWindowName()
   const rows = createMemo(() => {
-    const stored = harnessAccounts(props.harness, props.snapshot.stored).map((row) =>
-      storedAccountWords(t, row, props.accounts.liveChecks()[row.id], selected() === row.id),
-    )
+    const stored = harnessAccounts(props.harness, props.snapshot.stored).map((row) => storedAccountWords({ t, windowName }, row, props.accounts.liveChecks()[row.id]))
     const login = machineLoginOf(props.harness, props.snapshot)
-    return login ? [...stored, machineLoginWords(t, login, props.harness, props.snapshot)] : stored
+    return login ? [...stored, machineLoginWords({ t, windowName }, login, props.harness, props.snapshot)] : stored
   })
   const connecting = () => props.accounts.activity()?.kind === "connecting" && props.accounts.activity()?.key === props.harness.id
 
@@ -94,7 +91,7 @@ function HarnessCard(props: { readonly harness: Harness; readonly snapshot: Acco
           disabled={props.accounts.activity()?.kind === "selecting"}
           onChange={(key: string) => {
             const row = rows().find((entry) => entry.key === key)
-            if (row) void props.accounts.select(props.harness, key, row.ids)
+            if (row) props.accounts.select(props.harness, key, row.ids)
           }}
         >
           <For each={rows()}>
@@ -102,8 +99,8 @@ function HarnessCard(props: { readonly harness: Harness; readonly snapshot: Acco
               <AccountRow
                 account={row}
                 activity={props.accounts.activity()}
-                onCheck={() => void (row.machine ? props.accounts.checkMachine(props.harness) : props.accounts.check(row.ids[0] ?? row.key))}
-                onRemove={() => void props.accounts.remove(row.ids)}
+                onCheck={() => (row.machine ? props.accounts.checkMachine(props.harness) : props.accounts.check(row.ids[0] ?? row.key))}
+                onRemove={() => props.accounts.remove(row.ids)}
               />
             )}
           </For>

@@ -22,11 +22,11 @@ function TabsRoot(props: TabsProps) {
     <Kobalte
       {...rest}
       orientation={split.orientation}
-      data-component="tabs"
+      data-component="v2-tabs"
       data-variant={split.variant || "normal"}
       data-orientation={split.orientation || "horizontal"}
       classList={{
-        "ui-tabs": true,
+        "v2-tabs": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}
@@ -39,8 +39,8 @@ function TabsList(props: TabsListProps) {
   return (
     <Kobalte.List
       {...rest}
-      data-slot="tabs-list"
-      classList={{ "ui-tabs-list": true,
+      data-slot="v2-tabs-list"
+      classList={{ "v2-tabs-list": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}
@@ -52,9 +52,9 @@ function TabsTrigger(props: ParentProps<TabsTriggerProps>) {
   const [split, rest] = splitProps(props, ["class", "classList", "children", "onMiddleClick", "subtext"])
   return (
     <div
-      data-slot="tabs-trigger-wrapper"
+      data-slot="v2-tabs-trigger-wrapper"
       data-value={props.value}
-      classList={{ "ui-tabs-trigger-wrapper": true,
+      classList={{ "v2-tabs-trigger-wrapper": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}
@@ -70,12 +70,12 @@ function TabsTrigger(props: ParentProps<TabsTriggerProps>) {
         }
       }}
     >
-      <Kobalte.Trigger {...rest} data-slot="tabs-trigger" data-value={props.value} classList={{ "ui-tabs-trigger": true }}>
-        <span class="inline-flex items-center gap-2" data-slot="tabs-trigger-content">
+      <Kobalte.Trigger {...rest} data-slot="v2-tabs-trigger" data-value={props.value} classList={{ "v2-tabs-trigger": true }}>
+        <span class="inline-flex items-center gap-2" data-slot="v2-tabs-trigger-content">
           {split.children}
           <Show when={split.subtext}>
             {(subtext) => (
-              <span data-slot="tabs-subtext" class="ml-2 text-xs text-text-weak">
+              <span data-slot="v2-tabs-subtext" class="ml-2 text-xs text-text-weak">
                 {subtext()}
               </span>
             )}
@@ -93,10 +93,10 @@ function TabsCloseButton(props: TabsCloseButtonProps) {
       role="button"
       tabindex={0}
       aria-label="Close tab"
-      data-slot="tabs-close-button"
+      data-slot="v2-tabs-close-button"
       {...rest}
       classList={{
-        "ui-tabs-close-button": true,
+        "v2-tabs-close-button": true,
         [split.class ?? ""]: !!split.class,
         ...split.classList,
       }}
@@ -125,7 +125,7 @@ function TabsContent(props: ParentProps<TabsContentProps>) {
   return (
     <Kobalte.Content
       {...rest}
-      data-slot="tabs-content"
+      data-slot="v2-tabs-content"
       classList={{
         ...split.classList,
         [split.class ?? ""]: !!split.class,
@@ -137,7 +137,7 @@ function TabsContent(props: ParentProps<TabsContentProps>) {
 }
 
 const TabsSectionTitle: Component<ParentProps> = (props) => {
-  return <div data-slot="tabs-section-title">{props.children}</div>
+  return <div data-slot="v2-tabs-section-title">{props.children}</div>
 }
 
 export const Tabs = Object.assign(TabsRoot, {

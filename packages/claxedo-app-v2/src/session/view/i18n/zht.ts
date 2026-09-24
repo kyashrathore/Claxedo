@@ -81,4 +81,8 @@ export const zht: Partial<Record<SessionScreenTextKey, string>> = {
   "sessionScreen.timeline.ui.sessionTurn.diffs.showAll": "全部顯示",
   "sessionScreen.timeline.ui.sessionTurn.diffs.showLess": "顯示較少",
   "sessionScreen.timeline.ui.sessionTurn.status.thinking": "思考中",
+  "command.message.previous": "上一則訊息",
+  "command.message.previous.description": "跳到上一則使用者訊息",
+  "command.message.next": "下一則訊息",
+  "command.message.next.description": "跳到下一則使用者訊息",
 }

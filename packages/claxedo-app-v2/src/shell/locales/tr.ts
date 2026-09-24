@@ -1,5 +1,4 @@
 export const dictionary = {
-  "shell.palette.title": "Komut paleti",
   "shell.palette.placeholder": "Dosya, komut ve oturum ara",
   "shell.palette.empty": "Sonuç bulunamadı",
   "shell.palette.suggested": "Önerilen",
@@ -19,7 +18,6 @@ export const dictionary = {
   "shell.key.insert": "Insert",
   "shell.key.esc": "ESC",
   "shell.settings": "Ayarlar",
-  "shell.close": "Kapat",
   "shell.loading": "Yükleniyor",
   "shell.scheme.system": "Sistem",
   "shell.scheme.light": "Açık",

@@ -5,7 +5,7 @@ import os from "node:os"
 import path from "node:path"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../platform/auth/auth"
 import type { WorkspaceAuthority } from "../platform/auth/authority"
-import { ensureWorkspace, listWorkspaces } from "../workspace/store/index"
+import { configureWorkspaceStore, ensureWorkspace, listProjects, listWorkspaces, updateProjectMetadata } from "../workspace/store/index"
 import { localProjectStore, projectsDirectory, type LocalProjectStoreDeps } from "./local-store"
 import { githubCloneAuthorization, type RepositoryAccessResult, type RepositorySourceDeps } from "./repository-source"
 import { ProjectRoutes, type ProjectRouteOptions } from "./routes"
@@ -286,6 +286,79 @@ describe("local project routes", () => {
     const again = await app.request("http://localhost/", json({ name: "Removed", source: { kind: "directory", directory } }))
     expect(again.status).toBe(201)
     expect(((await again.json()) as { project: { id: string } }).project.id).not.toBe(project.id)
+  })
+
+  test("lists every project the catalog holds, a folder registered without a record among them", async () => {
+    const directory = await gitRepository("catalog-only-")
+    const workspace = await ensureWorkspace({ directory, kind: "local" })
+    const id = workspace?.project_id ?? ""
+    const listed = await (await app.request("http://localhost/")).json() as { projects: Array<{ id: string }> }
+    expect(listed.projects.find((project) => project.id === id)).toMatchObject({ name: path.basename(directory), directory, env: {}, available: true })
+    expect((await app.request(`http://localhost/${id}`)).status).toBe(200)
+  })
+
+  test("a project whose folder is gone stays listed, marked unavailable", async () => {
+    const directory = await gitRepository("vanished-")
+    const { project } = await (await app.request("http://localhost/", json({ name: "Vanished", source: { kind: "directory", directory } }))).json() as { project: { id: string; available: boolean } }
+    expect(project.available).toBe(true)
+    await fs.rm(directory, { recursive: true, force: true })
+    const listed = await (await app.request("http://localhost/")).json() as { projects: Array<{ id: string }> }
+    expect(listed.projects.find((item) => item.id === project.id)).toMatchObject({ name: "Vanished", available: false })
+  })
+
+  test("a project that runs only in a cloud workspace is available only while its sandbox is ready", async () => {
+    const cloud = await ensureWorkspace({ kind: "cloud", driver: "daytona", directory: "/workspace", repo_url: "https://github.com/acme/sky.git", status: "stopped" })
+    const id = cloud?.project_id ?? ""
+    const availability = async () => (((await (await app.request(`http://localhost/${id}`)).json()) as { project: { available: boolean } }).project.available)
+    expect(await availability()).toBe(false)
+    configureWorkspaceStore({ sandboxLease: (workspaceId) => (workspaceId === cloud?.id ? { status: "ready" } : undefined) })
+    try {
+      expect(await availability()).toBe(true)
+    } finally {
+      configureWorkspaceStore()
+    }
+  })
+
+  test("the name is the catalog's: a rename there reads back here, one here reaches it, and an empty one restores the default", async () => {
+    const directory = await gitRepository("one-name-")
+    const { project } = await (await app.request("http://localhost/", json({ name: "One Name", source: { kind: "directory", directory } }))).json() as { project: { id: string } }
+    const catalogName = async () => (await listProjects()).find((item) => item.id === project.id)?.name
+    await updateProjectMetadata(project.id, { name: "Renamed Elsewhere" })
+    expect(((await (await app.request(`http://localhost/${project.id}`)).json()) as { project: { name: string } }).project.name).toBe("Renamed Elsewhere")
+    const renamed = await app.request(`http://localhost/${project.id}`, { ...json({ name: "Renamed Here" }), method: "PATCH" })
+    expect(renamed.status).toBe(200)
+    expect(((await renamed.json()) as { project: { name: string } }).project.name).toBe("Renamed Here")
+    expect(await catalogName()).toBe("Renamed Here")
+    const taken = await app.request("http://localhost/", json({ name: "renamed here", source: { kind: "directory", directory: await gitRepository("one-name-clash-") } }))
+    expect(taken.status).toBe(409)
+    const cleared = await app.request(`http://localhost/${project.id}`, { ...json({ name: "" }), method: "PATCH" })
+    expect(cleared.status).toBe(200)
+    expect(((await cleared.json()) as { project: { name: string } }).project.name).toBe(path.basename(directory))
+    expect(await catalogName()).toBe(path.basename(directory))
+  })
+
+  test("a project's icon and startup command are read and written through the route", async () => {
+    const directory = await gitRepository("icon-")
+    const { project } = await (await app.request("http://localhost/", json({ name: "Icon Project", source: { kind: "directory", directory } }))).json() as { project: { id: string } }
+    const patched = await app.request(`http://localhost/${project.id}`, { ...json({ icon: { color: "mint", override: "data:image/png;base64,AA==" }, commands: { start: "bun install" } }), method: "PATCH" })
+    expect(patched.status).toBe(200)
+    const expected = { icon: { color: "mint", override: "data:image/png;base64,AA==" }, commands: { start: "bun install" } }
+    expect(((await patched.json()) as { project: unknown }).project).toMatchObject(expected)
+    expect(((await (await app.request("http://localhost/")).json()) as { projects: Array<{ id: string }> }).projects.find((item) => item.id === project.id)).toMatchObject(expected)
+    expect((await listProjects()).find((item) => item.id === project.id)).toMatchObject(expected)
+    const unknown = await app.request(`http://localhost/${project.id}`, { ...json({ icon: { shape: "round" } }), method: "PATCH" })
+    expect(unknown.status).toBe(400)
+  })
+
+  test("removing a project the catalog holds without a record removes its workspace", async () => {
+    const directory = await gitRepository("catalog-remove-")
+    const workspace = await ensureWorkspace({ directory, kind: "local" })
+    const id = workspace?.project_id ?? ""
+    const removed = await app.request(`http://localhost/${id}`, { method: "DELETE" })
+    expect(removed.status).toBe(200)
+    expect((await listWorkspaces()).some((row) => row.id === workspace?.id)).toBe(false)
+    expect((await app.request(`http://localhost/${id}`)).status).toBe(404)
+    expect((await fs.stat(path.join(directory, ".git"))).isDirectory()).toBe(true)
   })
 
   test("a project with a cloud workspace is kept until that workspace is deleted", async () => {

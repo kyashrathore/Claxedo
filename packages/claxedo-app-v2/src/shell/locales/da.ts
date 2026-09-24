@@ -1,5 +1,4 @@
 export const dictionary = {
-  "shell.palette.title": "Kommandopalette",
   "shell.palette.placeholder": "Søg i filer, kommandoer og sessioner",
   "shell.palette.empty": "Ingen resultater fundet",
   "shell.palette.suggested": "Foreslået",
@@ -19,7 +18,6 @@ export const dictionary = {
   "shell.key.insert": "Insert",
   "shell.key.esc": "ESC",
   "shell.settings": "Indstillinger",
-  "shell.close": "Luk",
   "shell.loading": "Indlæser",
   "shell.scheme.system": "System",
   "shell.scheme.light": "Lys",

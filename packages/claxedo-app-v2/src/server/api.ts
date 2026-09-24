@@ -1,9 +1,8 @@
 import type { Accessor } from "solid-js"
 import type { QueryClient } from "@tanstack/solid-query"
-import type { Account } from "./account-types"
+import type { Account, AccountCheck, AccountKeyInput, EffectiveAccounts, MachineLogin } from "./account-types"
 import type { CloudCreateInput, CloudWorkspace, CodeHostConnection, CodeHostRepository } from "./cloud-types"
 import type { ConnectionState, ServerEvent } from "./events"
-import type { EngineProjectsApi, EngineProjectsQueries } from "./engine-projects"
 import type { FolderQueries, FoldersApi } from "./folders"
 import type { HarnessConfigApi } from "./harness-config"
 import type {
@@ -22,7 +21,7 @@ import type {
   WorktreeCreateInput,
 } from "./git-types"
 import type { PlacementId, ProjectId, RequestId, TerminalId } from "./ids"
-import type { MarketplaceCatalog } from "./marketplace-types"
+import type { MarketplaceCatalog, PluginActivationInput, PluginChange, PluginSourceInput, PluginSourceRecord } from "./marketplace-types"
 import type {
   Terminal,
   TerminalAgentStatus,
@@ -44,6 +43,7 @@ import type {
   Placement,
   Project,
   ProjectSource,
+  ProjectUpdate,
   PromptDelivery,
   PromptInput,
   QueuedPrompt,
@@ -65,6 +65,7 @@ export type SessionsApi = {
   readonly list: (input: { readonly cursor?: string; readonly limit: number }) => Promise<SessionPage>
   readonly snapshot: (ref: SessionRef) => Promise<SessionSnapshot>
   readonly older: (ref: SessionRef, cursor: string) => Promise<TranscriptPage>
+  readonly latestTurn: (ref: SessionRef) => Promise<TranscriptPage>
   readonly create: (input: SessionCreateInput) => Promise<SessionRow>
   readonly prompt: (ref: SessionRef, input: PromptInput) => Promise<PromptDelivery>
   readonly stop: (ref: SessionRef) => Promise<void>
@@ -82,7 +83,7 @@ export type SessionsApi = {
 
 export type ProjectsApi = {
   readonly create: (input: { readonly name?: string; readonly source: ProjectSource }) => Promise<Project>
-  readonly update: (id: ProjectId, input: { readonly name?: string; readonly env?: Record<string, string> }) => Promise<Project>
+  readonly update: (id: ProjectId, input: ProjectUpdate) => Promise<Project>
   readonly remove: (id: ProjectId) => Promise<void>
 }
 
@@ -117,6 +118,22 @@ export type CloudApi = {
   readonly remove: (id: PlacementId) => Promise<void>
 }
 
+export type AccountsApi = {
+  readonly select: (ids: readonly string[]) => Promise<void>
+  readonly selectMachineLogin: (providerIds: readonly string[]) => Promise<void>
+  readonly remove: (ids: readonly string[]) => Promise<void>
+  readonly check: (id: string) => Promise<AccountCheck>
+  readonly checkMachineLogin: (harness: string) => Promise<readonly MachineLogin[]>
+  readonly addKey: (input: AccountKeyInput) => Promise<string>
+}
+
+export type MarketplaceApi = {
+  readonly setActivation: (input: PluginActivationInput) => Promise<PluginChange>
+  readonly update: (pluginInstanceId: string, revision: number) => Promise<PluginChange>
+  readonly addSource: (input: PluginSourceInput) => Promise<PluginSourceRecord>
+  readonly removeSource: (id: string) => Promise<void>
+}
+
 export type LivePluginsApi = {
   readonly remove: (pluginId: string) => Promise<void>
 }
@@ -131,9 +148,16 @@ export type ServerQueries = {
     readonly byProject: (projectId: ProjectId) => FetchQuery<readonly Placement[]>
   }
   readonly machines: { readonly list: () => FetchQuery<readonly Machine[]> }
-  readonly accounts: { readonly list: () => FetchQuery<readonly Account[]> }
+  readonly accounts: {
+    readonly list: () => FetchQuery<readonly Account[]>
+    readonly effective: () => FetchQuery<EffectiveAccounts>
+    readonly machineLogins: () => FetchQuery<readonly MachineLogin[]>
+  }
   readonly usage: { readonly summary: (input: UsageRequest) => FetchQuery<UsageSummary> }
-  readonly marketplace: { readonly catalog: (projectId?: ProjectId) => FetchQuery<MarketplaceCatalog> }
+  readonly marketplace: {
+    readonly catalog: (projectId?: ProjectId) => FetchQuery<MarketplaceCatalog>
+    readonly sources: () => FetchQuery<readonly PluginSourceRecord[]>
+  }
   readonly tasks: { readonly availability: () => FetchQuery<FeatureAvailability> }
   readonly documents: { readonly availability: () => FetchQuery<FeatureAvailability> }
   readonly codeHost: {
@@ -142,7 +166,6 @@ export type ServerQueries = {
   }
   readonly cloud: { readonly list: () => FetchQuery<readonly CloudWorkspace[]> }
   readonly folders: FolderQueries
-  readonly engineProjects: EngineProjectsQueries
   readonly harnesses: {
     readonly options: (placementId: PlacementId, harness: string) => FetchQuery<HarnessOptions>
     readonly logins: () => FetchQuery<readonly HarnessLogin[]>
@@ -173,8 +196,9 @@ export type Server = {
   readonly terminals: TerminalsApi
   readonly git: GitApi
   readonly cloud: CloudApi
+  readonly accounts: AccountsApi
+  readonly marketplace: MarketplaceApi
   readonly folders: FoldersApi
-  readonly engineProjects: EngineProjectsApi
   readonly livePlugins: LivePluginsApi
   readonly harnessConfig: HarnessConfigApi
   readonly queries: ServerQueries

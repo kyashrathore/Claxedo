@@ -24,13 +24,13 @@ export function IconButton(props: IconButtonProps) {
   return (
     <Kobalte
       {...rest}
-      data-component="icon-button"
+      data-component="v2-icon-button"
       data-icon={split.icon}
       data-size={split.size || "normal"}
       data-variant={split.variant || "neutral"}
       data-state={split.state}
       classList={{
-        "ui-icon-button": true,
+        "v2-icon-button": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}

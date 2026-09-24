@@ -60,8 +60,10 @@ const createBody = z
 
 const updateBody = z
   .object({
-    name: z.string().trim().min(1).max(PROJECT_NAME_MAX).optional(),
+    name: z.string().trim().max(PROJECT_NAME_MAX).optional(),
     env: z.record(z.string(), z.string()).optional(),
+    icon: z.object({ color: z.string().optional(), override: z.string().optional() }).strict().optional(),
+    commands: z.object({ start: z.string().optional() }).strict().optional(),
   })
   .strict()
 
@@ -154,7 +156,7 @@ export function ProjectRoutes(options: ProjectRouteOptions) {
       return c.json(apiError("project_access_denied", "Project write access is required"), 403)
     }
     const parsed = updateBody.safeParse(await c.req.json().catch(() => undefined))
-    if (!parsed.success) return c.json(apiError("project_invalid", "name or env expected"), 400)
+    if (!parsed.success) return c.json(apiError("project_invalid", "name, env, icon or commands expected"), 400)
     const envProblem = projectEnvProblem(parsed.data.env)
     if (envProblem) return c.json(apiError("project_env_invalid", envProblem), 400)
     const project = await store.update(id, parsed.data, auth)
