@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "provider.connect.title.harness": "连接 {{harness}}",
   "provider.connect.title.engine": "为 {{engine}} 连接 {{vendor}}",
   "provider.connect.selectMethod": "选择 {{vendor}} 的登录方式。",

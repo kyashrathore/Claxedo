@@ -7,6 +7,7 @@ import { PANEL_CLOSE_GRACE_MS, PANEL_MOTION } from "../width"
 import { PanelBody } from "./panel-body"
 import { PanelHeader } from "./panel-header"
 import { PanelResizeHandle } from "./resize-handle"
+import { createShellSettle } from "./shell-settle"
 
 function WorkspacePanel(): JSX.Element {
   const t = useTranslator(dictionary)
@@ -19,6 +20,7 @@ function WorkspacePanel(): JSX.Element {
   const [dragging, setDragging] = createSignal(false)
   const [exposed, setExposed] = createSignal(panel.open())
   let aside: HTMLElement | undefined
+  const settled = createShellSettle(() => aside, panel.open)
   let hideTimer: ReturnType<typeof setTimeout> | undefined
   createEffect(() => {
     clearTimeout(hideTimer)
@@ -46,6 +48,7 @@ function WorkspacePanel(): JSX.Element {
       role={exposed() ? "complementary" : undefined}
       data-testid="workspace-panel-shell"
       data-open={panel.open() ? "true" : "false"}
+      data-shell-settled={settled() ? "true" : "false"}
       data-state-open={panel.open() ? "true" : "false"}
       data-state-mode="review"
       data-state-navigator={panel.navigator() ?? ""}

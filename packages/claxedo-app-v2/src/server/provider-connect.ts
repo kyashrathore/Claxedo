@@ -72,7 +72,10 @@ export function providerConnectQueries(transport: Transport): ProviderConnectQue
 
 export function createProviderConnectApi(transport: Transport, queryClient: QueryClient): ProviderConnectApi {
   const server = transport.serverUrl
-  const changed = () => queryClient.invalidateQueries({ queryKey: queryKeys.accounts(server) })
+  const changed = async () => {
+    await queryClient.invalidateQueries({ queryKey: queryKeys.accounts(server) })
+    await queryClient.invalidateQueries({ queryKey: queryKeys.providerCatalogs(server) })
+  }
   const oauthPath = (providerId: string, step: "authorize" | "callback") => `/provider/${encodeURIComponent(providerId)}/oauth/${step}`
   return {
     authorize: async (providerId, method) => authorizationOf(await transport.json<unknown>(oauthPath(providerId, "authorize"), jsonInit("POST", { method }))),
