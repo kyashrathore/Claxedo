@@ -90,7 +90,7 @@ Rules the checks enforce:
 
 | Member | Meaning |
 | --- | --- |
-| `makeWorkspace(name)` | A fresh git repository with one commit, registered with the daemon; returns `{ id, directory }` |
+| `makeWorkspace(name, projectName?)` | A fresh git repository with one commit, registered with the daemon and recorded as a project named `projectName` (the folder's name when omitted); returns `{ id, directory, projectId }` |
 | `restart()` | Stops and relaunches the daemon on the same port and data directory (reload-recovery flows) |
 | `log()` | Everything the daemon wrote to stdout and stderr |
 | `acpScriptDir`, `dataDir`, `url`, `port` | Paths and address |
@@ -143,11 +143,11 @@ Opens the stream the app reads (`/api/wr/events`) and records every frame. `fram
 
 `resolveWorkspace`, `setHarness`, `createSession` (optional `model`), `session`, `sessions`, `deleteSession`, `prompt` (waits for the turn; optional `model`), `promptAsync`, `abort`, `messages`, `status`, `permissions`, `replyPermission`, `questions`, `replyQuestion`, `rejectQuestion`, `providerCatalog(nativeHarness)`, `health`. Every call takes the workspace `directory` first, because that is how today's routes are scoped. A non-2xx answer throws `ApiError` with the status and body. `assistantText(messages)` joins the assistant text parts.
 
-`createProject(name, directory)` records a project for a folder. A stack with no project opens the onboarding screen at `/`, so a flow that starts on the shell creates one first.
+`createProject(name, directory)` records a project for another folder. A stack with no project opens the onboarding screen at `/`; `makeWorkspace` records one, so a flow that made a workspace starts on the shell.
 
 ### Accessibility
 
-`expectNoAxeViolations(page, screen)` runs axe on the page and expects nothing; v2 flows use it. `expectWithinV1Baseline(page, surface)` expects no rule outside today's app's `packages/claxedo-app/e2e/playwright/a11y-baseline.json` for that surface (`home`, `session-page`, `settings-surface`, `command-palette`, `prompt-input-focused`); v1 paths use it, and only on those surfaces. Both first wait (`settled`) until no animation that ends within 5 s is running, so a fade-in is not measured half-drawn.
+`expectWithinV1Baseline(page, surface)` runs axe and expects no rule outside today's app's `packages/claxedo-app/e2e/playwright/a11y-baseline.json` for that surface (`home`, `session-page`, `settings-surface`, `command-palette`, `prompt-input-focused`), on both apps: v2 renders v1's markup, so v1's baseline is its bar. It first waits (`settled`) until no animation that ends within 5 s is running, so a fade-in is not measured half-drawn.
 
 ### `desktop` (the Electron app)
 
@@ -160,7 +160,7 @@ The embedded server admits only its application: Electron main stamps a capabili
 | `window` | The shell window (`index.local.html`) |
 | `electron` | Playwright's `ElectronApplication`, for the main process and other windows |
 | `api` | `ClaxedoApi` for the embedded server, sent through `window` |
-| `url`, `dataDir`, `scripted`, `egress`, `acp`, `makeWorkspace(name)`, `log()` | As on `stack` |
+| `url`, `dataDir`, `scripted`, `egress`, `acp`, `makeWorkspace(name, projectName?)`, `log()` | As on `stack` |
 
 `bun run dev:v2` in `packages/claxedo-desktop` runs the desktop in development with the v2 renderer. Packaging v2 (`package:mac:v2`) waits on a v2 build without the auth vendor client, which the desktop's unsigned boundary check requires.
 
