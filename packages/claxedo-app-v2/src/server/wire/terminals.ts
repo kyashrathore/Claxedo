@@ -2,16 +2,13 @@ import type { TerminalCheckpoint } from "@claxedo/workspace-runtime/client"
 import type { ServerEvent } from "../events"
 import { sessionId, terminalId, type PlacementId } from "../ids"
 import type { Terminal, TerminalAgentStatus, TerminalFrame } from "../terminal-types"
+import { isRecord } from "../../lib/record"
 
 export const PTY_PATH = "/api/wr/pty"
 export const TERMINAL_HOOK_PATH = "/api/wr/hook/terminal-session"
 export const PTY_NOT_FOUND = "pty_session_not_found"
 
 export type ParsedTerminalFrame = { readonly ok: true; readonly frame?: TerminalFrame } | { readonly ok: false; readonly reason: string }
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value)
-}
 
 function text(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined

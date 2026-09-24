@@ -12,7 +12,7 @@ function panePath(route: PaneRoute): string {
   return route.kind === "session" ? sessionPath(route) : terminalPath(route.placementId, route.terminalId)
 }
 
-function showsPanes(route: ShellRoute): boolean {
+function showsPanes(route: ShellRoute): route is Extract<ShellRoute, { readonly kind: "draft" | "session" | "terminal" }> {
   return route.kind === "draft" || route.kind === "session" || route.kind === "terminal"
 }
 
@@ -44,6 +44,14 @@ export function RouteSync(): JSX.Element {
   createEffect(() => {
     const target = paneRouteOf(routing.route(), (route) => server.placements.byId(route.placementId)?.projectId)
     if (target) untrack(() => workbench.openRoute(target))
+  })
+
+  createEffect(() => {
+    if (workbench.selectors.focusedContent()) return
+    const route = routing.route()
+    if (!showsPanes(route)) return
+    const projectId = server.placements.byId(route.placementId)?.projectId
+    if (projectId) untrack(() => workbench.openRoute({ kind: "draft", projectId, placementId: route.placementId }))
   })
 
   createEffect(() => {

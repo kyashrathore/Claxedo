@@ -1,10 +1,9 @@
 import "./terminal-pane.css"
-import { Show, createMemo, createSignal, onCleanup, onMount, type JSX } from "solid-js"
+import { Show, createEffect, createMemo, createSignal, onCleanup, onMount, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { machine } from "@/lib/machine"
-import { toAppError, useServer } from "@/server"
+import { useServer } from "@/server"
 import type { PaneProps } from "@/shell"
-import { showToast } from "@/ui"
 import type { TerminalBackend } from "../backend/types"
 import { useTerminalRuntime } from "../context"
 import { dictionary } from "../i18n"
@@ -52,18 +51,9 @@ export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
   })
   onCleanup(() => mount?.dispose())
 
-  const recreate = () => {
-    store.recreate(terminalId).then(
-      (terminal) => terminals.open({ placementId, terminalId: terminal.id }, props.paneId),
-      (error: unknown) => {
-        console.error("Terminal could not be recreated", {
-          terminalId,
-          error: toAppError(error),
-        })
-        showToast({ title: t("terminal.createFailed") })
-      },
-    )
-  }
+  createEffect(() => {
+    if (connection.state().kind === "ended") store.drop(terminalId)
+  })
 
   return (
     <section
@@ -93,7 +83,6 @@ export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
             <TerminalStatus
               connection={connection.state()}
               onRetry={() => mount?.retry()}
-              onRecreate={recreate}
             />
           </div>
         </Show>

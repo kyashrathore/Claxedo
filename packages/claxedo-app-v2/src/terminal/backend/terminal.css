@@ -26,7 +26,7 @@
 .xterm .xterm-scrollable-element > .xterm-scrollbar > .xterm-slider {
   width: 4px !important;
   left: 1px !important;
-  border-radius: var(--radius-pill) !important;
+  border-radius: var(--radius-3) !important;
   background: var(--border-weak-base) !important;
 }
 

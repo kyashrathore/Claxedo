@@ -39,7 +39,6 @@ function Notice(props: {
 export function TerminalStatus(props: {
   readonly connection: TerminalConnection
   readonly onRetry: () => void
-  readonly onRecreate: () => void
 }): JSX.Element {
   const t = useTranslator(dictionary)
   return (
@@ -73,28 +72,6 @@ export function TerminalStatus(props: {
             description={t(FAILURE_TEXT[failed().failure])}
             action={props.onRetry}
             actionLabel={t("terminal.retry")}
-          />
-        )}
-      </Match>
-      <Match when={props.connection.kind === "gone"}>
-        <Notice
-          testId="terminal-gone"
-          title={t("terminal.gone.title")}
-          description={t("terminal.gone.description")}
-          action={props.onRecreate}
-          actionLabel={t("terminal.recreate")}
-        />
-      </Match>
-      <Match when={props.connection.kind === "exited" && props.connection}>
-        {(exited) => (
-          <Notice
-            testId="terminal-exited"
-            title={t("terminal.exited.title")}
-            description={
-              exited().code === undefined ? undefined : t("terminal.exited.code", { code: exited().code ?? 0 })
-            }
-            action={props.onRecreate}
-            actionLabel={t("terminal.recreate")}
           />
         )}
       </Match>

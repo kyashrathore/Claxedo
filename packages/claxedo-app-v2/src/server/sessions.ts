@@ -6,6 +6,7 @@ import { sessionPath, type SessionContext } from "./session-context"
 import { controlGoal, startGoal } from "./session-goal"
 import { createSessionQueue } from "./session-queue"
 import { readLatestTurn } from "./latest-turn"
+import { readTurn } from "./turn"
 import { listSessions, readOlder, readSnapshot } from "./session-reads"
 import { createStatusesRead } from "./session-statuses"
 import { stopTurn } from "./session-stop"
@@ -75,6 +76,7 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
     snapshot: (ref) => readSnapshot(context, ref),
     older: (ref, cursor) => readOlder(context, ref, cursor),
     latestTurn: (ref) => readLatestTurn(context, ref),
+    turn: (ref, turnId) => readTurn(context, ref, turnId),
     create: (input) => createSession(context, input),
     prompt: (ref, input) => sendPrompt(context, ref, input, input.messageId ?? newMessageId()),
     stop: async (ref) => stopTurn(transport, await workspaces.route(ref), ref),
