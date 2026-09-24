@@ -1,7 +1,7 @@
 export { Accordion, type AccordionProps, type AccordionItemProps, type AccordionTriggerProps, type AccordionContentProps } from "./accordion"
 export { AppIcon, appIconNames, type AppIconName, type AppIconProps } from "./app-icon"
 export { Avatar, type AvatarProps } from "./avatar"
-export { Button, type ButtonProps } from "./button"
+export { Button, type ButtonProps } from "@opencode-ai/ui/button"
 export { Card, type CardProps, type CardTitleProps, type CardVariant } from "./card"
 export { Checkbox, type CheckboxProps } from "./checkbox"
 export { ClaxedoIcon, ClaxedoIconV2, type ClaxedoIconName, type ClaxedoIconProps } from "./controls/claxedo-icon"

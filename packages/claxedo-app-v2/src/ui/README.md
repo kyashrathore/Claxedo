@@ -1,6 +1,6 @@
 # UI kit
 
-v2's own components and tokens. Surfaces ported from today's app render with today's kit (`@opencode-ai/ui`), and today's global CSS (`src/shell/styles`) styles the kit's selectors for the whole page, so every `data-component`, `data-slot` and class name here carries the `v2-` prefix (`[data-component="v2-select"]`, `.v2-button`): an unprefixed name would take the kit's rules, and a kit dialog would take these. Names stay inside this folder.
+v2's own components and tokens. Surfaces ported from today's app render with today's kit (`@opencode-ai/ui`), and today's global CSS (`src/shell/styles`) styles the kit's selectors for the whole page, so every `data-component`, `data-slot` and class name here carries the `v2-` prefix (`[data-component="v2-select"]`, `.v2-icon-button`): an unprefixed name would take the kit's rules, and a kit dialog would take these. Names stay inside this folder.
 
 ## Owned concepts
 
@@ -15,7 +15,7 @@ Every component works at 390 px with a coarse pointer: `touch.css` gives compact
 
 ## Origin
 
-Upstream's v2 library (anomalyco/opencode `packages/ui/src/v2` at 1d6c3c0e29) is the source of `Accordion`, `Avatar`, `Button`, `Checkbox`, `DiffChanges`, `Divider`, `Field`, the file-tree styles, `Icon`, `IconButton`, `InlineInput`, `Keybind`, `Loader`, `Menu`, `ProgressCircle`, `ProjectAvatar`, `RadioGroup`, `SegmentedControl`, `Select`, `SplitButton`, `Switch`, `TabStateIndicator`, `Tabs`, `Tag` (upstream's `Badge`), `TextInput`, `TextShimmer`, `Textarea`, `Wordmark`, the tokens and the base styles. Upstream has no twin for the rest, so it is Claxedo's own, restyled onto the v2 tokens: `AppIcon`, `Card`, `Collapsible`, `DockShell` and `DockTray`, `FileIcon`, `ImagePreview`, `List` with `useFilteredList`, `Popover`, `ProviderIcon`, `ResizeHandle` and `ScrollView`. Upstream has no prompt-input frame in this library; the composer builds its own from `Textarea` and `DockShell`.
+Upstream's v2 library (anomalyco/opencode `packages/ui/src/v2` at 1d6c3c0e29) is the source of `Accordion`, `Avatar`, `Checkbox`, `DiffChanges`, `Divider`, `Field`, the file-tree styles, `Icon`, `IconButton`, `InlineInput`, `Keybind`, `Loader`, `Menu`, `ProgressCircle`, `ProjectAvatar`, `RadioGroup`, `SegmentedControl`, `Select`, `SplitButton`, `Switch`, `TabStateIndicator`, `Tabs`, `Tag` (upstream's `Badge`), `TextInput`, `TextShimmer`, `Textarea`, `Wordmark`, the tokens and the base styles. Upstream has no twin for the rest, so it is Claxedo's own, restyled onto the v2 tokens: `AppIcon`, `Card`, `Collapsible`, `DockShell` and `DockTray`, `FileIcon`, `ImagePreview`, `List` with `useFilteredList`, `Popover`, `ProviderIcon`, `ResizeHandle` and `ScrollView`. Upstream has no prompt-input frame in this library; the composer builds its own from `Textarea` and `DockShell`.
 
 ## Components
 
@@ -24,7 +24,7 @@ Upstream's v2 library (anomalyco/opencode `packages/ui/src/v2` at 1d6c3c0e29) is
 | `Accordion` (`.Item`, `.Header`, `.Trigger`, `.Content`) | Kobalte accordion props; `Trigger` adds `hideChevron?` |
 | `AppIcon` | `id: AppIconName`, img props |
 | `Avatar` | `fallback: string`, `src?`, `background?`, `foreground?`, `size?: small \| normal \| large`, `kind?: user \| org` |
-| `Button` | Kobalte button props, `size?: small \| normal \| large`, `variant?: neutral \| danger \| warning \| outline \| contrast \| ghost \| ghost-muted \| loading`, `icon?: IconName` |
+| `Button` (the kit's, from `@opencode-ai/ui/button`, so buttons look as they do today) | Kobalte button props, `size?: small \| normal \| large`, `variant?: primary \| secondary \| ghost`, `icon?: kit icon name` |
 | `Card` (`.Title`, `.Description`, `.Actions`) | `variant?: normal \| error \| warning \| success \| info`, `accent?` (paints the rail), div props; `Title` adds `variant?`, `icon?: IconName \| false \| null` |
 | `Checkbox` | Kobalte checkbox props, `label: JSX.Element`, `description?`, `hideLabel?` |
 | `Collapsible` (`.Trigger`, `.Content`, `.Arrow`) | Kobalte collapsible props, `variant?: normal \| ghost`, `class?` |

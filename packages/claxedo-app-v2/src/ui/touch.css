@@ -1,6 +1,5 @@
 @layer touch {
   @media (pointer: coarse) {
-    .v2-button,
     .v2-icon-button,
     .v2-tabs-close-button,
     .v2-segmented-control-item,
@@ -14,7 +13,6 @@
       position: relative;
     }
 
-    .v2-button::before,
     .v2-icon-button::before,
     .v2-tabs-close-button::before,
     .v2-segmented-control-item::before,
