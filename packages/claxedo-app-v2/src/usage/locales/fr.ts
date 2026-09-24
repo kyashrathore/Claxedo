@@ -7,4 +7,5 @@ export const dictionary = {
   "usage.quota.windowResets": "réinitialisé dans {{reset}}",
   "usage.window.weekly": "Hebdomadaire",
   "usage.window.weeklyOpus": "Hebdomadaire · Opus",
+  "usage.quota.checking": "Vérification de vos agents…",
 }

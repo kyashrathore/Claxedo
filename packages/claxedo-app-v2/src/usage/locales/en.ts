@@ -23,6 +23,7 @@ export const dictionary = {
   "usage.quota.windowLeft": "{{percent}}% left",
   "usage.quota.windowResets": "resets {{reset}}",
   "usage.quota.unavailable": "Usage limits are unavailable",
+  "usage.quota.checking": "Checking your agents…",
   "usage.window.session": "Session",
   "usage.window.weekly": "Weekly",
   "usage.window.weeklyOpus": "Weekly · Opus",

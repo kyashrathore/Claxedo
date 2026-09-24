@@ -58,87 +58,55 @@ export function renderPromptEditor(editor: HTMLElement, parts: Prompt) {
   }
 }
 
+type Parser = { parts: Prompt; position: number; buffer: string }
+
+function flushText(parser: Parser): void {
+  let content = parser.buffer
+  if (content.includes("\r")) content = content.replace(/\r\n?/g, "\n")
+  if (content.includes("​")) content = content.replace(/​/g, "")
+  parser.buffer = ""
+  if (!content) return
+  parser.parts.push({ type: "text", content, start: parser.position, end: parser.position + content.length })
+  parser.position += content.length
+}
+
+function pushPill(parser: Parser, element: HTMLElement): void {
+  flushText(parser)
+  const content = element.textContent ?? ""
+  const span = { content, start: parser.position, end: parser.position + content.length }
+  if (element.dataset.type === "file") {
+    parser.parts.push({ type: "file", path: element.dataset.path ?? "", selection: readFileSelection(element), ...span })
+  } else {
+    parser.parts.push({ type: "agent", name: element.dataset.name ?? "", ...span })
+  }
+  parser.position += content.length
+}
+
+function visit(parser: Parser, node: Node): void {
+  if (node.nodeType === Node.TEXT_NODE) {
+    parser.buffer += node.textContent ?? ""
+    return
+  }
+  const el = asElement(node)
+  if (!el) return
+  if (el.dataset.type === "file" || el.dataset.type === "agent") return pushPill(parser, el)
+  if (el.tagName === "BR") {
+    parser.buffer += "\n"
+    return
+  }
+  for (const child of Array.from(el.childNodes)) visit(parser, child)
+}
+
 export function parsePromptEditor(editor: HTMLElement): Prompt {
-  const parts: Prompt = []
-  let position = 0
-  let buffer = ""
-
-  const flushText = () => {
-    let content = buffer
-    if (content.includes("\r")) content = content.replace(/\r\n?/g, "\n")
-    if (content.includes("​")) content = content.replace(/​/g, "")
-    buffer = ""
-    if (!content) return
-    parts.push({ type: "text", content, start: position, end: position + content.length })
-    position += content.length
-  }
-
-  const pushFile = (file: HTMLElement) => {
-    const content = file.textContent ?? ""
-    parts.push({
-      type: "file",
-      path: file.dataset.path ?? "",
-      selection: readFileSelection(file),
-      content,
-      start: position,
-      end: position + content.length,
-    })
-    position += content.length
-  }
-
-  const pushAgent = (agent: HTMLElement) => {
-    const content = agent.textContent ?? ""
-    parts.push({
-      type: "agent",
-      name: agent.dataset.name ?? "",
-      content,
-      start: position,
-      end: position + content.length,
-    })
-    position += content.length
-  }
-
-  const visit = (node: Node) => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      buffer += node.textContent ?? ""
-      return
-    }
-    const el = asElement(node)
-    if (!el) return
-    if (el.dataset.type === "file") {
-      flushText()
-      pushFile(el)
-      return
-    }
-    if (el.dataset.type === "agent") {
-      flushText()
-      pushAgent(el)
-      return
-    }
-    if (el.tagName === "BR") {
-      buffer += "\n"
-      return
-    }
-
-    for (const child of Array.from(el.childNodes)) {
-      visit(child)
-    }
-  }
-
+  const parser: Parser = { parts: [], position: 0, buffer: "" }
   const children = Array.from(editor.childNodes)
   children.forEach((child, index) => {
     const childTag = asElement(child)?.tagName
-    const isBlock = childTag === "DIV" || childTag === "P"
-    visit(child)
-    if (isBlock && index < children.length - 1) {
-      buffer += "\n"
-    }
+    visit(parser, child)
+    if ((childTag === "DIV" || childTag === "P") && index < children.length - 1) parser.buffer += "\n"
   })
-
-  flushText()
-
-  if (parts.length === 0) return emptyPrompt()
-  return parts
+  flushText(parser)
+  return parser.parts.length === 0 ? emptyPrompt() : parser.parts
 }
 
 function hasValidSelectionDataset(file: HTMLElement) {
