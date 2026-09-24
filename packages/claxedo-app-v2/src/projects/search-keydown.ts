@@ -1,21 +1,14 @@
-// VENDORED VERBATIM from upstream `packages/app/src/utils/search-keydown.ts`
-// at upstream a4fed69a82 (tree 7534d23551). Keep byte-identical below this
-// header so `git show upstream:packages/app/src/utils/search-keydown.ts | diff`
-// stays a clean re-sync (plan 2026-07-25-005, T1.2/W6).
-//
-// What it is: the keyboard bridge that makes a dropdown's search field behave as
-// if it were focused even when focus sits on a menu row. A searchable menu wants
-// arrow keys to move the highlighted row (so focus must NOT be in the input) and
-// printable keys to type into the filter (so the input must receive them). This
-// helper reconciles that by intercepting a document-level keydown and applying
-// insert/delete/caret-move/select-all to the input by hand.
 const editableSelector = "input, textarea, select, [contenteditable=''], [contenteditable='true']"
+
+type Setter = (value: string) => void
+
+type SearchKeyAction = NonNullable<ReturnType<typeof searchKeyAction>>
 
 export function handleDocumentSearchKeydown(
   input: HTMLInputElement | undefined,
   event: KeyboardEvent,
   inputValue: string,
-  setInputValue: (value: string) => void,
+  setInputValue: Setter,
 ) {
   if (!input) return false
   if (event.defaultPrevented || event.isComposing) return false
@@ -28,50 +21,44 @@ export function handleDocumentSearchKeydown(
   event.preventDefault()
   event.stopPropagation()
   input.focus()
+  return applySearchKey(input, action, inputValue, event.shiftKey, setInputValue)
+}
 
+function applySearchKey(input: HTMLInputElement, action: SearchKeyAction, inputValue: string, extend: boolean, setInputValue: Setter) {
   const start = input.selectionStart ?? inputValue.length
   const end = input.selectionEnd ?? inputValue.length
-
-  if (action.type === "selectAll") {
-    input.setSelectionRange(0, inputValue.length)
-    return true
+  switch (action.type) {
+    case "selectAll":
+      input.setSelectionRange(0, inputValue.length)
+      return true
+    case "move":
+      moveSelection(input, inputValue, action.delta, extend)
+      return true
+    case "home":
+      setBoundarySelection(input, start, 0, extend)
+      return true
+    case "end":
+      setBoundarySelection(input, start, inputValue.length, extend)
+      return true
+    case "deleteBackward":
+      return deleteBackward(input, inputValue, start, end, setInputValue)
+    case "deleteForward":
+      return deleteForward(input, inputValue, start, end, setInputValue)
+    case "insert":
+      return updateValue(input, inputValue.slice(0, start) + action.value + inputValue.slice(end), start + action.value.length, setInputValue)
   }
+}
 
-  if (action.type === "move") {
-    moveSelection(input, inputValue, action.delta, event.shiftKey)
-    return true
-  }
+function deleteBackward(input: HTMLInputElement, value: string, start: number, end: number, setInputValue: Setter) {
+  if (start !== end) return updateValue(input, value.slice(0, start) + value.slice(end), start, setInputValue)
+  if (start === 0) return true
+  return updateValue(input, value.slice(0, start - 1) + value.slice(end), start - 1, setInputValue)
+}
 
-  if (action.type === "home") {
-    setBoundarySelection(input, start, 0, event.shiftKey)
-    return true
-  }
-
-  if (action.type === "end") {
-    setBoundarySelection(input, start, inputValue.length, event.shiftKey)
-    return true
-  }
-
-  if (action.type === "deleteBackward") {
-    if (start !== end)
-      return updateValue(input, inputValue.slice(0, start) + inputValue.slice(end), start, setInputValue)
-    if (start === 0) return true
-    return updateValue(input, inputValue.slice(0, start - 1) + inputValue.slice(end), start - 1, setInputValue)
-  }
-
-  if (action.type === "deleteForward") {
-    if (start !== end)
-      return updateValue(input, inputValue.slice(0, start) + inputValue.slice(end), start, setInputValue)
-    if (end === inputValue.length) return true
-    return updateValue(input, inputValue.slice(0, start) + inputValue.slice(end + 1), start, setInputValue)
-  }
-
-  return updateValue(
-    input,
-    inputValue.slice(0, start) + action.value + inputValue.slice(end),
-    start + action.value.length,
-    setInputValue,
-  )
+function deleteForward(input: HTMLInputElement, value: string, start: number, end: number, setInputValue: Setter) {
+  if (start !== end) return updateValue(input, value.slice(0, start) + value.slice(end), start, setInputValue)
+  if (end === value.length) return true
+  return updateValue(input, value.slice(0, start) + value.slice(end + 1), start, setInputValue)
 }
 
 function searchKeyAction(event: KeyboardEvent) {
@@ -119,7 +106,7 @@ function setBoundarySelection(input: HTMLInputElement, anchor: number, focus: nu
   input.setSelectionRange(Math.min(anchor, focus), Math.max(anchor, focus), focus < anchor ? "backward" : "forward")
 }
 
-function updateValue(input: HTMLInputElement, value: string, caret: number, setInputValue: (value: string) => void) {
+function updateValue(input: HTMLInputElement, value: string, caret: number, setInputValue: Setter) {
   input.value = value
   setInputValue(value)
   input.setSelectionRange(caret, caret)
