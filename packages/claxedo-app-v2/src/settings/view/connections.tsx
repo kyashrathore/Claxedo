@@ -1,10 +1,10 @@
 import { createSignal, For, Show } from "solid-js"
-import { useQuery, useQueryClient } from "@tanstack/solid-query"
+import { useQuery } from "@tanstack/solid-query"
 import { useServer, type Connection, type ConnectionScope, type Integration, type IntegrationsCatalog } from "@/server"
-import type { HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
+import type { HarnessConnectionRef, HarnessConnectionsCatalog } from "@claxedo/agent-runtime-contract"
 import { showToast, Tag, Button } from "@/ui"
 import { useTranslator } from "@/i18n"
-import { loadAgentConnections, removeAgentConnection, verifyFailedMessage } from "../connections"
+import { verifyFailedMessage } from "../connections"
 import { settingsDictionary, type SettingsKey } from "../i18n"
 import { ConnectForm } from "./connect-form"
 import { SettingsEmpty, SettingsGroup, SettingsIntro, SettingsList, SettingsNote } from "./section"
@@ -21,10 +21,9 @@ const reason = (error: unknown) => (error instanceof Error ? error.message : Str
 
 export function ConnectionsSection() {
   const t = useTranslator(settingsDictionary)
-  const queryClient = useQueryClient()
   const server = useServer()
   const catalog = useQuery(() => server.queries.integrations.catalog())
-  const agents = useQuery(() => ({ queryKey: ["settings", "agent-connections"], queryFn: loadAgentConnections, staleTime: Infinity }))
+  const agents = useQuery(() => server.queries.agentConnections.list())
   const [connecting, setConnecting] = createSignal<Connecting>()
   const [busy, setBusy] = createSignal<string>()
   const reverify = async (id: string) => {
@@ -47,7 +46,7 @@ export function ConnectionsSection() {
   return (
     <div class="settings-body">
       <SettingsIntro description={t("settings.connections.description")} />
-      <AgentConnections rows={agents.data} error={agents.error} loading={agents.isPending} onRemove={(row) => void act(row.connectionId, () => removeAgentConnection(row.connectionId).then(() => queryClient.invalidateQueries({ queryKey: ["settings", "agent-connections"] })), `${row.label} removed`)} busy={busy()} />
+      <AgentConnections rows={agents.data} error={agents.error} loading={agents.isPending} onRemove={(row) => void act(row.connectionId, () => server.agentConnections.remove(row.connectionId), `${row.label} removed`)} busy={busy()} />
       <SettingsGroup title={t("settings.connections.integrations")}>
         <Show when={catalog.error}>{(error) => <SettingsNote tone="danger">{reason(error())}</SettingsNote>}</Show>
         <Show when={catalog.data} fallback={<SettingsEmpty>{catalog.isPending ? t("settings.common.loading") : t("settings.connections.integrations.empty")}</SettingsEmpty>}>
@@ -162,7 +161,7 @@ function ConnectionRow(props: {
 }
 
 function AgentConnections(props: {
-  readonly rows: Awaited<ReturnType<typeof loadAgentConnections>> | undefined
+  readonly rows: HarnessConnectionsCatalog | undefined
   readonly error: unknown
   readonly loading: boolean
   readonly busy: string | undefined

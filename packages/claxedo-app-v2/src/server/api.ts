@@ -3,6 +3,7 @@ import type { QueryClient } from "@tanstack/solid-query"
 import type { Account, AccountCheck, EffectiveAccounts, MachineLogin } from "./account-types"
 import type { CloudCreateInput, CloudWorkspace, CodeHostConnection, CodeHostRepository } from "./cloud-types"
 import type { ConnectionState, ServerEvent } from "./events"
+import type { AgentConnectionsApi, AgentConnectionsQueries } from "./agent-connections"
 import type { IntegrationQueries, IntegrationsApi } from "./integrations"
 import type { SandboxProviderQueries, SandboxProvidersApi } from "./sandbox-providers"
 import type { ProviderConnectApi, ProviderConnectQueries } from "./provider-connect"
@@ -208,6 +209,7 @@ export type ServerQueries = {
   readonly cloud: { readonly list: () => FetchQuery<readonly CloudWorkspace[]> }
   readonly folders: FolderQueries
   readonly integrations: IntegrationQueries
+  readonly agentConnections: AgentConnectionsQueries
   readonly sandboxProviders: SandboxProviderQueries
   readonly providerConnect: ProviderConnectQueries
   readonly providerCatalogs: ProviderCatalogQueries
@@ -246,6 +248,7 @@ export type Server = {
   readonly tasks: TasksApi
   readonly folders: FoldersApi
   readonly integrations: IntegrationsApi
+  readonly agentConnections: AgentConnectionsApi
   readonly sandboxProviders: SandboxProvidersApi
   readonly providerConnect: ProviderConnectApi
   readonly providerCatalogs: ProviderCatalogsApi

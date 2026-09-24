@@ -1,4 +1,5 @@
 import type { QueryClient } from "@tanstack/solid-query"
+import { agentConnectionQueries } from "./agent-connections"
 import { integrationQueries } from "./integrations"
 import { sandboxProviderQueries } from "./sandbox-providers"
 import { providerConnectQueries } from "./provider-connect"
@@ -53,6 +54,7 @@ export function createQueries(transport: Transport, workspaces: Workspaces): Ser
     harnesses: harnessQueries(transport, workspaces),
     folders: folderQueries(transport),
     integrations: integrationQueries(transport),
+    agentConnections: agentConnectionQueries(transport),
     sandboxProviders: sandboxProviderQueries(transport),
     providerConnect: providerConnectQueries(transport),
     providerCatalogs: providerCatalogQueries(transport),
