@@ -1,7 +1,6 @@
 import { For, Show } from "solid-js"
 import { Select } from "@opencode-ai/ui/select"
-import { TextField } from "@opencode-ai/ui/text-field"
-import { Switch, useTheme, type ColorScheme } from "@/ui"
+import { Switch, useTheme, type ColorScheme, TextField } from "@/ui"
 import { useTranslator } from "@/i18n"
 import { settingsDictionary, type SettingsKey } from "../i18n"
 import { CODE_FONT_PLACEHOLDER, codeFontFamily, TERMINAL_FONT_PLACEHOLDER, terminalFontFamily, UI_FONT_PLACEHOLDER, uiFontFamily } from "../fonts"
