@@ -4,7 +4,7 @@ import { onboardingRoute } from "@/onboarding"
 import { addProjectPage, projectPage } from "@/projects"
 import { changesPanelTab } from "@/review"
 import { draftSessionPaneKind, sessionPaneKind } from "@/session/view"
-import { terminalPaneKind } from "@/terminal/pane"
+import { terminalPaneKind } from "@/terminal"
 import type { FirstPartyEntries } from "./registries"
 import { settingsPage } from "./view/settings-page"
 

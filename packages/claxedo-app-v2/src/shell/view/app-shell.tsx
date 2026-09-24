@@ -56,9 +56,9 @@ function ScopedShell(props: { readonly scope: string; readonly mainSidebar: JSX.
   return (
     <ComposerStoreProvider>
       <WorkbenchProvider store={workbench}>
-        <PlacementProviders>
-          <ShellLayoutProvider scope={props.scope}>
-            <CommandsProvider>
+        <ShellLayoutProvider scope={props.scope}>
+          <CommandsProvider>
+            <PlacementProviders>
               <FirstRunRedirect />
               <RouteSync />
               <ShellCommands />
@@ -67,9 +67,9 @@ function ScopedShell(props: { readonly scope: string; readonly mainSidebar: JSX.
               <ShellBody route={routing.route()} mainSidebar={props.mainSidebar} />
               <CommandPalette />
               <Overlays />
-            </CommandsProvider>
-          </ShellLayoutProvider>
-        </PlacementProviders>
+            </PlacementProviders>
+          </CommandsProvider>
+        </ShellLayoutProvider>
       </WorkbenchProvider>
     </ComposerStoreProvider>
   )

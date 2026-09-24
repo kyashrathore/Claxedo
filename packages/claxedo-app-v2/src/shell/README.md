@@ -19,7 +19,7 @@ Id-only: `/` (home), `/w/:placementId/s/:sessionId`, `/w/:placementId/t/:termina
 
 ## Placement providers (`placement-providers.tsx`)
 
-The domains whose state is kept per placement (terminal, files, review, browser) get their providers here, inside the workbench, fed `useShellRoute().placementId` and `useWorkbench().openByKind`. Their commands are added to the `commands` registry while the shell is mounted. The composer's draft store sits above the workbench, inside the principal's scope, so another principal starts with no drafts.
+The domains whose state is kept per placement (terminal, files, review, browser) get their providers here, under the commands provider inside the workbench. Files, review and browser take `useShellRoute().placementId` and `useWorkbench().openByKind` as props; the terminal reads the route, the workbench and the commands itself. The review commands are added to the `commands` registry while the shell is mounted. The composer's draft store sits above the workbench, inside the principal's scope, so another principal starts with no drafts.
 
 ## First run (`first-run.tsx`)
 
@@ -36,10 +36,6 @@ Kept from the old app: registrations with owners, keybinding parsing and display
 ## Phone
 
 Below 768 px the sidebar is a drawer and the workspace panel a sheet (both Kobalte dialogs), the top bar shows the pane switcher, and the home route shows the sidebar content full screen. The frame never scrolls horizontally.
-
-## Placeholders
-
-`placeholders/` holds the stand-in server until the adapter's `createServer` lands.
 
 ## Flows
 
