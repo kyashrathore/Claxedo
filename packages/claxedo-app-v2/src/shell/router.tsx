@@ -1,12 +1,15 @@
 import { Route, Router, useLocation, useNavigate } from "@solidjs/router"
-import { createContext, createMemo, useContext, type Accessor, type JSX } from "solid-js"
-import type { PlacementId } from "@/server"
+import { createContext, createMemo, createSignal, useContext, type Accessor, type JSX } from "solid-js"
+import type { PlacementId, SessionId } from "@/server"
 import { useShellRegistries } from "./registries"
 import { parseRoute, placementOf, type ShellRoute } from "./routes"
+
+export type SessionPlacementResolver = (session: SessionId) => PlacementId | undefined
 
 export type ShellRouting = {
   readonly route: Accessor<ShellRoute>
   readonly placementId: Accessor<PlacementId | undefined>
+  readonly resolveSessions: (resolver: SessionPlacementResolver) => () => void
   readonly pathname: Accessor<string>
   readonly navigate: (path: string, options?: { readonly replace?: boolean }) => void
 }
@@ -17,10 +20,21 @@ function RoutingProvider(props: { readonly children: JSX.Element }): JSX.Element
   const location = useLocation()
   const navigate = useNavigate()
   const registries = useShellRegistries()
-  const route = createMemo(() => parseRoute(location.pathname, registries.pages.list(), registries.routes.list()))
+  const parsed = createMemo(() => parseRoute(location.pathname, registries.pages.list(), registries.routes.list()))
+  const [resolver, setResolver] = createSignal<SessionPlacementResolver>()
+  const route = createMemo((): ShellRoute => {
+    const current = parsed()
+    if (current.kind !== "localSession") return current
+    const placement = resolver()?.(current.sessionId)
+    return placement ? { kind: "session", placementId: placement, sessionId: current.sessionId } : current
+  })
   const routing: ShellRouting = {
     route,
     placementId: createMemo(() => placementOf(route())),
+    resolveSessions: (next) => {
+      setResolver(() => next)
+      return () => setResolver((current) => (current === next ? undefined : current))
+    },
     pathname: () => location.pathname,
     navigate: (path, options) => navigate(path, { replace: options?.replace ?? false }),
   }
