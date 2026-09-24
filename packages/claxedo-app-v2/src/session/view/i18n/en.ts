@@ -74,7 +74,7 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.untitled": "Session",
   "sessionScreen.subagent.label": "Subagent",
   "sessionScreen.subagent.task": "Delegated task",
-  "sessionScreen.draft.title": "New session",
+  "sessionScreen.draft.title": "New Session",
   "sessionScreen.action.retry": "Retry",
   "sessionScreen.failed": "Could not load this session.",
   "sessionScreen.action.dismiss": "Dismiss",
