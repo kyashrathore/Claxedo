@@ -32,7 +32,7 @@ export {
 } from "./segmented-control"
 export { Select, type SelectProps } from "./select"
 export { SemanticIcon, type SemanticIconConcept } from "./semantic-icon"
-export { Switch, type SwitchProps } from "./switch"
+export { Switch, type SwitchProps } from "@opencode-ai/ui/switch"
 export { Tag, type TagProps } from "@opencode-ai/ui/tag"
 export { TextInput, type TextInputProps } from "./text-input"
 export { Toast, showToast, toaster, type ToastAction, type ToastOptions, type ToastRegionProps, type ToastVariant } from "@opencode-ai/ui/toast"
