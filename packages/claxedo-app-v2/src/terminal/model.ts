@@ -37,7 +37,9 @@ export function transitionConnection(state: TerminalConnection, event: TerminalC
     case "failed":
       return { kind: "failed", failure: event.failure, error: event.error }
     case "retry":
-      return state.kind === "detached" || state.kind === "failed" || state.kind === "gone" ? { kind: "connecting" } : state
+      return state.kind === "detached" || state.kind === "failed" || state.kind === "gone"
+        ? { kind: "connecting" }
+        : state
     case "gone":
       return { kind: "gone" }
     case "exited":
@@ -54,9 +56,7 @@ export type TerminalLoad =
   | { readonly kind: "failed"; readonly error: AppError }
 
 export type TerminalLoadEvent =
-  | { readonly type: "started" }
-  | { readonly type: "loaded" }
-  | { readonly type: "failed"; readonly error: AppError }
+  { readonly type: "started" } | { readonly type: "loaded" } | { readonly type: "failed"; readonly error: AppError }
 
 export function transitionLoad(state: TerminalLoad, event: TerminalLoadEvent): TerminalLoad {
   switch (event.type) {
@@ -69,17 +69,6 @@ export function transitionLoad(state: TerminalLoad, event: TerminalLoadEvent): T
     default:
       return unreachable(event)
   }
-}
-
-export function isAppError(value: unknown): value is AppError {
-  if (!value || typeof value !== "object") return false
-  const record = value as Record<string, unknown>
-  return typeof record.class === "string" && typeof record.message === "string" && typeof record.retryable === "boolean"
-}
-
-export function asAppError(cause: unknown, message: string): AppError {
-  if (isAppError(cause)) return cause
-  return { class: "internal", message, retryable: false, cause }
 }
 
 export function closeError(close: TerminalStreamClose): AppError {

@@ -1,10 +1,10 @@
 import type { Machine } from "@/lib/machine"
 import { resolveWorkspaceFileFocus, type WorkspaceFileFocusTarget } from "@/lib/workspace-file-focus"
-import type { PlacementId, Server, TerminalId } from "@/server"
+import { toAppError, type PlacementId, type Server, type TerminalId } from "@/server"
 import type { RendererBudget } from "../backend/renderer-budget"
 import type { TerminalBackend, TerminalBackendOptions } from "../backend/types"
 import { attachTerminal, type Attachment } from "../attach"
-import { asAppError, type TerminalConnection, type TerminalConnectionEvent, type TerminalRow } from "../model"
+import { type TerminalConnection, type TerminalConnectionEvent, type TerminalRow } from "../model"
 import { isLikelyTui } from "../resize"
 import { monoFontFamily, observeTheme, terminalColors } from "./terminal-colors"
 
@@ -53,10 +53,19 @@ function attachBackend(input: TerminalMountInput, backend: TerminalBackend, like
     host: input.host,
     connection: input.connection,
     likelyTui,
-    onPublishFailed: (error) => console.error("Terminal size could not be published", { terminalId: input.terminalId, error }),
+    onPublishFailed: (error) =>
+      console.error("Terminal size could not be published", { terminalId: input.terminalId, error }),
   })
   backend.focus()
   return { attachment, stopTheme }
+}
+
+function reportStartFailure(input: TerminalMountInput, error: unknown): void {
+  input.connection.send({
+    type: "failed",
+    failure: "start",
+    error: toAppError(error),
+  })
 }
 
 export function mountTerminal(input: TerminalMountInput): TerminalMount {
@@ -75,7 +84,7 @@ export function mountTerminal(input: TerminalMountInput): TerminalMount {
   }
   const boot = () =>
     start().catch((error: unknown) => {
-      if (!disposed) input.connection.send({ type: "failed", failure: "start", error: asAppError(error, "Terminal backend failed to start") })
+      if (!disposed) reportStartFailure(input, error)
     })
   void boot()
 

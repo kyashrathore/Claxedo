@@ -14,7 +14,10 @@ const KEYS: readonly { readonly id: AccessoryKey; readonly label: string; readon
   { id: "right", label: "→", name: "terminal.key.right" },
 ]
 
-export function AccessoryRow(props: { readonly onKey: (data: string) => void; readonly active: () => boolean }): JSX.Element {
+export function AccessoryRow(props: {
+  readonly onKey: (data: string) => void
+  readonly active: () => boolean
+}): JSX.Element {
   const t = useTranslator(dictionary)
   const [ctrlArmed, setCtrlArmed] = createSignal(false)
   const coarse = useCoarsePointer()

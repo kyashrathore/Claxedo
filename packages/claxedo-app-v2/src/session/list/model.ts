@@ -3,7 +3,7 @@ import type { AppError, SessionId, SessionRef, SessionRow, SessionStatus, Sessio
 export type PendingSend = {
   readonly clientRequestId: string
   readonly at: number
-  readonly humanTurnBefore: number | undefined
+  readonly updatedBefore: number
 }
 
 export type OrderKey = { readonly activity: number; readonly createdAt: number; readonly sessionId: string }

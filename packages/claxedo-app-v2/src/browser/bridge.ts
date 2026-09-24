@@ -15,7 +15,11 @@ export type BrowserNavigationState =
   | { readonly ok: true; readonly url: string; readonly canGoBack: boolean; readonly canGoForward: boolean }
   | { readonly ok: false; readonly error: string }
 
-export type BrowserConsoleQuery = { readonly since?: number; readonly level?: BrowserConsoleLevel; readonly limit?: number }
+export type BrowserConsoleQuery = {
+  readonly since?: number
+  readonly level?: BrowserConsoleLevel
+  readonly limit?: number
+}
 
 export type BrowserBridge = {
   readonly enabled: () => Promise<boolean>
@@ -24,7 +28,10 @@ export type BrowserBridge = {
   readonly navigate: (paneId: string, url: string) => Promise<BrowserResult>
   readonly getConsoleLogs: (paneId: string, query?: BrowserConsoleQuery) => Promise<BrowserConsoleEntry[]>
   readonly onConsoleEntry: (paneId: string, listener: (entry: BrowserConsoleEntry) => void) => () => void
-  readonly captureScreenshot: (paneId: string, options?: { clip?: BrowserScreenshotClip }) => Promise<BrowserScreenshotResult>
+  readonly captureScreenshot: (
+    paneId: string,
+    options?: { clip?: BrowserScreenshotClip },
+  ) => Promise<BrowserScreenshotResult>
   readonly setInspectMode: (paneId: string, enabled: boolean) => Promise<BrowserResult>
   readonly onNodeSelected: (paneId: string, listener: (payload: unknown) => void) => () => void
   readonly getNavigationState?: (paneId: string) => Promise<BrowserNavigationState>

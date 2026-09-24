@@ -26,4 +26,4 @@ One column, 16 px gutters, the steps list wraps, every control is a kit componen
 
 ## Flows
 
-- Flow 1: first run on an unsigned desktop: detect agents, add a project, first prompt.
+- Flow 1 (`e2e/flows/01-first-run.spec.ts`): first run on an unsigned machine: detect agents, add a folder project, first prompt. It runs on the local web in both apps; the desktop variant waits for a desktop fixture in the harness.

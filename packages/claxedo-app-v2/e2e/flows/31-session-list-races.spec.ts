@@ -3,9 +3,11 @@ import {
   expectRailEqualsServer,
   expectServerStatus,
   holdListRead,
+  loadEveryPage,
   PAGE_SIZE,
   patchSession,
   railLinks,
+  railRows,
   reopenHoldingListRead,
   serverItems,
   setup,
@@ -119,4 +121,21 @@ test("31 a session is archived, renamed or deleted while a turn runs", async ({ 
   await api.deleteSession(checked.directory, deleted.id)
   await expectServerStatus(checked, renamed.id, "Idle")
   await expectRailEqualsServer(app, checked)
+})
+
+test("31 a thousand sessions, including the status of rows off screen", async ({ stack, api, app }) => {
+  test.setTimeout(180_000)
+  const titles = Array.from({ length: 1000 }, (_, index) => `Bulk ${String(index).padStart(4, "0")}`)
+  const { sessions, checked } = await setup(stack, api, app, titles)
+  const oldest = sessions[0]
+  await startHeldTurn(checked, oldest.id, "off-screen")
+  await expectServerStatus(checked, oldest.id, "Working")
+  await expectRailEqualsServer(app, checked)
+  await loadEveryPage(app)
+  await expectRailEqualsServer(app, checked, { through: oldest.id, timeout: 60_000 })
+  expect((await railRows(app)).at(-1), "the last row, off screen until scrolled, shows the server's status").toEqual({
+    sessionId: oldest.id,
+    title: oldest.title,
+    status: "Working",
+  })
 })

@@ -77,4 +77,17 @@ test("12 workbench and shell: tabs, split, drag, the palette, and settings in th
   await expect(divider(app)).toBeVisible()
   await expect(openPanes(app).getByRole("tab")).toHaveText(titles)
   await expect(app.getByRole("region", { name: "Sessions" })).toBeVisible()
+
+  await openPanes(app).getByRole("tab", { name: "First" }).focus()
+  await app.keyboard.press("Delete")
+  await expect(openPanes(app).getByRole("tab")).toHaveText(["Second"])
+  await expect(divider(app)).toHaveCount(0)
+  expect((await api.session(workspace.directory, first.id)).title).toBe("First")
+
+  const sessions = app.getByRole("region", { name: "Sessions" })
+  await sessions.getByRole("button", { name: "New session" }).click()
+  await expect(openPanes(app).getByRole("tab")).toHaveText(["Second", "New session"])
+  await expect(app.getByRole("region", { name: "New session" })).toBeVisible()
+  await expect(sessions.getByRole("listitem")).toHaveCount(2)
+  expect(await api.sessions(workspace.directory)).toHaveLength(2)
 })
