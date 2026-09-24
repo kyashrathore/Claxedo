@@ -1,5 +1,4 @@
 export const dictionary = {
-  "rail.newSession": "Nowa sesja",
   "rail.cancel": "Anuluj",
   "rail.rename": "Zmień nazwę",
   "rail.archive": "Archiwizuj",

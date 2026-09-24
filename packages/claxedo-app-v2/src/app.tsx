@@ -2,6 +2,7 @@ import { browserAuthAdapter } from "#browser-auth-adapter"
 import { createMemo, Show, type JSX, type ParentProps } from "solid-js"
 import { AuthProvider, useAuth, type Auth, type AuthState } from "@/auth"
 import { I18nProvider } from "@/i18n"
+import { ProjectListProvider } from "@/projects"
 import { MainSidebar } from "@/rail"
 import { createServer, ServerProvider, type AuthSource } from "@/server"
 import { SessionStoresProvider } from "@/session"
@@ -27,7 +28,9 @@ function ServerScope(props: ParentProps<{ readonly auth: AuthSource; readonly se
   return (
     <ServerProvider server={server}>
       <SessionStoresProvider>
-        <DialogProvider>{props.children}</DialogProvider>
+        <ProjectListProvider>
+          <DialogProvider>{props.children}</DialogProvider>
+        </ProjectListProvider>
       </SessionStoresProvider>
     </ServerProvider>
   )
