@@ -81,7 +81,7 @@ export function UsageSection(): JSX.Element {
     return load.kind === "ready" ? load.summary : undefined
   }
   return (
-    <div class="usage" data-component="usage">
+    <div class="usage">
       <div class="usage-toolbar">
         <Choices label={t("usage.view")} choices={VIEWS} value={options().view} onChange={(view) => choose({ view })} />
         <Show when={options().view !== "quota"}>
