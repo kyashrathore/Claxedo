@@ -51,7 +51,7 @@ export function createQueries(transport: Transport, workspaces: Workspaces): Ser
   }
 }
 
-export function invalidationKeys(server: string, event: ServerEvent): readonly (readonly unknown[])[] {
+function invalidationKeys(server: string, event: ServerEvent): readonly (readonly unknown[])[] {
   switch (event.type) {
     case "filesChanged":
       return [queryKeys.filesOf(server, event.placementId), queryKeys.gitOf(server, event.placementId)]

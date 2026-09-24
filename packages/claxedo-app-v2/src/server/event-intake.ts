@@ -4,6 +4,7 @@ import { toAppError } from "./errors"
 import type { ServerEvent } from "./events"
 import { invalidateFor } from "./queries"
 import type { StatusOwner } from "./status"
+import type { SessionRef } from "./types"
 import type { Workspaces } from "./workspaces"
 import { createCoalescer, type Coalescer } from "./wire/coalesce"
 import { frameOf, placementDirectory, serverEventFromFrame, type Frame } from "./wire/frames"
@@ -24,14 +25,26 @@ type IntakeInput = {
 
 type Listeners = Set<(event: ServerEvent) => void>
 
-function publisher(input: IntakeInput, listeners: Listeners) {
+async function settleHeld(input: IntakeInput, ref: SessionRef, coalescer: Coalescer) {
+  try {
+    const status = await input.status.settle(await input.workspaces.route(ref), ref)
+    coalescer.push({ type: "statusChanged", ref, status })
+  } catch (error) {
+    console.error("A session's status after its failed turn could not be settled", { sessionId: ref.sessionId, error: toAppError(error) })
+  }
+}
+
+function publisher(input: IntakeInput, listeners: Listeners, coalescer: () => Coalescer) {
   return (events: readonly ServerEvent[]) => {
     batch(() => {
       for (const event of events) {
-        const admitted = input.status.apply(event)
-        if (!admitted) continue
-        invalidateFor(input.queryClient, input.serverUrl, admitted)
-        for (const listener of listeners) listener(admitted)
+        const admission = input.status.apply(event)
+        if (admission.kind === "held") {
+          void settleHeld(input, admission.ref, coalescer())
+          continue
+        }
+        invalidateFor(input.queryClient, input.serverUrl, admission.event)
+        for (const listener of listeners) listener(admission.event)
       }
     })
   }
@@ -58,7 +71,7 @@ async function mapFrame(workspaces: Workspaces, coalescer: Coalescer, frame: Fra
 
 export function createEventIntake(input: IntakeInput): EventIntake {
   const listeners: Listeners = new Set()
-  const coalescer = createCoalescer(publisher(input, listeners))
+  const coalescer: Coalescer = createCoalescer(publisher(input, listeners, () => coalescer))
   let queue: Promise<void> = Promise.resolve()
   return {
     frame: (raw) => {

@@ -4,8 +4,8 @@ import { openStream, type Stream } from "./stream"
 import type { Transport } from "./transport"
 import type { BootstrapDeclaration } from "./wire/placements"
 
-export const WORKSPACE_EVENTS_PATH = "/api/wr/events"
-export const CONTROL_PLANE_EVENTS_PATH = "/api/cp/events"
+const WORKSPACE_EVENTS_PATH = "/api/wr/events"
+const CONTROL_PLANE_EVENTS_PATH = "/api/cp/events"
 
 export type EventStreams = {
   readonly open: (declaration: BootstrapDeclaration) => void
@@ -13,7 +13,7 @@ export type EventStreams = {
   readonly close: () => void
 }
 
-export function eventSocketResponse(url: URL, headers: Headers, signal: AbortSignal): Promise<Response> {
+function eventSocketResponse(url: URL, headers: Headers, signal: AbortSignal): Promise<Response> {
   const target = new URL(url)
   target.protocol = target.protocol === "https:" ? "wss:" : "ws:"
   const cursor = headers.get("Last-Event-ID")

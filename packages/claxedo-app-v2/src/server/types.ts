@@ -136,6 +136,10 @@ export type PromptAttachment =
   | { readonly kind: "image"; readonly dataUrl: string; readonly name?: string; readonly mime: string }
   | { readonly kind: "text"; readonly text: string; readonly label?: string }
 
+export type PromptDeliveryRequest = "queue" | "steer"
+
+export type PromptDelivery = "start" | PromptDeliveryRequest
+
 export type PromptInput = {
   readonly clientRequestId: string
   readonly messageId?: string
@@ -146,6 +150,7 @@ export type PromptInput = {
   readonly effort?: string
   readonly permissionMode?: string
   readonly goal?: { readonly objective: string }
+  readonly delivery?: PromptDeliveryRequest
 }
 
 export type SessionCreateInput = {

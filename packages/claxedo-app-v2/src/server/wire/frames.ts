@@ -6,7 +6,7 @@ import { provisionStatus } from "./cloud"
 import { goalFromWire } from "./goal"
 import { isPermissionWire, isQuestionWire, permissionRequest, questionRequest } from "./requests"
 import { sessionRefFor, sessionRowFromSession, type Address } from "./session-row"
-import { sessionStatusFailed, sessionStatusFromWire } from "./status"
+import { sessionStatusFromTurnError, sessionStatusFromWire } from "./status"
 import { terminalEvent } from "./terminals"
 
 export type Frame = {
@@ -114,7 +114,7 @@ function lifecycleEvent(frame: Frame, ref: SessionRef): ServerEvent | undefined 
     case "session.idle":
       return { type: "statusChanged", ref, status: { kind: "idle" } }
     case "session.error":
-      return { type: "statusChanged", ref, status: sessionStatusFailed(properties.error) }
+      return { type: "statusChanged", ref, status: sessionStatusFromTurnError(properties.error) }
     case "session.updated":
       return isSessionInfo(properties.info) ? { type: "sessionUpserted", row: sessionRowFromSession(properties.info, ref) } : undefined
     case "session.deleted":

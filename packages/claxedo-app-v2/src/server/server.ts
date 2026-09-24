@@ -19,10 +19,10 @@ import { createTransport, type Transport } from "./transport"
 import { createWorkspaces, type Workspaces } from "./workspaces"
 import { createWorktreeCreator } from "./worktrees"
 
-export const QUERY_GC_TIME_MS = 10 * 60_000
-export const QUERY_RETRY_LIMIT = 2
+const QUERY_GC_TIME_MS = 10 * 60_000
+const QUERY_RETRY_LIMIT = 2
 
-export function createQueryClient() {
+function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
       queries: {

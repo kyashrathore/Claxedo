@@ -15,6 +15,12 @@ export async function readGoalState(transport: Transport, where: RuntimeRoute, r
   }
 }
 
+export async function startGoal(transport: Transport, where: RuntimeRoute, ref: SessionRef, objective: string): Promise<SessionGoal> {
+  const goal = goalMutationFromWire(await transport.runtimeJson<unknown>(where, sessionPath(ref, "/goal"), jsonInit("POST", { objective })))
+  if (!goal) throw new ServerError({ class: "internal", message: "The goal start answered without a goal" })
+  return goal
+}
+
 export async function controlGoal(transport: Transport, where: RuntimeRoute, ref: SessionRef, action: GoalAction): Promise<SessionGoal | undefined> {
   const route = GOAL_ACTION_ROUTES[action]
   const init = route.method === "POST" ? jsonInit("POST", {}) : { method: route.method }

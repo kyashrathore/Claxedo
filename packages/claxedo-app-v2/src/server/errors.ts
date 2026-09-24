@@ -39,7 +39,7 @@ export class ServerError extends Error implements AppError {
   }
 }
 
-export function errorClassForStatus(status: number): ErrorClass {
+function errorClassForStatus(status: number): ErrorClass {
   if (status === 401 || status === 403) return "auth"
   if (status === 404) return "not_found"
   if (status === 409) return "conflict"
