@@ -59,6 +59,7 @@ function createSendFor(props: ComposerProps, store: ComposerStore, key: Accessor
   return createComposerSend({
     key,
     store,
+    working: () => sessionWorking(props.view),
     mode: () => late.controller?.state.mode ?? "normal",
     selection: selection.sendSelection,
     goalMode: () => selection.harness()?.goalMode,
