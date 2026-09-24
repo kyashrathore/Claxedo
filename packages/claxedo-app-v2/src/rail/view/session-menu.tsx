@@ -15,9 +15,7 @@ export function SessionMenu(props: { readonly row: SessionRowView; readonly acti
       <Menu.Portal>
         <Menu.Content>
           <Menu.Item onSelect={() => props.actions.rename(props.row)}>{t("rail.rename")}</Menu.Item>
-          <Menu.Item onSelect={() => props.actions.toggleArchive(props.row)}>
-            {props.row.archivedAt === undefined ? t("rail.archive") : t("rail.unarchive")}
-          </Menu.Item>
+          <Menu.Item onSelect={() => props.actions.archive(props.row)}>{t("rail.archive")}</Menu.Item>
           <Menu.Separator />
           <Menu.Item onSelect={() => props.actions.remove(props.row)}>{t("rail.delete")}</Menu.Item>
         </Menu.Content>

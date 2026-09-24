@@ -1,8 +1,8 @@
 import type { JSX } from "solid-js"
 import { isRecord, readString } from "@/lib/record"
 import { placementId, projectId, sessionId, type SessionRef } from "@/server"
+import { useSessionStores } from "@/session"
 import type { PaneKind, PaneProps } from "../types"
-import { useSessionStores } from "./session-stores"
 
 function SessionPanePlaceholder(props: PaneProps<SessionRef>): JSX.Element {
   const stores = useSessionStores()

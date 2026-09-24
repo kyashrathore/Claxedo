@@ -1,4 +1,7 @@
 import { QueryClient } from "@tanstack/solid-query"
+import type { CloudServer, CloudWorkspace } from "@/cloud"
+import { uuid } from "@/lib/uuid"
+import type { CodeHostConnection, CodeHostRepository, ProjectsServer } from "@/projects"
 import { machineId } from "@/server"
 import type {
   AppError,
@@ -12,8 +15,9 @@ import type {
   GitCommit,
   GitRefs,
   GitStatus,
+  Machine,
   Placement,
-  Server,
+  Project,
 } from "@/server"
 
 const unavailable = (): AppError => ({ class: "internal", message: "The server adapter has not landed yet", retryable: false })
@@ -45,7 +49,7 @@ const capabilities: Capabilities = {
   },
 }
 
-export function createPlaceholderServer(): Server {
+export function createPlaceholderServer(): ProjectsServer & CloudServer {
   return {
     connection: () => ({ kind: "connected" }),
     capabilities: () => capabilities,
@@ -62,6 +66,10 @@ export function createPlaceholderServer(): Server {
       rename: rejected,
       archive: rejected,
       remove: rejected,
+      statuses: async () => ({ reports: [], unreported: { kind: "idle" } }),
+      newMessageId: uuid,
+      queue: async () => [],
+      controlQueued: rejected,
     },
     projects: { create: rejected, update: rejected, remove: rejected },
     placements: { byId: () => undefined, createWorktree: rejected },
@@ -76,6 +84,7 @@ export function createPlaceholderServer(): Server {
       attach: rejected,
     },
     git: { stage: rejected, unstage: rejected, commit: rejected, push: rejected },
+    cloud: { create: rejected, start: rejected, stop: rejected, remove: rejected },
     queries: {
       files: {
         tree: (placement, path) => emptyQuery<readonly FileNode[]>(["files", placement, path], []),
@@ -91,6 +100,16 @@ export function createPlaceholderServer(): Server {
         diffFile: (placement, scope, file) => unavailableQuery<DiffFile>(["diffFile", placement, scope, file]),
       },
       placements: { byProject: (project) => emptyQuery<readonly Placement[]>(["placements", project], []) },
+      projects: {
+        list: () => emptyQuery<readonly Project[]>(["projects"], []),
+        byId: (project) => unavailableQuery<Project>(["project", project]),
+      },
+      machines: { list: () => emptyQuery<readonly Machine[]>(["machines"], []) },
+      codeHost: {
+        connections: () => emptyQuery<readonly CodeHostConnection[]>(["codeHostConnections"], []),
+        repositories: (connection) => emptyQuery<readonly CodeHostRepository[]>(["codeHostRepositories", connection], []),
+      },
+      cloud: { list: () => emptyQuery<readonly CloudWorkspace[]>(["cloud"], []) },
     },
   }
 }
