@@ -112,8 +112,21 @@ async function connectAndPlace(probe: Probe): Promise<Placement> {
   await check("connect", async () => {
     await server.ready
     await waitFor("connected", () => (server.connection().kind === "connected" ? true : undefined))
-    const harnesses = server.capabilities()?.harnesses.map((harness) => `${harness.id}:${harness.models.length}`).join(",")
-    return `connected, ${server.placements.list().length} placement(s), harnesses ${harnesses}`
+    const capabilities = server.capabilities()
+    const harnesses = capabilities?.harnesses.map((harness) => `${harness.id}:${harness.models.length}`).join(",")
+    const features = Object.entries(capabilities?.features ?? {}).filter(([, on]) => on).map(([name]) => name).join(",")
+    return `connected, this machine=${capabilities?.thisMachine?.id}, harnesses ${harnesses}, features ${features}`
+  })
+  await check("fetched-data queries", async () => {
+    const fetch = server.queryClient.fetchQuery.bind(server.queryClient)
+    const [machines, hosts, accounts, catalog, cloud] = await Promise.all([
+      fetch(server.queries.machines.list()),
+      fetch(server.queries.codeHost.connections()),
+      fetch(server.queries.accounts.list()),
+      fetch(server.queries.marketplace.catalog()),
+      fetch(server.queries.cloud.list()),
+    ])
+    return `machines=${machines.map((machine) => machine.name).join(",")} codeHosts=${hosts.length} accounts=${accounts.map((account) => account.providerId).join(",")} plugins=${catalog.candidates.length} cloud=${cloud.length}`
   })
   await check("projects: create from a folder and read back by id", async () => {
     const project = await server.projects.create({ source: { kind: "folder", path: workspace.directory } })

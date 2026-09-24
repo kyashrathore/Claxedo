@@ -2,12 +2,11 @@ import { HARNESS_EFFORT_LEVELS, HARNESS_TABLE } from "@claxedo/agent-runtime-con
 import { createSignal, type Accessor } from "solid-js"
 import { probeAvailability } from "./availability"
 import { DOCUMENTS_PATH } from "./documents"
-import { machineId } from "./ids"
+import { thisMachine, thisMachineId } from "./machines"
 import { TASKS_PRESETS_PATH } from "./tasks"
 import type { Transport } from "./transport"
-import type { Capabilities, HarnessInfo, Machine, ModelChoice } from "./types"
+import type { Capabilities, HarnessInfo, ModelChoice } from "./types"
 import type { Workspaces } from "./workspaces"
-import type { BootstrapDeclaration } from "./wire/placements"
 import { providerModelsFromWire } from "./wire/providers"
 
 export type CapabilitiesOwner = {
@@ -48,13 +47,6 @@ async function harnessInfo(transport: Transport, harness: (typeof HARNESSES)[num
   }
 }
 
-const UNENROLLED_MACHINE = "this-machine"
-
-function thisMachine(declaration: BootstrapDeclaration, loopback: boolean): Machine | undefined {
-  if (!loopback) return undefined
-  return { id: machineId(declaration.enrollmentId ?? UNENROLLED_MACHINE), name: "This machine", online: true, isThisMachine: true }
-}
-
 export function createCapabilities(transport: Transport, workspaces: Workspaces): CapabilitiesOwner {
   const [value, setValue] = createSignal<Capabilities | undefined>(undefined)
   const load = async () => {
@@ -67,7 +59,7 @@ export function createCapabilities(transport: Transport, workspaces: Workspaces)
     const signedIn = declaration.issuesSessions
     const machine = thisMachine(declaration, transport.loopback)
     setValue({
-      principal: { kind: "machine", machineId: machineId(declaration.enrollmentId ?? UNENROLLED_MACHINE) },
+      principal: { kind: "machine", machineId: thisMachineId(declaration) },
       signedIn,
       ...(machine ? { thisMachine: machine } : {}),
       harnesses,
