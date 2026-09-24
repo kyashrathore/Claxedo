@@ -1,12 +1,16 @@
 import { createMemo, For, Match, Show, Switch, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
+import { useTranslator } from "@/i18n"
+import { FailureNotice } from "@/lib/failure"
 import type { FileNode, PlacementId } from "@/server"
+import { useWorkbench } from "@/workbench"
 import { useFilesApi } from "../api"
+import { dictionary } from "../i18n"
 import { changeMarks, fetchView, sortNodes, treeKeyAction, type ChangeMark } from "../model"
+import { filePaneKind } from "../pane"
 import { useFiles } from "../store"
-import { t } from "../i18n"
-import { FailedNotice, PlaceholderRows } from "./placeholder"
 import { FileTreeRow } from "./file-tree-row"
+import { PlaceholderRows } from "./placeholder"
 
 type Marks = ReadonlyMap<string, ChangeMark>
 
@@ -27,6 +31,7 @@ function handleTreeKeys(event: KeyboardEvent & { currentTarget: HTMLDivElement }
 }
 
 export function FileTree(props: { readonly placementId: PlacementId; readonly activePath?: string }): JSX.Element {
+  const t = useTranslator(dictionary)
   const api = useFilesApi()
   const status = useQuery(() => api.changes(props.placementId))
   const marks = createMemo(() => changeMarks(status.data))
@@ -44,13 +49,15 @@ function TreeLevel(props: {
   readonly marks: Marks
   readonly activePath?: string
 }): JSX.Element {
+  const t = useTranslator(dictionary)
   const api = useFilesApi()
   const files = useFiles()
+  const workbench = useWorkbench()
   const query = useQuery(() => api.tree(props.placementId, props.dir))
   const view = createMemo(() => fetchView(query))
   const failed = createMemo(() => {
     const current = view()
-    return current.kind === "failed" ? current : undefined
+    return current.kind === "failed" ? current.error : undefined
   })
   const nodes = createMemo(() => {
     const current = view()
@@ -58,7 +65,7 @@ function TreeLevel(props: {
   })
   const activate = (node: FileNode) => {
     if (node.kind === "directory") files.setExpanded(node.path, !files.expanded(node.path))
-    else files.openPane("file", { placementId: props.placementId, path: node.path })
+    else workbench.openPane(filePaneKind, { placementId: props.placementId, path: node.path })
   }
   return (
     <Switch>
@@ -66,8 +73,13 @@ function TreeLevel(props: {
         <PlaceholderRows label={t("files.loading")} rows={props.level === 0 ? 5 : 2} />
       </Match>
       <Match when={failed()}>
-        {(failure) => (
-          <FailedNotice message={failure().error.message} retryLabel={t("files.retry")} onRetry={() => void query.refetch()} />
+        {(error) => (
+          <FailureNotice
+            title={t("files.loadFailed")}
+            message={error().message}
+            retryLabel={t("files.retry")}
+            onRetry={() => void query.refetch()}
+          />
         )}
       </Match>
       <Match when={view().kind === "ready"}>

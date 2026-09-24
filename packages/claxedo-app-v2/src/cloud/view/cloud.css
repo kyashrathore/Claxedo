@@ -38,6 +38,7 @@
 .cloud-alert {
   font-size: var(--font-size-small);
   color: var(--v2-state-fg-danger);
+  overflow-wrap: anywhere;
 }
 
 .cloud-placeholder {

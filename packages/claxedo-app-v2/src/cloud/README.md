@@ -15,13 +15,13 @@ Owns: the cloud workspace as a placement of a project, its lifecycle machine, an
 
 ## State machine
 
-`CloudWorkspaceState`: `provisioning(step)`, `starting`, `ready`, `stopping`, `stopped`, `failed(reason)`. The server owns the lifecycle; the adapter maps it. Local events are optimistic: `startRequested` moves `stopped | failed → starting`, `stopRequested` moves `ready | starting | provisioning → stopping`, `commandFailed` moves any state to `failed(reason)`, shown on the row until the next command or a new server status.
+`CloudWorkspaceStatus` (from `@/server`): `provisioning(step)`, `starting`, `ready`, `stopping`, `stopped`, `failed(reason)`. The server owns the lifecycle; the adapter maps it. Local events are optimistic: `startRequested` moves `stopped | failed → starting`, `stopRequested` moves `ready | starting | provisioning → stopping`, `commandFailed` moves any state to `failed(reason)`, shown on the row until the next command or a new server status.
 
 A create failure is shown by the create form; the workspace does not exist yet, so it has no row.
 
 ## API
 
-`useCloudWorkspaces(projectId, enabled)` returns the list machine (`loading`, `ready(rows)`, `failed(error)`) and the commands. `useCloudPlacer()` is what the add-project flow calls to place a new project in the cloud. `api.ts` types `server.cloud` and `server.queries.cloud` as a cast over `Server` until the adapter lands them.
+`useCloudWorkspaces(projectId, enabled)` returns the list machine (`loading`, `ready(rows)`, `failed(error)`) and the commands. `useCloudPlacer()` is what the add-project flow calls to place a new project in the cloud. Rows come from `server.queries.cloud.list()` and commands go through `server.cloud`.
 
 ## Flows
 

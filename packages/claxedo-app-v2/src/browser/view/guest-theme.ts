@@ -2,12 +2,12 @@ import type { BrowserWebview } from "../bridge"
 import { GUEST_THEME_CHANNEL } from "../guest"
 
 const TOKEN_SOURCES = {
-  bg: "--background-strong",
-  fg: "--text-strong",
-  muted: "--text-weak",
-  border: "--border-base",
-  accent: "--text-interactive-base",
-  "accent-hover": "--border-interactive-hover",
+  bg: "--v2-background-bg-base",
+  fg: "--v2-text-text-base",
+  muted: "--v2-text-text-muted",
+  border: "--v2-border-border-base",
+  accent: "--v2-text-text-accent",
+  "accent-hover": "--v2-text-text-accent-hover",
 } as const
 
 export function themeTokens(): Record<string, string> {
@@ -32,7 +32,10 @@ export function sendThemeTokens(element: BrowserWebview): void {
 
 export function watchTheme(element: BrowserWebview): () => void {
   const observer = new MutationObserver(() => sendThemeTokens(element))
-  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-color-scheme", "class", "style"] })
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-color-scheme", "class", "style"],
+  })
   const media = window.matchMedia("(prefers-color-scheme: dark)")
   const onChange = () => sendThemeTokens(element)
   media.addEventListener("change", onChange)

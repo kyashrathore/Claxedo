@@ -90,7 +90,7 @@ export function parseRoute(
   return { kind: "unknown", path: pathname }
 }
 
-export function routePlacementId(route: ShellRoute): PlacementId | undefined {
+export function placementOf(route: ShellRoute): PlacementId | undefined {
   return route.kind === "session" || route.kind === "terminal" ? route.placementId : undefined
 }
 

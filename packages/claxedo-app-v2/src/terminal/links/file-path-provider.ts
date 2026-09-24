@@ -101,7 +101,8 @@ export class FilePathLinkProvider extends WrappedLineLinkProvider {
     const cleaned = decodeUrlEncodedPath(removeLinkSuffix(link.path.text))
     if (!cleaned) return
     const suffix = link.suffix
-    const target = suffix?.row === undefined ? trailingLineColumn(cleaned) : { path: cleaned, line: suffix.row, column: suffix.col }
+    const target =
+      suffix?.row === undefined ? trailingLineColumn(cleaned) : { path: cleaned, line: suffix.row, column: suffix.col }
     this.onOpen(event, target.path, target.line, target.column, suffix?.rowEnd, suffix?.colEnd)
   }
 

@@ -1,5 +1,5 @@
 import { createContext, useContext } from "solid-js"
-import type { Server } from "./index"
+import type { Server } from "./api"
 
 export const ServerContext = createContext<Server>()
 

@@ -1,58 +1,72 @@
-import { createMemo, Match, Show, Switch, type JSX } from "solid-js"
+import { createMemo, Match, Switch, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
+import { useTranslator } from "@/i18n"
+import { FailureNotice } from "@/lib/failure"
 import type { FileContent } from "@/server"
-import type { PaneProps } from "@/shell/types"
+import type { PaneProps } from "@/shell"
+import type { FileRevealHandle } from "@/transcript"
 import { useFilesApi } from "../api"
+import { dictionary } from "../i18n"
 import { fetchView, fileView, type FilePaneState } from "../model"
+import { basename } from "../path"
 import { imagePreviewUrl } from "../preview"
-import { t } from "../i18n"
-import { FailedNotice, PlaceholderRows } from "./placeholder"
-import { TextLines } from "./text-lines"
+import { CodeEngine } from "./code-engine"
+import { PlaceholderRows } from "./placeholder"
+
+const REVEAL_WINDOW_MS = 5000
 
 export function FilePane(props: PaneProps<FilePaneState>): JSX.Element {
+  const t = useTranslator(dictionary)
   const api = useFilesApi()
   const query = useQuery(() => api.content(props.state.placementId, props.state.path))
   const view = createMemo(() => fileView(fetchView(query)))
   const failed = createMemo(() => {
     const current = view()
-    return current.kind === "failed" ? current : undefined
+    return current.kind === "failed" ? current.error : undefined
   })
   const content = createMemo(() => {
     const current = view()
     return current.kind === "ready" ? current.content : undefined
   })
   return (
-    <div data-component="file-pane" data-path={props.state.path} class="flex size-full min-h-0 flex-col bg-background-base">
-      <header class="flex h-9 shrink-0 items-center border-b border-border-weak-base px-3 text-12-medium text-text-base">
-        <span class="min-w-0 truncate" title={props.state.path}>
-          {props.state.path}
-        </span>
-      </header>
-      <div class="min-h-0 flex-1 overflow-auto">
-        <Switch>
-          <Match when={view().kind === "loading"}>
-            <PlaceholderRows label={t("files.loading")} rows={5} />
-          </Match>
-          <Match when={view().kind === "missing"}>
-            <div role="status" class="px-3 py-6 text-center text-12-regular text-text-weak">
-              {t("files.missing")}
-            </div>
-          </Match>
-          <Match when={failed()}>
-            {(failure) => (
-              <FailedNotice message={failure().error.message} retryLabel={t("files.retry")} onRetry={() => void query.refetch()} />
-            )}
-          </Match>
-          <Match when={content()}>
-            {(ready) => <FileBody path={props.state.path} content={ready()} line={props.state.line} />}
-          </Match>
-        </Switch>
-      </div>
+    <div
+      data-testid="file-pane"
+      data-path={props.state.path}
+      class="flex size-full min-h-0 flex-col overflow-auto bg-background-base"
+    >
+      <Switch>
+        <Match when={view().kind === "loading"}>
+          <PlaceholderRows label={t("files.loading")} rows={5} />
+        </Match>
+        <Match when={view().kind === "missing"}>
+          <p role="status" class="px-3 py-6 text-center text-sm text-text-muted">
+            {t("files.missing")}
+          </p>
+        </Match>
+        <Match when={failed()}>
+          {(error) => (
+            <FailureNotice
+              title={t("files.readFailed")}
+              message={error().message}
+              retryLabel={t("files.retry")}
+              onRetry={() => void query.refetch()}
+            />
+          )}
+        </Match>
+        <Match when={content()}>
+          {(ready) => <FileBody path={props.state.path} content={ready()} line={props.state.line} />}
+        </Match>
+      </Switch>
     </div>
   )
 }
 
-function FileBody(props: { readonly path: string; readonly content: FileContent; readonly line?: number }) {
+function FileBody(props: {
+  readonly path: string
+  readonly content: FileContent
+  readonly line?: number
+}): JSX.Element {
+  const t = useTranslator(dictionary)
   const image = () => imagePreviewUrl(props.path, props.content)
   return (
     <Switch>
@@ -64,13 +78,39 @@ function FileBody(props: { readonly path: string; readonly content: FileContent;
         )}
       </Match>
       <Match when={props.content.type === "binary"}>
-        <div role="status" class="px-3 py-6 text-center text-12-regular text-text-weak">
+        <p role="status" class="px-3 py-6 text-center text-sm text-text-muted">
           {t("files.binary")}
-        </div>
+        </p>
       </Match>
       <Match when={props.content.type === "text"}>
-        <TextLines text={props.content.content} line={props.line} label={props.path} />
+        <FileText path={props.path} text={props.content.content} line={props.line} />
       </Match>
     </Switch>
+  )
+}
+
+function FileText(props: { readonly path: string; readonly text: string; readonly line?: number }): JSX.Element {
+  const t = useTranslator(dictionary)
+  let handle: FileRevealHandle | null = null
+  const revealUntil = performance.now() + REVEAL_WINDOW_MS
+  const reveal = () => {
+    if (props.line === undefined || performance.now() > revealUntil) return
+    handle?.revealLine(props.line)
+  }
+  const file = createMemo(() => ({ name: basename(props.path), contents: props.text }))
+  return (
+    <CodeEngine label={t("files.loading")}>
+      {(File) => (
+        <File
+          mode="text"
+          file={file()}
+          overflow="wrap"
+          class="select-text"
+          reveal={{ register: (next) => (handle = next) }}
+          onRendered={reveal}
+          selectedLines={props.line === undefined ? null : { start: props.line, end: props.line }}
+        />
+      )}
+    </CodeEngine>
   )
 }

@@ -63,36 +63,37 @@ function aggregate(states: readonly ConnectionState[]): ConnectionState {
   return { kind: "connected" }
 }
 
-export function createEventStreams(input: {
+type StreamsInput = {
   readonly config: ServerConfig
   readonly transport: Transport
   readonly onFrame: (frame: unknown) => void
   readonly onGap: () => void
   readonly onState: (state: ConnectionState) => void
-}): EventStreams {
+}
+
+function openEventsAt(input: StreamsInput, path: string, socket: boolean, report: () => void): Stream {
+  const { config, transport } = input
+  return openStream({
+    open: ({ headers, signal }) => {
+      if (socket) return eventSocketResponse(new URL(path, `${transport.serverUrl}/`), headers, signal)
+      return transport.request(path, { headers, signal })
+    },
+    onFrame: input.onFrame,
+    onGap: input.onGap,
+    onState: report,
+    ...(config.maxReconnectAttempts !== undefined ? { maxAttempts: config.maxReconnectAttempts } : {}),
+  })
+}
+
+export function createEventStreams(input: StreamsInput): EventStreams {
   const { config, transport } = input
   const streams: Stream[] = []
   const report = () => input.onState(aggregate(streams.map((stream) => stream.state())))
-
-  const openAt = (path: string, socket: boolean) => {
-    const stream = openStream({
-      open: ({ headers, signal }) => {
-        if (socket) return eventSocketResponse(new URL(path, `${transport.serverUrl}/`), headers, signal)
-        return transport.request(path, { headers, signal })
-      },
-      onFrame: input.onFrame,
-      onGap: input.onGap,
-      onState: report,
-      ...(config.maxReconnectAttempts !== undefined ? { maxAttempts: config.maxReconnectAttempts } : {}),
-    })
-    streams.push(stream)
-    return stream
-  }
-
+  const socket = config.eventSocket === true && transport.loopback && config.auth.kind === "none"
   return {
     open: (declaration) => {
-      openAt(CONTROL_PLANE_EVENTS_PATH, config.eventSocket === true && transport.loopback && config.auth.kind === "none")
-      if (declaration.hostAggregate) openAt(WORKSPACE_EVENTS_PATH, false)
+      streams.push(openEventsAt(input, CONTROL_PLANE_EVENTS_PATH, socket, report))
+      if (declaration.hostAggregate) streams.push(openEventsAt(input, WORKSPACE_EVENTS_PATH, false, report))
       report()
     },
     retry: () => {

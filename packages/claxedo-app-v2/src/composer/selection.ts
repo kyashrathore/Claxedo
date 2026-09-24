@@ -17,11 +17,14 @@ export function selectionFor(harness: HarnessInfo | undefined, current: Selectio
   return { harness: harness.id, model, effort, permissionMode }
 }
 
-export function pickHarness(harnesses: readonly HarnessInfo[], locked: string | undefined, chosen: string | undefined) {
-  const wanted = locked ?? chosen
-  const found = wanted ? harnesses.find((harness) => harness.id === wanted) : undefined
+export function pickHarness(harnesses: readonly HarnessInfo[], chosen: string | undefined) {
+  const found = chosen ? harnesses.find((harness) => harness.id === chosen) : undefined
   if (found) return found
   return harnesses.find((harness) => harness.available) ?? harnesses[0]
+}
+
+export function sessionHarness(harnesses: readonly HarnessInfo[], harness: string | undefined) {
+  return harness ? harnesses.find((candidate) => candidate.id === harness) : undefined
 }
 
 export function selectionChanged(a: Selection, b: Selection) {

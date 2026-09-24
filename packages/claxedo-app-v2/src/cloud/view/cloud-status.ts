@@ -1,8 +1,8 @@
 import { unreachable } from "@/lib/machine"
+import type { CloudWorkspaceStatus } from "@/server"
 import type { CloudText } from "../i18n"
-import type { CloudWorkspaceState } from "../model"
 
-export function cloudStatusText(t: CloudText, state: CloudWorkspaceState): string {
+export function cloudStatusText(t: CloudText, state: CloudWorkspaceStatus): string {
   switch (state.kind) {
     case "provisioning":
       return t("cloud.status.provisioning", { step: state.step })

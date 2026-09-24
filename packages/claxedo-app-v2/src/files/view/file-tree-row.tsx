@@ -1,31 +1,16 @@
-import { Show } from "solid-js"
+import { Show, type JSX } from "solid-js"
+import { useTranslator } from "@/i18n"
 import type { FileNode } from "@/server"
+import { FileIcon, Icon } from "@/ui"
+import { dictionary } from "../i18n"
 import type { ChangeMark } from "../model"
-import { t } from "../i18n"
 
 const MARK_LETTER: Readonly<Record<ChangeMark, string>> = { added: "A", deleted: "D", modified: "M" }
 
 const MARK_COLOR: Readonly<Record<ChangeMark, string>> = {
-  added: "var(--icon-diff-add-base)",
-  deleted: "var(--icon-diff-delete-base)",
-  modified: "var(--icon-diff-modified-base)",
-}
-
-const markLabel = (mark: ChangeMark) => t(`files.mark.${mark}`)
-
-function Chevron(props: { readonly expanded: boolean }) {
-  return (
-    <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" class="shrink-0 text-icon-weak-base">
-      <path
-        d={props.expanded ? "M3 6l5 5 5-5" : "M6 3l5 5-5 5"}
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.5"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      />
-    </svg>
-  )
+  added: "text-success-fg",
+  deleted: "text-danger-fg",
+  modified: "text-warning-fg",
 }
 
 export function FileTreeRow(props: {
@@ -35,9 +20,10 @@ export function FileTreeRow(props: {
   readonly mark?: ChangeMark
   readonly active?: boolean
   readonly onActivate: () => void
-}) {
+}): JSX.Element {
+  const t = useTranslator(dictionary)
   const directory = () => props.node.kind === "directory"
-  const color = () => (props.mark && !props.node.ignored ? MARK_COLOR[props.mark] : undefined)
+  const mark = () => (props.node.ignored ? undefined : props.mark)
   return (
     <button
       type="button"
@@ -45,28 +31,38 @@ export function FileTreeRow(props: {
       aria-level={props.level + 1}
       aria-expanded={directory() ? props.expanded === true : undefined}
       aria-selected={props.active === true}
-      aria-current={props.active ? "true" : undefined}
-      data-file-tree-path={props.node.path}
-      class="flex h-7 w-full min-w-0 items-center gap-1.5 rounded-md px-1.5 text-left text-12-medium hover:bg-surface-base-hover pointer-coarse:min-h-11"
-      classList={{ "bg-surface-base-active": props.active === true }}
-      style={{ "padding-left": `${8 + props.level * 12}px` }}
+      data-path={props.node.path}
+      class="flex h-7 w-full min-w-0 items-center gap-1.5 rounded-md pr-1.5 text-left text-sm hover:bg-overlay-hover pointer-coarse:min-h-11"
+      classList={{ "bg-overlay-pressed": props.active === true }}
+      style={{ "padding-left": `${6 + props.level * 12}px` }}
       onClick={() => props.onActivate()}
     >
-      <Show when={directory()} fallback={<span class="w-3 shrink-0" />}>
-        <Chevron expanded={props.expanded === true} />
+      <Show when={directory()} fallback={<span class="w-3.5 shrink-0" />}>
+        <Icon name={props.expanded ? "chevron-down" : "chevron-right"} size="small" class="shrink-0 text-icon-muted" />
       </Show>
+      <FileIcon
+        node={{ path: props.node.path, type: props.node.kind }}
+        expanded={props.expanded === true}
+        class="size-4 shrink-0"
+      />
       <span
         class="min-w-0 flex-1 truncate"
-        classList={{ "text-text-weaker": props.node.ignored, "text-text-weak": !props.node.ignored && !color() }}
-        style={{ color: color() }}
+        classList={{
+          "text-text-faint": props.node.ignored,
+          "text-text-base": !props.node.ignored && !mark(),
+          [MARK_COLOR[mark() ?? "modified"]]: mark() !== undefined,
+        }}
       >
         {props.node.name}
       </span>
-      <Show when={props.mark}>
-        {(mark) => (
-          <span class="w-4 shrink-0 text-center text-12-medium" style={{ color: MARK_COLOR[mark()] }} aria-label={markLabel(mark())}>
-            {directory() ? "•" : MARK_LETTER[mark()]}
-          </span>
+      <Show when={mark()}>
+        {(current) => (
+          <>
+            <span aria-hidden="true" class={`w-4 shrink-0 text-center text-xs ${MARK_COLOR[current()]}`}>
+              {directory() ? "•" : MARK_LETTER[current()]}
+            </span>
+            <span class="sr-only">{t(`files.mark.${current()}`)}</span>
+          </>
         )}
       </Show>
     </button>

@@ -1,8 +1,8 @@
 import { hashKey, type QueryClient } from "@tanstack/solid-query"
-import { createSignal } from "solid-js"
+import { createSignal, type Accessor } from "solid-js"
+import type { PlacementsApi } from "./api"
 import { ServerError } from "./errors"
 import type { PlacementId } from "./ids"
-import type { PlacementsApi } from "./index"
 import { queryKeys } from "./query-keys"
 import type { RuntimeRoute, Transport } from "./transport"
 import type { SessionRef } from "./types"
@@ -33,70 +33,74 @@ function locatedAt(record: PlacementRecord, directory: string) {
     || (workspaceRef !== undefined && record.route.workspaceId === workspaceRef)
 }
 
-export function createWorkspaces(transport: Transport, queryClient: QueryClient): Workspaces {
-  const key = queryKeys.bootstrap(transport.serverUrl)
+function recordAt(records: readonly PlacementRecord[], directory: string, workspaceId?: string) {
+  const byWorkspace = workspaceId ? records.find((record) => record.route.workspaceId === workspaceId) : undefined
+  const wanted = directoryKey(directory)
+  return byWorkspace ?? records.find((record) => locatedAt(record, wanted))
+}
+
+function watchQuery(queryClient: QueryClient, key: readonly unknown[]): { readonly revision: Accessor<number>; readonly dispose: () => void } {
   const hash = hashKey(key)
   const [revision, setRevision] = createSignal(0)
-  const relearned = new Set<string>()
   let seen: unknown
-
-  const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+  const dispose = queryClient.getQueryCache().subscribe((event) => {
     if (event.query.queryHash !== hash || event.query.state.data === seen) return
     seen = event.query.state.data
     setRevision((value) => value + 1)
   })
+  return { revision, dispose }
+}
 
-  const catalog = () => {
-    revision()
-    return queryClient.getQueryData<BootstrapCatalog>(key)
-  }
-  const records = () => catalog()?.placements ?? []
+function placementReads(records: () => readonly PlacementRecord[]) {
   const recordOf = (id: PlacementId) => records().find((record) => record.placement.id === id)
-
-  const recordAt = (directory: string, workspaceId?: string) => {
-    const all = records()
-    const byWorkspace = workspaceId ? all.find((record) => record.route.workspaceId === workspaceId) : undefined
-    const wanted = directoryKey(directory)
-    return byWorkspace ?? all.find((record) => locatedAt(record, wanted))
-  }
-
-  const read = async () => bootstrapCatalog(await transport.json<unknown>(BOOTSTRAP_PATH))
-  const load = () => queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: Number.POSITIVE_INFINITY })
-
-  const refresh = async () => {
-    relearned.clear()
-    await queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: 0 })
-    await queryClient.invalidateQueries({ queryKey: queryKeys.placements(transport.serverUrl) })
-  }
-
-  const learn = async (directory: string) => {
-    if (relearned.has(directory)) return
-    await queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: 0 })
-    relearned.add(directory)
-  }
-
-  const route = async (ref: SessionRef | PlacementId): Promise<RuntimeRoute> => {
-    const id = typeof ref === "string" ? ref : ref.placementId
-    await load()
-    const record = recordOf(id)
-    if (!record) throw new ServerError({ class: "not_found", message: `Placement ${id} is not in the catalog` })
-    return record.route
-  }
-
   return {
-    byId: (id) => recordOf(id)?.placement,
+    recordOf,
+    byId: (id: PlacementId) => recordOf(id)?.placement,
     list: () => records().map((record) => record.placement),
     address: {
-      placementFor: (directory, workspaceId) => {
-        const record = recordAt(directory, workspaceId)
+      placementFor: (directory: string, workspaceId?: string) => {
+        const record = recordAt(records(), directory, workspaceId)
         return record ? { placementId: record.placement.id, projectId: record.placement.projectId } : undefined
       },
     },
-    route,
-    learn,
+  }
+}
+
+export function createWorkspaces(transport: Transport, queryClient: QueryClient): Workspaces {
+  const key = queryKeys.bootstrap(transport.serverUrl)
+  const watched = watchQuery(queryClient, key)
+  const relearned = new Set<string>()
+  const read = async () => bootstrapCatalog(await transport.json<unknown>(BOOTSTRAP_PATH))
+  const reread = () => queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: 0 })
+  const load = () => queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: Number.POSITIVE_INFINITY })
+  const catalog = () => {
+    watched.revision()
+    return queryClient.getQueryData<BootstrapCatalog>(key)
+  }
+  const { recordOf, byId, list, address } = placementReads(() => catalog()?.placements ?? [])
+  return {
+    byId,
+    list,
+    address,
+    route: async (ref) => {
+      const id = typeof ref === "string" ? ref : ref.placementId
+      await load()
+      const record = recordOf(id)
+      if (!record) throw new ServerError({ class: "not_found", message: `Placement ${id} is not in the catalog` })
+      return record.route
+    },
+    learn: async (directory) => {
+      if (relearned.has(directory)) return
+      await reread()
+      relearned.add(directory)
+    },
     catalog,
     load,
-    refresh,
-    dispose: unsubscribe,
+    refresh: async () => {
+      relearned.clear()
+      await reread()
+      await queryClient.invalidateQueries({ queryKey: queryKeys.placements(transport.serverUrl) })
+    },
+    dispose: watched.dispose,
   }
 }

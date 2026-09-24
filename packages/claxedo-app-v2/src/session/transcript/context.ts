@@ -39,6 +39,7 @@ export type TranscriptContext = {
   readonly deltas: DeltaBuffer
   readonly queue: QueueInternal
   readonly goal: SessionGoalStore
+  readonly snapshotRead: { current: Promise<void> | undefined }
 }
 
 export function createTranscriptContext(server: Server, ref: SessionRef, deps: TranscriptDeps): TranscriptContext {
@@ -57,5 +58,6 @@ export function createTranscriptContext(server: Server, ref: SessionRef, deps: T
     deltas: createDeltaBuffer((messageId, partId, field, text) => appendDelta(setData, data, messageId, partId, field, text)),
     queue: createQueue(server, ref, (items) => dropQueuedStubs(setData, data, items)),
     goal: createSessionGoal(server, ref),
+    snapshotRead: { current: undefined },
   }
 }

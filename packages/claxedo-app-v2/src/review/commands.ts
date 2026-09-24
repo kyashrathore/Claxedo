@@ -1,14 +1,18 @@
-import type { CommandEntry } from "@/shell/types"
-import { t } from "./i18n"
+import { useTranslator } from "@/i18n"
+import { useCommands } from "@/shell"
+import { dictionary } from "./i18n"
 import type { Review } from "./store"
 
-export function reviewCommands(review: Review): readonly CommandEntry[] {
-  return [
+export function useReviewCommands(review: Review): void {
+  const commands = useCommands()
+  const t = useTranslator(dictionary)
+  commands.register("review", () => [
     {
       id: "review.toggleDiffStyle",
-      title: () => t("review.style.toggle"),
-      when: () => review.placementId() !== undefined,
-      run: () => review.toggleStyle(),
+      title: t("review.style.toggle"),
+      category: t("review.tab"),
+      disabled: review.placementId() === undefined,
+      onSelect: () => review.setStyle(review.style() === "unified" ? "split" : "unified"),
     },
-  ]
+  ])
 }

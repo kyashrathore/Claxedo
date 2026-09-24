@@ -1,22 +1,27 @@
 import { createMemo, For, Show, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
+import { useTranslator } from "@/i18n"
 import type { DiffScope, GitRefs, PlacementId } from "@/server"
-import { fetchView } from "@/files"
+import { SegmentedControl, SegmentedControlItem } from "@/ui"
 import { useReviewApi } from "../api"
-import { t } from "../i18n"
+import { dictionary } from "../i18n"
+import { readDiffStyle } from "../model"
 import { useReview } from "../store"
 
 type ScopeKind = DiffScope["kind"]
 
 const KINDS: readonly ScopeKind[] = ["uncommitted", "staged", "unstaged", "branch", "branchWorktree", "range"]
 
+const SELECT =
+  "h-8 min-w-0 flex-1 rounded-md border border-border-base bg-background-base px-2 text-sm text-text-base pointer-coarse:h-11"
+
+function isScopeKind(value: string): value is ScopeKind {
+  return (KINDS as readonly string[]).includes(value)
+}
+
 function scopeFor(kind: ScopeKind, base: string, current: DiffScope): DiffScope {
   if (kind === "branch" || kind === "branchWorktree") return { kind, base }
-  if (kind === "range") {
-    const from = current.kind === "range" ? current.from : base
-    const to = current.kind === "range" ? current.to : "HEAD"
-    return { kind, from, to }
-  }
+  if (kind === "range") return current.kind === "range" ? current : { kind, from: base, to: "HEAD" }
   return { kind }
 }
 
@@ -30,13 +35,13 @@ function RefSelect(props: {
   readonly value: string
   readonly options: readonly string[]
   readonly onChange: (value: string) => void
-}) {
+}): JSX.Element {
   const options = () => (props.options.includes(props.value) ? props.options : [props.value, ...props.options])
   return (
     <select
       aria-label={props.label}
       value={props.value}
-      class="h-8 min-w-0 flex-1 rounded-md border border-border-weak-base bg-surface-base px-2 text-12-regular text-text-base pointer-coarse:min-h-11"
+      class={SELECT}
       onChange={(event) => props.onChange(event.currentTarget.value)}
     >
       <For each={options()}>{(ref) => <option value={ref}>{ref}</option>}</For>
@@ -45,55 +50,81 @@ function RefSelect(props: {
 }
 
 export function ScopePicker(props: { readonly placementId: PlacementId }): JSX.Element {
+  const t = useTranslator(dictionary)
   const api = useReviewApi()
   const review = useReview()
   const refs = useQuery(() => api.refs(props.placementId))
   const bases = useQuery(() => api.bases(props.placementId))
-  const defaultBase = createMemo(() => {
-    const view = fetchView(bases)
-    return view.kind === "ready" ? view.data.defaultRef : undefined
-  })
-  const names = createMemo(() => {
-    const view = fetchView(refs)
-    return refNames(view.kind === "ready" ? view.data : undefined)
-  })
+  const names = createMemo(() => refNames(refs.data))
   const scope = () => review.scope()
-  const rangeScope = createMemo(() => {
+  const range = createMemo(() => {
     const current = scope()
     return current.kind === "range" ? current : undefined
   })
-  const baseOf = () => {
+  const base = () => {
     const current = scope()
-    return current.kind === "branch" || current.kind === "branchWorktree" ? current.base : (defaultBase() ?? "")
+    return current.kind === "branch" || current.kind === "branchWorktree"
+      ? current.base
+      : (bases.data?.defaultRef ?? "")
   }
-  const setKind = (kind: ScopeKind) => review.setScope(scopeFor(kind, baseOf(), scope()))
+  const setKind = (value: string) => {
+    if (isScopeKind(value)) review.setScope(scopeFor(value, base(), scope()))
+  }
   return (
-    <div data-component="review-scope" class="flex flex-wrap items-center gap-2 border-b border-border-weak-base px-3 py-2">
+    <div data-testid="review-toolbar" class="flex flex-wrap items-center gap-2 border-b border-border-muted px-3 py-2">
       <select
         aria-label={t("review.scope.label")}
         value={scope().kind}
-        class="h-8 min-w-0 flex-1 rounded-md border border-border-weak-base bg-surface-base px-2 text-12-medium text-text-base pointer-coarse:min-h-11"
-        onChange={(event) => setKind(event.currentTarget.value as ScopeKind)}
+        class={SELECT}
+        onChange={(event) => setKind(event.currentTarget.value)}
       >
         <For each={KINDS}>
           {(kind) => (
-            <option value={kind} disabled={(kind === "branch" || kind === "branchWorktree") && !baseOf()}>
+            <option value={kind} disabled={(kind === "branch" || kind === "branchWorktree") && !base()}>
               {t(`review.scope.${kind}`)}
             </option>
           )}
         </For>
       </select>
       <Show when={scope().kind === "branch" || scope().kind === "branchWorktree"}>
-        <RefSelect label={t("review.scope.base")} value={baseOf()} options={names()} onChange={(base) => review.setScope({ kind: scope().kind === "branchWorktree" ? "branchWorktree" : "branch", base })} />
+        <RefSelect
+          label={t("review.scope.base")}
+          value={base()}
+          options={names()}
+          onChange={(next) =>
+            review.setScope({ kind: scope().kind === "branchWorktree" ? "branchWorktree" : "branch", base: next })
+          }
+        />
       </Show>
-      <Show when={rangeScope()}>
-        {(range) => (
+      <Show when={range()}>
+        {(current) => (
           <>
-            <RefSelect label={t("review.scope.from")} value={range().from} options={names()} onChange={(from) => review.setScope({ kind: "range", from, to: range().to })} />
-            <RefSelect label={t("review.scope.to")} value={range().to} options={["HEAD", ...names()]} onChange={(to) => review.setScope({ kind: "range", from: range().from, to })} />
+            <RefSelect
+              label={t("review.scope.from")}
+              value={current().from}
+              options={names()}
+              onChange={(from) => review.setScope({ kind: "range", from, to: current().to })}
+            />
+            <RefSelect
+              label={t("review.scope.to")}
+              value={current().to}
+              options={["HEAD", ...names()]}
+              onChange={(to) => review.setScope({ kind: "range", from: current().from, to })}
+            />
           </>
         )}
       </Show>
+      <SegmentedControl
+        aria-label={t("review.style.label")}
+        value={review.style()}
+        onChange={(value) => {
+          const style = readDiffStyle(value)
+          if (style) review.setStyle(style)
+        }}
+      >
+        <SegmentedControlItem value="unified">{t("review.style.unified")}</SegmentedControlItem>
+        <SegmentedControlItem value="split">{t("review.style.split")}</SegmentedControlItem>
+      </SegmentedControl>
     </div>
   )
 }

@@ -6,8 +6,6 @@ import { ProjectPage } from "./view/project-page"
 
 export type { AddProjectFlow, ProjectCreated } from "./add-project"
 export { createAddProjectFlow, useAddProjectFlow } from "./add-project"
-export type { CodeHostConnection, CodeHostRepository, ProjectsServer } from "./api"
-export { appErrorOf, useProjectsServer } from "./api"
 export type { ProjectsKey, ProjectsText } from "./i18n"
 export { dictionary as projectsDictionary, useProjectsText } from "./i18n"
 export type { AddProjectEvent, AddProjectState, AddProjectStep, PlacementChoice, ProjectDraft } from "./model"

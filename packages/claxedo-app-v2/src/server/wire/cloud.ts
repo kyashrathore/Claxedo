@@ -55,17 +55,35 @@ export function cloudWorkspaceFromRow(row: unknown): CloudWorkspace | undefined 
   }
 }
 
-export function codeHostConnectionFromRow(row: unknown): CodeHostConnection | undefined {
-  if (!isRecord(row)) return undefined
-  const id = text(row.id) ?? text(row.connection_id)
-  if (!id) return undefined
-  const status = row.status === "connected" || row.status === "degraded" || row.status === "broken" ? row.status : "connected"
-  const label = text(row.account_label) ?? text(row.accountLabel) ?? text(row.login)
-  return { id, providerName: text(row.provider_name) ?? text(row.providerName) ?? text(row.provider) ?? "GitHub", ...(label ? { accountLabel: label } : {}), status }
+const CODE_HOST_CAPABILITY = "code-host"
+
+function codeHostNames(integrations: unknown): ReadonlyMap<string, string> {
+  const rows = Array.isArray(integrations) ? integrations : []
+  return new Map(rows.flatMap((row) => {
+    if (!isRecord(row) || typeof row.id !== "string") return []
+    const capabilities = Array.isArray(row.capabilities) ? row.capabilities : []
+    return capabilities.includes(CODE_HOST_CAPABILITY) ? [[row.id, text(row.name) ?? row.id] as const] : []
+  }))
+}
+
+export function codeHostConnectionsFromWire(body: unknown): CodeHostConnection[] {
+  const root = isRecord(body) ? body : {}
+  const names = codeHostNames(root.integrations)
+  const connections = Array.isArray(root.connections) ? root.connections : []
+  return connections.flatMap((row) => {
+    if (!isRecord(row)) return []
+    const id = text(row.id)
+    const providerName = names.get(text(row.integrationId) ?? "")
+    if (!id || !providerName) return []
+    const accountLabel = text(row.accountLabel)
+    const status = row.status === "connected" || row.status === "degraded" ? row.status : "broken"
+    return [{ id, providerName, ...(accountLabel ? { accountLabel } : {}), status }]
+  })
 }
 
 export function codeHostRepositoryFromRow(row: unknown): CodeHostRepository | undefined {
   if (!isRecord(row)) return undefined
-  const fullName = text(row.full_name) ?? text(row.fullName)
-  return fullName ? { id: text(row.id) ?? fullName, fullName, private: row.private === true } : undefined
+  const id = text(row.id)
+  const fullName = text(row.fullName)
+  return id && fullName ? { id, fullName, private: row.private === true } : undefined
 }

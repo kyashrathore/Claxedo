@@ -1,13 +1,15 @@
 import { fetchQuery } from "./fetch-query"
-import type { CloudApi } from "./index"
+import type { CloudApi } from "./api"
 import { ServerError } from "./errors"
 import type { PlacementId, ProjectId } from "./ids"
 import { queryKeys } from "./query-keys"
 import { jsonInit, withQuery, type Transport } from "./transport"
 import type { CloudWorkspace, CodeHostConnection, CodeHostRepository } from "./cloud-types"
 import type { FetchQuery, Project } from "./types"
-import { cloudWorkspaceFromRow, codeHostConnectionFromRow, codeHostRepositoryFromRow } from "./wire/cloud"
+import { cloudWorkspaceFromRow, codeHostConnectionsFromWire, codeHostRepositoryFromRow } from "./wire/cloud"
 import type { Workspaces } from "./workspaces"
+
+const INTEGRATIONS_PATH = "/api/claxedo/integrations"
 
 export function cloudQueries(transport: Transport) {
   const server = transport.serverUrl
@@ -18,15 +20,10 @@ export function cloudQueries(transport: Transport) {
         return workspace ? [workspace] : []
       })
     })
-  const connections = (): FetchQuery<readonly CodeHostConnection[]> => fetchQuery(queryKeys.codeHostConnections(server), async () => {
-      const body = await transport.json<{ connections?: unknown }>("/api/claxedo/integrations")
-      return (Array.isArray(body.connections) ? body.connections : []).flatMap((row) => {
-        const connection = codeHostConnectionFromRow(row)
-        return connection ? [connection] : []
-      })
-    })
+  const connections = (): FetchQuery<readonly CodeHostConnection[]> =>
+    fetchQuery(queryKeys.codeHostConnections(server), async () => codeHostConnectionsFromWire(await transport.json<unknown>(INTEGRATIONS_PATH)))
   const repositories = (connectionId: string): FetchQuery<readonly CodeHostRepository[]> => fetchQuery(queryKeys.codeHostRepositories(server, connectionId), async () => {
-      const body = await transport.json<{ repositories?: unknown }>(`/api/claxedo/integrations/connections/${encodeURIComponent(connectionId)}/repositories`)
+      const body = await transport.json<{ repositories?: unknown }>(`${INTEGRATIONS_PATH}/connections/${encodeURIComponent(connectionId)}/repositories`)
       return (Array.isArray(body.repositories) ? body.repositories : []).flatMap((row) => {
         const repository = codeHostRepositoryFromRow(row)
         return repository ? [repository] : []

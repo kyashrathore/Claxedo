@@ -1,5 +1,5 @@
 import { createVirtualizer } from "@tanstack/solid-virtual"
-import { Index, type JSX } from "solid-js"
+import { Index, Show, type JSX } from "solid-js"
 import type { SessionId } from "@/server"
 import type { SessionRowView } from "@/session"
 import type { SessionActions } from "./session-actions"
@@ -24,12 +24,9 @@ export function SessionRows(props: {
       <ul role="list" class="rail-rows" style={{ height: `${virtualizer.getTotalSize()}px` }}>
         <Index each={virtualizer.getVirtualItems()}>
           {(item) => (
-            <SessionRow
-              row={props.rows[item().index]}
-              active={props.rows[item().index].ref.sessionId === props.activeSessionId}
-              top={item().start}
-              actions={props.actions}
-            />
+            <Show when={props.rows[item().index]}>
+              {(row) => <SessionRow row={row()} active={row().ref.sessionId === props.activeSessionId} top={item().start} actions={props.actions} />}
+            </Show>
           )}
         </Index>
       </ul>

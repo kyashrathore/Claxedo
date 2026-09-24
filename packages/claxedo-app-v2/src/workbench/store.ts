@@ -54,6 +54,7 @@ export type WorkbenchStore = WorkbenchApi &
   readonly openRoute: (route: PaneRoute) => string | undefined
   readonly routeOf: (contentId: string) => PaneRoute | undefined
   readonly closeContent: (contentId: string) => void
+  readonly onClosed: <State>(kind: PaneKind<State>, listener: (state: State) => void) => () => void
   readonly drag: DragController
 }
 
@@ -92,7 +93,11 @@ function readRecord(value: unknown): WorkbenchRecord | undefined {
   return { layout, contents: pruned(contents, layout.contentIds) }
 }
 
-function createApply(record: Accessor<WorkbenchRecord>, setRecord: (update: (current: WorkbenchRecord) => WorkbenchRecord) => void) {
+function createApply(
+  record: Accessor<WorkbenchRecord>,
+  setRecord: (update: (current: WorkbenchRecord) => WorkbenchRecord) => void,
+  onRemoved: (contents: readonly PaneContent[]) => void,
+) {
   let scratch: WorkbenchState | undefined
   let clearQueued = false
   return (mutation: (layout: WorkbenchState) => WorkbenchState) => {
@@ -107,7 +112,31 @@ function createApply(record: Accessor<WorkbenchRecord>, setRecord: (update: (cur
         clearQueued = false
       })
     }
+    const contents = record().contents
+    const removed = current.contentIds.flatMap((id) => (next.contentIds.includes(id) || !contents[id] ? [] : [contents[id]]))
     setRecord((r) => ({ layout: next, contents: pruned(r.contents, next.contentIds) }))
+    if (removed.length > 0) onRemoved(removed)
+  }
+}
+
+function createClosedListeners() {
+  const listeners = new Map<string, Set<(state: Json) => void>>()
+  return {
+    notify: (contents: readonly PaneContent[]) => {
+      for (const content of contents) for (const listener of listeners.get(content.kind) ?? []) listener(content.state)
+    },
+    add: <State,>(kind: PaneKind<State>, listener: (state: State) => void) => {
+      const decoded = (json: Json) => {
+        const state = kind.decode(json)
+        if (state !== undefined) listener(state)
+      }
+      const forKind = listeners.get(kind.kind) ?? new Set()
+      forKind.add(decoded)
+      listeners.set(kind.kind, forKind)
+      return () => {
+        forKind.delete(decoded)
+      }
+    },
   }
 }
 
@@ -118,7 +147,8 @@ export function createWorkbenchStore(key: string, kinds: Accessor<readonly AnyPa
     readRecord,
   )
   const layout = () => record().layout
-  const apply = createApply(record, setRecord)
+  const closed = createClosedListeners()
+  const apply = createApply(record, setRecord, closed.notify)
   const focusedContent = createMemo(() => selectors.focusedContent(layout()))
   const decoded = new Map<string, { json: Json; state: unknown }>()
 
@@ -147,7 +177,7 @@ export function createWorkbenchStore(key: string, kinds: Accessor<readonly AnyPa
   const closeContent = (contentId: string) => apply((s) => closeContentReducer(s, contentId))
 
   return {
-    ...createPaneApi({ kinds, layout, content, open, apply, closeContent }),
+    ...createPaneApi({ layout, content, open, apply, closeContent }),
     layout,
     content,
     open,
@@ -163,6 +193,7 @@ export function createWorkbenchStore(key: string, kinds: Accessor<readonly AnyPa
       return opened?.kind.toRoute?.(opened.state as never)
     },
     closeContent,
+    onClosed: closed.add,
     drag: createDragController(),
     contents: {
       add: (id) => apply((s) => reducers.contents.add(s, id)),

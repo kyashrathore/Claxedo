@@ -27,8 +27,14 @@ function landSnapshot(context: TranscriptContext, snapshot: SessionSnapshot, sen
   context.phase.send({ type: "readLanded" })
 }
 
-export async function readSnapshot(context: TranscriptContext): Promise<void> {
-  if (isReading(context.phase.state())) return
+export function readSnapshot(context: TranscriptContext): Promise<void> {
+  context.snapshotRead.current ??= readOnce(context).finally(() => {
+    context.snapshotRead.current = undefined
+  })
+  return context.snapshotRead.current
+}
+
+async function readOnce(context: TranscriptContext): Promise<void> {
   context.phase.send({ type: "readStarted" })
   const sentAt = Date.now()
   try {

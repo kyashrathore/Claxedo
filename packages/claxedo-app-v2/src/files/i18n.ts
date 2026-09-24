@@ -1,4 +1,6 @@
-export const en = {
+import type { Translations } from "@/i18n"
+
+const en = {
   "files.tab": "Files",
   "files.search": "Search files",
   "files.clearSearch": "Clear search",
@@ -8,13 +10,17 @@ export const en = {
   "files.tree": "File tree",
   "files.loading": "Loading files",
   "files.retry": "Retry",
+  "files.loadFailed": "The files could not be loaded",
+  "files.searchFailed": "The search failed",
+  "files.readFailed": "The file could not be read",
+  "files.engineFailed": "The code viewer could not load",
   "files.noPlacement": "Open a project to browse its files",
   "files.missing": "This file does not exist in the workspace",
   "files.binary": "Binary file, no preview",
   "files.mark.added": "Added",
   "files.mark.deleted": "Deleted",
   "files.mark.modified": "Modified",
-} as const
+}
 
 export type FilesKey = keyof typeof en
 
@@ -146,28 +152,22 @@ const tr: Partial<Record<FilesKey, string>> = {
   "files.mark.modified": "Değiştirildi",
 }
 
-export const filesDictionaries: Readonly<Record<string, Readonly<Partial<Record<FilesKey, string>>>>> = {
+export const dictionary = {
   en,
-  zh,
-  zht,
-  ko,
+  ar,
+  br,
+  bs,
+  da,
   de,
   es,
   fr,
-  da,
   ja,
+  ko,
+  no,
   pl,
   ru,
-  bs,
-  ar,
-  no,
-  br,
   th,
   tr,
-}
-
-export function t(key: FilesKey, params?: Readonly<Record<string, string | number>>): string {
-  const template: string = en[key]
-  if (!params) return template
-  return template.replace(/\{\{(\w+)\}\}/g, (match, name: string) => (name in params ? String(params[name]) : match))
-}
+  zh,
+  zht,
+} satisfies Translations<FilesKey>
