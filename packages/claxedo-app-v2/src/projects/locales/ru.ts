@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "projects.cancel": "Отмена",
   "projects.save": "Сохранить",
   "projects.saving": "Сохранение...",
