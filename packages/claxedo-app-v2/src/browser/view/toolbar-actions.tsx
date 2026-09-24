@@ -29,7 +29,14 @@ async function takeScreenshot(tab: BrowserTab, deliver: PickDelivery): Promise<v
     tab.notify(result.error.message ? { text: result.error.message } : { key: "browser.notice.screenshotFailed" })
     return
   }
-  const delivered = deliver({ id: uuid(), pageUrl: tab.state().url, selector: "", tagName: "page", comment: "", screenshotDataUrl: result.dataUrl })
+  const delivered = deliver({
+    id: uuid(),
+    pageUrl: tab.state().url,
+    selector: "",
+    tagName: "page",
+    comment: "",
+    screenshotDataUrl: result.dataUrl,
+  })
   tab.notify({ key: delivered ? "browser.notice.screenshotAdded" : "browser.notice.needSession" })
 }
 
@@ -46,11 +53,21 @@ export function ToolbarActions(props: { readonly tab: BrowserTab; readonly deliv
       <Menu.Trigger as={IconButton} icon="three-dots" variant="ghost" aria-label={t("browser.actions")} />
       <Menu.Portal>
         <Menu.Content>
-          <Menu.Item disabled={desktopOnly()} onSelect={() => void screenshot()}>{t("browser.screenshot")}</Menu.Item>
-          <Menu.Item disabled={desktopOnly()} onSelect={() => void props.tab.act("devTools")}>{t("browser.devTools")}</Menu.Item>
-          <Menu.Item disabled={desktopOnly()} onSelect={() => void props.tab.act("hardReload")}>{t("browser.hardReload")}</Menu.Item>
-          <Menu.Item disabled={!props.tab.state().url} onSelect={() => void copyUrl(props.tab)}>{t("browser.copyUrl")}</Menu.Item>
-          <Menu.Item disabled={desktopOnly()} onSelect={() => void props.tab.act("clearCookies")}>{t("browser.clearCookies")}</Menu.Item>
+          <Menu.Item disabled={desktopOnly()} onSelect={() => void screenshot()}>
+            {t("browser.screenshot")}
+          </Menu.Item>
+          <Menu.Item disabled={desktopOnly()} onSelect={() => void props.tab.act("devTools")}>
+            {t("browser.devTools")}
+          </Menu.Item>
+          <Menu.Item disabled={desktopOnly()} onSelect={() => void props.tab.act("hardReload")}>
+            {t("browser.hardReload")}
+          </Menu.Item>
+          <Menu.Item disabled={!props.tab.state().url} onSelect={() => void copyUrl(props.tab)}>
+            {t("browser.copyUrl")}
+          </Menu.Item>
+          <Menu.Item disabled={desktopOnly()} onSelect={() => void props.tab.act("clearCookies")}>
+            {t("browser.clearCookies")}
+          </Menu.Item>
         </Menu.Content>
       </Menu.Portal>
     </Menu>
@@ -69,7 +86,13 @@ export function NoticeRow(props: { readonly tab: BrowserTab }): JSX.Element {
       {(message) => (
         <div role="status" class="flex w-full items-center gap-2 text-xs text-text-muted">
           <span class="min-w-0 flex-1 truncate">{message()}</span>
-          <IconButton icon="close-small" variant="ghost" size="small" aria-label={t("browser.notice.dismiss")} onClick={() => props.tab.notify(undefined)} />
+          <IconButton
+            icon="close-small"
+            variant="ghost"
+            size="small"
+            aria-label={t("browser.notice.dismiss")}
+            onClick={() => props.tab.notify(undefined)}
+          />
         </div>
       )}
     </Show>

@@ -17,7 +17,11 @@ export function ChangesTab(): JSX.Element {
   useReviewCommands(review)
   return (
     <div data-testid="changes-tab" class="flex size-full min-h-0 flex-col bg-background-base">
-      <Show when={review.placementId()} keyed fallback={<p class="px-3 py-6 text-center text-sm text-text-muted">{t("review.noPlacement")}</p>}>
+      <Show
+        when={review.placementId()}
+        keyed
+        fallback={<p class="px-3 py-6 text-center text-sm text-text-muted">{t("review.noPlacement")}</p>}
+      >
         {(placementId) => (
           <>
             <StatusLine placementId={placementId} />

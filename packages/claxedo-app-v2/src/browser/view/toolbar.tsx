@@ -13,10 +13,32 @@ export function Toolbar(props: { readonly tab: BrowserTab; readonly deliver: Pic
   const canPick = () => !!props.tab.bridge && (props.tab.state().kind === "ready" || picking())
   const consoleLabel = () => (props.tab.consoleOpen() ? t("browser.console.hide") : t("browser.console.show"))
   return (
-    <div role="toolbar" aria-label={t("browser.tab")} class="flex w-full shrink-0 flex-wrap items-center gap-1 border-b border-border-muted px-2 py-1">
-      <IconButton icon="arrow-left" variant="ghost" aria-label={t("browser.back")} disabled={!props.tab.history().canGoBack} onClick={() => void props.tab.act("back")} />
-      <IconButton icon="arrow-right" variant="ghost" aria-label={t("browser.forward")} disabled={!props.tab.history().canGoForward} onClick={() => void props.tab.act("forward")} />
-      <IconButton icon="reload" variant="ghost" aria-label={t("browser.reload")} disabled={!props.tab.bridge} onClick={() => void props.tab.act("reload")} />
+    <div
+      role="toolbar"
+      aria-label={t("browser.tab")}
+      class="flex w-full shrink-0 flex-wrap items-center gap-1 border-b border-border-muted px-2 py-1"
+    >
+      <IconButton
+        icon="arrow-left"
+        variant="ghost"
+        aria-label={t("browser.back")}
+        disabled={!props.tab.history().canGoBack}
+        onClick={() => void props.tab.act("back")}
+      />
+      <IconButton
+        icon="arrow-right"
+        variant="ghost"
+        aria-label={t("browser.forward")}
+        disabled={!props.tab.history().canGoForward}
+        onClick={() => void props.tab.act("forward")}
+      />
+      <IconButton
+        icon="reload"
+        variant="ghost"
+        aria-label={t("browser.reload")}
+        disabled={!props.tab.bridge}
+        onClick={() => void props.tab.act("reload")}
+      />
       <AddressBar tab={props.tab} />
       <IconButton
         icon="inspect-element"

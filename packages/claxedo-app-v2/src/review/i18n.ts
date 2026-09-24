@@ -51,12 +51,13 @@ const en = {
   "review.style.split": "Split",
   "review.style.toggle": "Toggle diff style",
   "review.comment.remove": "Remove comment",
-  "review.comment.submit": "Comment",
+  "review.comment.gutter": "Comment on this line",
   "review.comment.save": "Save",
   "review.comment.edit": "Edit",
   "review.comment.more": "Comment options",
   "review.comment.needSession": "Open a session to comment on lines for its agent",
   "review.commit.message": "Message (⌘⏎ to commit)",
+  "review.commit.messageLabel": "Commit message",
   "review.commit": "Commit",
   "review.commit.files": "Files to commit",
   "review.commit.staging": "Staging…",
@@ -84,4 +85,22 @@ const en = {
 
 export type ReviewKey = keyof typeof en
 
-export const dictionary = { en, ar, br, bs, da, de, es, fr, ja, ko, no, pl, ru, th, tr, zh, zht } satisfies Translations<ReviewKey>
+export const dictionary = {
+  en,
+  ar,
+  br,
+  bs,
+  da,
+  de,
+  es,
+  fr,
+  ja,
+  ko,
+  no,
+  pl,
+  ru,
+  th,
+  tr,
+  zh,
+  zht,
+} satisfies Translations<ReviewKey>

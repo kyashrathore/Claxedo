@@ -1,4 +1,13 @@
-import { createContext, createMemo, createRoot, onCleanup, useContext, type Accessor, type JSX, type ParentProps } from "solid-js"
+import {
+  createContext,
+  createMemo,
+  createRoot,
+  onCleanup,
+  useContext,
+  type Accessor,
+  type JSX,
+  type ParentProps,
+} from "solid-js"
 import { useShellRoute } from "@/shell"
 import type { PlacementId } from "@/server"
 import { readBrowserBridge } from "./bridge"
@@ -53,9 +62,7 @@ export function BrowserProvider(props: ParentProps): JSX.Element {
   const cache = createTabCache(TAB_CAP)
   onCleanup(cache.disposeAll)
   return (
-    <BrowserContext.Provider value={{ placementId, tabFor: cache.tabFor }}>
-      {props.children}
-    </BrowserContext.Provider>
+    <BrowserContext.Provider value={{ placementId, tabFor: cache.tabFor }}>{props.children}</BrowserContext.Provider>
   )
 }
 

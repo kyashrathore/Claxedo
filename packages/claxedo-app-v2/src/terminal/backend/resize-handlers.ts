@@ -80,7 +80,8 @@ export function setupResizeHandlers(input: {
     const width = rect?.width ?? container.clientWidth
     const height = rect?.height ?? container.clientHeight
     const wasZero = lastWidth === 0 && lastHeight === 0
-    const widthChanged = lastWidth > 0 && width > 0 && Math.abs(width - lastWidth) / lastWidth > SIGNIFICANT_WIDTH_CHANGE
+    const widthChanged =
+      lastWidth > 0 && width > 0 && Math.abs(width - lastWidth) / lastWidth > SIGNIFICANT_WIDTH_CHANGE
     if ((wasZero && width > 0 && height > 0) || widthChanged) {
       fontMetricsDirty = true
       if (!wasSuspended) runWhenParserIdle(parserGate, runFit)
