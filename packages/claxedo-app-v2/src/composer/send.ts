@@ -3,8 +3,8 @@ import type { HarnessInfo, PromptAttachment, PromptInput } from "@/server"
 import type { SessionView } from "@/session"
 import { formatCommentNote, formatImageMarkNote } from "@/lib/comment-note"
 import { machine } from "@/lib/machine"
-import type { Draft, EditorMode, HistoryComment, Selection, SendEvent, SendState } from "./model"
-import { promptFilled, promptImages, promptText, randomId, sendTransition } from "./model"
+import type { Draft, EditorMode, HistoryComment, Selection, SendEvent, SendState, StopEvent, StopState } from "./model"
+import { promptFilled, promptImages, promptText, randomId, sendTransition, stopTransition } from "./model"
 import { flattenMarkedImages } from "./marks/flatten"
 import { numberImageMarks } from "./marks/marks"
 import { asAppError } from "./errors"
@@ -91,7 +91,7 @@ export async function buildPromptInput(input: {
   }
 }
 
-export function createComposerSend(input: {
+type SendInput = {
   key: Accessor<ComposerKey>
   store: ComposerStore
   mode: Accessor<EditorMode>
@@ -100,38 +100,63 @@ export function createComposerSend(input: {
   createSession?: () => Promise<SessionView>
   afterAccepted?: (view: SessionView) => void
   focusEditor: () => void
-}) {
-  const state = machine<SendState, SendEvent>({ kind: "editing" }, sendTransition)
-  const sending = createMemo(() => state.state().kind === "sending")
+}
 
-  const armGoal = () => {
+function createStop(view: Accessor<SessionView | undefined>) {
+  const state = machine<StopState, StopEvent>({ kind: "idle" }, stopTransition)
+  const stop = async () => {
+    const current = view()
+    if (!current || state.state().kind === "stopping") return
+    state.send({ type: "stopStarted" })
+    try {
+      await current.stop()
+      state.send({ type: "stopFinished" })
+    } catch (error) {
+      state.send({ type: "stopFailed", error: asAppError(error) })
+    }
+  }
+  return { state: state.state, stop, dismiss: () => state.send({ type: "stopFinished" }) }
+}
+
+function createArmGoal(input: SendInput) {
+  return () => {
     const key = input.key()
     input.store.setPrompt(key, promptImages(input.store.draft(key).prompt), 0)
     input.store.setGoalArmed(key, true)
     requestAnimationFrame(input.focusEditor)
   }
+}
 
+async function deliver(input: SendInput, draft: Draft, goal: GoalIntent, clientRequestId: string): Promise<SessionView> {
+  const key = input.key()
+  const prompt = await buildPromptInput({ draft, mode: input.mode(), selection: input.store.selection(key), goal })
+  const view = input.view() ?? (await required(input.createSession)())
+  await view.send({ ...prompt, clientRequestId })
+  input.store.addHistory(key, input.mode(), draft.prompt, historyComments(draft))
+  input.store.reset(key)
+  return view
+}
+
+export function createComposerSend(input: SendInput) {
+  const state = machine<SendState, SendEvent>({ kind: "editing" }, sendTransition)
+  const sending = createMemo(() => state.state().kind === "sending")
+  const armGoal = createArmGoal(input)
+  const stop = createStop(input.view)
   const send = async () => {
-    const key = input.key()
-    const draft = input.store.draft(key)
+    const draft = input.store.draft(input.key())
     if (sending() || !promptFilled(draft)) return
     const goal = goalIntent(promptText(draft.prompt), draft.goalArmed, input.goalMode())
     if (goal.kind === "arm") return armGoal()
     const clientRequestId = randomId()
     state.send({ type: "sendStarted", clientRequestId })
     try {
-      const prompt = await buildPromptInput({ draft, mode: input.mode(), selection: input.store.selection(key), goal })
-      const view = input.view() ?? (await required(input.createSession)())
-      await view.send({ ...prompt, clientRequestId })
-      input.store.addHistory(key, input.mode(), draft.prompt, historyComments(draft))
-      input.store.reset(key)
+      const view = await deliver(input, draft, goal, clientRequestId)
       state.send({ type: "sendAccepted", clientRequestId })
       input.afterAccepted?.(view)
     } catch (error) {
       state.send({ type: "sendRejected", error: asAppError(error) })
     }
   }
-
   return {
     state: state.state,
     sending,
@@ -139,10 +164,9 @@ export function createComposerSend(input: {
     armGoal,
     disarmGoal: () => input.store.setGoalArmed(input.key(), false),
     edited: () => state.send({ type: "edited" }),
-    stop: async () => {
-      const view = input.view()
-      if (view) await view.stop()
-    },
+    stop: stop.stop,
+    stopState: stop.state,
+    dismissStop: stop.dismiss,
   }
 }
 
