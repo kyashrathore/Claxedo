@@ -97,7 +97,7 @@ export function ProjectSettings(props: { readonly id: ProjectId }): JSX.Element 
     return state.kind === "failed" ? state.error : undefined
   }
   return (
-    <div class="settings-body" data-component="settings-project" data-project-id={props.id}>
+    <div class="settings-body" data-project-id={props.id}>
       <A href={projectSettingsPath()} class="projects-settings-back">
         <Icon name="arrow-left" />
         <span>{t("projects.settings.all")}</span>

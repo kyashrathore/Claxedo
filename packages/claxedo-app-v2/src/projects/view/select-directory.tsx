@@ -52,7 +52,6 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
       action={
         <button
           type="button"
-          data-slot="directory-dialog-close"
           aria-label={t("projects.close")}
           class="inline-flex size-7 items-center justify-center rounded-md border-0 bg-transparent p-0 leading-none text-icon-weak-base transition-[background-color,color] duration-100 hover:bg-surface-base-hover hover:text-icon-strong-base focus-visible:bg-surface-base-hover focus-visible:text-icon-strong-base focus-visible:outline-none"
           onClick={() => dialog.close()}

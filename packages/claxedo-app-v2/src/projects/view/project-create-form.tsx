@@ -35,7 +35,7 @@ function FolderField(props: { look: CreateFormLook; folder: string; onChoose: ()
       >
         <Icon name="folder" size="small" class="shrink-0 text-icon-weak-base" />
         <Show when={props.folder} fallback={<span class={`min-w-0 flex-1 truncate ${text()} text-text-weak/60`}>{t("projects.create.folder.placeholder")}</span>}>
-          <span class={`min-w-0 flex-1 truncate font-mono text-text-strong ${props.look.comfortable ? "text-13-regular" : "text-12-regular"}`} data-slot="project-create-folder">
+          <span class={`min-w-0 flex-1 truncate font-mono text-text-strong ${props.look.comfortable ? "text-13-regular" : "text-12-regular"}`}>
             {props.folder}
           </span>
         </Show>
@@ -129,7 +129,7 @@ function RepositorySection(props: {
       </Show>
       <Show when={host()}>
         {(name) => (
-          <button type="button" data-slot="project-create-url-link" class={`${props.look.link} self-start`} onClick={() => props.onEntry()}>
+          <button type="button" class={`${props.look.link} self-start`} onClick={() => props.onEntry()}>
             {props.choice.entry() === "url" ? t("projects.create.choose", { host: name() }) : t("projects.add.pasteUrl")}
           </button>
         )}
@@ -189,12 +189,11 @@ export function ProjectCreateForm(props: ProjectCreateFormProps) {
   const submitLabel = () => (props.onSubmit ? (props.submitLabel ?? t("projects.create.continue")) : form.busy() ? t("projects.create.creating") : t("projects.add.create"))
   const control = (): "normal" | "small" => (look().comfortable ? "normal" : "small")
   return (
-    <form onSubmit={(event) => void submit(event)} class={look().comfortable ? "flex w-full flex-col gap-4" : "flex w-[340px] max-w-full flex-col gap-3"} data-slot="project-create-form">
+    <form onSubmit={(event) => void submit(event)} class={look().comfortable ? "flex w-full flex-col gap-4" : "flex w-[340px] max-w-full flex-col gap-3"}>
       <Show when={form.offersFolder()}>
         <div class="-mb-2 flex justify-end">
           <button
             type="button"
-            data-slot="project-create-source"
             class={look().link}
             onClick={() => {
               form.setError("")

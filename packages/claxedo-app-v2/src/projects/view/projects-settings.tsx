@@ -44,7 +44,7 @@ function ProjectsList(): JSX.Element {
     return state.kind === "ready" ? state.data : undefined
   }
   return (
-    <div class="settings-body" data-component="settings-projects">
+    <div class="settings-body">
       <SettingsIntro description={t("projects.settings.description")} />
       <Switch>
         <Match when={projects().kind === "loading"}>
