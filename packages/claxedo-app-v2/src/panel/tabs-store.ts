@@ -1,7 +1,8 @@
 import { createMemo, createSignal, type Accessor } from "solid-js"
 import { persistedSignal, preferenceKey } from "@/lib/persisted"
 import type { PlacementId } from "@/server"
-import { applyFocus, type FileReveal, type PanelFocus, type ReviewFocus } from "./focus"
+import type { ReviewFocus } from "@/review"
+import { applyFocus, type FileReveal, type PanelFocus } from "./focus"
 import {
   REVIEW_TAB,
   closeWorkspaceTab,

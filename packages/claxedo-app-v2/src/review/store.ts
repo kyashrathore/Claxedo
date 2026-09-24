@@ -8,7 +8,6 @@ import { defaultScope, readDiffStyle, type DiffStyle } from "./model"
 type PlacementReview = {
   readonly scope: DiffScope
   readonly open: readonly string[]
-  readonly excluded: Readonly<Record<string, boolean>>
   readonly forced: readonly string[]
   readonly message: string
 }
@@ -18,11 +17,11 @@ export type Review = {
   readonly scope: () => DiffScope
   readonly setScope: (scope: DiffScope) => void
   readonly open: () => readonly string[]
+  readonly setOpen: (files: readonly string[]) => void
+  readonly expand: (file: string) => void
   readonly toggleOpen: (file: string) => void
   readonly style: Accessor<DiffStyle>
   readonly setStyle: (style: DiffStyle) => void
-  readonly excluded: (path: string) => boolean
-  readonly setExcluded: (path: string, excluded: boolean) => void
   readonly forced: (file: string) => boolean
   readonly force: (file: string) => void
   readonly message: () => string
@@ -31,7 +30,7 @@ export type Review = {
 
 const ReviewContext = createContext<Review>()
 
-const emptyReview: PlacementReview = { scope: defaultScope, open: [], excluded: {}, forced: [], message: "" }
+const emptyReview: PlacementReview = { scope: defaultScope, open: [], forced: [], message: "" }
 
 function toggled(list: readonly string[], item: string): readonly string[] {
   return list.includes(item) ? list.filter((entry) => entry !== item) : [...list, item]
@@ -54,12 +53,12 @@ export function ReviewProvider(props: ParentProps): JSX.Element {
     scope: () => current().scope,
     setScope: (scope) => write((previous) => ({ ...previous, scope, open: [] })),
     open: () => current().open,
+    setOpen: (files) => write((previous) => ({ ...previous, open: files })),
+    expand: (file) =>
+      write((previous) => (previous.open.includes(file) ? previous : { ...previous, open: [...previous.open, file] })),
     toggleOpen: (file) => write((previous) => ({ ...previous, open: toggled(previous.open, file) })),
     style,
     setStyle: (next) => setStyle(next),
-    excluded: (path) => current().excluded[path] === true,
-    setExcluded: (path, excluded) =>
-      write((previous) => ({ ...previous, excluded: { ...previous.excluded, [path]: excluded } })),
     forced: (file) => current().forced.includes(file),
     force: (file) => write((previous) => ({ ...previous, forced: [...previous.forced, file] })),
     message: () => current().message,

@@ -69,7 +69,14 @@ export function createComposerController(input: ControllerInput) {
     closePopover(context)
   }
   keepActiveItem(context)
-  const sync = createEditorSync(context, (value, cursor) => updatePopover(context, value, cursor))
+  const sync = createEditorSync(
+    context,
+    (value, cursor) => updatePopover(context, value, cursor),
+    () => {
+      closePopover(context)
+      setState({ historyIndex: -1, savedPrompt: null })
+    },
+  )
   return {
     state,
     text: context.text,
@@ -80,7 +87,12 @@ export function createComposerController(input: ControllerInput) {
     onKeyDown: createKeyDown(context, blank, setMode),
     onCursor: sync.onCursor,
     setComposing: (composing: boolean) => setState("composing", composing),
-    setFocused: (focused: boolean) => setState("focused", focused),
+    setFocused: (focused: boolean) => {
+      setState("focused", focused)
+      if (focused) return
+      sync.onCursor()
+      closePopover(context)
+    },
     setActive: (id: string) => setState("activeId", id),
     selectAt: (item: Parameters<typeof selectAt>[1]) => selectAt(context, item),
     selectSlash: (item: Parameters<typeof selectSlash>[1]) => selectSlash(context, item),

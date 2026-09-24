@@ -4,18 +4,18 @@ Owns: the app frame and nothing a feature knows about. Three regions and one pag
 
 ## Regions
 
-- **Sidebar** (left): `main` mode shows what `AppShell` receives as `mainSidebar` (the rail); `settings` mode shows `SettingsSidebar`, the sections from the `settingsSections` registry grouped by `account`, `workspace`, `app`. The URL decides the mode: a page whose entry says `sidebar: "settings"` switches it.
+- **Sidebar** (left): today's rail frame (`view/sidebar.tsx`): the `rail-sidebar` nav named "Projects and sessions", 260 px by default, with a 36 px header strip holding Hide Sidebar (Pin Sidebar while it peeks) and an 8 px resize grip on its right edge (220 to 520 px; dragging below 220 unpins it). Pinned, it sits in the row; unpinned, it is an overlay at the left that shows only while peeking and hides when the pointer leaves it. `main` mode shows what `AppShell` receives as `mainSidebar` (the rail); `settings` mode shows `SettingsSidebar`, the sections from the `settingsSections` registry grouped by `account`, `workspace`, `app`. The URL decides the mode: a page whose entry says `sidebar: "settings"` switches it.
 - **Center**: the workbench of split panes (`src/workbench/`), or the one **page tab** when the URL names a `PageEntry` (Settings, Marketplace, Tasks, Pages, projects, plugin pages). The page tab cannot split or drag; opening another page reuses it; its state is the URL.
 - **Workspace panel** (right): `src/panel/`. The frame wraps the workbench column in its `WorkspaceArea`; the layout below decides whether it is shown.
 - **Top bar**: the sidebar toggle, the workbench tab strip on a wide screen, the pane switcher on a phone, the page header for a page, and the panel's `PanelToggle` while the panel is closed.
 
 ## State machines
 
-- **`ShellLayout`** (`model.ts`): `wide { sidebar, panel }` with each side region `open` or `collapsed`, or `phone { drawer, sheet }` with each overlay `open` or `closed`. Events: `viewportChanged`, `toggleSidebar`, `showSidebar`, `hideSidebar`, `togglePanel`, `showPanel`, `hidePanel`, `navigated` (closes the phone overlays). The wide regions persist as preferences (`store.ts`) under the principal's scope; phone overlays never persist.
+- **`ShellLayout`** (`model.ts`): `wide { sidebar, panel }` with the panel `open` or `collapsed` and the sidebar `open` (pinned), `collapsed` (unpinned) or `peeking` (unpinned and shown), or `phone { drawer, sheet }` with each overlay `open` or `closed`. Events: `viewportChanged`, `toggleSidebar`, `showSidebar`, `hideSidebar`, `peekSidebar` (only from `collapsed`), `unpeekSidebar` (only from `peeking`), `togglePanel`, `showPanel`, `hidePanel`, `navigated` (closes the phone overlays). The wide regions persist as preferences (`store.ts`) under the principal's scope, a peek as `collapsed`; phone overlays never persist.
 
 ## Routes (`routes.ts`)
 
-Id-only: `/` (home), `/w/:placementId/s/:sessionId`, `/w/:placementId/t/:terminalId`, `/settings/:section?`, each page's own `path`, and the `routes` registry for full-screen screens outside the shell (auth, onboarding) which match first. `RouteSync` opens the session or terminal the URL names in the workbench and mirrors the focused pane back into the URL with `replace`, so the URL is the one home of the current placement: `useShellRoute().placementId()`.
+Today's app's shapes, id-only: `/` (home), `/w/:placementId/session` (the placement's new-session draft), `/w/:placementId/session/:sessionId`, `/w/:placementId/terminal/:terminalId`, `/settings/:section?`, each page's own `path`, and the `routes` registry for full-screen screens outside the shell (auth, onboarding) which match first. `RouteSync` opens the draft, session or terminal the URL names in the workbench (through the pane kinds' `fromRoute`) and mirrors the focused pane back into the URL with `replace` (through `toRoute`), so the URL is the one home of the current placement: `useShellRoute().placementId()`.
 
 ## Placement providers (`placement-providers.tsx`)
 

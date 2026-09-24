@@ -1,0 +1,150 @@
+import { type Accessor, type JSX, Show } from "solid-js"
+import { Tooltip } from "@opencode-ai/ui/tooltip"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
+import type { HarnessScopeInput, HarnessSelectionController } from "../harness/controller"
+import type { PermissionModeGroups } from "../permission/permission-mode"
+import type { PermissionModeOption } from "../permission/modes"
+import { AgentHarnessSelector } from "./agent-harness-selector"
+import { PromptAddMenu } from "./add-menu"
+import { PromptPermissionControl } from "./permission-control"
+
+/**
+ * The composer's bottom row. Two clusters instead of one left-aligned strip:
+ * actions and session policy on the left (`+`, auto-accept), the "who answers"
+ * configuration on the right (harness, model, effort), with the submit control
+ * following in `frame.tsx`. Agent/plan-mode selection lives in the `+` menu;
+ * effort is folded into the model control rather than getting its own chip.
+ */
+export function PromptToolbarControls(props: {
+  fileAttachmentInput: () => JSX.Element
+  addTitle: string
+  attachTitle: string
+  attachKeybind: string
+  attachStyle: Accessor<JSX.CSSProperties>
+  onAttach: VoidFunction
+  commandsTitle: string
+  onCommands: VoidFunction
+  contextTitle: string
+  onContext: VoidFunction
+  shellTitle: string
+  onEnterShell: VoidFunction
+  goalTitle: string
+  clearGoalTitle: string
+  goalSelectable: Accessor<boolean>
+  goalArmed: Accessor<boolean>
+  onGoal: VoidFunction
+  onGoalToggle: VoidFunction
+  planModeTitle: string
+  agentGroupTitle: string
+  approveEnabled: Accessor<boolean>
+  approveTitle: string
+  permissionGroups: Accessor<PermissionModeGroups | undefined>
+  permissionCurrent: Accessor<PermissionModeOption | undefined>
+  onPermissionSelect: (option: PermissionModeOption) => void
+  mode: Accessor<"normal" | "shell">
+  harnessPending: Accessor<boolean>
+  harnessController: Accessor<HarnessSelectionController | undefined>
+  harnessScope: Accessor<string>
+  harnessScopeInput: Accessor<HarnessScopeInput>
+  active: Accessor<boolean>
+  controlStyle: Accessor<JSX.CSSProperties>
+  sessionLocked: Accessor<boolean>
+  showAgentSelector: Accessor<boolean>
+  agentNames: Accessor<string[]>
+  currentAgentName: Accessor<string>
+  onAgentSelect: (value: string) => void
+}) {
+  const addDisabled = () => props.mode() !== "normal" || props.harnessPending()
+
+  return (
+    <div data-slot="composer-controls" data-claxedo-compact-touch class="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+      <PromptAddMenu
+        fileAttachmentInput={props.fileAttachmentInput}
+        disabled={addDisabled}
+        triggerStyle={props.attachStyle}
+        triggerLabel={props.addTitle}
+        attachLabel={props.attachTitle}
+        attachKeybind={props.attachKeybind}
+        onAttach={props.onAttach}
+        commandsLabel={props.commandsTitle}
+        onCommands={props.onCommands}
+        contextLabel={props.contextTitle}
+        onContext={props.onContext}
+        shellLabel={props.shellTitle}
+        onEnterShell={props.onEnterShell}
+        goalLabel={props.goalTitle}
+        goalDisabled={() => !props.goalSelectable()}
+        onGoal={props.onGoal}
+        agentNames={props.agentNames}
+        currentAgentName={props.currentAgentName}
+        onAgentSelect={props.onAgentSelect}
+        showAgentControls={() => props.showAgentSelector() && !props.harnessPending()}
+        agentGroupLabel={props.agentGroupTitle}
+        planModeLabel={props.planModeTitle}
+      />
+      <PromptPermissionControl
+        enabled={() => {
+          if (!props.approveEnabled() || !props.active()) return false
+          const groups = props.permissionGroups()
+          // Harness or report still resolving: show the trigger in its
+          // unresolved "Permissions" state rather than leaving the slot empty —
+          // the control must exist before the reports arrive.
+          if (!groups) return true
+          const offered = groups.harness.rows
+          if (offered.length > 0) return true
+          return groups.harness.loading === true
+        }}
+        disabled={addDisabled}
+        style={props.attachStyle}
+        groups={props.permissionGroups}
+        current={props.permissionCurrent}
+        label={props.approveTitle}
+        onSelect={props.onPermissionSelect}
+      />
+      <Show when={props.goalArmed()}>
+        <PromptGoalToggle
+          label={props.goalTitle}
+          clearLabel={props.clearGoalTitle}
+          onClear={props.onGoalToggle}
+        />
+      </Show>
+      <div data-slot="composer-selection-controls" class="ml-auto flex min-w-0 items-center gap-1">
+        <Show when={props.harnessController()}>
+          {(controller) => (
+            <AgentHarnessSelector
+              harnessController={controller()}
+              scope={props.harnessScope()}
+              scopeInput={props.harnessScopeInput()}
+              active={props.active()}
+              triggerStyle={props.controlStyle()}
+              sessionLocked={props.sessionLocked()}
+            />
+          )}
+        </Show>
+      </div>
+    </div>
+  )
+}
+
+export function PromptGoalToggle(props: {
+  label: string
+  clearLabel: string
+  onClear: VoidFunction
+}) {
+  return (
+    <Tooltip placement="top" value={props.clearLabel}>
+      <button
+        data-action="prompt-goal-toggle"
+        type="button"
+        aria-label={props.clearLabel}
+        aria-pressed="true"
+        onClick={props.onClear}
+        class="group/goal flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-v2-overlay-simple-overlay-pressed px-2.5 text-compact font-body leading-4 text-v2-text-text-muted transition-colors duration-150 hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-v2-border-border-focus"
+      >
+        <Icon name="circle-dashed" size="small" class="shrink-0 group-hover/goal:hidden" />
+        <Icon name="circle-x" size="small" class="hidden shrink-0 group-hover/goal:block" />
+        <span>{props.label}</span>
+      </button>
+    </Tooltip>
+  )
+}

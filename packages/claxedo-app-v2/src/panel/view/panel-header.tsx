@@ -44,6 +44,7 @@ function Tools(): JSX.Element {
       available={panel.placementId() !== undefined}
       filesActive={panel.navigator() === "files"}
       changesActive={panel.navigator() === "changes"}
+      showChanges
       onToggle={panel.toggleNavigator}
     />
   )

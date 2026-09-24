@@ -3,7 +3,7 @@ import path from "node:path"
 import type { Page } from "@playwright/test"
 import { expect, gitFolder, test } from "../harness"
 
-const SESSION_URL = /\/w\/[^/]+\/s\/[^/?]+$/
+const SESSION_URL = /\/w\/[^/]+\/session\/[^/?]+$/
 
 type ProjectRecord = { id: string; name: string; directory?: string | null; repoUrl?: string | null }
 

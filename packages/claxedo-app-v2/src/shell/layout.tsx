@@ -1,6 +1,6 @@
 import { createContext, createEffect, on, useContext, type Accessor, type JSX } from "solid-js"
 import { usePhone } from "@/lib/viewport"
-import { createShellLayout, panelShown, sidebarShown, type ShellLayoutEvent, type ShellLayoutState } from "./model"
+import { createShellLayout, panelShown, persistedSidebar, sidebarPinned, sidebarShown, type ShellLayoutEvent, type ShellLayoutState } from "./model"
 import { clampWidth, createShellPreferences, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH } from "./store"
 
 export type ShellLayout = {
@@ -8,6 +8,7 @@ export type ShellLayout = {
   readonly send: (event: ShellLayoutEvent) => void
   readonly phone: Accessor<boolean>
   readonly sidebarShown: Accessor<boolean>
+  readonly sidebarPinned: Accessor<boolean>
   readonly panelShown: Accessor<boolean>
   readonly sidebarWidth: Accessor<number>
   readonly setSidebarWidth: (width: number) => void
@@ -24,7 +25,7 @@ export function ShellLayoutProvider(props: { readonly scope: string; readonly ch
     machine.send(event)
     const state = machine.state()
     if (state.kind !== "wide") return
-    setPrefs({ sidebar: state.sidebar, panel: state.panel })
+    setPrefs({ sidebar: persistedSidebar(state.sidebar), panel: state.panel })
   }
   createEffect(on(phone, (isPhone, previous) => {
     if (previous === undefined) return
@@ -36,6 +37,7 @@ export function ShellLayoutProvider(props: { readonly scope: string; readonly ch
     send,
     phone,
     sidebarShown: () => sidebarShown(machine.state()),
+    sidebarPinned: () => sidebarPinned(machine.state()),
     panelShown: () => panelShown(machine.state()),
     sidebarWidth: () => prefs.sidebarWidth,
     setSidebarWidth: (width) => setPrefs("sidebarWidth", clampWidth(width, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH)),

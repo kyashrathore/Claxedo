@@ -67,20 +67,27 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
       <div data-slot="session-screen-timeline">
         <SessionTimeline view={props.view} host={host} active={props.active} scroll={scroll} onNavigateParent={toParent} />
       </div>
-      <div ref={setDock} data-slot="session-screen-dock">
-        <SessionDocks view={props.view} />
-        <Show when={!parentId()} fallback={<ChildNotice t={t} onBack={toParent} />}>
-          <Show when={props.view.requests().length === 0}>
-            <Composer
-              composerKey={sessionComposerKey(props.view.ref)}
-              placementId={props.view.ref.placementId}
-              view={props.view}
-              sessionHarness={props.view.row()?.harness}
-              attachmentWorkspace={true}
-              afterAccepted={queueEdit.accepted}
-            />
+      <div
+        ref={setDock}
+        data-component="session-prompt-dock"
+        class="ui-session-prompt-dock w-full flex flex-col justify-center items-center pointer-events-none shrink-0 pb-3 bg-background-stronger"
+      >
+        <div data-slot="session-screen-dock" class="w-full px-3 pointer-events-auto md:max-w-192 md:mx-auto 2xl:max-w-[880px]">
+          <SessionDocks view={props.view} />
+          <Show when={!parentId()} fallback={<ChildNotice t={t} onBack={toParent} />}>
+            <Show when={props.view.requests().length === 0}>
+              <Composer
+                composerKey={sessionComposerKey(props.view.ref)}
+                placementId={props.view.ref.placementId}
+                view={props.view}
+                sessionHarness={props.view.row()?.harness}
+                attachmentWorkspace={true}
+                afterAccepted={queueEdit.accepted}
+                queuedEdit={queueEdit.edit}
+              />
+            </Show>
           </Show>
-        </Show>
+        </div>
       </div>
     </div>
   )

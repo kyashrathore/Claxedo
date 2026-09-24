@@ -1,9 +1,9 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import type { Locator, Page } from "@playwright/test"
-import { assistantText, expect, gitFolder, installedCli, test } from "../harness"
+import { assistantText, expect, gitFolder, installedCli, test, UI } from "../harness"
 
-const SESSION_URL = /\/w\/[^/]+\/s\/[^/?]+$/
+const SESSION_URL = /\/w\/[^/]+\/session\/[^/?]+$/
 const MARKER = "FIRSTRUN1"
 
 async function serverProjects(url: string): Promise<{ id: string; name: string; directory?: string | null }[]> {
@@ -49,7 +49,7 @@ async function onboardV2(app: Page): Promise<Locator> {
   expect(await pageOverflows(app)).toBe(false)
   await app.getByRole("button", { name: "Create project" }).click()
   await expect(app).toHaveURL(SESSION_URL)
-  return app.getByRole("textbox", { name: "Prompt" })
+  return app.getByRole("textbox", { name: UI.composer })
 }
 
 async function onboardV1(app: Page, fromHome: string): Promise<Locator> {
@@ -64,7 +64,7 @@ async function onboardV1(app: Page, fromHome: string): Promise<Locator> {
   await expect(app.getByRole("radiogroup", { name: "Where work runs" }).getByRole("radio", { name: /^Just this machine/ })).toBeChecked()
   expect(await pageOverflows(app)).toBe(false)
   await app.getByRole("button", { name: "Open project" }).click()
-  return app.getByRole("textbox", { name: /^Ask anything/ })
+  return app.getByRole("textbox", { name: UI.composer })
 }
 
 test("01 first run: onboarding detects the agents, adds a folder project, and the first prompt runs", async ({ stack, api, app }) => {
