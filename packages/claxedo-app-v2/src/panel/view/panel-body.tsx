@@ -144,7 +144,7 @@ function ActiveTab(props: { readonly placementId: PlacementId }): JSX.Element {
   return (
     <Switch>
       <Match when={tab().kind === "review"}>
-        <div data-testid="workspace-review-body" class="absolute inset-0 flex h-full flex-col overflow-hidden">
+        <div data-testid="review-pane-root" class="absolute inset-0 flex h-full flex-col overflow-hidden">
           <ReviewTab
             placementId={props.placementId}
             focus={panel.reviewFocus()}
