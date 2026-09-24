@@ -66,8 +66,8 @@ function closeContentReducer(state: WorkbenchState, contentId: string): Workbenc
   return closed.panes.length === 0 && next ? reducers.navigation.show(closed, next) : closed
 }
 
-function contentKey(kind: string, state: Json): string {
-  return `${kind}:${JSON.stringify(state)}`
+function contentKey(kind: { readonly kind: string; readonly singleton?: boolean }, state: Json): string {
+  return kind.singleton ? kind.kind : `${kind.kind}:${JSON.stringify(state)}`
 }
 
 function readContents(value: unknown): Record<string, PaneContent> {
@@ -167,15 +167,15 @@ export function createWorkbenchStore(key: string, kinds: Accessor<readonly AnyPa
 
   const keyOf = (contentId: string): string | undefined => {
     const opened = content(contentId)
-    return opened?.state === undefined ? undefined : contentKey(opened.kind.kind, opened.kind.encode(opened.state as never))
+    return opened?.state === undefined ? undefined : contentKey(opened.kind, opened.kind.encode(opened.state as never))
   }
 
   const open = <State,>(kind: PaneKind<State>, state: State, focus = true): string => {
     const encoded = kind.encode(state)
-    const key = contentKey(kind.kind, encoded)
+    const key = contentKey(kind, encoded)
     const id = record().contents[key] ? key : (layout().contentIds.find((contentId) => keyOf(contentId) === key) ?? key)
     batch(() => {
-      setRecord((r) => (r.contents[id] ? r : { ...r, contents: { ...r.contents, [id]: { kind: kind.kind, state: encoded } } }))
+      setRecord((r) => (r.contents[id] && !kind.singleton ? r : { ...r, contents: { ...r.contents, [id]: { kind: kind.kind, state: encoded } } }))
       apply((s) => (focus ? reducers.navigation.show(reducers.contents.add(s, id), id) : reducers.contents.add(s, id)))
     })
     return id

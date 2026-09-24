@@ -1,6 +1,6 @@
 import { placementId, sessionId, terminalId } from "@/server"
 import type { MachineId, Placement, PlacementId, SessionId, SessionRef, TerminalId } from "@/server"
-import type { PageEntry, RouteEntry } from "./types"
+import type { PageEntry, PaneRoute, RouteEntry } from "./types"
 
 export type RouteParams = Readonly<Record<string, string>>
 
@@ -116,6 +116,10 @@ export function parseRoute(
 
 export function placementOf(route: ShellRoute): PlacementId | undefined {
   return route.kind === "draft" || route.kind === "session" || route.kind === "terminal" ? route.placementId : undefined
+}
+
+export function panePlacementOf(route: PaneRoute | undefined): PlacementId | undefined {
+  return route && route.kind !== "pageTab" ? route.placementId : undefined
 }
 
 export function sidebarModeOf(route: ShellRoute): "main" | "settings" {
