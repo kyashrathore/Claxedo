@@ -88,6 +88,7 @@ export async function buildPromptInput(input: {
     model: input.submission.model,
     effort: input.submission.effort,
     serviceTier: input.submission.serviceTier,
+    permissionMode: input.submission.permissionMode,
     goal: input.goal.kind === "submit" ? { objective: input.goal.objective } : undefined,
     delivery: input.delivery,
   }

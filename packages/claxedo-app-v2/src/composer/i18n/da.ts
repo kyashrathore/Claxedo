@@ -98,4 +98,5 @@ export const da: Partial<Record<ComposerTextKey, string>> = {
   "prompt.action.attachFile": "Vedhæft fil",
   "command.category.file": "Fil",
   "prompt.toast.promptSendFailed.title": "Kunne ikke sende forespørgsel",
+  "common.requestFailed": "Forespørgsel mislykkedes",
 }

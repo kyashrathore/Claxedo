@@ -2,7 +2,7 @@ import { createEffect, createMemo, createSignal, on, onCleanup, type Accessor } 
 import type { PlacementId } from "@/server"
 import { useServer } from "@/server"
 import type { SessionView } from "@/session"
-import { connectionHarness, nativeHarness, NATIVE_HARNESS_IDS, type NativeHarnessId } from "@/lib/harness-selection"
+import { connectionHarness, harnessSelectionValue, nativeHarness, NATIVE_HARNESS_IDS, type NativeHarnessId } from "@/lib/harness-selection"
 import { useDialog } from "@/ui"
 import type { ImagePart, Submission } from "./model"
 import { promptImages } from "./model"
@@ -19,6 +19,8 @@ import { createHarnessSelectionController, createHarnessSubmitController, type H
 import { harnessProfile, harnessSelectionId, type HarnessType } from "./harness/profile"
 import { submitBlockReason } from "./submit-block-reason"
 import { registerPromptModeCommands } from "./view/mode-commands"
+import { createComposerPermissionSurface } from "./permission/permission-mode-wiring"
+import { harnessModesUnavailable } from "./role-gate"
 
 export type ComposerProps = {
   readonly composerKey: ComposerKey
@@ -39,7 +41,7 @@ function harnessOfId(id: string): HarnessType {
   return native ? nativeHarness(native) : connectionHarness(id)
 }
 
-function createHarnessSelection(props: ComposerProps, key: Accessor<ComposerKey>) {
+function createHarnessSelection(props: ComposerProps, key: Accessor<ComposerKey>, t: ReturnType<typeof useComposerText>) {
   const server = useServer()
   const store = useHarnessConfig()
   const controller = createHarnessSelectionController(store)
@@ -55,6 +57,25 @@ function createHarnessSelection(props: ComposerProps, key: Accessor<ComposerKey>
     }
   })
   const selection = createMemo(() => controller.read(key()))
+  const permissionHarness = () => {
+    const type = selection().harness
+    return type ? harnessSelectionValue(type) : undefined
+  }
+  const { permissionMode } = createComposerPermissionSurface({
+    api: server.harnessConfig,
+    placementId: () => scopeInput().placementId,
+    sessionRef: () => (submit.heldHarness(key()) ? undefined : scopeInput().sessionRef),
+    harness: permissionHarness,
+    harnessSelection: () => selection().harness,
+    harnessUnavailable: () =>
+      harnessModesUnavailable({
+        isHarness: !!selection().harness,
+        readiness: selection().readiness,
+        configError: !!selection().configError,
+        harness: permissionHarness(),
+      }),
+    requestFailedTitle: () => t("common.requestFailed"),
+  })
   const harness = createMemo(() => {
     const type = submit.heldHarness(key()) ?? selection().harness
     return type ? server.capabilities()?.harnesses.find((info) => info.id === harnessSelectionId(type)) : undefined
@@ -67,14 +88,16 @@ function createHarnessSelection(props: ComposerProps, key: Accessor<ComposerKey>
     const tier = submit.serviceTierForSubmit(scope)
     await store.commitHeldHarness(scope, scopeInput())
     const type = held ?? submit.harness(scope)
+    const mode = permissionMode.promptModeId()
     return {
       ...(type ? { harness: harnessSelectionId(type) } : {}),
       ...(model ? { model: { providerId: model.providerID, modelId: model.modelID } } : {}),
       ...(model?.variant ? { effort: model.variant } : {}),
       ...(tier ? { serviceTier: tier } : {}),
+      ...(mode ? { permissionMode: mode } : {}),
     }
   }
-  return { controller, submit, scopeInput, selection, harness, submission }
+  return { controller, submit, scopeInput, selection, harness, submission, permissionMode }
 }
 
 type HarnessSelection = ReturnType<typeof createHarnessSelection>
@@ -158,7 +181,7 @@ export function createComposer(props: ComposerProps) {
   createEffect(on(key, (current) => onCleanup(store.retain(current))))
   const late: Late = {}
   const refs = createComposerRefs()
-  const selection = createHarnessSelection(props, key)
+  const selection = createHarnessSelection(props, key, t)
   const working = createMemo(() => sessionWorking(props.view))
   const goalAvailable = createMemo(() => (selection.harness()?.goalMode ?? "none") !== "none")
   const [query, setQuery] = createSignal<SuggestionQuery>({ kind: "closed" })
@@ -220,6 +243,7 @@ export function createComposer(props: ComposerProps) {
     harness: selection.harness,
     harnessController: selection.controller,
     harnessScopeInput: selection.scopeInput,
+    permissionMode: selection.permissionMode,
     harnessPending,
     booting,
     bootText,

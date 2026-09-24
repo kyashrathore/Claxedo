@@ -116,6 +116,7 @@ export type ComposerTextKey =
   | "command.prompt.mode.normal"
   | "command.category.session"
   | "prompt.toast.promptSendFailed.title"
+  | "common.requestFailed"
 
 export const composerEnglish: Record<ComposerTextKey, string> = {
   "composer.placeholder.normal": "Ask anything...",
@@ -235,4 +236,5 @@ export const composerEnglish: Record<ComposerTextKey, string> = {
   "command.prompt.mode.normal": "Prompt",
   "command.category.session": "Session",
   "prompt.toast.promptSendFailed.title": "Failed to send prompt",
+  "common.requestFailed": "Request failed",
 }

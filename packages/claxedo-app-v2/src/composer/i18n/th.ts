@@ -106,4 +106,5 @@ export const th: Partial<Record<ComposerTextKey, string>> = {
   "command.prompt.mode.normal": "พรอมต์",
   "command.category.session": "เซสชัน",
   "prompt.toast.promptSendFailed.title": "ไม่สามารถส่งพร้อมท์",
+  "common.requestFailed": "คำขอล้มเหลว",
 }

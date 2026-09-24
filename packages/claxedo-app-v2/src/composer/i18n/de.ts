@@ -103,4 +103,5 @@ export const de: Partial<Record<ComposerTextKey, string>> = {
   "command.category.file": "Datei",
   "command.category.session": "Sitzung",
   "prompt.toast.promptSendFailed.title": "Eingabe konnte nicht gesendet werden",
+  "common.requestFailed": "Anfrage fehlgeschlagen",
 }
