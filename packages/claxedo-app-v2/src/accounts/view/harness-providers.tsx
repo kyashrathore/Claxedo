@@ -1,6 +1,5 @@
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Tag } from "@opencode-ai/ui/tag"
-import { TextField } from "@opencode-ai/ui/text-field"
 import { createEffect, createMemo, createSignal, For, onMount, Show } from "solid-js"
 import { createProviderCatalog } from "@/composer"
 import { harnessDisplayLabel } from "@/lib/harness-catalog"
@@ -11,6 +10,7 @@ import { canDisconnectProvider, catalogProviders, providerNote, providerSourceTa
 import { useAccountsText } from "../i18n"
 import { DialogCustomProvider } from "./custom-provider-dialog"
 import { ProviderSetupRow } from "./provider-setup-row"
+import { SearchField } from "./search-field"
 
 export function createHarnessProviders(harness: () => string) {
   const server = useServer()
@@ -37,31 +37,6 @@ export function createHarnessProviders(harness: () => string) {
     }
   }
   return { harness, catalog, disconnect, connected: () => catalog.connected().length > 0, machine: () => server.capabilities()?.thisMachine?.name ?? "" }
-}
-
-function ProviderSearch(props: { readonly value: string; readonly onChange: (value: string) => void }) {
-  const t = useAccountsText()
-  return (
-    <div class="flex items-center gap-2 px-3 h-9 rounded-lg bg-surface-base">
-      <Icon name="magnifying-glass" class="text-icon-weak-base flex-shrink-0" />
-      <TextField
-        variant="ghost"
-        type="text"
-        value={props.value}
-        onChange={props.onChange}
-        placeholder={t("settings.providers.search.placeholder")}
-        spellcheck={false}
-        autocorrect="off"
-        autocomplete="off"
-        autocapitalize="off"
-        class="flex-1"
-        data-action="settings-providers-search"
-      />
-      <Show when={props.value}>
-        <IconButton icon="circle-x" variant="ghost" onClick={() => props.onChange("")} />
-      </Show>
-    </div>
-  )
 }
 
 function ConnectedProvider(props: { readonly provider: CatalogProvider; readonly onDisconnect: () => void }) {
@@ -124,7 +99,7 @@ export function HarnessProvidersSection(props: { readonly providers: HarnessProv
         <CatalogNote harness={harness()} machine={props.providers.machine()} error={catalog().error()} />
       </Show>
       <Show when={items().length > 1}>
-        <ProviderSearch value={search()} onChange={setSearch} />
+        <SearchField value={search()} onChange={setSearch} placeholder={t("settings.providers.search.placeholder")} action="settings-providers-search" />
       </Show>
       <SettingsList>
         <For each={rows()}>
