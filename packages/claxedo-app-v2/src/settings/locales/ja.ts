@@ -20,7 +20,6 @@ export const dictionary = {
   "settings.keybindings.search": "ショートカットを検索",
   "settings.keybindings.empty": "ショートカットが見つかりません",
   "settings.keybindings.group.general": "一般",
-  "settings.section.general": "一般",
   "settings.general.reasoningSummaries": "推論の要約を表示",
   "settings.general.reasoningSummaries.description": "タイムラインにモデルの推論の要約を表示します",
   "settings.general.shellToolPartsExpanded": "shell ツールパーツを展開",
@@ -33,4 +32,10 @@ export const dictionary = {
   "settings.appearance.codeFont.description": "コードブロックで使用するフォントをカスタマイズします",
   "settings.appearance.screenReader": "スクリーンリーダーモード",
   "settings.appearance.screenReader.description": "新しいターミナルでアクセシブルなスクリーンリーダー用バッファを公開します",
+  "settings.section.language": "言語",
+  "settings.appearance.group.colors": "色",
+  "settings.appearance.group.fonts": "フォント",
+  "settings.appearance.group.transcript": "トランスクリプト",
+  "settings.appearance.group.panel": "ワークスペースパネル",
+  "settings.appearance.group.terminal": "ターミナル",
 }

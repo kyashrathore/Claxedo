@@ -20,7 +20,6 @@ export const dictionary = {
   "settings.keybindings.search": "Tastenkürzel suchen",
   "settings.keybindings.empty": "Keine Tastenkürzel gefunden",
   "settings.keybindings.group.general": "Allgemein",
-  "settings.section.general": "Allgemein",
   "settings.general.reasoningSummaries": "Reasoning-Zusammenfassungen anzeigen",
   "settings.general.reasoningSummaries.description": "Zusammenfassungen des Modell-Reasonings in der Timeline anzeigen",
   "settings.general.shellToolPartsExpanded": "Shell-Tool-Abschnitte ausklappen",
@@ -33,4 +32,9 @@ export const dictionary = {
   "settings.appearance.codeFont.description": "Die in Codeblöcken verwendete Schriftart anpassen",
   "settings.appearance.screenReader": "Bildschirmleser-Modus",
   "settings.appearance.screenReader.description": "Stellen Sie einen barrierefreien Bildschirmleser-Puffer in neuen Terminals bereit",
+  "settings.section.language": "Sprache",
+  "settings.appearance.group.colors": "Farben",
+  "settings.appearance.group.fonts": "Schriftarten",
+  "settings.appearance.group.transcript": "Verlauf",
+  "settings.appearance.group.panel": "Arbeitsbereich-Panel",
 }

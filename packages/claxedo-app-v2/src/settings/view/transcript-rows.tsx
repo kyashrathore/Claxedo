@@ -3,7 +3,7 @@ import { useTranslator } from "@/i18n"
 import { Switch } from "@/ui"
 import { dictionary, type Keys } from "../i18n"
 import { usePreferences, type TranscriptPreferences } from "../preferences"
-import { SettingsGroup, SettingsList, SettingsRow } from "./section"
+import { SettingsRow } from "./section"
 
 type TranscriptToggle = {
   readonly key: keyof TranscriptPreferences
@@ -33,26 +33,20 @@ const TRANSCRIPT_TOGGLES: readonly TranscriptToggle[] = [
   },
 ]
 
-export function GeneralSection() {
+export function TranscriptRows() {
   const t = useTranslator(dictionary)
   const preferences = usePreferences()
   return (
-    <div class="settings-body" data-component="settings-general">
-      <SettingsGroup>
-        <SettingsList>
-          <For each={TRANSCRIPT_TOGGLES}>
-            {(toggle) => (
-              <SettingsRow title={t(toggle.title)} description={t(toggle.description)}>
-                <div data-action={toggle.action}>
-                  <Switch hideLabel checked={preferences.transcript[toggle.key]} onChange={(checked) => preferences.setTranscript(toggle.key, checked)}>
-                    {t(toggle.title)}
-                  </Switch>
-                </div>
-              </SettingsRow>
-            )}
-          </For>
-        </SettingsList>
-      </SettingsGroup>
-    </div>
+    <For each={TRANSCRIPT_TOGGLES}>
+      {(toggle) => (
+        <SettingsRow title={t(toggle.title)} description={t(toggle.description)}>
+          <div data-action={toggle.action}>
+            <Switch hideLabel checked={preferences.transcript[toggle.key]} onChange={(checked) => preferences.setTranscript(toggle.key, checked)}>
+              {t(toggle.title)}
+            </Switch>
+          </div>
+        </SettingsRow>
+      )}
+    </For>
   )
 }

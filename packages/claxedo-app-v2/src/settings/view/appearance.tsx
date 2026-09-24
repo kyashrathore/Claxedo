@@ -1,12 +1,13 @@
 import { For, Show } from "solid-js"
 import { Select, Switch, TextInput } from "@/ui"
 import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme"
-import { useI18n, useTranslator, type Locale } from "@/i18n"
+import { useTranslator } from "@/i18n"
 import { dictionary, type Keys } from "../i18n"
 import { CODE_FONT_PLACEHOLDER, codeFontFamily, TERMINAL_FONT_PLACEHOLDER, terminalFontFamily, UI_FONT_PLACEHOLDER, uiFontFamily } from "../fonts"
 import { usePreferences, type AppearancePreferences, type NavigatorSide } from "../preferences"
 import { ContrastRow } from "./contrast"
 import { SettingsGroup, SettingsList, SettingsRow } from "./section"
+import { TranscriptRows } from "./transcript-rows"
 
 const SCHEMES: readonly ColorScheme[] = ["system", "light", "dark"]
 
@@ -45,10 +46,14 @@ const FONT_ROWS: readonly FontRow[] = [
   },
 ]
 
-function FontRows(props: { readonly appearance: AppearancePreferences; readonly onChange: (key: FontRow["key"], value: string) => void }) {
+function FontRows(props: {
+  readonly rows: readonly FontRow[]
+  readonly appearance: AppearancePreferences
+  readonly onChange: (key: FontRow["key"], value: string) => void
+}) {
   const t = useTranslator(dictionary)
   return (
-    <For each={FONT_ROWS}>
+    <For each={props.rows}>
       {(row) => (
         <SettingsRow title={t(row.title)} description={t(row.description)}>
           <TextInput
@@ -71,28 +76,46 @@ function FontRows(props: { readonly appearance: AppearancePreferences; readonly 
 
 export function AppearanceSection() {
   const t = useTranslator(dictionary)
-  const i18n = useI18n()
   const theme = useTheme()
   const preferences = usePreferences()
-  const localeLabel = (code: Locale) => i18n.locales.find((entry) => entry.code === code)?.label ?? code
+  const setFont = (key: FontRow["key"], value: string) => preferences.setAppearance(key, value)
+  const fontRows = (keys: readonly FontRow["key"][]) => FONT_ROWS.filter((row) => keys.includes(row.key))
 
   return (
     <div class="settings-body" data-component="settings-appearance">
-      <SettingsGroup>
+      <SettingsGroup title={t("settings.appearance.group.colors")}>
         <SettingsList>
-          <SettingsRow title={t("settings.appearance.language")} description={t("settings.appearance.language.description")}>
-            <Select options={i18n.locales.map((entry) => entry.code)} current={i18n.locale()} value={(code) => code} label={localeLabel} onSelect={(code) => code && i18n.setLocale(code)} />
-          </SettingsRow>
           <SettingsRow title={t("settings.appearance.colorScheme")} description={t("settings.appearance.colorScheme.description")}>
-            <Select options={[...SCHEMES]} current={theme.colorScheme()} value={(scheme) => scheme} label={(scheme) => t(SCHEME_KEY[scheme])} onSelect={(scheme) => scheme && theme.setColorScheme(scheme)} />
+            <Select
+              data-action="settings-color-scheme"
+              options={[...SCHEMES]}
+              current={theme.colorScheme()}
+              value={(scheme) => scheme}
+              label={(scheme) => t(SCHEME_KEY[scheme])}
+              onSelect={(scheme) => scheme && theme.setColorScheme(scheme)}
+            />
           </SettingsRow>
           <SettingsRow title={t("settings.appearance.theme")} description={t("settings.appearance.theme.description")}>
-            <Select options={theme.ids()} current={theme.themeId()} value={(id) => id} label={(id) => theme.name(id)} onSelect={(id) => id && theme.setTheme(id)} />
+            <Select data-action="settings-theme" options={theme.ids()} current={theme.themeId()} value={(id) => id} label={(id) => theme.name(id)} onSelect={(id) => id && theme.setTheme(id)} />
           </SettingsRow>
           <Show when={theme.themeId() === "codex"}>
             <ContrastRow scheme="light" />
             <ContrastRow scheme="dark" />
           </Show>
+        </SettingsList>
+      </SettingsGroup>
+      <SettingsGroup title={t("settings.appearance.group.fonts")}>
+        <SettingsList>
+          <FontRows rows={fontRows(["uiFont", "codeFont"])} appearance={preferences.appearance} onChange={setFont} />
+        </SettingsList>
+      </SettingsGroup>
+      <SettingsGroup title={t("settings.appearance.group.transcript")}>
+        <SettingsList>
+          <TranscriptRows />
+        </SettingsList>
+      </SettingsGroup>
+      <SettingsGroup title={t("settings.appearance.group.panel")}>
+        <SettingsList>
           <SettingsRow title={t("settings.appearance.navigatorSide")} description={t("settings.appearance.navigatorSide.description")}>
             <Select
               data-action="settings-navigator-side"
@@ -103,7 +126,11 @@ export function AppearanceSection() {
               onSelect={(side) => side && preferences.setAppearance("navigatorSide", side)}
             />
           </SettingsRow>
-          <FontRows appearance={preferences.appearance} onChange={(key, value) => preferences.setAppearance(key, value)} />
+        </SettingsList>
+      </SettingsGroup>
+      <SettingsGroup title={t("settings.appearance.group.terminal")}>
+        <SettingsList>
+          <FontRows rows={fontRows(["terminalFont"])} appearance={preferences.appearance} onChange={setFont} />
           <SettingsRow title={t("settings.appearance.screenReader")} description={t("settings.appearance.screenReader.description")}>
             <div data-action="settings-terminal-screen-reader">
               <Switch

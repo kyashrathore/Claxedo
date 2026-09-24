@@ -20,7 +20,6 @@ export const dictionary = {
   "settings.keybindings.search": "Szukaj skrótów",
   "settings.keybindings.empty": "Nie znaleziono skrótów",
   "settings.keybindings.group.general": "Ogólne",
-  "settings.section.general": "Ogólne",
   "settings.general.reasoningSummaries": "Pokaż podsumowania wnioskowania",
   "settings.general.reasoningSummaries.description": "Wyświetlaj podsumowania wnioskowania modelu na osi czasu",
   "settings.general.shellToolPartsExpanded": "Rozwijaj elementy narzędzia shell",
@@ -33,4 +32,9 @@ export const dictionary = {
   "settings.appearance.codeFont.description": "Dostosuj czcionkę używaną w blokach kodu",
   "settings.appearance.screenReader": "Tryb czytnika ekranu",
   "settings.appearance.screenReader.description": "Udostępnij dostępny bufor czytnika ekranu w nowych terminalach",
+  "settings.section.language": "Język",
+  "settings.appearance.group.colors": "Kolory",
+  "settings.appearance.group.fonts": "Czcionki",
+  "settings.appearance.group.transcript": "Transkrypcja",
+  "settings.appearance.group.panel": "Panel obszaru roboczego",
 }

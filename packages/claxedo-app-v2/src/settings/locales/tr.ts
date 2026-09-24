@@ -20,7 +20,6 @@ export const dictionary = {
   "settings.keybindings.search": "Kısayol ara",
   "settings.keybindings.empty": "Kısayol bulunamadı",
   "settings.keybindings.group.general": "Genel",
-  "settings.section.general": "Genel",
   "settings.general.reasoningSummaries": "Akıl yürütme özetlerini göster",
   "settings.general.reasoningSummaries.description": "Zaman çizelgesinde model akıl yürütme özetlerini görüntüle",
   "settings.general.shellToolPartsExpanded": "Kabuk araç bileşenlerini genişlet",
@@ -33,4 +32,9 @@ export const dictionary = {
   "settings.appearance.codeFont.description": "Kod bloklarında kullanılan yazı tipini özelleştirin",
   "settings.appearance.screenReader": "Ekran okuyucu modu",
   "settings.appearance.screenReader.description": "Yeni terminallerde erişilebilir bir ekran okuyucu arabelleği sunun",
+  "settings.section.language": "Dil",
+  "settings.appearance.group.colors": "Renkler",
+  "settings.appearance.group.fonts": "Yazı tipleri",
+  "settings.appearance.group.transcript": "Döküm",
+  "settings.appearance.group.panel": "Çalışma alanı paneli",
 }

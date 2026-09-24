@@ -9,8 +9,8 @@ Owns: the settings sections the shell's settings page shows. The shell owns the 
 | Usage | account | quota windows and usage through Claxedo | `src/usage/` |
 | Organization | account | the org and your role | `src/access/` |
 | Connections | account | GitHub and MCP connections | the server |
-| General | app | the transcript toggles (reasoning summaries, shell and edit parts expanded), read live by the timeline | `preferences.tsx` (`transcript`) |
-| Appearance | app | language, color scheme, theme, contrast, files navigator side, UI, code and terminal fonts, terminal screen reader | the i18n provider, the kit (`useTheme`), and `preferences.tsx` (`appearance`): the UI and code fonts are written to `--font-family-sans`/`--font-family-mono` on `<html>` only while one is chosen, so a theme's own font tokens apply otherwise; the terminal takes the terminal font (else the code font) and screen reader mode when it opens |
+| Language | app | the display language | the i18n provider (`useI18n`) |
+| Appearance | app | grouped: Colors (color scheme, theme, contrast), Fonts (UI, code), Transcript (reasoning summaries, shell and edit parts expanded, read live by the timeline), Workspace panel (files navigator side), Terminal (font, screen reader); every v1 General row lives here or in Language (Owner 00:55: no General) | the kit (`useTheme`) and `preferences.tsx` (`appearance`): the UI and code fonts are written to `--font-family-sans`/`--font-family-mono` on `<html>` only while one is chosen, so a theme's own font tokens apply otherwise; the terminal takes the terminal font (else the code font) and screen reader mode when it opens |
 | Keyboard shortcuts | app | every command's shortcut; record, clear with Backspace, reset all | the shell palette's overrides (`useCommands`) |
 
 `settingsSections` includes the Usage and Organization sections from their own domains. Settings → Models comes from `@/accounts` and is registered by the shell next to this array.

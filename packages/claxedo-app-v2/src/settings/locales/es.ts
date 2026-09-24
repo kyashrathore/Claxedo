@@ -32,4 +32,9 @@ export const dictionary = {
   "settings.appearance.codeFont.description": "Personaliza la fuente usada en bloques de código",
   "settings.appearance.screenReader": "Modo de lector de pantalla",
   "settings.appearance.screenReader.description": "Expón un búfer accesible de lector de pantalla en las terminales nuevas",
+  "settings.section.language": "Idioma",
+  "settings.appearance.group.colors": "Colores",
+  "settings.appearance.group.fonts": "Fuentes",
+  "settings.appearance.group.transcript": "Transcripción",
+  "settings.appearance.group.panel": "Panel del espacio de trabajo",
 }

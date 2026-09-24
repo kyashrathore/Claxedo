@@ -20,7 +20,6 @@ export const dictionary = {
   "settings.keybindings.search": "Buscar atalhos",
   "settings.keybindings.empty": "Nenhum atalho encontrado",
   "settings.keybindings.group.general": "Geral",
-  "settings.section.general": "Geral",
   "settings.general.reasoningSummaries": "Mostrar resumos de raciocínio",
   "settings.general.reasoningSummaries.description": "Exibir resumos de raciocínio do modelo na linha do tempo",
   "settings.general.shellToolPartsExpanded": "Expandir partes da ferramenta shell",
@@ -33,4 +32,9 @@ export const dictionary = {
   "settings.appearance.codeFont.description": "Personalize a fonte usada em blocos de código",
   "settings.appearance.screenReader": "Modo de leitor de tela",
   "settings.appearance.screenReader.description": "Exponha um buffer acessível de leitor de tela em novos terminais",
+  "settings.section.language": "Idioma",
+  "settings.appearance.group.colors": "Cores",
+  "settings.appearance.group.fonts": "Fontes",
+  "settings.appearance.group.transcript": "Transcrição",
+  "settings.appearance.group.panel": "Painel do espaço de trabalho",
 }

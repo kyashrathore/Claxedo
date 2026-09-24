@@ -175,7 +175,7 @@ function AgentConnections(props: {
     <SettingsGroup title={t("settings.connections.agents")} description={t("settings.connections.agents.description")}>
       <Show when={props.error}>{(error) => <SettingsNote tone="danger">{reason(error())}</SettingsNote>}</Show>
       <Show when={props.rows?.status === "unsupported"}>
-        <SettingsNote>{props.rows?.status === "unsupported" && props.rows.reason === "operator_local_configuration" ? t("settings.connections.agents.operator") : String(props.rows?.status === "unsupported" ? props.rows.reason : "")}</SettingsNote>
+        <SettingsNote>{props.rows?.status === "unsupported" && props.rows.reason === "operator_local_configuration" ? t("settings.connections.agents.operator") : props.rows?.status === "unsupported" ? props.rows.reason : ""}</SettingsNote>
       </Show>
       <Show when={supported()}>
         {(rows) => (

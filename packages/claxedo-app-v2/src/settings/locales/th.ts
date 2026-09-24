@@ -20,7 +20,6 @@ export const dictionary = {
   "settings.keybindings.search": "ค้นหาทางลัด",
   "settings.keybindings.empty": "ไม่พบทางลัด",
   "settings.keybindings.group.general": "ทั่วไป",
-  "settings.section.general": "ทั่วไป",
   "settings.general.reasoningSummaries": "แสดงสรุปการใช้เหตุผล",
   "settings.general.reasoningSummaries.description": "แสดงสรุปการใช้เหตุผลของโมเดลในไทม์ไลน์",
   "settings.general.shellToolPartsExpanded": "ขยายส่วนเครื่องมือ shell",
@@ -33,4 +32,10 @@ export const dictionary = {
   "settings.appearance.codeFont.description": "ปรับแต่งฟอนต์ที่ใช้ในบล็อกโค้ด",
   "settings.appearance.screenReader": "โหมดโปรแกรมอ่านหน้าจอ",
   "settings.appearance.screenReader.description": "เปิดใช้งานบัฟเฟอร์โปรแกรมอ่านหน้าจอที่เข้าถึงได้ในเทอร์มินัลใหม่",
+  "settings.section.language": "ภาษา",
+  "settings.appearance.group.colors": "สี",
+  "settings.appearance.group.fonts": "แบบอักษร",
+  "settings.appearance.group.transcript": "บันทึกการสนทนา",
+  "settings.appearance.group.panel": "แผงพื้นที่ทำงาน",
+  "settings.appearance.group.terminal": "เทอร์มินัล",
 }

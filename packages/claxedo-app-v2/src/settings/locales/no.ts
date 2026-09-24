@@ -20,7 +20,6 @@ export const dictionary = {
   "settings.keybindings.search": "Søk etter snarveier",
   "settings.keybindings.empty": "Ingen snarveier funnet",
   "settings.keybindings.group.general": "Generelt",
-  "settings.section.general": "Generelt",
   "settings.general.reasoningSummaries": "Vis resonneringssammendrag",
   "settings.general.reasoningSummaries.description": "Vis sammendrag av modellresonnering i tidslinjen",
   "settings.general.shellToolPartsExpanded": "Utvid shell-verktøydeler",
@@ -33,4 +32,9 @@ export const dictionary = {
   "settings.appearance.codeFont.description": "Tilpass skrifttypen som brukes i kodeblokker",
   "settings.appearance.screenReader": "Skjermleser-modus",
   "settings.appearance.screenReader.description": "Vis en tilgjengelig skjermleser-buffer i nye terminaler",
+  "settings.section.language": "Språk",
+  "settings.appearance.group.colors": "Farger",
+  "settings.appearance.group.fonts": "Skrifttyper",
+  "settings.appearance.group.transcript": "Utskrift",
+  "settings.appearance.group.panel": "Arbeidsområdepanel",
 }

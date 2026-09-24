@@ -20,7 +20,6 @@ export const dictionary = {
   "settings.keybindings.search": "搜尋快速鍵",
   "settings.keybindings.empty": "找不到快速鍵",
   "settings.keybindings.group.general": "一般",
-  "settings.section.general": "一般",
   "settings.general.reasoningSummaries": "顯示推理摘要",
   "settings.general.reasoningSummaries.description": "在時間軸中顯示模型推理摘要",
   "settings.general.shellToolPartsExpanded": "展開 shell 工具區塊",
@@ -33,4 +32,10 @@ export const dictionary = {
   "settings.appearance.codeFont.description": "自訂程式碼區塊使用的字型",
   "settings.appearance.screenReader": "螢幕閱讀器模式",
   "settings.appearance.screenReader.description": "在新終端機中公開可存取的螢幕閱讀器緩衝區",
+  "settings.section.language": "語言",
+  "settings.appearance.group.colors": "顏色",
+  "settings.appearance.group.fonts": "字型",
+  "settings.appearance.group.transcript": "對話紀錄",
+  "settings.appearance.group.panel": "工作區面板",
+  "settings.appearance.group.terminal": "終端機",
 }
