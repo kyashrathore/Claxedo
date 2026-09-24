@@ -31,7 +31,7 @@ test("11 long transcript: older turns page in above the reader and the nav rail 
     .toBeGreaterThan(0)
   await app.getByRole("button", { name: "Scroll to latest message" }).click()
   await expect(latest).toBeInViewport()
-  await app.getByRole("button", { name: /^1\. Turn 1:/ }).click()
+  await app.getByRole("button", { name: "1. New message", exact: true }).click()
   await expect(app.getByText("Turn 1:", { exact: false }).first()).toBeInViewport()
 
   const messages = await api.messages(workspace.directory, session.id)
