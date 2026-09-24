@@ -62,12 +62,25 @@ async function scrollVirtualRows(list: Element): Promise<RailRow[]> {
   return [...seen.values()]
 }
 
+async function listHeight(app: Page): Promise<number> {
+  return await app.getByRole("region", { name: "Sessions" }).getByRole("list").evaluate((list) => list.scrollHeight)
+}
+
+export async function loadEveryPage(app: Page) {
+  const more = app.getByRole("button", { name: "Load more" })
+  while (await more.isVisible()) {
+    const before = await listHeight(app)
+    await more.click()
+    await expect.poll(() => listHeight(app), { message: "a page of rows landed" }).toBeGreaterThan(before)
+  }
+}
+
 export async function serverItems(stack: Stack): Promise<ListItem[]> {
   const items: ListItem[] = []
   let cursor: string | undefined
   do {
     const url = new URL("/api/claxedo/session-list", stack.url)
-    url.searchParams.set("scope", "project")
+    url.searchParams.set("scope", "workspace")
     url.searchParams.set("sort", "human_turn_desc")
     url.searchParams.set("limit", String(PAGE_SIZE))
     if (cursor) url.searchParams.set("cursor", cursor)
@@ -115,7 +128,7 @@ export async function expectRailEqualsServer(app: Page, checked: Checked, bounds
 }
 
 export async function expectServerStatus(checked: Checked, sessionId: string, label: string) {
-  const status = async () => (await serverRail(checked)).find((row) => row.sessionId === sessionId)?.status
+  const status = async () => (await serverRail(checked, { through: sessionId })).find((row) => row.sessionId === sessionId)?.status
   await expect.poll(status, { message: `the server reports ${label}` }).toBe(STATUS_COMPARED ? label : "")
 }
 
@@ -195,8 +208,18 @@ export async function startHeldTurn(checked: Checked, sessionId: string, hold: s
   await checked.api.promptAsync(checked.directory, sessionId, `Run ${acpScriptToken(hold)}`)
 }
 
+async function createProject(stack: Stack, directory: string) {
+  const response = await fetch(new URL("/api/claxedo/projects", stack.url), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "Races", source: { kind: "directory", directory } }),
+  })
+  expect(response.status, "the project was created").toBe(201)
+}
+
 export async function setup(stack: Stack, api: ClaxedoApi, app: Page, titles: readonly string[]) {
   const workspace: Workspace = await stack.daemon.makeWorkspace("races")
+  await createProject(stack, workspace.directory)
   const create = (title: string) => api.createSession(workspace.directory, { title, harness: SCRIPTED_ACP_HARNESS })
   const sessions = [await create(titles[0])]
   for (let start = 1; start < titles.length; start += 20) {

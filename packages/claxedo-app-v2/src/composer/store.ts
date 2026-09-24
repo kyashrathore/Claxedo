@@ -33,11 +33,10 @@ type Entry = {
 
 const emptyEntry = (): Entry => ({ draft: emptyDraft(), history: { normal: [], shell: [] }, selection: {}, attachments: [] })
 
-export function createComposerStore() {
+function createEntryTable() {
   const [entries, setEntries] = createStore<Record<ComposerKey, Entry>>({})
   const recent: ComposerKey[] = []
   const retained = new Map<ComposerKey, number>()
-
   const evict = () => {
     while (recent.length > MAX_ENTRIES) {
       const victim = recent.find((key) => !retained.has(key))
@@ -46,7 +45,6 @@ export function createComposerStore() {
       setEntries(produce((all) => delete all[victim]))
     }
   }
-
   const ensure = (key: ComposerKey) => {
     if (!entries[key]) setEntries(key, emptyEntry())
     const index = recent.indexOf(key)
@@ -54,90 +52,115 @@ export function createComposerStore() {
     recent.push(key)
     evict()
   }
-
-  const entry = (key: ComposerKey): Entry => entries[key] ?? emptyEntry()
-
-  const setPrompt = (key: ComposerKey, prompt: Prompt, cursor?: number) => {
+  const retain = (key: ComposerKey) => {
     ensure(key)
+    retained.set(key, (retained.get(key) ?? 0) + 1)
+    return () => {
+      const count = (retained.get(key) ?? 1) - 1
+      if (count <= 0) retained.delete(key)
+      else retained.set(key, count)
+    }
+  }
+  return { setEntries, ensure, retain, entry: (key: ComposerKey): Entry => entries[key] ?? emptyEntry() }
+}
+
+type EntryTable = ReturnType<typeof createEntryTable>
+
+function promptActions(table: EntryTable) {
+  const setPrompt = (key: ComposerKey, prompt: Prompt, cursor?: number) => {
+    table.ensure(key)
     batch(() => {
-      setEntries(key, "draft", "prompt", prompt)
-      setEntries(key, "draft", "cursor", cursor)
+      table.setEntries(key, "draft", "prompt", prompt)
+      table.setEntries(key, "draft", "cursor", cursor)
     })
   }
-
-  const addPart = (key: ComposerKey, part: PromptPart, cursor?: number) => {
-    const draft = entry(key).draft
-    const at = cursor ?? draft.cursor ?? promptText(draft.prompt).length
-    setPrompt(key, insertPart(draft.prompt, at, part), at + ("content" in part ? part.content.length : 0))
-  }
-
   return {
-    retain(key: ComposerKey) {
-      ensure(key)
-      retained.set(key, (retained.get(key) ?? 0) + 1)
-      return () => {
-        const count = (retained.get(key) ?? 1) - 1
-        if (count <= 0) retained.delete(key)
-        else retained.set(key, count)
-      }
-    },
-    draft: (key: ComposerKey) => entry(key).draft,
-    selection: (key: ComposerKey) => entry(key).selection,
-    attachments: (key: ComposerKey) => entry(key).attachments,
-    history: (key: ComposerKey, mode: EditorMode): HistoryEntry[] => entry(key).history[mode],
     setPrompt,
-    addPart,
-    setCursor(key: ComposerKey, cursor: number) {
+    addPart: (key: ComposerKey, part: PromptPart, cursor?: number) => {
+      const draft = table.entry(key).draft
+      const at = cursor ?? draft.cursor ?? promptText(draft.prompt).length
+      setPrompt(key, insertPart(draft.prompt, at, part), at + ("content" in part ? part.content.length : 0))
+    },
+    removeImage: (key: ComposerKey, id: string) => {
+      const draft = table.entry(key).draft
+      setPrompt(key, draft.prompt.filter((part) => part.type !== "image" || part.id !== id), draft.cursor)
+    },
+    setImageMarks: (key: ComposerKey, id: string, marks: ImageMark[]) => {
+      const draft = table.entry(key).draft
+      setPrompt(key, withImageMarks(draft.prompt, id, marks), draft.cursor)
+    },
+  }
+}
+
+function withImageMarks(prompt: Prompt, id: string, marks: ImageMark[]): Prompt {
+  return prompt.map((part) => {
+    if (part.type !== "image" || part.id !== id) return part
+    if (marks.length > 0) return { ...part, marks }
+    const { marks: _removed, ...rest } = part
+    return rest
+  })
+}
+
+function draftActions(table: EntryTable) {
+  const { ensure, setEntries } = table
+  return {
+    setCursor: (key: ComposerKey, cursor: number) => {
       ensure(key)
       setEntries(key, "draft", "cursor", cursor)
     },
-    reset(key: ComposerKey) {
+    reset: (key: ComposerKey) => {
       ensure(key)
       setEntries(key, "draft", emptyDraft())
     },
-    addContext(key: ComposerKey, item: ContextItem) {
+    addContext: (key: ComposerKey, item: ContextItem) => {
       ensure(key)
-      if (entry(key).draft.context.some((existing) => existing.key === item.key)) return
+      if (table.entry(key).draft.context.some((existing) => existing.key === item.key)) return
       setEntries(key, "draft", "context", (items) => [...items, item])
     },
-    removeContext(key: ComposerKey, itemKey: string) {
+    removeContext: (key: ComposerKey, itemKey: string) => {
       ensure(key)
       setEntries(key, "draft", "context", (items) => items.filter((item) => item.key !== itemKey))
     },
-    removeImage(key: ComposerKey, id: string) {
-      const draft = entry(key).draft
-      setPrompt(key, draft.prompt.filter((part) => part.type !== "image" || part.id !== id), draft.cursor)
-    },
-    setImageMarks(key: ComposerKey, id: string, marks: ImageMark[]) {
-      const draft = entry(key).draft
-      const prompt = draft.prompt.map((part) => {
-        if (part.type !== "image" || part.id !== id) return part
-        if (marks.length > 0) return { ...part, marks }
-        const { marks: _removed, ...rest } = part
-        return rest
-      })
-      setPrompt(key, prompt, draft.cursor)
-    },
-    setGoalArmed(key: ComposerKey, armed: boolean) {
+    setGoalArmed: (key: ComposerKey, armed: boolean) => {
       ensure(key)
       setEntries(key, "draft", "goalArmed", armed)
     },
-    setSelection(key: ComposerKey, patch: Selection) {
+  }
+}
+
+function entryActions(table: EntryTable) {
+  const { ensure, setEntries } = table
+  return {
+    setSelection: (key: ComposerKey, patch: Selection) => {
       ensure(key)
       setEntries(key, "selection", (current) => ({ ...current, ...patch }))
     },
-    addHistory(key: ComposerKey, mode: EditorMode, prompt: Prompt, comments: HistoryComment[]) {
+    addHistory: (key: ComposerKey, mode: EditorMode, prompt: Prompt, comments: HistoryComment[]) => {
       ensure(key)
       setEntries(key, "history", mode, (list) => prependHistoryEntry(list, prompt, comments))
     },
-    setAttachment(key: ComposerKey, state: AttachmentState) {
+    setAttachment: (key: ComposerKey, state: AttachmentState) => {
       ensure(key)
       setEntries(key, "attachments", (list) => [...list.filter((item) => item.id !== state.id), state])
     },
-    removeAttachment(key: ComposerKey, id: string) {
+    removeAttachment: (key: ComposerKey, id: string) => {
       ensure(key)
       setEntries(key, "attachments", (list) => list.filter((item) => item.id !== id))
     },
+  }
+}
+
+export function createComposerStore() {
+  const table = createEntryTable()
+  return {
+    retain: table.retain,
+    draft: (key: ComposerKey) => table.entry(key).draft,
+    selection: (key: ComposerKey) => table.entry(key).selection,
+    attachments: (key: ComposerKey) => table.entry(key).attachments,
+    history: (key: ComposerKey, mode: EditorMode): HistoryEntry[] => table.entry(key).history[mode],
+    ...promptActions(table),
+    ...draftActions(table),
+    ...entryActions(table),
   }
 }
 

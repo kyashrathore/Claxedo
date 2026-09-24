@@ -212,6 +212,7 @@ export type HarnessInfo = {
   readonly id: string
   readonly name: string
   readonly available: boolean
+  readonly unavailableReason?: string
   readonly models: readonly ModelChoice[]
   readonly efforts: readonly string[]
   readonly permissionModes: readonly string[]

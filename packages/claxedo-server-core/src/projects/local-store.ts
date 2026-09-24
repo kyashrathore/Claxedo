@@ -1,4 +1,5 @@
 import fs from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
 import { lookup } from "node:dns/promises"
 import { createBoundedGit, runGit, type GitHttpCredential } from "@claxedo/workspace-runtime/host"
@@ -143,12 +144,21 @@ function signedOnly<Dep>(caller: SignedControlPlaneAuth | undefined, dep: Dep | 
   return dep
 }
 
+function expandHome(directory: string): string {
+  if (directory === "~") return os.homedir()
+  if (directory.startsWith("~/")) return path.join(os.homedir(), directory.slice(2))
+  return directory
+}
+
 export function localProjectStore(deps: LocalProjectStoreDeps = {}): ProjectStore {
   const clone = deps.clone ?? cloneRepository
 
   async function checkout(input: ProjectCreateInput): Promise<{ directory: string; repoUrl?: string; name: string; credential?: GitHttpCredential }> {
     if (input.source.kind === "directory") {
-      const directory = input.source.directory
+      const directory = expandHome(input.source.directory.trim())
+      if (!path.isAbsolute(directory)) {
+        throw new ProjectStoreError(400, "project_directory_relative", "Use the folder's full path, for example /Users/you/code/app")
+      }
       const stat = await fs.stat(directory).catch(() => undefined)
       if (!stat?.isDirectory()) throw new ProjectStoreError(400, "project_directory_missing", "That folder does not exist on this server")
       const existing = await getWorkspaceByDirectory(directory)

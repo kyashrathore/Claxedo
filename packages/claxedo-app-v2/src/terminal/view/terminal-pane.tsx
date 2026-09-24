@@ -2,14 +2,13 @@ import "./terminal-pane.css"
 import { Show, createMemo, createSignal, onCleanup, onMount, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { machine } from "@/lib/machine"
-import { useServer } from "@/server"
+import { toAppError, useServer } from "@/server"
 import type { PaneProps } from "@/shell"
 import { showToast } from "@/ui"
 import type { TerminalBackend } from "../backend/types"
 import { useTerminals } from "../context"
 import { dictionary } from "../i18n"
 import {
-  asAppError,
   transitionConnection,
   type TerminalConnection,
   type TerminalConnectionEvent,
@@ -60,7 +59,7 @@ export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
       (error: unknown) => {
         console.error("Terminal could not be recreated", {
           terminalId,
-          error: asAppError(error, "Terminal recreate failed"),
+          error: toAppError(error),
         })
         showToast({ title: t("terminal.createFailed") })
       },

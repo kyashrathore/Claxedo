@@ -27,7 +27,7 @@ async function openPanelTab(app: Page, name: string): Promise<Locator> {
   const toggle = app.getByRole("button", { name: "Toggle workspace panel" })
   await expect(toggle).toBeVisible()
   if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click()
-  await app.getByRole("tab", { name }).click()
+  await app.getByRole("tablist", { name: "Workspace panel tabs" }).getByRole("tab", { name }).click()
   return app.getByRole("tabpanel", { name })
 }
 
@@ -37,6 +37,8 @@ async function commentOnLine(changes: Locator, line: string, comment: string) {
   await changes.getByRole("textbox", { name: "Add comment" }).fill(comment)
   await changes.getByRole("button", { name: "Comment", exact: true }).click()
 }
+
+test.skip(({ isMobile }) => isMobile, "flow 14 runs at desktop width")
 
 test("14 review: diff, line comment, commit, push to a bare remote, worktree, the comment reaches the agent", async ({
   stack,

@@ -7,11 +7,7 @@ function createDockResizeHandler(input: {
   userScrolled: () => boolean
   scrollToEnd: () => void
   scheduleScrollState: (scroller: HTMLDivElement) => void
-  requestFrame?: (callback: FrameRequestCallback) => number
-  cancelFrame?: (frame: number) => void
 }) {
-  const requestFrame = input.requestFrame ?? requestAnimationFrame
-  const cancelFrame = input.cancelFrame ?? cancelAnimationFrame
   let active = true
   let frame: number | undefined
   let height = 0
@@ -30,7 +26,7 @@ function createDockResizeHandler(input: {
       height = next
 
       if (stick && frame === undefined) {
-        frame = requestFrame(() => {
+        frame = requestAnimationFrame(() => {
           frame = undefined
           if (active) input.scrollToEnd()
         })
@@ -40,7 +36,7 @@ function createDockResizeHandler(input: {
     dispose() {
       active = false
       if (frame === undefined) return
-      cancelFrame(frame)
+      cancelAnimationFrame(frame)
       frame = undefined
     },
   }

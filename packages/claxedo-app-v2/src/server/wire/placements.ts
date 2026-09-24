@@ -18,6 +18,8 @@ export type BootstrapCatalog = {
   readonly placements: readonly PlacementRecord[]
 }
 
+export const UNENROLLED_MACHINE = "this-machine"
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value)
 }
@@ -35,11 +37,9 @@ function remoteOf(row: Record<string, unknown>, self: string | undefined): { rem
   if (row.kind === "cloud" || row.backing === "cloud-vm") return { remote: true }
   const placement = isRecord(row.placement) ? row.placement : undefined
   const enrollment = text(placement?.host_enrollment_id)
-  if (row.backing === "local-worktree") {
-    const own = enrollment !== undefined && enrollment === self
-    return { remote: !own, ...(enrollment ? { machine: machineId(enrollment) } : {}) }
-  }
-  return { remote: false }
+  const own = enrollment !== undefined && enrollment === self
+  if (row.backing === "local-worktree" && !own) return { remote: true, ...(enrollment ? { machine: machineId(enrollment) } : {}) }
+  return { remote: false, machine: machineId(self ?? UNENROLLED_MACHINE) }
 }
 
 function label(row: Record<string, unknown>, directory: string) {

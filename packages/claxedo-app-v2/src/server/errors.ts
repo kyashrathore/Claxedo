@@ -105,7 +105,7 @@ function isAbort(error: unknown) {
 export function toAppError(error: unknown): ServerError {
   if (error instanceof ServerError) return error
   if (isAbort(error)) return new ServerError({ class: "network", message: "The request was aborted", code: "aborted", retryable: false, cause: error })
-  if (error instanceof TypeError) return new ServerError({ class: "network", message: error.message || "The server could not be reached", cause: error })
+  if (error instanceof TypeError) return new ServerError({ class: "network", message: "The server could not be reached", cause: error })
   const message = error instanceof Error ? error.message : String(error)
   return new ServerError({ class: "internal", message, cause: error })
 }
