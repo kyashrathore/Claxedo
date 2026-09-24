@@ -1,23 +1,9 @@
 import type { AppError } from "@/server"
+import type { RequestState } from "@/session"
 import type { Transition } from "@/lib/machine"
 import { unreachable } from "@/lib/machine"
 
-export type RequestReplyState = { kind: "open" } | { kind: "answering" } | { kind: "failed"; error: AppError }
-
-export type RequestReplyEvent = { type: "replyStarted" } | { type: "replyRejected"; error: AppError } | { type: "edited" }
-
-export const requestReplyTransition: Transition<RequestReplyState, RequestReplyEvent> = (state, event) => {
-  switch (event.type) {
-    case "replyStarted":
-      return state.kind === "answering" ? state : { kind: "answering" }
-    case "replyRejected":
-      return { kind: "failed", error: event.error }
-    case "edited":
-      return state.kind === "answering" ? state : { kind: "open" }
-    default:
-      return unreachable(event)
-  }
-}
+export const replyError = (state: RequestState): AppError | undefined => (state.kind === "failed" ? state.error : undefined)
 
 export type DockActionState<Action extends string> =
   | { kind: "idle" }

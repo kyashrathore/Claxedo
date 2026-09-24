@@ -11,17 +11,18 @@ import { useSessionScreenText } from "./text"
 import "./docks/docks.css"
 
 function RequestDock(props: { readonly view: SessionView; readonly request: AgentRequest }) {
-  const reply = (value: AgentRequestReply) => props.view.reply(props.request.id, value)
+  const reply = (value: AgentRequestReply) => void props.view.reply(props.request.id, value)
+  const replyState = () => props.view.requestState(props.request.id)
   const stop = () => props.view.stop()
   const permission = () => (props.request.kind === "permission" ? props.request : undefined)
   const question = () => (props.request.kind === "question" ? props.request : undefined)
   return (
     <Switch>
       <Match when={permission()}>
-        {(request) => <PermissionDock request={request().permission} onReply={reply} onStop={stop} />}
+        {(request) => <PermissionDock request={request().permission} replyState={replyState()} onReply={reply} onStop={stop} />}
       </Match>
       <Match when={question()}>
-        {(request) => <QuestionDock request={request().question} onReply={reply} onStop={stop} />}
+        {(request) => <QuestionDock request={request().question} replyState={replyState()} onReply={reply} onStop={stop} />}
       </Match>
     </Switch>
   )

@@ -20,7 +20,7 @@ The pane that shows one session: the moved timeline (`timeline/`, owned by the t
 
 ## State machines
 
-- **Request reply** (`docks/model.ts`): `open → answering → open | failed(error)`; the store's request machine (`open`, `answering`, `answered`, `expired`) is the server's side.
+- **Request reply**: the session store owns it, and the permission and question docks only read it (`SessionView.requestState`): `open → answering → answered | failed(error)`, and a failed reply can be sent again. A failed reply therefore re-enables its dock and shows the error, instead of leaving every button disabled.
 - **Dock action** (`docks/model.ts`): `idle → running(action) → idle | failed(action, error)`, for stop and the goal's pause, resume and remove.
 - The screen's load state is the store's `SessionLoadState`; the send machine is the composer's.
 
