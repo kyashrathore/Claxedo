@@ -1,6 +1,4 @@
 import { readPluginManifest, type PluginDefinition } from "@claxedo/plugin-api"
-import codexTheme from "@claxedo/plugin-codex-theme"
-import codexThemePackage from "@claxedo/plugin-codex-theme/package.json"
 import compactTabs, { dictionary as compactTabsDictionary } from "@claxedo/plugin-compact-tabs"
 import compactTabsPackage from "@claxedo/plugin-compact-tabs/package.json"
 import pages, { dictionary as pagesDictionary } from "@claxedo/plugin-pages"
@@ -19,6 +17,5 @@ export function bundledPlugins(): readonly PluginBuild[] {
     bundled(tasksPackage, tasks, tasksDictionary),
     bundled(pagesPackage, pages, pagesDictionary),
     bundled(compactTabsPackage, compactTabs, compactTabsDictionary),
-    bundled(codexThemePackage, codexTheme),
   ]
 }

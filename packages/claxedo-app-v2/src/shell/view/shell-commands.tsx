@@ -1,6 +1,6 @@
 import type { JSX } from "solid-js"
 import { useI18n, useTranslator } from "@/i18n"
-import { useTheme, type ColorScheme } from "@/ui"
+import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme"
 import { dictionary } from "../i18n"
 import { useShellLayout } from "../layout"
 import { useCommands } from "../palette/commands"
@@ -41,11 +41,11 @@ export function ShellCommands(): JSX.Element {
       category: t("shell.category.theme"),
       onSelect: () => theme.setColorScheme(scheme),
     })),
-    ...theme.themes().map((entry) => ({
-      id: `shell.theme.${entry.id}`,
-      title: t("shell.command.theme", { name: entry.name }),
+    ...theme.ids().map((id) => ({
+      id: `shell.theme.${id}`,
+      title: t("shell.command.theme", { name: theme.name(id) }),
       category: t("shell.category.theme"),
-      onSelect: () => theme.setTheme(entry.id),
+      onSelect: () => theme.setTheme(id),
     })),
   ]
 
