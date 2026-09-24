@@ -1,7 +1,7 @@
 import { createMemo, For, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { byOrder, fillPattern, RegistryIcon, useShellRegistries, useShellRoute, type PageEntry, type SidebarItem } from "@/shell"
-import { dictionary } from "../i18n"
+import { railDictionary } from "../i18n"
 import { MARKETPLACE_PATH, TASKS_PATH } from "./utility-pages"
 import { ClaxedoIcon as Icon } from "@/ui"
 
@@ -76,7 +76,7 @@ function PluginRows(): JSX.Element {
 }
 
 export function GlobalNavigation(): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(railDictionary)
   const routing = useShellRoute()
   const at = (path: string) => routing.pathname().startsWith(path)
   return (

@@ -1,7 +1,7 @@
 import { useTranslator, type DomainTranslate } from "@/i18n"
 import { showToast } from "@/ui"
 import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme"
-import { dictionary, type ShellKey } from "../i18n"
+import { shellDictionary, type ShellKey } from "../i18n"
 import type { CommandOption } from "../palette/registrations"
 
 const COLOR_SCHEMES: readonly ColorScheme[] = ["system", "light", "dark"]
@@ -47,7 +47,7 @@ function useCycles(theme: Theme, t: Translate) {
 }
 
 export function useThemeCommands(): () => CommandOption[] {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(shellDictionary)
   const theme = useTheme()
   const cycles = useCycles(theme, t)
   const category = () => t("shell.category.theme")

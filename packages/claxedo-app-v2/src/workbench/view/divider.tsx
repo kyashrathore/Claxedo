@@ -1,6 +1,6 @@
 import type { JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { dictionary } from "../i18n"
+import { workbenchDictionary } from "../i18n"
 import { useWorkbench } from "../provider"
 import type { SplitNode } from "../types"
 
@@ -18,7 +18,7 @@ function keyboardDelta(horizontal: boolean, key: string): number {
 
 export function Divider(props: { split: Extract<SplitNode, { t: "split" }>; root: () => HTMLElement | undefined }): JSX.Element {
   const wb = useWorkbench()
-  const t = useTranslator(dictionary)
+  const t = useTranslator(workbenchDictionary)
   const horizontal = () => props.split.dir === "h"
 
   const onPointerDown = (event: PointerEvent) => {

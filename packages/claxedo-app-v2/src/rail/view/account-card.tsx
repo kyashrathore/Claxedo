@@ -8,7 +8,7 @@ import { showToast, ClaxedoIcon as Icon } from "@/ui"
 import { Avatar } from "@opencode-ai/ui/avatar"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Spinner } from "@opencode-ai/ui/spinner"
-import { dictionary } from "../i18n"
+import { railDictionary } from "../i18n"
 
 const HELP_URL = "https://github.com/kyashrathore/Claxedo"
 export const USAGE_SECTION = "usage"
@@ -23,7 +23,7 @@ type AccountView = {
 }
 
 function useAccountView() {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(railDictionary)
   const auth = useAuth()
   const server = useServer()
   return createMemo((): AccountView => {
@@ -67,7 +67,7 @@ function IdentityMark(props: { readonly view: AccountView; readonly size: "trigg
 }
 
 export function AccountCard(props: { readonly anchor: () => HTMLElement | undefined }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(railDictionary)
   const auth = useAuth()
   const routing = useShellRoute()
   const view = useAccountView()

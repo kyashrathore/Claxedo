@@ -1,7 +1,7 @@
 import { Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { ProjectAvatar } from "@opencode-ai/ui/v2/project-avatar-v2"
-import { dictionary } from "../i18n"
+import { railDictionary } from "../i18n"
 import type { NavigationStatus } from "../model"
 import type { SwitcherItem } from "../switcher-items"
 import { NavigationStatusMark } from "./navigation-row"
@@ -12,7 +12,7 @@ function orGlobal(value: string | undefined, global: string): string {
 }
 
 export function SwitcherPrefixMark(props: { readonly item: SwitcherItem; readonly active: boolean }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(railDictionary)
   return (
     <span
       aria-hidden="true"
@@ -67,7 +67,7 @@ function statusKey(status: NavigationStatus) {
 }
 
 export function SwitcherCard(props: { readonly item: SwitcherItem }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(railDictionary)
   const project = () => orGlobal(props.item.projectLabel, t("rail.global"))
   return (
     <div data-slot="switcher-metadata-card" class="w-[320px] bg-[var(--overlay-surface)] p-3">

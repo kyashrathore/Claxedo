@@ -4,7 +4,7 @@ import { useTranslator } from "@/i18n"
 import { isRecord } from "@/lib/record"
 import { persistedStore, preferenceKey } from "@/lib/persisted"
 import { useDialog } from "@/ui"
-import { dictionary } from "../i18n"
+import { shellDictionary } from "../i18n"
 import { useShellRegistries } from "../registries"
 import { eventSignature, formatKeybind, formatKeybindParts, isEditableTarget, keybindSignature, parseKeybind, type KeyLabel } from "./keybinding"
 import { OPEN_FILE_COMMAND } from "./palette-entries"
@@ -57,7 +57,7 @@ function readOverrides(value: unknown): Overrides | undefined {
 }
 
 export function CommandsProvider(props: { readonly children: JSX.Element }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(shellDictionary)
   const registries = useShellRegistries()
   const [store, setStore] = createStore({ registrations: [] as CommandRegistration[], suspendCount: 0 })
   const [overrides, setOverrides] = persistedStore<Overrides>(preferenceKey("keybinds"), {}, readOverrides)

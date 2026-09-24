@@ -2,7 +2,7 @@ import { Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { useTerminals } from "@/terminal"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { dictionary } from "../i18n"
+import { shellDictionary } from "../i18n"
 import { useActivePlacement } from "../active-placement"
 import { useShellLayout } from "../layout"
 import { useCommands } from "../palette/commands"
@@ -14,7 +14,7 @@ const BUTTON_CLASS =
   "flex size-6 shrink-0 items-center justify-center rounded-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base"
 
 export function ScopeButtons(): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(shellDictionary)
   const commands = useCommands()
   const terminals = useTerminals()
   const active = useActivePlacement()

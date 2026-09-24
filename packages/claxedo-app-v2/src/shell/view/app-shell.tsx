@@ -8,7 +8,7 @@ import { useServer, type Capabilities } from "@/server"
 import { Toast, ClaxedoSplash } from "@/ui"
 import { createWorkbenchStore, WorkbenchProvider } from "@/workbench"
 import { HomeRedirect } from "../home-redirect"
-import { dictionary } from "../i18n"
+import { shellDictionary } from "../i18n"
 import { ShellLayoutProvider } from "../layout"
 import { CommandsProvider } from "../palette/commands"
 import { OpenFileCommand } from "../palette/open-file-command"
@@ -36,7 +36,7 @@ function centerOf(route: ShellRoute): CenterContent {
 }
 
 function ShellLoading(): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(shellDictionary)
   return (
     <div
       role="status"

@@ -1,6 +1,6 @@
 import type { JSX } from "solid-js"
 import { useI18n, useTranslator } from "@/i18n"
-import { dictionary } from "../i18n"
+import { shellDictionary } from "../i18n"
 import { useShellLayout } from "../layout"
 import { useCommands } from "../palette/commands"
 import type { CommandOption } from "../palette/registrations"
@@ -12,7 +12,7 @@ import { NEW_SESSION_COMMAND } from "./scope-buttons"
 import { useThemeCommands } from "./theme-commands"
 
 function useLayoutCommands(): () => CommandOption[] {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(shellDictionary)
   const layout = useShellLayout()
   const routing = useShellRoute()
   const active = useActivePlacement()
@@ -30,7 +30,7 @@ function useLayoutCommands(): () => CommandOption[] {
 }
 
 function useLanguageCommands(): () => CommandOption[] {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(shellDictionary)
   const i18n = useI18n()
   return () =>
     i18n.locales.map((entry) => ({
@@ -42,7 +42,7 @@ function useLanguageCommands(): () => CommandOption[] {
 }
 
 function usePageCommands(): () => CommandOption[] {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(shellDictionary)
   const routing = useShellRoute()
   const registries = useShellRegistries()
   return () =>

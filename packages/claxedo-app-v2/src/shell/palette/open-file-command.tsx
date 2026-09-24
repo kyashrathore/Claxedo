@@ -3,14 +3,14 @@ import { useTranslator } from "@/i18n"
 import { usePanel } from "@/panel"
 import { useDialog } from "@/ui"
 import { useActivePlacement } from "../active-placement"
-import { dictionary } from "../i18n"
+import { shellDictionary } from "../i18n"
 import { useCommands } from "./commands"
 import { OPEN_FILE_COMMAND } from "./palette-entries"
 import type { CommandSource } from "./registrations"
 import { DialogSelectFile } from "./select-file"
 
 export function OpenFileCommand(): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(shellDictionary)
   const commands = useCommands()
   const dialog = useDialog()
   const panel = usePanel()

@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "shell.palette.placeholder": "Buscar archivos, comandos y sesiones",
   "shell.palette.empty": "No se encontraron resultados",
   "shell.palette.suggested": "Sugerido",

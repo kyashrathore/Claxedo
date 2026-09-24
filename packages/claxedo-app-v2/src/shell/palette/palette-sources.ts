@@ -2,7 +2,7 @@ import { createMemo } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { useServer, type FileNode, type PlacementId } from "@/server"
 import { useSessionStores } from "@/session"
-import { dictionary } from "../i18n"
+import { shellDictionary } from "../i18n"
 import { useCommands } from "./commands"
 import {
   commandEntry,
@@ -43,7 +43,7 @@ function useFileReads(placementId: () => PlacementId | undefined) {
 }
 
 function useSessionSource(placementId: () => PlacementId | undefined) {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(shellDictionary)
   const server = useServer()
   const stores = useSessionStores()
   return (): PaletteEntry[] => {
@@ -62,7 +62,7 @@ function useSessionSource(placementId: () => PlacementId | undefined) {
 }
 
 export function createPaletteSources(input: PaletteSourcesInput) {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(shellDictionary)
   const commands = useCommands()
   const files = useFileReads(input.placementId)
   const allowed = createMemo(() => (input.filesOnly() ? [] : paletteCommands(commands.options())))
