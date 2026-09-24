@@ -185,7 +185,7 @@
   background: var(--overlay-surface);
 }
 
-[data-slot="switcher-metadata-card"] {
+.switcher-metadata-card {
   border: var(--surface-card-border, none);
   border-radius: var(--surface-card-radius, var(--radius-lg));
   box-shadow: var(--surface-card-shadow, var(--v2-elevation-raised));

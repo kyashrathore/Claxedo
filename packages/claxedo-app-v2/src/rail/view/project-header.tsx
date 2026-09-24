@@ -1,10 +1,9 @@
 import { Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { createHoverEngagement } from "../hover-engagement"
 import { railDictionary } from "../i18n"
 import type { ProjectSection } from "../project-sections"
-import { ClaxedoIcon as Icon } from "@/ui"
+import { ClaxedoIcon as Icon, Tooltip } from "@/ui"
 
 export type ProjectHeaderProps = {
   readonly section: ProjectSection
@@ -96,7 +95,6 @@ export function ProjectHeader(props: ProjectHeaderProps): JSX.Element {
   return (
     <div
       data-testid="project-header"
-      data-slot="project-header"
       data-active={props.active ? "true" : "false"}
       data-cloud-disconnected={props.section.dimmed ? "true" : undefined}
       class="flex items-center gap-2 min-h-8 pl-3 pr-2.5 py-1 mx-1 group/header cursor-pointer hover:bg-surface-base-hover/30 rounded-md transition-[colors,opacity] duration-100"

@@ -256,7 +256,7 @@
     [data-overlay-shell],
     .ui-context-card.is-floating,
     .ui-context-card-rail,
-    [data-slot="switcher-metadata-card"],
+    .switcher-metadata-card,
     [data-surface="composer"]
   ) {
     border: 1px solid CanvasText;
@@ -602,7 +602,7 @@ html[data-theme="codex"] [data-testid="rail-sidebar-terminal-row"] .ui-navigatio
   border-radius: var(--radius-xl);
 }
 
-html[data-theme="codex"] [data-slot="rail-section-label"] {
+html[data-theme="codex"] .rail-section-label {
   color: var(--text-weak);
   font-size: var(--font-size-small);
   font-weight: var(--font-weight-body);

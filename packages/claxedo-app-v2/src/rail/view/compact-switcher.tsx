@@ -2,11 +2,10 @@ import { createEffect, createMemo, For, onCleanup, onMount, Show, type Accessor,
 import { useTranslator } from "@/i18n"
 import { useCommands } from "@/shell"
 import { useDragSource, useWorkbench } from "@/workbench"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { railDictionary } from "../i18n"
 import { useSwitcherItems, type SwitcherItem } from "../switcher-items"
 import { SwitcherCard, SwitcherPrefixMark } from "./switcher-card"
-import { ClaxedoIcon as Icon } from "@/ui"
+import { ClaxedoIcon as Icon, Tooltip } from "@/ui"
 
 const ACTIVE_SCROLL_DELAY_MS = 120
 const COMMAND_HINT_HOLD_MS = 500
@@ -90,7 +89,6 @@ function SwitcherTab(props: { readonly item: SwitcherItem; readonly active: bool
   return (
     <div data-testid="compact-switcher-tab" data-content-id={props.item.contentId} data-claxedo-compact-touch class="group relative h-7 min-w-[118px] max-w-[220px] shrink-0" ref={props.onElement}>
       <div
-        data-slot="workbench-tab"
         data-selected={props.active ? "true" : undefined}
         class="flex h-7 w-full min-w-0 max-w-[220px] shrink-0 items-stretch gap-0 rounded-md border border-transparent py-0 pl-1.5 pr-7 text-left text-sm leading-none transition-[background-color,color] duration-100"
         classList={{

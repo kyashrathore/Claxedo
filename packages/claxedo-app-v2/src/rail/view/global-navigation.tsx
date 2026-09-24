@@ -80,7 +80,7 @@ export function GlobalNavigation(): JSX.Element {
   const routing = useShellRoute()
   const at = (path: string) => routing.pathname().startsWith(path)
   return (
-    <div data-testid="global-navigation" data-slot="global-navigation" class="flex flex-col gap-0.5 px-2.5 py-1.5 border-b border-border-weak-base/15">
+    <div data-testid="global-navigation" class="flex flex-col gap-0.5 px-2.5 py-1.5 border-b border-border-weak-base/15">
       <NavigationRow
         icon="checklist"
         label={t("rail.tasks")}

@@ -4,10 +4,7 @@ import { useTranslator } from "@/i18n"
 import { failureMessage } from "@/lib/failure"
 import { useServer } from "@/server"
 import { settingsPath, useShellRoute } from "@/shell"
-import { showToast, ClaxedoIcon as Icon } from "@/ui"
-import { Avatar } from "@opencode-ai/ui/avatar"
-import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
-import { Spinner } from "@opencode-ai/ui/spinner"
+import { showToast, ClaxedoIcon as Icon, Avatar, DropdownMenu, Spinner } from "@/ui"
 import { railDictionary } from "../i18n"
 
 const HELP_URL = "https://github.com/kyashrathore/Claxedo"
@@ -92,7 +89,7 @@ export function AccountCard(props: { readonly anchor: () => HTMLElement | undefi
         data-testid="rail-account-trigger"
       >
         <IdentityMark view={view()} size="trigger" />
-        <span data-slot="rail-account-label" class="min-w-0 flex-1 truncate text-13-medium">
+        <span class="min-w-0 flex-1 truncate text-13-medium">
           {view().label}
         </span>
         <Icon name="chevron-down" size="small" class="shrink-0 rotate-180 text-icon-weak-base opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 group-data-[expanded]:opacity-100" />
