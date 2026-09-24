@@ -1,15 +1,18 @@
-import type { SessionId, SessionRef, SessionRow } from "@/server"
+import type { PlacementId, SessionId, SessionRef, SessionRow } from "@/server"
 import {
   WINDOW_ALL,
   compareOrder,
-  insideWindow,
+  insidePlacementWindow,
   newerRow,
+  windowTail,
   orderKey,
+  type FetchedPage,
   type FetchedWindow,
   type ListData,
   type ListEntry,
   type OrderKey,
   type PendingSend,
+  type PlacementWindow,
   type StatusEntry,
 } from "./model"
 
@@ -39,7 +42,7 @@ export function mergeRow<S extends ListData>(data: S, row: SessionRow): S {
 
 export function upsertRow<S extends ListData>(data: S, row: SessionRow): S {
   const id = row.ref.sessionId
-  const outsideWindow = !insideWindow(orderKey(row), data.windowTail)
+  const outsideWindow = !insidePlacementWindow(data, row)
   if (!data.entries.has(id) && !data.open.has(id) && outsideWindow) return data
   return mergeRow(data, row)
 }
@@ -64,34 +67,55 @@ function pruneTombstones<S extends ListData>(data: S, before: number): S {
 
 const laterKey = (a: OrderKey, b: OrderKey): OrderKey => (compareOrder(a, b) >= 0 ? a : b)
 
-function windowTailOf(window: FetchedWindow, fallback: OrderKey): OrderKey {
-  if (window.nextCursor === undefined) return WINDOW_ALL
+function pageTail(page: FetchedPage, fallback: OrderKey): OrderKey {
+  if (page.nextCursor === undefined) return WINDOW_ALL
   let tail: OrderKey | undefined
-  for (const row of window.rows) tail = tail ? laterKey(tail, orderKey(row)) : orderKey(row)
+  for (const row of page.rows) tail = tail ? laterKey(tail, orderKey(row)) : orderKey(row)
   return tail ?? fallback
 }
 
-export function extendWindow<S extends ListData>(data: S, window: FetchedWindow): S {
-  const windowTail = laterKey(data.windowTail, windowTailOf(window, data.windowTail))
-  let next: S = { ...data, windowTail, nextCursor: window.nextCursor }
-  for (const row of window.rows) next = mergeRow(next, row)
+function withWindows<S extends ListData>(data: S, change: (windows: Map<PlacementId, PlacementWindow>) => void): S {
+  const windows = new Map(data.windows)
+  change(windows)
+  return { ...data, windows }
+}
+
+function mergePages<S extends ListData>(data: S, window: FetchedWindow): S {
+  let next = data
+  for (const page of window.pages) for (const row of page.rows) next = mergeRow(next, row)
   return pruneTombstones(next, window.sentAt)
+}
+
+export function extendWindow<S extends ListData>(data: S, window: FetchedWindow): S {
+  const next = withWindows(data, (windows) => {
+    for (const page of window.pages) {
+      const current = windowTail(data, page.placementId)
+      windows.set(page.placementId, { tail: laterKey(current, pageTail(page, current)), nextCursor: page.nextCursor })
+    }
+  })
+  return mergePages(next, window)
 }
 
 export function refreshWindow<S extends ListData>(data: S, window: FetchedWindow): S {
-  const tail = windowTailOf(window, data.windowTail)
-  const keepsWindow = compareOrder(data.windowTail, tail) >= 0
-  let next: S = keepsWindow ? data : { ...data, windowTail: tail, nextCursor: window.nextCursor }
-  for (const row of window.rows) next = mergeRow(next, row)
-  return pruneTombstones(next, window.sentAt)
+  const next = withWindows(data, (windows) => {
+    for (const page of window.pages) {
+      const current = windowTail(data, page.placementId)
+      const tail = pageTail(page, current)
+      if (data.windows.has(page.placementId) && compareOrder(current, tail) >= 0) continue
+      windows.set(page.placementId, { tail, nextCursor: page.nextCursor })
+    }
+  })
+  return mergePages(next, window)
 }
 
-function dropMissingFromWindow<S extends ListData>(data: S, fetched: ReadonlySet<SessionId>): S {
+function dropMissingFromPages<S extends ListData>(data: S, window: FetchedWindow): S {
+  const fetched = new Set(window.pages.flatMap((page) => page.rows.map((row) => row.ref.sessionId)))
+  const read = new Set(window.pages.map((page) => page.placementId))
   const entries = new Map(data.entries)
   const statuses = new Map<SessionId, StatusEntry>(data.statuses)
   for (const [id, entry] of data.entries) {
     if (entry.kind !== "confirmed" || fetched.has(id) || data.open.has(id)) continue
-    if (!insideWindow(orderKey(entry.row), data.windowTail)) continue
+    if (!read.has(entry.row.ref.placementId) || !insidePlacementWindow(data, entry.row)) continue
     entries.delete(id)
     statuses.delete(id)
   }
@@ -99,11 +123,10 @@ function dropMissingFromWindow<S extends ListData>(data: S, fetched: ReadonlySet
 }
 
 export function replaceWindow<S extends ListData>(data: S, window: FetchedWindow): S {
-  const fetched = new Set(window.rows.map((row) => row.ref.sessionId))
-  const dropped = dropMissingFromWindow(data, fetched)
-  let next: S = { ...dropped, windowTail: windowTailOf(window, WINDOW_ALL), nextCursor: window.nextCursor }
-  for (const row of window.rows) next = mergeRow(next, row)
-  return pruneTombstones(next, window.sentAt)
+  const next = withWindows(dropMissingFromPages(data, window), (windows) => {
+    for (const page of window.pages) windows.set(page.placementId, { tail: pageTail(page, WINDOW_ALL), nextCursor: page.nextCursor })
+  })
+  return mergePages(next, window)
 }
 
 function pendingEntryId(data: ListData, clientRequestId: string): SessionId | undefined {
@@ -151,7 +174,7 @@ export function closeSession<S extends ListData>(data: S, sessionId: SessionId):
   const open = new Set(data.open)
   open.delete(sessionId)
   const entry = data.entries.get(sessionId)
-  const keep = entry?.kind !== "confirmed" || insideWindow(orderKey(entry.row), data.windowTail)
+  const keep = entry?.kind !== "confirmed" || insidePlacementWindow(data, entry.row)
   if (keep) return { ...data, open }
   const entries = new Map(data.entries)
   entries.delete(sessionId)

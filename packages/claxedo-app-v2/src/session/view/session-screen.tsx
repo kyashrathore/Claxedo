@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js"
-import { Composer, promptText, sessionComposerKey, useComposerStore } from "@/composer"
+import { Composer, promptText, sessionComposerKey, useComposerStore, type ComposerRecovery } from "@/composer"
 import { usePhone } from "@/lib/viewport"
 import { FailureBoundary, FailureNotice } from "@/lib/failure"
 import { sessionId, useServer, type SessionRef } from "@/server"
@@ -104,13 +104,13 @@ function SessionBody(props: {
     markScrollGesture: () => scroll.props.onMarkScrollGesture(),
   })
   createMessageLinks({ view: () => props.view, users, scroll, active: driving, commands: useCommands(), t })
-  let retry: ((text: string) => void) | undefined
+  let recovery: ComposerRecovery | undefined
   const recover = (kind: Parameters<typeof recoverTurn>[2], userMessageId: string) =>
     recoverTurn(props.view, {
       startNewSession: () => routing.navigate(draftPath(props.view.ref.placementId)),
       openProviders: () => routing.navigate(settingsPath("models")),
-      chooseModel: () => body?.querySelector<HTMLElement>('[data-action="prompt-harness-model"]')?.click(),
-      resend: (text) => retry?.(text),
+      switchModelAndResend: async (text) => recovery?.switchModelAndResend(text),
+      resend: (text) => recovery?.resend(text),
     }, kind, userMessageId)
   document.addEventListener("keydown", handleKeyDown)
   onCleanup(() => document.removeEventListener("keydown", handleKeyDown))
@@ -164,7 +164,7 @@ function SessionBody(props: {
                   queuedEdit={queueEdit.edit}
                   dropZone={() => body}
                   collapsible={props.floating}
-                  registerRetry={(next) => (retry = next)}
+                  registerRecovery={(next) => (recovery = next)}
                 />
               </Show>
             </div>
@@ -193,6 +193,9 @@ export function SessionSurface(props: SessionSurfaceProps) {
       data-session-presentation={floating() ? "floating" : undefined}
       aria-label={view().row()?.title ?? t("sessionScreen.untitled")}
     >
+      <Show when={!view().row()?.parentSessionId}>
+        <h1 class="sr-only">{view().row()?.title || t("sessionScreen.untitled")}</h1>
+      </Show>
       <FailureBoundary title={t("sessionScreen.failed")} retryLabel={t("sessionScreen.action.retry")}>
         <Switch fallback={<SessionBody view={view()} active={props.active} readOnly={props.readOnly === true} floating={floating()} />}>
           <Match when={view().state().kind === "missing"}>

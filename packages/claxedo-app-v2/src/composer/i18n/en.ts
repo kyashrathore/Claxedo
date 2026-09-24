@@ -87,6 +87,8 @@ export type ComposerTextKey =
   | "prompt.imageMarks.mark"
   | "common.cancel"
   | "common.save"
+  | "composer.recovery.chooseModel"
+  | "composer.recovery.noModels"
 
 export const composerEnglish: Record<ComposerTextKey, string> = {
   "composer.action.cancel": "Cancel",
@@ -177,4 +179,6 @@ export const composerEnglish: Record<ComposerTextKey, string> = {
   "prompt.imageMarks.mark": "mark {{number}}",
   "common.cancel": "Cancel",
   "common.save": "Save",
+  "composer.recovery.chooseModel": "Choose a model to resend",
+  "composer.recovery.noModels": "No other models are available. Configure another model in Settings → Providers.",
 }
