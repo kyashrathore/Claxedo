@@ -32,8 +32,12 @@ async function openPanelTab(app: Page, name: string): Promise<Locator> {
 }
 
 async function commentOnLine(changes: Locator, line: string, comment: string) {
-  await changes.getByText(line).hover()
-  await changes.getByRole("button", { name: "Comment on this line" }).click()
+  const gutter = changes.getByRole("button", { name: "Comment on this line" })
+  await expect(async () => {
+    await changes.getByText(line).hover()
+    await expect(gutter).toBeVisible({ timeout: 1_000 })
+  }).toPass()
+  await gutter.click()
   await changes.getByRole("textbox", { name: "Add comment" }).fill(comment)
   await changes.getByRole("button", { name: "Comment", exact: true }).click()
 }
@@ -65,10 +69,12 @@ test("14 review: diff, line comment, commit, push to a bare remote, worktree, th
   await commit.getByRole("button", { name: "Commit", exact: true }).click()
   await expect(commit.getByText(/^Committed [0-9a-f]{7}$/)).toBeVisible()
   expect(await git(workspace.directory, "log", "-1", "--format=%s")).toBe("Add a reviewed line")
+  await expect(changes.getByText("No changes")).toBeVisible()
 
   await commit.getByRole("button", { name: "Publish Branch" }).click()
   await expect(commit.getByText("Pushed to origin/main")).toBeVisible()
   expect(await git(remote, "log", "-1", "--format=%s", "main")).toBe("Add a reviewed line")
+  await expect(changes.getByText("Up to date")).toBeVisible()
 
   await changes.getByRole("button", { name: /^Worktrees/ }).click()
   const worktrees = changes.getByRole("region", { name: "Worktrees" })
@@ -77,11 +83,10 @@ test("14 review: diff, line comment, commit, push to a bare remote, worktree, th
   await expect(worktrees.getByText(/^Created /)).toBeVisible()
   expect(await git(workspace.directory, "worktree", "list")).toContain("feature")
 
-  await expect(changes.getByText("No changes")).toBeVisible()
-  await expect(changes.getByText("Up to date")).toBeVisible()
-
   const prompt = app.getByRole("textbox", { name: "Prompt" })
-  await expect(app.getByRole("region", { name: "Session" }).getByText("Why was this line added?")).toBeVisible()
+  await expect(
+    app.getByRole("region", { name: "Review", exact: true }).getByText("Why was this line added?"),
+  ).toBeVisible()
   await prompt.fill(`Answer my review comment. ${acpScriptToken("answer")}`)
   await prompt.press("Enter")
   await expect(app.getByText("Read your line comment.")).toBeVisible()
