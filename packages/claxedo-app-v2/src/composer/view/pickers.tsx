@@ -12,12 +12,13 @@ export type Picker = {
   title: string
   options: PickerOption[]
   current?: string
+  fallback?: string
   locked?: boolean
   onSelect: (id: string) => void
 }
 
 function currentLabel(picker: Picker) {
-  return picker.options.find((option) => option.id === picker.current)?.label ?? picker.current ?? ""
+  return picker.options.find((option) => option.id === picker.current)?.label ?? picker.current ?? picker.fallback ?? ""
 }
 
 function PickerItems(props: { picker: Picker }) {
@@ -92,7 +93,9 @@ export function harnessIcon(harness: HarnessInfo) {
   return isIconName(harness.id) ? <Icon name={harness.id} size="small" /> : undefined
 }
 
-type PickerText = (key: "composer.picker.agent" | "composer.picker.model" | "composer.picker.effort" | "composer.picker.permissionMode" | "composer.picker.unavailable") => string
+type PickerText = (
+  key: "composer.picker.agent" | "composer.picker.model" | "composer.picker.effort" | "composer.picker.permissionMode" | "composer.picker.unavailable" | "composer.picker.default",
+) => string
 
 type PickerInput = {
   harnesses: readonly HarnessInfo[]
@@ -125,6 +128,7 @@ function modelPicker(input: PickerInput, harness: HarnessInfo): Picker {
     id: "model",
     title: input.t("composer.picker.model"),
     current: input.selection.model ? modelChoiceId(input.selection.model) : undefined,
+    fallback: input.t("composer.picker.default"),
     options: harness.models.map((choice) => ({
       id: modelChoiceId(choice),
       label: choice.variant ? `${choice.modelId} (${choice.variant})` : choice.modelId,
@@ -138,7 +142,8 @@ function listPicker(input: PickerInput, id: "effort" | "permissionMode", values:
   if (values.length === 0) return []
   const title = input.t(id === "effort" ? "composer.picker.effort" : "composer.picker.permissionMode")
   const options = values.map((value) => ({ id: value, label: value }))
-  return [{ id, title, current: input.selection[id], options, onSelect: (value) => input.onSelect({ [id]: value }) }]
+  const fallback = input.t("composer.picker.default")
+  return [{ id, title, current: input.selection[id], fallback, options, onSelect: (value) => input.onSelect({ [id]: value }) }]
 }
 
 export function buildPickers(input: PickerInput): Picker[] {
