@@ -19,7 +19,7 @@ type MessageBlock = Extract<ContentBlock, { type: "text" | "tool_use" }>
 
 const SSE_HEADERS = { "content-type": "text/event-stream", "cache-control": "no-cache" }
 
-function textDeltaChunks(text: string, chunks: number) {
+export function textDeltaChunks(text: string, chunks: number) {
   const pieces = Math.max(1, Math.min(chunks, text.length))
   const size = Math.ceil(text.length / pieces)
   const out: string[] = []
@@ -31,7 +31,7 @@ function deltas(text: string, pacing?: StreamPacing) {
   return pacing ? textDeltaChunks(text, pacing.chunks) : [text]
 }
 
-function frame(event: string, data: unknown) {
+export function frame(event: string, data: unknown) {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
 }
 

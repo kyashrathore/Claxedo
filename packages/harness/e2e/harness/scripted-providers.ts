@@ -44,7 +44,6 @@ export async function connectScriptedProviders(
   transport: HttpTransport,
   daemonUrl: string,
   scripted: ScriptedModelServer,
-  input: { red: boolean },
 ) {
   for (const providerId of SCRIPTED_PROVIDER_IDS) await routeToScripted(transport, daemonUrl, providerId, scripted)
   await storeScriptedKeys(transport, daemonUrl)

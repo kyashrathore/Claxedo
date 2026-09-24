@@ -124,6 +124,7 @@ function currentFunctionName(node: ts.Node): string | undefined {
     if (ts.isFunctionExpression(parent) && parent.name) return parent.name.text
     if ((ts.isArrowFunction(parent) || ts.isFunctionExpression(parent)) && ts.isVariableDeclaration(parent.parent)) return nameOf(parent.parent.name)
   }
+  return undefined
 }
 
 function atModuleScope(node: ts.Node): boolean {

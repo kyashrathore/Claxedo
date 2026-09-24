@@ -17,17 +17,23 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p e2e/tsconfig.json",
     "check": "bun scripts/check.ts",
-    "test": "bun run check && bun test src scripts"
+    "test": "bun run check && bun test src scripts e2e/harness",
+    "flows": "bun e2e/flows/run.ts"
   },
   "dependencies": {
     "@claxedo/agent-event-runtime": "workspace:*",
     "@claxedo/agent-runtime-contract": "workspace:*"
   },
   "devDependencies": {
+    "@agentclientprotocol/sdk": "1.3.0",
+    "@anthropic-ai/sdk": "0.115.0",
+    "@claxedo/helpers": "workspace:*",
     "@tsconfig/node-lts": "22.0.4",
     "@types/bun": "catalog:",
+    "@types/node": "catalog:",
+    "openai": "6.26.0",
     "typescript": "catalog:",
     "typescript-5": "npm:typescript@5.9.3"
   }

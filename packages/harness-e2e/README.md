@@ -1,7 +1,0 @@
-# API-level harness flows
-
-Run `bun run build:packages` from the repository root, then `bun run --cwd packages/harness-e2e flows`. Run `bun run --cwd packages/harness-e2e typecheck` for its TypeScript check. `CLAXEDO_E2E_RED=1 bun run --cwd packages/harness-e2e flows` makes the scripted ACP agent and model endpoint reject every turn; H0 must fail. `CLAXEDO_E2E_KEEP_DATA=1` retains the temporary stack directory for diagnosis. Give concurrent runs disjoint `CLAXEDO_E2E_PORT_RANGE` values.
-
-Each flow starts the real local daemon and workspace runtime. It creates sessions and sends prompts through HTTP, reads live SSE frames, reads stored messages through HTTP, and checks a server readback. The scripted ACP process speaks ACP over stdio; the model server replies to real Pi model requests. These are the only scripted turn boundaries. Pi is installed at the runtime's pinned version when missing. Each stack has its own temporary data directory, isolated home and XDG directories, and a rejecting egress proxy. H0 requires its egress record to be empty.
-
-A green flow must show the requested behavior in live frames and stored messages, and one independent server readback. A targeted red run must fail at the boundary it claims to test. The generic red mode only proves H0 detects failed turns; future regression flows need their own targeted faults. A scripted endpoint cannot prove live vendor service behavior. Keep real harness programs pinned and report unavailable programs or failing isolation as failures, never skips.
