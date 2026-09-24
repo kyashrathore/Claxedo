@@ -32,6 +32,8 @@ The pane that shows one session: the moved timeline (`timeline/`, owned by the t
 - The resize observer watches the scroller as well as the content: the viewport's own height moves the bottom as much as the content does, and a transient viewport change (a dock line appearing and going) would otherwise strand the reader one line above the end.
 - A selected text range or a click during the settle window stops following.
 - Older pages load when the reader scrolls within 200 px of the top, or pulls at the top of a list too short to scroll; the timeline's prepend anchor keeps the reader's row in place.
+- A message picked from the nav rail is sought, not scrolled to once: the first scroll lands on the virtualizer's estimate for unmeasured rows, so the seek scrolls again every second frame (at most 30 times) until the row's top is in the viewport. The first step always scrolls, because a row can report itself in view before the jump that brings it there.
+- The moved timeline still renders the old kit's ScrollView; `transcript-kit.css` carries that view's layout, scoped to the session screen, until the transcript swaps it for the v2 twin.
 
 ## Flows
 
