@@ -165,9 +165,15 @@ export function createWorkbenchStore(key: string, kinds: Accessor<readonly AnyPa
     return { contentId, kind, state }
   }
 
+  const keyOf = (contentId: string): string | undefined => {
+    const opened = content(contentId)
+    return opened?.state === undefined ? undefined : contentKey(opened.kind.kind, opened.kind.encode(opened.state as never))
+  }
+
   const open = <State,>(kind: PaneKind<State>, state: State, focus = true): string => {
     const encoded = kind.encode(state)
-    const id = contentKey(kind.kind, encoded)
+    const key = contentKey(kind.kind, encoded)
+    const id = record().contents[key] ? key : (layout().contentIds.find((contentId) => keyOf(contentId) === key) ?? key)
     batch(() => {
       setRecord((r) => (r.contents[id] ? r : { ...r, contents: { ...r.contents, [id]: { kind: kind.kind, state: encoded } } }))
       apply((s) => (focus ? reducers.navigation.show(reducers.contents.add(s, id), id) : reducers.contents.add(s, id)))
