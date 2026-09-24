@@ -267,6 +267,12 @@ At 19:08 the owner said: finish in-progress work; start no new work.
 - **Flows not yet written:** 17–25, 28, 32, 34–36. The signed flows need the self-hosted Node signed fixture.
 - **Stopped lanes with WIP:** live plugins, hosted projects on D1, the checks lane.
 
+## Performance findings to apply at the swap
+
+- **The kit's `ScrollView` (`packages/ui/src/components/scroll-view.tsx:225`, `updateThumb`)** reads `scrollTop`, `scrollHeight` and `clientHeight` every frame while scrolling. That forces the layout the virtualizer just dirtied: about 0.8 ms per wheel event, 49 ms of 350 ms busy while wheel-scrolling an 8 MiB session.
+  - The fix: cache the heights from ResizeObserver entries and read only `scrollTop` per frame.
+  - It can't land before the swap, because `packages/ui` is shared with today's app. Apply it when the used kit components move into the app.
+
 ## Server gaps found by the parity work
 
 - **Harness health is pull-only.** v1's composer health peek ("The agent stopped responding / Check again") polls `/api/wr/health` every 20 s during a turn, because no event carries `degraded` or `harness_process_lost`. Publish a health change when a driver records a process error, for example a `harness.health` event, and the peek's timer can go.
