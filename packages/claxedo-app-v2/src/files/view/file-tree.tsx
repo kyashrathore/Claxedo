@@ -33,8 +33,6 @@ export type FileTreeProps = {
   readonly visibleLimit?: number
   readonly loadingEpisode?: string
   readonly onFileClick?: (file: FileNode) => void
-  readonly onFilePointerEnter?: (file: FileNode) => void
-  readonly onFilePointerLeave?: (file: FileNode) => void
   readonly _filter?: FileTreeFilter
   readonly _marks?: TreeMarks
   readonly _deeps?: ReadonlyMap<string, number>
@@ -143,8 +141,6 @@ function FileRow(props: {
       aria-level={props.level + 1}
       aria-selected={props.node.path === props.tree.active}
       data-file-tree-path={props.node.path}
-      onPointerEnter={() => props.tree.onFilePointerEnter?.(props.node)}
-      onPointerLeave={() => props.tree.onFilePointerLeave?.(props.node)}
       onClick={() => props.tree.onFileClick?.(props.node)}
     >
       <div class="w-4 shrink-0" />

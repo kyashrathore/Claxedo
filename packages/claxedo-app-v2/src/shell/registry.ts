@@ -11,6 +11,7 @@ import { settingsPage } from "./view/settings-page"
 export const firstParty: FirstPartyEntries = {
   pages: [settingsPage, addProjectPage],
   paneKinds: [sessionPaneKind, draftSessionPaneKind, terminalPaneKind],
+  panelViews: [],
   settingsSections: [...settingsSections, projectsSettingsSection, pluginsSettingsSection],
   sidebarItems: [],
   overlays: [],
