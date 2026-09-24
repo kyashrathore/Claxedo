@@ -1,12 +1,12 @@
 import { Show, createEffect, createMemo, onMount, type Accessor, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { Select } from "@opencode-ai/ui/select"
 import type { ConfigurationSlot, HarnessReference } from "@claxedo/tasks"
 import { createHarnessConnectionsCatalog } from "@/composer"
 import { useTranslator } from "@/i18n"
 import { placementId, useServer, type HarnessModel, type ModelChoice } from "@/server"
 import { dictionary } from "../i18n"
 import type { ConfigurationDraft } from "./draft"
+import { Select } from "@/ui"
 
 type HarnessChoice = { readonly ref: HarnessReference; readonly label: string; readonly available: boolean }
 

@@ -1,6 +1,5 @@
 import { For, Show, type JSX } from "solid-js"
-import { Checkbox } from "@opencode-ai/ui/checkbox"
-import { Icon } from "@opencode-ai/ui/icon"
+import { Checkbox, Icon } from "@/ui"
 import type { PresetPlacement } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
 import { dictionary } from "../i18n"

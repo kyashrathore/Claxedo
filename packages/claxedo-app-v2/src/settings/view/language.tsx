@@ -1,7 +1,7 @@
-import { Select } from "@opencode-ai/ui/select"
 import { useI18n, useTranslator, type Locale } from "@/i18n"
 import { dictionary } from "../i18n"
 import { SettingsGroup, SettingsList, SettingsRow } from "./section"
+import { Select } from "@/ui"
 
 export function LanguageSection() {
   const t = useTranslator(dictionary)

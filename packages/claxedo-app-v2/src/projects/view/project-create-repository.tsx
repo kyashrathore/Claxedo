@@ -1,7 +1,6 @@
 import { createMemo, For, Show, type JSX } from "solid-js"
 import type { AppError, CodeHostConnection, CodeHostRepository } from "@/server"
-import { Field } from "@/ui"
-import { Select } from "@opencode-ai/ui/select"
+import { Field, Select } from "@/ui"
 import { useProjectsText } from "../i18n"
 
 export type CreateFormLook = {
