@@ -1,76 +1,56 @@
-import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
-import { createSignal, For, Show } from "solid-js"
+import { createMemo, For, onMount, Show } from "solid-js"
+import { createStore } from "solid-js/store"
+import { createHarnessConnectionsCatalog } from "@/composer"
 import { harnessDisplayLabel } from "@/lib/harness-catalog"
-import { hasManagedProviderCredentials, NATIVE_HARNESS_IDS } from "@/lib/harness-selection"
+import { connectionHarness, NATIVE_HARNESS_IDS, nativeHarness } from "@/lib/harness-selection"
+import { useServer } from "@/server"
 import { SettingsIntro } from "@/settings"
 import type { SettingsSection } from "@/shell"
 import { useAccountsText } from "../i18n"
-import { harnesses, type Harness } from "../model"
-import { useAccounts, type Accounts } from "../store"
-import { AgentHarnessAccounts, MachineScanStatus } from "./harness-accounts"
-import { createHarnessProviders, HarnessProvidersSection } from "./harness-providers"
+import { harnesses } from "../model"
+import { useSettingsScope } from "../model-sources"
+import { useAccounts } from "../store"
+import { MachineScanStatus } from "./harness-accounts"
+import { HarnessSection, type HarnessTab, type ModelsHarness } from "./harness-section"
 
-function HarnessTabs(props: { readonly harness: string; readonly onAdd: (() => void) | undefined }) {
-  const t = useAccountsText()
-  return (
-    <div class="flex items-center gap-1" role="tablist" data-component="models-harness-tabs">
-      <button type="button" role="tab" aria-selected={true} class="rounded-md px-2.5 py-1 text-13-regular text-text-strong bg-surface-base" data-action="settings-models-tab-accounts">
-        {t("settings.models.tab.accounts")}
-      </button>
-      <span class="flex-1" />
-      <Show when={props.onAdd}>
-        {(open) => (
-          <button type="button" class="rounded-md border-none bg-transparent px-1 py-0.5 text-12-regular text-text-interactive-base" data-action="agent-add-account" onClick={() => open()()}>
-            {props.harness === "opencode" ? t("provider.custom.title") : t("settings.providers.agents.addAccount")}
-          </button>
-        )}
-      </Show>
-    </div>
-  )
-}
+const NATIVE: readonly ModelsHarness[] = NATIVE_HARNESS_IDS.map((id) => {
+  const cli = harnesses.find((harness) => harness.id === id)
+  return { slug: id, label: harnessDisplayLabel(id), selection: nativeHarness(id), kind: cli ? "cli" : "catalog", ...(cli ? { cli } : {}) }
+})
 
-function CatalogAccounts(props: { readonly harness: string; readonly onAddCustomRef: (open: () => void) => void }) {
-  const providers = createHarnessProviders(() => props.harness)
-  return <HarnessProvidersSection providers={providers} onAddCustomRef={props.onAddCustomRef} />
-}
-
-type ModelsHarness = { readonly id: string; readonly label: string; readonly cli?: Harness }
-
-const MODELS_HARNESSES: readonly ModelsHarness[] = [
-  ...harnesses.map((harness) => ({ id: harness.id, label: harness.label, cli: harness })),
-  ...NATIVE_HARNESS_IDS.filter(hasManagedProviderCredentials).map((id) => ({ id, label: harnessDisplayLabel(id) })),
-]
-
-function HarnessSection(props: { readonly harness: ModelsHarness; readonly accounts: Accounts }) {
-  const [addAccount, setAddAccount] = createSignal<() => void>()
-  return (
-    <section class="flex flex-col gap-4" data-component={`models-section-${props.harness.id}`}>
-      <div class="flex items-baseline justify-between gap-4">
-        <div class="flex items-center gap-2">
-          <ProviderIcon id={props.harness.id} class="size-4 shrink-0 icon-strong-base" />
-          <h2 class="text-14-medium text-text-strong">{props.harness.label}</h2>
-        </div>
-      </div>
-      <div class="flex flex-col gap-4">
-        <HarnessTabs harness={props.harness.id} onAdd={addAccount()} />
-        <Show when={props.harness.cli} fallback={<CatalogAccounts harness={props.harness.id} onAddCustomRef={(open) => setAddAccount(() => open)} />}>
-          {(cli) => <AgentHarnessAccounts harness={cli()} accounts={props.accounts} headerless onAddAccountRef={(open) => setAddAccount(() => open)} />}
-        </Show>
-      </div>
-    </section>
-  )
+function useModelsHarnesses() {
+  const server = useServer()
+  const connections = createHarnessConnectionsCatalog({ api: server.harnessConfig })
+  onMount(() => void connections.refresh())
+  return createMemo((): readonly ModelsHarness[] => {
+    const catalog = connections.data()
+    const enabled = catalog?.status === "supported" ? catalog.connections.filter((row) => row.enabled) : []
+    return [...NATIVE, ...enabled.map((row): ModelsHarness => ({ slug: `connection:${row.connectionId}`, label: row.label, selection: connectionHarness(row.connectionId), kind: "connection" }))]
+  })
 }
 
 function ModelsSection() {
   const t = useAccountsText()
   const accounts = useAccounts()
+  const scope = useSettingsScope()
+  const list = useModelsHarnesses()
+  const [tabs, setTabs] = createStore<Record<string, HarnessTab>>({})
   return (
     <div class="settings-body" data-component="settings-models-page">
       <SettingsIntro description={t("settings.models.description")} />
       <MachineScanStatus accounts={accounts} />
-      <div class="flex flex-col gap-10">
-        <For each={MODELS_HARNESSES}>{(harness) => <HarnessSection harness={harness} accounts={accounts} />}</For>
-      </div>
+      <Show
+        when={scope().placement}
+        fallback={<p class="text-12-regular text-text-weak" data-component="models-no-workspace">{scope().loading ? t("settings.scope.workspace.loading") : t("settings.scope.workspace.empty")}</p>}
+      >
+        {(placement) => (
+          <div class="flex flex-col gap-10">
+            <For each={list()}>
+              {(harness) => <HarnessSection harness={harness} accounts={accounts} placement={placement()} tab={tabs[harness.slug] ?? "accounts"} onTab={(tab) => setTabs(harness.slug, tab)} />}
+            </For>
+          </div>
+        )}
+      </Show>
     </div>
   )
 }
