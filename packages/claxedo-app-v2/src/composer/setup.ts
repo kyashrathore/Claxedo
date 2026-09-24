@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, on, onCleanup, type Accessor } from "solid-js"
-import type { PlacementId } from "@/server"
+import type { PlacementId, PromptInput } from "@/server"
 import { useServer } from "@/server"
 import type { SessionView } from "@/session"
 import { connectionHarness, harnessSelectionValue, nativeHarness, NATIVE_HARNESS_IDS, type NativeHarnessId } from "@/lib/harness-selection"
@@ -34,7 +34,7 @@ export type ComposerProps = {
   readonly readOnly?: boolean
   readonly createSession?: (submission: Submission) => Promise<SessionView>
   readonly afterAccepted?: (view: SessionView) => void
-  readonly queuedEdit?: { readonly active: () => boolean; readonly cancel: () => void }
+  readonly queuedEdit?: { readonly active: () => boolean; readonly cancel: () => void; readonly replace: (input: PromptInput) => Promise<boolean> }
   readonly dropZone?: () => HTMLElement | undefined
   readonly collapsible?: boolean
   readonly registerRecovery?: (recovery: ComposerRecovery) => void
@@ -132,6 +132,7 @@ function createSendFor(props: ComposerProps, store: ComposerStore, key: Accessor
     goalCapable: () => goalCapable(props, selection),
     view: () => props.view,
     createSession: props.createSession,
+    queuedReplace: () => (props.queuedEdit?.active() ? props.queuedEdit.replace : undefined),
     afterAccepted: (view) => {
       late.controller?.resetHistory()
       props.afterAccepted?.(view)
