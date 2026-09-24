@@ -7,6 +7,7 @@ import type { Commands, ShellRegistries, ShellRouting } from "@/shell"
 import type { useDialog } from "@/ui"
 import type { WorkbenchStore } from "@/workbench"
 import type { PluginServerCalls } from "../api"
+import type { Claims } from "./claims"
 import type { RegistrationSink } from "../registrations"
 import type { OverlayTracker } from "./overlays"
 
@@ -23,6 +24,7 @@ export type HostServices = {
   readonly projects: Accessor<readonly Project[]>
   readonly overlays: OverlayTracker
   readonly calls: PluginServerCalls
+  readonly claims: Claims
 }
 
 export type BindingScope = {

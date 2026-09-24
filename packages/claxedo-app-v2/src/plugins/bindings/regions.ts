@@ -23,7 +23,8 @@ function pageEntry(scope: BindingScope, page: PageDefinition): PageEntry {
 function registerPage(scope: BindingScope, page: PageDefinition) {
   const pages = scope.services.registries.pages
   const entry = pageEntry(scope, page)
-  if (pages.list().some((existing) => existing.path === page.path)) {
+  const ownPrefix = entryId(scope.manifest.id, "")
+  if (pages.list().some((existing) => existing.path === page.path && !existing.id.startsWith(ownPrefix))) {
     throw new PluginEntryError(scope.manifest.id, `the path ${page.path} already belongs to another page`)
   }
   return scope.sink.add(pages, entry)
