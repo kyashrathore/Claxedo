@@ -1,4 +1,4 @@
-import type { PageEntry } from "@/shell/types"
+import type { PageEntry } from "@/shell"
 import { useProjectsText } from "./i18n"
 import { addProjectPath, projectPathPattern } from "./routes"
 import { AddProjectPage } from "./view/add-project-page"
