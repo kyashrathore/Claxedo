@@ -77,9 +77,11 @@ function ScopedShell(props: AppShellProps & { readonly scope: string }): JSX.Ele
 }
 
 function ShellBody(props: AppShellProps & { readonly route: ShellRoute }): JSX.Element {
+  const main = props.mainSidebar
+  const settings = <SettingsSidebar />
   return (
     <ShellFrame
-      sidebar={{ mode: sidebarModeOf(props.route), main: props.mainSidebar, settings: <SettingsSidebar /> }}
+      sidebar={{ mode: sidebarModeOf(props.route), main, settings }}
       center={centerOf(props.route)}
       compactTabs={props.compactTabs}
     />
