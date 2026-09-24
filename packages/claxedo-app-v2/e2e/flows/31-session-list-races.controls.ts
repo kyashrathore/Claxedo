@@ -1,3 +1,4 @@
+import path from "node:path"
 import type { Page, Route } from "@playwright/test"
 import {
   acpScriptToken,
@@ -127,18 +128,9 @@ export async function startHeldTurn(checked: Checked, sessionId: string, hold: s
   await checked.api.promptAsync(checked.directory, sessionId, `Run ${acpScriptToken(hold)}`)
 }
 
-async function createProject(stack: Stack, directory: string) {
-  const response = await fetch(new URL("/api/claxedo/projects", stack.url), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name: directory.split("/").at(-1), source: { kind: "directory", directory } }),
-  })
-  expect(response.status, "the project was created").toBe(201)
-}
-
 async function createInWorkspace(stack: Stack, api: ClaxedoApi, titles: readonly string[]) {
   const workspace: Workspace = await stack.daemon.makeWorkspace("races")
-  await createProject(stack, workspace.directory)
+  await api.createProject(path.basename(workspace.directory), workspace.directory)
   const create = (title: string) => api.createSession(workspace.directory, { title, harness: SCRIPTED_ACP_HARNESS })
   const sessions = [await create(titles[0])]
   for (let start = 1; start < titles.length; start += 50) {
@@ -150,7 +142,8 @@ async function createInWorkspace(stack: Stack, api: ClaxedoApi, titles: readonly
 export async function setup(stack: Stack, api: ClaxedoApi, app: Page, titles: readonly string[], options: SetupOptions = {}) {
   const share = Math.ceil(titles.length / (options.workspaces ?? 1))
   const chunks = Array.from({ length: Math.ceil(titles.length / share) }, (_, index) => titles.slice(index * share, (index + 1) * share))
-  const created = await Promise.all(chunks.map((chunk) => createInWorkspace(stack, api, chunk)))
+  const created: Awaited<ReturnType<typeof createInWorkspace>>[] = []
+  for (const chunk of chunks) created.push(await createInWorkspace(stack, api, chunk))
   if (options.open ?? true) await app.goto(`${stack.url}/`)
   const sessions = created.flatMap((workspace) => workspace.sessions)
   const directories = created.map((workspace) => workspace.directory)
