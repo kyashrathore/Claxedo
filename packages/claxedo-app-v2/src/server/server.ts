@@ -1,5 +1,6 @@
 import { QueryClient } from "@tanstack/solid-query"
 import { createSignal } from "solid-js"
+import { createAccountsApi } from "./accounts"
 import { createCapabilities, type CapabilitiesOwner } from "./capabilities"
 import { createCloudApi } from "./cloud"
 import { createFoldersApi } from "./folders"
@@ -8,6 +9,7 @@ import { isRetryable, toAppError } from "./errors"
 import { createEventIntake } from "./event-intake"
 import type { ConnectionState } from "./events"
 import { createGitApi } from "./git"
+import { createMarketplaceApi } from "./marketplace"
 import { createHarnessConfigApi } from "./harness-config"
 import { createLivePluginsApi } from "./live-plugins"
 import type { ProjectId } from "./ids"
@@ -85,6 +87,8 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     terminals: createTerminalsApi(transport, workspaces),
     git: createGitApi(transport, workspaces, queryClient),
     cloud: createCloudApi(transport, workspaces, project),
+    accounts: createAccountsApi(transport, queryClient),
+    marketplace: createMarketplaceApi(transport, queryClient),
     folders: createFoldersApi(transport),
     livePlugins: createLivePluginsApi(transport),
     harnessConfig: createHarnessConfigApi(transport, workspaces),

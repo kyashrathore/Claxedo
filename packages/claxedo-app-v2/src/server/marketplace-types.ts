@@ -47,3 +47,23 @@ export type MarketplaceCatalog = {
   readonly candidates: readonly PluginCandidate[]
   readonly errors: readonly MarketplaceCatalogError[]
 }
+
+export type PluginActivationInput = {
+  readonly pluginInstanceId: string
+  readonly harnessIds: readonly PluginHarness[]
+  readonly choice: boolean | null
+  readonly revision: number
+}
+
+export type PluginChange = { readonly revision: number; readonly reconciliation: { readonly state: string; readonly message?: string } }
+
+export type PluginSourceRecord = {
+  readonly id: string
+  readonly kind: PluginSource["kind"]
+  readonly label: string
+  readonly repository: string
+  readonly ref: string
+  readonly canRemove: boolean
+}
+
+export type PluginSourceInput = { readonly owner: string; readonly repository: string; readonly ref?: string }
