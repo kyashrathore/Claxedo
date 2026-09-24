@@ -113,7 +113,7 @@ async function connectAndPlace(probe: Probe): Promise<Placement> {
     await server.ready
     await waitFor("connected", () => (server.connection().kind === "connected" ? true : undefined))
     const capabilities = server.capabilities()
-    const harnesses = capabilities?.harnesses.map((harness) => `${harness.id}:${harness.models.length}`).join(",")
+    const harnesses = capabilities?.harnesses.map((harness) => `${harness.id}:${harness.available ? "ready" : harness.unavailableReason}`).join(", ")
     const features = Object.entries(capabilities?.features ?? {}).filter(([, on]) => on).map(([name]) => name).join(",")
     return `connected, this machine=${capabilities?.thisMachine?.id}, harnesses ${harnesses}, features ${features}`
   })

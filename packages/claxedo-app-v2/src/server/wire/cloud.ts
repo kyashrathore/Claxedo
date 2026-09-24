@@ -25,11 +25,13 @@ export function cloudStatusFromWire(status: unknown, step?: unknown, message?: u
       return { kind: "ready" }
     case "stopping":
       return { kind: "stopping" }
+    case "stopped":
+      return { kind: "stopped" }
     case "error":
     case "failed":
       return { kind: "failed", reason: text(message) ?? "The cloud workspace failed" }
     default:
-      return { kind: "stopped" }
+      return { kind: "failed", reason: `The cloud workspace reports an unknown status: ${String(status)}` }
   }
 }
 
