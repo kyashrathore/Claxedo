@@ -1,20 +1,7 @@
-import { Show } from "solid-js"
-import { ClaxedoLogo } from "@/ui/controls/claxedo-logo"
-import type { PluginIcon } from "../api"
+import { Show, type JSX } from "solid-js"
+import type { PluginIcon } from "@/server"
+import { ClaxedoLogo } from "@/ui"
 
-/**
- * The brands the Directory can draw from memory.
- *
- * The catalog carries no colour, so a recognisable product would otherwise be a
- * grey monogram beside every other grey monogram. This table is deliberately
- * small and hand-checked: it names the products the Claxedo collection actually
- * ships, and every other plugin falls through to the hashed hue below rather
- * than to an invented brand.
- *
- * `hue` is the product's own mark colour. It is rendered as a soft tint behind
- * the same colour's monogram, never as a saturated fill, so the tile keeps the
- * app's quiet weight in both colour schemes and needs no glow to read.
- */
 const BRANDS: Record<string, { hue: string; mark: string }> = {
   amplitude: { hue: "#1e61f0", mark: "Am" },
   apify: { hue: "#ff9013", mark: "Ap" },
@@ -40,37 +27,24 @@ const BRANDS: Record<string, { hue: string; mark: string }> = {
   vercel: { hue: "#a1a1aa", mark: "Vc" },
 }
 
-/** The brand key a plugin name resolves to, or `undefined` for an unknown product. */
 export function brandKey(name: string) {
   const normalized = name.trim().toLowerCase().replace(/\s+/g, "-")
   if (BRANDS[normalized]) return normalized
-  // `composio-mcp`, `github-issues`: a suffixed variant is still that product.
   return Object.keys(BRANDS).find((key) => normalized.startsWith(`${key}-`))
 }
 
-/**
- * A stable hue for a name the table does not know.
- *
- * Deterministic so the same plugin keeps the same tile across reloads and
- * across machines; saturation and lightness are fixed so an unknown plugin can
- * never out-shout a real brand.
- */
 function hashedHue(name: string) {
   let hash = 0
   for (let index = 0; index < name.length; index++) hash = (hash * 31 + name.charCodeAt(index)) % 360
   return `hsl(${hash} 42% 52%)`
 }
 
-/**
- * A plugin's tile: the icon its manifest declares, else the product's brand
- * mark, else a hashed monogram. `icon.kind === "url"` always wins, because a
- * manifest that ships artwork has said what it wants to look like.
- *
- * The built-in is Claxedo itself, so it wears the app's own mark on a neutral
- * tile instead of a monogram: the catalog cannot ship the logo as artwork, and
- * a hashed hue would make Claxedo look like one more third-party product.
- */
-export function PluginIconTile(props: { icon?: PluginIcon; name: string; size?: "card" | "pane"; builtIn?: boolean }) {
+export function PluginIconTile(props: {
+  readonly icon?: PluginIcon
+  readonly name: string
+  readonly size?: "card" | "pane"
+  readonly builtIn?: boolean
+}): JSX.Element {
   const size = () => (props.size === "pane" ? "size-12 text-14-medium" : "size-10 text-12-medium")
   const url = () => {
     const icon = props.icon
@@ -80,7 +54,7 @@ export function PluginIconTile(props: { icon?: PluginIcon; name: string; size?: 
     const key = brandKey(props.name)
     return key ? BRANDS[key] : undefined
   }
-  const hue = () => (props.builtIn ? "var(--icon-strong-base)" : brand()?.hue ?? hashedHue(props.name))
+  const hue = () => (props.builtIn ? "var(--icon-strong-base)" : (brand()?.hue ?? hashedHue(props.name)))
   const mark = () => {
     const known = brand()
     if (known) return known.mark
@@ -98,11 +72,14 @@ export function PluginIconTile(props: { icon?: PluginIcon; name: string; size?: 
       }}
       class={`shrink-0 grid place-items-center overflow-hidden rounded-lg bg-[var(--agent-plugin-tile)] text-[var(--agent-plugin-hue)] ${size()}`}
     >
-      <Show when={props.builtIn} fallback={
-        <Show when={url()} fallback={mark()}>
-          {(src) => <img src={src()} alt="" class="size-full object-cover" />}
-        </Show>
-      }>
+      <Show
+        when={props.builtIn}
+        fallback={
+          <Show when={url()} fallback={mark()}>
+            {(src) => <img src={src()} alt="" class="size-full object-cover" />}
+          </Show>
+        }
+      >
         <ClaxedoLogo class={props.size === "pane" ? "size-7" : "size-6"} />
       </Show>
     </span>

@@ -16,6 +16,7 @@ export {
 } from "./controls/portal-slot"
 export { Dialog, type DialogProps } from "@opencode-ai/ui/dialog"
 export { DialogProvider, useDialog } from "@opencode-ai/ui/context/dialog"
+export { requestConfirm, type ConfirmOptions } from "./confirm"
 export { Field, type FieldProps, type FieldLabelProps } from "./field"
 export { Icon, iconNames, isIconName, type IconName, type IconProps, type IconSize } from "./icon"
 export { ProviderIcon, providerIconNames, providerIconSprite, type ProviderIconProps } from "./provider-icon"
