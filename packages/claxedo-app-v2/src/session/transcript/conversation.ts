@@ -95,6 +95,28 @@ export function replaceLatest(set: SetTranscript, page: TranscriptPage): void {
   )
 }
 
+function mergedParts(current: readonly TranscriptPart[] | undefined, canonical: readonly TranscriptPart[]): TranscriptPart[] {
+  if (!current || current.length === 0) return canonical.slice()
+  const byId = new Map(current.map((part) => [part.id, part]))
+  const known = new Set(canonical.map((part) => part.id))
+  return [...canonical.map((part) => mergedPart(byId.get(part.id), part)), ...current.filter((part) => !known.has(part.id))]
+}
+
+function withLatestTurn(messages: readonly SessionMessage[], fresh: readonly SessionMessage[]): SessionMessage[] {
+  const freshIds = new Set(fresh.map((message) => message.id))
+  const at = messages.findIndex((message) => freshIds.has(message.id))
+  const current = new Map(messages.map((message) => [message.id, message]))
+  const merged = fresh.map((message) => mergedMessage(current.get(message.id), message))
+  const rest = messages.filter((message) => !freshIds.has(message.id))
+  if (at === -1) return [...rest, ...merged]
+  return [...rest.slice(0, at), ...merged, ...rest.slice(at)]
+}
+
+export function mergeLatestTurn(set: SetTranscript, page: TranscriptPage): void {
+  set("messages", (messages) => withLatestTurn(messages, pageMessages(page)))
+  for (const entry of page.entries) set("parts", entry.info.id, (parts) => mergedParts(parts, entry.parts))
+}
+
 export function dropQueuedStubs(set: SetTranscript, data: TranscriptData, queued: readonly QueuedPrompt[]): void {
   const queuedIds = new Set(queued.map((item) => item.messageId).filter((id): id is string => id !== undefined))
   if (queuedIds.size === 0) return

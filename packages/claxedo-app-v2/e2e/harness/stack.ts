@@ -7,6 +7,7 @@ import { appChoice, appDistDir, type AppChoice } from "./app"
 import { startDaemon, type Daemon } from "./daemon"
 import { startEgressGuard, type EgressGuard } from "./egress-guard"
 import { serveGitRemote, type GitRemote } from "./git-remote"
+import { serveLocalPages, type LocalPages } from "./local-pages"
 import { claimPort, fixedDaemonPort, portFreed, portIsLeased, releasePort, reservePort } from "./ports"
 import { startScriptedModelServer, type ScriptedModelServer } from "./scripted-model-server"
 import { openEventStream, type EventStream, type EventStreamOptions } from "./stream"
@@ -25,6 +26,7 @@ export type Stack = {
   }
   events(directory: string, options?: EventStreamOptions): Promise<EventStream>
   gitRemote(name: string): Promise<GitRemote>
+  localPages(pages: Readonly<Record<string, string>>): Promise<LocalPages>
   close(): Promise<void>
 }
 
@@ -76,7 +78,18 @@ export async function startStack(input: StackInput): Promise<Stack> {
     throw error
   }
   const streams: EventStream[] = []
-  const remotes: { remote: GitRemote; port: number }[] = []
+  const sideServers: { server: { close(): Promise<void> }; port: number }[] = []
+  const startSideServer = async <T extends { close(): Promise<void> }>(start: (port: number) => Promise<T>) => {
+    const port = await reservePort()
+    try {
+      const server = await start(port)
+      sideServers.push({ server, port })
+      return server
+    } catch (error) {
+      releasePort(port)
+      throw error
+    }
+  }
   return {
     app,
     url: daemon.url,
@@ -94,21 +107,12 @@ export async function startStack(input: StackInput): Promise<Stack> {
       streams.push(stream)
       return stream
     },
-    gitRemote: async (name) => {
-      const port = await reservePort()
-      try {
-        const remote = await serveGitRemote({ root: path.join(dataDir, "git-remotes"), name, port })
-        remotes.push({ remote, port })
-        return remote
-      } catch (error) {
-        releasePort(port)
-        throw error
-      }
-    },
+    gitRemote: (name) => startSideServer((port) => serveGitRemote({ root: path.join(dataDir, "git-remotes"), name, port })),
+    localPages: (pages) => startSideServer((port) => serveLocalPages({ pages, port })),
     close: async () => {
       for (const stream of streams) stream.close()
-      for (const { remote, port } of remotes) {
-        await remote.close()
+      for (const { server, port } of sideServers) {
+        await server.close()
         releasePort(port)
       }
       await daemon.close()

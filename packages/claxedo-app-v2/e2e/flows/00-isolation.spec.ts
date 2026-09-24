@@ -3,6 +3,8 @@ import {
   expect,
   installedCli,
   SCRIPTED_PROVIDER_IDS,
+  sendPrompt,
+  sessionRoute,
   test,
   unexpectedEgress,
   type CliName,
@@ -34,10 +36,8 @@ test("00 isolation: Pi's default model and every chosen provider answer only fro
   }
 
   const session = await api.createSession(workspace.directory, { title: "Default model", harness: PI })
-  await app.goto(`${stack.url}/w/${workspace.id}/s/${session.id}`)
-  const prompt = app.getByRole("textbox", { name: "Prompt" })
-  await prompt.fill("Reply with exactly this one token: ISOLATEDDEFAULT")
-  await prompt.press("Enter")
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  await sendPrompt(app, "Reply with exactly this one token: ISOLATEDDEFAULT")
   await expect(app.getByText("ISOLATEDDEFAULT", { exact: true })).toBeVisible()
 
   const catalog = await api.providerCatalog("pi")

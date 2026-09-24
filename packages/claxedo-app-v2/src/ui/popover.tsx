@@ -67,8 +67,8 @@ export function Popover<T extends ValidComponent = "div">(props: PopoverProps<T>
   const content = () => (
     <Kobalte.Content
       ref={(element: HTMLElement | undefined) => setState("content", element)}
-      data-component="popover-content"
-      classList={{ "ui-popover": true, ...local.classList, [local.class ?? ""]: !!local.class }}
+      data-component="v2-popover-content"
+      classList={{ "v2-popover": true, ...local.classList, [local.class ?? ""]: !!local.class }}
       style={local.style}
       onCloseAutoFocus={(event: Event) => {
         if (state.dismiss === "outside") event.preventDefault()
@@ -76,10 +76,10 @@ export function Popover<T extends ValidComponent = "div">(props: PopoverProps<T>
       }}
     >
       <Show when={local.title}>
-        <div data-slot="popover-header">
-          <Kobalte.Title data-slot="popover-title">{local.title}</Kobalte.Title>
+        <div data-slot="v2-popover-header">
+          <Kobalte.Title data-slot="v2-popover-title">{local.title}</Kobalte.Title>
           <Kobalte.CloseButton
-            data-slot="popover-close-button"
+            data-slot="v2-popover-close-button"
             as={IconButton}
             icon="close"
             size="small"
@@ -89,9 +89,9 @@ export function Popover<T extends ValidComponent = "div">(props: PopoverProps<T>
         </div>
       </Show>
       <Show when={local.description}>
-        <Kobalte.Description data-slot="popover-description">{local.description}</Kobalte.Description>
+        <Kobalte.Description data-slot="v2-popover-description">{local.description}</Kobalte.Description>
       </Show>
-      <div data-slot="popover-body" class="ui-popover-body">
+      <div data-slot="v2-popover-body" class="v2-popover-body">
         {local.children}
       </div>
     </Kobalte.Content>
@@ -102,7 +102,7 @@ export function Popover<T extends ValidComponent = "div">(props: PopoverProps<T>
       <Kobalte.Trigger
         ref={(element: HTMLElement) => setState("trigger", element)}
         as={local.triggerAs ?? "div"}
-        data-slot="popover-trigger"
+        data-slot="v2-popover-trigger"
         {...local.triggerProps}
       >
         {local.trigger}

@@ -7,7 +7,9 @@ import { useCommands } from "../palette/commands"
 import type { CommandOption } from "../palette/registrations"
 import { useShellRegistries } from "../registries"
 import { useShellRoute } from "../router"
-import { fillPattern, homePath, settingsPath } from "../routes"
+import { draftPath, fillPattern, homePath, settingsPath } from "../routes"
+import { useActivePlacement } from "../active-placement"
+import { NEW_SESSION_COMMAND } from "./scope-buttons"
 
 const colorSchemes: readonly ColorScheme[] = ["system", "light", "dark"]
 
@@ -19,6 +21,11 @@ export function ShellCommands(): JSX.Element {
   const routing = useShellRoute()
   const registries = useShellRegistries()
   const theme = useTheme()
+  const active = useActivePlacement()
+  const newSession = () => {
+    const placement = active()
+    if (placement) routing.navigate(draftPath(placement))
+  }
 
   const schemeLabel = (scheme: ColorScheme) => t(`shell.scheme.${scheme}`)
   const cycleScheme = () => {
@@ -27,6 +34,7 @@ export function ShellCommands(): JSX.Element {
   }
 
   const layoutCommands = (): CommandOption[] => [
+    { id: NEW_SESSION_COMMAND, title: t("shell.command.newSession"), category: t("shell.category.session"), keybind: "mod+shift+s", onSelect: newSession },
     { id: "shell.sidebar.toggle", title: t("shell.command.sidebarToggle"), category: t("shell.category.view"), keybind: "mod+b", onSelect: () => layout.send({ type: "toggleSidebar" }) },
     { id: "shell.panel.toggle", title: t("shell.command.panelToggle"), category: t("shell.category.view"), keybind: "mod+shift+b", onSelect: () => layout.send({ type: "togglePanel" }) },
     { id: "shell.home", title: t("shell.command.home"), category: t("shell.category.view"), onSelect: () => routing.navigate(homePath) },
@@ -34,7 +42,7 @@ export function ShellCommands(): JSX.Element {
   ]
 
   const themeCommands = (): CommandOption[] => [
-    { id: "shell.scheme.cycle", title: t("shell.command.schemeCycle"), category: t("shell.category.theme"), keybind: "mod+shift+s", onSelect: cycleScheme },
+    { id: "shell.scheme.cycle", title: t("shell.command.schemeCycle"), category: t("shell.category.theme"), onSelect: cycleScheme },
     ...colorSchemes.map((scheme) => ({
       id: `shell.scheme.${scheme}`,
       title: t("shell.command.scheme", { scheme: schemeLabel(scheme) }),

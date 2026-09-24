@@ -3,11 +3,11 @@ import { Composer, promptText, sessionComposerKey, useComposerStore } from "@/co
 import { usePhone } from "@/lib/viewport"
 import { FailureBoundary, FailureNotice } from "@/lib/failure"
 import { sessionId, useServer, type SessionRef } from "@/server"
+import { usePanel } from "@/panel"
 import { useSessionStores, type SessionView } from "@/session"
 import { sessionPath, useCommands, useShellRoute, type PaneProps } from "@/shell"
 import { useDialog } from "@/ui"
 import { useWorkbench } from "@/workbench"
-import { PlanDialog } from "./plan-dialog"
 import { createQueueEdit } from "./queue-edit"
 import { createTodoDock, SessionDocks, TodoDockSlot } from "./session-docks"
 import { SessionTimeline, userMessages } from "./session-timeline"
@@ -42,13 +42,12 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
   const stores = useSessionStores()
   const workbench = useWorkbench()
   const routing = useShellRoute()
+  const panel = usePanel()
   const dialog = useDialog()
-  const openPlan = (plan: Parameters<typeof PlanDialog>[0]["plan"]) =>
-    dialog.show(() => <PlanDialog plan={plan} fallbackTitle={t("sessionScreen.plan.title")} />)
   const parentId = () => props.view.row()?.parentSessionId
   const [parent, setParent] = createSignal<SessionView>()
   createEffect(on(parentId, (id) => setParent(id ? stores.open({ ...props.view.ref, sessionId: sessionId(id) }) : undefined)))
-  const host = createTimelineHost({ view: props.view, parent, stores, server, workbench, routing, t, openPlan })
+  const host = createTimelineHost({ view: props.view, parent, stores, server, workbench, routing, t, panel })
   const toParent = () => {
     const parent = parentId()
     if (parent) routing.navigate(sessionPath({ placementId: props.view.ref.placementId, sessionId: parent }))

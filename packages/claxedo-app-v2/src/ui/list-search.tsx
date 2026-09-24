@@ -19,10 +19,10 @@ export function ListSearch(props: {
   inputRef: (element: HTMLInputElement) => void
 }) {
   return (
-    <div data-slot="list-search-wrapper" class="ui-list-search-wrapper">
+    <div data-slot="v2-list-search-wrapper" class="v2-list-search-wrapper">
       <div
-        data-slot="list-search"
-        classList={{ "ui-list-search": true, [props.search.class ?? ""]: !!props.search.class }}
+        data-slot="v2-list-search"
+        classList={{ "v2-list-search": true, [props.search.class ?? ""]: !!props.search.class }}
         onPointerDown={(event) => {
           const input = event.currentTarget.querySelector("input")
           input?.focus()
@@ -32,7 +32,7 @@ export function ListSearch(props: {
         <TextInput
           ref={props.inputRef}
           autofocus={props.search.autofocus}
-          data-slot="list-search-input"
+          data-slot="v2-list-search-input"
           leadingIcon={props.search.hideIcon ? undefined : <Icon name="magnifying-glass" />}
           value={props.value}
           onInput={(event) => props.onInput(event.currentTarget.value)}
@@ -46,7 +46,7 @@ export function ListSearch(props: {
           autocomplete="off"
           autocapitalize="off"
         />
-        <Show when={props.search.action}>{(action) => <div data-slot="list-search-action">{action()}</div>}</Show>
+        <Show when={props.search.action}>{(action) => <div data-slot="v2-list-search-action">{action()}</div>}</Show>
       </div>
     </div>
   )

@@ -1,5 +1,4 @@
 export const dictionary = {
-  "shell.palette.title": "Paleta komandi",
   "shell.palette.placeholder": "Pretraži datoteke, komande i sesije",
   "shell.palette.empty": "Nema rezultata",
   "shell.palette.suggested": "Predloženo",
@@ -19,7 +18,6 @@ export const dictionary = {
   "shell.key.insert": "Insert",
   "shell.key.esc": "ESC",
   "shell.settings": "Postavke",
-  "shell.close": "Zatvori",
   "shell.loading": "Učitavanje",
   "shell.scheme.system": "Sistem",
   "shell.scheme.light": "Svijetlo",

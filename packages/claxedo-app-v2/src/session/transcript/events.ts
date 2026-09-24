@@ -3,7 +3,7 @@ import type { ServerEvent, TranscriptMessage } from "@/server"
 import type { TranscriptContext } from "./context"
 import { removeMessage, removePart, upsertMessage, upsertPart } from "./conversation"
 import { isPresentationMessage } from "./merge"
-import { isReading, isTranscriptEvent, type TranscriptEvent } from "./model"
+import { isHolding, isTranscriptEvent, type TranscriptEvent } from "./model"
 
 function upsertInfo(context: TranscriptContext, info: TranscriptMessage): void {
   if (!isPresentationMessage(info)) return
@@ -37,6 +37,6 @@ export function applyServerEvent(context: TranscriptContext, event: ServerEvent)
   if (event.type === "statusChanged") return void context.queue.reread()
   if (event.type === "subagentUpdated") return context.subagents.apply(event.subagent)
   if (!isTranscriptEvent(event)) return
-  if (isReading(context.phase.state())) return context.phase.send({ type: "held", event })
+  if (isHolding(context.phase.state())) return context.phase.send({ type: "held", event })
   applyTranscriptEvent(context, event)
 }

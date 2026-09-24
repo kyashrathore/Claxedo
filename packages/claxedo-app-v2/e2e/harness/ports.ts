@@ -18,8 +18,9 @@ async function portIsFree(port: number) {
 }
 
 export async function reservePort(): Promise<number> {
+  const daemonPort = fixedDaemonPort()
   for (let port = PORT_RANGE.first; port <= PORT_RANGE.last; port += 1) {
-    if (leased.has(port)) continue
+    if (leased.has(port) || port === daemonPort) continue
     if (!(await portIsFree(port))) continue
     leased.add(port)
     return port

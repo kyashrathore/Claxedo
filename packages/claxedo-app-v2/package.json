@@ -16,7 +16,8 @@
     "typecheck": "tsgo --noEmit -p tsconfig.json",
     "typecheck:e2e": "tsgo --noEmit -p tsconfig.e2e.json",
     "check": "bun scripts/checks/run.ts",
-    "e2e": "bun ./e2e/run.ts"
+    "e2e": "bun ./e2e/run.ts",
+    "e2e:parity": "bun ./e2e/parity/run.ts"
   },
   "license": "MIT",
   "devDependencies": {
@@ -54,7 +55,6 @@
     "@claxedo/agent-runtime-contract": "workspace:*",
     "@claxedo/helpers": "workspace:*",
     "@claxedo/plugin-api": "workspace:*",
-    "@claxedo/plugin-compact-tabs": "workspace:*",
     "@claxedo/plugin-pages": "workspace:*",
     "@claxedo/plugin-tasks": "workspace:*",
     "@claxedo/service-contract": "workspace:*",

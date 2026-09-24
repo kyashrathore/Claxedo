@@ -1,5 +1,5 @@
 @layer components {
-  .ui-avatar {
+  .v2-avatar {
     --avatar-bg: var(--v2-background-bg-layer-02);
     --avatar-fg: var(--v2-text-text-muted);
     --avatar-radius: 9999px;
@@ -26,7 +26,7 @@
     -webkit-user-select: none;
   }
 
-  .ui-avatar::before {
+  .v2-avatar::before {
     content: "";
     position: absolute;
     inset: 0;
@@ -34,30 +34,30 @@
     pointer-events: none;
   }
 
-  .ui-avatar[data-has-image]::before {
+  .v2-avatar[data-has-image]::before {
     display: none;
   }
 
-  .ui-avatar[data-kind="org"] {
+  .v2-avatar[data-kind="org"] {
     --avatar-radius: 6px;
   }
 
-  .ui-avatar[data-kind="org"][data-size="normal"],
-  .ui-avatar[data-kind="org"][data-size="small"] {
+  .v2-avatar[data-kind="org"][data-size="normal"],
+  .v2-avatar[data-kind="org"][data-size="small"] {
     --avatar-radius: 4px;
   }
 
-  .ui-avatar[data-size="normal"] {
+  .v2-avatar[data-size="normal"] {
     width: 20px;
     height: 20px;
   }
 
-  .ui-avatar[data-size="small"] {
+  .v2-avatar[data-size="small"] {
     width: 16px;
     height: 16px;
   }
 
-  [data-component="avatar"] [data-slot="avatar-image"] {
+  [data-component="v2-avatar"] [data-slot="v2-avatar-image"] {
     position: relative;
     z-index: 1;
     width: 100%;

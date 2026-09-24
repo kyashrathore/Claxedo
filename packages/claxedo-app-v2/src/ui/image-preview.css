@@ -1,5 +1,5 @@
 @layer components {
-  .ui-image-preview {
+  .v2-image-preview {
     position: fixed;
     inset: 0;
     z-index: 50;
@@ -8,7 +8,7 @@
     justify-content: center;
   }
 
-  .ui-image-preview [data-slot="image-preview-container"] {
+  .v2-image-preview [data-slot="v2-image-preview-container"] {
     position: relative;
     z-index: 50;
     display: flex;
@@ -20,7 +20,7 @@
     height: min(calc(100dvh - 32px), 90dvh);
   }
 
-  .ui-image-preview [data-slot="image-preview-content"] {
+  .v2-image-preview [data-slot="v2-image-preview-content"] {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -32,11 +32,11 @@
     overflow: hidden;
   }
 
-  .ui-image-preview [data-slot="image-preview-content"]:focus-visible {
+  .v2-image-preview [data-slot="v2-image-preview-content"]:focus-visible {
     outline: none;
   }
 
-  .ui-image-preview [data-slot="image-preview-header"] {
+  .v2-image-preview [data-slot="v2-image-preview-header"] {
     display: flex;
     align-items: center;
     justify-content: flex-end;
@@ -44,7 +44,7 @@
     padding: 8px 8px 0;
   }
 
-  .ui-image-preview [data-slot="image-preview-body"] {
+  .v2-image-preview [data-slot="v2-image-preview-body"] {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -53,7 +53,7 @@
     overflow: auto;
   }
 
-  .ui-image-preview [data-slot="image-preview-image"] {
+  .v2-image-preview [data-slot="v2-image-preview-image"] {
     max-width: 100%;
     max-height: calc(90dvh - 100px);
     object-fit: contain;

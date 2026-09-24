@@ -2,17 +2,17 @@ import { createMemo, Show, type JSX } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { ComposerStoreProvider } from "@/composer"
 import { useTranslator } from "@/i18n"
-import { useElapsed } from "@/lib/delay"
 import { preferenceKey } from "@/lib/persisted"
 import { PluginHostProvider } from "@/plugins"
 import { useServer, type Capabilities } from "@/server"
 import { Toast } from "@/ui"
-import { createWorkbenchStore, WorkbenchProvider, useWorkbench } from "@/workbench"
-import { FirstRunRedirect } from "../first-run"
+import { ClaxedoSplash } from "@/ui/controls/claxedo-logo"
+import { createWorkbenchStore, WorkbenchProvider } from "@/workbench"
+import { HomeRedirect } from "../home-redirect"
 import { dictionary } from "../i18n"
 import { ShellLayoutProvider } from "../layout"
 import { CommandsProvider } from "../palette/commands"
-import { CommandPalette } from "../palette/palette"
+import { OpenFileCommand } from "../palette/open-file-command"
 import { PlacementProviders } from "../placement-providers"
 import { useShellRegistries } from "../registries"
 import { useShellRoute } from "../router"
@@ -25,7 +25,7 @@ import { RouteSync } from "./route-sync"
 import { SettingsSidebar } from "./settings-sidebar"
 import { ShellCommands } from "./shell-commands"
 
-export type AppShellProps = { readonly mainSidebar: JSX.Element }
+export type AppShellProps = { readonly mainSidebar: JSX.Element; readonly compactTabs: JSX.Element }
 
 export function principalScope(capabilities: Capabilities | undefined): string | undefined {
   if (!capabilities) return undefined
@@ -39,17 +39,19 @@ function centerOf(route: ShellRoute): CenterContent {
 
 function ShellLoading(): JSX.Element {
   const t = useTranslator(dictionary)
-  const elapsed = useElapsed()
   return (
-    <div class="shell-loading" data-testid="shell-loading">
-      <Show when={elapsed()}>
-        <span role="status">{t("shell.loading")}</span>
-      </Show>
+    <div
+      role="status"
+      aria-label={t("shell.loading")}
+      data-testid="shell-loading"
+      class="fixed inset-0 z-[9999] h-dvh w-screen flex flex-col items-center justify-center bg-background-base"
+    >
+      <ClaxedoSplash class="w-16 h-20 opacity-50" />
     </div>
   )
 }
 
-function ScopedShell(props: { readonly scope: string; readonly mainSidebar: JSX.Element }): JSX.Element {
+function ScopedShell(props: AppShellProps & { readonly scope: string }): JSX.Element {
   const registries = useShellRegistries()
   const routing = useShellRoute()
   const workbench = createWorkbenchStore(preferenceKey("workbench", props.scope), registries.paneKinds.list)
@@ -60,12 +62,12 @@ function ScopedShell(props: { readonly scope: string; readonly mainSidebar: JSX.
           <CommandsProvider>
             <PlacementProviders>
               <PluginHostProvider scope={props.scope}>
-                <FirstRunRedirect />
+                <HomeRedirect />
                 <RouteSync />
                 <ShellCommands />
+                <OpenFileCommand />
                   <ConnectionBanner />
-                <ShellBody route={routing.route()} mainSidebar={props.mainSidebar} />
-                <CommandPalette />
+                <ShellBody route={routing.route()} mainSidebar={props.mainSidebar} compactTabs={props.compactTabs} />
                 <Overlays />
               </PluginHostProvider>
             </PlacementProviders>
@@ -76,18 +78,12 @@ function ScopedShell(props: { readonly scope: string; readonly mainSidebar: JSX.
   )
 }
 
-function ShellBody(props: { readonly route: ShellRoute; readonly mainSidebar: JSX.Element }): JSX.Element {
-  const registries = useShellRegistries()
-  const routing = useShellRoute()
-  const workbench = useWorkbench()
-  const panelScope = () => routing.placementId() ?? "default"
-  const phoneHome = () => props.route.kind === "home" && workbench.selectors.focusedContent() === null
+function ShellBody(props: AppShellProps & { readonly route: ShellRoute }): JSX.Element {
   return (
     <ShellFrame
       sidebar={{ mode: sidebarModeOf(props.route), main: props.mainSidebar, settings: <SettingsSidebar /> }}
       center={centerOf(props.route)}
-      panel={{ tabs: registries.panelTabs.list(), scope: panelScope() }}
-      phoneHome={phoneHome()}
+      compactTabs={props.compactTabs}
     />
   )
 }
@@ -102,7 +98,7 @@ export function AppShell(props: AppShellProps): JSX.Element {
   })
   return (
     <>
-      <Show when={screen()} fallback={<Show when={scope()} fallback={<ShellLoading />}>{(s) => <ScopedShell scope={s()} mainSidebar={props.mainSidebar} />}</Show>}>
+      <Show when={screen()} fallback={<Show when={scope()} fallback={<ShellLoading />}>{(s) => <ScopedShell scope={s()} mainSidebar={props.mainSidebar} compactTabs={props.compactTabs} />}</Show>}>
         {(route) => <Dynamic component={route().screen.view} params={route().params} />}
       </Show>
       <Toast.Region />

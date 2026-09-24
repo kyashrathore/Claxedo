@@ -1,5 +1,4 @@
 export const dictionary = {
-  "shell.palette.title": "คำสั่งค้นหา",
   "shell.palette.placeholder": "ค้นหาไฟล์ คำสั่ง และเซสชัน",
   "shell.palette.empty": "ไม่พบผลลัพธ์",
   "shell.palette.suggested": "แนะนำ",
@@ -19,7 +18,6 @@ export const dictionary = {
   "shell.key.insert": "Insert",
   "shell.key.esc": "ESC",
   "shell.settings": "การตั้งค่า",
-  "shell.close": "ปิด",
   "shell.loading": "กำลังโหลด",
   "shell.scheme.system": "ระบบ",
   "shell.scheme.light": "สว่าง",

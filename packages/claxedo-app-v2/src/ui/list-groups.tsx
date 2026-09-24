@@ -16,7 +16,7 @@ export function ListGroups<T>(props: {
 }) {
   const showAdd = () => !!props.add
   const renderAdd = () => (
-    <div data-slot="list-item-add" classList={{ "ui-list-item-add": true, [props.add?.class ?? ""]: !!props.add?.class }}>
+    <div data-slot="v2-list-item-add" classList={{ "v2-list-item-add": true, [props.add?.class ?? ""]: !!props.add?.class }}>
       {props.add?.render()}
     </div>
   )
@@ -27,11 +27,11 @@ export function ListGroups<T>(props: {
         {(group, groupIndex) => {
           const lastGroup = () => groupIndex() === props.groups.length - 1
           return (
-            <div data-slot="list-group">
+            <div data-slot="v2-list-group">
               <Show when={group.category}>
                 <ListGroupHeader scroll={props.scroll}>{props.groupHeader?.(group) ?? group.category}</ListGroupHeader>
               </Show>
-              <div data-slot="list-items">
+              <div data-slot="v2-list-items">
                 <For each={group.items}>
                   {(item, index) => props.renderItem(item, index(), index() === group.items.length - 1 && !(showAdd() && lastGroup()))}
                 </For>
@@ -42,8 +42,8 @@ export function ListGroups<T>(props: {
         }}
       </For>
       <Show when={props.groups.length === 0 && showAdd()}>
-        <div data-slot="list-group">
-          <div data-slot="list-items">{renderAdd()}</div>
+        <div data-slot="v2-list-group">
+          <div data-slot="v2-list-items">{renderAdd()}</div>
         </div>
       </Show>
     </>

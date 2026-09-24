@@ -47,9 +47,9 @@ function DialogFailure(props: { error: unknown; onClose: () => void }) {
     return "Something went wrong."
   }
   return (
-    <div data-component="dialog-error" role="alert" class="ui-dialog-error">
-      <p data-slot="dialog-error-message">{message()}</p>
-      <button type="button" data-slot="dialog-error-close" onClick={() => props.onClose()}>
+    <div data-component="v2-dialog-error" role="alert" class="v2-dialog-error">
+      <p data-slot="v2-dialog-error-message">{message()}</p>
+      <button type="button" data-slot="v2-dialog-error-close" onClick={() => props.onClose()}>
         Close
       </button>
     </div>
@@ -67,8 +67,8 @@ function DialogLayer(props: {
   return (
     <Kobalte modal open={!props.closing()} onOpenChange={(open) => !open && props.close()}>
       <Kobalte.Portal>
-        <Kobalte.Overlay class="ui-dialog-overlay" style={{ "z-index": zIndex() }} onClick={() => props.close()} />
-        <div data-dialog-layer={props.layer()} class="ui-dialog-layer" style={{ "z-index": zIndex() }}>
+        <Kobalte.Overlay data-component="dialog-overlay" class="ui-dialog-overlay" style={{ "z-index": zIndex() }} onClick={() => props.close()} />
+        <div data-dialog-layer={props.layer()} class="v2-dialog-layer" style={{ "z-index": zIndex() }}>
           <ErrorBoundary fallback={(error: unknown) => <DialogFailure error={error} onClose={() => props.close()} />}>
             <Suspense fallback={null}>
               {props.element()}
@@ -168,7 +168,7 @@ export function DialogProvider(props: ParentProps) {
   return (
     <DialogContext.Provider value={stack}>
       {props.children}
-      <div data-component="dialog-stack">
+      <div data-component="v2-dialog-stack">
         <For each={stack.stack()}>{(item) => item.node}</For>
       </div>
     </DialogContext.Provider>

@@ -1,5 +1,4 @@
 export const dictionary = {
-  "shell.palette.title": "コマンドパレット",
   "shell.palette.placeholder": "ファイル、コマンド、セッションを検索",
   "shell.palette.empty": "結果が見つかりません",
   "shell.palette.suggested": "おすすめ",
@@ -19,7 +18,6 @@ export const dictionary = {
   "shell.key.insert": "Insert",
   "shell.key.esc": "ESC",
   "shell.settings": "設定",
-  "shell.close": "閉じる",
   "shell.loading": "読み込み中",
   "shell.scheme.system": "システム",
   "shell.scheme.light": "ライト",

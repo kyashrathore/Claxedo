@@ -1,0 +1,42 @@
+{
+  "id": "markdown-blocks",
+  "title": "Markdown blocks render with the theme's transcript typography",
+  "source": {
+    "kind": "inventory",
+    "ids": [
+      "SESS-026",
+      "SESS-027",
+      "SESS-028",
+      "SESS-029",
+      "SESS-030",
+      "SESS-031",
+      "SESS-032",
+      "SESS-033"
+    ]
+  },
+  "partKinds": [
+    "text"
+  ],
+  "replay": {
+    "agent": "acp",
+    "turns": [
+      {
+        "prompt": "Show every block.",
+        "steps": [
+          {
+            "kind": "text",
+            "text": "Here are the blocks:\n\n# Heading 1\n## Heading 2\n### Heading 3\n#### Heading 4\n##### Heading 5\n###### Heading 6\n\nPlain paragraph with **bold**, *italic*, ~~strike~~ and `inline code`. A [link](https://example.com) and https://example.org.\n\n- Item one\n- Item two\n  - Nested item\n- [ ] Task open\n- [x] Task done\n\n1. First\n2. Second\n\n> A quote\n> > A nested quote\n\n```ts\nconst value = 1\nexport function add(a: number, b: number) {\n  return a + b\n}\n```\n\n| Name | Value |\n| --- | --- |\n| alpha | 1 |\n| beta | 2 |\n\n---\n\nDone with the blocks."
+          }
+        ]
+      }
+    ]
+  },
+  "ready": "Done with the blocks.",
+  "interactions": [
+    {
+      "kind": "scroll",
+      "to": "top"
+    }
+  ],
+  "invariant": "Headings, lists, quotes, code, tables and inline code keep today's sizes, weights and spacing."
+}

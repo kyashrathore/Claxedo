@@ -38,21 +38,26 @@ function cssVariable(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 }
 
+function colorValue(name: string): string | undefined {
+  const value = cssVariable(name)
+  return hexColor(value) ?? (/^rgba?\(/i.test(value) ? value : undefined)
+}
+
 export function terminalColors(): TerminalColors {
   const mode = currentMode()
   const seeds = SEEDS[mode]
-  const background = hexColor(cssVariable("--v2-background-bg-base")) ?? seeds.background
-  const foreground = hexColor(cssVariable("--v2-text-text-base")) ?? seeds.foreground
+  const background = colorValue("--background-stronger") ?? seeds.background
+  const foreground = colorValue("--text-stronger") ?? seeds.foreground
   return {
     background,
     foreground,
     cursor: foreground,
-    selectionBackground: withAlpha(foreground, SELECTION_ALPHA[mode]),
+    selectionBackground: withAlpha(hexColor(foreground) ?? seeds.foreground, SELECTION_ALPHA[mode]),
   }
 }
 
 export function monoFontFamily(): string {
-  return cssVariable("--font-family-terminal") || TERMINAL_FONT_FAMILY
+  return cssVariable("--font-family-mono") || TERMINAL_FONT_FAMILY
 }
 
 export function observeTheme(onChange: () => void): () => void {

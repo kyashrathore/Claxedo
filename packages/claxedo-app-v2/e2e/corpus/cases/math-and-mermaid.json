@@ -1,0 +1,31 @@
+{
+  "id": "math-and-mermaid",
+  "title": "Display math and a Mermaid diagram",
+  "source": {
+    "kind": "inventory",
+    "ids": [
+      "SESS-034",
+      "SESS-035"
+    ]
+  },
+  "partKinds": [
+    "text"
+  ],
+  "replay": {
+    "agent": "acp",
+    "turns": [
+      {
+        "prompt": "Show the sum.",
+        "steps": [
+          {
+            "kind": "text",
+            "text": "The sum is:\n\n$$a+b=c$$\n\n```mermaid\ngraph TD\n  A-->B\n```\n\nThat is the diagram."
+          }
+        ]
+      }
+    ]
+  },
+  "ready": "That is the diagram.",
+  "interactions": [],
+  "invariant": "Math and Mermaid render in place with their controls."
+}

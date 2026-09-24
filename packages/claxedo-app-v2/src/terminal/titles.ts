@@ -17,6 +17,19 @@ export function defaultTitleNumber(title: string): number | undefined {
   return undefined
 }
 
+export function launcherTitle(name: string, rows: readonly { readonly title: string }[]): string {
+  const pattern = new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} (\\d+)$`)
+  const taken = new Set(
+    rows.flatMap((row) => {
+      const match = pattern.exec(row.title)
+      return match ? [Number(match[1])] : []
+    }),
+  )
+  let next = 1
+  while (taken.has(next)) next += 1
+  return `${name} ${next}`
+}
+
 export function nextTerminalNumber(rows: readonly { readonly title: string }[]): number {
   const taken = new Set(
     rows.flatMap((row) => {

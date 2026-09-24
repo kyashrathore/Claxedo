@@ -11,7 +11,7 @@
 }
 
 @layer components {
-  .ui-collapsible {
+  .v2-collapsible {
     display: flex;
     flex-direction: column;
     width: 100%;
@@ -20,7 +20,7 @@
     overflow: visible;
   }
 
-  .ui-collapsible .ui-collapsible-trigger {
+  .v2-collapsible .v2-collapsible-trigger {
     display: flex;
     align-items: center;
     align-self: stretch;
@@ -36,22 +36,22 @@
     user-select: none;
   }
 
-  .ui-collapsible .ui-collapsible-trigger:focus-visible {
+  .v2-collapsible .v2-collapsible-trigger:focus-visible {
     outline: none;
     background-color: var(--v2-overlay-simple-overlay-hover);
   }
 
-  .ui-collapsible .ui-collapsible-trigger[data-disabled] {
+  .v2-collapsible .v2-collapsible-trigger[data-disabled] {
     cursor: not-allowed;
     color: var(--v2-text-text-faint);
   }
 
-  .ui-collapsible .ui-collapsible-trigger[data-hide-details="true"] {
+  .v2-collapsible .v2-collapsible-trigger[data-hide-details="true"] {
     height: auto;
     align-items: stretch;
   }
 
-  .ui-collapsible .ui-collapsible-arrow {
+  .v2-collapsible .v2-collapsible-arrow {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -62,37 +62,37 @@
     transition: opacity 0.15s ease;
   }
 
-  .ui-collapsible .ui-collapsible-arrow-icon {
+  .v2-collapsible .v2-collapsible-arrow-icon {
     display: inline-flex;
     color: var(--v2-icon-icon-muted);
     transform: rotate(-90deg);
     transition: transform 0.15s ease;
   }
 
-  .ui-collapsible .ui-collapsible-trigger:hover .ui-collapsible-arrow,
-  .ui-collapsible .ui-collapsible-trigger:focus-visible .ui-collapsible-arrow,
-  .ui-collapsible .ui-collapsible-trigger[aria-expanded="true"] .ui-collapsible-arrow {
+  .v2-collapsible .v2-collapsible-trigger:hover .v2-collapsible-arrow,
+  .v2-collapsible .v2-collapsible-trigger:focus-visible .v2-collapsible-arrow,
+  .v2-collapsible .v2-collapsible-trigger[aria-expanded="true"] .v2-collapsible-arrow {
     opacity: 1;
   }
 
-  .ui-collapsible .ui-collapsible-trigger[aria-expanded="true"] .ui-collapsible-arrow-icon {
+  .v2-collapsible .v2-collapsible-trigger[aria-expanded="true"] .v2-collapsible-arrow-icon {
     transform: rotate(0deg);
   }
 
-  .ui-collapsible [data-slot="collapsible-content"] {
+  .v2-collapsible [data-slot="v2-collapsible-content"] {
     overflow: hidden;
   }
 
-  .ui-collapsible [data-slot="collapsible-content"][data-expanded] {
+  .v2-collapsible [data-slot="v2-collapsible-content"][data-expanded] {
     overflow: visible;
   }
 
-  .ui-collapsible[data-variant="ghost"] > .ui-collapsible-trigger {
+  .v2-collapsible[data-variant="ghost"] > .v2-collapsible-trigger {
     padding: 0;
     background-color: transparent;
   }
 
-  .ui-collapsible[data-variant="ghost"][data-scope="file-tree"] > .ui-collapsible-trigger {
+  .v2-collapsible[data-variant="ghost"][data-scope="file-tree"] > .v2-collapsible-trigger {
     height: 28px;
   }
 }

@@ -22,3 +22,7 @@ export async function sendJson(transport: HttpTransport, method: string, url: st
   if (reply.status < 200 || reply.status >= 300) throw new Error(`${label} failed: ${reply.status} ${reply.body}`)
   return reply.body
 }
+
+export function bearerTransport(token: string): HttpTransport {
+  return (request) => directTransport({ ...request, headers: { ...request.headers, authorization: `Bearer ${token}` } })
+}

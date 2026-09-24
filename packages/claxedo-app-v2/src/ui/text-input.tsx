@@ -43,34 +43,34 @@ export function TextInput(props: TextInputProps) {
 
   return (
     <div
-      data-component="text-input"
+      data-component="v2-text-input"
       data-disabled={local.disabled ? "" : undefined}
       data-invalid={local.invalid ? "" : undefined}
       data-numeric={local.numeric ? "" : undefined}
       data-appearance={local.appearance ?? "base"}
       data-leading-icon={local.leadingIcon ? "" : undefined}
       classList={{
-        "ui-text-input": true,
+        "v2-text-input": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}
     >
-      <div data-slot="text-input-value">
+      <div data-slot="v2-text-input-value">
         <Show when={local.leadingIcon}>
-          <span data-slot="text-input-leading-icon">{local.leadingIcon}</span>
+          <span data-slot="v2-text-input-leading-icon">{local.leadingIcon}</span>
         </Show>
         <input
           {...inputProps}
           type={inputProps.type ?? "text"}
           disabled={local.disabled}
           aria-invalid={local.invalid ? true : undefined}
-          data-slot="text-input-input" classList={{ "ui-text-input-input": true }}
+          data-slot="v2-text-input-input" classList={{ "v2-text-input-input": true }}
         />
       </div>
       <Show when={local.showClearButton || local.showCopyButton}>
         <button
           type="button"
-          data-slot="text-input-icon-button" class="ui-text-input-icon-button"
+          data-slot="v2-text-input-icon-button" class="v2-text-input-icon-button"
           data-variant={local.showClearButton ? "clear" : "copy"}
           aria-label={local.showClearButton ? (local.clearLabel ?? "Clear") : (local.copyLabel ?? "Copy")}
           disabled={local.disabled}

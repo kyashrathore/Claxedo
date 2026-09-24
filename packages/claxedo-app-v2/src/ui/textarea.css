@@ -1,5 +1,5 @@
 @layer components {
-  .ui-textarea {
+  .v2-textarea {
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
@@ -22,28 +22,28 @@
       box-shadow 85ms ease-out;
   }
 
-  .ui-textarea:where(:hover):not([data-disabled], [data-invalid]):not(:focus-within) {
+  .v2-textarea:where(:hover):not([data-disabled], [data-invalid]):not(:focus-within) {
     background:
       linear-gradient(0deg, var(--v2-overlay-simple-overlay-hover), var(--v2-overlay-simple-overlay-hover)),
       linear-gradient(180deg, var(--v2-alpha-light-2) 0%, var(--v2-alpha-light-0) 100%), var(--v2-background-bg-base);
   }
 
-  .ui-textarea:where(:focus-within):not([data-disabled], [data-invalid]) {
+  .v2-textarea:where(:focus-within):not([data-disabled], [data-invalid]) {
     outline-color: var(--v2-border-border-focus);
     box-shadow: none;
   }
 
-  .ui-textarea:where([data-invalid]):not([data-disabled]) {
+  .v2-textarea:where([data-invalid]):not([data-disabled]) {
     outline-color: var(--v2-state-fg-danger);
     box-shadow: none;
   }
 
-  .ui-textarea:where([data-disabled]) {
+  .v2-textarea:where([data-disabled]) {
     opacity: 0.5;
     cursor: not-allowed;
   }
 
-  [data-component="textarea"] .ui-textarea-textarea {
+  [data-component="v2-textarea"] .v2-textarea-textarea {
     display: block;
     width: 100%;
     min-width: 0;
@@ -64,16 +64,16 @@
     font-variation-settings: "slnt" 0;
   }
 
-  [data-component="textarea"] .ui-textarea-textarea::placeholder {
+  [data-component="v2-textarea"] .v2-textarea-textarea::placeholder {
     color: var(--v2-text-text-faint);
   }
 
-  [data-component="textarea"][data-invalid]:not([data-disabled]) .ui-textarea-textarea {
+  [data-component="v2-textarea"][data-invalid]:not([data-disabled]) .v2-textarea-textarea {
     color: var(--v2-state-fg-danger);
     caret-color: var(--v2-state-fg-danger);
   }
 
-  [data-component="textarea"][data-invalid]:not([data-disabled]) .ui-textarea-textarea::placeholder {
+  [data-component="v2-textarea"][data-invalid]:not([data-disabled]) .v2-textarea-textarea::placeholder {
     color: var(--v2-state-fg-danger);
     opacity: 1;
   }

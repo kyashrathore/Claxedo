@@ -64,8 +64,8 @@ export function Select<T>(props: SelectProps<T>) {
       {...others}
       multiple={false}
       disabled={local.disabled}
-      data-component="select-root"
-      classList={{ "ui-select-root": true }}
+      data-component="v2-select-root"
+      classList={{ "v2-select-root": true }}
       placement={local.placement ?? (inline() ? "bottom-end" : "bottom-start")}
       gutter={local.gutter ?? 4}
       sameWidth={local.sameWidth ?? !inline()}
@@ -91,29 +91,29 @@ export function Select<T>(props: SelectProps<T>) {
     >
       <Kobalte.Trigger
         as="div"
-        data-component="select"
+        data-component="v2-select"
         data-appearance={local.appearance ?? "base"}
         data-invalid={local.invalid ? "" : undefined}
         data-numeric={local.numeric ? "" : undefined}
         disabled={local.disabled}
         data-disabled={local.disabled ? "" : undefined}
-        classList={{ "ui-select": true, ...local.classList, [local.class ?? ""]: !!local.class }}
+        classList={{ "v2-select": true, ...local.classList, [local.class ?? ""]: !!local.class }}
       >
-        <div data-slot="select-value">
-          <Kobalte.Value<T> data-slot="select-value-text" class={local.valueClass} classList={{ "ui-select-value-text": true }}>
+        <div data-slot="v2-select-value">
+          <Kobalte.Value<T> data-slot="v2-select-value-text" class={local.valueClass} classList={{ "v2-select-value-text": true }}>
             {(state) => {
               const selected = state.selectedOption()
               return selected == null ? "" : labelFor(selected)
             }}
           </Kobalte.Value>
         </div>
-        <span data-slot="select-chevron" class="ui-select-chevron" aria-hidden="true">
+        <span data-slot="v2-select-chevron" class="v2-select-chevron" aria-hidden="true">
           <SelectChevron />
         </span>
       </Kobalte.Trigger>
       <Kobalte.Portal>
-        <Kobalte.Content data-component="menu-content" data-slot="select-content">
-          <Kobalte.Listbox data-slot="select-listbox" />
+        <Kobalte.Content data-component="v2-menu-content" data-slot="v2-select-content">
+          <Kobalte.Listbox data-slot="v2-select-listbox" />
         </Kobalte.Content>
       </Kobalte.Portal>
     </Kobalte>

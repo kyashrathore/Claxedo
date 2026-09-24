@@ -1,12 +1,12 @@
 @layer components {
-  [data-component="switch"] {
+  [data-component="v2-switch"] {
     position: relative;
     display: flex;
     align-items: center;
     gap: 8px;
     cursor: default;
 
-    [data-slot="switch-input"] {
+    [data-slot="v2-switch-input"] {
       position: absolute;
       width: 1px;
       height: 1px;
@@ -18,7 +18,7 @@
       border-width: 0;
     }
 
-    .ui-switch-control {
+    .v2-switch-control {
       box-sizing: border-box;
       display: inline-flex;
       justify-content: flex-start;
@@ -39,7 +39,7 @@
         outline-color 90ms ease-out;
     }
 
-    .ui-switch-thumb {
+    .v2-switch-thumb {
       box-sizing: border-box;
       width: 12px;
       height: 12px;
@@ -61,7 +61,7 @@
         background 90ms;
     }
 
-    [data-slot="switch-label"] {
+    [data-slot="v2-switch-label"] {
       display: inline-flex;
       align-items: center;
       height: 16px;
@@ -75,7 +75,7 @@
       font-variation-settings: "slnt" 0;
     }
 
-    [data-slot="switch-error"] {
+    [data-slot="v2-switch-error"] {
       color: var(--v2-state-fg-danger);
       font-size: var(--font-size-small);
       font-weight: var(--font-weight-regular);
@@ -83,34 +83,34 @@
       letter-spacing: var(--letter-spacing-normal);
     }
 
-    [data-slot="switch-error"]:empty {
+    [data-slot="v2-switch-error"]:empty {
       display: none;
     }
 
-    &:hover:not([data-disabled], [data-readonly]) .ui-switch-control {
+    &:hover:not([data-disabled], [data-readonly]) .v2-switch-control {
       background:
         linear-gradient(0deg, var(--v2-overlay-simple-overlay-hover), var(--v2-overlay-simple-overlay-hover)),
         linear-gradient(180deg, var(--v2-alpha-light-0) 0%, var(--v2-alpha-light-20) 100%),
         var(--v2-background-bg-layer-03);
     }
 
-    &:hover:not([data-disabled], [data-readonly]) .ui-switch-thumb {
+    &:hover:not([data-disabled], [data-readonly]) .v2-switch-thumb {
       width: 13px;
       border-radius: var(--radius-3);
     }
 
-    &:not([data-readonly]) [data-slot="switch-input"]:focus-visible ~ .ui-switch-control {
+    &:not([data-readonly]) [data-slot="v2-switch-input"]:focus-visible ~ .v2-switch-control {
       outline: 2px solid var(--v2-border-border-focus);
       outline-offset: 1px;
     }
 
-    &[data-checked] .ui-switch-control {
+    &[data-checked] .v2-switch-control {
       background:
         linear-gradient(180deg, var(--v2-alpha-light-0) 0%, var(--v2-alpha-light-10) 100%), var(--v2-background-bg-accent);
       box-shadow: var(--v2-elevation-switch-on);
     }
 
-    &[data-checked] .ui-switch-thumb {
+    &[data-checked] .v2-switch-thumb {
       transform: translateX(8px);
       border-radius: var(--radius-xs);
       background:
@@ -122,7 +122,7 @@
         var(--v2-grey-300);
     }
 
-    &[data-checked]:hover:not([data-disabled], [data-readonly]) .ui-switch-control {
+    &[data-checked]:hover:not([data-disabled], [data-readonly]) .v2-switch-control {
       background:
         linear-gradient(
           0deg,
@@ -132,7 +132,7 @@
         linear-gradient(180deg, var(--v2-alpha-light-0) 0%, var(--v2-alpha-light-10) 100%), var(--v2-background-bg-accent);
     }
 
-    &[data-checked]:hover:not([data-disabled], [data-readonly]) .ui-switch-thumb {
+    &[data-checked]:hover:not([data-disabled], [data-readonly]) .v2-switch-thumb {
       transform: translateX(7px);
     }
 
@@ -140,11 +140,11 @@
       cursor: not-allowed;
     }
 
-    &[data-disabled] .ui-switch-control {
+    &[data-disabled] .v2-switch-control {
       opacity: 0.5;
     }
 
-    &[data-invalid] .ui-switch-control {
+    &[data-invalid] .v2-switch-control {
       border-color: var(--v2-state-border-danger);
     }
 

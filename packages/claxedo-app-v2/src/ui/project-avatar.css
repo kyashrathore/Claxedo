@@ -1,16 +1,16 @@
 @layer components {
-  .ui-project-avatar {
+  .v2-project-avatar {
     position: relative;
     flex-shrink: 0;
     width: 16px;
     height: 16px;
   }
 
-  .ui-project-avatar[data-unread] {
+  .v2-project-avatar[data-unread] {
     overflow: visible;
   }
 
-  .ui-project-avatar-surface {
+  .v2-project-avatar-surface {
     --project-avatar-bg: var(--v2-avatar-bg-gray);
     --project-avatar-border: var(--v2-avatar-border-gray);
     position: relative;
@@ -37,63 +37,63 @@
     -webkit-user-select: none;
   }
 
-  .ui-project-avatar-surface[data-variant="orange"] {
+  .v2-project-avatar-surface[data-variant="orange"] {
     --project-avatar-bg: var(--v2-avatar-bg-orange);
     --project-avatar-border: var(--v2-avatar-border-orange);
   }
 
-  .ui-project-avatar-surface[data-variant="yellow"] {
+  .v2-project-avatar-surface[data-variant="yellow"] {
     --project-avatar-bg: var(--v2-avatar-bg-yellow);
     --project-avatar-border: var(--v2-avatar-border-yellow);
   }
 
-  .ui-project-avatar-surface[data-variant="cyan"] {
+  .v2-project-avatar-surface[data-variant="cyan"] {
     --project-avatar-bg: var(--v2-avatar-bg-cyan);
     --project-avatar-border: var(--v2-avatar-border-cyan);
   }
 
-  .ui-project-avatar-surface[data-variant="green"] {
+  .v2-project-avatar-surface[data-variant="green"] {
     --project-avatar-bg: var(--v2-avatar-bg-green);
     --project-avatar-border: var(--v2-avatar-border-green);
   }
 
-  .ui-project-avatar-surface[data-variant="red"] {
+  .v2-project-avatar-surface[data-variant="red"] {
     --project-avatar-bg: var(--v2-avatar-bg-red);
     --project-avatar-border: var(--v2-avatar-border-red);
   }
 
-  .ui-project-avatar-surface[data-variant="pink"] {
+  .v2-project-avatar-surface[data-variant="pink"] {
     --project-avatar-bg: var(--v2-avatar-bg-pink);
     --project-avatar-border: var(--v2-avatar-border-pink);
   }
 
-  .ui-project-avatar-surface[data-variant="blue"] {
+  .v2-project-avatar-surface[data-variant="blue"] {
     --project-avatar-bg: var(--v2-avatar-bg-blue);
     --project-avatar-border: var(--v2-avatar-border-blue);
   }
 
-  .ui-project-avatar-surface[data-variant="purple"] {
+  .v2-project-avatar-surface[data-variant="purple"] {
     --project-avatar-bg: var(--v2-avatar-bg-purple);
     --project-avatar-border: var(--v2-avatar-border-purple);
   }
 
-  .ui-project-avatar-surface[data-variant="gray"] {
+  .v2-project-avatar-surface[data-variant="gray"] {
     --project-avatar-bg: var(--v2-avatar-bg-gray);
     --project-avatar-border: var(--v2-avatar-border-gray);
   }
 
-  .ui-project-avatar-surface[data-variant="outline"] {
+  .v2-project-avatar-surface[data-variant="outline"] {
     --project-avatar-bg: var(--v2-background-bg-base);
     --project-avatar-border: var(--v2-border-border-strong);
     color: var(--v2-text-text-muted);
     text-shadow: none;
   }
 
-  .ui-project-avatar-surface[data-has-image] {
+  .v2-project-avatar-surface[data-has-image] {
     background: var(--project-avatar-bg);
   }
 
-  [data-slot="project-avatar-surface"] [data-slot="project-avatar-image"] {
+  [data-slot="v2-project-avatar-surface"] [data-slot="v2-project-avatar-image"] {
     position: relative;
     display: block;
     width: 100%;
@@ -105,12 +105,12 @@
     -webkit-user-drag: none;
   }
 
-  [data-component="project-avatar"][data-unread] .ui-project-avatar-surface {
+  [data-component="v2-project-avatar"][data-unread] .v2-project-avatar-surface {
     -webkit-mask-image: radial-gradient(circle 4.5px at calc(100% - 1px) 1px, transparent 4.5px, black 4.5px);
     mask-image: radial-gradient(circle 4.5px at calc(100% - 1px) 1px, transparent 4.5px, black 4.5px);
   }
 
-  [data-slot="project-avatar-unread-dot"] {
+  [data-slot="v2-project-avatar-unread-dot"] {
     position: absolute;
     z-index: 3;
     width: 6px;
@@ -122,7 +122,7 @@
     pointer-events: none;
   }
 
-  [data-slot="project-avatar-slot"] {
+  [data-slot="v2-project-avatar-slot"] {
     display: flex;
     flex-shrink: 0;
     align-items: center;

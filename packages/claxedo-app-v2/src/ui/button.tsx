@@ -17,11 +17,11 @@ export function Button(props: ButtonProps) {
   return (
     <Kobalte
       {...rest}
-      data-component="button"
+      data-component="v2-button"
       data-size={split.size || "normal"}
       data-variant={split.variant || "neutral"}
       data-icon={resolvedIcon()}
-      classList={{ "ui-button": true,
+      classList={{ "v2-button": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}

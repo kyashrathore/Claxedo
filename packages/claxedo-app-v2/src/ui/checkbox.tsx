@@ -14,17 +14,17 @@ export function Checkbox(props: CheckboxProps) {
   return (
     <Kobalte
       {...others}
-      data-slot="checkbox"
+      data-slot="v2-checkbox"
       classList={{
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}
     >
-      <div data-slot="checkbox-row">
-        <Kobalte.Input data-slot="checkbox-input" />
-        <div data-slot="checkbox-control-stack">
-          <Kobalte.Control data-slot="checkbox-control" class="ui-checkbox-control">
-            <Kobalte.Indicator data-slot="checkbox-indicator">
+      <div data-slot="v2-checkbox-row">
+        <Kobalte.Input data-slot="v2-checkbox-input" />
+        <div data-slot="v2-checkbox-control-stack">
+          <Kobalte.Control data-slot="v2-checkbox-control" class="v2-checkbox-control">
+            <Kobalte.Indicator data-slot="v2-checkbox-indicator">
               <svg
                 class="checkbox-icon checkbox-icon--check"
                 width="16"
@@ -50,16 +50,16 @@ export function Checkbox(props: CheckboxProps) {
             </Kobalte.Indicator>
           </Kobalte.Control>
         </div>
-        <Kobalte.Label data-slot="checkbox-label" classList={{ "ui-checkbox-label": true, "sr-only": local.hideLabel }}>
-          <div data-slot="checkbox-text">
-            <span data-slot="checkbox-label-text">{local.label}</span>
+        <Kobalte.Label data-slot="v2-checkbox-label" classList={{ "v2-checkbox-label": true, "sr-only": local.hideLabel }}>
+          <div data-slot="v2-checkbox-text">
+            <span data-slot="v2-checkbox-label-text">{local.label}</span>
             <Show when={local.description}>
-              {(description) => <span data-slot="checkbox-description" class="ui-checkbox-description">{description()}</span>}
+              {(description) => <span data-slot="v2-checkbox-description" class="v2-checkbox-description">{description()}</span>}
             </Show>
           </div>
         </Kobalte.Label>
       </div>
-      <Kobalte.ErrorMessage data-slot="checkbox-error" class="ui-checkbox-error" />
+      <Kobalte.ErrorMessage data-slot="v2-checkbox-error" class="v2-checkbox-error" />
     </Kobalte>
   )
 }

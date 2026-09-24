@@ -2,9 +2,11 @@ import { browserAuthAdapter } from "#browser-auth-adapter"
 import { createMemo, Show, type JSX, type ParentProps } from "solid-js"
 import { AuthProvider, useAuth, type Auth, type AuthState } from "@/auth"
 import { I18nProvider } from "@/i18n"
-import { MainSidebar } from "@/rail"
+import { ProjectListProvider } from "@/projects"
+import { CompactSwitcher, MainSidebar } from "@/rail"
 import { createServer, ServerProvider, type AuthSource } from "@/server"
 import { SessionStoresProvider } from "@/session"
+import { PreferencesProvider } from "@/settings"
 import { AppShell, createShellRegistries, ShellRegistriesContext, ShellRouter, type ShellRouterComponent } from "@/shell"
 import { firstParty } from "@/shell/registry"
 import { DialogProvider } from "@/ui"
@@ -27,7 +29,9 @@ function ServerScope(props: ParentProps<{ readonly auth: AuthSource; readonly se
   return (
     <ServerProvider server={server}>
       <SessionStoresProvider>
-        <DialogProvider>{props.children}</DialogProvider>
+        <ProjectListProvider>
+          <DialogProvider>{props.children}</DialogProvider>
+        </ProjectListProvider>
       </SessionStoresProvider>
     </ServerProvider>
   )
@@ -54,11 +58,13 @@ export function App(props: AppProps): JSX.Element {
       <ShellRegistriesContext.Provider value={registries}>
         <I18nProvider>
           <ThemeProvider defaultTheme="codex" onThemeApplied={syncIconLibraryWithTheme}>
-            <ShellRouter router={props.router}>
-              <SignedServer serverUrl={props.serverUrl}>
-                <AppShell mainSidebar={<MainSidebar />} />
-              </SignedServer>
-            </ShellRouter>
+            <PreferencesProvider>
+              <ShellRouter router={props.router}>
+                <SignedServer serverUrl={props.serverUrl}>
+                  <AppShell mainSidebar={<MainSidebar />} compactTabs={<CompactSwitcher />} />
+                </SignedServer>
+              </ShellRouter>
+            </PreferencesProvider>
           </ThemeProvider>
         </I18nProvider>
       </ShellRegistriesContext.Provider>

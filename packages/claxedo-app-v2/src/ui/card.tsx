@@ -33,11 +33,11 @@ function CardRoot(props: CardProps) {
   return (
     <div
       {...rest}
-      data-component="card"
+      data-component="v2-card"
       data-variant={variant()}
       data-accent={split.accent ? "" : undefined}
       style={withAccent(split.style, variants[variant()]?.accent)}
-      classList={{ "ui-card": true, ...split.classList, [split.class ?? ""]: !!split.class }}
+      classList={{ "v2-card": true, ...split.classList, [split.class ?? ""]: !!split.class }}
     >
       {split.children}
     </div>
@@ -49,9 +49,9 @@ function CardTitle(props: CardTitleProps) {
   const hidden = () => split.icon === false || split.icon === null
   const name = () => (typeof split.icon === "string" ? split.icon : variants[split.variant ?? "normal"]?.icon)
   return (
-    <div {...rest} data-slot="card-title" classList={{ ...split.classList, [split.class ?? ""]: !!split.class }}>
+    <div {...rest} data-slot="v2-card-title" classList={{ ...split.classList, [split.class ?? ""]: !!split.class }}>
       {hidden() ? null : (
-        <span data-slot="card-title-icon" data-placeholder={name() ? undefined : ""}>
+        <span data-slot="v2-card-title-icon" data-placeholder={name() ? undefined : ""}>
           <Icon name={name() ?? "dash"} size="normal" />
         </span>
       )}
@@ -63,7 +63,7 @@ function CardTitle(props: CardTitleProps) {
 function CardDescription(props: ComponentProps<"div">) {
   const [split, rest] = splitProps(props, ["class", "classList", "children"])
   return (
-    <div {...rest} data-slot="card-description" classList={{ ...split.classList, [split.class ?? ""]: !!split.class }}>
+    <div {...rest} data-slot="v2-card-description" classList={{ ...split.classList, [split.class ?? ""]: !!split.class }}>
       {split.children}
     </div>
   )
@@ -72,7 +72,7 @@ function CardDescription(props: ComponentProps<"div">) {
 function CardActions(props: ComponentProps<"div">) {
   const [split, rest] = splitProps(props, ["class", "classList", "children"])
   return (
-    <div {...rest} data-slot="card-actions" classList={{ ...split.classList, [split.class ?? ""]: !!split.class }}>
+    <div {...rest} data-slot="v2-card-actions" classList={{ ...split.classList, [split.class ?? ""]: !!split.class }}>
       {split.children}
     </div>
   )

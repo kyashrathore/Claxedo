@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url"
-import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, test } from "../harness"
+import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI } from "../harness"
 
 const IMAGE = fileURLToPath(new URL("../../public/web-app-manifest-192x192.png", import.meta.url))
 const IMAGE_NAME = "web-app-manifest-192x192.png"
@@ -8,8 +8,9 @@ test("06 composer: a marked image, an @file pill and a slash command popover all
   const workspace = await stack.daemon.makeWorkspace("composer")
   await stack.acp.write("ack", { steps: [{ kind: "text", text: "Received the attachments" }] })
   const session = await api.createSession(workspace.directory, { title: "Composer", harness: SCRIPTED_ACP_HARNESS })
-  await app.goto(`${stack.url}/w/${workspace.id}/s/${session.id}`)
-  const prompt = app.getByRole("textbox", { name: "Ask anything, / for commands, @ for context..." })
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  const prompt = app.getByRole("textbox", { name: UI.composer })
+  await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
 
   await prompt.click()
   await app.keyboard.type("/")
@@ -50,36 +51,33 @@ test("06 composer: a marked image, an @file pill and a slash command popover all
   expect(sent).toContain("the logo corner")
 })
 
-test("06 a new session starts on the folder's harness, then on the harness last used for a draft in the workspace", async ({ stack, api, app, isMobile }) => {
+test("06 a new session starts on the folder's harness, then on the harness last used for a draft in the workspace", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("defaults")
   const existing = await api.createSession(workspace.directory, { title: "Existing", harness: SCRIPTED_ACP_HARNESS })
-  await app.goto(`${stack.url}/w/${workspace.id}/s/${existing.id}`)
-  await expect(app.getByRole("textbox", { name: "Ask anything, / for commands, @ for context..." })).toBeVisible()
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, existing.id)}`)
+  await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
+  const picker = app.locator('[data-action="prompt-harness-model"]').filter({ visible: true })
   const openDraft = async () => {
-    if (isMobile) await app.getByRole("button", { name: "Open menu" }).click()
-    await app.getByRole("button", { name: "New session" }).click()
-    return app.getByRole("region", { name: "New session", exact: true })
+    await app.getByRole("main").getByRole("button", { name: UI.newSession, exact: true }).click()
+    await expect(app).toHaveURL(new RegExp(`${sessionRoute(workspace.id)}$`))
   }
 
-  const draft = await openDraft()
-  const picker = draft.locator('[data-action="prompt-harness-model"]')
+  await openDraft()
   await expect(picker).toHaveAttribute("data-harness", "pi")
   await picker.click()
   await app.getByRole("button", { name: /^Harness/ }).click()
   await app.getByRole("button", { name: "Scripted ACP" }).click()
   await expect(picker).toHaveAttribute("data-harness", "scripted-acp")
   await app.keyboard.press("Escape")
-  const prompt = draft.getByRole("textbox", { name: "Ask anything, / for commands, @ for context..." })
-  await prompt.fill("Start on the scripted agent")
-  await prompt.press("Enter")
-  await expect(draft).toHaveCount(0)
+  await sendPrompt(app, "Start on the scripted agent")
+  await expect.poll(async () => (await api.sessions(workspace.directory)).length).toBe(2)
   const created = (await api.sessions(workspace.directory)).find((row) => row.id !== existing.id)
   expect(JSON.stringify(created)).toContain('"harness":{"id":"scripted-acp","access":"connection"}')
 
   await app.reload()
-  await expect(app.getByRole("textbox", { name: "Ask anything, / for commands, @ for context..." }).first()).toBeVisible()
-  const next = await openDraft()
-  await expect(next.locator('[data-action="prompt-harness-model"]')).toHaveAttribute("data-harness", "scripted-acp")
+  await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
+  await openDraft()
+  await expect(picker).toHaveAttribute("data-harness", "scripted-acp")
 })
 
 test("06 a draft and the prompt history survive a reload, and a shell command is sent as plain text", async ({ stack, api, app }) => {

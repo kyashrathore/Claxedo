@@ -1,13 +1,9 @@
 import type { ProjectId } from "@/server"
+import { settingsPath } from "@/shell"
 
-export const addProjectPath = "/projects/new"
+export const settingsAccountsPath = settingsPath("accounts")
 
-export const projectPathPattern = "/p/:projectId"
-
-export function projectPath(id: ProjectId): string {
-  return `/p/${encodeURIComponent(id)}`
+export function projectSettingsPath(id?: ProjectId): string {
+  const list = settingsPath("projects")
+  return id ? `${list}?${new URLSearchParams({ project: id }).toString()}` : list
 }
-
-export const settingsAccountsPath = "/settings/accounts"
-
-export const settingsConnectionsPath = "/settings/connections"

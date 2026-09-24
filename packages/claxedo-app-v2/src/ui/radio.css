@@ -1,11 +1,11 @@
 @layer components {
-  [data-component="radio"] {
+  [data-component="v2-radio"] {
     display: flex;
     flex-direction: column;
     gap: 8px;
     cursor: default;
 
-    [data-slot="radio-label"] {
+    [data-slot="v2-radio-label"] {
       display: inline-flex;
       align-items: center;
       user-select: none;
@@ -18,7 +18,7 @@
       font-variation-settings: "slnt" 0;
     }
 
-    [data-slot="radio-description"] {
+    [data-slot="v2-radio-description"] {
       color: var(--v2-text-text-faint);
       font-size: var(--font-size-x-small);
       font-weight: var(--font-weight-body);
@@ -26,13 +26,13 @@
       letter-spacing: var(--letter-spacing-micro-wide);
     }
 
-    [data-slot="radio-items"] {
+    [data-slot="v2-radio-items"] {
       display: flex;
       flex-direction: column;
       gap: 12px;
     }
 
-    .ui-radio-error {
+    .v2-radio-error {
       color: var(--v2-state-fg-danger);
       font-size: var(--font-size-small);
       font-weight: var(--font-weight-regular);
@@ -40,12 +40,12 @@
       letter-spacing: var(--letter-spacing-normal);
     }
 
-    .ui-radio-error:empty {
+    .v2-radio-error:empty {
       display: none;
     }
   }
 
-  [data-slot="radio-item"] {
+  [data-slot="v2-radio-item"] {
     position: relative;
     display: flex;
     flex-direction: row;
@@ -57,7 +57,7 @@
       cursor: not-allowed;
     }
 
-    [data-slot="radio-item-input"] {
+    [data-slot="v2-radio-item-input"] {
       position: absolute;
       width: 1px;
       height: 1px;
@@ -69,14 +69,14 @@
       border-width: 0;
     }
 
-    [data-slot="radio-item-control-stack"] {
+    [data-slot="v2-radio-item-control-stack"] {
       position: relative;
       width: 16px;
       height: 20px;
       flex: none;
     }
 
-    .ui-radio-item-control {
+    .v2-radio-item-control {
       box-sizing: border-box;
       position: absolute;
       width: 16px;
@@ -99,31 +99,31 @@
     }
 
     &:where(:not([data-readonly]))
-      [data-slot="radio-item-input"]:focus-visible
-      ~ [data-slot="radio-item-control-stack"]
-      .ui-radio-item-control {
+      [data-slot="v2-radio-item-input"]:focus-visible
+      ~ [data-slot="v2-radio-item-control-stack"]
+      .v2-radio-item-control {
       outline: 2px solid var(--v2-border-border-focus);
       outline-offset: 1px;
     }
 
     &:where(:hover):where(:not([data-disabled], [data-readonly])):where(:not([data-checked]))
-      .ui-radio-item-control {
+      .v2-radio-item-control {
       background:
         linear-gradient(0deg, var(--v2-overlay-simple-overlay-hover), var(--v2-overlay-simple-overlay-hover)),
         linear-gradient(180deg, var(--v2-alpha-light-6) 0%, var(--v2-alpha-light-0) 100%), var(--v2-background-bg-base);
     }
 
-    &:where([data-disabled]) .ui-radio-item-control {
+    &:where([data-disabled]) .v2-radio-item-control {
       opacity: 0.5;
     }
 
-    &:where([data-checked]) .ui-radio-item-control {
+    &:where([data-checked]) .v2-radio-item-control {
       background:
         linear-gradient(180deg, var(--v2-alpha-light-20) 0%, var(--v2-alpha-light-0) 100%), var(--v2-background-bg-accent);
     }
 
     &:where([data-checked]):where(:hover):where(:not([data-disabled], [data-readonly]))
-      .ui-radio-item-control {
+      .v2-radio-item-control {
       background:
         linear-gradient(
           0deg,
@@ -133,12 +133,12 @@
         linear-gradient(180deg, var(--v2-alpha-light-20) 0%, var(--v2-alpha-light-0) 100%), var(--v2-background-bg-accent);
     }
 
-    &:where([data-invalid]):where(:not([data-checked])) .ui-radio-item-control {
+    &:where([data-invalid]):where(:not([data-checked])) .v2-radio-item-control {
       background: var(--v2-state-bg-danger);
       box-shadow: inset 0 0 0 0.5px var(--v2-state-border-danger);
     }
 
-    [data-slot="radio-item-indicator"] {
+    [data-slot="v2-radio-item-indicator"] {
       box-sizing: border-box;
       position: absolute;
       width: 6px;
@@ -152,7 +152,7 @@
       box-shadow: var(--shadow-radio-indicator);
     }
 
-    [data-slot="radio-item-text"] {
+    [data-slot="v2-radio-item-text"] {
       display: flex;
       flex-direction: column;
       justify-content: center;
@@ -161,7 +161,7 @@
       gap: 6px;
     }
 
-    [data-slot="radio-item-label"] {
+    [data-slot="v2-radio-item-label"] {
       display: inline-flex;
       user-select: none;
       color: inherit;
@@ -171,7 +171,7 @@
       font-variation-settings: "slnt" 0;
     }
 
-    .ui-radio-item-label-text {
+    .v2-radio-item-label-text {
       display: inline-flex;
       align-items: center;
       user-select: none;
@@ -181,7 +181,7 @@
       letter-spacing: var(--letter-spacing-ui);
     }
 
-    .ui-radio-item-description {
+    .v2-radio-item-description {
       color: var(--v2-text-text-muted);
       font-size: var(--font-size-x-small);
       font-weight: var(--font-weight-body);
@@ -191,11 +191,11 @@
       user-select: none;
     }
 
-    &:where([data-disabled]) .ui-radio-item-label-text {
+    &:where([data-disabled]) .v2-radio-item-label-text {
       color: var(--v2-text-text-muted);
     }
 
-    &:where([data-disabled]) .ui-radio-item-description {
+    &:where([data-disabled]) .v2-radio-item-description {
       color: var(--v2-text-text-faint);
     }
   }

@@ -1,4 +1,4 @@
-import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, test, installedCli } from "../harness"
+import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI } from "../harness"
 
 test("08 a permission prompt blocks the composer until it is allowed from its dock", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("permission")
@@ -9,10 +9,9 @@ test("08 a permission prompt blocks the composer until it is allowed from its do
     ],
   })
   const session = await api.createSession(workspace.directory, { title: "Permission", harness: SCRIPTED_ACP_HARNESS })
-  await app.goto(`${stack.url}/w/${workspace.id}/s/${session.id}`)
-  const prompt = app.getByRole("textbox", { name: "Ask anything, / for commands, @ for context..." })
-  await prompt.fill(`Edit the notes. ${acpScriptToken("permission")}`)
-  await prompt.press("Enter")
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  const prompt = app.getByRole("textbox", { name: UI.composer })
+  await sendPrompt(app, `Edit the notes. ${acpScriptToken("permission")}`)
 
   await expect(app.getByText("Permission required")).toBeVisible()
   await expect(prompt).toHaveCount(0)
@@ -30,10 +29,9 @@ test("08 a question is answered from its dock and the agent receives the answer"
   const workspace = await stack.daemon.makeWorkspace("question")
   await stack.acp.write("question", { steps: [{ kind: "question", message: "Which color should the button be?", options: ["Red", "Blue"] }] })
   const session = await api.createSession(workspace.directory, { title: "Question", harness: SCRIPTED_ACP_HARNESS })
-  await app.goto(`${stack.url}/w/${workspace.id}/s/${session.id}`)
-  const prompt = app.getByRole("textbox", { name: "Ask anything, / for commands, @ for context..." })
-  await prompt.fill(`Pick a color. ${acpScriptToken("question")}`)
-  await prompt.press("Enter")
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  const prompt = app.getByRole("textbox", { name: UI.composer })
+  await sendPrompt(app, `Pick a color. ${acpScriptToken("question")}`)
 
   await expect(app.getByText("Which color should the button be?")).toBeVisible()
   await expect(prompt).toHaveCount(0)
@@ -46,24 +44,4 @@ test("08 a question is answered from its dock and the agent receives the answer"
   await expect(prompt).toBeVisible()
   expect(assistantText(await api.messages(workspace.directory, session.id))).toContain("Answer: Blue")
   expect((await api.questions(workspace.directory)).filter((row) => row.sessionID === session.id)).toHaveLength(0)
-})
-
-test("08 the permission chip shows the mode the harness reports and delivers a pick to the session", async ({ stack, api, app, isMobile }) => {
-  test.skip(isMobile, "the chip collapses to its shield on phone")
-  const availability = await installedCli("claude")
-  test.skip(!availability.available, availability.available ? "" : availability.reason)
-  const workspace = await stack.daemon.makeWorkspace("permission-mode")
-  const session = await api.createSession(workspace.directory, { title: "Permission mode", harness: { id: "claude", access: "native" } })
-  await app.goto(`${stack.url}/w/${workspace.id}/s/${session.id}`)
-
-  const chip = app.locator('[data-action="prompt-permission-mode"]')
-  await expect(chip).toHaveText("Auto")
-  await chip.click()
-  const menu = app.getByRole("menu")
-  await expect(menu.getByText("Claude", { exact: true })).toBeVisible()
-  await expect(menu.getByText("Use a model classifier to approve/deny permission prompts")).toBeVisible()
-  const saved = app.waitForResponse((response) => response.request().method() === "PUT" && response.url().includes("/permission-mode"))
-  await menu.getByRole("menuitem", { name: /^Plan/ }).click()
-  expect((await saved).ok()).toBe(true)
-  await expect(chip).toHaveText("Plan")
 })
