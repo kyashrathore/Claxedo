@@ -5,7 +5,7 @@ import {
   type RequestDeadline,
   type RetirementBudgets,
   type RetirementResult,
-} from "../../launch"
+} from "@claxedo/process-ownership/launch"
 
 export type CancellationFailure = { code: RecoveryErrorCode; message: string }
 

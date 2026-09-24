@@ -62,7 +62,7 @@ import {
 import {
   observeAgentProcess,
   type AgentProcessObserverHandle,
-} from "../../process-observer"
+} from "@claxedo/process-ownership/process-observer"
 
 const CURSOR_PENDING_PREFIX = "cursor-sdk:"
 const CURSOR_SDK_AUTH_ERROR =

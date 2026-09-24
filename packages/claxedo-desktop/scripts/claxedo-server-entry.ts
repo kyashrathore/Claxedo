@@ -21,7 +21,7 @@ import {
   writeClaxedoDaemonDiscovery,
   type ClaxedoDaemonDiscovery,
 } from "../src/main/server-daemon-discovery"
-import { readCreationIdentity, type CreationIdentity } from "@claxedo/agent-sdk-runtime/launch"
+import { readCreationIdentity, type CreationIdentity } from "@claxedo/process-ownership/launch"
 import path from "node:path"
 
 // The V8 compile cache is already enabled and already seeded by the time this

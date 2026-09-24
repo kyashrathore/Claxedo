@@ -3,7 +3,7 @@ import { spawn } from "node:child_process"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { readCreationIdentity, type CreationIdentity, type RetirementResult } from "@claxedo/agent-sdk-runtime/launch"
+import { readCreationIdentity, type CreationIdentity, type RetirementResult } from "@claxedo/process-ownership/launch"
 
 import {
   claxedoDaemonOwnershipPath,

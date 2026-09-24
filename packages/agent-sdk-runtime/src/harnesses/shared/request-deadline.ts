@@ -1,5 +1,5 @@
 import { DEFAULT_RECOVERY_BUDGETS, capChildBudget } from "@claxedo/agent-runtime-contract"
-import type { RequestDeadline } from "../../launch"
+import type { RequestDeadline } from "@claxedo/process-ownership/launch"
 
 /**
  * A control request's own budget, never outliving the operation that asked for

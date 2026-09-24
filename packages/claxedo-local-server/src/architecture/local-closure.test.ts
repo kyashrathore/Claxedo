@@ -252,7 +252,9 @@ describe("@claxedo/local-server closure", () => {
     // `@claxedo/mcp` is the first-party endpoint mounted at
     // `/api/claxedo/mcp`; `@claxedo/egress-broker` is the request policy,
     // header injection and runtime-token verification behind the broker
-    // handler; `smol-toml` is the hosted MCP installer's configuration
+    // handler; `@claxedo/process-ownership` supplies dependency-free data and
+    // OS reads, with no server, runtime or store closure behind them;
+    // `smol-toml` is the hosted MCP installer's configuration
     // validator; `@claxedo/agent-runtime-contract` is the dependency-free data
     // this product reads rather than restating — the harness/provider-id table
     // the credential routes, the reaper and the agent-config auth route all
@@ -271,6 +273,6 @@ describe("@claxedo/local-server closure", () => {
     // the answers `git` will dial.
     const { modules, packages } = closure({ runtimeOnly: true })
     expect(modules.size).toBeLessThanOrEqual(98)
-    expect(packages.size).toBeLessThanOrEqual(29)
+    expect(packages.size).toBeLessThanOrEqual(30)
   })
 })

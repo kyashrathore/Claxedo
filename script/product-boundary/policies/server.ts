@@ -150,6 +150,7 @@ export const serverSelfHosted: Policy = {
       { packageDir: "packages/claxedo-helpers" },
       { packageDir: "packages/agent-runtime-contract" },
       { packageDir: "packages/agent-event-runtime" },
+      { packageDir: "packages/process-ownership" },
       { packageDir: "packages/agent-sdk-runtime" },
       { packageDir: "packages/opencode-server-adapter" },
       { packageDir: "packages/workspace-relay-protocol" },

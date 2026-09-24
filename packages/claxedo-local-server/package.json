@@ -67,6 +67,7 @@
   "dependencies": {
     "@claxedo/agent-runtime-contract": "workspace:*",
     "@claxedo/agent-sdk-runtime": "workspace:*",
+    "@claxedo/process-ownership": "workspace:*",
     "@claxedo/egress-broker": "workspace:*",
     "@claxedo/helpers": "workspace:*",
     "@claxedo/host-serving": "workspace:*",

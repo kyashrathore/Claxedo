@@ -1,6 +1,6 @@
 import type { AgentHarnessAdapterHealth, AgentHarnessAdapterHealthContext } from "../../adapter-contract"
 import type { AgentRuntimeStoreCore } from "../shared/runtime-store"
-import type { RetirementResult } from "../../launch"
+import type { RetirementResult } from "@claxedo/process-ownership/launch"
 
 /**
  * Health for one ACP connection.

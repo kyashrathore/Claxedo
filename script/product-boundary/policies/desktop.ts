@@ -156,16 +156,12 @@ export const desktopMainComposition: Policy = {
   // capabilities. Node builtins and type-only electron imports, so no package
   // edge.
   //
-  // +1 module, +2 packages (2026-09-21): `main/daemon-recovery.ts`. It is the
-  // external owner of a daemon that stopped answering HTTP, so it needs the two
-  // things only those packages hold: `@claxedo/agent-sdk-runtime/launch` for
-  // creation identity and identity-checked retirement, and
-  // `@claxedo/agent-runtime-contract` for the recovery result it reports.
-  // Reviewed owner: Electron main, which is the only process that launched the
-  // daemon and the only one that may signal it; reimplementing either here
-  // would be a second answer to "is this pid still that launch", and a guessed
-  // one is what R8 was. Both packages are dependency-free data and OS reads,
-  // with no server, runtime or store closure behind them.
+  // `main/daemon-recovery.ts` owns recovery of a daemon that stopped answering
+  // HTTP. `@claxedo/process-ownership` supplies creation identity and bounded,
+  // identity-checked retirement; `@claxedo/agent-runtime-contract` supplies the
+  // recovery result. Electron main launched the daemon and is the only process
+  // that may signal it. These packages provide dependency-free data and OS
+  // reads, with no server, runtime or store closure behind them.
   // 99/26, no headroom.
   ceilings: { modules: 99, packages: 26 },
   emitted: {

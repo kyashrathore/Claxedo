@@ -1,6 +1,6 @@
 import fs from "node:fs/promises"
 import path from "node:path"
-import { sameCreationIdentity, verifyCreationIdentity, type CreationIdentity } from "@claxedo/agent-sdk-runtime/launch"
+import { sameCreationIdentity, verifyCreationIdentity, type CreationIdentity } from "@claxedo/process-ownership/launch"
 import { asRecordOrEmpty, isNonNegativeSafeInteger, nonEmptyString } from "@claxedo/helpers/guards"
 
 /**

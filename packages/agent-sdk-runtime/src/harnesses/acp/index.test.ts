@@ -7,7 +7,7 @@ import { committedStartTurn, fakeRuntimeStore } from "../../test-utils/fake-runt
 import type { AgentRuntimeTurnStartInput } from "../shared/runtime-store"
 import { AcpHarnessAdapter, type AcpRuntimeStore, type ACPTransport } from "./index"
 import { ACPProcess } from "./process"
-import type { AgentProcessDescriptor, AgentProcessObserver } from "../../process-observer"
+import type { AgentProcessDescriptor, AgentProcessObserver } from "@claxedo/process-ownership/process-observer"
 import { createSessionTurnLifecycle } from "../shared/turn-lifecycle"
 import { MemoryRuntimeStore } from "../../stores/memory"
 import { executeTestTurn, executionBinding } from "../../test-utils/execution-binding"

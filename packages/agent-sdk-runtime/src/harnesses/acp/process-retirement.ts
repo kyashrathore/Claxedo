@@ -1,4 +1,4 @@
-import type { RetirementResult } from "../../launch"
+import type { RetirementResult } from "@claxedo/process-ownership/launch"
 import type { ACPTransport } from "./transport"
 
 /**

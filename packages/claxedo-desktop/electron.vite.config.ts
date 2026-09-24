@@ -75,7 +75,7 @@ export default defineConfig(({ mode }) => {
         }),
         {
           // The launch gate is spawned by path, not imported, so bundling
-          // agent-sdk-runtime into the main process leaves nothing on disk for
+          // process-ownership into the main process leaves nothing on disk for
           // `resolveLaunchGateChild()` to find. It is copied beside the main
           // bundle and unpacked from the asar, because a process cannot be
           // spawned from inside an archive.
@@ -83,10 +83,10 @@ export default defineConfig(({ mode }) => {
           closeBundle() {
             const src = path.join(
               desktopDir,
-              "../agent-sdk-runtime/dist/launch/launch-gate-child.mjs",
+              "../process-ownership/dist/launch-gate-child.mjs",
             )
             if (!existsSync(src)) {
-              throw new Error(`Cannot package the desktop main process: ${src} does not exist. Build @claxedo/agent-sdk-runtime first.`)
+              throw new Error(`Cannot package the desktop main process: ${src} does not exist. Build @claxedo/process-ownership first.`)
             }
             const dest = path.join(desktopDir, "out/main/launch-gate-child.mjs")
             rmSync(dest, { force: true })

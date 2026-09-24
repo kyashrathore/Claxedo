@@ -42,7 +42,7 @@ import {
   verifyCreationIdentity,
   type RetirementBudgets,
   type RetirementResult,
-} from "@claxedo/agent-sdk-runtime/launch"
+} from "@claxedo/process-ownership/launch"
 
 import { readArray, readNumber, readRecord, readString, readUnknown } from "../shared/json-read"
 import { nodeErrorCode } from "../shared/node-error"

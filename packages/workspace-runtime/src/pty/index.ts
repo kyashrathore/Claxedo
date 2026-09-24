@@ -26,7 +26,7 @@ import {
   type DescendantSweep,
   type LaunchOwnershipStore,
   type RetirementResult,
-} from "@claxedo/agent-sdk-runtime/launch"
+} from "@claxedo/process-ownership/launch"
 import { BIN_DIR, getTerminalEnvVars, isSetupComplete, setupAgentHooks } from "../agent-hooks"
 import { cleanupOrphanedHistory, createDiskHistory, renameHistory } from "./history-disk"
 import { CLEAR_SCROLLBACK, extractContentAfterClear } from "./escape-filter"

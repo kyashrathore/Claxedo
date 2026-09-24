@@ -1,7 +1,7 @@
 import { asRecord, DEFAULT_RECOVERY_BUDGETS } from "@claxedo/agent-runtime-contract"
 import { spawn, type ChildProcess } from "child_process"
-import { resolveHarnessCommand } from "../shared/windows-process"
-import { readCreationIdentity, retire as retireLaunch, retirementSettled, type CreationIdentity, type RetirementResult } from "../../launch"
+import { resolveHarnessCommand } from "@claxedo/process-ownership/windows-process"
+import { readCreationIdentity, retire as retireLaunch, retirementSettled, type CreationIdentity, type RetirementResult } from "@claxedo/process-ownership/launch"
 import { ndJsonStream, type Stream } from "@agentclientprotocol/sdk"
 import {
   createHttpStream,
@@ -12,7 +12,7 @@ import {
   createWebSocketStream,
   type WebSocketStreamOptions,
 } from "@agentclientprotocol/sdk/experimental/ws-client"
-import { harnessSpawnEnv } from "../shared/spawn-env"
+import { harnessSpawnEnv } from "@claxedo/process-ownership/spawn-env"
 
 export type ACPTransportEnv = Record<string, string | undefined>
 

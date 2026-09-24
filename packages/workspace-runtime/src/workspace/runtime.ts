@@ -1,4 +1,5 @@
 import { Log } from "../log"
+import type { AgentProcessObserver } from "@claxedo/process-ownership/process-observer"
 import fs from "fs"
 import path from "path"
 import {
@@ -15,7 +16,6 @@ import {
   type ConnectionProvider,
   type ConnectionSecretResolver,
   type HarnessConnectionDescriptor,
-  type AgentProcessObserver,
   type AgentTurnOutcome,
   type AgentRuntimeRecovery,
 } from "@claxedo/agent-sdk-runtime"
@@ -67,7 +67,7 @@ import {
   mountWorkspacePty,
   type MountedWorkspaceEvents,
 } from "./core"
-import { volatileLaunchOwnership, type LaunchOwnershipOwner, type LaunchOwnershipStore } from "@claxedo/agent-sdk-runtime/launch"
+import { volatileLaunchOwnership, type LaunchOwnershipOwner, type LaunchOwnershipStore } from "@claxedo/process-ownership/launch"
 import type {
   RuntimeConfigApplyStatus,
   WorkspaceCheckpointBlocker,

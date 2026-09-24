@@ -22,7 +22,7 @@ import {
   verifyCreationIdentity,
   type CreationIdentity,
   type IdentityVerdict,
-} from "@claxedo/agent-sdk-runtime/launch"
+} from "@claxedo/process-ownership/launch"
 import { Pty } from "@claxedo/workspace-runtime"
 import {
   embeddedWorkspaceRuntimeActivity,

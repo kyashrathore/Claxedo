@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { codexSpawnEnv, observeCodexAppServerProcess } from "./driver"
-import type { AgentProcessDescriptor, AgentProcessObserver } from "../../process-observer"
+import type { AgentProcessDescriptor, AgentProcessObserver } from "@claxedo/process-ownership/process-observer"
 
 describe("Codex app-server environment", () => {
   test("scrubs the local document installation secret from the child environment", () => {

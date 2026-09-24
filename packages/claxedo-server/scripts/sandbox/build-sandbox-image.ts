@@ -316,10 +316,10 @@ export async function bundleClaxedoWorkspaceRuntimeHost(
   const smokePath = path.join(outDir, IMAGE_SMOKE_FILENAME)
   fs.copyFileSync(new URL(`./${IMAGE_SMOKE_FILENAME}`, import.meta.url), smokePath)
   // The host spawns the launch gate child by path, and the bundle has no
-  // node_modules entry for @claxedo/agent-sdk-runtime to resolve it through;
+  // node_modules entry for @claxedo/process-ownership to resolve it through;
   // resolveLaunchGateChild() finds it beside the bundle.
-  const gateChildSource = path.join(workspacePackageRoot("@claxedo/agent-sdk-runtime"), "dist/launch", LAUNCH_GATE_CHILD_FILENAME)
-  if (!fs.existsSync(gateChildSource)) throw new Error(`${gateChildSource} does not exist; @claxedo/agent-sdk-runtime did not build it`)
+  const gateChildSource = path.join(workspacePackageRoot("@claxedo/process-ownership"), "dist", LAUNCH_GATE_CHILD_FILENAME)
+  if (!fs.existsSync(gateChildSource)) throw new Error(`${gateChildSource} does not exist; @claxedo/process-ownership did not build it`)
   const gateChildPath = path.join(outDir, LAUNCH_GATE_CHILD_FILENAME)
   fs.copyFileSync(gateChildSource, gateChildPath)
   // Content build-id: sha256 over the emitted bundle + generated package.json,

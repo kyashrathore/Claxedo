@@ -34,7 +34,7 @@ import {
   hostTunnelFromEnv,
   managementTargetFromEnv,
 } from "./workspace-relay-env"
-import { volatileLaunchOwnership } from "@claxedo/agent-sdk-runtime/launch"
+import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 
 /** This suite asserts routing, not recovery: the launch records die with the test. */
 const ownership = volatileLaunchOwnership()

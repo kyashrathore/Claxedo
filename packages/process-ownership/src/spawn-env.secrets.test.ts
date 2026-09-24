@@ -13,7 +13,7 @@ import { harnessEnvAllowed, harnessSpawnEnv } from "./spawn-env"
 // WORKSPACE_RUNTIME_*_TOKEN somewhere fails HERE rather than silently
 // becoming readable by agents.
 
-const repoRoot = path.resolve(import.meta.dirname, "../../../../..")
+const repoRoot = path.resolve(import.meta.dirname, "../../..")
 const SECRET_SUFFIXED = /\b(?:CLAXEDO|WORKSPACE_RUNTIME)_[A-Z0-9_]*(?:TOKEN|SECRET|KEY|PASSWORD|CREDENTIALS?|PEM)\b/g
 
 function sourceFiles(dir: string, out: string[] = []): string[] {

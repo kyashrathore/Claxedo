@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto"
 import { spawn } from "child_process"
 import type { SpawnOptions, SpawnedProcess } from "@anthropic-ai/claude-agent-sdk"
-import { observeAgentProcess, type AgentProcessObserver, type AgentProcessObserverHandle } from "../../process-observer"
+import { observeAgentProcess, type AgentProcessObserver, type AgentProcessObserverHandle } from "@claxedo/process-ownership/process-observer"
 import type { ResolvedMcpServer } from "../../mcp-resolver"
 import { errorMessage } from "../shared/sdk-runtime-values"
 import {
@@ -13,7 +13,7 @@ import {
   type LaunchOwnershipStore,
   type RetirementBudgets,
   type RetirementResult,
-} from "../../launch"
+} from "@claxedo/process-ownership/launch"
 
 export function spawnObservedClaudeCodeProcess(input: {
   options: SpawnOptions

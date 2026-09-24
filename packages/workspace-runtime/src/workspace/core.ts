@@ -1,5 +1,5 @@
 import type { AgentSessionStarts } from "@claxedo/agent-runtime-contract"
-import type { LaunchOwnershipStore } from "@claxedo/agent-sdk-runtime/launch"
+import type { LaunchOwnershipStore } from "@claxedo/process-ownership/launch"
 import type { Hono } from "hono"
 import { PtyRoutes, type PtyRouteOptions } from "../routes/pty"
 import { Pty } from "../pty/index"

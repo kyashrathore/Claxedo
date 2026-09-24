@@ -7,7 +7,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import type { WSContext } from "hono/ws"
-import { volatileLaunchOwnership } from "@claxedo/agent-sdk-runtime/launch"
+import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 
 /** This suite asserts real process containment, not record durability. */
 const ownership = volatileLaunchOwnership()

@@ -1,4 +1,4 @@
-import { clearOpaqueTimer } from "./harnesses/shared/opaque-timer"
+import { clearOpaqueTimer } from "@claxedo/helpers"
 export type SseFanoutCleanup = () => void
 export type SseFanoutMeta = { id?: string }
 

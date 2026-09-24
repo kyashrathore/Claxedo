@@ -11,7 +11,7 @@ import {
   type LaunchOwnershipStore,
   type LaunchScope,
   type RetirementResult,
-} from "@claxedo/agent-sdk-runtime/launch"
+} from "@claxedo/process-ownership/launch"
 import { Log } from "../log"
 
 const log = Log.create({ service: "launch-ownership-reconcile" })

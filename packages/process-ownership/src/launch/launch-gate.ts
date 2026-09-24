@@ -279,13 +279,13 @@ export function resolveLaunchGateChild() {
   if (gateChild) return gateChild
   const attempted: string[] = []
   try {
-    const resolved = createRequire(import.meta.url).resolve("@claxedo/agent-sdk-runtime/launch-gate-child")
+    const resolved = createRequire(import.meta.url).resolve("@claxedo/process-ownership/launch-gate-child")
     const spawnable = outsideArchive(resolved)
     const runner = spawnable ? runnerFor(spawnable) : undefined
     if (spawnable && runner) return (gateChild = { file: spawnable, runner })
     attempted.push(spawnable ? `${resolved} (no runner on this host can execute it)` : resolved)
   } catch (error) {
-    attempted.push(`@claxedo/agent-sdk-runtime/launch-gate-child (${launchErrorText(error)})`)
+    attempted.push(`@claxedo/process-ownership/launch-gate-child (${launchErrorText(error)})`)
   }
   for (const candidate of packageRelativeCandidates()) {
     const spawnable = outsideArchive(candidate)
@@ -328,7 +328,7 @@ function packageRelativeCandidates() {
   for (let depth = 0; depth < 8; depth++) {
     candidates.push(path.join(directory, "launch-gate-child.mjs"))
     candidates.push(path.join(directory, "launch-gate-child.ts"))
-    candidates.push(path.join(directory, "dist/launch/launch-gate-child.mjs"))
+    candidates.push(path.join(directory, "dist/launch-gate-child.mjs"))
     candidates.push(path.join(directory, "src/launch/launch-gate-child.ts"))
     const parent = path.dirname(directory)
     if (parent === directory) break

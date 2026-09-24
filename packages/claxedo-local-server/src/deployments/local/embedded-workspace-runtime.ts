@@ -29,7 +29,7 @@ import type { WorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposu
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { configureLocalWorkspaceRuntime } from "@claxedo/server-core/workspace/local-runtime-port"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
-import type { LaunchOwnershipRecord } from "@claxedo/agent-sdk-runtime/launch"
+import type { LaunchOwnershipRecord } from "@claxedo/process-ownership/launch"
 import { createClaxedoRuntimeExposure } from "../../hosts/workspace-runtime/exposure"
 import { claxedoCorsOrigin } from "@claxedo/server-core/hosts/workspace-runtime/cors-origin"
 import { createClaxedoAppliedRuntimeConfig } from "@claxedo/server-core/hosts/workspace-runtime/runtime-config"

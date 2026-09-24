@@ -1,4 +1,4 @@
-import { retirementSettled, type RetirementResult } from "@claxedo/agent-sdk-runtime/launch"
+import { retirementSettled, type RetirementResult } from "@claxedo/process-ownership/launch"
 export type ProcessOwnerKind =
   | "runtime"
   | "sidecar"

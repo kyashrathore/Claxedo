@@ -14,7 +14,7 @@ import type {
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import { GoalCapabilityError } from "./capabilities"
 import type { AdapterCapability, GoalCapabilities, HarnessCapabilityContext, HarnessCapabilities } from "./capabilities"
-import type { AgentProcessObserver } from "./process-observer"
+import type { AgentProcessObserver } from "@claxedo/process-ownership/process-observer"
 import type { AgentMessagePage, AgentMessagePageInput } from "./message-page"
 import type { SessionTitleRequest } from "./title-generation"
 import type {

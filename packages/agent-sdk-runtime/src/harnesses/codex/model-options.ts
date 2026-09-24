@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto"
 import type { AgentConfigOption } from "../../index"
-import type { AgentProcessObserver } from "../../process-observer"
-import { observeAgentProcess } from "../../process-observer"
+import type { AgentProcessObserver } from "@claxedo/process-ownership/process-observer"
+import { observeAgentProcess } from "@claxedo/process-ownership/process-observer"
 import {
   catalogModel,
   modelConfigOption,

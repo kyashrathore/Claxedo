@@ -63,7 +63,7 @@ import { harnessProjection } from "../../harness-projection"
 import { brokeredClaudeConfigDir } from "./config-dir"
 import { requireClaudeExecutable } from "./executable"
 import { CLAUDE_TURN_INPUT_ARGS, createClaudeTurnInput, type ClaudeTurnInput } from "./turn-input"
-import { harnessSpawnEnv } from "../shared/spawn-env"
+import { harnessSpawnEnv } from "@claxedo/process-ownership/spawn-env"
 import { spawnObservedClaudeCodeProcess, type ClaudeDirectLaunch } from "./launch"
 import { goalStopDeadline } from "../shared/request-deadline"
 import {
@@ -74,7 +74,7 @@ import {
 } from "../shared/cancellation-facts"
 import {
   type LaunchOwnershipStore,
-} from "../../launch"
+} from "@claxedo/process-ownership/launch"
 import {
   CLAUDE_DENY_FLOOR,
   CLAUDE_PERMISSION_MODES,
@@ -82,7 +82,7 @@ import {
 } from "../shared/permission-modes"
 import { isClaudeSdkPermissionMode } from "./permission-mode-parity"
 import {
-} from "../../process-observer"
+} from "@claxedo/process-ownership/process-observer"
 
 const CLAUDE_PENDING_PREFIX = "claude-sdk:"
 const MODEL_LIST_TIMEOUT_MS = 30_000

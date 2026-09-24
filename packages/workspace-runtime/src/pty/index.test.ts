@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { spawn as spawnChild, type ChildProcess } from "node:child_process"
-import { volatileLaunchOwnership } from "@claxedo/agent-sdk-runtime/launch"
+import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -391,7 +391,7 @@ describe("Pty unresolved retirement", () => {
 
   test("a store that cannot record ownership refuses the launch before anything is spawned", async () => {
     const { Pty } = await import("./index")
-    const { LaunchRefusedError } = await import("@claxedo/agent-sdk-runtime/launch")
+    const { LaunchRefusedError } = await import("@claxedo/process-ownership/launch")
     const before = Pty.list().length
     const refusing = {
       ...volatileLaunchOwnership(),
