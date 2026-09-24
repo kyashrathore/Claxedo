@@ -4,6 +4,20 @@ export { Avatar, type AvatarProps } from "./avatar"
 export { Button, type ButtonProps } from "./button"
 export { Card, type CardProps, type CardTitleProps, type CardVariant } from "./card"
 export { Checkbox, type CheckboxProps } from "./checkbox"
+export { ClaxedoIcon, ClaxedoIconV2, type ClaxedoIconName, type ClaxedoIconProps } from "./controls/claxedo-icon"
+export { ClaxedoIconButton, type ClaxedoIconButtonProps } from "./controls/claxedo-icon-button"
+export { ClaxedoLogo } from "./controls/claxedo-logo"
+export { DelayedLoading } from "./controls/delayed-loading"
+export {
+  browserToolbarSlot,
+  fileHeaderActionsSlot,
+  reviewControlsSlot,
+  reviewToolbarSlot,
+  setBrowserToolbarSlot,
+  setFileHeaderActionsSlot,
+  setReviewControlsSlot,
+  setReviewToolbarSlot,
+} from "./controls/portal-slot"
 export { Collapsible, type CollapsibleProps } from "./collapsible"
 export {
   Dialog,
@@ -67,6 +81,7 @@ export {
   type SegmentedControlItemProps,
 } from "./segmented-control"
 export { Select, type SelectProps } from "./select"
+export { SemanticIcon, type SemanticIconConcept } from "./semantic-icon"
 export { SplitButton, SplitButtonAction, SplitButtonMenuTrigger } from "./split-button"
 export { Switch, type SwitchProps } from "./switch"
 export { TabStateIndicator } from "./tab-state-indicator"
@@ -75,9 +90,6 @@ export { Tag, type TagProps } from "./tag"
 export { TextInput, type TextInputProps } from "./text-input"
 export { TextShimmer } from "./text-shimmer"
 export { Textarea, type TextareaProps } from "./textarea"
-export { ThemeProvider, useTheme } from "./theme/provider"
-export { defaultThemeId, type ColorMode, type ColorScheme, type ThemeRecord, type ThemeStylesheet } from "./theme/model"
-export { type ThemeStore } from "./theme/store"
 export { Toast, showToast, toaster, type ToastAction, type ToastOptions, type ToastRegionProps } from "./toast"
 export { Tooltip, type TooltipProps } from "./tooltip"
 export { Wordmark } from "./wordmark"

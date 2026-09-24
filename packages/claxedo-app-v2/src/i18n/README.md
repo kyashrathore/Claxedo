@@ -34,13 +34,17 @@ Lookup order: the current locale, then English, then the key itself. Templates u
 
 ## Locale
 
-`I18nProvider` sits under the session stores and above the theme in `src/app.tsx`. The locale is detected from `navigator.languages` on first run and persisted under `claxedo:locale`. Changing it sets `<html lang>` to the locale's `intlTag`.
+`I18nProvider` sits under the auth provider and above the theme, the router and the server scope in `src/app.tsx`, so the locale survives a sign-in or sign-out that rebuilds the server scope. The locale is detected from `navigator.languages` on first run and persisted under `claxedo:locale`. Changing it sets `<html lang>` to the locale's `intlTag`.
 
 The manifest is `locales.ts`: seventeen codes (`en`, `zh`, `zht`, `ko`, `de`, `es`, `fr`, `da`, `ja`, `pl`, `ru`, `bs`, `ar`, `no`, `br`, `th`, `tr`). `br` is the code the old app persisted for Brazilian Portuguese; its `intlTag` is `pt-BR`. Traditional Chinese is chosen for a `Hant` script tag or a TW, HK or MO region.
 
 ## Moving strings from the legacy locales
 
 `src/legacy/platform/i18n/<locale>.ts` holds the old flat dictionaries. Copy the keys a domain still uses into its `i18n.ts` under new domain-prefixed names, for every language that has them. Keys for deleted features are not carried.
+
+## Error copy
+
+`useErrorCopy()` returns `(error: AppError) => { title, message, retry }`: the one table from an error class (`auth`, `rate_limit`, `network`, `not_found`, `conflict`, `invalid`, `internal`) to what the user reads, in all seventeen locales (`errors/<locale>.ts`). A domain may add copy for its own error codes (such as review's git codes) and fall back to this table for every other failure; the class copy lives only here.
 
 ## Flows
 

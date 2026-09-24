@@ -3,6 +3,8 @@ import type { QueryClient } from "@tanstack/solid-query"
 import type { Account, AccountCheck, AccountKeyInput, EffectiveAccounts, MachineLogin } from "./account-types"
 import type { CloudCreateInput, CloudWorkspace, CodeHostConnection, CodeHostRepository } from "./cloud-types"
 import type { ConnectionState, ServerEvent } from "./events"
+import type { FolderQueries, FoldersApi } from "./folders"
+import type { HarnessConfigApi } from "./harness-config"
 import type {
   DiffFile,
   DiffScope,
@@ -35,11 +37,14 @@ import type {
   FeatureAvailability,
   FetchQuery,
   GoalAction,
+  HarnessLogin,
   HarnessOptions,
   Machine,
   Placement,
   Project,
   ProjectSource,
+  ProjectUpdate,
+  PromptDelivery,
   PromptInput,
   QueuedPrompt,
   QueuedPromptAction,
@@ -51,6 +56,7 @@ import type {
   SessionRow,
   SessionSnapshot,
   SessionStatusRead,
+  Subagent,
   TranscriptPage,
 } from "./types"
 import type { UsageRequest, UsageSummary } from "./usage-types"
@@ -60,7 +66,7 @@ export type SessionsApi = {
   readonly snapshot: (ref: SessionRef) => Promise<SessionSnapshot>
   readonly older: (ref: SessionRef, cursor: string) => Promise<TranscriptPage>
   readonly create: (input: SessionCreateInput) => Promise<SessionRow>
-  readonly prompt: (ref: SessionRef, input: PromptInput) => Promise<void>
+  readonly prompt: (ref: SessionRef, input: PromptInput) => Promise<PromptDelivery>
   readonly stop: (ref: SessionRef) => Promise<void>
   readonly reply: (ref: SessionRef, requestId: RequestId, reply: AgentRequestReply) => Promise<void>
   readonly rename: (ref: SessionRef, title: string) => Promise<void>
@@ -71,11 +77,12 @@ export type SessionsApi = {
   readonly queue: (ref: SessionRef) => Promise<readonly QueuedPrompt[]>
   readonly controlQueued: (ref: SessionRef, seq: number, action: QueuedPromptAction) => Promise<QueuedPromptControl>
   readonly controlGoal: (ref: SessionRef, action: GoalAction) => Promise<SessionGoal | undefined>
+  readonly subagents: (ref: SessionRef) => Promise<readonly Subagent[]>
 }
 
 export type ProjectsApi = {
   readonly create: (input: { readonly name?: string; readonly source: ProjectSource }) => Promise<Project>
-  readonly update: (id: ProjectId, input: { readonly name?: string; readonly env?: Record<string, string> }) => Promise<Project>
+  readonly update: (id: ProjectId, input: ProjectUpdate) => Promise<Project>
   readonly remove: (id: ProjectId) => Promise<void>
 }
 
@@ -126,6 +133,10 @@ export type MarketplaceApi = {
   readonly removeSource: (id: string) => Promise<void>
 }
 
+export type LivePluginsApi = {
+  readonly remove: (pluginId: string) => Promise<void>
+}
+
 export type ServerQueries = {
   readonly projects: {
     readonly list: () => FetchQuery<readonly Project[]>
@@ -153,7 +164,11 @@ export type ServerQueries = {
     readonly repositories: (connectionId: string) => FetchQuery<readonly CodeHostRepository[]>
   }
   readonly cloud: { readonly list: () => FetchQuery<readonly CloudWorkspace[]> }
-  readonly harnesses: { readonly options: (placementId: PlacementId, harness: string) => FetchQuery<HarnessOptions> }
+  readonly folders: FolderQueries
+  readonly harnesses: {
+    readonly options: (placementId: PlacementId, harness: string) => FetchQuery<HarnessOptions>
+    readonly logins: () => FetchQuery<readonly HarnessLogin[]>
+  }
   readonly files: {
     readonly tree: (placementId: PlacementId, path: string) => FetchQuery<readonly FileNode[]>
     readonly content: (placementId: PlacementId, path: string) => FetchQuery<FileContent>
@@ -182,5 +197,9 @@ export type Server = {
   readonly cloud: CloudApi
   readonly accounts: AccountsApi
   readonly marketplace: MarketplaceApi
+  readonly folders: FoldersApi
+  readonly livePlugins: LivePluginsApi
+  readonly harnessConfig: HarnessConfigApi
   readonly queries: ServerQueries
+  readonly request: (path: string, init?: RequestInit) => Promise<Response>
 }

@@ -3,12 +3,15 @@ import { createSignal } from "solid-js"
 import { createAccountsApi } from "./accounts"
 import { createCapabilities, type CapabilitiesOwner } from "./capabilities"
 import { createCloudApi } from "./cloud"
+import { createFoldersApi } from "./folders"
 import type { ServerConfig } from "./config"
 import { isRetryable, toAppError } from "./errors"
 import { createEventIntake } from "./event-intake"
 import type { ConnectionState } from "./events"
 import { createGitApi } from "./git"
 import { createMarketplaceApi } from "./marketplace"
+import { createHarnessConfigApi } from "./harness-config"
+import { createLivePluginsApi } from "./live-plugins"
 import type { ProjectId } from "./ids"
 import type { Server, ServerQueries } from "./api"
 import { createProjectsApi } from "./projects"
@@ -21,10 +24,10 @@ import { createTransport, type Transport } from "./transport"
 import { createWorkspaces, type Workspaces } from "./workspaces"
 import { createWorktreeCreator } from "./worktrees"
 
-export const QUERY_GC_TIME_MS = 10 * 60_000
-export const QUERY_RETRY_LIMIT = 2
+const QUERY_GC_TIME_MS = 10 * 60_000
+const QUERY_RETRY_LIMIT = 2
 
-export function createQueryClient() {
+function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
       queries: {
@@ -82,10 +85,14 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     projects: createProjectsApi(transport, queryClient, workspaces.refresh),
     placements: { byId: workspaces.byId, list: workspaces.list, createWorktree: createWorktreeCreator(transport, workspaces) },
     terminals: createTerminalsApi(transport, workspaces),
-    git: createGitApi(transport, workspaces),
+    git: createGitApi(transport, workspaces, queryClient),
     cloud: createCloudApi(transport, workspaces, project),
     accounts: createAccountsApi(transport, queryClient),
     marketplace: createMarketplaceApi(transport, queryClient),
+    folders: createFoldersApi(transport),
+    livePlugins: createLivePluginsApi(transport),
+    harnessConfig: createHarnessConfigApi(transport, workspaces),
+    request: transport.request,
   }
 }
 

@@ -1,9 +1,17 @@
 @layer components {
-  .ui-segmented-control.segmented-control--full-width {
+  .v2-segmented-control.segmented-control--full-width {
     width: 100%;
   }
 
-  .ui-segmented-control {
+  .v2-segmented-control.segmented-control--fit {
+    width: auto;
+  }
+
+  .segmented-control--fit .v2-segmented-control-item {
+    flex: 1 1 auto;
+  }
+
+  .v2-segmented-control {
     box-sizing: border-box;
     display: flex;
     flex-direction: row;
@@ -19,7 +27,7 @@
     flex: none;
   }
 
-  .ui-segmented-control-item {
+  .v2-segmented-control-item {
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
@@ -49,28 +57,28 @@
       box-shadow 0.12s ease;
   }
 
-  .ui-segmented-control-item:where(:disabled) {
+  .v2-segmented-control-item:where(:disabled) {
     cursor: not-allowed;
     opacity: 0.45;
   }
 
-  .ui-segmented-control-item:where(:focus-visible) {
+  .v2-segmented-control-item:where(:focus-visible) {
     outline: 2px solid var(--v2-border-border-focus);
     outline-offset: 1px;
     z-index: 2;
   }
 
-  .ui-segmented-control-item:where([data-pressed]) {
+  .v2-segmented-control-item:where([data-pressed]) {
     background: var(--v2-background-bg-base);
     color: var(--v2-text-text-base);
     box-shadow: 0 0 0 0.5px var(--v2-border-border-strong);
     z-index: 1;
   }
 
-  [data-slot="segmented-control-item-label"] {
+  [data-slot="v2-segmented-control-item-label"] {
     display: flex;
     flex-direction: row;
-    justify-content: center;
+    justify-content: safe center;
     align-items: center;
     padding: 0;
     min-width: 0;

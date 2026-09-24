@@ -1,15 +1,15 @@
 import type { Page } from "@playwright/test"
-import { expect, SCRIPTED_ACP_HARNESS, test } from "../harness"
+import { expect, sessionRoute, test, UI } from "../harness"
 
-const TERMINAL_URL = /\/w\/[^/]+\/t\/[^/?]+$/
+const TERMINAL_URL = /\/w\/[^/]+\/terminal\/pty_[^/?]+$/
 
-async function createServerProject(url: string, name: string, directory: string) {
-  const response = await fetch(new URL("/api/claxedo/projects", url), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name, source: { kind: "directory", directory } }),
-  })
-  expect(response.status).toBe(201)
+async function serverTerminalIds(serverUrl: string, directory: string): Promise<readonly string[]> {
+  const url = new URL("/api/wr/pty", serverUrl)
+  url.searchParams.set("directory", directory)
+  const response = await fetch(url)
+  expect(response.status).toBe(200)
+  const rows = (await response.json()) as readonly { readonly id: string }[]
+  return rows.map((row) => row.id)
 }
 
 type ReplayInput = { readonly path: string; readonly marker: string }
@@ -51,38 +51,34 @@ async function ptyReplay(app: Page, directory: string, terminalId: string, marke
   )
 }
 
+function terminalPane(app: Page, terminalId: string) {
+  return app.locator(`[data-testid="terminal-pane"][data-terminal-id="${terminalId}"]`)
+}
+
 test.skip(({ isMobile }) => isMobile, "flow 13 runs at desktop width")
 
-test("13 terminal: run a command, its output replays from the server, reload reattaches", async ({
-  stack,
-  api,
-  app,
-}) => {
-  const workspace = await stack.daemon.makeWorkspace("terminal")
-  await createServerProject(stack.url, "Terminal", workspace.directory)
-  const session = await api.createSession(workspace.directory, { title: "Terminal", harness: SCRIPTED_ACP_HARNESS })
+test("13 terminal: run a command, its output replays from the server, reload reattaches, closing leaves the draft", async ({ stack, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("terminal", "Terminal")
 
-  await app.goto(`${stack.url}/w/${encodeURIComponent(workspace.id)}/s/${encodeURIComponent(session.id)}`)
-  await expect(app.getByRole("tablist", { name: "Open panes" })).toBeVisible()
-  await app.keyboard.press("ControlOrMeta+Shift+P")
-  const palette = app.getByRole("dialog", { name: "Command palette" })
-  await palette.getByRole("combobox", { name: "Command palette" }).fill("New terminal")
-  await palette.getByRole("option", { name: /^New terminal/ }).click()
-
-  const pane = app.getByRole("region", { name: "Terminal pane" })
-  await expect(pane).toHaveAttribute("data-terminal-connection", "attached")
+  await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
+  await app.getByRole("button", { name: "New Terminal", exact: true }).click()
+  await app.getByRole("button", { name: /^Shell\b/ }).click()
   await expect(app).toHaveURL(TERMINAL_URL)
   const terminalId = decodeURIComponent(new URL(app.url()).pathname.split("/").at(-1) ?? "")
+  await expect(terminalPane(app, terminalId)).toHaveAttribute("data-terminal-connected", "true")
 
-  await pane.click()
+  await app.getByRole("textbox", { name: "Terminal input" }).focus()
   await app.keyboard.type("echo tools-e2e-$((6*7))")
   await app.keyboard.press("Enter")
   expect(await ptyReplay(app, workspace.directory, terminalId, "tools-e2e-42")).toContain("tools-e2e-42")
 
   await app.reload()
   await expect(app).toHaveURL(TERMINAL_URL)
-  await expect(app.getByRole("region", { name: "Terminal pane" })).toHaveAttribute(
-    "data-terminal-connection",
-    "attached",
-  )
+  await expect(terminalPane(app, terminalId)).toHaveAttribute("data-terminal-connected", "true")
+  expect(await serverTerminalIds(stack.url, workspace.directory)).toContain(terminalId)
+
+  await app.getByRole("button", { name: /^Close terminal: / }).click()
+  await expect(terminalPane(app, terminalId)).toHaveCount(0)
+  await expect(app.getByRole("button", { name: /^Close terminal: / })).toHaveCount(0)
+  await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
 })

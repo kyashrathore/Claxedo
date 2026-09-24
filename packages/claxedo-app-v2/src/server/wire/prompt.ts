@@ -1,7 +1,7 @@
 import type { PromptInput as RuntimePromptInput } from "@claxedo/agent-runtime-contract"
-import type { PromptAttachment, PromptInput } from "../types"
+import type { PromptAttachment, PromptDelivery, PromptInput } from "../types"
 
-export const DEFAULT_AGENT = "build"
+const DEFAULT_AGENT = "build"
 
 type WirePart = RuntimePromptInput["parts"][number]
 
@@ -35,6 +35,14 @@ export function promptBody(input: PromptInput, messageId: string) {
     ...(input.model?.variant !== undefined ? { variant: input.model.variant } : {}),
     ...(input.effort !== undefined ? { variant: input.effort } : {}),
     ...(input.permissionMode !== undefined ? { permissionMode: input.permissionMode } : {}),
+    ...(input.serviceTier !== undefined ? { serviceTier: input.serviceTier } : {}),
+    ...(input.delivery ? { delivery: input.delivery } : {}),
     parts: [{ type: "text", text: input.text } as WirePart, ...input.attachments.map(attachmentPart)],
   }
+}
+
+export function promptDeliveryFromWire(body: unknown): PromptDelivery {
+  const delivery = body && typeof body === "object" ? (body as { delivery?: unknown }).delivery : undefined
+  if (delivery === "queue" || delivery === "steer") return delivery
+  return body === undefined ? "start" : "steer"
 }

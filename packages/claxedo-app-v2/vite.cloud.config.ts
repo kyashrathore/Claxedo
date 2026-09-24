@@ -186,6 +186,7 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
     },
     worker: {
       format: "es",
+      plugins: () => [claxedoWorkspaceSource(), solidPlugin()],
     },
     optimizeDeps: {
       exclude: ["@pierre/diffs", "@pierre/theming"],
@@ -247,6 +248,10 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
         {
           find: "@shikijs/themes",
           replacement: `${shikiThemesDist}index.mjs`,
+        },
+        {
+          find: "@claxedo/app-v2/ui",
+          replacement: normalizePath(fileURLToPath(new URL("./src/ui/index.ts", import.meta.url))),
         },
         {
           find: "lru_map",

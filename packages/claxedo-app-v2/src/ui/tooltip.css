@@ -1,13 +1,13 @@
 @layer components {
-  .ui-tooltip-trigger {
+  .v2-tooltip-trigger {
     display: flex;
   }
 
-  [data-popper-positioner]:has([data-component="tooltip"]) {
+  [data-popper-positioner]:has([data-component="v2-tooltip"]) {
     z-index: 1000;
   }
 
-  .ui-tooltip {
+  .v2-tooltip {
     z-index: 1000;
     box-sizing: border-box;
     display: inline-flex;
@@ -63,8 +63,8 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .ui-tooltip,
-    .ui-tooltip[data-closed] {
+    .v2-tooltip,
+    .v2-tooltip[data-closed] {
       animation: none;
     }
   }

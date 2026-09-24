@@ -19,8 +19,8 @@ export interface IconProps extends ComponentProps<"svg"> {
   size?: IconSize
 }
 
-const spriteId = "claxedo-icon-sprite"
-const symbolId = (name: IconName) => `claxedo-icon-${name}`
+const spriteId = "v2-icon-sprite"
+const symbolId = (name: IconName) => `v2-icon-${name}`
 
 function ensureSprite() {
   if (document.getElementById(spriteId)) return
@@ -36,13 +36,13 @@ export function Icon(props: IconProps) {
   onMount(ensureSprite)
   return (
     <svg
-      data-component="icon"
-      data-slot="icon-svg"
+      data-component="v2-icon"
+      data-slot="v2-icon-svg"
       data-icon={local.name}
       data-size={local.size || "normal"}
       classList={{
-        "ui-icon": true,
-        "ui-icon-svg": true,
+        "v2-icon": true,
+        "v2-icon-svg": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}

@@ -1,7 +1,8 @@
 import { createSignal, Show, type Component } from "solid-js"
 import { useServer, type ProjectSource } from "@/server"
-import { Button, Field, SegmentedControl, SegmentedControlItem, TextInput } from "@/ui"
+import { Button, Field, SegmentedControl, SegmentedControlItem, TextInput, useDialog } from "@/ui"
 import type { AddProjectFlow } from "../add-project"
+import { pickProjectFolderWith } from "../pick-project-folder"
 import { useProjectsText } from "../i18n"
 import { draftProjectName } from "../model"
 import { RepositoryPicker } from "./repository-picker"
@@ -13,14 +14,11 @@ function folderSource(path: string): ProjectSource | undefined {
   return trimmed ? { kind: "folder", path: trimmed } : undefined
 }
 
-const FolderField: Component<{
-  path: string
-  onPath: (path: string) => void
-  pickFolder?: () => Promise<string | undefined>
-}> = (props) => {
+const FolderField: Component<{ path: string; onPath: (path: string) => void }> = (props) => {
   const t = useProjectsText()
+  const pickFolder = pickProjectFolderWith(useDialog())
   const browse = async () => {
-    const picked = await props.pickFolder?.()
+    const picked = await pickFolder()
     if (picked) props.onPath(picked)
   }
   return (
@@ -36,18 +34,16 @@ const FolderField: Component<{
             onInput={(event) => props.onPath(event.currentTarget.value)}
           />
         </Field.Control>
-        <Show when={props.pickFolder}>
-          <Button variant="outline" onClick={() => void browse()}>
-            {t("projects.add.folder.browse")}
-          </Button>
-        </Show>
+        <Button variant="outline" onClick={() => void browse()}>
+          {t("projects.add.folder.browse")}
+        </Button>
       </div>
       <span class="projects-hint">{t("projects.add.folder.hint")}</span>
     </Field>
   )
 }
 
-export const SourceStep: Component<{ flow: AddProjectFlow; pickFolder?: () => Promise<string | undefined> }> = (props) => {
+export const SourceStep: Component<{ flow: AddProjectFlow }> = (props) => {
   const t = useProjectsText()
   const server = useServer()
   const draft = props.flow.draft
@@ -82,13 +78,13 @@ export const SourceStep: Component<{ flow: AddProjectFlow; pickFolder?: () => Pr
         <span class="projects-hint">{t("projects.add.name.hint")}</span>
       </Field>
       <Show when={offersFolder()}>
-        <SegmentedControl class="self-start" value={mode()} onChange={switchMode} aria-label={t("projects.source")}>
+        <SegmentedControl class="self-start segmented-control--fit" value={mode()} onChange={switchMode} aria-label={t("projects.source")}>
           <SegmentedControlItem value="repository">{t("projects.add.source.repository")}</SegmentedControlItem>
           <SegmentedControlItem value="folder">{t("projects.add.source.folder")}</SegmentedControlItem>
         </SegmentedControl>
       </Show>
       <Show when={mode() === "folder"}>
-        <FolderField path={folder()} onPath={useFolder} {...(props.pickFolder ? { pickFolder: props.pickFolder } : {})} />
+        <FolderField path={folder()} onPath={useFolder} />
       </Show>
       <Show when={mode() === "repository"}>
         <RepositoryPicker source={repository()} onSource={useRepository} />

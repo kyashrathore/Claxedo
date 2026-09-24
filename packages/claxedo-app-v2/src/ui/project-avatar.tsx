@@ -40,27 +40,27 @@ export function ProjectAvatar(props: ProjectAvatarProps) {
   return (
     <div
       {...rest}
-      data-component="project-avatar"
+      data-component="v2-project-avatar"
       data-unread={split.unread ? "" : undefined}
       classList={{
-        "ui-project-avatar": true,
+        "v2-project-avatar": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}
       style={typeof split.style === "object" ? split.style : undefined}
     >
       <div
-        data-slot="project-avatar-surface"
-        class="ui-project-avatar-surface"
+        data-slot="v2-project-avatar-surface"
+        class="v2-project-avatar-surface"
         data-variant={split.variant ?? "gray"}
         data-has-image={split.src ? "" : undefined}
       >
         <Show when={split.src} fallback={first(split.fallback)}>
-          {(value) => <img src={value()} draggable={false} data-slot="project-avatar-image" />}
+          {(value) => <img src={value()} draggable={false} data-slot="v2-project-avatar-image" />}
         </Show>
       </div>
       <Show when={split.unread}>
-        <span data-slot="project-avatar-unread-dot" aria-hidden="true" />
+        <span data-slot="v2-project-avatar-unread-dot" aria-hidden="true" />
       </Show>
     </div>
   )

@@ -1,0 +1,40 @@
+{
+  "name": "@claxedo/plugin-pages",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Pages over the documents API, as a Claxedo app plugin",
+  "license": "MIT",
+  "exports": {
+    ".": {
+      "types": "./src/app.tsx",
+      "development": "./src/app.tsx",
+      "default": "./src/app.tsx"
+    },
+    "./package.json": "./package.json"
+  },
+  "claxedo": {
+    "id": "pages",
+    "name": "Pages",
+    "version": "0.1.0",
+    "app": "./src/app.tsx",
+    "requires": [
+      "documents"
+    ],
+    "server": {
+      "routes": [],
+      "operations": [
+        "documents.*"
+      ]
+    }
+  },
+  "dependencies": {
+    "@claxedo/plugin-api": "workspace:*"
+  },
+  "peerDependencies": {
+    "solid-js": "1.9.12"
+  },
+  "devDependencies": {
+    "solid-js": "1.9.12"
+  }
+}

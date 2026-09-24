@@ -22,6 +22,7 @@ const en = {
   "terminal.loadFailed": "The terminals could not be loaded.",
   "terminal.startFailed": "The terminal could not start in this window.",
   "terminal.createFailed": "The terminal could not be created.",
+  "terminal.closeFailed": "The terminal could not be ended. Its shell may still be running.",
   "terminal.failed.title": "The terminal stopped",
   "terminal.agent.working": "Agent working",
   "terminal.agent.idle": "Agent idle",

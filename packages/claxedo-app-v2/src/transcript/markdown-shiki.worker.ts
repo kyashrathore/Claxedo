@@ -2,6 +2,7 @@
 
 import { ShikiStreamTokenizer } from "@shikijs/stream"
 import { createHighlighter, getTokenStyleObject, stringifyTokenStyle, type ThemedToken } from "shiki"
+import { codeThemeName } from "./code-theme-name"
 import { highlightGrammar, resolveHighlightLanguage } from "./markdown-shiki-language"
 import type { MarkdownToken, MarkdownWorkerRequest, MarkdownWorkerResponse } from "./markdown-worker-protocol"
 import { createLatestWorkerQueue } from "./markdown-worker-queue"
@@ -44,7 +45,7 @@ async function highlight(request: Extract<MarkdownWorkerRequest, { type: "highli
     }
 
     if (request.complete) {
-      const result = instance.codeToTokens(request.text, { lang: language, theme: "OpenCode" })
+      const result = instance.codeToTokens(request.text, { lang: language, theme: codeThemeName })
       streams.delete(request.key)
       post({
         type: "highlight",
@@ -67,7 +68,7 @@ async function highlight(request: Extract<MarkdownWorkerRequest, { type: "highli
       ? {
           language,
           source: "",
-          tokenizer: new ShikiStreamTokenizer({ highlighter: instance, lang: language, theme: "OpenCode" }),
+          tokenizer: new ShikiStreamTokenizer({ highlighter: instance, lang: language, theme: codeThemeName }),
         }
       : previous
     const result = await stream.tokenizer.enqueue(request.text.slice(stream.source.length))

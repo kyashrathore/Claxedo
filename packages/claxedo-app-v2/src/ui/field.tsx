@@ -38,9 +38,9 @@ function useField() {
 }
 
 const CONTROL_SELECTOR = [
-  "[data-slot='text-input-input']",
-  "[data-slot='textarea-textarea']",
-  "[data-slot='inline-input-input']",
+  "[data-slot='v2-text-input-input']",
+  "[data-slot='v2-textarea-textarea']",
+  "[data-slot='v2-inline-input-input']",
 ].join(", ")
 
 export interface FieldProps extends ComponentProps<"div"> {
@@ -86,7 +86,7 @@ function FieldRoot(props: ParentProps<FieldProps>) {
     if (!(control instanceof HTMLInputElement) && !(control instanceof HTMLTextAreaElement)) return
 
     const shellNode = control.closest(
-      "[data-component='text-input'], [data-component='textarea'], [data-component='inline-input']",
+      "[data-component='v2-text-input'], [data-component='v2-textarea'], [data-component='v2-inline-input']",
     )
     const shell = shellNode instanceof HTMLElement ? shellNode : null
 
@@ -125,7 +125,7 @@ function FieldRoot(props: ParentProps<FieldProps>) {
       <div
         {...rest}
         ref={rootRef}
-        data-component="field"
+        data-component="v2-field"
         data-invalid={local.invalid ? "" : undefined}
         classList={{
           ...local.classList,
@@ -165,19 +165,19 @@ function FieldLabel(props: ParentProps<FieldLabelProps>) {
       {...rest}
       id={field.labelId}
       for={field.controlId}
-      data-slot="field-label"
+      data-slot="v2-field-label"
       classList={{
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}
     >
-      <span data-slot="field-label-text">{local.children}</span>
+      <span data-slot="v2-field-label-text">{local.children}</span>
       <Show when={local.tooltip}>
         {(tooltip) => (
           <Tooltip value={tooltip()}>
             <button
               type="button"
-              data-slot="field-label-info" class="ui-field-label-info"
+              data-slot="v2-field-label-info" class="v2-field-label-info"
               aria-label={tooltip()}
               onClick={(e) => e.stopPropagation()}
             >
@@ -203,7 +203,7 @@ function FieldPrefix(props: ParentProps<ComponentProps<"div">>) {
     <div
       {...rest}
       id={field.prefixId}
-      data-slot="field-prefix"
+      data-slot="v2-field-prefix"
       classList={{
         ...local.classList,
         [local.class ?? ""]: !!local.class,
@@ -227,7 +227,7 @@ function FieldSuffix(props: ParentProps<ComponentProps<"div">>) {
     <div
       {...rest}
       id={field.suffixId}
-      data-slot="field-suffix"
+      data-slot="v2-field-suffix"
       classList={{
         ...local.classList,
         [local.class ?? ""]: !!local.class,
@@ -244,7 +244,7 @@ function FieldControl(props: ParentProps<ComponentProps<"div">>) {
   return (
     <div
       {...rest}
-      data-slot="field-control"
+      data-slot="v2-field-control"
       classList={{
         ...local.classList,
         [local.class ?? ""]: !!local.class,

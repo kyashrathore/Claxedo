@@ -6,6 +6,7 @@ import type {
   AgentQuestion,
   AgentQuestionAnswer,
   AgentSnapshotFileDiff,
+  AgentSubagentUpdate,
   AgentTodo,
   RuntimeGoalSnapshot,
 } from "@claxedo/agent-runtime-contract"
@@ -54,13 +55,28 @@ export type ProjectSource =
   | { readonly kind: "connectedRepository"; readonly connectionId: string; readonly fullName: string }
   | { readonly kind: "folder"; readonly path: string }
 
+export type ProjectIcon = { readonly override?: string; readonly color?: string }
+
+export type ProjectCommands = { readonly start?: string }
+
 export type Project = {
   readonly id: ProjectId
   readonly name: string
   readonly source?: ProjectSource
+  readonly directory?: string
+  readonly icon?: ProjectIcon
+  readonly commands?: ProjectCommands
+  readonly available: boolean
   readonly env: Readonly<Record<string, string>>
   readonly createdAt: number
   readonly updatedAt: number
+}
+
+export type ProjectUpdate = {
+  readonly name?: string
+  readonly env?: Readonly<Record<string, string>>
+  readonly icon?: ProjectIcon
+  readonly commands?: ProjectCommands
 }
 
 export type RetryAction = {
@@ -105,6 +121,7 @@ export type AgentRequestReply =
 
 export type Todo = AgentTodo
 export type FileDiff = AgentSnapshotFileDiff
+export type Subagent = AgentSubagentUpdate
 
 export type SessionPage = { readonly rows: readonly SessionRow[]; readonly nextCursor?: string }
 
@@ -112,7 +129,7 @@ export type TranscriptPage = { readonly entries: readonly TranscriptEntry[]; rea
 
 export type SessionGoal = RuntimeGoalSnapshot
 
-export type GoalAction = "pause" | "resume" | "remove"
+export type GoalAction = "pause" | "resume" | "remove" | "stop"
 
 export type SessionGoalState = {
   readonly goal: SessionGoal | undefined
@@ -136,6 +153,10 @@ export type PromptAttachment =
   | { readonly kind: "image"; readonly dataUrl: string; readonly name?: string; readonly mime: string }
   | { readonly kind: "text"; readonly text: string; readonly label?: string }
 
+export type PromptDeliveryRequest = "queue" | "steer"
+
+export type PromptDelivery = "start" | PromptDeliveryRequest
+
 export type PromptInput = {
   readonly clientRequestId: string
   readonly messageId?: string
@@ -145,7 +166,9 @@ export type PromptInput = {
   readonly model?: ModelChoice
   readonly effort?: string
   readonly permissionMode?: string
+  readonly serviceTier?: string
   readonly goal?: { readonly objective: string }
+  readonly delivery?: PromptDeliveryRequest
 }
 
 export type SessionCreateInput = {
@@ -225,6 +248,8 @@ export type HarnessModel = {
   readonly connected: boolean
   readonly efforts: readonly string[]
 }
+
+export type HarnessLogin = { readonly harness: string; readonly signedIn: boolean; readonly providerIds: readonly string[] }
 
 export type HarnessOptions = {
   readonly models: readonly HarnessModel[]

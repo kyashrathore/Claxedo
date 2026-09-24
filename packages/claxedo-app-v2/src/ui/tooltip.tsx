@@ -45,9 +45,9 @@ export function Tooltip(props: TooltipProps) {
           <KobalteTooltip.Trigger
             ref={trigger}
             as="div"
-            data-component="tooltip-trigger"
+            data-component="v2-tooltip-trigger"
             class={local.class}
-            classList={{ "ui-tooltip-trigger": true }}
+            classList={{ "v2-tooltip-trigger": true }}
             onPointerDownCapture={guard.arm}
             onKeyDownCapture={(event: KeyboardEvent) => {
               if (event.key === "Enter" || event.key === " ") guard.arm()
@@ -63,11 +63,11 @@ export function Tooltip(props: TooltipProps) {
                 const theme = trigger?.closest("[data-theme]")?.getAttribute("data-theme")
                 if (theme) element.setAttribute("data-theme", theme)
               }}
-              data-component="tooltip"
+              data-component="v2-tooltip"
               data-placement={props.placement}
               data-force-open={local.forceOpen}
               class={local.contentClass}
-              classList={{ "ui-tooltip": true }}
+              classList={{ "v2-tooltip": true }}
               style={local.contentStyle}
               onPointerDownOutside={(event) => {
                 guard.pointerDownOutside(event.target)

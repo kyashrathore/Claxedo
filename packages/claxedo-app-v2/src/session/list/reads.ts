@@ -89,7 +89,7 @@ async function reread(context: ReadContext, mode: RereadMode): Promise<void> {
   if (kind !== "live" && kind !== "failed") return
   send({ type: "rereadStarted" })
   try {
-    send({ type: "rereadFetched", window: await readWindow(context, undefined, true), mode })
+    send({ type: "rereadFetched", window: await readWindow(context, undefined, mode === "replace"), mode })
   } catch (cause) {
     send({ type: "rereadFailed", error: toAppError(cause) })
   }

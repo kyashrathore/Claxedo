@@ -4,7 +4,8 @@ export type SessionScreenTextKey =
   | `sessionScreen.timeline.${TimelineTextKey}`
   | "sessionScreen.loading"
   | "sessionScreen.untitled"
-  | "sessionScreen.plan.title"
+  | "sessionScreen.subagent.label"
+  | "sessionScreen.subagent.task"
   | "sessionScreen.draft.title"
   | "sessionScreen.action.retry"
   | "sessionScreen.missing"
@@ -68,7 +69,8 @@ export type SessionScreenTextKey =
 export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.loading": "Loading messages...",
   "sessionScreen.untitled": "Session",
-  "sessionScreen.plan.title": "Plan",
+  "sessionScreen.subagent.label": "Subagent",
+  "sessionScreen.subagent.task": "Delegated task",
   "sessionScreen.draft.title": "New session",
   "sessionScreen.action.retry": "Retry",
   "sessionScreen.missing": "This session no longer exists.",

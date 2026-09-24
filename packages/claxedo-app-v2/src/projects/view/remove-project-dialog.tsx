@@ -1,5 +1,6 @@
-import { createSignal, Show, type Component } from "solid-js"
-import { toAppError, type AppError, type Project } from "@/server"
+import { Show, type Component } from "solid-js"
+import { createFlow, runFlow } from "@/lib/flow"
+import { toAppError, type AppError, type ProjectId } from "@/server"
 import { Button, Dialog, DialogBody, DialogFooter, DialogHeader, DialogTitleGroup, useDialog } from "@/ui"
 import { useProjectsText, type ProjectsText } from "../i18n"
 import { useProjectCommands } from "../store"
@@ -8,32 +9,29 @@ function removalMessage(t: ProjectsText, error: AppError): string {
   return error.class === "conflict" ? `${error.message} ${t("projects.remove.cloudFirst")}` : error.message
 }
 
-export const RemoveProjectDialog: Component<{ project: Project; onRemoved: () => void }> = (props) => {
+export const RemoveProjectDialog: Component<{ id: ProjectId; name: string; onRemoved: () => void }> = (props) => {
   const t = useProjectsText()
   const dialog = useDialog()
   const commands = useProjectCommands()
-  const [removing, setRemoving] = createSignal(false)
-  const [failure, setFailure] = createSignal<string>()
+  const removal = createFlow<"removing", void>()
+  const removing = () => removal.state().kind === "running"
+  const failure = () => {
+    const state = removal.state()
+    return state.kind === "failed" ? removalMessage(t, state.error) : undefined
+  }
 
   const remove = async () => {
     if (removing()) return
-    setRemoving(true)
-    setFailure(undefined)
-    try {
-      await commands.remove(props.project.id)
-      dialog.close()
-      props.onRemoved()
-    } catch (cause) {
-      setFailure(removalMessage(t, toAppError(cause)))
-    } finally {
-      setRemoving(false)
-    }
+    await runFlow(removal, "removing", () => commands.remove(props.id), toAppError)
+    if (removal.state().kind !== "done") return
+    dialog.close()
+    props.onRemoved()
   }
 
   return (
     <Dialog>
       <DialogHeader closeLabel={t("projects.close")}>
-        <DialogTitleGroup title={t("projects.remove.title")} description={t("projects.remove.confirm", { name: props.project.name })} />
+        <DialogTitleGroup title={t("projects.remove.title")} description={t("projects.remove.confirm", { name: props.name })} />
       </DialogHeader>
       <Show when={failure()}>
         {(message) => (

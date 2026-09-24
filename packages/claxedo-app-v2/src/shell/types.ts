@@ -20,6 +20,7 @@ export type PageEntry = {
 export type PaneProps<State> = { readonly state: State; readonly paneId: string; readonly active: boolean }
 
 export type PaneRoute =
+  | { readonly kind: "draft"; readonly projectId: ProjectId; readonly placementId: PlacementId }
   | {
       readonly kind: "session"
       readonly projectId: ProjectId
@@ -48,15 +49,6 @@ export type AnyPaneKind = {
   readonly decode: (value: Json) => unknown
   readonly fromRoute?: (route: PaneRoute) => unknown
   readonly toRoute?: (state: never) => PaneRoute | undefined
-}
-
-export type PanelTab = {
-  readonly id: string
-  readonly title: () => string
-  readonly icon: string
-  readonly order?: number
-  readonly when?: () => boolean
-  readonly view: Component
 }
 
 export type SettingsSection = {
@@ -127,7 +119,6 @@ export type Registry<Entry> = {
 export type ShellRegistries = {
   readonly pages: Registry<PageEntry>
   readonly paneKinds: Registry<AnyPaneKind>
-  readonly panelTabs: Registry<PanelTab>
   readonly settingsSections: Registry<SettingsSection>
   readonly sidebarItems: Registry<SidebarItem>
   readonly overlays: Registry<OverlayEntry>

@@ -42,7 +42,13 @@ const accountDefines = Object.fromEntries(
 
 // ── Config ──
 
-export default defineConfig(({ mode }) => {
+async function rendererConfig(mode: string, command: "build" | "serve") {
+  if (process.env.CLAXEDO_DESKTOP_RENDERER !== "v2") return createElectronRenderer(mode)
+  const { createElectronRendererV2 } = await import("./vite.renderer-v2")
+  return createElectronRendererV2({ mode, command })
+}
+
+export default defineConfig(async ({ mode, command }) => {
   return {
     main: {
       define: {
@@ -224,6 +230,6 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
-    renderer: createElectronRenderer(mode),
+    renderer: await rendererConfig(mode, command),
   }
 })

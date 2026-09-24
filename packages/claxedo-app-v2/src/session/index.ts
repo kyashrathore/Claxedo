@@ -17,6 +17,7 @@ import type {
   TranscriptPart,
 } from "@/server"
 import type { TranscriptConversation } from "@/transcript"
+import type { SessionSubagent } from "./transcript/subagent-merge"
 import type { QueuedMessages } from "./view/timeline/model"
 
 export type SessionStatusView = SessionStatus | { readonly kind: "unknown" }
@@ -82,6 +83,7 @@ export type SessionView = {
   readonly requestState: (requestId: RequestId) => RequestState
   readonly todos: Accessor<readonly Todo[]>
   readonly diff: Accessor<readonly FileDiff[]>
+  readonly subagents: Accessor<readonly SessionSubagent[]>
   readonly goal: Accessor<SessionGoal | undefined>
   readonly goalActions: Accessor<readonly GoalAction[]>
   readonly controlGoal: (action: GoalAction) => Promise<void>
@@ -93,6 +95,8 @@ export type SessionView = {
   readonly stop: () => Promise<void>
   readonly reply: (requestId: RequestId, reply: AgentRequestReply) => Promise<void>
 }
+
+export type { SessionSubagent }
 
 export type SessionStores = {
   readonly list: SessionList

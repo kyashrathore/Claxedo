@@ -4,6 +4,7 @@ export type HealthOptions = {
   label: string
   log: () => string
   child?: ChildProcess
+  ready?: () => boolean
   timeoutMs?: number
   intervalMs?: number
 }
@@ -26,8 +27,8 @@ export async function waitForHealth(url: string, options: HealthOptions) {
       throw new Error(`${options.label} exited with ${options.child.exitCode}\n${options.log()}`)
     }
     const result = await probe(url)
-    if (result.ok) return
-    lastReason = result.reason
+    if (result.ok && (options.ready?.() ?? true)) return
+    lastReason = result.ok ? `${url} answered, but not from ${options.label}` : result.reason
     await new Promise((resolve) => setTimeout(resolve, options.intervalMs ?? 250))
   }
   const tail = options.log().split("\n").slice(-80).join("\n")

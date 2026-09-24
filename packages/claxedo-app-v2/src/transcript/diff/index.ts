@@ -5,6 +5,7 @@ import {
   FileDiffOptions,
   type SelectedLineRange,
 } from "@pierre/diffs"
+import { codeTheme } from "../code-theme"
 import { ComponentProps } from "solid-js"
 import { lineCommentStyles } from "../line-comment-styles"
 
@@ -164,7 +165,7 @@ ${lineCommentStyles}
 // vary with a diff's annotation type.
 export function createDefaultOptions(style: BaseDiffOptions["diffStyle"]) {
   return {
-    theme: "OpenCode",
+    theme: codeTheme.name,
     themeType: "system",
     disableLineNumbers: true,
     overflow: "wrap",

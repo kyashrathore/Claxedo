@@ -39,7 +39,7 @@ export class ServerError extends Error implements AppError {
   }
 }
 
-export function errorClassForStatus(status: number): ErrorClass {
+function errorClassForStatus(status: number): ErrorClass {
   if (status === 401 || status === 403) return "auth"
   if (status === 404) return "not_found"
   if (status === 409) return "conflict"
@@ -85,13 +85,21 @@ export async function responseErrorCode(response: Response): Promise<string | un
   return readErrorBody(await response.clone().text()).code
 }
 
+const TURN_ERROR_CLASSES: Readonly<Record<string, ErrorClass>> = { credential: "auth", usage_limit: "rate_limit", session: "not_found" }
+
+function turnErrorClass(data: { firstTurnErrorClass?: unknown }, status: number | undefined): ErrorClass {
+  const reported = typeof data.firstTurnErrorClass === "string" ? TURN_ERROR_CLASSES[data.firstTurnErrorClass] : undefined
+  return reported ?? (status === undefined ? "internal" : errorClassForStatus(status))
+}
+
 export function turnError(value: unknown): ServerError {
   const error = value && typeof value === "object" ? (value as { name?: unknown; data?: unknown }) : {}
-  const data = error.data && typeof error.data === "object" ? (error.data as { message?: unknown; status?: unknown }) : {}
+  const data = error.data && typeof error.data === "object" ? (error.data as { message?: unknown; status?: unknown; statusCode?: unknown; firstTurnErrorClass?: unknown }) : {}
   const name = typeof error.name === "string" ? error.name : undefined
-  const status = typeof data.status === "number" ? data.status : undefined
+  const reportedStatus = typeof data.status === "number" ? data.status : data.statusCode
+  const status = typeof reportedStatus === "number" ? reportedStatus : undefined
   return new ServerError({
-    class: status === undefined ? "internal" : errorClassForStatus(status),
+    class: turnErrorClass(data, status),
     message: typeof data.message === "string" ? data.message : name ?? "The turn failed",
     ...(status !== undefined ? { status } : {}),
     ...(name !== undefined ? { code: name } : {}),

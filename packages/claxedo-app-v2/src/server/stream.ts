@@ -36,17 +36,17 @@ type StreamRun = {
   watchdog: ReturnType<typeof setTimeout> | undefined
 }
 
-export const RECONNECT_BASE_MS = 250
-export const RECONNECT_CEILING_MS = 15_000
-export const DEFAULT_MAX_ATTEMPTS = 10
-export const DEFAULT_HEARTBEAT_TIMEOUT_MS = 30_000
+const RECONNECT_BASE_MS = 250
+const RECONNECT_CEILING_MS = 15_000
+const DEFAULT_MAX_ATTEMPTS = 10
+const DEFAULT_HEARTBEAT_TIMEOUT_MS = 30_000
 
-export function reconnectDelayMs(attempt: number, random: () => number = Math.random) {
+function reconnectDelayMs(attempt: number, random: () => number = Math.random) {
   const ceiling = Math.min(RECONNECT_CEILING_MS, RECONNECT_BASE_MS * 2 ** attempt)
   return Math.round(ceiling / 2 + random() * (ceiling / 2))
 }
 
-export function connectionTransition(state: ConnectionState, event: ConnectionEvent): ConnectionState {
+function connectionTransition(state: ConnectionState, event: ConnectionEvent): ConnectionState {
   switch (event.type) {
     case "opened":
       return { kind: "connected" }

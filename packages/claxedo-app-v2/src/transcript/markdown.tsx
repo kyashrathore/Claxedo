@@ -1,5 +1,6 @@
-import { OpenCodeTheme, useMarked, transcriptMarkdownExtensions } from "@opencode-ai/ui/context/marked"
-import { useI18n } from "@opencode-ai/ui/context/i18n"
+import { useMarked, transcriptMarkdownExtensions } from "@opencode-ai/ui/context/marked"
+import { codeTheme } from "./code-theme"
+import { useTranscriptI18n } from "./i18n"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ImagePreview } from "@opencode-ai/ui/image-preview"
 import { useData } from "./data"
@@ -128,7 +129,7 @@ function codeLanguageName(language: string | undefined) {
 async function code(text: string, language: string | undefined, key: string, complete = false) {
   const name = codeLanguageName(language)
   try {
-    return await highlightCodeThroughCache(text, name, OpenCodeTheme.name, complete, async () => {
+    return await highlightCodeThroughCache(text, name, codeTheme.name, complete, async () => {
       const result = await highlightStreamingCode(key, text, name, complete)
       return { language: name, generation: result.generation, stable: result.stable, unstable: result.unstable }
     })
@@ -832,7 +833,7 @@ function cachedRenderResult(
   const blocks = projection.blocks.flatMap((block, index): RenderedBlock[] => {
     if (block.mode === "code") {
       if (!block.complete) return []
-      const cached = getCachedCodeHighlight(block.src, codeLanguageName(block.language), OpenCodeTheme.name)
+      const cached = getCachedCodeHighlight(block.src, codeLanguageName(block.language), codeTheme.name)
       if (!cached) return []
       return [
         {
@@ -885,7 +886,7 @@ export function Markdown(
 ) {
   const [local, others] = splitProps(props, ["text", "cacheKey", "streaming", "richAfterMs", "class", "classList"])
   const marked = useMarked()
-  const i18n = useI18n()
+  const i18n = useTranscriptI18n()
   // A host without a dialog layer cannot offer the full-view preview; image
   // tiles then render identically but clicks do nothing.
   const dialog = (() => {
@@ -951,7 +952,7 @@ export function Markdown(
           if (block.mode === "code") {
             const started = rendererClock()
             if (!block.complete) traceRenderer(`markdown.highlightmiss.incomplete.chars-${block.src.length}`)
-            else if (!getCachedCodeHighlight(block.src, codeLanguageName(block.language), OpenCodeTheme.name))
+            else if (!getCachedCodeHighlight(block.src, codeLanguageName(block.language), codeTheme.name))
               traceRenderer(`markdown.highlightmiss.no-entry.chars-${block.src.length}`)
             // Completed blocks read through the module-scope highlight cache
             // inside `code()`, so a remount resolves without a worker round trip.
@@ -1045,8 +1046,8 @@ export function Markdown(
 
     const commitStarted = rendererClock()
     const labels = {
-      copy: i18n.t("ui.message.copy"),
-      copied: i18n.t("ui.message.copied"),
+      copy: i18n.t("transcript.message.copy"),
+      copied: i18n.t("transcript.message.copied"),
     }
     const nextCodeKeys = new Set(content.filter((block) => block.mode === "code").map((block) => block.key))
     activeCodeKeys.forEach((key) => {
@@ -1066,8 +1067,8 @@ export function Markdown(
       .forEach((button) => setCopyState(button, labels, button.dataset.copied === "true"))
     if (!copyCleanup)
       copyCleanup = setupCodeCopy(container, () => ({
-        copy: i18n.t("ui.message.copy"),
-        copied: i18n.t("ui.message.copied"),
+        copy: i18n.t("transcript.message.copy"),
+        copied: i18n.t("transcript.message.copied"),
       }))
     if (!linkCleanup) linkCleanup = setupLinkOpen(container, openImage)
     traceRenderer(`markdown.commit.chars-${local.text.length}.blocks-${content.length}`, commitStarted)
@@ -1250,7 +1251,7 @@ function updateCodeBlock(
   wrapper.setAttribute("data-component", "markdown-code")
   applyCodeMetadata(wrapper, block.language)
   const pre = document.createElement("pre")
-  pre.className = "shiki OpenCode"
+  pre.className = `shiki ${codeTheme.name}`
   const codeElement = document.createElement("code")
   codeElement.className = `language-${block.language}`
   const tokens = [...block.stable, ...block.unstable]

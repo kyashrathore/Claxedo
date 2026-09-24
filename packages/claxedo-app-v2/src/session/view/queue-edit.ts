@@ -20,5 +20,14 @@ export function createQueueEdit(view: SessionView) {
       const seq = view.queue.editing()
       if (seq !== undefined) view.queue.remove(seq)
     },
+    edit: {
+      active: () => view.queue.editing() !== undefined,
+      cancel: () => {
+        const seq = view.queue.editing()
+        if (seq === undefined) return
+        view.queue.cancelEdit(seq)
+        store.reset(key)
+      },
+    },
   }
 }

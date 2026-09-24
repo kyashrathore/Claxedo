@@ -8,6 +8,7 @@ export const GOAL_ACTION_ROUTES: Readonly<Record<GoalAction, { readonly method: 
   pause: { method: "POST", suffix: "/goal/pause" },
   resume: { method: "POST", suffix: "/goal/resume" },
   remove: { method: "DELETE", suffix: "/goal" },
+  stop: { method: "POST", suffix: "/goal/stop" },
 }
 
 const GOAL_ACTIONS: Readonly<Record<string, GoalAction>> = { pause: "pause", resume: "resume", delete: "remove" }

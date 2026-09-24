@@ -3,11 +3,11 @@ import { Composer, sessionComposerKey } from "@/composer"
 import { useElapsed } from "@/lib/delay"
 import { FailureBoundary, FailureNotice } from "@/lib/failure"
 import { sessionId, useServer, type SessionRef } from "@/server"
+import { usePanel } from "@/panel"
 import { useSessionStores, type SessionView } from "@/session"
 import { sessionPath, useShellRoute, type PaneProps } from "@/shell"
-import { Button, useDialog } from "@/ui"
+import { Button } from "@/ui"
 import { useWorkbench } from "@/workbench"
-import { PlanDialog } from "./plan-dialog"
 import { createQueueEdit } from "./queue-edit"
 import { SessionDocks } from "./session-docks"
 import { SessionTimeline } from "./session-timeline"
@@ -46,13 +46,11 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
   const stores = useSessionStores()
   const workbench = useWorkbench()
   const routing = useShellRoute()
-  const dialog = useDialog()
-  const openPlan = (plan: Parameters<typeof PlanDialog>[0]["plan"]) =>
-    dialog.show(() => <PlanDialog plan={plan} fallbackTitle={t("sessionScreen.plan.title")} />)
+  const panel = usePanel()
   const parentId = () => props.view.row()?.parentSessionId
   const [parent, setParent] = createSignal<SessionView>()
   createEffect(on(parentId, (id) => setParent(id ? stores.open({ ...props.view.ref, sessionId: sessionId(id) }) : undefined)))
-  const host = createTimelineHost({ view: props.view, parent, stores, server, workbench, routing, t, openPlan })
+  const host = createTimelineHost({ view: props.view, parent, stores, server, workbench, routing, t, panel })
   const toParent = () => {
     const parent = parentId()
     if (parent) routing.navigate(sessionPath({ placementId: props.view.ref.placementId, sessionId: parent }))
@@ -69,20 +67,27 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
       <div data-slot="session-screen-timeline">
         <SessionTimeline view={props.view} host={host} active={props.active} scroll={scroll} onNavigateParent={toParent} />
       </div>
-      <div ref={setDock} data-slot="session-screen-dock">
-        <SessionDocks view={props.view} />
-        <Show when={!parentId()} fallback={<ChildNotice t={t} onBack={toParent} />}>
-          <Show when={props.view.requests().length === 0}>
-            <Composer
-              composerKey={sessionComposerKey(props.view.ref)}
-              placementId={props.view.ref.placementId}
-              view={props.view}
-              sessionHarness={props.view.row()?.harness}
-              attachmentWorkspace={true}
-              afterAccepted={queueEdit.accepted}
-            />
+      <div
+        ref={setDock}
+        data-component="session-prompt-dock"
+        class="ui-session-prompt-dock w-full flex flex-col justify-center items-center pointer-events-none shrink-0 pb-3"
+      >
+        <div data-slot="session-screen-dock" class="w-full px-3 pointer-events-auto md:max-w-192 md:mx-auto 2xl:max-w-[880px]">
+          <SessionDocks view={props.view} />
+          <Show when={!parentId()} fallback={<ChildNotice t={t} onBack={toParent} />}>
+            <Show when={props.view.requests().length === 0}>
+              <Composer
+                composerKey={sessionComposerKey(props.view.ref)}
+                placementId={props.view.ref.placementId}
+                view={props.view}
+                sessionHarness={props.view.row()?.harness}
+                attachmentWorkspace={true}
+                afterAccepted={queueEdit.accepted}
+                queuedEdit={queueEdit.edit}
+              />
+            </Show>
           </Show>
-        </Show>
+        </div>
       </div>
     </div>
   )

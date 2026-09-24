@@ -32,7 +32,6 @@ export type ControllerInput = {
   submit: () => void
   stop: () => void
   edited: () => void
-  armGoal: () => void
   runCommand: (item: SlashItem) => void
 }
 

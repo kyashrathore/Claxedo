@@ -11,8 +11,8 @@ export type {
   LineRange,
   Prompt,
   PromptPart,
-  Selection,
   SendState,
+  Submission,
   TextPart,
 } from "./model"
 export { emptyPrompt, promptText } from "./model"
@@ -20,6 +20,7 @@ export { createComposerStore, ComposerStoreContext, useComposerStore, draftCompo
 export type { ComposerKey, ComposerStore } from "./store"
 export { ComposerStoreProvider } from "./provider"
 export { Composer } from "./view/composer"
+export { ComposerNoticeProvider, ComposerNoticeRow, createComposerNoticeChannel } from "./view/composer-notice"
 export type { ComposerProps } from "./setup"
 export { asAppError } from "./errors"
 export { useErrorCopy } from "./error-copy"

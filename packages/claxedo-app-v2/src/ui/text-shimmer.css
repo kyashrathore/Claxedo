@@ -1,5 +1,5 @@
 @layer components {
-  [data-component="text-shimmer"] {
+  [data-component="v2-text-shimmer"] {
     --_step: 45ms;
     --_duration: 1200ms;
     --_swap: 220ms;
@@ -25,7 +25,7 @@
     user-select: none;
   }
 
-  [data-component="text-shimmer"] [data-slot="text-shimmer-char"] {
+  [data-component="v2-text-shimmer"] [data-slot="v2-text-shimmer-char"] {
     display: inline-grid;
     white-space: pre;
     font: inherit;
@@ -33,8 +33,8 @@
     line-height: inherit;
   }
 
-  [data-component="text-shimmer"] .ui-text-shimmer-base,
-  [data-component="text-shimmer"] .ui-text-shimmer-shimmer {
+  [data-component="v2-text-shimmer"] .v2-text-shimmer-base,
+  [data-component="v2-text-shimmer"] .v2-text-shimmer-shimmer {
     grid-area: 1 / 1;
     white-space: pre;
     transition: opacity var(--_swap) ease-out;
@@ -43,21 +43,21 @@
     line-height: inherit;
   }
 
-  [data-component="text-shimmer"] .ui-text-shimmer-base {
+  [data-component="v2-text-shimmer"] .v2-text-shimmer-base {
     color: inherit;
     opacity: 1;
   }
 
-  [data-component="text-shimmer"] .ui-text-shimmer-shimmer {
+  [data-component="v2-text-shimmer"] .v2-text-shimmer-shimmer {
     color: var(--_base-color);
     opacity: 0;
   }
 
-  [data-component="text-shimmer"][data-active="true"] .ui-text-shimmer-shimmer {
+  [data-component="v2-text-shimmer"][data-active="true"] .v2-text-shimmer-shimmer {
     opacity: 1;
   }
 
-  [data-component="text-shimmer"] .ui-text-shimmer-shimmer[data-run="true"] {
+  [data-component="v2-text-shimmer"] .v2-text-shimmer-shimmer[data-run="true"] {
     animation-name: text-shimmer-sweep;
     animation-duration: var(--_duration);
     animation-iteration-count: infinite;
@@ -81,7 +81,7 @@
   }
 
   @supports ((-webkit-background-clip: text) or (background-clip: text)) {
-    [data-component="text-shimmer"] .ui-text-shimmer-shimmer {
+    [data-component="v2-text-shimmer"] .v2-text-shimmer-shimmer {
       color: transparent;
       -webkit-text-fill-color: transparent;
       background-image: var(--_sweep), var(--_base);
@@ -96,25 +96,25 @@
       background-clip: text;
     }
 
-    [data-component="text-shimmer"][data-active="true"] .ui-text-shimmer-base {
+    [data-component="v2-text-shimmer"][data-active="true"] .v2-text-shimmer-base {
       opacity: 0;
     }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    [data-component="text-shimmer"] .ui-text-shimmer-base,
-    [data-component="text-shimmer"] .ui-text-shimmer-shimmer {
+    [data-component="v2-text-shimmer"] .v2-text-shimmer-base,
+    [data-component="v2-text-shimmer"] .v2-text-shimmer-shimmer {
       transition-duration: 0ms;
     }
 
-    [data-component="text-shimmer"] .ui-text-shimmer-shimmer {
+    [data-component="v2-text-shimmer"] .v2-text-shimmer-shimmer {
       animation: none !important;
       color: inherit;
       -webkit-text-fill-color: currentColor;
       background-image: none;
     }
 
-    [data-component="text-shimmer"] .ui-text-shimmer-base {
+    [data-component="v2-text-shimmer"] .v2-text-shimmer-base {
       opacity: 1 !important;
     }
   }

@@ -15,8 +15,9 @@
     "build:local": "VITE_CLAXEDO_AUTH_ADAPTER=better-auth node ./node_modules/vite/bin/vite.js build --config vite.local.config.ts",
     "typecheck": "tsgo --noEmit -p tsconfig.json",
     "typecheck:e2e": "tsgo --noEmit -p tsconfig.e2e.json",
-    "check": "bun run typecheck",
-    "e2e": "bun ./e2e/run.ts"
+    "check": "bun scripts/checks/run.ts",
+    "e2e": "bun ./e2e/run.ts",
+    "e2e:parity": "bun ./e2e/parity/run.ts"
   },
   "license": "MIT",
   "devDependencies": {
@@ -44,6 +45,7 @@
     "sharp": "0.34.5",
     "tailwindcss": "4.1.11",
     "typescript": "catalog:",
+    "typescript-api": "npm:typescript@5.9.3",
     "vite": "7.1.4",
     "vite-plugin-solid": "2.11.10",
     "wrangler": "4.114.0"
@@ -52,6 +54,10 @@
     "@claxedo/agent-event-runtime": "workspace:*",
     "@claxedo/agent-runtime-contract": "workspace:*",
     "@claxedo/helpers": "workspace:*",
+    "@claxedo/plugin-api": "workspace:*",
+    "@claxedo/plugin-compact-tabs": "workspace:*",
+    "@claxedo/plugin-pages": "workspace:*",
+    "@claxedo/plugin-tasks": "workspace:*",
     "@claxedo/service-contract": "workspace:*",
     "@claxedo/tasks": "workspace:*",
     "@claxedo/usage-contract": "workspace:*",

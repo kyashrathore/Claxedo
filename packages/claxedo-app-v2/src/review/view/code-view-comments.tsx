@@ -135,7 +135,7 @@ export function createCodeViewComments(input: CodeViewCommentsInput): CodeViewCo
     const labels = {
       gutter: t("review.comment.gutter"),
       save: t("review.comment.save"),
-      menu: { more: t("review.comment.more"), edit: t("review.comment.edit"), remove: t("review.comment.remove") },
+      menu: { more: t("review.comment.more"), edit: t("review.comment.edit"), remove: t("review.comment.delete") },
     }
     return fileOwner(file, { ...input, byFile, labels, state: fileState(file, ui, setUi, editorFor(file)) })
   })

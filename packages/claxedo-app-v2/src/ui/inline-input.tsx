@@ -41,14 +41,14 @@ export function InlineInput(props: InlineInputProps) {
 
   return (
     <div
-      data-component="inline-input"
+      data-component="v2-inline-input"
       data-disabled={local.disabled ? "" : undefined}
       data-invalid={local.invalid ? "" : undefined}
       data-numeric={local.numeric ? "" : undefined}
       data-appearance={local.appearance ?? "base"}
       data-label-width={local.labelWidth != null ? "" : undefined}
       classList={{
-        "ui-inline-input": true,
+        "v2-inline-input": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}
@@ -63,7 +63,7 @@ export function InlineInput(props: InlineInputProps) {
       }}
     >
       <div
-        data-slot="inline-input-prefix" class="ui-inline-input-prefix"
+        data-slot="v2-inline-input-prefix" class="v2-inline-input-prefix"
         onMouseDown={(event) => {
           if (local.disabled || event.button !== 0) return
 
@@ -71,11 +71,11 @@ export function InlineInput(props: InlineInputProps) {
           input?.focus()
         }}
       >
-        <span data-slot="inline-input-prefix-text" class="ui-inline-input-prefix-text">{local.prefix}</span>
+        <span data-slot="v2-inline-input-prefix-text" class="v2-inline-input-prefix-text">{local.prefix}</span>
       </div>
-      <div data-slot="inline-input-divider" aria-hidden="true" />
-      <div data-slot="inline-input-field" class="ui-inline-input-field">
-        <div data-slot="inline-input-value">
+      <div data-slot="v2-inline-input-divider" aria-hidden="true" />
+      <div data-slot="v2-inline-input-field" class="v2-inline-input-field">
+        <div data-slot="v2-inline-input-value">
           <input
             {...inputProps}
             ref={(el) => {
@@ -86,13 +86,13 @@ export function InlineInput(props: InlineInputProps) {
             type={inputProps.type ?? "text"}
             disabled={local.disabled}
             aria-invalid={local.invalid ? true : undefined}
-            data-slot="inline-input-input" classList={{ "ui-inline-input-input": true }}
+            data-slot="v2-inline-input-input" classList={{ "v2-inline-input-input": true }}
           />
         </div>
         <Show when={local.showCopyButton}>
           <button
             type="button"
-            data-slot="inline-input-icon-button" class="ui-inline-input-icon-button"
+            data-slot="v2-inline-input-icon-button" class="v2-inline-input-icon-button"
             aria-label={local.copyLabel ?? "Copy"}
             disabled={local.disabled}
             onClick={local.onCopyClick}

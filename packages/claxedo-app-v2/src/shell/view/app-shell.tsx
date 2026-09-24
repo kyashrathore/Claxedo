@@ -4,6 +4,7 @@ import { ComposerStoreProvider } from "@/composer"
 import { useTranslator } from "@/i18n"
 import { useElapsed } from "@/lib/delay"
 import { preferenceKey } from "@/lib/persisted"
+import { PluginHostProvider } from "@/plugins"
 import { useServer, type Capabilities } from "@/server"
 import { Toast } from "@/ui"
 import { createWorkbenchStore, WorkbenchProvider, useWorkbench } from "@/workbench"
@@ -23,7 +24,6 @@ import { Overlays } from "./overlays"
 import { RouteSync } from "./route-sync"
 import { SettingsSidebar } from "./settings-sidebar"
 import { ShellCommands } from "./shell-commands"
-import { ThemeBridge } from "./theme-bridge"
 
 export type AppShellProps = { readonly mainSidebar: JSX.Element }
 
@@ -59,14 +59,15 @@ function ScopedShell(props: { readonly scope: string; readonly mainSidebar: JSX.
         <ShellLayoutProvider scope={props.scope}>
           <CommandsProvider>
             <PlacementProviders>
-              <FirstRunRedirect />
-              <RouteSync />
-              <ShellCommands />
-              <ThemeBridge />
-              <ConnectionBanner />
-              <ShellBody route={routing.route()} mainSidebar={props.mainSidebar} />
-              <CommandPalette />
-              <Overlays />
+              <PluginHostProvider scope={props.scope}>
+                <FirstRunRedirect />
+                <RouteSync />
+                <ShellCommands />
+                  <ConnectionBanner />
+                <ShellBody route={routing.route()} mainSidebar={props.mainSidebar} />
+                <CommandPalette />
+                <Overlays />
+              </PluginHostProvider>
             </PlacementProviders>
           </CommandsProvider>
         </ShellLayoutProvider>
@@ -76,16 +77,12 @@ function ScopedShell(props: { readonly scope: string; readonly mainSidebar: JSX.
 }
 
 function ShellBody(props: { readonly route: ShellRoute; readonly mainSidebar: JSX.Element }): JSX.Element {
-  const registries = useShellRegistries()
-  const routing = useShellRoute()
   const workbench = useWorkbench()
-  const panelScope = () => routing.placementId() ?? "default"
   const phoneHome = () => props.route.kind === "home" && workbench.selectors.focusedContent() === null
   return (
     <ShellFrame
       sidebar={{ mode: sidebarModeOf(props.route), main: props.mainSidebar, settings: <SettingsSidebar /> }}
       center={centerOf(props.route)}
-      panel={{ tabs: registries.panelTabs.list(), scope: panelScope() }}
       phoneHome={phoneHome()}
     />
   )

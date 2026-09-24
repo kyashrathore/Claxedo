@@ -13,7 +13,7 @@ function retryAction(value: unknown): RetryAction | undefined {
   return { reason, provider, title, message, label, ...(typeof link === "string" ? { link } : {}) }
 }
 
-export function runtimeStatusFromWire(value: unknown): AgentRuntimeStatus | undefined {
+function runtimeStatusFromWire(value: unknown): AgentRuntimeStatus | undefined {
   if (!isRecord(value)) return undefined
   switch (value.type) {
     case "idle":
@@ -34,7 +34,7 @@ export function runtimeStatusFromWire(value: unknown): AgentRuntimeStatus | unde
   }
 }
 
-export function sessionStatusFromRuntime(status: AgentRuntimeStatus): SessionStatus {
+function sessionStatusFromRuntime(status: AgentRuntimeStatus): SessionStatus {
   switch (status.type) {
     case "idle":
       return { kind: "idle" }
@@ -52,6 +52,9 @@ export function sessionStatusFromWire(value: unknown): SessionStatus | undefined
   return status ? sessionStatusFromRuntime(status) : undefined
 }
 
-export function sessionStatusFailed(value: unknown): SessionStatus {
-  return { kind: "failed", error: turnError(value) }
+const TURN_CANCELLED_ERROR = "MessageAbortedError"
+
+export function sessionStatusFromTurnError(value: unknown): SessionStatus {
+  const name = value && typeof value === "object" ? (value as { name?: unknown }).name : undefined
+  return name === TURN_CANCELLED_ERROR ? { kind: "idle" } : { kind: "failed", error: turnError(value) }
 }
