@@ -14,26 +14,27 @@ export type CenterContent = { readonly kind: "page"; readonly page: PageEntry; r
 export type ShellFrameProps = {
   readonly sidebar: SidebarProps
   readonly center: CenterContent
+  readonly compactTabs: JSX.Element
 }
 
-function CenterHeader(props: { readonly center: CenterContent }): JSX.Element {
+function CenterHeader(props: { readonly center: CenterContent; readonly tabs: JSX.Element }): JSX.Element {
   const page = () => (props.center.kind === "page" ? props.center.page : undefined)
   return (
-    <Switch fallback={<WorkbenchHeader global={false} />}>
+    <Switch fallback={<WorkbenchHeader global={false} tabs={props.tabs} />}>
       <Match when={page()?.sidebar === "settings"}>
         <SettingsHeader />
       </Match>
       <Match when={page()}>
-        <WorkbenchHeader global />
+        <WorkbenchHeader global tabs={props.tabs} />
       </Match>
     </Switch>
   )
 }
 
-function CenterRegion(props: { readonly center: CenterContent }): JSX.Element {
+function CenterRegion(props: { readonly center: CenterContent; readonly tabs: JSX.Element }): JSX.Element {
   return (
     <>
-      <CenterHeader center={props.center} />
+      <CenterHeader center={props.center} tabs={props.tabs} />
       <div class="shell-center-body">
         <Show when={props.center.kind === "page" ? props.center : undefined} fallback={<Region name="center"><Workbench /></Region>}>
           {(page) => <PageView page={page().page} params={page().params} />}
@@ -54,9 +55,9 @@ export function ShellFrame(props: ShellFrameProps): JSX.Element {
           data-center={props.center.kind}
           data-testid="shell-center"
         >
-          <Show when={props.center.kind === "panes"} fallback={<CenterRegion center={props.center} />}>
+          <Show when={props.center.kind === "panes"} fallback={<CenterRegion center={props.center} tabs={props.compactTabs} />}>
             <WorkspaceArea>
-              <CenterRegion center={props.center} />
+              <CenterRegion center={props.center} tabs={props.compactTabs} />
             </WorkspaceArea>
           </Show>
         </main>
