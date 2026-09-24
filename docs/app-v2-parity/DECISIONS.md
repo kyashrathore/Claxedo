@@ -123,3 +123,8 @@ A **Settings → Projects** section lists the projects and holds their managemen
   - no maximize button;
   - no "+" to add a Browser or File tab.
 - Lanes: shell-4 (drawer, header), tools-3 (panel). Flow 33 branches on this entry.
+
+## Owner, 22:28: scrollbars better than v1
+- v1 shows the native scrollbar in Review and none in the Files tree (`scrollbar-width: none`), and its terminal thumb is barely visible under the Codex tokens.
+- **v2:** the kit's thin overlay thumb in Review and the Files tree, and a visible terminal thumb on its own token.
+- Lane: tools-3.
