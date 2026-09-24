@@ -1,4 +1,4 @@
-import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, test } from "../harness"
+import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI } from "../harness"
 
 test("08 a permission prompt blocks the composer until it is allowed from its dock", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("permission")
@@ -9,10 +9,9 @@ test("08 a permission prompt blocks the composer until it is allowed from its do
     ],
   })
   const session = await api.createSession(workspace.directory, { title: "Permission", harness: SCRIPTED_ACP_HARNESS })
-  await app.goto(`${stack.url}/w/${workspace.id}/s/${session.id}`)
-  const prompt = app.getByRole("textbox", { name: "Prompt" })
-  await prompt.fill(`Edit the notes. ${acpScriptToken("permission")}`)
-  await prompt.press("Enter")
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  const prompt = app.getByRole("textbox", { name: UI.composer })
+  await sendPrompt(app, `Edit the notes. ${acpScriptToken("permission")}`)
 
   await expect(app.getByText("Permission required")).toBeVisible()
   await expect(prompt).toHaveCount(0)
@@ -30,10 +29,9 @@ test("08 a question is answered from its dock and the agent receives the answer"
   const workspace = await stack.daemon.makeWorkspace("question")
   await stack.acp.write("question", { steps: [{ kind: "question", message: "Which color should the button be?", options: ["Red", "Blue"] }] })
   const session = await api.createSession(workspace.directory, { title: "Question", harness: SCRIPTED_ACP_HARNESS })
-  await app.goto(`${stack.url}/w/${workspace.id}/s/${session.id}`)
-  const prompt = app.getByRole("textbox", { name: "Prompt" })
-  await prompt.fill(`Pick a color. ${acpScriptToken("question")}`)
-  await prompt.press("Enter")
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  const prompt = app.getByRole("textbox", { name: UI.composer })
+  await sendPrompt(app, `Pick a color. ${acpScriptToken("question")}`)
 
   await expect(app.getByText("Which color should the button be?")).toBeVisible()
   await expect(prompt).toHaveCount(0)

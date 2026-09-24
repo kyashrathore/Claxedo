@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url"
-import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, test } from "../harness"
+import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI } from "../harness"
 
 const IMAGE = fileURLToPath(new URL("../../public/web-app-manifest-192x192.png", import.meta.url))
 const IMAGE_NAME = "web-app-manifest-192x192.png"
@@ -8,8 +8,9 @@ test("06 composer: a marked image, an @file pill and a slash command popover all
   const workspace = await stack.daemon.makeWorkspace("composer")
   await stack.acp.write("ack", { steps: [{ kind: "text", text: "Received the attachments" }] })
   const session = await api.createSession(workspace.directory, { title: "Composer", harness: SCRIPTED_ACP_HARNESS })
-  await app.goto(`${stack.url}/w/${workspace.id}/s/${session.id}`)
-  const prompt = app.getByRole("textbox", { name: "Prompt" })
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  const prompt = app.getByRole("textbox", { name: UI.composer })
+  await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
 
   await prompt.click()
   await app.keyboard.type("/")

@@ -29,4 +29,4 @@ export { type ScriptedModelRequest, type ScriptedModelServer, type ScriptedToolC
 export { appChoice, type AppChoice } from "./app"
 export { expectNoAxeViolations, expectWithinV1Baseline, settled, type V1Surface } from "./a11y"
 export { sessionRoute, UI } from "./ui-names"
-export { sendPrompt } from "./composer"
+export { sendPrompt, type SendOptions } from "./composer"
