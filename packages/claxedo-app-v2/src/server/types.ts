@@ -233,6 +233,8 @@ export type HarnessModel = {
   readonly efforts: readonly string[]
 }
 
+export type HarnessLogin = { readonly harness: string; readonly signedIn: boolean; readonly providerIds: readonly string[] }
+
 export type HarnessOptions = {
   readonly models: readonly HarnessModel[]
   readonly current?: ModelChoice
