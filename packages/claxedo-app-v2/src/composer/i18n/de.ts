@@ -84,4 +84,13 @@ export const de: Partial<Record<ComposerTextKey, string>> = {
   "prompt.imageMarks.mark": "Markierung {{number}}",
   "common.cancel": "Abbrechen",
   "common.save": "Speichern",
+  "model.input.text": "Text",
+  "model.input.image": "Bild",
+  "model.input.audio": "Audio",
+  "model.input.video": "Video",
+  "model.input.pdf": "PDF",
+  "model.tooltip.reasoning.allowed": "Erlaubt Reasoning",
+  "model.tooltip.reasoning.none": "Kein Reasoning",
+  "model.tooltip.context": "Kontextlimit {{limit}}",
+  "model.tooltip.allows": "Erlaubt: {{inputs}}",
 }

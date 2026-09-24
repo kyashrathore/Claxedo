@@ -84,4 +84,12 @@ export const zh: Partial<Record<ComposerTextKey, string>> = {
   "prompt.imageMarks.mark": "标记 {{number}}",
   "common.cancel": "取消",
   "common.save": "保存",
+  "model.input.text": "文本",
+  "model.input.image": "图像",
+  "model.input.audio": "音频",
+  "model.input.video": "视频",
+  "model.tooltip.reasoning.allowed": "支持推理",
+  "model.tooltip.reasoning.none": "不支持推理",
+  "model.tooltip.context": "上下文上限 {{limit}}",
+  "model.tooltip.allows": "支持：{{inputs}}",
 }

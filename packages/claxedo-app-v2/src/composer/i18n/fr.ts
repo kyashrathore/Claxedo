@@ -80,4 +80,10 @@ export const fr: Partial<Record<ComposerTextKey, string>> = {
   "prompt.imageMarks.mark": "repère {{number}}",
   "common.cancel": "Annuler",
   "common.save": "Enregistrer",
+  "model.input.text": "texte",
+  "model.input.video": "vidéo",
+  "model.tooltip.reasoning.allowed": "Autorise le raisonnement",
+  "model.tooltip.reasoning.none": "Sans raisonnement",
+  "model.tooltip.context": "Limite de contexte {{limit}}",
+  "model.tooltip.allows": "Autorise : {{inputs}}",
 }

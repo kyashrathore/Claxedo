@@ -1,11 +1,8 @@
 import { Show, type Component } from "solid-js"
-import { useLanguage } from "@/platform/i18n/provider"
+import { useComposerText } from "../text"
 
 type InputKey = "text" | "image" | "audio" | "video" | "pdf"
 
-// The picker item this card describes. `limit` is optional because a model the
-// catalog has not detailed yet carries no context window — the card then omits
-// that line instead of reading through `undefined`.
 type ModelInfo = {
   id: string
   name: string
@@ -26,30 +23,30 @@ type ModelInfo = {
 }
 
 export const ModelTooltip: Component<{ model: ModelInfo; latest?: boolean; free?: boolean }> = (props) => {
-  const language = useLanguage()
+  const t = useComposerText()
   const sourceName = (model: ModelInfo) => {
     const value = `${model.id} ${model.name}`.toLowerCase()
 
-    if (/claude|anthropic/.test(value)) return language.t("model.provider.anthropic")
-    if (/gpt|o[1-4]|codex|openai/.test(value)) return language.t("model.provider.openai")
-    if (/gemini|palm|bard|google/.test(value)) return language.t("model.provider.google")
-    if (/grok|xai/.test(value)) return language.t("model.provider.xai")
-    if (/llama|meta/.test(value)) return language.t("model.provider.meta")
+    if (/claude|anthropic/.test(value)) return t("model.provider.anthropic")
+    if (/gpt|o[1-4]|codex|openai/.test(value)) return t("model.provider.openai")
+    if (/gemini|palm|bard|google/.test(value)) return t("model.provider.google")
+    if (/grok|xai/.test(value)) return t("model.provider.xai")
+    if (/llama|meta/.test(value)) return t("model.provider.meta")
 
     return model.provider.name
   }
   const inputLabel = (value: string) => {
-    if (value === "text") return language.t("model.input.text")
-    if (value === "image") return language.t("model.input.image")
-    if (value === "audio") return language.t("model.input.audio")
-    if (value === "video") return language.t("model.input.video")
-    if (value === "pdf") return language.t("model.input.pdf")
+    if (value === "text") return t("model.input.text")
+    if (value === "image") return t("model.input.image")
+    if (value === "audio") return t("model.input.audio")
+    if (value === "video") return t("model.input.video")
+    if (value === "pdf") return t("model.input.pdf")
     return value
   }
   const title = () => {
     const tags: Array<string> = []
-    if (props.latest) tags.push(language.t("model.tag.latest"))
-    if (props.free) tags.push(language.t("model.tag.free"))
+    if (props.latest) tags.push(t("model.tag.latest"))
+    if (props.free) tags.push(t("model.tag.free"))
     const suffix = tags.length ? ` (${tags.join(", ")})` : ""
     return `${sourceName(props.model)} ${props.model.name}${suffix}`
   }
@@ -68,15 +65,15 @@ export const ModelTooltip: Component<{ model: ModelInfo; latest?: boolean; free?
   const reasoning = () => {
     if (props.model.capabilities)
       return props.model.capabilities.reasoning
-        ? language.t("model.tooltip.reasoning.allowed")
-        : language.t("model.tooltip.reasoning.none")
+        ? t("model.tooltip.reasoning.allowed")
+        : t("model.tooltip.reasoning.none")
     return props.model.reasoning
-      ? language.t("model.tooltip.reasoning.allowed")
-      : language.t("model.tooltip.reasoning.none")
+      ? t("model.tooltip.reasoning.allowed")
+      : t("model.tooltip.reasoning.none")
   }
   const context = () => {
     const limit = props.model.limit?.context
-    return limit === undefined ? undefined : language.t("model.tooltip.context", { limit: limit.toLocaleString() })
+    return limit === undefined ? undefined : t("model.tooltip.context", { limit: limit.toLocaleString() })
   }
 
   return (
@@ -85,7 +82,7 @@ export const ModelTooltip: Component<{ model: ModelInfo; latest?: boolean; free?
       <Show when={inputs()}>
         {(value) => (
           <div class="text-12-regular text-text-invert-base">
-            {language.t("model.tooltip.allows", { inputs: value() })}
+            {t("model.tooltip.allows", { inputs: value() })}
           </div>
         )}
       </Show>
