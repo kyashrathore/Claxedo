@@ -1,12 +1,12 @@
 import { createEffect, createMemo, createSignal, on, onCleanup, Show } from "solid-js"
 import type { AgentRuntimeStatus } from "@claxedo/agent-runtime-contract"
-import { useI18n } from "@opencode-ai/ui/context/i18n"
+import { useTranscriptI18n } from "./i18n"
 import { Card } from "@opencode-ai/ui/card"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { Spinner } from "@opencode-ai/ui/spinner"
 
 export function SessionRetry(props: { status: AgentRuntimeStatus; show?: boolean }) {
-  const i18n = useI18n()
+  const i18n = useTranscriptI18n()
   const retry = createMemo(() => {
     if (props.status.type !== "retry") return undefined
     return props.status
@@ -29,7 +29,7 @@ export function SessionRetry(props: { status: AgentRuntimeStatus; show?: boolean
     const current = retry()
     if (!current) return ""
     if (current.message.includes("exceeded your current quota") && current.message.includes("gemini")) {
-      return i18n.t("ui.sessionTurn.retry.geminiHot")
+      return i18n.t("transcript.sessionTurn.retry.geminiHot")
     }
     if (current.message.length > 80) return current.message.slice(0, 80) + "..."
     return current.message
@@ -43,11 +43,11 @@ export function SessionRetry(props: { status: AgentRuntimeStatus; show?: boolean
     const current = retry()
     if (!current) return ""
     const count = Math.max(0, seconds())
-    const delay = count > 0 ? i18n.t("ui.sessionTurn.retry.inSeconds", { seconds: count }) : ""
-    const retrying = i18n.t("ui.sessionTurn.retry.retrying")
+    const delay = count > 0 ? i18n.t("transcript.sessionTurn.retry.inSeconds", { seconds: count }) : ""
+    const retrying = i18n.t("transcript.sessionTurn.retry.retrying")
     const line = [retrying, delay].filter(Boolean).join(" ")
-    if (!line) return i18n.t("ui.sessionTurn.retry.attempt", { attempt: current.attempt })
-    return i18n.t("ui.sessionTurn.retry.attemptLine", { line, attempt: current.attempt })
+    if (!line) return i18n.t("transcript.sessionTurn.retry.attempt", { attempt: current.attempt })
+    return i18n.t("transcript.sessionTurn.retry.attemptLine", { line, attempt: current.attempt })
   })
 
   return (

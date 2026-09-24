@@ -5,7 +5,7 @@ import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { Icon, type IconProps } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { useI18n } from "@opencode-ai/ui/context/i18n"
+import { useTranscriptI18n, type TranscriptTextKey } from "./i18n"
 import { ToolExitCode } from "./basic-tool"
 import { safeLinkHref } from "./safe-link"
 
@@ -23,7 +23,7 @@ export interface ToolErrorCardProps extends Omit<ComponentProps<typeof Card>, "c
 }
 
 export function ToolErrorCard(props: ToolErrorCardProps) {
-  const i18n = useI18n()
+  const i18n = useTranscriptI18n()
   const [state, setState] = createStore({
     open: props.defaultOpen ?? false,
     copied: false,
@@ -48,17 +48,17 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
   }
   const name = createMemo(() => {
     if (split.title) return split.title
-    const map: Record<string, string> = {
-      read: "ui.tool.read",
-      list: "ui.tool.list",
-      glob: "ui.tool.glob",
-      grep: "ui.tool.grep",
-      task: "ui.tool.task",
-      webfetch: "ui.tool.webfetch",
-      websearch: "ui.tool.websearch",
-      bash: "ui.tool.shell",
-      apply_patch: "ui.tool.patch",
-      question: "ui.tool.questions",
+    const map: Record<string, TranscriptTextKey> = {
+      read: "transcript.tool.read",
+      list: "transcript.tool.list",
+      glob: "transcript.tool.glob",
+      grep: "transcript.tool.grep",
+      task: "transcript.tool.task",
+      webfetch: "transcript.tool.webfetch",
+      websearch: "transcript.tool.websearch",
+      bash: "transcript.tool.shell",
+      apply_patch: "transcript.tool.patch",
+      question: "transcript.tool.questions",
     }
     const key = map[split.tool]
     if (!key) return split.tool
@@ -78,10 +78,10 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
   const subtitle = createMemo(() => {
     if (split.subtitle) return split.subtitle
     const parts = tail().split(": ")
-    if (parts.length <= 1) return i18n.t("ui.toolErrorCard.failed")
+    if (parts.length <= 1) return i18n.t("transcript.toolErrorCard.failed")
     const head = (parts[0] ?? "").trim()
-    if (!head) return i18n.t("ui.toolErrorCard.failed")
-    return head[0] ? head[0].toUpperCase() + head.slice(1) : i18n.t("ui.toolErrorCard.failed")
+    if (!head) return i18n.t("transcript.toolErrorCard.failed")
+    return head[0] ? head[0].toUpperCase() + head.slice(1) : i18n.t("transcript.toolErrorCard.failed")
   })
 
   /**
@@ -144,7 +144,7 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
             <Show when={open()}>
               <div data-slot="tool-error-card-copy" class="ui-tool-error-card-copy">
                 <Tooltip
-                  value={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.toolErrorCard.copyError")}
+                  value={copied() ? i18n.t("transcript.message.copied") : i18n.t("transcript.toolErrorCard.copyError")}
                   placement="top"
                   gutter={4}
                 >
@@ -157,7 +157,7 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
                       e.stopPropagation()
                       void copy()
                     }}
-                    aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.toolErrorCard.copyError")}
+                    aria-label={copied() ? i18n.t("transcript.message.copied") : i18n.t("transcript.toolErrorCard.copyError")}
                   />
                 </Tooltip>
               </div>

@@ -1,4 +1,7 @@
+import { browserAuthAdapter } from "#browser-auth-adapter"
 import type { JSX } from "solid-js"
+import { AccessProvider } from "@/access"
+import { AuthProvider } from "@/auth"
 import { I18nProvider } from "@/i18n"
 import { MainSidebar } from "@/rail"
 import { createServer, ServerProvider } from "@/server"
@@ -11,20 +14,24 @@ export function App(): JSX.Element {
   const server = createServer({ auth: { kind: "none" } })
   const registries = createShellRegistries(firstParty)
   return (
-    <ServerProvider server={server}>
-      <SessionStoresProvider>
-        <ShellRegistriesContext.Provider value={registries}>
-          <I18nProvider>
-            <ThemeProvider>
-              <DialogProvider>
-                <ShellRouter>
-                  <AppShell mainSidebar={<MainSidebar />} />
-                </ShellRouter>
-              </DialogProvider>
-            </ThemeProvider>
-          </I18nProvider>
-        </ShellRegistriesContext.Provider>
-      </SessionStoresProvider>
-    </ServerProvider>
+    <AuthProvider adapter={browserAuthAdapter}>
+      <ServerProvider server={server}>
+        <AccessProvider>
+          <SessionStoresProvider>
+            <ShellRegistriesContext.Provider value={registries}>
+              <I18nProvider>
+                <ThemeProvider>
+                  <DialogProvider>
+                    <ShellRouter>
+                      <AppShell mainSidebar={<MainSidebar />} />
+                    </ShellRouter>
+                  </DialogProvider>
+                </ThemeProvider>
+              </I18nProvider>
+            </ShellRegistriesContext.Provider>
+          </SessionStoresProvider>
+        </AccessProvider>
+      </ServerProvider>
+    </AuthProvider>
   )
 }

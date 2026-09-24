@@ -5,6 +5,7 @@ import path from "node:path"
 import { releaseAcpHold, writeAcpScript, type AcpScript } from "./acp/script"
 import { appChoice, appDistDir, type AppChoice } from "./app"
 import { startDaemon, type Daemon } from "./daemon"
+import { startEgressGuard, type EgressGuard } from "./egress-guard"
 import { claimPort, fixedDaemonPort, portIsLeased, releasePort, reservePort } from "./ports"
 import { startScriptedModelServer, type ScriptedModelServer } from "./scripted-model-server"
 import { openEventStream, type EventStream, type EventStreamOptions } from "./stream"
@@ -15,6 +16,7 @@ export type Stack = {
   dataDir: string
   daemon: Daemon
   scripted: ScriptedModelServer
+  egress: EgressGuard
   acp: {
     scriptDir: string
     write(name: string, script: AcpScript): Promise<void>
@@ -42,19 +44,30 @@ export async function startStack(input: StackInput): Promise<Stack> {
   }
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-e2e-${safeLabel(input.label)}-`))
   const fixed = fixedDaemonPort()
-  const daemonPort = fixed !== undefined && !portIsLeased(fixed) ? claimPort(fixed) : await reservePort()
+  const daemonPort = fixed !== undefined && !portIsLeased(fixed) ? await claimPort(fixed) : await reservePort()
   const modelPort = await reservePort()
+  const guardPort = await reservePort()
   const keepData = process.env.CLAXEDO_E2E_KEEP_DATA === "1"
   const cleanup = async () => {
+    releasePort(guardPort)
     releasePort(modelPort)
     releasePort(daemonPort)
     if (!keepData) await fs.rm(dataDir, { recursive: true, force: true })
   }
-  const scripted = await startScriptedModelServer({ port: modelPort, piAgentDir: path.join(dataDir, "pi-agent") })
+  const egress = await startEgressGuard(guardPort)
+  let scripted: ScriptedModelServer
+  try {
+    scripted = await startScriptedModelServer({ port: modelPort })
+  } catch (error) {
+    await egress.close()
+    await cleanup()
+    throw error
+  }
   let daemon: Daemon
   try {
-    daemon = await startDaemon({ dataDir, distDir, scripted, port: daemonPort, red: input.red ?? redRun() })
+    daemon = await startDaemon({ dataDir, distDir, scripted, guardUrl: egress.url, port: daemonPort, red: input.red ?? redRun() })
   } catch (error) {
+    await egress.close()
     await scripted.close()
     await cleanup()
     throw error
@@ -66,6 +79,7 @@ export async function startStack(input: StackInput): Promise<Stack> {
     dataDir,
     daemon,
     scripted,
+    egress,
     acp: {
       scriptDir: daemon.acpScriptDir,
       write: (name, script) => writeAcpScript(daemon.acpScriptDir, name, script),
@@ -80,6 +94,7 @@ export async function startStack(input: StackInput): Promise<Stack> {
       for (const stream of streams) stream.close()
       await daemon.close()
       await scripted.close()
+      await egress.close()
       await cleanup()
     },
   }
