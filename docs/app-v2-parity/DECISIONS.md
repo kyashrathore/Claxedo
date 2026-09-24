@@ -142,3 +142,7 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - **No "Terminals" section in v2.**
 - **Settings content sections are free to be redesigned for the best UX** ("I don't think we had best UI in v1, just take your liberty"). Every v1 settings feature and its behavior stays: options, effects and persistence. The look inside the settings content is v2's own design, within v2's settings shell (16:45).
 - Settings flows assert behavior; a step about v1's markup branches on this entry. Lane transcript-3 owns src/settings.
+
+## Owner, 00:55: no catch-all General
+- Language, Appearance, Sounds and Notifications are separate top-level settings sections, not one "General".
+- Everything else v1's General held goes to the section it belongs to.
