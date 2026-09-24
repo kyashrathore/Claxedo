@@ -105,10 +105,8 @@
 
 .projects-choices {
   display: flex;
-  max-height: 18rem;
   flex-direction: column;
   gap: 4px;
-  overflow-y: auto;
 }
 
 .projects-link {

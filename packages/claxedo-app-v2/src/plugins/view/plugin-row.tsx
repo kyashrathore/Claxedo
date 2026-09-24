@@ -1,7 +1,7 @@
 import { createSignal, Show, type JSX } from "solid-js"
 import { unreachable } from "@/lib/machine"
 import { Button, Switch, Tag } from "@/ui"
-import { failureReason } from "../boundary"
+import { failureReason } from "../failure"
 import { usePluginsText, type PluginsKey, type PluginsText } from "../i18n"
 import { failureOf, type PluginState, type PluginSummary } from "../model"
 import { usePluginHost } from "../provider"
@@ -27,6 +27,7 @@ function detailOf(t: PluginsText, plugin: PluginSummary): string | undefined {
   const failure = failureOf(plugin.state)
   if (failure && plugin.state.kind === "failed") return t("plugins.failure", { reason: failure.reason })
   if (failure) return t("plugins.lastFailure", { reason: failure.reason })
+  if (plugin.origin.kind === "live" && plugin.origin.buildError) return t("plugins.lastFailure", { reason: plugin.origin.buildError })
   if (plugin.switchedOn && plugin.missing.length > 0) return t("plugins.missing", { capabilities: plugin.missing.join(", ") })
   if (plugin.switchedOn && !plugin.confirmed) return t("plugins.unconfirmed")
   return undefined
@@ -37,6 +38,11 @@ export function PluginRow(props: { readonly plugin: PluginSummary }): JSX.Elemen
   const t = usePluginsText()
   const [removeFailure, setRemoveFailure] = createSignal<string>()
   const detail = () => detailOf(t, props.plugin)
+  const toggle = (on: boolean) => {
+    if (!on) return host.switchOff(props.plugin.id)
+    if (!props.plugin.confirmed) return host.requestConfirmation(props.plugin.id)
+    host.switchOn(props.plugin.id)
+  }
   const remove = async () => {
     setRemoveFailure(undefined)
     try {
@@ -59,11 +65,7 @@ export function PluginRow(props: { readonly plugin: PluginSummary }): JSX.Elemen
         <Show when={detail()}>{(text) => <p class="plugin-row-detail">{text()}</p>}</Show>
         <Show when={removeFailure()}>{(text) => <p role="alert">{text()}</p>}</Show>
       </div>
-      <Switch
-        checked={props.plugin.switchedOn}
-        onChange={(on: boolean) => (on ? host.switchOn(props.plugin.id) : host.switchOff(props.plugin.id))}
-        hideLabel
-      >
+      <Switch checked={props.plugin.switchedOn && props.plugin.confirmed} onChange={toggle} hideLabel>
         {t("plugins.switch", { name: props.plugin.name })}
       </Switch>
       <Show when={props.plugin.origin.kind === "live"}>

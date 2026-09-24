@@ -36,7 +36,7 @@ export function createScrollThumb(input: { viewport: () => HTMLDivElement | unde
     const viewport = input.viewport()
     if (!viewport) return
     const { scrollTop, scrollHeight, clientHeight } = viewport
-    if (scrollHeight <= clientHeight || scrollHeight === 0) return setState("shown", false)
+    if (scrollHeight - clientHeight <= 1 || scrollHeight === 0) return setState("shown", false)
     const trackHeight = (input.track()?.clientHeight || clientHeight) - trackPadding * 2
     const height = Math.max((clientHeight / scrollHeight) * trackHeight, minThumbHeight)
     const maxScrollTop = scrollHeight - clientHeight

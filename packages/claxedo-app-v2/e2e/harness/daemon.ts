@@ -5,6 +5,7 @@ import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { promisify } from "node:util"
 import { scriptedAcpConnection, SCRIPTED_ACP_CONNECTION_ID } from "./acp/connection"
+import { initRepository } from "./git"
 import { waitForHealth } from "./health"
 import { isolatedEnv } from "./isolated-env"
 import { writeScriptedModelCatalog } from "./model-catalog"
@@ -94,19 +95,6 @@ async function installScriptedAcp(url: string, scriptDir: string, red: boolean) 
   if (!response.ok) throw new Error(`Scripted ACP connection setup failed: ${response.status} ${await response.text()}`)
 }
 
-async function initWorkspace(directory: string, name: string) {
-  await fs.mkdir(directory, { recursive: true })
-  const gitEnv = { ...process.env, GIT_INDEX_FILE: undefined, GIT_AUTHOR_DATE: undefined }
-  await execFileAsync("git", ["init"], { cwd: directory, env: gitEnv })
-  await fs.writeFile(path.join(directory, "README.md"), `${name}\n`)
-  await execFileAsync("git", ["add", "--", "README.md"], { cwd: directory, env: gitEnv })
-  await execFileAsync(
-    "git",
-    ["-c", "user.email=e2e@claxedo.test", "-c", "user.name=e2e", "commit", "-m", "init", "--", "README.md"],
-    { cwd: directory, env: gitEnv },
-  )
-}
-
 export async function startDaemon(input: DaemonInput): Promise<Daemon> {
   const dirs = await daemonDirs(input.dataDir)
   const env = await daemonEnv(input)
@@ -132,7 +120,7 @@ export async function startDaemon(input: DaemonInput): Promise<Daemon> {
     log: () => owned.log(),
     makeWorkspace: async (name) => {
       const directory = await fs.realpath(await fs.mkdtemp(path.join(dirs.workspaces, `${name}-`)))
-      await initWorkspace(directory, name)
+      await initRepository(directory, name)
       const response = await fetch(`${url}/api/workspace/resolve?directory=${encodeURIComponent(directory)}`, { method: "POST" })
       if (!response.ok) throw new Error(`workspace registration failed (${response.status}): ${await response.text()}`)
       const body = (await response.json()) as { workspaceId: string }

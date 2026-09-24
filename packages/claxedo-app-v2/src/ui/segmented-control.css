@@ -3,6 +3,14 @@
     width: 100%;
   }
 
+  .ui-segmented-control.segmented-control--fit {
+    width: auto;
+  }
+
+  .segmented-control--fit .ui-segmented-control-item {
+    flex: 1 1 auto;
+  }
+
   .ui-segmented-control {
     box-sizing: border-box;
     display: flex;
@@ -70,7 +78,7 @@
   [data-slot="segmented-control-item-label"] {
     display: flex;
     flex-direction: row;
-    justify-content: center;
+    justify-content: safe center;
     align-items: center;
     padding: 0;
     min-width: 0;

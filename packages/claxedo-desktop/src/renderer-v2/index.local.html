@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en" style="background-color: var(--v2-background-bg-base, #161616)">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Claxedo</title>
+    <link rel="icon" type="image/png" href="./favicon-96x96-v3.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="./favicon-v3.svg" />
+    <meta name="theme-color" content="#F8F7F7" />
+    <meta name="theme-color" content="#131010" media="(prefers-color-scheme: dark)" />
+    <style>
+      html,
+      body,
+      #root {
+        min-height: 100%;
+        margin: 0;
+        background-color: var(--v2-background-bg-base, #161616);
+        color: var(--v2-text-text-base, #aeaeae);
+      }
+    </style>
+    <script id="claxedo-theme-preload-script" src="./claxedo-theme-preload.js" vite-ignore></script>
+  </head>
+  <body class="antialiased overscroll-none text-12-regular overflow-hidden">
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root" class="flex flex-col h-dvh p-px"></div>
+    <script src="./main.tsx" type="module"></script>
+  </body>
+</html>

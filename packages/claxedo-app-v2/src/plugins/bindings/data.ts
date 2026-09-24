@@ -35,7 +35,7 @@ function rowOf(scope: BindingScope, ref: SessionRef): SessionRowView | undefined
   return scope.services.sessions.list.rows().find((row) => row.ref.sessionId === ref.sessionId)
 }
 
-function statusOf(row: SessionRowView | undefined): SessionStatus {
+export function sessionStatusOf(row: SessionRowView | undefined): SessionStatus {
   if (row?.waitingOnUser) return "waiting"
   switch (row?.status.kind) {
     case "working":
@@ -59,7 +59,7 @@ function sessionBindings(scope: BindingScope): PluginApi["sessions"] {
       await sessions.open(ref).send({ clientRequestId: uuid(), text: input.prompt, attachments })
       return { sessionId: ref.sessionId, projectId: ref.projectId }
     },
-    status: (ref) => statusOf(rowOf(scope, ref)),
+    status: (ref) => sessionStatusOf(rowOf(scope, ref)),
     open: (ref) => {
       const row = rowOf(scope, ref)
       if (!row) throw new PluginEntryError(scope.manifest.id, `session ${ref.sessionId} is not in the session list`)
