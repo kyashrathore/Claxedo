@@ -1,3 +1,4 @@
+import type { SessionConfig } from "@claxedo/agent-runtime-contract"
 import { afterEach, describe, expect, test } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -13,7 +14,7 @@ import {
   type RecoveryTurnTarget,
 } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeRecoveryInspection } from "@claxedo/agent-sdk-runtime"
-import type { AgentSession, ConnectionProvider, SessionConfig } from "@claxedo/agent-sdk-runtime"
+import type { AgentSession, ConnectionProvider } from "@claxedo/agent-sdk-runtime"
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import { createWorkspaceRuntimeClient } from "./client"
 import { loopbackWorkspaceRuntimeExposure } from "./exposure"

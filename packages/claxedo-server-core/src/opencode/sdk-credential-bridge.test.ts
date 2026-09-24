@@ -1,5 +1,5 @@
+import type { ProviderProjection } from "@claxedo/agent-runtime-contract"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import type { ProviderProjection } from "@claxedo/agent-sdk-runtime"
 import type { CustomProviderConfig } from "../credentials/custom-provider"
 import { configureAgentConfig, disposeAgentConfig } from "../agent-config/index"
 import { reconcileCredentialsIntoSdk, renewSdkCredentialsIfDue, syncCredentialsToSdk } from "./sdk-credential-bridge"

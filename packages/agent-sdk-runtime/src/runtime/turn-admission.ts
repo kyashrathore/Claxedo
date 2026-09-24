@@ -1,4 +1,5 @@
-import type { SteerResult } from "../adapter-contract"
+import type { SteerResult } from "@claxedo/agent-runtime-contract"
+
 import type { PromptDeliveryRequest, PromptInput } from "../index"
 import type {
   AgentRuntimeStore,

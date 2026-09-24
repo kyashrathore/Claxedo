@@ -1,4 +1,5 @@
 import { isRecord } from "@claxedo/agent-runtime-contract"
+import type { GoalAction, GoalCapabilities, GoalOptionalField } from "@claxedo/agent-runtime-contract"
 import type {
   AgentCapabilities,
   HarnessEffortLevels,
@@ -49,8 +50,6 @@ export function harnessCapabilities(input: HarnessCapabilities): HarnessCapabili
 }
 
 export const GOAL_ACTIONS = ["pause", "resume", "delete"] as const
-export type GoalAction = typeof GOAL_ACTIONS[number]
-export type GoalRecovery = "reconcile" | "blocked"
 export const GOAL_OPTIONAL_FIELDS = [
   "tokenBudget",
   "tokensUsed",
@@ -58,20 +57,6 @@ export const GOAL_OPTIONAL_FIELDS = [
   "iteration",
   "lastReason",
 ] as const
-export type GoalOptionalField = typeof GOAL_OPTIONAL_FIELDS[number]
-
-export type GoalCapabilities = {
-  /** Whether this adapter contains a real Goal implementation. */
-  implemented: boolean
-  /** Whether that implementation can be used in the current session/runtime. */
-  available: boolean
-  unavailableReason?: string
-  actions: readonly GoalAction[]
-  /** Whether authoritative state can be reconciled after reconnect/reload. */
-  recovery: GoalRecovery
-  /** Optional snapshot fields this implementation may report without fabrication. */
-  optionalFields: readonly GoalOptionalField[]
-}
 
 export class GoalCapabilityError extends Error {
   readonly code = "goal_capability_unavailable"

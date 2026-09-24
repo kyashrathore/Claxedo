@@ -205,7 +205,7 @@ export type AgentRuntimeTurnStartResult = {
   directory: RuntimeDirectory
   prompt: PromptInput
   delivery: PromptDelivery
-  steering?: import("../adapter-contract").SteerResult
+  steering?: import("@claxedo/agent-runtime-contract").SteerResult
   /**
    * The turn this prompt may later ask the runtime to cancel. A queued prompt
    * has none: the turn holding the session belongs to another caller, and

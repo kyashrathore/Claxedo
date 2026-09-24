@@ -1,4 +1,5 @@
-import type { SteerResult } from "../../adapter-contract"
+import type { SteerResult } from "@claxedo/agent-runtime-contract"
+
 import type { PromptInput } from "../../index"
 import type { ActiveTurn } from "./sdk-runtime-driver"
 import { errorMessage } from "./sdk-runtime-values"

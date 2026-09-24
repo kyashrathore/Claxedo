@@ -1,5 +1,5 @@
+import type { SubagentObservation } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/agent-runtime-contract"
-import type { SubagentObservation } from "../../subagent-admission"
 
 /** ACP draft #1992, implemented by claude-agent-acp and codex-acp.
  * https://github.com/agentclientprotocol/claude-agent-acp/blob/main/src/acp-subagents.ts

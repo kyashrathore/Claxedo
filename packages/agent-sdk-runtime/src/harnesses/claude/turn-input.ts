@@ -1,6 +1,6 @@
+import type { SteerResult } from "@claxedo/agent-runtime-contract"
 import { randomUUID } from "node:crypto"
 import type { SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
-import type { SteerResult } from "../../adapter-contract"
 
 export type ClaudeTurnPrompt = string | AsyncIterable<SDKUserMessage>
 

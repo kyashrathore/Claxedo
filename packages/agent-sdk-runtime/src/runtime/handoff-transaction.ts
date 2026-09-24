@@ -1,3 +1,4 @@
+import type { SessionConfig, SessionConfigUpdate, SessionHandoff, SessionHandoffSource } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
 import {
   connectionIdForHarness,
@@ -6,7 +7,7 @@ import {
 } from "@claxedo/agent-runtime-contract"
 import type { AgentHarnessAdapter } from "../adapter-contract"
 import { messagePartUpdated, type CompatEvent } from "../compat-events"
-import type { SessionConfig, SessionConfigUpdate, SessionHandoff, SessionHandoffSource, SessionHarness } from "../index"
+import type { SessionHarness } from "../index"
 import { renderSessionHandoff } from "../session-handoff"
 import type { AgentRuntimeStoreWithRecovery } from "../harnesses/shared/runtime-store"
 import type { TurnAdmissions } from "./turn-admission"

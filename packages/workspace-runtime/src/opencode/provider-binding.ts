@@ -1,5 +1,6 @@
+import type { ProviderUnavailable } from "@claxedo/agent-runtime-contract"
 import type { Plugin } from "@opencode-ai/plugin"
-import { isProviderUnavailable, type ProviderUnavailable } from "@claxedo/agent-sdk-runtime"
+import { isProviderUnavailable } from "@claxedo/agent-sdk-runtime"
 
 /** Where one provider's requests go and what they authenticate with. */
 export type ProviderBindingBound = Readonly<{ baseURL: string; apiKey: string }>

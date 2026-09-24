@@ -1,3 +1,4 @@
+import type { SessionConfig, SessionConfigUpdate } from "@claxedo/agent-runtime-contract"
 export { workspaceRuntimeBus } from "./bus"
 export type { WorkspaceRuntimeEvent, PtyInfo } from "./bus"
 export {
@@ -51,11 +52,5 @@ export { createBoundedGit, optionalGit, runGit, GitCredentialError, GitEnvironme
 export { buildSafeEnv } from "./pty/env"
 export type { GitHttpCredential, GitRunOptions } from "./git"
 export type { WorkspaceWorktreeRecord } from "./store"
-export type {
-  AgentRuntimeEvent,
-  AgentRuntimeStreamEvent,
-  HarnessCapabilities,
-  SessionConfig,
-  SessionConfigUpdate,
-} from "@claxedo/agent-sdk-runtime"
+export type { AgentRuntimeEvent, AgentRuntimeStreamEvent, HarnessCapabilities } from "@claxedo/agent-sdk-runtime"
 export type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"

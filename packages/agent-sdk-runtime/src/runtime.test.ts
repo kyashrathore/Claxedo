@@ -1,3 +1,4 @@
+import type { SessionConfig } from "@claxedo/agent-runtime-contract"
 import { mkdtempSync } from "fs"
 import { removeTestTempDir } from "./harnesses/shared/test-temp-dir"
 import { tmpdir } from "os"
@@ -21,7 +22,7 @@ afterAll(async () => { await nativePi.dispose() })
 import { createMemoryRuntimeStore } from "./stores/memory"
 import { createSqliteRuntimeStore } from "./stores/sqlite"
 import { buildAssistantMessage, buildSession, messagePartUpdated, messageUpdated, permissionAsked, questionAsked, sessionError, sessionIdle, sessionUpdated, sessionUsage } from "./compat-events"
-import type { AgentMessage, AgentRuntimeStreamEvent, PromptInput, RuntimeDirectory, SessionConfig } from "./index"
+import type { AgentMessage, AgentRuntimeStreamEvent, PromptInput, RuntimeDirectory } from "./index"
 
 test("disposing a runtime leaves its injected store open for its owner", async () => {
   let closed = 0

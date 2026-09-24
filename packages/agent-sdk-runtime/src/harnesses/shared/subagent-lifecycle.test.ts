@@ -1,7 +1,7 @@
+import type { SubagentObservation } from "@claxedo/agent-runtime-contract"
 import { expect, test } from "bun:test"
 import type { CompatEvent } from "../../compat-events"
 import { createMemoryRuntimeStore } from "../../stores/memory"
-import type { SubagentObservation } from "../../subagent-admission"
 import { createSubagentChildren, type SubagentChild } from "./subagent-lifecycle"
 import { registerTurnAuthority } from "./turn-authority"
 

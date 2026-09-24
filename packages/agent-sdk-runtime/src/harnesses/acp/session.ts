@@ -1,3 +1,4 @@
+import type { AgentPermissionMode, AgentPermissionModeState, GoalAction, GoalCapabilities, GoalOptionalField } from "@claxedo/agent-runtime-contract"
 import type {
   ClientContext,
   ContentBlock,
@@ -21,13 +22,8 @@ import {
   type PromptAttachment,
 } from "../shared/prompt-attachments"
 import { extractTextFromParts } from "../shared/sdk-runtime-values"
-import type {
-  AgentConfigOptions,
-  AgentPermissionMode,
-  AgentPermissionModeState,
-  ResolvedHarnessModel,
-} from "../../adapter-contract"
-import { GOAL_OPTIONAL_FIELDS, type GoalAction, type GoalCapabilities, type GoalOptionalField } from "../../capabilities"
+import type { AgentConfigOptions, ResolvedHarnessModel } from "../../adapter-contract"
+import { GOAL_OPTIONAL_FIELDS } from "../../capabilities"
 
 export const ACP_GOAL_METHODS = {
   read: "session/goal/get",

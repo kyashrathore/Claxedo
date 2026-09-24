@@ -1,3 +1,4 @@
+import type { AdapterCancelOutcome } from "@claxedo/agent-runtime-contract"
 import { randomUUID } from "node:crypto"
 import type {
   AgentExecutionBinding,
@@ -6,7 +7,7 @@ import type {
   RecoveryRequest,
   RecoveryTurnTarget,
 } from "@claxedo/agent-runtime-contract"
-import type { AdapterCancelOutcome, SupportsCancel } from "../adapter-contract"
+import type { SupportsCancel } from "../adapter-contract"
 import type { AgentRuntimeRecovery, RecoveryCaller } from "../runtime/contracts"
 
 /**

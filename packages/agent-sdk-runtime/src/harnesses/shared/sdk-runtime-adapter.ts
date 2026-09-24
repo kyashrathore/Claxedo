@@ -1,3 +1,5 @@
+import type { SessionTitleRequest } from "@claxedo/agent-runtime-contract"
+import type { AdapterCancelOutcome, AgentPermissionModeState, SessionConfig, SessionConfigUpdate, SteerResult } from "@claxedo/agent-runtime-contract"
 import { randomUUID } from "crypto"
 import {
   requireAgentExecutionBinding,
@@ -17,32 +19,10 @@ import {
   type CompatEvent,
 } from "../../compat-events"
 import { listCommands } from "../../command-discovery"
-import type {
-  AgentCommand,
-  AgentMessage,
-  AgentPermission,
-  AgentQuestion,
-  AgentQuestionAnswer,
-  AgentRuntimeStreamEvent,
-  AgentSession,
-  PromptInput,
-  SessionConfig,
-  SessionConfigUpdate,
-} from "../../index"
-import type {
-  AdapterCancelOutcome,
-  AgentConfigOptions,
-  AgentGoalResource,
-  AgentHarnessAdapter,
-  AgentHarnessAdapterHealth,
-  AgentHarnessAdapterHealthContext,
-  AgentPermissionModeState,
-  AgentSessionCreateOptions,
-  AgentTurnWriteContext,
-  SteerResult,
-} from "../../adapter-contract"
+import type { AgentCommand, AgentMessage, AgentPermission, AgentQuestion, AgentQuestionAnswer, AgentRuntimeStreamEvent, AgentSession, PromptInput } from "../../index"
+import type { AgentConfigOptions, AgentGoalResource, AgentHarnessAdapter, AgentHarnessAdapterHealth, AgentHarnessAdapterHealthContext, AgentSessionCreateOptions, AgentTurnWriteContext } from "../../adapter-contract"
 import { turnWriteFence } from "../../adapter-contract"
-import { generateDriverTitle, pushDriverTitle, type SessionTitleRequest } from "./sdk-runtime-title"
+import { generateDriverTitle, pushDriverTitle } from "./sdk-runtime-title"
 import type { HarnessCapabilities } from "../../capabilities"
 import { createTurnEventProjector, type RuntimeAppendSource } from "../shared/turn-projection"
 import {

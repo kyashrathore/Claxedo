@@ -1,5 +1,5 @@
+import type { AdapterCancelOutcome } from "@claxedo/agent-runtime-contract"
 import type { AgentMessageError } from "@claxedo/agent-runtime-contract"
-import type { AdapterCancelOutcome } from "../../adapter-contract"
 import { cancellationFailure, stopFailure, type CancellationFailure } from "./cancellation-facts"
 import type { RequestDeadline } from "../../launch"
 import type { ActiveTurn } from "./sdk-runtime-driver"

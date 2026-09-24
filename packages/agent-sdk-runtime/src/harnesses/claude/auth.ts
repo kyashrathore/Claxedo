@@ -1,4 +1,5 @@
-import type { ProviderBinding } from "../../provider-projection"
+import type { ProviderBinding } from "@claxedo/agent-runtime-contract"
+
 
 export type ClaudeAuthEnv = {
   ANTHROPIC_BASE_URL?: string

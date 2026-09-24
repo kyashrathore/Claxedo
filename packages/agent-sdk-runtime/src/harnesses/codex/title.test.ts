@@ -1,6 +1,6 @@
+import type { SessionTitleRequest } from "@claxedo/agent-runtime-contract"
 import { describe, expect, test } from "bun:test"
 import type { JsonRecord } from "../shared/sdk-runtime-adapter"
-import type { SessionTitleRequest } from "../../title-generation"
 import { generateCodexTitle, setCodexThreadName, type CodexTitleProcess } from "./title"
 
 function fakeProcess(options: { reply?: string; failTurn?: boolean; startTurn?: () => Promise<unknown> } = {}) {

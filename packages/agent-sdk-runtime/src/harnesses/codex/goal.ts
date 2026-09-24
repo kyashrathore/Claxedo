@@ -1,6 +1,7 @@
+import type { AgentGoalMutationResult } from "@claxedo/agent-runtime-contract"
 import type { RawHarnessEvent, RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import { randomUUID } from "crypto"
-import type { AgentGoalMutationResult, AgentGoalResource } from "../../adapter-contract"
+import type { AgentGoalResource } from "../../adapter-contract"
 import { GOAL_ACTIONS, goalCapabilities } from "../../capabilities"
 import { Log } from "../../log"
 import { requireWorkspaceDirectory } from "../../target"

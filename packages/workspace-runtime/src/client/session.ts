@@ -1,3 +1,4 @@
+import type { AgentGoalMutationResult, AgentPermissionModeState, GoalCapabilities, SessionConfig, SessionConfigUpdate } from "@claxedo/agent-runtime-contract"
 import type {
   AgentSessionStart,
   AgentMessage,
@@ -13,17 +14,7 @@ import type {
   RecoveryRequest,
 } from "@claxedo/agent-runtime-contract"
 import { isRecoveryOutcome, parseRecoveryOutcome } from "@claxedo/agent-runtime-contract"
-import type {
-  AgentConfigOptions,
-  AgentGoalMutationResult,
-  AgentRuntimeRecoveryInspection,
-  AgentPermissionModeState,
-  GoalCapabilities,
-  HarnessCapabilities,
-  RuntimeGoalSnapshot,
-  SessionConfig,
-  SessionConfigUpdate,
-} from "@claxedo/agent-sdk-runtime"
+import type { AgentConfigOptions, AgentRuntimeRecoveryInspection, HarnessCapabilities, RuntimeGoalSnapshot } from "@claxedo/agent-sdk-runtime"
 import type { AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
 import { claxedoErrorEnvelope, namedMembers, without, type WorkspaceRuntimeCaller, type WorkspaceRuntimeRequestOptions, type WorkspaceRuntimeResponse, type WorkspaceScope } from "./request"
 

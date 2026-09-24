@@ -1,3 +1,4 @@
+import type { SessionConfig, SessionConfigUpdate } from "@claxedo/agent-runtime-contract"
 import { randomUUID } from "crypto"
 import {
   AgentRuntimeContractError,
@@ -5,21 +6,7 @@ import {
   type AgentExecutionBinding,
 } from "@claxedo/agent-runtime-contract"
 import { assistantMessageIdForTurn, type AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
-import type {
-  AgentMessage,
-  AgentPermission,
-  AgentQuestion,
-  AgentQuestionAnswer,
-  AgentRuntimeStreamEvent,
-  AgentSession,
-  HarnessCapabilities,
-  PromptInput,
-  RuntimeDirectory,
-  SessionConfig,
-  SessionConfigUpdate,
-  SessionHarness,
-  AgentTurnOutcome,
-} from "./index"
+import type { AgentMessage, AgentPermission, AgentQuestion, AgentQuestionAnswer, AgentRuntimeStreamEvent, AgentSession, HarnessCapabilities, PromptInput, RuntimeDirectory, SessionHarness, AgentTurnOutcome } from "./index"
 import type { AgentHarnessAdapter } from "./adapter-contract"
 import { hasAdapterCapability } from "./capabilities"
 import { admitSessionInstructions } from "./session-instructions"

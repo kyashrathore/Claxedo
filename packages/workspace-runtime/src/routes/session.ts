@@ -1,3 +1,4 @@
+import type { SessionConfig } from "@claxedo/agent-runtime-contract"
 import { HTTPException } from "hono/http-exception"
 import { flushRuntimeSessionDocuments } from "./document-hydration"
 import { acquireSessionTurnLease, type ActiveSessionTurnLease } from "./session-turn-lease"
@@ -6,20 +7,7 @@ import { createChildSessionHost, type ChildOriginStore, type PendingChildWake } 
 import { createSessionDeliveryOwner, type SessionDeliveryStore } from "../session/delivery-owner"
 import { isAgentRuntimeTurnConflictError, type SubagentAdmissionStore } from "@claxedo/agent-sdk-runtime"
 import { admitSessionPromptTurn, runRuntimePromptTurn, runSessionPromptTurn } from "../session/service"
-import {
-  type AgentRuntime,
-  type AgentRuntimeRecovery,
-  type AgentMessage,
-  type AgentMessageAuthor,
-  type AgentPermission,
-  type AgentQuestion,
-  type SessionHarness,
-  type AgentSession,
-  type PromptDelivery,
-  type SessionConfig,
-  type SessionConfigRequestUpdate,
-  type SessionModelGroup,
-} from "@claxedo/agent-sdk-runtime"
+import { type AgentRuntime, type AgentRuntimeRecovery, type AgentMessage, type AgentMessageAuthor, type AgentPermission, type AgentQuestion, type SessionHarness, type AgentSession, type PromptDelivery, type SessionConfigRequestUpdate, type SessionModelGroup } from "@claxedo/agent-sdk-runtime"
 import {
   type AgentMessagePage,
   type AgentMessagePageInput,

@@ -1,3 +1,4 @@
+import type { SessionConfigUpdate } from "@claxedo/agent-runtime-contract"
 import type {
   AgentAgent,
   AgentCommand,
@@ -88,27 +89,9 @@ export {
   requireGoalAction,
 }
   from "./capabilities"
-export type {
-  GoalAction,
-  GoalCapabilities,
-  GoalOptionalField,
-  GoalRecovery,
-  HarnessCapabilities,
-  HarnessCapabilityTarget,
-} from "./capabilities"
+export type { HarnessCapabilities, HarnessCapabilityTarget } from "./capabilities"
 export { requireGoalResource } from "./adapter-contract"
-export type {
-  AgentConfigOptions,
-  AgentPermissionMode,
-  AgentPermissionModeState,
-  AutoLevel,
-  ResolvedHarnessModel,
-  AgentGoalMutationFailure,
-  AgentGoalMutationResult,
-  AgentGoalResource,
-  AgentGoalStartInput,
-  SupportsGoals,
-} from "./adapter-contract"
+export type { AgentConfigOptions, ResolvedHarnessModel, AgentGoalResource, SupportsGoals } from "./adapter-contract"
 export type { CompatEvent, CompatEnvelope, CompatPart } from "./compat-events"
 export { classifyFirstTurnError, firstTurnErrorData, FIRST_TURN_ERROR_CLASSES } from "./first-turn-error"
 export type { FirstTurnErrorClass } from "./first-turn-error"
@@ -139,12 +122,7 @@ export {
   createSubagentAdmissionBoundary,
   UnknownHostSubagentKeyError,
 } from "./subagent-admission"
-export type {
-  AdmittedSubagentObservation,
-  SubagentAdmissionBoundary,
-  SubagentAdmissionStore,
-  SubagentObservation,
-} from "./subagent-admission"
+export type { AdmittedSubagentObservation, SubagentAdmissionBoundary, SubagentAdmissionStore } from "./subagent-admission"
 export {
   AUTO_LEVEL_ORDER,
   comparePermissionLevels,
@@ -192,14 +170,6 @@ export {
   ProviderProjectionExpiredError,
 } from "./provider-projection"
 export type {
-  PlaceholderEnvironment,
-  ProviderBinding,
-  ProviderBindingSource,
-  ProviderProjection,
-  ProviderProjectionSource,
-  ProviderUnavailable,
-} from "./provider-projection"
-export type {
   AgentHarnessAccess,
   AgentHarnessDefinition,
   AgentHarnessId,
@@ -242,86 +212,6 @@ export {
   type AgentProcessObserverHandle,
   type AgentProcessRole,
 } from "./process-observer"
-
-/**
- * Conversation context owed to a session's fresh native thread, carried on
- * every turn until one completes. `announced` records that the harness change
- * was written onto a sent user message, so a retried first turn does not mark
- * it again.
- */
-export type SessionHandoff = {
-  from: SessionHarness
-  pending: true
-  transcript: string
-  reason?: "missing-session"
-  announced?: true
-  source?: SessionHandoffSource
-}
-
-/**
- * The native session of the harness a handoff left, and the config it ran
- * under. It is kept until a message is sent on the new harness, so picking the
- * left harness back resumes its own thread instead of a transcript copy.
- */
-export type SessionHandoffSource = {
-  agentSessionId: string
-  upstreamSessionId: string
-  ownerKey: string | null
-  model?: PromptModel
-  variant?: string | null
-  agent?: string | null
-  handoff?: Omit<SessionHandoff, "source">
-}
-
-export type SessionConfig = {
-  /** Host-owned maximum permission level, retained across harness changes. */
-  permissionCeiling?: import("./adapter-contract").AutoLevel
-  /** Accepted harness mode, persisted by the permission-mode operation. */
-  permissionMode?: string
-  /** Native permission state accepted by the driver; opaque to shared consumers. */
-  permissionState?: Record<string, unknown>
-  harness: SessionHarness
-  model?: PromptModel
-  variant?: string | null
-  agent?: string | null
-  /**
-   * Standing instructions this session was created with. Retained so a session
-   * reopened after a restart keeps them without the caller resending anything;
-   * where they reach the harness is that harness's own `instructionChannel`,
-   * and one with none refuses the create rather than dropping them.
-   */
-  instructions?: string | null
-  /**
-   * The resolved model group this session was created under, machine-readable
-   * so a later reader — a delegation request naming a slot, say — resolves the
-   * same harness/model/effort the creator chose instead of re-parsing the
-   * instruction prose the group was also rendered into.
-   */
-  group?: SessionModelGroup | null
-  handoff?: SessionHandoff | null
-}
-
-/**
- * Partial update for a session config.
- *
- * - `undefined` leaves a field unchanged.
- * - `null` clears optional nullable fields.
- * - a value replaces the field.
- *
- * `harness` is a full replacement, not a deep merge.
- */
-export type SessionConfigUpdate = {
-  permissionCeiling?: SessionConfig["permissionCeiling"]
-  permissionMode?: string | null
-  permissionState?: Record<string, unknown> | null
-  harness?: SessionHarness
-  model?: PromptModel | null
-  variant?: string | null
-  agent?: string | null
-  instructions?: string | null
-  group?: SessionModelGroup | null
-  handoff?: SessionHandoff | null
-}
 
 /**
  * Fixed at create, so a later edit cannot rewrite what an already-running

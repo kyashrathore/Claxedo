@@ -1,8 +1,8 @@
+import type { ProviderProjection } from "@claxedo/agent-runtime-contract"
 import { describe, expect, test } from "bun:test"
 import { claudeAuthEnv } from "./auth"
 import { harnessSpawnEnv } from "../shared/spawn-env"
 import { harnessProjection } from "../../harness-projection"
-import type { ProviderProjection } from "../../provider-projection"
 
 const key: ProviderProjection = {
   baseUrl: "http://127.0.0.1:2595/bindings/b1",

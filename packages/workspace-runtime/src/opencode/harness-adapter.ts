@@ -1,18 +1,8 @@
+import type { AdapterCancelOutcome } from "@claxedo/agent-runtime-contract"
+import type { SessionConfig, SessionConfigUpdate } from "@claxedo/agent-runtime-contract"
 import type { OpenCodeLaunchDocument } from "./launch-policy"
-import type {
-  AgentAgent,
-  AgentCommand,
-  AgentContentPart,
-  AgentMessage,
-  AgentPermission,
-  AgentQuestion,
-  AgentRuntimeStreamEvent,
-  AgentSession,
-  PromptInput,
-  SessionConfig,
-  SessionConfigUpdate,
-} from "@claxedo/agent-sdk-runtime"
-import type { AdapterCancelOutcome, AgentHarnessAdapter, AgentMessagePage, AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/adapters"
+import type { AgentAgent, AgentCommand, AgentContentPart, AgentMessage, AgentPermission, AgentQuestion, AgentRuntimeStreamEvent, AgentSession, PromptInput } from "@claxedo/agent-sdk-runtime"
+import type { AgentHarnessAdapter, AgentMessagePage, AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/adapters"
 import { harnessCapabilities } from "@claxedo/agent-sdk-runtime/capabilities"
 import { NO_HARNESS_EFFORT, ProviderCredentialUnavailableError } from "@claxedo/agent-sdk-runtime"
 import type { AgentExecutionBinding, AgentQuestionAnswer } from "@claxedo/agent-runtime-contract"

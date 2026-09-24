@@ -1,3 +1,4 @@
+import type { SessionConfig } from "@claxedo/agent-runtime-contract"
 /**
  * Shared harness for the carved `submit.ts` orchestrator suites
  * (`submit.harness-dispatch.test.ts`, `submit.transport-resolution.test.ts`,
@@ -24,7 +25,6 @@
  */
 import { createStore } from "solid-js/store"
 import { normalizeHarnessIdentity } from "@claxedo/agent-runtime-contract"
-import type { SessionConfig } from "@claxedo/agent-sdk-runtime"
 import type { HarnessSelection } from "@/platform/identity/harness-selection"
 import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
 import type { Prompt } from "@/features/session/providers/prompt"

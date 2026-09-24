@@ -1,6 +1,7 @@
+import type { AgentGoalMutationResult } from "@claxedo/agent-runtime-contract"
 import { randomUUID } from "crypto"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
-import type { AgentGoalMutationResult, AgentGoalResource } from "../../adapter-contract"
+import type { AgentGoalResource } from "../../adapter-contract"
 import type { AgentRuntimeStreamEvent, PromptInput } from "../../index"
 import { toCompatEvent } from "../../compat-events"
 import type { RuntimeEventHub } from "../../runtime-event-hub"

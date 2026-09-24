@@ -1,19 +1,12 @@
+import type { SessionConfig, SessionConfigUpdate } from "@claxedo/agent-runtime-contract"
 import fs from "fs"
 import path from "path"
-import {
-  type SessionConfig as AgentSessionConfig,
-  type SessionConfigUpdate as AgentSessionConfigUpdate,
-  type SessionHarness as AgentSessionHarness,
-  harnessKey,
-  normalizeHarnessIdentity,
-} from "@claxedo/agent-sdk-runtime"
+import { type SessionHarness as AgentSessionHarness, harnessKey, normalizeHarnessIdentity } from "@claxedo/agent-sdk-runtime"
 import { AGENT_HARNESS_ACCESSES } from "@claxedo/agent-sdk-runtime"
 import { isOneOf, jsonRecord, jsonString } from "@claxedo/server-core/platform/runtime/lib/json"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 
 export type SessionHarness = AgentSessionHarness
-export type SessionConfig = AgentSessionConfig
-export type SessionConfigUpdate = AgentSessionConfigUpdate
 
 export function meteringHarnessId(harness: SessionHarness) {
   const key = harnessKey(harness)

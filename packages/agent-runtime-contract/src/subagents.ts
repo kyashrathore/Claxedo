@@ -51,3 +51,23 @@ export type AgentSubagentUpdate = {
   attention?: number
   wake?: SubagentWake
 }
+
+export type SubagentObservation = {
+  observationId: string
+  harnessExecutionId?: string
+  subagentKey?: string
+  stableCorrelationId?: string
+  toolCallId?: string
+  toolCallRole?: SubagentToolCallRole
+  mode?: SubagentMode
+  status?: SubagentStatus
+  label?: string
+  subagentType?: string
+  description?: string
+  providerId?: string
+  providerKind?: string
+  childSessionId?: string
+  transcript?: SubagentTranscript
+  attention?: number
+  wake?: SubagentWake
+}

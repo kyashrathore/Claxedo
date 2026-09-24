@@ -1,5 +1,6 @@
+import type { SessionConfig } from "@claxedo/agent-runtime-contract"
 import type { HarnessInstructionChannel } from "@claxedo/agent-runtime-contract"
-import type { PromptModel, SessionConfig, SessionHarness } from "./index"
+import type { PromptModel, SessionHarness } from "./index"
 import { harnessKey } from "@claxedo/agent-runtime-contract"
 
 /**

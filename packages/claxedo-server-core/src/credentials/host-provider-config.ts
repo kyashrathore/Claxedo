@@ -1,3 +1,4 @@
+import type { ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
 /**
  * What the owner sealed for a host, once it is open again.
  *
@@ -15,10 +16,7 @@
  * puts the owner's account ahead of the machine's.
  */
 
-import {
-  providerProjectionRecord,
-  type ProviderProjectionSource,
-} from "@claxedo/agent-sdk-runtime/provider-projection"
+import { providerProjectionRecord } from "@claxedo/agent-sdk-runtime/provider-projection"
 
 /** Bumped when the sealed shape changes; a host that cannot read a version refuses the whole revision. */
 export const HOST_PROVIDER_CONFIG_VERSION = 1

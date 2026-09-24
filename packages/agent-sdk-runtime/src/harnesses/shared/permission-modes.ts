@@ -1,4 +1,5 @@
-import type { AgentPermissionMode, AgentPermissionModeState, AutoLevel } from "../../adapter-contract"
+import type { AgentPermissionMode, AgentPermissionModeState, AutoLevel } from "@claxedo/agent-runtime-contract"
+
 
 /**
  * Per-session permission-mode selection for the harnesses whose mode is an

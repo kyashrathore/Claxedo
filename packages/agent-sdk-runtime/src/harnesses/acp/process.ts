@@ -1,3 +1,4 @@
+import type { AgentPermissionModeState, GoalCapabilities } from "@claxedo/agent-runtime-contract"
 import { asRecord, type AgentSessionStartBinding } from "@claxedo/agent-runtime-contract"
 import { randomUUID } from "crypto"
 import type { ACPConnectionObservationUpdate } from "./connection-state"
@@ -41,8 +42,7 @@ import {
   type ACPState,
   type ACPGoalExtension,
 } from "./session"
-import type { AgentPermissionModeState, ResolvedHarnessModel } from "../../adapter-contract"
-import type { GoalCapabilities } from "../../capabilities"
+import type { ResolvedHarnessModel } from "../../adapter-contract"
 import { type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import { IDLE_TIMEOUT_MS, newSessionTimeoutMs, initializeTimeoutMs, promptTimeoutMs, watch } from "./helpers"
 import { AcpSessionUncertainError } from "./recovery"

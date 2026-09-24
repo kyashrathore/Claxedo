@@ -1,24 +1,8 @@
+import type { SessionConfig, SessionConfigUpdate } from "@claxedo/agent-runtime-contract"
 import { Log } from "../log"
 import fs from "fs"
 import path from "path"
-import {
-  connectionIdForHarness,
-  createAcpConnectionProvider,
-  createAgentRuntime,
-  createConnectionProviderRegistry,
-  type AgentRuntime,
-  type AgentSession,
-  type AgentMessage,
-  type SessionConfig,
-  type SessionConfigUpdate,
-  type SessionHarness,
-  type ConnectionProvider,
-  type ConnectionSecretResolver,
-  type HarnessConnectionDescriptor,
-  type AgentProcessObserver,
-  type AgentTurnOutcome,
-  type AgentRuntimeRecovery,
-} from "@claxedo/agent-sdk-runtime"
+import { connectionIdForHarness, createAcpConnectionProvider, createAgentRuntime, createConnectionProviderRegistry, type AgentRuntime, type AgentSession, type AgentMessage, type SessionHarness, type ConnectionProvider, type ConnectionSecretResolver, type HarnessConnectionDescriptor, type AgentProcessObserver, type AgentTurnOutcome, type AgentRuntimeRecovery } from "@claxedo/agent-sdk-runtime"
 import {
   ClaudeHarnessAdapter,
   CodexHarnessAdapter,

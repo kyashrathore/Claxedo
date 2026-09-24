@@ -1,19 +1,5 @@
-/**
- * Delivery of an operator's provider accounts into a cloud sandbox through the
- * sandbox provider's own secret edge, and the projection the runtime inside
- * that sandbox receives for them.
- *
- * Both halves are here because they are one decision read twice: the account
- * selected for a provider fixes the vendor host the secret is allowed to reach,
- * the header it is attached in, and the environment variable the harness reads
- * its placeholder from. Splitting them let the two sides disagree about the
- * variable's name, which is a turn that authenticates as nobody.
- *
- * The secret's value never reaches the sandbox: the driver hands it to the
- * provider edge, which substitutes or attaches it on egress to `hosts`.
- */
+import type { ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
 
-import type { ProviderProjectionSource } from "@claxedo/agent-sdk-runtime"
 import { Log } from "../platform/runtime/lib/log"
 import {
   destinationAuthMode,

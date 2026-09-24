@@ -1,5 +1,6 @@
+import type { AgentGoalMutationResult } from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
-import type { AgentGoalMutationResult, AgentGoalResource } from "../../adapter-contract"
+import type { AgentGoalResource } from "../../adapter-contract"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
 import { requireWorkspaceDirectory } from "../../target"
 import { createGoalPublisher, type GoalPublisher } from "../shared/goal-publisher"

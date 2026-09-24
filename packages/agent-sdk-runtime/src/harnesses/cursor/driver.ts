@@ -1,3 +1,4 @@
+import type { ProviderProjection, SessionTitleRequest } from "@claxedo/agent-runtime-contract"
 import { credentialBrokerErrorCode } from "@claxedo/agent-runtime-contract"
 import {
   createAgentEventRuntime,
@@ -37,12 +38,7 @@ import {
   type SdkRuntimeTranscriptRegistrar,
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
-import {
-  isProviderUnavailable,
-  providerBinding,
-  providerProjectionRecord,
-  type ProviderProjection,
-} from "../../provider-projection"
+import { isProviderUnavailable, providerBinding, providerProjectionRecord } from "../../provider-projection"
 import {
   applyCursorBackendUrl,
   CursorBackendUrlFrozenError,
@@ -52,7 +48,6 @@ import {
 import { harnessProjection } from "../../harness-projection"
 import { createNativeGoalStore, nativeGoalCommand } from "../shared/native-goal-store"
 import { generateCursorTitle } from "./title"
-import type { SessionTitleRequest } from "../../title-generation"
 import { createTurnStop, createTurnStopRecord } from "../shared/cancellation-facts"
 import {
   deliverPromptAttachments,

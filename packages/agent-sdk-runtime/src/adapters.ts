@@ -1,42 +1,4 @@
-export type {
-  AdapterCancelOutcome,
-  AgentHarnessAdapter,
-  AgentHarnessAdapterCore,
-  AgentHarnessAdapterHealth,
-  AgentHarnessAdapterHealthContext,
-  AgentInteractionResult,
-  AgentGoalMutationFailure,
-  AgentGoalMutationResult,
-  AgentGoalResource,
-  AgentGoalStartInput,
-  AgentMessagePage,
-  AgentMessagePageInput,
-  AgentHarnessAdapterProcessOptions,
-  AgentTurnWriteContext,
-  AgentConfigOptions,
-  AgentHandoffSessionOptions,
-  AgentPreparedHandoffSession,
-  AgentSessionCreateOptions,
-  PermissionDecision,
-  ResolvedHarnessModel,
-  SupportsCancel,
-  SupportsAgents,
-  SupportsCommands,
-  SupportsConfigOptions,
-  SupportsFork,
-  SupportsGoals,
-  SupportsMessagePages,
-  SupportsPermissions,
-  SupportsQuestions,
-  SupportsRevert,
-  SupportsRuntimeConfig,
-  SupportsShell,
-  SupportsSummarize,
-  SupportsTodos,
-  SupportsUnrevert,
-  ShellCommandInput,
-  SummarizeSessionInput,
-} from "./adapter-contract"
+export type { AgentHarnessAdapter, AgentHarnessAdapterCore, AgentHarnessAdapterHealth, AgentHarnessAdapterHealthContext, AgentInteractionResult, AgentGoalResource, AgentMessagePage, AgentMessagePageInput, AgentHarnessAdapterProcessOptions, AgentTurnWriteContext, AgentConfigOptions, AgentHandoffSessionOptions, AgentPreparedHandoffSession, AgentSessionCreateOptions, ResolvedHarnessModel, SupportsCancel, SupportsAgents, SupportsCommands, SupportsConfigOptions, SupportsFork, SupportsGoals, SupportsMessagePages, SupportsPermissions, SupportsQuestions, SupportsRevert, SupportsRuntimeConfig, SupportsShell, SupportsSummarize, SupportsTodos, SupportsUnrevert, ShellCommandInput, SummarizeSessionInput } from "./adapter-contract"
 export { requireGoalResource, resolvedModelFromConfigOptions } from "./adapter-contract"
 export { AgentMessagePageError } from "./message-page"
 export { AgentHarnessEngineError, isAgentHarnessEngineError } from "./harness-engine-error"
@@ -49,15 +11,7 @@ export {
   hasAdapterCapability,
   requireGoalAction,
 } from "./capabilities"
-export type {
-  AdapterCapability,
-  AdapterCapabilityProvider,
-  GoalAction,
-  GoalCapabilities,
-  GoalOptionalField,
-  GoalRecovery,
-  RuntimeConfigurableAdapter,
-} from "./capabilities"
+export type { AdapterCapability, AdapterCapabilityProvider, RuntimeConfigurableAdapter } from "./capabilities"
 export {
   AcpHarnessAdapter,
   createACPTransportFactory,

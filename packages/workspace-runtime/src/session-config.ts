@@ -1,15 +1,5 @@
-import {
-  isAutoLevel,
-  normalizeHarnessIdentity,
-  parseSessionModelGroup,
-  type AutoLevel,
-  type PromptModel,
-  type SessionConfig,
-  type SessionConfigRequestUpdate,
-  type SessionHarness,
-  type SessionModelGroup,
-  type SessionModelGroupParse,
-} from "@claxedo/agent-sdk-runtime"
+import type { AutoLevel, SessionConfig } from "@claxedo/agent-runtime-contract"
+import { isAutoLevel, normalizeHarnessIdentity, parseSessionModelGroup, type PromptModel, type SessionConfigRequestUpdate, type SessionHarness, type SessionModelGroup, type SessionModelGroupParse } from "@claxedo/agent-sdk-runtime"
 import { rec as record, str } from "./json-value"
 
 /**

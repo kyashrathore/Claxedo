@@ -121,12 +121,11 @@ Types:
 - `PromptModel`
 - `PromptFormat`
 - `SessionHarness`
-- `SessionConfig`
-- `SessionConfigUpdate`
 
 These describe host-visible prompt submission and harness/model/agent selection.
 They do not encode product authorization or database policy.
 
+`SessionConfig` and `SessionConfigUpdate` come from `@claxedo/agent-runtime-contract`.
 `SessionConfig` is the complete current config. `SessionConfigUpdate` is a
 partial mutation request:
 

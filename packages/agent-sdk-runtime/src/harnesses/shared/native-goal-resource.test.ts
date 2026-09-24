@@ -1,5 +1,6 @@
+import type { GoalCapabilities } from "@claxedo/agent-runtime-contract"
 import { describe, expect, test } from "bun:test"
-import { goalActionAvailable, goalCapabilities, type GoalCapabilities } from "../../capabilities"
+import { goalActionAvailable, goalCapabilities } from "../../capabilities"
 import { createNativeGoalResource, type NativeGoal, type NativeGoalResourceHost } from "./native-goal-resource"
 
 function resource(input: {

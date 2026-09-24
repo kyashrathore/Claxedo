@@ -1,6 +1,6 @@
+import type { SessionTitleRequest } from "@claxedo/agent-runtime-contract"
 import fs from "node:fs/promises"
 import path from "node:path"
-import type { SessionTitleRequest } from "../../title-generation"
 import type { PiRpcMessage } from "./rpc-process"
 import type { RequestDeadline } from "../../launch"
 import { controlRequestDeadline } from "../shared/request-deadline"
