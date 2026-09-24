@@ -4,7 +4,8 @@ import { Match, Show, Switch, type JSX } from "solid-js"
 import { CloudWorkspacesSection } from "@/cloud"
 import type { Project, ProjectId } from "@/server"
 import { SettingsGroup, SettingsList, SettingsNote, SettingsRow } from "@/settings"
-import { Button, Icon, useDialog } from "@/ui"
+import { Icon, useDialog } from "@/ui"
+import { Button } from "@opencode-ai/ui/button"
 import { useProjectsText } from "../i18n"
 import { usePlacementOpener } from "../open"
 import { sourceLabel } from "../project-source"
@@ -25,7 +26,7 @@ function ProjectFields(props: { readonly project: Project }): JSX.Element {
     <SettingsGroup
       title={t("projects.settings.group")}
       action={
-        <Button variant="outline" onClick={() => dialog.show(() => <DialogEditProject project={props.project} />)}>
+        <Button variant="secondary" size="small" onClick={() => dialog.show(() => <DialogEditProject project={props.project} />)}>
           {t("projects.edit.action")}
         </Button>
       }
@@ -68,7 +69,7 @@ function ProjectRemoval(props: { readonly id: ProjectId; readonly name: string }
   return (
     <SettingsList>
       <SettingsRow title={t("projects.remove.title")} description={t("projects.settings.remove.description")}>
-        <Button variant="danger" onClick={remove}>
+        <Button variant="secondary" size="small" onClick={remove}>
           {t("projects.remove")}
         </Button>
       </SettingsRow>

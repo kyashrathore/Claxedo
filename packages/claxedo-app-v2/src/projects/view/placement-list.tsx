@@ -1,7 +1,7 @@
 import { For, Match, Switch, type Accessor, type Component } from "solid-js"
 import { unreachable } from "@/lib/machine"
 import type { Placement, ProjectId } from "@/server"
-import { Button } from "@/ui"
+import { Button } from "@opencode-ai/ui/button"
 import { useProjectsText, type ProjectsText } from "../i18n"
 import { usePlacementOpener } from "../open"
 import { useProjectPlacements } from "../store"
@@ -58,7 +58,7 @@ export const PlacementList: Component<{ projectId: Accessor<ProjectId> }> = (pro
                     <span class="truncate text-sm">{placement.label}</span>
                     <span class="projects-hint truncate">{placementDetail(t, placement)}</span>
                   </div>
-                  <Button variant="outline" onClick={() => open(placement.id)}>
+                  <Button variant="secondary" size="small" onClick={() => open(placement.id)}>
                     {t("projects.placement.open")}
                   </Button>
                 </li>
