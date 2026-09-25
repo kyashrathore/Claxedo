@@ -1,8 +1,6 @@
 import type { PluginCapability, PluginManifest } from "@claxedo/plugin-api"
 import { unreachable } from "@/lib/machine"
 
-export const CODE_CHANGE_NEEDS_APPROVAL = false
-
 export type PluginAccess = {
   readonly routes: readonly string[]
   readonly operations: readonly string[]
@@ -17,7 +15,7 @@ export type ApprovalCheck =
   | { readonly kind: "approved" }
   | { readonly kind: "unapproved" }
   | { readonly kind: "accessChanged"; readonly change: AccessChange }
-  | { readonly kind: "codeChanged"; readonly builtAt: string; readonly needsApproval: boolean }
+  | { readonly kind: "codeChanged"; readonly builtAt: string }
 
 export type ApprovalSubject = { readonly manifest: PluginManifest; readonly hash: string; readonly builtAt: string }
 
@@ -52,15 +50,14 @@ export function approvalCheck(approval: Approval | undefined, subject: ApprovalS
   const change = accessChange(approval.access, accessOf(subject.manifest))
   if (change) return { kind: "accessChanged", change }
   if (approval.hash === subject.hash) return { kind: "approved" }
-  return { kind: "codeChanged", builtAt: subject.builtAt, needsApproval: CODE_CHANGE_NEEDS_APPROVAL }
+  return { kind: "codeChanged", builtAt: subject.builtAt }
 }
 
 export function approvalLetsRun(check: ApprovalCheck): boolean {
   switch (check.kind) {
     case "approved":
-      return true
     case "codeChanged":
-      return !check.needsApproval
+      return true
     case "unapproved":
     case "accessChanged":
       return false
