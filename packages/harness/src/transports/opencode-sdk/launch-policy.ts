@@ -1,30 +1,26 @@
 import type { Mcp, Plugin, Skill } from "@opencode-ai/plugin"
 import { promises as fs } from "node:fs"
-import { openCodeLocationClient, type OpenCodeHost } from "./host"
-import type { WorkspaceScope } from "./scope"
-import { loadSkills } from "./skill-info"
+import { openCodeLocationClient, type OpenCodeHost } from "./host.js"
+import type { WorkspaceScope } from "./scope.js"
+import { loadSkills } from "./skill-info.js"
 
 export type OpenCodeLaunchDocument = Readonly<{
-  
+
   skills: readonly string[]
-  
+
   mcp: Readonly<Record<string, Mcp.ServerConfig>>
 }>
 
 export type LaunchPolicyStore = Readonly<{
-  
+
   read(): Promise<OpenCodeLaunchDocument>
-  
+
   write(document: OpenCodeLaunchDocument): Promise<void>
 }>
 
 const EMPTY: OpenCodeLaunchDocument = Object.freeze({ skills: Object.freeze([]), mcp: Object.freeze({}) })
 
-export function createLaunchPolicy() {
-  const stores = new Map<string, LaunchPolicyStore>()
-  const plugin: Plugin.Plugin = {
-    id: "claxedo-launch-policy",
-    async setup(context) {
+async function setupLaunchPolicy(context: Plugin.Context, stores: Map<string, LaunchPolicyStore>) {
       let document = EMPTY
       let skills: Skill.Info[] = []
       let pending = Promise.resolve()
@@ -48,7 +44,9 @@ export function createLaunchPolicy() {
             await context.mcp.reload()
             await context.skill.reload()
           })
-          pending = operation.catch(() => {})
+          pending = operation.catch((error: unknown) => {
+            console.error("OpenCode launch policy write failed", error)
+          })
           await operation
         },
       }
@@ -56,14 +54,20 @@ export function createLaunchPolicy() {
       return () => {
         if (stores.get(context.location.directory) === store) stores.delete(context.location.directory)
       }
-    },
+}
+
+export function createLaunchPolicy() {
+  const stores = new Map<string, LaunchPolicyStore>()
+  const plugin: Plugin.Plugin = {
+    id: "claxedo-launch-policy",
+    setup: (context) => setupLaunchPolicy(context, stores),
   }
   return {
     plugin,
     async store(host: OpenCodeHost, scope: WorkspaceScope): Promise<LaunchPolicyStore> {
 
       await openCodeLocationClient(host, scope.directory)
-      const store = stores.get(await fs.realpath(scope.directory).catch(() => scope.directory)) ?? stores.get(scope.directory)
+      const store = stores.get(await fs.realpath(scope.directory)) ?? stores.get(scope.directory)
       if (!store) throw new Error("OpenCode launch policy was not initialized for the workspace")
       return store
     },

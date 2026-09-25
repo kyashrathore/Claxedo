@@ -17,7 +17,7 @@ test("parseSkill reads the frontmatter the engine reads and keeps the body", () 
 })
 
 test("launch policy exposes skill directories and MCP servers to one workspace and rewrites atomically", async () => {
-  
+
   const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "claxedo-launch-policy-"))
   const a = path.join(root, "a")
   const b = path.join(root, "b")
@@ -43,7 +43,7 @@ test("launch policy exposes skill directories and MCP servers to one workspace a
     })
     expect(await skillIds(a)).toContain("code-review")
     expect(await mcpNames(a)).toContain("claxedo-docs")
-    
+
     expect(await skillIds(b)).not.toContain("code-review")
     expect(await mcpNames(b)).not.toContain("claxedo-docs")
     expect(await store.read()).toEqual({

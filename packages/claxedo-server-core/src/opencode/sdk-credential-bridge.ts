@@ -3,12 +3,11 @@ import fs from "node:fs"
 import path from "node:path"
 import type { ProviderBindingOverlay, ProviderDefinition } from "@claxedo/harness/opencode-sdk"
 import {
-  isProviderUnavailable,
   projectionRenewalDue,
   projectionRenewalDueAt,
   providerProjectionRecord,
 } from "@claxedo/agent-sdk-runtime"
-import { vendorCredentialProviderIds } from "@claxedo/agent-runtime-contract"
+import { isProviderUnavailable, vendorCredentialProviderIds } from "@claxedo/agent-runtime-contract"
 import { hasProviderDestination } from "../credentials/destinations"
 import { listCustomProviders, type CustomProviderConfig } from "../credentials/custom-provider"
 import { jsonRecord } from "../platform/runtime/lib/json"

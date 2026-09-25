@@ -6,30 +6,28 @@ export type ProviderDefinition = Readonly<{
   baseURL: string
   headers: Readonly<Record<string, string>>
   models: Readonly<Record<string, Readonly<{ name: string }>>>
-  
+
   env: readonly string[]
-  
+
   enabled: boolean
 }>
 
 const OPENAI_COMPATIBLE_PACKAGE = "aisdk:@ai-sdk/openai-compatible"
 
-export function createProviderDefinitionPolicy() {
-  let definitions: readonly ProviderDefinition[] = []
-  const locations = new Set<() => Promise<void>>()
-
-  const plugin: Plugin.Plugin = {
-    id: "claxedo-provider-definition",
-    async setup(context) {
+async function setupProviderDefinition(
+  context: Plugin.Context,
+  definitions: () => readonly ProviderDefinition[],
+  locations: Set<() => Promise<void>>,
+) {
       const integration = await context.integration.transform((draft) => {
-        for (const definition of definitions) {
+        for (const definition of definitions()) {
           if (!definition.env.length) continue
           draft.method.update({ integrationID: definition.id, method: { type: "env", names: [...definition.env] } })
           draft.update(definition.id, (row) => { row.name = definition.name })
         }
       })
       const catalog = await context.catalog.transform((draft) => {
-        for (const definition of definitions) {
+        for (const definition of definitions()) {
           draft.provider.update(definition.id, (provider) => {
             provider.activation = definition.enabled ? "enabled" : "disabled"
             provider.name = definition.name
@@ -52,12 +50,19 @@ export function createProviderDefinitionPolicy() {
         await catalog.dispose()
         await integration.dispose()
       }
-    },
+}
+
+export function createProviderDefinitionPolicy() {
+  let definitions: readonly ProviderDefinition[] = []
+  const locations = new Set<() => Promise<void>>()
+  const plugin: Plugin.Plugin = {
+    id: "claxedo-provider-definition",
+    setup: (context) => setupProviderDefinition(context, () => definitions, locations),
   }
 
   return {
     plugin,
-    
+
     async apply(next: readonly ProviderDefinition[]) {
       definitions = next
       await Promise.all([...locations].map((reload) => reload()))

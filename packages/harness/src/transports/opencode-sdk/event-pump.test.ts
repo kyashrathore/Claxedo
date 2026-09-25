@@ -32,7 +32,7 @@ async function waitFor(predicate: () => boolean, timeoutMs = 8_000) {
 }
 
 afterEach(async () => {
-  await Promise.all(hosts.splice(0).map((host) => host.close().catch(() => {})))
+  await Promise.all(hosts.splice(0).map((host) => host.close()))
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true })
 })
 
@@ -52,14 +52,14 @@ test("projects real SDK events and marks durability correctly", async () => {
 
   const created = seen.find((event) => event.type === "session.created")
   expect(created).toBeDefined()
-  
+
   expect(created!.durable?.seq).toBeNumber()
   expect(created!.hintOnly).toBe(false)
   expect(created!.directory).toBe(fs.realpathSync(workspace))
 
   const connected = seen.find((event) => event.type === "server.connected")
   if (connected) {
-    
+
     expect(connected.durable).toBeUndefined()
     expect(connected.hintOnly).toBe(true)
   }
@@ -121,7 +121,7 @@ test("stop is idempotent and releases the stream", async () => {
   pump.start()
   await host.client()
   await Promise.all([pump.stop(), pump.stop()])
-  
+
   pump.start()
   await pump.stop()
 })

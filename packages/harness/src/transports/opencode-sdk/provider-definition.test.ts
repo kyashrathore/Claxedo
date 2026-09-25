@@ -34,7 +34,7 @@ function recordingEndpoint() {
     async listen() {
       await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()))
       const address = server.address()
-      return `http:
+      return `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}/v1`
     },
     async close() {
       server.closeAllConnections()

@@ -2,10 +2,10 @@ import { mkdtempSync, realpathSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, mock, test } from "bun:test"
-import { AgentHarnessEngineError } from "@claxedo/agent-sdk-runtime/adapters"
-import type { OpenCodeHost } from "@claxedo/harness/opencode-sdk/host"
-import { createInteractionPort } from "@claxedo/harness/opencode-sdk/interaction-port"
-import { WorkspaceScope } from "@claxedo/harness/opencode-sdk/scope"
+import { AgentHarnessEngineError } from "@claxedo/harness/contract"
+import type { OpenCodeHost } from "./host"
+import { createInteractionPort } from "./interaction-port"
+import { WorkspaceScope } from "./scope"
 
 function host(lifecycle: "cold" | "migrating" | "ready", rows: { permissions?: unknown[]; forms?: unknown[] } = {}) {
   const client = {

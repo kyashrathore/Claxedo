@@ -1,5 +1,5 @@
-import type { WorkspaceScope } from "./scope"
-import { num, rec } from "./value"
+import type { WorkspaceScope } from "./scope.js"
+import { asNumber as num, asRecord as rec } from "@claxedo/helpers/guards"
 
 export type TokenUsage = Readonly<{
   input: number
@@ -15,7 +15,7 @@ export type SessionSummary = Readonly<{
   directory: string
   createdAt: number
   updatedAt: number
-  
+
   tokens?: TokenUsage
 }>
 
@@ -40,7 +40,7 @@ export type SessionPage = Readonly<{
 }>
 
 export type PromptAttachment = Readonly<{
-  
+
   ref: string
   name?: string
   description?: string
@@ -49,14 +49,14 @@ export type PromptAttachment = Readonly<{
 
 export type PromptRequest = Readonly<{
   text: string
-  
+
   id?: string
   files?: readonly PromptAttachment[]
   agents?: readonly PromptAttachment[]
   skills?: readonly PromptAttachment[]
-  
+
   metadata?: JsonObject
-  
+
   delivery?: "steer" | "queue"
   resume?: boolean
 }>
@@ -73,9 +73,9 @@ export type SessionMessage = Readonly<{
   id: string
   type: string
   createdAt: number
-  
+
   text?: string
-  
+
   agent?: string
   model?: Readonly<{ providerID: string; id: string }>
   content?: readonly unknown[]
@@ -101,7 +101,7 @@ export type OpenCodeSessionPort = Readonly<{
   remove(scope: WorkspaceScope, sessionID: string): Promise<void>
   fork(scope: WorkspaceScope, sessionID: string, boundary: ForkBoundary): Promise<SessionSummary>
   switchAgent(scope: WorkspaceScope, sessionID: string, agent: string): Promise<void>
-  
+
   switchModel(scope: WorkspaceScope, sessionID: string, model: { providerID: string; modelID: string; variant?: string }): Promise<void>
 
   prompt(scope: WorkspaceScope, sessionID: string, request: PromptRequest): Promise<AdmittedMessage>
@@ -113,7 +113,7 @@ export type OpenCodeSessionPort = Readonly<{
   interrupt(scope: WorkspaceScope, sessionID: string, options?: { continue?: boolean }): Promise<void>
 
   revertTo(scope: WorkspaceScope, sessionID: string, messageID: string, options?: { files?: boolean }): Promise<void>
-  
+
   clearRevert(scope: WorkspaceScope, sessionID: string): Promise<void>
 
   messages(

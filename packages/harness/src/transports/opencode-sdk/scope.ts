@@ -10,13 +10,13 @@ export class WorkspaceScopeError extends Error {
 }
 
 export class WorkspaceScope {
-  
+
   private readonly authorized = true
 
   private constructor(
-    
+
     readonly workspaceID: string,
-    
+
     readonly directory: string,
   ) {}
 
@@ -45,19 +45,10 @@ export class WorkspaceScope {
   }
 }
 
-/** True when two scopes name the same authorized workspace. */
 export function sameScope(a: WorkspaceScope, b: WorkspaceScope): boolean {
   return a.workspaceID === b.workspaceID && a.directory === b.directory
 }
 
-/**
- * Assert that a location reported by the SDK belongs to the scope the caller
- * was authorized for.
- *
- * Every read that returns a location must pass through here. `sessions.get`
- * happily returns another workspace's session, so a projection that trusted
- * the SDK's answer would leak across workspaces.
- */
 export function assertLocationInScope(scope: WorkspaceScope, directory: string | undefined): void {
   if (!directory) {
     throw new WorkspaceScopeError("OpenCode returned a record with no location; refusing to attribute it to a workspace")

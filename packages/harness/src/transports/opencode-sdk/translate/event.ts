@@ -1,6 +1,6 @@
 import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
 import { asRecord, asRecordOrEmpty } from "@claxedo/helpers/guards"
-import type { ProjectedEvent } from "../event-pump"
+import type { ProjectedEvent } from "../event-pump.js"
 
 export function eventSessionID(event: ProjectedEvent): string | undefined {
   const data = asRecordOrEmpty(event.data)

@@ -97,19 +97,19 @@ test("merged Session tool groups keep their authoritative callback", async () =>
   await port.registerSession({
     scope: WorkspaceScope.authorize({ workspaceID: "test", directory: process.cwd() }),
     sessionID: "session-1",
-    callbackUrl: `${server.url}default`,
+    callbackUrl: new URL("default", server.url).href,
     tools: [
       {
         name: "workgraph_run",
         description: "Run operation",
         inputSchema: { type: "object" },
-        callbackUrl: `${server.url}run`,
+        callbackUrl: new URL("run", server.url).href,
       },
       {
         name: "workgraph_connection",
         description: "Connection operation",
         inputSchema: { type: "object" },
-        callbackUrl: `${server.url}connection`,
+        callbackUrl: new URL("connection", server.url).href,
       },
     ],
   })

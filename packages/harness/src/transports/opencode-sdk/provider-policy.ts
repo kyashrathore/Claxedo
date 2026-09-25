@@ -1,20 +1,16 @@
 import type { Plugin } from "@opencode-ai/plugin"
-import { openCodeLocationClient, type OpenCodeHost } from "./host"
-import type { WorkspaceScope } from "./scope"
-import { arr } from "./value"
+import { openCodeLocationClient, type OpenCodeHost } from "./host.js"
+import type { WorkspaceScope } from "./scope.js"
+import { asArrayOrUndefined as arr } from "@claxedo/helpers/guards"
 
 export type ProviderConfigStore = {
-  
+
   read(): Promise<Record<string, unknown>>
-  
+
   write(patch: { disabled_providers: string[] }): Promise<Record<string, unknown>>
 }
 
-export function createProviderPolicy() {
-  const stores = new Map<string, ProviderConfigStore>()
-  const plugin: Plugin.Plugin = {
-    id: "claxedo-provider-policy",
-    async setup(context) {
+async function setupProviderPolicy(context: Plugin.Context, stores: Map<string, ProviderConfigStore>) {
       const key = `disabled-providers:${context.location.directory}`
       const raw = await context.storage.get(key)
       const saved = arr(raw)
@@ -38,14 +34,22 @@ export function createProviderPolicy() {
             disabled = next
             await context.catalog.reload()
           })
-          pending = operation.catch(() => {})
+          pending = operation.catch((error: unknown) => {
+            console.error("OpenCode provider policy write failed", error)
+          })
           await operation
           return { disabled_providers: [...disabled] }
         },
       }
       stores.set(context.location.directory, store)
       return () => { if (stores.get(context.location.directory) === store) stores.delete(context.location.directory) }
-    },
+}
+
+export function createProviderPolicy() {
+  const stores = new Map<string, ProviderConfigStore>()
+  const plugin: Plugin.Plugin = {
+    id: "claxedo-provider-policy",
+    setup: (context) => setupProviderPolicy(context, stores),
   }
   return {
     plugin,

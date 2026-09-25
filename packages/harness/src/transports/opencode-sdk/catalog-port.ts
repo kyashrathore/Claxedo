@@ -1,7 +1,7 @@
-import { engineRead } from "./engine-read"
-import { openCodeLocationClient, type OpenCodeHost } from "./host"
-import type { WorkspaceScope } from "./scope"
-import { arr, rec, str } from "./value"
+import { engineRead } from "./engine-read.js"
+import { openCodeLocationClient, type OpenCodeHost } from "./host.js"
+import type { WorkspaceScope } from "./scope.js"
+import { asArrayOrUndefined as arr, asRecord as rec, asString as str } from "@claxedo/helpers/guards"
 
 export type AgentEntry = Readonly<{
   name: string
@@ -22,9 +22,9 @@ export type ModelEntry = Readonly<{
   providerID: string
   id: string
   name?: string
-  
+
   variants?: readonly string[]
-  
+
   cost: readonly Readonly<{ input: number; output: number }>[]
 }>
 
@@ -50,9 +50,7 @@ function rows(response: unknown): readonly Record<string, unknown>[] {
   return items
 }
 
-export function createCatalogPort(host: OpenCodeHost): OpenCodeCatalogPort {
-  return {
-    async agents(scope) {
+async function agents(host: OpenCodeHost, scope: WorkspaceScope): Promise<readonly AgentEntry[]> {
       const client = await openCodeLocationClient(host, scope.directory)
       const response = await engineRead("agent.list", scope, () => client.agent.list({ location: { directory: scope.directory } }))
       return rows(response).map((row) => {
@@ -65,9 +63,9 @@ export function createCatalogPort(host: OpenCodeHost): OpenCodeCatalogPort {
           ...(model === undefined ? {} : { model }),
         }
       })
-    },
+}
 
-    async commands(scope) {
+async function commands(host: OpenCodeHost, scope: WorkspaceScope): Promise<readonly CommandEntry[]> {
       const client = await openCodeLocationClient(host, scope.directory)
       const response = await engineRead("command.list", scope, () => client.command.list({ location: { directory: scope.directory } }))
       return rows(response).map((row) => {
@@ -79,9 +77,9 @@ export function createCatalogPort(host: OpenCodeHost): OpenCodeCatalogPort {
           ...(model === undefined ? {} : { model }),
         }
       })
-    },
+}
 
-    async models(scope) {
+async function models(host: OpenCodeHost, scope: WorkspaceScope): Promise<readonly ModelEntry[]> {
       const client = await openCodeLocationClient(host, scope.directory)
       const response = await engineRead("model.list", scope, () => client.model.list({ location: { directory: scope.directory } }))
       return rows(response).flatMap((row) => {
@@ -100,6 +98,12 @@ export function createCatalogPort(host: OpenCodeHost): OpenCodeCatalogPort {
           cost,
         }]
       })
-    },
+}
+
+export function createCatalogPort(host: OpenCodeHost): OpenCodeCatalogPort {
+  return {
+    agents: (scope) => agents(host, scope),
+    commands: (scope) => commands(host, scope),
+    models: (scope) => models(host, scope),
   }
 }

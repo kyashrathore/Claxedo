@@ -49,7 +49,7 @@ test("a host close failure is reported after the outstanding read settles", asyn
     expect(await closing).toBe(failure)
   } finally {
     next.resolve({ done: true, value: undefined })
-    await runtime.close().catch(() => {})
+    expect(await runtime.close().then(() => undefined, (error: unknown) => error)).toBe(failure)
     clientCall.mockRestore()
     hostClose.mockRestore()
   }

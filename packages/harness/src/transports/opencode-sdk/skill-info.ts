@@ -2,14 +2,24 @@ import { Skill } from "@opencode-ai/schema/skill"
 import { promises as fs } from "node:fs"
 import path from "node:path"
 
+function missingFile(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "ENOENT"
+}
+
 export async function loadSkills(directories: readonly string[]): Promise<Skill.Info[]> {
   const skills = new Map<string, Skill.Info>()
   for (const directory of directories) {
-    const entries = await fs.readdir(directory, { withFileTypes: true }).catch(() => [])
+    const entries = await fs.readdir(directory, { withFileTypes: true }).catch((error: unknown) => {
+      if (missingFile(error)) return []
+      throw error
+    })
     for (const entry of entries.toSorted((a, b) => a.name.localeCompare(b.name))) {
       if (!entry.isDirectory()) continue
       const location = path.join(directory, entry.name, "SKILL.md")
-      const text = await fs.readFile(location, "utf8").catch(() => undefined)
+      const text = await fs.readFile(location, "utf8").catch((error: unknown) => {
+        if (missingFile(error)) return undefined
+        throw error
+      })
       if (text === undefined) continue
       skills.set(entry.name, parseSkill(entry.name, location, text))
     }
@@ -22,13 +32,13 @@ export function parseSkill(id: string, location: string, text: string): Skill.In
   const frontmatter: Record<string, string> = {}
   for (const line of (match?.[1] ?? "").split(/\r?\n/)) {
     const field = /^([A-Za-z0-9_-]+):\s*(.*)$/.exec(line)
-    if (field) frontmatter[field[1]] = field[2].trim().replace(/^(["'])(.*)\1$/, "$2")
+    if (field?.[1] !== undefined) frontmatter[field[1]] = (field[2] ?? "").trim().replace(/^(["'])(.*)\1$/, "$2")
   }
   return Skill.Info.make({
     id: Skill.ID.make(id),
     name: Skill.Name.make(frontmatter.name || id),
     ...(frontmatter.description ? { description: frontmatter.description } : {}),
     location: Skill.Info.fields.location.make(location),
-    content: match ? match[2] : text,
+    content: match?.[2] ?? text,
   })
 }

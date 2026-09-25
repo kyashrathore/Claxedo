@@ -1,18 +1,18 @@
 import type { RuntimeTokenUsage } from "@claxedo/agent-event-runtime"
 import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
-import type { ProjectedEvent } from "../event-pump"
-import { tokenUsage, type TokenUsage } from "../session-port"
-import { errorMessage } from "../error-text"
-import { rec, str } from "../value"
+import type { ProjectedEvent } from "../event-pump.js"
+import { tokenUsage, type TokenUsage } from "../session-port.js"
+import { errorMessage } from "@claxedo/helpers"
+import { asRecord as rec, asString as str } from "@claxedo/helpers/guards"
 
 type UsageEvent = Extract<AgentRuntimeEvent, { type: "usage" }>
 type UsageObservation = NonNullable<UsageEvent["observation"]>
 
-const RECORDED_USAGE: ReadonlySet<string> = new Set([
+const RECORDED_USAGE: readonly string[] = [
   "session.step.ended",
   "session.step.failed",
   "session.usage.recorded",
-])
+]
 
 function recordsNothing(tokens: TokenUsage) {
   return tokens.input + tokens.output + tokens.reasoning + tokens.cache.read + tokens.cache.write === 0
@@ -51,16 +51,10 @@ function durableId(event: ProjectedEvent): string | undefined {
   return event.durable ? `${event.durable.aggregateID}:${event.durable.seq}` : undefined
 }
 
-/** How long a turn waits for the engine to report the session total, at its start and at its end. */
 export const SESSION_TOTAL_READ_MS = 5_000
 
-/** The session's recorded token total, or why it could not be read in time. */
 export type SessionTotal = { tokens: TokenUsage | undefined } | { failure: string }
 
-/**
- * Reads the session total with a deadline: a wedged engine costs the turn its
- * reconciliation, never the turn itself or the step usage already metered.
- */
 export async function readSessionTotal(read: () => Promise<TokenUsage | undefined>, deadlineMs = SESSION_TOTAL_READ_MS): Promise<SessionTotal> {
   let timer: ReturnType<typeof setTimeout> | undefined
   const expired = new Promise<never>((_, reject) => {
@@ -75,33 +69,23 @@ export async function readSessionTotal(read: () => Promise<TokenUsage | undefine
   }
 }
 
-/**
- * One turn's token usage, from the engine's own accounting.
- *
- * Every recorded usage event becomes a delta keyed by its durable position, so
- * a replay carries the identity of the event it repeats. The event stream does
- * not replay what it missed while disconnected, so the turn closes with the
- * growth of the session's recorded total as a cumulative observation, which
- * replaces the running sum of the deltas downstream.
- */
-export function createTurnUsage(sessionID: string, opened: SessionTotal) {
-  /** The prompt the latest step sent, which is how full the context was. */
-  let contextUsed = 0
-  /** The model each step started on, by the assistant message the step writes. */
-  const stepModels = new Map<string, string>()
-  /** Every model a recorded usage event was served by; `undefined` for one that named none. */
-  const servedModels = new Set<string | undefined>()
-  let observed = NONE
+class TurnUsage {
+  private contextUsed = 0
+  private readonly stepModels = new Map<string, string>()
+  private readonly servedModels = new Set<string | undefined>()
+  private observed = NONE
 
-  function usage(kind: UsageObservation["kind"], tokens: TokenUsage, providerObservationId: string | undefined, model: string | undefined): UsageEvent {
+  constructor(private readonly sessionID: string, private readonly opened: SessionTotal) {}
+
+  private usage(kind: UsageObservation["kind"], tokens: TokenUsage, providerObservationId: string | undefined, model: string | undefined): UsageEvent {
     return {
       type: "usage",
       contextSize: 0,
-      contextUsed,
+      contextUsed: this.contextUsed,
       observation: {
         kind,
         ...(providerObservationId ? { providerObservationId } : {}),
-        nativeSessionId: sessionID,
+        nativeSessionId: this.sessionID,
         ...(model ? { model } : {}),
         tokens: runtimeTokens(tokens),
       },
@@ -109,7 +93,7 @@ export function createTurnUsage(sessionID: string, opened: SessionTotal) {
     }
   }
 
-  function unreconciled(reason: string): AgentRuntimeEvent {
+  private unreconciled(reason: string): AgentRuntimeEvent {
     return {
       type: "diagnostic",
       diagnostic: {
@@ -122,34 +106,36 @@ export function createTurnUsage(sessionID: string, opened: SessionTotal) {
     }
   }
 
-  return {
-    observe(event: ProjectedEvent): UsageEvent | undefined {
+  observe(event: ProjectedEvent): UsageEvent | undefined {
       const data = rec(event.data)
       const message = str(data?.assistantMessageID)
       if (event.type === "session.step.started") {
         const model = str(rec(data?.model)?.id)
-        if (message && model) stepModels.set(message, model)
+        if (message && model) this.stepModels.set(message, model)
         return undefined
       }
       const id = durableId(event)
-      if (!id || !RECORDED_USAGE.has(event.type)) return undefined
+      if (!id || !RECORDED_USAGE.includes(event.type)) return undefined
       const tokens = tokenUsage(data?.tokens)
       if (!tokens || recordsNothing(tokens)) return undefined
-      if (event.type !== "session.usage.recorded") contextUsed = tokens.input + tokens.cache.read + tokens.cache.write
-      const model = event.type === "session.usage.recorded" || !message ? undefined : stepModels.get(message)
-      servedModels.add(model)
-      observed = addTokens(observed, tokens)
-      return usage("delta", tokens, id, model)
-    },
-
-    close(closed: SessionTotal, terminal: ProjectedEvent): AgentRuntimeEvent | undefined {
-      if ("failure" in opened) return unreconciled(`the session total before the prompt was not read: ${opened.failure}`)
-      if ("failure" in closed) return unreconciled(closed.failure)
-      if (!opened.tokens || !closed.tokens) return unreconciled("the engine reported no session token total")
-      const grown = subtractTokens(closed.tokens, opened.tokens)
-      if (recordsNothing(grown)) return undefined
-      const [only] = servedModels.size === 1 && JSON.stringify(grown) === JSON.stringify(observed) ? servedModels : []
-      return usage("cumulative", grown, durableId(terminal), only)
-    },
+      if (event.type !== "session.usage.recorded") this.contextUsed = tokens.input + tokens.cache.read + tokens.cache.write
+      const model = event.type === "session.usage.recorded" || !message ? undefined : this.stepModels.get(message)
+      this.servedModels.add(model)
+      this.observed = addTokens(this.observed, tokens)
+      return this.usage("delta", tokens, id, model)
   }
+
+  close(closed: SessionTotal, terminal: ProjectedEvent): AgentRuntimeEvent | undefined {
+      if ("failure" in this.opened) return this.unreconciled(`the session total before the prompt was not read: ${this.opened.failure}`)
+      if ("failure" in closed) return this.unreconciled(closed.failure)
+      if (!this.opened.tokens || !closed.tokens) return this.unreconciled("the engine reported no session token total")
+      const grown = subtractTokens(closed.tokens, this.opened.tokens)
+      if (recordsNothing(grown)) return undefined
+      const [only] = this.servedModels.size === 1 && JSON.stringify(grown) === JSON.stringify(this.observed) ? this.servedModels : []
+      return this.usage("cumulative", grown, durableId(terminal), only)
+  }
+}
+
+export function createTurnUsage(sessionID: string, opened: SessionTotal): TurnUsage {
+  return new TurnUsage(sessionID, opened)
 }

@@ -1,6 +1,6 @@
-import { AgentHarnessEngineError } from "@claxedo/agent-sdk-runtime/adapters"
-import { num, rec, str } from "./value"
-import type { WorkspaceScope } from "./scope"
+import { AgentHarnessEngineError } from "@claxedo/harness/contract"
+import { asNumber as num, asRecord as rec, asString as str } from "@claxedo/helpers/guards"
+import type { WorkspaceScope } from "./scope.js"
 
 function sdkClientError(error: unknown): { reason: string; status: number | undefined } | undefined {
   if (!(error instanceof Error) || error.name !== "ClientError") return undefined

@@ -1,6 +1,6 @@
-import { assertLocationInScope, type WorkspaceScope } from "./scope"
-import { arr, num, rec, str } from "./value"
-import { tokenUsage, type PromptAttachment, type SessionMessage, type SessionSummary } from "./session-types"
+import { assertLocationInScope, type WorkspaceScope } from "./scope.js"
+import { asArrayOrUndefined as arr, asNumber as num, asRecord as rec, asString as str } from "@claxedo/helpers/guards"
+import { tokenUsage, type PromptAttachment, type SessionMessage, type SessionSummary } from "./session-types.js"
 
 export function project(scope: WorkspaceScope, input: unknown): SessionSummary {
   const row = rec(input) ?? {}

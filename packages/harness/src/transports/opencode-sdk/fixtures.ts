@@ -1,4 +1,4 @@
-import { createOpenCodeHost, type OpenCodeClient } from "./host"
+import { createOpenCodeHost, type OpenCodeClient } from "./host.js"
 
 export type OpenCodeFixtureSession = Pick<Parameters<OpenCodeClient["session"]["import"]>[0], "info" | "messages">
 export type OpenCodeFixtureReadback = Awaited<ReturnType<OpenCodeClient["session"]["export"]>>

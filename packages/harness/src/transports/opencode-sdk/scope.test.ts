@@ -42,7 +42,7 @@ test("resolves symlinks so a later retarget cannot widen access", () => {
   fs.unlinkSync(link)
   fs.symlinkSync(other, link)
   expect(() => assertLocationInScope(scope, other)).toThrow(WorkspaceScopeError)
-  
+
   expect(() => assertLocationInScope(scope, real)).not.toThrow()
 })
 

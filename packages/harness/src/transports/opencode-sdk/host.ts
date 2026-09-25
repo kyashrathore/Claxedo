@@ -1,21 +1,12 @@
 import type * as OpenCodeSdk from "@opencode-ai/sdk"
 import { isAbsolute } from "node:path"
-import {
-  canTransition,
-  isTerminal,
-  type OpenCodeEventHealth,
-  type OpenCodeLifecycle,
-  type OpenCodeStatus,
-} from "./lifecycle"
+import { canTransition, isTerminal, type OpenCodeEventHealth, type OpenCodeLifecycle, type OpenCodeStatus } from "./lifecycle.js"
 
 export type OpenCodeClient = Awaited<ReturnType<typeof OpenCodeSdk.OpenCode.create>>
 
 export type OpenCodeHostOptions = Readonly<{
-  
   databasePath: string
-  
   configContent?: string
-  
   persistEvents?: boolean
   plugins?: OpenCodeSdk.OpenCode.CreateOptions["plugins"]
 }>
@@ -30,12 +21,9 @@ export class OpenCodeUnavailableError extends Error {
 }
 
 export type OpenCodeHost = Readonly<{
-  /** Resolve the shared client, booting it if this is first use. */
   client(): Promise<OpenCodeClient>
   status(): OpenCodeStatus
-  /** Report event-stream health without disturbing lifecycle. */
   setEventHealth(health: OpenCodeEventHealth): void
-  /** Drain and close exactly once. Repeated calls are safe. */
   close(): Promise<void>
 }>
 
@@ -45,78 +33,95 @@ export async function openCodeLocationClient(host: OpenCodeHost, directory: stri
   return client
 }
 
-export function createOpenCodeHost(options: OpenCodeHostOptions): OpenCodeHost {
-  if (!isAbsolute(options.databasePath)) {
-    throw new Error(`OpenCode databasePath must be absolute, received ${options.databasePath}`)
-  }
+class EmbeddedOpenCodeHost implements OpenCodeHost {
+  private lifecycle: OpenCodeLifecycle = "cold"
+  private events: OpenCodeEventHealth = "healthy"
+  private reason: string | undefined
+  private booting: Promise<OpenCodeClient> | undefined
+  private current: OpenCodeClient | undefined
+  private closing: Promise<void> | undefined
 
-  let lifecycle: OpenCodeLifecycle = "cold"
-  let events: OpenCodeEventHealth = "healthy"
-  let reason: string | undefined
-  let booting: Promise<OpenCodeClient> | undefined
-  let client: OpenCodeClient | undefined
-  let closing: Promise<void> | undefined
-
-  function moveTo(next: OpenCodeLifecycle, why?: string) {
-    if (!canTransition(lifecycle, next)) {
-      throw new Error(`Illegal OpenCode lifecycle transition ${lifecycle} -> ${next}`)
+  constructor(private readonly options: OpenCodeHostOptions) {
+    if (!isAbsolute(options.databasePath)) {
+      throw new Error(`OpenCode databasePath must be absolute, received ${options.databasePath}`)
     }
-    lifecycle = next
-    reason = why
   }
 
-  async function boot(): Promise<OpenCodeClient> {
-    moveTo("migrating")
+  private moveTo(next: OpenCodeLifecycle, why?: string): void {
+    if (!canTransition(this.lifecycle, next)) {
+      throw new Error(`Illegal OpenCode lifecycle transition ${this.lifecycle} -> ${next}`)
+    }
+    this.lifecycle = next
+    this.reason = why
+  }
+
+  private async boot(): Promise<OpenCodeClient> {
+    this.moveTo("migrating")
     try {
       const { OpenCode } = await import("@opencode-ai/sdk")
       const created = await OpenCode.create({
-        plugins: options.plugins,
-        database: { path: options.databasePath },
-        events: { persist: options.persistEvents ?? true },
+        plugins: this.options.plugins,
+        database: { path: this.options.databasePath },
+        events: { persist: this.options.persistEvents ?? true },
         fs: { fff: false },
-        ...(options.configContent ? { config: { content: options.configContent } } : {}),
+        ...(this.options.configContent ? { config: { content: this.options.configContent } } : {}),
       })
-      client = created
-      moveTo("ready")
+      this.current = created
+      this.moveTo("ready")
       return created
     } catch (cause) {
-      booting = undefined
-      lifecycle = "unavailable"
-      reason = cause instanceof Error ? cause.message : String(cause)
-      throw new OpenCodeUnavailableError(reason, { cause })
+      this.booting = undefined
+      this.lifecycle = "unavailable"
+      this.reason = cause instanceof Error ? cause.message : String(cause)
+      throw new OpenCodeUnavailableError(this.reason, { cause })
     }
   }
 
-  return {
-    client() {
-      if (closing || isTerminal(lifecycle)) {
-        return Promise.reject(new OpenCodeUnavailableError("the runtime owner is closed; construct a fresh one"))
-      }
-      if (client) return Promise.resolve(client)
-      if (lifecycle === "unavailable") moveTo("cold")
-      booting ??= boot()
-      return booting
-    },
-    status() {
-      return reason === undefined ? { lifecycle, events } : { lifecycle, events, reason }
-    },
-    setEventHealth(next) {
-      events = next
-    },
-    close() {
-      closing ??= (async () => {
-        if (isTerminal(lifecycle)) return
-        if (booting) await booting.catch(() => undefined)
-        if (lifecycle === "ready") moveTo("draining")
-        try {
-          await client?.close()
-        } finally {
-          client = undefined
-          booting = undefined
-          lifecycle = "closed"
-        }
-      })()
-      return closing
-    },
+  client(): Promise<OpenCodeClient> {
+    if (this.closing || isTerminal(this.lifecycle)) {
+      return Promise.reject(new OpenCodeUnavailableError("the runtime owner is closed; construct a fresh one"))
+    }
+    if (this.current) return Promise.resolve(this.current)
+    if (this.lifecycle === "unavailable") this.moveTo("cold")
+    this.booting ??= this.boot()
+    return this.booting
   }
+
+  status(): OpenCodeStatus {
+    return this.reason === undefined
+      ? { lifecycle: this.lifecycle, events: this.events }
+      : { lifecycle: this.lifecycle, events: this.events, reason: this.reason }
+  }
+
+  setEventHealth(next: OpenCodeEventHealth): void {
+    this.events = next
+  }
+
+  close(): Promise<void> {
+    this.closing ??= this.drain()
+    return this.closing
+  }
+
+  private async drain(): Promise<void> {
+    if (isTerminal(this.lifecycle)) return
+    if (this.booting) {
+      try {
+        await this.booting
+      } catch (error) {
+        if (!(error instanceof OpenCodeUnavailableError)) throw error
+      }
+    }
+    if (this.lifecycle === "ready") this.moveTo("draining")
+    try {
+      await this.current?.close()
+    } finally {
+      this.current = undefined
+      this.booting = undefined
+      this.lifecycle = "closed"
+    }
+  }
+}
+
+export function createOpenCodeHost(options: OpenCodeHostOptions): OpenCodeHost {
+  return new EmbeddedOpenCodeHost(options)
 }

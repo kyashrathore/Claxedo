@@ -1,5 +1,5 @@
-import type { OpenCodeHost } from "./host"
-import { arr, rec, str } from "./value"
+import type { OpenCodeHost } from "./host.js"
+import { asArrayOrUndefined as arr, asRecord as rec, asString as str } from "@claxedo/helpers/guards"
 
 export type IntegrationConnection = Readonly<{ type: "credential" | "env"; id: string; label?: string }>
 export type IntegrationEntry = Readonly<{

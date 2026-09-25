@@ -1,7 +1,7 @@
-import { engineRead } from "./engine-read"
-import type { OpenCodeHost } from "./host"
-import { assertLocationInScope, type WorkspaceScope } from "./scope"
-import { arr, num, rec } from "./value"
+import { engineRead } from "./engine-read.js"
+import type { OpenCodeHost } from "./host.js"
+import { assertLocationInScope, type WorkspaceScope } from "./scope.js"
+import { asArrayOrUndefined as arr, asNumber as num, asRecord as rec } from "@claxedo/helpers/guards"
 
 export type PermissionRequest = Readonly<{
   id: string
@@ -51,16 +51,13 @@ function createdAt(row: Record<string, unknown>): number | undefined {
   return num(rec(row.time)?.created) ?? num(row.timeCreated)
 }
 
-export function createInteractionPort(host: OpenCodeHost): OpenCodeInteractionPort {
-  
-  async function assertOwned(scope: WorkspaceScope, sessionID: string) {
-    const client = await host.client()
-    const session = await client.sessions.get({ sessionID })
-    assertLocationInScope(scope, (session as { location?: { directory?: string } }).location?.directory)
-  }
+async function assertOwned(host: OpenCodeHost, scope: WorkspaceScope, sessionID: string) {
+  const client = await host.client()
+  const session = await client.sessions.get({ sessionID })
+  assertLocationInScope(scope, (session as { location?: { directory?: string } }).location?.directory)
+}
 
-  return {
-    async permissions(scope) {
+async function permissions(host: OpenCodeHost, scope: WorkspaceScope): Promise<readonly PermissionRequest[]> {
 
       if (host.status().lifecycle !== "ready") return []
       const client = await host.client()
@@ -77,20 +74,9 @@ export function createInteractionPort(host: OpenCodeHost): OpenCodeInteractionPo
           ...(at === undefined ? {} : { createdAt: at }),
         }
       })
-    },
+}
 
-    async replyPermission(scope, input) {
-      const client = await host.client()
-      await assertOwned(scope, input.sessionID)
-      await client.permission.reply({
-        sessionID: input.sessionID,
-        requestID: input.requestID,
-        reply: input.reply,
-        ...(input.message === undefined ? {} : { message: input.message }),
-      })
-    },
-
-    async forms(scope) {
+async function forms(host: OpenCodeHost, scope: WorkspaceScope): Promise<readonly FormRequest[]> {
       if (host.status().lifecycle !== "ready") return []
       const client = await host.client()
       const response = await engineRead("form.request.list", scope, () =>
@@ -105,11 +91,27 @@ export function createInteractionPort(host: OpenCodeHost): OpenCodeInteractionPo
           ...(at === undefined ? {} : { createdAt: at }),
         }
       })
+}
+
+export function createInteractionPort(host: OpenCodeHost): OpenCodeInteractionPort {
+  return {
+    permissions: (scope) => permissions(host, scope),
+    async replyPermission(scope, input) {
+      const client = await host.client()
+      await assertOwned(host, scope, input.sessionID)
+      await client.permission.reply({
+        sessionID: input.sessionID,
+        requestID: input.requestID,
+        reply: input.reply,
+        ...(input.message === undefined ? {} : { message: input.message }),
+      })
     },
+
+    forms: (scope) => forms(host, scope),
 
     async replyForm(scope, input) {
       const client = await host.client()
-      await assertOwned(scope, input.sessionID)
+      await assertOwned(host, scope, input.sessionID)
       await client.form.reply({
         sessionID: input.sessionID,
         formID: input.formID,
@@ -119,7 +121,7 @@ export function createInteractionPort(host: OpenCodeHost): OpenCodeInteractionPo
 
     async cancelForm(scope, input) {
       const client = await host.client()
-      await assertOwned(scope, input.sessionID)
+      await assertOwned(host, scope, input.sessionID)
       await client.form.cancel({ sessionID: input.sessionID, formID: input.formID })
     },
   }

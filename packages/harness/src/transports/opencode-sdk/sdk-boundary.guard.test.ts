@@ -30,13 +30,6 @@ function sourceFiles(root: string, excluded: ReadonlySet<string>): string[] {
   return found
 }
 
-/**
- * Fixed-string search over first-party source, reported as `./path:line:text`.
- *
- * Deliberately not `rg`: the guard is the only thing standing between the
- * repository and a deep SDK import, and a machine without ripgrep on PATH
- * would turn every gate below into an error instead of a verdict.
- */
 function search(pattern: string, extraExcludes: readonly string[] = [], root = repoRoot): string[] {
   const excluded = new Set([...PENDING_DELETION, ...extraExcludes])
   const hits: string[] = []
@@ -57,7 +50,6 @@ function readLines(file: string): string[] {
   return lines
 }
 
-/** Hits inside this package's own guard and contract probes, which must NAME the hazard. */
 function isSelfReference(line: string): boolean {
   return (
     line.includes("packages/harness/src/transports/opencode-sdk/sdk-boundary.guard.test.ts") ||
@@ -83,10 +75,10 @@ describe("public SDK boundary", () => {
         fs.writeFileSync(path.join(root, file), violation)
       }
 
-      expect(search("dist/internal", ["packages/excluded"], root).sort()).toEqual([
+      expect(search("dist/internal", ["packages/excluded"], root).sort((a, b) => a.localeCompare(b))).toEqual([
         `./packages/app/src/deep.ts:1:${violation.trimEnd()}`,
         `./packages/app/src/nested/deep.tsx:1:${violation.trimEnd()}`,
-      ].sort())
+      ].sort((a, b) => a.localeCompare(b)))
     } finally {
       fs.rmSync(root, { recursive: true, force: true })
     }
@@ -113,10 +105,6 @@ describe("public SDK boundary", () => {
     expect(hits).toEqual([])
   })
 
-  /**
-   * `@opencode-ai/sdk` importers outside the owning package. Asserted exactly,
-   * so a removal fails as loudly as an addition; it only ever shrinks.
-   */
   const LEGACY_SDK_CONSUMERS = [
     "./packages/claxedo-app/src/architecture/scanners.test.ts",
     "./packages/workspace-runtime/scripts/stage-opencode-sdk.test.ts",
@@ -128,9 +116,9 @@ describe("public SDK boundary", () => {
         search('from "@opencode-ai/core')
           .filter((line) => !line.includes("packages/harness/src/transports/opencode-sdk/sdk-boundary.guard.test.ts"))
           .filter((line) => line.startsWith("./packages/harness/src/transports/opencode-sdk/"))
-          .map((line) => line.split(":")[0]),
+            .map((line) => line.split(":")[0] ?? ""),
       ),
-    ].sort()
+    ].sort((a, b) => a.localeCompare(b))
     expect(files).toEqual([])
   })
 
@@ -138,7 +126,7 @@ describe("public SDK boundary", () => {
     const hits = search('from "@opencode-ai/sdk"')
       .filter((line) => !isSelfReference(line))
       .filter((line) => !line.startsWith("./packages/harness/src/transports/opencode-sdk/"))
-    const files = [...new Set(hits.map((line) => line.split(":")[0]))].sort()
-    expect(files).toEqual([...LEGACY_SDK_CONSUMERS].sort())
+    const files = [...new Set(hits.map((line) => line.split(":")[0] ?? ""))].sort((a, b) => a.localeCompare(b))
+    expect(files).toEqual([...LEGACY_SDK_CONSUMERS].sort((a, b) => a.localeCompare(b)))
   })
 })

@@ -108,11 +108,13 @@ function inNamingOperation(node: ts.Node): boolean {
 }
 
 function isTitleDecision(node: ts.Node): boolean {
-  const titleName = (value: ts.Node): boolean => /(?:^|\.)title$|^(?:should|decide|generate)Title$/i.test(nameOf(value))
+  const titleName = (value: ts.Node): boolean => ts.isIdentifier(value) && /^(?:title|shouldTitle|decideTitle|generateTitle)$/i.test(value.text) && !(ts.isPropertyAccessExpression(value.parent) && value.parent.name === value)
   if (ts.isCallExpression(node) && /^(?:should|decide|generate)Title$/.test(nameOf(node.expression))) return true
   if (ts.isIfStatement(node) || ts.isConditionalExpression(node)) {
+    const condition = ts.isIfStatement(node) ? node.expression : node.condition
+    if (ts.isBinaryExpression(condition) && [ts.SyntaxKind.EqualsEqualsToken, ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken].includes(condition.operatorToken.kind) && (condition.left.kind === ts.SyntaxKind.UndefinedKeyword || condition.right.kind === ts.SyntaxKind.UndefinedKeyword || nameOf(condition.left) === "undefined" || nameOf(condition.right) === "undefined")) return false
     let found = false
-    walk(ts.isIfStatement(node) ? node.expression : node.condition, part => { if (ts.isIdentifier(part) || ts.isPropertyAccessExpression(part)) found ||= titleName(part) })
+    walk(condition, part => { if (ts.isIdentifier(part) || ts.isPropertyAccessExpression(part)) found ||= titleName(part) })
     return found
   }
   return false
@@ -136,7 +138,7 @@ function atModuleScope(node: ts.Node): boolean {
 }
 
 function errorMessage(node: ts.Node): boolean {
-  return ts.isPropertyAccessExpression(node) && node.name.text === "message"
+  return ts.isPropertyAccessExpression(node) && node.name.text === "message" && /^(?:e|error|err|cause|failure)$/i.test(nameOf(node.expression))
 }
 
 function isErrorTextMatch(node: ts.Node): boolean {
@@ -164,9 +166,16 @@ export function check(sources: Source[], agentsText: string, budgets: Record<str
       if (!firstFile.has(part)) firstFile.set(part, path)
     }
     const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, path.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
+    const templateFragments: Array<{ start: number; end: number }> = []
+    walk(source, node => {
+      if (ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+        templateFragments.push({ start: node.getStart(source), end: node.end })
+      }
+    })
     const scanner = ts.createScanner(ts.ScriptTarget.Latest, false, ts.LanguageVariant.Standard, text)
     for (let token = scanner.scan(); token !== ts.SyntaxKind.EndOfFileToken; token = scanner.scan()) {
       if (token !== ts.SyntaxKind.SingleLineCommentTrivia && token !== ts.SyntaxKind.MultiLineCommentTrivia) continue
+      if (templateFragments.some(fragment => fragment.start <= scanner.getTokenPos() && scanner.getTokenPos() < fragment.end)) continue
       const comment = scanner.getTokenText()
       if (!isDirective(comment)) add(path, lineAt(source, scanner.getTokenPos()), "no-comments", "Remove the comment or use a listed tool directive")
     }

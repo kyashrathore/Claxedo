@@ -20,7 +20,8 @@ const [
   { configureAgentConfig, disposeAgentConfig },
   { opencodeProviderCatalog },
   { openCodeEngineModels, openCodeSdkRuntime, drainOpenCodeSdkRuntime },
-  { OpenCodeSdkHarnessAdapter, WorkspaceScope },
+  { WorkspaceScope },
+  { OpenCodeSdkHarnessAdapter },
   { createLocalCredentialBroker },
   { ClaxedoDB },
 ] = await Promise.all([
@@ -31,6 +32,7 @@ const [
   import("@claxedo/server-core/credentials/opencode-provider-catalog"),
   import("@claxedo/server-core/opencode/sdk-runtime"),
   import("@claxedo/harness/opencode-sdk"),
+  import("@claxedo/workspace-runtime/testing"),
   import("./broker"),
   import("@claxedo/server-core/platform/db/index"),
 ])

@@ -22,7 +22,7 @@ function hostAt(root: string) {
 }
 
 afterEach(async () => {
-  await Promise.all(hosts.splice(0).map((host) => host.close().catch(() => {})))
+  await Promise.all(hosts.splice(0).map((host) => host.close()))
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true })
 })
 
@@ -34,7 +34,7 @@ test("starts cold and does not boot the SDK until first use", () => {
   const root = tempRoot()
   const host = hostAt(root)
   expect(host.status().lifecycle).toBe("cold")
-  
+
   expect(fs.existsSync(path.join(root, "opencode.db"))).toBe(false)
 })
 
@@ -50,7 +50,7 @@ test("event health is orthogonal to lifecycle", async () => {
   const host = hostAt(tempRoot())
   await host.client()
   host.setEventHealth("degraded")
-  
+
   expect(host.status()).toMatchObject({ lifecycle: "ready", events: "degraded" })
 })
 
@@ -156,6 +156,6 @@ test("remove proves ownership before destroying", async () => {
   const inB = await port.create(scopeB, { title: "b" })
 
   await expect(port.remove(scopeA, inB.id)).rejects.toBeInstanceOf(WorkspaceScopeError)
-  
+
   expect((await port.get(scopeB, inB.id)).id).toBe(inB.id)
 })

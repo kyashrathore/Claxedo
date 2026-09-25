@@ -2,11 +2,10 @@ import { mkdtempSync, realpathSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, test } from "bun:test"
-import { AgentHarnessEngineError } from "@claxedo/agent-sdk-runtime/adapters"
-import { engineRead } from "@claxedo/harness/opencode-sdk/engine-read"
-import { WorkspaceScope } from "@claxedo/harness/opencode-sdk/scope"
+import { AgentHarnessEngineError } from "@claxedo/harness/contract"
+import { engineRead } from "./engine-read"
+import { WorkspaceScope } from "./scope"
 
-/** `@opencode-ai/sdk`'s promise `ClientError`: `reason` on the instance, the status on `cause`. */
 class ClientError extends Error {
   name = "ClientError"
   readonly reason: string

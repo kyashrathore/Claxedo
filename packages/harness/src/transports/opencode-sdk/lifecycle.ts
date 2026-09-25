@@ -10,9 +10,9 @@ export type OpenCodeEventHealth = "healthy" | "degraded"
 
 export type OpenCodeStatus = Readonly<{
   lifecycle: OpenCodeLifecycle
-  
+
   events: OpenCodeEventHealth
-  
+
   reason?: string
 }>
 

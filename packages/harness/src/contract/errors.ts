@@ -1,9 +1,3 @@
-/**
- * The engine behind a harness adapter refused a read with a failure the adapter
- * cannot interpret — a bare 5xx, an unnamed transport fault. Carried as its own
- * type so an HTTP boundary can answer 502 with the operation and the harness
- * named, without importing the harness's client to recognise its error.
- */
 export class AgentHarnessEngineError extends Error {
   readonly code = "harness_engine_error"
   readonly harness: string

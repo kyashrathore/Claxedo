@@ -4,16 +4,16 @@ export {
   type OpenCodeClient,
   type OpenCodeHost,
   type OpenCodeHostOptions,
-} from "./host"
-export { createEventPump, type EventPump, type EventPumpOptions, type ProjectedEvent } from "./event-pump"
+} from "./host.js"
+export { createEventPump, type EventPump, type EventPumpOptions, type ProjectedEvent } from "./event-pump.js"
 export {
   canServe,
   isTerminal,
   type OpenCodeEventHealth,
   type OpenCodeLifecycle,
   type OpenCodeStatus,
-} from "./lifecycle"
-export { assertLocationInScope, WorkspaceScope, sameScope, WorkspaceScopeError } from "./scope"
+} from "./lifecycle.js"
+export { assertLocationInScope, WorkspaceScope, sameScope, WorkspaceScopeError } from "./scope.js"
 export {
   createSessionPort,
   type AdmittedMessage,
@@ -25,14 +25,14 @@ export {
   type SessionMessage,
   type SessionPage,
   type SessionSummary,
-} from "./session-port"
+} from "./session-port.js"
 export {
   createCatalogPort,
   type AgentEntry,
   type CommandEntry,
   type ModelEntry,
   type OpenCodeCatalogPort,
-} from "./catalog-port"
+} from "./catalog-port.js"
 export {
   createInteractionPort,
   type FormFieldValue,
@@ -40,20 +40,20 @@ export {
   type OpenCodeInteractionPort,
   type PermissionReply,
   type PermissionRequest,
-} from "./interaction-port"
+} from "./interaction-port.js"
 export {
   createToolPort,
   type OpenCodeToolPort,
   type SessionTool,
   type SessionToolRegistration,
-} from "./tool-port"
-export { createOpenCodeRuntime, type OpenCodeRuntime, type OpenCodeRuntimeOptions } from "./runtime"
+} from "./tool-port.js"
+export { createOpenCodeRuntime, type OpenCodeRuntime, type OpenCodeRuntimeOptions } from "./runtime.js"
 export {
   createConfigurationPort,
   type IntegrationConnection,
   type IntegrationEntry,
   type OpenCodeConfigurationPort,
-} from "./configuration-port"
-export { createLaunchPolicy, type LaunchPolicyStore, type OpenCodeLaunchDocument } from "./launch-policy"
-export { createProviderBindingPolicy, type ProviderBindingOverlay } from "./provider-binding"
-export { createProviderDefinitionPolicy, type ProviderDefinition } from "./provider-definition"
+} from "./configuration-port.js"
+export { createLaunchPolicy, type LaunchPolicyStore, type OpenCodeLaunchDocument } from "./launch-policy.js"
+export { createProviderBindingPolicy, type ProviderBindingOverlay } from "./provider-binding.js"
+export { createProviderDefinitionPolicy, type ProviderDefinition } from "./provider-definition.js"

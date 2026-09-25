@@ -1,23 +1,26 @@
-import type { ProviderUnavailable } from "@claxedo/agent-runtime-contract"
+import { isProviderUnavailable, type ProviderUnavailable } from "@claxedo/agent-runtime-contract"
 import type { Plugin } from "@opencode-ai/plugin"
-import { isProviderUnavailable } from "@claxedo/agent-sdk-runtime"
 
 export type ProviderBindingBound = Readonly<{ baseURL: string; apiKey: string }>
-
 export type ProviderBindingOverlay = ProviderBindingBound | ProviderUnavailable
 
 type CatalogDraft = Parameters<Parameters<Plugin.Context["catalog"]["transform"]>[0]>[0]
 type CatalogProvider = Parameters<Parameters<CatalogDraft["provider"]["update"]>[1]>[0]
+type Location = { reload: () => Promise<void>; settle: () => Promise<void> }
 
-export function createProviderBindingPolicy() {
-  let overlays: Record<string, ProviderBindingOverlay> = {}
-  const locations = new Set<{ reload: () => Promise<void>; settle: () => Promise<void> }>()
+class BindingPolicy {
+  private overlays: Record<string, ProviderBindingOverlay> = {}
+  private readonly locations = new Set<Location>()
 
-  const applyOverlays = (draft: CatalogDraft) => {
-    for (const [providerID, overlay] of Object.entries(overlays)) {
+  readonly plugin: Plugin.Plugin = {
+    id: "claxedo-provider-binding",
+    setup: (context) => this.setup(context),
+  }
+
+  private applyOverlays = (draft: CatalogDraft): void => {
+    for (const [providerID, overlay] of Object.entries(this.overlays)) {
       draft.provider.update(providerID, (provider) => {
         if (isProviderUnavailable(overlay)) {
-
           provider.activation = "disabled"
           return
         }
@@ -26,67 +29,71 @@ export function createProviderBindingPolicy() {
     }
   }
 
-  const holds = (provider: Pick<CatalogProvider, "settings" | "activation">, overlay: ProviderBindingOverlay) =>
-    isProviderUnavailable(overlay)
+  private holds(provider: Pick<CatalogProvider, "settings" | "activation">, overlay: ProviderBindingOverlay): boolean {
+    return isProviderUnavailable(overlay)
       ? provider.activation === "disabled"
       : provider.settings?.baseURL === overlay.baseURL && provider.settings?.apiKey === overlay.apiKey
+  }
 
-  const plugin: Plugin.Plugin = {
-    id: "claxedo-provider-binding",
-    async setup(context) {
-      let registration = await context.catalog.transform(applyOverlays)
-      const overridden = async () => {
-        for (const [providerID, overlay] of Object.entries(overlays)) {
-
-          const row = await context.catalog.provider.get({ providerID }).then((output) => output.data, () => undefined)
-          if (row && !holds(row, overlay)) return true
+  private async setup(context: Plugin.Context): Promise<() => Promise<void>> {
+    let registration = await context.catalog.transform(this.applyOverlays)
+    let settling: Promise<void> | undefined
+    const settle = () => {
+      if (settling) return settling
+      settling = (async () => {
+        for (const [providerID, overlay] of Object.entries(this.overlays)) {
+          const row = (await context.catalog.provider.get({ providerID })).data
+          if (row && !this.holds(row, overlay)) {
+            await registration.dispose()
+            registration = await context.catalog.transform(this.applyOverlays)
+            return
+          }
         }
-        return false
-      }
-      let settling: Promise<void> | undefined
-      const settle = () => {
-        if (settling) return settling
-        settling = (async () => {
-          if (!(await overridden())) return
-          await registration.dispose()
-          registration = await context.catalog.transform(applyOverlays)
-        })().finally(() => { settling = undefined })
-        return settling
-      }
-      const location = { reload: () => context.catalog.reload(), settle }
-      locations.add(location)
+      })().finally(() => { settling = undefined })
+      return settling
+    }
+    const location = { reload: () => context.catalog.reload(), settle }
+    this.locations.add(location)
+    const subscription = this.watchUpdates(context, settle)
+    return async () => {
+      this.locations.delete(location)
+      await subscription.close()
+    }
+  }
 
-      let open = true
-      const events = context.event.subscribe()[Symbol.asyncIterator]()
-      void (async () => {
-        for (let next = await events.next(); !next.done; next = await events.next()) {
-          if (!open) return
-          if (next.value.type === "catalog.updated") await settle()
-        }
-      })().catch(() => {})
-
-      return async () => {
+  private watchUpdates(context: Plugin.Context, settle: () => Promise<void>) {
+    let open = true
+    const events = context.event.subscribe()[Symbol.asyncIterator]()
+    const reading = (async () => {
+      for (let next = await events.next(); !next.done; next = await events.next()) {
+        if (!open) return
+        if (next.value.type === "catalog.updated") await settle()
+      }
+    })()
+    void reading.catch((error: unknown) => console.error("OpenCode catalog watch failed", error))
+    return {
+      async close() {
         open = false
-        locations.delete(location)
         await events.return?.()
-      }
-    },
+        await reading.catch((error: unknown) => console.error("OpenCode catalog watch failed", error))
+      },
+    }
   }
-  return {
-    plugin,
-    
-    async apply(next: Record<string, ProviderBindingOverlay>) {
-      overlays = next
 
-      await Promise.all([...locations].map(async (location) => {
-        await location.reload()
-        await location.settle()
-      }))
-    },
-    
-    unavailableReason(providerID: string): string | undefined {
-      const overlay = overlays[providerID]
-      return overlay && isProviderUnavailable(overlay) ? overlay.reason : undefined
-    },
+  async apply(next: Record<string, ProviderBindingOverlay>): Promise<void> {
+    this.overlays = next
+    await Promise.all([...this.locations].map(async (location) => {
+      await location.reload()
+      await location.settle()
+    }))
   }
+
+  unavailableReason(providerID: string): string | undefined {
+    const overlay = this.overlays[providerID]
+    return overlay && isProviderUnavailable(overlay) ? overlay.reason : undefined
+  }
+}
+
+export function createProviderBindingPolicy(): BindingPolicy {
+  return new BindingPolicy()
 }

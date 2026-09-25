@@ -1,150 +1,136 @@
-import type { OpenCodeHost } from "./host"
-import { num, rec, str } from "./value"
+import type { OpenCodeHost } from "./host.js"
+import { asNumber as num, asRecord as rec, asString as str } from "@claxedo/helpers/guards"
 
 export type ProjectedEvent = Readonly<{
-  
   id: string
   type: string
-  
   directory?: string
-  
   durable?: Readonly<{ aggregateID: string; seq: number }>
-  
   hintOnly: boolean
   data: unknown
 }>
 
 export type EventPumpOptions = Readonly<{
-  
   onEvent(event: ProjectedEvent): void
-  
   backoffMs?: readonly number[]
-  
   sleep?: (ms: number) => Promise<void>
 }>
 
 export type EventPump = Readonly<{
-  
   start(): void
-  
   ready(): Promise<void>
-  
   checkpoint(aggregateID: string): number | undefined
-  
   stop(): Promise<void>
 }>
 
 const DEFAULT_BACKOFF = [100, 500, 2_000, 5_000] as const
 
-function durableCursor(input: unknown): { aggregateID: string; seq: number } | undefined {
-  const durable = rec(input)
-  const aggregateID = str(durable?.aggregateID)
-  const seq = num(durable?.seq)
-  return aggregateID !== undefined && seq !== undefined ? { aggregateID, seq } : undefined
+function projectEvent(input: unknown): ProjectedEvent {
+  const raw = rec(input) ?? {}
+  const cursor = rec(raw.durable)
+  const aggregateID = str(cursor?.aggregateID)
+  const seq = num(cursor?.seq)
+  const durable = aggregateID !== undefined && seq !== undefined ? { aggregateID, seq } : undefined
+  const directory = str(rec(raw.location)?.directory)
+  return {
+    id: str(raw.id) ?? "",
+    type: str(raw.type) ?? "",
+    ...(directory ? { directory } : {}),
+    ...(durable ? { durable } : {}),
+    hintOnly: durable === undefined,
+    data: raw.data,
+  }
+}
+
+class OpenCodeEventPump implements EventPump {
+  private readonly checkpoints = new Map<string, number>()
+  private readonly readiness = Promise.withResolvers<void>()
+  private readonly backoff: readonly number[]
+  private readonly sleep: (ms: number) => Promise<void>
+  private running = false
+  private stopped = false
+  private attempt = 0
+  private abort: AbortController | undefined
+  private loop: Promise<void> | undefined
+
+  constructor(private readonly host: OpenCodeHost, private readonly options: EventPumpOptions) {
+    this.backoff = options.backoffMs ?? DEFAULT_BACKOFF
+    this.sleep = options.sleep ?? ((ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
+  }
+
+  start(): void {
+    if (this.running) return
+    this.running = true
+    this.loop = this.consume()
+  }
+
+  ready(): Promise<void> {
+    return this.readiness.promise
+  }
+
+  checkpoint(aggregateID: string): number | undefined {
+    return this.checkpoints.get(aggregateID)
+  }
+
+  async stop(): Promise<void> {
+    this.stopped = true
+    this.abort?.abort()
+    await this.loop
+  }
+
+  private deliver(input: unknown): void {
+    const event = projectEvent(input)
+    if (event.durable) {
+      const seen = this.checkpoints.get(event.durable.aggregateID)
+      if (seen !== undefined && event.durable.seq <= seen) return
+      this.checkpoints.set(event.durable.aggregateID, event.durable.seq)
+    }
+    try {
+      this.options.onEvent(event)
+    } catch (error) {
+      this.host.setEventHealth("degraded")
+      console.error("OpenCode event consumer failed", error)
+    }
+  }
+
+  private async consumeStream(): Promise<void> {
+    const client = await this.host.client()
+    if (this.stopped) return
+    this.abort = new AbortController()
+    const iterator = client.events.subscribe({ signal: this.abort.signal })[Symbol.asyncIterator]()
+    let next = iterator.next()
+    this.readiness.resolve()
+    while (true) {
+      const item = await next
+      if (this.stopped) {
+        await iterator.return?.()
+        return
+      }
+      if (item.done) return
+      this.attempt = 0
+      this.host.setEventHealth("healthy")
+      this.deliver(item.value)
+      next = iterator.next()
+    }
+  }
+
+  private async consume(): Promise<void> {
+    while (!this.stopped) {
+      try {
+        await this.consumeStream()
+      } catch (error) {
+        if (this.stopped) return
+        console.error("OpenCode event stream failed", error)
+      }
+      if (this.stopped) return
+      this.host.setEventHealth("degraded")
+      const wait = this.backoff[Math.min(this.attempt, this.backoff.length - 1)] ?? 0
+      this.attempt += 1
+      await this.sleep(wait)
+    }
+  }
 }
 
 export function createEventPump(host: OpenCodeHost, options: EventPumpOptions): EventPump {
-  const backoff = options.backoffMs ?? DEFAULT_BACKOFF
-  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
-  const checkpoints = new Map<string, number>()
-
-  let running = false
-  let stopped = false
-  let abort: AbortController | undefined
-  let loop: Promise<void> | undefined
-  let markReady: (() => void) | undefined
-  const ready = new Promise<void>((resolve) => {
-    markReady = resolve
-  })
-
-  function project(input: unknown): ProjectedEvent {
-    const raw = rec(input) ?? {}
-    const durable = durableCursor(raw.durable)
-    const directory = str(rec(raw.location)?.directory)
-    return {
-      id: str(raw.id) ?? "",
-      type: str(raw.type) ?? "",
-      ...(directory ? { directory } : {}),
-      ...(durable ? { durable } : {}),
-      hintOnly: durable === undefined,
-      data: raw.data,
-    }
-  }
-
-  function pumpActive(): boolean {
-    return !stopped
-  }
-
-  async function consume(): Promise<void> {
-    let attempt = 0
-    while (pumpActive()) {
-      try {
-        const client = await host.client()
-        if (stopped) return
-        abort = new AbortController()
-        const iterator = client.events.subscribe({ signal: abort.signal })[Symbol.asyncIterator]()
-        let next = iterator.next()
-        markReady?.()
-        markReady = undefined
-        while (true) {
-          const item = await next
-          if (stopped) {
-
-            await iterator.return?.()
-            return
-          }
-          if (item.done) break
-          const raw = item.value
-          
-          attempt = 0
-          host.setEventHealth("healthy")
-          const event = project(raw)
-          if (event.durable) {
-            const seen = checkpoints.get(event.durable.aggregateID)
-            
-            if (seen !== undefined && event.durable.seq <= seen) {
-              next = iterator.next()
-              continue
-            }
-            checkpoints.set(event.durable.aggregateID, event.durable.seq)
-          }
-          try {
-            options.onEvent(event)
-          } catch {
-            
-            host.setEventHealth("degraded")
-          }
-          next = iterator.next()
-        }
-        
-        host.setEventHealth("degraded")
-      } catch {
-        if (stopped) return
-
-        host.setEventHealth("degraded")
-      }
-      const wait = backoff[Math.min(attempt, backoff.length - 1)] ?? 0
-      attempt += 1
-      await sleep(wait)
-    }
-  }
-
-  return {
-    start() {
-      if (running) return
-      running = true
-      loop = consume()
-    },
-    ready() {
-      return ready
-    },
-    checkpoint(aggregateID) {
-      return checkpoints.get(aggregateID)
-    },
-    async stop() {
-      stopped = true
-      abort?.abort()
-      await loop?.catch(() => {})
-    },
-  }
+  return new OpenCodeEventPump(host, options)
 }

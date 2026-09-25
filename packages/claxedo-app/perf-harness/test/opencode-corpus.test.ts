@@ -3,7 +3,7 @@ import { existsSync } from "node:fs"
 import { mkdtemp, realpath, rm } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { WorkspaceScope, createOpenCodeRuntime } from "@claxedo/harness/opencode-sdk"
+import { WorkspaceScope, createOpenCodeRuntime } from "@claxedo/workspace-runtime/testing"
 import { OpenCodeCorpus } from "../src/opencode-corpus"
 
 function corpus(directory: string) {

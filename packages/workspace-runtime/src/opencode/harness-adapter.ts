@@ -7,8 +7,8 @@ import type { AgentHarnessAdapter, AgentMessagePage, AgentMessagePageInput } fro
 import { harnessCapabilities } from "@claxedo/agent-sdk-runtime/capabilities"
 import { NO_HARNESS_EFFORT, ProviderCredentialUnavailableError } from "@claxedo/agent-sdk-runtime"
 import type { AgentExecutionBinding, AgentQuestionAnswer } from "@claxedo/agent-runtime-contract"
-import { asRecordOrEmpty } from "@claxedo/helpers/guards"
-import type { Mcp } from "@opencode-ai/plugin"
+import { asArray, asRecordOrEmpty, isNonEmptyString } from "@claxedo/helpers/guards"
+import { projectMcpServers } from "@claxedo/harness/opencode-sdk/mcp-projection"
 import type { OpenCodeRuntime } from "@claxedo/harness/opencode-sdk/runtime"
 import { WorkspaceScope } from "@claxedo/harness/opencode-sdk/scope"
 import type { ProjectedEvent } from "@claxedo/harness/opencode-sdk/event-pump"
@@ -96,69 +96,6 @@ function message(sessionID: string, row: SessionMessage): AgentMessage {
 function record(input: unknown): Record<string, unknown> {
   return rec(input) ?? {}
 }
-
-function stringList(input: unknown): string[] {
-  return Array.isArray(input) ? input.filter((value): value is string => typeof value === "string" && value.length > 0) : []
-}
-
-function stringRecord(input: unknown): Record<string, string> | undefined {
-  const row = asRecordOrEmpty(input)
-  const entries = Object.entries(row).filter((entry): entry is [string, string] => typeof entry[1] === "string")
-  return entries.length === Object.keys(row).length && entries.length > 0 ? Object.fromEntries(entries) : undefined
-}
-
-/**
- * The runtime snapshot's MCP servers (`type: "stdio" | "remote"`, the
- * `UserMcpServer` shape every harness receives) in the SDK's own config
- * shape. A snapshot entry of neither type is a contract violation, not a
- * server to skip silently.
- */
-function snapshotMcpServers(input: Record<string, unknown>): Record<string, Mcp.ServerConfig> {
-  const servers: Record<string, Mcp.ServerConfig> = {}
-  for (const [name, value] of Object.entries(input)) {
-    const row = asRecordOrEmpty(value)
-    const disabled = row.disabled === true ? { disabled: true } : {}
-    const environment = stringRecord(row.env)
-    const headers = stringRecord(row.headers)
-    if (row.type === "stdio" && typeof row.command === "string" && row.command.length > 0) {
-      servers[name] = { type: "local", command: [row.command, ...stringList(row.args)], ...(environment ? { environment } : {}), ...disabled }
-      continue
-    }
-    if (row.type === "remote" && typeof row.url === "string" && row.url.length > 0) {
-      servers[name] = { type: "remote", url: row.url, ...(headers ? { headers } : {}), ...disabled }
-      continue
-    }
-    throw new Error(`OpenCode MCP server ${name} must be a stdio server with a command or a remote server with a url`)
-  }
-  return servers
-}
-
-/**
- * Recognise one Agent Plugins server row.
- *
- * A predicate, not an assertion: these rows are ALREADY in the SDK's config
- * shape and carry fields this file does not model (`cwd`, for one), so the row
- * itself must survive. Checking the discriminator and its one required field is
- * what the plugin contract actually promises.
- */
-function isPluginServerConfig(row: Record<string, unknown>): row is Record<string, unknown> & Mcp.ServerConfig {
-  if (row.type === "local") return stringList(row.command).length > 0
-  return row.type === "remote" && typeof row.url === "string" && row.url.length > 0
-}
-
-/** Agent Plugins already project their servers in the SDK config shape; only the discriminator is checked. */
-function pluginMcpServers(input: Record<string, unknown>): Record<string, Mcp.ServerConfig> {
-  const servers: Record<string, Mcp.ServerConfig> = {}
-  for (const [name, value] of Object.entries(input)) {
-    const row = record(value)
-    if (!isPluginServerConfig(row)) {
-      throw new Error(`Agent Plugins OpenCode MCP server ${name} must be a local or remote server`)
-    }
-    servers[name] = row
-  }
-  return servers
-}
-
 
 /**
  * Watches the engine's own event stream for this session's turn ending.
@@ -658,8 +595,8 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
     this.scope(this.directory)
     const plugins = record(record(config.launch).config)
     this.launchDocument = {
-      skills: stringList(plugins.skills),
-      mcp: { ...snapshotMcpServers(record(config.mcp)), ...pluginMcpServers(record(plugins.mcp)) },
+      skills: asArray(plugins.skills).filter(isNonEmptyString),
+      mcp: projectMcpServers(record(config.mcp), record(plugins.mcp)),
     }
     // A newer document supersedes any earlier application; the next engine
     // operation writes the current one before it runs. Configuration is a
