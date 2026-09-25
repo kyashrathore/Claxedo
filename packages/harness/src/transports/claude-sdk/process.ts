@@ -16,11 +16,11 @@ export class ClaudeProcess extends EventEmitter implements SpawnedProcess {
   private exited = false
   private retirement?: Promise<void>
 
-  constructor(private readonly services: HarnessServices, options: SpawnOptions, sessionId: string) {
+  constructor(private readonly services: HarnessServices, options: SpawnOptions, sessionId: string, role: "harness" | "probe" = "harness") {
     super()
     this.started = services.spawn({ file: options.command, args: options.args, cwd: options.cwd ?? process.cwd(),
       env: Object.fromEntries(Object.entries(options.env).filter((entry): entry is [string, string] => entry[1] !== undefined)) },
-    { role: "harness", label: "Claude Code SDK", sessionId })
+    { role, label: "Claude Code SDK", sessionId })
     this.started.then((owned) => {
       this.stdin.pipe(owned.stdin)
       owned.stdout.pipe(this.stdout)

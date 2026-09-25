@@ -2,10 +2,6 @@ import { randomUUID } from "node:crypto"
 import type { SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { SteerResult } from "@claxedo/agent-runtime-contract"
 
-function sdkInputMessage(text: string): SDKUserMessage {
-  return { type: "user", session_id: "", message: { role: "user", content: [{ type: "text", text }] }, parent_tool_use_id: null }
-}
-
 type Pending = { ids: Set<string>; resolve: (result: SteerResult) => void }
 
 export class ClaudeTurnInput {
@@ -14,7 +10,7 @@ export class ClaudeTurnInput {
   private readonly pending = new Set<Pending>()
   private ended = false
 
-  constructor(opening: string) { this.queue = [sdkInputMessage(opening)] }
+  constructor(opening: SDKUserMessage) { this.queue = [opening] }
 
   readonly stream: AsyncIterable<SDKUserMessage> = {
     [Symbol.asyncIterator]: async function* (this: ClaudeTurnInput) {
@@ -27,9 +23,9 @@ export class ClaudeTurnInput {
     }.bind(this),
   }
 
-  steer(text: string): Promise<SteerResult> {
+  steer(input: SDKUserMessage): Promise<SteerResult> {
     if (this.ended) return Promise.resolve({ ok: false, status: "no_active_turn", message: "Claude turn ended" })
-    const message = { ...sdkInputMessage(text), uuid: randomUUID() }
+    const message = { ...input, uuid: randomUUID() }
     const result = new Promise<SteerResult>((resolve) => this.pending.add({ ids: new Set([message.uuid]), resolve }))
     this.queue.push(message)
     this.wake()

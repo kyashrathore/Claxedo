@@ -15,7 +15,7 @@ export function claudeBinding(credentials: ResolvedCredentials, owner: TurnActor
 
 export function claudeEnvironment(parent: NodeJS.ProcessEnv, binding?: ProviderBinding, configHome?: string): Record<string, string> {
   const env = Object.fromEntries(Object.entries(parent).filter((entry): entry is [string, string] => entry[1] !== undefined))
-  delete env.CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN
+  for (const name of Object.keys(env)) if (name.startsWith("CLAXEDO_")) delete env[name]
   if (!binding) return env
   for (const name of ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_SCOPES",
     "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "GOOGLE_APPLICATION_CREDENTIALS", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"]) delete env[name]

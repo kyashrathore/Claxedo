@@ -21,13 +21,14 @@ describe("Claude session credentials", () => {
     const selected = claudeBinding({ ...empty, providers: { anthropic: binding } }, person)
     const env = claudeEnvironment({ PATH: "/bin", ANTHROPIC_API_KEY: "operator-own", ANTHROPIC_AUTH_TOKEN: "operator-own",
       CLAUDE_CODE_OAUTH_TOKEN: "operator-own", CLAUDE_CODE_OAUTH_SCOPES: "operator-own",
-      CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN: "local-secret" }, selected, "/claxedo/claude")
+      CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN: "local-secret", CLAXEDO_OTHER_SECRET: "other-secret" }, selected, "/claxedo/claude")
     expect(env.ANTHROPIC_BASE_URL).toBe(binding.baseUrl)
     expect(env[authMode === "api-key" ? "ANTHROPIC_API_KEY" : "ANTHROPIC_AUTH_TOKEN"]).toBe("placeholder")
     expect(env[authMode === "api-key" ? "ANTHROPIC_AUTH_TOKEN" : "ANTHROPIC_API_KEY"]).toBeUndefined()
     expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
     expect(env.CLAUDE_CODE_OAUTH_SCOPES).toBeUndefined()
     expect(env.CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN).toBeUndefined()
+    expect(env.CLAXEDO_OTHER_SECRET).toBeUndefined()
     expect(env.CLAUDE_CONFIG_DIR).toBe("/claxedo/claude")
   })
 
