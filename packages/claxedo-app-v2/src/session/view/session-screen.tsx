@@ -137,7 +137,7 @@ function SessionBody(props: {
           data-session-transcript-collapsed={transcriptCollapsed() ? "true" : undefined}
           classList={{ "session-floating-timeline": props.floating, "session-floating-timeline-collapsed": transcriptCollapsed() }}
         >
-          <SessionTimeline view={props.view} host={host} active={props.active} scroll={scroll} onRecover={recover} />
+          <SessionTimeline view={props.view} host={host} active={props.active} onScreen={!transcriptCollapsed()} scroll={scroll} onRecover={recover} />
         </div>
       </div>
       <div

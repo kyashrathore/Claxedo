@@ -14,6 +14,7 @@ import {
   Show,
   mapArray,
   Switch,
+  untrack,
   type Accessor,
   type JSX,
 } from "solid-js"
@@ -48,6 +49,7 @@ import { useData } from "@/transcript"
 import { sessionTitle } from "./session-title"
 import { latchSessionTitle, type LatchedSessionTitle } from "./session-title-latch"
 import { createActivePaneProjection } from "./active-pane-projection"
+import { whileOnScreen } from "./timeline-on-screen"
 import { MessageComment, Timeline } from "./message-timeline.data"
 import { ImageMarkBadge } from "@/lib/image-mark-badge"
 import { TimelineRow, type TimelineRowMap } from "./timeline-row-model"
@@ -278,7 +280,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const [listRoot, setListRoot] = createSignal<HTMLDivElement>()
   const sessionId = createMemo(() => host.sessionId())
   const sessionConversation = host.conversation
-  const sessionMessages = createMemo(() => sessionConversation()?.messages ?? emptyMessages)
+  const sessionMessages = createMemo(whileOnScreen(props.onScreen, () => sessionConversation()?.messages ?? emptyMessages))
   const messageById = createMemo(() => new Map(sessionMessages().map((message) => [message.id, message] as const)))
   const queuedNotYetInTranscript = createMemo(() =>
     (props.queued?.items() ?? []).filter((item) => !item.messageId || !messageById().has(item.messageId)),
@@ -302,20 +304,21 @@ export function MessageTimeline(props: MessageTimelineProps) {
         isRuntimeMessage(item) && item.role === "assistant" && typeof item.time.completed !== "number",
     ),
   )
-  const sessionStatus = createActivePaneProjection({ active: props.active, read: () => host.status() ?? idle, initial: idle })
+  const displayed = () => props.active() && props.onScreen()
+  const sessionStatus = createActivePaneProjection({ active: displayed, read: () => host.status() ?? idle, initial: idle })
   const turnSettleRefreshPending = (userMessageId: string) => host.turnSettlePending(userMessageId)
   const working = createMemo(() => turnActive(sessionStatus()))
-  const directorySessionRows = createActivePaneProjection({ active: props.active, read: host.sessions, initial: [] as readonly TimelineSessionRow[] })
+  const directorySessionRows = createActivePaneProjection({ active: displayed, read: host.sessions, initial: [] as readonly TimelineSessionRow[] })
   const directorySession = (sessionId: string | undefined) =>
     sessionId ? directorySessionRows().find((session) => session.id === sessionId) : undefined
-  const hostCallIds = createMemo(() => subagentHostCallIds(sessionConversation()?.parts ?? {}))
+  const hostCallIds = createMemo(whileOnScreen(props.onScreen, () => subagentHostCallIds(sessionConversation()?.parts ?? {})))
   const resolveAmbientSubagents = () => {
     const id = sessionId()
     if (!id) return []
     return (data.resolveSubagents?.(id, undefined, hostCallIds()) ?? []).filter((subagent) => subagent.ambient)
   }
   const ambientSubagents = createActivePaneProjection({
-    active: props.active,
+    active: displayed,
     read: resolveAmbientSubagents,
     initial: [] as ReturnType<typeof resolveAmbientSubagents>,
   })
@@ -388,7 +391,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
           { equals: sameArrayItems },
         )
         const turnParts = createMemo(
-          () => {
+          whileOnScreen(props.onScreen, () => {
             const conversation = sessionConversation()
             const parts: Record<string, PartType[]> = {
               [userMessage.id]: conversation?.parts[userMessage.id] ?? emptyParts,
@@ -397,7 +400,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
               parts[message.id] = conversation?.parts[message.id] ?? emptyParts
             }
             return parts
-          },
+          }),
           undefined,
           { equals: samePartsRecord },
         )
@@ -410,7 +413,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
           )
         })
         const isActive = createMemo(() => activeMessageId() === userMessage.id)
-        return createMemo((previous: TimelineRow.TimelineRow[] | undefined) => {
+        return createMemo(whileOnScreen(props.onScreen, (previous: TimelineRow.TimelineRow[] | undefined) => {
           const parts = turnParts()
           const shownFoldCount = previous?.find((row): row is TimelineRow.TurnFold => row._tag === "TurnFold")?.foldCount
           const rows = Timeline.constructMessageRows(
@@ -433,7 +436,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
           )
 
           return TimelineRow.reuse(previous, rows)
-        })
+        }))
       },
     ),
   )
@@ -452,7 +455,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
     return TimelineRow.PreviousMessages({ userMessageId: head.id, count })
   }
 
-  const timelineRows = createMemo((previous: TimelineRow.TimelineRow[] | undefined) => {
+  const timelineRows = createMemo(whileOnScreen(props.onScreen, (previous: TimelineRow.TimelineRow[] | undefined) => {
     thinkingHoldRevision()
     const rows = messageRowMemos().flatMap((memo) => memo())
     const hiddenTurns = hiddenTurnsRow()
@@ -483,10 +486,10 @@ export function MessageTimeline(props: MessageTimelineProps) {
     }
 
     return TimelineRow.reuse(previous, props.progressBlocked?.() ? rows.filter((row) => row._tag !== "Thinking") : rows)
-  })
+  }))
 
   const prepend = createTimelinePrependAnchor({
-    root: listRoot, displayed: props.active,
+    root: listRoot, displayed,
     resolveRowStart: (key) => {
       const index = timelineRows().findIndex((row) => TimelineRow.key(row) === key)
       return index < 0 ? undefined : virtualizer.getOffsetForIndex(index, "start")?.[0]
@@ -516,6 +519,15 @@ export function MessageTimeline(props: MessageTimelineProps) {
   let virtualContent: HTMLDivElement | undefined
   const resizeAnchor = createTimelineResizeAnchor()
   const followsEnd = () => props.shouldAnchorBottom() && working()
+  const rowKeys = createMemo(() => {
+    const keys = timelineRows().map(TimelineRow.key)
+    resizeAnchor.noteRowKeys(keys)
+    return keys
+  })
+  const itemKey = createMemo(() => {
+    const keys = rowKeys()
+    return (index: number) => keys[index] ?? `removed:${index}`
+  })
   const virtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
     get count() {
       return timelineRows().length
@@ -529,15 +541,13 @@ export function MessageTimeline(props: MessageTimelineProps) {
     },
     initialOffset: () => props.shouldAnchorBottom() ? Number.MAX_SAFE_INTEGER : (savedScroll?.offset ?? 0),
     initialMeasurementsCache: initialMeasurements,
-    estimateSize: (index) => estimateTimelineRowSize({ index, rows: timelineRows(), parts: getMsgParts }),
+    estimateSize: (index) => untrack(() => estimateTimelineRowSize({ index, rows: timelineRows(), parts: getMsgParts })),
     scrollToFn: (offset, options, instance) => {
       if (virtualContent) virtualContent.style.height = `${instance.getTotalSize()}px`
       elementScroll(offset, options, instance)
     },
     get getItemKey() {
-      const keys = timelineRows().map(TimelineRow.key)
-      resizeAnchor.noteRowKeys(keys)
-      return (index: number) => keys[index] ?? `removed:${index}`
+      return itemKey()
     },
     get anchorTo() {
       return followsEnd() ? "end" : "start"
@@ -570,7 +580,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
   resizeAnchor.install({
     virtualizer,
     root: listRoot,
-    displayed: props.active,
+    displayed,
     shouldAnchorBottom: followsEnd,
     hasScrollGesture: props.hasScrollGesture,
     onInViewInsert: () => props.onMarkScrollGesture(),
@@ -591,7 +601,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const virtualItemByKey = createMemo(
     () => new Map(virtualizer.getVirtualItems().map((item) => [String(item.key), item] as const)),
   )
-  const virtualRowKeys = createMemo(() => virtualizer.getVirtualItems().map((item) => String(item.key)))
+  const virtualRowKeys = createMemo(() => (props.onScreen() ? virtualizer.getVirtualItems().map((item) => String(item.key)) : []))
   const messageRowIndex = createMemo(() => {
     const result = new Map<string, number>()
     timelineRows().forEach((row, index) => {

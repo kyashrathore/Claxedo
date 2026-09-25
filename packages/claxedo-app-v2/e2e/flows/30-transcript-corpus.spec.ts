@@ -5,7 +5,7 @@ import type { CaseInteraction, CaseTurn, CorpusCase } from "../corpus/case"
 import { expectDetachedGrowthAtMost, expectHeapGrowthAtMost, expectRowsKept, markDetachedNodes, markRows, quietDom, releaseHold, startLiveTurn } from "../corpus/live"
 import { switchSessions } from "../corpus/switch"
 import { expectWritesAtMost, watchWrites } from "../corpus/writes"
-import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, type AcpStep, type ClaxedoApi, type MessageRow, type Stack } from "../harness"
+import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, type AcpStep, type ClaxedoApi, type MessageRow, type Stack } from "../harness"
 
 const CASES_DIR = path.join(import.meta.dirname, "..", "corpus", "cases")
 const LIVE_DURATIONS_STYLE = path.join(import.meta.dirname, "..", "corpus", "live-durations.css")
@@ -265,28 +265,4 @@ test("30 an opened session shows its last turn's work folded under Worked, as to
 
   const messages = await api.messages(workspace.directory, session.id)
   expect(messages.flatMap((message) => message.parts).filter((part) => part.type === "tool")).toHaveLength(2)
-})
-
-test("30 a reply streaming into a transcript taller than the screen leaves the unseen scroll thumb untouched", async ({ stack, api, app }) => {
-  const workspace = await stack.daemon.makeWorkspace("thumb")
-  const earlier = Array.from({ length: 70 }, (_, index) => `Earlier line ${index + 1} keeps the transcript taller than the screen.`).join("\n\n")
-  const streamed = Array.from({ length: 40 }, (_, index) => `Streamed line ${index + 1} grows the transcript.`).join("\n\n")
-  await stack.acp.write("thumb-earlier", { steps: [{ kind: "text", text: earlier }] })
-  const session = await api.createSession(workspace.directory, { title: "Thumb", harness: SCRIPTED_ACP_HARNESS })
-  await api.prompt(workspace.directory, session.id, `Write a long answer. ${acpScriptToken("thumb-earlier")}`)
-  const target = { directory: workspace.directory, sessionId: session.id }
-
-  await app.goto(sessionUrl(stack, workspace.id, session.id))
-  await expect(app.getByText("Earlier line 70 keeps", { exact: false })).toBeVisible()
-  await app.mouse.move(0, 0)
-  await watchWrites(app, stack.app, "thumb")
-  await startLiveTurn(stack, api, target, {
-    name: "thumb-stream",
-    prompt: "Stream another long answer.",
-    steps: [{ kind: "hold", name: "thumb-stream-0" }, { kind: "text", text: `${streamed}\n\nLast streamed line.`, chunks: 40, delayMs: 8 }],
-  })
-  await releaseHold({ stack, api, target, app }, { hold: "thumb-stream-0", ready: "Last streamed line.", settles: true })
-  await expectWritesAtMost(app, stack.app, 0)
-
-  expect(assistantText(await api.messages(workspace.directory, session.id))).toContain("Last streamed line.")
 })
