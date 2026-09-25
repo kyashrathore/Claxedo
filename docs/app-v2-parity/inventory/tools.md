@@ -245,7 +245,7 @@ Shots: `session-v1-390.png`, `panel-open-v1-390.png`, `changes-nav-v1-390.png`, 
 
 Every row was re-read against v1's source and today's v2, and the visible ones were compared with the parity screens (`bun run e2e:parity`, panel screens) and with probes that ran the same steps on both apps on the e2e stack. The "v2" columns above describe the build the inventory was taken on. The marks below replace them.
 
-**Tally (108 rows):** matches 75 · approved difference 12 · fixed in this sweep 18 · open 3.
+**Tally (108 rows):** matches 75 · approved difference 12 · fixed in this sweep 18 · open 3. TOOL-008 counts as fixed (its File item); its Context item is still listed as open below.
 
 Fixed in this sweep:
 
