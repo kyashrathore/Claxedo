@@ -1,6 +1,7 @@
 import { createSignal, type Accessor } from "solid-js"
 import { PLUGIN_CAPABILITIES, type PluginCapability } from "@claxedo/plugin-api"
 import { persistedSignal, preferenceKey } from "@/lib/persisted"
+import { isRecord } from "@/lib/record"
 import type { Approval } from "./approval"
 
 type PluginSwitches = { readonly off: readonly string[] }
@@ -21,10 +22,6 @@ const NO_APPROVALS: PluginApprovals = {}
 
 function isStringList(value: unknown): value is readonly string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string")
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function isCapability(value: string): value is PluginCapability {
