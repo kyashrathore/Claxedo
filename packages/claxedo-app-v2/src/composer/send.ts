@@ -1,5 +1,5 @@
 import { createMemo, createSignal, type Accessor } from "solid-js"
-import type { PromptAttachment, PromptInput } from "@/server"
+import { toAppError, type PromptAttachment, type PromptInput } from "@/server"
 import type { SessionView } from "@/session"
 import { formatCommentNote, formatImageMarkNote } from "@/lib/comment-note"
 import { machine } from "@/lib/machine"
@@ -7,7 +7,6 @@ import type { Draft, EditorMode, HistoryComment, SendEvent, SendState, StopEvent
 import { promptFilled, promptImages, promptText, randomId, sendTransition, stopTransition } from "./model"
 import { flattenMarkedImages } from "./marks/flatten"
 import { numberImageMarks } from "./marks/marks"
-import { asAppError } from "./errors"
 import type { ComposerKey, ComposerStore } from "./store"
 
 export type GoalIntent = { kind: "none" } | { kind: "arm" } | { kind: "submit"; objective: string }
@@ -129,7 +128,7 @@ function createStop(view: Accessor<SessionView | undefined>, goalStopFailed: (er
       await stopTurn(current, goalStopFailed)
       state.send({ type: "stopFinished" })
     } catch (error) {
-      state.send({ type: "stopFailed", error: asAppError(error) })
+      state.send({ type: "stopFailed", error: toAppError(error) })
     }
   }
   return { state: state.state, stop, dismiss: () => state.send({ type: "stopFinished" }) }
@@ -186,7 +185,7 @@ export function createComposerSend(input: SendInput) {
       state.send({ type: "sendAccepted", clientRequestId })
       input.afterAccepted?.(view)
     } catch (error) {
-      state.send({ type: "sendRejected", error: asAppError(error) })
+      state.send({ type: "sendRejected", error: toAppError(error) })
     } finally {
       setBoot(undefined)
     }

@@ -1,5 +1,5 @@
 import { readString } from "@/lib/record"
-import { betterAuthApiError } from "./better-auth-error"
+import { authResponseBody, betterAuthApiError } from "./better-auth-error"
 import { apiOrigin } from "./origins"
 
 export type DeviceAuthorizationRequest = {
@@ -22,7 +22,7 @@ export async function readDeviceAuthorization(userCode: string): Promise<DeviceA
   const url = new URL("/api/auth/device", apiOrigin())
   url.searchParams.set("user_code", userCode)
   const response = await fetch(url.toString(), { credentials: "include", headers: { accept: "application/json" } })
-  const body: unknown = await response.json().catch(() => undefined)
+  const body = await authResponseBody(response)
   if (!response.ok) throw betterAuthApiError(body, response.status, "Device authorization failed")
   const clientId = readString(body, "client_id")
   const transaction = readString(body, "transaction")
@@ -43,6 +43,6 @@ export async function submitDeviceDecision(input: { request: DeviceAuthorization
     body: JSON.stringify({ userCode: input.request.userCode, transaction: input.request.transaction }),
   })
   if (!response.ok) {
-    throw betterAuthApiError(await response.json().catch(() => undefined), response.status, "Device authorization failed")
+    throw betterAuthApiError(await authResponseBody(response), response.status, "Device authorization failed")
   }
 }

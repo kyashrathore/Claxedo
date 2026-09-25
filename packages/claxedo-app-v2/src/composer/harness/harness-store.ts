@@ -1,6 +1,6 @@
 import { batch } from "solid-js"
 import { createStore, unwrap } from "solid-js/store"
-import type { ModelKey } from "./model-key"
+import type { ModelChoice } from "@/server"
 import { harnessHasConfigOptions, isCatalogHarness, type HarnessType } from "./profile"
 import { sameHarnessSelection } from "@/lib/harness-selection"
 import {
@@ -103,8 +103,8 @@ export function createHarnessStore(storage: DraftDefaultStorage) {
       draftDefaultState: undefined,
       harness: type,
       harnessMode: type ? "harness" : "unknown",
-      selectedModel: saved?.model?.modelID ?? "",
-      selectedModelProvider: saved?.model?.providerID,
+      selectedModel: saved?.model?.modelId ?? "",
+      selectedModelProvider: saved?.model?.providerId,
       optionsLoading: !!saved && !!type && harnessHasConfigOptions(type),
       configError: saved ? "Loading model options..." : undefined,
     })
@@ -125,8 +125,8 @@ export function createHarnessStore(storage: DraftDefaultStorage) {
     setStore(application.scope, {
       harness: result.harness,
       harnessMode: "harness",
-      selectedModel: model?.modelID ?? "",
-      selectedModelProvider: model?.providerID,
+      selectedModel: model?.modelId ?? "",
+      selectedModelProvider: model?.providerId,
       optionsLoading: false,
       configError: result.state === "saved-model-unavailable"
         ? "Saved model unavailable"
@@ -245,15 +245,15 @@ export function createHarnessStore(storage: DraftDefaultStorage) {
     const { choice, patch } = draftHarnessChoicePatch(scope, identity, type)
     setStore(scope, {
       ...patch,
-      selectedModel: choice?.model?.modelID ?? "",
-      selectedModelProvider: choice?.model?.providerID,
+      selectedModel: choice?.model?.modelId ?? "",
+      selectedModelProvider: choice?.model?.providerId,
     })
   }
 
   const rememberDraftModel = (
     scope: string,
     identity: Omit<DraftDefaultScope, "fallbackWorkspaceKey">,
-    model: ModelKey,
+    model: ModelChoice,
     labels: DraftDefaultLabels | undefined,
     save: boolean,
   ) => {
@@ -273,7 +273,7 @@ export function createHarnessStore(storage: DraftDefaultStorage) {
     return persisted
   }
 
-  const acceptsDraftModel = (scope: string, model: ModelKey) => canSelectDraftModel(read(scope), model)
+  const acceptsDraftModel = (scope: string, model: ModelChoice) => canSelectDraftModel(read(scope), model)
 
   /** Show `patch` in an existing session's scope as a choice, keeping what the session itself runs. */
   const holdHarness = (scope: string, patch: HarnessStorePatch) => {
@@ -313,9 +313,9 @@ export function createHarnessStore(storage: DraftDefaultStorage) {
     setConfigError: (scope: string, message: string) => setStore(scope, "configError", message),
     setOptionsLoading: (scope: string, value: boolean) => setStore(scope, "optionsLoading", value),
     setReadiness: (scope: string, readiness: HarnessStoreState["readiness"]) => setStore(scope, "readiness", readiness),
-    setSelectedModel: (scope: string, model: ModelKey) => {
-      setStore(scope, "selectedModel", model.modelID)
-      setStore(scope, "selectedModelProvider", model.providerID)
+    setSelectedModel: (scope: string, model: ModelChoice) => {
+      setStore(scope, "selectedModel", model.modelId)
+      setStore(scope, "selectedModelProvider", model.providerId)
     },
     displayName: (scope: string) => harnessDisplayName(read(scope)),
     harness: (scope: string) => read(scope).harness,
@@ -353,8 +353,8 @@ export function createHarnessStore(storage: DraftDefaultStorage) {
   }
 }
 
-function canSelectDraftModel(state: HarnessStoreState, model: ModelKey) {
+function canSelectDraftModel(state: HarnessStoreState, model: ModelChoice) {
   if (!state.harness) return false
   if (isCatalogHarness(state.harness) || state.harness.kind === "connection") return true
-  return model.providerID === state.harness.harnessId && !!state.dynamicModels?.some((item) => item.id === model.modelID)
+  return model.providerId === state.harness.harnessId && !!state.dynamicModels?.some((item) => item.id === model.modelId)
 }

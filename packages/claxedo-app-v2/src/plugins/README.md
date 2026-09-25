@@ -1,6 +1,6 @@
 # Plugins
 
-The plugin host. It runs the four first-party plugins from `plugins/` and the user's live plugins from the daemon, and it is the only code that knows a plugin exists. The contract is `@claxedo/plugin-api` (`packages/claxedo-plugin-api`); this folder implements it over the shell's registries.
+The plugin host. It runs the first-party plugins that `bundled.ts` lists from `plugins/` and the user's live plugins from the daemon, and it is the only code that knows a plugin exists. The contract is `@claxedo/plugin-api` (`packages/claxedo-plugin-api`); this folder implements it over the shell's registries.
 
 ## Owned concepts
 

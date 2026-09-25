@@ -130,14 +130,3 @@ export function submitBlockReason(input: SubmitBlockInput): SubmitBlock | null {
   return null
 }
 
-// Clickability must never become submittability. Every standing block reason
-// stops Enter/form submit before the handler; actionable reasons still explain
-// on click (and Enter opens the model picker for `no-model`) via
-// PromptSubmitControl / createPromptInputSubmitRetry.
-export function submitHardBlocked(input: {
-  stoppable: boolean
-  block: SubmitBlock | null
-}): boolean {
-  if (input.stoppable) return false
-  return input.block !== null
-}

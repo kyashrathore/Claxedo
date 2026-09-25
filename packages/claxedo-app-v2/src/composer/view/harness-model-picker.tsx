@@ -118,7 +118,7 @@ function SectionHeader(props: {
 /** The open section's body: the surface's own column, entering from its header. */
 function SectionPanel(props: { class?: string; children: JSX.Element }) {
   return (
-    <div data-slot="harness-picker-panel" class={`harness-picker-panel ${props.class ?? ""}`}>
+    <div class={`harness-picker-panel ${props.class ?? ""}`}>
       {props.children}
     </div>
   )
@@ -177,7 +177,7 @@ function EffortRow(props: {
   onFastToggle: (next: boolean) => void
 }) {
   return (
-    <div data-slot="harness-picker-effort-row" class="harness-picker-effort-row" data-fast={props.fast ? "true" : undefined}>
+    <div class="harness-picker-effort-row" data-fast={props.fast ? "true" : undefined}>
       <Show
         when={props.levels.length > 1}
         fallback={<div data-slot="harness-picker-effort" data-supported="false" class="harness-picker-effort" title="No effort control" />}
@@ -188,7 +188,6 @@ function EffortRow(props: {
         {(fast) => (
           <button
             type="button"
-            data-slot="harness-picker-fast"
             aria-pressed={fast().on}
             aria-label={fast().label}
             title={fast().description ? `${fast().label} · ${fast().description}` : fast().label}
@@ -514,7 +513,7 @@ export function HarnessModelPicker<H>(props: {
                 fallback={<ModelList model={props.model()} tooltips={false} onSelect={() => setOpen(false)} />}
               >
                 {(failure) => (
-                  <div data-slot="harness-picker-model-error" class="flex min-h-0 flex-1 flex-col items-start gap-2 px-3 py-4">
+                  <div class="flex min-h-0 flex-1 flex-col items-start gap-2 px-3 py-4">
                     <div class="flex items-center gap-2">
                       <span aria-hidden="true" class="size-1.5 shrink-0 rounded-full bg-icon-critical-base" />
                       <span class="text-compact font-medium text-text-base">{failure().message}</span>

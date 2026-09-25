@@ -55,9 +55,11 @@ type ErrorBody = { readonly code?: string; readonly message?: string }
 function readErrorBody(text: string): ErrorBody {
   if (!text.trim()) return {}
   let parsed: unknown
+  if (!/^\s*[[{]/.test(text)) return { message: text }
   try {
     parsed = JSON.parse(text)
-  } catch {
+  } catch (error) {
+    console.warn("An error body that looks like JSON could not be parsed; its text is the message", { error })
     return { message: text }
   }
   if (!parsed || typeof parsed !== "object") return { message: text }

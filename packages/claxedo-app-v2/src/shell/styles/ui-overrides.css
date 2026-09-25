@@ -670,3 +670,18 @@ html[data-theme="codex"] [data-component="todo-dock"],
 html[data-theme="codex"] [data-component="goal-dock"] {
   background: var(--codex-elevated-secondary);
 }
+
+.composer-model-list [data-slot="list-scroll"] {
+  flex: 1 1 0%;
+  min-height: 0;
+}
+
+.composer-submit > [data-component="icon"] {
+  transition-property: opacity;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+.composer-submit[data-booting] > [data-component="icon"] {
+  opacity: 0;
+}

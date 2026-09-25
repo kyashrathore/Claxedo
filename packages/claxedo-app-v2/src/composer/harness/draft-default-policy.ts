@@ -1,25 +1,25 @@
-import type { ModelKey } from "./model-key"
+import type { ModelChoice } from "@/server"
 import type { HarnessType } from "./profile"
 import { sameHarnessSelection } from "@/lib/harness-selection"
 import { isCatalogHarnessId } from "@/lib/harness-selection"
 
 export type DraftDefaultPair = {
   readonly harness: HarnessType
-  readonly model?: ModelKey
+  readonly model?: ModelChoice
 }
 
 export type DraftDefaultResult = DraftDefaultPair & {
   readonly state: "ready" | "choose-model" | "saved-model-unavailable" | "unsupported-placement"
   readonly source: "saved" | "harness-default" | "catalog-provider-default" | "placement-default"
-  readonly blockedModel?: ModelKey
+  readonly blockedModel?: ModelChoice
 }
 
 export type ResolveDraftDefaultInput = {
   readonly saved: DraftDefaultPair
   readonly supportedHarnesses: readonly HarnessType[]
-  readonly eligibleModels: readonly ModelKey[]
-  readonly declaredDefaultModel?: ModelKey
-  readonly connectedProviderIDs?: readonly string[]
+  readonly eligibleModels: readonly ModelChoice[]
+  readonly declaredDefaultModel?: ModelChoice
+  readonly connectedProviderIds?: readonly string[]
   readonly providerDefaults?: Readonly<Record<string, string | undefined>>
   readonly placementDefault?: DraftDefaultPair
 }
@@ -62,12 +62,12 @@ export function resolveDraftDefault(input: ResolveDraftDefaultInput): DraftDefau
     }
   }
   if (input.saved.harness.kind === "native" && isCatalogHarnessId(input.saved.harness.harnessId)) {
-    const defaults = [...new Set(input.connectedProviderIDs ?? [])]
-      .map((providerID) => {
-        const modelID = input.providerDefaults?.[providerID]
-        return modelID ? { providerID, modelID } : undefined
+    const defaults = [...new Set(input.connectedProviderIds ?? [])]
+      .map((providerId) => {
+        const modelId = input.providerDefaults?.[providerId]
+        return modelId ? { providerId, modelId } : undefined
       })
-      .filter((model): model is ModelKey => !!model)
+      .filter((model): model is ModelChoice => !!model)
       .filter((model) => eligible(input.eligibleModels, model))
     if (defaults.length === 1) {
       return {
@@ -102,12 +102,12 @@ export function shouldApplyDraftDefault(
     current.revision === captured.revision
 }
 
-function sameModel(left: ModelKey, right: ModelKey) {
-  return left.providerID === right.providerID &&
-    left.modelID === right.modelID &&
+function sameModel(left: ModelChoice, right: ModelChoice) {
+  return left.providerId === right.providerId &&
+    left.modelId === right.modelId &&
     left.variant === right.variant
 }
 
-function eligible(models: readonly ModelKey[], candidate?: ModelKey): candidate is ModelKey {
+function eligible(models: readonly ModelChoice[], candidate?: ModelChoice): candidate is ModelChoice {
   return !!candidate && models.some((model) => sameModel(model, candidate))
 }
