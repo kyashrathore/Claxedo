@@ -37,7 +37,7 @@ function useFileReads(placementId: () => PlacementId | undefined) {
     search: async (text: string): Promise<readonly string[]> => {
       const placement = placementId()
       if (!placement) return []
-      return server.queryClient.fetchQuery(server.queries.files.search(placement, text)).catch(failed(placement))
+      return server.queryClient.fetchQuery(server.queries.files.search(placement, text, "files")).catch(failed(placement))
     },
   }
 }

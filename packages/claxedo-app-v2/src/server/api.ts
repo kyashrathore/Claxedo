@@ -19,6 +19,7 @@ import type {
   DiffSummary,
   FileContent,
   FileNode,
+  FileSearchEntries,
   GitBases,
   GitCommit,
   GitCommitInput,
@@ -222,7 +223,7 @@ export type ServerQueries = {
   readonly files: {
     readonly tree: (placementId: PlacementId, path: string) => FetchQuery<readonly FileNode[]>
     readonly content: (placementId: PlacementId, path: string) => FetchQuery<FileContent>
-    readonly search: (placementId: PlacementId, query: string) => FetchQuery<readonly string[]>
+    readonly search: (placementId: PlacementId, query: string, entries: FileSearchEntries) => FetchQuery<readonly string[]>
   }
   readonly git: {
     readonly status: (placementId: PlacementId) => FetchQuery<GitStatus>

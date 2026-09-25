@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, Match, Show, Switch, untrack, type JSX } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Match, on, Show, Switch, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { FailureNotice } from "@/lib/failure"
 import type { FileNode } from "@/server"
@@ -6,16 +6,7 @@ import { ClaxedoIconV2 as IconV2, Collapsible } from "@/ui"
 import { dictionary } from "../i18n"
 import type { ChangeKind } from "../model"
 import type { TreeSource } from "../tree-source"
-import {
-  buildAllowedFilter,
-  dirsToExpand,
-  expandedDepths,
-  fileTreeRevealWindow,
-  filteredNodes,
-  resolveTreeKeyAction,
-  treeKey,
-  type FileTreeFilter,
-} from "../tree-helpers"
+import { expandedDepths, fileTreeRevealWindow, resolveTreeKeyAction, treeKey } from "../tree-helpers"
 import { FileRowIcon, FileTreeNode, ShowMore, TreeLoading, visibleKind, type TreeMarks } from "./file-tree-node"
 
 const MAX_DEPTH = 128
@@ -24,15 +15,12 @@ export type FileTreeProps = {
   readonly source: TreeSource
   readonly path: string
   readonly active?: string
-  readonly enabled?: boolean
   readonly level?: number
-  readonly allowed?: readonly string[]
   readonly modified?: readonly string[]
   readonly kinds?: ReadonlyMap<string, ChangeKind>
   readonly visibleLimit?: number
   readonly loadingEpisode?: string
   readonly onFileClick?: (file: FileNode) => void
-  readonly _filter?: FileTreeFilter
   readonly _marks?: TreeMarks
   readonly _deeps?: ReadonlyMap<string, number>
   readonly _chain?: readonly string[]
@@ -60,7 +48,6 @@ function DirectoryRow(props: {
   readonly level: number
   readonly marks: TreeMarks
   readonly deeps: ReadonlyMap<string, number>
-  readonly filter: FileTreeFilter | undefined
   readonly chain: readonly string[]
 }): JSX.Element {
   const expanded = () => props.tree.source.state(props.node.path).expanded
@@ -110,7 +97,6 @@ function DirectoryRow(props: {
             {...props.tree}
             path={props.node.path}
             level={props.level + 1}
-            _filter={props.filter}
             _marks={props.marks}
             _deeps={props.deeps}
             _chain={props.chain}
@@ -152,24 +138,14 @@ function FileRow(props: {
 }
 
 function createTreeLevel(props: FileTreeProps, level: number) {
-  const filter = createMemo(() => props._filter ?? (props.allowed ? buildAllowedFilter(props.allowed) : undefined))
   const marks = createMemo((): TreeMarks => {
     if (props._marks) return props._marks
     const out = new Set<string>([...(props.modified ?? []), ...(props.kinds?.keys() ?? [])])
     return out.size === 0 ? undefined : out
   })
   const deeps = createMemo(() => props._deeps ?? expandedDepths(props.source, props.path, level))
-  createEffect(() => {
-    if (props.enabled === false) return
-    const dirs = dirsToExpand({
-      level,
-      filter: filter(),
-      expanded: (dir) => untrack(() => props.source.state(dir).expanded),
-    })
-    for (const dir of dirs) props.source.expand(dir)
-  })
-  const nodes = createMemo(() => filteredNodes(props.source, props.path, filter()))
-  return { filter, marks, deeps, nodes }
+  const nodes = createMemo(() => props.source.children(props.path))
+  return { marks, deeps, nodes }
 }
 
 export function FileTree(props: FileTreeProps): JSX.Element {
@@ -180,12 +156,12 @@ export function FileTree(props: FileTreeProps): JSX.Element {
   const [batchesAfter, setBatchesAfter] = createSignal(0)
   const chain = [...(props._chain ?? []), treeKey(props.path)]
   const tree = createTreeLevel(props, level)
-  createEffect(() => {
-    void props.path
-    void props.allowed
-    setBatchesBefore(0)
-    setBatchesAfter(0)
-  })
+  createEffect(
+    on([() => props.path, () => props.source], () => {
+      setBatchesBefore(0)
+      setBatchesAfter(0)
+    }),
+  )
   const reveal = createMemo(() =>
     fileTreeRevealWindow({
       paths: tree.nodes().map((node) => node.path),
@@ -238,7 +214,6 @@ export function FileTree(props: FileTreeProps): JSX.Element {
               level={level}
               marks={tree.marks()}
               deeps={tree.deeps()}
-              filter={tree.filter()}
               chain={chain}
             />
           </Show>

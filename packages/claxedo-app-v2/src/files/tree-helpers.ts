@@ -1,33 +1,4 @@
-import type { FileNode } from "@/server"
-import { basename, parentPath } from "./path"
 import type { TreeSource } from "./tree-source"
-
-export type FileTreeFilter = {
-  readonly files: ReadonlySet<string>
-  readonly dirs: ReadonlySet<string>
-}
-
-export function dirsToExpand(input: {
-  readonly level: number
-  readonly filter?: { readonly dirs: ReadonlySet<string> }
-  readonly expanded: (dir: string) => boolean
-}): string[] {
-  if (input.level !== 0 || !input.filter) return []
-  return [...input.filter.dirs].filter((dir) => !input.expanded(dir))
-}
-
-export function buildAllowedFilter(allowed: readonly string[]): FileTreeFilter {
-  const files = new Set(allowed)
-  const dirs = new Set<string>()
-  for (const item of allowed) {
-    const parents = item.split("/").slice(0, -1)
-    for (const [index] of parents.entries()) {
-      const dir = parents.slice(0, index + 1).join("/")
-      if (dir) dirs.add(dir)
-    }
-  }
-  return { files, dirs }
-}
 
 export function fileTreeRevealWindow(input: {
   readonly paths: readonly string[]
@@ -110,23 +81,4 @@ export function expandedDepths(source: TreeSource, root: string, level: number):
     if (parent) parent.max = Math.max(parent.max, top.max)
   }
   return out
-}
-
-export function filteredNodes(
-  source: TreeSource,
-  path: string,
-  filter: FileTreeFilter | undefined,
-): readonly FileNode[] {
-  const nodes = source.children(path)
-  if (!filter) return nodes
-  const out = nodes.filter((node) => (node.kind === "file" ? filter.files.has(node.path) : filter.dirs.has(node.path)))
-  const seen = new Set(out.map((node) => node.path))
-  const add = (item: string, kind: FileNode["kind"]) => {
-    if (parentPath(item) !== path || seen.has(item)) return
-    out.push({ name: basename(item), path: item, kind, ignored: false })
-    seen.add(item)
-  }
-  for (const dir of filter.dirs) add(dir, "directory")
-  for (const item of filter.files) add(item, "file")
-  return out.sort((a, b) => (a.kind !== b.kind ? (a.kind === "directory" ? -1 : 1) : a.name.localeCompare(b.name)))
 }

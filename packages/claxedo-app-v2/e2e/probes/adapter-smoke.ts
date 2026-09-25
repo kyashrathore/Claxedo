@@ -113,7 +113,7 @@ async function connectAndPlace(probe: Probe): Promise<Placement> {
     return `project ${read.id} "${read.name}"`
   })
   await check("files and git queries", async () => {
-    const found = await server.queryClient.fetchQuery(server.queries.files.search(placement.id, "README"))
+    const found = await server.queryClient.fetchQuery(server.queries.files.search(placement.id, "README", "files"))
     const git = await server.queryClient.fetchQuery(server.queries.git.status(placement.id))
     return `search README → ${found.join(",")}; git branch=${git.branch ?? "?"} staged=${git.staged.length} unstaged=${git.unstaged.length}`
   })

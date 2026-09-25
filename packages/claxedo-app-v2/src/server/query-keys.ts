@@ -1,5 +1,5 @@
 import type { PlacementId, ProjectId } from "./ids"
-import type { DiffScope } from "./git-types"
+import type { DiffScope, FileSearchEntries } from "./git-types"
 
 export const queryKeys = {
   bootstrap: (server: string) => ["server", server, "bootstrap"] as const,
@@ -39,7 +39,7 @@ export const queryKeys = {
   codeHostRepositories: (server: string, connectionId: string) => ["server", server, "codeHost", "repositories", connectionId] as const,
   fileTree: (server: string, placementId: PlacementId, path: string) => ["server", server, "files", placementId, "tree", path] as const,
   fileContent: (server: string, placementId: PlacementId, path: string) => ["server", server, "files", placementId, "content", path] as const,
-  fileSearch: (server: string, placementId: PlacementId, query: string) => ["server", server, "files", placementId, "search", query] as const,
+  fileSearch: (server: string, placementId: PlacementId, query: string, entries: FileSearchEntries) => ["server", server, "files", placementId, "search", entries, query] as const,
   filesOf: (server: string, placementId: PlacementId) => ["server", server, "files", placementId] as const,
   gitStatus: (server: string, placementId: PlacementId) => ["server", server, "git", placementId, "status"] as const,
   gitLog: (server: string, placementId: PlacementId, limit: number) => ["server", server, "git", placementId, "log", limit] as const,

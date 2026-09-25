@@ -57,7 +57,7 @@ function openFocus(input: TimelineHostInput, focus: TimelineFocus): void {
 
 async function findFiles(input: TimelineHostInput, query: string): Promise<readonly string[]> {
   try {
-    return await input.server.queryClient.fetchQuery(input.server.queries.files.search(input.view.ref.placementId, query))
+    return await input.server.queryClient.fetchQuery(input.server.queries.files.search(input.view.ref.placementId, query, "files"))
   } catch (error) {
     console.warn("Transcript file lookup failed", { query, error })
     return []

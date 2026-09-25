@@ -118,3 +118,36 @@ test("14 Review keeps its scroll position through a file tab and back", async ({
     .poll(() => review.locator("[data-scrollable='true']").first().evaluate((element) => element.scrollTop))
     .toBeGreaterThan(200)
 })
+
+test("14 searching files narrows the tree to the matches, reads no folder while typing, and clearing keeps their folders open", async ({ stack, api, app }) => {
+  test.skip(stack.app !== "v2", "v1 lists every matching folder on each keystroke")
+  const workspace = await stack.daemon.makeWorkspace("search")
+  for (const [file, text] of [["src/needle.ts", "a"], ["src/deep/needle-notes.md", "b"], ["src/other.ts", "c"], ["docs/guide.md", "d"], ["top.md", "e"]]) {
+    await fs.mkdir(path.dirname(path.join(workspace.directory, file)), { recursive: true })
+    await fs.writeFile(path.join(workspace.directory, file), `${text}\n`)
+  }
+  await git(workspace.directory, "add", "-A")
+  await git(workspace.directory, "commit", "-qm", "files to search")
+  const session = await api.createSession(workspace.directory, { title: "Search", harness: SCRIPTED_ACP_HARNESS })
+
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
+  await app.getByRole("button", { name: UI.openPanel }).click()
+  const panel = app.getByRole("complementary", { name: "Workspace panel" })
+  const row = (name: string) => panel.getByRole("treeitem", { name: new RegExp(`^${name.replaceAll(".", "\\.")}`) })
+  await expect(row("top.md")).toBeVisible()
+  const listings: string[] = []
+  app.on("request", (request) => {
+    const url = new URL(request.url())
+    if (url.pathname === "/api/wr/file" && url.searchParams.has("path")) listings.push(url.searchParams.get("path") ?? "")
+  })
+
+  await panel.getByPlaceholder("Search files...").pressSequentially("needle")
+  for (const name of ["src", "deep", "needle.ts", "needle-notes.md"]) await expect(row(name)).toBeVisible()
+  for (const name of ["other.ts", "docs", "top.md"]) await expect(row(name)).toBeHidden()
+  expect(listings, "folder listings read while searching").toEqual([])
+
+  await panel.getByRole("button", { name: "Clear search" }).click()
+  for (const name of ["top.md", "docs", "other.ts", "needle.ts", "needle-notes.md"]) await expect(row(name)).toBeVisible()
+  expect(listings.sort()).toEqual(["src", "src/deep"])
+})
