@@ -1310,7 +1310,7 @@ Every slice deletes what it replaces.
   - Provider credentials in every placement (C-3, C-11), applied without aborting a running turn; requests through the broker.
   - The conformance suite green; H17 at P3.
   - The server adapter and `OPENCODE_URL` go in P4's package deletions (H-7).
-  - `Progress:` decided 2026-09-25; part 1, the engine moved into the transport's folder, runs in `hv2/opencode-sdk`; part 2, the transport, follows the contract pass.
+  - `Progress:` the embedded transport and profile are built over the moved engine in `hv2/opencode-sdk-2`; real-engine conformance covers brokered permission and question requests, owner refusal, projected MCP and skills, and credential rotation during an active turn. H17 on today's adapter ends its shell turn without asking permission and omits the live `question.asked` frame, while the stored question answer and local credential rotation succeed; P3 acceptance remains open. Same-directory sessions with distinct first-party MCP documents are currently refused because the engine applies MCP configuration per directory.
 - [ ] **Cloud: one repository and hosted delivery (C-1, C-2).**
   - One repository for credentials and settings, D1 and SQLite behind it.
   - The delivery path run on hosted: brokered provider secrets per person, the settings snapshot, fan-out, credential reconciliation.

@@ -64,6 +64,7 @@ describe("public OpenCode corpus materialization", () => {
     const root = await mkdtemp(path.join(tmpdir(), "claxedo-public-corpus-"))
     try {
       const corpus = await writeCorpus(root)
+      const importStartedAt = Date.now()
       const result = await materializeClaxedoPublicCorpus({
         corpusDirectory: corpus.directory,
         corpusManifestPath: corpus.manifestPath,
@@ -72,6 +73,7 @@ describe("public OpenCode corpus materialization", () => {
         dataDirectory: path.join(root, "state", "data"),
         workspaceDirectory: path.join(root, "workspaces"),
       })
+      const importFinishedAt = Date.now()
       expect(result.messageCount).toBe(2)
       expect(result.transcriptBytes).toBe(10)
       expect(result.sessionMapping.control).toBe("ses_bench_control")
@@ -157,7 +159,8 @@ describe("public OpenCode corpus materialization", () => {
       database.close()
       expect(session.title).toBe("1. Control")
       expect(session.time_created).toBe(SYNTHETIC_SESSION_TIME_BASE_MS + 60_000)
-      expect(session.time_updated).toBe(SYNTHETIC_SESSION_TIME_BASE_MS + 100 + 60_000)
+      expect(session.time_updated).toBeGreaterThanOrEqual(importStartedAt)
+      expect(session.time_updated).toBeLessThanOrEqual(importFinishedAt)
       expect(messages.map((row) => ({ id: row.id, role: row.type }))).toEqual([
         { id: "msg_user", role: "user" },
         { id: "msg_assistant", role: "assistant" },

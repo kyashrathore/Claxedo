@@ -7,6 +7,7 @@ import { MemoryPorts, authority, origin } from "./memory-ports"
 import { createTestServices, type TestServices } from "./services"
 
 export type ConformanceBackend = {
+  execution?: "process" | "embedded"
   directory: string
   harness: StartInput["config"]["harness"]
   model: PromptModel
@@ -112,9 +113,10 @@ async function collect(transport: HarnessTransport, session: HarnessSession, inp
 
 export function runConformance(input: ConformanceInput): void {
   describe(`${input.name} transport conformance`, () => {
-    test("starts a real process, streams text and usage, and closes it", async () => {
+    test("starts a real harness, streams text and usage, and closes it", async () => {
       const context = await setup(input)
       try {
+        if (context.backend.execution === "embedded") expect(context.services.processes).toHaveLength(0)
         expect(context.session.binding.workspaceId).toBe(context.start.workspaceId)
         const events = await collect(context.transport, context.session, context.turn(context.backend.textCommand ?? "Reply with exactly this one token: PICONFORM"), context.turnBroker())
         expect(events.some((item) => item.event.type === "text-delta" && item.event.delta.includes("PICONFORM"))).toBe(true)
@@ -123,7 +125,8 @@ export function runConformance(input: ConformanceInput): void {
         const capabilities = await context.transport.capabilities({ directory: context.backend.directory })
         if (context.backend.expectedMcp) expect(capabilities.pluginIntake.mcp).toBe(context.backend.expectedMcp)
         await context.transport.close(context.session)
-        expect((await Promise.all(context.services.processes.map((process) => process.exited))).every((exit) => exit.code !== null || exit.signal !== null)).toBe(true)
+        if (context.backend.execution === "embedded") expect(context.services.processes).toHaveLength(0)
+        else expect((await Promise.all(context.services.processes.map((process) => process.exited))).every((exit) => exit.code !== null || exit.signal !== null)).toBe(true)
       } finally { await context.close() }
     }, 60_000)
 
@@ -220,12 +223,13 @@ export function runConformance(input: ConformanceInput): void {
         await collect(context.transport, context.session, context.turn("PIATTACH"), context.turnBroker())
         await context.transport.close(context.session)
         const attached = await context.transport.attach({ ...context.start, binding: context.session.binding }, context.sessionBroker)
+        if (context.backend.execution === "embedded") expect(context.services.processes).toHaveLength(0)
         expect(attached.binding.upstreamSessionId).toBe(context.session.binding.upstreamSessionId)
         const events = await collect(context.transport, attached, context.turn("PIRESUMED"), context.turnBroker())
         expect(events.flatMap((item) => item.event.type === "text-delta" ? [item.event.delta] : []).join("").length).toBeGreaterThan(0)
         expect(events.some((item) => item.event.type === "finish")).toBe(true)
         await context.transport.close(attached)
-        expect(context.services.processes).toHaveLength(context.backend.locality === "remote" ? 0 : 2)
+        expect(context.services.processes).toHaveLength(context.backend.execution === "embedded" || context.backend.locality === "remote" ? 0 : 2)
       } finally { await context.close() }
     }, 60_000)
 
@@ -414,7 +418,8 @@ export function runConformance(input: ConformanceInput): void {
         ])
         expect(first).toEqual(second)
         expect(first.length).toBeGreaterThan(0)
-        if (context.backend.locality !== "remote") {
+        if (context.backend.execution === "embedded") expect(context.services.processes).toHaveLength(0)
+        else if (context.backend.locality !== "remote") {
           expect(context.services.processes).toHaveLength(before + 1)
           expect(await context.services.processes.at(-1)!.exited).toBeDefined()
         }
@@ -432,7 +437,8 @@ export function runConformance(input: ConformanceInput): void {
         const commands = await context.transport.commands?.list({ draft })
         expect(commands).toBeArray()
         expect(commands?.length).toBeGreaterThan(0)
-        if (context.backend.locality !== "remote") {
+        if (context.backend.execution === "embedded") expect(context.services.processes).toHaveLength(0)
+        else if (context.backend.locality !== "remote") {
           expect(context.services.processes).toHaveLength(before + 1)
           expect(await context.services.processes.at(-1)!.exited).toBeDefined()
         }
@@ -448,6 +454,7 @@ export function runConformance(input: ConformanceInput): void {
         expect(sessionAgents?.length).toBeGreaterThan(0)
         const { sessionId: _sessionId, title: _title, instructions: _instructions, ...draft } = context.start
         expect(await context.transport.agents?.list({ draft })).toEqual(sessionAgents)
+        if (context.backend.execution === "embedded") expect(context.services.processes).toHaveLength(0)
       } finally { await context.close() }
     }, 60_000)
 

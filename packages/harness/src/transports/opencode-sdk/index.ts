@@ -57,3 +57,5 @@ export {
 export { createLaunchPolicy, type LaunchPolicyStore, type OpenCodeLaunchDocument } from "./launch-policy.js"
 export { createProviderBindingPolicy, type ProviderBindingOverlay } from "./provider-binding.js"
 export { createProviderDefinitionPolicy, type ProviderDefinition } from "./provider-definition.js"
+export { OpenCodeSdkTransport } from "./transport.js"
+export { OpenCodeOwnerMismatchError, OpenCodeTransportError } from "./errors.js"
