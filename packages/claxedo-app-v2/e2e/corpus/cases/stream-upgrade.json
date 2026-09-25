@@ -1,0 +1,68 @@
+{
+  "id": "stream-upgrade",
+  "title": "A block that closes mid-stream upgrades to math and highlighted code",
+  "source": {
+    "kind": "test",
+    "file": "src/transcript/markdown.tsx",
+    "name": "the open block is parsed once; closed blocks take the async upgrade"
+  },
+  "partKinds": [
+    "text"
+  ],
+  "replay": {
+    "agent": "acp",
+    "turns": [
+      {
+        "prompt": "Say hello first.",
+        "steps": [
+          {
+            "kind": "text",
+            "text": "Hello, ready to stream."
+          }
+        ]
+      },
+      {
+        "prompt": "Stream the math.",
+        "live": true,
+        "steps": [
+          {
+            "kind": "text",
+            "text": "Before the formula.\n\n",
+            "chunks": 4,
+            "delayMs": 8
+          },
+          {
+            "kind": "text",
+            "text": "$$\na^2 + b^2 = c^2\n$$\n\n"
+          },
+          {
+            "kind": "text",
+            "text": "Inline `code` stays inline.\n\n```ts\nconst answer = 42\n```\n\nThe blocks above are closed now.\n\nStill streaming",
+            "chunks": 18,
+            "delayMs": 8
+          },
+          {
+            "kind": "hold",
+            "name": "stream-upgrade-1"
+          },
+          {
+            "kind": "text",
+            "text": " the last paragraph. Upgrade stream done.",
+            "chunks": 7,
+            "delayMs": 8
+          }
+        ]
+      }
+    ]
+  },
+  "ready": "Still streaming",
+  "interactions": [
+    {
+      "kind": "release",
+      "hold": "stream-upgrade-1",
+      "ready": "Upgrade stream done.",
+      "settles": true
+    }
+  ],
+  "invariant": "While the reply is still streaming, the closed formula renders as math and the closed fence as highlighted code, as they do once the turn settles."
+}

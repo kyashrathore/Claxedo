@@ -848,6 +848,7 @@ describe("SdkRuntimeAdapter", () => {
     await turn
 
     expect(events.map((event) => event.type)).not.toContain("session.error")
+    expect(events.at(-1)).toEqual({ type: "cancelled", sessionId: session.id })
     const messages = store.getMessages(session.id) as Array<{ info: { id: string; error?: unknown } }>
     expect(messages.find((message) => message.info.id === "assistant-1")?.info.error).toEqual({
       name: "MessageAbortedError",

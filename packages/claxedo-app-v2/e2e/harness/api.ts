@@ -165,6 +165,16 @@ export class ClaxedoApi {
     })
   }
 
+  async stopTurn(directory: string, id: string) {
+    const route = `/session/${encodeURIComponent(id)}/recovery`
+    const inspected = await this.call<{ target?: { ownerGeneration: unknown } }>("GET", route, { directory })
+    if (!inspected.target) throw new Error(`session ${id} has no turn to stop`)
+    return this.call<unknown>("POST", route, {
+      directory,
+      body: { requestId: `stop:${randomUUID()}`, action: "cancel_turn", target: inspected.target, scopeRevision: inspected.target.ownerGeneration, attempt: 1 },
+    })
+  }
+
   async messages(directory: string, id: string): Promise<MessageRow[]> {
     const body = await this.call<MessageRow[] | { messages: MessageRow[] }>("GET", `/session/${encodeURIComponent(id)}/message`, { directory })
     return Array.isArray(body) ? body : body.messages

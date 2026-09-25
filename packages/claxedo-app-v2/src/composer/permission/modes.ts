@@ -88,20 +88,12 @@ export function harnessPermissionModes(input: {
 
   if (report.unsupported) return { modes: [], unavailable: report.unsupported }
 
-  // A 200 whose body is not actually a mode report — a proxy error page, a
-  // server mid-deploy, a mis-scoped route — must degrade to "unavailable" here.
-  // `readJson` does no shape validation, so without this guard the `.length`
-  // below throws during the composer's render, and a render-time throw takes
-  // the whole app shell into the ErrorBoundary: the user gets a blank "Something
-  // went wrong" page instead of one control that could not load.
-  if (!Array.isArray(report.modes)) {
-    return { modes: [], unavailable: `${label} returned an unreadable permission-mode report` }
-  }
-
   if (report.modes.length === 0) {
     return { modes: [], unavailable: `${label} has not reported any permission modes for this session` }
   }
-
+  // Suppressed on a draft: there is no "this session" for the change to be
+  // excluded from, and the first message will run under this mode regardless.
+  const caveat = report.appliesFrom === "next-session" && input.hasSession !== false ? `Applies to the next ${label} agent, not this session` : undefined
   return {
     modes: report.modes.map((mode) => ({
       id: mode.id,
@@ -109,16 +101,8 @@ export function harnessPermissionModes(input: {
       name: mode.name,
       ...(mode.description ? { description: mode.description } : {}),
       origin: "harness" as const,
-      // Suppressed on a draft: there is no "this session" for the change to be
-      // excluded from, and the first message will run under this mode regardless.
-      ...(report.appliesFrom === "next-session" && input.hasSession !== false
-        ? { caveat: `Applies to the next ${label} agent, not this session` }
-        : {}),
-      delivery: {
-        kind: "harness-permission-mode" as const,
-        modeId: mode.id,
-        appliesFrom: report.appliesFrom,
-      },
+      ...(caveat ? { caveat } : {}),
+      delivery: { kind: "harness-permission-mode" as const, modeId: mode.id, appliesFrom: report.appliesFrom },
     })),
   }
 }

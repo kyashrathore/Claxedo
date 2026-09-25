@@ -19,7 +19,7 @@ export type CaseSeedSlice = {
   readonly turns?: { readonly from: number; readonly to: number }
 }
 
-export type CaseTurn = { readonly prompt: string; readonly steps: readonly AcpStep[] }
+export type CaseTurn = { readonly prompt: string; readonly steps: readonly AcpStep[]; readonly abort?: boolean; readonly live?: boolean }
 
 export type CaseReplay =
   | { readonly agent: "acp"; readonly turns: readonly CaseTurn[] }
@@ -34,6 +34,11 @@ export type CaseInteraction =
   | { readonly kind: "toggleFold"; readonly turn: number }
   | { readonly kind: "openTool"; readonly partId: string }
   | { readonly kind: "resize"; readonly width: number }
+  | { readonly kind: "release"; readonly hold: string; readonly ready: string; readonly settles?: boolean }
+  | { readonly kind: "markRows" }
+  | { readonly kind: "rowsKept" }
+  | { readonly kind: "markDetached" }
+  | { readonly kind: "detachedGrowth"; readonly max: number }
 
 export type CorpusCase = {
   readonly id: string

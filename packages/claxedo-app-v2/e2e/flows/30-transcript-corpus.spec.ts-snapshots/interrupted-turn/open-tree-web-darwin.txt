@@ -1,0 +1,14 @@
+scrollTop: 0
+background subagents:
+(none)
+row 0:
+- text: Start the task. acp-script:interrupted-turn-0 Build · <time>
+- button "Copy message"
+row 1:
+- paragraph: Starting on the task.
+- button "Copy response"
+- text: Build · 0s · Interrupted
+row 2:
+- button "Explored , 1 read , 0 search es , 0 list s": ", 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 read , 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 search es , 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 list s"
+row 3:
+- text: You stopped after 0s

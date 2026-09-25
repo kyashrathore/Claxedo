@@ -45,7 +45,7 @@ function statusFromRuntimeEvent(input: Record<string, unknown>): Extract<Outboun
     if (input.status === "idle") return { kind: "status", phase: "done" }
     if (input.status === "error") return { kind: "status", phase: "failed" }
   }
-  if (input.type === "finish") return { kind: "status", phase: "done" }
+  if (input.type === "finish" || input.type === "cancelled") return { kind: "status", phase: "done" }
   if (input.type === "error") return { kind: "status", phase: "failed" }
   return undefined
 }

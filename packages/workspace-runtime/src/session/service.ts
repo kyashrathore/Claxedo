@@ -1,6 +1,6 @@
 import { assistantMessageIdForTurn } from "@claxedo/agent-event-runtime/contracts"
 import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/projections/client-presentation"
-import { defaultSessionModel, firstTurnErrorData, isAgentRuntimeTurnConflictError, resolveTurnSystem } from "@claxedo/agent-sdk-runtime"
+import { defaultSessionModel, firstTurnErrorData, isAgentRuntimeTurnConflictError, isTerminalRuntimePayload, resolveTurnSystem } from "@claxedo/agent-sdk-runtime"
 import {
   AgentRuntimeContractError,
   assertAgentExecutionBinding,
@@ -426,11 +426,6 @@ function createPromptEventProjection(input: {
   }
 }
 
-function isTerminalEvent(event: AgentRuntimeStreamEvent) {
-  if (isCompatEvent(event)) return event.type === "session.idle" || event.type === "session.error"
-  return event.type === "finish" || event.type === "error" || event.type === "session-status" && event.status === "error"
-}
-
 function reply(messages: unknown[], assistantId: string) {
   const rows = messages.filter(isMessage)
   const exact = rows.find((row) => row.info.id === assistantId)
@@ -526,7 +521,7 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
         if (event.type === "session.error") error = failure(event.properties.error)
       }
       assistantId = projection.assistantId()
-      if (isTerminalEvent(item.payload)) break
+      if (isTerminalRuntimePayload(item.payload)) break
     }
   } catch (err) {
     settleAdmission(err)

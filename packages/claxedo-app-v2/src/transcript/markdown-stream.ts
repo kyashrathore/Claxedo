@@ -153,12 +153,19 @@ export function canReusePendingBlock(current: Pick<Block, "mode" | "raw"> | unde
   return current.raw === next.raw
 }
 
+function extend(previous: Projection, text: string): Block[] {
+  const open = previous.blocks.at(-1)
+  if (!open || refs(text) || !previous.text.endsWith(open.raw)) return stream(text, true)
+  const start = previous.text.length - open.raw.length
+  return [...previous.blocks.slice(0, -1), ...stream(text.slice(start), true)]
+}
+
 export function project(previous: Projection | undefined, text: string, live: boolean): Projection {
   if (!live || !previous || !text.startsWith(previous.text)) return { text, blocks: stream(text, live) }
   const tail = previous.blocks.at(-1)
   const suffix = text.slice(previous.text.length)
-  if (!suffix || tail?.mode !== "code" || tail.complete || closesFence(tail.raw, suffix))
-    return { text, blocks: stream(text, live) }
+  if (!suffix) return { text, blocks: stream(text, live) }
+  if (tail?.mode !== "code" || tail.complete || closesFence(tail.raw, suffix)) return { text, blocks: extend(previous, text) }
   return {
     text,
     blocks: [

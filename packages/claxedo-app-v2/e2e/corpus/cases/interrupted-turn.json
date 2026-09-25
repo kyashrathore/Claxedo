@@ -1,0 +1,46 @@
+{
+  "id": "interrupted-turn",
+  "title": "A turn the agent stops shows its interrupted divider",
+  "source": {
+    "kind": "comment",
+    "file": "src/session/view/timeline/message-timeline.tsx",
+    "line": 1190
+  },
+  "partKinds": [
+    "text",
+    "tool:read"
+  ],
+  "replay": {
+    "agent": "acp",
+    "turns": [
+      {
+        "prompt": "Start the task.",
+        "steps": [
+          {
+            "kind": "text",
+            "text": "Starting on the task."
+          },
+          {
+            "kind": "tool",
+            "tool": "read",
+            "title": "Read README.md",
+            "locations": [
+              {
+                "path": "{{workspace}}/README.md"
+              }
+            ],
+            "text": "corpus\n"
+          },
+          {
+            "kind": "hold",
+            "name": "interrupted-turn"
+          }
+        ],
+        "abort": true
+      }
+    ]
+  },
+  "ready": "Starting on the task.",
+  "interactions": [],
+  "invariant": "A stopped turn ends in a centred hairline 'Interrupted' divider, a peer of the Worked row, never a card."
+}

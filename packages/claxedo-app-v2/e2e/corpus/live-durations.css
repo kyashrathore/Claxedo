@@ -1,0 +1,7 @@
+[data-slot="text-part-meta"] {
+  visibility: hidden !important;
+}
+
+[data-slot="turn-fold-label"] {
+  display: none !important;
+}

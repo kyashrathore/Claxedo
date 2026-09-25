@@ -1,0 +1,88 @@
+{
+  "id": "stream-prefixes",
+  "title": "A streamed reply renders each held prefix as today's app does",
+  "source": {
+    "kind": "test",
+    "file": "src/transcript/markdown-stream.ts",
+    "name": "only the open block is re-lexed"
+  },
+  "partKinds": [
+    "text"
+  ],
+  "replay": {
+    "agent": "acp",
+    "turns": [
+      {
+        "prompt": "Say hello first.",
+        "steps": [
+          {
+            "kind": "text",
+            "text": "Hello, ready to stream."
+          }
+        ]
+      },
+      {
+        "prompt": "Stream the prefixes.",
+        "live": true,
+        "steps": [
+          {
+            "kind": "text",
+            "text": "Streaming prefixes start here and cite [the docs][1] early.\n\nSetext title\n",
+            "chunks": 13,
+            "delayMs": 8
+          },
+          {
+            "kind": "hold",
+            "name": "stream-prefixes-1"
+          },
+          {
+            "kind": "text",
+            "text": "===\n\n| Column | Value |\n| --- | --- |\n| alpha | 1 |\n| beta",
+            "chunks": 10,
+            "delayMs": 8
+          },
+          {
+            "kind": "hold",
+            "name": "stream-prefixes-2"
+          },
+          {
+            "kind": "text",
+            "text": " | 2 |\n\n- first item\n- second item\n\n  continued second\n- third",
+            "chunks": 11,
+            "delayMs": 8
+          },
+          {
+            "kind": "hold",
+            "name": "stream-prefixes-3"
+          },
+          {
+            "kind": "text",
+            "text": " item\n\n[1]: https://example.com/docs\n\nAfter the definition the early link resolves. Stream prefixes done.",
+            "chunks": 18,
+            "delayMs": 8
+          }
+        ]
+      }
+    ]
+  },
+  "ready": "Setext title",
+  "interactions": [
+    {
+      "kind": "release",
+      "hold": "stream-prefixes-1",
+      "ready": "alpha"
+    },
+    {
+      "kind": "release",
+      "hold": "stream-prefixes-2",
+      "ready": "continued second"
+    },
+    {
+      "kind": "release",
+      "hold": "stream-prefixes-3",
+      "ready": "Stream prefixes done.",
+      "settles": true
+    }
+  ],
+  "invariant": "Held mid-stream after a setext line, inside a table row and inside a list, and again once a late reference definition resolves an early link, the reply renders as today's app renders the same prefix."
+}

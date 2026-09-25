@@ -527,7 +527,10 @@ function completionEvents(
     ] satisfies AgentRuntimeEvent[]
   }
   if (status === "cancelled" || status === "interrupted") {
-    return [{ type: "session-status", status: "idle" }] satisfies AgentRuntimeEvent[]
+    return [
+      { type: "session-status", status: "idle" },
+      { type: "cancelled", sessionId: sessionId(event, context) },
+    ] satisfies AgentRuntimeEvent[]
   }
   return [
     { type: "session-status", status: "idle" },

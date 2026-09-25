@@ -573,7 +573,10 @@ export function translateStopReason(
         { type: "finish", sessionId },
       ]
     case "cancelled":
-      return [{ type: "session-status", status: "idle" }]
+      return [
+        { type: "session-status", status: "idle" },
+        { type: "cancelled", sessionId },
+      ]
     case "refusal":
       return [
         { type: "session-status", status: "error" },

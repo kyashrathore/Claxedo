@@ -1,0 +1,115 @@
+{
+  "id": "stream-rows-stable",
+  "title": "Streaming text keeps every turn row mounted",
+  "source": {
+    "kind": "test",
+    "file": "src/session/view/timeline/message-timeline.data.ts",
+    "name": "rows track whether a part has text, not the text"
+  },
+  "partKinds": [
+    "reasoning",
+    "text",
+    "tool:read"
+  ],
+  "replay": {
+    "agent": "acp",
+    "turns": [
+      {
+        "prompt": "Say hello first.",
+        "steps": [
+          {
+            "kind": "text",
+            "text": "Hello, ready to stream."
+          }
+        ]
+      },
+      {
+        "prompt": "Stream around a tool.",
+        "live": true,
+        "steps": [
+          {
+            "kind": "reasoning",
+            "text": "Reading before answering"
+          },
+          {
+            "kind": "text",
+            "text": "Checking the file first.",
+            "chunks": 4,
+            "delayMs": 8
+          },
+          {
+            "kind": "tool",
+            "tool": "read",
+            "title": "Read README.md",
+            "locations": [
+              {
+                "path": "{{workspace}}/README.md"
+              }
+            ],
+            "text": "corpus\n"
+          },
+          {
+            "kind": "text",
+            "text": "\n\n"
+          },
+          {
+            "kind": "hold",
+            "name": "stream-rows-stable-0"
+          },
+          {
+            "kind": "text",
+            "text": "The file is read, and this answer is halfway",
+            "chunks": 8,
+            "delayMs": 8
+          },
+          {
+            "kind": "hold",
+            "name": "stream-rows-stable-1"
+          },
+          {
+            "kind": "text",
+            "text": " through its text and still going",
+            "chunks": 6,
+            "delayMs": 8
+          },
+          {
+            "kind": "hold",
+            "name": "stream-rows-stable-2"
+          },
+          {
+            "kind": "text",
+            "text": ". Rows stay done.",
+            "chunks": 3,
+            "delayMs": 8
+          }
+        ]
+      }
+    ]
+  },
+  "ready": "Stream around a tool.",
+  "interactions": [
+    {
+      "kind": "release",
+      "hold": "stream-rows-stable-0",
+      "ready": "halfway"
+    },
+    {
+      "kind": "markRows"
+    },
+    {
+      "kind": "release",
+      "hold": "stream-rows-stable-1",
+      "ready": "still going"
+    },
+    {
+      "kind": "rowsKept"
+    },
+    {
+      "kind": "release",
+      "hold": "stream-rows-stable-2",
+      "ready": "Rows stay done.",
+      "settles": true
+    }
+  ],
+  "invariant": "A text part that opens with only whitespace gets its row once it has text, and text deltas then grow the answer in place: while the turn works, every turn row on screen before them is the same element after them."
+}

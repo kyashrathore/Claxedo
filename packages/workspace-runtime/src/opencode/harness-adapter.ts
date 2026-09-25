@@ -224,7 +224,7 @@ function eventAssistantMessageID(event: ProjectedEvent): string | undefined {
 function terminal(event: ProjectedEvent, sessionID: string): AgentRuntimeStreamEvent | undefined {
   const data = asRecordOrEmpty(event.data)
   if (event.type === "session.execution.succeeded") return { type: "finish", sessionId: sessionID, harness: "opencode" }
-  if (event.type === "session.execution.interrupted") return { type: "finish", sessionId: sessionID, harness: "opencode" }
+  if (event.type === "session.execution.interrupted") return { type: "cancelled", sessionId: sessionID, harness: "opencode" }
   if (event.type === "session.execution.failed") {
     const error = data.error
     const reason = error instanceof Error ? error.message : typeof error === "string" ? error : JSON.stringify(error)

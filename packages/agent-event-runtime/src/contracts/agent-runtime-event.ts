@@ -121,6 +121,8 @@ export type AgentRuntimeEvent = RuntimeEventMeta & (
   | { type: "goal-cleared"; sessionId: string }
   | SubagentUpdatedEvent
   | { type: "finish"; sessionId: string }
+  /** The turn ended because it was stopped. Its own terminal, never inferred from `session-status` idle. */
+  | { type: "cancelled"; sessionId: string }
   | { type: "error"; error: string }
   | { type: "image-delta"; mimeType: string; data: string }
   | { type: "audio-delta"; mimeType: string; data: string }
@@ -189,6 +191,7 @@ export const AGENT_RUNTIME_EVENT_TYPE_REGISTRY = {
   "goal-cleared": true,
   "subagent-updated": true,
   finish: true,
+  cancelled: true,
   error: true,
   "image-delta": true,
   "audio-delta": true,
@@ -244,6 +247,7 @@ export const AGENT_RUNTIME_EVENT_FACTORY_TYPES = {
   goalCleared: "goal-cleared",
   subagentUpdated: "subagent-updated",
   finish: "finish",
+  cancelled: "cancelled",
   error: "error",
   imageDelta: "image-delta",
   audioDelta: "audio-delta",
@@ -306,6 +310,7 @@ export const agentRuntimeEvent = {
   goalCleared: (input) => ({ type: "goal-cleared", ...input }),
   subagentUpdated: (input) => ({ type: "subagent-updated", ...input }),
   finish: (input) => ({ type: "finish", ...input }),
+  cancelled: (input) => ({ type: "cancelled", ...input }),
   error: (input) => ({ type: "error", ...input }),
   imageDelta: (input) => ({ type: "image-delta", ...input }),
   audioDelta: (input) => ({ type: "audio-delta", ...input }),

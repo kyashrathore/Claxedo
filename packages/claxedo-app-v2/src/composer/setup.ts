@@ -1,28 +1,21 @@
 import { createEffect, createMemo, createSignal, on, onCleanup, type Accessor } from "solid-js"
 import type { PlacementId, PromptInput } from "@/server"
-import { useServer } from "@/server"
 import type { SessionView } from "@/session"
-import { connectionHarness, harnessSelectionValue, nativeHarness, NATIVE_HARNESS_IDS, type NativeHarnessId } from "@/lib/harness-selection"
 import { showToast, useDialog } from "@/ui"
 import type { ImagePart, Submission } from "./model"
 import { promptImages } from "./model"
 import { useComposerStore, type ComposerKey, type ComposerStore } from "./store"
-import { settingsPath, useCommands, useShellRegistries, useShellRoute, type Commands } from "@/shell"
+import { useCommands, useShellRegistries, type Commands } from "@/shell"
 import { useComposerText } from "./text"
 import { createAttachmentReader, type DraggingType } from "./attachments/reader"
+import { registerComposerCommands } from "./composer-commands"
+import { createComposerHarness, type ComposerHarness } from "./composer-harness"
 import { createComposerController, type ComposerController } from "./controller"
 import { createComposerRefs, type ComposerRefs } from "./refs"
 import { createComposerSend } from "./send"
 import { createSuggestions, type SlashItem, type SuggestionQuery } from "./suggestions"
-import { useHarnessConfig } from "./harness/context"
-import { createHarnessSelectionController, createHarnessSubmitController, type HarnessScopeInput } from "./harness/controller"
-import { harnessProfile, harnessSelectionId, type HarnessType } from "./harness/profile"
+import { harnessProfile } from "./harness/profile"
 import { submitBlockReason } from "./submit-block-reason"
-import { registerPromptModeCommands } from "./view/mode-commands"
-import { registerModelCommand, showModelDialog } from "./view/model-command"
-import { harnessModelItems } from "./harness/model-items"
-import { createComposerPermissionSurface } from "./permission/permission-mode-wiring"
-import { harnessModesUnavailable } from "./role-gate"
 import { createRecovery, type ComposerRecovery } from "./recovery"
 
 export type ComposerProps = {
@@ -44,71 +37,7 @@ export type ComposerProps = {
 
 type Late = { controller?: ComposerController }
 
-function harnessOfId(id: string): HarnessType {
-  const native = NATIVE_HARNESS_IDS.find((candidate): candidate is NativeHarnessId => candidate === id)
-  return native ? nativeHarness(native) : connectionHarness(id)
-}
-
-function createHarnessSelection(props: ComposerProps, key: Accessor<ComposerKey>, t: ReturnType<typeof useComposerText>) {
-  const server = useServer()
-  const store = useHarnessConfig()
-  const controller = createHarnessSelectionController(store)
-  const submit = createHarnessSubmitController(store)
-  const scopeInput = createMemo<HarnessScopeInput>(() => {
-    const view = props.view
-    if (!view) return { placementId: props.placementId }
-    return {
-      placementId: view.ref.placementId,
-      sessionId: view.ref.sessionId,
-      sessionRef: view.ref,
-      ...(props.sessionHarness ? { sessionHarness: harnessOfId(props.sessionHarness) } : {}),
-    }
-  })
-  const selection = createMemo(() => controller.read(key()))
-  const permissionHarness = () => {
-    const type = selection().harness
-    return type ? harnessSelectionValue(type) : undefined
-  }
-  const { permissionMode } = createComposerPermissionSurface({
-    api: server.harnessConfig,
-    placementId: () => scopeInput().placementId,
-    sessionRef: () => (submit.heldHarness(key()) ? undefined : scopeInput().sessionRef),
-    harness: permissionHarness,
-    harnessSelection: () => selection().harness,
-    harnessUnavailable: () =>
-      harnessModesUnavailable({
-        isHarness: !!selection().harness,
-        readiness: selection().readiness,
-        configError: !!selection().configError,
-        harness: permissionHarness(),
-      }),
-    requestFailedTitle: () => t("common.requestFailed"),
-  })
-  const harness = createMemo(() => {
-    const type = submit.heldHarness(key()) ?? selection().harness
-    return type ? server.capabilities()?.harnesses.find((info) => info.id === harnessSelectionId(type)) : undefined
-  })
-  const submission = async (): Promise<Submission> => {
-    const scope = key()
-    await submit.settledModel(scope)
-    const held = submit.heldHarness(scope)
-    const model = submit.modelKeyForSubmit(scope)
-    const tier = submit.serviceTierForSubmit(scope)
-    await store.commitHeldHarness(scope, scopeInput())
-    const type = held ?? submit.harness(scope)
-    const mode = permissionMode.promptModeId()
-    return {
-      ...(type ? { harness: harnessSelectionId(type) } : {}),
-      ...(model ? { model: { providerId: model.providerId, modelId: model.modelId } } : {}),
-      ...(model?.variant ? { effort: model.variant } : {}),
-      ...(tier ? { serviceTier: tier } : {}),
-      ...(mode ? { permissionMode: mode } : {}),
-    }
-  }
-  return { controller, submit, scopeInput, selection, harness, submission, permissionMode }
-}
-
-type HarnessSelection = ReturnType<typeof createHarnessSelection>
+type HarnessSelection = ComposerHarness
 
 function goalCapable(props: ComposerProps, selection: HarnessSelection): boolean {
   if (props.view) return props.view.goalAvailable() !== false
@@ -198,7 +127,7 @@ export function createComposer(props: ComposerProps) {
   createEffect(on(key, (current) => onCleanup(store.retain(current))))
   const late: Late = {}
   const refs = createComposerRefs()
-  const selection = createHarnessSelection(props, key, t)
+  const selection = createComposerHarness(props, key, t)
   const working = createMemo(() => sessionWorking(props.view))
   const goalAvailable = createMemo(() => goalCapable(props, selection))
   const [query, setQuery] = createSignal<SuggestionQuery>({ kind: "closed" })
@@ -210,54 +139,35 @@ export function createComposer(props: ComposerProps) {
   const reader = createReaderFor({ props, store, key, refs, selection, setDragging, late })
   const controller = createControllerFor({ key, store, refs, working, suggestions, send, commands })
   late.controller = controller
-  const dialog = useDialog()
-  const routing = useShellRoute()
   props.registerRecovery?.(
-    createRecovery({ store, key, controller: selection.controller, scopeInput: selection.scopeInput, send: () => send.send(), dialog, t }),
+    createRecovery({ store, key, controller: selection.controller, scopeInput: selection.scopeInput, send: () => send.send(), dialog: useDialog(), t }),
   )
-  registerModelCommand({
-    register: (scope, options) => commands.register(scope, options),
-    available: () => !!selection.selection().harness,
-    open: () => {
-      const scope = key()
-      const snapshot = selection.controller.read(scope)
-      showModelDialog(
-        dialog,
-        { title: t("dialog.model.select.title"), connect: t("command.provider.connect") },
-        {
-          items: harnessModelItems(snapshot),
-          current: snapshot.selectedModelKey,
-          choose: (model) => void selection.controller.setModel(scope, model, selection.scopeInput()),
-        },
-        () => routing.navigate(settingsPath("models")),
-      )
-    },
-    labels: { title: t("command.model.choose"), description: t("command.model.choose.description"), category: t("command.category.model") },
-  })
-  registerPromptModeCommands({
-    register: (scope, options) => commands.register(scope, options),
-    mode: () => controller.state.mode,
-    pick: () => refs.fileInput()?.click(),
-    setMode: controller.setMode,
-    goalSelectable: goalAvailable,
-    armGoal: send.armGoal,
-    labels: {
-      attachFile: t("prompt.action.attachFile"),
-      fileCategory: t("command.category.file"),
-      shellMode: t("command.prompt.mode.shell"),
-      normalMode: t("command.prompt.mode.normal"),
-      sessionCategory: t("command.category.session"),
-      goal: t("prompt.action.goal"),
-    },
-  })
+  registerComposerCommands({ key, harness: selection, controller, refs, send, goalAvailable, t })
   createEffect(() => setQuery(controller.suggestionQuery()))
   const draft = () => store.draft(key())
-  const harnessPending = createMemo(() => selection.selection().readiness === "polling")
-  const booting = createMemo(() => send.boot() !== undefined)
-  const bootText = () => {
-    const type = selection.selection().harness
-    return send.boot() === "sending" ? "Sending first message..." : `Booting ${type ? harnessProfile(type).displayName : "Select harness"}...`
+  const shared = { t, key, store, refs, send, reader, suggestions, controller, dragging, draft, working, goalAvailable }
+  return {
+    ...shared,
+    ...submitState({ key, selection, send, controller, working }),
+    harness: selection.harness,
+    harnessController: selection.controller,
+    harnessScopeInput: selection.scopeInput,
+    permissionMode: selection.permissionMode,
+    images: createMemo(() => promptImages(draft().prompt)),
+    attachments: () => store.attachments(key()),
+    disabled: () => props.readOnly === true,
   }
+}
+
+function submitState(input: {
+  key: Accessor<ComposerKey>
+  selection: HarnessSelection
+  send: ReturnType<typeof createComposerSend>
+  controller: ComposerController
+  working: Accessor<boolean>
+}) {
+  const { selection, send } = input
+  const booting = createMemo(() => send.boot() !== undefined)
   const submitBlock = createMemo(() => {
     const state = selection.selection()
     const harnessMode = !!state.harness
@@ -268,31 +178,21 @@ export function createComposer(props: ComposerProps) {
       harnessReadiness: state.readiness,
       harnessConfigError: !!state.configError,
       harnessOptionsLoading: state.optionsLoading,
-      harnessReadyForSubmit: selection.submit.readyForSubmit(key()),
+      harnessReadyForSubmit: selection.submit.readyForSubmit(input.key()),
       needsModelSelection: state.draftDefaultState === "choose-model" || state.draftDefaultState === "saved-model-unavailable",
       modelBlocked: !harnessMode,
       modelBlockLabel: undefined,
       providerLoading: false,
       booting: booting(),
-      stoppable: working(),
-      blank: controller.blank(),
+      stoppable: input.working(),
+      blank: input.controller.blank(),
     })
   })
-  const shared = { t, key, store, refs, send, reader, suggestions, controller, dragging, draft, working, goalAvailable }
-  return {
-    ...shared,
-    harness: selection.harness,
-    harnessController: selection.controller,
-    harnessScopeInput: selection.scopeInput,
-    permissionMode: selection.permissionMode,
-    harnessPending,
-    booting,
-    bootText,
-    submitBlock,
-    images: createMemo(() => promptImages(draft().prompt)),
-    attachments: () => store.attachments(key()),
-    disabled: () => props.readOnly === true,
+  const bootText = () => {
+    const type = selection.selection().harness
+    return send.boot() === "sending" ? "Sending first message..." : `Booting ${type ? harnessProfile(type).displayName : "Select harness"}...`
   }
+  return { harnessPending: createMemo(() => selection.selection().readiness === "polling"), booting, bootText, submitBlock }
 }
 
 export type ComposerSetup = ReturnType<typeof createComposer>

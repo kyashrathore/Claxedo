@@ -2583,6 +2583,53 @@ describe("createAgentRuntime", () => {
     await runtime.dispose()
   })
 
+  test("records cancelled when a harness ends a stopped turn with its cancelled terminal", async () => {
+    const terminals = {
+      runtime: (id: string): AgentRuntimeStreamEvent[] => [
+        { type: "session-status", status: "idle" },
+        { type: "cancelled", sessionId: id },
+      ],
+      compat: (id: string): AgentRuntimeStreamEvent[] => [
+        { type: "message.completed", properties: { sessionID: id, messageID: "msg_1_r", cancelled: true } },
+        sessionIdle(id),
+      ],
+    }
+    for (const terminal of Object.values(terminals)) {
+      let stop!: () => void
+      const stopped = new Promise<void>((resolve) => {
+        stop = resolve
+      })
+      const runtime = createAgentRuntime({
+        store: createMemoryRuntimeStore(),
+        harnesses: [testHarness({
+          sendMessage: async function* (id) {
+            await stopped
+            yield* terminal(id)
+          },
+          cancelTurn: async () => {
+            stop()
+            await tick()
+            return { execution: "terminal" as const, cleanup: "unknown" as const }
+          },
+        })],
+      })
+      const session = await runtime.sessions.create({ workspaceId: "workspace-test",
+        directory: "/repo",
+        harness: { id: "pi", access: "native" },
+      })
+
+      await runtime.turns.start({ sessionId: session.id, messageId: "msg_1", text: "hello" })
+      expect(submittedOperation(await cancelRuntimeTurn(runtime, session.id)).facts.execution.value).toBe("terminal")
+      await tick()
+
+      await expect(runtime.sessions.get(session.id)).resolves.toMatchObject({
+        status: null,
+        lastTurn: { status: "cancelled", reason: "abort", assistantMessageId: "msg_1_r" },
+      })
+      await runtime.dispose()
+    }
+  })
+
   test("a cancellation with terminal execution releases admission and fences a stuck turn's late events", async () => {
     let releaseFirst: (() => void) | undefined
     const firstTurn = new Promise<void>((resolve) => {

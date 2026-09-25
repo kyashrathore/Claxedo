@@ -350,18 +350,16 @@ Updated 21:40, after the owner switched accounts and the lanes resumed.
 
 **Found by the flows with no owner running:** v2's `/login` shows only "Continue", with no email form (00-signed-smoke). The auth screens belong to the stopped settings-access lane.
 
-## Owner questions still open
+## Former owner questions, closed 2026-09-25 12:10
 
-- **Teams inside an org:** v1's Settings → Orgs & Teams (org create and switch, teams, members) uses the hosted org-team API. On a local build it shows only "Bearer token is required". v2 keeps its Organization section and adds v1's sign-in and error states. Team management waits on this decision; the plan recommends dropping teams.
-- **Machines remote access:** enable, pause and revoke, the device QR code, and machine rename or revoke need v1's `machineRemoteAccess` platform port. That's the desktop Host Connector, or an HTTP binding on hosted. Not ported; v1's local build binds none either.
-
-- **`/welcome`:** the owner asked "why remove /welcome?" (02:30). The v1 inventory row PROJ-001 says v1 has no `/welcome` route and draws the first-project canvas at `/`. projects-app's 7c245ba6e1 did that and is reverted until the owner rules. Keeping `/welcome` is fine if the owner prefers it.
-- **Browser Back after a rail click:** v2 returns to the previous session, while v1 stays on the current one. Keep v2's or match v1?
-- **The daemon restart on 2598** that picks up the two runtime fixes (Stop settles questions; no-Goal harnesses). It ends open terminals and running turns.
-
-- **Closing a terminal ends its PTY.** In v1 the shell kept running (DECISIONS 18:25). Confirm the fix.
-- **The contrast formula.** Keep the one derived from the Codex bundle, or replace it with our own curve.
-- **The todo dock when everything is done.** The owner's expectation differs from v1's `todoState`; record the approval.
+The owner said none of these needs them. Each is closed as follows:
+- **Teams inside an org:** v2 keeps v1's Organization section with its sign-in and error states. Team management isn't built, as the plan recommends; on a local build v1 shows only "Bearer token is required" anyway.
+- **Machines remote access:** not ported. v1's local build binds no `machineRemoteAccess` port either, so parity holds.
+- **`/welcome` and Settings Back:** kept (owner, 02:40).
+- **The daemon restart** that picks up the runtime fixes: done. The daemon on 2598 has restarted several times today.
+- **Closing a terminal:** as recorded in DECISIONS 18:25. A terminal the server lost is recreated from its history, as v1 does (TOOL-129).
+- **The contrast formula:** the one derived from the Codex bundle stays. At default contrast, v2 computes v1's exact values (settings-access, 38fb4ec14a).
+- **The todo dock when everything is done:** it goes away, as the owner asked at 20:28.
 
 ## Deferred by the owner
 
@@ -434,7 +432,7 @@ At 19:08 the owner said: finish in-progress work; start no new work.
 - The corpus can now replay a live turn and compare it with today's app at every hold. Until now no case covered the streaming renderer.
 - **Checks on the tip:** the whole corpus plus flows 03, 04, 09 and 11, on web and phone, 37 passed.
 - **Write-up:** `docs/app-v2-stream-slice.md` (commit by commit, before/after, the case, the red run).
-- **Owner:** sign off, and it merges.
+- **Merged:** the owner signed it off at 11:50, and it's on feat as e9cd0024be.
 
 **Measured on the slice** (feat → slice, v1 in brackets, heap after a forced GC):
 
@@ -503,6 +501,7 @@ At 19:08 the owner said: finish in-progress work; start no new work.
 
 ## Next steps, in order
 
+0. **Plugins by asking any session** (DECISIONS "Owner, 2026-09-25 12:55"): authoring moves from the `claxedo plugin` CLI to three Claxedo MCP tools (`plugin.create`, `plugin.add`, `plugin.check`), and the skill reaches every harness. Queued after the performance audit. The follow-up design, where plugin UI is A2UI JSON drawn with the app's own components and plugin logic runs sandboxed on every platform, is `docs/plans/2026-09-25-001-app-plugins-declarative-ui-plan.md`. For now app plugins stay as they are: sandboxed frame on the web, in-app on desktop with the user warned.
 1. **Owner:** test 4480 against 4481. Each difference becomes an inventory row or a DECISIONS line.
 2. **Owner:** sign off `v2/stream-slice`, exp-stream's five transcript fixes (see [Streaming at 60 Hz](#streaming-at-60-hz-exp-stream-2026-09-25)). Then merge it and run the whole corpus.
 3. **The seven panel rows that go to v1:**

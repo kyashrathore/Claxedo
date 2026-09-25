@@ -1,5 +1,6 @@
-import type { Locator, Page } from "@playwright/test"
+import type { Page } from "@playwright/test"
 import type { AppChoice } from "../harness/app"
+import { sessionRoute, UI } from "../harness/ui-names"
 import { ONBOARDING_FOLDER, type SeedData } from "./seed"
 
 export type SizeName = "1280" | "390"
@@ -27,32 +28,23 @@ function seeded(context: ScreenContext): SeedData {
 
 function sessionPath(context: ScreenContext) {
   const seed = seeded(context)
-  return `/w/${seed.workspace.id}/session/${seed.sessionId}`
+  return sessionRoute(seed.workspace.id, seed.sessionId)
 }
 
-function composer({ page, app }: ScreenContext): Locator {
-  return app === "v1" ? page.locator('[data-component="prompt-input"]').first() : page.getByRole("textbox", { name: "Prompt" })
+async function typeInComposer({ page }: ScreenContext, text: string) {
+  await page.getByRole("textbox", { name: UI.composer }).click()
+  await page.keyboard.type(text)
 }
 
-async function typeInComposer(context: ScreenContext, text: string) {
-  const input = composer(context)
-  await input.click()
-  await context.page.keyboard.type(text)
-}
-
-async function openSettings({ page, app, size }: ScreenContext) {
-  if (app === "v2") {
-    await page.goto(new URL("/settings/general", page.url()).toString())
-    return
-  }
-  if (size.touch) await page.getByRole("button", { name: "Open navigation sidebar" }).click()
-  await page.getByTestId("rail-account-trigger").click()
+async function openSettings({ page, size }: ScreenContext) {
+  if (size.touch) await page.getByRole("button", { name: UI.openRail }).click()
+  await page.getByRole("button", { name: UI.signedOutAccount }).click()
   await page.getByRole("menuitem", { name: "Settings" }).click()
 }
 
 async function revealRail({ page, size }: ScreenContext) {
   if (!size.touch) return
-  const opener = page.getByRole("button", { name: "Open navigation sidebar" })
+  const opener = page.getByRole("button", { name: UI.openRail })
   if (await opener.isVisible()) await opener.click()
 }
 
@@ -115,7 +107,7 @@ export const SCREENS: readonly Screen[] = [
     phase: "seeded",
     sizes: ["390"],
     path: sessionPath,
-    steps: ({ page }) => page.getByRole("button", { name: "Open navigation sidebar" }).click(),
+    steps: ({ page }) => page.getByRole("button", { name: UI.openRail }).click(),
   },
   { id: "palette", phase: "seeded", sizes: ["1280"], path: sessionPath, steps: ({ page }) => page.keyboard.press("ControlOrMeta+Shift+P") },
   { id: "at-popover", phase: "seeded", path: sessionPath, steps: (context) => typeInComposer(context, "@") },

@@ -434,6 +434,16 @@ describe("cursorSdkAdapter", () => {
     })
   })
 
+  test("ends a cancelled local run as cancelled, never as finished", () => {
+    expect(runtime().ingest({
+      source: "cursor.local-run-stream",
+      payload: { schemaVersion: 1, type: "result", agentId: "agent-1", runId: "run-3", status: "cancelled" },
+    }).events).toMatchObject([
+      { type: "session-status", status: "idle" },
+      { type: "cancelled", sessionId: "run-3" },
+    ])
+  })
+
   test("binds a create_subagent result to the host-minted child and raises nothing while it runs", () => {
     const running = {
       type: "tool_call",

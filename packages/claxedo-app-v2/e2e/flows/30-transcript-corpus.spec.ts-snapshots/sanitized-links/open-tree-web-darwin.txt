@@ -1,0 +1,31 @@
+scrollTop: 0
+background subagents:
+(none)
+row 0:
+- text: Show the links. acp-script:sanitized-links-0 Build · <time>
+- button "Copy message"
+row 1:
+- button "Worked for 0s"
+row 2:
+- paragraph: "Links and markup go through the sanitizer:"
+- list:
+  - listitem:
+    - text: a web link to
+    - link "the docs":
+      - /url: https://example.com/docs
+  - listitem:
+    - text: a mail link to
+    - link "support":
+      - /url: mailto:help@example.com
+  - listitem: a script link stays text
+  - listitem: raw markup <b>shows as text</b> and <img src=x onerror=alert(1)> too
+  - listitem:
+    - text: an autolink
+    - link "https://example.org/page":
+      - /url: https://example.org/page
+- paragraph:
+  - text: "Math still renders:"
+  - math: x 2 + y 2 = z 2 x^2 + y^2 = z^2
+- paragraph: Sanitized links done.
+- button "Copy response"
+- text: Build · 0s

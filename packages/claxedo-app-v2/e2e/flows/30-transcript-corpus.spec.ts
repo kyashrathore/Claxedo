@@ -2,14 +2,17 @@ import fs from "node:fs"
 import path from "node:path"
 import type { Locator, Page } from "@playwright/test"
 import type { CaseInteraction, CaseTurn, CorpusCase } from "../corpus/case"
-import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, type ClaxedoApi, type MessageRow, type Stack } from "../harness"
+import { expectDetachedGrowthAtMost, expectRowsKept, markDetachedNodes, markRows, quietDom, releaseHold, startLiveTurn } from "../corpus/live"
+import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, type AcpStep, type ClaxedoApi, type MessageRow, type Stack } from "../harness"
 
 const CASES_DIR = path.join(import.meta.dirname, "..", "corpus", "cases")
+const LIVE_DURATIONS_STYLE = path.join(import.meta.dirname, "..", "corpus", "live-durations.css")
 const TURN_TIMEOUT = 30_000
 const TALL_VIEWPORT = 1600
 const LATEST_TURN_READ = /[?&]view=latest-turn\b/
 const CLOCK_TIME = /\b\d{1,2}:\d{2}\s?(?:AM|PM)\b/g
 const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g
+const LIVE_DURATION = /(· |Worked for )\d+(?:h \d+m|m \d+s|ms|s|m|h)\b/g
 
 type Target = { readonly directory: string; readonly sessionId: string }
 
@@ -33,14 +36,29 @@ function turnSettled(messages: readonly MessageRow[], users: number): boolean {
   return time?.completed !== undefined || last.error !== undefined
 }
 
+function playedUpToHold(messages: readonly MessageRow[], steps: readonly AcpStep[], users: number): boolean {
+  if (messages.filter((message) => message.info.role === "user").length < users) return false
+  const last = messages.at(-1)
+  if (last?.info.role !== "assistant") return false
+  const tools = last.parts.filter((part) => part.type === "tool" && (part.state as { status?: string } | undefined)?.status === "completed")
+  const texts = last.parts.filter((part) => part.type === "text")
+  return tools.length >= steps.filter((step) => step.kind === "tool").length && texts.length >= steps.filter((step) => step.kind === "text").length
+}
+
 async function playTurn(stack: Stack, api: ClaxedoApi, target: Target, turn: CaseTurn & { readonly name: string }, users: number) {
   await stack.acp.write(turn.name, { steps: [...turn.steps] })
   const text = `${turn.prompt} ${acpScriptToken(turn.name)}`
-  if (!turn.steps.some((step) => step.kind === "error")) {
+  if (!turn.abort && !turn.steps.some((step) => step.kind === "error")) {
     await api.prompt(target.directory, target.sessionId, text)
     return
   }
   await api.promptAsync(target.directory, target.sessionId, text)
+  if (turn.abort) {
+    await expect
+      .poll(async () => playedUpToHold(await api.messages(target.directory, target.sessionId), turn.steps, users), { timeout: TURN_TIMEOUT })
+      .toBe(true)
+    await api.stopTurn(target.directory, target.sessionId)
+  }
   await expect
     .poll(async () => turnSettled(await api.messages(target.directory, target.sessionId), users), { timeout: TURN_TIMEOUT })
     .toBe(true)
@@ -51,11 +69,11 @@ async function arrange(stack: Stack, api: ClaxedoApi, corpusCase: CorpusCase) {
   const workspace = await stack.daemon.makeWorkspace("corpus")
   const session = await api.createSession(workspace.directory, { title: corpusCase.title, harness: SCRIPTED_ACP_HARNESS })
   const target = { directory: workspace.directory, sessionId: session.id }
-  const turns = inWorkspace(corpusCase.replay.turns, workspace.directory)
+  const turns = inWorkspace(corpusCase.replay.turns, workspace.directory).map((turn, index) => ({ ...turn, name: `${corpusCase.id}-${index}` }))
   for (const [index, turn] of turns.entries()) {
-    await playTurn(stack, api, target, { ...turn, name: `${corpusCase.id}-${index}` }, index + 1)
+    if (!turn.live) await playTurn(stack, api, target, turn, index + 1)
   }
-  return { workspace, target, turns: turns.length }
+  return { workspace, target, turns: turns.length, live: turns.filter((turn) => turn.live) }
 }
 
 function sessionUrl(stack: Stack, workspaceId: string, sessionId: string): string {
@@ -100,6 +118,10 @@ async function withBackground(app: Page, rows: RowsBox | undefined): Promise<Row
   return { x: rows.x, y: top, width: rows.width, height: bottom - top }
 }
 
+function isLive(corpusCase: CorpusCase): boolean {
+  return corpusCase.replay.agent === "acp" && corpusCase.replay.turns.some((turn) => turn.live)
+}
+
 async function compareStage(app: Page, corpusCase: CorpusCase, stage: string) {
   await app.mouse.move(0, 0)
   const box = await withBackground(app, await rowsBox(app))
@@ -110,6 +132,7 @@ async function compareStage(app: Page, corpusCase: CorpusCase, stage: string) {
     animations: "disabled",
     caret: "hide",
     mask: [app.locator('[data-component="agent-glyph"]')],
+    ...(isLive(corpusCase) ? { stylePath: LIVE_DURATIONS_STYLE } : {}),
   })
   const shown = await shownRows(app)
   const trees: string[] = []
@@ -118,13 +141,30 @@ async function compareStage(app: Page, corpusCase: CorpusCase, stage: string) {
   }
   const top = await scroller(app).first().evaluate((element) => Math.round(element.scrollTop))
   const background = (await backgroundSubagents(app).count()) > 0 ? await backgroundSubagents(app).ariaSnapshot() : "(none)"
-  const tree = `scrollTop: ${top}\nbackground subagents:\n${background}\n${trees.join("\n")}\n`.replace(CLOCK_TIME, "<time>")
+  const stable = `scrollTop: ${top}\nbackground subagents:\n${background}\n${trees.join("\n")}\n`.replace(CLOCK_TIME, "<time>")
     .replace(UUID, "<id>")
+  const tree = isLive(corpusCase) ? stable.replace(LIVE_DURATION, "$1<duration>") : stable
   expect.soft(tree).toMatchSnapshot([corpusCase.id, `${stage}-tree.txt`])
 }
 
-async function interact(app: Page, interaction: CaseInteraction) {
+async function interact(live: { stack: Stack; api: ClaxedoApi; target: Target; app: Page }, interaction: CaseInteraction) {
+  const { stack, app } = live
   switch (interaction.kind) {
+    case "release":
+      await releaseHold(live, interaction)
+      return
+    case "markRows":
+      await markRows(app)
+      return
+    case "rowsKept":
+      await expectRowsKept(app)
+      return
+    case "markDetached":
+      await markDetachedNodes(app, stack.app)
+      return
+    case "detachedGrowth":
+      await expectDetachedGrowthAtMost(app, stack.app, interaction.max)
+      return
     case "scroll":
       if (typeof interaction.to !== "string") throw new Error("scrolling to a turn is not replayed yet")
       await scroller(app).evaluate((element, to) => element.scrollTo({ top: to === "top" ? 0 : element.scrollHeight }), interaction.to)
@@ -166,16 +206,18 @@ function requireV1Baseline(stack: Stack, corpusCase: CorpusCase) {
 for (const corpusCase of loadCases()) {
   test(`30 transcript corpus: ${corpusCase.id}`, async ({ stack, api, app }) => {
     requireV1Baseline(stack, corpusCase)
-    const { workspace, target, turns } = await arrange(stack, api, corpusCase)
+    const { workspace, target, turns, live } = await arrange(stack, api, corpusCase)
     await app.setViewportSize({ width: app.viewportSize()?.width ?? 1280, height: TALL_VIEWPORT })
     const fullRead = await holdLatestTurnRead(app)
     await app.goto(sessionUrl(stack, workspace.id, target.sessionId))
     await expect(turnRows(app).first()).toBeVisible()
     await fullRead.release()
+    for (const turn of live) await startLiveTurn(stack, api, target, turn)
     await expect(app.getByText(corpusCase.ready).first()).toBeVisible()
+    if (live.length > 0) await quietDom(app)
     await compareStage(app, corpusCase, "open")
     for (const [index, interaction] of corpusCase.interactions.entries()) {
-      await interact(app, interaction)
+      await interact({ stack, api, target, app }, interaction)
       await expect(app.getByText(corpusCase.ready).first()).toBeAttached()
       await compareStage(app, corpusCase, `${index + 1}-${interaction.kind}`)
     }

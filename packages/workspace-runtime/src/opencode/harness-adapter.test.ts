@@ -772,6 +772,18 @@ describe("OpenCode turn usage", () => {
     ])
   })
 
+  test("an interrupted execution ends the turn as cancelled, never as finished", async () => {
+    const fake = runtime({ execution: "manual" })
+    const directory = workspace()
+    const turn = startTurn(adapterFor(fake, directory), directory)
+    await until(() => fake.sessions.prompt.mock.calls.length === 1)
+
+    fake.emit(recorded("session.execution.interrupted", "ses_1", 12, undefined, { assistantMessageID: "msg_a" }))
+    await turn.done
+
+    expect(turn.events).toEqual([{ type: "cancelled", sessionId: "ses_1", harness: "opencode" }])
+  })
+
   test("a step the provider reported no usage for is not metered as a measured zero", async () => {
     const fake = runtime({ execution: "manual" })
     const directory = workspace()
