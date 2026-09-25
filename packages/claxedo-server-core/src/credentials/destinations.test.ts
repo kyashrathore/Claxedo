@@ -62,3 +62,21 @@ describe("a custom provider's destination", () => {
       .toBe("https://api.anthropic.com")
   })
 })
+
+describe("Cursor SDK 1.0.24 dist/esm/index.js service descriptors", () => {
+  test("the standard row declares each Agent, Bidi, Dashboard and ServerConfig method and excludes Analytics", () => {
+    const destination = providerDestination({ providerId: "cursor-sdk", kind: "api_key", secret: "cursor-key" })!
+    expect(destination.exchange).toEqual({ path: "/auth/exchange_user_api_key", tokenField: "accessToken" })
+    expect(destination.pathPrefixes).toEqual([])
+    expect(destination.exactPaths).toHaveLength(552)
+    expect(new Set(destination.exactPaths).size).toBe(552)
+    expect(destination.exactPaths).toContain("/v1/models")
+    expect(destination.exactPaths).toContain("/agent.v1.AgentService/RunSSE")
+    expect(destination.exactPaths).toContain("/aiserver.v1.BidiService/BidiAppend")
+    expect(destination.exactPaths).toContain("/aiserver.v1.DashboardService/GetTeamReposOrEmptyIfNotInTeam")
+    expect(destination.exactPaths).toContain("/aiserver.v1.DashboardService/CreateOrganizationApiKey")
+    expect(destination.exactPaths).toContain("/aiserver.v1.ServerConfigService/GetServerConfig")
+    expect(destination.exactPaths?.some((path) => path.includes("AnalyticsService"))).toBe(false)
+    expect(destination.exactPaths?.every((path) => !path.endsWith("/"))).toBe(true)
+  })
+})
