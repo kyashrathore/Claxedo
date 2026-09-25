@@ -1,5 +1,5 @@
 import { unreachable } from "@/lib/machine"
-import type { AppError, PlacementId, SessionId, SessionRef, SessionRow, SessionStatus, SessionStatusRead } from "@/server"
+import type { AppError, ListedStatus, ProjectId, SessionId, SessionRef, SessionRow, SessionStatus } from "@/server"
 
 export type PendingSend = {
   readonly clientRequestId: string
@@ -29,34 +29,32 @@ export type StatusEntry = {
   readonly status: SessionStatus
   readonly at: number
   readonly source: "event" | "read"
-}
-
-export type UnreportedStatus = {
-  readonly status: SessionStatus
-  readonly sentAt: number
-  readonly unreadPlacements: ReadonlySet<PlacementId>
+  readonly waitingOnUser: boolean
 }
 
 export type FetchedPage = {
-  readonly placementId: PlacementId
+  readonly projectId: ProjectId
   readonly rows: readonly SessionRow[]
-  readonly nextCursor: string | undefined
+  readonly statuses: ReadonlyMap<SessionId, ListedStatus>
+  readonly nextAfter: string | undefined
 }
+
+export type FailedPage = { readonly projectId: ProjectId; readonly error: AppError }
 
 export type FetchedWindow = {
   readonly pages: readonly FetchedPage[]
+  readonly failures: readonly FailedPage[]
   readonly sentAt: number
-  readonly statuses: SessionStatusRead | undefined
 }
 
-export type PlacementWindow = { readonly tail: OrderKey; readonly nextCursor: string | undefined }
+export type ProjectWindow = { readonly tail: OrderKey; readonly nextAfter: string | undefined }
 
 export type ListData = {
   readonly entries: ReadonlyMap<SessionId, ListEntry>
   readonly statuses: ReadonlyMap<SessionId, StatusEntry>
-  readonly unreported: UnreportedStatus | undefined
   readonly open: ReadonlySet<SessionId>
-  readonly windows: ReadonlyMap<PlacementId, PlacementWindow>
+  readonly windows: ReadonlyMap<ProjectId, ProjectWindow>
+  readonly failures: ReadonlyMap<ProjectId, AppError>
 }
 
 export type ServerListEvent =
@@ -73,7 +71,7 @@ export type ListState = ListData &
   (
     | { readonly kind: "subscribing" }
     | { readonly kind: "fetching"; readonly held: readonly ServerListEvent[] }
-    | { readonly kind: "live"; readonly more: MorePhase }
+    | { readonly kind: "live"; readonly more: ReadonlyMap<ProjectId, MorePhase> }
     | { readonly kind: "rereading"; readonly held: readonly ServerListEvent[] }
     | { readonly kind: "failed"; readonly error: AppError }
   )
@@ -102,15 +100,14 @@ export type ListEvent =
   | { readonly type: "fetchStarted" }
   | { readonly type: "fetched"; readonly window: FetchedWindow }
   | { readonly type: "fetchFailed"; readonly error: AppError }
-  | { readonly type: "moreStarted"; readonly placementIds: readonly PlacementId[] }
-  | { readonly type: "moreFetched"; readonly window: FetchedWindow }
-  | { readonly type: "moreFailed"; readonly error: AppError }
+  | { readonly type: "moreStarted"; readonly projectId: ProjectId }
+  | { readonly type: "moreFetched"; readonly projectId: ProjectId; readonly window: FetchedWindow }
+  | { readonly type: "moreFailed"; readonly projectId: ProjectId; readonly error: AppError }
   | { readonly type: "rereadStarted" }
   | { readonly type: "rereadFetched"; readonly window: FetchedWindow; readonly mode: RereadMode }
   | { readonly type: "rereadFailed"; readonly error: AppError }
   | { readonly type: "rowRead"; readonly row: SessionRow }
   | { readonly type: "statusRead"; readonly ref: SessionRef; readonly status: SessionStatus; readonly sentAt: number }
-  | { readonly type: "statusesFetched"; readonly read: SessionStatusRead; readonly sentAt: number; readonly rows: readonly SessionRow[] }
   | { readonly type: "sessionOpened"; readonly sessionId: SessionId }
   | { readonly type: "sessionClosed"; readonly sessionId: SessionId }
   | { readonly type: "createStarted"; readonly clientRequestId: string; readonly row: SessionRow }
@@ -127,9 +124,9 @@ export const initialListState: ListState = {
   kind: "subscribing",
   entries: new Map(),
   statuses: new Map(),
-  unreported: undefined,
   open: new Set(),
   windows: new Map(),
+  failures: new Map(),
 }
 
 const rowActivityAt = (row: SessionRow): number => row.lastHumanTurnAt ?? 0
@@ -153,18 +150,13 @@ export function compareOrder(a: OrderKey, b: OrderKey): number {
 
 export const insideWindow = (key: OrderKey, tail: OrderKey): boolean => compareOrder(key, tail) <= 0
 
-export const windowTail = (data: Pick<ListData, "windows">, placementId: PlacementId): OrderKey => data.windows.get(placementId)?.tail ?? WINDOW_EMPTY
+export const windowTail = (data: Pick<ListData, "windows">, projectId: ProjectId): OrderKey => data.windows.get(projectId)?.tail ?? WINDOW_EMPTY
 
-export const insidePlacementWindow = (data: Pick<ListData, "windows">, row: SessionRow, key: OrderKey = orderKey(row)): boolean =>
-  insideWindow(key, windowTail(data, row.ref.placementId))
+export const insideProjectWindow = (data: Pick<ListData, "windows">, row: SessionRow, key: OrderKey = orderKey(row)): boolean =>
+  insideWindow(key, windowTail(data, row.ref.projectId))
 
-export const windowRows = (window: FetchedWindow): readonly SessionRow[] => window.pages.flatMap((page) => page.rows)
 
-export const listedRows = (data: ListData): readonly SessionRow[] =>
-  [...data.entries.values()].flatMap((entry) => (entry.kind === "confirmed" ? [entry.row] : []))
-
-export const hasMorePages = (windows: ListData["windows"], placementIds: readonly PlacementId[]): boolean =>
-  placementIds.some((id) => windows.get(id)?.nextCursor !== undefined)
+export const hasMorePages = (windows: ListData["windows"], projectId: ProjectId): boolean => windows.get(projectId)?.nextAfter !== undefined
 
 function laterHumanTurn(current: SessionRow, incoming: SessionRow): number | undefined {
   if (current.lastHumanTurnAt === undefined) return incoming.lastHumanTurnAt

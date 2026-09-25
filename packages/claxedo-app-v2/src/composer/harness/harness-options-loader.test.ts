@@ -33,15 +33,13 @@ function harness(answers: Array<HarnessOptions | Error>) {
 beforeEach(() => jest.useFakeTimers())
 afterEach(() => jest.useRealTimers())
 
-test("options loader: a stale answer loads again a second later, and the live one settles", async () => {
+test("options loader: a stale answer settles as stale, and nothing reads it again on a timer", async () => {
   const run = harness([answer(true), answer(false)])
   await run.loader.load("draft:a", codex)
-  expect(run.patches.at(-1)).toMatchObject({ optionsLoading: true, selectedModel: "gpt" })
-  jest.advanceTimersByTime(1000)
+  expect(run.patches.at(-1)).toMatchObject({ optionsLoading: false, optionsStale: false, selectedModel: "gpt" })
+  jest.advanceTimersByTime(60_000)
   await Promise.resolve()
-  await Promise.resolve()
-  expect(run.calls()).toBe(2)
-  expect(run.patches.at(-1)).toMatchObject({ optionsLoading: false, selectedModel: "gpt" })
+  expect(run.calls()).toBe(1)
 })
 
 test("options loader: an answer for a harness the user switched away from only releases its loading flag", async () => {

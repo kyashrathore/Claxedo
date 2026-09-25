@@ -8,6 +8,7 @@ import {
   hostServingState,
 } from "@claxedo/host-serving/serving"
 import { embeddedWorkspaceRuntimeSessionAuthority } from "../deployments/local/embedded-workspace-runtime"
+import { localHostSessionRowsUrl } from "../deployments/local/host-session-authority"
 
 const state = () => hostServingState({ sessionAuthority: embeddedWorkspaceRuntimeSessionAuthority })
 
@@ -39,11 +40,11 @@ function ackCredential(): AckHostTunnel {
   }
 }
 
-async function put(credential: unknown) {
+async function put(credential: unknown, endpoints?: Record<string, unknown>) {
   return HostServingRoutes().request("/", {
     method: "PUT",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ credential }),
+    body: JSON.stringify({ credential, ...(endpoints ? { endpoints } : {}) }),
   })
 }
 
@@ -76,6 +77,18 @@ describe("host serving routes", () => {
     await put(ackCredential())
     const serving = await HostServingRoutes().request("/")
     expect(await serving.json()).toMatchObject({ serving: true, sessionAuthority: "local" })
+  })
+
+  test("holds the session-rows address beside the credential and drops it with a null one", async () => {
+    const url = "https://control-plane.test/api/claxedo/host/session-rows"
+    expect((await put(ackCredential(), { sessionRowsUrl: url })).status).toBe(200)
+    expect(localHostSessionRowsUrl()).toBe(url)
+
+    expect((await put(ackCredential(), { sessionRowsUrl: "not a url" })).status).toBe(400)
+    expect(localHostSessionRowsUrl(), "a refused body changes nothing").toBe(url)
+
+    expect((await put(null, { sessionRowsUrl: url })).status).toBe(200)
+    expect(localHostSessionRowsUrl()).toBeUndefined()
   })
 
   test("a null credential stops serving", async () => {

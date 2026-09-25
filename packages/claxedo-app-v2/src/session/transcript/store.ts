@@ -1,4 +1,4 @@
-import { createMemo } from "solid-js"
+import { createMemo, onCleanup } from "solid-js"
 import { unreachable } from "@/lib/machine"
 import type { Server, ServerEvent, SessionRef } from "@/server"
 import type { SessionLoadState, SessionView } from "@/session"
@@ -86,6 +86,7 @@ function sessionView(context: TranscriptContext): SessionView {
 
 export function createSessionTranscript(server: Server, ref: SessionRef, deps: TranscriptDeps): SessionTranscript {
   const context = createTranscriptContext(server, ref, deps)
+  onCleanup(server.attachPlacement(ref.placementId))
   void readSnapshot(context)
   void context.queue.reread()
   return {

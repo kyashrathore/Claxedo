@@ -4,6 +4,7 @@ import { useTranslator } from "@/i18n"
 import { useServer, type ConnectionScope, type Integration, type IntegrationConnectInput } from "@/server"
 import { connectError, connectMachine, createConnectForm, grantError } from "../connections"
 import { settingsDictionary } from "../i18n"
+import { openExternal } from "@/lib/external-link"
 
 const SCOPES: readonly ConnectionScope[] = ["team", "personal"]
 
@@ -38,7 +39,7 @@ export function ConnectForm(props: {
     if (result.kind === "failed") return state.send(result.reason === "exists" ? { type: "exists" } : { type: "failed", error: connectError(result) })
     if (result.kind === "connected") return finish()
     state.send({ type: "authorize", url: result.grant.url, ...(result.grant.userCode ? { userCode: result.grant.userCode } : {}) })
-    window.open(result.grant.url, "_blank", "noopener")
+    openExternal(result.grant.url)
     const outcome = await server.integrations.awaitGrant(result.grant, alive)
     if (outcome.kind === "connected") finish()
     else if (outcome.kind === "failed") state.send({ type: "failed", error: grantError(outcome.reason) })

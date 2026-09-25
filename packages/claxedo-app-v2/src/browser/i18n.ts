@@ -36,6 +36,7 @@ const en = {
   "browser.mixedContent.title": "This source requires HTTPS.",
   "browser.mixedContent.hint": "Hosted Claxedo blocks insecure embedded content.",
   "browser.preview.title": "External source preview",
+  "browser.preview.document": "Browser preview",
   "browser.noPlacement": "Open a project to use the browser.",
 }
 

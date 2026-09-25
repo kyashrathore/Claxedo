@@ -34,6 +34,7 @@ describe("provider-neutral private-session authority contract", () => {
       "grantSessionParticipant",
       "revokeSessionParticipant",
       "listSessions",
+      "listSessionPage",
       "resolveSession",
       "readSessionMessages",
       "syncSessionMessages",

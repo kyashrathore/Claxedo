@@ -83,6 +83,9 @@ export { migrateCredentials } from "./credentials/operations/migrate"
 export { dropCopiedHarnessLogins } from "./credentials/operations/drop-copied-harness-logins"
 export { projectLocalSessionMetaFromEvent } from "./session/session-meta-tap"
 
+export { LivePluginRoutes } from "./plugins/routes"
+export { LIVE_PLUGINS_ROUTE_PATH } from "./plugins/service"
+
 /** Starts the desktop-local server: composition plus lifecycle. */
 export { startLocalServer, type LocalServer, type StartLocalServerOptions } from "./app/start-local-server"
 export { createLocalApp, mountLocalRouteFamilies, localSecurityHeaders, type LocalAppOptions } from "./app/local-app"

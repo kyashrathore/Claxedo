@@ -108,6 +108,8 @@ export type WorkspaceRouteOptions = {
   relayHostJwksUrl?: string
   /** The session-authorize endpoint a machine-enrolled host's runtime consults for private sessions. */
   sessionAuthorityUrl?: string
+  /** Where a machine-enrolled host publishes its sessions' list rows. */
+  sessionRowsUrl?: string
   defaultHomeRegion?: ClaxedoRegion
   sandboxEgressExtraHosts?: string[]
   runtimeAccessTokenSigner?: RuntimeAccessTokenSigner
@@ -297,12 +299,14 @@ export function configuredRelayUrl(options: WorkspaceRouteOptions, homeRegion?: 
 export function hostConnectEndpointOptions(env: Record<string, string | undefined>) {
   const jwksUrl = env.CLAXEDO_RELAY_HOST_JWKS_URL?.trim()
   const origin = (env.CLAXEDO_SESSION_AUTHORITY_ORIGIN ?? env.BETTER_AUTH_URL ?? env.CLAXEDO_PUBLIC_URL)?.trim()
+  const base = origin?.replace(/\/+$/, "")
   const sessionAuthorityUrl =
-    env.CLAXEDO_SESSION_AUTHORITY_URL?.trim() ||
-    (origin ? `${origin.replace(/\/+$/, "")}/api/runtime-authority/session-authorize` : undefined)
+    env.CLAXEDO_SESSION_AUTHORITY_URL?.trim() || (base ? `${base}/api/runtime-authority/session-authorize` : undefined)
+  const sessionRowsUrl = base ? `${base}/api/claxedo/host/session-rows` : undefined
   return {
     ...(jwksUrl ? { relayHostJwksUrl: jwksUrl } : {}),
     ...(sessionAuthorityUrl ? { sessionAuthorityUrl } : {}),
+    ...(sessionRowsUrl ? { sessionRowsUrl } : {}),
   }
 }
 

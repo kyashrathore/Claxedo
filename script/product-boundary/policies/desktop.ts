@@ -171,8 +171,15 @@ export const desktopMainComposition: Policy = {
   // bundle and main reads it to name userData and the Keychain item, so the v2
   // renderer build ("Claxedo V2 Dev") never opens today's profile. Reviewed
   // owner: Electron main, which sets both at startup. No imports, no package edge.
-  // 100/26, no headroom.
-  ceilings: { modules: 100, packages: 26 },
+  // +1 module, +1 package (2026-09-25): `main/renderer-content-security.ts`
+  // stamps the v2 renderer's Content-Security-Policy on its documents, built by
+  // `@claxedo/app-v2/content-security-policy` (one file, no imports), the same
+  // builder the web build uses, so the desktop and the web lock the app to one
+  // exact server origin by one rule. Reviewed owner: Electron main, the only
+  // place that knows the daemon's origin before the document loads and the
+  // only one a page cannot rewrite.
+  // 101/27, no headroom.
+  ceilings: { modules: 101, packages: 27 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,

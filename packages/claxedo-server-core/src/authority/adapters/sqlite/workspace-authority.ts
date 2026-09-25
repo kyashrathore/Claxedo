@@ -79,6 +79,7 @@ import {
   type WorkspaceRow,
 } from "./workspace-authority-store"
 import { createSqlitePrivateSessionAuthority } from "./private-session-authority"
+import { publishSqliteHostSessionRows } from "./host-session-rows"
 
 // Claxedo's LOCAL workspace-authority adapter: the full `WorkspaceAuthority`
 // port backed by a local SQLite database instead of the authority. This is the
@@ -2437,6 +2438,9 @@ export function createSqliteWorkspaceAuthority(
         host_id: row.host_id,
         enrolled_via: row.enrolled_via === "invitation" ? "invitation" : "account",
       }
+    },
+    async publishHostSessionRows(publisher, publication) {
+      return publishSqliteHostSessionRows(database(), Date.now(), HOST_SERVING_WORKSPACE_SQL, publisher, publication)
     },
     machineAuth: {
       async lookupEnrollment(enrollmentId) {

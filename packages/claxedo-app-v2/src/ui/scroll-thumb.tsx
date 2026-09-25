@@ -5,17 +5,14 @@ import "./scroll-thumb.css"
 
 type ScrollThumbState = ReturnType<typeof createScrollThumb>
 
-export function ScrollThumbElement(props: {
-  readonly thumb: ScrollThumbState
-  readonly visibility: ScrollViewThumbVisibility
-}): JSX.Element {
+export function ScrollThumbElement(props: { readonly thumb: ScrollThumbState; readonly class: string }): JSX.Element {
   return (
     <div
-      class="v2-scroll-view-thumb"
+      class={props.class}
       hidden={!props.thumb.state.shown}
-      data-visible={props.thumb.visible(props.visibility)}
+      data-visible={props.thumb.visible()}
       data-dragging={props.thumb.state.dragging}
-      style={{ height: `${props.thumb.state.height}px`, transform: `translateY(${props.thumb.state.top}px)` }}
+      style={{ height: `${props.thumb.state.height}px`, transform: `translateY(${props.thumb.state.top}px)`, "z-index": 100 }}
       onPointerDown={(event) => props.thumb.drag(event.currentTarget, event)}
     />
   )
@@ -28,24 +25,23 @@ export type ScrollThumbProps = {
 }
 
 export function ScrollThumb(props: ScrollThumbProps): JSX.Element {
-  const thumb = createScrollThumb({ viewport: () => props.scroller, track: () => undefined })
+  const thumb = createScrollThumb({ viewport: () => props.scroller, track: () => undefined, visibility: () => props.visibility ?? "hover" })
   createResizeObserver(
     () =>
       [props.scroller, props.scroller?.firstElementChild].filter(
         (element): element is HTMLElement => element instanceof HTMLElement,
       ),
-    thumb.schedule,
+    thumb.resized,
   )
   createEffect(() => {
     const scroller = props.scroller
     if (!scroller) return
-    const onScroll = () => thumb.schedule()
+    const onScroll = () => thumb.scrolled()
     const onWheel = () => thumb.reveal("wheel")
     const onTouch = () => thumb.reveal("touch")
     scroller.addEventListener("scroll", onScroll, { passive: true })
     scroller.addEventListener("wheel", onWheel, { passive: true })
     scroller.addEventListener("touchmove", onTouch, { passive: true })
-    thumb.measure()
     onCleanup(() => {
       scroller.removeEventListener("scroll", onScroll)
       scroller.removeEventListener("wheel", onWheel)
@@ -65,5 +61,5 @@ export function ScrollThumb(props: ScrollThumbProps): JSX.Element {
       thumb.setHovered(false)
     })
   })
-  return <ScrollThumbElement thumb={thumb} visibility={props.visibility ?? "hover"} />
+  return <ScrollThumbElement thumb={thumb} class="v2-scroll-view-thumb" />
 }

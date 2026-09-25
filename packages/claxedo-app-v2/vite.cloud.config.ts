@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url"
 import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { dirname } from "node:path"
 import { resolveAccountBindingSelection } from "./vite.account-binding"
+import { webContentSecurityPolicyPlugin } from "./vite.content-security-policy"
 
 /**
  * The chunks the authenticated app awaits BEFORE first paint. app/entry/app.tsx's
@@ -42,6 +43,7 @@ function bootChunkModulepreloadPlugin(): Plugin {
         const bundle = ctx.bundle
         // `generateBundle` has not run (dev/serve): nothing to preload.
         if (!bundle) return []
+        if (!ctx.filename.endsWith("/index.html")) return []
         // Vite already emits modulepreload links for the entry's static
         // imports (vendor-solid, vendor-better-auth); skip those and the entry.
         const seen = new Set<string>()
@@ -146,7 +148,7 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
     || env.VITE_CLAXEDO_SERVER_URL
     || "http://127.0.0.1:2593"
   return {
-    plugins: [claxedoWorkspaceSource(), solidPlugin(), tailwindcss(), bootChunkModulepreloadPlugin()],
+    plugins: [claxedoWorkspaceSource(), solidPlugin(), tailwindcss(), bootChunkModulepreloadPlugin(), webContentSecurityPolicyPlugin(env.VITE_CLAXEDO_SERVER_URL)],
     publicDir: "public",
     server: {
       host: "0.0.0.0",
@@ -203,7 +205,11 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
       // the publish directory.
       sourcemap: "hidden",
       rollupOptions: {
-        input: { main: fileURLToPath(new URL("./index.html", import.meta.url)) },
+        input: {
+          main: fileURLToPath(new URL("./index.html", import.meta.url)),
+          browserPreview: fileURLToPath(new URL("./browser-preview.html", import.meta.url)),
+          cliCallback: fileURLToPath(new URL("./cli-callback.html", import.meta.url)),
+        },
         output: {
           manualChunks: {
             "vendor-solid": ["solid-js", "solid-js/web", "solid-js/store"],

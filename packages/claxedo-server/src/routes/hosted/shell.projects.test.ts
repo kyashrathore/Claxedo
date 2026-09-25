@@ -57,4 +57,17 @@ describe("signedShellProjects", () => {
 
     expect(projects[0]?.workspaces).toMatchObject({ ws_running: { reachable: true }, ws_stopped: { reachable: false } })
   })
+
+  test("a machine-placed workspace is reachable only while its enrollment serves it", () => {
+    const projects = signedShellProjects(
+      [
+        { workspace_id: "ws_online", project_id: "proj_one", backing: "local-worktree", host_online: true },
+        { workspace_id: "ws_offline", project_id: "proj_one", backing: "local-worktree", host_online: false },
+      ],
+      1_800_000_000_000,
+      new Set(),
+    )
+
+    expect(projects[0]?.workspaces).toMatchObject({ ws_online: { reachable: true }, ws_offline: { reachable: false } })
+  })
 })

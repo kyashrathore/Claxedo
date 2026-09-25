@@ -21,6 +21,7 @@ import { HostedAuthProfileRoutes } from "../../routes/hosted/auth-profile"
 import { HostedDeviceAuthRoutes } from "../../routes/hosted/device-auth"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "../../routes/hosted/workspace"
 import { HostEnrollmentRoutes, HostInvitationRoutes } from "../../routes/hosted/host-enrollment"
+import { HostSessionRowsRoutes } from "../../routes/hosted/host-session-rows"
 import { RemoteAccessOwnerRoutes } from "../../routes/remote-access"
 import { hostedRemoteAccessService } from "./hosted-remote-access-service"
 import { WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
@@ -349,6 +350,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
   }
   app.route("/api/workspace", HostedWorkspaceRoutes(services, workspaceOptions))
   app.route("/api/claxedo/host/enrollments", HostEnrollmentRoutes(services, workspaceOptions))
+  app.route("/api/claxedo/host/session-rows", HostSessionRowsRoutes(services))
   app.route("/api/claxedo/host/invitations", HostInvitationRoutes(services, workspaceOptions))
   app.route("/api/claxedo/remote-access", RemoteAccessOwnerRoutes({
     deviceLoginConfigured: true,

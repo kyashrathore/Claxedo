@@ -2,6 +2,7 @@ import { test as base, expect, type Page, type TestInfo } from "@playwright/test
 import { ClaxedoApi } from "./api"
 import { appChoice, ensureAppBuilt, signedDistDir, type AppBuild } from "./app"
 import { launchDesktop, type Desktop, type DesktopAccount } from "./desktop"
+import { recordDestinations, reportDestinations } from "./destinations"
 import { ensureDesktopBuilt, type DesktopBuild } from "./desktop-build"
 import { unexpectedEgress, type EgressAttempt } from "./egress-guard"
 import { releasePort, reservePort } from "./ports"
@@ -15,6 +16,7 @@ export type HarnessFixtures = {
   desktop: Desktop
   signed: SignedStack
   signedDesktop: Desktop
+  signedCloud: SignedStack
 }
 
 type SignedBuild = AppBuild & { frontPort: number }
@@ -34,6 +36,11 @@ async function attachLogOnFailure(testInfo: TestInfo, attempts: EgressAttempt[],
 }
 
 export const test = base.extend<HarnessFixtures, HarnessWorkerFixtures>({
+  context: async ({ context }, use, testInfo) => {
+    const destinations = recordDestinations(context)
+    await use(context)
+    await reportDestinations(testInfo, destinations)
+  },
   stack: async ({}, use, testInfo) => {
     const stack = await startStack({ label: testInfo.titlePath.join(" ") })
     try {
@@ -75,6 +82,17 @@ export const test = base.extend<HarnessFixtures, HarnessWorkerFixtures>({
       await use(signed)
     } finally {
       await attachLogOnFailure(testInfo, signed.stack.egress.attempts, "daemon.log", signed.stack.daemon.log)
+      await signed.close()
+    }
+    refuseEgress(signed.stack.egress.attempts)
+  },
+  signedCloud: async ({ signedBuild }, use, testInfo) => {
+    const signed = await startSignedStack({ label: testInfo.titlePath.join(" "), frontPort: signedBuild.frontPort, distDir: signedBuild.distDir, cloud: true })
+    try {
+      await use(signed)
+    } finally {
+      await attachLogOnFailure(testInfo, signed.stack.egress.attempts, "daemon.log", signed.stack.daemon.log)
+      await attachLogOnFailure(testInfo, signed.stack.egress.attempts, "relay.log", signed.relayLog)
       await signed.close()
     }
     refuseEgress(signed.stack.egress.attempts)

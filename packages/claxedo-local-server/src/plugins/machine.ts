@@ -1,7 +1,9 @@
+import type { PluginManifest } from "@claxedo/plugin-api"
+
 export type LivePluginBundle = {
   hash: string
-  name: string
-  version: string
+  manifest: PluginManifest
+  builtAt: string
 }
 
 export type LivePluginState =

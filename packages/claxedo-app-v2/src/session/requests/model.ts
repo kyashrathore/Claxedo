@@ -1,5 +1,5 @@
 import { unreachable } from "@/lib/machine"
-import type { AgentRequest, AppError, RequestId, SessionRef } from "@/server"
+import type { AgentRequest, AppError, RequestId, SessionId, SessionRef } from "@/server"
 import type { RequestState } from "@/session"
 
 export type RequestEntry = {
@@ -9,9 +9,14 @@ export type RequestEntry = {
   readonly at: number
 }
 
+export type RequestsReadOutcome =
+  | { readonly kind: "read"; readonly sentAt: number }
+  | { readonly kind: "failed"; readonly sentAt: number; readonly error: AppError }
+
 export type RequestsData = {
   readonly entries: ReadonlyMap<RequestId, RequestEntry>
   readonly closedAt: ReadonlyMap<RequestId, number>
+  readonly lastRead: ReadonlyMap<SessionId, RequestsReadOutcome>
 }
 
 export type RequestMachineEvent =
@@ -23,6 +28,7 @@ export type RequestsEvent =
   | { readonly type: "opened"; readonly ref: SessionRef; readonly request: AgentRequest; readonly at: number }
   | { readonly type: "closed"; readonly requestId: RequestId; readonly at: number }
   | { readonly type: "read"; readonly ref: SessionRef; readonly requests: readonly AgentRequest[]; readonly sentAt: number }
+  | { readonly type: "readFailed"; readonly ref: SessionRef; readonly error: AppError; readonly sentAt: number }
   | ({ readonly requestId: RequestId } & RequestMachineEvent)
 
 export const OPEN: RequestState = { kind: "open" }
@@ -30,7 +36,7 @@ export const ANSWERING: RequestState = { kind: "answering" }
 export const ANSWERED: RequestState = { kind: "answered" }
 export const EXPIRED: RequestState = { kind: "expired" }
 
-export const initialRequestsData: RequestsData = { entries: new Map(), closedAt: new Map() }
+export const initialRequestsData: RequestsData = { entries: new Map(), closedAt: new Map(), lastRead: new Map() }
 
 export const CLOSED_MEMORY = 64
 
@@ -72,7 +78,20 @@ function opened(data: RequestsData, ref: SessionRef, request: AgentRequest, at: 
 function closed(data: RequestsData, requestId: RequestId, at: number): RequestsData {
   const entries = new Map(data.entries)
   entries.delete(requestId)
-  return { entries, closedAt: rememberClosed(data, requestId, at) }
+  return { ...data, entries, closedAt: rememberClosed(data, requestId, at) }
+}
+
+function withOutcome(data: RequestsData, ref: SessionRef, outcome: RequestsReadOutcome): RequestsData {
+  const current = data.lastRead.get(ref.sessionId)
+  if (current && current.sentAt > outcome.sentAt) return data
+  const lastRead = new Map(data.lastRead)
+  lastRead.set(ref.sessionId, outcome)
+  return { ...data, lastRead }
+}
+
+export function readErrorOf(data: RequestsData, sessionId: SessionId): AppError | undefined {
+  const outcome = data.lastRead.get(sessionId)
+  return outcome?.kind === "failed" ? outcome.error : undefined
 }
 
 function read(data: RequestsData, ref: SessionRef, requests: readonly AgentRequest[], sentAt: number): RequestsData {
@@ -88,7 +107,7 @@ function read(data: RequestsData, ref: SessionRef, requests: readonly AgentReque
     if ((data.closedAt.get(request.id) ?? Number.NEGATIVE_INFINITY) >= sentAt) continue
     entries.set(request.id, { ref, request, at: sentAt, state: OPEN })
   }
-  return withEntries(data, entries)
+  return withOutcome(withEntries(data, entries), ref, { kind: "read", sentAt })
 }
 
 function replied(data: RequestsData, requestId: RequestId, event: RequestMachineEvent): RequestsData {
@@ -109,6 +128,8 @@ export function applyRequestsEvent(data: RequestsData, event: RequestsEvent): Re
       return closed(data, event.requestId, event.at)
     case "read":
       return read(data, event.ref, event.requests, event.sentAt)
+    case "readFailed":
+      return withOutcome(data, event.ref, { kind: "failed", sentAt: event.sentAt, error: event.error })
     case "replyStarted":
     case "replyAccepted":
     case "replyRejected":

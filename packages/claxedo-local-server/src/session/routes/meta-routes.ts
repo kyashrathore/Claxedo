@@ -14,22 +14,18 @@ import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import {
-  listSessionNavigationMetas,
   listSessionMetas,
   parseSessionMeta,
   putSessionMeta,
   sessionMeta,
   type SessionMeta,
 } from "@claxedo/server-core/session/meta/index"
-import {
-  buildSessionListResponse,
-  parseSessionListQuery,
-  sessionListStoreFilter,
-  sessionListStorePageFilter,
-} from "@claxedo/server-core/session/navigation-list"
-import { getProjectWorkspace, resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
+import { parseSessionListQuery } from "@claxedo/server-core/session/navigation-list"
+import { getProjectWorkspace, listWorkspaces, resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { asRecord } from "@claxedo/helpers/guards"
+import { localSessionListPage, signedSessionListPage } from "../list/session-list-page"
+import { readMountedEmbeddedWorkspaceRuntime } from "../../deployments/local/embedded-workspace-runtime"
 
 type Options = {
   services?: ControlPlaneServicesContract
@@ -135,41 +131,6 @@ async function authorizeWorkspaceRead(
   await authority.openWorkspace(auth, { workspaceId })
 }
 
-/**
- * The authority's session rows for one workspace, stamped with the workspace
- * and project they were listed under: the rows name neither, and the
- * navigation list drops a row it cannot place.
- */
-async function placedAuthoritySessions(
-  auth: SignedControlPlaneAuth,
-  options: Options,
-  place: { workspaceId: string; projectId?: string },
-) {
-  const rows = await requireAuthority(options.services).listSessions(auth, { workspaceId: place.workspaceId })
-  return (Array.isArray(rows) ? rows : []).map((row) => ({
-    ...(row && typeof row === "object" ? row : {}),
-    workspace_id: place.workspaceId,
-    ...(place.projectId ? { project_id: place.projectId } : {}),
-  }))
-}
-
-async function authorizedProjectWorkspaceIds(
-  auth: SignedControlPlaneAuth,
-  options: Options,
-  projectId: string,
-) {
-  const workspaces = await requireAuthority(options.services).listWorkspaces(auth)
-  if (!Array.isArray(workspaces)) return new Set<string>()
-  return new Set(workspaces.flatMap((input) => {
-    const row = asRecord(input)
-    if (!row) return []
-    const rowProjectId = nonEmptyString(row.project_id) ?? nonEmptyString(row.projectID) ?? nonEmptyString(row.projectId)
-    if (rowProjectId !== projectId) return []
-    const workspaceId = nonEmptyString(row.workspace_id) ?? nonEmptyString(row.workspaceID) ?? nonEmptyString(row.workspaceId)
-    return workspaceId ? [workspaceId] : []
-  }))
-}
-
 function responseMeta(input: SessionMeta | undefined, auth: SignedControlPlaneAuth | undefined, sessionId: string) {
   const fallback = { sessionID: sessionId, tags: [], attachments: [] }
   if (!input) return fallback
@@ -262,41 +223,19 @@ export function SessionMetaRoutes(options: Options = {}) {
       if (authResult.error) return c.json(authResult.error, authResult.status)
       try {
         const query = parseSessionListQuery(new URL(c.req.url))
-        if (authResult.auth && query.scope === "project" && query.projectId) {
-          // Two narrowings, not one: a rank on the project is not a rank on
-          // each of its workspaces, and a rank on a workspace is not access
-          // to the sessions inside it, which the authority answers per row
-          // from creator, participant or share.
-          const authorized = await authorizedProjectWorkspaceIds(authResult.auth, options, query.projectId)
-          const projectId = query.projectId
-          const sessions = (await Promise.all(
-            [...authorized].map((workspaceId) => placedAuthoritySessions(authResult.auth!, options, { workspaceId, projectId })),
-          )).flat()
-          return c.json(buildSessionListResponse({ query, sessions }))
+        const named = query.scope === "project" && query.projectId && !c.req.query("workspaceId") && !c.req.query("directory")
+          ? undefined
+          : await workspace(c)
+        if (authResult.auth) {
+          return c.json(await signedSessionListPage(requireAuthority(options.services), authResult.auth, { query, workspace: named }))
         }
-        const resolved = await workspace(c)
-        await authorizeWorkspaceRead(authResult.auth, options, resolved?.id)
-        if (authResult.auth && resolved?.id) {
-          const sessions = await placedAuthoritySessions(authResult.auth, options, {
-            workspaceId: resolved.id,
-            ...(resolved.project_id ? { projectId: resolved.project_id } : {}),
-          })
-          return c.json(buildSessionListResponse({ query: { ...query, workspaceId: resolved.id }, sessions }))
-        }
-        if (resolved) await options.refreshSessionProjection?.(resolved)
-        const canUseBoundedProjection = query.groupBy === "none" &&
-          query.environment.length === 0 &&
-          query.git.length === 0
-        if (canUseBoundedProjection) {
-          return c.json(buildSessionListResponse({
-            query,
-            sessions: await listSessionNavigationMetas(sessionListStorePageFilter(query)),
-            cursorApplied: true,
-          }))
-        }
-        return c.json(buildSessionListResponse({
+        return c.json(await localSessionListPage({
           query,
-          sessions: await listSessionMetas(sessionListStoreFilter(query)),
+          workspace: named,
+          projectWorkspaces: async () => (await listWorkspaces()).filter((item) =>
+            item.project_id === query.projectId && item.kind !== "cloud"),
+          ...(options.refreshSessionProjection ? { refreshSessionProjection: options.refreshSessionProjection } : {}),
+          readRuntimeStatus: readMountedEmbeddedWorkspaceRuntime,
         }))
       } catch (err) {
         if (err instanceof Error && err.message === "invalid_session_list_cursor") {

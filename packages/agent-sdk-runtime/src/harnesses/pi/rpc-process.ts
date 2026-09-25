@@ -6,6 +6,7 @@ import { observeAgentProcess, type AgentProcessObserver, type AgentProcessObserv
 import { piCommand } from "./executable"
 import {
   launchOwnedProcess,
+  retirementSettled,
   settleAtRequestDeadline,
   type LaunchOwnershipStore,
   type OwnedLaunch,
@@ -185,8 +186,15 @@ export class PiRpcProcess {
     return this.leaderExited
   }
 
+  /**
+   * Concurrent calls share one attempt. A settled attempt is final; an
+   * unsettled one is a snapshot, so the next call retires the launch again.
+   */
   dispose(): Promise<RetirementResult> {
-    this.retirement ??= this.retireLaunch()
+    this.retirement ??= this.retireLaunch().then((result) => {
+      if (!retirementSettled(result)) this.retirement = undefined
+      return result
+    })
     return this.retirement
   }
 

@@ -427,7 +427,14 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
     const relay = configuredHostRelay(options)
     return {
       ...(relay ? { relay } : {}),
-      ...(options.sessionAuthorityUrl ? { authority: { session_authority_url: options.sessionAuthorityUrl } } : {}),
+      ...(options.sessionAuthorityUrl || options.sessionRowsUrl
+        ? {
+            authority: {
+              ...(options.sessionAuthorityUrl ? { session_authority_url: options.sessionAuthorityUrl } : {}),
+              ...(options.sessionRowsUrl ? { session_rows_url: options.sessionRowsUrl } : {}),
+            },
+          }
+        : {}),
     }
   }
 

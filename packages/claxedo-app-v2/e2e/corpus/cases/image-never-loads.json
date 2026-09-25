@@ -1,0 +1,50 @@
+{
+  "id": "image-never-loads",
+  "title": "An image that never loads keeps its loading tile and nothing of the transcripts left behind",
+  "source": {
+    "kind": "test",
+    "file": "src/transcript/markdown-images.ts",
+    "name": "an image's pending probe never holds the transcript that asked for it"
+  },
+  "partKinds": [
+    "text",
+    "markdown:image"
+  ],
+  "replay": {
+    "agent": "acp",
+    "turns": [
+      {
+        "prompt": "Show the diagram.",
+        "steps": [
+          {
+            "kind": "text",
+            "text": "Here is the diagram:\n\n![never loads]({{heldImage}})\n\nThe image is still loading."
+          }
+        ]
+      }
+    ]
+  },
+  "ready": "The image is still loading.",
+  "interactions": [
+    {
+      "kind": "switchSessions",
+      "times": 10
+    },
+    {
+      "kind": "markDetached"
+    },
+    {
+      "kind": "switchSessions",
+      "times": 80
+    },
+    {
+      "kind": "detachedGrowth",
+      "max": 200
+    },
+    {
+      "kind": "heapGrowth",
+      "maxKb": 2048
+    }
+  ],
+  "invariant": "An image whose host never answers stays a loading tile, and switching away and back 80 times leaves the DOM nodes and the heap flat: no transcript is kept alive by the image's pending probe."
+}

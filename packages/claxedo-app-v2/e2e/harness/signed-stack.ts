@@ -4,6 +4,8 @@ import { expect, type Page } from "@playwright/test"
 import { ClaxedoApi } from "./api"
 import type { SignedDaemon } from "./daemon"
 import { storeScriptedKeys } from "./scripted-providers"
+import { releasePort, reservePort } from "./ports"
+import { relayResolverToken, startRelay, type Relay } from "./relay"
 import { startStack, type Stack, type StackInput } from "./stack"
 import { startTlsFront, type TlsFront, type TlsTrust } from "./tls-front"
 import { bearerTransport, type HttpTransport } from "./transport"
@@ -26,10 +28,11 @@ export type SignedStack = {
   signUp(name: string): Promise<Account>
   signIn(page: Page, account: Account): Promise<void>
   makeWorkspace(name: string, projectName?: string): Promise<Workspace>
+  relayLog(): string
   close(): Promise<void>
 }
 
-export type SignedStackInput = StackInput & { frontPort: number; distDir: string }
+export type SignedStackInput = StackInput & { frontPort: number; distDir: string; cloud?: boolean }
 
 async function signUp(stack: Stack, frontUrl: string, name: string): Promise<Account> {
   const email = `${name.toLowerCase().replace(/[^a-z0-9]+/g, ".")}@claxedo.test`
@@ -63,9 +66,26 @@ async function signIn(page: Page, frontUrl: string, account: Account) {
   await expect(page).not.toHaveURL(/\/login$/)
 }
 
+async function startCloudRelay(stack: Stack, signed: SignedDaemon, relayPort: number | undefined, frontUrl: string): Promise<Relay | undefined> {
+  if (relayPort === undefined || !signed.cloud) return undefined
+  return startRelay({
+    port: relayPort,
+    resolverToken: signed.cloud.resolverToken,
+    controlPlaneUrl: stack.url,
+    runtimePublicPem: signed.runtimeKeys.publicPem,
+    allowedOrigins: [frontUrl, stack.url],
+  })
+}
+
 export async function startSignedStack(input: SignedStackInput): Promise<SignedStack> {
   const stack = await startStack(input)
+  const relayPort = input.cloud ? await reservePort() : undefined
   let front: TlsFront | undefined
+  let relay: Relay | undefined
+  const closeCloud = async () => {
+    await relay?.close()
+    if (relayPort !== undefined) releasePort(relayPort)
+  }
   try {
     front = await startTlsFront({ port: input.frontPort, daemonUrl: stack.url, certDir: stack.dataDir })
     const signed: SignedDaemon = {
@@ -74,10 +94,12 @@ export async function startSignedStack(input: SignedStackInput): Promise<SignedS
       distDir: input.distDir,
       operators: [],
       runtimeKeys: runtimeKeys(),
+      ...(relayPort !== undefined ? { cloud: { relayUrl: `http://127.0.0.1:${relayPort}`, resolverToken: relayResolverToken() } } : {}),
     }
     await stack.daemon.restart({ signed })
     const owner = await signUp(stack, front.url, "Ada Owner")
     await stack.daemon.restart({ signed: { ...signed, operators: [owner.subject] } })
+    relay = await startCloudRelay(stack, signed, relayPort, front.url)
     const opened = front
     return {
       url: opened.url,
@@ -87,14 +109,17 @@ export async function startSignedStack(input: SignedStackInput): Promise<SignedS
       signUp: (name) => signUp(stack, opened.url, name),
       signIn: (page, account) => signIn(page, opened.url, account),
       makeWorkspace: (name, projectName) => makeSignedWorkspace(owner.transport, stack.url, path.join(stack.dataDir, "workspaces"), name, projectName),
+      relayLog: () => relay?.log() ?? "",
       close: async () => {
         await opened.close()
         await stack.close()
+        await closeCloud()
       },
     }
   } catch (error) {
     await front?.close()
     await stack.close()
+    await closeCloud()
     throw error
   }
 }

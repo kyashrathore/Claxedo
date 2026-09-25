@@ -63,8 +63,8 @@ describe("isOpenableLinkUrl", () => {
   test("stays out of the navigation policy", () => {
     for (const url of ["claxedo://x", "vscode://file/etc/passwd"]) {
       expect(isSafeExternalUrl(url)).toBe(false)
-      expect(windowOpenDecision(url)).toEqual({ action: "block", url })
-      expect(navigationDecision(url, isTrusted)).toEqual({ action: "block", url })
+      expect(windowOpenDecision(url, "open")).toEqual({ action: "block", url })
+      expect(navigationDecision(url, isTrusted, "open")).toEqual({ action: "block", url })
     }
   })
 
@@ -82,27 +82,27 @@ describe("isOpenableLinkUrl", () => {
 
 describe("navigationDecision", () => {
   test("allows the app document, including hash/query routing", () => {
-    expect(navigationDecision(APP_URL, isTrusted)).toEqual({ action: "allow" })
-    expect(navigationDecision(`${APP_URL}#/s/session-123`, isTrusted)).toEqual({ action: "allow" })
+    expect(navigationDecision(APP_URL, isTrusted, "open")).toEqual({ action: "allow" })
+    expect(navigationDecision(`${APP_URL}#/s/session-123`, isTrusted, "open")).toEqual({ action: "allow" })
   })
 
   test("sends an http(s) link to the OS browser instead of navigating this window", () => {
     // The regression: a plain `[text](https://evil.com)` in agent markdown has no
     // target, so it navigates the bridge-bearing window. It must leave instead.
-    expect(navigationDecision("https://evil.com", isTrusted)).toEqual({
+    expect(navigationDecision("https://evil.com", isTrusted, "open")).toEqual({
       action: "external",
       url: "https://evil.com",
     })
   })
 
   test("blocks a navigation that is neither the app nor a safe external URL", () => {
-    expect(navigationDecision("file:///etc/passwd", isTrusted)).toEqual({
+    expect(navigationDecision("file:///etc/passwd", isTrusted, "open")).toEqual({
       action: "block",
       url: "file:///etc/passwd",
     })
     // A different local file in the app bundle is still not the app document.
     const sneaky = "file:///Applications/Claxedo.app/Contents/renderer/evil.html"
-    expect(navigationDecision(sneaky, isTrusted)).toEqual({ action: "block", url: sneaky })
+    expect(navigationDecision(sneaky, isTrusted, "open")).toEqual({ action: "block", url: sneaky })
   })
 })
 
@@ -111,18 +111,31 @@ describe("windowOpenDecision", () => {
     // Even the app's own URL is routed rather than granted a new bridge-bearing
     // window, so there is no "allow" branch to regress into.
     for (const url of [APP_URL, "https://example.com", "file:///etc/passwd"]) {
-      expect(windowOpenDecision(url).action).not.toBe("allow")
+      expect(windowOpenDecision(url, "open").action).not.toBe("allow")
     }
   })
 
   test("routes safe URLs out and drops the rest", () => {
-    expect(windowOpenDecision("https://example.com")).toEqual({
+    expect(windowOpenDecision("https://example.com", "open")).toEqual({
       action: "external",
       url: "https://example.com",
     })
-    expect(windowOpenDecision("file:///etc/passwd")).toEqual({
+    expect(windowOpenDecision("file:///etc/passwd", "open")).toEqual({
       action: "block",
       url: "file:///etc/passwd",
     })
+  })
+})
+
+describe("the v2 window refuses to leave", () => {
+  test("a navigation to a safe external URL is blocked, not handed to the OS browser", () => {
+    expect(navigationDecision("https://evil.com/?data=secret", isTrusted, "refuse")).toEqual({ action: "block", url: "https://evil.com/?data=secret" })
+    expect(navigationDecision(`${APP_URL}#/s/session-123`, isTrusted, "refuse")).toEqual({ action: "allow" })
+  })
+
+  test("window.open is blocked for every URL", () => {
+    for (const url of ["https://example.com", "http://127.0.0.1:9999/x", "mailto:someone@example.com", APP_URL]) {
+      expect(windowOpenDecision(url, "refuse")).toEqual({ action: "block", url })
+    }
   })
 })

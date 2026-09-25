@@ -5,12 +5,7 @@ const loopbackHosts: readonly string[] = ["localhost", "127.0.0.1", "0.0.0.0", "
 
 export type TimelineLinkHost = {
   openFocus: (focus: TimelineFocus) => void
-  platform: Pick<TimelinePlatform, "openLink" | "openPath">
-}
-
-function osPath(url: URL) {
-  const decoded = decodeURIComponent(url.pathname)
-  return /^\/[a-z]:[\\/]/i.test(decoded) ? decoded.slice(1) : decoded
+  platform: Pick<TimelinePlatform, "openLink">
 }
 
 export function createTimelineLinkOpen(host: TimelineLinkHost) {
@@ -28,13 +23,6 @@ export function createTimelineLinkOpen(host: TimelineLinkHost) {
       event.preventDefault()
       if (loopbackHosts.includes(url.hostname)) openBrowserTab(url.href)
       else host.platform.openLink(url.href)
-      return
-    }
-
-    if (url.protocol === "file:") {
-      if (!host.platform.openPath) return
-      event.preventDefault()
-      void host.platform.openPath(osPath(url))
       return
     }
 
