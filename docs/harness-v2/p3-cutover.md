@@ -1277,3 +1277,11 @@ An atom this large can compile yet misorder a store append and SSE publication; 
    - A missing source is added to the contract before step 3.
    - The wire doesn't change.
 5. **G4, composition.** Correct: step 1's merge of the P2 transports waits for their lanes. Composition work that doesn't depend on them starts now.
+
+### Run 2 status on this branch
+
+**Observed:** `createHarnessServices` is prepared in `packages/workspace-runtime/src/harness-services.ts:62`. It binds the host's launch ownership to `spawn`, the workspace transcript resolver to `transcripts`, the supplied host clock and logger, a two-worker bounded pattern evaluator, and a first-party MCP entry only when `locality` is `local` (`:67`–`:79`). No production caller selects it yet. The native Pi registry row is present (`packages/harness/src/registry/table.ts:13`–`:18`), and both custom providers validate the descriptor revision and enabled state before invoking an injected constructor (`packages/harness/src/registry/providers/types.ts:36`–`:46`). Their validation, projection and secret-binding hooks remain in the registry.
+
+**Unfinished:** The constructor injection point has no production caller on this base. A real transport constructor must be composed from `workspace-runtime` after the registry and transport entrypoints are made public in an owned harness package manifest; a direct source import crosses `workspace-runtime`'s `rootDir` and fails typecheck. ACP's published `scripted` command and Pi's dynamic `get_commands` list have not yet been proven to execute by the `/name [args]` prompt rule; Codex lists no commands on this base (`packages/harness/src/transports/codex-app-server/capabilities.ts:14`). The Claude, Cursor, OpenCode wrapper and store-backed ports remain in their lanes. G4 stays open; this run has made no production redirection.
+
+**Inventory and manifest rerun:** The three shell blocks above were rerun on this branch. They returned `199 imports/re-exports in 126 production files`, `361 kept invariant cases from 62 P3-removed test files`, `P3 source paths: 294` and `P4 residual package paths: 142`. The printed rows matched the inventories above exactly; this run changes no old-package import, invariant-map row or deletion candidate. The orchestrator must rerun them again at its integration commit after merging concurrent lanes.

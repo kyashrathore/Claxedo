@@ -18,18 +18,30 @@ export type CustomHarnessProvider<TConfig, TResolved = TConfig> = {
   validateConfig(input: unknown): TConfig
   immutableIdentity(config: TConfig): string
   project(config: TConfig): ConnectionProviderProjection
-  resolve(input: { descriptor: HarnessConnectionDescriptor<TConfig>; directory: string; secrets: Readonly<Record<string, string>> }): { config: TResolved }
-  createTransport(input: { descriptor: HarnessConnectionDescriptor<TConfig>; resolved: { config: TResolved }; services: HarnessServices }): HarnessTransport
+  resolve(input: { descriptor: HarnessConnectionDescriptor<TConfig>; directory: string; secrets: Readonly<Record<string, string>> }): ResolvedConnection<TResolved>
+  createTransport(input: { descriptor: HarnessConnectionDescriptor<TConfig>; expectedRevision: number; resolved: ResolvedConnection<TResolved>; services: HarnessServices }): HarnessTransport
 }
+
+export type ConstructTransport<TConfig> = (config: TConfig, services: HarnessServices) => HarnessTransport
+
+export type ResolvedConnection<TConfig> = { connectionId: string; configRevision: number; config: TConfig }
 
 export class HarnessProviderError extends Error {
   readonly retryable = false
-  constructor(readonly code: "invalid_config" | "connection_unavailable" | "transport_not_built", message: string, options?: ErrorOptions) {
+  constructor(readonly code: "invalid_config" | "connection_unavailable", message: string, options?: ErrorOptions) {
     super(message, options)
     this.name = "HarnessProviderError"
   }
 }
 
-export function transportNotBuilt(providerKey: string): never {
-  throw new HarnessProviderError("transport_not_built", `${providerKey} transport is not built yet`)
+export function assertCurrentConnection<TConfig, TResolved>(input: {
+  descriptor: HarnessConnectionDescriptor<TConfig>
+  expectedRevision: number
+  resolved: ResolvedConnection<TResolved>
+}, providerKey: string): void {
+  const { descriptor, expectedRevision, resolved } = input
+  if (descriptor.providerKey !== providerKey || !descriptor.enabled || descriptor.configRevision !== expectedRevision ||
+    resolved.connectionId !== descriptor.connectionId || resolved.configRevision !== expectedRevision) {
+    throw new HarnessProviderError("connection_unavailable", `${providerKey} connection is disabled or stale`)
+  }
 }

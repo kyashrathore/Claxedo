@@ -8,6 +8,7 @@ test("the table routes every built-in and custom provider", () => {
   expect(harnessRecord("claude")?.transport).toBe("claude-sdk")
   expect(harnessRecord("codex")?.transport).toBe("codex-app-server")
   expect(harnessRecord("cursor")?.transport).toBe("cursor-sdk")
+  expect(harnessRecord("pi")?.transport).toBe("pi-rpc")
   expect(harnessRecord("acp")?.transport).toBe("acp")
   expect(harnessRecord("opencode-server")).toBeUndefined()
   expect(harnessRecord("pi-rpc")?.transport).toBe("pi-rpc")

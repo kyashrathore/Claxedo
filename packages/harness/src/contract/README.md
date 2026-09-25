@@ -25,6 +25,7 @@ Everything a transport sees. The types say the shapes; this file says the rules 
 
 ## Configuration
 
+- **A listed command runs as a normal turn.** `commands.list` returns a name only when a turn whose text prompt is `/name [args]` executes it. A transport that needs a native call translates that prompt inside `send`; otherwise it does not list the command. The legacy command route remains unsupported.
 - **`configure(session, update)` is called once for each live session a change affects.**
   - For credentials, those are the owner's sessions. For projection, they are the workspace's sessions.
   - `after-active-turns` means that session's own turn, so a change in one workspace never waits on another's.
