@@ -102,7 +102,7 @@ Rules the checks enforce:
 | `api` | `ClaxedoApi` | An HTTP client for the daemon at `stack.url` |
 | `app` | `Page` | Playwright's page, already at `stack.url/` |
 | `signed` | `SignedStack` | A stack signed through its own issuer, behind HTTPS (below); a signed flow uses it with Playwright's `page` instead of `stack` |
-| `signedDesktop` | `Desktop` | The Electron app whose account is `signed`: main's `CLAXEDO_CORE_ORIGIN` is the stack's HTTPS front, trusted through `NODE_EXTRA_CA_CERTS` and its certificate's SPKI; the keychain is cut (below). `interceptSystemBrowser(desktop.electron)` replaces main's `shell.openExternal`, so a flow opens the authorization page in Playwright's `page` and the consent redirect reaches main's loopback callback |
+| `signedDesktop` | `Desktop` | The Electron app whose account is `signedCloud`: main's `CLAXEDO_CORE_ORIGIN` is the stack's HTTPS front, trusted through `NODE_EXTRA_CA_CERTS` and its certificate's SPKI; the keychain is cut (below). `interceptSystemBrowser(desktop.electron)` replaces main's `shell.openExternal`, so a flow opens the authorization page in Playwright's `page` and the consent redirect reaches main's loopback callback. `signInDesktop(signed, desktop, page)` runs that sign-in as the owner and waits for the account card |
 
 ### `stack.daemon`
 

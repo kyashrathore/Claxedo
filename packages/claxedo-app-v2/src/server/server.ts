@@ -93,7 +93,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
   const project = (id: ProjectId) => queryClient.fetchQuery(queries.projects.byId(id))
   const wakes = createWorkspaceWakes(transport, workspaces)
   return {
-    sessions: createSessionsApi(transport, workspaces, status, wakes, projection),
+    sessions: createSessionsApi(transport, workspaces, status, wakes, projection, account),
     projects: createProjectsApi(transport, queryClient, workspaces.refresh),
     placements: {
       byId: workspaces.byId,
