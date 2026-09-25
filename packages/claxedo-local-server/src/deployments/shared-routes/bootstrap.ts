@@ -17,6 +17,7 @@ import { controlPlaneAuthConfig, issuesSessions } from "@claxedo/server-core/pla
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { asRecord, asString } from "@claxedo/helpers/guards"
+import { authorityRowBacking, readyCloudWorkspaces } from "@claxedo/server-core/workspace/cloud-runtime-readiness"
 
 type Options = {
   authConfig?: ControlPlaneAuthConfig
@@ -121,7 +122,7 @@ function localBootstrap(url: string, options: Options) {
  * — it reaches the fs-backed workspace store and agent config — so the two
  * are changed together or one client meets two shapes.
  */
-function signedBootstrapProjects(workspaces: unknown[]) {
+function signedBootstrapProjects(workspaces: unknown[], readyCloud: ReadonlySet<string>) {
   const groups = new Map<string, {
     id: string
     name: string
@@ -149,16 +150,13 @@ function signedBootstrapProjects(workspaces: unknown[]) {
       directories: [],
       workspaces: {},
     }
+    const backing = authorityRowBacking(row)
     group.directories.push(workspaceId)
     group.workspaces[workspaceId] = {
       id: workspaceId,
-      // The row's own placement, passed through rather than restated: the app
-      // narrows this word once, in `placement-wire.ts`. A row naming no backing
-      // is the provisioner's, never the reader's own machine — defaulting the
-      // other way would put somebody else's workspace on this one.
-      backing: asString(row?.backing) === "local-worktree" ? "local-worktree" : "cloud-vm",
+      backing,
       workspace_name: workspaceName,
-      reachable: true,
+      reachable: backing === "local-worktree" || readyCloud.has(workspaceId),
       directory,
       ...(remoteDirectory ? { remote_directory: remoteDirectory } : {}),
     }
@@ -174,8 +172,9 @@ function signedBootstrapProjects(workspaces: unknown[]) {
 }
 
 async function signedBootstrapBody(auth: SignedControlPlaneAuth, options: Options) {
-  const workspaces = await requireAuthority(options.services).listWorkspaces(auth)
-  const projects = signedBootstrapProjects(Array.isArray(workspaces) ? workspaces : [])
+  const listed = await requireAuthority(options.services).listWorkspaces(auth)
+  const workspaces = Array.isArray(listed) ? listed : []
+  const projects = signedBootstrapProjects(workspaces, await readyCloudWorkspaces(options.services?.sandbox.sandboxManager, workspaces))
   return {
     healthy: true,
     version: version(options),

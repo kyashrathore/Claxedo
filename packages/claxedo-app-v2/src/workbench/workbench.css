@@ -1,4 +1,5 @@
 .workbench-root {
+  container: workbench / inline-size;
   position: relative;
   width: 100%;
   height: 100%;
@@ -147,4 +148,11 @@
   color: var(--v2-text-text-base, #ecebeb);
   box-shadow: var(--v2-elevation-floating, 0 8px 24px rgb(0 0 0 / 0.4));
   pointer-events: none;
+}
+
+@container workbench (max-width: 767px) {
+  .workbench-divider,
+  .workbench-pane-chrome {
+    display: none;
+  }
 }

@@ -98,36 +98,12 @@ export function draftDefaultApplication(scopes: HarnessScopes, scope: string, ty
   return { scope, workspaceKey: current.draftDefaultWorkspaceKey, revision: current.draftDefaultRevision ?? 0 }
 }
 
-/**
- * Whether a fresh options answer must keep this scope's model instead of
- * replacing it with the harness's own.
- *
- * Only a model the USER chose is held: `draftDefault.model` is the choice
- * this scope descends from, so it covers both a choice made here and one
- * restored from the workspace's memory, including the choice a shrunken
- * catalog no longer offers — that one has to stay selected for
- * "Saved model unavailable" to name it. A model the harness resolved is a
- * default, not a choice: every load may answer it afresh, and a catalog that
- * drops it simply resolves the next default rather than accusing the user of
- * selecting a model that is gone.
- */
 export function protectDraftModel(scopes: HarnessScopes, scope: string) {
   const current = scopes.read(scope)
   const authority = current.draftDefaultAuthority
   return (authority === "defaulted" || authority === "explicit") && !!current.draftDefault?.model
 }
 
-/**
- * What it means for this draft to be on harness `type`: `type` plus the
- * choice `type` OWNS here, and nothing else.
- *
- * A harness switch is a choice of HARNESS, never of model. The live selection
- * belongs to the harness being left, and the model the incoming harness
- * resolves for itself is a default — so a harness the user has never picked a
- * model for carries no model, its draft state stays unsettled until the
- * options load resolves one, and the resolved default is shown afresh every
- * time rather than filed as something the user chose.
- */
 function draftHarnessChoicePatch({ scopes, memory }: DraftDefaultContext, scope: string, identity: WorkspaceIdentity, type: HarnessType) {
   const choice = memory.readHarness(identity, type)
   return {
@@ -144,22 +120,14 @@ function draftHarnessChoicePatch({ scopes, memory }: DraftDefaultContext, scope:
   }
 }
 
-/** The user's switch to `type` landed: this workspace now opens drafts on it. */
 export function rememberDraftHarness(context: DraftDefaultContext, scope: string, identity: WorkspaceIdentity, type: HarnessType, save: boolean) {
   context.scopes.seed(scope)
   const { choice, patch } = draftHarnessChoicePatch(context, scope, identity, type)
   const persisted = save && context.memory.save(identity, { harness: type, ...choice })
-  // The switch flow already put the selection where it belongs; only the
-  // remembered pair is this call's business.
   context.scopes.setStore(scope, patch)
   return persisted
 }
 
-/**
- * The user picked `type` for this draft: restore what THAT harness last used
- * here. Each harness owns its own slot, so switching away and back returns to
- * the model it was on instead of "Choose a model".
- */
 export function beginDraftHarnessChoice(context: DraftDefaultContext, scope: string, identity: WorkspaceIdentity, type: HarnessType) {
   context.scopes.seed(scope)
   const { choice, patch } = draftHarnessChoicePatch(context, scope, identity, type)

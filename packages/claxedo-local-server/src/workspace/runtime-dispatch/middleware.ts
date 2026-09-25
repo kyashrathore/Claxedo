@@ -20,6 +20,7 @@ import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import {
   embedded,
   hostAggregateEvents,
+  ingressOptions,
   noWr,
   proxy,
   requestWorkspace,
@@ -27,6 +28,7 @@ import {
   runtimeOwned,
   type RuntimeProxyOptions,
 } from "./internals"
+import { hostSessionActivity } from "./session-activity"
 
 export function createWorkspaceRuntimeProxy(options: RuntimeProxyOptions = {}) {
   return (c: Context, next: Next) => workspaceRuntimeProxyWithOptions(c, next, options)
@@ -45,11 +47,13 @@ async function workspaceRuntimeProxyWithOptions(
 
   if (!runtimeOwned(pathname)) return next()
 
-  // Decided before the workspace lookup below and outside its catch: the
-  // aggregate names no workspace, so a failure on it is not "that workspace's
-  // runtime is unavailable".
+  // Decided before the workspace lookup below and outside its catch: the host
+  // event stream and the session-activity read name no workspace, so a failure
+  // on either is not "that workspace's runtime is unavailable".
   const aggregate = hostAggregateEvents(c, pathname, options)
   if (aggregate) return await aggregate
+  const activity = hostSessionActivity(c, pathname, options)
+  if (activity) return await activity
 
   try {
     const input = requestWorkspace(c.req.raw)
@@ -61,11 +65,7 @@ async function workspaceRuntimeProxyWithOptions(
     if (ws.kind !== "cloud") {
       // Same identity stamp as `/workspaces/:id` — without `resolveRelayActor`
       // (and the hop header it feeds), embedded prompts never get `claxedo.author`.
-      return await embedded(c, ws, undefined, {
-        ...(options.resolveRelayActor ? { resolveRelayActor: options.resolveRelayActor } : {}),
-        ...(options.requireRelayActor ? { requireRelayActor: true } : {}),
-        ...(options.verifyRelayIngress ? { verifyRelayIngress: true } : {}),
-      })
+      return await embedded(c, ws, undefined, ingressOptions(options))
     }
     const hit = await resolveWorkspaceHit(ws, options)
     if (!hit) return next()

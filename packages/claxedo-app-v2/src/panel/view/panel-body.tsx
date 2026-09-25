@@ -1,4 +1,4 @@
-import { createEffect, createSignal, Match, Show, Switch, type JSX } from "solid-js"
+import { createMemo, Match, Show, Switch, type JSX } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { DelayedLoading, MarkedProvider } from "@/ui"
 import { BrowserTabView } from "@/browser"
@@ -23,19 +23,15 @@ function activeFilePath(panel: Panel): string | undefined {
 function NavigatorViews(props: { readonly placementId: PlacementId }): JSX.Element {
   const panel = usePanel()
   const view = () => panel.navigator()
-  const [filesVisited, setFilesVisited] = createSignal(view() === "files")
-  const [changesVisited, setChangesVisited] = createSignal(view() === "changes")
-  createEffect(() => {
-    if (view() === "files") setFilesVisited(true)
-    if (view() === "changes") setChangesVisited(true)
-  })
+  const filesVisited = createMemo<boolean>((was) => was || view() === "files", false)
+  const changesVisited = createMemo<boolean>((was) => was || view() === "changes", false)
   return (
     <>
       <Show when={filesVisited()}>
         <div class="absolute inset-0" classList={{ hidden: view() !== "files" }}>
           <FilesNavigator
             placementId={props.placementId}
-            active={view() === "files"}
+            active={panel.open() && view() === "files"}
             activePath={activeFilePath(panel)}
             onOpenFile={(path) => panel.show({ kind: "file", path })}
           />
@@ -45,7 +41,7 @@ function NavigatorViews(props: { readonly placementId: PlacementId }): JSX.Eleme
         <div class="absolute inset-0" classList={{ hidden: view() !== "changes" }}>
           <SourceControlView
             placementId={props.placementId}
-            active={view() === "changes"}
+            active={panel.open() && view() === "changes"}
             activePath={panel.reviewFocus()?.path}
             onFileClick={(path) => panel.show({ kind: "review", path })}
           />
@@ -60,10 +56,7 @@ function NavigatorColumn(props: { readonly placementId: PlacementId }): JSX.Elem
   const preferences = usePreferences()
   const left = () => preferences.appearance.navigatorSide === "left"
   const selected = () => panel.navigator() !== null && !panel.phone()
-  const [visited, setVisited] = createSignal(selected())
-  createEffect(() => {
-    if (selected()) setVisited(true)
-  })
+  const visited = createMemo<boolean>((was) => was || (panel.open() && selected()), false)
   return (
     <Show when={visited()}>
       <div
@@ -223,7 +216,7 @@ function WorkspacePending(props: { readonly placementId: PlacementId }): JSX.Ele
   )
 }
 
-export function PanelBody(): JSX.Element {
+export function PanelBody(props: { readonly tabsShown: boolean }): JSX.Element {
   const t = useTranslator(dictionary)
   const panel = usePanel()
   return (
@@ -245,13 +238,17 @@ export function PanelBody(): JSX.Element {
                 data-workspace-panel-session-id={panel.sessionId()}
               >
                 <NavigatorColumn placementId={placementId} />
-                <WorkspacePending placementId={placementId} />
+                <Show when={props.tabsShown}>
+                  <WorkspacePending placementId={placementId} />
+                </Show>
                 <div class="h-full min-w-0 flex-1">
                   <div class="relative flex size-full min-h-0 overflow-hidden bg-background-base h-full">
                     <div id="review-panel" class="relative flex-1 min-w-0 flex flex-col h-full">
                       <div class="flex min-h-0 flex-1 flex-col bg-background-stronger">
                         <div class="relative min-h-0 flex-1 overflow-hidden contain-strict">
-                          <ActiveTab placementId={placementId} />
+                          <Show when={props.tabsShown}>
+                            <ActiveTab placementId={placementId} />
+                          </Show>
                         </div>
                       </div>
                     </div>

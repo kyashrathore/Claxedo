@@ -4,39 +4,23 @@ import type { PermissionModeGroups, PermissionModeRow } from "../permission/perm
 import {
   type PermissionModeOption,
 } from "../permission/modes"
-// Both icon exports render a single `<svg>`, so both satisfy the menu's
-// indicator contract (`[data-slot="menu-v2-item-indicator"] > svg` animates the
-// check in). `ClaxedoIconV2` is still the one used there because it carries the
-// COMPACT size scale — a 14px check in the 16px indicator slot — rather than
-// the shared primitive's 16px.
 import { ClaxedoIcon as Icon, ClaxedoIconV2 as BareIcon, MenuV2, Tooltip } from "@/ui"
 
-/** Runtime-reported modes, their delivery caveats, and explicit unavailable states. */
 export function PromptPermissionControl(props: {
   enabled: Accessor<boolean>
   disabled: Accessor<boolean>
   style: Accessor<JSX.CSSProperties>
-  /** Undefined while the harness is still resolving. */
   groups: Accessor<PermissionModeGroups | undefined>
-  /** Undefined when the stored selection names a mode the harness no longer offers. */
   current: Accessor<PermissionModeOption | undefined>
   label: string
   onSelect: (option: PermissionModeOption) => void
 }) {
-  // Deliberately not a mode name when unresolved: a stored mode the harness
-  // stopped advertising must not wear another row's label.
   const triggerText = () => props.current()?.name ?? "Permissions"
   const shieldActive = () => props.current() !== undefined
 
   return (
     <Show when={props.enabled()}>
       <MenuV2 placement="top-start" gutter={8} fitViewport>
-        {/*
-          Falls back to the REASON before the generic label. On a harness with no
-          modes the trigger has no description to show, and "Permissions" alone
-          invites a click that opens a menu with nothing to pick — saying why on
-          hover answers the question without one.
-        */}
         <Tooltip
           placement="top"
           value={props.current()?.description ?? props.groups()?.harness.unavailable ?? props.label}
@@ -75,21 +59,6 @@ export function PromptPermissionControl(props: {
             <Show when={props.groups()} fallback={<MenuV2.Item disabled>Resolving harness…</MenuV2.Item>}>
               {(groups) => (
                 <>
-                  {/*
-                    A REASON is prose, not a row.
-
-                    This was a `MenuV2.Item disabled`, and menu items are a
-                    fixed-height single line by contract — so a sentence
-                    explaining why a harness offers nothing was clipped mid-word
-                    and collided with the composer beneath it. It is rendered as
-                    a padded paragraph instead: no row height, no hover
-                    affordance and no focus stop, because there is nothing here
-                    to choose.
-
-                    `border-t` only when a group sits above it, so the state
-                    where this is the WHOLE menu (pi) is a clean note rather
-                    than a fragment under a stray rule.
-                  */}
                   <Show
                     when={groups().harness.rows.length > 0}
                     fallback={
@@ -100,12 +69,6 @@ export function PromptPermissionControl(props: {
                       </p>
                     }
                   >
-                    {/*
-                      The label names WHOSE vocabulary these rows are in, which
-                      is the one thing the rows themselves cannot say: they carry
-                      the harness's names verbatim, so without a heading there is
-                      nothing on screen tying "Accept edits" to Claude.
-                    */}
                     <MenuV2.Group>
                       <MenuV2.GroupLabel>{groups().harness.label}</MenuV2.GroupLabel>
                       <For each={groups().harness.rows}>
@@ -123,11 +86,6 @@ export function PromptPermissionControl(props: {
   )
 }
 
-/**
- * `caveat` is kept apart from `detail` because it renders as its own warning
- * line: on the local-answering path it is the line that says the harness
- * enforces nothing.
- */
 export function permissionRowText(row: PermissionModeRow) {
   const detail = [row.option.description, row.blockedReason].filter(Boolean).join(" — ")
   return { detail, caveat: row.option.caveat }
@@ -150,14 +108,6 @@ function ModeRow(props: {
       data-mode={option().id}
       data-what={option().delivery.kind}
       data-selectable={props.row.selectable ? "true" : "false"}
-      /*
-       * `data-checked` is the menu's own selected convention — it already
-       * drives weight and accent colour in menu-v2.css. This row was styling
-       * selection by tinting the leading glyph from `icon-muted` to
-       * `icon-base`, which is a barely-visible grey shift on a 14px icon, so
-       * every row read the same. Opting into the existing contract gives the
-       * check, the weight and the colour together.
-       */
       data-checked={selected() ? "true" : undefined}
       aria-checked={selected()}
       class="w-full"
@@ -168,14 +118,6 @@ function ModeRow(props: {
         <Icon
           name="shield"
           size="small"
-          /*
-           * Nudges the glyph down 1px to optically centre it against the 16px
-           * label line — geometric centring sits it a touch high. This was
-           * `mt-0.5` when the icon was an svg inside a fixed-height wrapper,
-           * where a 2px top margin under `align-items: center` moved the glyph
-           * exactly 1px and moved nothing else. The icon IS the box now, so
-           * the same 1px has to be a transform to stay out of the layout.
-           */
           class="translate-y-px shrink-0 transition-[color] duration-150 ease-[cubic-bezier(0.2,0,0,1)]"
           classList={{
             "text-v2-icon-icon-base": selected(),
@@ -196,27 +138,12 @@ function ModeRow(props: {
           <Show when={caveat()}>
             <span
               class="whitespace-normal text-xs leading-[var(--line-height-15)]"
-              // The composer is v2 UI, so this is the v2 warning foreground.
-              // Not `--text-danger`: that token is not defined by the theme
-              // layer these menus render under, so it silently resolves to
-              // inherited body text and the caveat stops reading as a warning.
               style={{ color: "var(--v2-state-fg-warning)" }}
             >
               {caveat()}
             </span>
           </Show>
         </span>
-        {/*
-          Trailing rather than leading, because the leading slot already
-          carries the shield/hand glyph that says what KIND of mode this is.
-          Two marks on the left would compete; kind on the left and state on
-          the right keeps each answering one question.
-
-          Always mounted, never conditionally rendered: the 16px slot holds
-          the row's width steady between states, and the check can animate in
-          rather than appearing. Rows are multi-line, so it pins to the first
-          line instead of centring against the whole block.
-        */}
         <span
           data-slot="menu-v2-item-indicator"
           data-checked={selected() ? "true" : undefined}

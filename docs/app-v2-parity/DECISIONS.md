@@ -204,3 +204,45 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - The owner signed off the transcript and timeline performance fixes from `docs/app-v2-perf-audit-2026-09-25.md`: the image-probe leak on session switch, scroll restyles from the virtualizer's notify, the hidden transcript computing behind the full-view composer, the per-part `hasText` roots, and scroll-thumb geometry written per delta.
 - "Architecturally, no patching": each fix names the owner that should hold the state or work, and moves it there. No guards, weak references, flags or special cases layered over the old shape.
 - Each fix lands with a corpus or flow assertion that measures it.
+
+## Owner, 2026-09-25 16:20: dead-sandbox session flow (signed web and cloud workspaces)
+- Only sending a message wakes a cloud workspace's sandbox. App open, rail status, hover and opening a session never do. The client learns whether the backing sandbox is gone from a read that doesn't wake it.
+- **Opening an existing session:**
+  1. The history always comes from the control plane.
+  2. The app checks whether the sandbox is alive, without waking it.
+  3. If it's gone: the transcript renders read-only, and a card above the composer says the next message will wake it. On send, the dock shows a waking-up state until the sandbox is up, then the message is sent.
+  4. If it's on: the app connects or reconnects, and attaches live streaming when a turn is running.
+- No dimming in the rail: rows and projects look the same whatever their sandbox's state.
+- v1's cloud startup view isn't ported; the dock's waking-up state replaces it.
+- (Owner, via the lead, 18:40) Runtime-only parts (status, permissions, questions, todos, goal) are read from the sandbox only while it runs; while it's gone they're absent, with no errors. The dock's state and the card are states of one machine. Waking handles `provisioning` by the server's `retryAfterMs`, and a refused start (409) is a clear failure with a retry.
+- **As built (lane signed-web):**
+  - Sandbox state: the catalog's `reachable` for a cloud placement is its sandbox lease, read without a wake (`readyCloudWorkspaces` in server-core, both signed catalogs). A runtime read uses `GET /api/workspace/:id/connection`, which never starts compute; only `POST` does, and only a send (or an explicit start) posts it.
+  - One machine per placement, owned by the adapter (`src/server/workspace-wakes.ts`, `wake-machine.ts`), read as `server.cloud.runtime(placementId)`: `live`, `asleep`, `waking(bootMode?)`, `wakeFailed(error)`.
+  - Copy: asleep "This workspace is asleep. Your next message wakes it."; waking "Waking up the workspace…", plus "Resuming its sandbox" or "Restoring it from a snapshot" when the server names the boot mode; failed "Couldn't wake the workspace." with the server's reason and Try again. The composer stays usable while asleep; the message is sent once the sandbox is up, and a failed wake keeps the draft.
+
+## Owner, 2026-09-25 17:45: session sources, merged on the server
+- One list owner per connection:
+  - the daemon on desktop, merging the local projection with the control plane's page when signed in;
+  - the control plane on the web.
+- The app never fans out list reads per placement.
+- Machines publish session rows (no transcripts) to the control plane.
+- One keyset cursor over `(lastHumanTurnAt, createdAt, sessionRef)`.
+- Status arrives by events.
+- History is routed by placement kind: control plane for cloud, relay for machines, local runtime for local.
+- Terminals only for live placements.
+- The plan is `docs/plans/2026-09-25-002-session-sources-plan.md`.
+
+## Owner, 2026-09-25 18:40: the account credential stays behind AccountPort
+- The signed desktop's merged session list reads the control plane through AccountPort: Electron main owns the credential and runs only named operations (`session.list` added to the closed set).
+- The daemon never receives the user's bearer.
+- Machine row publishing (S2) uses the machine's Host Tunnel Token, scoped to the workspaces still assigned to that host. That's a machine credential, not the user's.
+
+## Owner, 2026-09-25 19:45: no fixes to v1
+- v1 (`packages/claxedo-app` on dev) gets no fixes, including the "Too many redirects" crash in v1's route sync (`app-shell-route-sync.ts`) that the owner hit on a v1 build. v2 replaces v1 at the swap.
+
+## Orchestrator, 2026-09-25: Composer budget re-based after parity voided the frame swap
+- The plan's 5.5k Composer budget assumed swapping today's `PromptInputFrame` for upstream's `PromptInputV2` frame. The parity ruling (port v1's UI, don't restyle) voided that swap, so the composer is today's frame, moved.
+- The owner approved re-basing at 10:05 ("all good"), after the composer's no-comments triage.
+- After the triage (593 comment blocks: real constraints moved into `src/composer/README.md` under Constraints, the rest deleted), `src/composer` measured 10,147 lines. Splitting its 14 size violations by responsibility then added 835 lines of module seams (imports and prop types), to 10,982.
+- Merging feat/app-v2's hidden-pane command registration (`composer-commands.ts`) added 5 more, to 10,987.
+- The budget row is set to the measured 10,987, with no headroom, inside the owner's 11.1k; v1's composer is 12.3k.

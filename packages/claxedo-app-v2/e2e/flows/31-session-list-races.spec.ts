@@ -2,6 +2,7 @@ import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, sendPrompt
 import {
   holdEventStreams,
   holdListRead,
+  holdStatusRead,
   patchSession,
   reopenHoldingListRead,
   setup,
@@ -33,6 +34,24 @@ test("31 an event arrives before the list response", async ({ stack, api, app })
   await read.release()
   await expectRailEqualsServer(app, checked)
   await stack.acp.release("working-during-read")
+})
+
+test("31 the rows paint before their statuses land", async ({ stack, api, app }) => {
+  const { sessions, checked } = await setup(stack, api, app, ["Race painted", "Race busy"], { open: false })
+  const [, busy] = sessions
+  await startHeldTurn(checked, busy.id, "busy-before-open")
+  await expectServerStatus(checked, busy.id, "Working")
+  await app.goto("about:blank")
+  const statuses = await holdStatusRead(app)
+  await app.goto(`${stack.url}/`)
+  await statuses.computed
+  await expect(railRow(app, "Race painted")).toBeVisible()
+  await expect(railRow(app, "Race busy")).toBeVisible()
+  await expect(railRow(app, "Race busy").locator("[data-sidebar-status]")).toHaveCount(0)
+  await statuses.release()
+  await expectRailEqualsServer(app, checked)
+  await expect(railRow(app, "Race busy").locator("[data-sidebar-status]")).toHaveAttribute("data-sidebar-status", "working")
+  await stack.acp.release("busy-before-open")
 })
 
 test("31 a list response after the session's own read keeps its stopped turn's outcome", async ({ stack, api, app }) => {

@@ -1,5 +1,5 @@
-import type { Page, Request } from "@playwright/test"
-import { expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI } from "../harness"
+import type { Page } from "@playwright/test"
+import { apiRequests, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI } from "../harness"
 
 function panes(app: Page) {
   return app.getByRole("navigation", { name: "Workbench panes" })
@@ -50,6 +50,48 @@ test("12 workbench and shell: a rail row dragged to the edge splits, compact tab
   await expect(app.getByRole("dialog", { name: UI.palette })).toBeVisible()
   await app.keyboard.press("Escape")
   await expect(app.getByRole("dialog", { name: UI.palette })).toHaveCount(0)
+})
+
+async function domWritesDuring(app: Page, act: () => Promise<void>): Promise<string[]> {
+  await app.evaluate(() => {
+    const writes: string[] = []
+    Object.assign(window, { resizeWrites: writes })
+    new MutationObserver((records) => {
+      for (const record of records) writes.push(`${record.type} ${(record.target as Element).tagName ?? record.target.nodeName} ${record.attributeName ?? ""}`)
+    }).observe(document, { subtree: true, childList: true, attributes: true, characterData: true })
+  })
+  await act()
+  await app.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  return app.evaluate(() => (window as unknown as { resizeWrites: string[] }).resizeWrites)
+}
+
+test("12 a narrow workbench shows one split pane without chrome, and a resize of an unsplit one writes nothing", async ({ stack, api, app }) => {
+  await app.setViewportSize({ width: 1280, height: 800 })
+  const workspace = await stack.daemon.makeWorkspace("narrow", "Narrow")
+  const first = await api.createSession(workspace.directory, { title: "First", harness: SCRIPTED_ACP_HARNESS })
+  await api.createSession(workspace.directory, { title: "Second", harness: SCRIPTED_ACP_HARNESS })
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, first.id)}`)
+  await app.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "Second", exact: true }).click()
+  await dragRowToRightEdge(app, "First")
+  await expect(divider(app)).toBeVisible()
+  await expect(app.getByRole("button", { name: "Close Pane" })).toHaveCount(2)
+
+  await app.setViewportSize({ width: 900, height: 800 })
+  await expect(divider(app)).toBeHidden()
+  await expect(app.getByRole("button", { name: "Close Pane" })).toHaveCount(0)
+  await app.setViewportSize({ width: 1280, height: 800 })
+  await expect(divider(app)).toBeVisible()
+  await expect(app.getByRole("button", { name: "Close Pane" })).toHaveCount(2)
+
+  await app.getByRole("button", { name: "Close Pane" }).first().click()
+  await expect(divider(app)).toHaveCount(0)
+  const writes = await domWritesDuring(app, async () => {
+    await app.setViewportSize({ width: 900, height: 800 })
+    await app.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    await app.setViewportSize({ width: 1280, height: 800 })
+  })
+  expect(writes).toEqual([])
+  expect((await api.session(workspace.directory, first.id)).title).toBe("First")
 })
 
 test("12 New Session again focuses the workspace's one draft tab", async ({ stack, api, app }) => {
@@ -107,39 +149,6 @@ test("12 Tasks and Marketplace share one page tab that shows the last one opened
   await pageTabs().click()
   await expect(app).toHaveURL(/\/tasks$/)
 })
-
-const STATIC_ASSET = /\.(js|css|woff2?|svg|png|ico|map)(\?|$)|\/@vite\/|\/src\/|\/node_modules\//
-
-const EVENT_STREAM = /\/api\/(wr|cp)\/events/
-
-function apiRequests(app: Page, origin: string) {
-  let seen: string[] = []
-  const inFlight = new Set<Request>()
-  const counted = (request: Request) => {
-    const url = request.url()
-    return url.startsWith(origin) && !STATIC_ASSET.test(url) && !EVENT_STREAM.test(url) && request.resourceType() !== "document"
-  }
-  app.on("request", (request) => {
-    if (!counted(request)) return
-    inFlight.add(request)
-    const parsed = new URL(request.url())
-    const harness = parsed.searchParams.get("nativeHarness") ?? parsed.searchParams.get("connectionId")
-    seen.push(`${parsed.pathname.replace(/ses_[\w-]+/g, ":session")}${harness ? `?${harness}` : ""}`)
-  })
-  app.on("requestfinished", (request) => inFlight.delete(request))
-  app.on("requestfailed", (request) => inFlight.delete(request))
-  const idle = () => app.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => requestIdleCallback(() => resolve())))))
-  return async () => {
-    for (let quiet = 0; quiet < 2; ) {
-      await expect.poll(() => [...inFlight].map((request) => request.url())).toEqual([])
-      await idle()
-      quiet = inFlight.size === 0 ? quiet + 1 : 0
-    }
-    const taken = seen
-    seen = []
-    return taken
-  }
-}
 
 test("12 a boot reads neither Tasks nor pi's provider catalog, an open reads each thing once, and a revisit reads nothing", async ({ stack, api, app }) => {
   test.skip(stack.app !== "v2", "v1 reads connections, harness options and the transcript twice on an open")

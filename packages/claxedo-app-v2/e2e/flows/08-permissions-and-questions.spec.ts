@@ -1,4 +1,4 @@
-import { acpScriptToken, assistantText, expect, installedCli, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI } from "../harness"
+import { acpScriptToken, assistantText, expect, installedCli, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI, watchPageWork } from "../harness"
 
 test("08 a permission prompt blocks the composer until it is allowed from its dock", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("permission")
@@ -115,3 +115,40 @@ test("08 a failed read of pending requests leaves the transcript on screen", asy
     await expect(card).toHaveCount(0)
   }
 })
+
+test("08 a question dock and a permission dock mount alone: the composer and the todo dock stay mounted behind them", async ({ stack, api, app }) => {
+  test.skip(stack.app !== "v2", "v1 unmounts the composer while a request is pending")
+  const workspace = await stack.daemon.makeWorkspace("docks-alone")
+  await stack.acp.write("docks", {
+    steps: [
+      { kind: "plan", entries: [{ content: "Pick a color", priority: "medium", status: "in_progress" }, { content: "Edit the notes", priority: "medium", status: "pending" }] },
+      { kind: "question", message: "Which color should the notes use?", options: ["Red", "Blue"] },
+      { kind: "permission", tool: "edit", title: "Edit notes.md", path: `${workspace.directory}/notes.md` },
+      { kind: "text", text: "Used the answer and the permission." },
+    ],
+  })
+  const session = await api.createSession(workspace.directory, { title: "Docks alone", harness: SCRIPTED_ACP_HARNESS })
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  const prompt = app.getByRole("textbox", { name: UI.composer })
+  await expect(prompt).toBeVisible()
+  const work = await watchPageWork(app, { nodes: { composer: '[data-component="composer-frame"]', todoDock: '[data-component="session-todo-dock"]' } })
+  await sendPrompt(app, `Pick a color, then edit the notes. ${acpScriptToken("docks")}`)
+
+  await expect(app.getByText("Which color should the notes use?")).toBeVisible()
+  await expect(prompt).toHaveCount(0)
+  await app.getByRole("radio", { name: /Type your own answer/ }).click()
+  await app.getByRole("textbox", { name: "Type your answer..." }).fill('{"answer":"Blue"}')
+  await app.getByRole("button", { name: "Submit", exact: true }).click()
+  await expect(app.getByText("Permission required")).toBeVisible()
+  await expect(prompt).toHaveCount(0)
+  await app.getByRole("button", { name: "Allow once", exact: true }).click()
+  await expect(app.getByText("Used the answer and the permission.")).toBeVisible()
+  await expect(prompt).toBeVisible()
+
+  const seen = await work()
+  expect(seen.removed.composer ?? 0, "composer frames removed").toBe(0)
+  expect(seen.added.composer ?? 0, "composer frames added").toBe(0)
+  expect(seen.added.todoDock ?? 0, "todo docks added").toBeLessThanOrEqual(1)
+  expect(assistantText(await api.messages(workspace.directory, session.id))).toContain("Used the answer and the permission.")
+})
+

@@ -1,5 +1,5 @@
 import { For, type Component } from "solid-js"
-import { useClock } from "@/lib/clock"
+import { useAgeClock } from "@/lib/clock"
 import { formatCompactAge, formatRelativeTime } from "@/lib/relative-time"
 import { ClaxedoIcon } from "@/ui"
 import type { AccountsKey, AccountsText } from "../i18n"
@@ -28,7 +28,7 @@ export const AccountReachMarks: Component<{ reach: AccountReach; t: AccountsText
 )
 
 export const CheckedAge: Component<{ at: number; t: AccountsText; locale?: string; class?: string }> = (props) => {
-  const now = useClock()
+  const now = useAgeClock(() => props.at)
   return (
     <span class={props.class} aria-label={props.t("common.lastChecked", { ago: formatRelativeTime(props.at, props.locale, now()) })}>
       {formatCompactAge(props.at, now()) ?? props.t("common.justNow")}

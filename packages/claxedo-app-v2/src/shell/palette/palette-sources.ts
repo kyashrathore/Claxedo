@@ -50,9 +50,13 @@ function useSessionSource(placementId: () => PlacementId | undefined) {
     const current = placementId()
     const project = current ? server.placements.byId(current)?.projectId : undefined
     if (!project) return []
-    return stores.list
-      .rows()
-      .filter((row) => row.ref.projectId === project && row.parentSessionId === undefined)
+    const list = stores.list
+    return list
+      .order()
+      .flatMap((ref) => {
+        const row = ref.projectId === project ? list.view(ref.sessionId) : undefined
+        return row ? [row] : []
+      })
       .map((row) => {
         const placement = server.placements.byId(row.ref.placementId)
         const description = placement ? `${t(`shell.palette.workspace.${workspaceKind(placement)}`)} : ${placement.label}` : ""
