@@ -3,7 +3,7 @@ import type { Preset, TaskStatus, TaskSummary } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
 import { Button, DropdownMenu, Icon, IconButton } from "@/ui"
 import type { TaskStartOffer } from "../data/start"
-import { dictionary } from "../i18n"
+import { tasksDictionary } from "../i18n"
 import { SLOT_KEYS, configuredSlotsOf } from "../model"
 import { ListFailureNotice, LoadMore } from "./load-more"
 import { StatusMenuItems } from "./status-control"
@@ -15,7 +15,7 @@ function MainPart(props: {
   readonly offer: TaskStartOffer
   readonly testIdPrefix: string
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const preset = () => props.offer.presets.find((entry) => entry.id === props.offer.defaultPresetId)
   const label = () => props.offer.startLabel ?? t("tasks.start.start")
   const startable = () => props.task.archivedAt === null && props.offer.busy !== true
@@ -56,7 +56,7 @@ function PresetItems(props: {
   readonly offer: TaskStartOffer
   readonly testIdPrefix: string
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const slotsOf = (entry: Preset) => (props.offer.slot ? [props.offer.slot] : configuredSlotsOf(entry))
   const startable = () => props.task.archivedAt === null && props.offer.busy !== true
   return (
@@ -91,7 +91,7 @@ function ContinueItem(props: {
   readonly offer: TaskStartOffer
   readonly testIdPrefix: string
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   return (
     <Show when={props.offer.onContinue}>
       {(run) => (
@@ -138,7 +138,7 @@ function StartMenu(props: {
   readonly offer: TaskStartOffer
   readonly testIdPrefix: string
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const none = () =>
     props.offer.slot
       ? t("tasks.start.noPresetForSlot", { slot: t(SLOT_KEYS[props.offer.slot]) })
@@ -184,7 +184,7 @@ export function TaskStartControl(props: {
   readonly testIdPrefix: string
   readonly onMenuOpenChange?: (open: boolean) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   return (
     <span class="tsk-split" data-busy={props.offer.busy ? "true" : undefined}>
       <MainPart {...props} />
@@ -212,7 +212,7 @@ export function TaskRowActions(props: {
   readonly onStatusChange: (input: { taskId: string; revision: number; status: TaskStatus }) => void
   readonly onMenuOpenChange?: (open: boolean) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   return (
     <DropdownMenu placement="bottom-end" onOpenChange={props.onMenuOpenChange}>
       <DropdownMenu.Trigger

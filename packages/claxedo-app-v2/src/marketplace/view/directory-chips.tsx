@@ -2,7 +2,7 @@ import { For, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import type { PluginSourceRecord } from "@/server"
 import { Button } from "@/ui"
-import { dictionary } from "../i18n"
+import { marketplaceDictionary } from "../i18n"
 import { ALL, PERSONAL, type DirectorySourceView, type PluginCategoryView } from "../sections"
 
 function Chip(props: {
@@ -43,7 +43,7 @@ export function SourceChips(props: {
   readonly onToggleAdd: () => void
   readonly onRemove: (source: PluginSourceRecord) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   return (
     <div role="tablist" aria-label={t("marketplace.sources")} class="flex flex-wrap items-center gap-2">
       <Chip id={ALL} label={t("marketplace.all")} active={props.filter === ALL} onSelect={props.onFilter} />
@@ -84,7 +84,7 @@ export function CategoryChips(props: {
   readonly category: string
   readonly onCategory: (id: string) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   return (
     <Show when={props.categories.length > 0}>
       <div role="tablist" aria-label={t("marketplace.categories")} class="flex flex-wrap items-center gap-2">

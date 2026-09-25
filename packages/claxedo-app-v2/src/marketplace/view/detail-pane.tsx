@@ -2,7 +2,7 @@ import { createSignal, onCleanup, onMount, Show, type JSX } from "solid-js"
 import { ResizeHandle } from "@/ui"
 import { useTranslator } from "@/i18n"
 import type { PluginCandidate, PluginHarness, PluginToolGroup } from "@/server"
-import { dictionary } from "../i18n"
+import { marketplaceDictionary } from "../i18n"
 import { isBuiltIn, pluginLabel, pluginStatus } from "../model"
 import { createPaneWidth, PANE_MAX_FRACTION, PANE_MIN_WIDTH } from "../pane-width"
 import { GHOST_ICON_BUTTON } from "./chrome"
@@ -24,7 +24,7 @@ export type DetailHandlers = {
 }
 
 function DetailHeader(props: { readonly plugin: PluginCandidate; readonly onClose: () => void }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   const name = () => pluginLabel(props.plugin)
   const builtIn = () => isBuiltIn(props.plugin)
   return (
@@ -60,7 +60,7 @@ function DetailHeader(props: { readonly plugin: PluginCandidate; readonly onClos
 }
 
 function DetailNotes(props: { readonly plugin: PluginCandidate }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   return (
     <>
       <Show when={props.plugin.manifest?.description}>
@@ -106,7 +106,7 @@ export function PluginDetailPane(
     readonly onClose: () => void
   },
 ): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   const [skill, setSkill] = createSignal<string>()
   const size = createPaneSize()
   const name = () => pluginLabel(props.plugin)

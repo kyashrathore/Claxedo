@@ -1,6 +1,6 @@
 import { For, Show, createMemo, createSignal, createUniqueId, onMount, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { dictionary, type ReviewKey } from "../i18n"
+import { reviewDictionary, type ReviewKey } from "../i18n"
 import { shortRef, type ReviewMode } from "../intent"
 
 type CompareGroupId = "default" | "branches" | "remote" | "tags" | "commits"
@@ -36,7 +36,7 @@ export function CompareList(props: {
   readonly options: readonly CompareOption[]
   readonly onSelect: (option: CompareOption) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(reviewDictionary)
   const listId = createUniqueId()
   const [query, setQuery] = createSignal("")
   const [active, setActive] = createSignal(0)

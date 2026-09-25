@@ -1,7 +1,7 @@
 import { createEffect, createSignal, onCleanup, Show, type JSX, type ParentProps } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { useServer } from "@/server"
-import { dictionary } from "../i18n"
+import { panelDictionary } from "../i18n"
 import { usePanel } from "../store"
 import { PANEL_CLOSE_GRACE_MS, PANEL_MOTION } from "../width"
 import { PanelBody } from "./panel-body"
@@ -10,7 +10,7 @@ import { PanelResizeHandle } from "./resize-handle"
 import { createShellSettle } from "./shell-settle"
 
 function WorkspacePanel(): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(panelDictionary)
   const panel = usePanel()
   const server = useServer()
   const workspacePath = () => {

@@ -2,7 +2,7 @@ import { createMemo, createSignal, type Accessor } from "solid-js"
 import type { SelectedLineRange } from "@pierre/diffs"
 import { useTranslator } from "@/i18n"
 import { createLineCommentController, type LineCommentAnnotationMeta, type TextFileProps } from "@/transcript"
-import { dictionary } from "../i18n"
+import { filesDictionary } from "../i18n"
 
 export type FileLineComment = {
   readonly id: string
@@ -55,7 +55,7 @@ export function createFileComments(input: {
   readonly selected: Accessor<SelectedLineRange | null>
   readonly setSelected: (range: SelectedLineRange | null) => void
 }): FileCommentProps {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(filesDictionary)
   const [opened, setOpened] = createSignal<string | null>(null)
   const [commenting, setCommenting] = createSignal<SelectedLineRange | null>(null)
   const comments = createMemo(() =>

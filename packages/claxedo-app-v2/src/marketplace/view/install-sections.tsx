@@ -1,7 +1,7 @@
 import { For, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import type { PluginCandidate, PluginHarness } from "@/server"
-import { dictionary, type MarketplaceKey } from "../i18n"
+import { marketplaceDictionary, type MarketplaceKey } from "../i18n"
 
 export type HarnessRow = {
   readonly harnessId: PluginHarness
@@ -42,7 +42,7 @@ function Environment(props: { readonly title: string; readonly detail: string })
 }
 
 export function InstallPlacement(): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   return (
     <>
       <section
@@ -75,7 +75,7 @@ export function InstallHarnesses(props: {
   readonly selected: ReadonlySet<PluginHarness>
   readonly onChange: (next: Set<PluginHarness>) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   const reason = (row: HarnessRow) =>
     row.reason ? ("key" in row.reason ? t(row.reason.key) : row.reason.text) : undefined
   const toggle = (harnessId: PluginHarness, on: boolean) => {

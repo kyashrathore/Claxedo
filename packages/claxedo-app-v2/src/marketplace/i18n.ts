@@ -155,4 +155,4 @@ const en = {
 
 export type MarketplaceKey = keyof typeof en
 
-export const dictionary = { en } satisfies Translations<MarketplaceKey>
+export const marketplaceDictionary = { en } satisfies Translations<MarketplaceKey>

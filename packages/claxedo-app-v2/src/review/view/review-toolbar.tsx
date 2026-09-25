@@ -2,7 +2,7 @@ import { Show, type JSX } from "solid-js"
 import { Portal } from "solid-js/web"
 import { useTranslator } from "@/i18n"
 import { ClaxedoIcon as Icon, reviewControlsSlot, reviewToolbarSlot, DiffChanges, Spinner, Tooltip } from "@/ui"
-import { dictionary } from "../i18n"
+import { reviewDictionary } from "../i18n"
 import type { DiffStyle } from "../model"
 import { CompareMenu, type CompareMenuProps } from "./compare-menu"
 
@@ -42,7 +42,7 @@ function ReviewToolbarControls(props: {
   readonly diffStyle: DiffStyle
   readonly onSetDiffStyle: (style: DiffStyle) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(reviewDictionary)
   const expandLabel = () => (props.hasExpandedDiffs ? t("review.collapseAll") : t("review.expandAll"))
   const viewLabel = () => (props.diffStyle === "split" ? t("review.style.unified") : t("review.style.split"))
   return (

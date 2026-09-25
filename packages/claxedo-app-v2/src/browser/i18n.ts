@@ -42,4 +42,4 @@ const en = {
 
 export type BrowserKey = keyof typeof en
 
-export const dictionary = { en } satisfies Translations<BrowserKey>
+export const browserDictionary = { en } satisfies Translations<BrowserKey>

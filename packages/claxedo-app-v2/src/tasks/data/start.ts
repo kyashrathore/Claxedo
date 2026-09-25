@@ -2,7 +2,7 @@ import { createSignal } from "solid-js"
 import type { ConfigurationSlot, Preset, SessionReference, StartPreview, Task, TaskSummary } from "@claxedo/tasks"
 import { useTranslator, type DomainTranslate } from "@/i18n"
 import { uuid } from "@/lib/uuid"
-import { dictionary, type TasksKey } from "../i18n"
+import { tasksDictionary, type TasksKey } from "../i18n"
 import { useOpenPresetSettings, useOpenTaskSession } from "../links"
 import { SLOT_KEYS, groupLinksBySlot, openableSlot, slotAttempt } from "../model"
 import type { TasksStore } from "../store"
@@ -132,7 +132,7 @@ async function openLatest(calls: StartCalls, t: Translate, taskId: string): Prom
 }
 
 function useStartCommands() {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const calls = createStartCalls()
   return {
     startNow: (task: Task | TaskSummary, choice: StartChoiceInput) => startNow(calls, t, task, choice),

@@ -60,10 +60,10 @@ const en = {
 
 export type PluginsKey = keyof typeof en
 
-export const dictionary = { en } satisfies Translations<PluginsKey>
+export const pluginsDictionary = { en } satisfies Translations<PluginsKey>
 
 export type PluginsText = DomainTranslate<PluginsKey>
 
 export function usePluginsText(): PluginsText {
-  return useTranslator(dictionary)
+  return useTranslator(pluginsDictionary)
 }

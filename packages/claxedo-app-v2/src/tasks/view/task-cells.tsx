@@ -1,13 +1,13 @@
 import { Show, type JSX } from "solid-js"
 import type { TaskChildSummary, TaskSummary } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
-import { dictionary } from "../i18n"
+import { tasksDictionary } from "../i18n"
 import { shortAge, taskDate, type TaskDateField } from "../model"
 
 export type SubtaskProgress = TaskChildSummary
 
 export function ProgressCell(props: { readonly progress?: SubtaskProgress; readonly class?: string }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   return (
     <Show when={props.progress && props.progress.total > 0 ? props.progress : undefined}>
       {(progress) => (
@@ -23,7 +23,7 @@ export function ProgressCell(props: { readonly progress?: SubtaskProgress; reado
 }
 
 export function SessionMark(props: { readonly task: TaskSummary; readonly class: string }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   return (
     <Show when={props.task.links.count > 0}>
       <span class={props.class} role="img" aria-label={t("tasks.row.hasSession")} />
@@ -37,7 +37,7 @@ export function AgeCell(props: {
   readonly now: number
   readonly class: string
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const at = () => taskDate(props.task, props.field)
   const age = () => shortAge(at(), props.now)
   return (

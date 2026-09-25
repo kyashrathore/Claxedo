@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "i18n.error.auth.title": "다시 로그인하세요",
   "i18n.error.auth.message": "로그인이 만료되었거나 거부되었습니다. 계속하려면 다시 로그인하세요.",
   "i18n.error.auth.retry": "로그인",

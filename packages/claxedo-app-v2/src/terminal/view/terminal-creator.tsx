@@ -7,7 +7,7 @@ import { ClaxedoIcon, ClaxedoLogo } from "@/ui"
 import { useWorkbench } from "@/workbench"
 import { useTerminalRuntime } from "../context"
 import { terminalCreatorPaneKind } from "../creator-pane"
-import { dictionary } from "../i18n"
+import { terminalDictionary } from "../i18n"
 import { terminalLaunchers, type TerminalLauncher } from "../launchers"
 import "./terminal-creator.css"
 
@@ -19,7 +19,7 @@ function LauncherTile(props: {
   readonly starting: string | undefined
   readonly onLaunch: (launcher: TerminalLauncher) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(terminalDictionary)
   return (
     <button
       type="button"
@@ -66,7 +66,7 @@ function useInstalledAgents(placementId: () => PlacementId) {
 }
 
 export function TerminalCreator(props: PaneProps<TerminalCreatorState>): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(terminalDictionary)
   const errorCopy = useErrorCopy()
   const runtime = useTerminalRuntime()
   const server = useServer()

@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "i18n.error.auth.title": "Войдите снова",
   "i18n.error.auth.message": "Срок входа истёк или вход был отклонён. Войдите снова, чтобы продолжить.",
   "i18n.error.auth.retry": "Войти",

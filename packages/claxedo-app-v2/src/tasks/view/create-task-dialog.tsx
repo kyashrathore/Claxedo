@@ -5,7 +5,7 @@ import { uuid } from "@/lib/uuid"
 import { Dialog } from "@/ui"
 import { useTasksApi, useTasksInvalidation } from "../data/queries"
 import { refusalOf, type TasksRefusal } from "../data/refusal"
-import { dictionary } from "../i18n"
+import { tasksDictionary } from "../i18n"
 import { useTaskProjects } from "../links"
 import { TaskCreateForm } from "./task-create-form"
 
@@ -15,7 +15,7 @@ export function DialogCreateTask(props: {
   readonly onClose: () => void
   readonly onCreated?: (taskId: string) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const api = useTasksApi()
   const projects = useTaskProjects()
   const invalidate = useTasksInvalidation()

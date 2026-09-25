@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "i18n.error.auth.title": "請重新登入",
   "i18n.error.auth.message": "登入已過期或遭拒。請重新登入後繼續。",
   "i18n.error.auth.retry": "登入",

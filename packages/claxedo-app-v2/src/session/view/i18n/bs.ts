@@ -1,6 +1,6 @@
 import type { SessionScreenTextKey } from "./en"
 
-export const bs: Partial<Record<SessionScreenTextKey, string>> = {
+export default {
   "sessionScreen.loading": "Učitavanje poruka...",
   "sessionScreen.action.dismiss": "Odbaci",
   "sessionScreen.action.back": "Nazad",
@@ -88,4 +88,4 @@ export const bs: Partial<Record<SessionScreenTextKey, string>> = {
   "sessionScreen.requests.loadFailed": "Nije moguće učitati dozvole ili pitanja na čekanju. Pokušajte ponovo da nastavite.",
   "command.session.new": "Nova sesija",
   "command.category.session": "Sesija",
-}
+} satisfies Partial<Record<SessionScreenTextKey, string>>

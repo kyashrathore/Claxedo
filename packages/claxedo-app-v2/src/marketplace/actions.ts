@@ -8,7 +8,7 @@ import {
   type PluginToolGroup,
 } from "@/server"
 import { requestConfirm, showToast, useDialog } from "@/ui"
-import { dictionary, type MarketplaceKey } from "./i18n"
+import { marketplaceDictionary, type MarketplaceKey } from "./i18n"
 import { isBuiltIn, pluginLabel, toolGroups } from "./model"
 import { withCurrentRevision } from "./revision"
 
@@ -85,7 +85,7 @@ function reportFailedSync(t: Translate, changes: readonly PluginChange[]) {
 export function createPluginActions(input: ActionInput) {
   const server = useServer()
   const dialog = useDialog()
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   const activateAll = createActivator(input)
   const { pending, run } = createPending()
   const activate = async (plugin: PluginCandidate, choice: boolean | null) => {

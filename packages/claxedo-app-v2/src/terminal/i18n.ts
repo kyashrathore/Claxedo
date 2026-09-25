@@ -49,7 +49,7 @@ const named = (title: string): Localized => ({
   "terminal.title": title,
 })
 
-export const dictionary = {
+export const terminalDictionary = {
   en,
   ar: {
     ...named("محطة طرفية"),

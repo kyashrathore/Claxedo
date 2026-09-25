@@ -4,7 +4,7 @@ import { useTranslator } from "@/i18n"
 import type { ChangeStatus } from "@/server"
 import { ClaxedoIcon as Icon, SemanticIcon, DiffChanges, Spinner } from "@/ui"
 import type { GitAction } from "../git-actions"
-import { dictionary, type ReviewKey } from "../i18n"
+import { reviewDictionary, type ReviewKey } from "../i18n"
 
 export type ChangeGroupId = "staged" | "changes"
 
@@ -90,7 +90,7 @@ export function ChangeRow(props: {
   readonly onOpen: () => void
   readonly action?: JSX.Element
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(reviewDictionary)
   const label = () => t(STATUS_LABEL[props.entry.status])
   return (
     <div
@@ -167,7 +167,7 @@ export function ChangeGroup(props: {
   readonly onAction: (paths: string[]) => void
   readonly onOpen: (entry: ChangeEntry) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(reviewDictionary)
   const action = (): "stage" | "unstage" => (props.id === "staged" ? "unstage" : "stage")
   const actionLabel = () => (action() === "stage" ? t("review.sourceControl.stage") : t("review.sourceControl.unstage"))
   const actionAllLabel = () =>

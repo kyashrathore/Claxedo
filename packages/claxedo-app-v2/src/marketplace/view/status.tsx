@@ -1,10 +1,10 @@
 import type { JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { dictionary } from "../i18n"
+import { marketplaceDictionary } from "../i18n"
 import type { PluginStatus } from "../model"
 
 export function PluginStatusLine(props: { readonly status: PluginStatus; readonly wrap?: boolean }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   return (
     <span
       data-component="agent-plugin-status"

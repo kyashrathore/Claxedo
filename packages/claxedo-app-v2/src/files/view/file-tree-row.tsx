@@ -3,7 +3,7 @@ import { useTranslator } from "@/i18n"
 import { FailureNotice } from "@/lib/failure"
 import type { FileNode } from "@/server"
 import { ClaxedoIconV2 as IconV2 } from "@/ui"
-import { dictionary } from "../i18n"
+import { filesDictionary } from "../i18n"
 import type { ChangeKind } from "../model"
 import type { TreeRow } from "../tree-rows"
 import type { TreeSource } from "../tree-source"
@@ -67,7 +67,7 @@ function FileRow(props: { readonly tree: TreeRowContext; readonly node: FileNode
 }
 
 export function TreeRowView(props: { readonly tree: TreeRowContext; readonly row: TreeRow }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(filesDictionary)
   return (
     <Switch>
       <Match when={props.row.kind === "node" && props.row}>

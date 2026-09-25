@@ -5,12 +5,12 @@ import { useCommands } from "@/shell"
 import { showToast } from "@/ui"
 import { useWorkbench } from "@/workbench"
 import type { Terminals } from "./context"
-import { dictionary } from "./i18n"
+import { terminalDictionary } from "./i18n"
 import { terminalPaneKind } from "./pane"
 
 function useStartShell(terminals: Terminals): () => void {
   const panel = usePanel()
-  const t = useTranslator(dictionary)
+  const t = useTranslator(terminalDictionary)
   const openNew = async (placementId: PlacementId) => {
     const terminal = await terminals.store(placementId).create()
     terminals.open({ placementId, terminalId: terminal.id })
@@ -40,7 +40,7 @@ function useToggleTerminal(start: () => void): () => void {
 
 export function useNewTerminalCommand(terminals: Terminals): void {
   const commands = useCommands()
-  const t = useTranslator(dictionary)
+  const t = useTranslator(terminalDictionary)
   const start = useStartShell(terminals)
   const toggle = useToggleTerminal(start)
   commands.register("terminal", () => [

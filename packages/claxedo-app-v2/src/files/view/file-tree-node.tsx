@@ -3,7 +3,7 @@ import { Dynamic } from "solid-js/web"
 import { useTranslator } from "@/i18n"
 import type { FileNode } from "@/server"
 import { DelayedLoading, FileIcon } from "@/ui"
-import { dictionary } from "../i18n"
+import { filesDictionary } from "../i18n"
 import type { ChangeKind } from "../model"
 
 export type TreeMarks = ReadonlySet<string> | undefined
@@ -150,7 +150,7 @@ export function FileRowIcon(props: { readonly node: FileNode; readonly kind: Cha
 }
 
 export function TreeLoading(props: { readonly level: number; readonly episode?: string }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(filesDictionary)
   return (
     <div data-file-tree-loading class="flex flex-col gap-0.5 p-1" aria-label={t("files.loading")}>
       <DelayedLoading episode={props.episode}>
@@ -171,7 +171,7 @@ export function TreeLoading(props: { readonly level: number; readonly episode?: 
 }
 
 export function ShowMore(props: { readonly count: number; readonly onClick: () => void }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(filesDictionary)
   return (
     <button
       type="button"

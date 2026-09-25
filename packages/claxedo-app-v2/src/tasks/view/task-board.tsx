@@ -4,7 +4,7 @@ import { isTaskCreateStatus, type TaskCreateStatus, type TaskStatus, type TaskSu
 import { useTranslator } from "@/i18n"
 import type { MorePages } from "../data/queries"
 import type { TaskStartOffer } from "../data/start"
-import { dictionary } from "../i18n"
+import { tasksDictionary } from "../i18n"
 import { TASK_STATUS_KEYS, taskKey, type TaskDateField } from "../model"
 import { LoadMore } from "./load-more"
 import { TaskStatusIcon } from "./status-control"
@@ -40,7 +40,7 @@ function BoardCard(props: {
   readonly board: TaskBoardProps
   readonly drag: Drag
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const selected = () => props.board.selectedTaskId === props.task.id
   const menus = createRowToolsMenus()
   return (
@@ -93,7 +93,7 @@ function BoardCard(props: {
 }
 
 function ColumnHead(props: { readonly status: TaskStatus; readonly count: number; readonly board: TaskBoardProps }) {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const label = () => t(TASK_STATUS_KEYS[props.status])
   return (
     <header class="tsk-column-head">
@@ -127,7 +127,7 @@ function BoardColumn(props: {
   readonly drag: Drag
   readonly onDrop: (status: TaskStatus) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const tasks = () => props.board.tasks.filter((task) => task.status === props.status)
   return (
     <section

@@ -1,7 +1,7 @@
 import { createEffect, on, Show, type Accessor, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { showToast } from "@/ui"
-import { dictionary, type TerminalKey } from "../i18n"
+import { terminalDictionary, type TerminalKey } from "../i18n"
 import type { TerminalConnection, TerminalFailure } from "../model"
 
 type FailureToast = { readonly title: TerminalKey; readonly description?: TerminalKey }
@@ -13,7 +13,7 @@ const FAILURE_TOAST: Readonly<Record<Exclude<TerminalFailure, "start">, FailureT
 }
 
 export function useConnectionToasts(connection: Accessor<TerminalConnection>): void {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(terminalDictionary)
   createEffect(
     on(connection, (current) => {
       if (current.kind !== "failed" || current.failure === "start") return
@@ -32,7 +32,7 @@ export function TerminalStatus(props: {
   readonly connection: TerminalConnection
   readonly onRetry: () => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(terminalDictionary)
   const startFailure = () =>
     props.connection.kind === "failed" && props.connection.failure === "start" ? props.connection.error.message : undefined
   return (

@@ -4,7 +4,7 @@ import { MarkedProvider } from "@/ui"
 import { useTranslator } from "@/i18n"
 import { useServer } from "@/server"
 import { Markdown } from "@/transcript"
-import { dictionary } from "../i18n"
+import { marketplaceDictionary } from "../i18n"
 import { skillBody } from "../model"
 import { GHOST_ICON_BUTTON } from "./chrome"
 
@@ -13,7 +13,7 @@ function SkillBreadcrumb(props: {
   readonly skill: string
   readonly onBack: () => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   return (
     <nav
       aria-label={t("marketplace.skill.breadcrumb")}
@@ -42,7 +42,7 @@ export function SkillView(props: {
   readonly skill: string
   readonly onBack: () => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   const server = useServer()
   const document = useQuery(() =>
     server.queries.marketplace.skill({ pluginInstanceId: props.pluginInstanceId, skill: props.skill }),

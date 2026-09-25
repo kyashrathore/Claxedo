@@ -2,7 +2,7 @@ import { useTranslator } from "@/i18n"
 import { useServer, type PluginSourceInput, type PluginSourceRecord } from "@/server"
 import { requestConfirm, showToast, useDialog } from "@/ui"
 import { errorMessage } from "./actions"
-import { dictionary } from "./i18n"
+import { marketplaceDictionary } from "./i18n"
 
 export function createSourceActions(input: {
   readonly refresh: () => Promise<void>
@@ -11,7 +11,7 @@ export function createSourceActions(input: {
 }) {
   const server = useServer()
   const dialog = useDialog()
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   const remove = async (source: PluginSourceRecord) => {
     const confirmed = await requestConfirm(dialog, {
       title: t("marketplace.confirm.removeSourceTitle", { label: source.label }),

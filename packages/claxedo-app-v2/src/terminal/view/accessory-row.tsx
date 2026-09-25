@@ -1,7 +1,7 @@
 import { For, Show, createSignal, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { useCoarsePointer, usePhone } from "@/lib/viewport"
-import { dictionary, type TerminalKey } from "../i18n"
+import { terminalDictionary, type TerminalKey } from "../i18n"
 import { resolveAccessoryKey, type AccessoryKey } from "./accessory-keys"
 
 const KEYS: readonly { readonly id: AccessoryKey; readonly label: string; readonly name: TerminalKey }[] = [
@@ -18,7 +18,7 @@ export function AccessoryRow(props: {
   readonly onKey: (data: string) => void
   readonly active: () => boolean
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(terminalDictionary)
   const [ctrlArmed, setCtrlArmed] = createSignal(false)
   const coarse = useCoarsePointer()
   const phone = usePhone()

@@ -6,7 +6,7 @@ import { Button, useDialog } from "@/ui"
 import { morePages, useTaskList, useTasksApi, useTasksInvalidation } from "../data/queries"
 import { refusalOf, type TaskListFilter } from "../data/refusal"
 import { useTaskStartOffers } from "../data/start"
-import { dictionary } from "../i18n"
+import { tasksDictionary } from "../i18n"
 import { useTaskProjects } from "../links"
 import { TASK_COLLECTION_KEYS, TASK_COLLECTION_STATUSES } from "../model"
 import type { TasksStore } from "../store"
@@ -61,7 +61,7 @@ function createStatusChange(store: TasksStore, busyWhile: <T>(taskId: string, ru
 }
 
 export function TasksView(props: TasksViewProps): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const projects = useTaskProjects()
   const dialog = useDialog()
   const offers = useTaskStartOffers(props.store)

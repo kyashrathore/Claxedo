@@ -1,6 +1,6 @@
 import { createEffect, on, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { dictionary } from "../i18n"
+import { browserDictionary } from "../i18n"
 import { usePickDelivery } from "../pick-to-composer"
 import { useBrowserTab } from "../store"
 import { ConsoleDrawer } from "./console"
@@ -12,7 +12,7 @@ import { useNoticeToasts } from "./toolbar-actions"
 export type BrowserTabViewProps = { readonly url?: string; readonly navigationVersion?: number }
 
 export function BrowserTabView(props: BrowserTabViewProps): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(browserDictionary)
   const tab = useBrowserTab()
   const deliver = usePickDelivery()
   useNoticeToasts(tab)

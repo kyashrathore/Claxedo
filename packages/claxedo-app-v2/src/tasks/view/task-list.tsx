@@ -4,7 +4,7 @@ import { useTranslator } from "@/i18n"
 import { Button } from "@/ui"
 import type { MorePages } from "../data/queries"
 import type { TaskStartOffer } from "../data/start"
-import { dictionary } from "../i18n"
+import { tasksDictionary } from "../i18n"
 import { TASK_STATUS_KEYS, taskKey, type TaskDateField } from "../model"
 import { LoadMore } from "./load-more"
 import { TaskStatusIcon } from "./status-control"
@@ -37,7 +37,7 @@ function TaskRow(props: {
   readonly now: number
   readonly list: TaskListProps
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const selected = () => props.list.selectedTaskId === props.task.id
   const menus = createRowToolsMenus()
   return (
@@ -91,7 +91,7 @@ function TaskRow(props: {
 }
 
 function EmptyList(props: { readonly label?: string; readonly onCreate?: () => void }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   return (
     <div class="tsk-empty">
       <p>{props.label ?? t("tasks.list.empty")}</p>
@@ -107,7 +107,7 @@ function EmptyList(props: { readonly label?: string; readonly onCreate?: () => v
 }
 
 export function TaskList(props: TaskListProps): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const groups = createMemo(() => {
     if (props.grouped === false) return [{ status: undefined, tasks: props.tasks }] as const
     return TASK_STATUSES.map((status) => ({

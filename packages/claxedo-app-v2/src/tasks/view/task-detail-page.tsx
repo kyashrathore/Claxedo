@@ -3,7 +3,7 @@ import { CONFIGURATION_SLOTS, type ConfigurationSlot, type Task } from "@claxedo
 import { useTranslator } from "@/i18n"
 import { followRetry, useTaskChildren, useTaskDetail, useTasksApi } from "../data/queries"
 import { useTaskStartOffers } from "../data/start"
-import { dictionary } from "../i18n"
+import { tasksDictionary } from "../i18n"
 import { useOpenTaskSession, useTaskProjects } from "../links"
 import { groupLinksBySlot, slotAttempt } from "../model"
 import type { TasksStore } from "../store"
@@ -21,7 +21,7 @@ type TaskDetailPageProps = {
 }
 
 function createDetailData(props: TaskDetailPageProps) {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const detail = useTaskDetail(() => props.taskId)
   const children = useTaskChildren(() => props.taskId)
   const parent = useTaskDetail(() => detail.data?.task.parentTaskId ?? undefined)
@@ -126,7 +126,7 @@ function LoadedTask(props: Loaded): JSX.Element {
 }
 
 export function TaskDetailPage(props: TaskDetailPageProps): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const data = createDetailData(props)
   const commands = createTaskCommands(props.store, data.offers.busyWhile)
   const sending = createSendTask(data.offers.busyWhile)

@@ -10,7 +10,7 @@ import {
 import { useTranslator } from "@/i18n"
 import { Button, Select } from "@/ui"
 import { fieldReasonKey, type FieldReasons } from "../data/refusal"
-import { dictionary } from "../i18n"
+import { tasksDictionary } from "../i18n"
 import type { TaskProject } from "../links"
 import { TASK_STATUS_KEYS } from "../model"
 import { draftImageUrl, type ImageShrink } from "./image-drafts"
@@ -42,7 +42,7 @@ function ImageStrip(props: {
   readonly images: readonly TaskAttachmentDraft[]
   readonly queue: ReturnType<typeof createImageQueue>
 }) {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   let picker: HTMLInputElement | undefined
   return (
     <div class="tsk-images" data-testid="task-create-images">
@@ -90,7 +90,7 @@ function ImageStrip(props: {
 }
 
 function ChipRow(props: TaskCreateFormProps & { readonly patch: (input: Partial<TaskDraft>) => void }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const project = () => props.projects.find((entry) => entry.id === props.draft.projectId)
   const projectError = () => props.fieldErrors?.projectId
   return (
@@ -127,12 +127,12 @@ function ChipRow(props: TaskCreateFormProps & { readonly patch: (input: Partial<
 }
 
 function FieldError(props: { readonly reason?: string }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   return <Show when={props.reason}>{(reason) => <span class="tsk-error">{t(fieldReasonKey(reason()))}</span>}</Show>
 }
 
 export function TaskCreateForm(props: TaskCreateFormProps): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const patch = (input: Partial<TaskDraft>) => props.onDraftChange({ ...props.draft, ...input })
   const images = () => props.draft.attachments ?? []
   const queue = createImageQueue({

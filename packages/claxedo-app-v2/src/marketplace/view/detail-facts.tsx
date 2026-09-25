@@ -1,12 +1,12 @@
 import { For, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import type { PluginCandidate } from "@/server"
-import { dictionary } from "../i18n"
+import { marketplaceDictionary } from "../i18n"
 import { activationSummary, installedHarnesses } from "../model"
 import { CHIP } from "./chrome"
 
 export function PluginFacts(props: { readonly plugin: PluginCandidate }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   const status = () => {
     const summary = activationSummary(props.plugin)
     const state = t(summary.state.key)

@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "i18n.error.auth.title": "Ponovo se prijavite",
   "i18n.error.auth.message": "Vaša prijava je istekla ili je odbijena. Ponovo se prijavite da nastavite.",
   "i18n.error.auth.retry": "Prijava",

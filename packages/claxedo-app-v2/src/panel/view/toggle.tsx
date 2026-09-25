@@ -1,11 +1,11 @@
 import { Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { ClaxedoIcon as Icon } from "@/ui"
-import { dictionary } from "../i18n"
+import { panelDictionary } from "../i18n"
 import { usePanel } from "../store"
 
 export function PanelToggleButton(): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(panelDictionary)
   const panel = usePanel()
   const label = () => (panel.open() ? t("panel.close") : t("panel.open"))
   return (

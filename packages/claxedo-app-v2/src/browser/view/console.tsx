@@ -1,7 +1,7 @@
 import { For, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { ClaxedoIcon as Icon, ClaxedoIconButton as IconButton, Tooltip } from "@/ui"
-import { dictionary } from "../i18n"
+import { browserDictionary } from "../i18n"
 import type { BrowserConsoleEntry } from "../model"
 import type { BrowserTab } from "../tab"
 
@@ -36,7 +36,7 @@ function ConsoleRow(props: { readonly entry: BrowserConsoleEntry }): JSX.Element
 }
 
 function ConsoleHeader(props: { readonly tab: BrowserTab }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(browserDictionary)
   return (
     <div class="flex h-8 shrink-0 items-center justify-between border-b border-border-weak-base px-2">
       <div class="flex items-center gap-2 text-12-medium text-text-base">
@@ -72,7 +72,7 @@ function ConsoleHeader(props: { readonly tab: BrowserTab }): JSX.Element {
 }
 
 export function ConsoleDrawer(props: { readonly tab: BrowserTab }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(browserDictionary)
   return (
     <div
       classList={{

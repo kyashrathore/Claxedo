@@ -2,12 +2,12 @@ import { createSignal, For, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { useServer, type PluginCandidate, type PluginHarness } from "@/server"
 import { Button, Dialog, showToast, useDialog } from "@/ui"
-import { dictionary } from "../i18n"
+import { marketplaceDictionary } from "../i18n"
 import { pluginLabel } from "../model"
 import { InstallHarnesses, InstallPlacement, harnessRows } from "./install-sections"
 
 function SheetHeader(props: { readonly plugin: PluginCandidate }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   const name = () => pluginLabel(props.plugin)
   const monogram = () => (name().trim()[0] ?? "?").toUpperCase()
   return (
@@ -40,7 +40,7 @@ function createInstall(props: {
   readonly revision: number
   readonly done: () => void
 }) {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   const server = useServer()
   const [error, setError] = createSignal<string>()
   const [busy, setBusy] = createSignal(false)
@@ -77,7 +77,7 @@ export function InstallPluginSheet(props: {
   readonly supportedHarnesses: readonly PluginHarness[]
   readonly onDone: () => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   const dialog = useDialog()
   const rows = () => harnessRows(props.plugin, props.supportedHarnesses)
   const [selected, setSelected] = createSignal(
