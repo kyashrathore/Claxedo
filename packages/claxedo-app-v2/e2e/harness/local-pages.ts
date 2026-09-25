@@ -2,11 +2,16 @@ import { createServer } from "node:http"
 
 export type LocalPages = { url: string; requested: readonly string[]; close(): Promise<void> }
 
-export async function serveLocalPages(input: { pages: Readonly<Record<string, string>>; port: number }): Promise<LocalPages> {
+export async function serveLocalPages(input: {
+  pages: Readonly<Record<string, string>>
+  held: readonly string[]
+  port: number
+}): Promise<LocalPages> {
   const requested: string[] = []
   const server = createServer((request, response) => {
     const path = new URL(request.url ?? "/", "http://pages").pathname
     requested.push(path)
+    if (input.held.includes(path)) return
     const body = input.pages[path]
     if (body === undefined) return void response.writeHead(404).end()
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(body)

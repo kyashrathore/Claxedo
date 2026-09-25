@@ -2,7 +2,8 @@ import fs from "node:fs"
 import path from "node:path"
 import type { Locator, Page } from "@playwright/test"
 import type { CaseInteraction, CaseTurn, CorpusCase } from "../corpus/case"
-import { expectDetachedGrowthAtMost, expectRowsKept, markDetachedNodes, markRows, quietDom, releaseHold, startLiveTurn } from "../corpus/live"
+import { expectDetachedGrowthAtMost, expectHeapGrowthAtMost, expectRowsKept, markDetachedNodes, markRows, quietDom, releaseHold, startLiveTurn } from "../corpus/live"
+import { switchSessions } from "../corpus/switch"
 import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, type AcpStep, type ClaxedoApi, type MessageRow, type Stack } from "../harness"
 
 const CASES_DIR = path.join(import.meta.dirname, "..", "corpus", "cases")
@@ -13,6 +14,7 @@ const LATEST_TURN_READ = /[?&]view=latest-turn\b/
 const CLOCK_TIME = /\b\d{1,2}:\d{2}\s?(?:AM|PM)\b/g
 const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g
 const LIVE_DURATION = /(· |Worked for )\d+(?:h \d+m|m \d+s|ms|s|m|h)\b/g
+const HELD_IMAGE = "/held-image.png"
 
 type Target = { readonly directory: string; readonly sessionId: string }
 
@@ -24,8 +26,8 @@ function loadCases(): CorpusCase[] {
     .map((file) => JSON.parse(fs.readFileSync(path.join(CASES_DIR, file), "utf8")) as CorpusCase)
 }
 
-function inWorkspace<T>(value: T, directory: string): T {
-  return JSON.parse(JSON.stringify(value).replaceAll("{{workspace}}", directory)) as T
+function inWorkspace<T>(value: T, directory: string, heldImage: string): T {
+  return JSON.parse(JSON.stringify(value).replaceAll("{{workspace}}", directory).replaceAll("{{heldImage}}", heldImage)) as T
 }
 
 function turnSettled(messages: readonly MessageRow[], users: number): boolean {
@@ -69,7 +71,9 @@ async function arrange(stack: Stack, api: ClaxedoApi, corpusCase: CorpusCase) {
   const workspace = await stack.daemon.makeWorkspace("corpus")
   const session = await api.createSession(workspace.directory, { title: corpusCase.title, harness: SCRIPTED_ACP_HARNESS })
   const target = { directory: workspace.directory, sessionId: session.id }
-  const turns = inWorkspace(corpusCase.replay.turns, workspace.directory).map((turn, index) => ({ ...turn, name: `${corpusCase.id}-${index}` }))
+  const holdsImage = JSON.stringify(corpusCase.replay.turns).includes("{{heldImage}}")
+  const heldImage = holdsImage ? `${(await stack.localPages({}, [HELD_IMAGE])).url}${HELD_IMAGE}` : ""
+  const turns = inWorkspace(corpusCase.replay.turns, workspace.directory, heldImage).map((turn, index) => ({ ...turn, name: `${corpusCase.id}-${index}` }))
   for (const [index, turn] of turns.entries()) {
     if (!turn.live) await playTurn(stack, api, target, turn, index + 1)
   }
@@ -81,7 +85,7 @@ function sessionUrl(stack: Stack, workspaceId: string, sessionId: string): strin
 }
 
 function turnRows(app: Page): Locator {
-  return app.locator('[data-component="session-turn"]')
+  return app.locator('[data-component="session-turn"]:not([inert] *, [aria-hidden="true"] *)')
 }
 
 function scroller(app: Page): Locator {
@@ -147,7 +151,7 @@ async function compareStage(app: Page, corpusCase: CorpusCase, stage: string) {
   expect.soft(tree).toMatchSnapshot([corpusCase.id, `${stage}-tree.txt`])
 }
 
-async function interact(live: { stack: Stack; api: ClaxedoApi; target: Target; app: Page }, interaction: CaseInteraction) {
+async function interact(live: { stack: Stack; api: ClaxedoApi; target: Target; app: Page }, corpusCase: CorpusCase, interaction: CaseInteraction) {
   const { stack, app } = live
   switch (interaction.kind) {
     case "release":
@@ -164,6 +168,12 @@ async function interact(live: { stack: Stack; api: ClaxedoApi; target: Target; a
       return
     case "detachedGrowth":
       await expectDetachedGrowthAtMost(app, stack.app, interaction.max)
+      return
+    case "heapGrowth":
+      await expectHeapGrowthAtMost(app, stack.app, interaction.maxKb)
+      return
+    case "switchSessions":
+      await switchSessions(live, { title: corpusCase.title, ready: corpusCase.ready, times: interaction.times })
       return
     case "scroll":
       if (typeof interaction.to !== "string") throw new Error("scrolling to a turn is not replayed yet")
@@ -217,7 +227,7 @@ for (const corpusCase of loadCases()) {
     if (live.length > 0) await quietDom(app)
     await compareStage(app, corpusCase, "open")
     for (const [index, interaction] of corpusCase.interactions.entries()) {
-      await interact({ stack, api, target, app }, interaction)
+      await interact({ stack, api, target, app }, corpusCase, interaction)
       await expect(app.getByText(corpusCase.ready).first()).toBeAttached()
       await compareStage(app, corpusCase, `${index + 1}-${interaction.kind}`)
     }

@@ -26,7 +26,7 @@ export type Stack = {
   }
   events(directory: string, options?: EventStreamOptions): Promise<EventStream>
   gitRemote(name: string): Promise<GitRemote>
-  localPages(pages: Readonly<Record<string, string>>): Promise<LocalPages>
+  localPages(pages: Readonly<Record<string, string>>, held?: readonly string[]): Promise<LocalPages>
   close(): Promise<void>
 }
 
@@ -108,7 +108,7 @@ export async function startStack(input: StackInput): Promise<Stack> {
       return stream
     },
     gitRemote: (name) => startSideServer((port) => serveGitRemote({ root: path.join(dataDir, "git-remotes"), name, port })),
-    localPages: (pages) => startSideServer((port) => serveLocalPages({ pages, port })),
+    localPages: (pages, held = []) => startSideServer((port) => serveLocalPages({ pages, held, port })),
     close: async () => {
       for (const stream of streams) stream.close()
       for (const { server, port } of sideServers) {

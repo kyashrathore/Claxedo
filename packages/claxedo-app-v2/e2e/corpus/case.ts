@@ -39,6 +39,8 @@ export type CaseInteraction =
   | { readonly kind: "rowsKept" }
   | { readonly kind: "markDetached" }
   | { readonly kind: "detachedGrowth"; readonly max: number }
+  | { readonly kind: "heapGrowth"; readonly maxKb: number }
+  | { readonly kind: "switchSessions"; readonly times: number }
 
 export type CorpusCase = {
   readonly id: string
