@@ -1,7 +1,7 @@
 import { unreachable } from "@/lib/machine"
 import type { ServerEvent, TranscriptMessage } from "@/server"
 import type { TranscriptContext } from "./context"
-import { appendDelta, removeMessage, removePart, upsertMessage, upsertPart } from "./conversation"
+import { removeMessage, removePart, upsertMessage, upsertPart } from "./conversation"
 import { isPresentationMessage } from "./merge"
 import { isHolding, isTranscriptEvent, type TranscriptEvent } from "./model"
 
@@ -33,7 +33,7 @@ export function applyTranscriptEvent(context: TranscriptContext, event: Transcri
 }
 
 export function applyServerEvent(context: TranscriptContext, event: ServerEvent): void {
-  if (event.type === "partDelta") return appendDelta(context.setData, context.data, event.messageId, event.partId, event.field, event.delta)
+  if (event.type === "partDelta") return context.deltas.add(event)
   if (event.type === "statusChanged") return void context.queue.reread()
   if (event.type === "subagentUpdated") return context.subagents.apply(event.subagent)
   if (!isTranscriptEvent(event)) return

@@ -5,7 +5,8 @@ import type { Server, SessionRef } from "@/server"
 import type { OlderState } from "@/session"
 import type { SessionListInternal } from "../list"
 import type { RequestsInternal } from "../requests"
-import { dropQueuedStubs, type SetTranscript } from "./conversation"
+import { appendDelta, dropQueuedStubs, type SetTranscript } from "./conversation"
+import { committingFirst, createDeltaBuffer, type DeltaBuffer } from "./deltas"
 import { createSessionGoal, type SessionGoalStore } from "./goal"
 import {
   OLDER_IDLE,
@@ -33,6 +34,7 @@ export type TranscriptContext = {
   readonly deps: TranscriptDeps
   readonly data: TranscriptData
   readonly setData: SetTranscript
+  readonly deltas: DeltaBuffer
   readonly phase: Machine<SessionPhase, SessionPhaseEvent>
   readonly older: Machine<OlderState, OlderEvent>
   readonly olderCursor: Accessor<string | undefined>
@@ -46,7 +48,9 @@ export type TranscriptContext = {
 }
 
 export function createTranscriptContext(server: Server, ref: SessionRef, deps: TranscriptDeps): TranscriptContext {
-  const [data, setData] = createStore(emptyTranscript())
+  const [data, setStoreData] = createStore(emptyTranscript())
+  const deltas = createDeltaBuffer((delta) => appendDelta(setStoreData, data, delta.messageId, delta.partId, delta.field, delta.delta))
+  const setData = committingFirst(setStoreData, deltas)
   const [olderCursor, setOlderCursor] = createSignal<string>()
   return {
     server,
@@ -54,6 +58,7 @@ export function createTranscriptContext(server: Server, ref: SessionRef, deps: T
     deps,
     data,
     setData,
+    deltas,
     phase: machine(initialPhase, phaseTransition),
     older: machine(OLDER_IDLE, olderTransition),
     olderCursor,

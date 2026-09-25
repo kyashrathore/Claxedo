@@ -21,7 +21,7 @@ The app asks one server for one page of a project's sessions, with one opaque cu
 | Connection | List owner | Sources it merges |
 |---|---|---|
 | Desktop, signed out | the daemon | the local projection |
-| Desktop, signed in | the daemon | the local projection, plus the control plane's page for the user's cloud workspaces and shared machines |
+| Desktop, signed in | the app's one session-source owner in `src/server`, composing exactly two pages: the daemon's local page and the control plane's page, read through the AccountPort operation `session.list` | local projection + the control plane (cloud workspaces, shared machines) |
 | Web (hosted or self-hosted) | the control plane (or the self-hosted node) | its own store (D1 or SQLite) |
 
 ### 2. Machines publish session rows to the control plane
@@ -33,7 +33,7 @@ The app asks one server for one page of a project's sessions, with one opaque cu
 ### 3. One merged cursor
 - **Order:** `(lastHumanTurnAt ?? 0 desc, createdAt desc, sessionRef)`, the same everywhere.
 - **Keyset pagination:** the cursor carries the last key, and every source reads only rows after it, bounded by `limit`. No full-list re-reads.
-- **The daemon's merged page (signed desktop):** a k-way merge of the local page and the control-plane page. The cursor is the last emitted key, so the next page is a true continuation, with no gaps and no duplicates.
+- **The signed desktop's merged page:** a two-way merge of the daemon's page and the AccountPort page. The composite cursor holds each source's last key, so the next page is a true continuation, with no gaps and no duplicates. The account credential never leaves Electron main (AccountPort's closed operation set). The daemon never holds a user bearer.
 - **Dedup is by `sessionRef`,** never by bare `sessionId`. A session has exactly one placement.
 
 ### 4. Status by events, not reads
@@ -67,7 +67,13 @@ The app asks one server for one page of a project's sessions, with one opaque cu
   - Progress:
 - [ ] **S2. Machine publisher:** the daemon publishes rows and status on change and on reconnect, bounded with backoff. Tests use a fake control plane; an offline control plane queues nothing unbounded.
   - Progress:
-- [ ] **S3. Daemon merged list (signed desktop):** a k-way merge with an opaque cursor over local and control-plane pages. When the control plane is unreachable, the page is the local rows plus a `sources.degraded` marker, never a failure.
+- [ ] **S3. Signed desktop merged list through AccountPort:**
+  - add `session.list` to the closed `HostedOperationName` set and to Electron main's route table;
+  - the guard tests hold the registry and main equal;
+  - the app's session-source owner merges the daemon page and the account page with a composite cursor;
+  - when the account source fails, the page is the local rows plus a `degraded` marker, never a failure;
+  - no bearer is ever pushed to the daemon.
+  - Progress:
   - Progress:
 - [ ] **S4. App switch:**
   - `src/session/list` reads one page per project from one endpoint;

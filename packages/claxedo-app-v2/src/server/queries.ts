@@ -61,12 +61,12 @@ export function createQueries(transport: Transport, workspaces: Workspaces): Ser
   }
 }
 
-function invalidationKeys(server: string, event: ServerEvent): readonly (readonly unknown[])[] {
+function invalidationKeys(server: string, event: ServerEvent, endsWritingTurn: boolean): readonly (readonly unknown[])[] {
   switch (event.type) {
     case "filesChanged":
       return [queryKeys.filesOf(server, event.placementId), queryKeys.gitOf(server, event.placementId)]
     case "statusChanged":
-      return event.status.kind === "idle" ? [queryKeys.filesOf(server, event.ref.placementId), queryKeys.gitOf(server, event.ref.placementId)] : []
+      return endsWritingTurn ? [queryKeys.filesOf(server, event.ref.placementId), queryKeys.gitOf(server, event.ref.placementId)] : []
     case "projectChanged":
       return [queryKeys.projects(server), queryKeys.project(server, event.projectId), queryKeys.bootstrap(server), queryKeys.placements(server), queryKeys.placementsOf(server, event.projectId)]
     case "placementsChanged":
@@ -77,14 +77,22 @@ function invalidationKeys(server: string, event: ServerEvent): readonly (readonl
     case "usageChanged":
       return [queryKeys.usageAll(server)]
     case "streamGap":
-      return [queryKeys.bootstrap(server), queryKeys.placements(server), queryKeys.projects(server), queryKeys.machines(server), queryKeys.cloud(server)]
+      return [
+        queryKeys.bootstrap(server),
+        queryKeys.placements(server),
+        queryKeys.projects(server),
+        queryKeys.machines(server),
+        queryKeys.cloud(server),
+        queryKeys.filesAll(server),
+        queryKeys.gitAll(server),
+      ]
     default:
       return []
   }
 }
 
-export function invalidateFor(queryClient: QueryClient, server: string, event: ServerEvent) {
-  for (const queryKey of invalidationKeys(server, event)) {
+export function invalidateFor(queryClient: QueryClient, server: string, event: ServerEvent, endsWritingTurn: boolean) {
+  for (const queryKey of invalidationKeys(server, event, endsWritingTurn)) {
     void queryClient.invalidateQueries({ queryKey })
   }
 }

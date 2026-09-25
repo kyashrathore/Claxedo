@@ -40,3 +40,11 @@
   flex: 1;
   flex-direction: column;
 }
+
+[data-component="session-prompt-dock"] [data-component="session-todo-dock"] {
+  margin-bottom: -36px;
+}
+
+[data-component="session-prompt-dock"].session-floating-dock [data-component="session-todo-dock"] {
+  margin-bottom: 0;
+}
