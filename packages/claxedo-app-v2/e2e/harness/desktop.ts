@@ -182,7 +182,12 @@ export async function launchDesktop(input: { label: string; red: boolean; accoun
     await window.reload()
     return desktopHandle(world, { app, window, transport, log, close })
   } catch (error) {
-    await close()
-    throw new Error(`the desktop did not start:\n${log().split("\n").slice(-40).join("\n")}`, { cause: error })
+    const failure = new Error(`the desktop did not start:\n${log().split("\n").slice(-40).join("\n")}`, { cause: error })
+    try {
+      await close()
+    } catch (closing) {
+      console.error("closing a desktop that did not start failed too", closing)
+    }
+    throw failure
   }
 }

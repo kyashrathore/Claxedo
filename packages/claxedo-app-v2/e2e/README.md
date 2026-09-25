@@ -197,7 +197,7 @@ So the recommendation is A.
 
 ### Keychain
 
-Moving `HOME` hides the login keychain from the `security` tool (it answers 44), but not from Electron's `safeStorage`, which goes through the Security framework and the user's own keychain search list. So on macOS the desktop fixture always passes `--use-mock-keychain`, and a signed desktop (`signedDesktop`) is refused unless `app.commandLine.hasSwitch("use-mock-keychain")` holds in main before the window loads.
+Moving `HOME` hides the login keychain from the `security` tool (it answers 44), but not from Electron's `safeStorage`, which goes through the Security framework and the user's own keychain search list. What keeps it out is Chromium's `--use-mock-keychain`, which makes OSCrypt (and so `safeStorage`) keep its key in memory. Playwright's Electron loader already appends it (with `--password-store=basic`) to every app it launches; the desktop fixture passes it as well on macOS so the cut does not rest on the driver, and a signed desktop (`signedDesktop`) is refused unless `app.commandLine.hasSwitch("use-mock-keychain")` holds in main before the window loads.
 
 ### v1 known bugs (flow 31)
 
