@@ -47,7 +47,7 @@ function RowControls(props: { readonly file: string; readonly onViewFile?: (file
           <Icon name="copy" size="small" />
         </button>
       </Tooltip>
-      <span data-slot="session-review-diff-chevron" aria-hidden="true">
+      <span data-slot="session-review-diff-chevron" class="ui-session-review-diff-chevron" aria-hidden="true">
         <IconV2 name="chevron-down" size="small" />
       </span>
       <Show when={props.onViewFile}>

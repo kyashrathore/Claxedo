@@ -18,7 +18,7 @@ function groupOptions<T>(options: T[], groupBy?: (x: T) => string): { category: 
 }
 
 const ChevronDown = () => (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <svg class="ui-select-v2-chevron-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <path
       d="M11 9.5L8 6.5L5 9.5"
       stroke="currentColor"

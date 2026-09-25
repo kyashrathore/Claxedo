@@ -165,7 +165,7 @@ export function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[]; onUndo?: (
                             <span data-slot="session-turn-diff-changes">
                               <DiffChanges changes={diff} />
                             </span>
-                            <span data-slot="session-turn-diff-chevron">
+                            <span data-slot="session-turn-diff-chevron" class="ui-session-turn-diff-chevron">
                               <Icon name="chevron-down" size="small" />
                             </span>
                           </div>

@@ -9,7 +9,7 @@ import { TASK_STATUS_KEYS, taskKey, type TaskDateField } from "../model"
 import { LoadMore } from "./load-more"
 import { TaskStatusIcon } from "./status-control"
 import { AgeCell, ProgressCell, SessionMark, type SubtaskProgress } from "./task-cells"
-import { TaskRowActions, TaskStartControl } from "./task-row-controls"
+import { createRowToolsMenus, TaskRowActions, TaskStartControl } from "./task-row-controls"
 
 type StatusChange = (input: { taskId: string; revision: number; status: TaskStatus }) => void
 
@@ -39,11 +39,13 @@ function TaskRow(props: {
 }): JSX.Element {
   const t = useTranslator(dictionary)
   const selected = () => props.list.selectedTaskId === props.task.id
+  const menus = createRowToolsMenus()
   return (
     <div
       class="tsk-tr tsk-rise"
       style={{ "--tsk-i": String(props.index) }}
       data-selected={selected() ? "true" : undefined}
+      data-tools-open={menus.open() ? "true" : undefined}
       data-archived={props.task.archivedAt === null ? undefined : "true"}
     >
       <button
@@ -70,7 +72,7 @@ function TaskRow(props: {
       </span>
       <span class="tsk-row-tools" onClick={(event) => event.stopPropagation()}>
         <Show when={props.list.startOffer?.(props.task)}>
-          {(offer) => <TaskStartControl task={props.task} offer={offer()} testIdPrefix="tasks-list" />}
+          {(offer) => <TaskStartControl task={props.task} offer={offer()} testIdPrefix="tasks-list" onMenuOpenChange={menus.track("start")} />}
         </Show>
         <Show when={props.list.onStatusChange}>
           {(change) => (
@@ -79,6 +81,7 @@ function TaskRow(props: {
               busy={props.list.busyTaskId === props.task.id}
               testIdPrefix="tasks-list"
               onStatusChange={(input) => change()(input)}
+              onMenuOpenChange={menus.track("actions")}
             />
           )}
         </Show>

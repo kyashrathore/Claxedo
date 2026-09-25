@@ -4,6 +4,10 @@
 
 @source "../../";
 @source not "../../legacy";
+@source "../../../../session-ui/src";
+@source not "../../../../session-ui/src/**/*.test.*";
+@source not "../../../../session-ui/src/**/*.stories.*";
+@source not "../../../../session-ui/src/components/transcript-lab-fixture.*";
 
 @font-face {
   font-family: "JetBrainsMono Nerd Font Mono";

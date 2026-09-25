@@ -72,7 +72,7 @@ function SectionHeader(props: {
        * the rotated chevron and the panel underneath already say which section
        * is showing, and a permanent band reads as "selected", not "open".
        */
-      class={`group/section shrink-0 disabled:pointer-events-none disabled:opacity-45 ${ROW_CLASS}`}
+      class={`shrink-0 disabled:pointer-events-none disabled:opacity-45 ${ROW_CLASS}`}
       onClick={props.onToggle}
     >
       {/* Full-strength icon: at `icon-weak` it fades into a dark surface, and
@@ -80,7 +80,7 @@ function SectionHeader(props: {
       <Icon
         name="chevron-right"
         size="small"
-        class="shrink-0 text-icon-base transition-transform duration-200 ease-out group-data-[expanded=true]/section:rotate-90"
+        class={`shrink-0 text-icon-base transition-transform duration-200 ease-out${props.expanded ? " rotate-90" : ""}`}
       />
       {/* The label is what you scan for, so it carries the weight; the value is
           the answer it currently holds and steps back — a dim label under a
