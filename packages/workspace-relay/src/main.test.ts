@@ -274,6 +274,19 @@ describe("createCachedTargetClient", () => {
     expect(calls).toBe(2)
   })
 
+  test("a token for a restarted sandbox's new lease misses the old lease's cached target", async () => {
+    const asked: (number | undefined)[] = []
+    const cached = createCachedTargetClient(async (args) => {
+      asked.push(args.leaseEpoch)
+      return { ...target, baseUrl: `https://runtime.test/lease-${args.leaseEpoch}` }
+    }, { ttlMs: 30_000 })
+
+    await expect(cached({ workspaceId: "ws_1", hostId: "host_1", leaseEpoch: 1 })).resolves.toMatchObject({ baseUrl: "https://runtime.test/lease-1" })
+    await expect(cached({ workspaceId: "ws_1", hostId: "host_1", leaseEpoch: 2 })).resolves.toMatchObject({ baseUrl: "https://runtime.test/lease-2" })
+    await expect(cached({ workspaceId: "ws_1", hostId: "host_1", leaseEpoch: 2 })).resolves.toMatchObject({ baseUrl: "https://runtime.test/lease-2" })
+    expect(asked).toEqual([1, 2])
+  })
+
   test("does not retain missing targets after the in-flight lookup completes", async () => {
     let calls = 0
     const cached = createCachedTargetClient(async () => {
@@ -351,6 +364,30 @@ describe("createResolverClient", () => {
       expect(requests[0]?.url.searchParams.get("workspaceId")).toBe("ws_1")
       expect(requests[0]?.url.searchParams.get("hostId")).toBe("host_1")
       expect(requests[0]?.authorization).toBe("Bearer resolver_token")
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  test("asks the resolver again for a token minted against a newer lease epoch of the same host", async () => {
+    const originalFetch = globalThis.fetch
+    const answers = [`${target.baseUrl}/lease-1`, `${target.baseUrl}/lease-2`]
+    const requests: URL[] = []
+    globalThis.fetch = (async (input) => {
+      requests.push(new URL(input instanceof Request ? input.url : String(input)))
+      return new Response(JSON.stringify({ ...target, baseUrl: answers[requests.length - 1] }), {
+        headers: { "content-type": "application/json" },
+      })
+    }) as typeof fetch
+
+    try {
+      const client = createResolverClient("https://resolver.test/", "resolver_token", { targetCacheTtlMs: 10_000 })
+      await expect(client.target("ws_1", "host_1", 1)).resolves.toMatchObject({ baseUrl: `${target.baseUrl}/lease-1` })
+      await expect(client.target("ws_1", "host_1", 1)).resolves.toMatchObject({ baseUrl: `${target.baseUrl}/lease-1` })
+      await expect(client.target("ws_1", "host_1", 2)).resolves.toMatchObject({ baseUrl: `${target.baseUrl}/lease-2` })
+
+      expect(requests.map((url) => url.searchParams.get("hostId"))).toEqual(["host_1", "host_1"])
+      expect(requests.map((url) => url.searchParams.has("leaseEpoch"))).toEqual([false, false])
     } finally {
       globalThis.fetch = originalFetch
     }

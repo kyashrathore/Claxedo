@@ -57,7 +57,7 @@ type WorkspaceRelayWorkerBindings = {
 export type WorkspaceRelayWorkerEnv = Record<string, unknown> & WorkspaceRelayWorkerBindings
 
 type ResolverClient = {
-  target(workspaceId: string, hostId: string): Promise<WorkspaceRelayTarget | undefined>
+  target(workspaceId: string, hostId: string, leaseEpoch?: number): Promise<WorkspaceRelayTarget | undefined>
   revocation(args: { jti: string; workspaceId: string; hostId: string }): Promise<RuntimeAccessTokenActiveResult>
   hostGeneration: HostGenerationLookup
 }
@@ -190,7 +190,7 @@ export function workspaceRelayWorkerResolverClient(env: WorkspaceRelayWorkerEnv,
     (hostGenerationCacheTtlMs ? { ttlMs: hostGenerationCacheTtlMs } : {}),
   )
   return {
-    target: (workspaceId, hostId) => target({ workspaceId, hostId }),
+    target: (workspaceId, hostId, leaseEpoch) => target({ workspaceId, hostId, ...(leaseEpoch !== undefined ? { leaseEpoch } : {}) }),
     revocation,
     hostGeneration,
   }
@@ -211,7 +211,7 @@ export async function workspaceRelayDurableObjectOptions(
     ...(positiveInteger(env.CLAXEDO_RELAY_TUNNEL_CHANNEL_CAP) ? { tunnelChannelCap: positiveInteger(env.CLAXEDO_RELAY_TUNNEL_CHANNEL_CAP) } : {}),
     ...(sampleRate(env.CLAXEDO_RELAY_TRACE_SAMPLE_RATE) !== undefined ? { traceSampleRate: sampleRate(env.CLAXEDO_RELAY_TRACE_SAMPLE_RATE) } : {}),
     ...(trimToUndefined(env.CLAXEDO_RELAY_TRACE_FORCE_SECRET) ? { traceForceHeaderSecret: trimToUndefined(env.CLAXEDO_RELAY_TRACE_FORCE_SECRET) } : {}),
-    resolveTarget: (claims: RuntimeAccessTokenClaims) => resolver.target(claims.workspace_id, claims.host_id),
+    resolveTarget: (claims: RuntimeAccessTokenClaims) => resolver.target(claims.workspace_id, claims.host_id, claims.lease_epoch),
     isRuntimeAccessTokenActive: (claims: RuntimeAccessTokenClaims) =>
       resolver.revocation({
         jti: claims.jti,

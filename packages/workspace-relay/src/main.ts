@@ -449,7 +449,8 @@ export function createResolverClient(
     { ttlMs: options.hostGenerationCacheTtlMs ?? BUN_HOST_GENERATION_CACHE_TTL_MS_DEFAULT },
   )
   return {
-    target: (workspaceId: string, hostId: string): Promise<WorkspaceRelayTarget | undefined> => target({ workspaceId, hostId }),
+    target: (workspaceId: string, hostId: string, leaseEpoch?: number): Promise<WorkspaceRelayTarget | undefined> =>
+      target({ workspaceId, hostId, ...(leaseEpoch !== undefined ? { leaseEpoch } : {}) }),
     revocation,
     hostGeneration,
   }
@@ -766,7 +767,7 @@ async function main() {
     auditAcceptSampleRate,
     ...(metricsToken ? { metricsToken } : {}),
     resolveTarget: (claims: RuntimeAccessTokenClaims) =>
-      resolver.target(claims.workspace_id, claims.host_id),
+      resolver.target(claims.workspace_id, claims.host_id, claims.lease_epoch),
     isRuntimeAccessTokenActive: (claims: RuntimeAccessTokenClaims) =>
       resolver.revocation({
         jti: claims.jti,

@@ -230,7 +230,7 @@ export type CachedHostGenerationOptions = {
   now?: () => number
 }
 
-export type TargetLookupArgs = { workspaceId: string; hostId: string }
+export type TargetLookupArgs = { workspaceId: string; hostId: string; leaseEpoch?: number }
 export type TargetLookup = (args: TargetLookupArgs) => Promise<WorkspaceRelayTarget | undefined>
 
 export type CachedTargetOptions = {
@@ -678,9 +678,12 @@ export async function checkHostTunnelGeneration(
 }
 
 /**
- * Caches positive workspace target lookups by workspace+host. Missing targets
- * are only coalesced while in flight, not retained, so cold-start polling can
- * see readiness as soon as the control plane records it.
+ * Caches positive workspace target lookups by workspace, host and the lease
+ * epoch the token names. A restarted sandbox keeps its host id but gets a new
+ * lease epoch and address, so a token minted for it misses the entry cached
+ * for the old one. Missing targets are only coalesced while in flight, not
+ * retained, so cold-start polling can see readiness as soon as the control
+ * plane records it.
  */
 export function createCachedTargetClient(
   inner: TargetLookup,
@@ -695,7 +698,7 @@ export function createCachedTargetClient(
   }>()
 
   return async (args) => {
-    const key = `${args.workspaceId}\0${args.hostId}`
+    const key = `${args.workspaceId}\0${args.hostId}\0${args.leaseEpoch ?? ""}`
     const at = now()
     const entry = cache.get(key)
     if (entry && entry.expiresAt > at) {
