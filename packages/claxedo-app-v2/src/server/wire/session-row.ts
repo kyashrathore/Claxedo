@@ -58,5 +58,6 @@ export function sessionRowFromSession(info: AgentSession, ref: SessionRef): Sess
     ...(lastHumanTurnAt !== undefined ? { lastHumanTurnAt } : {}),
     ...(archived ? { archivedAt: archived } : {}),
     ...(parent ? { parentSessionId: sessionId(parent) as SessionId } : {}),
+    ...(info.lastTurn ? { lastTurn: info.lastTurn } : {}),
   }
 }

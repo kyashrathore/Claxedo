@@ -132,10 +132,10 @@ function messagePartDelta(input: {
   }
 }
 
-function messageCompleted(sessionID: string, messageID: string): EventMessageCompleted {
+function messageCompleted(sessionID: string, messageID: string, cancelled?: true): EventMessageCompleted {
   return {
     type: "message.completed",
-    properties: { sessionID, messageID },
+    properties: { sessionID, messageID, ...(cancelled ? { cancelled } : {}) },
   }
 }
 
@@ -1408,6 +1408,12 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
     case "finish":
       return [
         withDir(ctx.directory, messageCompleted(ctx.sessionId, ctx.assistantMsgId)),
+        withDir(ctx.directory, sessionIdle(ctx.sessionId)),
+      ]
+
+    case "cancelled":
+      return [
+        withDir(ctx.directory, messageCompleted(ctx.sessionId, ctx.assistantMsgId, true)),
         withDir(ctx.directory, sessionIdle(ctx.sessionId)),
       ]
 

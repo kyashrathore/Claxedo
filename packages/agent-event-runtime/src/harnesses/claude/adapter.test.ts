@@ -1545,7 +1545,7 @@ describe("claudeSdkAdapter", () => {
     expect(meteredTokens(closing)).toEqual({ input: 3, output: 900, reasoning: null, cache: { read: 1000, write: 200, write1h: 200 } })
   })
 
-  test("treats user-aborted results as idle without a runtime error", () => {
+  test("ends a user-aborted result as cancelled without a runtime error", () => {
     const agent = runtime()
 
     expect(agent.ingest({
@@ -1558,10 +1558,13 @@ describe("claudeSdkAdapter", () => {
         stop_reason: "tool_use",
         session_id: "sdk-session-abort",
       },
-    }).events).toMatchObject([{ type: "session-status", status: "idle" }])
+    }).events).toMatchObject([
+      { type: "session-status", status: "idle" },
+      { type: "cancelled", sessionId: "sdk-session-abort" },
+    ])
   })
 
-  test("treats cancelled and interrupted error results as idle", () => {
+  test("ends cancelled and interrupted error results as cancelled", () => {
     for (const error of ["Claude request cancelled by user", "Turn interrupted"]) {
       const agent = runtime()
 
@@ -1574,7 +1577,10 @@ describe("claudeSdkAdapter", () => {
           errors: [error],
           session_id: "sdk-session-cancel",
         },
-      }).events).toMatchObject([{ type: "session-status", status: "idle" }])
+      }).events).toMatchObject([
+        { type: "session-status", status: "idle" },
+        { type: "cancelled", sessionId: "sdk-session-cancel" },
+      ])
     }
   })
 

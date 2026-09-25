@@ -8,6 +8,7 @@ import type {
   AgentSnapshotFileDiff,
   AgentSubagentUpdate,
   AgentTodo,
+  AgentTurnOutcome,
   RuntimeGoalSnapshot,
 } from "@claxedo/agent-runtime-contract"
 import type { SolidQueryOptions } from "@tanstack/solid-query"
@@ -107,6 +108,7 @@ export type SessionRow = {
   readonly archivedAt?: number
   readonly parentSessionId?: SessionId
   readonly harness?: string
+  readonly lastTurn?: AgentTurnOutcome
 }
 
 export type TranscriptMessage = AgentMessageInfo

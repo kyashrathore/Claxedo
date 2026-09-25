@@ -111,6 +111,7 @@ export type {
 } from "./adapter-contract"
 export type { CompatEvent, CompatEnvelope, CompatPart } from "./compat-events"
 export { classifyFirstTurnError, firstTurnErrorData, FIRST_TURN_ERROR_CLASSES } from "./first-turn-error"
+export { isTerminalRuntimePayload } from "./runtime/turn-outcome"
 export type { FirstTurnErrorClass } from "./first-turn-error"
 export {
   ConnectionProviderError,

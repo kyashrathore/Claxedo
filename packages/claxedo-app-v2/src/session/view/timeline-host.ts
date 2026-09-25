@@ -34,6 +34,7 @@ function timelineRows(rows: readonly SessionRowView[]): readonly TimelineSession
     title: row.title,
     parentId: row.parentSessionId,
     archived: row.archivedAt !== undefined,
+    ...(row.lastTurn ? { lastTurn: row.lastTurn } : {}),
   }))
 }
 

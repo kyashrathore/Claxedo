@@ -171,6 +171,12 @@ function laterHumanTurn(current: SessionRow, incoming: SessionRow): number | und
 export function newerRow(current: SessionRow, incoming: SessionRow): SessionRow | undefined {
   if (incoming.updatedAt < current.updatedAt) return undefined
   const lastHumanTurnAt = laterHumanTurn(current, incoming)
-  if (incoming.createdAt === current.createdAt && incoming.lastHumanTurnAt === lastHumanTurnAt) return incoming
-  return { ...incoming, createdAt: current.createdAt, ...(lastHumanTurnAt === undefined ? {} : { lastHumanTurnAt }) }
+  const lastTurn = incoming.lastTurn ?? current.lastTurn
+  if (incoming.createdAt === current.createdAt && incoming.lastHumanTurnAt === lastHumanTurnAt && incoming.lastTurn === lastTurn) return incoming
+  return {
+    ...incoming,
+    createdAt: current.createdAt,
+    ...(lastHumanTurnAt === undefined ? {} : { lastHumanTurnAt }),
+    ...(lastTurn === undefined ? {} : { lastTurn }),
+  }
 }

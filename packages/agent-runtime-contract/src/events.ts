@@ -65,7 +65,8 @@ export type AgentPresentationEvent =
   | { id: string; type: "message.part.updated"; properties: { sessionID: string; part: AgentContentPart; time: number } }
   | { id: string; type: "message.part.removed"; properties: { sessionID: string; messageID: string; partID: string } }
   | { id: string; type: "message.part.delta"; properties: { sessionID: string; messageID: string; partID: string; field: string; delta: string } }
-  | { type: "message.completed"; properties: { sessionID: string; messageID: string } }
+  /** `cancelled` marks the message a stopped turn ended on; the runtime records that turn as cancelled from it. */
+  | { type: "message.completed"; properties: { sessionID: string; messageID: string; cancelled?: true } }
   | { id: string; type: "permission.asked"; properties: AgentPermission }
   | { id: string; type: "permission.replied"; properties: { sessionID: string; requestID: string } & ({ reply: "once" | "always" | "reject"; optionId?: never } | { optionId: string; reply?: never }) }
   | { id: string; type: "question.asked"; properties: AgentQuestion }
@@ -172,6 +173,7 @@ export type AgentRuntimeEvent = ({ harness?: string; threadId?: string; raw?: Ra
   | { type: "mcp-server-status"; serverName: string; status: "starting" | "ready" | "failed" | "cancelled"; error?: string | null }
   | { type: "subagent-updated"; subagentKey: string; revision: number; [key: string]: unknown }
   | { type: "finish"; sessionId: string }
+  | { type: "cancelled"; sessionId: string }
   | { type: "error"; error: string }
   | { type: "image-delta" | "audio-delta" | "thinking-audio-delta"; mimeType: string; data: string }
   | { type: "resource-link-delta" | "thinking-resource-link-delta"; uri: string; name: string; mimeType?: string; title?: string }

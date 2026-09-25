@@ -870,6 +870,7 @@ function resultEvents(
     return [
       ...(usage ? [usage] : []),
       { type: "session-status", status: "idle" },
+      { type: "cancelled", sessionId },
     ] satisfies AgentRuntimeEvent[]
   }
   return [
