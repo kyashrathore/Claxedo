@@ -1,18 +1,28 @@
 import path from "node:path"
+import fs from "node:fs/promises"
+import { randomUUID } from "node:crypto"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import type {
-  AttachInput, ConfigApplied, Deadline, HarnessServices, HarnessSession, HarnessTransport, McpServerSpec,
-  RoutedEvent, SessionBroker, StartInput, TransportCapabilities, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef,
+  AttachInput, ConfigApplied, Deadline, HarnessServices, HarnessSession, HarnessTransport,
+  RoutedEvent, SessionBroker, StartInput, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
 import { prepareCodexProfile } from "../../profiles/codex"
-import type { JsonValue, v2 } from "@claxedo/agent-event-runtime/harnesses/codex"
+import { refreshCodexChatgptTokens, type CodexAuthFetch } from "../../profiles/codex/auth"
+import type { v2 } from "@claxedo/agent-event-runtime/harnesses/codex"
+import { projectCodexThreadConfig } from "./configuration"
+import { createCodexConfig } from "./config"
+import { codexCapabilities, codexCapabilityDraft } from "./capabilities"
+import { codexTurnParams, codexInlineUserInput } from "./input"
 import { CodexEvents, CodexEventQueue, publishCodexQuota } from "./events"
-import { CodexTransportError } from "./errors"
+import { CodexRequestRefusal, CodexTransportError } from "./errors"
 import { snapshotFromCodexGoal, createCodexGoals } from "./goals"
+import { codexTurnSettings, readCodexModels, type CodexModel } from "./models"
+import { admitCodexProviderTurn, type CodexProviderTurn } from "./provider-turn"
 import { answerCodexRequest } from "./requests"
 import { startCodexTurn } from "./recovery"
-import { CodexRpc, type RpcMessage } from "./rpc"
+import { CodexRpc, codexRetirementDeadline, type RpcMessage } from "./rpc"
+import { CodexTerminals } from "./terminals"
 
 type Entry = {
   state: "ready" | "busy" | "retiring"
@@ -20,76 +30,38 @@ type Entry = {
   session: HarnessSession
   broker: SessionBroker
   rpc: CodexRpc
+  home: string
+  brokered: boolean
+  terminals: CodexTerminals
   goal: RuntimeGoalSnapshot | null
-  providerTurn?: { id: string; queue: CodexEventQueue<RoutedEvent>; events: CodexEvents }
+  models?: Promise<CodexModel[]>
+  providerTurn?: CodexProviderTurn
   turn?: { broker: TurnBroker; id?: string }
 }
 
-export type CodexTransportOptions = { binary: string; homeRoot: string; ownerHome?: string; env?: NodeJS.ProcessEnv }
-
-function mcpConfig(server: McpServerSpec): Record<string, JsonValue> {
-  if (server.kind === "stdio") return { command: server.command, args: [...(server.args ?? [])], env: server.env ?? {}, ...(server.cwd ? { cwd: server.cwd } : {}) }
-  if (server.kind === "sse") throw new CodexTransportError("configuration", `Codex cannot load SSE MCP server ${server.name}`)
-  return { url: server.url, http_headers: server.headers ?? {} }
-}
-
-export function projectCodexThreadConfig(input: StartInput, services: HarnessServices): Record<string, JsonValue> {
-  const servers = [...input.projection.mcpServers]
-  const first = input.locality === "local" ? services.firstPartyMcp(input.sessionId, input.locality) : undefined
-  if (first) servers.push({ ...first, origin: "first-party" })
-  const mcp = Object.fromEntries(servers.map((server) => [server.name, mcpConfig(server)]))
-  if (Object.keys(mcp).length !== servers.length) throw new CodexTransportError("configuration", "Duplicate Codex MCP server name")
-  return { features: { default_mode_request_user_input: true }, tools: { update_plan: { enabled: true } }, mcp_servers: mcp }
-}
-
-function codexRetirementDeadline(services: HarnessServices): Deadline {
-  return { at: services.clock.now() + 10_000, signal: new AbortController().signal }
-}
-
-function reasoningEffort(value: string | null | undefined): v2.TurnStartParams["effort"] {
-  if (value == null) return undefined
-  if (value === "none" || value === "minimal" || value === "low" || value === "medium" || value === "high" || value === "xhigh") return value
-  throw new CodexTransportError("configuration", `Unsupported Codex effort ${value}`)
-}
-
-function userInput(turn: TurnInput): v2.UserInput[] {
-  const prefix = turn.system ? `${turn.system}\n\n` : ""
-  const parts = turn.prompt.parts.flatMap((part): v2.UserInput[] => {
-    if (part.type === "text") return [{ type: "text", text: part.text, text_elements: [] }]
-    if (part.type === "file" && part.url.startsWith("data:image/")) return [{ type: "image", url: part.url }]
-    throw new CodexTransportError("configuration", "Codex prompt attachment is unsupported")
-  })
-  if (prefix && parts[0]?.type === "text") parts[0].text = prefix + parts[0].text
-  else if (prefix) parts.unshift({ type: "text", text: prefix, text_elements: [] })
-  return parts
-}
+export type CodexTransportOptions = { binary: string; homeRoot: string; ownerHome?: string; env?: NodeJS.ProcessEnv; fetch?: CodexAuthFetch }
 
 export class CodexAppServerTransport implements HarnessTransport {
   readonly kind = "codex-app-server" as const
   private readonly entries = new Map<string, Entry>()
   private readonly starting = new Set<CodexRpc>()
+  private readonly modelProbes = new Map<string, Promise<CodexModel[]>>()
   private disposed = false
 
   constructor(private readonly services: HarnessServices, private readonly options: CodexTransportOptions) {}
 
-  async capabilities(): Promise<TransportCapabilities> {
-    return {
-      modelSelection: { status: "required", models: [] }, effortLevels: { status: "unresolved", models: [] },
-      instructionChannel: "thread-start", configOwner: "runtime",
-      requests: { permissions: true, questions: true, elicitation: true },
-      steer: true, subagents: false,
-      goals: { implemented: true, available: true, actions: ["pause", "resume", "delete"], recovery: "reconcile", optionalFields: ["tokenBudget", "tokensUsed", "timeUsedSeconds"] },
-      fork: false, agents: false, commands: false, todos: true, history: "store", titles: "none",
-      pluginIntake: { mcp: "config", skills: "plugin-dir" },
-      mcpTransports: { stdio: true, http: true, sse: false },
-      timing: { model: "next-turn", effort: "next-turn", permissionMode: "next-turn", credentials: "after-active-turns" },
-    }
+  async capabilities(context: { sessionId?: string; directory: string }) {
+    const entry = context.sessionId ? this.entries.get(context.sessionId) : [...this.entries.values()].find((item) => item.session.directory === context.directory)
+    const models = entry ? await this.models(entry) : await this.probeDraftModels(codexCapabilityDraft(context.directory), "probe", true)
+    return codexCapabilities(models)
   }
 
-  private async launch(input: StartInput): Promise<CodexRpc> {
+  private async launch(input: StartInput, isolatedHome = false): Promise<{ rpc: CodexRpc; home: string; brokered: boolean }> {
     if (this.disposed) throw new CodexTransportError("process", "Codex transport disposed")
     const home = path.join(this.options.homeRoot, input.sessionId)
-    const profile = await prepareCodexProfile({ home, credentials: input.credentials, projection: input.projection, ownerHome: this.options.ownerHome })
+    if (isolatedHome) await fs.mkdir(home, { recursive: true, mode: 0o700 })
+    const profile = await prepareCodexProfile({ home, credentials: input.credentials, projection: input.projection,
+      ownerHome: isolatedHome ? home : this.options.ownerHome })
     const env = Object.fromEntries(Object.entries(this.options.env ?? process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
     delete env.CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN
     env.CODEX_HOME = profile.home
@@ -98,20 +70,24 @@ export class CodexAppServerTransport implements HarnessTransport {
     const rpc = new CodexRpc(owned, this.services.clock)
     this.starting.add(rpc)
     try {
+      if (this.disposed) throw new CodexTransportError("process", "Codex transport disposed during startup")
       await rpc.request("initialize", { clientInfo: { name: "claxedo", version: "0.1.0" }, capabilities: { experimentalApi: true, requestAttestation: false } })
+      if (this.disposed) throw new CodexTransportError("process", "Codex transport disposed during initialize")
       rpc.notify("initialized")
-      return rpc
+      return { rpc, ...profile }
     } catch (error) {
       await rpc.retire(codexRetirementDeadline(this.services))
       this.starting.delete(rpc)
+      if (isolatedHome) await fs.rm(home, { recursive: true, force: true })
       throw error
     }
   }
 
   private async open(input: StartInput, broker: SessionBroker, resumed?: string): Promise<HarnessSession> {
-    const rpc = await this.launch(input)
+    const { rpc, home, brokered } = await this.launch(input)
     try {
       const config = projectCodexThreadConfig(input, this.services)
+      if (this.disposed) throw new CodexTransportError("process", "Codex transport disposed during startup")
       const model = input.model?.modelID === "default" ? undefined : input.model?.modelID
       const params: v2.ThreadStartParams = { cwd: input.directory, ...(model ? { model } : {}),
         ...(input.credentials.providers.codex ? { modelProvider: "broker" } : {}),
@@ -124,7 +100,8 @@ export class CodexAppServerTransport implements HarnessTransport {
         sessionId: input.sessionId, workspaceId: input.workspaceId, directory: input.directory,
         connectionId: "codex-app-server", upstreamSessionId: threadId,
       } }
-      const entry: Entry = { state: "ready", start: input, session, broker, rpc, goal: null }
+      const entry: Entry = { state: "ready", start: input, session, broker, rpc, home, brokered,
+        terminals: new CodexTerminals(rpc, threadId), goal: null }
       rpc.onRequest((message) => this.answer(entry, message))
       rpc.onMessage((message) => this.outsideTurn(entry, message))
       this.entries.set(input.sessionId, entry)
@@ -151,13 +128,55 @@ export class CodexAppServerTransport implements HarnessTransport {
     return entry
   }
 
+  private models(entry: Entry): Promise<CodexModel[]> {
+    entry.models ??= readCodexModels(entry.rpc)
+    return entry.models
+  }
+
+  readonly config = createCodexConfig({
+    entry: (session) => this.entry(session), models: (entry) => this.models(entry),
+    probe: (draft, mode) => this.probeDraftModels(draft, mode),
+  })
+
+  private probeDraftModels(draft: Omit<StartInput, "sessionId" | "title" | "instructions">, mode: "probe" | "peek",
+    isolatedHome = false): Promise<CodexModel[]> {
+    const key = JSON.stringify([draft, isolatedHome])
+    const cached = this.modelProbes.get(key)
+    if (cached) return cached
+    if (mode === "peek") return Promise.resolve([])
+    const probe = this.probeModels({ ...draft, sessionId: `probe-${randomUUID()}` }, isolatedHome)
+    this.modelProbes.set(key, probe)
+    void probe.then(undefined, () => this.modelProbes.delete(key))
+    return probe
+  }
+
+  private async probeModels(input: StartInput, isolatedHome = false): Promise<CodexModel[]> {
+    const { rpc } = await this.launch(input, isolatedHome)
+    try { return await readCodexModels(rpc) }
+    finally {
+      this.starting.delete(rpc)
+      try { await rpc.retire(codexRetirementDeadline(this.services)) }
+      finally { if (isolatedHome) await fs.rm(path.join(this.options.homeRoot, input.sessionId), { recursive: true, force: true }) }
+    }
+  }
+
   private async answer(entry: Entry, message: RpcMessage): Promise<unknown> {
-    if (!message.method || (!entry.turn && !entry.providerTurn)) throw new CodexTransportError("protocol", "Codex request has no active turn")
-    return answerCodexRequest(message, entry.turn?.broker ?? entry.broker, entry.session.binding.sessionId)
+    if (message.method === "account/chatgptAuthTokens/refresh") {
+      if (entry.brokered) throw new CodexRequestRefusal(-32000, "ChatGPT token refresh is unavailable for a brokered Codex account")
+      try { return await refreshCodexChatgptTokens(entry.home, this.options.fetch) }
+      catch (error) { throw new CodexRequestRefusal(-32000, `Codex ChatGPT token refresh failed: ${String(error)}`) }
+    }
+    if (!message.method) throw new CodexRequestRefusal(-32600, "Codex request has no method")
+    if (!entry.turn && !entry.providerTurn && message.method !== "item/tool/call") {
+      throw new CodexRequestRefusal(-32000, "Codex request has no active turn")
+    }
+    return answerCodexRequest(message, entry.turn?.broker ?? entry.broker, entry.session.binding.sessionId,
+      { directory: entry.session.directory, permissionMode: entry.start.config.permissionMode })
   }
 
   private outsideTurn(entry: Entry, message: RpcMessage): void {
     const params = asRecordOrEmpty(message.params)
+    entry.terminals.observe(message)
     if (message.method === "account/rateLimits/updated") {
       if (entry.state !== "busy" && !entry.providerTurn) {
         void publishCodexQuota(entry.broker, entry.session.binding.upstreamSessionId, message)
@@ -188,35 +207,14 @@ export class CodexAppServerTransport implements HarnessTransport {
       }
     }
     if (message.method !== "turn/started" || entry.state === "busy" || entry.goal?.status !== "active") return
-    this.beginProviderTurn(entry, message, params)
-  }
-
-  private beginProviderTurn(entry: Entry, message: RpcMessage, params: Record<string, unknown>): void {
-    const id = asString(asRecordOrEmpty(params.turn).id) ?? ""
-    if (!id) return
-    const queue = new CodexEventQueue<RoutedEvent>()
-    entry.providerTurn = { id, queue, events: new CodexEvents(entry.session.binding.upstreamSessionId) }
-    for (const event of entry.providerTurn.events.ingest(message)) queue.push(event)
-    void entry.broker.admitProviderTurn({ reason: "goal" }, async function* () {
-      for (;;) {
-        const next = await queue.next()
-        if (next.done) return
-        yield next.value
-      }
-    }).then((result) => {
-      if (!result.admitted) { queue.end(); entry.providerTurn = undefined }
-      else void result.settled.then((settlement) => {
-        if (settlement.state === "failed") entry.broker.reportFailure(new CodexTransportError("session", settlement.error))
-        if (settlement.state !== "completed") { queue.end(); entry.providerTurn = undefined }
-      })
-    }, (error: unknown) => { queue.fail(error); entry.broker.reportFailure(error) })
+    admitCodexProviderTurn(entry, message)
   }
 
   readonly goals = createCodexGoals((session) => this.entry(session))
 
   async *send(session: HarnessSession, turn: TurnInput, broker: TurnBroker): AsyncIterable<RoutedEvent> {
     const entry = this.entry(session)
-    if (entry.state !== "ready") throw new CodexTransportError("session", "Codex turn already active")
+    if (entry.state !== "ready" || entry.providerTurn) throw new CodexTransportError("session", "Codex turn already active")
     entry.state = "busy"
     entry.turn = { broker }
     const queue = new CodexEventQueue<RoutedEvent>()
@@ -231,14 +229,15 @@ export class CodexAppServerTransport implements HarnessTransport {
       } catch (error) { queue.fail(error) }
     })
     void entry.rpc.process.exited.then(() => queue.fail(new CodexTransportError("process", "Codex exited during turn")))
-    const onAbort = () => { void this.cancel(session, { turnId: turn.turnId, assistantMessageId: turn.assistantMessageId }, codexRetirementDeadline(this.services)) }
+    const onAbort = () => { void this.cancel(session, { turnId: turn.turnId, assistantMessageId: turn.assistantMessageId },
+      codexRetirementDeadline(this.services)).catch((error: unknown) => entry.broker.reportFailure(error)) }
     broker.signal.addEventListener("abort", onAbort, { once: true })
     try {
-      const params: v2.TurnStartParams = { threadId: session.binding.upstreamSessionId, input: userInput(turn), cwd: session.directory,
-        ...(turn.model?.modelID && turn.model.modelID !== "default" ? { model: turn.model.modelID } : {}),
-        ...(turn.effort ? { effort: reasoningEffort(turn.effort) } : {}),
-        ...(turn.prompt.serviceTier !== undefined ? { serviceTier: turn.prompt.serviceTier } : {}),
-        approvalPolicy: "on-request", approvalsReviewer: "user" }
+      const settings = codexTurnSettings(await this.models(entry), {
+        model: turn.model?.modelID ?? entry.start.config.model?.modelID ?? entry.start.model?.modelID,
+        effort: turn.effort, serviceTier: turn.prompt.serviceTier,
+      })
+      const params = codexTurnParams(turn, session.binding.upstreamSessionId, session.directory, settings)
       const result = asRecordOrEmpty(await startCodexTurn(entry.rpc, params, projectCodexThreadConfig(entry.start, this.services)))
       entry.turn.id = asString(asRecordOrEmpty(result.turn).id) ?? entry.turn.id ?? ""
       for (;;) {
@@ -254,24 +253,23 @@ export class CodexAppServerTransport implements HarnessTransport {
     }
   }
 
-  async cancel(session: HarnessSession, _turn: TurnRef, _deadline: Deadline) {
+  async cancel(session: HarnessSession, _turn: TurnRef, deadline: Deadline) {
     const entry = this.entry(session)
     if (entry.state !== "busy" || !entry.turn?.id) return { execution: "unknown" as const, cleanup: "unknown" as const }
-    await entry.rpc.request("turn/interrupt", { threadId: session.binding.upstreamSessionId, turnId: entry.turn.id })
-    return { execution: "unknown" as const, cleanup: "unknown" as const }
+    return entry.terminals.stop(entry.turn.id, deadline)
   }
 
   readonly steer = { steer: async (session: HarnessSession, _turn: TurnRef, input: TurnInput) => {
     const entry = this.entry(session)
     if (!entry.turn?.id) return { ok: false as const, status: "no_active_turn" as const, message: "No active Codex turn" }
-    await entry.rpc.request("turn/steer", { threadId: session.binding.upstreamSessionId, expectedTurnId: entry.turn.id, input: userInput(input) })
+    await entry.rpc.request("turn/steer", { threadId: session.binding.upstreamSessionId, expectedTurnId: entry.turn.id, input: codexInlineUserInput(input) })
     return { ok: true as const }
   } }
 
   async configure(session: HarnessSession, update: TransportConfigUpdate): Promise<ConfigApplied> {
     const entry = this.entry(session)
     if (!update.credentials && !update.projection) return { state: "applied" }
-    if (entry.state === "busy") return { state: "refused", reason: "Codex turn is active" }
+    if (entry.state === "busy" || entry.providerTurn) return { state: "refused", reason: "Codex turn is active" }
     const start = { ...entry.start, ...(update.credentials ? { credentials: update.credentials } : {}),
       ...(update.projection ? { projection: update.projection } : {}) }
     if (JSON.stringify(start.credentials) === JSON.stringify(entry.start.credentials)
@@ -287,6 +285,8 @@ export class CodexAppServerTransport implements HarnessTransport {
     const entry = this.entries.get(session.binding.sessionId)
     if (!entry) return
     entry.state = "retiring"
+    entry.providerTurn?.queue.fail(new CodexTransportError("process", "Codex process retired during provider turn"))
+    entry.providerTurn = undefined
     await entry.rpc.retire(codexRetirementDeadline(this.services))
     this.entries.delete(session.binding.sessionId)
   }

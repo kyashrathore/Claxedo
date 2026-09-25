@@ -4,11 +4,11 @@ import { join } from "node:path"
 import { describe, expect, jest, mock, test } from "bun:test"
 import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import { OpenCodeSdkHarnessAdapter } from "./harness-adapter"
-import { SESSION_TOTAL_READ_MS } from "./turn-usage"
-import { createEventPump, type ProjectedEvent } from "./event-pump"
-import type { OpenCodeHost } from "./host"
-import type { OpenCodeRuntime } from "./runtime"
-import type { TokenUsage } from "./session-port"
+import { SESSION_TOTAL_READ_MS } from "@claxedo/harness/opencode-sdk/translate/turn-usage"
+import { createEventPump, type ProjectedEvent } from "@claxedo/harness/opencode-sdk/event-pump"
+import type { OpenCodeHost } from "@claxedo/harness/opencode-sdk/host"
+import type { OpenCodeRuntime } from "@claxedo/harness/opencode-sdk/runtime"
+import type { TokenUsage } from "@claxedo/harness/opencode-sdk/session-port"
 
 const NO_TOKENS: TokenUsage = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
 

@@ -19,6 +19,8 @@ Everything a transport sees. The types say the shapes; this file says the rules 
 
   A harness that reports its session id only inside the first turn can rebind at once, and a crash before the turn ends still leaves a durable binding.
 - **`admitProviderTurn` resolves when the turn is admitted, not when it ends.** `settled` resolves when the run ends and never rejects.
+  - The runtime owns cancelling a provider turn, as it does any turn: it aborts the turn's signal. A run that ends after that signal aborted settles `cancelled`, whether it returned or threw.
+  - A transport's own stop of a native goal interrupts the harness. The runtime's goal-stop route then cancels the provider turn it admitted.
 - **`SessionBroker.publish` carries session-level events that arrive with no turn active.** Examples are quota windows and command updates. Usage outside a turn goes through `meter`.
 
 ## Configuration

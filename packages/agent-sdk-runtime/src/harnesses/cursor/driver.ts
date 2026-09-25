@@ -38,7 +38,8 @@ import {
   type SdkRuntimeTranscriptRegistrar,
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
-import { isProviderUnavailable, providerBinding, providerProjectionRecord } from "../../provider-projection"
+import { providerBinding, providerProjectionRecord } from "../../provider-projection"
+import { isProviderUnavailable } from "@claxedo/agent-runtime-contract"
 import {
   applyCursorBackendUrl,
   CursorBackendUrlFrozenError,

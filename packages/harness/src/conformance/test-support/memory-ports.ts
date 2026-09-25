@@ -126,10 +126,14 @@ export class MemoryPorts implements BrokerPorts {
   }
   readGoal(_sessionId: string) { return null }
   async publishGoal(_sessionId: string, _snapshot: null) {}
+  providerTurn?: AbortController
+  cancelProviderTurn() { this.providerTurn?.abort() }
   async admitProviderTurn(_sessionId: string, _input: unknown, run: (id: string, signal: AbortSignal) => Promise<void>) {
-    const settled = Promise.resolve().then(() => run("t1", new AbortController().signal)).then(
-      () => ({ state: "completed" as const }),
-      (error: unknown) => ({ state: "failed" as const, error: String(error) }),
+    const controller = new AbortController()
+    this.providerTurn = controller
+    const settled = Promise.resolve().then(() => run("t1", controller.signal)).then(
+      () => controller.signal.aborted ? { state: "cancelled" as const } : { state: "completed" as const },
+      (error: unknown) => controller.signal.aborted ? { state: "cancelled" as const } : { state: "failed" as const, error: String(error) },
     )
     return { admitted: true as const, turnId: "t1", settled }
   }
