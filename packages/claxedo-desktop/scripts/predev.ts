@@ -179,6 +179,10 @@ console.log(`[predev] Local server entry: ${LOCAL_SERVER_ENTRY} → ${resolveLoc
 if (fs.existsSync(serverSource) && outputIsStale(serverEntry, [
   path.resolve(SCRIPT_DIR, "bundle-claxedo-server.ts"),
   serverSource,
+  // The boot stub's own imports: they seed the compile cache before the
+  // product entry loads, so an edit to them is a new server bundle too.
+  path.resolve(SCRIPT_DIR, "claxedo-server-startup.ts"),
+  path.resolve(PACKAGE_DIR, "src/shared/compile-cache.ts"),
   path.resolve(SCRIPT_DIR, "claxedo-server-entry.ts"),
   path.resolve(PACKAGE_DIR, "src/shared/claxedo-server-lifecycle.ts"),
   path.resolve(CLAXEDO_SERVER_DIR, "src"),

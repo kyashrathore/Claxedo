@@ -141,6 +141,8 @@ let mainWindow: BrowserWindow | null = null
 let quitting = false
 const daemonExitLifecycle = createDaemonExitLifecycle()
 let daemonLease: Awaited<ReturnType<typeof holdClaxedoDaemonLease>> | undefined
+/** Held for the recovery IPC while no server connection could be established. */
+let unresolvedDaemon: { discovery: ClaxedoDaemonDiscovery; result: DaemonRecoveryResult } | undefined
 const loadingComplete = defer<void>()
 
 const browserTabSetup = setupBrowserTab()
@@ -243,6 +245,13 @@ function setupApp() {
     return
   }
   cleanupLegacyDevCaches()
+  // The server child needs nothing from app readiness, so it forks here rather
+  // than after whenReady; initialize() awaits the connection and owns its
+  // failure, and this catch only keeps the rejection from being reported as
+  // unhandled before initialize() attaches.
+  logger.log("setting up server connection")
+  const serverConnection = setupServerConnection()
+  serverConnection.catch(() => undefined)
 
   app.on("second-instance", (_event: Event, argv: string[]) => {
     const urls = argv.filter((arg: string) => arg.startsWith("claxedo://"))
@@ -283,7 +292,7 @@ function setupApp() {
     void account.ready.catch((error) => {
       logger.warn("account restore failed", { error: String(error) })
     })
-    await initialize()
+    await initialize(serverConnection)
   })
 }
 
@@ -603,14 +612,10 @@ class DaemonUnresolvedError extends Error {
   }
 }
 
-/** Held for the recovery IPC while no server connection could be established. */
-let unresolvedDaemon: { discovery: ClaxedoDaemonDiscovery; result: DaemonRecoveryResult } | undefined
-
-async function initialize() {
+async function initialize(serverConnectionStarted: Promise<ServerConnection>) {
   const loadingTask = (async () => {
     try {
-      logger.log("setting up server connection")
-      const serverConnection = await setupServerConnection()
+      const serverConnection = await serverConnectionStarted
       logger.log("server connection ready", {
         variant: serverConnection.variant,
         url: serverConnection.url,
