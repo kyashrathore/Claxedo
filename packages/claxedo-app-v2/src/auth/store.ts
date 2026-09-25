@@ -1,5 +1,5 @@
 import { createEffect, type Accessor } from "solid-js"
-import type { BrowserAuthAdapter, BrowserAuthMethod, BrowserAuthSignInOptions, BrowserAuthSignUpOptions } from "./browser-auth"
+import type { BrowserAuthAdapter, BrowserAuthMethod, BrowserAuthSignInOptions, BrowserAuthSignUpOptions, BrowserAuthState } from "./browser-auth"
 import type { AuthUser } from "./display-user"
 import { authMachine, type AuthState } from "./model"
 import { apiOrigin, appOrigin, serverIssuesSessions } from "./origins"
@@ -16,9 +16,7 @@ export type Auth = {
   readonly token: (options?: { skipCache?: boolean }) => Promise<string | null>
 }
 
-export function createAuth(adapter: BrowserAuthAdapter): Auth {
-  const browser = adapter.useAuth()
-  const auth = authMachine()
+function followAdapter(browser: BrowserAuthState, auth: ReturnType<typeof authMachine>) {
   const settle = () => {
     const reason = browser.unavailable()
     auth.send({ type: "settled", user: browser.user(), ...(reason ? { reason } : {}) })
@@ -27,7 +25,7 @@ export function createAuth(adapter: BrowserAuthAdapter): Auth {
     if (browser.loading()) auth.send({ type: "started" })
     else settle()
   })
-  const run = async (task: () => Promise<void>) => {
+  return async (task: () => Promise<void>) => {
     auth.send({ type: "started" })
     try {
       await task()
@@ -35,6 +33,12 @@ export function createAuth(adapter: BrowserAuthAdapter): Auth {
       settle()
     }
   }
+}
+
+export function createAuth(adapter: BrowserAuthAdapter): Auth {
+  const browser = adapter.useAuth()
+  const auth = authMachine()
+  const run = followAdapter(browser, auth)
   return {
     state: auth.state,
     user: browser.user,

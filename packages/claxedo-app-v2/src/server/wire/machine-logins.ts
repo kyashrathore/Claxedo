@@ -1,4 +1,4 @@
-import type { HarnessLogin } from "../types"
+import type { HarnessLogin } from "../harness-types"
 
 export const MACHINE_LOGINS_PATH = "/api/claxedo/credentials/machine-logins"
 export const MACHINE_LOGINS_UNSUPPORTED = 501
