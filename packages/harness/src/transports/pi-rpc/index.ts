@@ -12,6 +12,7 @@ import { piEvents } from "./events"
 import { EventQueue } from "./queue"
 import { PiRpc, type PiMessage } from "./rpc"
 import { answerPiDialog } from "./ui"
+import { piCommands } from "./commands"
 
 type Entry = {
   session: HarnessSession
@@ -259,26 +260,13 @@ export class PiRpcTransport implements HarnessTransport {
 
   readonly commands = {
     list: async (target: ConfigTarget) => {
-      if ("session" in target) return this.commandList(this.entry(target.session).rpc)
+      if ("session" in target) return piCommands(this.entry(target.session).rpc)
       const input: StartInput = { ...target.draft, sessionId: `probe-${randomUUID()}` }
       const profile = selectPiProfile(input.owner, input.credentials, input.directory, input.sessionId, this.options)
       const rpc = await this.launch(input, profile, undefined, undefined, "probe")
-      try { return await this.commandList(rpc) }
+      try { return await piCommands(rpc) }
       finally { await rpc.retire(deadline(this.services.clock)) }
     },
-  }
-
-  private async commandList(rpc: PiRpc) {
-    const result = await rpc.request("get_commands")
-    if (!result || typeof result !== "object" || !("commands" in result) || !Array.isArray(result.commands)) {
-      throw new PiTransportError("protocol", "Pi returned an invalid command list")
-    }
-    return result.commands.map((value: unknown) => {
-      if (!value || typeof value !== "object" || !("name" in value) || typeof value.name !== "string") {
-        throw new PiTransportError("protocol", "Pi command has no name")
-      }
-      return { name: value.name, description: "description" in value && typeof value.description === "string" ? value.description : undefined }
-    })
   }
 
   readonly naming = { rename: async (session: HarnessSession, title: string) => {

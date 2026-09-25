@@ -3,7 +3,8 @@ import os from "node:os"
 import path from "node:path"
 import { expect, test } from "bun:test"
 import { createTestServices } from "./test-support/services"
-import { runConformance, type ConformanceBackend } from "./test-support/run"
+import { runConformance, setupConformance, type ConformanceBackend } from "./test-support/run"
+import { assertListedCommandsRun } from "./test-support/commands"
 import { ensurePinnedPi, PINNED_PI } from "../../e2e/harness/pinned-pi"
 import { reservePort, releasePort } from "../../e2e/harness/ports"
 import { startScriptedModelServer } from "../../e2e/harness/scripted-model-server"
@@ -72,6 +73,31 @@ runConformance({
     })
   },
 })
+
+test("every listed Pi command runs as a slash prompt", async () => {
+  const context = await setupConformance({ name: "pi command proof", backend,
+    makeTransport(services, state) {
+      const pi = state as PiBackend
+      return new PiRpcTransport(services, { binary: PINNED_PI, placement: "loopback", machineOwnerUserId: "owner",
+        canUseOwnLogin: true, stateRoot: path.join(pi.root, "claxedo"), ownerAgentDir: pi.agentDir,
+        runtime: process.execPath, env: process.env })
+    } })
+  try {
+    await assertListedCommandsRun({ transport: context.transport, session: context.session, turn: context.turn,
+      turnBroker: context.turnBroker, args: (name) => { expect(name).toBe("conformance-ui"); return "choose" },
+      whileRunning: async () => {
+        let question = context.owner.broker.list({ sessionId: "s1" }).find((row) => row.request.kind === "question")
+        for (let attempt = 0; !question && attempt < 500; attempt++) {
+          await new Promise((resolve) => setTimeout(resolve, 10))
+          question = context.owner.broker.list({ sessionId: "s1" }).find((row) => row.request.kind === "question")
+        }
+        expect(question).toBeDefined()
+        if (question) expect((await context.owner.broker.answer(question.request.requestId,
+          { kind: "answers", answers: [["Allow"]] }, { sessionId: "s1" })).ok).toBe(true)
+      },
+      observe: (_name, events) => expect(events.some(({ event }) => event.type === "session-title" && event.title === "Pi allowed")).toBe(true) })
+  } finally { await context.close() }
+}, 60_000)
 
 test("Pi script uses the composed runtime even when PATH starts with a failing node", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-script-runtime-"))

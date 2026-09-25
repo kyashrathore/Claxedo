@@ -5,6 +5,7 @@ This package connects Claxedo to agent harnesses. The repo root `AGENTS.md` stil
 ## Parts
 
 - **Core** (`src/contract/`, `src/broker/`, `src/registry/`, `src/capabilities/`, `src/translate/`): Claxedo's own concepts. It never imports a transport, a profile, or a vendor SDK.
+- **Composition** (`src/compose.ts`): wires the registry to built-in and custom transport constructors. It may import the registry and every transport; only the package export imports it.
 - **Transports** (`src/transports/<kind>/`): how we drive one kind of harness and read its events. A transport imports only `src/contract/`, `src/translate/`, its profile, its own folder, its own vendor SDK, Node built-ins and `@claxedo/helpers`.
 - **Profiles** (`src/profiles/<harness>/`): the documented format of a harness's skills, MCP config and plugins, and its delivery per transport. Every rule cites the doc it comes from. A profile never grants plugin authority.
 
@@ -35,7 +36,6 @@ Never assume its files are ours, and never report a remote stop as proven.
 
 None, except these owners, each with its reason in its folder's `README.md`:
 - `src/transports/cursor-sdk/worker-registry.ts`: the Cursor worker registry (the SDK freezes its backend per process);
-- `src/transports/acp/pattern-validation.ts`: ACP's validation pool (two workers, 32 MB, shared on purpose).
 
 Adding an owner adds its exact path here; `bun run check` reads this list.
 

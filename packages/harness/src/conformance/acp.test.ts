@@ -11,6 +11,7 @@ import { expect, test } from "bun:test"
 import { createRequestBroker, createSessionBroker } from "../broker"
 import { MemoryPorts, authority, origin } from "./test-support/memory-ports"
 import { createTestServices } from "./test-support/services"
+import { assertListedCommandsRun } from "./test-support/commands"
 
 type AcpBackend = ConformanceBackend & {
   root: string
@@ -83,6 +84,19 @@ for (const kind of ["process", "websocket"] as const) {
     },
   })
 }
+
+test("every listed ACP command runs as a slash prompt", async () => {
+  const context = await setupConformance({ name: "acp command proof", backend: () => backend("process"),
+    makeTransport(services, state) {
+      return new AcpTransport(services, (state as AcpBackend).connection, filterMcpServers,
+        async () => { throw new Error("No saved transcript") })
+    } })
+  try {
+    await assertListedCommandsRun({ transport: context.transport, session: context.session, turn: context.turn,
+      turnBroker: context.turnBroker, args: () => acpScriptToken("text"),
+      observe: (_name, events) => expect(events.some(({ event }) => JSON.stringify(event).includes("PICONFORM"))).toBe(true) })
+  } finally { await context.close() }
+}, 60_000)
 
 runConformance({
   name: "acp websocket load",

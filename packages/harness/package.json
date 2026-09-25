@@ -5,6 +5,18 @@
   "type": "module",
   "license": "MIT",
   "exports": {
+    "./compose": {
+      "development": "./src/compose.ts",
+      "bun": "./src/compose.ts",
+      "types": "./dist/compose.d.ts",
+      "import": "./dist/compose.js"
+    },
+    "./broker": {
+      "development": "./src/broker/index.ts",
+      "bun": "./src/broker/index.ts",
+      "types": "./dist/broker/index.d.ts",
+      "import": "./dist/broker/index.js"
+    },
     "./contract": {
       "development": "./src/contract/index.ts",
       "bun": "./src/contract/index.ts",
