@@ -20,7 +20,7 @@ import type { WorkspaceWakes } from "./workspace-wakes"
 import type { Workspaces } from "./workspaces"
 import { createMessageIds } from "./wire/ascending-id"
 import { harnessIdentity, harnessSelectionQuery } from "./wire/harness-selection"
-import { promptBody, promptDeliveryFromWire } from "./wire/prompt"
+import { PROMPT_ROUTE, promptBody, promptDeliveryFromWire } from "./wire/prompt"
 import { permissionReplyBody } from "./wire/requests"
 import { sessionRowFromSession } from "./wire/session-row"
 import { subagentsFromWire } from "./wire/subagents"
@@ -71,7 +71,7 @@ async function sendPrompt(context: SessionContext, wakes: WorkspaceWakes, ref: S
     await startGoal(context.transport, where, ref, input.goal.objective)
     return "start"
   }
-  const answer = await context.transport.runtimeJson<unknown>(where, sessionEndpoint(ref, "/prompt_async"), jsonInit("POST", promptBody(input, messageId)))
+  const answer = await context.transport.runtimeJson<unknown>(where, sessionEndpoint(ref, PROMPT_ROUTE), jsonInit("POST", promptBody(input, messageId)))
   return promptDeliveryFromWire(answer)
 }
 

@@ -48,7 +48,7 @@ export function OAuthConsentPage() {
   }
 
   return (
-    <main class="auth-page" data-component="oauth-consent-page">
+    <main class="auth-page">
       <section class="auth-card">
         <p class="auth-kicker">Authorization request</p>
         <h1 class="auth-title" data-testid="consent-client">Allow {client()?.name ?? clientId() ?? "this application"}?</h1>

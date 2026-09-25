@@ -7,7 +7,6 @@ export function PluginStatusLine(props: { readonly status: PluginStatus; readonl
   const t = useTranslator(marketplaceDictionary)
   return (
     <span
-      data-component="agent-plugin-status"
       data-tone={props.status.tone}
       class="inline-flex min-w-0 max-w-full gap-1.5"
       classList={{ "items-center": !props.wrap, "items-baseline": props.wrap }}

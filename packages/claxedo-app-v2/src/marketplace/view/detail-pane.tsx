@@ -119,7 +119,6 @@ export function PluginDetailPane(
   return (
     <aside
       ref={size.ref}
-      data-component="agent-plugin-detail"
       aria-label={t("marketplace.details", { name: name() })}
       style={{ width: `${size.width()}px` }}
       class="relative flex min-h-0 max-w-full shrink-0 flex-col border-l border-border-weak-base bg-surface-base"

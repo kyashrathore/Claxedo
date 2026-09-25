@@ -79,7 +79,6 @@ export function AddSourceForm(props: {
   const form = createSourceForm(props.onAdd, () => t("marketplace.source.invalid"))
   return (
     <form
-      data-component="agent-plugin-add-source"
       aria-label={t("marketplace.source.add")}
       class="grid gap-2 rounded-lg border border-border-weak-base bg-surface-inset-base p-3"
       onSubmit={(event) => void form.submit(event)}

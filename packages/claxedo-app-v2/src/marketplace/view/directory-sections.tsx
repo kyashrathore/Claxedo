@@ -24,7 +24,7 @@ function SectionHeading(props: {
 
 export function CatalogSkeleton(): JSX.Element {
   return (
-    <div data-component="agent-plugin-skeleton" aria-hidden="true" class={GRID}>
+    <div aria-hidden="true" class={GRID}>
       <For each={[0, 1, 2]}>
         {() => (
           <div class="flex h-16 items-start gap-3 rounded-lg border border-border-weak-base bg-surface-base p-3">

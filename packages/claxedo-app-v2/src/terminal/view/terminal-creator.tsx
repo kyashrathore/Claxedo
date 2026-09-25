@@ -23,7 +23,6 @@ function LauncherTile(props: {
   return (
     <button
       type="button"
-      data-slot="terminal-launcher"
       data-launcher-id={props.launcher.id}
       disabled={!!props.starting}
       onClick={() => props.onLaunch(props.launcher)}
@@ -127,7 +126,7 @@ export function TerminalCreator(props: PaneProps<TerminalCreatorState>): JSX.Ele
                 <span class="text-sm font-medium text-text-weak">{t("terminal.creator.title")}</span>
           <Show when={creating()}>
             {(kind) => (
-              <span data-slot="terminal-new-create-note" class="truncate text-xs text-v2-text-text-faint">
+              <span class="truncate text-xs text-v2-text-text-faint">
                 {t(kind() === "cloud" ? "terminal.creator.inNewSandbox" : "terminal.creator.inNewWorktree")}
               </span>
             )}
@@ -148,7 +147,6 @@ export function TerminalCreator(props: PaneProps<TerminalCreatorState>): JSX.Ele
               <Show when={error()}>
                 {(message) => (
                   <div
-                    data-slot="terminal-new-error"
                     class="border-t border-border-weaker-base px-3.5 py-2.5 text-xs text-icon-critical-base"
                   >
                     {message()}

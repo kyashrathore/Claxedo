@@ -1,6 +1,8 @@
 import type { PromptInput as RuntimePromptInput } from "@claxedo/agent-runtime-contract"
 import type { PromptAttachment, PromptDelivery, PromptInput } from "../types"
 
+export const PROMPT_ROUTE = "/prompt_async"
+
 const DEFAULT_AGENT = "build"
 
 type WirePart = RuntimePromptInput["parts"][number]

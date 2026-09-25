@@ -40,7 +40,6 @@ export function AccessoryRow(props: {
         role="toolbar"
         aria-label={t("terminal.keys")}
         data-testid="terminal-keys"
-        data-component="terminal-accessory-row"
         class="fixed inset-x-0 bottom-0 z-40 flex items-stretch gap-1 border-t border-border-weak-base/60 bg-surface-base/95 px-1.5 py-1 backdrop-blur"
         style={{ "padding-bottom": "max(0.25rem, env(safe-area-inset-bottom))" }}
       >

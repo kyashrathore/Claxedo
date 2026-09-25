@@ -48,7 +48,7 @@ export function SkillView(props: {
     server.queries.marketplace.skill({ pluginInstanceId: props.pluginInstanceId, skill: props.skill }),
   )
   return (
-    <div data-component="agent-plugin-skill-view" class="flex min-h-0 flex-1 flex-col">
+    <div class="flex min-h-0 flex-1 flex-col">
       <SkillBreadcrumb pluginName={props.pluginName} skill={props.skill} onBack={props.onBack} />
       <div class="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         <Switch fallback={<p class="text-12-regular text-text-weak">{t("marketplace.skill.reading")}</p>}>
