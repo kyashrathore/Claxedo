@@ -390,6 +390,35 @@ At 19:08 the owner said: finish in-progress work; start no new work.
   - The fix: cache the heights from ResizeObserver entries and read only `scrollTop` per frame.
   - It can't land before the swap, because `packages/ui` is shared with today's app. Apply it when the used kit components move into the app.
 
+## Streaming at 60 Hz (exp-stream, 2026-09-25)
+
+**Scenario:** a session with 22 earlier turns streams a 12k-character reply (headings, lists, 5 code fences, a table, Mermaid, 4 tool parts): 1,540 deltas, 8 characters every 25 ms, measured on production builds. At 1x every build holds 60 Hz; the differences show up in per-delta latency, CPU and memory, and at 4x throttle in missed frames.
+
+| | v1 | v2 on feat | v2 with every fix below |
+|---|---|---|---|
+| Delta to paint, p50 (1x) | 5.8 ms | 17.3 ms | 8.4 ms |
+| Delta to paint, p50 (4x) | 14.8 ms | 22.1 ms | 11.8 ms |
+| Frames over 16.7 ms (4x) | 53 | 48–98 | 15 |
+| Main thread busy (4x) | 71% | 54% | 36–40% |
+| Heap after GC | 42.8 MiB | 37.0 MiB | 16.2 MiB |
+| DOM nodes after GC | 48.7k | 48.6k | 3.7k |
+
+**The design causes, and their fixes:**
+- **A. Two animation-frame buffers in series.** Every delta waited one extra frame. It now commits in the event intake's frame, which halves latency (17.3 → 8.4 ms). Merged into feat as b6597411cd.
+- **B2. Every delta re-lexed the whole message**, which is quadratic: 32.5 ms per delta at 37k characters. The fix re-lexes only the open block and gets it to 0.68 ms.
+- **B1. The open block was parsed and sanitized twice per delta.** The fix renders it once while streaming.
+- **C. Table copy and view buttons were built on a throwaway tree on every delta and never disposed.** That leak exists in v1 too, at about 20 MiB and 45k nodes per long reply. The fix creates the controls once on the committed DOM.
+- **D. Every delta rebuilt all of the turn's timeline rows**, because the rows tracked the text rather than the part's shape. 756–920 → 23–27 ms.
+- **E. Follow-at-end had two owners**: anchorBottom and the virtualizer's anchor. The fix removes one. It's neutral for performance and simpler.
+- **F. DOMPurify re-read its config on every call** (about 27% of sanitize). The fix configures it once.
+
+**Status:** B–F change `src/transcript` and the timeline, which AGENTS.md reserves for an owner-signed, corpus-proven slice. They're on `v2/stream-slice`, one commit per fix, each with its corpus case, and `scratchpad/perf/exp-stream/SLICE.md` explains every commit. **Owner:** sign off, and it merges.
+
+**Remaining long frames:**
+- mounting a new tool card: 15–25 ms at 1x;
+- the first Mermaid render;
+- the settle read at turn end: 93 ms at 4x.
+
 ## Server gaps found by the parity work
 
 - **Harness health is pull-only.** v1's composer health peek ("The agent stopped responding / Check again") polls `/api/wr/health` every 20 s during a turn, because no event carries `degraded` or `harness_process_lost`. Publish a health change when a driver records a process error, for example a `harness.health` event, and the peek's timer can go.
