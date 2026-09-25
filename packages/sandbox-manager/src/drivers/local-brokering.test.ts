@@ -58,8 +58,8 @@ test("local broker keeps the key outside the runtime and withdraws it on ensure"
     const executable = process.execPath
     const args = ["-e", `require('node:http').createServer((req,res)=>{if(req.url==='/global/health')res.end('ok');else if(req.url.startsWith('/fetch/')){const origin=req.url==='/fetch/control'?process.env.CONTROL_PLANE_ORIGIN:process.env.RELAY_ORIGIN;fetch(origin).then(r=>res.end(String(r.status))).catch(e=>res.end(e.code||e.message))}else if(req.url.startsWith('/tls/')){const host=req.url.slice(5);fetch('https://'+host+'/v1/messages?proof=1',{method:'POST',headers:{authorization:'Bearer '+process.env.MODEL_KEY},body:'{}',signal:AbortSignal.timeout(3000)}).then(async r=>res.end(JSON.stringify({status:r.status,body:await r.text()}))).catch(e=>res.end(String(e)+' '+String(e.cause)))}else if(req.url==='/ca-key'){try{require('node:fs').readFileSync(process.env.CA_KEY);res.end('readable')}catch(e){res.end(e.code)}}else if(req.url==='/direct/vendor'){const s=require('node:net').connect(Number(process.env.VENDOR_PORT),'127.0.0.1');s.on('connect',()=>{s.destroy();res.end('connected')});s.on('error',(e)=>res.end(e.code))}else if(req.url==='/ps'){require('node:child_process').execFile('/bin/ps',['-p',String(process.pid),'-o','lstart='],(error,stdout)=>res.end(error?String(error):stdout.trim()))}else res.end(JSON.stringify(process.env))}).listen(process.env.WORKSPACE_RUNTIME_PORT,'127.0.0.1')`]
     const driver = createLocalBrokeringSandboxDriver({
-      root, executable, args, allowedOrigins: [origin], upstreams: { "https://api.openai.com": origin }, controlPlaneOrigin: `http://127.0.0.1:${controlAddress.port}`,
-      relayOrigin: `http://127.0.0.1:${relayAddress.port}`,
+      root, executable, args, allowedOrigins: [origin], upstreams: { "https://api.openai.com": origin },
+      directOrigins: [`http://127.0.0.1:${controlAddress.port}`, `http://127.0.0.1:${relayAddress.port}`],
       inheritedEnv,
     })
     const createdCaDirectory = (await fs.readdir(root, { withFileTypes: true })).find((entry) => entry.isDirectory() && entry.name.startsWith("local-broker-ca-"))?.name
@@ -109,4 +109,18 @@ test("local broker keeps the key outside the runtime and withdraws it on ensure"
     relay.closeAllConnections()
     await new Promise<void>((resolve) => relay.close(() => resolve()))
   }
+})
+
+test("local broker reports the last 40 runtime log lines when startup exits", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "local-broker-exit-test-"))
+  roots.push(root)
+  const driver = createLocalBrokeringSandboxDriver({
+    root,
+    executable: process.execPath,
+    args: ["-e", "for (let i = 1; i <= 45; i++) console.error(`runtime line ${i}`); process.exit(1)"],
+    allowedOrigins: [],
+    directOrigins: ["http://127.0.0.1:47100"],
+  })
+  await expect(driver.ensureHost({ workspaceId: "failed-runtime", homeRegion: "local", epoch: 1, labels: {} }))
+    .rejects.toThrow(/local sandbox runtime exited: 1\nruntime line 6\n[\s\S]*runtime line 45$/)
 })
