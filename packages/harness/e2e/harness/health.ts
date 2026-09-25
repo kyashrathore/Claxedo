@@ -23,8 +23,8 @@ export async function waitForHealth(url: string, options: HealthOptions) {
   const deadline = Date.now() + timeoutMs
   let lastReason = "no response yet"
   while (Date.now() < deadline) {
-    if (options.child && options.child.exitCode !== null) {
-      throw new Error(`${options.label} exited with ${options.child.exitCode}\n${options.log()}`)
+    if (options.child && (options.child.exitCode !== null || options.child.signalCode !== null)) {
+      throw new Error(`${options.label} exited with ${options.child.exitCode ?? options.child.signalCode}\n${options.log()}`)
     }
     const result = await probe(url)
     if (result.ok && (options.ready?.() ?? true)) return
