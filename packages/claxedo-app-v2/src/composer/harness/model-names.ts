@@ -1,8 +1,8 @@
-import { createRoot } from "solid-js"
-import { produce, type SetStoreFunction, type Store } from "solid-js/store"
+import { produce } from "solid-js/store"
 import { isRecord } from "@/lib/record"
 import { persistedStore, preferenceKey } from "@/lib/persisted"
 import type { ModelChoice } from "@/server"
+import { useModelPreferences } from "./context"
 
 type NameRecord = Record<string, string>
 
@@ -13,17 +13,15 @@ function readNames(value: unknown): NameRecord | undefined {
   return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
 }
 
-let shared: [Store<NameRecord>, SetStoreFunction<NameRecord>] | undefined
-
-function namesStore() {
-  shared ??= createRoot(() => persistedStore<NameRecord>(preferenceKey("model-names"), {}, readNames))
-  return shared
-}
-
 const nameKey = (model: ModelChoice) => `${model.providerId}:${model.modelId}`
 
-export function useModelNames() {
-  const [store, setStore] = namesStore()
+export type ModelNames = {
+  readonly name: (model: ModelChoice) => string | undefined
+  readonly remember: (model: ModelChoice, name: string) => void
+}
+
+export function createModelNames(): ModelNames {
+  const [store, setStore] = persistedStore<NameRecord>(preferenceKey("model-names"), {}, readNames)
   return {
     name: (model: ModelChoice): string | undefined => store[nameKey(model)],
     remember: (model: ModelChoice, name: string) => {
@@ -38,4 +36,8 @@ export function useModelNames() {
       )
     },
   }
+}
+
+export function useModelNames(): ModelNames {
+  return useModelPreferences().names
 }

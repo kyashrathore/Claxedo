@@ -8,7 +8,7 @@ import { useReviewApi } from "../api"
 import { useLineComments } from "../comments"
 import { createDiffContent } from "../diff-content"
 import { useErrorText } from "../errors"
-import { dictionary, type ReviewKey } from "../i18n"
+import { reviewDictionary, type ReviewKey } from "../i18n"
 import { isBaseReviewMode, scopeOf, selectionOf, type ReviewSelection } from "../intent"
 import { useReview } from "../store"
 import { createReviewScrollRestoration } from "../scroll-restoration"
@@ -71,7 +71,7 @@ function useDiffStyleKey(): void {
 }
 
 function ReviewLoading(): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(reviewDictionary)
   return (
     <div class="relative flex-1 min-h-0 overflow-hidden">
       <div
@@ -88,7 +88,7 @@ function ReviewLoading(): JSX.Element {
 }
 
 function ReviewEmpty(props: { readonly placementId: PlacementId; readonly selection: ReviewSelection }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(reviewDictionary)
   const api = useReviewApi()
   const server = useServer()
   const review = useReview()
@@ -226,7 +226,7 @@ function ReviewDiffList(props: {
 }
 
 export function ReviewTab(props: ReviewTabProps): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(reviewDictionary)
   const api = useReviewApi()
   const review = useReview()
   const diff = useQuery(() => api.diff(props.placementId, review.scope()))

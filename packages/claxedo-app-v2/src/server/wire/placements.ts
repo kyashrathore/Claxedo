@@ -22,6 +22,8 @@ export type BootstrapCatalog = {
 
 export const UNENROLLED_MACHINE = "this-machine"
 
+export const WORKTREE_ROUTE = "/experimental/worktree"
+
 function text(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined
 }

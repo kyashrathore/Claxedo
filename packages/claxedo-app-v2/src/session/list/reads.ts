@@ -1,6 +1,5 @@
 import { machine, type Machine } from "@/lib/machine"
-import type { ProjectId, Server } from "@/server"
-import { toAppError } from "../requests"
+import { toAppError, type ProjectId, type Server } from "@/server"
 import {
   NO_FOLLOW_UP,
   followUpTransition,

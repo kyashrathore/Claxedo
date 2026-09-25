@@ -1,6 +1,6 @@
 import type { ComposerTextKey } from "./en"
 
-export const fr: Partial<Record<ComposerTextKey, string>> = {
+export default {
   "composer.action.cancel": "Annuler",
   "composer.action.save": "Enregistrer",
   "composer.attachment.refused.title": "{{harness}} ne peut pas utiliser cette pièce jointe",
@@ -90,4 +90,4 @@ export const fr: Partial<Record<ComposerTextKey, string>> = {
   "command.model.choose": "Choisir le modèle",
   "command.model.choose.description": "Sélectionner un modèle différent",
   "command.category.model": "Modèle",
-}
+} satisfies Partial<Record<ComposerTextKey, string>>

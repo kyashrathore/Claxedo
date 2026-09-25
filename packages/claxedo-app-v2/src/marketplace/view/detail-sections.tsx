@@ -1,13 +1,13 @@
 import { For, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import type { PluginCandidate, PluginToolGroup } from "@/server"
-import { dictionary } from "../i18n"
+import { marketplaceDictionary } from "../i18n"
 import { isBuiltIn, pluginLabel, toolGroups } from "../model"
 import { HEADING, ROW } from "./chrome"
 import { PluginMcpServers } from "./detail-mcp"
 
 function SkillRows(props: { readonly plugin: PluginCandidate; readonly onSkill: (name: string) => void }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   return (
     <section class="border-t border-border-weak-base px-4 pb-4">
       <h3 class={`${HEADING} pt-3 pb-2`}>
@@ -46,7 +46,7 @@ export function PluginSections(props: {
   readonly onToolGroup: (group: PluginToolGroup, enabled: boolean) => void
   readonly onSkill: (name: string) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   const builtIn = () => isBuiltIn(props.plugin)
   const count = () => (builtIn() ? toolGroups(props.plugin).length : props.plugin.mcpServers.length)
   const heading = () => t(builtIn() ? "marketplace.toolGroups" : "marketplace.mcpServers")

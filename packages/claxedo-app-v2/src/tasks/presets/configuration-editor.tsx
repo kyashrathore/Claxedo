@@ -5,7 +5,7 @@ import { DraftHarnessPicker, type DraftHarnessChoice } from "@/composer"
 import { useTranslator } from "@/i18n"
 import { NATIVE_HARNESS_IDS, connectionHarness, nativeHarness, type HarnessSelection } from "@/lib/harness-selection"
 import { useServer } from "@/server"
-import { dictionary } from "../i18n"
+import { tasksDictionary } from "../i18n"
 import type { ConfigurationDraft } from "./draft"
 import { Select } from "@/ui"
 
@@ -43,7 +43,7 @@ export function ConfigurationEditor(props: {
   readonly disabled: boolean
   readonly onChange: (configuration: ConfigurationDraft) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const server = useServer()
   const placements = useQuery(() => server.queries.placements.list())
   const placement = () => placements.data?.[0]?.id

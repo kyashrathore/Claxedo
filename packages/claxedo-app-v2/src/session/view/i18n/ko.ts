@@ -1,6 +1,6 @@
 import type { SessionScreenTextKey } from "./en"
 
-export const ko: Partial<Record<SessionScreenTextKey, string>> = {
+export default {
   "sessionScreen.loading": "메시지 로드 중...",
   "sessionScreen.action.dismiss": "닫기",
   "sessionScreen.action.back": "뒤로",
@@ -88,4 +88,4 @@ export const ko: Partial<Record<SessionScreenTextKey, string>> = {
   "sessionScreen.requests.loadFailed": "대기 중인 권한 요청이나 질문을 불러오지 못했습니다. 다시 시도하여 계속하세요.",
   "command.session.new": "새 세션",
   "command.category.session": "세션",
-}
+} satisfies Partial<Record<SessionScreenTextKey, string>>

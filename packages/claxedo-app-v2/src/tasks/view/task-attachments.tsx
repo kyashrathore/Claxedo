@@ -1,7 +1,7 @@
 import { For, Show, createEffect, createResource, onCleanup, type JSX } from "solid-js"
 import type { TaskAttachment } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
-import { dictionary } from "../i18n"
+import { tasksDictionary } from "../i18n"
 
 type Loaded =
   { readonly status: "ready"; readonly url: string } | { readonly status: "failed"; readonly error?: unknown }
@@ -43,7 +43,7 @@ function AttachmentImage(props: {
   readonly attachment: TaskAttachment
   readonly read: (id: string) => Promise<Blob>
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const image = createAttachmentImage(props)
   const body = (): JSX.Element => {
     const current = image.latest
@@ -67,7 +67,7 @@ export function TaskAttachmentGallery(props: {
   readonly attachments: readonly TaskAttachment[]
   readonly read: (attachmentId: string) => Promise<Blob>
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   return (
     <Show when={props.attachments.length > 0}>
       <section class="tsk-gallery" aria-label={t("tasks.attachment.images")} data-testid="task-attachments">

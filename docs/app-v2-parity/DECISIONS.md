@@ -258,3 +258,54 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - The app page keeps v1's image rule: `img-src` allows `https:`, so web images in agent replies load as in v1.
 - On the web, each app plugin's sandboxed frame gets its own stricter policy on top: no outside images or media. A frame can only tighten the inherited policy.
 - Desktop in-app plugins can load outside images. That's part of the desktop residual already accepted and warned about.
+
+## Orchestrator, 2026-09-26: Server adapter budget re-based: split along its responsibilities, each part at its measured size
+- The plan's 4.0k was one estimate for "one transport; one wire module; one error table; one status owner". The adapter measured 8,297 lines, 1,122 of them tests; the budget counts tests.
+- Real duplicates went first (8,297 → 8,243): the second decoder of `/api/claxedo/integrations`, the second machine-logins read, a copy of `withQuery`, and prompt-delivery types restating the runtime contract's. A read-only audit found about 170 lines of such candidates in all, so reduction cannot close a 4.3k gap.
+- Scope that later owner rulings added and the 4.0k did not price:
+  - session sources merged on the server (17:45);
+  - the account credential behind AccountPort and the signed desktop's account catalog (18:40);
+  - the dead-sandbox flow with its wake machine and remote placement streams (16:20);
+  - cloud session sync with the control plane;
+  - the Marketplace catalog contract (02:10);
+  - integrations, sandbox providers, plugin hosted operations and live plugins;
+  - the harness options and permission-mode lane (COMP-105..114, "Server gaps" 10:05).
+- The one row becomes eleven parts, each budgeted at its measured size with no headroom:
+
+  | Part | Lines |
+  | --- | --- |
+  | transport, streams, intake, errors and the contract (the remainder of `src/server`) | 2,312 |
+  | sessions, status, session sources and cloud session sync | 1,436 |
+  | placements, projects, machines, capabilities, folders | 658 |
+  | cloud workspaces and the dead-sandbox wake | 601 |
+  | the signed desktop's account catalog | 423 |
+  | accounts and provider connect | 362 |
+  | harness config, options, permission modes, provider catalogs | 620 |
+  | Marketplace | 652 |
+  | integrations and sandbox providers | 334 |
+  | git, files, terminals | 484 |
+  | tasks, usage, live plugins, hosted operations | 361 |
+
+- Files stay where they are, so no lane's branch conflicts. `budget.ts` lists each part's files and file-name prefixes (a trailing `*`), and the longest match wins. A new adapter file lands in the transport part, whose ceiling has no headroom, so its author must place it.
+
+## Orchestrator, 2026-09-26: Plugin host budget re-based: the web frame is its own part
+- The plan's 1.7k priced a web "iframe bridge". What was built is a second runtime: a control frame plus a slot frame per page, section and overlay, a mirrored `PluginApi` and its own bundle, locked down by the owner's 22:40 frame policy. `src/plugins/frame` (host bridge and frame runtime) is now its own part, budgeted at its measured 864.
+- The rest of the host measured 2,064 after its deletions (`PluginOff`, the constant `CODE_CHANGE_NEEDS_APPROVAL` flag, the second bundle import). The remaining excess over 1.7k comes from rulings made after the plan:
+  - per-manifest approval with the access diff, build time and per-platform warnings (owner 2026-09-25, "desktop app plugins run in-app; residual accepted, users warned");
+  - the App plugins settings with the manifest summary and remove confirmation.
+- The plugin host's part is re-based to 2,064 with no headroom.
+
+## Orchestrator, 2026-09-26: Browser tabs budget re-based: the parity ruling kept v1's chrome
+- The plan's 1.1k assumed v2 screens. The parity rule ("v2 looks and behaves exactly like v1") brought back v1's options menu and console drawer, and the 22:40 frame policy added the two-document web preview.
+- Dead compatibility and unread fields went first (1,429 → 1,375): optional bridge members the preload declares required, bridge members nothing calls, and the picked element's bounding box.
+- Re-based to the measured 1,375 with no headroom.
+
+## Orchestrator, 2026-09-26: Marketplace budget re-based: v1's directory ported under the parity rule
+- 02:10 ported v1's Agent Plugins directory into the page tab and recorded 2,384 lines against 1,800. The handoff left it "awaiting a scope review, not squeezed".
+- Duplicates went first (2,378 → 2,348): the OAuth server rows built only to be counted, a copy of the harness names and a copy of the failure message reader.
+- Re-based to the measured 2,348 with no headroom. v1's comparable directory code is about 3,160 lines.
+
+## Orchestrator, 2026-09-26: Tasks budget re-based: an app domain at v1 parity, not the plan's Tasks plugin
+- The plan's 2.5k was the Tasks plugin's number. The handoff recorded Tasks becoming an app domain (`src/tasks`), over budget and "awaiting a scope review, not squeezed". Presets as a Settings section then added 1,195 lines.
+- A duplicate status-change runner and unreachable selection state went first (4,449 → 4,414).
+- Re-based to the measured 4,414 with no headroom. v1's `features/tasks` is 4,636 lines. Cutting detail editing, subtasks, the properties rail or the presets picker needs an owner ruling under the parity rule.

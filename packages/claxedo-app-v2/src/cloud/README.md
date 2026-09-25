@@ -21,7 +21,7 @@ A create failure is shown by the create form; the workspace does not exist yet, 
 
 ## API
 
-`useCloudWorkspaces(projectId, enabled)` returns the list machine (`loading`, `ready(rows)`, `failed(error)`) and the commands. `useCloudPlacer()` is what the first run calls to place a new project in the cloud on a hosted plane. Rows come from `server.queries.cloud.list()` and commands go through `server.cloud`.
+`useCloudWorkspaces(projectId, enabled)` returns the list machine (`loading`, `ready(rows)`, `failed(error)`) and the commands. The first run places a new project in the cloud on a hosted plane through `server.cloud.create` directly. Rows come from `server.queries.cloud.list()` and commands go through `server.cloud`.
 
 ## Sandbox provider marks
 

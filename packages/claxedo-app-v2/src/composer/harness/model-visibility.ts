@@ -1,8 +1,8 @@
-import { createRoot } from "solid-js"
-import { produce, type SetStoreFunction, type Store } from "solid-js/store"
+import { produce } from "solid-js/store"
 import { isRecord } from "@/lib/record"
 import { persistedStore, preferenceKey } from "@/lib/persisted"
 import type { ModelChoice } from "@/server"
+import { useModelPreferences } from "./context"
 
 type Visibility = "show" | "hide"
 
@@ -26,13 +26,6 @@ export function modelGroupKey(providerId: string, sampleModelId: string | undefi
 
 const modelEntry = (model: ModelChoice) => `${model.providerId}:${model.modelId}`
 
-let shared: [Store<VisibilityRecord>, SetStoreFunction<VisibilityRecord>] | undefined
-
-function visibilityStore() {
-  shared ??= createRoot(() => persistedStore<VisibilityRecord>(preferenceKey("model-visibility"), { entries: {}, groups: {} }, readVisibility))
-  return shared
-}
-
 export function resolveModelVisibility(input: { readonly model: ModelChoice; readonly defaults: Readonly<Record<string, string>>; readonly user?: Visibility; readonly group?: Visibility; readonly connected?: boolean }): boolean {
   if (input.user !== undefined) return input.user === "show"
   if (input.group !== undefined) return input.group === "show"
@@ -41,8 +34,10 @@ export function resolveModelVisibility(input: { readonly model: ModelChoice; rea
   return fallback === undefined || fallback === input.model.modelId
 }
 
-export function useModelVisibility() {
-  const [store, setStore] = visibilityStore()
+export type ModelVisibility = ReturnType<typeof createModelVisibility>
+
+export function createModelVisibility() {
+  const [store, setStore] = persistedStore<VisibilityRecord>(preferenceKey("model-visibility"), { entries: {}, groups: {} }, readVisibility)
   return {
     visible: (model: ModelChoice, context: ModelVisibilityContext = {}) =>
       resolveModelVisibility({
@@ -65,3 +60,7 @@ export function useModelVisibility() {
   }
 }
 
+
+export function useModelVisibility(): ModelVisibility {
+  return useModelPreferences().visibility
+}

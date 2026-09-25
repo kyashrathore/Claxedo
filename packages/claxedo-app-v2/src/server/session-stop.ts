@@ -24,7 +24,7 @@ function stopRefused(outcome: RecoveryOutcome): ServerError {
   })
 }
 
-export async function stopTurn(transport: Transport, where: RuntimeRoute, ref: SessionRef): Promise<void> {
+export async function cancelRunningTurn(transport: Transport, where: RuntimeRoute, ref: SessionRef): Promise<void> {
   const path = sessionEndpoint(ref, "/recovery")
   const inspected = await transport.runtimeJson<{ target?: RecoveryTurnTarget } | RecoveryOutcome>(where, path)
   if (isRecoveryOutcome(inspected)) throw stopRefused(inspected)

@@ -9,7 +9,7 @@ import {
 import { useTranslator } from "@/i18n"
 import { Button, Checkbox, Switch, TextField } from "@/ui"
 import { fieldReasonKey, type FieldReasons } from "../data/refusal"
-import { dictionary } from "../i18n"
+import { tasksDictionary } from "../i18n"
 import { SLOT_KEYS } from "../model"
 import { ProseField } from "../view/prose-field"
 import type { CapabilityCatalog } from "./capabilities"
@@ -46,7 +46,7 @@ type FieldText = (path: string) => string | undefined
 function PlacementField(
   props: PresetEditorProps & { readonly patch: (input: Partial<PresetEditorDraft>) => void },
 ): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const label = (placement: PresetPlacement) => t(placement === "cloud" ? "tasks.preset.cloud" : "tasks.preset.local")
   return (
     <fieldset class="tsk-field" data-testid="preset-editor-placement">
@@ -109,7 +109,7 @@ function SlotEditor(props: {
 }
 
 function Configurations(props: PresetEditorProps & { readonly fieldText: FieldText }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const setConfiguration = (slot: ConfigurationSlot, value: ConfigurationDraft | null) =>
     props.onDraftChange({ ...props.draft, configurations: { ...props.draft.configurations, [slot]: value } })
   return (
@@ -159,7 +159,7 @@ function Configurations(props: PresetEditorProps & { readonly fieldText: FieldTe
 }
 
 function createFieldText(props: PresetEditorProps, attempted: () => boolean): FieldText {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const local = () => {
     if (!attempted()) return undefined
     const parsed = parsePresetEditorDraft(props.draft)
@@ -180,7 +180,7 @@ function IdentityFields(
     readonly patch: (input: Partial<PresetEditorDraft>) => void
   },
 ): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   return (
     <>
       <div class="tsk-field">
@@ -211,7 +211,7 @@ function IdentityFields(
 }
 
 export function PresetEditor(props: PresetEditorProps): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const patch = (input: Partial<PresetEditorDraft>) => props.onDraftChange({ ...props.draft, ...input })
   const [attempted, setAttempted] = createSignal(false)
   const fieldText = createFieldText(props, attempted)

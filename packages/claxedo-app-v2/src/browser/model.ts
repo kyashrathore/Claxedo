@@ -50,13 +50,6 @@ export type BrowserConsoleEntry = {
   readonly source: "console" | "exception" | "log"
 }
 
-export type BrowserBox = {
-  readonly x: number
-  readonly y: number
-  readonly width: number
-  readonly height: number
-}
-
 export type BrowserSelection = { readonly selector: string; readonly url: string }
 
 export type PickedElement = {
@@ -65,7 +58,6 @@ export type PickedElement = {
   readonly selector: string
   readonly tagName: string
   readonly outerHtml?: string
-  readonly boundingBox?: BrowserBox
   readonly comment: string
   readonly screenshotDataUrl?: string
 }

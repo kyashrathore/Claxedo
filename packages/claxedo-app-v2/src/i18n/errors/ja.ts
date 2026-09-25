@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "i18n.error.auth.title": "再度サインインしてください",
   "i18n.error.auth.message": "サインインの有効期限が切れたか、拒否されました。続行するには再度サインインしてください。",
   "i18n.error.auth.retry": "サインイン",

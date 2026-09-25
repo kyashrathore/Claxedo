@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "i18n.error.auth.title": "Vuelve a iniciar sesión",
   "i18n.error.auth.message": "Tu sesión caducó o fue rechazada. Inicia sesión de nuevo para continuar.",
   "i18n.error.auth.retry": "Iniciar sesión",

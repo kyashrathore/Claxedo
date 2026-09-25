@@ -1,14 +1,14 @@
 import { For, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { Button, Icon, IconButton } from "@/ui"
-import { dictionary } from "../i18n"
+import { tasksDictionary } from "../i18n"
 import { openableSlot } from "../model"
 import { StatusControl } from "./status-control"
 import type { TaskDetailProps } from "./task-detail"
 import { SlotRow } from "./task-slot"
 
 function Properties(props: TaskDetailProps): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const task = () => props.view.task
   const presetName = () => openableSlot(props.view.groups)?.current.presetNameAtStart
   return (
@@ -58,7 +58,7 @@ function Properties(props: TaskDetailProps): JSX.Element {
 }
 
 function ArchiveAction(props: TaskDetailProps): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   return (
     <Show
       when={props.view.task.archivedAt === null}
@@ -88,7 +88,7 @@ function ArchiveAction(props: TaskDetailProps): JSX.Element {
 }
 
 export function TaskRail(props: TaskDetailProps): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   return (
     <aside id="task-detail-rail" class="tsk-rail" data-testid="task-detail-rail" inert={props.railCollapsed === true}>
       <section class="tsk-rail-section" aria-label={t("tasks.detail.properties")}>

@@ -3,6 +3,7 @@ import { createParser, type EventSourceMessage } from "eventsource-parser"
 import { machine, unreachable, type Machine } from "../lib/machine"
 import { responseError, ServerError, toAppError } from "./errors"
 import type { ConnectionState } from "./events"
+import { streamSignalOf } from "./wire/stream-signals"
 
 export type StreamOptions = {
   readonly open: (init: { readonly headers: Headers; readonly signal: AbortSignal }) => Promise<Response>
@@ -78,9 +79,10 @@ function deliver(run: StreamRun, message: EventSourceMessage) {
   if (message.id) run.cursor = message.id
   armWatchdog(run)
   const frame = parsedFrame(message.data)
-  const type = frame && typeof frame === "object" ? (frame as { type?: unknown }).type : undefined
-  if (frame === undefined || type === "heartbeat") return
-  if (type === "stream.replay-gap") return run.options.onGap()
+  if (frame === undefined) return
+  const signal = streamSignalOf(frame)
+  if (signal === "heartbeat") return
+  if (signal === "replayGap") return run.options.onGap()
   run.options.onFrame(frame)
 }
 

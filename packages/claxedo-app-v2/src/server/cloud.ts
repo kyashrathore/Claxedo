@@ -4,9 +4,9 @@ import { ServerError } from "./errors"
 import type { PlacementId, ProjectId } from "./ids"
 import { queryKeys } from "./query-keys"
 import { jsonInit, withQuery, type Transport } from "./transport"
-import type { CloudWorkspace, CodeHostConnection, CodeHostRepository } from "./cloud-types"
+import type { CloudWorkspace, CodeHostRepository } from "./cloud-types"
 import type { FetchQuery, Project } from "./types"
-import { cloudWorkspaceFromRow, codeHostConnectionsFromWire, codeHostRepositoryFromRow } from "./wire/cloud"
+import { cloudWorkspaceFromRow, codeHostRepositoryFromRow } from "./wire/cloud"
 import type { WorkspaceWakes } from "./workspace-wakes"
 import type { Workspaces } from "./workspaces"
 
@@ -21,8 +21,6 @@ export function cloudQueries(transport: Transport) {
         return workspace ? [workspace] : []
       })
     })
-  const connections = (): FetchQuery<readonly CodeHostConnection[]> =>
-    fetchQuery(queryKeys.codeHostConnections(server), async () => codeHostConnectionsFromWire(await transport.json<unknown>(INTEGRATIONS_PATH)))
   const repositories = (connectionId: string): FetchQuery<readonly CodeHostRepository[]> => fetchQuery(queryKeys.codeHostRepositories(server, connectionId), async () => {
       const body = await transport.json<{ repositories?: unknown }>(`${INTEGRATIONS_PATH}/connections/${encodeURIComponent(connectionId)}/repositories`)
       return (Array.isArray(body.repositories) ? body.repositories : []).flatMap((row) => {
@@ -30,7 +28,7 @@ export function cloudQueries(transport: Transport) {
         return repository ? [repository] : []
       })
     })
-  return { cloud: { list }, codeHost: { connections, repositories } }
+  return { cloud: { list }, codeHost: { repositories } }
 }
 
 function sourceBody(project: Project) {

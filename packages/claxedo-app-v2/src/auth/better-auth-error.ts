@@ -1,6 +1,5 @@
 import { readField, readString } from "@/lib/record"
 
-/** The auth routes answer JSON; a proxy's HTML error page has no fields to read. */
 export async function authResponseBody(response: Response): Promise<unknown> {
   return response.headers.get("content-type")?.includes("application/json") ? await response.json() : undefined
 }

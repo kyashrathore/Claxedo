@@ -4,13 +4,13 @@ import { useTranslator } from "@/i18n"
 import { DialogSelectFile, useShellRegistries } from "@/shell"
 import { ClaxedoIcon as Icon, DropdownMenu, useDialog } from "@/ui"
 import { filePathFromTab } from "../focus"
-import { dictionary } from "../i18n"
+import { panelDictionary } from "../i18n"
 import { usePanel } from "../store"
 import { createReviewWorkspaceTabPresentation } from "../tab-presentation"
 import { ReviewWorkspaceTabButton } from "./tab-button"
 
 function AddTabMenu(): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(panelDictionary)
   const panel = usePanel()
   const session = useActiveSession()
   const registries = useShellRegistries()
@@ -60,7 +60,7 @@ function AddTabMenu(): JSX.Element {
 
 export function PanelTabStrip(): JSX.Element {
   const panel = usePanel()
-  const t = useTranslator(dictionary)
+  const t = useTranslator(panelDictionary)
   const presentation = createReviewWorkspaceTabPresentation({
     reviewLabel: () => t("panel.tab.review"),
     contextLabel: () => t("panel.tab.context"),

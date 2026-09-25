@@ -28,10 +28,6 @@ export type CloudWorkspaces = {
   readonly remove: (id: PlacementId) => Promise<void>
 }
 
-export type CloudPlacer = {
-  readonly create: (input: { readonly projectId: ProjectId }) => Promise<{ readonly id: PlacementId }>
-}
-
 type Pending = { readonly event: CloudWorkspaceEvent; readonly at: CloudWorkspaceStatus["kind"] }
 
 function rowState(workspace: CloudWorkspace, pending: Pending | undefined): CloudWorkspaceStatus {
@@ -73,9 +69,4 @@ export function useCloudWorkspaces(projectId: Accessor<ProjectId>, enabled: Acce
     stop: (id) => command(id, { type: "stopRequested" }, () => server.cloud.stop(id)),
     remove: (id) => command(id, undefined, () => server.cloud.remove(id)),
   }
-}
-
-export function useCloudPlacer(): CloudPlacer {
-  const server = useServer()
-  return { create: (input) => server.cloud.create(input) }
 }

@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "i18n.error.auth.title": "Yeniden oturum açın",
   "i18n.error.auth.message": "Oturumunuzun süresi doldu veya reddedildi. Devam etmek için yeniden oturum açın.",
   "i18n.error.auth.retry": "Oturum aç",

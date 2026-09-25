@@ -3,6 +3,7 @@ import { machine, type Machine } from "@/lib/machine"
 import { uuid } from "@/lib/uuid"
 import {
   sessionId as asSessionId,
+  toAppError,
   type AppError,
   type PlacementId,
   type ProjectId,
@@ -15,11 +16,11 @@ import {
   type SessionStatus,
 } from "@/server"
 import type { LoadMoreState, SessionList, SessionListState, SessionStatusView } from "@/session"
-import { toAppError, type RequestsInternal } from "../requests"
+import type { RequestsInternal } from "../requests"
 import { hasMorePages, initialListState, type ListEvent, type ListState, type MorePhase } from "./model"
 import { createKeyedReads } from "./keyed-reads"
 import { createListReads, type ListReads } from "./reads"
-import { transition } from "./transition"
+import { listTransition } from "./transition"
 import { createRowViewCache, rowViews, UNKNOWN_STATUS, visibleOrder } from "./visible-rows"
 
 export type SessionListInternal = SessionList & {
@@ -117,7 +118,7 @@ function createRowReads(state: Accessor<ListState>, requests: RequestsInternal, 
 }
 
 export function createSessionList(server: Server, requests: RequestsInternal): SessionListInternal {
-  const list = machine(initialListState, transition)
+  const list = machine(initialListState, listTransition)
   const reads = createListReads(server, list)
   const { state, send } = list
   const windows = createMemo(() => state().windows)

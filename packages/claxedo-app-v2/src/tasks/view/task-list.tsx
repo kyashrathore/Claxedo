@@ -4,7 +4,7 @@ import { useTranslator } from "@/i18n"
 import { Button } from "@/ui"
 import type { MorePages } from "../data/queries"
 import type { TaskStartOffer } from "../data/start"
-import { dictionary } from "../i18n"
+import { tasksDictionary } from "../i18n"
 import { TASK_STATUS_KEYS, taskKey, type TaskDateField } from "../model"
 import { LoadMore } from "./load-more"
 import { TaskStatusIcon } from "./status-control"
@@ -17,7 +17,6 @@ export type TaskListProps = {
   readonly tasks: readonly TaskSummary[]
   readonly projectName: string
   readonly dateField: TaskDateField
-  readonly selectedTaskId?: string
   readonly loading?: boolean
   readonly emptyLabel?: string
   readonly grouped?: boolean
@@ -37,14 +36,12 @@ function TaskRow(props: {
   readonly now: number
   readonly list: TaskListProps
 }): JSX.Element {
-  const t = useTranslator(dictionary)
-  const selected = () => props.list.selectedTaskId === props.task.id
+  const t = useTranslator(tasksDictionary)
   const menus = createRowToolsMenus()
   return (
     <div
       class="tsk-tr tsk-rise"
       style={{ "--tsk-i": String(props.index) }}
-      data-selected={selected() ? "true" : undefined}
       data-tools-open={menus.open() ? "true" : undefined}
       data-archived={props.task.archivedAt === null ? undefined : "true"}
     >
@@ -52,7 +49,6 @@ function TaskRow(props: {
         type="button"
         class="tsk-open"
         data-testid={`tasks-list-row-${props.task.id}`}
-        aria-current={selected() ? "true" : undefined}
         onClick={() => props.list.onSelect(props.task.id)}
       >
         <TaskStatusIcon status={props.task.status} label={t(TASK_STATUS_KEYS[props.task.status])} />
@@ -91,7 +87,7 @@ function TaskRow(props: {
 }
 
 function EmptyList(props: { readonly label?: string; readonly onCreate?: () => void }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   return (
     <div class="tsk-empty">
       <p>{props.label ?? t("tasks.list.empty")}</p>
@@ -107,7 +103,7 @@ function EmptyList(props: { readonly label?: string; readonly onCreate?: () => v
 }
 
 export function TaskList(props: TaskListProps): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const groups = createMemo(() => {
     if (props.grouped === false) return [{ status: undefined, tasks: props.tasks }] as const
     return TASK_STATUSES.map((status) => ({

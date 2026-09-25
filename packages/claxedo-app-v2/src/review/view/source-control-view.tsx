@@ -12,7 +12,7 @@ import {
 import { useReviewApi } from "../api"
 import { useErrorText } from "../errors"
 import { createGitActions, type GitAction } from "../git-actions"
-import { dictionary } from "../i18n"
+import { reviewDictionary } from "../i18n"
 import { commitScope, shortRef } from "../intent"
 import { defaultScope } from "../model"
 import { useReview } from "../store"
@@ -46,7 +46,7 @@ function compareEntries(summaries: readonly DiffSummary[] | undefined): readonly
 }
 
 function LoadingRows(): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(reviewDictionary)
   return (
     <div
       data-testid="source-control-loading"
@@ -81,7 +81,7 @@ function WorktreeGroups(props: {
   readonly onUnstage: (paths: string[]) => void
   readonly onOpen: (entry: ChangeEntry, scope: DiffScope) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(reviewDictionary)
   return (
     <>
       <ChangeGroup
@@ -123,7 +123,7 @@ export type SourceControlViewProps = {
 }
 
 export function SourceControlView(props: SourceControlViewProps): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(reviewDictionary)
   const api = useReviewApi()
   const review = useReview()
   const errorText = useErrorText()

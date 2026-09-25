@@ -4,7 +4,7 @@ import { useTranslator } from "@/i18n"
 import type { PlacementId } from "@/server"
 import { ClaxedoIcon as Icon, DelayedLoading, Spinner, ScrollView } from "@/ui"
 import { useFilesApi } from "../api"
-import { dictionary } from "../i18n"
+import { filesDictionary } from "../i18n"
 import { buildKinds } from "../model"
 import { useFiles } from "../store"
 import { createSearchView } from "../search-view"
@@ -34,7 +34,7 @@ function expandToActivePath(input: {
 }
 
 function SearchRow(): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(filesDictionary)
   const files = useFiles()
   return (
     <div class="shrink-0 flex items-center gap-1 px-2 h-9 border-b border-border-weak-base">
@@ -67,7 +67,7 @@ function SearchRow(): JSX.Element {
 }
 
 export function FilesNavigator(props: FilesNavigatorProps): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(filesDictionary)
   const api = useFilesApi()
   const search = createSearchView(
     () => props.placementId,

@@ -58,7 +58,7 @@ export function CliLoginPage() {
   })
 
   return (
-    <main class="auth-page" data-component="cli-login-page">
+    <main class="auth-page">
       <section class="auth-card auth-card-center">
         <div class="auth-title">Claxedo CLI</div>
         <p class="auth-subtitle">{message()}</p>

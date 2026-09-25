@@ -4,6 +4,7 @@ import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
 import { ask } from "./answer"
 import { jsonInit, type Transport } from "./transport"
+import type { CodeHostConnection } from "./cloud-types"
 import type { FetchQuery } from "./types"
 
 const INTEGRATIONS_PATH = "/api/claxedo/integrations"
@@ -70,6 +71,15 @@ export type IntegrationsApi = {
 
 export function codeHostIntegrations(catalog: IntegrationsCatalog | undefined): readonly Integration[] {
   return (catalog?.integrations ?? []).filter((integration) => integration.capabilities.includes(CODE_HOST_CAPABILITY))
+}
+
+export function codeHostConnections(catalog: IntegrationsCatalog | undefined): readonly CodeHostConnection[] {
+  const names = new Map(codeHostIntegrations(catalog).map((integration) => [integration.id, integration.name]))
+  return (catalog?.connections ?? []).flatMap((connection) => {
+    const providerName = names.get(connection.integrationId)
+    if (!providerName) return []
+    return [{ id: connection.id, providerName, ...(connection.accountLabel ? { accountLabel: connection.accountLabel } : {}), status: connection.status }]
+  })
 }
 
 function httpsLink(value: string | undefined) {

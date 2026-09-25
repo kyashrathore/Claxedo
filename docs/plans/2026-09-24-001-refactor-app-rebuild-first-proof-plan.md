@@ -352,7 +352,7 @@ Those reviews assumed new server contracts and a rebuilt timeline. Where today's
 
 | Plugin | Built from | Talks to | Budget |
 | --- | --- | --- | --- |
-| Tasks | the UI of `features/tasks/*` (4.6k) | today's Tasks API, `/api/claxedo/tasks` on the Claxedo server the app is connected to, unchanged | ≤ 2.5k |
+| Tasks | the UI of `features/tasks/*` (4.6k) | today's Tasks API, `/api/claxedo/tasks` on the Claxedo server the app is connected to, unchanged | ≤ 2.5k as a plugin; 4.4k as the app domain it became (re-based; DECISIONS 2026-09-26) |
 | Pages | the UI of `features/documents/*` (5.1k) | today's documents API, unchanged: control-plane operations (`documents.*`) when signed, the daemon's `/documents` routes when not | ≤ 3k |
 | Compact tabs | `app/workbench/compact-switcher/*` (0.8k) | the app's workbench | ≤ 0.6k |
 | Codex theme | `ui/icons/codex.ts`, `ui/codex-icon-map.tsx`, the Codex half of `claxedo-icon.tsx`, the `data-theme="codex"` overrides (~0.7k + sprite) | the app's theme and icon registry | ≤ 0.6k + assets |
@@ -416,12 +416,12 @@ The Tasks and documents server code stays on the server, unchanged.
 
 | Part | Budget |
 | --- | --- |
-| Server adapter | 4.0k |
+| Server adapter | 8.2k in eleven parts (re-based: split by responsibility at measured sizes; DECISIONS 2026-09-26) |
 | Session client, including the session list store | 9.5k |
 | Session screen incl. the kept timeline and docks, with its phone layout | 14.3k |
 | Composer | 11.0k (re-based: the 5.5k assumed the voided `PromptInputV2` frame swap; DECISIONS 2026-09-25) |
 | Rail and workbench | 8.3k |
-| Browser tabs | 1.1k |
+| Browser tabs | 1.4k (re-based: the parity ruling kept v1's chrome; DECISIONS 2026-09-26) |
 | Shell and platform | 6.5k |
 | Terminal | 4.3k |
 | Settings | 5.2k |
@@ -429,8 +429,8 @@ The Tasks and documents server code stays on the server, unchanged.
 | Review, git, files | 4.3k |
 | Projects and cloud | 3.0k |
 | Onboarding and usage | 1.8k |
-| Plugin host | 1.7k |
-| Marketplace | 1.8k |
+| Plugin host | 2.1k, plus the web plugin frame 0.9k (re-based; DECISIONS 2026-09-26) |
+| Marketplace | 2.3k (re-based: v1's directory under the parity rule; DECISIONS 2026-09-26) |
 | Moved in from the session feature (rail rows, review clients) | 0.6k |
 | State-machine helper | 0.1k |
 | UI kit (`src/ui/`) and kept transcript renderers (`src/transcript/`) | ~20k |

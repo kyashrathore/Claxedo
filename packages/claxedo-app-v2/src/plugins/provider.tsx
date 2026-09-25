@@ -12,7 +12,7 @@ import { pluginServerCalls } from "./api"
 import { createApiFactory, createClaims, createOverlayTracker, type HostServices } from "./bindings"
 import { bundledPlugins } from "./bundled"
 import { createPluginHost, type PluginHost } from "./host"
-import { dictionary, usePluginsText } from "./i18n"
+import { pluginsDictionary, usePluginsText } from "./i18n"
 import { createFrameRuntimeSource } from "./frame/runtime-source"
 import { createLiveReconciler } from "./live/controller"
 import { liveListState, type LiveListState } from "./live/list-state"
@@ -111,7 +111,7 @@ function useOfferedCapabilities(services: HostServices, required: Accessor<Reado
 
 export function PluginHostProvider(props: { readonly scope: string; readonly children: JSX.Element }): JSX.Element {
   const services = useHostServices()
-  onCleanup(services.i18n.add(dictionary))
+  onCleanup(services.i18n.add(pluginsDictionary))
   const host = createPluginHost({
     preferences: createPluginPreferences(props.scope, safeModeRequested(window.location.search)),
     offered: (capability) => offered(capability),

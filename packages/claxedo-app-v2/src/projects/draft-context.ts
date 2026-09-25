@@ -130,19 +130,20 @@ export function createDraftContext(draft: Accessor<DraftTarget>) {
   }
 }
 
-const mounted = new Map<PlacementId, DraftContext>()
-
-export function registerDraftContext(placementId: Accessor<PlacementId>, context: DraftContext) {
-  createEffect(
-    on(placementId, (id) => {
-      mounted.set(id, context)
-      onCleanup(() => {
-        if (mounted.get(id) === context) mounted.delete(id)
-      })
-    }),
-  )
+export type DraftPlacementResolver = {
+  readonly attach: (context: DraftContext) => void
+  readonly resolve: (draft: DraftTarget) => Promise<PlacementId>
 }
 
-export function resolveDraftPlacement(draft: DraftTarget): Promise<PlacementId> {
-  return mounted.get(draft.placementId)?.resolve() ?? Promise.resolve(draft.placementId)
+export function createDraftPlacementResolver(): DraftPlacementResolver {
+  let attached: DraftContext | undefined
+  return {
+    attach: (context) => {
+      attached = context
+      onCleanup(() => {
+        if (attached === context) attached = undefined
+      })
+    },
+    resolve: (draft) => attached?.resolve() ?? Promise.resolve(draft.placementId),
+  }
 }

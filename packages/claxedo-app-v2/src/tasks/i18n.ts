@@ -185,4 +185,4 @@ const en = {
 
 export type TasksKey = keyof typeof en
 
-export const dictionary = { en } satisfies Translations<TasksKey>
+export const tasksDictionary = { en } satisfies Translations<TasksKey>

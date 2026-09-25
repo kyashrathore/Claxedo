@@ -2,6 +2,7 @@ import { acpScriptToken, SCRIPTED_ACP_HARNESS, startStack } from "../harness"
 import { appChoice, ensureAppBuilt } from "../harness/app"
 import type { ServerEvent } from "../../src/server/events"
 import type { Placement } from "../../src/server/types"
+import { codeHostConnections } from "../../src/server/integrations"
 import { createServer, type ServerHandle } from "../../src/server/server"
 import { check, describe, eventLog, isStatus, RESTART_TIMEOUT_MS, results, surfaceOf, waitFor, type Probe } from "./probe-support"
 import { startTcpProxy } from "./tcp-proxy"
@@ -20,12 +21,12 @@ async function connectAndPlace(probe: Probe): Promise<Placement> {
     const fetch = server.queryClient.fetchQuery.bind(server.queryClient)
     const [machines, hosts, accounts, catalog, cloud] = await Promise.all([
       fetch(server.queries.machines.list()),
-      fetch(server.queries.codeHost.connections()),
+      fetch(server.queries.integrations.catalog()),
       fetch(server.queries.accounts.list()),
       fetch(server.queries.marketplace.catalog()),
       fetch(server.queries.cloud.list()),
     ])
-    return `machines=${machines.map((machine) => machine.name).join(",")} codeHosts=${hosts.length} accounts=${accounts.map((account) => account.providerId).join(",")} plugins=${catalog.candidates.length} cloud=${cloud.length}`
+    return `machines=${machines.map((machine) => machine.name).join(",")} codeHosts=${codeHostConnections(hosts).length} accounts=${accounts.map((account) => account.providerId).join(",")} plugins=${catalog.candidates.length} cloud=${cloud.length}`
   })
   await check("plugin host calls", async () => {
     const health = await server.request("/api/claxedo/health")
@@ -60,8 +61,8 @@ async function turnChecks(probe: Probe, placement: Placement) {
     const options = await server.queryClient.fetchQuery(server.queries.harnesses.options(placement.id, "pi"))
     const models = options.models?.choices ?? []
     const connected = models.filter((item) => item.connected !== false).length
-    const logins = await server.queryClient.fetchQuery(server.queries.harnesses.logins())
-    const signedIn = logins.map((login) => `${login.harness}:${login.signedIn ? "in" : "out"}`).join(",")
+    const logins = await server.queryClient.fetchQuery(server.queries.accounts.machineLogins())
+    const signedIn = logins.map((login) => `${login.harness}:${login.state === "signed_in" ? "in" : "out"}`).join(",")
     return `${models.length} model(s), ${connected} connected, current=${options.models?.current}, efforts=${(options.thoughtLevels?.choices ?? []).map((level) => level.id).join(",")}; logins ${signedIn}`
   })
   await check("provider catalogs: the opencode summary, then one provider's detail", async () => {

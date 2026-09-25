@@ -2,7 +2,7 @@ import { Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import type { GitStatus } from "@/server"
 import { SemanticIcon, Button, Spinner } from "@/ui"
-import { dictionary } from "../i18n"
+import { reviewDictionary } from "../i18n"
 
 function ActionButton(props: {
   readonly testId: string
@@ -26,7 +26,7 @@ export function PushRow(props: {
   readonly compareUrl: string | undefined
   readonly onPush: (setUpstream: boolean) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(reviewDictionary)
   return (
     <div class="flex h-8 shrink-0 items-center gap-1 border-b border-border-weak-base px-2">
       <Show

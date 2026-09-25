@@ -1,5 +1,5 @@
 import { Composer, ComposerNoticeProvider, ComposerNoticeRow, createComposerNoticeChannel, draftComposerKey, type Submission } from "@/composer"
-import { NewSessionContextRow, resolveDraftPlacement } from "@/projects"
+import { createDraftPlacementResolver, NewSessionContextRow } from "@/projects"
 import type { PlacementId, ProjectId } from "@/server"
 import { useSessionStores, type SessionView } from "@/session"
 import { useCommands, useShellRoute, type PaneProps } from "@/shell"
@@ -25,9 +25,10 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
   registerSessionCommands({ commands: useCommands(), placementId: () => props.state.placementId, active: () => props.active, navigate: (path) => routing.navigate(path), t })
   const key = () => draftComposerKey(props.state.placementId)
   const notice = createComposerNoticeChannel()
+  const draft = createDraftPlacementResolver()
   let pane: HTMLDivElement | undefined
   const createSession = async (submission: Submission): Promise<SessionView> => {
-    const ref = await stores.list.create({ placementId: await resolveDraftPlacement(props.state), harness: submission.harness, model: submission.model })
+    const ref = await stores.list.create({ placementId: await draft.resolve(props.state), harness: submission.harness, model: submission.model })
     return stores.open(ref)
   }
   return (
@@ -45,6 +46,7 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
                   <NewSessionContextRow
                     projectId={props.state.projectId}
                     placementId={props.state.placementId}
+                    resolver={draft}
                     onOpen={(target) => workbench.replacePane(props.paneId, draftSessionPaneKind, target)}
                   />
                 </div>

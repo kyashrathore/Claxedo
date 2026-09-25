@@ -1,8 +1,8 @@
 import { useTranslator } from "@/i18n"
+import { failureMessage } from "@/lib/failure"
 import { useServer, type PluginSourceInput, type PluginSourceRecord } from "@/server"
 import { requestConfirm, showToast, useDialog } from "@/ui"
-import { errorMessage } from "./actions"
-import { dictionary } from "./i18n"
+import { marketplaceDictionary } from "./i18n"
 
 export function createSourceActions(input: {
   readonly refresh: () => Promise<void>
@@ -11,7 +11,7 @@ export function createSourceActions(input: {
 }) {
   const server = useServer()
   const dialog = useDialog()
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   const remove = async (source: PluginSourceRecord) => {
     const confirmed = await requestConfirm(dialog, {
       title: t("marketplace.confirm.removeSourceTitle", { label: source.label }),
@@ -25,7 +25,7 @@ export function createSourceActions(input: {
       input.onRemoved()
       await input.refresh()
     } catch (error) {
-      showToast({ title: t("marketplace.toast.removeSourceFailed"), description: errorMessage(error) })
+      showToast({ title: t("marketplace.toast.removeSourceFailed"), description: failureMessage(error) })
     }
   }
   const add = async (registration: PluginSourceInput) => {
