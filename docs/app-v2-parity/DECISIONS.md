@@ -199,3 +199,8 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - The authoring skill describes those tools and reaches every harness, not only OpenCode's `config.skills`.
 - The app's one-time confirmation before a new plugin runs stays.
 - The `claxedo plugin` CLI goes once the tools land.
+
+## Owner, 2026-09-25 15:50: fix every audit finding, architecturally
+- The owner signed off the transcript and timeline performance fixes from `docs/app-v2-perf-audit-2026-09-25.md`: the image-probe leak on session switch, scroll restyles from the virtualizer's notify, the hidden transcript computing behind the full-view composer, the per-part `hasText` roots, and scroll-thumb geometry written per delta.
+- "Architecturally, no patching": each fix names the owner that should hold the state or work, and moves it there. No guards, weak references, flags or special cases layered over the old shape.
+- Each fix lands with a corpus or flow assertion that measures it.
