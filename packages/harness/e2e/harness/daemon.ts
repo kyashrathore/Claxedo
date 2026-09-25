@@ -1,7 +1,8 @@
-import { spawn } from "node:child_process"
+import { execFileSync, spawn } from "node:child_process"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
+import { isRecord } from "@claxedo/helpers/guards"
 import { waitForHealth } from "./health"
 import { isolatedEnv } from "./isolated-env"
 import { REPO_ROOT, SERVER_DIR, TSX_LOADER } from "./node-loader"
@@ -15,6 +16,7 @@ import { makeWorkspace, type Workspace } from "./workspaces"
 export type { Workspace }
 
 const SERVER_ENTRY = path.join(SERVER_DIR, "src/deployments/self-hosted-node/index.ts")
+const SERVER_MANIFEST = path.join(SERVER_DIR, "package.json")
 const TEXT_IMPORTS = pathToFileURL(path.join(REPO_ROOT, "packages/workspace-runtime/src/text-imports.mjs")).href
 
 export type SignedDaemon = {
@@ -77,8 +79,23 @@ function signedEnv(signed: SignedDaemon): NodeJS.ProcessEnv {
   }
 }
 
-function launchDaemon(env: NodeJS.ProcessEnv, cwd: string): OwnedProcess {
-  const child = spawn("node", ["--conditions=development", "--import", TEXT_IMPORTS, "--import", TSX_LOADER, SERVER_ENTRY], {
+export type DaemonRuntime = { node: string; version: string }
+
+export async function daemonRuntime(): Promise<DaemonRuntime> {
+  const manifest: unknown = JSON.parse(await fs.readFile(SERVER_MANIFEST, "utf8"))
+  const engines = isRecord(manifest) && isRecord(manifest.engines) ? manifest.engines : undefined
+  const range = typeof engines?.node === "string" ? engines.node : undefined
+  if (!range) throw new Error(`${SERVER_MANIFEST} declares no engines.node range`)
+  const node = process.env.CLAXEDO_E2E_NODE?.trim() || "node"
+  const version = execFileSync(node, ["--version"], { encoding: "utf8" }).trim()
+  if (!Bun.semver.satisfies(version, range)) {
+    throw new Error(`The daemon runs on Node ${range} (${SERVER_MANIFEST}), but ${node} is ${version}. Set CLAXEDO_E2E_NODE to a supported node binary.`)
+  }
+  return { node, version }
+}
+
+function launchDaemon(runtime: DaemonRuntime, env: NodeJS.ProcessEnv, cwd: string): OwnedProcess {
+  const child = spawn(runtime.node, ["--conditions=development", "--import", TEXT_IMPORTS, "--import", TSX_LOADER, SERVER_ENTRY], {
     cwd,
     env,
     stdio: ["ignore", "pipe", "pipe"],
@@ -90,7 +107,8 @@ export async function startDaemon(input: DaemonInput): Promise<Daemon> {
   const dirs = await daemonDirs(input.dataDir)
   let env = await daemonEnv(input)
   const url = `http://127.0.0.1:${input.port}`
-  let owned = launchDaemon(env, input.dataDir)
+  const runtime = await daemonRuntime()
+  let owned = launchDaemon(runtime, env, input.dataDir)
   const listening = `[claxedo-server] listening on ${url}`
   const health = (label: string) =>
     waitForHealth(`${url}/api/claxedo/health`, { label, log: owned.log, child: owned.child, ready: () => owned.log().includes(listening) })
@@ -111,7 +129,7 @@ export async function startDaemon(input: DaemonInput): Promise<Daemon> {
     restart: async (options = {}) => {
       await stopProcess(owned.child)
       if (options.signed) env = { ...env, ...signedEnv(options.signed) }
-      owned = launchDaemon(env, input.dataDir)
+      owned = launchDaemon(runtime, env, input.dataDir)
       await health(options.signed ? "signed daemon" : "restarted daemon")
     },
     close: () => stopProcess(owned.child),

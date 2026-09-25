@@ -1,5 +1,6 @@
 import { readdir } from "node:fs/promises"
 import { isRecord } from "@claxedo/helpers/guards"
+import { daemonRuntime } from "../harness/daemon"
 import { ensurePinnedPi } from "../harness/pinned-pi"
 import { CONTRACT_DIST, ensureWorkspaceDist, HELPERS_DIST } from "../harness/workspace-dists"
 
@@ -19,6 +20,8 @@ function selected(entries: string[], ids: string[]) {
 for (const dist of [HELPERS_DIST, CONTRACT_DIST]) await ensureWorkspaceDist(dist)
 const pi = await ensurePinnedPi()
 console.log(`Pinned Pi ${pi.version}: ${pi.installed ? "installed" : "already installed"}`)
+const runtime = await daemonRuntime()
+console.log(`Daemon runtime: Node ${runtime.version} (${runtime.node})`)
 
 const all = (await readdir(import.meta.dirname)).filter((name) => /^H\d+[a-z]?-.*\.flow\.ts$/.test(name)).sort()
 if (!all.length) throw new Error("No e2e flows found")
