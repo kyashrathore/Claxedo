@@ -85,7 +85,7 @@ const SIGNED_MINT_REFUSAL = /A user-principal runtime token must be minted for a
 export async function reachCloudRuntime<T>(attempt: Promise<T>): Promise<T> {
   try { return await attempt }
   catch (error) {
-    if (SIGNED_MINT_REFUSAL.test(String(error))) throw new Error(`C-16: the proxy minted the signed caller no runtime token: ${String(error).slice(0, 300)}`)
+    if (SIGNED_MINT_REFUSAL.test(String(error))) throw new Error(`C-16: the proxy minted the signed caller no runtime token: ${String(error).slice(0, 300)}`, { cause: error })
     throw error
   }
 }
