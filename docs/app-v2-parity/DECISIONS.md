@@ -189,3 +189,6 @@ A **Settings → Projects** section lists the projects and holds their managemen
 ## Orchestrator, 2026-09-25: browser pick sends text (v1's file part is broken)
 - v1 adds a picked element as a file chip whose path is the page URL, and sends it as a `file://<folder>/<url>` part the agent cannot read (TOOL-145).
 - **v2:** a text chip "<tag> on <host>" whose text carries the page URL, the element's selector and HTML snippet, and the comment; the screenshot goes in as an image.
+
+## Owner, 2026-09-25 11:50: streaming slice signed off
+- The owner signed off `v2/stream-slice` (the protected-area rule for `src/transcript` and the timeline): open-block re-lex, one parse of the open block, controls built on the committed DOM, rows tracking whether a part has text, and one purifier. It merged into feat as e9cd0024be. The fixes are described commit by commit in `docs/app-v2-stream-slice.md`.

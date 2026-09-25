@@ -434,7 +434,7 @@ At 19:08 the owner said: finish in-progress work; start no new work.
 - The corpus can now replay a live turn and compare it with today's app at every hold. Until now no case covered the streaming renderer.
 - **Checks on the tip:** the whole corpus plus flows 03, 04, 09 and 11, on web and phone, 37 passed.
 - **Write-up:** `docs/app-v2-stream-slice.md` (commit by commit, before/after, the case, the red run).
-- **Owner:** sign off, and it merges.
+- **Merged:** the owner signed it off at 11:50, and it's on feat as e9cd0024be.
 
 **Measured on the slice** (feat → slice, v1 in brackets, heap after a forced GC):
 
