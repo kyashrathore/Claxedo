@@ -38,10 +38,10 @@ Invariant 5 breakdown, v2 run 3 (v1 run 2 in brackets):
 
 | Region | Mutations per turn | Per delta | Computations per turn | Note |
 |---|---|---|---|---|
-| Streaming message | 7,076 [16,153] | 9.2 [22.6] | 7,567 transcript [≈120,000] | Expected work |
+| Streaming message | 7,076 [16,153] | 9.2 [22.6] | 7,567 transcript + 2,117 generic (icons, tooltips, buttons) [53,197 + 91,620] | Expected work. v1's generic share is `Show<Icon>` 34,139 and `AnimatedCountLabel` 14,061. |
 | Timeline chrome | 1,387 [1,279] | **1.8** [1.8] | – | Row `style` 695, **scroll thumb `style` 448**, bottom spacer 234: geometry written on each delta. The thumb is invisible unless the reader scrolls or hovers. |
 | Body-level Mermaid scratch | 1,805 [1,383] | 2.3 | – | One Mermaid render once the fence completes (gated in `src/transcript/markdown.tsx:350`, correct), drawn in a scratch SVG in `body`. It is the turn's one long task: **62–87 ms** in `mermaid.core` (LoAF), in all 3 runs. |
-| Rail | 1 [3] | 0 | 142 [≈1,000] | The DOM change is the own row's title and status. Computations re-run for every row's owner on each status or update event. |
+| Rail | 1 [3] | 0 | 142 [1,605] | The DOM change is the own row's title and status. Computations re-run for every row's owner on each status or update event. |
 | Composer | 7 [8] | 0 | 33 [3,196] | Turn edges only |
 | Workspace panel (Files + Review open) | 5 [9] | 0 | 126 | Turn end: `statusChanged → idle` invalidates the files and git queries (`src/server/queries.ts:67-68`), so the panel re-fetches `wr/file`, `git/status`, `diff/refs`, `diff/vcs` and `diff/targets` **twice** (10 requests) after a read-only turn, and the tree re-runs `KindMark` 48 and `FileTreeNode` 24. |
 | Session screen outside the timeline | 10 [11] | 0 | – | Row and key counters, the sr-only title |
