@@ -117,3 +117,22 @@ test.skipIf(!posix)("a group that answers EPERM throughout never counts as retir
   expect(outcome.descendants).toBe("owned")
   expect(retirementSettled(outcome)).toBe(false)
 })
+
+test.skipIf(!posix)("init's group is never signalled, even when its identity verifies", async () => {
+  const init = await readCreationIdentity(1)
+  if (!init) throw new Error("pid 1 was not readable")
+  const signalled: Array<number> = []
+  const kill = spyOn(process, "kill").mockImplementation((pid) => {
+    signalled.push(Number(pid))
+    return true
+  })
+  let outcome: RetirementResult
+  try {
+    outcome = await retire({ identity: init }, budgets)
+  } finally {
+    kill.mockRestore()
+  }
+  expect(signalled).toEqual([])
+  expect(outcome.error?.code).toBe("ownership_unverified")
+  expect(retirementSettled(outcome)).toBe(false)
+})

@@ -12,6 +12,9 @@ import {
   type InitializeResponse,
   type NewSessionResponse,
   type NewSessionRequest,
+  type LoadSessionRequest,
+  type ResumeSessionRequest,
+  type ForkSessionRequest,
   type PromptRequest,
   type PromptResponse,
 } from "@agentclientprotocol/sdk"
@@ -19,10 +22,12 @@ import { isTitlePrompt, lastMarker } from "../scripted-model-request"
 import { ACP_RED_ENV, ACP_SCRIPT_DIR_ENV, lastAcpScriptName, readAcpScript, recoveryContextDropped, type AcpScript } from "./script"
 import { scriptedGoalExtension, scriptedGoals } from "./goals"
 import { playScript } from "./turn"
+import { recordAcpRequest } from "./requests"
 
-const scriptDir = process.env[ACP_SCRIPT_DIR_ENV]
-if (!scriptDir) throw new Error(`${ACP_SCRIPT_DIR_ENV} is not set`)
 const red = process.env[ACP_RED_ENV] === "1"
+
+/** A stdio agent forgets its sessions when its process restarts; the websocket server keeps them across connections, as a remote agent does. */
+const knownSessions = new Set<string>()
 
 function promptText(prompt: ContentBlock[]) {
   return prompt
@@ -47,39 +52,54 @@ async function scriptFor(text: string, dir: string): Promise<AcpScript> {
   return script
 }
 
-class ScriptedAgent implements Agent {
+export class ScriptedAgent implements Agent {
   private readonly turns = new Map<string, AbortController>()
-  private readonly sessions = new Set<string>()
   private readonly mcpUrls = new Map<string, string>()
   private readonly goalRequest: ReturnType<typeof scriptedGoals>
 
-  constructor(private readonly connection: AgentSideConnection, private readonly dir: string) {
+  constructor(private readonly connection: AgentSideConnection, private readonly dir: string, private readonly headers: Record<string, string> = {}, private readonly record = true, private readonly restoreMode: "load" | "resume" = "resume") {
     this.goalRequest = scriptedGoals(dir)
   }
 
   initialize(): InitializeResponse {
     return {
       protocolVersion: PROTOCOL_VERSION,
-      agentCapabilities: { loadSession: true, promptCapabilities: { image: true, embeddedContext: true } },
+      agentCapabilities: { loadSession: true, sessionCapabilities: { fork: {}, ...(this.restoreMode === "resume" ? { resume: {} } : {}) }, promptCapabilities: { image: true, embeddedContext: true }, mcpCapabilities: { http: true, sse: true } },
       authMethods: [],
       _meta: { jetbrains: { air: { version: 1, capabilities: ["nativeSubagentSessions"] } }, goal: scriptedGoalExtension },
     }
   }
 
-  newSession(params: NewSessionRequest): NewSessionResponse {
+  async newSession(params: NewSessionRequest): Promise<NewSessionResponse> {
+    if (this.record) await recordAcpRequest(this.dir, "session/new", params, this.headers)
     const sessionId = `scripted-${randomUUID()}`
-    this.sessions.add(sessionId)
+    knownSessions.add(sessionId)
     const mcp = params.mcpServers.find((server) => server.name === "scripted")
     if (mcp && "url" in mcp && typeof mcp.url === "string") this.mcpUrls.set(sessionId, mcp.url)
+    queueMicrotask(() => {
+      void this.connection.sessionUpdate({ sessionId, update: { sessionUpdate: "available_commands_update", availableCommands: [{ name: "scripted", description: "Run a named scripted reply" }] } })
+    })
     return {
       sessionId,
       modes: { currentModeId: "default", availableModes: [{ id: "default", name: "Default", description: "Scripted replies" }] },
+      configOptions: [{ id: "mode", name: "Agent", category: "mode", type: "select", currentValue: "default", options: [{ value: "default", name: "Default" }, { value: "review", name: "Review" }] }],
     }
   }
 
-  loadSession(params: { sessionId: string }) {
-    if (!this.sessions.has(params.sessionId)) throw RequestError.resourceNotFound(params.sessionId)
+  async loadSession(params: LoadSessionRequest) {
+    if (this.record) await recordAcpRequest(this.dir, "session/load", params, this.headers)
+    if (!knownSessions.has(params.sessionId)) throw RequestError.resourceNotFound(params.sessionId)
     return { modes: { currentModeId: "default", availableModes: [{ id: "default", name: "Default", description: "Scripted replies" }] } }
+  }
+
+  async resumeSession(params: ResumeSessionRequest) {
+    if (this.record) await recordAcpRequest(this.dir, "session/resume", params, this.headers)
+    return {}
+  }
+
+  async unstable_forkSession(params: ForkSessionRequest) {
+    if (this.record) await recordAcpRequest(this.dir, "session/fork", params, this.headers)
+    return { sessionId: `scripted-${randomUUID()}` }
   }
 
   authenticate() {
@@ -91,6 +111,7 @@ class ScriptedAgent implements Agent {
   }
 
   async prompt(params: PromptRequest): Promise<PromptResponse> {
+    if (this.record) await recordAcpRequest(this.dir, "session/prompt", params, this.headers)
     const text = promptText(recoveryContextDropped(this.dir)
       ? params.prompt.filter((block) => block.type !== "text" || !block.text.includes("<session-context-recovery>"))
       : params.prompt)
@@ -115,8 +136,12 @@ class ScriptedAgent implements Agent {
   }
 }
 
-const stream = ndJsonStream(
-  Writable.toWeb(process.stdout) as WritableStream<Uint8Array>,
-  Readable.toWeb(process.stdin) as unknown as ReadableStream<Uint8Array>,
-)
-new AgentSideConnection((connection) => new ScriptedAgent(connection, scriptDir), stream)
+if (import.meta.main) {
+  const scriptDir = process.env[ACP_SCRIPT_DIR_ENV]
+  if (!scriptDir) throw new Error(`${ACP_SCRIPT_DIR_ENV} is not set`)
+  const stream = ndJsonStream(
+    Writable.toWeb(process.stdout) as WritableStream<Uint8Array>,
+    Readable.toWeb(process.stdin) as unknown as ReadableStream<Uint8Array>,
+  )
+  new AgentSideConnection((connection) => new ScriptedAgent(connection, scriptDir), stream)
+}

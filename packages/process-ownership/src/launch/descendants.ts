@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { isRecord } from "@claxedo/helpers/guards"
-import { launchErrorText, readCreationIdentity, verifyCreationIdentity, type CreationIdentity } from "./identity"
+import { launchErrorText, ownablePid, readCreationIdentity, verifyCreationIdentity, type CreationIdentity } from "./identity"
 import type { RetirementBudgets } from "./retirement"
 
 const execFileAsync = promisify(execFile)
@@ -29,7 +29,7 @@ export type DescendantSweep = {
  * a pid recycled in between no longer matches.
  */
 export async function captureDescendants(rootPid: number): Promise<CreationIdentity[]> {
-  if (process.platform === "win32") return []
+  if (process.platform === "win32" || !ownablePid(rootPid)) return []
   const { stdout } = await execFileAsync("ps", ["-A", "-o", "pid=,ppid="], { timeout: 5_000 })
   const edges = stdout.trim().split("\n").map((line) => line.trim().split(/\s+/).map(Number))
   const owned = new Set([rootPid])
@@ -54,7 +54,7 @@ export async function captureDescendants(rootPid: number): Promise<CreationIdent
  * a child does not leave its process group by exiting a parent.
  */
 export async function captureOwnedGroup(processGroupId: number, excludePid?: number): Promise<CreationIdentity[]> {
-  if (process.platform === "win32") return []
+  if (process.platform === "win32" || !ownablePid(processGroupId)) return []
   let stdout: string
   try {
     ;({ stdout } = await execFileAsync("ps", ["-g", String(processGroupId), "-o", "pid="], { timeout: 5_000 }))

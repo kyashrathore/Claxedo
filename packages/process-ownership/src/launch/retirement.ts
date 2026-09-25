@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process"
 import type { RecoveryBudgets, RecoveryErrorCode } from "@claxedo/agent-runtime-contract"
 import { isRecord } from "@claxedo/helpers/guards"
-import { launchErrorText, verifyCreationIdentity, windowsSystemTool, type CreationIdentity } from "./identity"
+import { launchErrorText, ownablePid, verifyCreationIdentity, windowsSystemTool, type CreationIdentity } from "./identity"
 
 export type SignalRefusal =
   | "exited"
@@ -74,6 +74,12 @@ export async function retire(target: RetirementTarget, budgets: RetirementBudget
 
 async function retireOwned(target: RetirementTarget, budgets: RetirementBudgets): Promise<RetirementResult> {
   const { identity } = target
+  if (!ownablePid(identity.pid)) return {
+    leader: "unknown",
+    descendants: "unknown",
+    signals: [],
+    error: { code: "ownership_unverified", message: `pid ${identity.pid} is the kernel or init, which no launch owns; nothing was signalled` },
+  }
   const verdict = await verifyCreationIdentity(identity)
   if (verdict.state === "unknown") return {
     leader: "unknown",

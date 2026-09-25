@@ -1,4 +1,4 @@
-import { encodeSseData } from "../../../../agent-sdk-runtime/src/sse"
+import { encodeSseData } from "../../../../workspace-runtime/src/projection/sse"
 
 const decoder = new TextDecoder()
 

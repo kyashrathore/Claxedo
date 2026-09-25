@@ -1,10 +1,23 @@
 import {
   ElicitationValidationError,
+  elicitationPatternChecks,
   readElicitationSchema,
   validateElicitationResponse,
 } from "@claxedo/agent-runtime-contract"
 import type { RequestAnswer, TurnRequest } from "../../contract/broker"
 import type { BrokerPorts } from "../ports"
+
+export async function validateRequest(ports: BrokerPorts, request: TurnRequest, signal?: AbortSignal): Promise<void> {
+  if (request.kind !== "elicitation" || request.mode !== "form") return
+  let schema: ReturnType<typeof readElicitationSchema>
+  try {
+    schema = readElicitationSchema(request.schema)
+    await ports.services.patternEvaluator(elicitationPatternChecks(schema), signal)
+  } catch (error) {
+    if (error instanceof ElicitationValidationError && error.code === "invalid_schema") throw error
+    throw new ElicitationValidationError("invalid_schema", error instanceof Error ? error.message : "Invalid form schema")
+  }
+}
 
 export async function validateAnswer(
   ports: BrokerPorts,
