@@ -9,6 +9,26 @@ function parseSymbols(rootID: string, markup: string) {
   return symbols
 }
 
+const SPRITE_SHELF_ID = "svg-sprite-shelf"
+
+/**
+ * Every sprite host lives in one shelf: a `display: contents` element with no
+ * `aria-hidden` of its own. Kobalte's hide-outside pass (menus, dialogs,
+ * popovers) skips an element that is already `aria-hidden` without recording
+ * it as hidden, then walks into it and writes `aria-hidden` on each of its
+ * children: every `<symbol>` of every sprite, on every open and close. The shelf
+ * is not hidden, so the pass hides it with one write and does not descend.
+ */
+function spriteShelf(body: HTMLElement): HTMLElement {
+  const existing = document.getElementById(SPRITE_SHELF_ID)
+  if (existing) return existing
+  const shelf = document.createElement("div")
+  shelf.id = SPRITE_SHELF_ID
+  shelf.style.display = "contents"
+  body.insertBefore(shelf, body.firstChild)
+  return shelf
+}
+
 /**
  * The one place that builds an SVG sprite host. Every sprite in the app —
  * lazily materialized symbols here, and the eagerly built app/icon sprites —
@@ -37,7 +57,7 @@ export function ensureSvgSpriteHost(rootID: string): SVGSVGElement | undefined {
   root.style.position = "absolute"
   root.style.overflow = "hidden"
   root.style.contentVisibility = "hidden"
-  body.insertBefore(root, body.firstChild)
+  spriteShelf(body).appendChild(root)
   return root
 }
 
