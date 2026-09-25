@@ -5,41 +5,45 @@ import type {
   AttachInput, ConfigApplied, Deadline, HarnessServices, HarnessSession, HarnessTransport, ResolvedCredentials,
   RoutedEvent, SessionBroker, StartInput, TransportCapabilities, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
+import { attachedSessionEntry, mergeStartInput, selectedProviderProjection, sessionMcpServers } from "../../contract"
 import { projectCursorMcpServers, cursorPluginSettings } from "../../profiles/cursor"
 import { unrecognizedEvent } from "../../translate/unrecognized"
-import { CursorTransportError } from "./errors"
+import { inlineDataUrl, flattenTurnPrompt } from "../../translate/prompt"
+import { routedIngest } from "../../translate/ingest"
+import { TransportError } from "../../contract/errors"
 import type { WorkerReply, WorkerSession } from "./protocol"
-import { CursorQueue } from "./queue"
+import { AsyncPushQueue, errorMessage } from "@claxedo/helpers"
 import { CursorWorkerRegistry } from "./worker-registry"
 
 type Entry = { session: HarnessSession; input: StartInput; key: string; busy: boolean }
 
 function cursorCredential(credentials: ResolvedCredentials, env: NodeJS.ProcessEnv) {
-  const projection = credentials.providers["cursor-sdk"] ?? credentials.providers.cursor
-  if (projection && "unavailable" in projection) throw new CursorTransportError("configuration", `Cursor account unavailable: ${projection.reason}`)
+  const projection = selectedProviderProjection(credentials, ["cursor-sdk", "cursor"])
+  if (projection && "unavailable" in projection) throw new TransportError("cursor", "configuration", `Cursor account unavailable: ${projection.reason}`)
   const apiKey = projection?.placeholder ?? env.CURSOR_API_KEY?.trim()
-  if (!apiKey) throw new CursorTransportError("configuration", "Cursor SDK requires an API key")
+  if (!apiKey) throw new TransportError("cursor", "configuration", "Cursor SDK requires an API key")
   return { apiKey, backendUrl: projection?.baseUrl, key: projection?.baseUrl ?? `owner:${env.CURSOR_BACKEND_URL ?? "default"}` }
 }
 
 function workerSession(input: StartInput, services: HarnessServices, env: NodeJS.ProcessEnv, agentId?: string): WorkerSession {
   const { apiKey } = cursorCredential(input.credentials, env)
-  const firstParty = input.locality === "local" ? services.firstPartyMcp(input.sessionId, input.locality) : undefined
+  const servers = sessionMcpServers(input, services, { includeFirstParty: input.locality === "local",
+    duplicate: (name) => new Error(`Duplicate Cursor MCP server ${name}`) })
   return {
     sessionId: input.sessionId, agentId, directory: input.directory, apiKey,
     model: input.model?.modelID && input.model.modelID !== "default" ? input.model.modelID : "auto",
-    mcpServers: projectCursorMcpServers(input.projection, firstParty),
+    mcpServers: projectCursorMcpServers(servers),
     plugins: cursorPluginSettings(input.projection).settingSources !== undefined,
   }
 }
 
 function inlineCursorPrompt(turn: TurnInput): string | SDKUserMessage {
-  const text = [turn.system, ...turn.prompt.parts.flatMap((part) => part.type === "text" ? [part.text] : [])].filter(Boolean).join("\n\n")
+  const text = flattenTurnPrompt(turn, { system: "turn", separator: "\n\n" })
   const images = turn.prompt.parts.flatMap((part) => {
     if (part.type !== "file") return []
-    const match = /^data:(image\/[^;]+);base64,(.+)$/s.exec(part.url)
-    if (!match?.[1] || !match[2]) throw new CursorTransportError("configuration", "Cursor requires inline image attachments")
-    return [{ mimeType: match[1], data: match[2] }]
+    const image = inlineDataUrl(part.url, { imageOnly: true, strictBase64: false })
+    if (!image) throw new TransportError("cursor", "configuration", "Cursor requires inline image attachments")
+    return [image]
   })
   return images.length ? { text, images } : text
 }
@@ -47,24 +51,23 @@ function inlineCursorPrompt(turn: TurnInput): string | SDKUserMessage {
 function cursorRunResultEvents(runtime: ReturnType<typeof createAgentEventRuntime>, reply: WorkerReply): RoutedEvent[] {
   if (reply.kind !== "result") return []
   const value = reply.value
-  if (!value?.runId || !value.agentId || !value.status) throw new CursorTransportError("sdk", "Cursor omitted its run result")
+  if (!value?.runId || !value.agentId || !value.status) throw new TransportError("cursor", "sdk", "Cursor omitted its run result")
   const status = value.status
   if (status !== "finished" && status !== "cancelled" && status !== "error") {
-    throw new CursorTransportError("sdk", `Cursor reported unknown run status ${status}`)
+    throw new TransportError("cursor", "sdk", `Cursor reported unknown run status ${status}`)
   }
-  return runtime.ingest({ source: "cursor.local-run-stream", method: "result",
+  return routedIngest(runtime, { source: "cursor.local-run-stream", method: "result",
     payload: { type: "result", agentId: value.agentId, runId: value.runId, status,
-      ...(value.result ? { result: value.result } : {}) } }).events.map((event) => ({ event, source: { dir: "in", method: "cursor.result" } }))
+      ...(value.result ? { result: value.result } : {}) } }, { method: "cursor.result" })
 }
 
 function translateReply(runtime: ReturnType<typeof createAgentEventRuntime>, reply: WorkerReply): RoutedEvent[] {
   if (reply.kind !== "event") return cursorRunResultEvents(runtime, reply)
-  return runtime.ingest({ source: "cursor.sdk.message", method: `cursor/${reply.message.type}`,
-    payload: cursorRuntimeMessage(reply.message) }).events.map((event): RoutedEvent => ({
-    event: event.type === "diagnostic" && event.diagnostic.code.includes("unmapped")
+  return routedIngest(runtime, { source: "cursor.sdk.message", method: `cursor/${reply.message.type}`,
+    payload: cursorRuntimeMessage(reply.message) }, { method: `cursor.${reply.message.type}`,
+    mapEvent: (event) => event.type === "diagnostic" && event.diagnostic.code.includes("unmapped")
       ? unrecognizedEvent("cursor.sdk", reply.message.type, reply.message) : event,
-    source: { dir: "in", method: `cursor.${reply.message.type}` },
-  }))
+  })
 }
 
 export class CursorSdkTransport implements HarnessTransport {
@@ -96,7 +99,7 @@ export class CursorSdkTransport implements HarnessTransport {
     try {
       const reply = await worker.call({ kind: "open", session: workerSession(input, this.services, this.env) })
       agentId = reply.kind === "result" ? reply.value?.agentId : undefined
-      if (!agentId) throw new CursorTransportError("sdk", "Cursor did not return an agent id")
+      if (!agentId) throw new TransportError("cursor", "sdk", "Cursor did not return an agent id")
     } catch (error) {
       await this.registry.replace(credential.key)
       throw error
@@ -120,20 +123,16 @@ export class CursorSdkTransport implements HarnessTransport {
   }
 
   private entry(session: HarnessSession): Entry {
-    const entry = this.entries.get(session.binding.sessionId)
-    if (!entry || entry.session.binding.upstreamSessionId !== session.binding.upstreamSessionId) {
-      throw new CursorTransportError("session", "Cursor session is not attached")
-    }
-    return entry
+    return attachedSessionEntry(this.entries, session, () => new TransportError("cursor", "session", "Cursor session is not attached"))
   }
 
   async *send(session: HarnessSession, turn: TurnInput, broker: TurnBroker): AsyncIterable<RoutedEvent> {
     const entry = this.entry(session)
-    if (entry.busy) throw new CursorTransportError("session", "Cursor turn already active")
+    if (entry.busy) throw new TransportError("cursor", "session", "Cursor turn already active")
     entry.busy = true
     const credential = cursorCredential(entry.input.credentials, this.env)
     const worker = this.registry.acquire(entry.key, credential.backendUrl)
-    const queue = new CursorQueue<WorkerReply>()
+    const queue = new AsyncPushQueue<WorkerReply>()
     const runtime = createAgentEventRuntime({ harness: "cursor", threadId: session.binding.sessionId, adapter: cursorSdkAdapter() })
     const onAbort = () => { void worker.call({ kind: "cancel", sessionId: session.binding.sessionId }).then(
       () => {}, (error: unknown) => queue.fail(error)) }
@@ -149,7 +148,7 @@ export class CursorSdkTransport implements HarnessTransport {
         const reply = next.value
         for (const event of translateReply(runtime, reply)) yield event
         if (reply.kind === "result" && reply.value?.status === "error") {
-          throw new CursorTransportError("sdk", "Cursor run failed")
+          throw new TransportError("cursor", "sdk", "Cursor run failed")
         }
       }
     } catch (error) {
@@ -166,21 +165,20 @@ export class CursorSdkTransport implements HarnessTransport {
     if (!entry.busy) return { execution: "terminal" as const, cleanup: "unknown" as const }
     try {
       const worker = this.registry.existing(entry.key)
-      if (!worker) throw new CursorTransportError("worker", "Cursor worker unavailable during cancellation")
+      if (!worker) throw new TransportError("cursor", "worker", "Cursor worker unavailable during cancellation")
       await worker.call({ kind: "cancel", sessionId: session.binding.sessionId })
       return { execution: "unknown" as const, cleanup: "unknown" as const }
     } catch (error) {
       await this.registry.replace(entry.key)
       return { execution: "unknown" as const, cleanup: "owned" as const,
-        error: { code: "provider_unreachable" as const, message: String(error) } }
+        error: { code: "provider_unreachable" as const, message: errorMessage(error) } }
     }
   }
 
   async configure(session: HarnessSession, update: TransportConfigUpdate): Promise<ConfigApplied> {
     const entry = this.entry(session)
     if (entry.busy) return { state: "refused", reason: "Cursor turn active" }
-    const input = { ...entry.input, credentials: update.credentials ?? entry.input.credentials,
-      projection: update.projection ?? entry.input.projection }
+    const input = mergeStartInput(entry.input, update)
     const credential = cursorCredential(input.credentials, this.env)
     await this.registry.existing(entry.key)?.call({ kind: "close", sessionId: session.binding.sessionId })
     entry.input = input

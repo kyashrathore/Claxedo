@@ -1,8 +1,8 @@
-import crypto from "node:crypto"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
+import { writePrivateFileAtomic } from "@claxedo/helpers/fs"
 import type { PluginProjection, ResolvedCredentials } from "../../contract"
 
 const MARKETPLACE = "claxedo-agent-plugins"
@@ -90,8 +90,6 @@ export async function prepareCodexProfile(input: {
   const retained = begin < 0 ? current.trimEnd() : `${current.slice(0, begin)}${current.slice(end + END.length)}`.trim()
   const block = fragments.filter(Boolean).join("\n\n")
   const next = [retained, block ? `${START}\n${block}\n${END}` : ""].filter(Boolean).join("\n\n")
-  const temp = path.join(home, `.config-${crypto.randomUUID()}.tmp`)
-  await fs.writeFile(temp, `${next}\n`, { mode: 0o600 })
-  await fs.rename(temp, target)
+  await writePrivateFileAtomic(target, `${next}\n`)
   return { home, brokered }
 }

@@ -9,6 +9,7 @@ import { createWebSocketStream } from "@agentclientprotocol/sdk/experimental/ws-
 import type { HarnessServices, OwnedProcess, StartInput } from "../../contract"
 import { AcpTransportError } from "./errors"
 import { AcpStartupDeadline } from "./deadline"
+import { stringRecord } from "@claxedo/helpers"
 
 export type AcpConnectionOptions = ({ startupTimeoutMs?: number; promptTimeoutMs?: number } & (
   | { kind: "process"; command: string; args?: readonly string[]; env?: Readonly<Record<string, string>>; supportsMcpServers?: boolean }
@@ -140,5 +141,5 @@ async function retireStream(process: OwnedProcess | undefined, stream: Stream, s
 }
 
 function processEnv(): Record<string, string> {
-  return Object.fromEntries(Object.entries(process.env).filter((row): row is [string, string] => row[1] !== undefined))
+  return stringRecord(process.env)
 }

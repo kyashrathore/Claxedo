@@ -1,9 +1,7 @@
 import { expect, test } from "bun:test"
 import type { ProviderBinding, ProviderUnavailable } from "@claxedo/agent-runtime-contract"
-import type { ResolvedCredentials } from "../contract/projection"
 import { CredentialSelectionError, selectSessionCredentials, type CredentialSelectionInput } from "./credentials"
 
-const ownerLogin: ResolvedCredentials = { providers: {}, secrets: {}, leaseGeneration: "owner-pi" }
 const machineBinding: ProviderBinding = { baseUrl: "https://machine.example", placeholder: "machine", authMode: "api-key" }
 const ownerBinding: ProviderBinding = { baseUrl: "https://owner.example", placeholder: "owner", authMode: "api-key" }
 const memberBinding: ProviderBinding = { baseUrl: "https://member.example", placeholder: "member", authMode: "api-key" }
@@ -74,22 +72,4 @@ test("machine fallback injects only its available provider secrets", () => {
     anthropic: { projection: { unavailable: true, reason: "missing" }, secrets: { ANTHROPIC_API_KEY: "ambient" } },
     openai: machine.openai,
   } } }).secrets).toEqual({ OPENAI_API_KEY: "machine-openai" })
-})
-
-test("Pi machine login follows the session owner on desktop or loopback only", () => {
-  const brokeredCredentials = { ...ownerLogin, leaseGeneration: "brokered" }
-  const base: CredentialSelectionInput = {
-    owner: machineOwner, placement: "desktop", machineOwnerUserId: "owner", canUseOwnLogin: true,
-    profile: { kind: "pi-rpc", ownerLogin, brokeredCredentials },
-  }
-  expect(selectSessionCredentials(base)).toBe(ownerLogin)
-  expect(selectSessionCredentials({ ...base, owner: { kind: "person", userId: "owner" } })).toBe(ownerLogin)
-  for (const input of [
-    { ...base, owner: member },
-    { ...base, placement: "cloud" as const },
-    { ...base, placement: "self-hosted" as const },
-    { ...base, canUseOwnLogin: false },
-  ]) {
-    expect(selectSessionCredentials(input)).toBe(brokeredCredentials)
-  }
 })

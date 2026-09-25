@@ -3,7 +3,10 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { piCredentialProviderIDs, type PromptModel } from "@claxedo/agent-runtime-contract"
 import type { PluginProjection, ResolvedCredentials, TurnActor } from "../../contract"
-import { selectSessionCredentials, type CredentialProfile, type RuntimePlacement } from "../../registry/credentials"
+import type { CredentialProfile, RuntimePlacement } from "../../registry/credentials"
+import { ownerMayUseMachineLogin, selectedProviderProjection } from "../../contract"
+import { stringRecord } from "@claxedo/helpers"
+import { writePrivateFileAtomic } from "@claxedo/helpers/fs"
 
 export type PiProfile = {
   kind: CredentialProfile
@@ -29,34 +32,24 @@ const providerPaths: Record<string, { path: string; env: readonly string[] }> = 
   xai: { path: "/v1", env: ["XAI_API_KEY"] },
 }
 
-function machineOwnerSession(owner: TurnActor, options: PiProfileOptions): boolean {
-  return (owner.kind === "machine-owner" || owner.userId === options.machineOwnerUserId)
-    && options.canUseOwnLogin && (options.placement === "desktop" || options.placement === "loopback")
-}
-
 export function selectPiProfile(
   owner: TurnActor, credentials: ResolvedCredentials, directory: string, sessionId: string, options: PiProfileOptions,
   sessionProfile?: CredentialProfile,
 ): PiProfile {
-  const kind = machineOwnerSession(owner, options) ? sessionProfile ?? "owner-login" : "brokered"
-  const selected = selectSessionCredentials({
-    owner, placement: options.placement, machineOwnerUserId: options.machineOwnerUserId,
-    canUseOwnLogin: options.canUseOwnLogin,
-    profile: { kind: "pi-rpc", ownerLogin: credentials, brokeredCredentials: credentials },
-  })
+  const kind = ownerMayUseMachineLogin(owner, options) ? sessionProfile ?? "owner-login" : "brokered"
   const workspace = createHash("sha256").update(path.resolve(directory)).digest("hex").slice(0, 16)
   const stateDir = path.join(options.stateRoot, workspace)
   const session = createHash("sha256").update(sessionId).digest("hex").slice(0, 16)
   return {
     kind,
-    credentials: selected,
+    credentials,
     agentDir: kind === "owner-login" ? options.ownerAgentDir : path.join(stateDir, "profiles", session),
     sessionDir: path.join(stateDir, "sessions", session),
   }
 }
 
 export function piEnvironment(profile: PiProfile, base: NodeJS.ProcessEnv): Record<string, string> {
-  const env = Object.fromEntries(Object.entries(base).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
+  const env = stringRecord(base)
   if (profile.kind === "brokered") {
     for (const provider of Object.values(providerPaths)) for (const name of provider.env) delete env[name]
   }
@@ -76,7 +69,7 @@ export async function preparePiProfile(profile: PiProfile, model?: PromptModel):
   const providers: Record<string, { baseUrl: string; apiKey: string }> = {}
   const selected = model?.providerID === "pi" ? model.modelID.split("/", 1)[0] : undefined
   for (const [name, config] of Object.entries(providerPaths)) {
-    const projection = piCredentialProviderIDs(name).map((id) => profile.credentials.providers[id]).find(Boolean)
+    const projection = selectedProviderProjection(profile.credentials, piCredentialProviderIDs(name))
     if (!projection) continue
     if ("unavailable" in projection) {
       if (!selected || selected === name) throw new Error(`Pi provider ${name} unavailable: ${projection.reason}`)
@@ -85,7 +78,5 @@ export async function preparePiProfile(profile: PiProfile, model?: PromptModel):
     providers[name] = { baseUrl: `${projection.baseUrl}${config.path}`, apiKey: projection.placeholder }
   }
   const target = path.join(profile.agentDir, "models.json")
-  const temp = `${target}.${process.pid}.tmp`
-  await fs.writeFile(temp, JSON.stringify({ providers }), { mode: 0o600 })
-  await fs.rename(temp, target)
+  await writePrivateFileAtomic(target, JSON.stringify({ providers }))
 }

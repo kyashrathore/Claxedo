@@ -1,5 +1,7 @@
 import { execFileSync, spawn as nodeSpawn } from "node:child_process"
 import type { HarnessServices, OwnedProcess, SpawnCommand, SpawnOptions } from "../../contract"
+import { pollUntil } from "./poll"
+import { singleFlightUntil } from "@claxedo/helpers"
 
 export type TestServices = HarnessServices & {
   processes: OwnedProcess[]
@@ -27,7 +29,7 @@ function childProcess(command: SpawnCommand, _options: SpawnOptions): OwnedProce
   })
   return {
     pid, stdin: child.stdin, stdout: child.stdout, stderr: child.stderr, exited,
-    async retire(deadline) {
+    retire: singleFlightUntil(async (deadline: Parameters<OwnedProcess["retire"]>[0]) => {
       const stop = (signal: NodeJS.Signals) => {
         if (process.platform === "win32") child.kill(signal)
         else process.kill(-pid, signal)
@@ -50,13 +52,11 @@ function childProcess(command: SpawnCommand, _options: SpawnOptions): OwnedProce
         try { stop("SIGKILL") }
         catch (error) { if (!["ESRCH", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error }
       }
-      while (alive() && Date.now() < deadline.at && !deadline.signal.aborted) {
-        await new Promise((resolve) => setTimeout(resolve, 10))
-      }
+      await pollUntil(() => alive() ? undefined : true, deadline.at, deadline.signal)
       if (alive()) return { stopped: false, error: { code: "deadline", message: "Process group stayed alive" } }
       await exited
       return { stopped: true }
-    },
+    }, (result) => result.stopped),
   }
 }
 

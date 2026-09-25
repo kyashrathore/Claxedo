@@ -1,4 +1,5 @@
 import type { v2 } from "@claxedo/agent-event-runtime/harnesses/codex"
+import { errorMessage } from "@claxedo/helpers"
 import { CodexTransportError, isMissingCodexThread } from "./errors"
 import type { CodexRpc } from "./rpc"
 
@@ -7,7 +8,7 @@ export async function startCodexTurn(rpc: CodexRpc, params: v2.TurnStartParams, 
     try { return await rpc.request("turn/start", params, 60_000) }
     catch (error) {
       if (!isMissingCodexThread(error)) throw error
-      if (attempt === 2) throw new CodexTransportError("session", `Codex session is gone: ${String(error)}`, { cause: error })
+      if (attempt === 2) throw new CodexTransportError("session", `Codex session is gone: ${errorMessage(error)}`, { cause: error })
       await rpc.request("thread/resume", { threadId: params.threadId, cwd: params.cwd, config })
     }
   }

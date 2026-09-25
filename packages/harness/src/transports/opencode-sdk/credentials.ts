@@ -1,17 +1,18 @@
 import { isProviderUnavailable } from "@claxedo/agent-runtime-contract"
 import type { ResolvedCredentials } from "../../contract"
 import type { ProviderBindingOverlay } from "./provider-binding"
-import { OpenCodeTransportError } from "./errors.js"
+import { TransportError } from "../../contract/errors.js"
+import { providerPlaceholder } from "../../contract"
 
 export function providerOverlays(credentials: ResolvedCredentials): Record<string, ProviderBindingOverlay> {
   return Object.fromEntries(Object.entries(credentials.providers).map(([id, row]) => [id,
-    isProviderUnavailable(row) ? row : { baseURL: `${row.baseUrl}${row.apiPath ?? ""}`, apiKey: row.placeholder },
+    providerPlaceholder(row),
   ]))
 }
 
 export function assertProviderAvailable(credentials: ResolvedCredentials, providerID: string): void {
   const selected = credentials.providers[providerID]
   if (selected && isProviderUnavailable(selected)) {
-    throw new OpenCodeTransportError("configuration", `OpenCode provider ${providerID} is unavailable: ${selected.reason}`)
+    throw new TransportError("opencode", "configuration", `OpenCode provider ${providerID} is unavailable: ${selected.reason}`)
   }
 }

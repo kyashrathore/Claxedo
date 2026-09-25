@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { createAcpProvider } from "./acp"
 import { createPiRpcProvider } from "./pi-rpc"
-import { HarnessProviderError } from "./types"
+import { TransportError } from "../../contract/errors"
 import * as providers from "./index"
 
 test("provider registry omits the OpenCode server until its adapter moves", () => {
@@ -24,7 +24,7 @@ test("ACP remote headers resolve only named secrets", () => {
   expect(provider.resolve({ descriptor: { connectionId: "remote", providerKey: "acp", configRevision: 1, enabled: true, config }, directory: "/work", secrets: { token: "Bearer abc" } }).config.connection).toEqual({ kind: "streamable-http", url: "https://agent.example", headers: { Authorization: "Bearer abc" } })
   expect(() => provider.validateConfig({ label: "Remote", connection: { kind: "websocket", url: "https://agent.example" } })).toThrow("protocol")
   expect(provider.immutableIdentity(config)).toBe(provider.immutableIdentity({ ...config, label: "Renamed" }))
-  expect(() => provider.createTransport({} as never)).toThrow(HarnessProviderError)
+  expect(() => provider.createTransport({} as never)).toThrow(TransportError)
 })
 
 test("Pi defaults its command and keeps environment secret bindings local", () => {
@@ -34,7 +34,7 @@ test("Pi defaults its command and keeps environment secret bindings local", () =
   expect(provider.resolve({ descriptor: { connectionId: "pi", providerKey: "pi-rpc", configRevision: 1, enabled: true, config }, directory: "/work", secrets: { key: "secret" } }).config.env).toEqual({ API_KEY: "secret" })
   expect(() => provider.validateConfig({ label: "Pi", secretBindings: { headers: { Authorization: "key" } } })).toThrow("header")
   expect(() => provider.validateConfig({ label: "Pi", env: { API_KEY: "literal" }, secretBindings: { env: { API_KEY: "key" } } })).toThrow("overwrite")
-  expect(() => provider.createTransport({} as never)).toThrow(HarnessProviderError)
+  expect(() => provider.createTransport({} as never)).toThrow(TransportError)
 })
 
 test("a Pi connection never claims permission requests: its extension UI asks questions", () => {

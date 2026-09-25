@@ -1,8 +1,8 @@
+import type { RequestDeadline } from "@claxedo/helpers"
 import { DEFAULT_RECOVERY_BUDGETS, type CleanupFact, type RecoveryErrorCode } from "@claxedo/agent-runtime-contract"
 import {
   RecoveryCodedError,
   retirementSettled,
-  type RequestDeadline,
   type RetirementBudgets,
   type RetirementResult,
 } from "@claxedo/process-ownership/launch"

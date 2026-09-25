@@ -5,7 +5,7 @@
  */
 
 import { Hono } from "hono"
-import { errorMessage } from "../error-message"
+import { errorMessage } from "@claxedo/helpers"
 import { errorBody } from "./http"
 import { assertTarget, hasWorkspaceTarget, WorkspaceTargetError } from "../target"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"

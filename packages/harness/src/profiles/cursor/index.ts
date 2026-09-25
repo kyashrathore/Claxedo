@@ -6,11 +6,9 @@ function cursorMcp(server: McpServerSpec): McpServerConfig {
   return { type: server.kind, url: server.url, headers: { ...server.headers } }
 }
 
-export function projectCursorMcpServers(projection: PluginProjection, firstParty?: McpServerSpec): Record<string, McpServerConfig> {
-  const servers = [...projection.mcpServers, ...firstParty ? [firstParty] : []]
+export function projectCursorMcpServers(servers: readonly McpServerSpec[]): Record<string, McpServerConfig> {
   const result: Record<string, McpServerConfig> = {}
   for (const server of servers) {
-    if (Object.hasOwn(result, server.name)) throw new Error(`Duplicate Cursor MCP server ${server.name}`)
     result[server.name] = cursorMcp(server)
   }
   return result

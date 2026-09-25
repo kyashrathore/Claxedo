@@ -1,7 +1,7 @@
 import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk"
 import type { AgentPermissionMode, SessionConfig } from "@claxedo/agent-runtime-contract"
 import { CLAUDE_DENY_FLOOR } from "../../profiles/claude-code"
-import { ClaudeTransportError } from "./errors"
+import { TransportError } from "../../contract/errors"
 
 export const sdkModes = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"] as const satisfies readonly PermissionMode[]
 export const modeParity: Exclude<PermissionMode, typeof sdkModes[number]> extends never ? true : never = true
@@ -21,12 +21,12 @@ const protocolPermissionMap = { allow: "allow", ask: "ask", deny: "deny", additi
 export function permissionOptions(config: SessionConfig) {
   const modeId = config.permissionMode ?? "default"
   const selected = sdkModes.find((value) => value === modeId)
-  if (!selected) throw new ClaudeTransportError("configuration", `Unknown Claude permission mode ${modeId}`)
+  if (!selected) throw new TransportError("claude", "configuration", `Unknown Claude permission mode ${modeId}`)
   const rows = config.permissionState ?? {}
   const values = (key: "allow" | "deny" | "ask" | "additionalDirectories") => {
     const row = rows[key]
     if (row === undefined) return []
-    if (!Array.isArray(row) || row.some((value) => typeof value !== "string")) throw new ClaudeTransportError("configuration", `Invalid Claude ${key} permission state`)
+    if (!Array.isArray(row) || row.some((value) => typeof value !== "string")) throw new TransportError("claude", "configuration", `Invalid Claude ${key} permission state`)
     return row.filter((value: unknown): value is string => typeof value === "string")
   }
   return { permissionMode: selected, allowDangerouslySkipPermissions: modeId === "bypassPermissions" ? true as const : undefined,

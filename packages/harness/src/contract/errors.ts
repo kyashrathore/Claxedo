@@ -1,3 +1,23 @@
+export type TransportErrorKind = "acp" | "claude" | "cursor" | "pi" | "codex" | "opencode" | "provider"
+
+export class TransportError extends Error {
+  readonly retryable: boolean
+
+  constructor(readonly transport: TransportErrorKind, readonly code: string, message: string,
+    options?: { cause?: unknown; retryable?: boolean }) {
+    super(message, { cause: options?.cause })
+    this.name = transport === "provider" ? "HarnessProviderError" : `${transport === "acp" ? "Acp" :
+      transport === "pi" ? "Pi" : transport === "codex" ? "Codex" :
+      transport === "opencode" ? "OpenCode" : transport === "claude" ? "Claude" : "Cursor"}TransportError`
+    this.retryable = options?.retryable ?? (
+      (transport === "acp" && (code === "connection" || code === "timeout")) ||
+      (transport === "cursor" && (code === "worker" || code === "sdk")) ||
+      (transport === "pi" && (code === "timeout" || code === "process")) ||
+      (transport === "codex" && code === "process") ||
+      (transport === "opencode" && code === "engine"))
+  }
+}
+
 export class AgentHarnessEngineError extends Error {
   readonly code = "harness_engine_error"
   readonly harness: string

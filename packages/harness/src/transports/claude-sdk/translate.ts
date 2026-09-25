@@ -4,6 +4,7 @@ import { claudeChildCorrelationKey, claudeSdkAdapter, claudeSubagentObservations
   type ClaudeSdkAdapterState, type ClaudeTaskLedger } from "@claxedo/agent-event-runtime/harnesses/claude"
 import type { RoutedEvent, TurnBroker, TurnInput } from "../../contract"
 import { unrecognizedEvent } from "../../translate/unrecognized"
+import { routedIngest } from "../../translate/ingest"
 
 const knownTypes = { assistant: true, auth_status: true, conversation_reset: true, prompt_suggestion: true,
   rate_limit_event: true, result: true, stream_event: true, system: true, tool_progress: true,
@@ -24,9 +25,9 @@ export async function translateClaude(message: SDKMessage, runtime: AgentEventRu
     const correlationKey = key ?? observation.toolCallId
     if (child && correlationKey) broker.associateChild(correlationKey, child)
   }
-  const events = runtime.ingest({ source: "claude.sdk", method: `claude/${message.type}`, payload: folded }).events
-  return events.map((event) => ({ event, route: key ? { kind: "child", correlationKey: key } : { kind: "parent" },
-    source: { dir: "in", method: `claude.${message.type}` } }))
+  return routedIngest(runtime, { source: "claude.sdk", method: `claude/${message.type}`, payload: folded }, {
+    method: `claude.${message.type}`, target: key ? { kind: "child", correlationKey: key } : { kind: "parent" },
+  })
 }
 
 export function unknownClaude(message: unknown, method: string): RoutedEvent {

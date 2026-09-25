@@ -1,6 +1,7 @@
 import type { HarnessServices, OwnedProcess, SpawnCommand, SpawnOptions } from "@claxedo/harness/contract"
 import { launchOwnedProcess, retirementSettled, type LaunchOwnershipStore } from "@claxedo/process-ownership/launch"
 import { harnessSpawnEnv } from "@claxedo/process-ownership/spawn-env"
+import { singleFlightUntil } from "@claxedo/helpers"
 
 export function createSpawnService(ownership: LaunchOwnershipStore): HarnessServices["spawn"] {
   return async (command: SpawnCommand, options: SpawnOptions): Promise<OwnedProcess> => {
@@ -27,7 +28,7 @@ export function createSpawnService(ownership: LaunchOwnershipStore): HarnessServ
         : new Promise((resolve) => {
             child.once("exit", (code, signal) => resolve({ code, signal }))
           }),
-      async retire(deadline) {
+      retire: singleFlightUntil(async (deadline: Parameters<OwnedProcess["retire"]>[0]): Promise<Awaited<ReturnType<OwnedProcess["retire"]>>> => {
         const remainingMs = deadline.at - Date.now()
         if (deadline.signal.aborted || remainingMs <= 0) {
           return { stopped: false, error: { code: "deadline_exceeded", message: "Process retirement deadline has expired" } }
@@ -36,7 +37,7 @@ export function createSpawnService(ownership: LaunchOwnershipStore): HarnessServ
         const result = await launch.retire({ termGraceMs, killVerifyMs: Math.max(1, remainingMs - termGraceMs) })
         if (retirementSettled(result)) return { stopped: true }
         return { stopped: false, error: result.error ?? { code: "retirement_unverified", message: `Launch ${launch.launchId} retirement was not verified` } }
-      },
+      }, (result) => result.stopped),
     }
   }
 }

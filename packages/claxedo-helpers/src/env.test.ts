@@ -21,6 +21,11 @@ describe("stringRecord", () => {
     expect(stringRecord(["a"])).toEqual({})
     expect(stringRecord("a")).toEqual({})
   })
+
+  test("strict projection discards a mixed record", () => {
+    expect(stringRecord({ a: "1", b: 2 }, { requireAllStrings: true })).toEqual({})
+    expect(stringRecord({ a: "1" }, { requireAllStrings: true })).toEqual({ a: "1" })
+  })
 })
 
 describe("positiveIntegerEnv", () => {

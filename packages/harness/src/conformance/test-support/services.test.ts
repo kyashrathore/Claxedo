@@ -24,8 +24,11 @@ setInterval(()=>{},1000);`
       if (!descendant) await new Promise((resolve) => setTimeout(resolve, 10))
     }
     expect(descendant).toBeGreaterThan(0)
-    const result = await owned.retire({ at: Date.now() + 2_000, signal: new AbortController().signal })
+    const first = owned.retire({ at: Date.now() + 2_000, signal: new AbortController().signal })
+    expect(owned.retire({ at: Date.now() - 1, signal: new AbortController().signal })).toBe(first)
+    const result = await first
     expect(result).toEqual({ stopped: true })
+    expect(owned.retire({ at: Date.now() - 1, signal: new AbortController().signal })).toBe(first)
     expect(() => process.kill(descendant, 0)).toThrow()
   } finally {
     await fs.rm(directory, { recursive: true, force: true })

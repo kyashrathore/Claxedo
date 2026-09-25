@@ -5,6 +5,7 @@ import type { HarnessSession, HarnessTransport, PluginProjection, ResolvedCreden
 import { createRequestBroker, createSessionBroker, createTurnBroker } from "../../broker"
 import { MemoryPorts, authority, origin } from "./memory-ports"
 import { createTestServices, type TestServices } from "./services"
+import { pollUntil } from "./poll"
 
 export type ConformanceBackend = {
   execution?: "process" | "in-process"
@@ -79,24 +80,16 @@ async function setup(input: ConformanceInput) {
 export { setup as setupConformance }
 
 async function pendingQuestion(context: Awaited<ReturnType<typeof setup>>) {
-  const deadline = Date.now() + 5_000
-  while (Date.now() < deadline) {
-    const pending = context.owner.broker.list({ sessionId: context.session.binding.sessionId })
-      .find((row) => row.request.kind === "question")
-    if (pending) return pending
-    await new Promise((resolve) => setTimeout(resolve, 10))
-  }
+  const pending = await pollUntil(() => context.owner.broker.list({ sessionId: context.session.binding.sessionId })
+    .find((row) => row.request.kind === "question"), Date.now() + 5_000)
+  if (pending) return pending
   throw new Error("Pi question did not reach the broker")
 }
 
 async function pendingPermission(context: Awaited<ReturnType<typeof setup>>) {
-  const deadline = Date.now() + 5_000
-  while (Date.now() < deadline) {
-    const pending = context.owner.broker.list({ sessionId: context.session.binding.sessionId })
-      .find((row) => row.request.kind === "permission")
-    if (pending) return pending
-    await new Promise((resolve) => setTimeout(resolve, 10))
-  }
+  const pending = await pollUntil(() => context.owner.broker.list({ sessionId: context.session.binding.sessionId })
+    .find((row) => row.request.kind === "permission"), Date.now() + 5_000)
+  if (pending) return pending
   throw new Error("ACP permission did not reach the broker")
 }
 
@@ -169,11 +162,10 @@ export function runConformance(input: ConformanceInput): void {
         await heldRequest(context.backend, "PISTEER")
         const steer = () => context.transport.steer?.steer(context.session, { turnId: "t1", assistantMessageId: "a1" },
           context.turn("Reply with exactly this one token: PISTEERFOLLOW"))
-        let result = await steer()
-        for (let attempt = 0; result && !result.ok && result.status === "no_active_turn" && attempt < 500; attempt++) {
-          await new Promise((resolve) => setTimeout(resolve, 10))
-          result = await steer()
-        }
+        const result = await pollUntil(async () => {
+          const result = await steer()
+          return result && !result.ok && result.status === "no_active_turn" ? undefined : result
+        }, Date.now() + 5_000)
         expect(result?.ok).toBe(true)
         release()
         const events = await running
@@ -399,11 +391,8 @@ export function runConformance(input: ConformanceInput): void {
           "Reply with exactly this one token: CONFORMANCESECOND" : context.backend.permissionCommand!), secondTurnBroker)
         let pending: ReturnType<typeof context.owner.broker.list>[number] | undefined
         if (!release) {
-          for (let attempt = 0; attempt < 500; attempt++) {
-            pending = context.owner.broker.list({ sessionId: "s2" }).find((row) => row.request.kind === "permission")
-            if (pending) break
-            await new Promise((resolve) => setTimeout(resolve, 10))
-          }
+          pending = await pollUntil(() => context.owner.broker.list({ sessionId: "s2" })
+            .find((row) => row.request.kind === "permission"), Date.now() + 5_000)
           expect(pending).toBeDefined()
         } else await heldRequest(context.backend, "CONFORMANCESECOND")
         const secondProcess = context.services.processes.at(-1)

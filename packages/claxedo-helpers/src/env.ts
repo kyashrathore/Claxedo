@@ -18,11 +18,12 @@ export function envText(env: Record<string, string | undefined>, key: string): s
  * bindings, numbers, null and objects. `Record<string, string>` is assignable
  * to the `Record<string, string | undefined>` every call site declares.
  */
-export function stringRecord(value: unknown): Record<string, string> {
+export function stringRecord(value: unknown, options?: { requireAllStrings?: boolean }): Record<string, string> {
   if (!isRecord(value)) return {}
   const out: Record<string, string> = {}
   for (const [key, entry] of Object.entries(value)) {
     if (isString(entry)) out[key] = entry
+    else if (options?.requireAllStrings) return {}
   }
   return out
 }

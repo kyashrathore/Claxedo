@@ -93,7 +93,7 @@ import {
 import { SessionRollbackError } from "../session-rollback-error"
 import { WorkspaceHarnessUnavailableError } from "../harness-unavailable-error"
 import { asRecord } from "@claxedo/helpers/guards"
-import { errorMessage as thrownMessage } from "../error-message"
+import { errorMessage as thrownMessage } from "@claxedo/helpers"
 
 
 /**

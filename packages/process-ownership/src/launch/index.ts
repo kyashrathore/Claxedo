@@ -46,8 +46,6 @@ export { volatileLaunchOwnership } from "./volatile-ownership"
 export {
   RecoveryCodedError,
   deadlineExceeded,
-  settleAtRequestDeadline,
-  type RequestDeadline,
 } from "./deadline"
 export {
   GATE_EXIT,

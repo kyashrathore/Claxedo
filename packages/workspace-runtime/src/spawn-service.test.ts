@@ -50,12 +50,40 @@ test("spawn observes output and retires the child and its descendant", async () 
     expect(processExists(owned.pid)).toBe(true)
     expect(processExists(descendant)).toBe(true)
 
-    const retired = await owned.retire({ at: Date.now() + 5_000, signal: new AbortController().signal })
+    const first = owned.retire({ at: Date.now() + 5_000, signal: new AbortController().signal })
+    const concurrent = owned.retire({ at: Date.now() - 1, signal: new AbortController().signal })
+    expect(concurrent).toBe(first)
+    const retired = await first
     expect(retired).toEqual({ stopped: true })
+    expect(owned.retire({ at: Date.now() - 1, signal: new AbortController().signal })).toBe(first)
     await owned.exited
     expect(processExists(owned.pid)).toBe(false)
     expect(processExists(descendant)).toBe(false)
     expect(await ownership.listUnresolved({ kind: "standalone", sessionId: "spawn-test" })).toEqual([])
+  } finally {
+    if (owned) await owned.retire({ at: Date.now() + 5_000, signal: new AbortController().signal })
+    await rm(cwd, { recursive: true, force: true })
+  }
+})
+
+test("a retirement refused for an expired deadline can be retried and stops the process", async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), "harness-spawn-retry-"))
+  const ownership = volatileLaunchOwnership()
+  let owned: Awaited<ReturnType<ReturnType<typeof createSpawnService>>> | undefined
+  try {
+    owned = await createSpawnService(ownership)({
+      file: "/bin/sh",
+      args: ["-c", "printf 'READY\\n'; sleep 30"],
+      cwd,
+      env: Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)),
+    }, { role: "harness", label: "retry proof", sessionId: "spawn-retry" })
+    await waitForOutput(owned.stdout, /READY/)
+    const refused = await owned.retire({ at: Date.now() - 1, signal: new AbortController().signal })
+    expect(refused).toMatchObject({ stopped: false, error: { code: "deadline_exceeded" } })
+    expect(processExists(owned.pid)).toBe(true)
+    expect(await owned.retire({ at: Date.now() + 5_000, signal: new AbortController().signal })).toEqual({ stopped: true })
+    await owned.exited
+    expect(processExists(owned.pid)).toBe(false)
   } finally {
     if (owned) await owned.retire({ at: Date.now() + 5_000, signal: new AbortController().signal })
     await rm(cwd, { recursive: true, force: true })

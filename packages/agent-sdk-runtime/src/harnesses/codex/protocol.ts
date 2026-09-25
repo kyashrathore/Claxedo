@@ -10,7 +10,7 @@ import {
 import { createTurnStop, type TurnStopRecord } from "../shared/cancellation-facts"
 import { controlRequestDeadline } from "../shared/request-deadline"
 import { deliverPromptAttachments, promptImageAttachments } from "../shared/prompt-attachments"
-import type { RequestDeadline } from "@claxedo/process-ownership/launch"
+import type { RequestDeadline } from "@claxedo/helpers"
 import type { CodexAppServerProcess } from "./app-server-process"
 
 export type CodexTurnStop = {

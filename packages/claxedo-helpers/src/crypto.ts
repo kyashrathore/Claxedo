@@ -72,11 +72,11 @@ export function timingSafeEqualStrings(a: string, b: string): boolean {
  * alphabet keep the result legal for the control plane's inbound identifier
  * regex, and for URL, DNS-label, relay-room and storage-key use.
  */
-export function prefixedRandomId(prefix: string): string {
+export function prefixedRandomId(prefix: string, separator: "_" | "-" = "_"): string {
   const bytes = crypto.getRandomValues(new Uint8Array(16))
   let hex = ""
   for (const byte of bytes) hex += byte.toString(16).padStart(2, "0")
-  return `${prefix}_${hex}`
+  return `${prefix}${separator}${hex}`
 }
 
 /**

@@ -27,7 +27,7 @@ const transportVendors: Record<string, string[]> = {
   "pi-rpc": [],
   "opencode-sdk": ["@opencode-ai/sdk", "@opencode-ai/plugin", "@opencode-ai/schema"],
 }
-const coreParts = new Set(["contract", "broker", "registry", "capabilities", "translate"])
+const coreParts = new Set(["contract", "broker", "registry", "capabilities", "translate", "rpc"])
 const harnessIds = new Set(["claude", "codex", "cursor", "pi", "opencode"])
 const decisions = new Set(["allow_once", "allow_always", "deny", "reject_always"])
 const pollOwners: string[] = []
@@ -199,7 +199,7 @@ export function check(sources: Source[], agentsText: string, budgets: Record<str
         }
         if (transport) {
           const own = target === `src/transports/${transport}` || target.startsWith(`src/transports/${transport}/`)
-          const shared = ["src/contract", "src/translate", "src/profiles"].some(folder => target === folder || target.startsWith(`${folder}/`))
+          const shared = ["src/contract", "src/translate", "src/rpc", "src/profiles"].some(folder => target === folder || target.startsWith(`${folder}/`))
           const builtin = nodeBuiltins.has(target.replace(/^node:/, ""))
           const testSupport = !production && (target === "bun:test" || target === "src/test-support" || target.startsWith("src/test-support/"))
           const helper = target === "@claxedo/helpers" || target.startsWith("@claxedo/helpers/") || target === "@claxedo/agent-runtime-contract" || target.startsWith("@claxedo/agent-runtime-contract/") || target === "@claxedo/agent-event-runtime" || target.startsWith("@claxedo/agent-event-runtime/")

@@ -30,7 +30,7 @@ test("a file URL the SDK cannot take is refused as configuration", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "claude-attachment-"))
   try {
     await expect(claudePrompt(turn([{ type: "file", mime: "image/png", url: "https://example.invalid/image.png" }]), root))
-      .rejects.toMatchObject({ kind: "configuration" })
+      .rejects.toMatchObject({ transport: "claude", code: "configuration" })
   } finally { await fs.rm(root, { recursive: true, force: true }) }
 })
 

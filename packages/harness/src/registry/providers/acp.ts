@@ -1,6 +1,7 @@
 import { decodeModelSelection, type ModelSelection } from "@claxedo/agent-runtime-contract"
 import { configObject, onlyFields, resolveBindings, secretBindings, configStringArray, configStringRecord, configText, type SecretBindings } from "./bindings"
-import { HarnessProviderError, transportNotBuilt, type CustomHarnessProvider } from "./types"
+import { transportNotBuilt, type CustomHarnessProvider } from "./types"
+import { TransportError } from "../../contract/errors"
 
 export type AcpConnection =
   | { kind: "process"; command: string; args?: string[]; env?: Record<string, string>; supportsMcpServers?: boolean; sharedFilesystem?: boolean }
@@ -29,19 +30,19 @@ export function validateAcpConnection(input: unknown): AcpConnection {
     onlyFields(row, row.kind === "websocket" ? ["kind", "url", "protocols", "headers", "supportsMcpServers", "sharedFilesystem"] : ["kind", "url", "headers", "supportsMcpServers", "sharedFilesystem"], "connection")
     const url = configText(row.url, "url")
     let protocol: string
-    try { protocol = new URL(url).protocol } catch { throw new HarnessProviderError("invalid_config", "connection URL is invalid") }
+    try { protocol = new URL(url).protocol } catch { throw new TransportError("provider", "invalid_config", "connection URL is invalid") }
     const allowed = row.kind === "websocket" ? ["ws:", "wss:"] : ["http:", "https:"]
-    if (!allowed.includes(protocol)) throw new HarnessProviderError("invalid_config", "connection URL protocol is invalid")
+    if (!allowed.includes(protocol)) throw new TransportError("provider", "invalid_config", "connection URL protocol is invalid")
     return { kind: row.kind, url, ...common,
       ...(row.headers !== undefined ? { headers: configStringRecord(row.headers, "headers")! } : {}),
       ...(row.kind === "websocket" && row.protocols !== undefined ? { protocols: configStringArray(row.protocols, "protocols")! } : {}) }
   }
-  throw new HarnessProviderError("invalid_config", "connection kind must be process, streamable-http, or websocket")
+  throw new TransportError("provider", "invalid_config", "connection kind must be process, streamable-http, or websocket")
 }
 
 function acpConfigBoolean(input: unknown, field: string): boolean | undefined {
   if (input === undefined) return undefined
-  if (typeof input !== "boolean") throw new HarnessProviderError("invalid_config", `${field} must be boolean`)
+  if (typeof input !== "boolean") throw new TransportError("provider", "invalid_config", `${field} must be boolean`)
   return input
 }
 
