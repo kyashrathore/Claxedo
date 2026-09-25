@@ -3,7 +3,6 @@ import fs from "node:fs/promises"
 import { createRequire } from "node:module"
 import os from "node:os"
 import path from "node:path"
-import { fileURLToPath } from "node:url"
 import type { PluginDiagnostic } from "./errors"
 import type { PluginPackage } from "./manifest-file"
 
@@ -12,24 +11,22 @@ const GLOBAL_DIAGNOSTIC_LINE = /^error (TS\d+): (.*)$/
 
 const UNTYPED_HOST_MODULES = `declare module "@claxedo/app-v2/ui"\n`
 
+const require = createRequire(import.meta.url)
+
 function typescriptCompiler(): string {
-  const typescript = createRequire(import.meta.url).resolve("typescript/package.json")
-  const native = createRequire(typescript).resolve(`@typescript/typescript-${process.platform}-${process.arch}/package.json`)
+  const native = createRequire(require.resolve("typescript/package.json"))
+    .resolve(`@typescript/typescript-${process.platform}-${process.arch}/package.json`)
   return path.join(path.dirname(native), "lib", process.platform === "win32" ? "tsc.exe" : "tsc")
 }
 
-function packageDirectory(specifier: string): string {
-  return path.dirname(fileURLToPath(import.meta.resolve(`${specifier}/package.json`)))
-}
-
 function hostModulePaths(): Record<string, string[]> {
-  const solid = packageDirectory("solid-js")
+  const solid = path.dirname(require.resolve("solid-js/package.json"))
   return {
     "solid-js": [path.join(solid, "types/index.d.ts")],
     "solid-js/web": [path.join(solid, "web/types/index.d.ts")],
     "solid-js/store": [path.join(solid, "store/types/index.d.ts")],
     "solid-js/jsx-runtime": [path.join(solid, "types/jsx.d.ts")],
-    "@claxedo/plugin-api": [fileURLToPath(import.meta.resolve("@claxedo/plugin-api"))],
+    "@claxedo/plugin-api": [require.resolve("@claxedo/plugin-api")],
   }
 }
 
