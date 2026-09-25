@@ -58,30 +58,38 @@ The app asks one server for one page of a project's sessions, with one opaque cu
 - A gone sandbox or an offline machine shows no terminals.
 
 ## Phases and acceptance
-- [ ] **S1. Control plane:**
+- [x] **S1. Control plane:**
   - an idempotent machine-row publish endpoint;
   - a keyset-paged, authz-filtered project list (D1 and the self-hosted SQLite);
   - `latest-surface` and `before` history for cloud sessions;
   - honest reachability.
   - Tests: authz (another user's or another org's rows never appear), keyset continuity (no gaps or duplicates across 3+ pages with concurrent inserts), idempotent republish.
-  - Progress:
-- [ ] **S2. Machine publisher:** the daemon publishes rows and status on change and on reconnect, bounded with backoff. Tests use a fake control plane; an offline control plane queues nothing unbounded.
-  - Progress:
+  - Progress: done on `v2/session-sources`.
+    - 928d1bba4d: `listSessionPage` (D1 SQL predicate; SQLite keyset walk over its per-row admission), `sessionOrderSql` shared with the local projection, the 409 gone. Session-page conformance on both adapters: other users' and other orgs' rows never appear; a 3+ page walk with inserts and prompts between pages has no gaps or repeats.
+    - 585f8f98cb: `POST /api/claxedo/host/session-rows` with the Host Tunnel Token (approved, owner 18:40). Adopts unseen sessions for the enrollment owner; idempotent republish; refuses unserved, superseded-generation, reassigned-host, elsewhere-registered and plane-deleted rows (D1 and SQLite tests; d23b7de590 adds the generation and reassignment cases).
+    - d23b7de590: the explicit `after` key / `nextAfter` on every server; `cursor` stays only for v1 and is deleted at the swap.
+    - 84f91b15f5: `authorityRowReachable`: machine rows by `host_online` or served here; cloud rows by the ready lease (signed-web's `readyCloudWorkspaces`).
+    - f2f74a70a7: `latest-surface` and `latest-turn` views on D1 and SQLite (conformance on both); the app's stored-history first page reads the surface.
+- [x] **S2. Machine publisher:** the daemon publishes rows and status on change and on reconnect, bounded with backoff. Tests use a fake control plane; an offline control plane queues nothing unbounded.
+  - Progress: 2fa2eaf949 (the URL rides the heartbeat to the daemon), af707f5fbb (publisher: coalesced, 250 ms debounce, 100-row chunks, 1 s→60 s jittered backoff, a 1000-session cap that collapses to one full resync, a 401 waits for the next credential), ca5d7c95c3 (change notices come from the projection's own writers; an unreadable row backs off). Tests against a fake control plane, including a real daemon booted in-process.
 - [ ] **S3. Signed desktop merged list through AccountPort:**
   - add `session.list` to the closed `HostedOperationName` set and to Electron main's route table;
   - the guard tests hold the registry and main equal;
   - the app's session-source owner merges the daemon page and the account page with a composite cursor;
   - when the account source fails, the page is the local rows plus a `degraded` marker, never a failure;
   - no bearer is ever pushed to the daemon.
-  - Progress:
-  - Progress:
+  - Progress: blocked on `lane-desktop-account` (the v2 AccountPort owner, `session.page`, the signed desktop catalog and project link). The server contract it calls is ready (`scope=project`, `after`, `nextAfter`); the two-source merge in `src/server` follows its port.
 - [ ] **S4. App switch:**
   - `src/session/list` reads one page per project from one endpoint;
   - status comes from events;
   - the per-placement fan-out, per-placement tails and `Promise.all` are deleted;
   - the rail is a true prefix of the order.
   - Flows: prefix order across mixed sources, "Show more" continuity, one failed source not blanking the rail, and 0 sandbox-wake requests at boot.
-  - Progress:
+  - Progress: done for unsigned desktop and the web; the signed desktop's two sources wait on S3.
+    - 125e0bce4b, 1fadb6854f, cb48ece993: the daemon lists one keyset page per project, each row carrying its runtime's status read in process.
+    - ac41cbea48: one list read per project; per-project windows, more-state and page failures; status from rows and events; the fan-out, the tails, `sessions.statuses()` and `/api/wr/session-activity` deleted.
+    - Flow 38: true prefix across a folder and its worktree at every Show more; one list read per project and no status, permission, question or wake at boot; a failed project page leaves the others and retries. Flows 10, 31 (paint case rewritten), 33, 12 and 00-signed-smoke pass.
+    - Boot, before: one list read per reachable placement plus `/api/wr/session-activity` on loopback, or three runtime reads per remote placement. After: one list read per project and nothing else.
 - [ ] **S5. History routing:** one owner in `src/server` routes by placement kind (control plane, relay or local), and offline machines render the published row.
   - Flows: a gone cloud sandbox renders its history; an offline machine renders its row and state.
   - Progress:
