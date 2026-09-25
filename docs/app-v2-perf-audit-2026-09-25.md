@@ -237,7 +237,7 @@ Session "Local changes review" with the workspace panel open, pointer parked, 5 
 | Timer callbacks fired | 50 | 4 |
 | ScriptDuration (ms) | 20 | 1 |
 
-v2's 60 frames are the text caret blinking at 2 Hz, not an app animation. `document.getAnimations()` is empty and there are no SMIL or video elements. The frames occur exactly when an editable element has focus: in v2 opening the panel moves focus into the Files filter `<input>`; in v1's boot idle the composer holds focus, and that is where v1's 60 idle frames in scenario 1 come from. Neither app runs an idle animation. Whether opening the panel should move focus into the filter is a product choice; while it does, an idle window with the panel open redraws twice a second.
+v2's 60 frames are the text caret blinking at 2 Hz, not an app animation. `document.getAnimations()` is empty and there are no SMIL or video elements. The frames occur exactly when an editable element has focus: in v2 opening the panel moves focus into the Files search `<input placeholder="Search files...">`; in v1's boot idle the composer holds focus, and that is where v1's 60 idle frames in scenario 1 come from. Neither app runs an idle animation. Whether opening the panel should move focus into the search box is a product choice; while it does, an idle window with the panel open redraws twice a second.
 
 ## Stylesheets: duplication and coverage
 
@@ -259,3 +259,130 @@ The duplicates come in two pairs, not one:
 - Plus 25 rules present in all three.
 
 The two extra sheets are 107,563 and 80,707 bytes. Disabling either copy on the live page does not change the scroll restyle count (scenario 2), so the measured cost is parse, memory and rule-matching setup at boot, not per-frame style work. Design fix: one owner per stylesheet. The shell must not import session-ui's and ui's CSS when v2 imports its own copies, or v2 must not keep copies.
+
+## Ranked findings, proven (v2)
+
+Severity order: battery/idle, then lag, then wasted work. Each finding gives (a) scenario/action, (b) metric v1 → v2, (c) cause, (d) whether v1 shares it, (e) design fix.
+
+1. **Session switching leaks whole transcripts while an image probe is pending** (memory growth feeds GC and lag).
+   - (a) S3, 80 switches.
+   - (b) Nodes 3,824 → 3,824 in v1; 3,291 → 15,531 in v2. Listeners 463 → 463 vs 285 → 1,045. Heap +0 MB vs +9.9 MB. Identical in all 3 runs.
+   - (c) `probeImage` waiters are never removed on unmount (`src/transcript/markdown.tsx:584-603`), and v2 re-mounts the transcript on each switch. Proven by retainer path and by a control run where failing the image fast keeps Nodes flat.
+   - (d) The code is shared (`session-ui/src/components/markdown.tsx:627-646`), but v1 does not re-mount, so v1 does not leak.
+   - (e) Unsubscribe the waiter in `onCleanup`, or key a per-`src` signal. Bound or abort a hung probe.
+2. **Transcript scroll restyles 2.4× the elements** (lag).
+   - (a) S2, wheel-scroll 3,000 px.
+   - (b) 4,696 → 11,394 elements restyled. RecalcStyleDuration 40 → 73 ms. Forced recalcs inside `requestAnimationFrame` at the thumb read: 13 → 19, restyling 817 → 7,791 elements.
+   - (c) 73% of v2's restyles follow whole-subtree `:first-child` invalidations of `[data-timeline-virtual-content]` (466 elements), flushed synchronously by `ScrollView.updateThumb` (`packages/ui/src/components/scroll-view.tsx:225`). The rule is not yet identified (see Suspected).
+   - (d) The invalidation set exists in v1 but lands on a childless spacer there.
+   - (e) Find the featureless `:first-child … *` rule and give it a feature (class) in its descendant part. Read the thumb geometry from cached `ResizeObserver`/scroll values instead of `scrollHeight` inside rAF.
+3. **A 10 s clock tick runs for the app's lifetime** (battery/idle).
+   - (a) S1, 30 s idle.
+   - (b) 3 interval callbacks per 30 s, 0 DOM changes. v1 has 27 timer callbacks and 10 requests in the same window, so v2 is far better.
+   - (c) `ClockProvider` `setInterval(…, 10_000)` (`src/lib/clock.tsx:12`) ticks regardless of readers or visibility. The rail's labels are hours and days old.
+   - (d) v1 has its own 10 s rail interval plus TanStack's.
+   - (e) Tick only while a mounted label needs it, schedule the next tick at the label's next boundary, and stop while `document.hidden`.
+4. **Machine-level catalogs are re-fetched on every session mount** (wasted network).
+   - (a) S3 revisits and S7 Back.
+   - (b) 3 requests per revisit or Back (`agent-config/connections`, `agent-config/harness`, `session/:id/permission-mode`); v1: 4–11.
+   - (c) `AgentHarnessSelector` owns its own catalog and refreshes it in a mount effect (`src/composer/view/agent-harness-selector.tsx:86-94`).
+   - (d) v1 re-fetches too.
+   - (e) Give the catalog one server-scope owner, refreshed by its change event or when the picker opens.
+5. **`permission-mode` is fetched twice per session open** (wasted network).
+   - (a) S2 and S3 open.
+   - (b) v1 ×1 → v2 ×2.
+   - (c) The resource key changes shape from `{sessionId}` to `{sessionId, selection}` when the harness hydrates (`src/composer/permission/permission-mode-wiring.ts:17`, `src/composer/harness/harness-hydrator.ts:82`).
+   - (d) v2 only.
+   - (e) For an existing session, key only on the session.
+6. **Leaving Tasks fetches the task list again** (wasted network).
+   - (a) S7, Back from Tasks.
+   - (b) 0 → 1 `GET /api/claxedo/tasks/tasks`.
+   - (c) The `useTaskList` key follows `activeProjectId()` (`src/tasks/view/tasks-page.tsx:14`), which flips before unmount.
+   - (d) v2 only.
+   - (e) Freeze the page's project when the route leaves, or key it on the route's project only.
+7. **Boot fetches two payloads to derive two booleans** (wasted network).
+   - (a) S1 boot.
+   - (b) v1 0 → v2 2 (`tasks/presets`, `agent-config/providers?nativeHarness=pi`).
+   - (c) `probeAvailability` and `piConnected` in `src/server/capabilities.ts:43,77`.
+   - (d) v2 only.
+   - (e) Let the bootstrap declaration carry both facts, or fetch lazily when Tasks or the pi picker opens.
+8. **Every keystroke serializes and writes the whole composer entry to localStorage** (wasted work).
+   - (a) S4.
+   - (b) 40 writes and 6,002 bytes for 40 keys; v1: 80 writes and 9,192 bytes.
+   - (c) `src/composer/store.ts:66-71` → `src/composer/persistence.ts:145-155`.
+   - (d) v1 does twice as many.
+   - (e) Persist on idle, blur or `pagehide`.
+9. **Stylesheets are loaded twice** (wasted work at boot).
+   - (a) Boot and session open.
+   - (b) Duplicate rules 205 → 1,715. Duplicate bytes 15.7 KB → 238.5 KB. Sheets 23 → 42.
+   - (c) `shell/styles/index.css` imports session-ui and ui styles that `src/transcript/styles.css` and `src/ui/styles.css` also load.
+   - (d) v2 only.
+   - (e) One owner per stylesheet.
+10. **Menus hide 167 sprite symbols one by one** (wasted work).
+    - (a) S7, account menu → Settings.
+    - (b) 668 `aria-hidden` mutations on `<symbol>` elements in both apps (v1 783 total mutations, v2 748).
+    - (c) The hide-outside pass walks into the inline sprite `svg#codex-icon-sprite` under `body`.
+    - (d) Shared.
+    - (e) Mark the sprite container `aria-hidden` and keep it out of the walk, or move the sprite to an external file.
+11. **Resize changes the DOM** (wasted work).
+    - (a) S8.
+    - (b) Mutations 0 → 9, layouts 2 → 5, restyled 240 → 312 per direction.
+    - (c) `Workbench` measures with a `ResizeObserver` plus `getBoundingClientRect`, sets a new size object each callback and toggles `data-collapsed` (`src/workbench/view/workbench.tsx:25-70`).
+    - (d) v2 only.
+    - (e) A container or media query for the collapse.
+12. **Folder expand restyles 343 extra elements when the scroll thumb appears** (wasted work).
+    - (a) S5, expand `docs`.
+    - (b) 147 → 492 restyled.
+    - (c) `ScrollView` inserts `div.scroll-view__thumb` as a sibling after the viewport when the tree becomes scrollable, which restyles the viewport's subtree.
+    - (d) The mechanism is shared (`packages/ui` `ScrollView`); v1's tree did not change scrollability here.
+    - (e) Keep the thumb element mounted and toggle visibility.
+
+Where v2 is already better than v1 and must stay that way: idle network (0 vs 10–25 requests per 30 s), boot requests (15 vs 44), session-open requests (16 vs 25), session-open script time (5 vs 40 ms), no polling during scroll, typing or hover, and CLS 0 on open and switch (v1 0.08).
+
+## Suspected (not proven)
+
+- **The rule behind the scroll subtree invalidation.** The trace names the `:first-child` pseudo invalidation set with `allDescendantsMightBeInvalid` on the list container, scheduled from Solid's `reconcileArrays`. Disabling `shell/styles/index.css`, `src/ui/styles.css` or `src/transcript/styles.css` did not remove it, and the container's own DOM, attributes and matched positional rules are identical to v1's. Next step: disable the remaining 39 sheets one at a time with `bisect-css.mjs`, or read Blink's `InvalidationSet` dump (`--vmodule=invalidation_set*=2`) for the set id.
+- **Why Tasks refetches on leave.** The request and its initiator are proven; that `activeProjectId()` flips first is read from code, not traced.
+- **Full-viewport paint per keystroke** (shared, same in both): each key reports a 1280×800 Paint on the root layer. This may be `chromium-headless-shell` software raster reporting the layer bounds rather than the damage rect. Check in headed Chrome with paint flashing.
+- **Panel focus into "Search files..."** keeps a caret blinking (60 frames per 30 s idle). This is a product behaviour, not a defect; listed because it is the only source of idle frames in v2.
+
+## Deterministic regression gates
+
+These counts did not vary across runs, so each can be an exact or ceiling assertion. They must run against a fixture server, not the owner's data. Harness: `lib.mjs` in the audit scratchpad (Playwright + CDP, one headless Chromium).
+
+| Gate | Action | Assertion | Today (v2) |
+|---|---|---|---|
+| Idle is silent | boot, settle 10 s, 30 s window | API requests = 0, DrawFrame = 0, UpdateLayoutTree = 0, mutations = 0, timer callbacks ≤ 0 after finding 3 is fixed | 0 / 0 / 0 / 0 / 4 |
+| No switch leak | 80 switches over 4 sessions, one with an image routed to never respond; 2× GC | ΔNodes ≤ 50, ΔJSEventListeners ≤ 10 | +12,240 / +760 |
+| Scroll restyle budget | long-transcript fixture, 30 × −100 px wheel | elements restyled ≤ 5,000; API requests = 1 | 11,394 / 1 |
+| Session open requests | click a rail row | no path template twice; total ≤ 15 | `permission-mode` ×2; 16 |
+| Revisit requests | revisit a mounted-before session | API requests = 0 | 3 |
+| Boot requests | cold boot | ≤ 13 (drop `tasks/presets`, `providers`) | 15 |
+| Typing | 40 chars in the composer | API = 0, rAF = 0, mutations ≤ 45, localStorage writes ≤ 2 | 0 / 0 / 45 / 40 |
+| Resize | 1280 → 900 → 1280 | mutations = 0 | 9 |
+| Menu open | account menu open + close | `aria-hidden` mutations ≤ 20 | 668 |
+| Stylesheet duplication | CSSOM census after boot | duplicate rules ≤ 205 | 1,715 |
+
+## v2 per-action baseline (medians, dev build, this machine)
+
+| Action | API | Mutations | Restyled | Layouts | Paints | Frames | Script ms |
+|---|---|---|---|---|---|---|---|
+| Cold boot (to +6 s after rail) | 15 (+2 dev) | 76 | 486 | 8 | 36 | 53 | 45 |
+| Idle 30 s, draft page | 0 | 0 | 0 | 0 | 0 | 0 | 2 |
+| Idle 30 s, session + panel | 0 | 0 | 0 | 0 | 0 | 60 (caret) | 1 |
+| Open long session | 16 | 111 | 945 | 15 | 77 | 22 | 5 |
+| Scroll 3,000 px | 1 | 810 | 11,394 | 101 | 551 | 195 | 107 |
+| 4 switches, unvisited | 65 | 524 | 2,687 | 45 | 286 | 82 | 14 |
+| 4 switches, visited | 12 | 259 | 1,111 | 24 | 154 | 75 | 8 |
+| Type 40 chars | 0 | 45 | 12 | 42 | 83 | 59 | 21 |
+| Select-all + Delete | 0 | 8 | 11 | 4 | 6 | – | – |
+| Open panel | 3 | 124 | 674 | 30 | 129 | 26 | 40 |
+| Expand folder | 1 | 28 | 492 | 3 | 25 | 14 | 8 |
+| Open file | 1 | 116 | 327 | 2 | 9 | 11 | 10 |
+| Review Expand all | 1 | 67 | 1,331 | 8 | 15 | 4 | 19 |
+| Hover 4 rail rows | 0 | 14 | 154 | 9 | 60 | 19 | 6 |
+| Hover transcript sweep | 0 | 2 | 344 | 0 | 11 | 53 | 4 |
+| Settings (menu + item) | 0 | 748 | 853 | 12 | 33 | 37 | 11 |
+| Back to session | 3 | 47–67 | 397–489 | 3–6 | 49 | 19 | 2 |
+| Resize, each direction | 0 | 9 | 312 | 5 | 4 | 2 | 1 |
+| Heap after boot, after GC | 32,764 KB, 1,460 Nodes, 153 listeners | | | | | | |
