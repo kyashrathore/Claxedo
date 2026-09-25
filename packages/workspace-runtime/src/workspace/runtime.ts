@@ -2317,8 +2317,13 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         await hostOptions.opencodeRuntime.tools.registerSession({
           scope: WorkspaceScope.authorize({ workspaceID: options.target?.workspaceId ?? "workspace-runtime", directory }),
           sessionID: input.sessionId,
-          callbackUrl: input.callbackUrl,
           tools: input.tools,
+          execute: async (call) => {
+            if (!input.dispatch) throw new Error("OpenCode Session tool callback is unavailable")
+            const selected = input.tools.find((tool) => tool.name === call.name)
+            if (!selected) throw new Error(`OpenCode Session tool ${call.name} is unregistered`)
+            return input.dispatch(selected.callbackUrl ?? input.callbackUrl, { sessionID: input.sessionId, ...call })
+          },
         })
         opencodeToolSessions.add(input.sessionId)
         return

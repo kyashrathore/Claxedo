@@ -169,6 +169,7 @@ export type WorkspaceHost = {
     harness?: string
     callbackUrl: string
     tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>; callbackUrl?: string }>
+    dispatch?: (url: string, call: { sessionID: string; name: string; toolCallID: string; input: unknown }) => Promise<unknown>
   }) => Promise<void>
   unregisterSessionTools: (sessionId: string) => Promise<void>
   checkpoint: WorkspaceCheckpointControl
