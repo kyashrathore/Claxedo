@@ -15,6 +15,41 @@ v2 is cheaper than v1 on almost every count: idle network 0 vs 10–25 requests 
 
 The ranked list, the suspected items, the regression gates and the per-action baseline are at the end.
 
+## Isolation invariants (regression gate)
+
+Measured on real harness turns (Claude Code, "Default (recommended)") in new sessions named "perf-audit …", created on :4480 and :4481 and archived afterwards so the owner's rail stays as it was. Instruments:
+
+- A document `MutationObserver` that classifies each mutation by region: rail own row, other rail rows, rail chrome, composer (`[data-component=composer-frame]`), dock area (the rest of `[data-component=session-prompt-dock]`), streaming message (`[data-message-id]` inside the timeline), timeline chrome, other session-screen parts, workspace panel, overlays, and body-level nodes.
+- Style-invalidation tracking with each invalidated node resolved to its region.
+- A count of Solid computations re-run per owner component. The dev build's `runComputation` is patched in the browser only, through a Playwright route on the Vite deps chunk, and each run is tagged with its nearest three component owners.
+- A document-level observer that logs when the composer, todo dock, question dock or permission dock is added or removed.
+
+"Per delta" divides by the `message.part.delta` frames counted on the event stream.
+
+| # | Invariant | v2 | Evidence (v2) | v1 |
+|---|---|---|---|---|
+| 1 | A background session's status change touches only its own rail row | **DOM PASS, compute FAIL** | Background turn in a new session (405 deltas, 28.7 s) while "Greeting" is open: 1 mutation in total, on `rail:ownRow`. 159 computations ran elsewhere: other rail rows' owners (`NavigationRow` 35, `ProjectBlock<For>` 16, `Row` 16, `ProjectRows` 10), the open session's composer (`Composer` 6, `AgentHarnessSelector` 4) and shell providers (`SessionStoresProvider` 8, `RoutingProvider`, `PanelProvider`, `CenterHeader`, `SettingsSidebar`). The background deltas also woke **240 animation frames and 442 style recalcs** with nothing visible changing (see the coalescer finding). | DOM PASS (1 row mutation, plus 2 in its kept-mounted hidden transcript); compute FAIL (725: rail 300, composer 215); 2,206 style recalcs; 38 requests |
+| 2 | The session composer never re-renders while streaming | **PASS per delta; 7 mutations per turn** | 0 composer mutations per delta across 772 deltas. The 7 per turn are the submit button switching to Stop at the start and back at the end (`disabled`, `data-disabled`, `icon`, `aria-label`, `data-icon`, `use href`). 33 composer computations per turn (`Composer<Show>` 17, `AgentHarnessSelector` 8), driven by status events, not deltas. `SessionHealthPeek` inside the composer polls `agent-config/harness` every 20 s during a turn and on every working-state change (`src/composer/view/health-peek.tsx:19-36`): 4–6 requests per turn. | Same 8 button mutations; 3,196 `PromptInput` computations per turn |
+| 3 | A dock appearing or leaving re-renders only the dock | **FAIL** | Todo dock: added alone (PASS). **Question dock: the composer and the todo dock are removed from the DOM when it appears and re-mounted when it is answered** (dock log: `23940 composer removed, todoDock removed, questionDock added` … `27263 composer added, todoDock added`). Cause: `src/session/view/session-screen.tsx:151` wraps the todo dock and the whole `Composer` in `<Show when={props.view.requests().length === 0}>`. The re-mount re-fetches `agent-config/connections` and `permission-mode` and re-runs 316 composer computations. A permission request takes the same path. The todo dock also shifts the composer wrapper through `margin-top: -lift()` (`session-screen.tsx:80`), which is a style write outside the dock. | Same FAIL (composer removed and re-added at the question) |
+| 4 | Points 2 and 3 hold with the floating composer (panel maximized) | **PASS for the composer; FAIL for the hidden transcript** | Floating composer: the same 7 turn-edge mutations and 57 computations. The collapsed transcript behind it still runs the virtualizer per delta: 166 timeline-chrome style writes (row translate and bottom spacer, 83 each) and 887 `MessageTimeline` + 383 `hasText` computations for content nobody can see. | Composer PASS by DOM; 3,527 composer computations; hidden transcript 188 chrome writes |
+| 5 | While streaming, only the streaming parts re-render; all compute relates to them | **FAIL** | Per delta (run 3, 772 deltas, panel open on Files + Review, Greeting, Local changes review, Tasks and Marketplace visited first): see the breakdown below. | FAIL, and 13× the computations |
+
+Invariant 5 breakdown, v2 run 3 (v1 run 2 in brackets):
+
+| Region | Mutations per turn | Per delta | Computations per turn | Note |
+|---|---|---|---|---|
+| Streaming message | 7,076 [16,153] | 9.2 [22.6] | 7,567 transcript + 2,117 generic (icons, tooltips, buttons) [53,197 + 91,620] | Expected work. v1's generic share is `Show<Icon>` 34,139 and `AnimatedCountLabel` 14,061. |
+| Timeline chrome | 1,387 [1,279] | **1.8** [1.8] | – | Row `style` 695, **scroll thumb `style` 448**, bottom spacer 234: geometry written on each delta. The thumb is invisible unless the reader scrolls or hovers. |
+| Body-level Mermaid scratch | 1,805 [1,383] | 2.3 | – | One Mermaid render once the fence completes (gated in `src/transcript/markdown.tsx:350`, correct), drawn in a scratch SVG in `body`. It is the turn's one long task: **62–87 ms** in `mermaid.core` (LoAF), in all 3 runs. |
+| Rail | 1 [3] | 0 | 142 [1,605] | The DOM change is the own row's title and status. Computations re-run for every row's owner on each status or update event. |
+| Composer | 7 [8] | 0 | 33 [3,196] | Turn edges only |
+| Workspace panel (Files + Review open) | 5 [9] | 0 | 126 | Turn end: `statusChanged → idle` invalidates the files and git queries (`src/server/queries.ts:67-68`), so the panel re-fetches `wr/file`, `git/status`, `diff/refs`, `diff/vcs` and `diff/targets` **twice** (10 requests) after a read-only turn, and the tree re-runs `KindMark` 48 and `FileTreeNode` 24. |
+| Session screen outside the timeline | 10 [11] | 0 | – | Row and key counters, the sr-only title |
+| Ownerless (`createRoot`) | – | – | 518 | `hasText` memo per part, `createRoot(() => createMemo(() => !!part.text?.trim()))`, never disposed (`src/session/view/timeline/message-timeline.data.ts:491`). It trims the whole growing text on every delta. |
+| Background session stores, Tasks, Marketplace, settings | 0 | 0 | 0 | PASS: nothing visited-and-left re-rendered or recomputed |
+
+Style: 6,285 style recalcs for 772 deltas (8 per delta). Invalidated nodes resolve to the streaming message (323), the timeline chrome (6), the panel (1) and nodes removed before resolution (269). Requests during the turn: 18 in v2, 129 in v1, whose `queue` is polled 48–55 times per turn.
+
 ## Method
 
 - One headless Chromium (Playwright 1.61.1, `chromium-headless-shell`) per run, viewport 1280×800, fresh context per run. Identical script for v1 and v2, alternating v2/v1, 3 runs each unless stated.
@@ -24,7 +59,11 @@ The ranked list, the suspected items, the regression gates and the per-action ba
   - CDP trace (`devtools.timeline`, `…timeline.frame`, and for idle/hot actions `…invalidationTracking` and `blink.debug`): UpdateLayoutTree count and `elementCount`, Layout count, Paint count, DrawFrame count, BeginMainThreadFrame count, style-invalidation reasons.
   - Init-script wrappers for `setTimeout`/`setInterval`/`requestAnimationFrame` recording call sites (first non-library stack frame), a document-wide `MutationObserver`, `PerformanceObserver` for `long-animation-frame` and `layout-shift`.
   - `page.on("request")` per action; API requests (not Vite module/asset loads) grouped by path template. Initiators from CDP `Network.requestWillBeSent` with async stacks.
-- v1's dev build has no `VITE_CLAXEDO_SERVER_URL`, so its client calls `http://127.0.0.1:2593` directly (`packages/claxedo-app/src/platform/api/api.ts:388`) and nothing listens there. The harness bridges v1 in the browser context: HTTP to :2593 is re-issued to :2598 with `route.fetch`, and WebSockets to :2593 are piped to :2598 with `routeWebSocket`. Request counts come from `page.on("request")` and are unaffected by the bridge.
+- v1's dev build has no `VITE_CLAXEDO_SERVER_URL`, so its client calls `http://127.0.0.1:2593` directly (`packages/claxedo-app/src/platform/api/api.ts:388`) and nothing listens there. The harness bridges v1 in the browser context.
+  - Scenarios 1–8 used Playwright routing: HTTP to :2593 re-issued to :2598 with `route.fetch`, WebSockets piped with `routeWebSocket`. `route.fetch` buffers whole responses, so v1's fetch-streamed `/api/wr/events` could not stream there. That broken stream accounts for exactly one v1 request per idle window (a `/api/wr/events` reconnect).
+  - From scenario 9 on, an init script rewrites `127.0.0.1:2593` to `127.0.0.1:2598` in `fetch`, XHR, `WebSocket` and `EventSource`. The daemon's CORS allows the v1 origin, and streams are live.
+  - Re-measured with the live bridge, v1's idle polling is unchanged: 9 requests per 30 s on the draft page (`health` ×3, `status`, `permission` and `question` ×2 each) and 24 on an open session. The v1 polling reported in scenarios 1–8 is real.
+  - Request counts come from `page.on("request")` in both modes.
 - The owner's data has 4 sessions with local data (project "Claxedo"); the other 7 projects are unavailable fixture records. "Switch among 5 sessions" therefore uses all 4.
 
 ## Scenario 1: cold boot to rail painted, then 30 s idle
@@ -44,14 +83,14 @@ Medians of 3 runs each. Boot window is navigation start to 6 s after the first `
 | DOM elements after boot | 803 | 862 |
 | Composited layers after boot | 15 | 11 |
 | JS heap after GC (KB) / Nodes / listeners | 40,066 / 1,300 / 161 | 32,764 / 1,460 / 153 |
-| **Idle 30 s: API requests** | **10** | **0** |
+| **Idle 30 s: API requests** | **10 (9 with a live event stream)** | **0** |
 | **Idle 30 s: frames / BeginMainThreadFrame** | **60 / 60** | **0 / 0** |
 | Idle 30 s: style recalcs / layouts / paints / mutations | 0 / 0 / 0 / 0 | 0 / 0 / 0 / 0 |
 | Idle 30 s: timer callbacks fired (timeouts + intervals) | 27 | 4 |
 | Idle 30 s: ScriptDuration / TaskDuration (ms) | 15 / 95 | 2 / 36 |
 | Idle 30 s: JS heap growth (KB) | 258 | 9 |
 
-v2 is better than v1 on every idle count and on boot network. v1's idle window polls `/api/claxedo/health` ×3, `/session/status`, `/permission`, `/question` ×2 each, reconnects `/api/wr/events` once, draws 60 frames with no paint (2 Hz), and runs incremental GC continuously (1,005 `V8.GC_MC_INCREMENTAL` events in the trace).
+v2 is better than v1 on every idle count and on boot network. v1's idle window polls `/api/claxedo/health` ×3, `/session/status`, `/permission`, `/question` ×2 each (the one `/api/wr/events` reconnect in that window was caused by the harness bridge, see Method), draws 60 frames with no paint (2 Hz), and runs incremental GC continuously (1,005 `V8.GC_MC_INCREMENTAL` events in the trace).
 
 v2 idle wakeups that remain (all runs identical):
 
@@ -456,3 +495,34 @@ In "Greeting": open "+", close it, then open each item that opens something (Com
 - Opening the menu: 495 of v2's 532 mutations are `aria-hidden` writes on the icon sprite's `<symbol>` elements, and closing adds 165 more. That is the scenario-7 sprite finding, measured per region.
 - Shell-command mode re-renders the composer: 412–421 composer mutations and 839–858 `ButtonRoot` computations in both apps.
 - v2's Commands popover is 23× cheaper than v1's (236 vs 6,837 computations).
+
+## Scenario 9: streaming a real agent turn
+
+On the draft page of project "Claxedo", with Claude Code "Default (recommended)" selected: a prompt asking the agent to read `package.json` and `AGENTS.md` with its tools and write a ~1,200-word report with a TypeScript block, an 8-row table, a bash block and a Mermaid flowchart. No file changes. Sent with Enter. The workspace panel was opened on the new session, then measurement ran from about 2 s after send until the session was idle plus 2.5 s. Each run created one session. Every such session was then renamed `perf-audit <app> <mode> <run>` and archived through `PATCH /session/:id` (`scratchpad/audit/cleanup.mjs`), leaving the owner's 4-row rail as it was.
+
+The scripted stack (`bun run e2e:perf-stream`) was not run. It builds both apps first, and the real-harness runs answered the questions without a second stack.
+
+| Metric (one turn) | v1 run 2 | v2 runs 2 / 3 |
+|---|---|---|
+| Deltas (`message.part.delta` frames) | 714 | 785 / 772 |
+| Turn length (s) | 52.0 | 59.5 / 51.5 |
+| API requests during the turn | **129** (`queue` ×48, `status` ×21, `permission` ×17, `question` ×17, `message` ×11) | **20 / 18** |
+| DOM mutations | 19,673 | 13,018 / 11,068 |
+| **Solid computations re-run** | **150,836 (211 per delta)** | **11,461 / 10,503 (14 per delta)** |
+| Elements restyled / style recalcs | 27,541 / 5,263 | 30,816 / 5,310 · 35,188 / 6,285 |
+| Layouts / paints | 1,323 / 10,804 | 1,252 / 11,671 · 1,208 / 13,356 |
+| ScriptDuration / RecalcStyleDuration / LayoutDuration (ms) | 2,061 / 496 / 139 | 843 / 527 / 138 · 656 / 567 / 123 |
+| rAF callbacks | 753 | 1,598 / 1,494 |
+| Longest task / long tasks > 16 ms | 68 ms / 5 | 62 ms / 5 · 75 ms / 1 |
+| Worst long animation frame | 76 ms (Mermaid) | 72 ms / 80 ms (Mermaid, `chunk-TCVXKB7Q` = `mermaid.core`) |
+| JSEventListeners / Nodes growth | +1,081 / +14,230 | +59 / +4,507 · +37 / +4,642 |
+
+v2 streams with 13–14× fewer computations, 6–7× fewer requests and about 2.5× less script time than v1. Rendering work (restyle, layout, paint) is on par; that is the streaming text itself.
+
+v2 problems seen while streaming, beyond the invariant failures above:
+
+- **Mermaid renders on the main thread in one 62–87 ms task** (every run, both apps; the diagram renders once, when its fence closes). It is the only long animation frame of the turn, 4–5 dropped frames. Design fix: render off the visible frame (idle callback or a worker-side layout where Mermaid allows), or show the code block and render on demand.
+- **The scroll thumb's geometry is written 448 times per turn** (0.6 per delta) while it is invisible (`ScrollView.updateThumb`, `packages/ui/src/components/scroll-view.tsx:225`), and each write follows a `scrollHeight` read that forces style and layout. Design fix: skip thumb geometry while the thumb is hidden and compute it when it shows.
+- **The turn end re-fetches the placement's files and git state twice** (10 requests) even for a read-only turn: `invalidationKeys` treats `statusChanged → idle` as a file change (`src/server/queries.ts:67-68`), and idle arrives twice (`session.status` and `session.idle`). Design fix: invalidate on the file events or the turn's tool results; de-duplicate the idle transition.
+- **`SessionHealthPeek` polls the harness during every turn**: `setInterval(probe, 20_000)` plus a probe on each working-state change (`src/composer/view/health-peek.tsx:19-36`), 4–6 `agent-config/harness` requests per turn. v1 has the same poll.
+- **Background sessions wake frames.** Every event batch schedules `requestAnimationFrame` plus a 250 ms timeout (`src/server/wire/coalesce.ts:53-66`), whether or not anything visible depends on it. A background turn produced 240 rAF callbacks and 442 style recalcs (about 8 frames per second) while the visible page did not change (invariant 1). Design fix: flush events for sessions that are not on screen on a timer or microtask; request a frame only when a mounted view subscribes.
