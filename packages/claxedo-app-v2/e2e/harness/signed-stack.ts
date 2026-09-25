@@ -7,7 +7,7 @@ import { storeScriptedKeys } from "./scripted-providers"
 import { releasePort, reservePort } from "./ports"
 import { relayResolverToken, startRelay, type Relay } from "./relay"
 import { startStack, type Stack, type StackInput } from "./stack"
-import { startTlsFront, type TlsFront } from "./tls-front"
+import { startTlsFront, type TlsFront, type TlsTrust } from "./tls-front"
 import { bearerTransport, type HttpTransport } from "./transport"
 import { makeSignedWorkspace, type Workspace } from "./workspaces"
 
@@ -22,6 +22,7 @@ export type Account = {
 
 export type SignedStack = {
   url: string
+  trust: TlsTrust
   stack: Stack
   owner: Account
   signUp(name: string): Promise<Account>
@@ -102,6 +103,7 @@ export async function startSignedStack(input: SignedStackInput): Promise<SignedS
     const opened = front
     return {
       url: opened.url,
+      trust: opened.trust,
       stack,
       owner,
       signUp: (name) => signUp(stack, opened.url, name),

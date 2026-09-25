@@ -10,7 +10,7 @@
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { credentialRequestOrigin } from "@/platform/api/credential-request"
 import { hostedControlCall, parseHostedHttpError, signedAccountRun } from "@/platform/account/hosted-control-call"
-import type { HostedOperationName } from "@/platform/account/account-port"
+import type { HostedOperationName } from "@claxedo/account-contract"
 import { requestBodyText } from "@/lib/url"
 import { recordOrEmpty } from "@/lib/record"
 import { errorMessage } from "@/lib/server-errors"

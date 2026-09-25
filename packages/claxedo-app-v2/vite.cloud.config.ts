@@ -4,7 +4,7 @@ import tailwindcss from "@tailwindcss/vite"
 import { fileURLToPath } from "node:url"
 import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { dirname } from "node:path"
-import { resolveBrowserAuthBuildSelection } from "./vite.browser-auth"
+import { resolveAccountBindingSelection } from "./vite.account-binding"
 import { webContentSecurityPolicyPlugin } from "./vite.content-security-policy"
 
 /**
@@ -136,7 +136,7 @@ function claxedoWorkspaceSource(): Plugin {
  */
 function cloudConfig({ mode }: { mode: string }): UserConfig {
   const env = loadEnv(mode, process.cwd(), "VITE_")
-  const browserAuth = resolveBrowserAuthBuildSelection(
+  const accountBinding = resolveAccountBindingSelection(
     env.VITE_CLAXEDO_AUTH_ADAPTER || process.env.VITE_CLAXEDO_AUTH_ADAPTER,
   )
   // 2593 tracks DEFAULT_CLAXEDO_SERVER_PORT in claxedo-server (see
@@ -213,7 +213,7 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
         output: {
           manualChunks: {
             "vendor-solid": ["solid-js", "solid-js/web", "solid-js/store"],
-            ...browserAuth.manualChunks,
+            ...accountBinding.manualChunks,
           },
         },
       },
@@ -221,8 +221,8 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
     resolve: {
       alias: [
         {
-          find: "#browser-auth-adapter",
-          replacement: normalizePath(fileURLToPath(new URL(browserAuth.module, import.meta.url))),
+          find: "#account-binding",
+          replacement: normalizePath(fileURLToPath(new URL(accountBinding.module, import.meta.url))),
         },
         // Keep the terminal backend lazy-loaded without making it configurable.
         {

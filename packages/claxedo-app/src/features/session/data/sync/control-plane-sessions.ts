@@ -1,7 +1,7 @@
 import { asRecord, asString } from "@claxedo/helpers/guards"
 import { authFetch as defaultAuthFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
 import { signedAccountRun } from "@/platform/account/hosted-control-call"
-import { decodeHostedResult } from "@/platform/account/hosted-operations"
+import { decodeHostedResult } from "@claxedo/account-contract"
 import { controlSessionListUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import { readArray } from "@/lib/record"
 import type { SessionOwner } from "../query/types"

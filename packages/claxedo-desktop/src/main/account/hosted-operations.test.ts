@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { hostedOperationNames } from "@claxedo/account-contract"
 import {
   HOSTED_OPERATIONS,
   MissingOperationParameter,
@@ -16,6 +17,10 @@ import {
  */
 
 describe("HOSTED_OPERATIONS", () => {
+  test("routes exactly the contract's operations", () => {
+    expect(Object.keys(HOSTED_OPERATIONS).toSorted()).toEqual(hostedOperationNames().toSorted())
+  })
+
   test("reaches no machine-signed, invitation or relay-fence route", () => {
     // Those routes authenticate a machine or an invitation secret, never an
     // account. An entry here would spend the account credential on them.
@@ -86,6 +91,24 @@ describe("resolveHostedOperation", () => {
       method: "GET",
       path: "/api/control/session-list?scope=workspace&limit=25&sort=created_desc",
     })
+  })
+
+  test("a project's session page keeps its fixed scope and appends only the declared keys", () => {
+    expect(resolveHostedOperation("session.page", {
+      projectId: "prj_1",
+      limit: 50,
+      sort: "human_turn_desc",
+      after: "key_1",
+      scope: "global",
+    })).toEqual({
+      method: "GET",
+      path: "/api/control/session-list?scope=project&projectId=prj_1&limit=50&sort=human_turn_desc&after=key_1",
+    })
+    expect(() => resolveHostedOperation("session.page", { limit: 50 })).toThrow(MissingOperationParameter)
+  })
+
+  test("the account's project catalog takes no parameters", () => {
+    expect(resolveHostedOperation("project.catalog", { projectId: "prj_1" })).toEqual({ method: "GET", path: "/project" })
   })
 
   test("appends only declared query keys from input", () => {

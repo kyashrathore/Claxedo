@@ -14,7 +14,7 @@ import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { authFetch as defaultAuthFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
 import { signedAccountRun } from "@/platform/account/hosted-control-call"
-import { decodeHostedResult } from "@/platform/account/hosted-operations"
+import { decodeHostedResult } from "@claxedo/account-contract"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import { workspaceListUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import {

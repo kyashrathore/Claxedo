@@ -6,7 +6,7 @@ import { authFetch as defaultAuthFetch } from "@/platform/api/api"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import { readArray } from "@/lib/record"
 import { signedAccountRun } from "@/platform/account/hosted-control-call"
-import { decodeHostedResult } from "@/platform/account/hosted-operations"
+import { decodeHostedResult } from "@claxedo/account-contract"
 import {
   backingHostKind,
   controlPlaneRowPlacement,

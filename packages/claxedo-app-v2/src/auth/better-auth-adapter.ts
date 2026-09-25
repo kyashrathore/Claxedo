@@ -35,5 +35,3 @@ export function createBetterAuthBrowserAdapter(
   }
   return adapter
 }
-
-export const browserAuthAdapter = createBetterAuthBrowserAdapter()
