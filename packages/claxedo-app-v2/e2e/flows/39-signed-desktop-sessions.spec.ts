@@ -17,14 +17,14 @@ function projectTitles(window: Page, projectId: string): Promise<string[]> {
     .evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label") ?? ""))
 }
 
-test("39 signed desktop: the account's project and this machine's list in one rail, and Show more continues the account's page", { tag: "@desktop" }, async ({ signed, signedDesktop, page }) => {
+test("39 signed desktop: the account's project and this machine's list in one rail, and Show more continues the account's page", { tag: "@desktop" }, async ({ signedCloud: signed, signedDesktop, page }) => {
   const remote = await signed.makeWorkspace("remote-list", "Remote List")
   for (let index = 1; index <= 7; index++) {
     await signed.owner.api.createSession(remote.directory, { title: `Remote ${index}`, harness: SCRIPTED_ACP_HARNESS })
   }
   const local = await signedDesktop.makeWorkspace("local-list", "Local List")
   await signedDesktop.api.createSession(local.directory, { title: "Local one", harness: SCRIPTED_ACP_HARNESS })
-  const order = await accountOrder(signed, remote.projectId)
+  const order = await accountOrder(signed, remote.id)
   expect(order).toHaveLength(7)
 
   await signedDesktop.window.reload()
@@ -32,9 +32,9 @@ test("39 signed desktop: the account's project and this machine's list in one ra
   const window = signedDesktop.window
   const rail = window.getByRole("navigation", { name: UI.rail })
   await expect(rail.getByRole("button", { name: "Local one", exact: true })).toBeVisible()
-  await expect.poll(() => projectTitles(window, remote.projectId)).toEqual(order.slice(0, 5))
+  await expect.poll(() => projectTitles(window, remote.id)).toEqual(order.slice(0, 5))
 
-  await window.locator(`[data-testid="project-group"][data-project-id="${remote.projectId}"]`).getByTestId("rail-sidebar-session-load-more").click()
-  await expect.poll(() => projectTitles(window, remote.projectId)).toEqual(order)
+  await window.locator(`[data-testid="project-group"][data-project-id="${remote.id}"]`).getByTestId("rail-sidebar-session-load-more").click()
+  await expect.poll(() => projectTitles(window, remote.id)).toEqual(order)
   await expect(rail.getByRole("button", { name: "Local one", exact: true })).toBeVisible()
 })
