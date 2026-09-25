@@ -95,3 +95,45 @@ Session-open requests v2 makes twice:
 - `GET /session/:id/message?view` ×2 is the surface read plus the latest-turn completion (`src/session/transcript/snapshot.ts:51` → `latest-turn.ts:26`). v1 makes the same two reads; by design.
 
 v1 during the scroll polls `/session/status`, `/permission`, `/question` and `/api/wr/process`; v2 does not poll.
+
+## Scenario 3: switch among the sessions, unvisited then visited, then 20 rounds
+
+Order: "Markdown blocks sample", "Greeting", "Image reference verification", "Local changes review" (all 4 sessions with local data), 2.5 s settle each. Numbers are sums over the 4 switches, medians of 3 runs. Then 20 rounds × 4 switches (700 ms apart) with heap measured after two forced GCs before and after. v1 run 1's first switch reloaded the whole page (v1 navigates a local session to `/s/:id`), so v1's unvisited medians use runs 2–3 where that did not recur.
+
+| Metric (4 switches) | v1 unvisited | v2 unvisited | v1 visited | v2 visited |
+|---|---|---|---|---|
+| API requests | 66 | 65 | 28 | 12 |
+| Mutations | 686 | 524 | 178 | 259 |
+| Elements restyled | 3,982 | 2,687 | 332 | 1,111 |
+| Layouts / paints / frames | 65 / 258 / 100 | 45 / 286 / 82 | 12 / 10 / 24 | 24 / 154 / 75 |
+| ScriptDuration (ms) | 117 | 14 | 93 | 8 |
+| Timers fired / rAF | 187 / 96 | 15 / 32 | 116 / 28 | 12 / 30 |
+| CLS | 0.08 | 0 | 0 | 0 |
+
+| After 80 more switches (after GC) | v1 | v2 |
+|---|---|---|
+| JS heap (KB) | 56,440 → 56,408 | **40,422 → 50,308 (+9,886)** |
+| Nodes (CDP counter, includes detached) | 3,824 → 3,824 | **3,291 → 15,531 (+12,240)** |
+| JSEventListeners | 463 → 463 | **285 → 1,045 (+760)** |
+| Nodes in the document | 2,336 → 2,336 | 1,285 → 1,285 |
+
+All three v2 runs gave the same growth to the node (15,531 each time).
+
+### Proven: v2 keeps every re-opened transcript alive while an image probe is pending
+
+- Heap snapshot after 12 v2 switches: the detached `session-turn` DOM is retained through `EventListener → V8EventHandlerNonNull → closure → scope.settled (Set) → closure → <span data-component="markdown-image-fallback" data-state="loading"> → <p> → markdown block → … → [data-timeline-virtual-content]`, so the whole old transcript stays alive.
+- Code: `probeImage` in `src/transcript/markdown.tsx:583-605` keeps a module-level `imageProbes: Map<src, Set<waiter>>`. Each mount of a markdown image whose probe has not settled adds a waiter closure over its fallback chip (`waiters.add(onSettle)`); nothing removes it on unmount. The Set is released only when the probe `Image` fires `load` or `error`.
+- Trigger in the owner's data: "Markdown blocks sample" contains `https://via.placeholder.com/80`, whose request never completes in this environment, so its chip stays `data-state="loading"`. Every re-open of that session keeps one more transcript DOM alive (329-element `section[data-component=session-screen]` roots among the detached elements).
+- Control experiment, same script: when the harness aborts `via.placeholder.com` so the probe errors at once, 20 switches leave Nodes flat (1,969 → 1,962) and detached elements flat (177 → 177). Without the abort they grow 2,686 → 5,739 Nodes and 264 → 921 detached elements.
+- v1 has the same `probeImage` (`packages/session-ui/src/components/markdown.tsx:620-640`) but keeps visited session screens mounted, so it never re-mounts the chip, and its chip is still `loading` in the live DOM while other sessions are shown. v2 re-mounts the transcript on every switch, which turns the latent defect into a per-switch leak.
+- Design fix: the probe registry must drop a waiter when its owner is disposed (return an unsubscribe from `probeImage` and call it in `onCleanup`), or the chip should read a per-`src` signal instead of registering closures. Separately, a hung external image should not keep a probe alive forever. It also fetches a third-party host on every render (in both apps).
+
+### Proven: v2 re-fetches the machine's connection catalog on every session switch
+
+- Each switch, visited or not, makes `GET /api/claxedo/agent-config/connections`, `GET /api/claxedo/agent-config/harness` and `GET /session/:id/permission-mode` (12 requests for 4 revisits).
+- `AgentHarnessSelector` creates its own catalog and refreshes it in an effect on every mount (`src/composer/view/agent-harness-selector.tsx:86-94`, `src/composer/harness/connection-catalog.ts:10`). The catalog is machine-level; it changes only when the user edits connections. v1 re-fetches it too (4 per 4 revisits) plus `status`/`permission`/`question` polling.
+- Design fix: one owner for the connections catalog at server scope, fetched once, refreshed by the event that changes it or when the harness picker opens.
+
+### Observed trade-off: v2 re-renders a revisited session; v1 keeps it mounted
+
+On revisits v1 paints 10 times and restyles 332 elements for 4 switches because the screens stay mounted (v1 heap 56 MB, 2,336 document nodes). v2 re-renders (154 paints, 1,111 restyles) and holds 40 MB and 1,285 document nodes. The owner's no-cache-without-advantage rule points to v2's side of this trade. It is not listed as a finding.
