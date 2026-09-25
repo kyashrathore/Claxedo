@@ -27,7 +27,7 @@ export function createPiRpcProvider(): CustomHarnessProvider<PiRpcProviderConfig
     immutableIdentity(config) { return JSON.stringify({ command: config.command, args: config.args ?? [], profileDir: config.profileDir ?? null }) },
     project(config) {
       return { label: config.label, readiness: "configured", capabilities: {
-        abort: true, reconnect: false, replay: true, permissions: true, questions: true, todos: false,
+        abort: true, reconnect: false, replay: true, permissions: false, questions: true, todos: false,
         commands: false, fork: false, revert: false, unrevert: false, configOptions: true, subagents: false,
       } }
     },

@@ -8,6 +8,7 @@ export default defineConfig({
       "@claxedo/workspace-runtime/config": path.resolve(import.meta.dirname, "../workspace-runtime/src/config.ts"),
       "@claxedo/workspace-runtime/exposure": path.resolve(import.meta.dirname, "../workspace-runtime/src/exposure.ts"),
       "@claxedo/workspace-runtime/host": path.resolve(import.meta.dirname, "../workspace-runtime/src/host.ts"),
+      "@claxedo/workspace-runtime/projection": path.resolve(import.meta.dirname, "../workspace-runtime/src/projection.ts"),
       "@claxedo/workspace-runtime/relay": path.resolve(import.meta.dirname, "../workspace-runtime/src/relay.ts"),
       "@claxedo/workspace-runtime/routes": path.resolve(import.meta.dirname, "../workspace-runtime/src/routes.ts"),
       // Aliased alongside the rest so a test exercises the runtime SOURCE, not

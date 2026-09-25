@@ -11,6 +11,7 @@ export default defineConfig({
       { find: "@claxedo/workspace-runtime/config", replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/config.ts") },
       { find: "@claxedo/workspace-runtime/exposure", replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/exposure.ts") },
       { find: "@claxedo/workspace-runtime/host", replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/host.ts") },
+      { find: "@claxedo/workspace-runtime/projection", replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/projection.ts") },
       { find: "@claxedo/workspace-runtime/relay", replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/relay.ts") },
       { find: "@claxedo/workspace-runtime/routes", replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/routes.ts") },
       { find: "@claxedo/workspace-runtime/http", replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/http.ts") },

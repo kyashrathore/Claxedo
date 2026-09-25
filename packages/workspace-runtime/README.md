@@ -92,6 +92,7 @@ lower-level helpers:
 | `@claxedo/workspace-runtime` | Standalone bootstrap, host creation, exposure/management contracts, route manifest, and stable config types. |
 | `@claxedo/workspace-runtime/client` | Manual typed HTTP client for health, capabilities, config apply, events, files, diff/git, PTY, and process routes. |
 | `@claxedo/workspace-runtime/host` | Low-level host construction and route mounting. |
+| `@claxedo/workspace-runtime/projection` | SSE fanout and replay helpers for runtime presentation frames. |
 | `@claxedo/workspace-runtime/opencode` | Process-owned public embedded SDK host, workspace-scoped ports, and harness adapter (Node 24+). |
 | `@claxedo/workspace-runtime/exposure` | Explicit loopback, relay, private-network, and embedded exposure declarations. |
 | `@claxedo/workspace-runtime/relay` | Relay-host auth and host tunnel helpers. |
