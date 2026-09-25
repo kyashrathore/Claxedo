@@ -8,6 +8,8 @@ import type {
   SessionRef,
   SettingsSection,
 } from "@claxedo/plugin-api"
+import type { Translations } from "@/i18n"
+import { translated } from "../../dictionary"
 import type { FrameContext, FrameResponse, HostCall, Registration } from "../protocol"
 import type { FrameLink } from "./link"
 
@@ -30,6 +32,7 @@ export type FrameScope = {
   readonly link: FrameLink
   readonly context: FrameContext
   readonly entries: FrameEntries
+  readonly dictionary: Translations | undefined
   readonly forward: boolean
   readonly signal: AbortSignal
 }
@@ -150,7 +153,7 @@ function dataApi(scope: FrameScope): Pick<PluginApi, "sessions" | "projects" | "
       toast: (toast) => fireAndReport(scope, { method: "ui.toast", toast }),
       confirm: async (confirmation) => (await link.call({ method: "ui.confirm", confirmation })) === true,
     },
-    i18n: { t: fill },
+    i18n: { t: (key, params) => fill(translated(scope.dictionary, link.mirror.locale, key), params) },
   }
 }
 

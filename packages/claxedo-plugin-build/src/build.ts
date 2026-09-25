@@ -20,8 +20,8 @@ export type PluginBuild = {
   warnings: readonly string[]
 }
 
-export function pluginBundleHash(code: string): string {
-  return createHash("sha256").update(code).digest("hex").slice(0, PLUGIN_BUNDLE_HASH_LENGTH)
+export function pluginBundleHash(manifest: PluginManifest, code: string): string {
+  return createHash("sha256").update(JSON.stringify(manifest)).update("\n").update(code).digest("hex").slice(0, PLUGIN_BUNDLE_HASH_LENGTH)
 }
 
 function isBuildFailure(error: unknown): error is { errors: Message[]; warnings: Message[] } {
@@ -52,7 +52,7 @@ export async function buildPluginApp(options: PluginBuildOptions): Promise<Plugi
     const output = result.outputFiles.find((file) => file.path.endsWith(".js")) ?? result.outputFiles[0]
     if (!output) throw new PluginBuildError("bundle", [`${pkg.appEntry}: esbuild produced no output`])
     const code = output.text
-    return { manifest: pkg.manifest, code, hash: pluginBundleHash(code), warnings: await formatted(result.warnings, "warning") }
+    return { manifest: pkg.manifest, code, hash: pluginBundleHash(pkg.manifest, code), warnings: await formatted(result.warnings, "warning") }
   } catch (error) {
     if (error instanceof PluginBuildError) throw error
     if (isBuildFailure(error)) throw new PluginBuildError("bundle", await formatted(error.errors, "error"))

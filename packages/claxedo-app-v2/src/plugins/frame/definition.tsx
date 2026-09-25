@@ -1,6 +1,6 @@
 import type { Disposer, PluginApi, PluginDefinition } from "@claxedo/plugin-api"
 import { failureReason } from "../failure"
-import { FRAME_DOCUMENT } from "./document"
+import { frameDocument } from "./document"
 import type { FrameControl, HostLink } from "./host-link"
 import type { FrameSlots } from "./host-registrations"
 import { openFrame, type FrameSource } from "./open"
@@ -18,13 +18,13 @@ function controlFrame(pluginId: string): HTMLIFrameElement {
   frame.setAttribute("sandbox", "allow-scripts")
   frame.hidden = true
   frame.title = pluginId
-  frame.srcdoc = FRAME_DOCUMENT
+  frame.srcdoc = frameDocument(location.origin)
   return frame
 }
 
 function activateInFrame(api: PluginApi, source: FrameSource): Promise<Disposer> {
   const pluginId = api.context.pluginId
-  const slots: FrameSlots = (target) => <FrameSlot title={pluginId} open={(frame) => openFrame(frame, api, source, target)} />
+  const slots: FrameSlots = (target, title) => <FrameSlot title={title} open={(frame) => openFrame(frame, api, source, target)} />
   return new Promise((resolve, reject) => {
     const frame = controlFrame(pluginId)
     let link: HostLink | undefined

@@ -3,7 +3,7 @@ import type { Disposer, MentionInsert, PluginApi } from "@claxedo/plugin-api"
 import { unreachable } from "@/lib/machine"
 import type { FoundMention, FrameInvoke, Registration, RenderTarget } from "./protocol"
 
-export type FrameSlots = (target: RenderTarget) => JSX.Element
+export type FrameSlots = (target: RenderTarget, title: string) => JSX.Element
 
 export type Invoke = (invoke: FrameInvoke) => Promise<unknown>
 
@@ -30,11 +30,11 @@ export function registerOnHost(api: PluginApi, registration: Registration, slots
     case "sidebar":
       return api.sidebar.item(registration)
     case "page":
-      return api.pages.register({ ...registration, render: (props) => slots({ kind: "page", id: registration.id, path: props.path, params: props.params }) })
+      return api.pages.register({ ...registration, render: (props) => slots({ kind: "page", id: registration.id, path: props.path, params: props.params }, registration.title) })
     case "settings":
-      return api.settings.section({ ...registration, render: () => slots({ kind: "settings", id: registration.id }) })
+      return api.settings.section({ ...registration, render: () => slots({ kind: "settings", id: registration.id }, registration.title) })
     case "overlay":
-      return api.overlays.register({ ...registration, render: () => slots({ kind: "overlay", id: registration.id }) })
+      return api.overlays.register({ ...registration, render: () => slots({ kind: "overlay", id: registration.id }, registration.id) })
     case "command":
       return api.commands.register({
         ...registration,

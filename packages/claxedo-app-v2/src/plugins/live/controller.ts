@@ -1,4 +1,4 @@
-import type { LivePlugin } from "../api"
+import type { LivePlugin } from "@/server"
 import type { PluginHost } from "../host"
 import type { PluginBuild } from "../model"
 import { failingBuild, type LiveRow } from "./load"

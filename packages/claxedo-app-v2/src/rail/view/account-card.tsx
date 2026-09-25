@@ -6,6 +6,7 @@ import { useServer } from "@/server"
 import { settingsPath, useShellRoute } from "@/shell"
 import { showToast, ClaxedoIcon as Icon, Avatar, DropdownMenu, Spinner } from "@/ui"
 import { railDictionary } from "../i18n"
+import { openExternal } from "@/lib/external-link"
 
 const HELP_URL = "https://github.com/kyashrathore/Claxedo"
 export const USAGE_SECTION = "usage"
@@ -112,7 +113,7 @@ export function AccountCard(props: { readonly anchor: () => HTMLElement | undefi
               <Icon name="settings-gear" size="small" />
               <DropdownMenu.ItemLabel>{t("rail.settings")}</DropdownMenu.ItemLabel>
             </DropdownMenu.Item>
-            <DropdownMenu.Item onSelect={select(() => window.open(HELP_URL, "_blank", "noopener,noreferrer"))}>
+            <DropdownMenu.Item onSelect={select(() => openExternal(HELP_URL))}>
               <Icon name="help" size="small" />
               <DropdownMenu.ItemLabel>{t("rail.account.help")}</DropdownMenu.ItemLabel>
             </DropdownMenu.Item>
