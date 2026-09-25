@@ -1588,6 +1588,7 @@ export function createSelfHostedApp(
 
 export type ControlPlaneStackOptions = {
   services: ControlPlaneServices
+  sandboxDriver?: import("@claxedo/sandbox-manager").SandboxDriver
   egressBroker?: (request: Request) => Promise<Response>
   port?: number
   processObserver?: ProcessObserver
@@ -1873,6 +1874,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   const stopConfigRenewal = startEmbeddedWorkspaceRuntimeConfigRenewal()
   configureWorkspaceSupervisor({
     server_url: `http://127.0.0.1:${port}`,
+    ...(options.sandboxDriver ? { sandboxDriver: options.sandboxDriver } : {}),
     ...(services.relay.relayUrl ? { relay_url: services.relay.relayUrl } : {}),
     ...(isSandboxDriverID(services.sandbox.defaultDriver)
       ? { default_sandbox_driver: services.sandbox.defaultDriver }

@@ -6,7 +6,7 @@ export type EventStream = {
   close(): void
 }
 
-export type EventStreamOptions = { sessionId?: string; lastEventId?: string }
+export type EventStreamOptions = { sessionId?: string; lastEventId?: string; workspaceId?: string; authorization?: string }
 
 function parseBlock(block: string): StreamFrame | undefined {
   let id: string | undefined
@@ -59,10 +59,11 @@ export function frameSessionId(frame: StreamFrame): string | undefined {
 export async function openEventStream(url: string, directory: string, options: EventStreamOptions = {}): Promise<EventStream> {
   const target = new URL("/api/wr/events", url)
   target.searchParams.set("directory", directory)
+  if (options.workspaceId) target.searchParams.set("workspaceId", options.workspaceId)
   if (options.sessionId) target.searchParams.set("sessionID", options.sessionId)
   const controller = new AbortController()
   const response = await fetch(target, {
-    headers: { accept: "text/event-stream", ...(options.lastEventId ? { "last-event-id": options.lastEventId } : {}) },
+    headers: { accept: "text/event-stream", ...(options.lastEventId ? { "last-event-id": options.lastEventId } : {}), ...(options.authorization ? { authorization: options.authorization } : {}) },
     signal: controller.signal,
   })
   if (!response.ok || !response.body) throw new Error(`event stream refused: ${response.status} ${await response.text()}`)

@@ -26,6 +26,7 @@ import { createSelfHostedTasksComposition } from "../../tasks/self-hosted-compos
 export type SelfHostedStartOptions = {
   port: number
   env?: NodeJS.ProcessEnv
+  sandboxDriver?: import("@claxedo/sandbox-manager").SandboxDriver
 }
 
 /**
@@ -88,6 +89,7 @@ export async function startSelfHostedServer(options: SelfHostedStartOptions) {
   return startControlPlaneStack({
     services,
     port: options.port,
+    ...(options.sandboxDriver ? { sandboxDriver: options.sandboxDriver } : {}),
     routeContributions: [...agentPlugins.routeContributions, ...tasks.routeContributions],
     ...(tasks.grants ? { tasksGrants: tasks.grants } : {}),
   })

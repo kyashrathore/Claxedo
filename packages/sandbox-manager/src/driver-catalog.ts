@@ -26,6 +26,33 @@ export type SandboxDriverCatalogEntry = {
 
 export { validateSandboxPersistenceCapabilities }
 
+export const localBrokeringTestDriverCatalogEntry = {
+  id: "local-brokering-test",
+  label: "Local brokering test driver",
+  credentialFields: [],
+  metadata: {
+    driverRunsIn: ["local"],
+    hostStopBehavior: "terminates-host",
+    hostResumeBehavior: "same-host",
+    targetAccess: "loopback",
+    secretBrokering: "native",
+    egressControl: "hosts",
+    persistence: {
+      resume: "same-sandbox",
+      capture: "none",
+      clone: false,
+      captureSource: "not-applicable",
+      retention: "provider-managed",
+      restoreMount: "same-resource",
+    },
+  },
+} as const satisfies {
+  id: string
+  label: string
+  credentialFields: ReadonlyArray<{ key: string; label: string; secret?: boolean }>
+  metadata: SandboxDriverMetadata
+}
+
 export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogEntry> = {
   exe: {
     id: "exe",

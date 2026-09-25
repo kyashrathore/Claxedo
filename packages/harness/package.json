@@ -30,6 +30,7 @@
     "@agentclientprotocol/sdk": "1.3.0",
     "@anthropic-ai/sdk": "0.115.0",
     "@claxedo/helpers": "workspace:*",
+    "@claxedo/sandbox-manager": "workspace:*",
     "@tsconfig/node-lts": "22.0.4",
     "@types/bun": "catalog:",
     "@types/node": "catalog:",

@@ -109,7 +109,8 @@ export async function resolveSandboxBindings(
     ...(bindings?.secrets ? { stated: bindings.secrets } : {}),
     ...(state.ws.org_id ? { org: state.ws.org_id } : {}),
     ...(state.installed_secrets === undefined ? {} : { installed: state.installed_secrets }),
-    secretBrokering: sandboxDriverCatalog[await supervisorSandboxDriverId(state)].metadata.secretBrokering,
+    secretBrokering: needWorkspaceSupervisorOptions().sandboxDriver?.metadata.secretBrokering
+      ?? sandboxDriverCatalog[await supervisorSandboxDriverId(state)].metadata.secretBrokering,
   })
   return {
     stated: sandboxBindingsRequested(bindings),
@@ -214,7 +215,10 @@ export async function startSandbox(
       workspaceRoot: state.ws.remote_directory || WORKSPACE_DIR,
       // The project's environment (`projectEnv`): every sandbox of the project,
       // first or re-provisioned, starts the same way.
-      env: (await projectEnv(state.ws.project_id)) ?? {},
+      env: {
+        ...(await projectEnv(state.ws.project_id)),
+        ...(needWorkspaceSupervisorOptions().sandboxDriver ? runtimeEnvForHost(state, driverId) : {}),
+      },
       source: state.ws.repo_url
         ? { kind: "git", repoUrl: state.ws.repo_url, branch: state.ws.git_branch ?? undefined }
         : { kind: "empty" },
@@ -523,7 +527,7 @@ async function markSandboxAcquiring(state: WorkspaceRuntimeState) {
 }
 
 async function createSupervisorSandboxManager(state: WorkspaceRuntimeState, driverId: SandboxDriverID) {
-  const driver = await sandboxDriverForSupervisor(state, driverId)
+  const driver = needWorkspaceSupervisorOptions().sandboxDriver ?? await sandboxDriverForSupervisor(state, driverId)
   return createSandboxManager({
     leaseStore: createSupervisorSandboxLeaseStore(),
     driver,
@@ -711,11 +715,11 @@ function sandboxDriverId(state: WorkspaceRuntimeState): SandboxDriverID | undefi
  */
 function runtimeEnvForHost(state: WorkspaceRuntimeState, driverId: SandboxDriverID) {
   const options = needWorkspaceSupervisorOptions()
-  const controlPlaneUrl = sandboxControlPlaneUrl(driverId, options.server_url)
+  const controlPlaneUrl = options.sandboxDriver ? options.server_url : sandboxControlPlaneUrl(driverId, options.server_url)
   const lease = getSupervisorSandboxLease(state.ws.id)
   return {
     ...controlPlaneVerificationEnv(controlPlaneUrl, { options }),
-    ...relayHostVerificationEnv(driverId, { options }),
+    ...relayHostVerificationEnv(driverId, { options: options.sandboxDriver ? { ...options, relay_url: undefined } : options }),
     ...runtimeConfigTokenEnv(configToken(state)),
     WORKSPACE_RUNTIME_DISABLE_CORS: "1",
     ...(lease
