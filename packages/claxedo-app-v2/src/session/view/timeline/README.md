@@ -37,7 +37,7 @@ Today's props keep their names, except `parentID` → `parentId`, and `status`, 
 
 ## Data shapes
 
-`TranscriptConversation` (`@/transcript`): `messages` in transcript order, sorted by id so `Binary.search` works; `parts` keyed by message id; `fragmentParts`, the ids of messages whose parts are still a partial read. The timeline never mutates these; identities of unchanged messages and part arrays must be stable across updates, because the per-turn row memos are gated on identity (`timeline-row-equality.ts`).
+`TranscriptConversation` (`@/transcript`): `messages` in transcript order, sorted by id so `Binary.search` works; `parts` keyed by message id; `fragmentParts`, the ids of messages whose parts are still a partial read; `partsWithText`, the ids of parts whose text has had a non-blank character. The timeline never mutates these; identities of unchanged messages and part arrays must be stable across updates, because the per-turn row memos are gated on identity (`timeline-row-equality.ts`).
 
 ## Status
 
@@ -66,7 +66,7 @@ Today's props keep their names, except `parentID` → `parentId`, and `status`, 
 
 The row builder is `Timeline.constructMessageRows` (`message-timeline.data.ts`); the row union, keys and reuse are `timeline-row-model.ts`.
 
-- A turn's rows depend on whether each text part has text, through one memo per part, not on the text itself. The fold count copies a part untracked. When the row memo read the text, every delta of a streaming reply rebuilt every row of its turn (0.8 s per 12k-character reply at 4x CPU).
+- A turn's rows depend on whether each text part has text, not on the text itself. That fact is the transcript store's `partsWithText`, recorded when the part's first non-blank text lands, so the row memo reads one key per part and the deltas after it wake nothing. The fold count copies a part untracked. When the row memo read the text, every delta of a streaming reply rebuilt every row of its turn (0.8 s per 12k-character reply at 4x CPU); a per-part memo over the text instead lived in an undisposed root and trimmed the whole reply on every delta (1,551 runs per streamed turn).
 - The builder reads only a user message's `id`, `time` and optional `summary`, all of which the optimistic stub carries, so a just-typed turn renders before the runtime echoes it. A turn's duration reads only the user message's creation stamp, so a turn opened by a prompt that never reached the runtime still has one.
 - Turn semantics (error, interruption, settlement, fold, tokens, cost) always come from every assistant sibling of the turn. The optional visibility set only bounds the part rows built for the first cold frame.
 - A run of tools cannot span the interruption row: grouping the refs whole would merge the runs either side into one group, which the fold counts as one where the turn draws two.

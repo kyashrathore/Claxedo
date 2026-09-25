@@ -25,6 +25,8 @@ Order is flat and is the server's `human_turn_desc`: `lastHumanTurnAt` descendin
 
 Fetched data never enters these stores and pushed data never enters the query cache. Deltas arrive coalesced per animation frame by the event intake (`server/wire/coalesce.ts`) and are appended in place on the part's field in that frame's batch; a message or part upsert replaces only that message's parts array or the messages array, so unchanged messages and part arrays keep their identity for the timeline's row memos.
 
+`partsWithText` records, per part id, that a part's text has had a non-blank character (`transcript/text-presence.ts`). The store sets it where parts land: an upsert, a page read, and a delta, which checks only its own characters, so a streaming reply is never scanned whole. It is set once and never cleared, because text only grows; a row that asks whether its part has text reads that one key and is not woken by the deltas after it.
+
 ## State machines
 
 | Machine | States | Where |

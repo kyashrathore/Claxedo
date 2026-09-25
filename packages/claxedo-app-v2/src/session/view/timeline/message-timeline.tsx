@@ -416,6 +416,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
           const rows = Timeline.constructMessageRows(
             userMessage,
             (messageId) => parts[messageId] ?? emptyParts,
+            (part) => sessionConversation()?.partsWithText[part.id] === true,
             turnAssistants(),
             indexAccessor(),
             host.settings.showReasoningSummaries(),
@@ -803,7 +804,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
       const parts = getMsgParts(message.id)
       for (let j = parts.length - 1; j >= 0; j--) {
         const part = parts[j]
-        if (!part || part.type !== "text" || !part.text?.trim()) continue
+        if (!part || part.type !== "text" || sessionConversation()?.partsWithText[part.id] !== true) continue
         return part.id
       }
     }

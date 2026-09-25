@@ -23,6 +23,7 @@ export type TranscriptConversation = {
   readonly messages: ConversationMessage[]
   readonly parts: Record<string, AgentContentPart[]>
   readonly fragmentParts: ReadonlySet<string>
+  readonly partsWithText: Readonly<Record<string, true>>
 }
 
 export function isRuntimeMessage(message: ConversationMessage): message is AgentPresentationMessage {

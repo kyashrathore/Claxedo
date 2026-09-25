@@ -1,0 +1,87 @@
+{
+  "id": "text-presence",
+  "title": "A text part gets its row when its first non-blank text lands",
+  "source": {
+    "kind": "test",
+    "file": "src/session/transcript/conversation.ts",
+    "name": "the store records a part's text presence once, when non-blank text first lands"
+  },
+  "partKinds": [
+    "text",
+    "tool:read"
+  ],
+  "replay": {
+    "agent": "acp",
+    "turns": [
+      {
+        "prompt": "Say you are ready.",
+        "steps": [
+          {
+            "kind": "text",
+            "text": "Ready for the next turn."
+          }
+        ]
+      },
+      {
+        "prompt": "Answer after a blank start.",
+        "live": true,
+        "steps": [
+          {
+            "kind": "text",
+            "text": " \n \n"
+          },
+          {
+            "kind": "tool",
+            "tool": "read",
+            "title": "Read README.md",
+            "locations": [
+              {
+                "path": "{{workspace}}/README.md"
+              }
+            ],
+            "text": "corpus\n"
+          },
+          {
+            "kind": "text",
+            "text": "\n \n"
+          },
+          {
+            "kind": "hold",
+            "name": "text-presence-0"
+          },
+          {
+            "kind": "text",
+            "text": "The answer appears once its text lands",
+            "chunks": 6,
+            "delayMs": 8
+          },
+          {
+            "kind": "hold",
+            "name": "text-presence-1"
+          },
+          {
+            "kind": "text",
+            "text": ", and it stays in place.",
+            "chunks": 5,
+            "delayMs": 8
+          }
+        ]
+      }
+    ]
+  },
+  "ready": "Answer after a blank start.",
+  "interactions": [
+    {
+      "kind": "release",
+      "hold": "text-presence-0",
+      "ready": "once its text lands"
+    },
+    {
+      "kind": "release",
+      "hold": "text-presence-1",
+      "ready": "it stays in place.",
+      "settles": true
+    }
+  ],
+  "invariant": "A text part that stays blank never gets a row, and a part that opens blank gets its row when its first non-blank delta lands, as in today's app."
+}
