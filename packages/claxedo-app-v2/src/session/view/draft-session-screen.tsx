@@ -32,7 +32,7 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
   return (
     <section data-component="session-screen" data-variant="draft" aria-label={t("sessionScreen.draft.title")}>
       <ComposerNoticeProvider channel={notice}>
-        <div ref={pane} data-component="session-new-design" class="relative size-full overflow-hidden bg-background-base">
+        <div ref={pane} class="relative size-full overflow-hidden bg-background-base">
           <div class="absolute inset-x-0 top-[34%] flex justify-center px-6">
             <div data-component="session-new-design-content" class="w-full max-w-[720px]">
               <div class="mb-5 flex justify-center">
