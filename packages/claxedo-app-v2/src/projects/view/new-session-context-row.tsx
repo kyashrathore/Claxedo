@@ -7,7 +7,7 @@ import { primaryPlacement } from "../open"
 import { useProjectList } from "../project-list"
 import { inCatalogOrder } from "../project-order"
 import { useProjects } from "../store"
-import { createDraftContext, registerDraftContext, type DraftTarget } from "../draft-context"
+import { createDraftContext, type DraftPlacementResolver, type DraftTarget } from "../draft-context"
 import { useBranchChip, useEnvironmentChip, useWorkspaceChip } from "./context-chips"
 import { SessionContextRow, type ContextChip, type ContextChipAvatar } from "./context-row"
 import { ProjectCreateForm } from "./project-create-form"
@@ -57,6 +57,7 @@ function CreateProjectPanel(props: CreatePanelInput & { readonly pickFolder: () 
 
 export function NewSessionContextRow(
   props: DraftTarget & {
+    readonly resolver: DraftPlacementResolver
     readonly onOpen: (target: DraftTarget) => void
     readonly branch?: boolean
     readonly onCreatingChange?: (creating: DraftCreation | undefined) => void
@@ -94,7 +95,7 @@ export function NewSessionContextRow(
     },
   })
   const context = createDraftContext(() => ({ projectId: props.projectId, placementId: props.placementId }))
-  registerDraftContext(() => props.placementId, context)
+  props.resolver.attach(context)
   createEffect(() => props.onCreatingChange?.(context.creating() ? (context.hostKind() === "provisioner" ? "cloud" : "worktree") : undefined))
   const environmentChip = useEnvironmentChip(context)
   const workspaceChip = useWorkspaceChip(context)

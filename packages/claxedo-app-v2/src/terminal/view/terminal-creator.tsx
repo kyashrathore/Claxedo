@@ -1,6 +1,6 @@
 import { createResource, createSignal, For, Show, type JSX } from "solid-js"
 import { useErrorCopy, useTranslator } from "@/i18n"
-import { NewSessionContextRow, resolveDraftPlacement, type DraftCreation } from "@/projects"
+import { createDraftPlacementResolver, NewSessionContextRow, type DraftCreation } from "@/projects"
 import { toAppError, useServer, type PlacementId } from "@/server"
 import type { PaneProps } from "@/shell"
 import { ClaxedoIcon, ClaxedoLogo } from "@/ui"
@@ -75,6 +75,7 @@ export function TerminalCreator(props: PaneProps<TerminalCreatorState>): JSX.Ele
   const [starting, setStarting] = createSignal<string>()
   const [error, setError] = createSignal<string>()
   const [creating, setCreating] = createSignal<DraftCreation>()
+  const draft = createDraftPlacementResolver()
   const launchers = () =>
     terminalLaunchers(t("terminal.creator.shell"), installed.state === "ready" ? installed() : undefined)
   const launch = async (launcher: TerminalLauncher) => {
@@ -84,7 +85,7 @@ export function TerminalCreator(props: PaneProps<TerminalCreatorState>): JSX.Ele
     try {
       const project = projectId()
       const placementId = project
-        ? await resolveDraftPlacement({ projectId: project, placementId: props.state.placementId })
+        ? await draft.resolve({ projectId: project, placementId: props.state.placementId })
         : props.state.placementId
       const terminal = await runtime.store(placementId).create({ command: launcher.command, title: launcher.title })
       runtime.open({ placementId, terminalId: terminal.id }, props.paneId)
@@ -108,6 +109,7 @@ export function TerminalCreator(props: PaneProps<TerminalCreatorState>): JSX.Ele
                   projectId={project()}
                   placementId={props.state.placementId}
                   branch={false}
+                  resolver={draft}
                   onCreatingChange={setCreating}
                   onOpen={(target) =>
                     workbench.replacePane(props.paneId, terminalCreatorPaneKind, { placementId: target.placementId })
