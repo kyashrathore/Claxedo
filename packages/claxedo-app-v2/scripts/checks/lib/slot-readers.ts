@@ -17,13 +17,17 @@ export function slotReaders(root: string): SlotReaders {
   for (const file of readerFiles(root)) {
     const text = readFileSync(file, "utf8")
     for (const match of text.matchAll(bracketSelector)) {
-      selectors[`data-${match[1]}` as SlotHook].push({ operator: match[2] ?? "=", value: match[3] ?? "" })
+      selectors[hookOf(match[1])].push({ operator: match[2] ?? "=", value: match[3] ?? "" })
     }
     for (const match of text.matchAll(tailwindVariant)) {
-      selectors[`data-${match[1]}` as SlotHook].push({ operator: "=", value: match[2] ?? "" })
+      selectors[hookOf(match[1])].push({ operator: "=", value: match[2] ?? "" })
     }
   }
   return { selects: (hook, value) => selectors[hook].some((selector) => matches(selector, value)) }
+}
+
+function hookOf(name: string | undefined): SlotHook {
+  return name === "component" ? "data-component" : "data-slot"
 }
 
 function matches(selector: Selector, value: string): boolean {
