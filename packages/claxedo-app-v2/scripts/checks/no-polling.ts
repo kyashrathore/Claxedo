@@ -4,8 +4,6 @@ import { finish, type Violation } from "./lib/report"
 import { enclosingFunction, functionName, unwrap, walk } from "./lib/tree"
 
 const timerOwners: Readonly<Record<string, string>> = {
-  "src/server/transport.ts": "reserved by the plan for the transport's own retry; holds no timer today",
-  "src/server/status.ts": "reserved by the plan if P0.7 needs a status settle timer; holds no timer today",
   "src/lib/clock.tsx": "the app's one clock: relative ages every 10 s",
   "src/lib/second-ticker.ts": "the clock's ref-counted 1 s tick, running only while a running tool's elapsed time or a retry countdown reads it",
 }
