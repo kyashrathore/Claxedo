@@ -14,6 +14,8 @@ import { MemoryPorts, authority } from "./test-support/memory-ports"
 import { createTestServices } from "./test-support/services"
 import type { TestServices } from "./test-support/services"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
+import type { CanUseTool } from "@anthropic-ai/claude-agent-sdk"
+import { askClaudePermission } from "../transports/claude-sdk/requests"
 
 type ClaudeBackend = ConformanceBackend & {
   root: string
@@ -264,3 +266,54 @@ test("a requested Claude agent changes the real CLI query", async () => {
     expect(state.server.requests.some((request) => request.model.includes("haiku"))).toBe(true)
   } finally { await transport.dispose(); await state.close() }
 }, 60_000)
+
+test("a saved Claude grant survives transport recreation and stays in its session", async () => {
+  const ports = new MemoryPorts()
+  const services = createTestServices()
+  const owner = createRequestBroker(ports)
+  const origin = { actor: { kind: "machine-owner" as const }, via: "loopback" as const, reissued: false }
+  const input = (sessionId: string) => ({ sessionId, workspaceId: "w1", directory: "/work", locality: "local" as const,
+    owner: origin.actor, config: { harness: { id: "claude" as const, access: "native" as const }, permissionMode: "default" },
+    projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] },
+    credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" } })
+  const options = { signal: new AbortController().signal, blockedPath: "/work" } as Parameters<CanUseTool>[2]
+  const transport = () => new ClaudeSdkTransport(services, { executable: "claude", configRoot: "/tmp/claude-grants",
+    userConfigRoot: "/tmp/claude-owner", env: {} })
+  const first = transport()
+  const firstSessions = [] as Awaited<ReturnType<typeof first.start>>[]
+  for (const sessionId of ["s1", "s2"]) {
+    ports.current.set(sessionId, { ...authority, sessionId, connectionId: "claude-sdk" })
+    ports.directories.set(sessionId, "/work")
+    const broker = createSessionBroker(owner, { sessionId, workspaceId: "w1", directory: "/work", origin })
+    firstSessions.push(await first.start(input(sessionId), broker))
+  }
+  const turn = (brokerOwner: typeof owner, sessionId: string) => createTurnBroker(brokerOwner, {
+    authority: ports.current.get(sessionId)!, origin, signal: new AbortController().signal })
+  const initial = askClaudePermission(input("s1"), turn(owner, "s1"), "Bash", { command: "echo shared" }, options)
+  for (let index = 0; index < 12; index++) await Promise.resolve()
+  const pending = owner.broker.list({ sessionId: "s1" })[0]
+  expect(pending?.request.kind).toBe("permission")
+  expect(await owner.broker.answer(pending!.request.requestId, { kind: "permission", decision: "allow_always" }, { sessionId: "s1" }))
+    .toMatchObject({ ok: true })
+  expect((await initial).behavior).toBe("allow")
+  await first.dispose()
+
+  const restartedOwner = createRequestBroker(ports)
+  const second = transport()
+  for (const [index, sessionId] of ["s1", "s2"].entries()) {
+    const broker = createSessionBroker(restartedOwner, { sessionId, workspaceId: "w1", directory: "/work", origin })
+    await second.attach({ ...input(sessionId), binding: firstSessions[index]!.binding }, broker)
+  }
+  try {
+    const reused = await askClaudePermission(input("s1"), turn(restartedOwner, "s1"), "Bash", { command: "echo shared" }, options)
+    expect(reused.behavior).toBe("allow")
+    expect(restartedOwner.broker.list({ sessionId: "s1" })).toHaveLength(0)
+    const isolated = askClaudePermission(input("s2"), turn(restartedOwner, "s2"), "Bash", { command: "echo shared" }, options)
+    for (let index = 0; index < 12; index++) await Promise.resolve()
+    const separate = restartedOwner.broker.list({ sessionId: "s2" })[0]
+    expect(separate?.request.kind).toBe("permission")
+    expect(await restartedOwner.broker.answer(separate!.request.requestId, { kind: "permission", decision: "deny" }, { sessionId: "s2" }))
+      .toMatchObject({ ok: true })
+    expect((await isolated).behavior).toBe("deny")
+  } finally { await second.dispose() }
+})

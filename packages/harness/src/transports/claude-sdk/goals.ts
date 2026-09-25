@@ -1,24 +1,17 @@
-import path from "node:path"
-import { query, type McpServerConfig, type Query, type SDKActiveGoalMessage, type SDKMessage } from "@anthropic-ai/claude-agent-sdk"
+import type { SDKActiveGoalMessage, SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { AgentGoalMutationResult } from "@claxedo/agent-runtime-contract"
-import type { HarnessServices, HarnessSession, RoutedEvent, SessionBroker, StartInput, TurnBroker } from "../../contract"
-import { claudePlugins, composeClaudeConfigHome } from "../../profiles/claude-code"
-import { claudeBinding, claudeEnvironment } from "./credentials"
-import { activeGoal, goalSessionStore } from "./goal-state"
-import { permissionOptions } from "./permissions"
+import type { HarnessSession, RoutedEvent, SessionBroker, StartInput, TurnBroker } from "../../contract"
 import { ClaudeProcess } from "./process"
-import { askClaudePermission } from "./requests"
+import { ClaudeQueryLauncher } from "./query-options"
+import { observeClaudeSessionMessage } from "./session-events"
 import { claudeTranslator, translateClaude } from "./translate"
 
 type Running = { turnId: string; abort: AbortController; settled: Promise<unknown> }
-const protocolGoalMap = { deny: "deny" } as const
 
 export class ClaudeGoals {
   private readonly running = new Map<string, Running>()
 
-  constructor(private readonly services: HarnessServices, private readonly options: {
-    executable: string; configRoot: string; userConfigRoot: string; env: NodeJS.ProcessEnv
-  }, private readonly mcp: (input: StartInput) => Record<string, McpServerConfig>) {}
+  constructor(private readonly launcher: ClaudeQueryLauncher) {}
 
   async start(session: HarnessSession, input: StartInput, broker: SessionBroker, objective: string): Promise<AgentGoalMutationResult> {
     if (this.running.has(input.sessionId)) return { ok: false, status: "conflict", message: "Claude Goal is running" }
@@ -66,57 +59,28 @@ export class ClaudeGoals {
 
   turnId(sessionId: string): string | undefined { return this.running.get(sessionId)?.turnId }
 
-  private async launch(session: HarnessSession, input: StartInput, broker: SessionBroker, turnBroker: TurnBroker | undefined,
-    prompt: string, abort: AbortController, clear: boolean,
-    runtime: ReturnType<typeof claudeTranslator>["runtime"]): Promise<{ stream: Query; processes: ClaudeProcess[] }> {
-    const current = { ...input, config: { ...broker.config(), permissionMode: input.config.permissionMode } }
-    const binding = claudeBinding(input.credentials, input.owner)
-    const home = binding ? await composeClaudeConfigHome(path.join(this.options.configRoot, input.sessionId), this.options.userConfigRoot) : undefined
-    const processes: ClaudeProcess[] = []
-    const stream = query({ prompt, options: {
-      cwd: input.directory, pathToClaudeCodeExecutable: this.options.executable,
-      env: { ...claudeEnvironment(this.options.env, binding, home), CLAUDE_AGENT_SDK_CLIENT_APP: "claxedo-workspace-runtime/0.1.0",
-        CLAUDE_CODE_ENABLE_TODO_TOOLS: "1", CLAUDE_CODE_ENABLE_TASKS: "1" }, abortController: abort,
-      ...(session.binding.upstreamSessionId.startsWith("claude-sdk:") ? {} : { resume: session.binding.upstreamSessionId }),
-      ...(clear ? { tools: [], maxTurns: 1 } : { ...permissionOptions(current.config), plugins: claudePlugins(input.projection),
-        mcpServers: this.mcp(input), forwardSubagentText: true, settingSources: ["user", "project", "local"] as const,
-        sessionStore: goalSessionStore(broker, abort.signal, { runtime, assistantMessageId: session.binding.sessionId,
-          directory: input.directory }), sessionStoreFlush: "eager" as const }),
-      canUseTool: (name, payload, options) => clear || !turnBroker
-        ? Promise.resolve({ behavior: protocolGoalMap.deny, message: "Clearing the native Goal cannot run tools" })
-        : askClaudePermission(current, turnBroker, name, payload, options),
-      spawnClaudeCodeProcess: (options) => {
-        const child = new ClaudeProcess(this.services, options, input.sessionId)
-        processes.push(child)
-        return child
-      },
-    } })
-    return { stream, processes }
-  }
-
   private async *run(session: HarnessSession, input: StartInput, broker: SessionBroker, turnBroker: TurnBroker | undefined,
     prompt: string, abort: AbortController, clear = false, confirm?: () => void): AsyncIterable<RoutedEvent> {
     const { runtime, tasks } = claudeTranslator(session.binding.sessionId)
-    const { stream, processes } = await this.launch(session, input, broker, turnBroker, prompt, abort, clear, runtime)
+    const processes = new Set<ClaudeProcess>()
+    const stream = await this.launcher.launch({ session, input, broker, turnBroker, prompt, abort, processes, runtime,
+      assistantMessageId: session.binding.sessionId, clear })
     try {
       for await (const message of stream as AsyncIterable<SDKMessage | SDKActiveGoalMessage>) {
-        if (message.type === "active_goal") { if (!abort.signal.aborted) await broker.goal.publish(activeGoal(input.sessionId, message)); continue }
-        if ("session_id" in message && typeof message.session_id === "string" && message.session_id &&
-          session.binding.upstreamSessionId !== message.session_id) {
-          session.binding.upstreamSessionId = message.session_id
-          await broker.rebind(message.session_id)
-        }
+        const observed = await observeClaudeSessionMessage(message, session, broker, abort.signal)
+        if (observed.kind === "active-goal") continue
+        const current = observed.message
         if (clear) {
-          if (message.type === "result" && message.subtype === "success" && !message.is_error && message.num_turns === 0) {
+          if (current.type === "result" && current.subtype === "success" && !current.is_error && current.num_turns === 0) {
             confirm?.()
           }
           continue
         }
-        if (turnBroker) for (const event of await translateClaude(message, runtime, tasks, turnBroker)) yield event
+        if (turnBroker) for (const event of await translateClaude(current, runtime, tasks, turnBroker)) yield event
       }
     } finally {
       stream.close()
-      await Promise.all(processes.map((child) => child.retire({ at: Date.now() + 5_000, signal: new AbortController().signal })))
+      await Promise.all([...processes].map((child) => child.retire({ at: Date.now() + 5_000, signal: new AbortController().signal })))
     }
   }
 }

@@ -1,19 +1,15 @@
-import path from "node:path"
 import { query, type AgentInfo, type ModelInfo, type Query, type SlashCommand } from "@anthropic-ai/claude-agent-sdk"
 import type { AgentConfigOption } from "@claxedo/agent-runtime-contract"
 import type { DraftLaunch, HarnessServices, StartInput } from "../../contract"
-import { claudePlugins, composeClaudeConfigHome } from "../../profiles/claude-code"
-import { claudeBinding, claudeEnvironment } from "./credentials"
 import { ClaudeTransportError } from "./errors"
+import { claudeLaunchContext, type ClaudeSdkOptions } from "./launch-context"
 import { ClaudeProcess } from "./process"
 
 export class ClaudeModelCatalog {
   private readonly rows = new Map<string, readonly ModelInfo[]>()
   private readonly inFlight = new Map<string, Promise<readonly ModelInfo[]>>()
 
-  constructor(private readonly services: HarnessServices, private readonly options: {
-    executable: string; configRoot: string; userConfigRoot: string; env: NodeJS.ProcessEnv
-  }) {}
+  constructor(private readonly services: HarnessServices, private readonly options: ClaudeSdkOptions) {}
 
   private key(input: StartInput | DraftLaunch): string {
     return JSON.stringify([input.directory, input.owner.kind === "person" ? input.owner.userId : "machine-owner", input.credentials.leaseGeneration])
@@ -49,16 +45,13 @@ export class ClaudeModelCatalog {
 
   private async discover<T>(input: StartInput | DraftLaunch, sessionId: string | undefined,
     read: (stream: Query) => Promise<T>): Promise<T> {
-    const binding = claudeBinding(input.credentials, input.owner)
-    const home = binding ? await composeClaudeConfigHome(path.join(this.options.configRoot, sessionId ?? "probe"), this.options.userConfigRoot) : undefined
+    const context = await claudeLaunchContext(input, this.options, sessionId ?? "probe")
     const spawned: ClaudeProcess[] = []
     const abort = new AbortController()
     const probe = query({ prompt: { async *[Symbol.asyncIterator]() {
       await new Promise<void>((resolve) => abort.signal.addEventListener("abort", () => resolve(), { once: true }))
     } }, options: {
-      cwd: input.directory, pathToClaudeCodeExecutable: this.options.executable,
-      env: { ...claudeEnvironment(this.options.env, binding, home), CLAUDE_AGENT_SDK_CLIENT_APP: "claxedo-workspace-runtime/0.1.0" },
-      settingSources: ["user", "project", "local"], plugins: claudePlugins(input.projection), abortController: abort,
+      ...context, abortController: abort,
       spawnClaudeCodeProcess: (options) => {
         const child = new ClaudeProcess(this.services, options, sessionId ?? "probe", "probe")
         spawned.push(child)

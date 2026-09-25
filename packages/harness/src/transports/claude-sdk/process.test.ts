@@ -58,3 +58,18 @@ test("a spawn that finishes after the caller's deadline still retires its own ch
   await new Promise((resolve) => setTimeout(resolve, 5))
   expect(retired).toBe(1)
 })
+
+test("a reused PID identity is refused by the owned retirement boundary", async () => {
+  const calls: number[] = []
+  const owned: OwnedProcess = { pid: 5_000_003, stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(),
+    exited: new Promise(() => {}), retire: async () => {
+      calls.push(5_000_003)
+      return { stopped: false, error: { code: "signal_denied", message: "identity_mismatch" } }
+    } }
+  const services = { spawn: async () => owned, log: { debug() {}, info() {}, warn() {}, error() {} } } as unknown as HarnessServices
+  const child = new ClaudeProcess(services, { command: "claude", args: [], env: {}, signal: new AbortController().signal }, "s1")
+  await child.started
+  await expect(child.retire({ at: Date.now() + 1000, signal: new AbortController().signal }))
+    .rejects.toMatchObject({ kind: "process", message: "identity_mismatch" })
+  expect(calls).toEqual([5_000_003])
+})
