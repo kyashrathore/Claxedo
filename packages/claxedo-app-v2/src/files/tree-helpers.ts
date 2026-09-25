@@ -1,5 +1,3 @@
-import type { TreeSource } from "./tree-source"
-
 export function fileTreeRevealWindow(input: {
   readonly paths: readonly string[]
   readonly active: string | undefined
@@ -52,33 +50,3 @@ export function resolveTreeKeyAction(input: {
 }
 
 export const treeKey = (path: string) => path.replace(/[\\/]+$/, "").replaceAll("\\", "/")
-
-export function expandedDepths(source: TreeSource, root: string, level: number): ReadonlyMap<string, number> {
-  const out = new Map<string, number>()
-  if (!source.state(root).expanded) return out
-  const seen = new Set<string>()
-  const stack: { dir: string; lvl: number; i: number; kids: string[]; max: number }[] = []
-  const push = (dir: string, lvl: number) => {
-    if (seen.has(treeKey(dir))) return
-    seen.add(treeKey(dir))
-    const kids = source
-      .children(dir)
-      .filter((node) => node.kind === "directory" && source.state(node.path).expanded)
-      .map((node) => node.path)
-    stack.push({ dir, lvl, i: 0, kids, max: lvl })
-  }
-  push(root, level - 1)
-  while (stack.length > 0) {
-    const top = stack[stack.length - 1]!
-    if (top.i < top.kids.length) {
-      push(top.kids[top.i]!, top.lvl + 1)
-      top.i++
-      continue
-    }
-    out.set(top.dir, top.max)
-    stack.pop()
-    const parent = stack[stack.length - 1]
-    if (parent) parent.max = Math.max(parent.max, top.max)
-  }
-  return out
-}

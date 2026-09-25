@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, on, onCleanup, Show, type JSX } from "solid-js"
+import { createEffect, createMemo, createSignal, on, Show, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useTranslator } from "@/i18n"
 import type { PlacementId } from "@/server"
@@ -19,35 +19,16 @@ export type FilesNavigatorProps = {
   readonly onOpenFile: (path: string) => void
 }
 
-function revealActivePath(input: {
+function expandToActivePath(input: {
   readonly path: () => string | undefined
   readonly active: () => boolean
   readonly expand: (dir: string) => void
-  readonly scroller: () => HTMLDivElement | undefined
 }): void {
   createEffect(
     on([input.path, input.active], ([path, active]) => {
       if (!path || !active) return
       const segments = path.split("/").slice(0, -1)
       for (const [index] of segments.entries()) input.expand(segments.slice(0, index + 1).join("/"))
-      const reveal = () => {
-        const row = input.scroller()?.querySelector(`[data-file-tree-path="${CSS.escape(path)}"]`)
-        row?.scrollIntoView({ block: "nearest" })
-        return !!row
-      }
-      let observer: MutationObserver | undefined
-      const frame = requestAnimationFrame(() => {
-        const scroller = input.scroller()
-        if (reveal() || !scroller) return
-        observer = new MutationObserver(() => {
-          if (reveal()) observer?.disconnect()
-        })
-        observer.observe(scroller, { childList: true, subtree: true })
-      })
-      onCleanup(() => {
-        cancelAnimationFrame(frame)
-        observer?.disconnect()
-      })
     }),
   )
 }
@@ -101,7 +82,7 @@ export function FilesNavigator(props: FilesNavigatorProps): JSX.Element {
   const showTree = () => !search.pending() && !search.empty()
   const [scroller, setScroller] = createSignal<HTMLDivElement>()
   const dataReady = () => source.state("").loaded && source.children("").length > 0
-  revealActivePath({ path: () => props.activePath, active: () => props.active, expand: source.expand, scroller })
+  expandToActivePath({ path: () => props.activePath, active: () => props.active, expand: source.expand })
   return (
     <div
       data-testid="workspace-files-navigator"
@@ -125,7 +106,8 @@ export function FilesNavigator(props: FilesNavigatorProps): JSX.Element {
         <div style={{ "content-visibility": showTree() ? "visible" : "hidden" }}>
           <FileTree
             source={search.source()}
-            path=""
+            scroller={scroller}
+            reveal={props.active ? props.activePath : undefined}
             modified={changed()}
             kinds={kinds()}
             active={props.activePath}
