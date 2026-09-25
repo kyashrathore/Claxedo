@@ -32,5 +32,5 @@ export function rememberPanelPerSession(input: {
       input.restore(snapshot)
     })
     return next
-  }, input.sessionId())
+  }, undefined)
 }
