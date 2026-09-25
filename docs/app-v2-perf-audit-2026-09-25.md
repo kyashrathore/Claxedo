@@ -161,3 +161,21 @@ v2 is at or below v1 on every count. Per keystroke v2 does one text mutation, on
 Remaining v2 waste: one synchronous `JSON.stringify` + `localStorage.setItem` of the whole entry (draft plus history) per keystroke (`src/composer/store.ts:66-71` → `persistence.ts:145-155`). The cost grows with the stored prompt history. Design fix: write on idle, blur, `visibilitychange` or `pagehide` rather than per input.
 
 Shared (both apps, same numbers): each keystroke's Paint event carries a 1280×800 clip on the root layer (node 2) plus the 744×52 editor. That is 43.7 M px² for 40 keys. This may be a `chromium-headless-shell` software-raster artifact, so it is listed under Suspected.
+
+## Scenario 5: workspace panel, Files, a file, Changes, Review expand/collapse
+
+In session "Greeting": open the panel with "Open workspace panel" (Files shows first), expand the `docs` folder, open `docs/ci-green-staging-handoff-2026-09-23.md`, click "Open Changes" (source-control column), click the "Review" tab, click "Expand all", then "Collapse all". Commit, stage and push controls were not touched. Medians of 3 runs.
+
+| Step | v1 API | v2 API | v1 restyled | v2 restyled | v1 paints | v2 paints | v1 script ms | v2 script ms |
+|---|---|---|---|---|---|---|---|---|
+| Open panel | 6 | 3 | 919 | 674 | 153 | 129 | 55 | 40 |
+| Expand `docs` | 8 (5 of them polling) | 1 | **147** | **492** | 23 | 25 | 5 | 8 |
+| Open file | 1 | 1 | 473 | 327 | 10 | 9 | 20 | 10 |
+| Open Changes | 3 | 1 | 155 | 146 | 15 | 13 | 13 | 11 |
+| Review tab | 7 (polling) | 0 | 213 | 203 | 41 | 30 | 11 | 8 |
+| Expand all | 3 | 1 | 1,292 | 1,331 | 13 | 15 | 14 | 19 |
+| Collapse all | 0 | 0 | 61 | 64 | 3 | 4 | 2 | 2 |
+
+v2's panel does fewer requests on every step. Where v1 makes two `diff/vcs/file` reads on Expand all, v2 makes one; v1 also reads `git/status`, `diff/refs` and `file/status` that v2 does not. Panel state goes to `localStorage` only (`claxedo:panel:navigator`, `claxedo:shell:machine:this-machine`).
+
+Folder expand restyles 3.3× more elements in v2 (492 vs 147). The detailed trace shows the same 118-element recalc for the inserted tree rows in both apps. v2 adds one recalc of 343 elements, triggered when the expanded tree becomes taller than the pane and `ScrollView` inserts its thumb (`Node was inserted into tree: div.scroll-view__thumb`, plus an inline-style write to the thumb). Inserting a sibling after the viewport restyles the viewport's subtree, the same positional-selector class as in scenario 2. In v1 the tree root does not change scrollability on this expand. This costs 343 restyles once per expand, so it is wasted work, not lag.
