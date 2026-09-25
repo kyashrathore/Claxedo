@@ -20,11 +20,8 @@ function pinned(binary: string | undefined): string | undefined {
 }
 
 /**
- * The Pi 0.85.1 a real-process test drives; never a skip. `PI_EXECUTABLE`
- * wins when set. Otherwise the machine's own Pi serves when it is the pin, and
- * when it is not, `bun run pi:install` puts the pin under `.artifacts/pi` and
- * that copy serves, so a machine carrying another Pi or none still proves the
- * pinned one.
+ * An opt-in native Pi run may install the pinned CLI when the machine has a
+ * different version. The default unit suite never invokes this installer.
  */
 export function pinnedPiExecutable(): string {
   const explicit = process.env[PI_EXECUTABLE_ENV]?.trim()

@@ -38,6 +38,13 @@ async function plugin(root: string, instanceId: string) {
 }
 
 describe("codexAgentPluginAdapter", () => {
+  test("resolves the suite's default Codex home before projecting an empty generation", async () => {
+    const generationRoot = await temporary("claxedo-codex-default-generation-")
+    await codexAgentPluginAdapter().project({ generationRoot, plugins: [] })
+    const codexHome = process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex")
+    await expect(fs.readFile(path.join(codexHome, "config.toml"), "utf8")).resolves.toBe("")
+  })
+
   test("generates a Codex local marketplace over the retained generation", async () => {
     const generationRoot = await temporary("claxedo-codex-generation-")
     const codexHome = await temporary("claxedo-codex-home-")
