@@ -23,11 +23,11 @@
     "flows": "bun e2e/flows/run.ts"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "1.3.0",
     "@claxedo/agent-event-runtime": "workspace:*",
     "@claxedo/agent-runtime-contract": "workspace:*"
   },
   "devDependencies": {
-    "@agentclientprotocol/sdk": "1.3.0",
     "@anthropic-ai/sdk": "0.115.0",
     "@claxedo/helpers": "workspace:*",
     "@claxedo/sandbox-manager": "workspace:*",
