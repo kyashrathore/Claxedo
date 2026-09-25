@@ -55,8 +55,9 @@ export function createCloudApi(transport: Transport, workspaces: Workspaces, pro
       if (!workspace) throw new ServerError({ class: "internal", message: "The cloud workspace create answered without a workspace id" })
       return workspace
     },
-    start: async (id) => {
-      await transport.json<unknown>(at(id, "/connection"), jsonInit("POST", {}))
+    start: async (id, options) => {
+      await transport.startRuntime(id, options)
+      await workspaces.refresh()
     },
     stop: async (id) => {
       await transport.json<unknown>(at(id, "/lifecycle/stop"), jsonInit("POST", {}))

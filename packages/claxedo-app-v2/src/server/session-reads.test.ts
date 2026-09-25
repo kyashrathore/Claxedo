@@ -53,6 +53,7 @@ function fakeServer(options: { reachable: () => boolean; runtime?: (path: string
       if (response.status === 409) throw workspaceStopped("ws_cloud")
       return readJson<T>(response)
     },
+    startRuntime: async () => undefined,
   } satisfies Transport
   const workspaces = createWorkspaces(transport, new QueryClient())
   return { context: { transport, workspaces, status: createStatusOwner(transport) }, requests, runtimeCalls }
