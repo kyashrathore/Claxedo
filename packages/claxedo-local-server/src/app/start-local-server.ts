@@ -160,11 +160,8 @@ export function startLocalServer(options: StartLocalServerOptions): LocalServer 
 
 function startOwned(options: StartLocalServerOptions, release: () => void): LocalServer {
   const port = options.port ?? DEFAULT_CLAXEDO_SERVER_PORT
-  const composed = options.services ?? createLocalControlPlaneServices()
-  // Every session-metadata writer below and in `createLocalApp` goes through
-  // this store, which is what lets a signed-in machine publish each change.
-  const sessionRows = startSessionRowsPublisher(composed.projectionStore)
-  const services = { ...composed, projectionStore: sessionRows.projectionStore }
+  const services = options.services ?? createLocalControlPlaneServices()
+  const sessionRows = startSessionRowsPublisher(services.projectionStore)
   const connectionProviders = [
     createAcpConnectionProvider(),
     createOpenCodeServerConnectionProvider(),

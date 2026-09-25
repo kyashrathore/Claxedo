@@ -27,9 +27,11 @@ function harness(options: { maxDirtySessions?: number; url?: string | undefined 
   const sent: Sent[] = []
   const answers: Array<() => Response> = []
   const reads = { list: 0, read: 0 }
+  const unreadable = new Set<string>()
   const source: SessionRowSource = {
     listRows: async (workspaceId) => {
       reads.list++
+      if (unreadable.has(workspaceId)) throw new Error(`${workspaceId} unreadable`)
       return [...(rows.get(workspaceId)?.values() ?? [])]
     },
     readRow: async (workspaceId, sessionId) => {
@@ -67,6 +69,7 @@ function harness(options: { maxDirtySessions?: number; url?: string | undefined 
     put,
     drop: (workspaceId: string, sessionId: string) => rows.get(workspaceId)?.delete(sessionId),
     child: (sessionId: string) => children.add(sessionId),
+    unreadable: (workspaceId: string, is: boolean) => (is ? unreadable.add(workspaceId) : unreadable.delete(workspaceId)),
     answer: (...next: Array<() => Response>) => answers.push(...next),
     setUrl: (next: string | undefined) => {
       url = next
@@ -242,6 +245,36 @@ describe("the machine session-rows publisher", () => {
     h.publisher.sessionChanged(WS_A, "a1")
     await settle()
     expect(h.sent, "after a success the next change waits only the debounce").toHaveLength(4)
+  })
+
+  test("a workspace that cannot be read is retried on the backoff, not every debounce", async () => {
+    const h = up()
+    h.put(row(WS_A, "a1"))
+    h.put(row(WS_B, "b1"))
+    h.unreadable(WS_A, true)
+
+    h.serve([WS_A, WS_B])
+    await settle()
+    expect(h.reads.list).toBe(2)
+    expect(h.sent.map((entry) => entry.body.rows.map((row) => row.sessionId)), "the readable workspace still went out").toEqual([["b1"]])
+
+    await settle(949)
+    expect(h.reads.list, "no re-read before the first retry delay").toBe(2)
+    await settle(1)
+    expect(h.reads.list).toBe(3)
+    await settle(1_999)
+    expect(h.reads.list, "the second retry waits twice as long").toBe(3)
+    await settle(1)
+    expect(h.reads.list).toBe(4)
+
+    h.unreadable(WS_A, false)
+    await settle(4_000)
+    expect(h.sent.at(-1)?.body.rows.map((row) => row.sessionId)).toEqual(["a1"])
+    expect(vi.getTimerCount()).toBe(0)
+
+    h.publisher.sessionChanged(WS_B, "b1")
+    await settle()
+    expect(h.sent, "after a clean flush the next change waits only the debounce").toHaveLength(3)
   })
 
   test("a failed chunk is put back and only it is retried", async () => {

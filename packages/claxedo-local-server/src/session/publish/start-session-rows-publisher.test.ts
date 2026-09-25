@@ -164,6 +164,16 @@ describe("the machine publisher on the running daemon", () => {
     await until(() => cp.received.length === 2, "the resync after the set changed")
     expect(cp.received[1]?.authorization).toBe("Bearer htt.2")
     expect(cp.received[1]?.body.rows.map((row) => row.sessionId)).toEqual(["ses_a", "ses_b"])
+
+    // A write through the projection's own writer publishes that row alone.
+    await services.projectionStore.put_session_meta("ses_b", { title: "renamed" })
+    await until(() => cp.received.length === 3, "the changed row")
+    expect(cp.received[2]?.body.rows.map((row) => [row.sessionId, row.title])).toEqual([["ses_b", "renamed"]])
+    expect(cp.received[2]?.body.removed).toEqual([])
+
+    await services.projectionStore.delete_session_meta("ses_b")
+    await until(() => cp.received.length === 4, "the removed row")
+    expect(cp.received[3]?.body).toEqual({ hostId: "host_machine-1", rows: [], removed: [{ workspaceId: WS_B, sessionId: "ses_b" }] })
   })
 
   test("publishes nothing without the address, and a refused token waits for the next credential", async () => {

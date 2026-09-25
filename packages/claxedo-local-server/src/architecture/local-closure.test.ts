@@ -279,12 +279,12 @@ describe("@claxedo/local-server closure", () => {
     //    plane, on change and in full whenever its serving credential or
     //    workspace set changes. Only the process that holds the projection,
     //    hosts the runtimes whose frames carry status, and receives the Host
-    //    Tunnel Token can. The six modules reach the projection port,
-    //    host-serving's credential listener, the runtime registry and
-    //    `platform/json.ts`, all here, and server-core's session-rows
-    //    contract, which costs no package.
+    //    Tunnel Token can. The five modules reach the projection port and
+    //    its change notices, host-serving's credential listener, the runtime
+    //    registry and `platform/json.ts`, all here, and server-core's
+    //    session-rows contract, which costs no package.
     const { modules, packages } = closure({ runtimeOnly: true })
-    expect(modules.size).toBeLessThanOrEqual(109)
+    expect(modules.size).toBeLessThanOrEqual(108)
     expect(packages.size).toBeLessThanOrEqual(31)
   })
 })

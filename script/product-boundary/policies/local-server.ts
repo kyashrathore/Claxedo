@@ -191,12 +191,13 @@ export const localServer: Policy = {
   //    full whenever its serving credential or workspace set changes, so the
   //    control plane answers machine sessions from its own store. Only the
   //    process that holds the projection, hosts the runtimes whose frames
-  //    carry status, and receives the Host Tunnel Token can do it. The six
-  //    modules reach the projection port, host-serving's credential listener,
-  //    the runtime registry and `platform/json.ts`, all already here, and
-  //    server-core's session-rows contract, which costs no package.
-  //    80/30, no headroom.
-  ceilings: { modules: 80, packages: 30 },
+  //    carry status, and receives the Host Tunnel Token can do it. The five
+  //    modules reach the projection port and its change notices,
+  //    host-serving's credential listener, the runtime registry and
+  //    `platform/json.ts`, all already here, and server-core's session-rows
+  //    contract, which costs no package.
+  //    79/30, no headroom.
+  ceilings: { modules: 79, packages: 30 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

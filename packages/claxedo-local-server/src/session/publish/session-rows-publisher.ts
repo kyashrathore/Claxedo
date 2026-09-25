@@ -8,7 +8,6 @@ import type { HostServingPublisherCredential } from "@claxedo/host-serving/servi
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { record } from "../../platform/json"
 import type { SessionRowSource } from "./local-session-rows"
-import type { SessionProjectionWriteObserver } from "./session-projection-observer"
 
 const log = Log.create({ service: "session-rows-publisher" })
 
@@ -26,7 +25,11 @@ export type SessionRowsPublisherOptions = {
   maxDirtySessions?: number
 }
 
-export type SessionRowsPublisher = SessionProjectionWriteObserver & {
+export type SessionRowsPublisher = {
+  sessionChanged: (workspaceId: string, sessionId: string) => void
+  sessionRemoved: (workspaceId: string, sessionId: string) => void
+  /** A snapshot rewrote the workspace's rows; which ones changed is not known. */
+  workspaceChanged: (workspaceId: string) => void
   /** The serving credential as it stands now, or nothing when this machine serves nothing. */
   credentialChanged: (credential: HostServingPublisherCredential | undefined) => void
   /** Republish every served workspace's rows. */
@@ -158,6 +161,7 @@ export function createSessionRowsPublisher(options: SessionRowsPublisherOptions)
   /** Reads what a full or partial publish has to say; a workspace or session that cannot be read stays dirty. */
   const collect = async (workspaceIds: readonly string[]) => {
     const items: Item[] = []
+    let unreadable = 0
     const full = resyncPending
     const workspaces = new Set(full ? workspaceIds : dirtyWorkspaces)
     const sessions = full ? [] : [...dirtySessions.values()].filter((dirty) => !workspaces.has(dirty.workspaceId))
@@ -168,6 +172,7 @@ export function createSessionRowsPublisher(options: SessionRowsPublisherOptions)
         await collectWorkspace(workspaceId, items)
       } catch (error) {
         dirtyWorkspaces.add(workspaceId)
+        unreadable += 1
         log.warn("session rows unreadable for workspace", { workspaceId, error: String(error) })
       }
     }
@@ -176,10 +181,11 @@ export function createSessionRowsPublisher(options: SessionRowsPublisherOptions)
         await collectSession(dirty, items)
       } catch (error) {
         remark(dirty)
+        unreadable += 1
         log.warn("session row unreadable", { ...dirty, error: String(error) })
       }
     }
-    return { full, items }
+    return { full, items, unreadable }
   }
 
   const post = async (url: string, token: string, hostId: string, chunk: Chunk) => {
@@ -223,7 +229,10 @@ export function createSessionRowsPublisher(options: SessionRowsPublisherOptions)
         remember(chunk, await post(url, current.token, current.hostId, chunk))
         unsent.shift()
       }
-      failures = 0
+      // What could not be read is dirty again and is retried on the same
+      // backoff as a failed post; only a flush that read and sent everything
+      // returns to the debounce.
+      failures = collected.unreadable ? failures + 1 : 0
     } catch (error) {
       if (full) resyncPending = true
       else for (const chunk of unsent) chunk.origins.forEach(remark)

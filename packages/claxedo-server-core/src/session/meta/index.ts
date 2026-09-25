@@ -30,8 +30,10 @@ import { resolveWorkspace, type Workspace } from "../../workspace/store"
 import { controlBus } from "../../platform/runtime/lib/bus"
 import { asRecord } from "@claxedo/helpers/guards"
 import { sessionOrderSql, type SessionOrderColumns } from "../navigation-order"
+import { reportSessionMetaChanges, type SessionMetaChange } from "./changes"
 
 export { GLOBAL_TAG, GLOBAL_SHOW_TAG } from "./types"
+export { onSessionMetaChange, type SessionMetaChange } from "./changes"
 export type {
   SessionAttachment,
   SessionMeta,
@@ -53,7 +55,10 @@ export async function syncSessionMetas(ws: Workspace | undefined, input: unknown
   const rows = input.map((item) => sessionMetaSyncRow(item, ws))
   const inserted = await upsertRows(rows)
   await announceInventoryChange(inserted, ws)
-  if (!ws?.id) return
+  if (!ws?.id) {
+    reportSessionMetaChanges(rows.flatMap((row) => (row?.workspace_id ? [{ kind: "changed", workspaceId: row.workspace_id, sessionId: row.session_id }] : [])))
+    return
+  }
   const incoming = ids(rows.flatMap((item) => item?.session_ref ? [item.session_ref] : []))
   const owned = ClaxedoDB.use((db) => db
     .select({
@@ -79,11 +84,14 @@ export async function syncSessionMetas(ws: Workspace | undefined, input: unknown
   const stale = owned.filter((session_ref) => !incoming.includes(session_ref))
   deleteSessionMetaRefs(stale)
   if (stale.length) await announceInventoryChange([ws.id], ws)
+  reportSessionMetaChanges([{ kind: "workspace", workspaceId: ws.id }])
 }
 
 export async function syncSessionMeta(ws: Workspace | undefined, input: unknown) {
-  const inserted = await upsertRows([sessionMetaSyncRow(input, ws)])
+  const row = sessionMetaSyncRow(input, ws)
+  const inserted = await upsertRows([row])
   await announceInventoryChange(inserted, ws)
+  if (row?.workspace_id) reportSessionMetaChanges([{ kind: "changed", workspaceId: row.workspace_id, sessionId: row.session_id }])
 }
 
 export async function deleteSessionMeta(sessionID: string) {
@@ -97,9 +105,13 @@ export async function deleteSessionMeta(sessionID: string) {
     db.delete(ClaxedoSessionAttachmentTable).where(inArray(ClaxedoSessionAttachmentTable.session_id, sessionIDs)).run()
     db.delete(ClaxedoSessionTagTable).where(inArray(ClaxedoSessionTagTable.session_id, sessionIDs)).run()
     db.delete(ClaxedoSessionMetaTable).where(inArray(ClaxedoSessionMetaTable.session_id, sessionIDs)).run()
-    return rows.filter((row) => sessionIDs.includes(row.session_id)).flatMap((row) => row.workspace_id ? [row.workspace_id] : [])
+    return rows.flatMap((row): SessionMetaChange[] =>
+      sessionIDs.includes(row.session_id) && row.workspace_id
+        ? [{ kind: "removed", workspaceId: row.workspace_id, sessionId: row.session_id }]
+        : [])
   })
-  await announceInventoryChange(removed)
+  await announceInventoryChange(removed.map((change) => change.workspaceId))
+  reportSessionMetaChanges(removed)
 }
 
 /**
@@ -248,9 +260,10 @@ export async function putSessionMeta(
         }).run()
       }
     }
-    return prev ? [] : [workspaceID]
+    return { inserted: prev ? [] : [workspaceID], workspaceID }
   })
-  await announceInventoryChange(inserted, input.ws)
+  await announceInventoryChange(inserted.inserted, input.ws)
+  if (inserted.workspaceID) reportSessionMetaChanges([{ kind: "changed", workspaceId: inserted.workspaceID, sessionId: sessionID }])
 }
 
 export async function sessionMetas(input: string[]) {

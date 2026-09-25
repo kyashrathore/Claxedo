@@ -1,4 +1,5 @@
 import type { SessionProjectionStore } from "@claxedo/server-core/authority/session-projection"
+import { onSessionMetaChange } from "@claxedo/server-core/session/meta/index"
 import { onHostServingCredential } from "@claxedo/host-serving/serving"
 import { localHostSessionRowsUrl } from "../../deployments/local/host-session-authority"
 import {
@@ -7,18 +8,16 @@ import {
 } from "../../deployments/local/embedded-workspace-runtime"
 import { localSessionRowSource } from "./local-session-rows"
 import { createRuntimeSessionStatus } from "./runtime-session-status"
-import { observedSessionProjectionStore } from "./session-projection-observer"
 import { createSessionRowsPublisher } from "./session-rows-publisher"
 
 /**
  * The machine publisher, composed over this daemon's own producers: the
- * projection store's writes, the embedded runtimes' frames, and the serving
- * credential and publish URL the heartbeat delivers. The store handed back is
- * the one every writer in this process must use, or its writes go unpublished.
+ * projection's change notices, the embedded runtimes' frames, and the
+ * serving credential and publish URL the heartbeat delivers.
  */
-export function startSessionRowsPublisher<Store extends SessionProjectionStore>(
-  projectionStore: Store,
-): { projectionStore: Store; stop: () => void } {
+export function startSessionRowsPublisher(
+  projectionStore: Pick<SessionProjectionStore, "list_session_metas" | "session_meta">,
+): { stop: () => void } {
   const status = createRuntimeSessionStatus({
     observe: onEmbeddedWorkspaceRuntime,
     read: readMountedEmbeddedWorkspaceRuntime,
@@ -28,11 +27,16 @@ export function startSessionRowsPublisher<Store extends SessionProjectionStore>(
     source: localSessionRowSource(projectionStore, status),
     url: localHostSessionRowsUrl,
   })
-  const unsubscribe = onHostServingCredential((credential) => publisher.credentialChanged(credential))
+  const unsubscribeChanges = onSessionMetaChange((change) => {
+    if (change.kind === "changed") publisher.sessionChanged(change.workspaceId, change.sessionId)
+    else if (change.kind === "removed") publisher.sessionRemoved(change.workspaceId, change.sessionId)
+    else publisher.workspaceChanged(change.workspaceId)
+  })
+  const unsubscribeCredential = onHostServingCredential((credential) => publisher.credentialChanged(credential))
   return {
-    projectionStore: observedSessionProjectionStore(projectionStore, publisher),
     stop: () => {
-      unsubscribe()
+      unsubscribeChanges()
+      unsubscribeCredential()
       publisher.stop()
       status.stop()
     },
