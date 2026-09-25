@@ -22,8 +22,8 @@ The only module that knows today's server: its routes, its OpenCode-shaped paylo
 
 ## State machines
 
-- Connection (`stream.ts`): `connecting → connected`, `connected → reconnecting(attempt)` on a drop, `reconnecting → offline(reason)` past the attempt bound, `offline → connecting` on `retry`. Backoff doubles from 250 ms to a 15 s ceiling with jitter in the top half. A stream with no frame for 30 s (three heartbeats) is dropped and reopened.
-- `server.connection` aggregates the open streams: offline if any is offline, reconnecting if any is reconnecting, else connecting, else connected. A bootstrap read that fails before any stream opens is offline with its reason; `retryConnection` reads it again.
+- Connection (`stream.ts`): `connecting → connected`, and `connected → reconnecting(attempt)` on a drop. A stream never gives up while the app is open: a daemon restarted for an update or a laptop that slept keeps reconnecting, as today's app does. Backoff doubles from 250 ms to a 15 s ceiling (today's cap) with jitter in the top half. `retry` reconnects at once; the provider calls it on `online`, on window focus and when the page becomes visible. A stream with no frame for 30 s (three heartbeats) is dropped and reopened. A reconnect after the server lost the cursor gets `stream.replay-gap`, and every store re-reads on `streamGap`. `stream.test.ts` checks that attempts past any count still reconnect.
+- `server.connection` aggregates the open streams: reconnecting if any is reconnecting, else connecting, else connected. A bootstrap read that fails before any stream opens is offline with its reason; `retryConnection` reads it again.
 
 ## Invariants
 

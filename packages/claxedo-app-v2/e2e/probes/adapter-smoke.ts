@@ -247,7 +247,7 @@ async function main() {
   const stack = await startStack({ label: "adapter-smoke" })
   const proxy = await startTcpProxy(new URL(stack.url))
   const workspace = await stack.daemon.makeWorkspace("adapter")
-  const server = createServer({ serverUrl: proxy.url, auth: { kind: "none" }, maxReconnectAttempts: 40 })
+  const server = createServer({ serverUrl: proxy.url, auth: { kind: "none" } })
   const probe: Probe = { stack, proxy, server, log: eventLog(server), workspace }
   try {
     const placement = await connectAndPlace(probe)
