@@ -1,21 +1,25 @@
 import assert from "node:assert/strict"
 import { ClaxedoApi, assistantText } from "../harness/api"
-import { activateCloudCredential, cloudSessionTransport, createCloudWorkspace, setCloudCredentialScope, waitCloudConnection, reachCloudRuntime } from "../harness/cloud-workspace"
+import { activateCloudCredential, cloudSessionTransport, cloudTransport, createCloudWorkspace, waitCloudConnection } from "../harness/cloud-workspace"
 import { startStack } from "../harness/stack"
 import { frameType, openEventStream } from "../harness/stream"
+import { sendJson } from "../harness/transport"
 
 export async function run() {
   const stack = await startStack({ label: "h19-cloud-pi", cloud: true })
   try {
-    await activateCloudCredential(stack, await setCloudCredentialScope(stack, "openai", "shared"))
+    const stored = await sendJson(cloudTransport(stack), "PUT", `${stack.url}/api/claxedo/credentials`, {
+      provider_id: "openai", kind: "api_key", source: "managed", scope: "shared", secret: "test-key",
+    }, "Storing the signed Pi account")
+    await activateCloudCredential(stack, (JSON.parse(stored) as { credential: { id: string } }).credential.id)
     const workspace = await createCloudWorkspace(stack, "h19-pi")
     const connection = await waitCloudConnection(stack, workspace.id)
     assert.equal(connection.status, 200, `Cloud connection: ${connection.body}`)
     const api = new ClaxedoApi(stack.url, cloudSessionTransport(stack, workspace.id), { reserveSessions: true })
-    const stream = await reachCloudRuntime(openEventStream(stack.url, workspace.directory, {
+    const stream = await openEventStream(stack.url, workspace.directory, {
       relayWorkspaceId: workspace.id,
       authorization: `Bearer ${stack.daemon.cloudToken}`,
-    }))
+    })
     try {
       const model = { providerId: "pi", modelId: "openai/gpt-4.1" }
       const session = await api.createSession(workspace.directory, { harness: { id: "pi", access: "native" }, model })

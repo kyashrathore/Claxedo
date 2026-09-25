@@ -72,6 +72,7 @@ async function workspaceRuntimeProxyWithOptions(
     return await proxy(c, hit, {
       sandboxManager: options.sandboxManager,
       ...(options.relayProvider ? { relayProvider: options.relayProvider } : {}),
+      ...(options.mintLocalRelayHostToken ? { mintLocalRelayHostToken: options.mintLocalRelayHostToken } : {}),
       ...(options.defaultHomeRegion ? { defaultHomeRegion: options.defaultHomeRegion } : {}),
       ...(options.resolveRelayActor ? { resolveRelayActor: options.resolveRelayActor } : {}),
       ...(options.requireRelayActor ? { requireRelayActor: true } : {}),
