@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto"
+import { prefixedRandomId } from "@claxedo/helpers"
 import { UnknownHostSubagentKeyError, type SubagentObservation } from "@claxedo/agent-runtime-contract"
 import type { ChildSessionRef } from "../../contract/broker"
 import type { BrokerPorts } from "../ports"
@@ -29,7 +30,7 @@ export class SubagentBroker {
       const admitted = this.ports.subagentAdmissionStore.admit({
         parentSessionId: sessionId,
         observation,
-        allocateKey: () => `subagent_${randomUUID()}`,
+        allocateKey: () => prefixedRandomId("subagent", "_"),
         ...(openable ? { allocateChildSessionId: () => randomUUID() } : {}),
       })
       event = admitted.event

@@ -1,17 +1,19 @@
 import fs from "node:fs/promises"
 import path from "node:path"
-import { randomUUID } from "node:crypto"
+import { errorMessage, prefixedRandomId } from "@claxedo/helpers"
 import type { PromptModel } from "@claxedo/agent-runtime-contract"
 import type {
   AttachInput, ConfigApplied, ConfigTarget, Deadline, HarnessServices, HarnessSession, HarnessTransport,
   RoutedEvent, SessionBroker, StartInput, TransportCapabilities, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
+import { attachedSessionEntry, mergeStartInput, sessionConnectionHealth } from "../../contract"
 import { piEnvironment, piProjectionArgs, preparePiProfile, selectPiProfile, type PiProfile, type PiProfileOptions } from "../../profiles/pi"
-import { PiTransportError } from "./errors"
+import { TransportError } from "../../contract/errors"
 import { piEvents } from "./events"
-import { EventQueue } from "./queue"
+import { AsyncPushQueue } from "@claxedo/helpers"
 import { PiRpc, type PiMessage } from "./rpc"
 import { answerPiDialog } from "./ui"
+import { inlineDataUrl, flattenTurnPrompt } from "../../translate/prompt"
 
 type Entry = {
   session: HarnessSession
@@ -28,20 +30,19 @@ export type PiRpcOptions = PiProfileOptions & { binary: string; runtime: string;
 function piRpcModelSelection(model: PromptModel): { provider: string; modelId: string } {
   const slash = model.modelID.indexOf("/")
   if (model.providerID !== "pi" || slash < 1 || slash === model.modelID.length - 1) {
-    throw new PiTransportError("configuration", "Pi requires a provider/model key")
+    throw new TransportError("pi", "configuration", "Pi requires a provider/model key")
   }
   return { provider: model.modelID.slice(0, slash), modelId: model.modelID.slice(slash + 1) }
 }
 
 function piRpcPromptBody(turn: TurnInput): { message: string; images?: { type: "image"; mimeType: string; data: string }[] } {
-  const text = turn.prompt.parts.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n")
   const images = turn.prompt.parts.flatMap((part) => {
     if (part.type !== "file") return []
-    const match = part.url.match(/^data:(image\/[^;]+);base64,(.+)$/s)
-    if (!match || !match[1] || !match[2]) throw new PiTransportError("configuration", "Pi attachments require inline base64 images")
-    return [{ type: "image" as const, mimeType: match[1], data: match[2] }]
+    const image = inlineDataUrl(part.url, { imageOnly: true, strictBase64: false })
+    if (!image) throw new TransportError("pi", "configuration", "Pi attachments require inline base64 images")
+    return [{ type: "image" as const, ...image }]
   })
-  return { message: [turn.system, text].filter(Boolean).join("\n\n"), ...(images.length ? { images } : {}) }
+  return { message: flattenTurnPrompt(turn, { system: "turn", separator: "\n" }), ...(images.length ? { images } : {}) }
 }
 
 function deadline(clock: HarnessServices["clock"], ms = 15_000): Deadline {
@@ -71,7 +72,7 @@ export class PiRpcTransport implements HarnessTransport {
 
   private async launch(input: StartInput, profile: PiProfile, broker?: SessionBroker, resume?: string,
     role: "harness" | "probe" = "harness"): Promise<PiRpc> {
-    if (this.disposed) throw new PiTransportError("process", "Pi transport disposed")
+    if (this.disposed) throw new TransportError("pi", "process", "Pi transport disposed")
     await preparePiProfile(profile, input.model)
     const args = ["--mode", "rpc", "--session-dir", profile.sessionDir, ...piProjectionArgs(input.projection), ...this.options.args ?? []]
     if (resume) args.push("--session", resume)
@@ -82,7 +83,7 @@ export class PiRpcTransport implements HarnessTransport {
     { role, label: "Pi RPC", sessionId: input.sessionId })
     const rpc = new PiRpc(owned, this.services.clock, (event) => {
       if (broker) void broker.publish(event).catch((error: unknown) =>
-        this.services.log.error("Pi RPC diagnostic publication failed", { error: String(error) }))
+        this.services.log.error("Pi RPC diagnostic publication failed", { error: errorMessage(error) }))
       else this.services.log.warn(event.diagnostic.message, { code: event.diagnostic.code, raw: event.diagnostic.raw })
     })
     try { await rpc.request("get_state"); return rpc }
@@ -93,7 +94,7 @@ export class PiRpcTransport implements HarnessTransport {
     const state = await rpc.request("get_state")
     if (!state || typeof state !== "object" || !("sessionId" in state) || typeof state.sessionId !== "string") {
       await rpc.retire(deadline(this.services.clock))
-      throw new PiTransportError("protocol", "Pi did not return a session id")
+      throw new TransportError("pi", "protocol", "Pi did not return a session id")
     }
     const binding = { sessionId: input.sessionId, workspaceId: input.workspaceId, directory: input.directory,
       connectionId: "pi-rpc", upstreamSessionId: state.sessionId }
@@ -105,7 +106,7 @@ export class PiRpcTransport implements HarnessTransport {
   private async sessionFile(profile: PiProfile, upstreamSessionId: string): Promise<string> {
     const files = await fs.readdir(profile.sessionDir)
     const file = files.find((name) => name.endsWith(`_${upstreamSessionId}.jsonl`))
-    if (!file) throw new PiTransportError("session", "Pi session file is missing")
+    if (!file) throw new TransportError("pi", "session", "Pi session file is missing")
     return path.join(profile.sessionDir, file)
   }
 
@@ -129,7 +130,7 @@ export class PiRpcTransport implements HarnessTransport {
     if (session.binding.upstreamSessionId !== input.binding.upstreamSessionId) {
       this.entries.delete(input.sessionId)
       await rpc.retire(deadline(this.services.clock))
-      throw new PiTransportError("session", "Pi resumed a different session")
+      throw new TransportError("pi", "session", "Pi resumed a different session")
     }
     try { await broker.rebind(session.binding.upstreamSessionId) }
     catch (error) {
@@ -141,14 +142,10 @@ export class PiRpcTransport implements HarnessTransport {
   }
 
   private entry(session: HarnessSession): Entry {
-    const entry = this.entries.get(session.binding.sessionId)
-    if (!entry || entry.session.binding.upstreamSessionId !== session.binding.upstreamSessionId) {
-      throw new PiTransportError("session", "Pi session is not attached")
-    }
-    return entry
+    return attachedSessionEntry(this.entries, session, () => new TransportError("pi", "session", "Pi session is not attached"))
   }
 
-  private receiveTurn(entry: Entry, broker: TurnBroker, queue: EventQueue<RoutedEvent>, pending: Set<Promise<void>>): () => void {
+  private receiveTurn(entry: Entry, broker: TurnBroker, queue: AsyncPushQueue<RoutedEvent>, pending: Set<Promise<void>>): () => void {
     const translate = piEvents(entry.session.binding.sessionId)
     return entry.rpc.onEvent((message: PiMessage) => {
       try {
@@ -165,19 +162,19 @@ export class PiRpcTransport implements HarnessTransport {
 
   async *send(session: HarnessSession, turn: TurnInput, broker: TurnBroker): AsyncIterable<RoutedEvent> {
     const entry = this.entry(session)
-    if (entry.busy) throw new PiTransportError("session", "Pi turn already active")
+    if (entry.busy) throw new TransportError("pi", "session", "Pi turn already active")
     entry.busy = true
     entry.settled = false
-    const queue = new EventQueue<RoutedEvent>()
+    const queue = new AsyncPushQueue<RoutedEvent>()
     const pending = new Set<Promise<void>>()
     const remove = this.receiveTurn(entry, broker, queue, pending)
     const removeFailure = entry.rpc.onFailure((error) => queue.fail(error))
     const onAbort = () => { void this.cancel(session, { turnId: turn.turnId, assistantMessageId: turn.assistantMessageId }, deadline(this.services.clock)).then(
-      (result) => { if (result.error) queue.fail(new PiTransportError("process", result.error.message)) },
+      (result) => { if (result.error) queue.fail(new TransportError("pi", "process", result.error.message)) },
       (error: unknown) => queue.fail(error),
     ) }
     broker.signal.addEventListener("abort", onAbort, { once: true })
-    void entry.rpc.process.exited.then(() => queue.fail(new PiTransportError("process", "Pi exited during turn")))
+    void entry.rpc.process.exited.then(() => queue.fail(new TransportError("pi", "process", "Pi exited during turn")))
     try {
       if (turn.model) await entry.rpc.request("set_model", piRpcModelSelection(turn.model))
       if (turn.effort) await entry.rpc.request("set_thinking_level", { level: turn.effort })
@@ -210,7 +207,7 @@ export class PiRpcTransport implements HarnessTransport {
       return { execution: entry.settled ? "terminal" as const : "unknown" as const, cleanup: "unknown" as const }
     } catch (error) {
       return { execution: "unknown" as const, cleanup: "owned" as const,
-        error: { code: "provider_unreachable" as const, message: String(error) } }
+        error: { code: "provider_unreachable" as const, message: errorMessage(error) } }
     }
   }
 
@@ -218,9 +215,7 @@ export class PiRpcTransport implements HarnessTransport {
     const entry = this.entry(session)
     if (!update.credentials && !update.projection) return { state: "applied" }
     if (entry.busy) return { state: "refused", reason: "Cannot reconfigure Pi during an active turn" }
-    const start = { ...entry.start,
-      ...(update.credentials ? { credentials: update.credentials } : {}),
-      ...(update.projection ? { projection: update.projection } : {}) }
+    const start = mergeStartInput(entry.start, update)
     const profile = selectPiProfile(start.owner, start.credentials, start.directory, start.sessionId, this.options, entry.profile.kind)
     await preparePiProfile(profile, start.model)
     await entry.rpc.retire(deadline(this.services.clock))
@@ -228,7 +223,7 @@ export class PiRpcTransport implements HarnessTransport {
     const state = await rpc.request("get_state")
     if (!state || typeof state !== "object" || !("sessionId" in state) || state.sessionId !== entry.session.binding.upstreamSessionId) {
       await rpc.retire(deadline(this.services.clock))
-      throw new PiTransportError("session", "Pi resumed a different session after credential change")
+      throw new TransportError("pi", "session", "Pi resumed a different session after credential change")
     }
     entry.rpc = rpc
     entry.profile = profile
@@ -260,7 +255,7 @@ export class PiRpcTransport implements HarnessTransport {
   readonly commands = {
     list: async (target: ConfigTarget) => {
       if ("session" in target) return this.commandList(this.entry(target.session).rpc)
-      const input: StartInput = { ...target.draft, sessionId: `probe-${randomUUID()}` }
+      const input: StartInput = { ...target.draft, sessionId: prefixedRandomId("probe", "-") }
       const profile = selectPiProfile(input.owner, input.credentials, input.directory, input.sessionId, this.options)
       const rpc = await this.launch(input, profile, undefined, undefined, "probe")
       try { return await this.commandList(rpc) }
@@ -271,11 +266,11 @@ export class PiRpcTransport implements HarnessTransport {
   private async commandList(rpc: PiRpc) {
     const result = await rpc.request("get_commands")
     if (!result || typeof result !== "object" || !("commands" in result) || !Array.isArray(result.commands)) {
-      throw new PiTransportError("protocol", "Pi returned an invalid command list")
+      throw new TransportError("pi", "protocol", "Pi returned an invalid command list")
     }
     return result.commands.map((value: unknown) => {
       if (!value || typeof value !== "object" || !("name" in value) || typeof value.name !== "string") {
-        throw new PiTransportError("protocol", "Pi command has no name")
+        throw new TransportError("pi", "protocol", "Pi command has no name")
       }
       return { name: value.name, description: "description" in value && typeof value.description === "string" ? value.description : undefined }
     })
@@ -286,7 +281,7 @@ export class PiRpcTransport implements HarnessTransport {
   } }
 
   readonly health = {
-    connection: (_directory: string, sessionId?: string) => ({ state: sessionId && !this.entries.has(sessionId) ? "disconnected" as const : "ready" as const, processes: [] }),
+    connection: (_directory: string, sessionId?: string) => sessionConnectionHealth(sessionId, (id) => this.entries.has(id), "disconnected"),
     runtime: (_directory: string, sessionId?: string) => {
       const entry = sessionId ? this.entries.get(sessionId) : [...this.entries.values()][0]
       return { status: !entry || entry.rpc.alive ? "ok" as const : "degraded" as const }

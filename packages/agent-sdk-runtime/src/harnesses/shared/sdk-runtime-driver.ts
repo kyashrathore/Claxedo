@@ -18,7 +18,7 @@ import type { RuntimeAppendSource } from "./turn-projection"
 import type { SessionTurnLifecycle } from "./turn-lifecycle"
 import type { TurnStopRecord } from "./cancellation-facts"
 import type { OutsideTurnUsage } from "./outside-turn-usage"
-import type { RequestDeadline } from "@claxedo/process-ownership/launch"
+import type { RequestDeadline } from "@claxedo/helpers"
 
 export type SdkRuntimeRunnerType = NativeSdkHarnessId
 export type SdkRuntimeStore = AgentRuntimeStoreCore

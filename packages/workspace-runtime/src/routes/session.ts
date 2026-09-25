@@ -15,7 +15,7 @@ import {
 } from "@claxedo/agent-sdk-runtime/adapters"
 import type { AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
 import { workspaceRuntimeBus } from "../bus"
-import { errorMessage } from "../error-message"
+import { errorMessage } from "@claxedo/helpers"
 import { rec, str } from "../json-value"
 import { createRuntimeEventHub, type RuntimeEventHub } from "../runtime-event-hub"
 import { assertTarget, registeredWorkspaceDirectory, workspaceId } from "../target"

@@ -33,7 +33,7 @@ export function errorMessage(err: unknown, fallback?: string): string {
       // properties are non-enumerable — so that case belongs to the fallback.
       if (typeof encoded === "string" && encoded !== "{}") return encoded
     } catch {
-      // Circular or BigInt payloads fall through to the caller's fallback.
+      if (obj && fallback === undefined) return `{${Object.keys(obj).join(", ")}}`
     }
   }
   if (typeof err === "string" && err.length > 0) return err

@@ -1,4 +1,5 @@
 import { UnknownHostSubagentKeyError, type AgentSessionStartBinding, type SubagentObservation } from "@claxedo/agent-runtime-contract"
+import { errorMessage } from "@claxedo/helpers"
 import type { AgentRuntimeEvent, SubagentUpdatedEvent } from "@claxedo/agent-event-runtime/contracts"
 import type { PendingRequest, RequestAnswer } from "../../contract/broker"
 import type { BrokerEvent, BrokerPorts, SubagentAdmissionStore, TurnAuthority } from "../../broker/ports"
@@ -133,7 +134,7 @@ export class MemoryPorts implements BrokerPorts {
     this.providerTurn = controller
     const settled = Promise.resolve().then(() => run("t1", controller.signal)).then(
       () => controller.signal.aborted ? { state: "cancelled" as const } : { state: "completed" as const },
-      (error: unknown) => controller.signal.aborted ? { state: "cancelled" as const } : { state: "failed" as const, error: String(error) },
+      (error: unknown) => controller.signal.aborted ? { state: "cancelled" as const } : { state: "failed" as const, error: errorMessage(error) },
     )
     return { admitted: true as const, turnId: "t1", settled }
   }

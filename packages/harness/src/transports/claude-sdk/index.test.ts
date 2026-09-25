@@ -13,6 +13,6 @@ test("a reconstructed binding attaches to the same Claude session without object
   const reconstructed = JSON.parse(JSON.stringify(session)) as typeof session
   expect(await transport.config.read(reconstructed)).toEqual(input.config)
   await expect(transport.config.read({ ...reconstructed, binding: { ...reconstructed.binding, workspaceId: "other" } }))
-    .rejects.toMatchObject({ kind: "session" })
+    .rejects.toMatchObject({ transport: "claude", code: "session" })
   await transport.close(session)
 })

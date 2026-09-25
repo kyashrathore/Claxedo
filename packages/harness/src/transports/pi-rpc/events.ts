@@ -4,6 +4,7 @@ import type { RoutedEvent } from "../../contract"
 import type { PiMessage } from "./rpc"
 import { piUiEvent } from "./ui"
 import { unrecognizedEvent } from "../../translate/unrecognized"
+import { routedIngest } from "../../translate/ingest"
 
 function recognized(type: string): boolean {
   switch (type) {
@@ -26,7 +27,6 @@ export function piEvents(sessionId: string) {
       return [{ event: unrecognizedEvent("pi.rpc", `extension_ui.${String(message.method)}`, message) }]
     }
     if (!recognized(message.type)) return [{ event: unrecognizedEvent("pi.rpc", message.type, message) }]
-    const result = runtime.ingest({ source: "pi.rpc", method: message.type, payload: message })
-    return result.events.map((event) => ({ event, source: { dir: "in" as const, method: message.type } }))
+    return routedIngest(runtime, { source: "pi.rpc", method: message.type, payload: message }, { method: message.type })
   }
 }

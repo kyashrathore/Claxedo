@@ -9,7 +9,9 @@ function fixture(retire: () => Promise<RetireOutcome> = async () => ({ stopped: 
   const stderr = new PassThrough()
   let exit!: (status: ExitStatus) => void
   const exited = new Promise<ExitStatus>((resolve) => { exit = resolve })
-  const process: OwnedProcess = { pid: 42, stdin, stdout, stderr, exited, retire }
+  let retirement: Promise<RetireOutcome> | undefined
+  const process: OwnedProcess = { pid: 5_000_000, stdin, stdout, stderr, exited,
+    retire: () => retirement ??= retire() }
   const clock: Clock = { now: Date.now, setTimeout: (callback, ms) => setTimeout(callback, ms),
     clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>) }
   const diagnostics: ReturnType<typeof import("../../translate/unrecognized").unrecognizedEvent>[] = []
@@ -76,15 +78,13 @@ describe("Pi RPC wire", () => {
     expect(f.rpc.exited).toBe(true)
   })
 
-  test("retries an unsettled retirement until the owned process stops", async () => {
+  test("returns the first unsettled retirement result on later calls", async () => {
     let attempts = 0
-    const f = fixture(async () => ++attempts === 1
-      ? { stopped: false, error: { code: "still-running", message: "Descendant alive" } }
-      : { stopped: true })
+    const f = fixture(async () => { attempts++; return { stopped: false, error: { code: "still-running", message: "Descendant alive" } } })
     const deadline = { at: Date.now() + 1_000, signal: new AbortController().signal }
     await expect(f.rpc.retire(deadline)).rejects.toThrow("Descendant alive")
-    await f.rpc.retire(deadline)
-    expect(attempts).toBe(2)
+    await expect(f.rpc.retire(deadline)).rejects.toThrow("Descendant alive")
+    expect(attempts).toBe(1)
     f.exit({ code: 0, signal: null })
   })
 })

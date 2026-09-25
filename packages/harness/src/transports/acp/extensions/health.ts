@@ -1,6 +1,8 @@
+import { sessionConnectionHealth, sessionRuntimeHealth } from "../../../contract"
+
 export function acpHealthOperations(hasSession: (sessionId: string) => boolean) {
   return {
-    connection: (_directory: string, sessionId?: string) => ({ state: sessionId && !hasSession(sessionId) ? "disconnected" as const : "ready" as const, processes: [] }),
-    runtime: (_directory: string, sessionId?: string) => ({ status: sessionId && !hasSession(sessionId) ? "unavailable" as const : "ok" as const }),
+    connection: (_directory: string, sessionId?: string) => sessionConnectionHealth(sessionId, hasSession, "disconnected"),
+    runtime: (_directory: string, sessionId?: string) => sessionRuntimeHealth(sessionId, hasSession),
   }
 }

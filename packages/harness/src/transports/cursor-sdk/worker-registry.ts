@@ -1,9 +1,11 @@
 import { MessageChannel, Worker, type MessagePort } from "node:worker_threads"
-import { CursorTransportError } from "./errors"
+import { TransportError } from "../../contract/errors"
+import { stringRecord } from "@claxedo/helpers"
 import type { WorkerReply, WorkerRequest } from "./protocol"
+import { PendingRpcRequests } from "../../rpc/pending"
 
 export function cursorWorkerEnvironment(base: NodeJS.ProcessEnv, backendUrl?: string): Record<string, string> {
-  const env = Object.fromEntries(Object.entries(base).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
+  const env = stringRecord(base)
   if (backendUrl !== undefined) {
     env.CURSOR_BACKEND_URL = backendUrl
     delete env.CURSOR_API_KEY
@@ -11,14 +13,12 @@ export function cursorWorkerEnvironment(base: NodeJS.ProcessEnv, backendUrl?: st
   return env
 }
 
-type Pending = { resolve(reply: WorkerReply): void; reject(error: unknown): void; onEvent?(reply: WorkerReply): void }
-
 export class CursorWorker {
   private readonly worker: Worker
   private readonly port: MessagePort
-  private readonly pending = new Map<number, Pending>()
+  private readonly pending = new PendingRpcRequests<number, ((reply: WorkerReply) => void) | undefined, WorkerReply>()
   private nextId = 0
-  private failure?: CursorTransportError
+  private failure?: TransportError
 
   constructor(baseEnv: NodeJS.ProcessEnv, backendUrl?: string) {
     const { port1, port2 } = new MessageChannel()
@@ -27,40 +27,35 @@ export class CursorWorker {
     this.worker = new Worker(source, { workerData: { port: port2 }, transferList: [port2],
       env: cursorWorkerEnvironment(baseEnv, backendUrl) })
     port1.on("message", (reply: WorkerReply) => this.receive(reply))
-    this.worker.on("error", (cause) => this.fail(new CursorTransportError("worker", "Cursor SDK worker crashed", cause)))
-    this.worker.on("exit", (code) => this.fail(new CursorTransportError("worker", `Cursor SDK worker exited with code ${code}`)))
+    this.worker.on("error", (cause) => this.fail(new TransportError("cursor", "worker", "Cursor SDK worker crashed", { cause })))
+    this.worker.on("exit", (code) => this.fail(new TransportError("cursor", "worker", `Cursor SDK worker exited with code ${code}`)))
   }
 
   get failed() { return this.failure !== undefined }
 
   private receive(reply: WorkerReply) {
-    const pending = this.pending.get(reply.id)
-    if (!pending) return
-    if (reply.kind === "event") { pending.onEvent?.(reply); return }
-    this.pending.delete(reply.id)
-    if (reply.kind === "error") pending.reject(new CursorTransportError("sdk", reply.message))
-    else pending.resolve(reply)
+    const onEvent = this.pending.get(reply.id)
+    if (reply.kind === "event") { onEvent?.(reply); return }
+    if (reply.kind === "error") this.pending.reject(reply.id, new TransportError("cursor", "sdk", reply.message))
+    else this.pending.resolve(reply.id, reply)
   }
 
-  private fail(error: CursorTransportError) {
+  private fail(error: TransportError) {
     if (this.failure) return
     this.failure = error
     this.port.close()
-    for (const pending of this.pending.values()) pending.reject(error)
-    this.pending.clear()
+    this.pending.fail(error)
   }
 
   call(command: WorkerRequest, onEvent?: (reply: WorkerReply) => void): Promise<WorkerReply> {
     if (this.failure) return Promise.reject(this.failure)
     const id = ++this.nextId
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject, onEvent })
-      this.port.postMessage({ ...command, id })
-    })
+    return this.pending.request(id, onEvent, undefined, () => new TransportError("cursor", "worker", "Cursor worker did not answer"),
+      () => this.port.postMessage({ ...command, id }))
   }
 
   async retire(): Promise<void> {
-    this.fail(new CursorTransportError("worker", "Cursor SDK worker retired"))
+    this.fail(new TransportError("cursor", "worker", "Cursor SDK worker retired"))
     this.port.close()
     await this.worker.terminate()
   }

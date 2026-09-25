@@ -1,5 +1,7 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { realPathAllowingMissing } from "@claxedo/helpers/real-path"
+import { errorMessage } from "@claxedo/helpers"
 
 export class WorkspaceScopeError extends Error {
   readonly code = "opencode_workspace_scope_invalid"
@@ -30,14 +32,17 @@ export class WorkspaceScope {
 
     let directory: string
     try {
-      directory = fs.realpathSync(input.directory)
+      directory = realPathAllowingMissing(input.directory)
     } catch (cause) {
       throw new WorkspaceScopeError(
-        `Workspace directory ${input.directory} could not be resolved: ${cause instanceof Error ? cause.message : String(cause)}`,
+        `Workspace directory ${input.directory} could not be resolved: ${errorMessage(cause)}`,
       )
     }
 
-    if (!fs.statSync(directory).isDirectory()) {
+    let isDirectory: boolean
+    try { isDirectory = fs.statSync(directory).isDirectory() }
+    catch (cause) { throw new WorkspaceScopeError(`Workspace directory ${input.directory} could not be resolved: ${errorMessage(cause)}`) }
+    if (!isDirectory) {
       throw new WorkspaceScopeError(`Workspace path ${directory} is not a directory`)
     }
 
@@ -53,12 +58,7 @@ export function assertLocationInScope(scope: WorkspaceScope, directory: string |
   if (!directory) {
     throw new WorkspaceScopeError("OpenCode returned a record with no location; refusing to attribute it to a workspace")
   }
-  let resolved: string
-  try {
-    resolved = fs.realpathSync(directory)
-  } catch {
-    resolved = path.resolve(directory)
-  }
+  const resolved = realPathAllowingMissing(directory)
   if (resolved !== scope.directory) {
     throw new WorkspaceScopeError("OpenCode record belongs to a different workspace than the authorized scope")
   }

@@ -1,3 +1,5 @@
+import { settleAtRequestDeadline } from "@claxedo/helpers"
+import type { RequestDeadline } from "@claxedo/helpers"
 import { isRecord } from "@claxedo/agent-runtime-contract"
 import type { ChildProcess } from "node:child_process"
 import { randomUUID } from "node:crypto"
@@ -6,10 +8,9 @@ import { observeAgentProcess, type AgentProcessObserver, type AgentProcessObserv
 import { piCommand } from "./executable"
 import {
   launchOwnedProcess,
-  settleAtRequestDeadline,
+  deadlineExceeded,
   type LaunchOwnershipStore,
   type OwnedLaunch,
-  type RequestDeadline,
   type RetirementResult,
 } from "@claxedo/process-ownership/launch"
 
@@ -153,7 +154,7 @@ export class PiRpcProcess {
       this.pending.set(id, { resolve, reject })
       this.send({ ...body, type, id })
     })
-    return settleAtRequestDeadline(`Pi ${type}`, deadline, answer, () => this.pending.delete(id))
+    return settleAtRequestDeadline(`Pi ${type}`, deadline, answer, () => this.pending.delete(id), deadlineExceeded)
   }
   private receive(message: PiRpcMessage) {
     if (message.type === "response" && typeof message.id === "string") {

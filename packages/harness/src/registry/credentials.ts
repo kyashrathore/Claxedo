@@ -1,6 +1,7 @@
 import type { ProviderProjection } from "@claxedo/agent-runtime-contract"
 import type { ResolvedCredentials } from "../contract/projection"
 import type { TurnActor } from "../contract/session"
+import { ownerMayUseMachineLogin } from "../contract/credentials"
 
 export type RuntimePlacement = "desktop" | "loopback" | "self-hosted" | "cloud"
 export type CredentialProfile = "owner-login" | "brokered"
@@ -15,15 +16,13 @@ export type CredentialSelectionInput = {
   placement: RuntimePlacement
   machineOwnerUserId: string
   canUseOwnLogin: boolean
-  profile:
-    | { kind: "pi-rpc"; ownerLogin: ResolvedCredentials; brokeredCredentials: ResolvedCredentials }
-    | {
-        kind: "providers"
-        providerIds: readonly string[]
-        selectedAccounts: Readonly<Record<string, Readonly<Record<string, SelectedAccount>>>>
-        machineCredentials: Readonly<Record<string, SelectedAccount>>
-        leaseGeneration: string
-      }
+  profile: {
+    kind: "providers"
+    providerIds: readonly string[]
+    selectedAccounts: Readonly<Record<string, Readonly<Record<string, SelectedAccount>>>>
+    machineCredentials: Readonly<Record<string, SelectedAccount>>
+    leaseGeneration: string
+  }
 }
 
 export class CredentialSelectionError extends Error {
@@ -43,18 +42,9 @@ function addCredentialSecrets(target: Record<string, string>, source: Readonly<R
   }
 }
 
-function ownerCanUseMachineLogin(input: CredentialSelectionInput): boolean {
-  const owner = input.owner
-  const isMachineOwner = owner.kind === "machine-owner" || owner.userId === input.machineOwnerUserId
-  return isMachineOwner && input.canUseOwnLogin && (input.placement === "desktop" || input.placement === "loopback")
-}
-
 export function selectSessionCredentials(input: CredentialSelectionInput): ResolvedCredentials {
   const profile = input.profile
-  const ownerLocal = ownerCanUseMachineLogin(input)
-  if (profile.kind === "pi-rpc") {
-    return ownerLocal ? profile.ownerLogin : profile.brokeredCredentials
-  }
+  const ownerLocal = ownerMayUseMachineLogin(input.owner, input)
 
   const owner = input.owner
   const userId = owner.kind === "machine-owner" ? input.machineOwnerUserId : owner.userId

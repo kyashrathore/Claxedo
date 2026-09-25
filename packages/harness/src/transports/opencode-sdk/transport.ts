@@ -4,12 +4,15 @@ import type { AttachInput, ConfigApplied, ConfigTarget, HarnessServices, Harness
 import { openCodeLaunchDocument } from "../../profiles/opencode/index.js"
 import { openCodeCapabilities } from "./capabilities.js"
 import { providerOverlays } from "./credentials.js"
-import { OpenCodeOwnerMismatchError, OpenCodeTransportError } from "./errors.js"
+import { OpenCodeOwnerMismatchError } from "./errors.js"
+import { TransportError } from "../../contract/errors.js"
 import { firstPartyTools } from "./first-party-tools.js"
 import { eventAssistantMessageID, eventSessionID, terminal } from "./translate/event.js"
 import { createOpenCodeRuntime, type OpenCodeRuntime, type OpenCodeRuntimeOptions } from "./runtime.js"
 import { WorkspaceScope } from "./scope.js"
 import { promptRequest, runOpenCodeTurn } from "./turn.js"
+import { errorMessage, settleAtRequestDeadline } from "@claxedo/helpers"
+import { attachedSessionEntry, mergeStartInput, sessionConnectionHealth, sessionMcpServers } from "../../contract"
 
 type Entry = { session: HarnessSession; start: StartInput; broker: SessionBroker; scope: WorkspaceScope;
   upstream: string; active: boolean; assistantMessageID?: string }
@@ -31,7 +34,7 @@ export class OpenCodeSdkTransport implements HarnessTransport {
   }
 
   private assertOwner(owner: StartInput["owner"]): void {
-    if (this.disposed) throw new OpenCodeTransportError("engine", "OpenCode transport is disposed")
+    if (this.disposed) throw new TransportError("opencode", "engine", "OpenCode transport is disposed")
     const key = this.ownerKey(owner)
     if (this.owner !== undefined && this.owner !== key) throw new OpenCodeOwnerMismatchError()
     this.owner = key
@@ -42,18 +45,18 @@ export class OpenCodeSdkTransport implements HarnessTransport {
   }
 
   private entry(session: HarnessSession): Entry {
-    const entry = this.entries.get(session.binding.sessionId)
-    if (!entry || entry.session.binding.upstreamSessionId !== session.binding.upstreamSessionId ||
-      entry.start.workspaceId !== session.binding.workspaceId) throw new OpenCodeTransportError("session", "OpenCode session is not attached")
-    return entry
+    return attachedSessionEntry(this.entries, session, () => new TransportError("opencode", "session", "OpenCode session is not attached"),
+      (entry, current) => entry.start.workspaceId === current.binding.workspaceId)
   }
 
   private async applyProjection(input: StartInput, scope: WorkspaceScope): Promise<void> {
-    const document = openCodeLaunchDocument(input.projection)
+    const servers = sessionMcpServers(input, this.services, { includeFirstParty: false,
+      duplicate: (name) => new Error(`OpenCode MCP server ${name} has conflicting owners`) })
+    const document = openCodeLaunchDocument(input.projection, servers)
     const content = JSON.stringify(document)
     const current = this.documents.get(scope.directory)
     if (current && current.content !== content && [...current.users].some((id) => id !== input.sessionId)) {
-      throw new OpenCodeTransportError("configuration", "OpenCode sessions in one directory require one MCP and skill catalog")
+      throw new TransportError("opencode", "configuration", "OpenCode sessions in one directory require one MCP and skill catalog")
     }
     const store = await this.runtime.launch(scope)
     await store.write(document)
@@ -67,7 +70,7 @@ export class OpenCodeSdkTransport implements HarnessTransport {
     await this.applyProjection(input, scope)
     const row = upstream ? await this.runtime.sessions.get(scope, upstream)
       : await this.runtime.sessions.create(scope, input.title ? { title: input.title } : {})
-    if (upstream && row.id !== upstream) throw new OpenCodeTransportError("session", "OpenCode attached a different session")
+    if (upstream && row.id !== upstream) throw new TransportError("opencode", "session", "OpenCode attached a different session")
     const session: HarnessSession = { directory: scope.directory, locality: input.locality,
       binding: { sessionId: input.sessionId, workspaceId: input.workspaceId, directory: scope.directory,
         connectionId: "opencode-sdk", upstreamSessionId: row.id } }
@@ -87,7 +90,7 @@ export class OpenCodeSdkTransport implements HarnessTransport {
   start(input: StartInput, broker: SessionBroker): Promise<HarnessSession> { return this.open(input, broker) }
   attach(input: AttachInput, broker: SessionBroker): Promise<HarnessSession> {
     if (input.binding.sessionId !== input.sessionId || input.binding.workspaceId !== input.workspaceId) {
-      throw new OpenCodeTransportError("session", "OpenCode attachment binding does not match the session")
+      throw new TransportError("opencode", "session", "OpenCode attachment binding does not match the session")
     }
     return this.open(input, broker, input.binding.upstreamSessionId)
   }
@@ -114,21 +117,20 @@ export class OpenCodeSdkTransport implements HarnessTransport {
       if (!id || !expected) finish("uncorrelated")
       else if (id === expected) finish("terminal")
     })
-    const timer = setTimeout(() => finish("deadline"), Math.max(0, deadline.at - Date.now()))
-    const onAbort = () => finish("deadline")
-    deadline.signal.addEventListener("abort", onAbort, { once: true })
     try {
       try { await this.runtime.sessions.interrupt(entry.scope, session.binding.upstreamSessionId) }
       catch (cause) {
         return { execution: "unknown" as const, cleanup: "unknown" as const,
-          error: { code: "provider_unreachable" as const, message: `OpenCode refused the interrupt: ${String(cause)}` } }
+          error: { code: "provider_unreachable" as const, message: `OpenCode refused the interrupt: ${errorMessage(cause)}` } }
       }
-      const state = await settled
+      let state: "terminal" | "uncorrelated" | "deadline"
+      try {
+        state = await settleAtRequestDeadline("OpenCode interrupt", { deadlineAt: deadline.at, signal: deadline.signal },
+          settled, unsubscribe, () => new TransportError("opencode", "engine", "OpenCode interrupt deadline expired"))
+      } catch { state = "deadline" }
       return { execution: state === "terminal" ? "terminal" as const : state === "deadline" ? "running" as const : "unknown" as const,
         cleanup: "unknown" as const }
     } finally {
-      clearTimeout(timer)
-      deadline.signal.removeEventListener("abort", onAbort)
       unsubscribe()
     }
   }
@@ -146,8 +148,7 @@ export class OpenCodeSdkTransport implements HarnessTransport {
     const entry = this.entry(session)
     this.assertOwner(entry.start.owner)
     if (update.credentials) await this.runtime.bindProviders(providerOverlays(update.credentials))
-    const next = { ...entry.start, ...(update.credentials ? { credentials: update.credentials } : {}),
-      ...(update.projection ? { projection: update.projection } : {}) }
+    const next = mergeStartInput(entry.start, update)
     if (update.projection) await this.applyProjection(next, entry.scope)
     entry.start = next
     return { state: "applied" }
@@ -155,7 +156,7 @@ export class OpenCodeSdkTransport implements HarnessTransport {
 
   async close(session: HarnessSession): Promise<void> {
     const entry = this.entry(session)
-    if (entry.active) throw new OpenCodeTransportError("session", "OpenCode session has an active turn")
+    if (entry.active) throw new TransportError("opencode", "session", "OpenCode session has an active turn")
     await this.runtime.tools.unregisterSession(session.binding.upstreamSessionId)
     this.entries.delete(session.binding.sessionId)
     const document = this.documents.get(entry.scope.directory)
@@ -228,11 +229,11 @@ export class OpenCodeSdkTransport implements HarnessTransport {
         ({ id: `${model.providerID}/${model.id}`, name: model.name ?? model.id })) }]
     },
     permissionModes: async () => ({ modes: [], unsupported: "OpenCode does not expose a session permission mode", appliesFrom: "next-turn" as const }),
-    setPermissionMode: async () => { throw new OpenCodeTransportError("configuration", "OpenCode does not expose a session permission mode") },
+    setPermissionMode: async () => { throw new TransportError("opencode", "configuration", "OpenCode does not expose a session permission mode") },
   }
 
   readonly health = {
-    connection: (_directory: string, sessionId?: string) => ({ state: sessionId && !this.entries.has(sessionId) ? "configured" as const : "ready" as const, processes: [] }),
+    connection: (_directory: string, sessionId?: string) => sessionConnectionHealth(sessionId, (id) => this.entries.has(id), "configured"),
     runtime: () => {
       const status = this.runtime.host.status()
       return { status: status.lifecycle === "closed" || status.lifecycle === "unavailable" ? "unavailable" as const
