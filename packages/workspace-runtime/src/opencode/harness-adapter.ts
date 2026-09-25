@@ -1,18 +1,19 @@
+import { eventSessionID, eventAssistantMessageID, terminal, projectTurnEvent } from "@claxedo/harness/opencode-sdk/translate/event"
 import type { AdapterCancelOutcome } from "@claxedo/agent-runtime-contract"
 import type { SessionConfig, SessionConfigUpdate } from "@claxedo/agent-runtime-contract"
-import type { OpenCodeLaunchDocument } from "./launch-policy"
+import type { OpenCodeLaunchDocument } from "@claxedo/harness/opencode-sdk/launch-policy"
 import type { AgentAgent, AgentCommand, AgentContentPart, AgentMessage, AgentPermission, AgentQuestion, AgentRuntimeStreamEvent, AgentSession, PromptInput } from "@claxedo/agent-sdk-runtime"
 import type { AgentHarnessAdapter, AgentMessagePage, AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/adapters"
 import { harnessCapabilities } from "@claxedo/agent-sdk-runtime/capabilities"
 import { NO_HARNESS_EFFORT, ProviderCredentialUnavailableError } from "@claxedo/agent-sdk-runtime"
 import type { AgentExecutionBinding, AgentQuestionAnswer } from "@claxedo/agent-runtime-contract"
-import { asRecord, asRecordOrEmpty } from "@claxedo/helpers/guards"
-import type { Mcp } from "@opencode-ai/plugin"
-import type { OpenCodeRuntime } from "./runtime"
-import { WorkspaceScope } from "./scope"
-import type { ProjectedEvent } from "./event-pump"
-import { openCodePartId, type SessionMessage, type SessionSummary } from "./session-port"
-import { createTurnUsage, readSessionTotal } from "./turn-usage"
+import { asArray, asRecordOrEmpty, isNonEmptyString } from "@claxedo/helpers/guards"
+import { projectMcpServers } from "@claxedo/harness/opencode-sdk/mcp-projection"
+import type { OpenCodeRuntime } from "@claxedo/harness/opencode-sdk/runtime"
+import { WorkspaceScope } from "@claxedo/harness/opencode-sdk/scope"
+import type { ProjectedEvent } from "@claxedo/harness/opencode-sdk/event-pump"
+import { openCodePartId, type SessionMessage, type SessionSummary } from "@claxedo/harness/opencode-sdk/session-port"
+import { createTurnUsage, readSessionTotal } from "@claxedo/harness/opencode-sdk/translate/turn-usage"
 import { errorMessage } from "../error-message"
 import { rec, str } from "../json-value"
 
@@ -96,73 +97,6 @@ function record(input: unknown): Record<string, unknown> {
   return rec(input) ?? {}
 }
 
-function stringList(input: unknown): string[] {
-  return Array.isArray(input) ? input.filter((value): value is string => typeof value === "string" && value.length > 0) : []
-}
-
-function stringRecord(input: unknown): Record<string, string> | undefined {
-  const row = asRecordOrEmpty(input)
-  const entries = Object.entries(row).filter((entry): entry is [string, string] => typeof entry[1] === "string")
-  return entries.length === Object.keys(row).length && entries.length > 0 ? Object.fromEntries(entries) : undefined
-}
-
-/**
- * The runtime snapshot's MCP servers (`type: "stdio" | "remote"`, the
- * `UserMcpServer` shape every harness receives) in the SDK's own config
- * shape. A snapshot entry of neither type is a contract violation, not a
- * server to skip silently.
- */
-function snapshotMcpServers(input: Record<string, unknown>): Record<string, Mcp.ServerConfig> {
-  const servers: Record<string, Mcp.ServerConfig> = {}
-  for (const [name, value] of Object.entries(input)) {
-    const row = asRecordOrEmpty(value)
-    const disabled = row.disabled === true ? { disabled: true } : {}
-    const environment = stringRecord(row.env)
-    const headers = stringRecord(row.headers)
-    if (row.type === "stdio" && typeof row.command === "string" && row.command.length > 0) {
-      servers[name] = { type: "local", command: [row.command, ...stringList(row.args)], ...(environment ? { environment } : {}), ...disabled }
-      continue
-    }
-    if (row.type === "remote" && typeof row.url === "string" && row.url.length > 0) {
-      servers[name] = { type: "remote", url: row.url, ...(headers ? { headers } : {}), ...disabled }
-      continue
-    }
-    throw new Error(`OpenCode MCP server ${name} must be a stdio server with a command or a remote server with a url`)
-  }
-  return servers
-}
-
-/**
- * Recognise one Agent Plugins server row.
- *
- * A predicate, not an assertion: these rows are ALREADY in the SDK's config
- * shape and carry fields this file does not model (`cwd`, for one), so the row
- * itself must survive. Checking the discriminator and its one required field is
- * what the plugin contract actually promises.
- */
-function isPluginServerConfig(row: Record<string, unknown>): row is Record<string, unknown> & Mcp.ServerConfig {
-  if (row.type === "local") return stringList(row.command).length > 0
-  return row.type === "remote" && typeof row.url === "string" && row.url.length > 0
-}
-
-/** Agent Plugins already project their servers in the SDK config shape; only the discriminator is checked. */
-function pluginMcpServers(input: Record<string, unknown>): Record<string, Mcp.ServerConfig> {
-  const servers: Record<string, Mcp.ServerConfig> = {}
-  for (const [name, value] of Object.entries(input)) {
-    const row = record(value)
-    if (!isPluginServerConfig(row)) {
-      throw new Error(`Agent Plugins OpenCode MCP server ${name} must be a local or remote server`)
-    }
-    servers[name] = row
-  }
-  return servers
-}
-
-function eventSessionID(event: ProjectedEvent): string | undefined {
-  const data = asRecordOrEmpty(event.data)
-  return typeof data.sessionID === "string" ? data.sessionID : undefined
-}
-
 /**
  * Watches the engine's own event stream for this session's turn ending.
  *
@@ -204,55 +138,6 @@ function engineTurnTerminal(
   return { settled, abandon: () => end("deadline") }
 }
 
-/** The engine's own id for the assistant turn an event belongs to, when it names one. */
-function eventAssistantMessageID(event: ProjectedEvent): string | undefined {
-  const data = asRecordOrEmpty(event.data)
-  const id = data.assistantMessageID ?? data.messageID
-  return typeof id === "string" ? id : undefined
-}
-
-function terminal(event: ProjectedEvent, sessionID: string): AgentRuntimeStreamEvent | undefined {
-  const data = asRecordOrEmpty(event.data)
-  if (event.type === "session.execution.succeeded") return { type: "finish", sessionId: sessionID, harness: "opencode" }
-  if (event.type === "session.execution.interrupted") return { type: "finish", sessionId: sessionID, harness: "opencode" }
-  if (event.type === "session.execution.failed") {
-    const error = data.error
-    const reason = error instanceof Error ? error.message : typeof error === "string" ? error : JSON.stringify(error)
-    return { type: "error", error: reason || "OpenCode execution failed", harness: "opencode" }
-  }
-  return undefined
-}
-
-function projectTurnEvent(event: ProjectedEvent): AgentRuntimeStreamEvent | undefined {
-  const data = asRecordOrEmpty(event.data)
-  if (event.type === "session.execution.started") return { type: "session-status", status: "busy", harness: "opencode" }
-  if (event.type === "session.text.delta" && typeof data.delta === "string") {
-    return { type: "text-delta", delta: data.delta, harness: "opencode" }
-  }
-  if (event.type === "session.reasoning.delta" && typeof data.delta === "string") {
-    return { type: "thinking-delta", delta: data.delta, harness: "opencode" }
-  }
-  if (event.type === "session.tool.input.started" && typeof data.id === "string" && typeof data.name === "string") {
-    return { type: "tool-start", toolCallId: data.id, toolName: data.name, harness: "opencode" }
-  }
-  if (event.type === "session.tool.called" && typeof data.id === "string") {
-    return { type: "tool-input", toolCallId: data.id, input: data.input, harness: "opencode" }
-  }
-  if (event.type === "session.tool.success" && typeof data.id === "string") {
-    const metadata = asRecord(data.metadata)
-    return {
-      type: "tool-output",
-      toolCallId: data.id,
-      output: data.content,
-      ...(metadata ? { metadata } : {}),
-      harness: "opencode",
-    }
-  }
-  if (event.type === "session.tool.failed" && typeof data.id === "string") {
-    return { type: "tool-error", toolCallId: data.id, error: JSON.stringify(data.error), harness: "opencode" }
-  }
-  return undefined
-}
 
 function prompt(input: PromptInput) {
   const text: string[] = []
@@ -710,8 +595,8 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
     this.scope(this.directory)
     const plugins = record(record(config.launch).config)
     this.launchDocument = {
-      skills: stringList(plugins.skills),
-      mcp: { ...snapshotMcpServers(record(config.mcp)), ...pluginMcpServers(record(plugins.mcp)) },
+      skills: asArray(plugins.skills).filter(isNonEmptyString),
+      mcp: projectMcpServers(record(config.mcp), record(plugins.mcp)),
     }
     // A newer document supersedes any earlier application; the next engine
     // operation writes the current one before it runs. Configuration is a

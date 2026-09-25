@@ -69,6 +69,10 @@ export function asFiniteNumber(value: unknown): number | undefined {
   return isFiniteNumber(value) ? value : undefined
 }
 
+export function asNumber(value: unknown): number | undefined {
+  return typeof value === "number" ? value : undefined
+}
+
 export function isBoolean(value: unknown): value is boolean {
   return typeof value === "boolean"
 }
@@ -107,4 +111,8 @@ export function numberClaim(payload: Record<string, unknown>, key: string): numb
  */
 export function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? (value as unknown[]) : []
+}
+
+export function asArrayOrUndefined(value: unknown): unknown[] | undefined {
+  return Array.isArray(value) ? value : undefined
 }

@@ -10,6 +10,18 @@
       "bun": "./src/contract/index.ts",
       "types": "./dist/contract/index.d.ts",
       "import": "./dist/contract/index.js"
+    },
+    "./opencode-sdk": {
+      "development": "./src/transports/opencode-sdk/index.ts",
+      "bun": "./src/transports/opencode-sdk/index.ts",
+      "types": "./dist/transports/opencode-sdk/index.d.ts",
+      "import": "./dist/transports/opencode-sdk/index.js"
+    },
+    "./opencode-sdk/*": {
+      "development": "./src/transports/opencode-sdk/*.ts",
+      "bun": "./src/transports/opencode-sdk/*.ts",
+      "types": "./dist/transports/opencode-sdk/*.d.ts",
+      "import": "./dist/transports/opencode-sdk/*.js"
     }
   },
   "files": [
@@ -26,11 +38,14 @@
     "@agentclientprotocol/sdk": "1.3.0",
     "@claxedo/agent-event-runtime": "workspace:*",
     "@claxedo/agent-runtime-contract": "workspace:*",
-    "@cursor/sdk": "1.0.24"
+    "@claxedo/helpers": "workspace:*",
+    "@cursor/sdk": "1.0.24",
+    "@opencode-ai/plugin": "0.0.0-beta-19271",
+    "@opencode-ai/schema": "0.0.0-beta-19271",
+    "@opencode-ai/sdk": "0.0.0-beta-19271"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "0.115.0",
-    "@claxedo/helpers": "workspace:*",
     "@claxedo/sandbox-manager": "workspace:*",
     "@tsconfig/node-lts": "22.0.4",
     "@types/bun": "catalog:",

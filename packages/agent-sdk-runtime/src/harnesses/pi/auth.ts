@@ -3,7 +3,8 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { piCredentialProviderIDs } from "@claxedo/agent-runtime-contract"
 import { writePrivateFileAtomic } from "@claxedo/helpers/fs"
-import { isProviderUnavailable, providerBinding } from "../../provider-projection"
+import { providerBinding } from "../../provider-projection"
+import { isProviderUnavailable } from "@claxedo/agent-runtime-contract"
 
 /** One `models.json` overlay per provider, merged onto Pi's own built-in definition. */
 export type PiProviderOverrides = Record<string, { baseUrl: string; apiKey: string }>
