@@ -7,38 +7,45 @@ import { AcpTransportError } from "./errors"
 import { claudeOptionsMeta } from "./extensions/claude-options"
 import { acpMcp } from "./protocol"
 import { AcpStartupDeadline } from "./deadline"
+import { acpAgentList } from "./extensions/agents"
+import { acpGroups } from "./extensions/groups"
+import type { AgentAgent } from "@claxedo/agent-runtime-contract"
 
 type Commands = Extract<SessionNotification["update"], { sessionUpdate: "available_commands_update" }>["availableCommands"]
 
 export class AcpDraftProbes {
   private readonly peers = new Set<AcpPeer>()
-  private readonly cache = new Map<string, Promise<{ options: SessionConfigOption[]; commands: Commands }>>()
+  private readonly cache = new Map<string, Promise<{ options: SessionConfigOption[]; commands: Commands; agents: AgentAgent[] }>>()
   private disposed = false
 
   constructor(private readonly services: HarnessServices, private readonly connection: AcpConnectionOptions,
     private readonly filterMcp: AcpMcpFilter) {}
 
   options(draft: DraftLaunch, mode: "probe" | "peek"): Promise<SessionConfigOption[]> {
-    return this.result(draft, mode, false).then((result) => result.options)
+    return this.result(draft, mode, false, false).then((result) => result.options)
   }
 
   commands(draft: DraftLaunch): Promise<Commands> {
-    return this.result(draft, "probe", true).then((result) => result.commands)
+    return this.result(draft, "probe", true, false).then((result) => result.commands)
   }
 
-  private result(draft: DraftLaunch, mode: "probe" | "peek", needCommands: boolean) {
+  agents(draft: DraftLaunch): Promise<AgentAgent[]> {
+    return this.result(draft, "probe", false, true).then((result) => result.agents)
+  }
+
+  private result(draft: DraftLaunch, mode: "probe" | "peek", needCommands: boolean, needAgents: boolean) {
     if (this.disposed) throw new AcpTransportError("connection", "ACP transport disposed")
-    const key = JSON.stringify([draft, needCommands])
+    const key = JSON.stringify([draft, needCommands, needAgents])
     const cached = this.cache.get(key)
     if (cached) return cached
-    if (mode === "peek") return Promise.resolve({ options: [], commands: [] })
-    const probe = this.run(draft, needCommands)
+    if (mode === "peek") return Promise.resolve({ options: [], commands: [], agents: [] })
+    const probe = this.run(draft, needCommands, needAgents)
     this.cache.set(key, probe)
     void probe.then(undefined, () => this.cache.delete(key))
     return probe
   }
 
-  private async run(draft: DraftLaunch, needCommands: boolean) {
+  private async run(draft: DraftLaunch, needCommands: boolean, needAgents: boolean) {
     const input: StartInput = { ...draft, sessionId: `probe-${randomUUID()}` }
     let resolveCommands!: (commands: Commands) => void
     const commands = new Promise<Commands>((resolve) => { resolveCommands = resolve })
@@ -61,9 +68,12 @@ export class AcpDraftProbes {
       const deadline = new AcpStartupDeadline(this.services.clock, this.connection.startupTimeoutMs ?? 10_000, "draft probe")
       const result = await deadline.run(peer.agent.newSession({ cwd: input.directory, mcpServers: servers.map(acpMcp),
         ...(meta ? { _meta: meta } : {}) }))
-      if (!needCommands) return { options: result.configOptions ?? [], commands: [] }
+      const agents = needAgents && acpGroups(peer.handshake).agents
+        ? await new AcpStartupDeadline(this.services.clock, this.connection.startupTimeoutMs ?? 10_000, "draft agents")
+          .run(acpAgentList(peer.agent, result.sessionId)) : []
+      if (!needCommands) return { options: result.configOptions ?? [], commands: [], agents }
       const commandUpdate = new AcpStartupDeadline(this.services.clock, this.connection.startupTimeoutMs ?? 10_000, "draft commands")
-      return { options: result.configOptions ?? [], commands: await commandUpdate.run(commands) }
+      return { options: result.configOptions ?? [], commands: await commandUpdate.run(commands), agents }
     } finally {
       this.peers.delete(peer)
       await peer.retire()
