@@ -1,10 +1,9 @@
-import { createEffect, createMemo, onCleanup, type JSX } from "solid-js"
+import { createEffect, createMemo, type JSX } from "solid-js"
 import { projectId, useServer, type Placement, type PlacementId, type Project, type ProjectId } from "@/server"
 import { ClaxedoIcon as Icon, useDialog } from "@/ui"
 import { useProjectsText } from "../i18n"
 import { pickProjectFolderWith } from "../pick-project-folder"
 import { primaryPlacement } from "../open"
-import { useProjectList } from "../project-list"
 import { inCatalogOrder } from "../project-order"
 import { useProjects } from "../store"
 import { createDraftContext, type DraftPlacementResolver, type DraftTarget } from "../draft-context"
@@ -66,9 +65,7 @@ export function NewSessionContextRow(
   const t = useProjectsText()
   const server = useServer()
   const dialog = useDialog()
-  const list = useProjectList()
   const choices = useProjectChoices()
-  onCleanup(list.registerCreateSurface())
   const current = createMemo(() => choices().find((project) => project.id === props.projectId))
   const openProject = (id: ProjectId) => {
     if (id === props.projectId) return
@@ -86,7 +83,6 @@ export function NewSessionContextRow(
     groupLabel: t("projects.title"),
     emptyMessage: t("projects.empty"),
     current: props.projectId,
-    openPanel: { pending: list.createPending, answer: list.answerCreate },
     options: choices().map((project) => ({ value: project.id, label: project.name, detail: projectDetail(project, server.placements.list()), avatar: avatarOf(project, project.name) })),
     onSelect: (value) => openProject(projectId(value)),
     panel: {

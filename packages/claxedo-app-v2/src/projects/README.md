@@ -5,7 +5,7 @@ Owns: the project as the app sees it, its placements, the create-project form (t
 ## Concepts
 
 - **Project** (`Project` from `@/server`): one entry of `/api/claxedo/projects`, the only project source, except on a signed desktop, where the adapter adds the account's control-plane projects that share no workspace with a local project (the link rule is in `src/server/README.md`). The route lists every project v1 lists, with v1's name, icon, colour and startup command, its environment, its source, its checkout `directory` (display only) and `available`, false when none of its placements exists any more (a stopped cloud sandbox still counts). Removing a project removes it and its placements everywhere.
-- **Rail list** (`createProjectList`, `ProjectListProvider`): v1's sidebar data, the route's projects in this browser's order with their expanded flags and colours, persisted per server as v1 did (`project-state.ts`, keyed by project id). New projects join at the end in v1's catalog order, by project id (`project-order.ts`), which is also a fresh browser's whole order. A project without a colour gets a free one (`project-colors.ts`), saved through the route.
+- **Rail list** (`createProjectList`, `ProjectListProvider`): v1's sidebar data, the route's projects in this browser's order with their colours, persisted per server as v1 did (`project-state.ts`, keyed by project id). New projects join at the end in v1's catalog order, by project id (`project-order.ts`), which is also a fresh browser's whole order. A project without a colour gets a free one (`project-colors.ts`), saved through the route.
 - **Placement**: where a project runs, a folder, a worktree or a cloud workspace (`Placement`). A placement has its own id; a session belongs to one placement. A folder path is display data, never a key, a route parameter or an identity. Only `src/server/` turns a placement into a directory.
 - **Source**: what the project is made from, a repository URL, a repository from a connected code host, or a folder on a machine. A folder is offered only when the server reports `thisMachine`.
 - **Draft** (`ProjectDraft`): the answers the add flow collects (name, source, harness, and the reader's explicit placement pick) before anything is created.
@@ -20,7 +20,6 @@ Owns: the project as the app sees it, its placements, the create-project form (t
 | `useProjects()` | `queries.projects.list()` | `Loaded<readonly Project[]>`: loading, ready(data), failed(error) |
 | `useProject(id)` | `queries.projects.byId(id)` | `ProjectView`: loading, ready(project), missing, failed(error) |
 | `useProjectPlacements(projectId)` | `queries.placements.byProject(projectId)` | `Loaded<readonly Placement[]>` |
-| `useMachines()` | `queries.machines.list()` | `Loaded<readonly Machine[]>` |
 
 `useProjectCommands()` gives `remove`, which calls `server.projects`. The Edit dialog saves the name, icon, colour, startup command and environment in one `server.projects.update`; an empty name drops a name set by hand, as v1 did for the folder's own name. The adapter updates the project queries from each answer; this domain never writes the query cache.
 
@@ -52,7 +51,7 @@ Context row invariants, kept from v1:
 - Searchable pickers bind a document keydown (`search-keydown.ts`): arrow keys move the highlighted row while printable keys still edit the search field, whose own value is the query's source of truth.
 - The row keeps 4px of itself visible under the composer, which overlaps it by `-mt-2`; the footer actions sit outside `List`'s scroll box so its scroll mask never fades them.
 
-Settings → Projects lists the projects (avatar, name, and the folder or repository they come from). A project's settings show its name, icon, colour, startup script and environment, with v1's Edit dialog (`DialogEditProject`, also exported for the rail's project menu) to change them; where it runs (its placements and the cloud workspaces section); and Remove, which asks first. Dialogs open through the kit's `useDialog()`, so the shell must mount `DialogProvider`.
+Settings → Projects lists the projects (avatar, name, and the folder or repository they come from). A project's settings show its name, icon, colour, startup script and environment, with v1's Edit dialog (`DialogEditProject`) to change them; where it runs (its placements and the cloud workspaces section); and Remove, which asks first. Dialogs open through the kit's `useDialog()`, so the shell must mount `DialogProvider`.
 
 ## Phone
 

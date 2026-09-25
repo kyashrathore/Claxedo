@@ -110,16 +110,12 @@ function bindSearchTypeahead(input: () => HTMLInputElement | undefined, setFilte
   onCleanup(() => document.removeEventListener("keydown", handler, true))
 }
 
-function createPickerState(chip: () => ContextChip) {
+function createPickerState() {
   const [store, setStore] = createStore({ open: false, panel: false, hold: false })
-  const requested = () => !!chip().panel && (chip().openPanel?.pending() ?? false)
-  const consume = () => chip().openPanel?.answer()
   const close = () => {
-    consume()
     setStore({ open: false, panel: false, hold: false })
   }
   const back = () => {
-    consume()
     setStore({ open: true, panel: false })
   }
   return {
@@ -127,14 +123,14 @@ function createPickerState(chip: () => ContextChip) {
     setStore,
     close,
     back,
-    isOpen: () => store.open || requested(),
-    panelShown: () => store.panel || requested(),
+    isOpen: () => store.open,
+    panelShown: () => store.panel,
   }
 }
 
 export function ContextChipPicker(props: { chip: ContextChip }): JSX.Element {
   const chip = () => props.chip
-  const state = createPickerState(chip)
+  const state = createPickerState()
   let contentRef: HTMLDivElement | undefined
   let listRef: ListRef | undefined
   const showPanel = createMemo(() => state.panelShown() && !!chip().panel)

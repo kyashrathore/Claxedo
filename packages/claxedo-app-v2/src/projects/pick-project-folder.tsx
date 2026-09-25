@@ -7,7 +7,7 @@ export function pickProjectFolderWith(dialog: DialogHost) {
   return () =>
     new Promise<string | undefined>((resolve) => {
       void dialog.show(
-        () => <DialogSelectDirectory onSelect={(dir) => resolve(typeof dir === "string" ? dir : undefined)} />,
+        () => <DialogSelectDirectory onSelect={resolve} />,
         () => resolve(undefined),
       )
     })
