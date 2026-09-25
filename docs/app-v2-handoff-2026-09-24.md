@@ -83,6 +83,42 @@ Both apps were packaged from 6d9c0a91a9 (b3cadffe69 plus driver fixes), on AC, o
 - **Not met:** idle memory (764 MiB, target ≤ 700), and app start (1.28 s, target ≤ 1.1 s, a tie). exp-idle's start and memory findings are the next lever.
 - Long rows and the panel open return come from the full-suite run.
 
+### Benchmark, publication run 2 (full suite, 2026-09-25 07:19–07:41)
+
+The build was the same (6d9c0a91a9), and the host was just as quiet. v2 had 0 invalid observations out of 380. v1 had 8 invalid, all at 128 MiB history navigation, so those two rows are withheld. There are 49 rows. Raw data: `~/test/agent-app-benchmark/artifacts/comparisons/claxedo-v1-vs-v2-user-flows-macos-arm64-headed-20260925-0719-pub/`.
+
+**v2 wins:**
+- **Unvisited switch:** 33 ms, p95 33 ms, against v1's 41 ms, p95 353–396 ms.
+- **Every size switch from 1 to 128 MiB:** 1.25–1.37× faster.
+- **1 MiB in one row:** 54.7 ms against 964 ms, 17.6× faster.
+- **First visit in history navigation:** 1.5–1.8× faster.
+- **Panel open return:** 15.6 ms against 32.3, 2.1× faster.
+- **Panel open:** 53–90 ms against 135, 1.5–2.5× faster.
+- **Expand-all heavy.**
+- **RSS:** 775 against 1,051 MiB after launch, and 821 against 1,096 MiB after the workload.
+- **CPU idle:** 0.4% against 6.8%.
+- **Existing-profile start:** 1.36 against 2.22 s.
+
+**Ties:** return to a visited session, close-panel, switch-file-tab, and the long-row 8 and 32 MiB rows (988 ms against 1.09 s, which isn't a reliable difference).
+
+**Rows that go to v1 (gate "no row to today's app": FAILS):**
+
+| Row | v1 | v2 |
+|---|---|---|
+| files-to-review, heavy | 15.2 ms | 17.4 ms |
+| review-to-files, moderate | 16.6 ms | 17.9 ms |
+| review-to-files, heavy | 24.9 ms | 27.9 ms |
+| open-file, light (no prefetch, disclosed) | 26.1 ms | 32.4 ms |
+| collapse-all, light / moderate / heavy | 24.1 / 24.4 / 24.8 ms | 26.7 / 26.9 / 27.8 ms |
+
+**Must-win targets:**
+- **Met:** idle CPU, panel open return, and long rows (988 ms, target ≤ 1 s, though it ties v1).
+- **Not met:** idle memory (775 MiB, target ≤ 700) and fresh start (1.41 s, target ≤ 1.1, a tie).
+- **Owners:**
+  - exp-scroll profiles the seven panel rows and names what v2 does extra per action;
+  - exp-idle owns start and memory.
+  - Either one's fixes land through the owning lane.
+
 ## The goal in four parts
 
 The owner's words: better, performant, easy code, less LOC. Each part gives the rule, where it stands (observed on `feat/app-v2`), and what is next.
