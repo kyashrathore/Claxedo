@@ -8,7 +8,8 @@ type StreamMessage = Stream["readable"] extends ReadableStream<infer Message> ? 
 
 export type ScriptedAcpWebSocket = { url: string; close(): Promise<void> }
 
-export async function startScriptedAcpWebSocket(scriptDir: string, options: { restoreMode?: "load" | "resume"; dropMethod?: string; source?: string } = {}): Promise<ScriptedAcpWebSocket> {
+export async function startScriptedAcpWebSocket(scriptDir: string, options: { restoreMode?: "load" | "resume"; dropMethod?: string; holdMethod?: string;
+  startupQuestion?: boolean; source?: string } = {}): Promise<ScriptedAcpWebSocket> {
   const port = await reservePort()
   const sockets = new Set<Bun.ServerWebSocket<SocketState>>()
   try {
@@ -29,15 +30,17 @@ export async function startScriptedAcpWebSocket(scriptDir: string, options: { re
           const writable = new WritableStream<StreamMessage>({
             write(message) { socket.send(JSON.stringify(message)) },
           })
-          new AgentSideConnection((connection) => new ScriptedAgent(connection, scriptDir, socket.data.headers, false, options.restoreMode), { readable, writable })
+          new AgentSideConnection((connection) => new ScriptedAgent(connection, scriptDir, socket.data.headers, false, options.restoreMode,
+            options.startupQuestion), { readable, writable })
         },
         async message(socket, message) {
           const value = JSON.parse(typeof message === "string" ? message : Buffer.from(message).toString("utf8")) as StreamMessage
-          if (value && typeof value === "object" && "method" in value && "id" in value) {
+          if (value && typeof value === "object" && "method" in value && ("id" in value || value.method === "session/cancel")) {
             await recordAcpRequest(scriptDir, value.method, "params" in value ? value.params : {}, socket.data.headers, options.source)
             if (value.method === options.dropMethod) { socket.close(); return }
+            if (value.method === options.holdMethod) return
           }
-          socket.data.input.enqueue(value)
+          if (sockets.has(socket)) socket.data.input.enqueue(value)
         },
         close(socket) {
           sockets.delete(socket)

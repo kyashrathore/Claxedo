@@ -40,21 +40,21 @@ These are the jobs the layer does, whoever owns them today. Each gets exactly on
 
 | # | Responsibility | What it means | Differs per harness in | Owner after |
 | --- | --- | --- | --- | --- |
-| 1 | **Harness registry** | Which harnesses exist: built-in (Claude, Codex, Cursor) and custom (any ACP agent, an OpenCode server, Pi). What each can do. **Today there are four separate harness lists:** `AGENT_HARNESS_DEFINITIONS`, `harness-table.ts`, the plugin `harness-registry.ts`, and `MCP_CAPABLE_AGENTS` | capabilities, declared from the harness's own handshake where it has one | `src/registry/`, `src/capabilities/` |
+| 1 | **Harness registry** | Which harnesses exist: built-in (Claude, Codex, Cursor, OpenCode) and custom (any ACP agent, Pi). What each can do. **Today there are four separate harness lists:** `AGENT_HARNESS_DEFINITIONS`, `harness-table.ts`, the plugin `harness-registry.ts`, and `MCP_CAPABLE_AGENTS` | capabilities, declared from the harness's own handshake where it has one | `src/registry/`, `src/capabilities/` |
 | 2 | **Connection setup** | Validating a custom harness entry (command or URL, headers, secrets, model choice), its immutable identity, and resolving its secrets into a lease | process versus remote; which secrets go in the environment and which in headers | `src/registry/` (the five `CustomHarnessProvider` hooks) |
 | 3 | **Where it runs** | Local on this machine, in a cloud sandbox, or remote on someone else's machine. This decides what can reach the harness ([Where a harness runs](#where-a-harness-runs)) | — | `StartInput.locality`, set by the registry |
-| 4 | **Process lifecycle** | Starting a harness process, owning it, observing it, retiring it, and proving it stopped, across restarts and on Windows | the Claude SDK starts `claude`; Codex runs `codex app-server --listen stdio://`; ACP starts a command over stdio or dials websocket or HTTP; Pi runs `pi --mode rpc`; Cursor's SDK runs in-process; an OpenCode server is reached over HTTP | `packages/process-ownership`, used only through `services.spawn` |
+| 4 | **Process lifecycle** | Starting a harness process, owning it, observing it, retiring it, and proving it stopped, across restarts and on Windows | the Claude SDK starts `claude`; Codex runs `codex app-server --listen stdio://`; ACP starts a command over stdio or dials websocket or HTTP; Pi runs `pi --mode rpc`; Cursor's SDK runs in-process; OpenCode's engine runs inside the daemon | `packages/process-ownership`, used only through `services.spawn` |
 | 5 | **Credentials** | Getting the person's selected provider account to the harness in the form the harness reads, without handing out the secret where avoidable | environment variables, config files (Codex `config.toml`, Pi `models.json`), SDK options, placeholders the broker fills | `src/registry/` credentials, plus each transport's `credentials.ts` |
 | 6 | **Session lifecycle** | Creating the harness's own session, reattaching after a restart, rebinding when the harness changes its id, closing | native session ids, resume calls (`resume`, `thread/resume`, `session/load`, `--session <file>`) | the transport (`start`, `attach`, `close`), with `SessionBroker.rebind` |
 | 7 | **Turn execution** | Sending a turn, streaming it, steering it mid-turn, cancelling it, and turns the harness starts itself (Codex goal turns) | `query()`, `turn/start`, `session/prompt`, RPC prompt, HTTP; `turn/steer` or streaming input; each protocol's cancel | the transport (`send`, `steer`, `cancel`), with `SessionBroker.admitProviderTurn` |
-| 8 | **Event translation** | Turning the harness's native stream into Claxedo's `AgentRuntimeEvent`s, and routing child-session events | SDK messages, 65 Codex notification methods, ACP `session/update`, Pi RPC lines, OpenCode server events | each transport's `translate/`, a pure function of state and event |
+| 8 | **Event translation** | Turning the harness's native stream into Claxedo's `AgentRuntimeEvent`s, and routing child-session events | SDK messages, 65 Codex notification methods, ACP `session/update`, Pi RPC lines, OpenCode engine events | each transport's `translate/`, a pure function of state and event |
 | 9 | **Requests** | Permissions, questions and elicitations: bringing them to the person, grants ("allow always"), permission-mode limits, saving before releasing, cancelling | `canUseTool`, Codex server requests, ACP `request_permission` and elicitation, Pi extension UI, OpenCode `permission.asked` | `src/broker/`; who may answer stays in the routes' access policy |
 | 10 | **Config and capabilities** | Models, effort, permission modes; applying changes on the right timing; reads before a session exists | next turn versus next session; what a mode's `level` is | the transport's `config` group, plus `configure` |
 | 11 | **Goals** | Native goals (the harness runs them) and evaluated goals (Claxedo checks the work) | Codex `thread/goal/*`, Claude and Cursor `/goal` prompts, an ACP goal extension, none | the transport's `goals` group; the evaluated loop in the runtime host |
 | 12 | **Subagents** | Seeing child agents, mapping them to child sessions, attributing usage | SDK task events, Codex collab calls, ACP draft #1992 | `src/broker/` |
 | 13 | **Usage** | Per-turn usage, quota windows, usage that arrives after a turn ends | where each harness reports it | `src/broker/` (`TurnBroker.meter`, `SessionBroker.meter`) |
 | 14 | **Naming** | Titles and renames | a side request, or the harness's own name | the runtime host decides when; the transport's `naming` group does it |
-| 15 | **Projection: skills, MCP servers, plugins** | Putting the person's tools into the harness the way *that harness* documents | plugin folders, a Codex marketplace, `~/.cursor/plugins/local`, OpenCode config, Pi flags; delivered by SDK option, file or protocol | `src/profiles/` (format), each transport (delivery) |
+| 15 | **Projection: skills, MCP servers, plugins** | Putting the person's tools into the harness the way *that harness* documents | plugin folders, a Codex marketplace, `~/.cursor/plugins/local`, OpenCode's host hooks, Pi flags; delivered by SDK option, file or protocol | `src/profiles/` (format), each transport (delivery) |
 | 16 | **MCP resolution** | Which MCP servers a session gets: Claxedo's own, the person's configured ones, plugin ones; and what may reach a remote harness | stdio versus HTTP or SSE; local versus remote | `src/capabilities/`, with the one remote filter |
 | 17 | **Health** | Connection state and runtime health for the UI | per transport | the transport's `health` group |
 | 18 | **Protocol recovery** | Resuming a lost thread, restoring a lost ACP session, rebuilding history | per protocol | each transport's own `restore/` |
@@ -99,7 +99,7 @@ After the rebuild it's a transport (driver plus translator), a profile, and one 
 
 **The rest is worth doing only if Claxedo keeps adding harnesses and harness features.**
 - If Claxedo only ever ran Claude and Codex locally, the fixes above plus the deletions would be enough, and a rebuild would be cost without return.
-- The owner's direction says otherwise: any ACP agent, the person's own Pi, an OpenCode server, cloud and remote harnesses, plugins everywhere. Every one of those multiplies the cost of each responsibility being spread across two stacks and four lists.
+- The owner's direction says otherwise: any ACP agent, the person's own Pi, OpenCode, cloud and remote harnesses, plugins everywhere. Every one of those multiplies the cost of each responsibility being spread across two stacks and four lists.
 
 **So yes: the rebuild is justified by the direction of the product, not by the line count.** The line count is a side effect.
 
@@ -252,7 +252,7 @@ The harness layer holds the most valuable things Claxedo handles: people's provi
 | **The first-party MCP bearer (owner-acting, 24 hours) is sent to remote ACP agents** | `acp/process-manager.ts:343-348` | H-1: the remote filter in P2 |
 | **Stdio MCP servers are sent to remote ACP agents** | `mcp-resolver.ts:284-290` through `process-manager.ts:344` | H-2: the remote filter |
 | **ACP releases a permission before saving the reply** | `acp/index.ts:609-610` | H-3 |
-| **No identity of the actor reaches a transport** | `AgentExecutionBinding`, `PromptInput` | `TurnInput.origin` (C-12) |
+| **No identity of the actor reaches a transport** | `AgentExecutionBinding`, `PromptInput` | `StartInput.owner` for credentials and `TurnInput.origin` for authorization and audit (C-12) |
 | **Reusing today's Pi code on the owner's folder would wipe their login** | `pi/auth.ts:119-121`, `:160` | The owner transport never writes the folder |
 | **Brokered Codex very likely starts without plugins.** An availability gap, not a leak | `codex/broker.ts:47-52` | H-4 |
 | **Three harnesses in the cloud image are installed by unpinned `curl \| bash` installers** (`cursor-agent`, Amp, `droid`). A supply-chain risk | `scripts/sandbox/Dockerfile`, `cloudflare-worker/Dockerfile` | C-13 |
@@ -425,14 +425,14 @@ The harness layer holds the most valuable things Claxedo handles: people's provi
 | 6 | **Per-person account selection:** write the owner, carry the actor | the owner column in the schema |
 | 7 | **The person's MCP servers filtered, not dropped:** HTTP servers with brokered tokens pass; local commands pass only if the image or an install spec provides them | the remote filter from Part 2 |
 | 8 | **Connect the sandbox secret resolver** | `createVmConnectionSecretResolver` |
-| 9 | **OpenCode provider binding in sandboxes, or OpenCode run as an ACP agent** | `bindProviders`, or the ACP transport |
+| 9 | **OpenCode provider binding in sandboxes** | `bindProviders`, through the OpenCode transport |
 | 10 | **Fan out default-harness changes, send commands, deliver plugins on self-hosted** | `fanOutConfig`, the apply route |
 | 11 | **Hide the cloud option in unsigned desktop onboarding** | — |
 | 12 | **Pin every agent program in the image** by version and checksum | — |
 | 13 | **A live cloud turn on staging, for each harness** (flow H19), as the acceptance test | the deployed acceptance harness |
 
 **Genuinely new pieces**, the only new design:
-- **install specs,** to run a harness that isn't in the image, for example OpenCode as `opencode acp`;
+- **install specs,** to run a harness that isn't in the image, for example a person's own ACP agent;
 - **profile bundles,** so a person's Pi extensions or `opencode.json` can follow them into the cloud (never login files).
 
 # Part 2: The plan
@@ -478,7 +478,7 @@ Decision 15 confirms that timing.
    | `src/registry/` | the core: the registry |
    | `src/capabilities/` | the core: capabilities |
    | `src/translate/` | the core: the translator runner and shared translator helpers, moved unchanged |
-   | `src/transports/<kind>/` | one transport each: `claude-sdk`, `codex-app-server`, `cursor-sdk`, `acp`, `pi-rpc`, and `opencode-http` if decision 2 keeps it |
+   | `src/transports/<kind>/` | one transport each: `claude-sdk`, `codex-app-server`, `cursor-sdk`, `acp`, `pi-rpc` and `opencode-sdk` (decision 2) |
    | `src/profiles/<harness>/` | one profile per harness |
 
 4. **Each transport is proven on its own, then the runtime cuts over once** (decision 14).
@@ -554,16 +554,21 @@ Every defect the reviews found, all fixed in this plan. Each regression test is 
 | H-4 | Brokered Codex sessions very likely start without plugins | Availability | `codex/broker.ts:47-52`, `codex/driver.ts:561` | The transport composes `CODEX_HOME` from credentials and profile fragments | P2 Codex | H15, brokered case |
 | H-5 | Pi drops extension-UI requests beyond five kinds | Correctness | `pi/driver.ts:551-559` | All nine kinds passed on | P1.3 | H18 |
 | H-6 | Pi can't run the person's own setup (pinned version, Claxedo profile, injected extension) | Product | `pi/executable.ts`, `agent-dir.ts`, `title-extension.ts` | Pi as a custom harness for the owner's turns | P1.3 | H18, H20 |
-| H-7 | The OpenCode server transport fails any turn where OpenCode asks permission | Availability | `opencode-server-adapter/src/adapter.ts:221` | Requests through the broker and OpenCode's reply endpoints, or OpenCode through ACP (decision 2) | P2 OpenCode | H17 |
+| H-7 | The OpenCode server transport fails any turn where OpenCode asks permission | Availability | `opencode-server-adapter/src/adapter.ts:221` | The server adapter deleted: OpenCode runs only on its embedded engine, whose requests go through the broker (decision 2) | P2 OpenCode | H17 |
 | H-8 | ACP's process-wide prompt counter makes a config restart wait on other workspaces' turns (inferred) | Correctness | `acp/turn-runner.ts:52`, `acp/index.ts:682` | Instance state | P2 ACP | H21 |
 | H-9 | Archiving a session leaves its own running turn running: `PATCH /session/:id` cancels admitted turns only in child sessions (found by H12 on the ACP harness) | Correctness | `workspace-runtime/src/routes/session-core.ts` | Archive cancels and settles the session's own admitted turn | P3 | H12 |
 | H-10 | Codex never receives the user's configured MCP servers: the driver keeps them in `currentMcp`, but `threadConfig` sends only the first-party server (found by H14) | Availability | `codex/driver.ts:151-169` | The Codex transport sends every projected server | P2 Codex | H14 |
 | H-11 | A Pi dialog with a timeout never records an expired request: the driver ends the dialog on its own timer but asks as an ordinary question without the deadline (found by H4) | Correctness | `pi/driver.ts` `question()` | The dialog becomes a broker request with `expiresAt`, and the broker persists `expired` | P1.3 | H4.pi |
 | H-12 | The app's `/compact` always fails on a harness that declares commands: it calls the summarize route, which no adapter ever implemented (409 before P0.3, 501 after) | Product | `claxedo-app/src/features/session/ui/use-session-commands.tsx` `session.compact` | `/compact` runs the harness's own compact command through `CommandOperations`, or isn't offered | P3 | — |
 | H-13 | Native turns never store the assistant message's tokens: Claude's `result` usage, Codex's `thread/tokenUsage/updated` and Pi's `message_end` usage each become a `session.usage` event with the right message id, and session totals are right, but the stored assistant `info.tokens` stays zero (ACP stores them; found by H13) | Correctness | the runtime projection that folds `session.usage` into stored messages | Usage folds into the assistant message it names, for every harness | P3 | H13.claude, H13.codex, H13.pi |
+| H-14 | A session id isn't owned across workspaces: creating an id that exists in workspace A from workspace B returns 201 and launches a second native session, because the create path resolves workspace-local state before any global ownership check (found by H37) | Correctness | the session create route and session registration in `workspace-runtime` | One owner per session id, checked before any harness launches; the conflict refused with a typed error | P3 | H37.scope |
+| H-15 | Public session routes answer some refusals untyped: a message to an unknown session is a bare 500, and a create with no directory a bare 404 (found by H37) | Correctness | `workspace-runtime` session routes | Typed refusals before any harness is resolved | P3 | H37.typed |
+| H-16 | A harness without todos answers the todo read as an empty list: Pi declares no todos, yet `GET /session/:id/todo` returns `200 []`, because a truthy empty replay returns before the capability check (found by H37) | Correctness | the todo route in `workspace-runtime/src/routes/session-core.ts` | The capability decides first: a typed `unsupported_operation`, which the app's todo reads treat as no todos | P3 | H37.todo |
+| H-17 | Deleting a session whose harness switch is still pending leaves the kept source process running: deletion reaches only the target adapter, not the runtime's release of the kept source (found by H35) | Availability | session deletion in `workspace-runtime` (`releaseKeptHandoffSource` is never reached) | Deletion through the runtime's own session transaction, which retires a kept source | P3 | H35.delete |
+| H-18 | Pi accepts a response whose `command` differs from the pending request, settling that request before Pi's real reply (found by H18) | Correctness | `agent-sdk-runtime/src/harnesses/pi/rpc-process.ts` `receive()` | The Pi RPC transport answers each request only from a reply matching its id and command. It ignores an unknown id (a late reply after a timeout) and a mismatched command, each as a diagnostic, and keeps waiting for the real reply until the request's own timeout | P3 | H18 |
 | C-1 | Hosted never delivers provider credentials to a cloud sandbox | Availability | `supervisor/sandbox.ts:108` is the only caller | The delivery path run on hosted, over the existing brokering | P2 cloud | H19 (local and live), H30 |
 | C-2 | Hosted has no settings store and never sends the settings snapshot; its provider screen is a stub | Availability | `config-sync.ts` (self-hosted only); `routes/hosted/shell.ts:170-175` | A D1 settings store, snapshot push and fan-out on hosted | P2 cloud | H28 |
-| C-3 | OpenCode fails in a hosted sandbox | Availability | `runtime-boot.ts:141-143`, `workspace/runtime.ts:564-568` | Composed when a session asks for it, or OpenCode through ACP | P2 OpenCode, cloud | H19, OpenCode case |
+| C-3 | OpenCode fails in a hosted sandbox | Availability | `runtime-boot.ts:141-143`, `workspace/runtime.ts:564-568` | Composed when a session asks for it | P2 OpenCode, cloud | H19, OpenCode case |
 | C-4 | Custom ACP harnesses fail in any sandbox | Availability | `workspace/runtime.ts:927-931` | Connections delivered in the snapshot (C-2), secrets resolved (C-10) | P2 cloud | H32 |
 | C-5 | Self-hosted snapshot sending fails by default: no key pair, and plain-HTTP key discovery is refused | Availability | `runtime-access-token.ts:161-167`, `management-auth.ts:83-88` | Keys created at first start; a pinned verification key | P2 cloud | H29 |
 | C-6 | No screen can allow a credential for cloud use (`shared`) | Availability | `provider-connect-form.tsx` (prop never set); `PATCH /credentials/:id/scope` unused | A per-account consent toggle in v2 Settings | P2 cloud, app v2 | H30 |
@@ -571,8 +576,8 @@ Every defect the reviews found, all fixed in this plan. Each regression test is 
 | C-8 | The person's MCP servers are always dropped for cloud sandboxes | Availability | `agent-config/index.ts:588` | Filtered per server, not dropped | P2 cloud | H28 |
 | C-9 | The startup harness key is half-renamed: drivers write `WORKSPACE_RUNTIME_RUNNER`, the runtime reads other names | Correctness | `sandbox-manager/src/runtime-env.ts:51`, `runtime-boot.ts:99-113` | One name, written and read | P2 cloud | H19, default-harness case |
 | C-10 | The sandbox-side secret resolver isn't connected | Availability | `connection-secrets.ts:84` (no callers); `workspace/runtime.ts:920-925` | Connected through the registry | P2 cloud | H32 |
-| C-11 | OpenCode never receives provider credentials in any sandbox | Availability | `opencode-runtime.ts:15` | Providers bound, or OpenCode through ACP | P2 OpenCode | H19, OpenCode case |
-| C-12 | Accounts are picked per org everywhere, never per person | Correctness, security | `registry.ts:185`; activation carries no actor; the broker's identity is `"operator"` | Owner written, actor carried, credentials chosen by `TurnInput.origin` | P1.3, P2 cloud | H31 |
+| C-11 | OpenCode never receives provider credentials in any sandbox | Availability | `opencode-runtime.ts:15` | Providers bound | P2 OpenCode | H19, OpenCode case |
+| C-12 | Accounts are picked per org everywhere, never per person | Correctness, security | `registry.ts:185`; activation carries no actor; the broker's identity is `"operator"` | Owner written, actor carried, credentials chosen by the session's owner (`StartInput.owner`, `selectSessionCredentials`) | P1.3, P2 cloud | H31 |
 | C-13 | Three agent programs in the image come from unpinned `curl \| bash` installers | Security (supply chain) | the sandbox Dockerfiles | Pinned by version and checksum | P2 cloud | An image check that fails on any unpinned install |
 | C-14 | Unsigned desktop onboarding offers a cloud sandbox the daemon can't create (404), and saves a driver key nothing uses | UX | `execution-step.tsx:54`, `workspace-control-routes.ts:54` | v2 onboarding offers cloud only when a control plane that can create one is connected | App v2 | H34 |
 | T-1 | An e2e spec sets the dead startup key, so it likely tests nothing | Test | `real-session-directory-isolation.spec.ts:96` | Sets the real key, with a red run | P2 cloud, with C-9 | Its own red run |
@@ -616,9 +621,9 @@ Every defect the reviews found, all fixed in this plan. Each regression test is 
   - Claude (Agent SDK), Codex (app-server) and Cursor (`@cursor/sdk`), first-party;
   - generic ACP;
   - Pi as a custom harness, running the user's own Pi for the machine owner;
-  - the OpenCode server, pending decision 2;
+  - OpenCode through its embedded engine (decision 2);
   - goal mode, including evaluated goals.
-- **Harness dropped:** the embedded OpenCode engine.
+- **Dropped:** the OpenCode server adapter. A remote OpenCode connects as an ACP agent (`opencode acp`).
 - **Projection follows each harness's docs, not the connection.** Remote harnesses get only what their API accepts.
 - **Transports and profiles are folders, not packages.**
 - **npm is not a constraint.**
@@ -635,7 +640,7 @@ Nothing is released and nobody depends on this codebase (owner ruling, 2026-09-2
 - **What stays, and why:** the server contracts both apps in this repo read (routes, events, the stored messages the routes return) stay, as a scope choice ("Why today's server contracts"), not as a compatibility promise. The recovery engine and its tables move with the runtime host because it uses them.
 - **npm.** 13 `@claxedo/*` packages are published; `npm view` on 2026-09-24 showed the harness libraries at 0.8.0. The CLI depends on them because it can't be bundled into one file: the embedded OpenCode host, `better-sqlite3` and `koffi` are native.
   - This plan publishes nothing.
-  - Its deletion of the embedded engine removes the first blocker.
+  - The embedded engine stays (decision 2), so that blocker stays.
   - The rest is its own plan.
 - **Pi.** Owner sessions move to the user's own Pi session directory. Member sessions keep today's brokered profiles.
 - **No switches and no bridge.** The runtime cuts over to the new transports in one slice (decision 14).
@@ -749,7 +754,7 @@ Everything users see today on every harness:
 
 ### Changes
 
-- **OpenCode server:** permission and question prompts work. This applies if decision 2 keeps it.
+- **A remote OpenCode connects as an ACP agent.** The external-server path (`OPENCODE_URL`) goes with the server adapter.
 - **Pi, for the owner, runs the user's own Pi:**
   - their extensions, skills and settings;
   - their session directory;
@@ -760,7 +765,8 @@ Everything users see today on every harness:
 
 ### Goes
 
-- **The embedded OpenCode engine,** with `getMessagePage` and `executeCommand`, which only it implements.
+- **The OpenCode server adapter,** which fails every turn that asks permission (H-7).
+- **`executeCommand` and the engine's `getMessagePage`.** No app calls `POST /session/:id/command`, which then answers 501 like `shell`; message pages already come from the runtime store (`workspace/runtime.ts`).
 - **`shell`, `summarize`, `revert` and `unrevert`,** which nothing implements. Their routes keep answering 501 (`unsupportedIfUnavailable`).
 
 ## What stays and what goes, in the code
@@ -786,7 +792,7 @@ Everything users see today on every harness:
 | `shell`, `summarize`, `revert`, `unrevert` contracts and callers; routes keep 501 | ~50 + callers | P0.3 |
 | Test stores, moved to test support | 1,860 | P4, with the last test importer mapped |
 | Pi pin, `agent-dir.ts` override and title extension, for owner sessions only | 258 | P1.3 |
-| Embedded engine with `getMessagePage`, `executeCommand` | 3.0k (in `workspace-runtime`) | P2 |
+| OpenCode server adapter (`opencode-server-adapter`) | 1.3k | P4 |
 | `adapters.ts`, `log.ts`, `target.ts`, `paths.ts` | 216 | with their last importer (13, 15, 8 and 2 production importers today) |
 | Plugin projection adapters in the local server | 686 | P2, as profiles |
 | Drifted `AgentRuntimeEvent` copy | ~50 | P1 |
@@ -823,7 +829,7 @@ Everything users see today on every harness:
 | **Transports and profiles** | **≤ 10.05k** | **≤ 7.95k** |
 | **`packages/harness`** | **≤ 15.7k** | **≤ 13.6k** |
 | `agent-runtime-contract` (today 3.2k; `recovery.ts` 866 kept; 458 event contracts moved in; duplicates removed), re-measured in P0.7 | ≤ 3.5k | ≤ 3.5k |
-| OpenCode server transport, only if kept | +0.85k | +0.85k |
+| OpenCode transport: the embedded engine moved from `workspace-runtime` (2.97k today), not re-estimated | +3.0k | +3.0k |
 
 **How the numbers work:**
 - "At the merge" translators are measured moved sizes. "After P6" is the review's rewrite estimate, reached only through corpus-proven slices.
@@ -839,7 +845,7 @@ A **transport** is how Claxedo drives a harness and reads its events. A **profil
 | Claude Code | plugin folders (`.claude-plugin/plugin.json`, `.mcp.json`) | Claude SDK: the `plugins` option (`claude/driver.ts:209-216`). `claude-agent-acp`: only its `_meta.claudeCode.options`, a version-checked ACP extension file. The wrapper passes `settingSources: ["user", "project", "local"]` and no `plugins` option, so folders alone don't reach it |
 | Codex | a marketplace block and plugin cache in `config.toml` | The transport composes `CODEX_HOME` from the credentials plus the profile's fragments. Today a brokered home is deleted and rebuilt with only the broker's `config.toml` (`codex/broker.ts:47-52`), so brokered Codex likely loses plugins today. P0.2 checks this on `dev` (H-4) |
 | Cursor | `~/.cursor/plugins/local` with `settingSources: ["plugins"]` | A machine-wide folder: the last projection wins across workspaces. The profile records "machine-scoped", and an exact per-session selection is refused, as today (`adapters/cursor.ts:62`) |
-| OpenCode (server) | config `mcp`, `plugin` and `instructions` through `PATCH /config`. OpenCode 1.18.32 has no `skills` key | The server API. A remote OpenCode server is a remote harness |
+| OpenCode | skills, MCP servers, plugins and instructions as the engine's host hooks take them (`catalog`, `tool`, `mcp`, `skill`) | In process, through the host hooks; nothing is written into the person's project |
 | Pi | its skills and extension locations, per its docs (P0.6) | Pi's own flags, adding to the user's setup, never replacing it |
 | An ACP agent with no profile | none | Only MCP servers in `session/new`, through the remote filter when remote |
 
@@ -849,7 +855,7 @@ A **transport** is how Claxedo drives a harness and reads its events. A **profil
 
 ## Remote harnesses: what reaches them and what doesn't
 
-A **remote harness** is one Claxedo doesn't start: an ACP agent over `streamable-http` or `websocket`, or an OpenCode server at a URL. `StartInput.locality` says which kind it is.
+A **remote harness** is one Claxedo doesn't start: an ACP agent over `streamable-http` or `websocket`. `StartInput.locality` says which kind it is.
 
 | | Local (Claxedo starts it) | Remote |
 | --- | --- | --- |
@@ -906,9 +912,9 @@ The ACP transport runs Claude, Codex and Cursor through their wrappers. **A nati
   - RPC events, with extension tools as ordinary tool calls;
   - commands through `get_commands`;
   - the nine extension-UI methods in Pi's RPC docs: the four dialogs through the broker (with `timeout` → `expired`), and `notify`, `setStatus`, `setWidget`, `setTitle` and `set_editor_text` as typed events. Where the app has no surface for one, it's shown as a notice.
-- **OpenCode server:**
-  - replies through `POST /session/{id}/permissions/{permissionID}` and `POST /question/{requestID}/reply|reject`;
-  - it passes the agent, and never the model, as today.
+- **OpenCode (embedded engine):**
+  - permission and question requests through the broker, answered through the engine's interaction port;
+  - message history and its pages come from the runtime store, as they do today.
 - **Every transport:** events it doesn't recognize become a typed `unrecognized` event, visible and counted.
 
 ## The contract
@@ -994,7 +1000,7 @@ Every member of today's surface has one owner. The list is taken from `adapter-c
 | `instructionChannel` | a capability field; the runtime composes per channel, as today, including the 501 gate |
 | `commitsStreamEvents` | removed. The moved projection commits for every transport exactly as today's adapters did; the wire corpus proves it |
 | `sessionConfigOwner` | capability `configOwner: harness \| runtime`; harness-owned config is read through `config.read` |
-| `getSession`, `getMessages` | the runtime store for local harnesses (as today); `history` for a harness that owns its history (the OpenCode server) |
+| `getSession`, `getMessages` | the runtime store for local harnesses (as today); `history` only for a transport whose harness owns its history |
 | `createSession` | `start` |
 | re-attach after restart (lazy today, from `upstreamSessionId`) | `attach` |
 | `createHandoffSession`, `releaseHandoffSource` | the moved runtime host, over `start` and `close` |
@@ -1021,7 +1027,7 @@ Every member of today's surface has one owner. The list is taken from `adapter-c
 | `probeConfigOptions`, `peekConfigOptions` | `config.options({ draft \| session, peek })` |
 | `applyConfig`, `waitForConfigReady` | `configure` and `ConfigApplied` |
 | `revert`, `unrevert`, `shell`, `summarize` | deleted; routes keep 501 |
-| `executeCommand`, `getMessagePage` | deleted with the embedded engine |
+| `executeCommand`, `getMessagePage` | deleted. No app calls the command route, which answers 501 like `shell`; message pages come from the runtime store |
 | **`SdkRuntimeDriverHost`** | |
 | `lifecycle` | the transport's own active-turn field; admission stays in the runtime |
 | `pendingPermissions`, `pendingQuestions`, `updatePermissionState` | the broker's requests and grants |
@@ -1172,7 +1178,7 @@ Runs are sharded by harness with separate `CLAXEDO_E2E_PORT_RANGE`s, on crabbox 
 | H14 | Configured MCP servers on every local harness | B |
 | H15 | Plugins through profiles: Claude SDK, Codex (including brokered, H-4), Cursor; Claude over `claude-agent-acp` through the `_meta` extension | B; N for brokered Codex and the ACP case |
 | H16 | Custom ACP by command and by websocket; fork, agent list, commands | B once the websocket agent exists |
-| H17 | OpenCode server prompts | N; only if kept |
+| H17 | OpenCode (embedded): permission and question prompts through the broker; owner credentials switched live without aborting a turn | N |
 | H18 | Pi for the owner: an extension command via `get_commands`, `setStatus` and a widget; mismatched RPC; `auth.json` unchanged | N |
 | H19 | Cloud workspace: one turn per harness | B once the sandbox driver exists |
 | H20 | Pi credentials by session owner: the owner's turn, a member's turn through a `send` share (spends the owner's profile), a queued re-issue, expired and missing accounts | N |
@@ -1232,20 +1238,20 @@ Every slice deletes what it replaces.
 
 ### P1: contract, broker, Pi
 
-- [ ] **P1.0 Contract frozen:** the operation map complete, every row callable. `Progress:`
+- [ ] **P1.0 Contract frozen:** the operation map complete, every row callable. `Progress:` the contract is in `packages/harness/src/contract/`; the transport lanes' proposals are folded in once by the contract pass (`hv2/contract-pass`).
 - [ ] **P1.1 The runtime host and projection moved** into `workspace-runtime` unchanged, and `spawn` implemented. Wire corpus unchanged. `Progress:` `sse.ts` moved and the `spawn` service built over `process-ownership` (3658717af4). The host, the rest of the projection, `compat-events.ts`, `turn-projection.ts` and `child-event-routing.ts` move in the P3 cutover slice: today's drivers import them, so moving them earlier would invert the dependency.
-- [ ] **P1.2 Broker:** requests with the full contract, grants and ceilings, start requests, subagents, goal plumbing and provider turns, usage, cancel. `Progress:`
-- [ ] **P1.4 Conformance suite** (`packages/harness/src/conformance/`): one set of cases every transport runs through the contract, with the real broker over in-memory runtime ports and the transport's real harness program behind the scripted model server or the scripted ACP agent. It carries the kept invariants the invariant map assigns to transports. `Progress:`
+- [ ] **P1.2 Broker:** requests with the full contract, grants and ceilings, start requests, subagents, goal plumbing and provider turns, usage, cancel. `Progress:` merged (0e3c8e2b99) with two review rounds' fixes (7039146100, ec4f6c5b56). Provider-turn admission, live rebind, abort-aware asks and outside-turn events come with the contract pass.
+- [ ] **P1.4 Conformance suite** (`packages/harness/src/conformance/`): one set of cases every transport runs through the contract, with the real broker over in-memory runtime ports and the transport's real harness program behind the scripted model server or the scripted ACP agent. It carries the kept invariants the invariant map assigns to transports. `Progress:` `runConformance` runs the real Pi 0.85.1, the real Codex 0.133.0 and the scripted ACP agent (process and websocket) through the real broker; permission cases came with ACP (93d3b2e8a9).
 - [ ] **P1.3 Pi transport and profile:**
   - the machine owner's sessions on their own Pi, whoever sends the turn; other owners' sessions brokered;
   - `get_commands`; all nine extension-UI methods (H-5, H-6);
   - the conformance suite green against the pinned Pi; H1, H4, H6, H12, H18 and H20 go green at the P3 cutover.
-  - `Progress:`
+  - `Progress:` the transport (518 lines) and profile (94) merged (dd82818f5a); H18 and H20 red at H-5 and H-6 on today's adapter. Open: a `.js` Pi binary runs whatever `node` is on PATH, `process.env` defaults belong in the composition, and `commands.list` needs a live session.
 
 ### P2: transports, profiles and cloud delivery, in parallel
 
-- [ ] **Claude SDK,** with the `claude-code` profile and its SDK delivery; the conformance suite green; H1–H15 eligible at P3. `Progress:`
-- [ ] **Codex app-server,** with `CODEX_HOME` composed from credentials and the profile (H-4); goals and provider turns; thread recovery; the conformance suite green; its flows at P3. `Progress:`
+- [ ] **Claude SDK,** with the `claude-code` profile and its SDK delivery; the conformance suite green; H1–H15 eligible at P3. `Progress:` the transport (398 lines) and profile (38) are built in `hv2/claude-transport` with the real CLI in the suite; unmerged until the contract pass lands, then native goals, model and effort discovery, attachments, profile parity and its kept rows.
+- [ ] **Codex app-server,** with `CODEX_HOME` composed from credentials and the profile (H-4); goals and provider turns; thread recovery; the conformance suite green; its flows at P3. `Progress:` merged (6c1cba7e5d): 666 lines, the composed home (H-4), projected MCP servers (H-10), the real Codex 0.133.0 in the suite. Open: provider-started goal turns end to end, and kept rows (the grant matrix, request-id concurrency, disposal during initialize, model precedence).
 - [ ] **Cursor SDK,** with a worker per backend binding; the conformance suite green; H25 at P3. `Progress:`
 - [ ] **ACP:**
   - one transport, extension files, `restore/`;
@@ -1255,8 +1261,13 @@ Every slice deletes what it replaces.
   - instance state, not a process-wide counter (H-8);
   - `claude-agent-acp`'s `_meta` delivery;
   - the conformance suite green; H16, H21, H24, H26 and defects H-1, H-2, H-3, H-8 green at P3.
-  - `Progress:`
-- [ ] **OpenCode, one path** (decision 2), with provider credentials in every placement (H-7, C-3, C-11). The embedded engine and its two add-ons deleted in the same slice. `Progress:`
+  - `Progress:` merged (2ffc7cfc4a): the transport, `restore/`, process and websocket agents in the suite. Open: the draft probe and startup-request retirement (contract pass), streamable-HTTP conformance, optional handshake groups, and its kept rows.
+- [ ] **OpenCode, one path: the embedded engine** (decision 2).
+  - The engine moved from `workspace-runtime/src/opencode` behind `HarnessTransport` into `src/transports/opencode-sdk/`, split to the 300-line file limit.
+  - Provider credentials in every placement (C-3, C-11), applied without aborting a running turn; requests through the broker.
+  - The conformance suite green; H17 at P3.
+  - The server adapter and `OPENCODE_URL` go in P4's package deletions (H-7).
+  - `Progress:` decided 2026-09-25; part 1, the engine moved into the transport's folder, runs in `hv2/opencode-sdk`; part 2, the transport, follows the contract pass.
 - [ ] **Cloud: one repository and hosted delivery (C-1, C-2).**
   - One repository for credentials and settings, D1 and SQLite behind it.
   - The delivery path run on hosted: brokered provider secrets per person, the settings snapshot, fan-out, credential reconciliation.
@@ -1338,8 +1349,12 @@ Each is corpus-proven, with your sign-off.
 1. **The counted boundary.**
    - **Recommendation:** `packages/harness` is gated. `agent-runtime-contract` is the shared wire contract, gated separately.
    - The moved runtime code and `process-ownership` count against their own packages.
-2. **OpenCode: server transport or ACP.**
-   - **Recommendation:** ACP. That saves 0.85k.
+2. **OpenCode: the embedded engine.** Decided by the owner on 2026-09-25, after the options were measured (`docs/harness-v2/opencode-options.md`).
+   - One transport, `opencode-sdk`: today's embedded engine (`@opencode-ai/sdk` V2, in the daemon), moved behind `HarnessTransport`. One engine serves every folder of the runtime: 572 MB idle and 792 MB after a turn.
+   - A session runs on its owner's credentials. The engine's provider overlay is process-wide, so the transport holds one owner's credentials and refuses a session whose owner differs instead of running it on another person's account.
+   - Claxedo's own tools, skills, MCP servers, plugins and the provider allow-list reach the engine in process through its host hooks, each with the calling session's identity.
+   - Accepted costs: an engine crash takes down the daemon, and the SDK keeps its five Node patches and the deep `EmbeddedHost` import.
+   - Rejected: the v2 server (`opencode2 serve`). Its config is process-wide, so Claxedo's own tools can't tell which session is calling without a bearer valid for every session, and one server per folder or per session multiplies 686 MB. Also rejected: the v1 server adapter (`opencode-server-adapter`, H-7), deleted in P4; a remote OpenCode connects as an ACP agent.
 3. **Harness switching mid-session.** It moves unchanged with the runtime host; nothing to decide here.
 4. **Protocol recovery inside transports.** **Recommendation:** keep it.
 5. **Pi credentials.** Decided 2026-09-25: credentials follow the session's owner, not the turn's sender.
@@ -1360,7 +1375,7 @@ Each is corpus-proven, with your sign-off.
 12. **The accepted totals, set before P1.**
     - `packages/harness` ≤ 15.7k at the merge and ≤ 13.6k after P6; `agent-runtime-contract` ≤ 3.5k.
     - **The core (≤ 5.65k) is the only part under 10k.**
-    - Going lower means cutting behavior: OpenCode through ACP (−0.85k); Claude through `claude-agent-acp`, which loses SDK plugins, per-owner usage and per-turn effort.
+    - Going lower means cutting behavior: OpenCode through ACP (−3.0k); Claude through `claude-agent-acp`, which loses SDK plugins, per-owner usage and per-turn effort.
     - **Recommendation:** accept.
 13. **Adapters from third parties.** **Recommendation:** first-party only, until there's a trust model.
 14. **The bridge or an atomic cutover.** Settled (2026-09-25): an atomic cutover, with no bridge. Each transport is proven by the conformance suite before P3; P3 cuts the runtime over once and the flows gate it.
