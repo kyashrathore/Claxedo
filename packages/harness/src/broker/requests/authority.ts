@@ -23,7 +23,11 @@ export function requestTargetMatchesOwner(
   owner: RequestAuthority,
   target: { sessionId: string } | { start: AgentSessionStartBinding },
 ): boolean {
-  if (owner.kind === "start") return "start" in target && sameStart(owner.value, target.start)
+  if (owner.kind === "start") {
+    const current = ports.readStart(owner.value.sessionId)
+    return "start" in target && sameStart(owner.value, target.start) &&
+      current?.status === "starting" && sameStart(owner.value, current.binding)
+  }
   if (!("sessionId" in target) || target.sessionId !== owner.value.sessionId) return false
   const current = ports.currentTurnAuthority(target.sessionId)
   return !!current && sameTurnAuthority(owner.value, current)

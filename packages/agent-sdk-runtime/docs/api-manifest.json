@@ -29,10 +29,6 @@
       "status": "integration",
       "purpose": "In-process runtime event fanout."
     },
-    "@claxedo/agent-sdk-runtime/sse": {
-      "status": "integration",
-      "purpose": "Local SSE fanout and replay helpers."
-    },
     "@claxedo/agent-sdk-runtime/provider-projection": {
       "status": "integration",
       "purpose": "Provider credential projection contracts and the record validator applied to pushed provider rows."
@@ -104,7 +100,6 @@
     "@claxedo/agent-sdk-runtime/status": "1cdf36244f79cd16df67b7183738572553a75282907cad9aefe54d2e487574a3",
     "@claxedo/agent-sdk-runtime/capabilities": "4330325eca22966c3b63d6312cdac4f8b618daef0ba82c0326cca0a56e8b87da",
     "@claxedo/agent-sdk-runtime/runtime-event-hub": "f5d1bbec95d9c8dd7e98a2009c63f548a3361248a5198065c65c8138514f618a",
-    "@claxedo/agent-sdk-runtime/sse": "4fa1dc17b98bee5189e96b860160be0ed0206a02ab1c40587f56356870585870",
     "@claxedo/agent-sdk-runtime/provider-projection": "782d8969102fba96a662f3b7800572b884ac38179b49ab7c5d9a761c8053ec44",
     "@claxedo/agent-sdk-runtime/mcp-resolver": "9ee49e91a385d15d6b2b82b8b9fa9045676c2f51dba06f59b65ba5c1c06f7ecf",
     "@claxedo/agent-sdk-runtime/subagent-admission": "c33ecd9674431994aa419dd5459a0ce6d38893754a900d0dd1b5ec5a8b70cc24",

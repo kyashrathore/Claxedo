@@ -7,7 +7,10 @@ const ownerLogin: ResolvedCredentials = { providers: {}, secrets: {}, leaseGener
 const machineBinding: ProviderBinding = { baseUrl: "https://machine.example", placeholder: "machine", authMode: "api-key" }
 const ownerBinding: ProviderBinding = { baseUrl: "https://owner.example", placeholder: "owner", authMode: "api-key" }
 const memberBinding: ProviderBinding = { baseUrl: "https://member.example", placeholder: "member", authMode: "api-key" }
-const machineCredentials: ResolvedCredentials = { providers: { anthropic: machineBinding, openai: machineBinding }, secrets: {}, leaseGeneration: "machine" }
+const machineCredentials = {
+  anthropic: { projection: machineBinding, secrets: {} },
+  openai: { projection: machineBinding, secrets: {} },
+}
 const direct = { actor: { kind: "machine-owner" as const }, via: "loopback" as const, reissued: false }
 const grant = { actor: { kind: "person" as const, userId: "owner" }, via: "owner-grant" as const, reissued: false }
 const ownerRelay = { actor: { kind: "person" as const, userId: "owner" }, via: "relay" as const, reissued: false }
@@ -64,10 +67,24 @@ test("selected provider secrets cannot overwrite another provider lease", () => 
   expect(() => selectTurnCredentials({ ...providerInput, profile: { ...providerProfile, selectedAccounts: conflicting } })).toThrow(CredentialSelectionError)
 })
 
+test("machine fallback injects only its available provider secrets", () => {
+  const selected = { owner: { anthropic: { projection: ownerBinding, secrets: { ANTHROPIC_API_KEY: "selected" } } } }
+  const machine = {
+    anthropic: { projection: machineBinding, secrets: { ANTHROPIC_API_KEY: "machine" } },
+    openai: { projection: machineBinding, secrets: { OPENAI_API_KEY: "machine-openai" } },
+  }
+  expect(selectTurnCredentials({ ...providerInput, profile: { ...providerProfile, selectedAccounts: selected, machineCredentials: machine } }).secrets)
+    .toEqual({ ANTHROPIC_API_KEY: "selected", OPENAI_API_KEY: "machine-openai" })
+  expect(selectTurnCredentials({ ...providerInput, profile: { ...providerProfile, selectedAccounts: {}, machineCredentials: {
+    anthropic: { projection: { unavailable: true, reason: "missing" }, secrets: { ANTHROPIC_API_KEY: "ambient" } },
+    openai: machine.openai,
+  } } }).secrets).toEqual({ OPENAI_API_KEY: "machine-openai" })
+})
+
 test("Pi owner profile is limited to direct or own-grant local turns", () => {
   const base: CredentialSelectionInput = {
     origin: direct, placement: "desktop", machineOwnerUserId: "owner", canUseOwnLogin: true,
-    profile: { kind: "pi-rpc", sessionProfile: "owner-login", ownerLogin, brokeredCredentials: machineCredentials },
+    profile: { kind: "pi-rpc", sessionProfile: "owner-login", ownerLogin, brokeredCredentials: ownerLogin },
   }
   expect(selectTurnCredentials(base)).toBe(ownerLogin)
   expect(selectTurnCredentials({ ...base, origin: grant })).toBe(ownerLogin)

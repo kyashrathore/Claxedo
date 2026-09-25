@@ -228,7 +228,7 @@ The harness layer holds the most valuable things Claxedo handles: people's provi
 2. **Nothing owner-acting leaves the machine.** Claxedo's own MCP server and its bearer go only to harnesses Claxedo starts. One remote filter covers `session/new`, load, resume and fork.
 3. **A person's decision is answered only three ways:** by an authorized person, by a written policy (a permission mode within its ceiling), or by cancel.
    - Replies are saved before the harness is released.
-   - Grants are scoped to the session and keyed exactly as today.
+   - Grants are scoped to the session and to the harness connection that asked; a grant never answers another harness.
    - "Once" never widens to "always".
    - Cancel never allows.
 4. **Identity follows the turn, not the session.** The owner's own credentials (their Pi login) are used only for turns the owner started, on the desktop or loopback runtime.
@@ -557,6 +557,10 @@ Every defect the reviews found, all fixed in this plan. Each regression test is 
 | H-6 | Pi can't run the person's own setup (pinned version, Claxedo profile, injected extension) | Product | `pi/executable.ts`, `agent-dir.ts`, `title-extension.ts` | Pi as a custom harness for the owner's turns | P1.3 | H18, H20 |
 | H-7 | The OpenCode server transport fails any turn where OpenCode asks permission | Availability | `opencode-server-adapter/src/adapter.ts:221` | Requests through the broker and OpenCode's reply endpoints, or OpenCode through ACP (decision 2) | P2 OpenCode | H17 |
 | H-8 | ACP's process-wide prompt counter makes a config restart wait on other workspaces' turns (inferred) | Correctness | `acp/turn-runner.ts:52`, `acp/index.ts:682` | Instance state | P2 ACP | H21 |
+| H-9 | Archiving a session leaves its own running turn running: `PATCH /session/:id` cancels admitted turns only in child sessions (found by H12 on the ACP harness) | Correctness | `workspace-runtime/src/routes/session-core.ts` | Archive cancels and settles the session's own admitted turn | P3 | H12 |
+| H-10 | Codex never receives the user's configured MCP servers: the driver keeps them in `currentMcp`, but `threadConfig` sends only the first-party server (found by H14) | Availability | `codex/driver.ts:151-169` | The Codex transport sends every projected server | P2 Codex | H14 |
+| H-11 | A Pi dialog with a timeout never records an expired request: the driver ends the dialog on its own timer but asks as an ordinary question without the deadline (found by H4) | Correctness | `pi/driver.ts` `question()` | The dialog becomes a broker request with `expiresAt`, and the broker persists `expired` | P1.3 | H4.pi |
+| H-12 | The app's `/compact` always fails on a harness that declares commands: it calls the summarize route, which no adapter ever implemented (409 before P0.3, 501 after) | Product | `claxedo-app/src/features/session/ui/use-session-commands.tsx` `session.compact` | `/compact` runs the harness's own compact command through `CommandOperations`, or isn't offered | P3 | — |
 | C-1 | Hosted never delivers provider credentials to a cloud sandbox | Availability | `supervisor/sandbox.ts:108` is the only caller | The delivery path run on hosted, over the existing brokering | P2 cloud | H19 (local and live), H30 |
 | C-2 | Hosted has no settings store and never sends the settings snapshot; its provider screen is a stub | Availability | `config-sync.ts` (self-hosted only); `routes/hosted/shell.ts:170-175` | A D1 settings store, snapshot push and fan-out on hosted | P2 cloud | H28 |
 | C-3 | OpenCode fails in a hosted sandbox | Availability | `runtime-boot.ts:141-143`, `workspace/runtime.ts:564-568` | Composed when a session asks for it, or OpenCode through ACP | P2 OpenCode, cloud | H19, OpenCode case |
@@ -579,6 +583,8 @@ Every defect the reviews found, all fixed in this plan. Each regression test is 
 | T-6 | Unit suites and smoke scripts touch the developer's real harness state: the Claude CLI test writes `~/.claude/projects` transcripts the usage scanner counts, local-server tests and the server closure smoke rewrite `~/.codex/config.toml`, and SDK tests start the real `codex app-server` against `api.openai.com` with the developer's login | Test, security | `agent-sdk-runtime` and `workspace-runtime` preloads; `claxedo-local-server` vitest has none; `claxedo-server` closure smoke | A throwaway HOME for every suite and smoke, and no test reaching a vendor | P0 | The bun suites' preload landed in 7affdc4bec; local-server, the smoke and the vendor calls remain |
 | T-7 | The real-spawn terminal test drops output printed before its client attaches: its fake socket ignores the binary attach checkpoint | Test | `workspace-runtime/src/pty/real-spawn.test.ts` | The socket reads the checkpoint's screen | P0 | Fixed in b33b9de0e7 |
 | T-8 | Three desktop boot tests race the product on a loaded machine: one reads the discovery record after health (it's written only before the ready message), one kills the daemon before terminal history reaches disk, one uses an idle grace shorter than the identity read before ready | Test | `claxedo-desktop/scripts/claxedo-server-boot.test.ts` | Wait for what the product guarantees: the ready message, the history file, a grace longer than the identity read | P0 | Fixed in 86c897772a; each failed under 28 CPU burners before and passes after |
+| T-9 | The flows spawned whatever `node` the shell resolved. In the lanes' shells that was `/usr/local/bin/node` v22.13.1, which segfaults in `better-sqlite3` on this machine (even `:memory:`, even rebuilt), so the daemon died opening its database. The harness never checked the runtime against `claxedo-server`'s `engines.node` | Test | `packages/harness/e2e/harness/daemon.ts`, `health.ts` | The daemon runs on a Node inside `engines.node` (`CLAXEDO_E2E_NODE`, refused otherwise); a crashed daemon is reported at once | P0 | Fixed in d6f6a51438, whose message wrongly blames Node 26; Node 26 was never the crashing runtime |
+| T-10 | Running `workspace-runtime`'s tests east of UTC sent SIGTERM, then SIGKILL, to every process the user owns (the Claude app, every lane, Chrome). `bun test` parses dates in UTC but leaves `TZ` unset, so `ps` printed `lstart` in local time and every start read hours late. Launchd then read as newly spawned, and the PTY test that fakes pid 1 recorded it, so retirement sent `kill(-1)` and swept launchd's whole tree. Made-up PTY pids from 52000 also landed on real processes. `dev` has the same code in `agent-sdk-runtime/src/launch/identity.ts` | Safety | `process-ownership/src/launch/identity.ts`, `retirement.ts`, `descendants.ts`; `pty/history-restore.test.ts` | `ps` reads in `TZ=UTC0 LC_ALL=C`, parsed as UTC; pid 0 and 1 are never ownable, so nothing signals their groups or captures their trees; fake pids above every kernel's ceiling | P0 | Fixed on `feat/harness-v2`; `dev` still has it |
 
 ## The goal
 
@@ -623,12 +629,14 @@ Every defect the reviews found, all fixed in this plan. Each regression test is 
 
 ## No backward compatibility
 
+Nothing is released and nobody depends on this codebase (owner ruling, 2026-09-25), so nothing is kept for compatibility.
+
+- **No migrations and no dual readers.** Stored config, stored runtime data and grants change shape whenever the new design is better. Old shapes are dropped, not converted.
+- **What stays, and why:** the server contracts both apps in this repo read (routes, events, the stored messages the routes return) stay, as a scope choice ("Why today's server contracts"), not as a compatibility promise. The recovery engine and its tables move with the runtime host because it uses them.
 - **npm.** 13 `@claxedo/*` packages are published; `npm view` on 2026-09-24 showed the harness libraries at 0.8.0. The CLI depends on them because it can't be bundled into one file: the embedded OpenCode host, `better-sqlite3` and `koffi` are native.
   - This plan publishes nothing.
   - Its deletion of the embedded engine removes the first blocker.
   - The rest is its own plan.
-- **Stored config.** `connections` entries and the `/connections` routes keep their shape.
-- **Stored runtime data.** Unchanged. The recovery engine and its tables move with the runtime host.
 - **Pi.** Owner sessions move to the user's own Pi session directory. Member sessions keep today's brokered profiles.
 - **No switches and no bridge.** The runtime cuts over to the new transports in one slice (decision 14).
 
@@ -670,7 +678,7 @@ This is a security boundary. The broker takes over what today's code enforces, a
 - **Stale, duplicate, foreign:** refused with a typed error and no change. Routes already refuse ordinary duplicates (`session-core.ts:2892`).
 - **Grants ("allow always"):**
   - scoped to the session and stored in `permissionState`;
-  - keyed per harness exactly as today (Claude's command grant, Codex's request with callback fields removed plus directory and mode, ACP's kind and title);
+  - keyed by the harness connection plus a key the transport computes from what the harness asks (Claude's command, Codex's request with callback fields removed plus directory and mode, ACP's kind and title); today's stored grants aren't carried over;
   - checked by the broker before asking, and an automatic answer is a recorded broker event;
   - saved before the allow is released.
 - **Option substitution as today:** never widen "once" to "always"; "deny" may become "reject always"; answer `cancelled` when nothing fits (`acp/permission-options.ts:21-34`).
@@ -1155,7 +1163,7 @@ Runs are sharded by harness with separate `CLAXEDO_E2E_PORT_RANGE`s, on crabbox 
 | H4 | Questions: free text, forms, ACP startup elicitation, URL consent, validation cancelled mid-way; Pi dialogs including `timeout` | B; N for Pi `timeout` |
 | H5 | Subagents with usage attributed to the owner | B |
 | H6 | Goals: start and stop (Claude, Cursor), pause and resume (Codex, an ACP agent with the extension), Codex provider-started turns, evaluated (Claude, Pi) | B |
-| H7 | Steer, including `unknown` falling back to the queue | B |
+| H7 | Steer, including an `unknown` result: the steer is held as provider-owned and never resent, because the harness may already have it (`session/delivery-owner.ts`) | B |
 | H8 | Restart mid-turn: the session is `recovering`, 503 while launches are unresolved, then usable | B |
 | H9 | Harness process dies mid-turn | B |
 | H10 | Config changes on their declared timing, including a credential renewal during a long session and a refused widening of a child's permission mode | B |
@@ -1183,6 +1191,9 @@ Runs are sharded by harness with separate `CLAXEDO_E2E_PORT_RANGE`s, on crabbox 
 | H32 | A custom ACP harness with a secret runs in a cloud sandbox; the secret is leased, and refused once revoked | N (C-4, C-10) |
 | H33 | A default-harness change, commands and a plugin reach a running self-hosted sandbox | N (C-7) |
 | H34 | Unsigned desktop onboarding offers no cloud sandbox; signed onboarding does, and the workspace is created | N (C-14, app v2) |
+| H35 | Harness switch mid-session: the transcript reaches the target harness, the handoff stays pending until a turn completes, switching back restores the source's own session, a failed target turn keeps the handoff, and rollback archives the prepared thread | B |
+| H36 | Connection descriptors: malformed, duplicate, disabled, stale or retargeted descriptors are refused with typed errors, and a malformed first-party MCP entry never reaches a harness | B |
+| H37 | Request refusals: an unknown session, an id bound to another workspace, a missing directory, an operation the harness doesn't implement, and a malformed provider binding are refused before any harness runs | B |
 
 ## Phases
 
@@ -1208,10 +1219,10 @@ Every slice deletes what it replaces.
   - B flows green on `dev` with targeted red runs.
   - Every defect's regression test recorded red on `dev`, H-4 included.
   - `Progress:`
-- [ ] **P0.5 Invariant map,** per test case, plus every fix commit. It must finish before P0.3 deletes anything. `Progress:`
+- [x] **P0.5 Invariant map,** per test case, plus every fix commit. It must finish before P0.3 deletes anything. `Progress:` done (`docs/harness-v2/invariant-map/`): 1,655 cases, of which 651 (39%) guard invariants no flow can observe and stay as focused tests, 503 are covered by flows, 483 by the two corpora, 18 are obsolete. The map adds flows H35 to H37 and lists the fix commits no test guards.
 - [ ] **P0.3 Deletions:** the generated Codex protocol (generated at build, fresh-clone run), the harness factories, and the four add-ons with no implementer. `Progress:` the protocol is generated at build from Codex 0.133.0, the version the sandbox runs, with a test that fails when the pins drift (b5ff388d93). The factories and add-ons wait for the invariant map.
 - [x] **P0.4 Checks and ratchet** at decision 12's numbers. `Progress:` `bun run check` in `packages/harness`, with a passing and a violating fixture per check and budgets in `budget.json` (1a1db3486d).
-- [ ] **P0.6 Profiles from docs:**
+- [x] **P0.6 Profiles from docs** (`docs/harness-v2/profiles.md`):
   - format and delivery per transport, with citations;
   - whether projection adds to or replaces the user's setup;
   - `claude-agent-acp`'s `_meta` options;
@@ -1223,7 +1234,7 @@ Every slice deletes what it replaces.
 ### P1: contract, broker, Pi
 
 - [ ] **P1.0 Contract frozen:** the operation map complete, every row callable. `Progress:`
-- [ ] **P1.1 The runtime host and projection moved** into `workspace-runtime` unchanged, and `spawn` implemented. Wire corpus unchanged. `Progress:`
+- [ ] **P1.1 The runtime host and projection moved** into `workspace-runtime` unchanged, and `spawn` implemented. Wire corpus unchanged. `Progress:` `sse.ts` moved and the `spawn` service built over `process-ownership` (3658717af4). The host, the rest of the projection, `compat-events.ts`, `turn-projection.ts` and `child-event-routing.ts` move in the P3 cutover slice: today's drivers import them, so moving them earlier would invert the dependency.
 - [ ] **P1.2 Broker:** requests with the full contract, grants and ceilings, start requests, subagents, goal plumbing and provider turns, usage, cancel. `Progress:`
 - [ ] **P1.4 Conformance suite** (`packages/harness/src/conformance/`): one set of cases every transport runs through the contract, with the real broker over in-memory runtime ports and the transport's real harness program behind the scripted model server or the scripted ACP agent. It carries the kept invariants the invariant map assigns to transports. `Progress:`
 - [ ] **P1.3 Pi transport and profile:**
@@ -1267,6 +1278,7 @@ Every slice deletes what it replaces.
 ### P3: the cutover
 
 - [ ] The runtime host calls the contract for every harness in one slice, and every old adapter is deleted in the same slice. Every eligible flow green; both corpora unchanged. `Progress:`
+- [ ] In the same slice: the runtime host and the rest of the projection move into `workspace-runtime`, and the subagent admission rules move into the broker, with the runtime store persisting only their state, so the broker's tests run the real rules instead of a fake. `Progress:`
 
 ### P4: cleanup
 

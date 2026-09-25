@@ -1,5 +1,5 @@
 import { streamSSE } from "hono/streaming"
-import { attachSseFanout, type SseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
+import { attachSseFanout, type SseReplayBuffer } from "../projection/sse"
 import { isRetainedCompatEvent, type CompatEnvelope, type EventSessionDeleted } from "@claxedo/agent-sdk-runtime/compat-events"
 import { presentationEventsFromRuntimeEnvelope } from "@claxedo/agent-event-runtime/projections/client-presentation"
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime"

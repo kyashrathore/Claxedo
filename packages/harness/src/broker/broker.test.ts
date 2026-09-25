@@ -24,6 +24,7 @@ const question = (id: string) => ({
 class MemoryPorts implements BrokerPorts {
   nowValue = 10
   timers = new Map<number, () => void>()
+  timerDelays = new Map<number, number>()
   nextTimer = 0
   current = new Map<string, TurnAuthority>([["s1", authority]])
   saved: { pending: PendingRequest; answer: RequestAnswer; automatic: boolean }[] = []
@@ -32,9 +33,15 @@ class MemoryPorts implements BrokerPorts {
   states = new Map<string, Record<string, unknown>>()
   failPersist = false
   failGrant = false
+  startStatus: "starting" | "created" | "failed" = "starting"
+  startBinding?: AgentSessionStartBinding
+  pendingRows = new Map<string, PendingRequest>()
+  publishGate?: Promise<void>
+  onReadPermissionState?: () => void
   failures: unknown[] = []
   evaluated?: Promise<void>
   evaluatorSignal?: AbortSignal
+  evaluatedChecks: unknown[] = []
   subagents: SubagentUpdatedEvent[] = []
   diagnostics: unknown[] = []
   children = new Map<string, { sessionId: string; assistantMessageId: string; created: number }>()
@@ -77,32 +84,53 @@ class MemoryPorts implements BrokerPorts {
   drained: unknown[] = []
   readonly clock = {
     now: () => this.nowValue,
-    setTimeout: (callback: () => void, _ms: number) => {
+    setTimeout: (callback: () => void, ms: number) => {
       const id = ++this.nextTimer
       this.timers.set(id, callback)
+      this.timerDelays.set(id, ms)
       return id
     },
     clearTimeout: (id: unknown) => { this.timers.delete(id as number) },
   }
   readonly services = {
-    patternEvaluator: async (_checks: unknown, signal?: AbortSignal) => {
+    patternEvaluator: async (checks: unknown, signal?: AbortSignal) => {
+      this.evaluatedChecks.push(checks)
       this.evaluatorSignal = signal
       await this.evaluated
     },
   }
   currentTurnAuthority(sessionId: string) { return this.current.get(sessionId) }
-  async persistAnswer(pending: PendingRequest, answer: RequestAnswer, automatic: boolean): Promise<readonly AgentRuntimeEvent[]> {
+  async persistAnswer(pending: PendingRequest, answer: RequestAnswer, automatic: boolean, grantKey?: string): Promise<readonly AgentRuntimeEvent[]> {
     if (this.failPersist) throw new Error("disk unavailable")
+    if (grantKey && this.failGrant) throw new Error("grant write unavailable")
+    if (grantKey) {
+      const state = this.states.get(pending.sessionId) ?? {}
+      const grants = (state.brokerGrants as string[] | undefined) ?? []
+      this.states.set(pending.sessionId, { ...state, brokerGrants: [...new Set([...grants, grantKey])] })
+    }
     this.saved.push({ pending, answer, automatic })
-    this.answers.set(pending.request.requestId, answer)
+    this.answers.set(JSON.stringify([pending.sessionId, pending.request.requestId]), answer)
+    this.pendingRows.delete(JSON.stringify([pending.sessionId, pending.request.requestId]))
     return []
   }
-  readAnswer(requestId: string) { return this.answers.get(requestId) }
-  async publish(event: BrokerEvent) { this.published.push(event) }
-  readPermissionState(sessionId: string) { return this.states.get(sessionId) }
-  async writePermissionState(sessionId: string, state: Record<string, unknown>) {
-    if (this.failGrant) throw new Error("grant write unavailable")
-    this.states.set(sessionId, state)
+  readAnswer(sessionId: string, requestId: string) { return this.answers.get(JSON.stringify([sessionId, requestId])) }
+  async publish(event: BrokerEvent) {
+    await this.publishGate
+    this.published.push(event)
+  }
+  readPending(scope: { sessionId: string } | { directory: string }) {
+    return [...this.pendingRows.values()].filter((row) => "sessionId" in scope ? row.sessionId === scope.sessionId : row.start?.directory === scope.directory)
+  }
+  readStart(sessionId: string) {
+    const binding = this.startBinding
+    if (!binding || binding.sessionId !== sessionId) return undefined
+    if (this.startStatus === "starting") return { binding, status: "starting" as const, createdAt: 1, updatedAt: 1 }
+    if (this.startStatus === "created") return { binding, status: "created" as const, upstreamSessionId: "up1", createdAt: 1, updatedAt: 2 }
+    return { binding, status: "failed" as const, error: "failed", createdAt: 1, updatedAt: 2 }
+  }
+  readPermissionState(sessionId: string) {
+    this.onReadPermissionState?.()
+    return this.states.get(sessionId)
   }
   readGoal(_sessionId: string) { return null }
   async publishGoal(_sessionId: string, _snapshot: null) {}
@@ -133,7 +161,7 @@ function setup() {
   return { ports, owner, controller, turn }
 }
 
-const tick = async () => { await Promise.resolve(); await Promise.resolve() }
+const tick = async () => { for (let index = 0; index < 12; index++) await Promise.resolve() }
 
 describe("request broker", () => {
   test("save before release and retry after persistence failure", async () => {
@@ -235,7 +263,8 @@ describe("request broker", () => {
   test("start request has operation, workspace, connection and directory authority", async () => {
     const { ports, owner } = setup()
     const start: AgentSessionStartBinding = { sessionId: "s1", operationId: "op1", workspaceId: "w1", connectionId: "c1", directory: "/work" }
-    const context = { sessionId: "s1", directory: "/work", workspaceId: "w1", start, origin }
+    ports.startBinding = start
+    const context = { sessionId: "s1", directory: "/work", workspaceId: "w1", connectionId: "c1", operationId: "op1", start, origin }
     const session = createSessionBroker(owner, context)
     const waiting = session.ask(question("start1"))
     await tick()
@@ -335,5 +364,234 @@ describe("request broker", () => {
     const restarted = createRequestBroker(ports)
     expect(await restarted.broker.answer("completed-after-restart", { kind: "rejected" }, { sessionId: "s1" })).toMatchObject({ refusal: "duplicate" })
     expect(await restarted.broker.answer("never-asked", { kind: "rejected" }, { sessionId: "s1" })).toMatchObject({ refusal: "stale" })
+  })
+})
+
+describe("broker review regressions", () => {
+  test("F3 identical native ids coexist in separate sessions", async () => {
+    const { ports, owner, turn } = setup()
+    const other = { ...authority, sessionId: "s2", turnId: "t2" }
+    ports.current.set("s2", other)
+    const secondTurn = createTurnBroker(owner, { authority: other, origin, signal: new AbortController().signal })
+    const first = turn.ask(question("native"))
+    const secondRequest = question("native")
+    secondRequest.question.sessionID = "s2"
+    const second = secondTurn.ask(secondRequest)
+    await tick()
+    expect(owner.broker.list({ sessionId: "s1" })).toHaveLength(1)
+    expect(owner.broker.list({ sessionId: "s2" })).toHaveLength(1)
+    expect(await owner.broker.answer("native", { kind: "answers", answers: [[]] }, { sessionId: "s2" })).toMatchObject({ ok: true })
+    expect(await second).toEqual({ kind: "answers", answers: [[]] })
+    expect(await owner.broker.answer("native", { kind: "rejected" }, { sessionId: "s1" })).toMatchObject({ ok: true })
+    expect(await first).toEqual({ kind: "rejected" })
+  })
+
+  test("F5 failed grant write records neither answer nor grant", async () => {
+    const { ports, owner, turn } = setup()
+    const waiting = turn.ask(permission("atomic", "run"))
+    await tick()
+    ports.failGrant = true
+    expect(await owner.broker.answer("atomic", { kind: "permission", decision: "allow_always" }, { sessionId: "s1" })).toMatchObject({ refusal: "persistence" })
+    expect(ports.saved).toHaveLength(0)
+    expect(ports.states.get("s1")?.brokerGrants).toBeUndefined()
+    ports.failGrant = false
+    await owner.broker.answer("atomic", { kind: "rejected" }, { sessionId: "s1" })
+    expect(await waiting).toEqual({ kind: "rejected" })
+  })
+
+  test("F6 grant does not cross a harness switch", async () => {
+    const { ports, owner, turn } = setup()
+    const first = turn.ask(permission("grant-one", "same"))
+    await tick()
+    await owner.broker.answer("grant-one", { kind: "permission", decision: "allow_always" }, { sessionId: "s1" })
+    await first
+    expect(ports.states.get("s1")?.brokerGrants).toEqual([JSON.stringify(["c1", "same"])])
+    const switched = { ...authority, connectionId: "c2", turnId: "t2" }
+    ports.current.set("s1", switched)
+    const next = createTurnBroker(owner, { authority: switched, origin, signal: new AbortController().signal })
+    const waiting = next.ask(permission("grant-two", "same"))
+    await tick()
+    expect(owner.broker.list({ sessionId: "s1" })).toHaveLength(1)
+    await owner.broker.answer("grant-two", { kind: "rejected" }, { sessionId: "s1" })
+    await waiting
+  })
+
+  test("F8 start must remain starting and elicitation carries connection", async () => {
+    const { ports, owner } = setup()
+    const start: AgentSessionStartBinding = { sessionId: "s1", operationId: "op", workspaceId: "w1", connectionId: "c1", directory: "/work" }
+    ports.startBinding = start
+    const session = createSessionBroker(owner, { sessionId: "s1", directory: "/work", workspaceId: "w1", connectionId: "c1", operationId: "op", start, origin })
+    const waiting = session.ask({ kind: "elicitation", requestId: "start-form", mode: "url", message: "Connect", url: "https://example.com" })
+    await tick()
+    expect(ports.published[0]).toMatchObject({ properties: { harnessPayload: { connectionId: "c1" } } })
+    ports.startStatus = "created"
+    expect(await owner.broker.answer("start-form", { kind: "consent", accepted: true }, { start })).toMatchObject({ refusal: "foreign" })
+    expect(() => session.ask(question("late-start"))).toThrow("no longer running")
+    await owner.requests.cancelStart({ sessionId: "s1", directory: "/work", workspaceId: "w1", connectionId: "c1", operationId: "op", start, origin })
+    await waiting
+  })
+
+  test("F9 malformed form is refused before publication", async () => {
+    const { ports, turn } = setup()
+    const asked = turn.ask({ kind: "elicitation", requestId: "bad-schema", mode: "form", message: "Form", schema: { type: "object", properties: { value: { type: "string", pattern: "x".repeat(4097) } } } })
+    await tick()
+    expect(ports.published).toHaveLength(0)
+    await expect(asked).rejects.toMatchObject({ code: "invalid_schema" })
+  })
+
+  test("F9 form patterns reach evaluator before asked publication", async () => {
+    const { ports, owner, turn } = setup()
+    const waiting = turn.ask({ kind: "elicitation", requestId: "pattern-admission", mode: "form", message: "Form", schema: { type: "object", properties: { value: { type: "string", pattern: "^ok$" } } } })
+    await tick()
+    expect(ports.evaluatedChecks[0]).toEqual([{ field: "value", pattern: "^ok$" }])
+    expect(ports.published).toHaveLength(1)
+    await owner.broker.answer("pattern-admission", { kind: "rejected" }, { sessionId: "s1" })
+    await waiting
+  })
+
+  test("F10 pending turn keeps upstream identity", async () => {
+    const { owner, turn } = setup()
+    const waiting = turn.ask(question("upstream"))
+    await tick()
+    expect(owner.broker.list({ sessionId: "s1" })[0]?.upstreamSessionId).toBe("up1")
+    await owner.broker.answer("upstream", { kind: "rejected" }, { sessionId: "s1" })
+    await waiting
+  })
+
+  test("F12 explicit option must match decision", async () => {
+    const { owner, turn } = setup()
+    const waiting = turn.ask(permission("exact", "grant", [{ optionId: "once", kind: "allow_once", name: "Once" }]))
+    await tick()
+    expect(await owner.broker.answer("exact", { kind: "permission", decision: "allow_always", optionId: "once" }, { sessionId: "s1" }))
+      .toMatchObject({ refusal: "unoffered" })
+    await owner.broker.answer("exact", { kind: "rejected" }, { sessionId: "s1" })
+    await waiting
+  })
+
+  test("caller cannot submit terminal answers", async () => {
+    const { owner, turn } = setup()
+    const waiting = turn.ask(question("terminal"))
+    await tick()
+    expect(await owner.broker.answer("terminal", { kind: "cancelled" }, { sessionId: "s1" })).toMatchObject({ refusal: "unoffered" })
+    expect(await owner.broker.answer("terminal", { kind: "expired" }, { sessionId: "s1" })).toMatchObject({ refusal: "unoffered" })
+    await owner.broker.answer("terminal", { kind: "rejected" }, { sessionId: "s1" })
+    await waiting
+  })
+
+  test("per-request deadlines expire independently", async () => {
+    const { ports, owner } = setup()
+    const turn = createTurnBroker(owner, { authority, origin, signal: new AbortController().signal, expiresAt: 100 })
+    const early = turn.ask({ ...question("early"), expiresAt: 20 })
+    const later = turn.ask({ ...question("later"), expiresAt: 80 })
+    await tick()
+    expect([...ports.timerDelays.values()]).toEqual([10, 70])
+    const firstTimer = [...ports.timers.values()][0]
+    firstTimer?.()
+    expect(await early).toEqual({ kind: "expired" })
+    expect(owner.broker.list({ sessionId: "s1" }).map((row) => row.request.requestId)).toEqual(["later"])
+    const secondTimer = [...ports.timers.values()][0]
+    secondTimer?.()
+    expect(await later).toEqual({ kind: "expired" })
+  })
+
+  test("F2 list retires durable requests after restart", async () => {
+    const { ports } = setup()
+    const pending: PendingRequest = { sessionId: "s1", request: question("orphan"), askedAt: 1, upstreamSessionId: "up1" }
+    ports.pendingRows.set(JSON.stringify(["s1", "orphan"]), pending)
+    const restarted = createRequestBroker(ports)
+    expect(restarted.broker.list({ sessionId: "s1" })).toEqual([])
+    await tick()
+    expect(ports.saved.at(-1)?.answer).toEqual({ kind: "cancelled" })
+    expect(await restarted.broker.answer("orphan", { kind: "rejected" }, { sessionId: "s1" })).toMatchObject({ refusal: "stale" })
+  })
+
+  test("F4 failed cancellation during validation is retried by the next answer", async () => {
+    const { ports, owner, controller, turn } = setup()
+    const waiting = turn.ask({ kind: "elicitation", requestId: "cancel-race", mode: "form", message: "Form", schema: { type: "object", properties: { value: { type: "string", pattern: "^ok$" } } } })
+    await tick()
+    let release!: () => void
+    ports.evaluated = new Promise<void>((done) => { release = done })
+    const validating = owner.broker.answer("cancel-race", { kind: "form", values: { value: "ok" } }, { sessionId: "s1" })
+    await tick()
+    ports.failPersist = true
+    controller.abort()
+    await tick()
+    release()
+    expect(await validating).toMatchObject({ refusal: "persistence" })
+    ports.failPersist = false
+    expect(await owner.broker.answer("cancel-race", { kind: "form", values: { value: "ok" } }, { sessionId: "s1" }))
+      .toMatchObject({ refusal: "duplicate" })
+    expect(await waiting).toEqual({ kind: "cancelled" })
+  })
+
+  test("F8 URL consent deduplicates and completion settles it", async () => {
+    const { ports, owner, turn } = setup()
+    const request = { kind: "elicitation" as const, mode: "url" as const, message: "Connect", url: "https://example.com", elicitationId: "oauth" }
+    const first = turn.ask({ ...request, requestId: "url-one" })
+    await tick()
+    expect(ports.published[0]).toMatchObject({ properties: { harnessPayload: { connectionId: "c1" } } })
+    const duplicate = turn.ask({ ...request, requestId: "url-two" })
+    await tick()
+    expect(owner.broker.list({ sessionId: "s1" })).toHaveLength(1)
+    await expect(duplicate).rejects.toThrow("Duplicate outstanding elicitationId")
+    await turn.completeElicitation("oauth")
+    expect(ports.saved.at(-1)?.answer).toEqual({ kind: "consent", accepted: true })
+    expect(await first).toEqual({ kind: "consent", accepted: true })
+  })
+
+  test("F11 duplicate permission answer is a refusal during validation", async () => {
+    const { owner, turn } = setup()
+    const waiting = turn.ask(permission("busy"))
+    await tick()
+    const first = owner.broker.answer("busy", { kind: "permission", decision: "allow_once" }, { sessionId: "s1" })
+    const second = owner.broker.answer("busy", { kind: "permission", decision: "allow_once" }, { sessionId: "s1" })
+    expect(await second)
+      .toMatchObject({ refusal: "duplicate" })
+    await first
+    await waiting
+  })
+
+  test("F13 grant auto-answer checks abort before persisting", async () => {
+    const { ports, controller, turn } = setup()
+    ports.states.set("s1", { brokerGrants: ["same", JSON.stringify(["c1", "same"])] })
+    ports.onReadPermissionState = () => controller.abort()
+    expect(await turn.ask(permission("auto-abort", "same"))).toEqual({ kind: "cancelled" })
+    expect(ports.saved.every((row) => row.answer.kind !== "permission")).toBe(true)
+  })
+
+  test("cancelling a turn cancels every request even when one cancel fails to persist", async () => {
+    const { ports, owner, turn } = setup()
+    void turn.ask(question("cancel-a"))
+    const second = turn.ask(question("cancel-b"))
+    await tick()
+    const persist = ports.persistAnswer.bind(ports)
+    ports.persistAnswer = async (pending, answer, automatic, grant) => {
+      if (pending.request.requestId === "cancel-a") throw new Error("disk full")
+      return persist(pending, answer, automatic, grant)
+    }
+    await expect(owner.requests.cancelTurn(authority)).rejects.toThrow("could not be cancelled")
+    expect(await second).toEqual({ kind: "cancelled" })
+  })
+
+  test("answer waits for asked publication", async () => {
+    const { ports, owner, turn } = setup()
+    let release!: () => void
+    ports.publishGate = new Promise<void>((done) => { release = done })
+    const waiting = turn.ask(question("publish-race"))
+    await tick()
+    const answer = owner.broker.answer("publish-race", { kind: "rejected" }, { sessionId: "s1" })
+    await tick()
+    expect(ports.saved).toHaveLength(0)
+    release()
+    expect(await answer).toMatchObject({ ok: true })
+    expect(await waiting).toEqual({ kind: "rejected" })
+  })
+
+  test("start factory checks connection and operation", () => {
+    const { owner } = setup()
+    const start: AgentSessionStartBinding = { sessionId: "s1", operationId: "op", workspaceId: "w1", connectionId: "c1", directory: "/work" }
+    const context = { sessionId: "s1", directory: "/work", workspaceId: "w1", connectionId: "c1", operationId: "op", start, origin }
+    expect(() => createSessionBroker(owner, { ...context, connectionId: "wrong" })).toThrow("does not match")
+    expect(() => createSessionBroker(owner, { ...context, operationId: "wrong" })).toThrow("does not match")
   })
 })
