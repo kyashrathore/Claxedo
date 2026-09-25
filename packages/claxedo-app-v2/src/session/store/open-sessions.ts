@@ -23,7 +23,6 @@ type OpenState = {
 
 function evict(open: OpenState, sessionId: SessionId, entry: OpenEntry): void {
   open.entries.delete(sessionId)
-  entry.view.dispose()
   entry.dispose()
   open.onEvicted(sessionId)
 }
