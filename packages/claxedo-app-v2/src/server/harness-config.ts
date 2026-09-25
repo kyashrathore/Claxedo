@@ -6,19 +6,14 @@ import { jsonInit, withQuery, type Transport } from "./transport"
 import type { SessionRef } from "./types"
 import type { Workspaces } from "./workspaces"
 import { readHarnessOptions, type HarnessOptionsRequest } from "./harness-options"
-import type { HarnessOptions, HarnessState, ModelChoice, SessionConfig } from "./types"
-import { harnessStateFromWire, sessionConfigFromWire } from "./wire/harness-state"
-import { harnessIdentity, harnessSelectionQuery } from "./wire/harness-selection"
+import type { HarnessOptions, HarnessState, SessionConfig } from "./harness-types"
+import { readSessionConfig, writeSessionConfig, type SessionConfigPatch } from "./session-config"
+import { harnessStateFromWire } from "./wire/harness-state"
+import { harnessSelectionQuery } from "./wire/harness-selection"
 import { permissionModeStateFromWire, type PermissionModeState } from "./wire/permission-modes"
 
 const HARNESS_PATH = "/api/claxedo/agent-config/harness"
 const CONNECTIONS_PATH = "/api/claxedo/agent-config/connections"
-
-export type SessionConfigPatch = {
-  readonly harness?: string
-  readonly model?: ModelChoice
-  readonly variant?: string
-}
 
 export type HarnessConfigApi = {
   readonly serverUrl: string
@@ -49,19 +44,8 @@ export function createHarnessConfigApi(transport: Transport, workspaces: Workspa
       return harnessStateFromWire(await response.json())
     },
     options: (request) => readHarnessOptions(transport, workspaces, request),
-    sessionConfig: async (ref) => {
-      const response = await transport.runtime(await workspaces.route(ref), sessionEndpoint(ref, "/config"))
-      if (!response.ok) throw await responseError(response, "Session config")
-      return sessionConfigFromWire(await response.json())
-    },
-    updateSessionConfig: async (ref, patch) => {
-      const response = await transport.runtime(await workspaces.route(ref), sessionEndpoint(ref, "/config"), jsonInit("PATCH", {
-        ...(patch.harness ? { harness: harnessIdentity(patch.harness) } : {}),
-        ...(patch.model ? { model: { providerID: patch.model.providerId, modelID: patch.model.modelId } } : {}),
-        ...(patch.variant !== undefined ? { variant: patch.variant } : {}),
-      }))
-      if (!response.ok) throw await responseError(response, "Session config")
-    },
+    sessionConfig: (ref) => readSessionConfig(transport, workspaces, ref),
+    updateSessionConfig: (ref, patch) => writeSessionConfig(transport, workspaces, ref, patch),
     connections: async () => {
       const response = await transport.request(CONNECTIONS_PATH)
       if (!response.ok) throw await responseError(response, "Agent connections")

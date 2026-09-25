@@ -1,6 +1,6 @@
 import { isHarnessSelection, type HarnessSelection } from "../../lib/harness-selection"
 import { asRecord } from "../../lib/record"
-import type { HarnessConnectionState, HarnessHealth, HarnessState, SessionConfig } from "../types"
+import type { HarnessConnectionState, HarnessHealth, HarnessState, SessionConfig } from "../harness-types"
 
 const harnessStatuses: readonly unknown[] = ["configured", "ready", "applying", "error"] satisfies readonly NonNullable<HarnessState["status"]>[]
 const connectionStates: readonly unknown[] = ["configured", "connecting", "ready", "auth-required", "disconnected", "failed"] satisfies readonly HarnessConnectionState["state"][]

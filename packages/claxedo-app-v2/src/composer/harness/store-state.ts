@@ -93,39 +93,42 @@ export function harnessStatusPatch(input: {
     readiness: input.data.ready === false || hardFailedHarness(input.data) ? "error" : "unresolved",
     configError: input.data.error ?? undefined,
   }
-  // A harness that reports ready:false without a hard failure
-  // (status "error" or an error message) is still CONNECTING during a startup or
-  // in-flight probe — surface that as "polling" so the selector renders a
-  // "Connecting" pill instead of a red "Unavailable". A hard failure is "error".
-  // A live-but-degraded harness (`ready:true` while `harnessHealth.status` is
-  // degraded/unavailable — the process was lost and is recovering) maps to
-  // "degraded", which drives the composer health peek and the Send gate.
-  // Precedence: a hard failure still wins; a still-connecting harness
-  // (`ready === false`, i.e. startup) stays "polling" — a genuinely process-lost
-  // harness reports `ready:true`, so the two never legitimately coincide, and
-  // ordering polling first avoids a startup flicker of "The agent stopped
-  // responding".
-  const health = input.data.harnessHealth?.status
-  const readiness: HarnessStoreState["readiness"] = hardFailedHarness(input.data)
-    ? "error"
-    : input.data.ready === false
-      ? "polling"
-      : health === "degraded" || health === "unavailable"
-        ? "degraded"
-        : "ready"
   return {
     harnessMode: harnessMode(want),
     harness: want,
     selectedModel: input.data.model ?? input.current?.selectedModel ?? "",
     selectedModelProvider: input.data.modelProviderId ?? input.current?.selectedModelProvider,
-    readiness,
-    connectionState: want.kind === "connection" && input.data.connectionState?.connectionId === want.connectionId
-      ? input.data.connectionState
-      : want.kind === "connection" && input.current?.connectionState?.connectionId === want.connectionId ? input.current.connectionState : undefined,
+    readiness: statusReadiness(input.data),
+    connectionState: statusConnection(want, input.data, input.current),
     configError: input.data.error ?? undefined,
     workspaceId: input.data.workspaceId ?? input.current?.workspaceId,
     ...(input.data.thoughtLevel ? { selectedThoughtLevel: input.data.thoughtLevel } : {}),
   }
+}
+
+// A harness that reports ready:false without a hard failure
+// (status "error" or an error message) is still CONNECTING during a startup or
+// in-flight probe — surface that as "polling" so the selector renders a
+// "Connecting" pill instead of a red "Unavailable". A hard failure is "error".
+// A live-but-degraded harness (`ready:true` while `harnessHealth.status` is
+// degraded/unavailable — the process was lost and is recovering) maps to
+// "degraded", which drives the composer health peek and the Send gate.
+// Precedence: a hard failure still wins; a still-connecting harness
+// (`ready === false`, i.e. startup) stays "polling" — a genuinely process-lost
+// harness reports `ready:true`, so the two never legitimately coincide, and
+// ordering polling first avoids a startup flicker of "The agent stopped
+// responding".
+function statusReadiness(data: HarnessState): HarnessStoreState["readiness"] {
+  const health = data.harnessHealth?.status
+  if (hardFailedHarness(data)) return "error"
+  if (data.ready === false) return "polling"
+  return health === "degraded" || health === "unavailable" ? "degraded" : "ready"
+}
+
+function statusConnection(want: HarnessType, data: HarnessState, current: HarnessStoreState | undefined) {
+  if (want.kind !== "connection") return undefined
+  if (data.connectionState?.connectionId === want.connectionId) return data.connectionState
+  return current?.connectionState?.connectionId === want.connectionId ? current.connectionState : undefined
 }
 
 export function readyHarnessHydrationPatch(type: HarnessType, hasConfigOptions = harnessHasConfigOptions(type)): HarnessStorePatch {

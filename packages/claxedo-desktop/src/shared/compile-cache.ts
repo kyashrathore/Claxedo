@@ -12,7 +12,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { pathToFileURL } from "node:url"
 
 import { readArray, readString, readUnknown } from "./json-read"
@@ -133,6 +133,29 @@ export type ShippedCompileCache = {
 }
 
 /**
+ * Where a manifest entry's source lives in this install, found the way Node
+ * resolves it. A bundle file sits under the bundle root. A dependency is
+ * recorded as `node_modules/...` under that root, which is where the build
+ * tree has it; packaging moves the server's node_modules to
+ * `Resources/node_modules` (extraResources), so it is found by the same
+ * ancestor walk Node's resolver makes from the bundle.
+ */
+export function compileCacheEntrySource(
+  rootDir: string,
+  file: string,
+  exists: (path: string) => boolean = existsSync,
+): string | undefined {
+  const direct = join(rootDir, file)
+  if (exists(direct)) return direct
+  if (!file.startsWith("node_modules/")) return undefined
+  for (let dir = dirname(rootDir); dir !== dirname(dir); dir = dirname(dir)) {
+    const candidate = join(dir, file)
+    if (exists(candidate)) return candidate
+  }
+  return undefined
+}
+
+/**
  * The string node hashes into the cache key for a file it is about to compile.
  *
  * ESM is keyed by the resolved `file://` URL, CommonJS by the absolute path.
@@ -232,7 +255,8 @@ export function seedShippedCompileCaches(input: {
     )
     for (const entry of manifest.entries) {
       expected += 1
-      const source = join(rootDir, entry.file)
+      const source = compileCacheEntrySource(rootDir, entry.file)
+      if (!source) throw new Error(`compile cache entry ${entry.file} has no source under ${rootDir}`)
       const name = compileCacheEntryName(compileCacheSourceName(source, entry.type), entry.type)
       // Copy through a temporary name so an interrupted launch cannot leave a
       // half-written blob behind a directory that now looks populated.

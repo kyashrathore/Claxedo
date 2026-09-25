@@ -49,7 +49,7 @@ export function syncHarnessSessionModel(input: {
   return run
 }
 
-export function createHarnessModelWriter<ScopeInput extends HarnessScopeInput>(input: {
+type ModelWriterInput<ScopeInput extends HarnessScopeInput> = {
   seed(scope: string): void
   acceptsDraftModel(scope: string, model: ModelChoice): boolean
   currentModel(scope: string): ModelChoice | undefined
@@ -63,65 +63,59 @@ export function createHarnessModelWriter<ScopeInput extends HarnessScopeInput>(i
     setSessionModel(ref: SessionRef, model: ModelChoice): Promise<void>
   }
   cache: HarnessSessionModelSyncCache
-}) {
-  const syncSessionModel = async (params: ScopeInput | undefined, model: ModelChoice) => {
-    const ref = params?.sessionRef
-    const key = params ? sessionModelSyncKey(params) : undefined
-    if (!ref || !key) return undefined
-    const syncValue = `${model.providerId}/${model.modelId}`
-    return syncHarnessSessionModel({
-      key,
-      model: syncValue,
-      cache: input.cache,
-      request: () => input.runtime.setSessionModel(ref, model),
-    })
-  }
+}
 
+export function createHarnessModelWriter<ScopeInput extends HarnessScopeInput>(input: ModelWriterInput<ScopeInput>) {
   const saving = new Map<string, Promise<void>>()
-
   const setModel = async (scope: string, model: ModelChoice, params?: ScopeInput, labels?: DraftDefaultLabels) => {
     input.seed(scope)
-    if ((!params?.sessionId || params.sessionId === "new") && !input.acceptsDraftModel(scope, model)) return
+    const draft = !params?.sessionId || params.sessionId === "new"
+    if (draft && !input.acceptsDraftModel(scope, model)) return
     const previous = input.currentModel(scope)
     input.setSelectedModel(scope, model)
     const changed = previous?.providerId !== model.providerId || previous.modelId !== model.modelId
-    if (!params?.sessionId || params.sessionId === "new") {
-      input.rememberDraftModel(scope, model, params, labels)
-      if (changed) await input.reloadOptions(scope, params)
-      return
-    }
-    if (input.holdsHarness(scope)) {
-      if (changed) await input.reloadOptions(scope, params)
-      return
-    }
-    const run = syncSessionModel(params, model)
-    if (!run) {
-      if (changed) await input.reloadOptions(scope, params)
-      return
-    }
-    saving.set(scope, run)
-    try {
-      await run
-    } catch (error) {
-      // A session runs its saved model, so a save that failed must not leave
-      // the picker showing one the next turn will not run on.
-      const shown = input.currentModel(scope)
-      if (previous && shown?.providerId === model.providerId && shown.modelId === model.modelId) input.setSelectedModel(scope, previous)
-      throw error
-    } finally {
-      if (saving.get(scope) === run) saving.delete(scope)
-    }
+    if (draft) input.rememberDraftModel(scope, model, params, labels)
+    const run = draft || input.holdsHarness(scope) ? undefined : syncSessionModel(input, params, model)
+    if (run) await saveSessionModel(input, saving, { scope, model, previous, run })
     if (changed) await input.reloadOptions(scope, params)
   }
-
-  /** Settles once the scope's in-flight model save has landed or been rolled back. */
-  const settledModel = async (scope: string) => {
-    await Promise.allSettled([saving.get(scope)])
-  }
-
   return {
     setModel,
-    settledModel,
-    syncSessionModel,
+    /** Settles once the scope's in-flight model save has landed or been rolled back. */
+    settledModel: async (scope: string) => {
+      await Promise.allSettled([saving.get(scope)])
+    },
+  }
+}
+
+function syncSessionModel<ScopeInput extends HarnessScopeInput>(input: ModelWriterInput<ScopeInput>, params: ScopeInput | undefined, model: ModelChoice) {
+  const ref = params?.sessionRef
+  const key = params ? sessionModelSyncKey(params) : undefined
+  if (!ref || !key) return undefined
+  return syncHarnessSessionModel({
+    key,
+    model: `${model.providerId}/${model.modelId}`,
+    cache: input.cache,
+    request: () => input.runtime.setSessionModel(ref, model),
+  })
+}
+
+async function saveSessionModel<ScopeInput extends HarnessScopeInput>(
+  input: ModelWriterInput<ScopeInput>,
+  saving: Map<string, Promise<void>>,
+  save: { readonly scope: string; readonly model: ModelChoice; readonly previous: ModelChoice | undefined; readonly run: Promise<void> },
+) {
+  const { scope, model, previous, run } = save
+  saving.set(scope, run)
+  try {
+    await run
+  } catch (error) {
+    // A session runs its saved model, so a save that failed must not leave
+    // the picker showing one the next turn will not run on.
+    const shown = input.currentModel(scope)
+    if (previous && shown?.providerId === model.providerId && shown.modelId === model.modelId) input.setSelectedModel(scope, previous)
+    throw error
+  } finally {
+    if (saving.get(scope) === run) saving.delete(scope)
   }
 }

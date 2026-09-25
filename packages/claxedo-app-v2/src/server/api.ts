@@ -2,6 +2,7 @@ import type { Accessor } from "solid-js"
 import type { QueryClient } from "@tanstack/solid-query"
 import type { Account, AccountCheck, EffectiveAccounts, MachineLogin } from "./account-types"
 import type { CloudCreateInput, CloudWorkspace, CodeHostConnection, CodeHostRepository } from "./cloud-types"
+import type { HarnessLogin, HarnessOptions } from "./harness-types"
 import type { ConnectionState, ServerEvent } from "./events"
 import type { AgentConnectionsApi, AgentConnectionsQueries } from "./agent-connections"
 import type { IntegrationQueries, IntegrationsApi } from "./integrations"
@@ -53,8 +54,6 @@ import type {
   FeatureAvailability,
   FetchQuery,
   GoalAction,
-  HarnessLogin,
-  HarnessOptions,
   Machine,
   Placement,
   Project,
