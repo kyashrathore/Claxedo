@@ -179,12 +179,6 @@ export const localServer: Policy = {
   //    bundle, serves it and announces changes, so the app on this machine
   //    loads them without a release. Clone destination admission (`node:dns`)
   //    moved with the projects route into server-core's projects module.
-  //  - `workspace/runtime-dispatch/session-activity.ts` (owner: the runtime
-  //    dispatcher): the one status read across workspaces. Only the daemon
-  //    hosts every local runtime in-process, so it answers each workspace's
-  //    status, permissions and questions through that workspace's own
-  //    dispatch; it reaches `internals.ts` and the workspace store, both
-  //    already here.
   //  - `session/publish/*` (owner: the machine publisher, this daemon's half
   //    of the control plane's session-rows endpoint): a signed-in machine
   //    publishes each served session's list row and status, on change and in
@@ -204,8 +198,8 @@ export const localServer: Policy = {
   //  - `session/runtime-activity.ts` (owner: the in-process status read): a
   //    mounted runtime's statuses, permissions and questions, read by the list
   //    page and the machine publisher alike. It reaches `platform/json.ts`.
-  //    81/30, no headroom.
-  ceilings: { modules: 81, packages: 30 },
+  //    80/30, no headroom.
+  ceilings: { modules: 80, packages: 30 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

@@ -2,18 +2,19 @@ import type { AgentPresentationSession } from "@claxedo/agent-runtime-contract"
 import { responseError } from "./errors"
 import { sessionEndpoint, type SessionContext } from "./session-context"
 import { readGoalState } from "./session-goal"
-import { readRequests } from "./session-statuses"
+import { readRequests } from "./session-requests"
 import { withQuery, type RuntimeRoute } from "./transport"
-import type { SessionListInput, SessionPage, SessionReads, SessionRef, SessionRow, Todo, TranscriptPage } from "./types"
-import { sessionRowFromListItem, sessionRowFromSession } from "./wire/session-row"
+import type { ListedStatus, SessionListInput, SessionPage, SessionReads, SessionRef, SessionRow, Todo, TranscriptPage } from "./types"
+import type { SessionId } from "./ids"
+import { listedStatusFromListItem, sessionRowFromListItem, sessionRowFromSession } from "./wire/session-row"
 import { OLDER_CURSOR_HEADER, transcriptPageFromWire } from "./wire/transcript"
 
 const OLDER_PAGE_SIZE = 50
-const WORKSPACE_SCOPE = "workspace"
 
-async function rowsOf(context: SessionContext, items: readonly unknown[]): Promise<SessionRow[]> {
+async function listedOf(context: SessionContext, items: readonly unknown[]) {
   const { address } = context.workspaces
   const rows: SessionRow[] = []
+  const statuses = new Map<SessionId, ListedStatus>()
   for (const item of items) {
     let row = sessionRowFromListItem(item, address)
     const directory = (item as { directory?: unknown }).directory
@@ -21,20 +22,21 @@ async function rowsOf(context: SessionContext, items: readonly unknown[]): Promi
       await context.workspaces.learn(directory)
       row = sessionRowFromListItem(item, address)
     }
-    if (row) rows.push(row)
+    if (!row) continue
+    rows.push(row)
+    const listed = listedStatusFromListItem(item)
+    if (listed) statuses.set(row.ref.sessionId, { ...listed, status: context.status.listed(row.ref, listed.status) })
   }
-  return rows
+  return { rows, statuses }
 }
 
 export async function listSessions(context: SessionContext, options: SessionListInput): Promise<SessionPage> {
   const { transport } = context
-  const where = await context.workspaces.route(options.placementId)
   const listPath = transport.loopback ? "/api/claxedo/session-list" : "/api/control/session-list"
-  const target = transport.loopback && !where.remote ? { directory: where.directory } : { workspaceId: where.workspaceId }
-  const query = { scope: WORKSPACE_SCOPE, ...target, sort: "human_turn_desc", limit: options.limit, cursor: options.cursor }
+  const query = { scope: "project", projectId: options.projectId, sort: "human_turn_desc", limit: options.limit, cursor: options.cursor }
   const body = await transport.json<{ items?: unknown; nextCursor?: unknown }>(withQuery(listPath, query))
-  const rows = await rowsOf(context, Array.isArray(body.items) ? body.items : [])
-  return { rows, ...(typeof body.nextCursor === "string" ? { nextCursor: body.nextCursor } : {}) }
+  const listed = await listedOf(context, Array.isArray(body.items) ? body.items : [])
+  return { ...listed, ...(typeof body.nextCursor === "string" ? { nextCursor: body.nextCursor } : {}) }
 }
 
 async function readPage(context: SessionContext, where: RuntimeRoute, path: string): Promise<TranscriptPage> {

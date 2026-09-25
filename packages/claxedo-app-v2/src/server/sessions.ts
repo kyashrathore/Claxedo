@@ -8,7 +8,6 @@ import { createSessionQueue } from "./session-queue"
 import { readLatestTurn } from "./latest-turn"
 import { readTurn } from "./turn"
 import { listSessions, readOlder, readSession } from "./session-reads"
-import { createStatusesRead } from "./session-statuses"
 import { stopTurn } from "./session-stop"
 import type { StatusOwner } from "./status"
 import { jsonInit, withQuery, type Transport } from "./transport"
@@ -87,7 +86,6 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
       await transport.runtimeJson<unknown>(await workspaces.route(ref), sessionEndpoint(ref), { method: "DELETE" })
       status.forget(ref)
     },
-    statuses: createStatusesRead(transport, workspaces, status),
     newMessageId,
     ...createSessionQueue(transport, workspaces),
     controlGoal: async (ref, action) => controlGoal(transport, await workspaces.route(ref), ref, action),

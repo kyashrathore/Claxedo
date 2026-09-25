@@ -13,7 +13,7 @@ export type StatusAdmission =
 
 export type StatusOwner = {
   readonly read: (route: RuntimeRoute, ref: SessionRef, row: AgentSession) => Promise<SessionStatus>
-  readonly placementStatuses: (placementId: PlacementId, body: unknown) => ReadonlyMap<string, SessionStatus>
+  readonly listed: (ref: SessionRef, status: SessionStatus) => SessionStatus
   readonly settle: (route: RuntimeRoute, ref: SessionRef) => Promise<SessionStatus>
   readonly apply: (event: ServerEvent) => StatusAdmission
   readonly forget: (ref: SessionRef) => void
@@ -57,21 +57,12 @@ function createFailures() {
       else if (status.kind !== "idle") failures.delete(key)
     },
     forget: (ref: SessionRef) => failures.delete(failureKey(ref.placementId, ref.sessionId)),
-    ofPlacement: (placementId: PlacementId) => {
-      const prefix = failureKey(placementId, "")
-      return [...failures].flatMap(([key, status]) => (key.startsWith(prefix) ? [[key.slice(prefix.length), status] as const] : []))
-    },
   }
 }
 
 export function createStatusOwner(transport: Transport): StatusOwner {
   const failures = createFailures()
   const live = async (route: RuntimeRoute) => statusesOf(await transport.runtimeJson<unknown>(route, STATUS_PATH))
-  const placementStatuses = (placementId: PlacementId, body: unknown) => {
-    const statuses = statusesOf(body)
-    for (const [id, failed] of failures.ofPlacement(placementId)) if ((statuses.get(id)?.kind ?? "idle") === "idle") statuses.set(id, failed)
-    return statuses
-  }
   const read = async (route: RuntimeRoute, ref: SessionRef, row: AgentSession) => {
     const read = settled((await live(route)).get(ref.sessionId), row)
     const known = failures.get(ref)
@@ -82,7 +73,7 @@ export function createStatusOwner(transport: Transport): StatusOwner {
   }
   return {
     read,
-    placementStatuses,
+    listed: (ref, status) => (status.kind === "idle" ? (failures.get(ref) ?? status) : status),
     settle: async (route, ref) => read(route, ref, await transport.runtimeJson<AgentSession>(route, sessionEndpoint(ref))),
     apply: (event) => {
       if (event.type !== "statusChanged") return { kind: "admitted", event }

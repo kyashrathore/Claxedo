@@ -28,7 +28,6 @@ import {
   runtimeOwned,
   type RuntimeProxyOptions,
 } from "./internals"
-import { hostSessionActivity } from "./session-activity"
 
 export function createWorkspaceRuntimeProxy(options: RuntimeProxyOptions = {}) {
   return (c: Context, next: Next) => workspaceRuntimeProxyWithOptions(c, next, options)
@@ -48,12 +47,10 @@ async function workspaceRuntimeProxyWithOptions(
   if (!runtimeOwned(pathname)) return next()
 
   // Decided before the workspace lookup below and outside its catch: the host
-  // event stream and the session-activity read name no workspace, so a failure
-  // on either is not "that workspace's runtime is unavailable".
+  // event stream names no workspace, so a failure on it is not "that
+  // workspace's runtime is unavailable".
   const aggregate = hostAggregateEvents(c, pathname, options)
   if (aggregate) return await aggregate
-  const activity = hostSessionActivity(c, pathname, options)
-  if (activity) return await activity
 
   try {
     const input = requestWorkspace(c.req.raw)

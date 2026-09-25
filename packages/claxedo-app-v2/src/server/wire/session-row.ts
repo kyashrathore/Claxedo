@@ -1,6 +1,6 @@
 import type { AgentSession } from "@claxedo/agent-runtime-contract"
 import { sessionId, type PlacementId, type ProjectId, type SessionId } from "../ids"
-import type { SessionRef, SessionRow } from "../types"
+import type { ListedStatus, SessionRef, SessionRow } from "../types"
 
 export type Address = {
   readonly placementFor: (directory: string, workspaceId?: string) => { readonly placementId: PlacementId; readonly projectId: ProjectId } | undefined
@@ -60,4 +60,15 @@ export function sessionRowFromSession(info: AgentSession, ref: SessionRef): Sess
     ...(parent ? { parentSessionId: sessionId(parent) as SessionId } : {}),
     ...(info.lastTurn ? { lastTurn: info.lastTurn } : {}),
   }
+}
+
+const WORKING: ListedStatus["status"] = { kind: "working" }
+const IDLE: ListedStatus["status"] = { kind: "idle" }
+
+export function listedStatusFromListItem(item: unknown): ListedStatus | undefined {
+  const status = (item as { status?: unknown } | null)?.status
+  if (!status || typeof status !== "object") return undefined
+  const { kind, awaitingInput } = status as { kind?: unknown; awaitingInput?: unknown }
+  if (kind !== "idle" && kind !== "busy" && kind !== "retry" && kind !== "recovering") return undefined
+  return { status: kind === "idle" ? IDLE : WORKING, waitingOnUser: awaitingInput === true }
 }

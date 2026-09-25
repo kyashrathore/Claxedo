@@ -73,7 +73,6 @@ import type {
   SessionRef,
   SessionRow,
   SessionReads,
-  SessionStatusRead,
   Subagent,
   TranscriptPage,
 } from "./types"
@@ -92,7 +91,6 @@ export type SessionsApi = {
   readonly rename: (ref: SessionRef, title: string) => Promise<void>
   readonly archive: (ref: SessionRef, archived: boolean) => Promise<void>
   readonly remove: (ref: SessionRef) => Promise<void>
-  readonly statuses: () => Promise<SessionStatusRead>
   readonly newMessageId: () => string
   readonly queue: (ref: SessionRef) => Promise<readonly QueuedPrompt[]>
   readonly controlQueued: (ref: SessionRef, seq: number, action: QueuedPromptAction) => Promise<QueuedPromptControl>

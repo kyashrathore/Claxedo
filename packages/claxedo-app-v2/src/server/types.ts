@@ -128,9 +128,15 @@ export type Todo = AgentTodo
 export type FileDiff = AgentSnapshotFileDiff
 export type Subagent = AgentSubagentUpdate
 
-export type SessionListInput = { readonly placementId: PlacementId; readonly cursor?: string; readonly limit: number }
+export type SessionListInput = { readonly projectId: ProjectId; readonly cursor?: string; readonly limit: number }
 
-export type SessionPage = { readonly rows: readonly SessionRow[]; readonly nextCursor?: string }
+export type ListedStatus = { readonly status: SessionStatus; readonly waitingOnUser: boolean }
+
+export type SessionPage = {
+  readonly rows: readonly SessionRow[]
+  readonly statuses: ReadonlyMap<SessionId, ListedStatus>
+  readonly nextCursor?: string
+}
 
 export type TranscriptPage = { readonly entries: readonly TranscriptEntry[]; readonly olderCursor?: string }
 
@@ -188,20 +194,6 @@ export type SessionCreateInput = {
   readonly harness?: string
   readonly model?: ModelChoice
   readonly title?: string
-}
-
-export type SessionStatusReport = {
-  readonly ref: SessionRef
-  readonly status: SessionStatus
-  readonly requests: readonly AgentRequest[]
-}
-
-export type SessionStatusReadFailure = { readonly placementId: PlacementId; readonly error: AppError }
-
-export type SessionStatusRead = {
-  readonly reports: readonly SessionStatusReport[]
-  readonly unreported: SessionStatus
-  readonly failures: readonly SessionStatusReadFailure[]
 }
 
 export type QueuedPromptPart = { readonly type: string; readonly text?: string; readonly filename?: string }

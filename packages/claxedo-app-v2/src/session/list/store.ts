@@ -5,6 +5,7 @@ import {
   sessionId as asSessionId,
   type AppError,
   type PlacementId,
+  type ProjectId,
   type Server,
   type ServerEvent,
   type SessionCreateInput,
@@ -15,7 +16,7 @@ import {
 } from "@/server"
 import type { LoadMoreState, SessionList, SessionListState, SessionStatusView } from "@/session"
 import { toAppError, type RequestsInternal } from "../requests"
-import { hasMorePages, initialListState, type ListEvent, type ListState } from "./model"
+import { hasMorePages, initialListState, type ListEvent, type ListState, type MorePhase } from "./model"
 import { createKeyedReads } from "./keyed-reads"
 import { createListReads, type ListReads } from "./reads"
 import { transition } from "./transition"
@@ -48,10 +49,9 @@ function publicState(state: ListState): SessionListState {
   return PUBLIC_STATE[state.kind]
 }
 
-function moreState(state: ListState): LoadMoreState {
-  if (state.kind !== "live") return MORE_IDLE
-  if (state.more.kind === "loading") return MORE_LOADING
-  return state.more.kind === "failed" ? { kind: "failed", error: state.more.error } : MORE_IDLE
+function moreState(phase: MorePhase | undefined): LoadMoreState {
+  if (phase?.kind === "loading") return MORE_LOADING
+  return phase?.kind === "failed" ? { kind: "failed", error: phase.error } : MORE_IDLE
 }
 
 const unknownPlacement = (placementId: PlacementId): AppError => ({
@@ -118,14 +118,20 @@ function createRowReads(state: Accessor<ListState>, requests: RequestsInternal, 
 
 export function createSessionList(server: Server, requests: RequestsInternal): SessionListInternal {
   const list = machine(initialListState, transition)
-  const reads = createListReads(server, requests, list)
+  const reads = createListReads(server, list)
   const { state, send } = list
   const windows = createMemo(() => state().windows)
+  const more = createMemo(() => {
+    const current = state()
+    return current.kind === "live" ? current.more : undefined
+  })
+  const failures = createMemo(() => state().failures)
   return {
     ...createRowReads(state, requests, windows),
     state: createMemo(() => publicState(state())),
-    hasMore: (placementIds) => hasMorePages(windows(), placementIds),
-    moreState: createMemo(() => moreState(state())),
+    hasMore: (projectId: ProjectId) => hasMorePages(windows(), projectId),
+    moreState: (projectId: ProjectId) => moreState(more()?.get(projectId)),
+    pageFailure: (projectId: ProjectId) => failures().get(projectId),
     loadMore: reads.loadMore,
     reload: () => reads.reread("replace"),
     create: (input) => createSession(server, list, input),
