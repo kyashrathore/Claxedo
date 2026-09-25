@@ -66,6 +66,7 @@ Today's props keep their names, except `parentID` → `parentId`, and `status`, 
 
 The row builder is `Timeline.constructMessageRows` (`message-timeline.data.ts`); the row union, keys and reuse are `timeline-row-model.ts`.
 
+- A turn's rows depend on whether each text part has text, through one memo per part, not on the text itself. The fold count copies a part untracked. When the row memo read the text, every delta of a streaming reply rebuilt every row of its turn (0.8 s per 12k-character reply at 4x CPU).
 - The builder reads only a user message's `id`, `time` and optional `summary`, all of which the optimistic stub carries, so a just-typed turn renders before the runtime echoes it. A turn's duration reads only the user message's creation stamp, so a turn opened by a prompt that never reached the runtime still has one.
 - Turn semantics (error, interruption, settlement, fold, tokens, cost) always come from every assistant sibling of the turn. The optional visibility set only bounds the part rows built for the first cold frame.
 - A run of tools cannot span the interruption row: grouping the refs whole would merge the runs either side into one group, which the fold counts as one where the turn draws two.
