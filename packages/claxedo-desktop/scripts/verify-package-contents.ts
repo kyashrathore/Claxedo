@@ -41,6 +41,7 @@ import { readRecord } from "../src/shared/json-read"
 import { ALL_NATIVE_MODULES, isDeclaredStructuralEntry, requiredPackagedBoundaryEntries } from "./package-structure"
 import { verifyHostConnectorChildArtifact } from "../src/main/host-connector/child-artifact"
 import { embeddedSdkPins, verifyOpenCodeSdkResources } from "./opencode-sdk-resources"
+import { verifyPackagedStartupArtifacts } from "./packaged-startup-artifacts"
 
 const ALLOWED_NATIVE_MODULES = new Set(ALL_NATIVE_MODULES)
 
@@ -290,6 +291,7 @@ export function verifyPackageContents(
     }
   }
   for (const archive of asars) {
+    failures.push(...verifyPackagedStartupArtifacts(archive))
     const entries = asarHeaderFiles(archive)
     for (const required of requiredPackagedBoundaryEntries(entries)) {
       if (!entries.includes(required)) {

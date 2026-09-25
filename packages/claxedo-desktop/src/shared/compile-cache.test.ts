@@ -143,6 +143,35 @@ describe("seeding", () => {
     fs.rmSync(root, { recursive: true, force: true })
   })
 
+  test("finds a dependency where packaging moved the server's node_modules", () => {
+    const { root, computed, server } = fixture()
+    const packaged = path.join(root, "node_modules", "dep")
+    fs.mkdirSync(packaged, { recursive: true })
+    fs.writeFileSync(path.join(packaged, "index.js"), "export const b = 2\n")
+    const shipped = path.join(root, "deps-shipped")
+    fs.mkdirSync(shipped)
+    fs.writeFileSync(path.join(shipped, "dep.esm.v8cache"), "BLOB:dep")
+    fs.writeFileSync(
+      path.join(shipped, CLAXEDO_COMPILE_CACHE_MANIFEST_NAME),
+      JSON.stringify({ version: 1, entries: [{ file: "node_modules/dep/index.js", type: "esm", blob: "dep.esm.v8cache", bytes: 8 }] }),
+    )
+
+    const result = seedShippedCompileCaches({ sources: [{ shippedDir: shipped, rootDir: server.rootDir }], computedCacheDir: computed })
+
+    expect(result).toMatchObject({ status: "seeded", entries: 1 })
+    const expected = compileCacheEntryName(pathToFileURL(fs.realpathSync(path.join(packaged, "index.js"))).href, "esm")
+    expect(fs.readFileSync(path.join(computed, expected), "utf8")).toBe("BLOB:dep")
+    fs.rmSync(root, { recursive: true, force: true })
+  })
+
+  test("refuses a manifest entry whose source is shipped nowhere", () => {
+    const { root, computed, server } = fixture()
+    fs.rmSync(path.join(server.rootDir, "chunks/entry-abc.js"))
+
+    expect(() => seedShippedCompileCaches({ sources: [server], computedCacheDir: computed })).toThrow("chunks/entry-abc.js")
+    fs.rmSync(root, { recursive: true, force: true })
+  })
+
   test("seeds EVERY shipped set into the one runtime directory", () => {
     // The regression this pins: the engine's blobs landing first must not make
     // the directory look populated to the server bundle's set.
