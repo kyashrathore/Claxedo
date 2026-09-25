@@ -15,7 +15,6 @@ import {
   type TerminalPaneState,
 } from "../model"
 import { AccessoryRow } from "./accessory-row"
-import { AgentBadge } from "./agent-badge"
 import { mountTerminal, type TerminalMount } from "./terminal-mount"
 import { TerminalStatus } from "./terminal-status"
 
@@ -59,6 +58,12 @@ export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
     if (connection.state().kind === "ended") store.drop(terminalId)
   })
 
+  createEffect(() => {
+    const current = row()
+    const busy = current?.agentStatus === "working" || current?.agentStatus === "waitingOnUser"
+    if (props.active && current?.seen && !busy) store.clearSeen(terminalId)
+  })
+
   return (
     <section
       aria-label={t("terminal.pane")}
@@ -79,9 +84,6 @@ export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
           classList={{ invisible: overlay() }}
           onPointerDown={() => backend()?.focus()}
         />
-        <div class="pointer-events-none absolute top-1.5 right-3">
-          <AgentBadge status={row()?.agentStatus} />
-        </div>
         <Show when={overlay()}>
           <div class="absolute inset-0 bg-background-base">
             <TerminalStatus
