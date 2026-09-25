@@ -49,6 +49,10 @@ export const CLAXEDO_TOOL_TITLE_KEYS = {
   workspace_checkpoint: "ui.claxedoTool.workspace_checkpoint",
   workspace_restore: "ui.claxedoTool.workspace_restore",
   workspace_lifecycle: "ui.claxedoTool.workspace_lifecycle",
+  app_plugin_create: "ui.claxedoTool.app_plugin_create",
+  app_plugin_check: "ui.claxedoTool.app_plugin_check",
+  app_plugin_add: "ui.claxedoTool.app_plugin_add",
+  app_plugin_guide: "ui.claxedoTool.app_plugin_guide",
 } as const satisfies Record<string, UiI18nKey>
 
 export type ClaxedoToolName = keyof typeof CLAXEDO_TOOL_TITLE_KEYS

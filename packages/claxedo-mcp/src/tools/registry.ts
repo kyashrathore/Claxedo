@@ -1,6 +1,6 @@
 import type { McpServer, ToolCallback } from "@modelcontextprotocol/sdk/server/mcp.js"
 import type { ShapeOutput } from "@modelcontextprotocol/sdk/server/zod-compat.js"
-import { assertToolAccess, McpAccessDenied, toolListed, type McpToolAccess, type McpToolContext } from "../context"
+import { assertToolAccess, McpAccessDenied, toolGrants, toolListed, type McpToolAccess, type McpToolContext } from "../context"
 import { mcpToolRefusal, toCallToolResult, type McpToolResult, type McpToolShape } from "../mcp-tool"
 
 export type McpToolDefinition<Shape extends McpToolShape> = Readonly<{
@@ -58,7 +58,7 @@ export function createToolRegistry(server: McpServer, ctx: McpToolContext): Tool
     listed,
     tool<Shape extends McpToolShape>(name: string, definition: McpToolDefinition<Shape>, handler: McpToolHandler<Shape>) {
       declared.set(name, definition.access)
-      if (!toolListed(ctx.credential, definition.access, ctx.client.tasks?.operations)) return
+      if (!toolListed(ctx.credential, definition.access, toolGrants(ctx.client))) return
       listed.push(name)
       // `ToolCallback<Shape>` is a conditional type over the shape; it resolves
       // only for a concrete shape, so a callback written once for every shape
@@ -67,7 +67,7 @@ export function createToolRegistry(server: McpServer, ctx: McpToolContext): Tool
       // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- see above: `ToolCallback<Shape>` resolves only for a concrete shape.
       const callback = (async (args: ShapeOutput<Shape>) => {
           try {
-            assertToolAccess(ctx.credential, name, definition.access, ctx.client.tasks?.operations)
+            assertToolAccess(ctx.credential, name, definition.access, toolGrants(ctx.client))
             if (definition.access.destructive) {
               const elicit = ctx.elicit
               if (!elicit) return toCallToolResult(mcpToolRefusal(`${name} requires confirmation, but this client does not support elicitation`))

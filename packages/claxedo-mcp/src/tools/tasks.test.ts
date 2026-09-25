@@ -744,8 +744,8 @@ describe("the handler-side operation check", () => {
   const access: McpToolAccess = { audiences: ["runtime", "user"], write: true, scope: "act", operation: "start" }
 
   test("refuses an operation the grant does not carry, whatever tools/list showed", () => {
-    expect(() => assertToolAccess(credential, "task_start", access, ["read", "create"])).toThrow(McpAccessDenied)
-    expect(() => assertToolAccess(credential, "task_start", access, ["read", "create"]))
+    expect(() => assertToolAccess(credential, "task_start", access, { tasks: ["read", "create"] })).toThrow(McpAccessDenied)
+    expect(() => assertToolAccess(credential, "task_start", access, { tasks: ["read", "create"] }))
       .toThrow("task_start needs the start Tasks operation, which this session was not granted")
   })
 
@@ -755,6 +755,6 @@ describe("the handler-side operation check", () => {
   })
 
   test("lets a granted operation through", () => {
-    expect(() => assertToolAccess(credential, "task_start", access, ALL_OPERATIONS)).not.toThrow()
+    expect(() => assertToolAccess(credential, "task_start", access, { tasks: ALL_OPERATIONS })).not.toThrow()
   })
 })

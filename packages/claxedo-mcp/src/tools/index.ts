@@ -1,3 +1,4 @@
+import { registerAppPluginTools } from "./app-plugins"
 import { registerAttentionTools } from "./attention"
 import { registerDocumentTools } from "./documents"
 import { registerProcessTools } from "./processes"
@@ -40,6 +41,7 @@ export type McpToolGroup = Readonly<{
 }>
 
 export const CLAXEDO_MCP_TOOL_GROUPS = [
+  { id: "app-plugins", reach: { service: "app-plugins" }, register: registerAppPluginTools },
   { id: "attention", reach: "runtime", register: registerAttentionTools },
   { id: "documents", reach: { service: "documents" }, register: registerDocumentTools },
   { id: "processes", reach: "runtime", register: registerProcessTools },

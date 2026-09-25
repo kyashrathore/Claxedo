@@ -47,6 +47,38 @@ export type TasksGrant = Readonly<{
   projectId?: string
 }>
 
+export type AppPluginDiagnostic = Readonly<{
+  stage: string
+  file?: string
+  line?: number
+  column?: number
+  code?: string
+  message: string
+}>
+
+export type AppPluginFolder = Readonly<{ id: string; name: string; directory: string; files: readonly string[] }>
+
+export type AppPluginCheck = Readonly<{ directory: string; ok: boolean; pluginId?: string; diagnostics: readonly AppPluginDiagnostic[] }>
+
+export type AppPluginRegistration = Readonly<{
+  id: string
+  name: string | null
+  directory: string
+  status: string
+  lastError: string | null
+}>
+
+/**
+ * App plugin authoring on the machine that runs the session. A composition
+ * hands it only to a session of the machine's owner, bound to the folders that
+ * session may write; every method refuses a directory outside them.
+ */
+export type AppPluginsGrant = Readonly<{
+  create(input: Readonly<{ name: string; directory?: string }>): Promise<AppPluginFolder>
+  check(directory: string): Promise<AppPluginCheck>
+  add(directory: string): Promise<AppPluginRegistration>
+}>
+
 export type WorkspaceSummary = Readonly<{
   id: string
   name?: string
@@ -72,6 +104,8 @@ export interface ClaxedoMcpClient {
   readonly documents?: ClaxedoFetch
   /** Tasks routes (`/api/claxedo/tasks/*`) and the operations this caller was granted; undefined where the deployment serves no Tasks. */
   readonly tasks?: TasksGrant
+  /** App plugin authoring; undefined unless this caller is a session of the machine's owner. */
+  readonly appPlugins?: AppPluginsGrant
   /** Runtime routes (`/session*`, `/permission`, `/api/wr/*`) on the workspace that owns the target. */
   runtime(target: WorkspaceTarget): Promise<ClaxedoFetch>
   resolveTarget(target: WorkspaceTarget): Promise<ResolvedTarget>

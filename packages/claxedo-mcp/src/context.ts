@@ -45,7 +45,19 @@ export type McpToolAccess = Readonly<{
   destructive?: boolean
   /** The Tasks operation this tool performs; a tool that names one exists only while the caller's grant carries it. */
   operation?: TasksOperation
+  /** App plugin authoring; a tool that needs it exists only while the client carries the grant. */
+  appPlugins?: true
 }>
+
+/** What the client was granted beyond the credential, read from the client rather than the credential. */
+export type McpToolGrants = Readonly<{ tasks?: readonly TasksOperation[]; appPlugins?: boolean }>
+
+export function toolGrants(client: ClaxedoMcpClient): McpToolGrants {
+  return {
+    ...(client.tasks ? { tasks: client.tasks.operations } : {}),
+    appPlugins: client.appPlugins !== undefined,
+  }
+}
 
 export type McpAuditEvent = Readonly<{
   tool: string
@@ -65,7 +77,7 @@ export type McpToolContext = Readonly<{
 
 export class McpAccessDenied extends Error {
   constructor(
-    readonly code: "audience" | "read-only" | "scope" | "cross-machine" | "own-children-only" | "recursion" | "tasks",
+    readonly code: "audience" | "read-only" | "scope" | "cross-machine" | "own-children-only" | "recursion" | "tasks" | "app-plugins",
     message: string,
   ) {
     super(message)
@@ -77,16 +89,16 @@ export class McpAccessDenied extends Error {
  * The handler-side check; `tools/list` filtering is the courtesy, this is the
  * boundary.
  *
- * `granted` is the Tasks operations the caller's grant carries, which live on
- * the client rather than the credential: hosted, the control plane mints them
- * into the capability the mount presents, so the credential the runtime signed
- * for itself says nothing about them.
+ * `grants` live on the client rather than the credential. Hosted, the control
+ * plane mints the Tasks operations into the capability the mount presents, and
+ * a composition hands app plugin authoring only to a session of the machine's
+ * owner, so the credential the runtime signed for itself says nothing of either.
  */
 export function assertToolAccess(
   credential: McpCredential,
   name: string,
   access: McpToolAccess,
-  granted?: readonly TasksOperation[],
+  grants: McpToolGrants = {},
 ): void {
   if (!access.audiences.includes(credential.kind)) {
     throw new McpAccessDenied("audience", `${name} is not available to a ${credential.kind} credential`)
@@ -97,17 +109,23 @@ export function assertToolAccess(
   if (credential.kind === "user" && !credential.scopes.has(access.scope)) {
     throw new McpAccessDenied("scope", `${name} requires the claxedo:${access.scope} scope`)
   }
+  const granted = grants.tasks
   if (access.operation) {
     if (!granted) throw new McpAccessDenied("tasks", `${name} needs the Tasks service, which this Claxedo deployment does not serve`)
     if (!granted.includes(access.operation)) {
       throw new McpAccessDenied("tasks", `${name} needs the ${access.operation} Tasks operation, which this session was not granted`)
     }
   }
+  if (access.appPlugins && !grants.appPlugins) throw appPluginsDenied(name)
 }
 
-export function toolListed(credential: McpCredential, access: McpToolAccess, granted?: readonly TasksOperation[]): boolean {
+export function appPluginsDenied(tool: string): McpAccessDenied {
+  return new McpAccessDenied("app-plugins", `${tool} makes app plugins on this machine, which only its owner's sessions may do`)
+}
+
+export function toolListed(credential: McpCredential, access: McpToolAccess, grants: McpToolGrants = {}): boolean {
   try {
-    assertToolAccess(credential, "", access, granted)
+    assertToolAccess(credential, "", access, grants)
     return true
   } catch (error) {
     if (error instanceof McpAccessDenied) return false
