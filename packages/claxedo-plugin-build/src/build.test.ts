@@ -68,6 +68,17 @@ describe("buildPluginApp", () => {
     expect((await buildPluginApp({ rootDir: dir })).hash).toBe(built.hash)
   })
 
+  test("a manifest change alone is a new build", async () => {
+    const dir = await writePlugin(path.join(root, "access"), { "package.json": packageJson(), "src/app.tsx": APP })
+    const before = await buildPluginApp({ rootDir: dir })
+    const manifest = JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf8")) as { claxedo: { server?: unknown } }
+    manifest.claxedo.server = { routes: ["/api/claxedo/projects"] }
+    await fs.writeFile(path.join(dir, "package.json"), JSON.stringify(manifest))
+    const after = await buildPluginApp({ rootDir: dir })
+    expect(after.code).toBe(before.code)
+    expect(after.hash).not.toBe(before.hash)
+  })
+
   test("the bundle activates against a runtime the host installs", async () => {
     const dir = await writePlugin(path.join(root, "runs"), { "package.json": packageJson(), "src/app.tsx": APP })
     const built = await buildPluginApp({ rootDir: dir })

@@ -1,4 +1,3 @@
-import { Show } from "solid-js"
 import { ClaxedoIcon as Icon } from "@/ui"
 
 export function TimelineFileContextMenu(props: {
@@ -6,7 +5,6 @@ export function TimelineFileContextMenu(props: {
   onOpenFile: (path: string) => void
   onDismiss: () => void
   resolvePath: (path: string) => string
-  showItemInFolder?: (path: string) => Promise<void> | void
 }) {
   return (
     <>
@@ -44,18 +42,6 @@ export function TimelineFileContextMenu(props: {
         >
           <Icon name="copy" size="small" /> Copy path
         </button>
-        <Show when={props.showItemInFolder}>
-          <button
-            type="button"
-            class="flex w-full items-center gap-2 rounded-md px-2 h-9 text-13-regular text-text-base hover:bg-surface-base-active"
-            onClick={() => {
-              void props.showItemInFolder?.(props.resolvePath(props.menu.path))
-              props.onDismiss()
-            }}
-          >
-            <Icon name="folder" size="small" /> Reveal in Finder
-          </button>
-        </Show>
       </div>
     </>
   )

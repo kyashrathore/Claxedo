@@ -1,5 +1,7 @@
 import type { PluginDefinition, PluginManifest } from "@claxedo/plugin-api"
-import type { LivePlugin, PluginServerCalls } from "../api"
+import type { LivePlugin } from "@/server"
+import type { PluginServerCalls } from "../api"
+import { moduleDictionary } from "../dictionary"
 import { frameDefinition } from "../frame/definition"
 import type { FrameSource } from "../frame/open"
 import type { PluginBuild, PluginOrigin } from "../model"
@@ -14,6 +16,7 @@ export class LivePluginLoadError extends Error {
 export type LiveRow = LivePlugin & { readonly hash: string }
 
 export function rowManifest(row: LivePlugin): PluginManifest {
+  if (row.manifest) return row.manifest
   return {
     id: row.id,
     name: row.name ?? row.id,
@@ -24,8 +27,14 @@ export function rowManifest(row: LivePlugin): PluginManifest {
   }
 }
 
-function originOf(row: LiveRow): PluginOrigin {
-  return row.lastError ? { kind: "live", hash: row.hash, buildError: row.lastError } : { kind: "live", hash: row.hash }
+function originOf(row: LivePlugin, hash: string): PluginOrigin {
+  return {
+    kind: "live",
+    hash,
+    directory: row.directory,
+    ...(row.builtAt && row.hash === hash ? { builtAt: row.builtAt } : {}),
+    ...(row.lastError ? { buildError: row.lastError } : {}),
+  }
 }
 
 function definitionOf(row: LiveRow, module: unknown): PluginDefinition {
@@ -47,15 +56,14 @@ async function importBundle(code: string): Promise<unknown> {
 
 function manifestOf(row: LiveRow, definition: PluginDefinition): PluginManifest {
   const declared = definition.manifest
-  if (!declared) return rowManifest(row)
-  if (declared.id !== row.id) throw new LivePluginLoadError(row.id, `the bundle declares the id ${declared.id}`)
-  return declared
+  if (declared && declared.id !== row.id) throw new LivePluginLoadError(row.id, `the bundle declares the id ${declared.id}`)
+  return rowManifest(row)
 }
 
 export function failingBuild(row: LivePlugin, hash: string, error: unknown): PluginBuild {
   return {
     manifest: rowManifest(row),
-    origin: { kind: "live", hash, ...(row.lastError ? { buildError: row.lastError } : {}) },
+    origin: originOf(row, hash),
     definition: {
       activate: () => {
         throw error
@@ -68,8 +76,10 @@ export async function loadLiveBuild(row: LiveRow, calls: PluginServerCalls): Pro
   try {
     const { installPluginRuntime } = await import("./runtime")
     installPluginRuntime()
-    const definition = definitionOf(row, await importBundle(await calls.liveBundle(row.id, row.hash)))
-    return { manifest: manifestOf(row, definition), origin: originOf(row), definition }
+    const module = await importBundle(await calls.liveBundle(row.id, row.hash))
+    const definition = definitionOf(row, module)
+    const dictionary = moduleDictionary(module)
+    return { manifest: manifestOf(row, definition), origin: originOf(row, row.hash), definition, ...(dictionary ? { dictionary } : {}) }
   } catch (error) {
     return failingBuild(row, row.hash, error)
   }
@@ -78,7 +88,7 @@ export async function loadLiveBuild(row: LiveRow, calls: PluginServerCalls): Pro
 export async function loadFrameBuild(row: LiveRow, calls: PluginServerCalls, frame: Omit<FrameSource, "code">): Promise<PluginBuild> {
   try {
     const code = await calls.liveBundle(row.id, row.hash)
-    return { manifest: rowManifest(row), origin: originOf(row), definition: frameDefinition({ ...frame, code }) }
+    return { manifest: rowManifest(row), origin: originOf(row, row.hash), definition: frameDefinition({ ...frame, code }) }
   } catch (error) {
     return failingBuild(row, row.hash, error)
   }

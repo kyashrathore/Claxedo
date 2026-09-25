@@ -1,0 +1,147 @@
+#!/usr/bin/env node
+import { spawn } from "node:child_process"
+import fs from "node:fs"
+import net from "node:net"
+import path from "node:path"
+import { createRequire } from "node:module"
+import { pathToFileURL } from "node:url"
+
+const REPO_ROOT = path.resolve(import.meta.dirname, "../../../../..")
+const RUNTIME_DIR = path.join(REPO_ROOT, "packages/workspace-runtime")
+const STATE_DIR = path.join(process.env.HOME ?? process.cwd(), ".docker-stand-in")
+
+const tsxLoader = () =>
+  pathToFileURL(path.join(path.dirname(createRequire(path.join(REPO_ROOT, "packages/claxedo-server/package.json")).resolve("tsx/package.json")), "dist/loader.mjs")).href
+
+const statePath = (id) => path.join(STATE_DIR, `${id}.json`)
+
+function read(id) {
+  if (!id || !fs.existsSync(statePath(id))) return undefined
+  return JSON.parse(fs.readFileSync(statePath(id), "utf8"))
+}
+
+function write(container) {
+  fs.mkdirSync(STATE_DIR, { recursive: true })
+  fs.writeFileSync(statePath(container.id), JSON.stringify(container, null, 2))
+}
+
+function fail(message) {
+  process.stderr.write(`Error response from daemon: ${message}\n`)
+  process.exit(1)
+}
+
+function running(pid) {
+  if (!pid) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer()
+    server.once("error", reject)
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address()
+      server.close(() => resolve(address.port))
+    })
+  })
+}
+
+function create(args) {
+  const container = { id: "", env: {}, containerPort: "", pid: 0, hostPort: 0 }
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]
+    if (arg === "--name") container.id = args[++index]
+    else if (arg === "--env") {
+      const pair = args[++index]
+      const at = pair.indexOf("=")
+      container.env[pair.slice(0, at)] = pair.slice(at + 1).replaceAll("host.docker.internal", "127.0.0.1")
+    } else if (arg === "-p") container.containerPort = args[++index].split(":").pop()
+    else if (arg === "--label" || arg === "--entrypoint") index += 1
+  }
+  if (!container.id) fail("create needs --name")
+  write(container)
+  process.stdout.write(`${container.id}\n`)
+}
+
+async function start(id) {
+  const container = read(id)
+  if (!container) fail(`No such container: ${id}`)
+  if (running(container.pid)) return process.stdout.write(`${id}\n`)
+  const root = path.join(STATE_DIR, id)
+  const directory = container.env.WORKSPACE_RUNTIME_DIRECTORY
+  if (!directory || !path.isAbsolute(directory)) fail("the e2e docker stand-in needs the workspace mounted at an absolute host path")
+  fs.mkdirSync(root, { recursive: true })
+  fs.mkdirSync(directory, { recursive: true })
+  const hostPort = await freePort()
+  const log = fs.openSync(path.join(root, "runtime.log"), "a")
+  const child = spawn(
+    process.execPath,
+    ["--conditions=development", "--import", pathToFileURL(path.join(RUNTIME_DIR, "src/text-imports.mjs")).href, "--import", tsxLoader(), path.join(RUNTIME_DIR, "src/cli.ts")],
+    {
+      cwd: directory,
+      detached: true,
+      stdio: ["ignore", log, log],
+      env: {
+        ...process.env,
+        ...container.env,
+        WORKSPACE_RUNTIME_HOST: "127.0.0.1",
+        WORKSPACE_RUNTIME_PORT: String(hostPort),
+      },
+    },
+  )
+  child.unref()
+  write({ ...container, pid: child.pid, hostPort })
+  process.stdout.write(`${id}\n`)
+}
+
+async function stop(id) {
+  const container = read(id)
+  if (!container) fail(`No such container: ${id}`)
+  if (running(container.pid)) {
+    process.kill(container.pid, "SIGTERM")
+    for (let wait = 0; wait < 100 && running(container.pid); wait += 1) await new Promise((resolve) => setTimeout(resolve, 50))
+    if (running(container.pid)) process.kill(container.pid, "SIGKILL")
+  }
+  write({ ...container, pid: 0 })
+  process.stdout.write(`${id}\n`)
+}
+
+const [command, ...args] = process.argv.slice(2)
+switch (command) {
+  case "create":
+    create(args)
+    break
+  case "start":
+    await start(args[0])
+    break
+  case "stop":
+    await stop(args.at(-1))
+    break
+  case "rm": {
+    const id = args.at(-1)
+    if (read(id)) await stop(id)
+    fs.rmSync(statePath(id), { force: true })
+    break
+  }
+  case "port": {
+    const container = read(args[0])
+    if (!container?.hostPort) fail(`No public port for ${args[0]}`)
+    process.stdout.write(`127.0.0.1:${container.hostPort}\n`)
+    break
+  }
+  case "inspect": {
+    const id = args.at(-1)
+    if (!read(id)) fail(`No such object: ${id}`)
+    process.stdout.write(`${id}\n`)
+    break
+  }
+  case "cp":
+    break
+  default:
+    fail(`the e2e docker stand-in does not implement "${command}"`)
+}

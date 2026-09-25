@@ -1,6 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { z } from "zod"
+import { pluginManifestSchema } from "@claxedo/plugin-api"
 import { PLUGIN_BUNDLE_HASH_LENGTH } from "@claxedo/plugin-build"
 import type { LivePluginBundle } from "./machine"
 import { isMissingFile, LivePluginStoreError, readJsonFile, writeJsonFileAtomically } from "./store"
@@ -10,8 +11,8 @@ export const BUNDLE_HASH_PATTERN = new RegExp(`^[0-9a-f]{${PLUGIN_BUNDLE_HASH_LE
 const currentSchema = z
   .object({
     hash: z.string().regex(BUNDLE_HASH_PATTERN),
-    name: z.string().min(1),
-    version: z.string().min(1),
+    manifest: pluginManifestSchema,
+    builtAt: z.iso.datetime(),
   })
   .strict()
 
@@ -27,7 +28,7 @@ export async function saveLivePluginBundle(root: string, id: string, bundle: Liv
   const directory = path.join(livePluginBundlesDirectory(root, id), bundle.hash)
   await fs.mkdir(directory, { recursive: true })
   await fs.writeFile(path.join(directory, "app.js"), bundle.code)
-  await writeJsonFileAtomically(currentFile(root, id), { hash: bundle.hash, name: bundle.name, version: bundle.version })
+  await writeJsonFileAtomically(currentFile(root, id), { hash: bundle.hash, manifest: bundle.manifest, builtAt: bundle.builtAt })
 }
 
 export async function readLivePluginBundle(root: string, id: string, hash: string): Promise<string | undefined> {

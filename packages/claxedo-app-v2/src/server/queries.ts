@@ -10,6 +10,7 @@ import { accountQueries } from "./accounts"
 import { cloudQueries } from "./cloud"
 import type { ServerEvent } from "./events"
 import { fileQueries } from "./files"
+import { livePluginQueries } from "./live-plugins"
 import { gitQueries } from "./git"
 import { harnessQueries } from "./harness-options"
 import type { ServerQueries } from "./api"
@@ -40,6 +41,7 @@ function placementQueries(transport: Transport, workspaces: Workspaces) {
 export function createQueries(transport: Transport, workspaces: Workspaces): ServerQueries {
   const cloud = cloudQueries(transport)
   return {
+    livePlugins: livePluginQueries(transport),
     projects: projectQueries(transport),
     placements: placementQueries(transport, workspaces),
     machines: machineQueries(transport, workspaces),
@@ -73,7 +75,7 @@ function invalidationKeys(server: string, event: ServerEvent, endsWritingTurn: b
     case "cloudWorkspaceChanged":
       return [queryKeys.bootstrap(server), queryKeys.placements(server), queryKeys.projects(server), queryKeys.machines(server), queryKeys.cloud(server)]
     case "pluginsChanged":
-      return [queryKeys.marketplaceAll(server), queryKeys.marketplaceSources(server)]
+      return [queryKeys.livePlugins(server)]
     case "usageChanged":
       return [queryKeys.usageAll(server)]
     case "streamGap":

@@ -1,4 +1,4 @@
-import type { Accessor } from "solid-js"
+import type { Accessor, Owner } from "solid-js"
 import type { CommandContext, PluginManifest, PluginPlatform } from "@claxedo/plugin-api"
 import type { I18n } from "@/i18n"
 import type { Project, Server } from "@/server"
@@ -12,6 +12,7 @@ import type { RegistrationSink } from "../registrations"
 import type { OverlayTracker } from "./overlays"
 
 export type HostServices = {
+  readonly owner: Owner
   readonly registries: ShellRegistries
   readonly commands: Commands
   readonly workbench: WorkbenchStore
