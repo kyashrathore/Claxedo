@@ -306,12 +306,12 @@ describe("local project routes", () => {
     expect(listed.projects.find((item) => item.id === project.id)).toMatchObject({ name: "Vanished", available: false })
   })
 
-  test("a project that runs only in a cloud workspace is available only while its sandbox is ready", async () => {
+  test("a project that runs only in a cloud workspace stays available while its sandbox is stopped, and its workspace is reachable only while the sandbox is ready", async () => {
     const cloud = await ensureWorkspace({ kind: "cloud", driver: "daytona", directory: "/workspace", repo_url: "https://github.com/acme/sky.git", status: "stopped" })
     const id = cloud?.project_id ?? ""
     const availability = async () => (((await (await app.request(`http://localhost/${id}`)).json()) as { project: { available: boolean } }).project.available)
     const reachable = async () => (await listProjects()).find((project) => project.id === id)?.workspaces[cloud?.id ?? ""]?.reachable
-    expect(await availability()).toBe(false)
+    expect(await availability()).toBe(true)
     expect(await reachable()).toBe(false)
     configureWorkspaceStore({ sandboxLease: (workspaceId) => (workspaceId === cloud?.id ? { status: "ready" } : undefined) })
     try {

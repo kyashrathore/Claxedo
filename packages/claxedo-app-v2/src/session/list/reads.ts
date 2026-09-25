@@ -1,5 +1,5 @@
 import { machine, type Machine } from "@/lib/machine"
-import type { PlacementId, Server, SessionRow, SessionStatusRead } from "@/server"
+import { listsSessions, type PlacementId, type Server, type SessionRow, type SessionStatusRead } from "@/server"
 import { toAppError, type RequestsInternal } from "../requests"
 import { unreadPlacementsOf } from "./statuses"
 import {
@@ -47,7 +47,7 @@ async function readPage(context: ReadContext, target: PageTarget): Promise<Fetch
 }
 
 async function firstPageTargets(context: ReadContext): Promise<PageTarget[]> {
-  return (await context.server.placements.load()).filter((placement) => placement.reachable).map((placement) => ({ placementId: placement.id }))
+  return (await context.server.placements.load()).filter(listsSessions).map((placement) => ({ placementId: placement.id }))
 }
 
 async function readWindow(context: ReadContext, targets: readonly PageTarget[], withStatuses: boolean): Promise<FetchedWindow> {
