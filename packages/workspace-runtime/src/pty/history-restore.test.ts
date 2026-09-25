@@ -28,7 +28,8 @@ type DataHandler = (data: string) => void
 type ExitHandler = (event: { exitCode: number }) => void
 
 const fakeProcesses = new Map<number, { dataHandlers: DataHandler[]; exitHandlers: ExitHandler[] }>()
-let nextPid = 52000
+/** Above every kernel's pid ceiling (Linux 2^22, macOS 99999), so no identity read can land on a real process. */
+let nextPid = 4_194_305
 
 await mock.module("@lydell/node-pty", () => ({
   spawn(command: string, args: string[], options: { cwd?: string; env?: Record<string, string> }) {
