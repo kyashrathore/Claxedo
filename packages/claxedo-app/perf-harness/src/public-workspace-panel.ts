@@ -818,8 +818,11 @@ async function waitForPanelProfile(
         const rendered = Number(corpus?.dataset.reviewRenderedFiles)
         const openCount = Number(state?.dataset.reviewOpenDiffCount ?? -1)
         const loadedCount = Number(state?.dataset.reviewLoadedDiffCount ?? -1)
+        // Today's app also marks each file's header inside its row, and v2 marks
+        // only the row; a row is the outermost element carrying its file.
         const canonicalRows = Array.from(root?.querySelectorAll<HTMLElement>("[data-review-file]") ?? [])
           .filter((row) => changed.includes(row.dataset.reviewFile ?? ""))
+          .filter((row, _index, rows) => !rows.some((other) => other !== row && other.dataset.reviewFile === row.dataset.reviewFile && other.contains(row)))
         const expandedRows = canonicalRows.filter((row) =>
           !!row.querySelector("[aria-expanded='true']") || !!row.shadowRoot?.querySelector("[aria-expanded='true']")
         )
@@ -1018,6 +1021,7 @@ export async function waitForPanelOwner(
             const loadedCount = Number(state?.dataset.reviewLoadedDiffCount ?? -1)
             const canonicalRows = Array.from(root?.querySelectorAll<HTMLElement>("[data-review-file]") ?? [])
               .filter((row) => changed.includes(row.dataset.reviewFile ?? ""))
+              .filter((row, _index, rows) => !rows.some((other) => other !== row && other.dataset.reviewFile === row.dataset.reviewFile && other.contains(row)))
             const expandedRows = canonicalRows.filter((row) =>
               !!row.querySelector("[aria-expanded='true']") || !!row.shadowRoot?.querySelector("[aria-expanded='true']")
             )
@@ -1333,6 +1337,7 @@ async function waitForDiffState(
         const loadedCount = Number(root?.dataset.reviewLoadedDiffCount ?? -1)
         const canonicalRows = Array.from(pane?.querySelectorAll<HTMLElement>("[data-review-file]") ?? [])
           .filter((row) => changed.includes(row.dataset.reviewFile ?? ""))
+          .filter((row, _index, rows) => !rows.some((other) => other !== row && other.dataset.reviewFile === row.dataset.reviewFile && other.contains(row)))
         const expandedRows = canonicalRows.filter((row) =>
           !!row.querySelector("[aria-expanded='true']") || !!row.shadowRoot?.querySelector("[aria-expanded='true']")
         )
