@@ -7,7 +7,7 @@ import { forward, forwardUpgrade } from "./proxy"
 
 export type TlsFront = { url: string; close(): Promise<void> }
 
-async function selfSignedCertificate(dir: string) {
+export async function selfSignedCertificate(dir: string) {
   const key = path.join(dir, "front-key.pem")
   const cert = path.join(dir, "front-cert.pem")
   await promisify(execFile)("openssl", [
