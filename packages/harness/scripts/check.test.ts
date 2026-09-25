@@ -13,7 +13,7 @@ const budgets: Record<string, number> = {
   contract: 1200, translate: 550, broker: 2300, registry: 900, capabilities: 450, profiles: 600,
   "transports/claude-sdk": 2100, "transports/codex-app-server": 2150,
   "transports/cursor-sdk": 1600, "transports/acp": 2950,
-  "transports/pi-rpc": 650, "transports/opencode-v2": 850,
+  "transports/pi-rpc": 650, "transports/opencode-sdk": 3000,
 }
 
 function inspect(path: string, text: string, options: { agents?: string; budgets?: Record<string, number> } = {}) {

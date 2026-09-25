@@ -25,7 +25,7 @@ const transportVendors: Record<string, string[]> = {
   acp: ["@agentclientprotocol/sdk"],
   "codex-app-server": [],
   "pi-rpc": [],
-  "opencode-v2": [],
+  "opencode-sdk": ["@opencode-ai/sdk", "@opencode-ai/plugin", "@opencode-ai/schema"],
 }
 const coreParts = new Set(["contract", "broker", "registry", "capabilities", "translate"])
 const harnessIds = new Set(["claude", "codex", "cursor", "pi", "opencode"])
