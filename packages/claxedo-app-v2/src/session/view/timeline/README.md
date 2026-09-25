@@ -165,7 +165,7 @@ Flow 30 (`e2e/flows/30-transcript-corpus.spec.ts`) replays every corpus case thr
 
 ## Pending v2 twins
 
-Kept on `@opencode-ai/ui` until the kit lists a twin and the corpus shows no difference: `button`, `card`, `spinner`, `scroll-view`, `dropdown-menu`, `dialog`, `context/dialog`, `inline-input`, `tooltip`, `accordion`, `sticky-accordion-header`, `text-reveal`, `text-shimmer`, `diff-changes`, `file-icon`, `context/file`, `toast`, `theme/transcript-typography`, `utils/binary`, `utils/path`, and `@kobalte/core/tooltip`.
+Kept on `@opencode-ai/ui` until the kit lists a twin and the corpus shows no difference: `button`, `card`, `spinner`, `dropdown-menu`, `dialog`, `context/dialog`, `inline-input`, `tooltip`, `accordion`, `sticky-accordion-header`, `text-reveal`, `text-shimmer`, `diff-changes`, `file-icon`, `context/file`, `toast`, `theme/transcript-typography`, `utils/binary`, `utils/path`, and `@kobalte/core/tooltip`.
 
 ## Diagram colors
 

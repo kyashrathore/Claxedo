@@ -13,6 +13,7 @@ No `data-component` hooks outside what something reads: `scripts/checks/claxedo-
 - **Tokens.** `tokens/colors.css` holds the primitive ramps (`--v2-grey-*`, `--v2-blue-*`, `--v2-alpha-*`, …). `tokens/theme.css` holds the semantic tokens (`--v2-background-*`, `--v2-text-*`, `--v2-icon-*`, `--v2-border-*`, `--v2-overlay-*`, `--v2-state-*`, `--v2-elevation-*`) for the light set (`:root`, `[data-color-scheme="light"]`) and the dark set (`[data-color-scheme="dark"]`). `tokens/type.css` holds fonts, the type scale, radii and the few shadows components compose from.
 - **Global styles.** `styles.css` is the app's one stylesheet entry (imported once by `src/main.tsx`): layer order, Tailwind (`@theme` maps every utility to a token), the base reset (`base.css`) and the touch rules (`touch.css`).
 - **Icons.** Icons are today's app's `ClaxedoIcon` (below) and the kit's `Icon`, `IconV2` and `ProviderIcon`, all through `@/ui`.
+- **Scroll thumb.** `createScrollThumb` (`scroll-view-thumb.ts`) derives the thumb's geometry only while the thumb is visible (hovered, scrolled by input, or dragged): becoming visible measures the viewport once, a resize of the viewport or its first child re-reads the extent, and a scroll moves the thumb from that extent and `scrollTop`. While it is hidden it reads and writes nothing, so a transcript growing under a streaming reply costs it nothing; the kit's thumb wrote its geometry 608 times per streamed turn, each write after a forced layout read.
 - **Dialogs.** `Dialog`, `DialogProvider` and `useDialog()` are the kit's (`@opencode-ai/ui/dialog`, `@opencode-ai/ui/context/dialog`), so dialogs look and stack as they do today.
 
 ## Controls from today's app (`controls/`, `icons/`)
@@ -39,7 +40,7 @@ Every component works at 390 px with a coarse pointer: `touch.css` gives compact
 
 ## Origin
 
-Upstream's v2 library (anomalyco/opencode `packages/ui/src/v2` at 1d6c3c0e29) is the source of `Field` and `SegmentedControl`, the tokens and the base styles. `ScrollThumb` is Claxedo's own, restyled onto the v2 tokens. Everything else a surface draws is today's kit (`@opencode-ai/ui`), re-exported through `@/ui`.
+Upstream's v2 library (anomalyco/opencode `packages/ui/src/v2` at 1d6c3c0e29) is the source of `Field` and `SegmentedControl`, the tokens and the base styles. `ScrollThumb` and `ScrollView` are Claxedo's own; `ScrollView` keeps the kit's markup and look. Everything else a surface draws is today's kit (`@opencode-ai/ui`), re-exported through `@/ui`.
 
 ## Components
 
@@ -49,20 +50,11 @@ Upstream's v2 library (anomalyco/opencode `packages/ui/src/v2` at 1d6c3c0e29) is
 | `Dialog` (the kit's) | `title?`, `description?`, `action?`, `size?: normal \| large \| x-large \| viewport`, `fit?`, `flush?`, `scrim?: strong`, `class?`; the body is its children |
 | `DialogProvider`, `useDialog()` (the kit's) | `useDialog()` returns `{ active, show(element, onClose?), push(element, onClose?), close() }` |
 | `Field` (`.Label`, `.Prefix`, `.Suffix`, `.Control`) | `invalid?`; `Label` adds `tooltip?: string` |
-| `ScrollThumb` | `scroller`, `hoverTarget?`, `visibility?: hover \| scroll`; draws v2's thin overlay thumb over an element that scrolls itself (the kit's `ScrollView` draws its own). The thumb stays mounted and is `hidden` while nothing overflows: it sits after the scroller, so mounting it flips the scroller's `:last-child`, and the markdown `> *:last-child` rules then restyle the scroller's whole subtree (the Review: 651 elements on every Collapse all) |
+| `ScrollThumb` | `scroller`, `hoverTarget?`, `visibility?: hover \| scroll`; draws v2's thin overlay thumb over an element that scrolls itself. The thumb stays mounted and is `hidden` while nothing overflows: it sits after the scroller, so mounting it flips the scroller's `:last-child`, and the markdown `> *:last-child` rules then restyle the scroller's whole subtree (the Review: 651 elements on every Collapse all) |
+| `ScrollView` | div props, `viewportRef?`; a region that scrolls its children with the kit's markup (`.scroll-view`, the focusable `.scroll-view__viewport` region named "scrollable content", page and arrow keys) and the kit's thumb look (`.scroll-view__thumb`), drawn by `ScrollThumb`'s machinery |
 | `SegmentedControl`, `SegmentedControlItem` | `value?`, `defaultValue?`, `onChange?(value \| null)`, `allowDeselect?`, `disabled?`; item: `value`, `children`. Width is 232 px with equal segments; the class `segmented-control--full-width` fills the container, and `segmented-control--fit` sizes each segment to its label |
 | `Select` (the kit's, from `@opencode-ai/ui/select`) | `options`, `current?`, `value?(item)`, `label?(item)`, `groupBy?(item)`, `onSelect?(item \| undefined)`, `onHighlight?`, plus the kit button's `variant`/`size`, `triggerVariant?: settings`, `triggerStyle?` |
 | `Switch` (the kit's, from `@opencode-ai/ui/switch`) | Kobalte switch props, `children` as label, `hideLabel?`, `description?` |
 | `Tag` (the kit's, from `@opencode-ai/ui/tag`) | span props, `size?: normal \| large` |
 | `Toast`, `showToast`, `toaster` (the kit's, from `@opencode-ai/ui/toast`, so toasts look as they do today) | `showToast(options \| string)`: `title?`, `description?`, `icon?: kit icon name`, `variant?: default \| success \| error \| loading`, `duration?`, `persistent?`, `actions?: { label, onClick }[]`; mount one `Toast.Region` |
 | `Tooltip` (the kit's, from `@opencode-ai/ui/tooltip`, so tooltips look as they do today) | Kobalte tooltip props, `value: JSX.Element`, `class?`, `contentClass?`, `contentStyle?`, `inactive?`, `forceOpen?` |
-
-## At the swap
-
-Things to change once the kit components v2 uses move into the app. `packages/ui` stays untouched until then, because today's app renders it.
-
-- **ScrollView thumb:** the kit's `ScrollView` (`packages/ui/src/components/scroll-view.tsx`, `updateThumb`) already coalesces to one update per animation frame. Each frame it still reads `scrollTop`, `scrollHeight` and `clientHeight` on the viewport and `clientHeight` on the track. Those reads force the layout the timeline's virtualizer has just dirtied. The bench measured about 0.8 ms of forced layout per wheel event: 48.9 ms of 350 ms busy over 60 wheel events on an 8 MiB session. The fix:
-  - cache `scrollHeight`, `clientHeight` and the track height from the ResizeObserver entries the component already registers (the viewport, its content and the thumb mount);
-  - in the frame, read only `scrollTop`;
-  - measure with the bench's `scrollprof.ts`.
-
