@@ -194,10 +194,12 @@ test("a request to an app-server that already exited is refused, not left to its
 
 test("a retained unresolved launch stops refusing once its recorded pid is no longer that launch", async () => {
   const fake = await installFakeCodexAppServer()
+  let healthReports = 0
   const driver = new CodexHarnessAdapter({
     binary: fake.binary,
     store: createMemoryRuntimeStore(),
     codexHome: path.join(fake.directory, "codex-home"),
+    reportHealthChanged: () => { healthReports++ },
   }) as unknown as WithInternals<CodexHarnessAdapter, { driver: {
     retained: { hold(identity: CreationIdentity, result: RetirementResult): void; blocker(): Promise<unknown> }
     readRuntimeHealth(): { status: string; reason?: string }
@@ -217,12 +219,14 @@ test("a retained unresolved launch stops refusing once its recorded pid is no lo
     }, { leader: "alive", descendants: "owned", signals: [] })
     // While it is held, the driver refuses to launch anything and says so.
     expect(codex.readRuntimeHealth()).toMatchObject({ status: "unavailable", reason: "harness_retirement_unresolved" })
+    expect(healthReports).toBe(1)
 
     // Re-reading the recorded identity is what releases it. Without this a
     // single failed retirement refuses every later session for the life of
     // the driver.
     expect(await codex.retained.blocker()).toBeUndefined()
     expect(codex.readRuntimeHealth()).toMatchObject({ status: "ok" })
+    expect(healthReports).toBe(2)
   } finally {
     await (driver as unknown as { dispose(): Promise<void> }).dispose()
     removeTestTempDir(fake.directory)

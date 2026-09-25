@@ -167,6 +167,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       pendingPermissions: this.interactions.permissions,
       pendingQuestions: this.interactions.questions,
       processObserver: options.processObserver,
+      ...(options.reportHealthChanged ? { reportHealthChanged: options.reportHealthChanged } : {}),
       transcriptRegistrar: options.transcriptRegistrar,
       bindSession: (input) => this.bindStoreSession(input),
       getAgentSessionId: (sessionId) => this.store.getAgentSessionId(sessionId),

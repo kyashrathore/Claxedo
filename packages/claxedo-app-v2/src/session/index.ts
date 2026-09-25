@@ -10,6 +10,7 @@ import type {
   RequestId,
   SessionCreateInput,
   SessionGoal,
+  SessionId,
   SessionRef,
   SessionRow,
   SessionStatus,
@@ -44,6 +45,7 @@ export type LoadMoreState =
 export type SessionList = {
   readonly state: Accessor<SessionListState>
   readonly rows: Accessor<readonly SessionRowView[]>
+  readonly rowOf: (sessionId: SessionId) => SessionRow | undefined
   readonly hasMore: (placementIds: readonly PlacementId[]) => boolean
   readonly moreState: Accessor<LoadMoreState>
   readonly loadMore: (placementIds: readonly PlacementId[]) => Promise<void>

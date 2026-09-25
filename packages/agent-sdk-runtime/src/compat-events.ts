@@ -11,10 +11,12 @@ import type {
   AgentSessionTitleSource,
   AgentSession,
   AgentTodo,
+  ConnectionRuntimeStatus,
 } from "@claxedo/agent-runtime-contract"
 import { parseAgentContentPart } from "@claxedo/agent-runtime-contract"
 import { withClaxedoMessageAuthor } from "@claxedo/agent-event-runtime/client-presentation"
 import { asRecord } from "@claxedo/helpers/guards"
+import type { AgentHarnessAdapterHealth } from "./adapter-contract"
 import type { StatusCompat } from "./status"
 import { firstTurnErrorData } from "./first-turn-error"
 
@@ -59,7 +61,21 @@ export function sessionDeleted(id: string, directory: string, parentID?: string)
   return { type: "session.deleted", properties: { info: { id, directory, ...(parentID ? { parentID } : {}) } } }
 }
 
-type SdkRuntimeOnlyEvent = EventServerHeartbeat | EventSessionDeleted
+/** What `readRuntimeHealth` and `readConnectionState` answer for one session, pushed when either changes. */
+export type EventHarnessHealth = {
+  type: "harness.health"
+  properties: {
+    sessionID: string
+    harnessHealth: AgentHarnessAdapterHealth
+    connectionState?: ConnectionRuntimeStatus & { connectionId: string }
+  }
+}
+
+export function harnessHealthChanged(properties: EventHarnessHealth["properties"]): EventHarnessHealth {
+  return { type: "harness.health", properties }
+}
+
+type SdkRuntimeOnlyEvent = EventServerHeartbeat | EventSessionDeleted | EventHarnessHealth
 
 export type CompatEvent = AgentPresentationEvent | SdkRuntimeOnlyEvent
 

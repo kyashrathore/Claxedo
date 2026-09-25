@@ -6,14 +6,59 @@ Owner rules checked: no element re-renders unless required; no network call unle
 
 ## Summary
 
-v2 is cheaper than v1 on almost every count: idle network 0 vs 10–25 requests per 30 s, boot 15 vs 44 requests, no polling, 5–10× less script time per action, CLS 0. Four problems remain, in this order:
+v2 is cheaper than v1 on almost every count:
+- idle network: 0 vs 9–24 requests per 30 s;
+- boot: 15 vs 44 requests;
+- streaming: 13× fewer Solid computations and 6× fewer requests per turn;
+- no polling;
+- CLS 0.
 
-1. Every session switch leaks the whole previous transcript while an image probe is pending: +12,240 Nodes, +760 listeners and +9.9 MB per 80 switches, against v1's flat line.
-2. Transcript scroll restyles 2.4× as many elements as v1 (11,394 vs 4,696), flushed synchronously in rAF.
-3. A 10 s clock interval runs for the app's lifetime.
-4. Machine-level catalogs are re-fetched on every session mount: 3 requests per switch or Back.
+The problems that remain, worst first:
 
-The ranked list, the suspected items, the regression gates and the per-action baseline are at the end.
+1. **Files search** re-renders the whole tree and fetches directory listings on every keystroke, and clearing it blocks for about 100 ms. This is the worst interaction found. v1 shares the design; v2's clear is heavier.
+2. **Session switching leaks** the previous transcript while an image probe is pending: +12,240 Nodes and +9.9 MB per 80 switches. v1 stays flat.
+3. **A question or permission dock unmounts and re-mounts the whole composer**, with re-fetches (invariant 3 FAIL, shared).
+4. **Isolation leaks while streaming.** A background session's deltas wake 8 frames per second. Status events re-run every rail row's computations. The hidden transcript behind the floating composer keeps computing. The scroll thumb's geometry is written 0.6 times per delta.
+5. **Panel re-mounts** on every switch back to a session with the panel open (34–38 ms). Panel maximize, restore and close restyle about 5,200 elements.
+6. **Transcript scroll restyles 2.4× as many elements** as v1.
+7. **Smaller network waste:** catalogs re-fetched per session mount; the files and git state re-fetched twice at every turn end; harness health polled during turns.
+
+The report opens with the ranked exploratory findings and the isolation invariants (the regression gate), then the per-scenario measurements, the full ranked list, the suspected items, the gates and the per-action baseline.
+
+## Exploratory findings, ranked (scenario 13)
+
+Method:
+- An automated crawl hovered, then clicked, every visible button, tab, tree item, menu item and link on five surfaces in both apps: a session, the workspace panel, Settings, Marketplace and Tasks. It skipped anything destructive or state-changing (delete, archive, commit, install, send, toggles).
+- A scripted pass then covered what a crawl cannot reach: the Files tree (`node_modules`, scroll, search), panel maximize, restore and close, the file and command palettes, a new terminal (the launcher only; no pty was created, and `/api/wr/pty` stayed empty), sidebar hide/show, and each Settings section.
+- Every interaction recorded the longest main-thread task, long animation frames, elements restyled, DOM mutations, Solid computations and requests.
+- Dev builds: every click costs 5–15 ms of dev overhead, so "over one frame" means over 16 ms here.
+
+Ranked by user impact:
+
+1. **Typing in the Files "Search files..." box re-renders the whole tree on every keystroke, and clearing it blocks the main thread for about 100 ms.** Proven.
+   - Measured, v2, per keystroke of "session" with the panel open: **22–32 ms tasks** on the first five keys; **2,036–2,892 elements restyled per key, even when the results do not change** ("o" and "n": the same 70 rows, still 2,041 restyled and 1,284 computations); 1,284–16,343 computations per key (13,756–16,343 on the first three); up to 793 mutations; **10, 14 and 18 `GET /api/wr/file` directory listings on the first three keys** (45 in total), plus one `find/file` per key.
+   - Clearing the query: a **98–106 ms task** (LoAF 100–108 ms, in the input event handler), 33,995–52,597 computations, 4,785–9,329 elements restyled.
+   - v1: the same design, same order of cost (38,683 computations and 60 requests for the 7 keys; the clear takes 95 ms, LoAF 103 ms). Clearing is heavier in v2 (52,597 vs 30,202 computations in the same pass).
+   - Cause:
+     - `SearchRow`'s `onInput` sets the query on every keystroke without a debounce (`src/files/view/files-navigator.tsx:68`).
+     - Each result replaces `allowed` with a new array even when the paths are identical (`files-navigator.tsx:103-106`).
+     - Every nested `FileTree` level rebuilds its filter from the whole list (`src/files/view/file-tree.tsx:155`), auto-expands every matching directory, which fetches its listing (`file-tree.tsx:161-169`), and resets its reveal batches (`file-tree.tsx:185-189`).
+     - Clearing flips `allowed` to `undefined`, so every level re-renders the unfiltered tree in one task.
+   - Fix: debounce the query; keep `allowed` referentially stable when the result set is unchanged; build the filter once at the root and pass membership down; expand matching directories from the search result's paths without fetching each listing; render the search result as a flat list instead of re-filtering the tree.
+2. **Session switching leaks whole transcripts while an image probe is pending** (scenario 3): +12,240 Nodes, +760 listeners and +9.9 MB per 80 switches. v1 stays flat.
+3. **Switching back to a session whose panel is open re-mounts the whole panel**: 34–38 ms tasks, 1,246 restyled, 5,833 computations per switch (scenario 10). v1: 26–29 ms.
+4. **Maximizing, restoring or closing the panel restyles about 5,200 elements** in a 23–27 ms task each (v2 5,222 / 5,416 / 5,136; v1 5,446 / 5,757 / 5,606). This is the whole center column re-laid out and restyled on a layout toggle. Shared.
+5. **Palette typing re-renders every result row per keystroke.**
+   - File palette (`mod+p`), "markdown": 16,182 computations, 4,841 restyled, 8 `find/file` requests (v1: 16,911 / 5,866 / 8).
+   - Command palette (`mod+shift+p`), "settings": 30,278 computations, 6,998 restyled, a 40 ms task (v1: 23,369 / 9,430 / 18 ms).
+   - Closing either palette restyles about 1,500 elements.
+   - Same `Show<For>` per-row filter pattern as the model picker (scenario 11); shared.
+6. **A Mermaid diagram renders in one 62–87 ms main-thread task** during streaming (scenario 9). Shared.
+7. **Settings → Keyboard shortcuts takes 23–49 ms to open** (360 `KeybindingRowView`s rendered at once, `src/settings/view/keybindings.tsx:63-67`), and **Settings → Models makes 11 requests** (`harness/options` ×5, `providers` ×2, credentials; v1 9) in a 31 ms task.
+8. **Opening any menu writes `aria-hidden` on 167 sprite symbols**: 495 of 532 mutations on menu open, 165 on close (scenarios 7 and 12). Shared.
+9. **Hovering the Marketplace "All" tab restyles 1,174 elements** (v1: 125); the other tabs restyle 49. This is a suspected broad hover selector on the selected tab and was not traced.
+
+Everything else the crawl reached stayed under 16 ms, under 1,000 restyles and under 5 requests in v2: rail controls, project collapse and expand, header buttons, account menu, New Session, Tasks, Settings sections other than Keyboard shortcuts, sidebar hide/show, Files expand and collapse including `node_modules` (7 ms, 836 restyled), tree scrolling, terminal launcher and idle. Hovering never caused a request in v2. Crawl coverage: session 20 of 28 targets, Settings 23 of 23, Marketplace 35 of 47, Tasks 21 of 28. Panel tree items were covered by the scripted pass; the crawl's panel pass stalled after closing Review. Targets that went missing after an earlier click changed the page were not retried.
 
 ## Isolation invariants (regression gate)
 
@@ -64,6 +109,11 @@ Style: 6,285 style recalcs for 772 deltas (8 per delta). Invalidated nodes resol
   - From scenario 9 on, an init script rewrites `127.0.0.1:2593` to `127.0.0.1:2598` in `fetch`, XHR, `WebSocket` and `EventSource`. The daemon's CORS allows the v1 origin, and streams are live.
   - Re-measured with the live bridge, v1's idle polling is unchanged: 9 requests per 30 s on the draft page (`health` ×3, `status`, `permission` and `question` ×2 each) and 24 on an open session. The v1 polling reported in scenarios 1–8 is real.
   - Request counts come from `page.on("request")` in both modes.
+- Added for scenarios 9–13:
+  - **Computations**: in the dev build, Solid's `runComputation` (Vite deps chunk `chunk-4Z4CCSDB.js`, identical in both apps) is patched in the browser only, through a Playwright route that rewrites the served file. Each re-run is counted under the names of its nearest three component owners (`Comp.name`, which solid-refresh wraps). Computations with no component owner are counted as `root:` plus their source.
+  - **Regions**: each mutation's target is classified with `closest()` into the regions listed under the invariants. Style-invalidation node ids from the trace are resolved to regions after the run.
+  - **Events**: `JSON.parse` is wrapped to count event-stream frames by `type`, which gives the delta count.
+  - **Longest task**: the longest `RunTask` on the renderer main thread in each action's trace.
 - The owner's data has 4 sessions with local data (project "Claxedo"); the other 7 projects are unavailable fixture records. "Switch among 5 sessions" therefore uses all 4.
 
 ## Scenario 1: cold boot to rail painted, then 30 s idle
@@ -137,7 +187,7 @@ Where the extra restyles happen (trace with `invalidationTracking` and `timeline
 - 73% of v2's restyled elements (8,348 of 11,394) come from 20 recalcs that each follow a whole-subtree invalidation (`Invalidation set invalidates subtree`, `allDescendantsMightBeInvalid: true`) of one element: the virtual list container `[data-timeline-virtual-content]`'s subtree, 466 elements. The invalidation set is the `:first-child` pseudo set, scheduled from Solid's `reconcileArrays` as rows are inserted and removed.
 - The same `:first-child` whole-subtree set fires in v1 (46 subtree invalidations in both apps), but in v1 it lands on small elements: the largest is the childless bottom spacer `div.pointer-events-none.h-16` (907 elements restyled in total).
 - The recalcs are flushed synchronously inside `requestAnimationFrame` by the scroll thumb's geometry read: `updateThumb` (`packages/ui/src/components/scroll-view.tsx:225`, reading `scrollHeight`/`clientHeight`) forces 19 recalcs restyling 7,791 elements in v2 against 13 recalcs and 817 elements in v1. `scroll-view.tsx` is shared by both apps; it is the flush point, not the cause.
-- Ruled out by experiment on the live v2 page: disabling `src/transcript/styles.css` (11,207 restyled), `src/ui/styles.css` (11,212) or the entire `shell/styles/index.css` (10,437) leaves the count unchanged, and inserting a stable first child into the scroll viewport (v1 has a `div.sticky` there; v2 does not) changes nothing (11,199). The whole-subtree invalidation is therefore not caused by the duplicated stylesheets. Which rule turns the container's `:first-child` change into a subtree invalidation is **not yet identified** (see Suspected).
+- Ruled out by experiment: every positional rule, every `:has()` rule, the duplicated sheets (disabled together) and every non-core sheet. Inserting a stable first child into the scroll viewport (v1 has a `div.sticky` there) changes nothing either. The trigger is the virtual list's re-render on `Virtualizer.notify` (22 of 25 whole-list restyles), not a CSS rule. See Suspected for the full bisection.
 
 Session-open requests v2 makes twice:
 
@@ -325,7 +375,7 @@ Severity order: battery/idle, then lag, then wasted work. Each finding gives (a)
    - (b) 4,696 → 11,394 elements restyled. RecalcStyleDuration 40 → 73 ms. Forced recalcs inside `requestAnimationFrame` at the thumb read: 13 → 19, restyling 817 → 7,791 elements.
    - (c) 73% of v2's restyles follow whole-subtree `:first-child` invalidations of `[data-timeline-virtual-content]` (466 elements), flushed synchronously by `ScrollView.updateThumb` (`packages/ui/src/components/scroll-view.tsx:225`). The rule is not yet identified (see Suspected).
    - (d) The invalidation set exists in v1 but lands on a childless spacer there.
-   - (e) Find the featureless `:first-child … *` rule and give it a feature (class) in its descendant part. Read the thumb geometry from cached `ResizeObserver`/scroll values instead of `scrollHeight` inside rAF.
+   - (e) Bisection shows no CSS rule is responsible (see Suspected); change how the virtual list re-renders on `Virtualizer.notify` so the container's subtree is not invalidated. Read the thumb geometry from cached `ResizeObserver`/scroll values instead of `scrollHeight` inside rAF.
 3. **A 10 s clock tick runs for the app's lifetime** (battery/idle).
    - (a) S1, 30 s idle.
    - (b) 3 interval callbacks per 30 s, 0 DOM changes. v1 has 27 timer callbacks and 10 requests in the same window, so v2 is far better.
@@ -387,14 +437,44 @@ Severity order: battery/idle, then lag, then wasted work. Each finding gives (a)
     - (d) The mechanism is shared (`packages/ui` `ScrollView`); v1's tree did not change scrollability here.
     - (e) Keep the thumb element mounted and toggle visibility.
 
+Added by the widened scope (scenarios 9–13). The Files-search finding ranks above all of the above for lag. The dock and coalescer findings rank with finding 3 for battery.
+
+13. **Files search re-renders the whole tree on every keystroke; clearing blocks for 98–106 ms.** See the exploratory finding 1 at the top: per key 2,000–2,900 restyled, up to 16,000 computations and up to 18 directory fetches (`src/files/view/files-navigator.tsx:68,103-106`, `src/files/view/file-tree.tsx:155,161-169,185-189`). Shared design; heavier in v2.
+14. **Background sessions wake frames**: 240 rAF callbacks and 442 style recalcs per background turn (`src/server/wire/coalesce.ts:53-66`). Battery. v2 only in this form; v1 runs 2,206 recalcs of its own.
+15. **A question or permission dock unmounts the composer and todo dock** (`src/session/view/session-screen.tsx:151`), and the re-mount re-fetches `connections` and `permission-mode`. Shared.
+16. **Status events re-run every rail row's computations**: 159 computations outside the own row per background turn. The session-list `state()` object is replaced on each status change, so `statusOf` and `rows` recompute for all rows (`src/session/list/statuses.ts:4-8`, `store.ts:111-120`). Wasted compute; there are no DOM writes.
+17. **The hidden transcript behind the floating composer keeps computing**: 887 `MessageTimeline` computations and 166 style writes per turn while collapsed. Wasted work.
+18. **The panel re-mounts on every switch back to a session that had it open**: 34–38 ms, 1,246 restyled (`src/panel/session-memory.ts`). Shared; lag.
+19. **Panel maximize, restore and close each restyle about 5,200 elements** in a 23–27 ms task. Shared; lag.
+20. **Every turn end re-fetches the files and git state twice**: 10 requests after a read-only turn (`src/server/queries.ts:67-68`). Wasted network.
+21. **Harness health is polled every 20 s during a turn and on each working-state change**: 4–6 requests per turn (`src/composer/view/health-peek.tsx:19-36`). Shared.
+22. **Invisible scroll-thumb geometry is written 0.6 times per streaming delta** (`packages/ui/src/components/scroll-view.tsx:225`). Wasted work, with a forced style and layout read each time.
+23. **Palettes and the model picker re-evaluate every row per keystroke**: 16,000–30,000 computations per word. Shared.
+24. **Mermaid renders in one 62–87 ms main-thread task.** Shared.
+25. **An ownerless `createRoot` memo per text part** is never disposed and trims the whole text on each delta (`src/session/view/timeline/message-timeline.data.ts:491`).
+
 Where v2 is already better than v1 and must stay that way: idle network (0 vs 10–25 requests per 30 s), boot requests (15 vs 44), session-open requests (16 vs 25), session-open script time (5 vs 40 ms), no polling during scroll, typing or hover, and CLS 0 on open and switch (v1 0.08).
 
 ## Suspected (not proven)
 
-- **The rule behind the scroll subtree invalidation.** The trace names the `:first-child` pseudo invalidation set with `allDescendantsMightBeInvalid` on the list container, scheduled from Solid's `reconcileArrays`. Disabling `shell/styles/index.css`, `src/ui/styles.css` or `src/transcript/styles.css` did not remove it, and the container's own DOM, attributes and matched positional rules are identical to v1's. Next step: disable the remaining 39 sheets one at a time with `bisect-css.mjs`, or read Blink's `InvalidationSet` dump (`--vmodule=invalidation_set*=2`) for the set id.
+- **The scroll subtree restyle is not caused by a CSS rule.** Bisection, all v2, 30 × −100 px wheel on "Local changes review" (baseline 10,440–11,230 elements restyled):
+  - Deleting all 87 positional rules through CSSOM (`:first-child`, `:last-child`, `:nth-*`, `:only-*`, including nested `&:first-child`): 10,466.
+  - Deleting all 50 `:has()` rules: 10,453.
+  - Disabling both duplicate copies together (`src/ui/styles.css` + `src/transcript/styles.css`; disabling one copy at a time proved nothing, because the other copy still carried the rules): 11,155.
+  - Disabling every sheet except the core layout sheets: 11,176. Also disabling `src/ui/styles.css` and `app-shell.css`: 11,321. Disabling `shell/styles/index.css` instead: 10,437. Disabling everything stops the scroller, so no measurement is possible.
+  - No stylesheet is injected during the scroll.
+  - Inline style writes match v1: row `top`/`height`, thumb and spacer `transform`, no custom properties.
+  - v2 inserts fewer elements than v1 (1,637 vs 2,167) and moves only 7 nodes (65 elements).
+
+  Both apps end with the same 466-element list, so about 9,000 of v2's restyles hit elements that already exist: about 20 whole-list recalcs. The trace attributes them to one path: of the 25 whole-subtree restyles of `[data-timeline-virtual-content]`, **22 are triggered from `@tanstack/solid-virtual`'s `onChange` → `Virtualizer.notify`**, i.e. Solid re-rendering the row list; 1 from `prepareScrollOverscan` and 1 from `prependPage` (`src/session/transcript/conversation.ts:59`). v1 runs the same `notify` path, but its `:first-child` whole-subtree set is scheduled on the childless bottom spacer (`div.pointer-events-none.h-16`, 907 restyled in total), not on the list container.
+  - Conclusion: there is no author rule to change. The difference lies in what v2's `MessageTimeline` does to the list container on each virtualizer notify, which makes Blink schedule the `:first-child` pseudo invalidation on the container itself.
+  - Next step: diff v2's and v1's `onChange` handling of the virtual list (`src/session/view/timeline/message-timeline.tsx` `createVirtualizer` options and the `For` over `virtualRowKeys`), using `--vmodule=style_invalidator*=2` or a Blink debug build to name the element whose pseudo state changed.
 - **Why Tasks refetches on leave.** The request and its initiator are proven; that `activeProjectId()` flips first is read from code, not traced.
 - **Full-viewport paint per keystroke** (shared, same in both): each key reports a 1280×800 Paint on the root layer. This may be `chromium-headless-shell` software raster reporting the layer bounds rather than the damage rect. Check in headed Chrome with paint flashing.
 - **Panel focus into "Search files..."** keeps a caret blinking (60 frames per 30 s idle). This is a product behaviour, not a defect; listed because it is the only source of idle frames in v2.
+
+- **Marketplace "All" tab hover** restyles 1,174 elements in v2 against 49 for the other tabs and 125 in v1. Not traced.
+- **Frames in headless:** `DrawFrame` and `BeginMainThreadFrame` counts run above 60 per second during streaming in `chromium-headless-shell`. Frame counts are therefore not used as findings for streaming; rAF callbacks are.
 
 ## Deterministic regression gates
 
@@ -412,6 +492,13 @@ These counts did not vary across runs, so each can be an exact or ceiling assert
 | Resize | 1280 → 900 → 1280 | mutations = 0 | 9 |
 | Menu open | account menu open + close | `aria-hidden` mutations ≤ 20 | 668 |
 | Stylesheet duplication | CSSOM census after boot | duplicate rules ≤ 205 | 1,715 |
+| Files search | panel open, type "session" | per key: `wr/file` requests = 0, restyled ≤ 300 when results are unchanged; clearing: longest task ≤ 16 ms | 10–18 / 2,041 / 98–106 ms |
+| Invariant 1 | background turn while another session is open | mutations outside the own rail row = 0; computations outside the own row's owner = 0; rAF callbacks = 0 | 0 / 159 / 240 |
+| Invariant 2 | foreground turn | composer mutations per delta = 0; composer computations per delta = 0 | 0 / 0 (7 and 33 per turn at the edges) |
+| Invariant 3 | question dock appears and is answered | composer-frame removals = 0; composer requests = 0 | 1 removal, 2 requests |
+| Invariant 4 | turn with the panel maximized | `MessageTimeline` computations while the transcript is collapsed = 0 | 887 |
+| Invariant 5 | turn with the panel open | timeline-chrome mutations per delta ≤ 1; thumb writes while hidden = 0; files/git requests after a read-only turn = 0 | 1.8 / 448 / 10 |
+| Panel re-mount | switch back to a session with the panel open | Files-tree computations = 0 | 5,833 |
 
 ## v2 per-action baseline (medians, dev build, this machine)
 
@@ -435,11 +522,16 @@ These counts did not vary across runs, so each can be an exact or ceiling assert
 | Settings (menu + item) | 0 | 748 | 853 | 12 | 33 | 37 | 11 |
 | Back to session | 3 | 47–67 | 397–489 | 3–6 | 49 | 19 | 2 |
 | Resize, each direction | 0 | 9 | 312 | 5 | 4 | 2 | 1 |
+| Streaming turn, per delta (panel open) | 0.02 | 14.3 (9.2 in the streaming message) | 45 | 1.6 | 17 | – | 0.85 |
+| Background turn, per delta | 0.01 | 0.002 | 1.1 | 0 | 0 | 0.6 rAF | 0.04 |
+| Files search, per key | 1–19 | 28–793 | 2,036–2,892 | – | – | – | – (longest task 6–32 ms) |
+| Files search clear | 0 | 378–644 | 4,785–9,329 | 4–22 | – | – | 72–184 (longest task 98–106 ms) |
+| Panel maximize / restore / close | 0 | 31–59 | 5,136–5,416 | 19–28 | 46–126 | – | 6–17 |
 | Heap after boot, after GC | 32,764 KB, 1,460 Nodes, 153 listeners | | | | | | |
 
 ## Scenario 10: switching sessions with the workspace panel open, then switching panel tabs
 
-The panel was opened on "Greeting", `docs/ci-green-staging-handoff-2026-09-23.md` was opened as a file tab, then the 4 sessions were switched twice (unvisited, then visited). The harness now also counts Solid computations re-run per component owner and DOM mutations per region (rail row, panel, composer, timeline turns, shell). It does this by patching Solid's dev `runComputation` in the browser (see Method addendum below). 1 run each here; the counts repeat from scenario 3.
+The panel was opened on "Greeting", `docs/ci-green-staging-handoff-2026-09-23.md` was opened as a file tab, then the 4 sessions were switched twice (unvisited, then visited). The harness now also counts Solid computations re-run per component owner and DOM mutations per region (rail row, panel, composer, timeline turns, shell). It does this by patching Solid's dev `runComputation` in the browser (see Method). 1 run each here; the counts repeat from scenario 3.
 
 | Switch (visited pass) | v1 panel mutations | v2 panel mutations | v1 restyled | v2 restyled | v1 longest task | v2 longest task | v2 computations |
 |---|---|---|---|---|---|---|---|

@@ -12,6 +12,7 @@ import { createMemoryRuntimeStore } from "../../stores/memory"
 import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import type { PromptInput } from "../../index"
 import { PiRpcProcess } from "./rpc-process"
+import { createProcessLoss } from "../shared/process-loss"
 
 test.each(["resolve", "reject"] as const)(
   "an idle RPC check cannot dispose a new turn after a stale %s",
@@ -109,7 +110,8 @@ const prompt = (text: string): PromptInput => ({
 async function fixture() {
   const fake = await installFakePiRpc()
   const store = createMemoryRuntimeStore()
-  const options = { binary: fake.binary, agentDir: fake.agentDir, store }
+  const healthReports: number[] = []
+  const options = { binary: fake.binary, agentDir: fake.agentDir, store, reportHealthChanged: () => healthReports.push(healthReports.length) }
   const adapter = new PiHarnessAdapter(options)
   const session = await adapter.createSession(fake.directory)
   const binding: AgentExecutionBinding = {
@@ -125,6 +127,7 @@ async function fixture() {
     adapter,
     store,
     binding,
+    healthReports,
     async cleanup() {
       await adapter.dispose()
       await fake.dispose()
@@ -189,6 +192,25 @@ describe("native Pi through the shared adapter", () => {
       await f.cleanup()
     }
   })
+  test("a second options read for the same model answers without starting Pi", async () => {
+    const fake = await installFakePiRpc()
+    const launches: string[] = []
+    const adapter = new PiHarnessAdapter({
+      binary: fake.binary,
+      agentDir: fake.agentDir,
+      store: createMemoryRuntimeStore(),
+      processObserver: { register: (descriptor) => { launches.push(descriptor.label); return { update: () => {}, exit: () => {} } } },
+    })
+    try {
+      const first = await adapter.probeConfigOptions(fake.directory)
+      expect(launches).toHaveLength(1)
+      expect(await adapter.probeConfigOptions(fake.directory)).toEqual(first)
+      expect(launches).toHaveLength(1)
+    } finally {
+      await adapter.dispose()
+      await fake.dispose()
+    }
+  })
   test("returns the process model list and thinking levels", async () => {
     const f = await fixture()
     try {
@@ -225,6 +247,10 @@ describe("native Pi through the shared adapter", () => {
       await collect(f.adapter, f.binding, "die")
       expect(JSON.stringify(f.store.getMessages(f.binding.sessionId))).toContain("Pi process exited")
       expect(f.adapter.readRuntimeHealth(f.directory).status).toBe("degraded")
+      expect(f.healthReports).toHaveLength(1)
+      await collect(f.adapter, f.binding, "hello")
+      expect(f.adapter.readRuntimeHealth(f.directory).status).toBe("ok")
+      expect(f.healthReports).toHaveLength(2)
     } finally {
       await f.cleanup()
     }
@@ -397,8 +423,12 @@ test("a deferred auth release is retried by the retirement that settles the laun
     dispose(): Promise<void>
     retire(id: string, entry: unknown): Promise<RetirementResult>
     readRuntimeHealth(): { status: string; reason?: string }
-    processError?: string
+    host: { reportHealthChanged(): void }
+    processLoss: ReturnType<typeof createProcessLoss>
   }
+  let healthReports = 0
+  driver.host = { reportHealthChanged: () => { healthReports++ } }
+  driver.processLoss = createProcessLoss(() => { healthReports++ })
   driver.entries = new Map()
   driver.blockers = new Map()
   driver.authProfile = { release: async () => { released.push("released") } }
@@ -420,6 +450,7 @@ test("a deferred auth release is retried by the retirement that settles the laun
   expect(driver.blockers.size).toBe(1)
   expect(released).toHaveLength(0)
   expect(driver.readRuntimeHealth()).toMatchObject({ status: "unavailable", reason: "harness_retirement_unresolved" })
+  expect(healthReports).toBe(1)
 
   // A retirement result is a snapshot: nothing about the value recorded above
   // will ever change, so only retiring the launch again can clear it.
@@ -428,4 +459,5 @@ test("a deferred auth release is retried by the retirement that settles the laun
   expect(driver.blockers.size).toBe(0)
   expect(released).toEqual(["released"])
   expect(driver.readRuntimeHealth()).toMatchObject({ status: "ok" })
+  expect(healthReports).toBe(2)
 })

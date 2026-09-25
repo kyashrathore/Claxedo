@@ -22,11 +22,15 @@ function RoutingProvider(props: { readonly children: JSX.Element }): JSX.Element
   const registries = useShellRegistries()
   const parsed = createMemo(() => parseRoute(location.pathname, registries.pages.list(), registries.routes.list()))
   const [resolver, setResolver] = createSignal<SessionPlacementResolver>()
+  const localPlacement = createMemo(() => {
+    const current = parsed()
+    return current.kind === "localSession" ? resolver()?.(current.sessionId) : undefined
+  })
   const route = createMemo((): ShellRoute => {
     const current = parsed()
-    if (current.kind !== "localSession") return current
-    const placement = resolver()?.(current.sessionId)
-    return placement ? { kind: "session", placementId: placement, sessionId: current.sessionId } : current
+    const placement = localPlacement()
+    if (current.kind !== "localSession" || !placement) return current
+    return { kind: "session", placementId: placement, sessionId: current.sessionId }
   })
   const routing: ShellRouting = {
     route,

@@ -50,7 +50,7 @@ export function RouteSync(): JSX.Element {
   const workbench = useWorkbench()
   const layout = useShellLayout()
   const stores = useSessionStores()
-  onCleanup(routing.resolveSessions((id) => stores.list.rows().find((row) => row.ref.sessionId === id)?.ref.placementId))
+  onCleanup(routing.resolveSessions((id) => stores.list.rowOf(id)?.ref.placementId))
 
   createEffect(on(routing.route, () => layout.send({ type: "navigated" }), { defer: true }))
   createEffect(on(workbench.selectors.focusedContent, () => layout.send({ type: "navigated" }), { defer: true }))

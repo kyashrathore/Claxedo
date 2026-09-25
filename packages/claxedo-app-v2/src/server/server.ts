@@ -111,7 +111,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     providerConnect: createProviderConnectApi(transport, queryClient),
     providerCatalogs: createProviderCatalogsApi(transport, queryClient),
     livePlugins: createLivePluginsApi(transport),
-    harnessConfig: createHarnessConfigApi(transport, workspaces),
+    harnessConfig: createHarnessConfigApi(transport, workspaces, queryClient),
     request: transport.request,
   }
 }

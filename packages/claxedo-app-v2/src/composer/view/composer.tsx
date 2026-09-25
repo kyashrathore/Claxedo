@@ -97,7 +97,7 @@ export function Composer(props: ComposerProps) {
   return (
     <>
     <Show when={props.view}>
-      <SessionHealthPeek composer={composer} active={() => props.active?.() ?? false} />
+      <SessionHealthPeek composer={composer} />
     </Show>
     <ReadingNotices composer={composer} />
     <PromptInputFrame

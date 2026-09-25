@@ -69,3 +69,25 @@ test("33 phone: the drawer, two sessions and the workspace panel, no horizontal 
   await drawer(stack, api, app, await arrange(stack, api))
   await panel(app)
 })
+
+test("33 phone: the drawer stays open on a session while another project gains sessions", async ({ stack, api, app }) => {
+  const arranged = await arrange(stack, api)
+  const other = await stack.daemon.makeWorkspace("elsewhere", "Elsewhere")
+  await api.createSession(other.directory, { title: "Earlier", harness: SCRIPTED_ACP_HARNESS })
+  await app.goto(`${stack.url}/`)
+  const open = app.getByRole("button", { name: UI.openRail })
+  await open.tap()
+  const nav = app.getByRole("navigation", { name: UI.rail })
+  await nav.getByRole("button", { name: "First" }).tap()
+  await expect(app).toHaveURL(new RegExp(`/s/${arranged.first.id}$`))
+  await open.tap()
+  const close = app.getByRole("button", { name: "Close navigation sidebar" })
+  await expect(close).toBeVisible()
+  for (const title of ["Arrived 1", "Arrived 2"]) {
+    await api.createSession(other.directory, { title, harness: SCRIPTED_ACP_HARNESS })
+    await expect(nav.getByRole("button", { name: title })).toBeVisible()
+  }
+  await expect(close).toBeVisible()
+  await expect(app).toHaveURL(new RegExp(`/s/${arranged.first.id}$`))
+  expect((await api.sessions(other.directory)).map((session) => session.title)).toContain("Arrived 2")
+})

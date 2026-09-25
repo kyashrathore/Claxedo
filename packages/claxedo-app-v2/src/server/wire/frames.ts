@@ -4,6 +4,7 @@ import { placementId as asPlacementId, projectId, requestId } from "../ids"
 import type { FileDiff, SessionRef, Todo } from "../types"
 import { provisionStatus } from "./cloud"
 import { goalFromWire } from "./goal"
+import { connectionStateFromWire, harnessHealthFromWire } from "./harness-state"
 import { subagentFromWire } from "./subagents"
 import { isPermissionWire, isQuestionWire, permissionRequest, questionRequest } from "./requests"
 import { sessionRefFor, sessionRowFromSession, type Address } from "./session-row"
@@ -102,6 +103,13 @@ function transcriptEvent(frame: Frame, ref: SessionRef): ServerEvent | undefined
   }
 }
 
+function harnessHealthEvent(properties: Record<string, unknown>, ref: SessionRef): ServerEvent | undefined {
+  const health = harnessHealthFromWire(properties.harnessHealth)
+  if (!health) return undefined
+  const connectionState = connectionStateFromWire(properties.connectionState)
+  return { type: "harnessHealthChanged", ref, health, ...(connectionState ? { connectionState } : {}) }
+}
+
 function lifecycleEvent(frame: Frame, ref: SessionRef): ServerEvent | undefined {
   const properties = frame.properties ?? {}
   switch (frame.type) {
@@ -135,6 +143,8 @@ function lifecycleEvent(frame: Frame, ref: SessionRef): ServerEvent | undefined 
       const todos = todosOf(properties.todos)
       return todos ? { type: "todosChanged", ref, todos } : undefined
     }
+    case "harness.health":
+      return harnessHealthEvent(properties, ref)
     default:
       return undefined
   }
@@ -196,7 +206,7 @@ function controlEvent(frame: Frame, address: Address): ServerEvent | undefined {
   }
 }
 
-const SESSION_FRAME = /^(message\.|session\.(status|idle|error|updated|deleted|diff)$|todo\.updated$|goal\.(updated|cleared)$|subagent\.updated$|permission\.|question\.)/
+const SESSION_FRAME = /^(message\.|session\.(status|idle|error|updated|deleted|diff)$|todo\.updated$|goal\.(updated|cleared)$|subagent\.updated$|harness\.health$|permission\.|question\.)/
 
 export function serverEventFromFrame(frame: Frame, address: Address): ServerEvent | undefined {
   if (!SESSION_FRAME.test(frame.type)) return controlEvent(frame, address)

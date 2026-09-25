@@ -24,13 +24,13 @@ function harnessSelectionFromWire(value: unknown): HarnessSelection | undefined 
   return undefined
 }
 
-function connectionStateFromWire(value: unknown): HarnessConnectionState | undefined {
+export function connectionStateFromWire(value: unknown): HarnessConnectionState | undefined {
   const row = asRecord(value)
   if (!row || typeof row.connectionId !== "string" || !row.connectionId || !isConnectionState(row.state)) return undefined
   return { connectionId: row.connectionId, state: row.state }
 }
 
-function harnessHealthFromWire(value: unknown): HarnessHealth | undefined {
+export function harnessHealthFromWire(value: unknown): HarnessHealth | undefined {
   const row = asRecord(value)
   if (!row || (row.status !== "ok" && row.status !== "degraded" && row.status !== "unavailable")) return undefined
   return { status: row.status, ...(typeof row.reason === "string" ? { reason: row.reason } : {}) }

@@ -260,7 +260,6 @@ export type Capabilities = {
   readonly thisMachine?: Machine
   readonly harnesses: readonly HarnessInfo[]
   readonly features: {
-    readonly tasks: boolean
     readonly documents: boolean
     readonly cloud: boolean
     readonly remoteAccess: boolean

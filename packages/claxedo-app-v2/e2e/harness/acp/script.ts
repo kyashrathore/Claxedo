@@ -30,7 +30,7 @@ export type AcpStep =
   | { kind: "permission"; tool: ToolKind; title: string; path?: string; input?: Record<string, unknown>; text?: string }
   | { kind: "question"; message: string; options?: string[] }
   | { kind: "subagent"; name: string; task: string; steps: AcpStep[] }
-  | { kind: "hold"; name: string }
+  | { kind: "hold"; name: string; ignoresCancel?: true }
   | { kind: "error"; message: string }
   | { kind: "stop"; reason: StopReason }
 

@@ -30,6 +30,7 @@ test("Cursor native receives the parent/workspace-bound opaque transcript regist
     runner,
     launchOwner: { ownerGeneration: "generation-under-test", scope: { kind: "workspace", workspaceId: "workspace-a" } },
     reportOwnerFailure: () => {},
+    reportHealthChanged: () => {},
     store: createMemoryRuntimeStore() as unknown as WorkspaceRuntimeStore,
     options: {
       transcripts: {
