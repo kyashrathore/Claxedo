@@ -21,7 +21,7 @@ async function reachableLocalWorkspaces(): Promise<Workspace[]> {
 
 // An access question that throws is unanswered rather than a failure of that
 // workspace: reporting it would name a workspace the caller may not see.
-async function admitted(c: Context, workspace: Workspace, options: IngressOptions): Promise<AdmittedProvenance | undefined> {
+async function admittedProvenance(c: Context, workspace: Workspace, options: IngressOptions): Promise<AdmittedProvenance | undefined> {
   try {
     const provenance = await resolveIngressProvenance(c.req.raw, workspace.id, options)
     return provenance.kind === "rejected" ? undefined : provenance
@@ -43,7 +43,7 @@ async function readActivity(c: Context, workspace: Workspace, provenance: Admitt
 // workspace's own routes ask for, so only a workspace this caller may read is
 // ever named, in `workspaces` or in `failures`.
 async function workspaceActivity(c: Context, workspace: Workspace, options: IngressOptions): Promise<WorkspaceActivity> {
-  const provenance = await admitted(c, workspace, options)
+  const provenance = await admittedProvenance(c, workspace, options)
   if (!provenance) return { kind: "refused" }
   try {
     return await readActivity(c, workspace, provenance)
