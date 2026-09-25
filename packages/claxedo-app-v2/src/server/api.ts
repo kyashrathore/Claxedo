@@ -28,7 +28,7 @@ import type {
   GitStatus,
   WorktreeCreateInput,
 } from "./git-types"
-import type { PlacementId, ProjectId, RequestId, SessionId, TerminalId } from "./ids"
+import type { PlacementId, ProjectId, RequestId, TerminalId } from "./ids"
 import type { TasksClient } from "@claxedo/tasks/client"
 import type {
   MachineInstalled,
@@ -239,7 +239,6 @@ export type Server = {
   readonly capabilities: Accessor<Capabilities | undefined>
   readonly queryClient: QueryClient
   readonly subscribe: (handler: (event: ServerEvent) => void) => () => void
-  readonly showSession: (sessionId: SessionId) => () => void
   readonly sessions: SessionsApi
   readonly projects: ProjectsApi
   readonly placements: PlacementsApi

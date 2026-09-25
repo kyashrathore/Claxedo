@@ -100,7 +100,7 @@ test("10 session list: the project's rows, live status, rename, archive and dele
   await expect.poll(() => rowTitles(app)).toEqual(["Charlie renamed"])
 })
 
-test("10 a background turn changes only its own rail row and wakes no animation frame", async ({ stack, api, app }) => {
+test("10 a background turn, in a session visited before, changes only its own rail row and wakes no animation frame", async ({ stack, api, app }) => {
   test.skip(stack.app !== "v2", "v1 re-renders every rail row and polls statuses")
   const workspace = await stack.daemon.makeWorkspace("isolation", "Isolation")
   const create = (title: string) => api.createSession(workspace.directory, { title, harness: SCRIPTED_ACP_HARNESS })
@@ -110,7 +110,10 @@ test("10 a background turn changes only its own rail row and wakes no animation 
   const reply = Array.from({ length: 30 }, (_, index) => `Background paragraph ${index + 1}.`).join("\n\n")
   await stack.acp.write("background", { steps: [{ kind: "hold", name: "background" }, { kind: "text", text: `${reply}\n\nThe background reply ends here.`, chunks: 150, delayMs: 10 }] })
 
-  await app.goto(`${stack.url}${sessionRoute(workspace.id, open.id)}`)
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, background.id)}`)
+  await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
+  await app.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "Open", exact: true }).click()
+  await expect(app).toHaveURL(new RegExp(open.id))
   await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
   const mark = row(app, "Background").locator("[data-sidebar-status]")
   await api.promptAsync(workspace.directory, background.id, `Write at length. ${acpScriptToken("background")}`)

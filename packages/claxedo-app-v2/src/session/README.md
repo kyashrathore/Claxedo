@@ -24,7 +24,7 @@ Order is flat and is the server's `human_turn_desc`: `lastHumanTurnAt` descendin
 | The subagents a session delegated to: read on open and on a stream gap, then `subagentUpdated` events, merged by `subagentKey` with a revision per field (a terminal status never reverts; the child session and provider are set once; tool-call edges are only added) | `transcript/subagents.ts`, `transcript/subagent-merge.ts` |
 | The LRU of open sessions, the one stream dispatch and the provider | `store/` |
 
-Fetched data never enters these stores and pushed data never enters the query cache. Deltas arrive coalesced per animation frame by the event intake (`server/wire/coalesce.ts`) and are appended in place on the part's field in that frame's batch; a message or part upsert replaces only that message's parts array or the messages array, so unchanged messages and part arrays keep their identity for the timeline's row memos.
+Fetched data never enters these stores and pushed data never enters the query cache. A session's deltas are held by its transcript store (`transcript/deltas.ts`), merged per part field, and appended in place on the part's field when the session's view commits them, once per animation frame (`view/delta-frames.ts`); a session with no view on screen schedules no frame, and its deltas wait. Every other write to the transcript commits the held deltas first, so they keep their place in the order: a part upsert that carries text replaces what they added, and a snapshot overwrites text it already includes. A message or part upsert replaces only that message's parts array or the messages array, so unchanged messages and part arrays keep their identity for the timeline's row memos.
 
 ## State machines
 

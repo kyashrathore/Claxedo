@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createRenderEffect, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js"
+import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js"
 import { Composer, promptText, sessionComposerKey, useComposerStore, type ComposerRecovery } from "@/composer"
 import { usePhone } from "@/lib/viewport"
 import { FailureBoundary, FailureNotice } from "@/lib/failure"
@@ -19,6 +19,7 @@ import { createDockFollow } from "./dock-follow"
 import { SessionTimelineSkeleton } from "./session-timeline-skeleton"
 import { createSessionScreenKeydownHandler } from "./session-screen-keydown"
 import { SessionConnectionLine } from "./connection-line"
+import { commitDeltasEachFrame } from "./delta-frames"
 import { registerSessionCommands } from "./session-commands"
 import { recoverTurn } from "./turn-recovery-actions"
 import { floatingPeekStep, type FloatingPeekState } from "./floating-peek"
@@ -185,12 +186,11 @@ function SessionBody(props: {
 export function SessionSurface(props: SessionSurfaceProps) {
   const t = useSessionScreenText()
   const phone = usePhone()
-  const server = useServer()
   const stores = useSessionStores()
-  createRenderEffect(() => onCleanup(server.showSession(props.sessionRef.sessionId)))
   const panel = usePanel()
   const floating = () => !props.readOnly && panel.maximized() && props.active
   const view = createMemo(() => stores.open(props.sessionRef))
+  commitDeltasEachFrame(view)
   const failure = () => {
     const state = view().state()
     return state.kind === "failed" ? state : undefined

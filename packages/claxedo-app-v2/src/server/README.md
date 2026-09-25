@@ -30,9 +30,8 @@ The only module that knows today's server: its routes, its OpenCode-shaped paylo
 ## Invariants
 
 - A frame that is not JSON, or has no type, is logged and dropped; the stream stays open.
-- Frames are mapped in arrival order through one serial queue. A frame naming a directory the catalog does not place re-reads the catalog once per directory until the next refresh; a failed re-read becomes a `streamGap`.
-- Deltas are coalesced per animation frame (`wire/coalesce.ts`): consecutive `partDelta` frames for one field merge, and a `partUpserted` that carries text supersedes the deltas queued before it. A hidden page gets no animation frames, so a batch also flushes after 250 ms; otherwise a background tab would hold every event until it is shown.
-- Only a session on screen asks for animation frames. A session view holds `showSession(sessionId)` while it is mounted; an event of any other session (a background turn's deltas, its status, its row) waits for a 250 ms flush instead, which wakes no frame, and an event that names no session asks for a frame. A batch that holds a background event and then gets an on-screen one moves to the next frame; one queue keeps the order.
+- Frames are mapped in arrival order: at once while every frame's directory is placed, and behind the catalog re-read once one is not. The frames of one network chunk publish in one reactive batch. A frame naming a directory the catalog does not place re-reads the catalog once per directory until the next refresh; a failed re-read becomes a `streamGap`.
+- The intake publishes each event as soon as it is mapped, in arrival order, and schedules no animation frames: rendering belongs to the views. A session's streamed deltas are held by that session's transcript store until its view commits them in a frame (`src/session/README.md`).
 - A status read across placements reports each placement that could not be read in `failures`; `unreported` holds only for the placements that were read.
 - Nothing outside `src/server/` imports `src/server/wire/`.
 - `ServerProvider` owns the handle it is given: it provides the query client, retries the connection when the browser comes online or the page becomes visible, and disposes the handle on cleanup.
