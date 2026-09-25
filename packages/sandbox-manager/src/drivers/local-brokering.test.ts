@@ -62,7 +62,7 @@ test("local broker keeps the key outside the runtime and withdraws it on ensure"
       relayOrigin: `http://127.0.0.1:${relayAddress.port}`,
       inheritedEnv,
     })
-    const createdCaDirectory = (await fs.readdir(root)).find((name) => name.startsWith("local-broker-ca-"))
+    const createdCaDirectory = (await fs.readdir(root, { withFileTypes: true })).find((entry) => entry.isDirectory() && entry.name.startsWith("local-broker-ca-"))?.name
     if (!createdCaDirectory) throw new Error("test CA was not created")
     const caKey = path.join(root, createdCaDirectory, "ca.key")
     expect((await fs.readFile(caKey, "utf8"))).toContain("PRIVATE KEY")
