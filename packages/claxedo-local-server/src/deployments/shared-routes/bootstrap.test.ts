@@ -285,4 +285,25 @@ describe("the signed bootstrap project inventory", () => {
     expect(body.project[0]?.workspaces.ws_stopped?.reachable).toBe(false)
     expect(body.project[0]?.workspaces.ws_unplaced?.reachable).toBe(true)
   })
+
+  test("a machine-placed workspace is reachable while its enrollment serves it or this node hosts it", async () => {
+    const { execFileSync } = await import("node:child_process")
+    const { ensureWorkspace } = await import("@claxedo/server-core/workspace/store/index")
+    const directory = path.join(root, "hosted-here")
+    await fs.mkdir(directory, { recursive: true })
+    execFileSync("git", ["init", "-b", "main"], { cwd: directory, stdio: "ignore" })
+    await ensureWorkspace({ workspaceId: "ws_here", directory })
+    const response = await signedBootstrap({
+      workspaces: [
+        { workspace_id: "ws_here", project_id: "proj_1", backing: "local-worktree", host_online: false },
+        { workspace_id: "ws_laptop", project_id: "proj_1", backing: "local-worktree", host_online: true },
+        { workspace_id: "ws_asleep", project_id: "proj_1", backing: "local-worktree", host_online: false },
+      ],
+    })
+
+    const body = await response.json() as { project: Array<{ workspaces: Record<string, { reachable: boolean }> }> }
+    expect(body.project[0]?.workspaces.ws_here?.reachable).toBe(true)
+    expect(body.project[0]?.workspaces.ws_laptop?.reachable).toBe(true)
+    expect(body.project[0]?.workspaces.ws_asleep?.reachable).toBe(false)
+  })
 })
