@@ -61,19 +61,26 @@ export type CreationIdentity = {
 }
 
 /**
+ * Whether any launch could own this pid. Pid 1 is init: a signal to its group
+ * is `kill(-1)`, which reaches every process this user owns, and every process
+ * descends from it. Pid 0 addresses the caller's own group.
+ */
+export function ownablePid(pid: number) {
+  return Number.isSafeInteger(pid) && pid > 1
+}
+
+/**
  * A `CreationIdentity` read back out of a record something else wrote — a
  * durable ownership row, a daemon discovery file.
  *
- * `pid` must be positive because pid 0 and the negative form address a process
- * GROUP, which is what every signal in `retirement.ts` is careful not to reach
- * by accident. `source` is checked against the sources that exist rather than
- * "some string", because the return type claims the union: a row carrying a
- * source this build cannot produce is not an identity it may verify against.
+ * `source` is checked against the sources that exist rather than "some
+ * string", because the return type claims the union: a row carrying a source
+ * this build cannot produce is not an identity it may verify against.
  */
 export function isCreationIdentity(value: unknown): value is CreationIdentity {
   if (!isRecord(value)) return false
   const { pid, processGroupId, parentPid, startedAtMs, startSecond, bootTime, source } = value
-  return typeof pid === "number" && Number.isSafeInteger(pid) && pid > 0
+  return typeof pid === "number" && ownablePid(pid)
     && typeof processGroupId === "number" && Number.isSafeInteger(processGroupId)
     && typeof parentPid === "number" && Number.isSafeInteger(parentPid)
     && typeof startedAtMs === "number" && Number.isFinite(startedAtMs)
@@ -132,10 +139,28 @@ export async function readCreationIdentity(pid: number): Promise<CreationIdentit
   return readDarwinCreationIdentity(pid, boot)
 }
 
+const DARWIN_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+/** `lstart` as `ps` prints it under `TZ=UTC0 LC_ALL=C`, for example `Fri Sep 25 05:29:17 2026`. */
+export function darwinStartMs(lstart: string) {
+  const match = /^[A-Z][a-z]{2} ([A-Z][a-z]{2}) +(\d{1,2}) (\d{2}):(\d{2}):(\d{2}) (\d{4})$/.exec(lstart)
+  const month = match ? DARWIN_MONTHS.indexOf(match[1]!) : -1
+  if (!match || month < 0) return undefined
+  return Date.UTC(Number(match[6]), month, Number(match[2]), Number(match[3]), Number(match[4]), Number(match[5]))
+}
+
 async function readDarwinCreationIdentity(pid: number, boot: string): Promise<CreationIdentity | undefined> {
   let stdout: string
   try {
-    ;({ stdout } = await execFileAsync("ps", ["-o", "pgid=,ppid=,lstart=", "-p", String(pid)], { timeout: PROBE_TIMEOUT_MS }))
+    // `lstart` carries no zone and prints in the zone of the `ps` process, while
+    // the runtime parsing it may use another: `bun test` parses in UTC without
+    // exporting TZ. A start read in the wrong zone lands hours late east of
+    // UTC, where a process that existed before a spawn then passes for the one
+    // it started.
+    ;({ stdout } = await execFileAsync("ps", ["-o", "pgid=,ppid=,lstart=", "-p", String(pid)], {
+      timeout: PROBE_TIMEOUT_MS,
+      env: { ...process.env, TZ: "UTC0", LC_ALL: "C" },
+    }))
   } catch (error) {
     // `ps` exits 1 for "no such process"; a probe this owner killed on its
     // timeout carries a signal instead, and that is not evidence of an exit.
@@ -145,12 +170,14 @@ async function readDarwinCreationIdentity(pid: number, boot: string): Promise<Cr
   const row = /^\s*(\d+)\s+(\d+)\s+(\S.*)$/.exec(stdout.trim())
   const startSecond = row?.[3]?.trim()
   if (!row || startSecond === undefined) return undefined
+  const startedAtMs = darwinStartMs(startSecond)
+  if (startedAtMs === undefined) throw new Error(`ps printed a start time for pid ${pid} in an unexpected form: ${startSecond}`)
   return {
     pid,
     processGroupId: Number(row[1]),
     parentPid: Number(row[2]),
     startSecond,
-    startedAtMs: Date.parse(startSecond),
+    startedAtMs,
     bootTime: boot,
     source: "darwin-ps",
   }
@@ -233,7 +260,7 @@ export const IDENTITY_START_TOLERANCE_MS = 2_000
  * spawn is one, and retiring it would signal it.
  */
 export function identityFromSpawn(observed: CreationIdentity | undefined, spawnedAt: number) {
-  if (!observed) return undefined
+  if (!observed || !ownablePid(observed.pid)) return undefined
   return observed.startedAtMs >= spawnedAt - IDENTITY_START_TOLERANCE_MS ? observed : undefined
 }
 
