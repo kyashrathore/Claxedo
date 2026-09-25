@@ -4,12 +4,14 @@ import type { Page } from "@playwright/test"
 import {
   APP_PLUGIN_WARNING,
   approveAppPlugin,
+  assistantText,
   expect,
   installedCli,
   listLivePlugins,
   sendPrompt,
   sessionRoute,
   test,
+  type ClaxedoApi,
   type ScriptedModelRequest,
   type Stack,
 } from "../harness"
@@ -36,12 +38,15 @@ function toolResults(requests: readonly ScriptedModelRequest[], tool: string): s
   return all.filter((block) => block.type === "tool_result" && ids.includes(block.tool_use_id)).map((block) => resultText(block.content))
 }
 
-async function callTool(stack: Stack, app: Page, tool: string, input: Record<string, unknown>, token: string): Promise<string> {
+type Turn = { stack: Stack; api: ClaxedoApi; app: Page; directory: string; sessionId: string }
+
+async function callTool(turn: Turn, tool: string, input: Record<string, unknown>, token: string): Promise<string> {
+  const { stack, api, app } = turn
   const before = toolResults(stack.scripted.requests, tool).length
   stack.scripted.scriptTool({ name: `${TOOL_PREFIX}${tool}`, input, whenPromptIncludes: token })
   await sendPrompt(app, `Run ${tool}. Reply with exactly this one token: ${token}`)
   await expect.poll(() => toolResults(stack.scripted.requests, tool).length, { timeout: 60_000 }).toBe(before + 1)
-  await expect(app.getByText(token, { exact: true }).last()).toBeVisible({ timeout: 30_000 })
+  await expect.poll(async () => assistantText(await api.messages(turn.directory, turn.sessionId)), { timeout: 30_000 }).toContain(token)
   return toolResults(stack.scripted.requests, tool).at(-1) ?? ""
 }
 
@@ -58,8 +63,9 @@ test("40 a session makes an app plugin with the Claxedo MCP tools: create, a red
     model,
   })
   await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  const turn = { stack, api, app, directory: workspace.directory, sessionId: session.id }
 
-  const created = await callTool(stack, app, "app_plugin_create", { name: "Standup notes" }, "CREATED")
+  const created = await callTool(turn, "app_plugin_create", { name: "Standup notes" }, "CREATED")
   const directory = path.join(await fs.realpath(workspace.directory), ".claxedo", "plugins", "standup-notes")
   expect(created).toContain(`Created the app plugin Standup notes (standup-notes) at ${directory}: package.json, src/app.tsx.`)
   expect(created).toContain("## Only when the person asked")
@@ -69,16 +75,16 @@ test("40 a session makes an app plugin with the Claxedo MCP tools: create, a red
   const entry = path.join(directory, "src", "app.tsx")
   const scaffold = await fs.readFile(entry, "utf8")
   await fs.writeFile(entry, scaffold.replace(`label: "Standup notes"`, "label: 42"))
-  const red = JSON.parse(await callTool(stack, app, "app_plugin_check", { directory }, "CHECKED_RED")) as { ok: boolean; diagnostics: Record<string, unknown>[] }
+  const red = JSON.parse(await callTool(turn, "app_plugin_check", { directory }, "CHECKED_RED")) as { ok: boolean; diagnostics: Record<string, unknown>[] }
   expect(red.ok).toBe(false)
   expect(red.diagnostics).toEqual([expect.objectContaining({ stage: "typecheck", file: "src/app.tsx", code: "TS2322" })])
 
   await fs.writeFile(entry, scaffold)
-  const green = JSON.parse(await callTool(stack, app, "app_plugin_check", { directory }, "CHECKED_GREEN")) as { ok: boolean; pluginId: string; diagnostics: unknown[] }
+  const green = JSON.parse(await callTool(turn, "app_plugin_check", { directory }, "CHECKED_GREEN")) as { ok: boolean; pluginId: string; diagnostics: unknown[] }
   expect(green).toMatchObject({ ok: true, pluginId: "standup-notes", diagnostics: [] })
   expect((await listLivePlugins(stack.url)).plugins).toEqual([])
 
-  const added = JSON.parse(await callTool(stack, app, "app_plugin_add", { directory }, "ADDED")) as Record<string, unknown>
+  const added = JSON.parse(await callTool(turn, "app_plugin_add", { directory }, "ADDED")) as Record<string, unknown>
   expect(added).toMatchObject({ id: "standup-notes", name: "Standup notes", directory, status: "ready" })
   expect((await listLivePlugins(stack.url)).plugins.map((row) => row.id)).toEqual(["standup-notes"])
 
@@ -98,12 +104,13 @@ test("40 the app plugin tools refuse a folder outside the session's workspace an
   const model = await api.defaultModel(workspace.directory, "claude")
   const session = await api.createSession(workspace.directory, { title: "Outside", harness: { id: "claude", access: "native" }, permissionMode: "bypassPermissions", model })
   await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  const turn = { stack, api, app, directory: workspace.directory, sessionId: session.id }
 
   const outside = path.join(stack.dataDir, "outside-plugin")
-  const refused = await callTool(stack, app, "app_plugin_create", { name: "Escape", directory: outside }, "REFUSED")
+  const refused = await callTool(turn, "app_plugin_create", { name: "Escape", directory: outside }, "REFUSED")
   expect(refused).toContain("is outside this session's workspace")
   await expect(fs.access(outside)).rejects.toThrow()
-  const addRefused = await callTool(stack, app, "app_plugin_add", { directory: stack.dataDir }, "ADD_REFUSED")
+  const addRefused = await callTool(turn, "app_plugin_add", { directory: stack.dataDir }, "ADD_REFUSED")
   expect(addRefused).toContain("is outside this session's workspace")
   expect((await listLivePlugins(stack.url)).plugins).toEqual([])
 })
