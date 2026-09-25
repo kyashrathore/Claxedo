@@ -15,15 +15,15 @@ function assertNoRemoteLeaks(requests: RecordedAcpRequest[], method: string, lab
   assert.ok(call, `${label}: remote agent received no ${method}`)
   const servers = call.params.mcpServers as McpEntry[] | undefined
   assert.ok(Array.isArray(servers), `${label}: ${method} omitted mcpServers`)
+  assert.ok(servers.some((server) => server.name === "h24_http" && server.type === "http"), `${label}: ${method} omitted the allowed HTTP MCP server`)
+  assert.equal(call.authorization, null, `${label}: ${method} carried a websocket Authorization header`)
   const errors: Error[] = []
   const check = (condition: boolean, message: string) => { if (!condition) errors.push(new Error(message)) }
-  check(servers.some((server) => server.name === "h24_http" && server.type === "http"), `${label}: ${method} omitted the allowed HTTP MCP server`)
   const firstParty = servers.filter((server) => server.name === "claxedo" || server.url?.includes("/api/claxedo/mcp"))
-  check(firstParty.length === 0, `${label}: ${method} leaked first-party Claxedo MCP server`)
+  check(firstParty.length === 0, `H-1: ${label}: ${method} leaked first-party Claxedo MCP server`)
   const bearer = firstParty.some((server) => JSON.stringify(server.headers).toLowerCase().includes("authorization"))
-  check(!bearer, `${label}: ${method} leaked first-party MCP Authorization`)
-  check(!servers.some((server) => server.type === "stdio" || "command" in server), `${label}: ${method} leaked stdio MCP server`)
-  check(call.authorization === null, `${label}: ${method} carried a websocket Authorization header`)
+  check(!bearer, `H-1: ${label}: ${method} leaked first-party MCP Authorization`)
+  check(!servers.some((server) => server.type === "stdio" || "command" in server), `H-2: ${label}: ${method} leaked stdio MCP server`)
   return errors
 }
 

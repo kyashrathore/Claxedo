@@ -15,11 +15,17 @@ function flowId(entry: string) {
   return entry.slice(0, entry.indexOf("-"))
 }
 
+/** `H14` selects H14 and each of its variants (`H14.codex`); `H14.codex` selects that variant alone. */
+function selects(id: string, entry: string) {
+  const candidate = flowId(entry)
+  return candidate === id || candidate.startsWith(`${id}.`)
+}
+
 function selected(entries: string[], ids: string[]) {
   if (!ids.length) return entries
-  const unknown = ids.filter((id) => !entries.some((entry) => flowId(entry) === id))
+  const unknown = ids.filter((id) => !entries.some((entry) => selects(id, entry)))
   if (unknown.length) throw new Error(`No flow file for ${unknown.join(", ")}`)
-  return entries.filter((entry) => ids.includes(flowId(entry)))
+  return entries.filter((entry) => ids.some((id) => selects(id, entry)))
 }
 
 async function expectedRed(entries: string[]): Promise<Map<string, string[]>> {
@@ -47,7 +53,7 @@ console.log(`Pinned Pi ${pi.version}: ${pi.installed ? "installed" : "already in
 const runtime = await daemonRuntime()
 console.log(`Daemon runtime: Node ${runtime.version} (${runtime.node})`)
 
-const all = (await readdir(import.meta.dirname)).filter((name) => /^H\d+[a-z]?-.*\.flow\.ts$/.test(name)).sort()
+const all = (await readdir(import.meta.dirname)).filter((name) => /^H\d+[a-z]?(?:\.[a-z0-9]+)?-.*\.flow\.ts$/.test(name)).sort()
 if (!all.length) throw new Error("No e2e flows found")
 const red = await expectedRed(all)
 const failures: string[] = []
@@ -61,12 +67,15 @@ for (const entry of selected(all, process.argv.slice(2))) {
     await flow.run()
     if (defects) failures.push(`${id} passed but is expected red for ${defects.join(", ")}: remove it from expected-red.json once the fix is proven`)
   } catch (error) {
-    if (defects) {
-      console.log(`${id} red as expected (${defects.join(", ")}): ${firstLine(error)}`)
+    const line = firstLine(error)
+    if (defects?.some((defect) => new RegExp(`\\b${defect}\\b`).test(line))) {
+      console.log(`${id} red as expected: ${line}`)
       continue
     }
     console.error(error)
-    failures.push(`${id} failed: ${firstLine(error)}`)
+    failures.push(defects
+      ? `${id} is expected red for ${defects.join(", ")} but failed elsewhere: ${line}`
+      : `${id} failed: ${line}`)
   }
 }
 if (failures.length) {
