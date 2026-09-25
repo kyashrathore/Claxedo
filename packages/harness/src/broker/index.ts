@@ -20,6 +20,7 @@ export function createTurnBroker(owner: BrokerOwner, context: TurnBrokerContext)
     signal: context.signal,
     origin: context.origin,
     ask: (request) => owner.requests.askTurn(context, request),
+    completeElicitation: (elicitationId) => owner.requests.completeElicitation(context.authority.sessionId, context.authority.connectionId, elicitationId),
     observeSubagent: (observation) => owner.subagents.observe(context.authority.sessionId, observation),
     associateChild: (correlationKey, child) => owner.subagents.associate(context.authority.sessionId, correlationKey, child),
   }
@@ -28,10 +29,15 @@ export function createTurnBroker(owner: BrokerOwner, context: TurnBrokerContext)
 export function createSessionBroker(owner: BrokerOwner, context: SessionBrokerContext): SessionBroker {
   const { ports } = owner
   if (context.start && (context.start.sessionId !== context.sessionId || context.start.directory !== context.directory ||
-    context.start.workspaceId !== context.workspaceId)) throw new Error("Session start binding does not match broker context")
+    context.start.workspaceId !== context.workspaceId || context.start.connectionId !== context.connectionId ||
+    context.start.operationId !== context.operationId)) throw new Error("Session start binding does not match broker context")
   return {
     sessionId: context.sessionId,
     ask: (request) => owner.requests.askStart(context, request),
+    completeElicitation: (elicitationId) => {
+      if (!context.start) throw new Error("Session completion requires a start binding")
+      return owner.requests.completeElicitation(context.sessionId, context.start.connectionId, elicitationId)
+    },
     rebind: (upstreamSessionId) => ports.rebind(context.sessionId, upstreamSessionId),
     persistHandoff: (handoff) => ports.persistHandoff(context.sessionId, handoff),
     admitProviderTurn: (input, run) => admitProviderTurn(

@@ -2,6 +2,7 @@ import type {
   AgentExecutionBinding,
   AgentPresentationEvent,
   AgentSessionStartBinding,
+  AgentSessionStart,
   RuntimeGoalSnapshot,
   SessionConfig,
   SessionHandoff,
@@ -12,6 +13,7 @@ import type {
   ChildSessionRef,
   OutsideTurnUsage,
   PendingRequest,
+  RequestScope,
   ProviderTurnInput,
   ProviderTurnResult,
   RequestAnswer,
@@ -52,11 +54,12 @@ export interface BrokerPorts {
   readonly clock: Clock
   readonly services: Pick<HarnessServices, "patternEvaluator">
   currentTurnAuthority(sessionId: string): TurnAuthority | undefined
-  persistAnswer(pending: PendingRequest, answer: RequestAnswer, automatic: boolean): Promise<readonly AgentRuntimeEvent[]>
-  readAnswer(requestId: string): RequestAnswer | undefined
+  readStart(sessionId: string): AgentSessionStart | undefined
+  readPending(scope: RequestScope): readonly PendingRequest[]
+  persistAnswer(pending: PendingRequest, answer: RequestAnswer, automatic: boolean, grantKey?: string): Promise<readonly AgentRuntimeEvent[]>
+  readAnswer(sessionId: string, requestId: string): RequestAnswer | undefined
   publish(event: BrokerEvent): Promise<void>
   readPermissionState(sessionId: string): Record<string, unknown> | undefined
-  writePermissionState(sessionId: string, state: Record<string, unknown>): Promise<void>
   readGoal(sessionId: string): RuntimeGoalSnapshot | null
   publishGoal(sessionId: string, snapshot: RuntimeGoalSnapshot | null): Promise<void>
   admitProviderTurn(
@@ -80,10 +83,13 @@ export type SessionBrokerContext = {
   sessionId: string
   directory: string
   workspaceId: string
-  start?: AgentSessionStartBinding
   origin: TurnOrigin
   expiresAt?: number
-}
+} & ({ start?: undefined; connectionId?: undefined; operationId?: undefined } | {
+  start: AgentSessionStartBinding
+  connectionId: string
+  operationId: string
+})
 
 export type TurnBrokerContext = {
   authority: TurnAuthority
