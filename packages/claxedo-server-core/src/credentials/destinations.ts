@@ -116,9 +116,9 @@ const cursorDestination: ProviderRow = () => ({
   methods: ["POST", "GET"],
   pathPrefixes: [
     "/auth/exchange_user_api_key",
-    "/agent.v1.AgentService",
-    "/aiserver.v1.BidiService",
-    "/aiserver.v1.ServerConfigService",
+    "/agent.v1.AgentService/RunSSE",
+    "/aiserver.v1.BidiService/BidiAppend",
+    "/aiserver.v1.DashboardService/GetTeamReposOrEmptyIfNotInTeam",
   ],
   apiPath: "",
   injection: { header: "Authorization", scheme: "Bearer" },

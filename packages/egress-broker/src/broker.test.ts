@@ -53,6 +53,26 @@ async function fixture(tuning: {
 }
 
 describe("binding broker HTTP entrypoint", () => {
+  test("Cursor exchange keeps the access token behind a signed placeholder", async () => {
+    const f = await fixture()
+    f.update({ destination: { origin: "https://api2.cursor.sh", methods: ["POST"], pathPrefixes: [
+      "/auth/exchange_user_api_key", "/aiserver.v1.DashboardService/GetTeamReposOrEmptyIfNotInTeam",
+    ] }, injection: { header: "Authorization", scheme: "Bearer" } })
+    f.respond(async () => Response.json({ accessToken: "real-cursor-access-token" }))
+    const connectPath = "/aiserver.v1.DashboardService/GetTeamReposOrEmptyIfNotInTeam"
+    expect((await f.request(connectPath, { headers: { authorization: `Bearer ${f.token}` } })).status).toBe(401)
+    const exchanged = await f.request("/auth/exchange_user_api_key", { headers: { authorization: `Bearer ${f.token}` } })
+    expect(exchanged.status).toBe(200)
+    expect(await exchanged.json()).toEqual({ accessToken: f.token })
+    expect(f.upstream[0].headers.get("authorization")).toBe("Bearer real-key")
+    const connected = await f.request(connectPath, { headers: { authorization: `Bearer ${f.token}` } })
+    expect(connected.status).toBe(200)
+    expect(f.upstream[1].headers.get("authorization")).toBe("Bearer real-cursor-access-token")
+    const forged = await f.request(connectPath, { headers: { authorization: "Bearer forged-cursor-placeholder" } })
+    expect([forged.status, (await forged.json()).error.code]).toEqual([401, "runtime_token_invalid"])
+    expect(f.upstream).toHaveLength(2)
+  })
+
   test("injects only at the upstream boundary and streams the response", async () => {
     const f = await fixture()
     const response = await f.request()
