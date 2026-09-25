@@ -34,7 +34,7 @@ export const moduleStateExceptions: readonly ModuleStateException[] = [
   { file: `${transcript}/markdown-shiki.worker.ts`, binding: "highlighter", reason: "the worker's one lazily created shiki highlighter" },
   { file: `${transcript}/markdown-worker.ts`, binding: "worker", reason: "the one markdown worker" },
   { file: `${transcript}/markdown-worker.ts`, binding: "disabled", reason: "why the worker stopped, so parsing falls back to the main thread" },
-  { file: `${transcript}/markdown-worker.ts`, binding: "nextID", reason: "request id counter for the worker protocol" },
+  { file: `${transcript}/markdown-worker.ts`, binding: "nextId", reason: "request id counter for the worker protocol" },
   { file: `${transcript}/markdown-worker.ts`, binding: "pending", reason: "requests awaiting a worker answer", cap: "deleted on answer" },
   { file: `${transcript}/markdown-worker.ts`, binding: "states", reason: "per-stream worker state", cap: "deleted on dispose" },
   { file: `${transcript}/markdown-worker.ts`, binding: "keys", reason: "live stream keys", cap: "deleted on dispose" },
