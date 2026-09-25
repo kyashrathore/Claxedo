@@ -16,7 +16,6 @@ export type TaskBoardProps = {
   readonly statuses: readonly TaskStatus[]
   readonly projectName: string
   readonly dateField: TaskDateField
-  readonly selectedTaskId?: string
   readonly busyTaskId?: string
   readonly subtaskProgress?: (taskId: string) => SubtaskProgress | undefined
   readonly startOffer?: (task: TaskSummary) => TaskStartOffer
@@ -41,14 +40,12 @@ function BoardCard(props: {
   readonly drag: Drag
 }): JSX.Element {
   const t = useTranslator(tasksDictionary)
-  const selected = () => props.board.selectedTaskId === props.task.id
   const menus = createRowToolsMenus()
   return (
     <div
       class="tsk-card tsk-rise"
       style={{ "--tsk-i": String(props.order) }}
       data-testid={`tasks-board-card-${props.task.id}`}
-      data-selected={selected() ? "true" : undefined}
       data-tools-open={menus.open() ? "true" : undefined}
       data-dragging={props.drag.dragging() === props.task.id ? "true" : undefined}
       draggable={props.task.archivedAt === null}
@@ -64,7 +61,6 @@ function BoardCard(props: {
         type="button"
         class="tsk-card-title"
         data-testid={`tasks-board-open-${props.task.id}`}
-        aria-current={selected() ? "true" : undefined}
       >
         {props.task.title}
       </button>

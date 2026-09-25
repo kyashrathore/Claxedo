@@ -44,7 +44,6 @@ export type TaskLinkGroup = {
   readonly slot: ConfigurationSlot
   readonly attempts: readonly TaskSessionLinkView[]
   readonly current: TaskSessionLinkView | undefined
-  readonly startable: boolean
 }
 
 export type TaskDetailView = {
@@ -142,6 +141,6 @@ export function groupLinksBySlot(links: readonly TaskSessionLinkView[]): readonl
   return [...bySlot.entries()].map(([slot, attempts]) => {
     const ordered = [...attempts].sort((a, b) => b.attempt - a.attempt)
     const current = ordered[0]
-    return { slot, attempts: ordered, current, startable: !current || current.liveness !== "live" }
+    return { slot, attempts: ordered, current }
   })
 }

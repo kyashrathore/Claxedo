@@ -17,7 +17,6 @@ export type TaskListProps = {
   readonly tasks: readonly TaskSummary[]
   readonly projectName: string
   readonly dateField: TaskDateField
-  readonly selectedTaskId?: string
   readonly loading?: boolean
   readonly emptyLabel?: string
   readonly grouped?: boolean
@@ -38,13 +37,11 @@ function TaskRow(props: {
   readonly list: TaskListProps
 }): JSX.Element {
   const t = useTranslator(tasksDictionary)
-  const selected = () => props.list.selectedTaskId === props.task.id
   const menus = createRowToolsMenus()
   return (
     <div
       class="tsk-tr tsk-rise"
       style={{ "--tsk-i": String(props.index) }}
-      data-selected={selected() ? "true" : undefined}
       data-tools-open={menus.open() ? "true" : undefined}
       data-archived={props.task.archivedAt === null ? undefined : "true"}
     >
@@ -52,7 +49,6 @@ function TaskRow(props: {
         type="button"
         class="tsk-open"
         data-testid={`tasks-list-row-${props.task.id}`}
-        aria-current={selected() ? "true" : undefined}
         onClick={() => props.list.onSelect(props.task.id)}
       >
         <TaskStatusIcon status={props.task.status} label={t(TASK_STATUS_KEYS[props.task.status])} />

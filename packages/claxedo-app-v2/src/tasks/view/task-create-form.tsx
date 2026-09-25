@@ -13,7 +13,7 @@ import { fieldReasonKey, type FieldReasons } from "../data/refusal"
 import { tasksDictionary } from "../i18n"
 import type { TaskProject } from "../links"
 import { TASK_STATUS_KEYS } from "../model"
-import { draftImageUrl, type ImageShrink } from "./image-drafts"
+import { draftImageUrl } from "./image-drafts"
 import { createImageQueue } from "./image-queue"
 import { ProseField } from "./prose-field"
 import { TaskStatusChip } from "./status-control"
@@ -28,7 +28,6 @@ export type TaskCreateFormProps = {
   readonly onDraftChange: (draft: TaskDraft) => void
   readonly onSubmit: () => void
   readonly onCancel: () => void
-  readonly shrinkImage?: ImageShrink
 }
 
 function imageFiles(transfer: DataTransfer | null): File[] {
@@ -138,7 +137,6 @@ export function TaskCreateForm(props: TaskCreateFormProps): JSX.Element {
   const queue = createImageQueue({
     images,
     setImages: (attachments) => patch({ attachments: [...attachments] }),
-    shrink: props.shrinkImage,
   })
   const imageFieldError = () =>
     Object.entries(props.fieldErrors ?? {}).find(([path]) => path.startsWith("attachments"))?.[1]

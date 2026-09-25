@@ -1,9 +1,8 @@
 import { Show, createMemo, type JSX } from "solid-js"
-import type { TaskCreateStatus, TaskStatus, TaskSummary } from "@claxedo/tasks"
+import type { TaskCreateStatus, TaskSummary } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
-import { uuid } from "@/lib/uuid"
 import { Button, useDialog } from "@/ui"
-import { morePages, useTaskList, useTasksApi, useTasksInvalidation } from "../data/queries"
+import { morePages, useTaskList } from "../data/queries"
 import { refusalOf, type TaskListFilter } from "../data/refusal"
 import { useTaskStartOffers } from "../data/start"
 import { tasksDictionary } from "../i18n"
@@ -12,6 +11,7 @@ import { TASK_COLLECTION_KEYS, TASK_COLLECTION_STATUSES } from "../model"
 import type { TasksStore } from "../store"
 import { DialogCreateTask } from "./create-task-dialog"
 import { TaskBoard } from "./task-board"
+import { createTaskCommands } from "./task-commands"
 import { TaskList } from "./task-list"
 import { TasksHeader } from "./tasks-header"
 import { TasksToolbar } from "./tasks-toolbar"
@@ -45,28 +45,13 @@ function createTaskRows(props: TasksViewProps) {
   }
 }
 
-function createStatusChange(store: TasksStore, busyWhile: <T>(taskId: string, run: () => Promise<T>) => Promise<T>) {
-  const api = useTasksApi()
-  const invalidate = useTasksInvalidation()
-  return (input: { taskId: string; revision: number; status: TaskStatus }) =>
-    busyWhile(input.taskId, async () => {
-      try {
-        await api.client.command({ clientRequestId: uuid(), command: { type: "task.set_status", input } })
-        await invalidate.afterCommand(input.taskId)
-        store.taskSaved(input.taskId)
-      } catch (error) {
-        store.refuseTaskEdit(input.taskId, refusalOf(error))
-      }
-    })
-}
-
 export function TasksView(props: TasksViewProps): JSX.Element {
   const t = useTranslator(tasksDictionary)
   const projects = useTaskProjects()
   const dialog = useDialog()
   const offers = useTaskStartOffers(props.store)
   const rows = createTaskRows(props)
-  const setStatus = createStatusChange(props.store, offers.busyWhile)
+  const commands = createTaskCommands(props.store, offers.busyWhile)
   const startOffer = (task: TaskSummary) =>
     offers.offerFor(task, { onOpen: task.links.count > 0 ? () => void offers.openLatestSession(task.id) : undefined })
   const openCreate = (status?: TaskCreateStatus) =>
@@ -84,12 +69,11 @@ export function TasksView(props: TasksViewProps): JSX.Element {
     projectName: projectName(),
     dateField: props.store.state.dateField,
     more: morePages(rows.tasks),
-    selectedTaskId: props.store.state.selectedTaskId,
     subtaskProgress: rows.subtaskProgress,
     startOffer,
     busyTaskId: offers.busyTaskId(),
     onSelect: props.onOpenTask,
-    onStatusChange: (input: { taskId: string; revision: number; status: TaskStatus }) => void setStatus(input),
+    onStatusChange: commands.setStatus,
   })
   return (
     <div class="tsk tsk-root" data-testid="tasks-view">
