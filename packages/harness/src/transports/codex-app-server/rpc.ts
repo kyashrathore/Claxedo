@@ -1,9 +1,13 @@
 import type { OwnedProcess, HarnessServices, Deadline } from "../../contract"
 import { asRecordOrEmpty, asString, assertRecord } from "@claxedo/helpers/guards"
-import { CodexTransportError } from "./errors"
+import { CodexRequestRefusal, CodexTransportError, codexRpcError } from "./errors"
 
 export type RpcMessage = { id?: string | number; method?: string; params?: unknown; result?: unknown; error?: { code: number; message: string } }
 type Pending = { resolve(value: unknown): void; reject(error: Error): void; timeout: unknown }
+
+export function codexRetirementDeadline(services: HarnessServices): Deadline {
+  return { at: services.clock.now() + 10_000, signal: new AbortController().signal }
+}
 
 export class CodexRpc {
   private buffer = ""
@@ -79,7 +83,7 @@ export class CodexRpc {
       if (!pending) return
       this.pending.delete(message.id)
       this.clock.clearTimeout(pending.timeout)
-      if (message.error) pending.reject(new CodexTransportError("protocol", message.error.message))
+      if (message.error) pending.reject(codexRpcError(message.error))
       else pending.resolve(message.result)
       return
     }
@@ -95,7 +99,7 @@ export class CodexRpc {
       if (!this.handler) throw new CodexTransportError("protocol", `No handler for ${message.method}`)
       this.write({ id: message.id, result: await this.handler(message) })
     } catch (error) {
-      if (!this.closed) this.write({ id: message.id, error: { code: -32603, message: String(error) } })
+      if (!this.closed) this.write({ id: message.id, error: { code: error instanceof CodexRequestRefusal ? error.code : -32603, message: String(error) } })
     }
   }
 
