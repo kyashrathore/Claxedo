@@ -1,18 +1,19 @@
+import { eventSessionID, eventAssistantMessageID, terminal, projectTurnEvent } from "@claxedo/harness/opencode-sdk/translate/event"
 import type { AdapterCancelOutcome } from "@claxedo/agent-runtime-contract"
 import type { SessionConfig, SessionConfigUpdate } from "@claxedo/agent-runtime-contract"
-import type { OpenCodeLaunchDocument } from "./launch-policy"
+import type { OpenCodeLaunchDocument } from "@claxedo/harness/opencode-sdk/launch-policy"
 import type { AgentAgent, AgentCommand, AgentContentPart, AgentMessage, AgentPermission, AgentQuestion, AgentRuntimeStreamEvent, AgentSession, PromptInput } from "@claxedo/agent-sdk-runtime"
 import type { AgentHarnessAdapter, AgentMessagePage, AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/adapters"
 import { harnessCapabilities } from "@claxedo/agent-sdk-runtime/capabilities"
 import { NO_HARNESS_EFFORT, ProviderCredentialUnavailableError } from "@claxedo/agent-sdk-runtime"
 import type { AgentExecutionBinding, AgentQuestionAnswer } from "@claxedo/agent-runtime-contract"
-import { asRecord, asRecordOrEmpty } from "@claxedo/helpers/guards"
+import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import type { Mcp } from "@opencode-ai/plugin"
-import type { OpenCodeRuntime } from "./runtime"
-import { WorkspaceScope } from "./scope"
-import type { ProjectedEvent } from "./event-pump"
-import { openCodePartId, type SessionMessage, type SessionSummary } from "./session-port"
-import { createTurnUsage, readSessionTotal } from "./turn-usage"
+import type { OpenCodeRuntime } from "@claxedo/harness/opencode-sdk/runtime"
+import { WorkspaceScope } from "@claxedo/harness/opencode-sdk/scope"
+import type { ProjectedEvent } from "@claxedo/harness/opencode-sdk/event-pump"
+import { openCodePartId, type SessionMessage, type SessionSummary } from "@claxedo/harness/opencode-sdk/session-port"
+import { createTurnUsage, readSessionTotal } from "@claxedo/harness/opencode-sdk/translate/turn-usage"
 import { errorMessage } from "../error-message"
 import { rec, str } from "../json-value"
 
@@ -158,10 +159,6 @@ function pluginMcpServers(input: Record<string, unknown>): Record<string, Mcp.Se
   return servers
 }
 
-function eventSessionID(event: ProjectedEvent): string | undefined {
-  const data = asRecordOrEmpty(event.data)
-  return typeof data.sessionID === "string" ? data.sessionID : undefined
-}
 
 /**
  * Watches the engine's own event stream for this session's turn ending.
@@ -204,55 +201,6 @@ function engineTurnTerminal(
   return { settled, abandon: () => end("deadline") }
 }
 
-/** The engine's own id for the assistant turn an event belongs to, when it names one. */
-function eventAssistantMessageID(event: ProjectedEvent): string | undefined {
-  const data = asRecordOrEmpty(event.data)
-  const id = data.assistantMessageID ?? data.messageID
-  return typeof id === "string" ? id : undefined
-}
-
-function terminal(event: ProjectedEvent, sessionID: string): AgentRuntimeStreamEvent | undefined {
-  const data = asRecordOrEmpty(event.data)
-  if (event.type === "session.execution.succeeded") return { type: "finish", sessionId: sessionID, harness: "opencode" }
-  if (event.type === "session.execution.interrupted") return { type: "finish", sessionId: sessionID, harness: "opencode" }
-  if (event.type === "session.execution.failed") {
-    const error = data.error
-    const reason = error instanceof Error ? error.message : typeof error === "string" ? error : JSON.stringify(error)
-    return { type: "error", error: reason || "OpenCode execution failed", harness: "opencode" }
-  }
-  return undefined
-}
-
-function projectTurnEvent(event: ProjectedEvent): AgentRuntimeStreamEvent | undefined {
-  const data = asRecordOrEmpty(event.data)
-  if (event.type === "session.execution.started") return { type: "session-status", status: "busy", harness: "opencode" }
-  if (event.type === "session.text.delta" && typeof data.delta === "string") {
-    return { type: "text-delta", delta: data.delta, harness: "opencode" }
-  }
-  if (event.type === "session.reasoning.delta" && typeof data.delta === "string") {
-    return { type: "thinking-delta", delta: data.delta, harness: "opencode" }
-  }
-  if (event.type === "session.tool.input.started" && typeof data.id === "string" && typeof data.name === "string") {
-    return { type: "tool-start", toolCallId: data.id, toolName: data.name, harness: "opencode" }
-  }
-  if (event.type === "session.tool.called" && typeof data.id === "string") {
-    return { type: "tool-input", toolCallId: data.id, input: data.input, harness: "opencode" }
-  }
-  if (event.type === "session.tool.success" && typeof data.id === "string") {
-    const metadata = asRecord(data.metadata)
-    return {
-      type: "tool-output",
-      toolCallId: data.id,
-      output: data.content,
-      ...(metadata ? { metadata } : {}),
-      harness: "opencode",
-    }
-  }
-  if (event.type === "session.tool.failed" && typeof data.id === "string") {
-    return { type: "tool-error", toolCallId: data.id, error: JSON.stringify(data.error), harness: "opencode" }
-  }
-  return undefined
-}
 
 function prompt(input: PromptInput) {
   const text: string[] = []

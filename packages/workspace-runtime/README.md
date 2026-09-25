@@ -67,7 +67,7 @@ Host decision seams (all default to decision-free kit behavior):
 product domains), generic `connectionProviders` plus a strict v3 runtime
 snapshot (operator-owned process/remote descriptors and secret references),
 `opencodeRuntime` (the process-owned public embedded SDK runtime behind the
-native `opencode` harness, composed by `@claxedo/workspace-runtime/opencode`),
+native `opencode` harness, composed by `@claxedo/harness/opencode-sdk`),
 and `startServer`'s third argument `{ signals: true }` (process
 signal/exit handling; kit default makes no process-global claims). Claxedo
 supplies all of these from `claxedo-server` (`runtime-boot.ts`, embedded
@@ -93,7 +93,7 @@ lower-level helpers:
 | `@claxedo/workspace-runtime/client` | Manual typed HTTP client for health, capabilities, config apply, events, files, diff/git, PTY, and process routes. |
 | `@claxedo/workspace-runtime/host` | Low-level host construction and route mounting. |
 | `@claxedo/workspace-runtime/projection` | SSE fanout and replay helpers for runtime presentation frames. |
-| `@claxedo/workspace-runtime/opencode` | Process-owned public embedded SDK host, workspace-scoped ports, and harness adapter (Node 24+). |
+| `@claxedo/harness/opencode-sdk` | Process-owned public embedded SDK host, workspace-scoped ports, and harness adapter (Node 24+). |
 | `@claxedo/workspace-runtime/exposure` | Explicit loopback, relay, private-network, and embedded exposure declarations. |
 | `@claxedo/workspace-runtime/relay` | Relay-host auth and host tunnel helpers. |
 | `@claxedo/workspace-runtime/config` | Runtime config snapshot and management-auth contracts. |

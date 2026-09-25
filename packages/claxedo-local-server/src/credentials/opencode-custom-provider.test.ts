@@ -30,7 +30,7 @@ const [
   import("@claxedo/server-core/agent-config/index"),
   import("@claxedo/server-core/credentials/opencode-provider-catalog"),
   import("@claxedo/server-core/opencode/sdk-runtime"),
-  import("@claxedo/workspace-runtime/opencode"),
+  import("@claxedo/harness/opencode-sdk"),
   import("./broker"),
   import("@claxedo/server-core/platform/db/index"),
 ])

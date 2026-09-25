@@ -10,6 +10,18 @@
       "bun": "./src/contract/index.ts",
       "types": "./dist/contract/index.d.ts",
       "import": "./dist/contract/index.js"
+    },
+    "./opencode-sdk": {
+      "development": "./src/transports/opencode-sdk/index.ts",
+      "bun": "./src/transports/opencode-sdk/index.ts",
+      "types": "./dist/transports/opencode-sdk/index.d.ts",
+      "import": "./dist/transports/opencode-sdk/index.js"
+    },
+    "./opencode-sdk/*": {
+      "development": "./src/transports/opencode-sdk/*.ts",
+      "bun": "./src/transports/opencode-sdk/*.ts",
+      "types": "./dist/transports/opencode-sdk/*.d.ts",
+      "import": "./dist/transports/opencode-sdk/*.js"
     }
   },
   "files": [

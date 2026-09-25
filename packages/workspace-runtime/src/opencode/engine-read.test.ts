@@ -3,8 +3,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, test } from "bun:test"
 import { AgentHarnessEngineError } from "@claxedo/agent-sdk-runtime/adapters"
-import { engineRead } from "./engine-read"
-import { WorkspaceScope } from "./scope"
+import { engineRead } from "@claxedo/harness/opencode-sdk/engine-read"
+import { WorkspaceScope } from "@claxedo/harness/opencode-sdk/scope"
 
 /** `@opencode-ai/sdk`'s promise `ClientError`: `reason` on the instance, the status on `cause`. */
 class ClientError extends Error {

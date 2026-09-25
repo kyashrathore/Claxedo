@@ -103,13 +103,6 @@
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.mjs",
       "default": "./dist/testing.mjs"
-    },
-    "./opencode": {
-      "development": "./src/opencode.ts",
-      "bun": "./src/opencode.ts",
-      "types": "./dist/opencode.d.ts",
-      "import": "./dist/opencode.mjs",
-      "default": "./dist/opencode.mjs"
     }
   },
   "files": [

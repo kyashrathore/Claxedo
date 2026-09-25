@@ -34,7 +34,7 @@ export const AGENT_HARNESS_DEFINITIONS = [
     authSlot: null,
   },
   {
-    // The public embedded OpenCode SDK, composed by `@claxedo/workspace-runtime/opencode`.
+    // The public embedded OpenCode SDK, composed by `@claxedo/harness/opencode-sdk`.
     // Credentials reach it through Claxedo's credential bridge, not an auth slot.
     key: "opencode",
     id: "opencode",
@@ -53,7 +53,7 @@ export type AgentHarnessId = (typeof AGENT_HARNESS_IDS)[number]
 export type AgentHarnessAccess = (typeof AGENT_HARNESS_ACCESSES)[number]
 export type AgentHarnessKey = (typeof AGENT_HARNESS_KEYS)[number]
 export type NativeHarnessId = AgentHarnessId
-/** The native harnesses driven through `SdkRuntimeDriver`; `opencode` is composed by `@claxedo/workspace-runtime/opencode` instead. */
+/** The native harnesses driven through `SdkRuntimeDriver`; `opencode` is composed by `@claxedo/harness/opencode-sdk` instead. */
 export type NativeSdkHarnessId = Extract<AgentHarnessId, "claude" | "codex" | "cursor" | "pi">
 /**
  * A harness identity's id field: one of the finite built-in ids, or a
