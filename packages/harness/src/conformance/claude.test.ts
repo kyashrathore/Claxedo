@@ -55,6 +55,11 @@ function watchedServices(services: TestServices, state: ClaudeBackend): TestServ
   } }
 }
 
+function configurePorts(ports: MemoryPorts, state: Pick<ClaudeBackend, "harness" | "model">): void {
+  Object.assign(ports, { config: (sessionId: string) => ({ harness: state.harness, model: state.model,
+    ...(ports.states.get(sessionId) ? { permissionState: ports.states.get(sessionId) } : {}) }) })
+}
+
 async function backend(): Promise<ClaudeBackend> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "claude-conformance-"))
   const directory = path.join(root, "work")
@@ -95,6 +100,8 @@ async function backend(): Promise<ClaudeBackend> {
     model: { providerID: "anthropic", modelID: "default" },
     credentials: { providers: { anthropic: { baseUrl: server.url, placeholder: "claude-conformance-placeholder", authMode: "api-key" } },
       secrets: {}, leaseGeneration: "conformance" },
+    onSetup: ({ ports }) => configurePorts(ports, { harness: { id: "claude", access: "native" },
+      model: { providerID: "anthropic", modelID: "default" } }),
     hold: (marker) => {
       const release = server.holdTextReplies(marker)
       if (marker === "PISTEER") setTimeout(release, 300)
@@ -102,16 +109,20 @@ async function backend(): Promise<ClaudeBackend> {
     },
     scriptTool: (name, input) => server.scriptTool({ name: name === "read" ? "Read" : name, input: name === "read" ? { file_path: path.join(directory, "conformance.txt") } : input }),
     close: async () => {
-      await Promise.all(samples)
-      expect(samples).toHaveLength(sampledPids.length * 3)
-      process.stdout.write(`CLAUDE_OUTBOUND_ATTEMPTS ${JSON.stringify(attempts)}\n`)
-      process.stdout.write(`CLAUDE_SOCKETS ${JSON.stringify({ sampledPids, samples: samples.length, sockets })}\n`)
-      listener.closeAllConnections()
-      await new Promise<void>((resolve) => listener.close(() => resolve()))
-      await server.close()
-      releasePort(proxyPort)
-      releasePort(port)
-      await fs.rm(root, { recursive: true, force: true })
+      try {
+        await Promise.all(samples)
+        expect(samples).toHaveLength(sampledPids.length * 3)
+      } finally {
+        process.stdout.write(`CLAUDE_OUTBOUND_ATTEMPTS ${JSON.stringify(attempts)}\n`)
+        process.stdout.write(`CLAUDE_SOCKETS ${JSON.stringify({ sampledPids, samples: samples.length, sockets })}\n`)
+        listener.closeAllConnections()
+        await new Promise<void>((resolve) => listener.close(() => resolve()))
+        await server.close()
+        releasePort(proxyPort)
+        releasePort(port)
+        await fs.rm(root, { recursive: true, force: true })
+      }
+      expect(attempts).toEqual([])
     },
   }
 }
@@ -126,10 +137,11 @@ runConformance({
   },
 })
 
-test.each(["allow_once", "allow_always", "deny"])("Claude permission %s is saved before the tool continues", async (decision) => {
+test.each(["allow_once", "allow_always", "deny", "reject_always"])("Claude permission %s is saved before the tool continues", async (decision) => {
   const state = await backend()
   const services = createTestServices()
   const ports = new MemoryPorts()
+  configurePorts(ports, state)
   Object.assign(ports, { clock: services.clock })
   ports.current.set("s1", { ...authority, directory: state.directory })
   const owner = createRequestBroker(ports)
@@ -159,12 +171,34 @@ test.each(["allow_once", "allow_always", "deny"])("Claude permission %s is saved
     expect(pending?.request.kind).toBe("permission")
     if (!pending) throw new Error("Claude did not ask permission")
     expect(pending.upstreamSessionId).toBe(session.binding.upstreamSessionId)
+    if (decision === "allow_always") {
+      ports.failPersist = true
+      expect(await owner.broker.answer(pending.request.requestId, { kind: "permission", decision }, { sessionId: "s1" }))
+        .toMatchObject({ ok: false, refusal: "persistence" })
+      expect(await fs.stat(target).then(() => true, () => false)).toBe(false)
+      expect(owner.broker.list({ sessionId: "s1" })).toHaveLength(1)
+      ports.failPersist = false
+    }
     const answer = await owner.broker.answer(pending.request.requestId, { kind: "permission", decision }, { sessionId: "s1" })
     expect(answer.ok).toBe(true)
-    await running
+    if (decision === "reject_always") await expect(running).rejects.toThrow()
+    else await running
     expect(ports.saved.some((row) => row.pending.request.requestId === pending.request.requestId)).toBe(true)
-    expect(await fs.stat(target).then(() => true, () => false)).toBe(decision !== "deny")
+    expect(await fs.stat(target).then(() => true, () => false)).toBe(decision.startsWith("allow"))
     expect(await fs.readFile(path.join(state.userConfigRoot, "settings.json"))).toEqual(originalSettings)
+    if (decision === "allow_always") {
+      expect(ports.states.get("s1")?.brokerGrants).toHaveLength(1)
+      await fs.rm(target)
+      state.server.scriptToolSequence("again", [{ name: "Bash", input: { command: `printf approved > ${target}` } }])
+      const next = { ...turn, turnId: "t2", userMessageId: "u2", assistantMessageId: "a2",
+        prompt: { ...turn.prompt, assistantMessageId: "a2", parts: [{ type: "text" as const, text: "Run the scripted Bash tool again" }] } }
+      ports.current.set("s1", { ...authority, directory: state.directory, upstreamSessionId: session.binding.upstreamSessionId, turnId: "t2" })
+      const nextBroker = createTurnBroker(owner, { authority: { ...authority, directory: state.directory,
+        upstreamSessionId: session.binding.upstreamSessionId, turnId: "t2" }, origin, signal: new AbortController().signal })
+      for await (const _event of transport.send(session, next, nextBroker)) {}
+      expect(owner.broker.list({ sessionId: "s1" })).toHaveLength(0)
+      expect(await fs.readFile(target, "utf8")).toBe("approved")
+    }
   } finally {
     await transport.dispose()
     await state.close()
@@ -175,6 +209,7 @@ test("Claude native Goal starts through provider admission and confirms clear", 
   const state = await backend()
   const services = createTestServices()
   const ports = new MemoryPorts()
+  configurePorts(ports, state)
   let currentGoal: RuntimeGoalSnapshot | null = null
   Object.assign(ports, { readGoal: () => currentGoal, publishGoal: async (_sessionId: string, snapshot: RuntimeGoalSnapshot | null) => {
     currentGoal = snapshot
@@ -199,4 +234,33 @@ test("Claude native Goal starts through provider admission and confirms clear", 
     expect(stopped.ok).toBe(true)
     expect(broker.goal.read()?.status).toBe("paused")
   } finally { release(); await transport.dispose(); await state.close() }
+}, 60_000)
+
+test("a requested Claude agent changes the real CLI query", async () => {
+  const state = await backend()
+  const services = createTestServices()
+  const ports = new MemoryPorts()
+  configurePorts(ports, state)
+  ports.current.set("s1", { ...authority, directory: state.directory })
+  const owner = createRequestBroker(ports)
+  const origin = { actor: state.owner, via: "relay" as const, reissued: false }
+  const broker = createSessionBroker(owner, { sessionId: "s1", workspaceId: "w1", directory: state.directory, origin })
+  const transport = new ClaudeSdkTransport(watchedServices(services, state), { executable: "claude", configRoot: state.configRoot,
+    userConfigRoot: state.userConfigRoot, env: state.env })
+  try {
+    await fs.mkdir(path.join(state.userConfigRoot, "agents"))
+    await fs.writeFile(path.join(state.userConfigRoot, "agents", "reviewer.md"),
+      "---\nname: reviewer\ndescription: Review work\nmodel: haiku\n---\nCLAUDE_AGENT_MARKER_REVIEWER\n")
+    const session = await transport.start({ sessionId: "s1", workspaceId: "w1", directory: state.directory, locality: "local",
+      owner: state.owner, config: { harness: state.harness, model: state.model }, model: state.model,
+      credentials: state.credentials, projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] } }, broker)
+    ports.current.set("s1", { ...authority, directory: state.directory, upstreamSessionId: session.binding.upstreamSessionId })
+    const turnBroker = createTurnBroker(owner, { authority: { ...authority, directory: state.directory,
+      upstreamSessionId: session.binding.upstreamSessionId }, origin, signal: new AbortController().signal })
+    const turn = { turnId: "t1", userMessageId: "u1", assistantMessageId: "a1", origin, model: state.model,
+      prompt: { agent: "reviewer", assistantMessageId: "a1", parts: [{ type: "text" as const, text: "Review this work" }] }, todos: [] }
+    for await (const _event of transport.send(session, turn, turnBroker)) {}
+    expect((await transport.agents.list({ session })).some((agent) => agent.name === "reviewer")).toBe(true)
+    expect(state.server.requests.some((request) => request.model.includes("haiku"))).toBe(true)
+  } finally { await transport.dispose(); await state.close() }
 }, 60_000)

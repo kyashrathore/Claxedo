@@ -33,3 +33,9 @@ test("a file URL the SDK cannot take is refused as configuration", async () => {
       .rejects.toMatchObject({ kind: "configuration" })
   } finally { await fs.rm(root, { recursive: true, force: true }) }
 })
+
+test("turn system text stays out of the SDK user prompt", async () => {
+  const result = await claudePrompt({ ...turn([{ type: "text", text: "user text" }]), system: "system only" }, os.tmpdir())
+  expect(JSON.stringify(result.message.content)).toContain("user text")
+  expect(JSON.stringify(result.message.content)).not.toContain("system only")
+})

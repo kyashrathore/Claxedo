@@ -1,8 +1,8 @@
 import path from "node:path"
-import { query, type ModelInfo } from "@anthropic-ai/claude-agent-sdk"
+import { query, type AgentInfo, type ModelInfo, type Query, type SlashCommand } from "@anthropic-ai/claude-agent-sdk"
 import type { AgentConfigOption } from "@claxedo/agent-runtime-contract"
 import type { DraftLaunch, HarnessServices, StartInput } from "../../contract"
-import { composeClaudeConfigHome } from "../../profiles/claude-code"
+import { claudePlugins, composeClaudeConfigHome } from "../../profiles/claude-code"
 import { claudeBinding, claudeEnvironment } from "./credentials"
 import { ClaudeTransportError } from "./errors"
 import { ClaudeProcess } from "./process"
@@ -12,7 +12,7 @@ export class ClaudeModelCatalog {
   private readonly inFlight = new Map<string, Promise<readonly ModelInfo[]>>()
 
   constructor(private readonly services: HarnessServices, private readonly options: {
-    executable: string; configRoot: string; userConfigRoot: string; env?: NodeJS.ProcessEnv
+    executable: string; configRoot: string; userConfigRoot: string; env: NodeJS.ProcessEnv
   }) {}
 
   private key(input: StartInput | DraftLaunch): string {
@@ -33,7 +33,22 @@ export class ClaudeModelCatalog {
     finally { this.inFlight.delete(key) }
   }
 
+  async commands(input: StartInput | DraftLaunch, sessionId?: string): Promise<SlashCommand[]> {
+    return this.discover(input, sessionId, (stream) => stream.supportedCommands())
+  }
+
+  async agents(input: StartInput | DraftLaunch, sessionId?: string): Promise<AgentInfo[]> {
+    return this.discover(input, sessionId, (stream) => stream.supportedAgents())
+  }
+
   private async probe(input: StartInput | DraftLaunch, sessionId?: string): Promise<readonly ModelInfo[]> {
+    const models = await this.discover(input, sessionId, (stream) => stream.supportedModels())
+    this.rows.set(this.key(input), models)
+    return models
+  }
+
+  private async discover<T>(input: StartInput | DraftLaunch, sessionId: string | undefined,
+    read: (stream: Query) => Promise<T>): Promise<T> {
     const binding = claudeBinding(input.credentials, input.owner)
     const home = binding ? await composeClaudeConfigHome(path.join(this.options.configRoot, sessionId ?? "probe"), this.options.userConfigRoot) : undefined
     const spawned: ClaudeProcess[] = []
@@ -42,7 +57,8 @@ export class ClaudeModelCatalog {
       await new Promise<void>((resolve) => abort.signal.addEventListener("abort", () => resolve(), { once: true }))
     } }, options: {
       cwd: input.directory, pathToClaudeCodeExecutable: this.options.executable,
-      env: claudeEnvironment(this.options.env ?? process.env, binding, home), abortController: abort,
+      env: { ...claudeEnvironment(this.options.env, binding, home), CLAUDE_AGENT_SDK_CLIENT_APP: "claxedo-workspace-runtime/0.1.0" },
+      settingSources: ["user", "project", "local"], plugins: claudePlugins(input.projection), abortController: abort,
       spawnClaudeCodeProcess: (options) => {
         const child = new ClaudeProcess(this.services, options, sessionId ?? "probe", "probe")
         spawned.push(child)
@@ -50,9 +66,7 @@ export class ClaudeModelCatalog {
       },
     } })
     try {
-      const models = await probe.supportedModels()
-      this.rows.set(this.key(input), models)
-      return models
+      return await read(probe)
     } finally {
       abort.abort()
       probe.close()

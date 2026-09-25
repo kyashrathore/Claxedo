@@ -81,3 +81,25 @@ test("internal plugin links are copied and links out of Claude home are refused"
     await expect(composeClaudeConfigHome(target, source)).rejects.toThrow("link escapes")
   } finally { await fs.rm(root, { recursive: true, force: true }) }
 })
+
+test("brokered history is mirrored once and Claude's own later session stays resumable", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "claude-history-test-"))
+  const source = path.join(root, "person")
+  const target = path.join(root, "claxedo")
+  try {
+    await fs.mkdir(path.join(source, "projects", "old"), { recursive: true })
+    await fs.mkdir(path.join(source, "todos"))
+    await fs.writeFile(path.join(source, "projects", "old", "history.jsonl"), "old session")
+    await fs.writeFile(path.join(source, "projects", "old", ".credentials.json"), "nested secret")
+    await fs.writeFile(path.join(source, "history.jsonl"), "old history")
+    await fs.writeFile(path.join(source, ".credentials.json"), "secret")
+    await composeClaudeConfigHome(target, source)
+    expect(await fs.readFile(path.join(target, "projects", "old", "history.jsonl"), "utf8")).toBe("old session")
+    expect(await fs.readdir(path.join(target, "projects", "old"))).not.toContain(".credentials.json")
+    expect(await fs.readdir(target)).not.toContain(".credentials.json")
+    await fs.writeFile(path.join(target, "projects", "live.jsonl"), "CLI session")
+    await fs.rm(path.join(source, "projects"), { recursive: true })
+    await composeClaudeConfigHome(target, source)
+    expect(await fs.readFile(path.join(target, "projects", "live.jsonl"), "utf8")).toBe("CLI session")
+  } finally { await fs.rm(root, { recursive: true, force: true }) }
+})

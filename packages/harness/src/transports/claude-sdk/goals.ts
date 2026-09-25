@@ -17,7 +17,7 @@ export class ClaudeGoals {
   private readonly running = new Map<string, Running>()
 
   constructor(private readonly services: HarnessServices, private readonly options: {
-    executable: string; configRoot: string; userConfigRoot: string; env?: NodeJS.ProcessEnv
+    executable: string; configRoot: string; userConfigRoot: string; env: NodeJS.ProcessEnv
   }, private readonly mcp: (input: StartInput) => Record<string, McpServerConfig>) {}
 
   async start(session: HarnessSession, input: StartInput, broker: SessionBroker, objective: string): Promise<AgentGoalMutationResult> {
@@ -67,20 +67,24 @@ export class ClaudeGoals {
   turnId(sessionId: string): string | undefined { return this.running.get(sessionId)?.turnId }
 
   private async launch(session: HarnessSession, input: StartInput, broker: SessionBroker, turnBroker: TurnBroker | undefined,
-    prompt: string, abort: AbortController, clear: boolean): Promise<{ stream: Query; processes: ClaudeProcess[] }> {
+    prompt: string, abort: AbortController, clear: boolean,
+    runtime: ReturnType<typeof claudeTranslator>["runtime"]): Promise<{ stream: Query; processes: ClaudeProcess[] }> {
+    const current = { ...input, config: { ...broker.config(), permissionMode: input.config.permissionMode } }
     const binding = claudeBinding(input.credentials, input.owner)
     const home = binding ? await composeClaudeConfigHome(path.join(this.options.configRoot, input.sessionId), this.options.userConfigRoot) : undefined
     const processes: ClaudeProcess[] = []
     const stream = query({ prompt, options: {
       cwd: input.directory, pathToClaudeCodeExecutable: this.options.executable,
-      env: claudeEnvironment(this.options.env ?? process.env, binding, home), abortController: abort,
+      env: { ...claudeEnvironment(this.options.env, binding, home), CLAUDE_AGENT_SDK_CLIENT_APP: "claxedo-workspace-runtime/0.1.0",
+        CLAUDE_CODE_ENABLE_TODO_TOOLS: "1", CLAUDE_CODE_ENABLE_TASKS: "1" }, abortController: abort,
       ...(session.binding.upstreamSessionId.startsWith("claude-sdk:") ? {} : { resume: session.binding.upstreamSessionId }),
-      ...(clear ? { tools: [], maxTurns: 1 } : { ...permissionOptions(input.config), plugins: claudePlugins(input.projection),
+      ...(clear ? { tools: [], maxTurns: 1 } : { ...permissionOptions(current.config), plugins: claudePlugins(input.projection),
         mcpServers: this.mcp(input), forwardSubagentText: true, settingSources: ["user", "project", "local"] as const,
-        sessionStore: goalSessionStore(broker, abort.signal), sessionStoreFlush: "eager" as const }),
+        sessionStore: goalSessionStore(broker, abort.signal, { runtime, assistantMessageId: session.binding.sessionId,
+          directory: input.directory }), sessionStoreFlush: "eager" as const }),
       canUseTool: (name, payload, options) => clear || !turnBroker
         ? Promise.resolve({ behavior: protocolGoalMap.deny, message: "Clearing the native Goal cannot run tools" })
-        : askClaudePermission(input, turnBroker, name, payload, options),
+        : askClaudePermission(current, turnBroker, name, payload, options),
       spawnClaudeCodeProcess: (options) => {
         const child = new ClaudeProcess(this.services, options, input.sessionId)
         processes.push(child)
@@ -92,8 +96,8 @@ export class ClaudeGoals {
 
   private async *run(session: HarnessSession, input: StartInput, broker: SessionBroker, turnBroker: TurnBroker | undefined,
     prompt: string, abort: AbortController, clear = false, confirm?: () => void): AsyncIterable<RoutedEvent> {
-    const { stream, processes } = await this.launch(session, input, broker, turnBroker, prompt, abort, clear)
     const { runtime, tasks } = claudeTranslator(session.binding.sessionId)
+    const { stream, processes } = await this.launch(session, input, broker, turnBroker, prompt, abort, clear, runtime)
     try {
       for await (const message of stream as AsyncIterable<SDKMessage | SDKActiveGoalMessage>) {
         if (message.type === "active_goal") { if (!abort.signal.aborted) await broker.goal.publish(activeGoal(input.sessionId, message)); continue }

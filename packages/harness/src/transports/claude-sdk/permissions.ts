@@ -1,5 +1,6 @@
 import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk"
 import type { AgentPermissionMode, SessionConfig } from "@claxedo/agent-runtime-contract"
+import { CLAUDE_DENY_FLOOR } from "../../profiles/claude-code"
 import { ClaudeTransportError } from "./errors"
 
 export const sdkModes = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"] as const satisfies readonly PermissionMode[]
@@ -14,8 +15,7 @@ export const modes: AgentPermissionMode[] = [
   { id: "bypassPermissions", name: "Bypass permissions", level: "full" },
 ]
 
-export const denyFloor = ["Bash(rm -rf /*)", "Bash(rm -rf ~*)", "Bash(git push --force*)", "Bash(curl *| sh)",
-  "Bash(curl *| bash)", "Bash(wget *| sh)", "Bash(chmod -R 777*)"]
+export const denyFloor = CLAUDE_DENY_FLOOR
 const protocolPermissionMap = { allow: "allow", ask: "ask", deny: "deny", additionalDirectories: "additionalDirectories" } as const
 
 export function permissionOptions(config: SessionConfig) {

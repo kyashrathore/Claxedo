@@ -27,12 +27,27 @@ export function transcriptGoal(sessionId: string, entry: SessionStoreEntry, prev
   }
 }
 
-export function goalSessionStore(broker: SessionBroker, signal: AbortSignal): SessionStore {
-  const { runtime } = claudeTranslator(broker.sessionId)
+export function goalSessionStore(broker: SessionBroker, signal: AbortSignal, usage?: {
+  runtime: ReturnType<typeof claudeTranslator>["runtime"]; assistantMessageId: string; directory: string
+}): SessionStore {
+  const runtime = usage?.runtime ?? claudeTranslator(broker.sessionId).runtime
   return {
-    async append(_key, entries) {
+    async append(key, entries) {
       for (const entry of entries) {
-        if (signal.aborted) return
+        if (key.subpath && entry.type === "assistant" && usage) {
+          const message = asRecord(entry.message)
+          const id = message?.id
+          const counts = asRecord(message?.usage)
+          if (typeof id === "string" && counts) {
+            const events = usage.runtime.ingest({ source: "claude.sdk", method: "claude/subagent-usage", payload: {
+              parent_tool_use_id: null, session_id: key.sessionId,
+              message: { id, usage: counts, ...(typeof message?.model === "string" ? { model: message.model } : {}) },
+            } }).events
+            for (const event of events) if (event.type === "usage") broker.meter({ sessionId: broker.sessionId,
+              directory: usage.directory, assistantMessageId: usage.assistantMessageId, usage: event })
+          }
+        }
+        if (signal.aborted) continue
         const goal = transcriptGoal(broker.sessionId, entry, broker.goal.read())
         if (goal !== undefined) await broker.goal.publish(goal)
         if (entry.type === "ai-title" || entry.type === "custom-title") {

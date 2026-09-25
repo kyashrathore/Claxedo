@@ -16,7 +16,7 @@ describe("Claude session credentials", () => {
     expect(() => claudeBinding(empty, person)).toThrow("no selected credentials")
   })
 
-  test.each(["api-key", "bearer"])("a %s binding delivers only its placeholder", (authMode) => {
+  test.each(["api-key", "bearer"])("a %s binding replaces inherited provider credentials before spawn", (authMode) => {
     const binding = { baseUrl: "http://127.0.0.1:47800", placeholder: "placeholder", authMode }
     const selected = claudeBinding({ ...empty, providers: { anthropic: binding } }, person)
     const env = claudeEnvironment({ PATH: "/bin", ANTHROPIC_API_KEY: "operator-own", ANTHROPIC_AUTH_TOKEN: "operator-own",
@@ -27,8 +27,8 @@ describe("Claude session credentials", () => {
     expect(env[authMode === "api-key" ? "ANTHROPIC_AUTH_TOKEN" : "ANTHROPIC_API_KEY"]).toBeUndefined()
     expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
     expect(env.CLAUDE_CODE_OAUTH_SCOPES).toBeUndefined()
-    expect(env.CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN).toBeUndefined()
-    expect(env.CLAXEDO_OTHER_SECRET).toBeUndefined()
+    expect(env.CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN).toBe("local-secret")
+    expect(env.CLAXEDO_OTHER_SECRET).toBe("other-secret")
     expect(env.CLAUDE_CONFIG_DIR).toBe("/claxedo/claude")
   })
 
@@ -38,6 +38,13 @@ describe("Claude session credentials", () => {
       anthropic: { baseUrl: "http://127.0.0.1:47802", placeholder: "vendor", authMode: "api-key" },
     } }, person)
     expect(chosen?.placeholder).toBe("native")
+  })
+
+  test("an ACP Claude binding is eligible for the native SDK transport", () => {
+    const chosen = claudeBinding({ ...empty, providers: {
+      "claude-acp": { baseUrl: "http://127.0.0.1:47803", placeholder: "acp-binding", authMode: "api-key" },
+    } }, person)
+    expect(chosen?.placeholder).toBe("acp-binding")
   })
 
   test("an unavailable or expired selection refuses launch", () => {

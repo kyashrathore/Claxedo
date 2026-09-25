@@ -1,6 +1,6 @@
 import path from "node:path"
 import { randomUUID } from "node:crypto"
-import { query, type EffortLevel, type McpServerConfig, type ModelInfo, type SDKActiveGoalMessage, type SDKMessage, type Query } from "@anthropic-ai/claude-agent-sdk"
+import { AbortError, query, type EffortLevel, type McpServerConfig, type ModelInfo, type SDKActiveGoalMessage, type SDKMessage, type Query } from "@anthropic-ai/claude-agent-sdk"
 import { isHarnessEffortLevel } from "@claxedo/agent-runtime-contract"
 import type {
   AttachInput, CapabilityContext, ConfigApplied, Deadline, HarnessServices, HarnessSession, HarnessTransport,
@@ -28,7 +28,7 @@ type Entry = {
   active?: { id: string; abort: AbortController; input: ClaudeTurnInput }
 }
 
-export type ClaudeSdkOptions = { executable: string; configRoot: string; userConfigRoot: string; env?: NodeJS.ProcessEnv }
+export type ClaudeSdkOptions = { executable: string; configRoot: string; userConfigRoot: string; env: NodeJS.ProcessEnv }
 
 function claudeEffort(value: string | null | undefined): EffortLevel | undefined {
   if (!value) return undefined
@@ -53,7 +53,7 @@ function capability(models?: readonly ModelInfo[]): TransportCapabilities {
     instructionChannel: "turn-system-prompt", configOwner: "runtime",
     requests: { permissions: true, questions: true, elicitation: false }, steer: true, subagents: true,
     goals: { implemented: true, available: true, actions: [], recovery: "blocked", optionalFields: ["iteration", "lastReason"] },
-    fork: false, agents: false, commands: false, todos: true, history: "store", titles: "side-request",
+    fork: false, agents: true, commands: true, todos: true, history: "store", titles: "harness",
     pluginIntake: { mcp: "session", skills: "plugin-dir" }, mcpTransports: { stdio: true, http: true, sse: true },
     timing: { model: "next-turn", effort: "next-turn", permissionMode: "next-turn", credentials: "next-turn" },
   }
@@ -102,14 +102,24 @@ export class ClaudeSdkTransport implements HarnessTransport {
 
   private entry(session: HarnessSession): Entry {
     const entry = this.entries.get(session.binding.sessionId)
-    if (!entry || entry.session !== session) throw new ClaudeTransportError("session", "Claude session is not attached")
+    if (!entry || entry.session.binding.sessionId !== session.binding.sessionId ||
+      entry.session.binding.workspaceId !== session.binding.workspaceId ||
+      entry.session.binding.connectionId !== session.binding.connectionId ||
+      entry.session.binding.upstreamSessionId !== session.binding.upstreamSessionId) {
+      throw new ClaudeTransportError("session", "Claude session is not attached")
+    }
     return entry
   }
 
-  private async launch(entry: Entry, turn: TurnInput, broker: TurnBroker, input: ClaudeTurnInput): Promise<Query> {
+  private async launch(entry: Entry, turn: TurnInput, broker: TurnBroker, input: ClaudeTurnInput,
+    runtime: ReturnType<typeof claudeTranslator>["runtime"]): Promise<Query> {
+    const current = { ...entry.input, config: { ...entry.broker.config(), permissionMode: entry.input.config.permissionMode } }
     const binding = claudeBinding(entry.input.credentials, entry.input.owner)
     const home = binding ? await composeClaudeConfigHome(path.join(this.options.configRoot, entry.input.sessionId), this.options.userConfigRoot) : undefined
-    const env = claudeEnvironment(this.options.env ?? process.env, binding, home)
+    const env = claudeEnvironment(this.options.env, binding, home)
+    env.CLAUDE_AGENT_SDK_CLIENT_APP = "claxedo-workspace-runtime/0.1.0"
+    env.CLAUDE_CODE_ENABLE_TODO_TOOLS = "1"
+    env.CLAUDE_CODE_ENABLE_TASKS = "1"
     const abort = new AbortController()
     entry.active = { id: turn.turnId, abort, input }
     if (broker.signal.aborted) abort.abort()
@@ -119,18 +129,19 @@ export class ClaudeSdkTransport implements HarnessTransport {
       turn.effort ?? turn.prompt.variant))
     return query({ prompt: input.stream, options: {
       cwd: entry.input.directory, pathToClaudeCodeExecutable: this.options.executable,
-      env, model,
-      ...permissionOptions(entry.input.config),
+      env, ...(turn.prompt.agent && model === "default" ? {} : { model }),
+      ...permissionOptions(current.config),
       agent: turn.prompt.agent,
       forwardSubagentText: true,
-      sessionStore: goalSessionStore(entry.broker, abort.signal), sessionStoreFlush: "eager",
+      sessionStore: goalSessionStore(entry.broker, abort.signal, { runtime, assistantMessageId: turn.assistantMessageId,
+        directory: entry.input.directory }), sessionStoreFlush: "eager",
       ...(effort ? { effort } : {}),
       ...(turn.system ? { systemPrompt: { type: "preset", preset: "claude_code", append: turn.system } } : {}),
       ...(entry.session.binding.upstreamSessionId.startsWith("claude-sdk:") ? {} : { resume: entry.session.binding.upstreamSessionId }),
       includePartialMessages: true, extraArgs: { "replay-user-messages": null },
       settingSources: ["user", "project", "local"], plugins: claudePlugins(entry.input.projection),
       mcpServers: mcpServers(entry.input, this.services), abortController: abort,
-      canUseTool: (name, payload, options) => askClaudePermission(entry.input, broker, name, payload, options, turn.turnId),
+      canUseTool: (name, payload, options) => askClaudePermission(current, broker, name, payload, options, turn.turnId),
       spawnClaudeCodeProcess: (options) => {
         const child = new ClaudeProcess(this.services, options, entry.input.sessionId)
         entry.processes.add(child)
@@ -143,29 +154,29 @@ export class ClaudeSdkTransport implements HarnessTransport {
     const entry = this.entry(session)
     if (entry.active) throw new ClaudeTransportError("session", "Claude turn already active")
     const input = new ClaudeTurnInput(await claudePrompt(turn, entry.input.directory))
-    const { runtime, tasks } = claudeTranslator(turn.assistantMessageId)
+    const { runtime, tasks } = claudeTranslator(turn.assistantMessageId, turn.todos)
     const aborted = () => entry.active?.abort.signal.aborted === true
     let settled = false
     let result: SDKMessage | undefined
     try {
-      const stream = await this.launch(entry, turn, broker, input)
+      const stream = await this.launch(entry, turn, broker, input, runtime)
       for await (const message of stream as AsyncIterable<SDKMessage | SDKActiveGoalMessage>) {
-        if (message.type === "active_goal") { await entry.broker.goal.publish(activeGoal(entry.input.sessionId, message)); continue }
-        if (input.observe(message)) continue
-        if (message.type === "result") { input.close(); result = message; continue }
         if ("session_id" in message && typeof message.session_id === "string" && message.session_id &&
           entry.session.binding.upstreamSessionId !== message.session_id) {
           entry.session.binding.upstreamSessionId = message.session_id
           await entry.broker.rebind(message.session_id)
         }
+        if (message.type === "active_goal") { await entry.broker.goal.publish(activeGoal(entry.input.sessionId, message)); continue }
+        if (input.observe(message)) continue
+        if (message.type === "result") { input.close(); result = message; continue }
         for (const event of await translateClaude(message, runtime, tasks, broker)) yield event
       }
       if (result) {
-        for (const event of runtime.ingest({ source: "claude.sdk", method: "claude/result", payload: result }).events) yield { event, route: { kind: "parent" } }
+        for (const event of await translateClaude(result, runtime, tasks, broker)) yield event
       }
       settled = true
     } catch (error) {
-      if (!aborted()) throw error
+      if (!aborted() || !(error instanceof AbortError)) throw error
     } finally {
       input.settle(settled ? "ended" : "failed")
       entry.active = undefined
@@ -225,6 +236,20 @@ export class ClaudeSdkTransport implements HarnessTransport {
       return { ...state, currentModeId: modeId }
     },
   }
+
+  readonly commands = { list: async (target: import("../../contract").ConfigTarget) => {
+    const input = "session" in target ? this.entry(target.session).input : target.draft
+    const rows = await this.models.commands(input, "session" in target ? target.session.binding.sessionId : undefined)
+    return rows.map((row) => ({ name: row.name, description: row.description, harnessPayload: row }))
+  } }
+
+  readonly agents = { list: async (target: import("../../contract").ConfigTarget) => {
+    const input = "session" in target ? this.entry(target.session).input : target.draft
+    const rows = await this.models.agents(input, "session" in target ? target.session.binding.sessionId : undefined)
+    return rows.map((row) => ({ name: row.name, description: row.description, harnessPayload: row }))
+  } }
+
+  readonly naming = {}
 
   async cancel(session: HarnessSession, turn: TurnRef, deadline: Deadline) {
     const entry = this.entry(session)

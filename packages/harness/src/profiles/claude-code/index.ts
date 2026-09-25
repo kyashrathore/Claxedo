@@ -5,9 +5,23 @@ import type { SdkPluginConfig } from "@anthropic-ai/claude-agent-sdk"
 import type { PluginProjection } from "../../contract"
 
 const SETTINGS = ["settings.json", "settings.local.json", "cowork_settings.json"] as const
-const MIRRORED = ["CLAUDE.md", "memory", "agents", "commands", "skills", "plugins"] as const
+const MIRRORED = ["CLAUDE.md", "memory", "agents", "commands", "skills", "plugins", "projects", "todos", "history.jsonl"] as const
+const CLAUDE_WRITTEN = ["projects", "todos", "history.jsonl"] as const
+
+export const CLAUDE_DENY_FLOOR = ["Bash(rm -rf /*)", "Bash(rm -rf ~*)", "Bash(git push --force*)", "Bash(curl *| sh)",
+  "Bash(curl *| bash)", "Bash(wget *| sh)", "Bash(chmod -R 777*)"] as const
+
+export function claudeFloorDenies(toolName: string, input: Record<string, unknown>): boolean {
+  const command = input.command
+  if (toolName !== "Bash" || typeof command !== "string") return false
+  return CLAUDE_DENY_FLOOR.some((rule) => {
+    const pattern = rule.slice("Bash(".length, -1).split("*").map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(".*")
+    return new RegExp(`^${pattern}$`).test(command)
+  })
+}
 const CREDENTIAL_KEYS = ["apiKeyHelper", "awsAuthRefresh", "awsCredentialExport"]
 const CREDENTIAL_ENV = /^(ANTHROPIC_|CLAUDE_CODE_)|(^|_)(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|CREDENTIALS)(_|$)/
+const SECRET_FILE = /^(?:\.claude\.json|auth\.json)$|(?:^|[-_.])(?:credential|credentials|oauth|secret|token|password|keychain)(?:[-_.]|$)/i
 
 async function existing(pathname: string) {
   try { return await fs.lstat(pathname) }
@@ -47,7 +61,7 @@ async function copyReadOnly(source: string, target: string, home: string, visite
     const prior = await existing(target)
     if (prior && !prior.isDirectory()) await fs.rm(target, { recursive: true, force: true })
     await fs.mkdir(target, { recursive: true, mode: 0o700 })
-    const names = await fs.readdir(source)
+    const names = (await fs.readdir(source)).filter((name) => !SECRET_FILE.test(name))
     for (const name of await fs.readdir(target)) if (!names.includes(name)) await fs.rm(path.join(target, name), { recursive: true, force: true })
     for (const name of names) await copyReadOnly(path.join(source, name), path.join(target, name), boundary,
       branch, externalSkill && source === path.join(home, "skills"))
@@ -71,7 +85,11 @@ export async function composeClaudeConfigHome(root: string, source: string): Pro
   for (const name of MIRRORED) {
     const from = path.join(home, name)
     const to = path.join(root, name)
-    if (!(await existing(from))) { await fs.rm(to, { recursive: true, force: true }); continue }
+    if (CLAUDE_WRITTEN.some((entry) => entry === name) && await existing(to)) continue
+    if (!(await existing(from))) {
+      if (!CLAUDE_WRITTEN.some((entry) => entry === name)) await fs.rm(to, { recursive: true, force: true })
+      continue
+    }
     try { await copyReadOnly(from, to, home, undefined, name === "skills") }
     catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") continue
