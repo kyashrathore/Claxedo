@@ -1,18 +1,23 @@
 # App v2 rebuild — handoff (2026-09-24)
 
-**Where it stands.** `packages/claxedo-app-v2` runs on today's server next to today's app. It boots into v1's rail with v1's look. Ported onto v2's own data layer are v1's:
-- shell;
-- workspace panel;
-- composer;
-- project surfaces.
+**Where it stands (2026-09-26 05:40, feat/app-v2 4da233314a).** v2 runs on today's server next to today's app, and is ready for the owner's test on 4480 against v1 on 4481. Nothing is pushed, `packages/claxedo-app` is untouched, and there is no swap.
 
-It is **not** at the plan's "Ready for you" (P6):
-- the publication benchmark (2026-09-25) gives 7 workspace-panel rows to v1 by 1–6 ms, and misses the start and idle-memory targets (see [the full suite](#benchmark-publication-run-2-full-suite-2026-09-25-07190741));
-- exp-stream's five transcript streaming fixes wait for the owner's sign-off on `v2/stream-slice`;
-- `bun run check` still fails on several checks; the lanes are taking them to zero, domain by domain;
-- the Composer is over its line budget: the budget assumed a frame swap that the parity ruling voided.
-
-Nothing is pushed, `packages/claxedo-app` is untouched, and there is no swap.
+- **Verified on 4da233314a:**
+  - in `packages/claxedo-app-v2`: `bun run typecheck`, `typecheck:e2e`, `test` (183 pass), `build`, and `check` (21 of 21 steps, including the new freshness and css-invalidation checks);
+  - the full e2e suite: 173 passed and 65 skipped, then flows 34 and 21 green after their selector fix (4da233314a);
+  - flow 24 (dead sandbox, relay routing) 3 of 3 green on the relay merge;
+  - the claxedo-server sweep and route allowlist fixed (e6d9580d53).
+- **Merged in the wrap-up:**
+  - checks-final, with the `src/server` budget deferred (bf6bf930c7);
+  - boot CPU fixes: incremental i18n, and removal of the unread panel settle and of v1's dead preload plugin (2673bfc3b3);
+  - the relay routing identity (8b58832259);
+  - the perf-gate static checks and the scroll-thumb fix (35b0600844).
+- **Open, each on its branch:**
+  - `v2/plugin-tools`: the app plugin MCP tools. Codex's review fixes are uncommitted in the worktree (59 files). Resume with `codex exec resume 01a0daa8-305c-79d1-a6d4-a69db923ff0b` after `codex login`.
+  - `v2/perf-gate`: the runtime budget gate (flow 40, cache-hit), 73def1a4be. It is proven red on five planted regressions and red today on recorded debt. Its `e2e/budgets/README.md` lists the debt by owner: 60 frames per idle window with the panel open, streaming computations outside the transcript, and 32 caches with no measured hit.
+  - `v2/idle-frames`: the idle-frames fix. Not started; Codex auth failed.
+  - The publication benchmark rerun on the final tip needs `v2/bench` (c77feed464) and a quiet host.
+- **Found in the owner's data:** seven fixture cloud projects (`channel_fixture`, `project_channel_*`, `project_failclosed_ok`) written into `~/.claxedo/workspaces.json` and `claxedo.db` on 2026-09-24 10:06 by `claxedo-server`'s `ingress.test.ts` run outside its vitest HOME isolation. Not deleted; the owner decides.
 
 The plan is `docs/plans/2026-09-24-001-refactor-app-rebuild-first-proof-plan.md`. Where it disagrees with the owner's parity rule, the rule wins (see [Better](#1-better-v2-looks-and-behaves-exactly-like-v1)).
 
