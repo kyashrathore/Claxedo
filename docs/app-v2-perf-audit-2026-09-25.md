@@ -15,6 +15,41 @@ v2 is cheaper than v1 on almost every count: idle network 0 vs 10–25 requests 
 
 The ranked list, the suspected items, the regression gates and the per-action baseline are at the end.
 
+## Exploratory findings, ranked (scenario 13)
+
+Method:
+- An automated crawl hovered, then clicked, every visible button, tab, tree item, menu item and link on five surfaces in both apps: a session, the workspace panel, Settings, Marketplace and Tasks. It skipped anything destructive or state-changing (delete, archive, commit, install, send, toggles).
+- A scripted pass then covered what a crawl cannot reach: the Files tree (`node_modules`, scroll, search), panel maximize, restore and close, the file and command palettes, a new terminal (the launcher only; no pty was created, and `/api/wr/pty` stayed empty), sidebar hide/show, and each Settings section.
+- Every interaction recorded the longest main-thread task, long animation frames, elements restyled, DOM mutations, Solid computations and requests.
+- Dev builds: every click costs 5–15 ms of dev overhead, so "over one frame" means over 16 ms here.
+
+Ranked by user impact:
+
+1. **Typing in the Files "Search files..." box re-renders the whole tree on every keystroke, and clearing it blocks the main thread for about 100 ms.** Proven.
+   - Measured, v2, per keystroke of "session" with the panel open: **22–32 ms tasks** on the first five keys; **2,036–2,892 elements restyled per key, even when the results do not change** ("o" and "n": the same 70 rows, still 2,041 restyled and 1,284 computations); 13,756–16,343 computations; up to 793 mutations; and **10–18 `GET /api/wr/file` directory listings per key** (45 in total) plus one `find/file` per key.
+   - Clearing the query: a **98–106 ms task** (LoAF 100–108 ms, in the input event handler), 33,995–52,597 computations, 4,785–9,329 elements restyled.
+   - v1: the same design, same order of cost (38,683 computations and 60 requests for the 7 keys; the clear takes 95 ms, LoAF 103 ms). Clearing is heavier in v2 (52,597 vs 30,202 computations in the same pass).
+   - Cause:
+     - `SearchRow`'s `onInput` sets the query on every keystroke without a debounce (`src/files/view/files-navigator.tsx:68`).
+     - Each result replaces `allowed` with a new array even when the paths are identical (`files-navigator.tsx:103-106`).
+     - Every nested `FileTree` level rebuilds its filter from the whole list (`src/files/view/file-tree.tsx:155`), auto-expands every matching directory, which fetches its listing (`file-tree.tsx:161-169`), and resets its reveal batches (`file-tree.tsx:185-189`).
+     - Clearing flips `allowed` to `undefined`, so every level re-renders the unfiltered tree in one task.
+   - Fix: debounce the query; keep `allowed` referentially stable when the result set is unchanged; build the filter once at the root and pass membership down; expand matching directories from the search result's paths without fetching each listing; render the search result as a flat list instead of re-filtering the tree.
+2. **Session switching leaks whole transcripts while an image probe is pending** (scenario 3): +12,240 Nodes, +760 listeners and +9.9 MB per 80 switches. v1 stays flat.
+3. **Switching back to a session whose panel is open re-mounts the whole panel**: 34–38 ms tasks, 1,246 restyled, 5,833 computations per switch (scenario 10). v1: 26–29 ms.
+4. **Maximizing, restoring or closing the panel restyles about 5,200 elements** in a 23–27 ms task each (v2 5,222 / 5,416 / 5,136; v1 5,446 / 5,757 / 5,606). This is the whole center column re-laid out and restyled on a layout toggle. Shared.
+5. **Palette typing re-renders every result row per keystroke.**
+   - File palette (`mod+p`), "markdown": 16,182 computations, 4,841 restyled, 8 `find/file` requests (v1: 16,911 / 5,866 / 8).
+   - Command palette (`mod+shift+p`), "settings": 30,278 computations, 6,998 restyled, a 40 ms task (v1: 23,369 / 9,430 / 18 ms).
+   - Closing either palette restyles about 1,500 elements.
+   - Same `Show<For>` per-row filter pattern as the model picker (scenario 11); shared.
+6. **A Mermaid diagram renders in one 62–87 ms main-thread task** during streaming (scenario 9). Shared.
+7. **Settings → Keyboard shortcuts takes 23–49 ms to open** (360 `KeybindingRowView`s rendered at once, `src/settings/view/keybindings.tsx:63-67`), and **Settings → Models makes 11 requests** (`harness/options` ×5, `providers` ×2, credentials; v1 9) in a 31 ms task.
+8. **Opening any menu writes `aria-hidden` on 167 sprite symbols**: 495 of 532 mutations on menu open, 165 on close (scenarios 7 and 12). Shared.
+9. **Hovering the Marketplace "All" tab restyles 1,174 elements** (v1: 125); the other tabs restyle 49. This is a suspected broad hover selector on the selected tab and was not traced.
+
+Everything else the crawl reached stayed under 16 ms, under 1,000 restyles and under 5 requests in v2: rail controls, project collapse and expand, header buttons, account menu, New Session, Tasks, Settings sections other than Keyboard shortcuts, sidebar hide/show, Files expand and collapse including `node_modules` (7 ms, 836 restyled), tree scrolling, terminal launcher and idle. Hovering never caused a request in v2. Crawl coverage: session 20 of 28 targets, Settings 23 of 23, Marketplace 35 of 47, Tasks 21 of 28. Panel tree items were covered by the scripted pass; the crawl's panel pass stalled after closing Review. Targets that went missing after an earlier click changed the page were not retried.
+
 ## Isolation invariants (regression gate)
 
 Measured on real harness turns (Claude Code, "Default (recommended)") in new sessions named "perf-audit …", created on :4480 and :4481 and archived afterwards so the owner's rail stays as it was. Instruments:
