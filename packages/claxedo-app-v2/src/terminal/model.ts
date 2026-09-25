@@ -15,6 +15,7 @@ export type TerminalConnection =
   | { readonly kind: "attached" }
   | { readonly kind: "detached"; readonly attempt: number; readonly error: AppError }
   | { readonly kind: "failed"; readonly failure: TerminalFailure; readonly error: AppError }
+  | { readonly kind: "gone" }
   | { readonly kind: "ended" }
 
 export type TerminalConnectionEvent =
@@ -22,6 +23,7 @@ export type TerminalConnectionEvent =
   | { readonly type: "closed"; readonly error: AppError }
   | { readonly type: "failed"; readonly failure: TerminalFailure; readonly error: AppError }
   | { readonly type: "retry" }
+  | { readonly type: "gone" }
   | { readonly type: "ended" }
 
 export function transitionConnection(state: TerminalConnection, event: TerminalConnectionEvent): TerminalConnection {
@@ -36,6 +38,8 @@ export function transitionConnection(state: TerminalConnection, event: TerminalC
       return { kind: "failed", failure: event.failure, error: event.error }
     case "retry":
       return state.kind === "detached" || state.kind === "failed" ? { kind: "connecting" } : state
+    case "gone":
+      return { kind: "gone" }
     case "ended":
       return { kind: "ended" }
     default:

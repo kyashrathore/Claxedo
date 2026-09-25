@@ -1,8 +1,9 @@
 import { terminalFontFamily, usePreferences } from "@/settings"
-import { Show, createEffect, createMemo, createSignal, onCleanup, onMount, type JSX } from "solid-js"
+import { Show, createEffect, createMemo, createSignal, on, onCleanup, onMount, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { machine } from "@/lib/machine"
 import { useServer } from "@/server"
+import { showToast } from "@/ui"
 import type { PaneProps } from "@/shell"
 import type { TerminalBackend } from "../backend/types"
 import { useTerminalRuntime } from "../context"
@@ -36,6 +37,14 @@ export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
     return !attachedOnce() && current.kind === "connecting"
   }
   let host!: HTMLDivElement
+  const recoverTerminal = () =>
+    store.recover(terminalId).then(
+      (terminal) => terminals.open({ placementId, terminalId: terminal.id }, props.paneId),
+      (error: unknown) => {
+        console.warn("The lost terminal could not be recreated", { terminalId, error })
+        showToast({ variant: "error", title: t("terminal.connectionLost.title"), description: t("terminal.connectionLost.description") })
+      },
+    )
   let mount: TerminalMount | undefined
 
   onMount(() => {
@@ -59,11 +68,16 @@ export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
   onCleanup(() => mount?.dispose())
 
   useConnectionToasts(connection.state)
-  createEffect(() => {
-    const kind = connection.state().kind
-    if (kind === "attached") setAttachedOnce(true)
-    if (kind === "ended") store.drop(terminalId)
-  })
+  createEffect(
+    on(
+      () => connection.state().kind,
+      (kind) => {
+        if (kind === "attached") setAttachedOnce(true)
+        if (kind === "ended") store.drop(terminalId)
+        if (kind === "gone") void recoverTerminal()
+      },
+    ),
+  )
 
   createEffect(() => {
     const current = row()

@@ -26,6 +26,8 @@ export type TerminalStore = {
   readonly close: (terminalId: TerminalId) => Promise<void>
   readonly loadAgentStatus: (terminalId: TerminalId) => Promise<void>
   readonly clearSeen: (terminalId: TerminalId) => void
+  readonly lost: (terminalId: TerminalId) => boolean
+  readonly recover: (terminalId: TerminalId) => Promise<Terminal>
 }
 
 export type TerminalLaunch = { readonly command?: string; readonly title?: string }
@@ -39,7 +41,7 @@ export type TerminalStoreInput = {
 type TerminalRows = ReturnType<typeof createTerminalRows>
 
 function createTerminalRows() {
-  const [state, setState] = createStore<{ rows: TerminalRow[] }>({ rows: [] })
+  const [state, setState] = createStore<{ rows: TerminalRow[]; lost: Record<string, true> }>({ rows: [], lost: {} })
   const index = (terminalId: TerminalId) => state.rows.findIndex((row) => row.id === terminalId)
   return {
     all: () => state.rows,
@@ -50,6 +52,8 @@ function createTerminalRows() {
       else setState("rows", at, (row) => ({ ...row, ...terminal }))
     },
     remove: (terminalId: TerminalId) => setState("rows", (rows) => rows.filter((row) => row.id !== terminalId)),
+    markLost: (terminalId: TerminalId) => setState("lost", terminalId, true),
+    lost: (terminalId: TerminalId) => state.lost[terminalId] === true,
     setAgentStatus: (terminalId: TerminalId, agentStatus: TerminalAgentStatus) => {
       const at = index(terminalId)
       if (at !== -1) setState("rows", at, (row) => ({ ...row, agentStatus, seen: agentStatus !== "idle" || row.seen }))
@@ -86,7 +90,11 @@ function loadTerminalList(
     (list) => {
       const listed = new Set(list.map((row) => row.id))
       batch(() => {
-        for (const terminalId of known) if (!listed.has(terminalId)) rows.remove(terminalId)
+        for (const terminalId of known) {
+          if (listed.has(terminalId)) continue
+          rows.remove(terminalId)
+          rows.markLost(terminalId)
+        }
         for (const row of list) rows.upsert(row)
         load.send({ type: "loaded" })
       })
@@ -97,6 +105,41 @@ function loadTerminalList(
       load.send({ type: "failed", error: failure })
     },
   )
+}
+
+type StoreParts = {
+  readonly api: TerminalsApi
+  readonly placementId: PlacementId
+  readonly rows: TerminalRows
+  readonly numberedTitle: () => string
+}
+
+async function createTerminal(input: StoreParts, launch: TerminalLaunch | undefined): Promise<Terminal> {
+  const title = launch?.title ? launcherTitle(launch.title, input.rows.all()) : input.numberedTitle()
+  const command = launch?.command ? { command: launch.command } : {}
+  const terminal = await input.api.create({ placementId: input.placementId, title, createRequestId: uuid(), ...command })
+  input.rows.upsert(terminal)
+  return terminal
+}
+
+async function recoverTerminal(
+  input: StoreParts,
+  terminalId: TerminalId,
+): Promise<Terminal> {
+  const previous = input.rows.find(terminalId)
+  const terminal = await input.api.create({
+    placementId: input.placementId,
+    title: previous?.title ?? input.numberedTitle(),
+    createRequestId: uuid(),
+    previousTerminalId: terminalId,
+    ...(previous?.sessionId ? { sessionId: previous.sessionId } : {}),
+  })
+  batch(() => {
+    input.rows.markLost(terminalId)
+    input.rows.remove(terminalId)
+    input.rows.upsert(terminal)
+  })
+  return terminal
 }
 
 export function createTerminalStore(input: TerminalStoreInput): TerminalStore {
@@ -118,13 +161,7 @@ export function createTerminalStore(input: TerminalStoreInput): TerminalStore {
     load: load.state,
     rows: rows.all,
     row: rows.find,
-    create: async (launch) => {
-      const title = launch?.title ? launcherTitle(launch.title, rows.all()) : numberedTitle()
-      const command = launch?.command ? { command: launch.command } : {}
-      const terminal = await api.create({ placementId, title, createRequestId: uuid(), ...command })
-      rows.upsert(terminal)
-      return terminal
-    },
+    create: (launch) => createTerminal({ api, placementId, rows, numberedTitle }, launch),
     drop: rows.remove,
     close: async (terminalId) => {
       await api.remove(placementId, terminalId).catch((cause: unknown) => {
@@ -137,5 +174,7 @@ export function createTerminalStore(input: TerminalStoreInput): TerminalStore {
       if (status) rows.setAgentStatus(terminalId, status)
     },
     clearSeen: rows.clearSeen,
+    lost: rows.lost,
+    recover: (terminalId) => recoverTerminal({ api, placementId, rows, numberedTitle }, terminalId),
   }
 }
