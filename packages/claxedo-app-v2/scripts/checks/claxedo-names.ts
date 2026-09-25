@@ -3,9 +3,11 @@ import { join } from "node:path"
 import { codeExtensions, isTranslationFile, listFiles, parseArgs, under } from "./lib/files"
 import { compilerOptions, createProgram, isImportSpecifierNode, startLine, ts } from "./lib/parse"
 import { finish, type Violation } from "./lib/report"
+import { slotReaders, type SlotHook, type SlotReaders } from "./lib/slot-readers"
 import { textOf, walk } from "./lib/tree"
 
 const retiredIdentifier = /[a-z0-9]IDs?$/
+const contractFields = new Set(["sessionID", "messageID", "partID", "providerID", "modelID"])
 const retiredWords = new Set(["globalSDK", "globalSync", "OpencodeTheme", "opencodeTheme"])
 const retiredStrings = [
   { pattern: /@opencode-ai\//, message: "names an @opencode-ai package" },
@@ -21,7 +23,6 @@ const exemptPackages = [
   "/node_modules/@claxedo/agent-event-runtime/",
 ]
 const slotOutsideKit = "uses data-slot outside src/ui; only the kit's components carry slots"
-const kitStyledComponents = new Set(["icon", "icon-button"])
 
 type Lookup = { readonly declarations: readonly ts.Declaration[]; readonly reference: boolean }
 
@@ -33,13 +34,14 @@ function main(): never {
   )
   const program = createProgram(files, compilerOptions())
   const checker = program.getTypeChecker()
+  const readers = slotReaders(root)
   const violations: Violation[] = []
   for (const file of files) {
     const sf = program.getSourceFile(file)
     if (!sf) continue
     const inKit = under(root, file, "src/ui")
     walk(sf, (node) => {
-      const message = retiredName(root, node, checker) ?? retiredText(node, events, inKit)
+      const message = retiredName(root, node, checker) ?? retiredText(node, events, inKit, readers, checker)
       if (message) violations.push({ file, line: startLine(node, sf), message })
     })
   }
@@ -48,6 +50,7 @@ function main(): never {
 
 function retiredName(root: string, node: ts.Node, checker: ts.TypeChecker): string | undefined {
   if (!ts.isIdentifier(node) || !(retiredIdentifier.test(node.text) || retiredWords.has(node.text))) return undefined
+  if (contractFields.has(node.text) && isPropertyKey(node)) return undefined
   const { declarations, reference } = lookup(node, checker)
   const files = declarations.map((declaration) => declaration.getSourceFile().fileName)
   if (files.some((file) => isExempt(root, file))) return undefined
@@ -95,6 +98,13 @@ function symbolDeclarations(symbol: ts.Symbol | undefined, checker: ts.TypeCheck
   return target.declarations ?? []
 }
 
+function isPropertyKey(node: ts.Identifier): boolean {
+  const parent = node.parent
+  if (ts.isPropertyAccessExpression(parent)) return parent.name === node
+  if (ts.isPropertyAssignment(parent) || ts.isShorthandPropertyAssignment(parent)) return parent.name === node
+  return ts.isBindingElement(parent) && parent.propertyName === node
+}
+
 function isDeclarationName(node: ts.Identifier): boolean {
   const parent = node.parent
   const declares =
@@ -119,8 +129,8 @@ function isDeclarationName(node: ts.Identifier): boolean {
   return declares && parent.name === node
 }
 
-function retiredText(node: ts.Node, events: ReadonlySet<string>, inKit: boolean): string | undefined {
-  if (ts.isJsxAttribute(node)) return retiredAttribute(node, inKit)
+function retiredText(node: ts.Node, events: ReadonlySet<string>, inKit: boolean, readers: SlotReaders, checker: ts.TypeChecker): string | undefined {
+  if (ts.isJsxAttribute(node)) return retiredAttribute(node, inKit, readers, checker)
   const text = textOf(node)
   if (text === undefined || isImportSpecifierNode(node)) return undefined
   if (events.has(text)) return `"${text}" is a server event name; only src/server/wire speaks it`
@@ -129,23 +139,45 @@ function retiredText(node: ts.Node, events: ReadonlySet<string>, inKit: boolean)
   return !inKit && /data-slot[=\]]/.test(text) ? slotOutsideKit : undefined
 }
 
-function retiredAttribute(node: ts.JsxAttribute, inKit: boolean): string | undefined {
-  const name = ts.isIdentifier(node.name) ? node.name.text : undefined
-  if (name === "data-component" && !(inKit && kitStyledComponents.has(componentName(node) ?? ""))) return "uses the data-component hook; app code uses kit components"
-  return name === "data-slot" && !inKit ? slotOutsideKit : undefined
+function retiredAttribute(node: ts.JsxAttribute, inKit: boolean, readers: SlotReaders, checker: ts.TypeChecker): string | undefined {
+  const hook = ts.isIdentifier(node.name) ? node.name.text : undefined
+  if (hook !== "data-slot" && hook !== "data-component") return undefined
+  if (hook === "data-slot" && inKit) return undefined
+  const values = attributeValues(node, checker)
+  if (values === undefined) return `${hook} has a computed value whose type is not a union of string literals, so no stylesheet or hook can be shown to read it`
+  const unread = values.filter((value) => !readers.selects(hook satisfies SlotHook, value))
+  if (unread.length === 0) return undefined
+  return `${hook}="${unread.join('" / "')}" is read by no stylesheet, e2e or perf-harness hook; remove it`
 }
 
-function componentName(node: ts.JsxAttribute): string | undefined {
+function attributeValues(node: ts.JsxAttribute, checker: ts.TypeChecker): string[] | undefined {
   const value = node.initializer
   if (!value) return undefined
-  if (ts.isStringLiteral(value)) return value.text
+  if (ts.isStringLiteral(value)) return [value.text]
   const expression = ts.isJsxExpression(value) ? value.expression : undefined
   if (!expression) return undefined
-  if (ts.isStringLiteral(expression)) return expression.text
-  if (ts.isConditionalExpression(expression)) {
-    const branches = [expression.whenTrue, expression.whenFalse].filter(ts.isStringLiteral)
-    return branches[0]?.text
+  return literalValues(expression) ?? typeValues(checker.getTypeAtLocation(expression))
+}
+
+function typeValues(type: ts.Type): string[] | undefined {
+  const parts = type.isUnion() ? type.types : [type]
+  const values: string[] = []
+  for (const part of parts) {
+    if (part.isStringLiteral()) values.push(part.value)
+    else if (!(part.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null))) return undefined
   }
+  return values
+}
+
+function literalValues(expression: ts.Expression): string[] | undefined {
+  if (ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression)) return [expression.text]
+  if (ts.isParenthesizedExpression(expression)) return literalValues(expression.expression)
+  if (ts.isConditionalExpression(expression)) {
+    const whenTrue = literalValues(expression.whenTrue)
+    const whenFalse = literalValues(expression.whenFalse)
+    return whenTrue && whenFalse ? [...whenTrue, ...whenFalse] : undefined
+  }
+  if (expression.kind === ts.SyntaxKind.UndefinedKeyword || (ts.isIdentifier(expression) && expression.text === "undefined")) return []
   return undefined
 }
 

@@ -1,4 +1,4 @@
-import { createMemo, type Accessor } from "solid-js"
+import { createMemo, createSignal, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import type { Server } from "@/server"
 
@@ -9,8 +9,9 @@ export function hydrateConnectedProviderDetails(providers: {
   return Promise.allSettled(providers.connected().map((provider) => providers.load(provider.id)))
 }
 
-export function createProviderCatalog(input: { server: Server; harness: Accessor<string> }) {
-  const query = useQuery(() => ({ ...input.server.queries.providerCatalogs.catalog(input.harness()), enabled: input.harness() !== "" }))
+export function createProviderCatalog(input: { server: Server; harness: Accessor<string>; eager?: boolean }) {
+  const [requested, setRequested] = createSignal(input.eager === true)
+  const query = useQuery(() => ({ ...input.server.queries.providerCatalogs.catalog(input.harness()), enabled: input.harness() !== "" && requested() }))
   const catalog = () => (input.harness() ? query.data : undefined)
   const all = createMemo(() => new Map((catalog()?.all ?? []).map((provider) => [provider.id, provider] as const)))
   const connected = createMemo(() => {
@@ -18,6 +19,7 @@ export function createProviderCatalog(input: { server: Server; harness: Accessor
     return [...all().values()].filter((provider) => ids.has(provider.id))
   })
   return {
+    request: () => setRequested(true),
     resolved: () => input.harness() !== "" && query.isFetched,
     loading: () => input.harness() !== "" && query.isFetching,
     error: () => (query.error ? query.error.message || `Failed to load ${input.harness()} models` : undefined),

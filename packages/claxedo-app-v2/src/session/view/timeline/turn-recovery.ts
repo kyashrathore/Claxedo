@@ -1,11 +1,3 @@
-// Client-side mirror of the server classifier in
-// packages/agent-sdk-runtime/src/first-turn-error.ts (classifyFirstTurnError).
-// The server stamps error.data.firstTurnErrorClass on the wire and this module
-// prefers it; the regexes below are only a fallback for errors that arrive
-// class-less. Keep them in lockstep with that file — it is the source of truth.
-// (agent-sdk-runtime cannot be imported here: it is not browser-safe.) The
-// credential broker's own codes are the exception: both sides read them out of
-// @claxedo/agent-runtime-contract, so that half cannot drift.
 import { providerErrorDetail, providerUsageLimitDetail } from "./provider-error-detail"
 import { asRecord } from "@/lib/record"
 import { credentialBrokerErrorCode, CREDENTIAL_BROKER_ERRORS } from "@claxedo/agent-runtime-contract"
@@ -15,9 +7,6 @@ export type FirstTurnMessage =
   | { id: string; role: "user"; time: { created: number } }
   | { id: string; role: "assistant"; parentID: string; time: { created: number; completed?: number }; finish?: string; error?: unknown }
 
-// Copy is position-independent — descriptions must not reference "first turn".
-// User-facing text says "agent", never "harness"/"ACP"/"adapter". The
-// `recoveries` table below is the copy table; the proposal it came from is retired.
 const recoveries = {
   credential: { kind: "credential", title: "Reconnect your AI provider", description: "The provider rejected the credential for this workspace.", label: "Reconnect and resend" },
   harness: { kind: "harness", title: "The agent isn't responding", description: "The agent process stopped or couldn't run this turn.", label: "Resend last prompt" },
@@ -25,10 +14,6 @@ const recoveries = {
   usage_limit: { kind: "usage_limit", title: "Usage limit reached", description: "Choose another model to continue.", label: "Continue" },
   workspace: { kind: "workspace", title: "Workspace isn't ready", description: "The project workspace wasn't available for this turn.", label: "Resend last prompt" },
   session: { kind: "session", title: "This session was lost", description: "The agent process no longer has this conversation. Its history is still here.", label: "Start a new session" },
-  // No generic-shrug copy: the description is always derived from the wire
-  // error by sessionRecoveryDescription(). This sentence is the last-resort
-  // failure wording for an error object that named nothing at all, and it
-  // still says what we know rather than shrugging.
   unknown: { kind: "unknown", title: "That turn didn't complete", description: "The agent returned an error before completing this turn. Resend the last prompt.", label: "Resend last prompt" },
 } as const satisfies Record<SessionErrorClass, { kind: SessionErrorClass; title: string; description: string; label: string }>
 
@@ -44,18 +29,6 @@ export function sessionRecovery(
   return recoveries[kind]
 }
 
-/**
- * The description to render for a failed turn. Never a generic shrug: it names
- * what failed, why, and what to do.
- *
- * The provider's own sentence wins whenever the wire error carried a real HTTP
- * status, for EVERY class — a 401 classifies as `credential`, and the class
- * copy ("The provider rejected the credential for this workspace.") is strictly
- * vaguer than "Anthropic rejected the credential (401). Check your API key in
- * Settings…". Without a status there is nothing more specific to say, so the
- * class keeps its own repair sentence; `unknown` alone falls through to the
- * error-derived wording, since its class copy would otherwise say nothing at all.
- */
 export function sessionRecoveryDescription(
   kind: SessionErrorClass,
   error?: unknown,
@@ -77,9 +50,6 @@ export function sessionRecoveryClass(error: unknown): SessionErrorClass {
     classified === "workspace" || classified === "session" || classified === "unknown"
   ) return classified
   const message = typeof data?.message === "string" ? data.message : ""
-  // The broker's own vocabulary, from the table the broker writes it out of.
-  // Without it a 403 naming a route the binding does not allow reads as
-  // `credential` below and asks the user to reconnect a working account.
   const broker = credentialBrokerErrorCode(message)
   if (broker) return CREDENTIAL_BROKER_ERRORS[broker].fault
   if (/(?:reached|hit)\s+(?:your|the)\s+.+?\s+limit|usage\s+(?:limit|cap)\s+(?:reached|exceeded)|limit.*(?:reset|usage credits)|usage_limit_reached|rate_limit_reached|credits_depleted/i.test(message)) return "usage_limit"
@@ -91,14 +61,6 @@ export function sessionRecoveryClass(error: unknown): SessionErrorClass {
   return "unknown"
 }
 
-export function isTurnAdmissionConflict(error: unknown) {
-  const data = asRecord(asRecord(error)?.data)
-  return data?.code === "turn_already_active" ||
-    data?.code === "session_turn_in_progress" ||
-    data?.message === "Session is already processing a message"
-}
-
-/** A completed tool step can precede the turn's actual answer under the same parent. */
 export function isSettledTurnAssistant(message: FirstTurnMessage): message is Extract<FirstTurnMessage, { role: "assistant" }> {
   if (message.role !== "assistant") return false
   if (message.error !== undefined) return true

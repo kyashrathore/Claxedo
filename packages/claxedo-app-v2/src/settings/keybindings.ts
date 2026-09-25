@@ -7,7 +7,7 @@ export type KeybindingRow = {
 
 const IS_MAC = typeof navigator === "object" && /(Mac|iPod|iPhone|iPad)/.test(navigator.platform)
 
-const MODIFIER_KEYS = new Set(["Shift", "Control", "Alt", "Meta"])
+const MODIFIER_KEYS: readonly string[] = ["Shift", "Control", "Alt", "Meta"]
 
 function keyName(key: string): string {
   if (key === ",") return "comma"
@@ -17,7 +17,7 @@ function keyName(key: string): string {
 }
 
 export function keybindingFromEvent(event: KeyboardEvent): string | undefined {
-  if (MODIFIER_KEYS.has(event.key)) return undefined
+  if (MODIFIER_KEYS.includes(event.key)) return undefined
   const parts: string[] = []
   if (IS_MAC ? event.metaKey : event.ctrlKey) parts.push("mod")
   if (IS_MAC && event.ctrlKey) parts.push("ctrl")

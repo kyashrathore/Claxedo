@@ -7,6 +7,7 @@ import { NATIVE_HARNESS_IDS, connectionHarness, nativeHarness, type HarnessSelec
 import { useServer } from "@/server"
 import { dictionary } from "../i18n"
 import type { ConfigurationDraft } from "./draft"
+import { Select } from "@/ui"
 
 function harnessReferenceOf(selection: HarnessSelection): HarnessReference {
   return selection.kind === "native"

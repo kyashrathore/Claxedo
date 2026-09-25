@@ -12,10 +12,7 @@ export function surfaceFragments(page: TranscriptPage): ReadonlySet<string> {
 function land(context: TranscriptContext, page: TranscriptPage | undefined): void {
   const current = context.phase.state()
   if (current.kind !== "completing") return
-  if (page) {
-    context.deltas.drop()
-    mergeLatestTurn(context.setData, page)
-  }
+  if (page) mergeLatestTurn(context.setData, page)
   context.setData("fragmentParts", NO_FRAGMENTS)
   for (const event of current.held) applyTranscriptEvent(context, event)
   context.phase.send({ type: "latestLanded" })

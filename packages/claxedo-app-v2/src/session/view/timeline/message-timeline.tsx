@@ -98,7 +98,6 @@ import { turnActive, type TimelineSessionRow } from "./model"
 import "./message-nav-gutter.css"
 import "./markdown-surfaces.css"
 
-// Keep parity with the upstream session row model.
 const emptyMessages: ConversationMessage[] = []
 const emptyParts: PartType[] = []
 const emptyAssistantMessages: AssistantMessage[] = []
@@ -114,16 +113,6 @@ function hasTag<Tag extends TimelineRow.TimelineRow["_tag"]>(
   return row._tag === tag
 }
 
-/**
- * A tag-narrowed view of the row accessor, seeded with the row the switch
- * already narrowed.
- *
- * `switch (row()._tag)` narrows the row VALUE, not the accessor, so each branch
- * used to re-assert the accessor's type. A row slot can also be reused for a
- * different tag for the tick before Solid disposes the branch; latching the last
- * matching row keeps the disposing branch reading its own fields instead of
- * silently reading another tag's shape through the asserted type.
- */
 function rowOfTag<Tag extends TimelineRow.TimelineRow["_tag"]>(
   row: Accessor<TimelineRow.TimelineRow>,
   tag: Tag,
@@ -163,16 +152,12 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const [groupOpen, setGroupOpen] = createStore<Record<string, boolean | undefined>>(cached?.groupOpen ?? {})
   const [toolRevealed, setToolRevealed] = createStore<Record<string, boolean | undefined>>(cached?.toolRevealed ?? {})
   const revealToolOutput = (partID: string, revealed: boolean) => {
-    // A reveal click resizes the row at the reader's position; the gesture mark
-    // keeps the resize anchor from bottom-pinning the growth.
     props.onMarkScrollGesture()
     setToolRevealed(partID, revealed)
   }
   installTimelineMermaid(host.platform.renderMermaid)
   installTimelineTables()
 
-  // A subagent's transcript is a workspace-panel tab, not a second pane: splitting took the turn the reader was on down to half width.
-  // Below the md boundary the panel covers that turn rather than sitting beside it, so there the child takes the pane instead.
   const openSubagent = (input: { childSessionId: string; label?: string; description?: string }) => {
     if (isPhoneWidth(window.innerWidth)) {
       host.openSessionInPane(input.childSessionId, input.label)
@@ -186,25 +171,14 @@ export function MessageTimeline(props: MessageTimelineProps) {
     })
   }
 
-  // Shared with the terminal's file links (timeline-file-paths.ts):
-  // normalizes/relativizes, parses `:line[:col]`, refuses `~`/traversal/
-  // out-of-workspace paths, which would open blank tabs.
   const fileFocus = (raw: string) => timelineFileFocus(raw, host.placementPath)
 
-  // Open a file in the workspace side panel (same path terminal file links take
-  // via terminal-content.tsx `onFileLinkOpen`), NOT `platform.openPath` (which
-  // is desktop-only and hands the file to the OS). No `navigator: "files"` — it
-  // would slide the tree drawer over the file tab this click just opened.
   const openFileInPanel = (raw: string) => {
     const target = fileFocus(raw)
     if (!target) return
     host.openFocus({ kind: "file", path: target.path, line: target.line, col: target.col })
   }
 
-  // Path-kind inline-code chips in assistant markdown. Anchors are handled in
-  // the capture phase below so preventDefault beats the native target="_blank"
-  // window; in Electron a bubble-phase handler opened the link in both a
-  // browser and the panel.
   let candidateFileController: AbortController | undefined
   onCleanup(() => candidateFileController?.abort())
   createEffect(() => {
@@ -214,8 +188,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
     if (event.defaultPrevented) return
     const target = event.target instanceof Element ? event.target : null
     const selection = typeof window !== "undefined" ? window.getSelection() : null
-    if (selection && !selection.isCollapsed) return // don't hijack a text-selection click
-    if (target?.closest("a[href]")) return // anchors → capture handler below
+    if (selection && !selection.isCollapsed) return
+    if (target?.closest("a[href]")) return
     const chip = target?.closest<HTMLElement>('[data-inline-code-kind="path"], [data-inline-code-kind="path-candidate"]')
     const raw = chip?.textContent?.trim()
     if (!raw || !fileFocus(raw)) return
@@ -236,12 +210,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
       openFileInPanel(raw)
     })
   }
-  // Capture phase runs before the link's default action (see above).
   const [timelineRoot, setTimelineRoot] = createSignal<HTMLDivElement>()
   const messageNavHasRoom = createMessageNavRoom(timelineRoot)
-  // One memo drives BOTH the rail's mount and `data-session-timeline-nav-gutter`
-  // on the root, so message-nav-gutter.css reserves the gutter without a `:has()`
-  // anchor over the timeline — see that file for why the anchor was expensive.
   const messageNavGutterVisible = createMemo(() =>
     messageNavVisible((props.navMessages ?? props.userMessages).length) && messageNavHasRoom() && !!props.onMessageSelect,
   )
@@ -252,8 +222,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
     setTimelineRoot(el)
     const stopLinkOpen = links.listen(el)
     const onOpenSubagent = (event: Event) => {
-      // The detail rides on a DOM CustomEvent, so it is read structurally rather
-      // than asserted into a typed CustomEvent the listener never guaranteed.
       const detail = event instanceof CustomEvent ? asRecord(event.detail) : undefined
       const childSessionId = readString(detail, "childSessionId")
       if (!childSessionId) return
@@ -312,17 +280,9 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const sessionConversation = host.conversation
   const sessionMessages = createMemo(() => sessionConversation()?.messages ?? emptyMessages)
   const messageByID = createMemo(() => new Map(sessionMessages().map((message) => [message.id, message] as const)))
-  // An admitted prompt reaches the transcript over events before the next
-  // queue poll drops its record; the record carries the id the turn's user
-  // message gets, so the bubble yields to the row the moment the row exists.
   const queuedNotYetInTranscript = createMemo(() =>
     (props.queued?.items() ?? []).filter((item) => !item.messageId || !messageByID().has(item.messageId)),
   )
-  // Both indexes are keyed by, and answer questions about, the parent/completion
-  // fields only a runtime-produced assistant message has. An optimistic row has
-  // no `parentID` to file it under and no `time.completed` to be pending on, so
-  // it is excluded here rather than filed under `undefined` and looked up by no
-  // one (every read below passes a real message id).
   const assistantMessagesByParent = createMemo(() => {
     const result = new Map<string, AssistantMessage[]>()
     for (const message of sessionMessages()) {
@@ -343,12 +303,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
     ),
   )
   const sessionStatus = createActivePaneProjection({ active: props.active, read: () => host.status() ?? idle, initial: idle })
-  // A `session.idle` lands before the final transcript read does: the turn's
-  // assistant row is still unsettled and its reply not yet painted. While the
-  // post-acceptance reconciliation owns that read, the turn is still working —
-  // dropping the Thinking row on the event alone blanked the tail of the turn
-  // until the snapshot arrived. The request clears only after the reconciled
-  // conversation is in the store, so no frame shows neither indicator.
   const turnSettleRefreshPending = (userMessageID: string) => host.turnSettlePending(userMessageID)
   const working = createMemo(() => turnActive(sessionStatus()))
   const directorySessionRows = createActivePaneProjection({ active: props.active, read: host.sessions, initial: [] as readonly TimelineSessionRow[] })
@@ -377,18 +331,11 @@ export function MessageTimeline(props: MessageTimelineProps) {
       const result = Binary.search(messages, parentID, (message) => message.id)
       const index = result.found ? result.index : messages.findIndex((item) => item.id === parentID)
       const message = index >= 0 ? messages[index] : undefined
-      // A stale un-completed assistant anchors on its parent only while that
-      // parent is still the newest prompt — once a follow-up send lands, the
-      // new user message owns the turn even if the old envelope's completion
-      // frame is still in flight.
       if (message && message.role === "user" && index >= lastUserIndex) return message.id
     }
 
     if (lastUserIndex < 0) return undefined
     const newest = messages[lastUserIndex].id
-    // An idle that lands before the turn's transcript read keeps the newest
-    // turn active: its reply is still owed, and letting go of it here drops
-    // the Thinking row with nothing to take its place.
     if (sessionStatus().kind !== "idle" || turnSettleRefreshPending(newest)) return newest
     return undefined
   })
@@ -429,13 +376,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
     return host.t("command.session.new")
   })
 
-  // Per-message inputs are equality-gated so a streaming part event (which
-  // produces a new conversation snapshot + a new assistantMessagesByParent Map
-  // every tick) only re-runs constructMessageRows for the message whose parts
-  // actually changed. Message and Part[] identities are stable for unchanged
-  // messages (see agentConversationProjection's WeakMap cache), so the cheap
-  // identity comparisons below turn wholesale per-tick recomputation into
-  // O(changed turn) work.
   const statusType = createMemo(() => sessionStatus().kind)
   const lastTurnOutcome = createMemo(() => info()?.lastTurn, undefined, { equals: sameTurnOutcome })
   const messageRowMemos = createMemo(
@@ -497,8 +437,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
     ),
   )
 
-  // Status can blip off "busy" for a frame mid-stream; dropping Thinking then
-  // collapses the virtualizer. Hold the last Thinking row for a short hide delay.
   let thinkingHeldUntilMs: number | undefined
   let thinkingHoldTimer: ReturnType<typeof setTimeout> | undefined
   const [thinkingHoldRevision, setThinkingHoldRevision] = createSignal(0)
@@ -563,7 +501,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
   let cancelFirstFoldReveal: (() => void) | undefined
   const prepareScrollOverscan = () => {
     if (!initialTurnExpanded()) setInitialTurnExpanded(true)
-    if (renderOverscan() < 6) setRenderOverscan(6) // 6 rows: a flick leaves 0 blank px at 1400px/frame and 802 at 5600, where 12 rows still leaves 443 and takes the worst renderer task from 16ms to 31ms (perf-harness transcript-flick)
+    if (renderOverscan() < 6) setRenderOverscan(6)
   }
   const prepareInteractionScroll = () => {
     const plan = timelineInteractionPlan({
@@ -576,12 +514,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
   }
   let virtualContent: HTMLDivElement | undefined
   const resizeAnchor = createTimelineResizeAnchor()
-  // Opening at the end and staying at the end are different promises. The
-  // first is `shouldAnchorBottom`: a session opens on its latest turn. The
-  // second holds only while a turn streams: for a settled transcript, a size
-  // change is the reader opening a fold or a tool row, and re-pinning the
-  // viewport to the new end — by the row's estimated height, before it is
-  // measured — takes them from what they clicked to the bottom of the page.
   const followsEnd = () => props.shouldAnchorBottom() && working()
   const virtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
     get count() {
@@ -612,20 +544,11 @@ export function MessageTimeline(props: MessageTimelineProps) {
     get followOnAppend() {
       return props.active() && followsEnd() && !resizeAnchor.held()
     },
-    // In-view insert holds and gesture windows mean the reader owns the viewport.
     get scrollEndThreshold() {
       return resizeAnchor.held() || props.hasScrollGesture() ? -1 : 80
     },
     get overscan() { return renderOverscan() },
     paddingEnd: 64,
-    // A getter, not a stable closure: the virtualizer memoizes the extractor's
-    // output keyed on the extractor's IDENTITY plus the computed range/count
-    // (virtual-core getVirtualIndexes deps). Solid signals read while the
-    // extractor RUNS are invisible to that memo, so a stable closure serves
-    // stale indexes whenever only those signals change (a stale extractor
-    // once left the timeline mounting one row forever after a reload).
-    // Reading them here — at option-read time inside the adapter's tracked
-    // setOptions pass — subscribes the virtualizer and mints a new identity.
     get rangeExtractor() {
       const rows = timelineRows()
       const activeID = activeMessageID()
@@ -660,9 +583,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
     scrollToEnd: () => virtualizer.scrollToEnd(),
     restoreAnchor: prepend.apply,
   })
-  // The prepend-anchor loop parks itself while stashed (it reads
-  // `props.active`). Returning needs the nudge: a parked loop has no frame on
-  // which to notice that its surface came back.
   createEffect(() => {
     if (props.active()) prepend.resume()
   })
@@ -710,7 +630,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
       const root = listRoot()
       const index = messageRowIndex().get(id)
       if (!root || index === undefined) return false
-      // getOffsetForIndex reads a lazily-refreshed cache; refresh it first.
       virtualizer.getTotalSize()
       const offset = virtualizer.getOffsetForIndex(index, "start")
       if (!offset) return false
@@ -734,8 +653,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
       activationKey,
       currentActivationKey: host.sessionKey,
       prepare: () => {
-        // Force the capped fold's virtual measurements while the surface is
-        // still hidden, then perform the bottom-anchor write before paint.
         virtualizer.getTotalSize()
         const root = listRoot()
         const nativeAtEnd = root
@@ -842,7 +759,9 @@ export function MessageTimeline(props: MessageTimelineProps) {
       ([id, description]) => {
         if (!id || description) return
         if (parentMessages().length > 0) return
-        void Promise.resolve(host.syncSession?.(id)).catch(() => undefined)
+        void Promise.resolve(host.syncSession?.(id)).catch((error: unknown) => {
+          console.warn("The parent session could not be read for a subagent's title", { sessionId: id, error })
+        })
       },
       { defer: true },
     ),
@@ -850,8 +769,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
 
   const turnAssistantMessages = (userMessageID: string) =>
     assistantMessagesByParent().get(userMessageID) ?? emptyAssistantMessages
-  // The newest message says whether the turn is open: a step-per-message
-  // harness completes each earlier step while the next one is still streaming.
   const turnSettled = (userMessageID: string) => {
     const newest = turnAssistantMessages(userMessageID).at(-1)
     return !!newest && assistantMessageSettled(newest)
@@ -961,9 +878,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
           .map((ref) => {
             const message = messageByID().get(ref.messageID)
             const part = getMsgPart(ref.messageID, ref.partID)
-            // The predicate below used to claim `AssistantMessage` for whatever
-            // `messageByID` returned; the group's refs carry no such promise.
-            // It asserts only what the renderer needs — a runtime-produced row.
             if (!message || !isRuntimeMessage(message)) return undefined
             if (!part || part.type !== "tool") return undefined
             return { message, part }
@@ -1185,9 +1099,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
       }
       case "TurnDivider": {
         const turnDividerRow = rowOfTag(row, "TurnDivider", current)
-        // D§3.6 / C4: terminal states are a centred hairline divider, a peer of the
-        // "Worked for" fold row — never a card. "interrupted" durationMs (when derivable,
-        // T8) reuses the same formatDuration voice as "Worked for {duration}".
         const label = () => {
           if (turnDividerRow().label === "compaction") return host.t("ui.messagePart.compaction")
           if (turnDividerRow().label === "handoff") return `Session handed off to ${turnDividerRow().harness}`
@@ -1286,7 +1197,10 @@ export function MessageTimeline(props: MessageTimelineProps) {
           if (!revert || !id) return undefined
           return Promise.resolve(revert({ sessionID: id, messageID: diffSummaryRow().userMessageID }))
             .then(() => showToast({ title: host.t("ui.message.revertMessage") }))
-            .catch(() => showToast({ title: host.t("common.requestFailed"), variant: "error" }))
+            .catch((error: unknown) => {
+              console.warn("The turn could not be undone", { error })
+              showToast({ title: host.t("common.requestFailed"), variant: "error" })
+            })
         }
         return (
           <TimelineRowFrame row={diffSummaryRow}>
@@ -1333,9 +1247,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
       items: virtualItemByKey(),
       rows: timelineRowByKey(),
     }))
-    // Latch the last defined entry: the virtualizer can publish an item list that momentarily omits this key while
-    // the row is still mounted (<For> disposes it a tick later); a non-keyed <Show> accessor read in that window
-    // throws Solid's stale-value error and takes down the pane boundary. The latch renders the closing frame.
     const entry = createMemo<ReturnType<typeof liveEntry>>((previous) => liveEntry() ?? previous)
     const asyncFile = (value: TimelineRow.TimelineRow) => {
       if (value._tag !== "AssistantPart" || value.group.type !== "part") return false
@@ -1373,7 +1284,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
             <div
               ref={(value) => {
                 element = value
-                // JSX applies `data-index` after refs and measureElement drops (warns on) unindexed elements — stamp it first; this is also the mount measurement.
                 value.dataset.index = String(current().item.index)
                 virtualizer.measureElement(value)
               }}
@@ -1492,9 +1402,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
             <SubagentChipRow subagents={ambientSubagents()} />
           </section>
         </Show>
-        {/* The content ref wraps the queued bubbles too: the auto-scroll and
-            scroll-state observers watch this element, and a bubble mounting
-            below the virtual rows must count as the content growing. */}
         <div data-timeline-content ref={props.setContentRef} class="w-full">
           <div
             data-timeline-virtual-content

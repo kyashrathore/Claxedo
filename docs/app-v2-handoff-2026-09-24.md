@@ -7,15 +7,118 @@
 - project surfaces.
 
 It is **not** at the plan's "Ready for you" (P6):
-- some of the owner's bugs are still open (see [Owner-reported bugs](#owner-reported-bugs));
-- the owner deferred several v1 surfaces at 19:08: settings sections, onboarding, Marketplace and Tasks;
-- 10 of the app's 17 checks fail;
-- app plus kit is over the line budget;
-- the benchmark has never run against v2.
+- the publication benchmark (2026-09-25) gives 7 workspace-panel rows to v1 by 1–6 ms, and misses the start and idle-memory targets (see [the full suite](#benchmark-publication-run-2-full-suite-2026-09-25-07190741));
+- exp-stream's five transcript streaming fixes wait for the owner's sign-off on `v2/stream-slice`;
+- `bun run check` still fails on several checks; the lanes are taking them to zero, domain by domain;
+- the Composer is over its line budget: the budget assumed a frame swap that the parity ruling voided.
 
 Nothing is pushed, `packages/claxedo-app` is untouched, and there is no swap.
 
 The plan is `docs/plans/2026-09-24-001-refactor-app-rebuild-first-proof-plan.md`. Where it disagrees with the owner's parity rule, the rule wins (see [Better](#1-better-v2-looks-and-behaves-exactly-like-v1)).
+
+## State at 06:50 on 2026-09-25 (after the night)
+
+- **feat/app-v2 b3cadffe69.** Every lane's work is merged. Not pushed.
+- **Code:**
+  - live v2 is 99.3k lines (86.4k at the first handoff). The growth is ported v1 features: Tasks, Marketplace, the Settings sections, onboarding, the account cards, notifications and sounds;
+  - `src/ui` is 2.8k lines (10.3k at the first handoff): v2's own copies of Toast, Tooltip, Dialog, Button, Select, TextInput, Icon and 29 unused components are deleted;
+  - `src/legacy` is 143.8k lines;
+  - e2e is 6.9k lines.
+- **`bun run check`: 7 of 17 pass** (typecheck ×2, v2-only, adapter-boundary, no-directory-identity, access-boundary, protected-areas).
+  - no-comments 1,772 (2,104 at the first handoff)
+  - claxedo-names 978 (1,111)
+  - one-owner 108 (239)
+  - one-home-per-datum 76 (81)
+  - size 59 (73)
+  - no-swallowed-errors 54 (56)
+  - domain-boundaries 4 (36)
+  - no-polling 5
+  - e2e-hygiene 3
+  - budget 15 parts over
+  - The shell, rail, workbench, ui, projects, accounts, onboarding and cloud folders are at 0 on most checks. The biggest remaining piles are the transcript's comments and names, which triage into the corpus first.
+- **Owner bugs from the night, all fixed and merged:**
+  - subagents in their turn, and as a panel tab;
+  - question dock after Stop (a runtime event fix);
+  - todo dock;
+  - terminals in the rail and compact tabs;
+  - the file-click and toggle freezes (a store write loop);
+  - the Goal-less session failing to open (runtime);
+  - 36 → 0 404s on session load;
+  - close all tabs → New Session;
+  - duplicate New Session tabs;
+  - scrollbars;
+  - the rail foot (account card + Usage);
+  - phone rules;
+  - contrast sliders only for Codex;
+  - the settings regroup;
+  - the Tasks and Marketplace pages;
+  - Presets.
+- **Performance:**
+  - cold session switch 126–625 ms → 21–46 ms, from transcript-first paint;
+  - the provider catalog loads once, on demand: 31–33 → 0 reads at launch for existing sessions;
+  - hidden panes unmount: +9 ms per return, −15 MiB heap with 8 open;
+  - the rail no longer remounts on every route change.
+  - The benchmark's proper run started 06:50 on b3cadffe69, with every other lane paused.
+- **Experiments (paused at the limit, results pending):** exp-stream (60 Hz while streaming), exp-scroll (scrolling and interaction), exp-idle (idle CPU, memory, start). Their worktrees are `~/test/opencode-app-v2-lanes/exp-*`, and their notes are in `scratchpad/perf/<exp>/`.
+
+### Benchmark, publication run 1 (fast pair, 2026-09-25 07:16)
+
+Both apps were packaged from 6d9c0a91a9 (b3cadffe69 plus driver fixes), on AC, on a quiet host with every lane paused. Every observation was valid. Raw data: `~/test/agent-app-benchmark/artifacts/comparisons/claxedo-v1-vs-v2-fast-macos-arm64-headed-20260925-0716-pub/`.
+
+| Row | v1 median (p95) | v2 median (p95) | Verdict |
+|---|---|---|---|
+| App start, fresh | 1.35 s (1.52) | 1.28 s (1.33) | tie |
+| App start, existing | 1.30 s (1.60) | 1.26 s (1.30) | tie |
+| Unvisited switch, same ws | 83.3 ms (691.7) | 24.9 ms (33.2) | v2 3.35× faster |
+| Unvisited switch, other ws | 41.5 ms (717.5) | 24.9 ms (42.6) | v2 1.67× faster |
+| Return visited | 16.5 ms | 16.7 ms | tie |
+| RSS idle after launch | 963 MiB | 764 MiB | v2 1.26× lower |
+| RSS after workload | 1,050 MiB | 779 MiB | v2 1.35× lower |
+| CPU idle | 70.0% | 0.4% | v2 lower |
+
+**Gate so far:**
+- No row goes to v1.
+- **Met:** idle CPU (0.4%, target ≤ 4.4%).
+- **Not met:** idle memory (764 MiB, target ≤ 700), and app start (1.28 s, target ≤ 1.1 s, a tie). exp-idle's start and memory findings are the next lever.
+- Long rows and the panel open return come from the full-suite run.
+
+### Benchmark, publication run 2 (full suite, 2026-09-25 07:19–07:41)
+
+The build was the same (6d9c0a91a9), and the host was just as quiet. v2 had 0 invalid observations out of 380. v1 had 8 invalid, all at 128 MiB history navigation, so those two rows are withheld. There are 49 rows. Raw data: `~/test/agent-app-benchmark/artifacts/comparisons/claxedo-v1-vs-v2-user-flows-macos-arm64-headed-20260925-0719-pub/`.
+
+**v2 wins:**
+- **Unvisited switch:** 33 ms, p95 33 ms, against v1's 41 ms, p95 353–396 ms.
+- **Every size switch from 1 to 128 MiB:** 1.25–1.37× faster.
+- **1 MiB in one row:** 54.7 ms against 964 ms, 17.6× faster.
+- **First visit in history navigation:** 1.5–1.8× faster.
+- **Panel open return:** 15.6 ms against 32.3, 2.1× faster.
+- **Panel open:** 53–90 ms against 135, 1.5–2.5× faster.
+- **Expand-all heavy.**
+- **RSS:** 775 against 1,051 MiB after launch, and 821 against 1,096 MiB after the workload.
+- **CPU idle:** 0.4% against 6.8%.
+- **Existing-profile start:** 1.36 against 2.22 s.
+
+**Ties:** return to a visited session, close-panel, switch-file-tab, and the long-row 8 and 32 MiB rows (988 ms against 1.09 s, which isn't a reliable difference).
+
+**Rows that go to v1 (gate "no row to today's app": FAILS):**
+
+| Row | v1 | v2 |
+|---|---|---|
+| files-to-review, heavy | 15.2 ms | 17.4 ms |
+| review-to-files, moderate | 16.6 ms | 17.9 ms |
+| review-to-files, heavy | 24.9 ms | 27.9 ms |
+| open-file, light (no prefetch, disclosed) | 26.1 ms | 32.4 ms |
+| collapse-all, light / moderate / heavy | 24.1 / 24.4 / 24.8 ms | 26.7 / 26.9 / 27.8 ms |
+
+**Caveat found after the run:** the packaged v2 renderer was **unminified** (a 6.72 MB main chunk; minified it's 3.67 MB). `claxedo-desktop/vite.renderer-v2.ts` never set `minify`, while v1's renderer config sets `minify: "esbuild"`. Every v2 number above comes from the unminified build. exp-idle is committing the fix with a package-step check; the rerun uses minified builds.
+
+**Must-win targets:**
+- **Met:** idle CPU, panel open return, and long rows (988 ms, target ≤ 1 s, though it ties v1).
+- **Not met:** idle memory (775 MiB, target ≤ 700) and fresh start (1.41 s, target ≤ 1.1, a tie).
+- **Owners:**
+  - exp-scroll profiles the seven panel rows and names what v2 does extra per action;
+  - exp-idle owns start and memory.
+  - Either one's fixes land through the owning lane.
 
 ## The goal in four parts
 
@@ -288,13 +391,60 @@ At 19:08 the owner said: finish in-progress work; start no new work.
   - The fix: cache the heights from ResizeObserver entries and read only `scrollTop` per frame.
   - It can't land before the swap, because `packages/ui` is shared with today's app. Apply it when the used kit components move into the app.
 
+## Streaming at 60 Hz (exp-stream, 2026-09-25)
+
+**Scenario:** a session with 22 earlier turns streams a 12k-character reply (headings, lists, 5 code fences, a table, Mermaid, 4 tool parts): 1,540 deltas, 8 characters every 25 ms, measured on production builds. At 1x every build holds 60 Hz; the differences show up in per-delta latency, CPU and memory, and at 4x throttle in missed frames.
+
+| | v1 | v2 on feat | v2 with every fix below |
+|---|---|---|---|
+| Delta to paint, p50 (1x) | 5.8 ms | 17.3 ms | 8.4 ms |
+| Delta to paint, p50 (4x) | 14.8 ms | 22.1 ms | 11.8 ms |
+| Frames over 16.7 ms (4x) | 53 | 48–98 | 15 |
+| Main thread busy (4x) | 71% | 54% | 36–40% |
+| Heap after GC | 42.8 MiB | 37.0 MiB | 16.2 MiB |
+| DOM nodes after GC | 48.7k | 48.6k | 3.7k |
+
+**The design causes, and their fixes:**
+- **A. Two animation-frame buffers in series.** Every delta waited one extra frame. It now commits in the event intake's frame, which halves latency (17.3 → 8.4 ms). Merged into feat as b6597411cd.
+- **B2. Every delta re-lexed the whole message**, which is quadratic: 32.5 ms per delta at 37k characters. The fix re-lexes only the open block and gets it to 0.68 ms.
+- **B1. The open block was parsed and sanitized twice per delta.** The fix renders it once while streaming.
+- **C. Table copy and view buttons were built on a throwaway tree on every delta and never disposed.** That leak exists in v1 too, at about 20 MiB and 45k nodes per long reply. The fix creates the controls once on the committed DOM.
+- **D. Every delta rebuilt all of the turn's timeline rows**, because the rows tracked the text rather than the part's shape. 756–920 → 23–27 ms.
+- **E. Follow-at-end had two owners**: anchorBottom and the virtualizer's anchor. The fix removes one. It's neutral for performance and simpler.
+- **F. DOMPurify re-read its config on every call** (about 27% of sanitize). The fix configures it once.
+
+**Status:** B–F change `src/transcript` and the timeline, which AGENTS.md reserves for an owner-signed, corpus-proven slice. They're on `v2/stream-slice`, one commit per fix, each with its corpus case, and `scratchpad/perf/exp-stream/SLICE.md` explains every commit. **Owner:** sign off, and it merges.
+
+**Remaining long frames:**
+- mounting a new tool card: 15–25 ms at 1x;
+- the first Mermaid render;
+- the settle read at turn end: 93 ms at 4x.
+
 ## Server gaps found by the parity work
 
-- **Harness health is pull-only.** v1's composer health peek ("The agent stopped responding / Check again") polls `/api/wr/health` every 20 s during a turn, because no event carries `degraded` or `harness_process_lost`. Publish a health change when a driver records a process error, for example a `harness.health` event, and the peek's timer can go.
+- **Harness health is pull-only.** The composer's health peek ("The agent stopped responding / Check again") polls every 20 s during a turn: v1 reads `/api/wr/health`, v2 reads `GET /api/claxedo/agent-config/harness?workspaceId=…&sessionId=…` (`harnessHealth.status`, `connectionState`). It is the one no-polling finding left, because no event carries `degraded` or `harness_process_lost`. Publish a health change when a driver records a process error, for example a `harness.health` event, and the peek's timer can go.
 - **The provider catalog route always answers with the whole catalog.** `GET /api/claxedo/agent-config/providers?nativeHarness=opencode` (`claxedo-local-server/src/agent-config/routes/provider-routes.ts`) returns models.dev's full list, 2,325,904 bytes and 1.6 s cold on the owner's machine, and ignores the `provider` parameter both apps send for one provider's detail, so a detail read costs the same as the index. v2 now reads the catalog once per harness through one cached query (`server.queries.providerCatalogs`), and skips the detail read whenever the index already holds a provider's models, as it always does here. The remaining 1.6 s first read needs the server: honor `provider` to return that provider alone, and add a summary form (connected providers with their models, the rest with ids and names) for the pickers.
+- **Session config carries no model display name.** An existing session's config names its model by id only, so v2's closed picker labels it from a per-browser display-name cache (`composer/harness/model-names.ts`) rather than read the whole provider catalog at mount. With the name in the session config the cache can go.
+- **A new draft's harness options cold-start a process.** `GET /api/claxedo/agent-config/harness/options?nativeHarness=pi` starts `pi --no-session` on every read: 2.4–9.9 s under load, while Send shows "Loading models…". v1 behaves identically. Fix it server-side: cache the options per harness, or keep one warm process.
 - **Fixed in the runtime today (take effect after a daemon restart or rebuild):**
   - a stopped turn publishes the questions and permissions it settles (2b7f71a178);
   - a harness without Goals reports them as not implemented, so its sessions open (09caeef9dd).
+- **No read across workspaces.** Boot makes 3 reads per reachable placement (`/session/status`, `/permission`, `/question`, which is v1's set since 8c551d4757) on top of the session-list page. v1 reads only for workspaces with rows on screen. A single cross-workspace status read on the server would make boot one request.
+- **Left open by the adapter lane:**
+  - `SessionRow.harness` from `config.harness.id`;
+  - the "Untitled session" fallback;
+  - creating a worktree doesn't invalidate the root git queries;
+  - the scripted ACP subagent step sends no tool call, so no live check exercises `toolCallEdges`;
+  - adapter probes need `bun run pi:install` in agent-sdk-runtime first (Playwright's global setup does it, the probe doesn't).
+
+- **A cancelled turn is recorded as completed (runtime; both apps).** The harnesses signal a cancelled turn as `session-status idle` without `finish`:
+  - ACP `translateStopReason("cancelled")` (`agent-event-runtime/src/harnesses/acp/translate-session-update.ts`);
+  - Codex `cancelled`/`interrupted`;
+  - Cursor `cancelled`.
+
+  `outcomeFromPayload` (`agent-sdk-runtime/src/runtime/turn-outcome.ts`) maps that idle to `{status: "completed"}`, and the turn's own producer finalizes with it. `finalizeCancelled` (`runtime/recovery.ts`) then finds the turn already finished and doesn't write its `{status: "cancelled", reason: "abort"}`. So neither app ever shows "Interrupted" after a Stop. Proven on v1 with the scripted ACP agent answering `cancelled` (lane-transcript-3; the ready corpus case is in `scratchpad/comments/interrupted-*`).
+  - **Fix:** a terminal cancelled event in the runtime vocabulary. It belongs in the harness rebuild (`docs/plans/2026-09-24-002-refactor-harness-rebuild-plan.md`).
+  - Parity holds meanwhile, since v1 has the same defect.
 
 ## Deletion candidates
 
@@ -312,18 +462,19 @@ At 19:08 the owner said: finish in-progress work; start no new work.
 
 ## Next steps, in order
 
-1. **Merge each lane's final commits and verify every owner bug on 4480**, on the owner's own session, against the same session on 4481.
-2. **The owner tests 4480 against 4481.** Each difference becomes an inventory row or a DECISIONS line.
-3. **One kit** (see [Easy code](#3-easy-code)). This is the largest single cut in both lines and concepts.
-4. **Checks to zero, domain by domain, composer first.**
-   - Split files by responsibility; never squeeze lines.
-   - Transcript comments get triaged into corpus cases before they're stripped.
-5. **Refresh the inventory status** with `bun run e2e:parity`, so the spec says what's actually left.
-6. **Port the deferred surfaces** from `src/legacy` with the same method.
-7. **Delete `src/legacy`.**
-8. **Benchmark.** Move the driver, then run the verdict three times on packaged builds.
+1. **Owner:** test 4480 against 4481. Each difference becomes an inventory row or a DECISIONS line.
+2. **Owner:** sign off `v2/stream-slice`, exp-stream's five transcript fixes (see [Streaming at 60 Hz](#streaming-at-60-hz-exp-stream-2026-09-25)). Then merge it and run the whole corpus.
+3. **The seven panel rows that go to v1:**
+   - exp-scroll found the cause: `src/review/diff-content.ts` `request()` writes a new file list on every CodeView emit and scroll frame, so the 24 diff queries and the Review list rebuild each time. Making it a no-op for an unchanged list takes collapse-all from 32.0 to 23.2 ms busy JS per click (v1 27.3), and idle CPU with Review open from 8.8% to 1.4% (v1 3.6%).
+   - v1 doesn't keep visited file tabs mounted either: retaining them blanks Pierre's viewer on reveal. The one tab gap is Review's scroll restoration, which lane-tools-3 is porting.
+   - Then lane-bench-3 reruns the workspace-panel lane.
+4. **Start (≤ 1.1 s) and idle memory (≤ 700 MiB):** exp-idle's findings, applied through the owning lanes.
+5. **Checks to zero:** transcript and timeline comments and names first, with comments triaged into corpus cases or README lines; then the remaining domains. Split files by responsibility; never squeeze.
+6. **Move the transcript's module caches and singletons into provider-owned stores**, as their own corpus-proven slice with a bench rerun. Until then they're named exceptions in one-home-per-datum.
+7. **Refresh the inventory status** with `bun run e2e:parity`.
+8. **Delete `src/legacy`** once nothing live imports it.
 9. **Make the flows robust:** 20 local runs per spec, 3 CI repeats, and the coverage map against v1's 58 specs.
-10. **P6 "Ready for you"**, then the owner's test, then the swap (plan § P6). Never swap without the owner's approval.
+10. **Rerun the publication benchmark** on the final tip. Then P6 "Ready for you", the owner's test, and the swap (plan § P6). Never swap without the owner's approval.
 
 ## Lanes at the stop
 

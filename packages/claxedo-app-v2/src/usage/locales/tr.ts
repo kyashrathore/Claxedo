@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "usage.quota.title": "Kota pencereleri",
   "usage.quota.empty": "Bağlı hiçbir hesap burada bir plan bildirmiyor.",
   "usage.quota.inUse": "Kullanımda",

@@ -3,6 +3,7 @@ export const UI = {
   sendIdle: "Type a message to get started",
   send: "Send",
   stop: "Stop",
+  submitSettling: /^(Checking session…|Checking the agent…|Loading models…|Starting up…)$/,
   newSession: "New Session",
   rail: "Projects and sessions",
   hideSidebar: "Hide Sidebar",

@@ -19,19 +19,6 @@ function refs(text: string) {
   return /^[ \t]{0,3}\[[^\]]+\]:[ \t]*(?:\S+|\r?\n[ \t]+\S+)/m.test(text)
 }
 
-/**
- * Reference-link support without collapsing the block projection.
- *
- * Blocks are parsed independently, so a `[docs][1]` use in one block cannot
- * see a `[1]: url` definition that lives in another (or arrives later in the
- * stream). Serializing the lexer's collected definitions and appending them
- * to every prose block's parse source resolves the links per block, while
- * the definitions themselves render as nothing. This is what lets a long
- * document keep its frozen prefix when a definition appears: collapsing the
- * whole text into one live blob re-renders the entire transcript as raw
- * healed text on every delta ("one giant paragraph"), then reflows it at
- * completion.
- */
 function definitionSuffix(links: Record<string, { href: string | null; title?: string | null }>): string {
   const entries = Object.entries(links)
   if (entries.length === 0) return ""
@@ -52,13 +39,6 @@ function language(value: string | undefined) {
   return value?.trim().split(/\s+/, 1)[0] || undefined
 }
 
-/**
- * The fenced-code fields a block projection needs, or `undefined` when the token is not a fence.
- *
- * `marked`'s `Token` union ends in `Tokens.Generic` (`type: string`, every other field `any`),
- * so comparing the discriminant never removes it and the variant cannot be narrowed to.
- * Reading the two fields through one checked accessor is what the per-site casts stood in for.
- */
 function codeBlock(token: Token): { text: string; lang: string | undefined } | undefined {
   if (token.type !== "code") return undefined
   const text: unknown = token.text
@@ -151,8 +131,6 @@ export function stream(text: string, live: boolean): Block[] {
     .join("")
   const fence = codeBlock(last)
   if (!fence) {
-    // Render the available rows now. Waiting for another token or message
-    // completion inserts the entire list/table above content already visible.
     return withDefinitions([...result, { raw, src: heal(raw), mode: "live" }], defs)
   }
 
@@ -176,12 +154,6 @@ export function canReusePendingBlock(current: Pick<Block, "mode" | "raw"> | unde
 }
 
 export function project(previous: Projection | undefined, text: string, live: boolean): Projection {
-  // TODO: streaming `Run the `config` then `# User Guide` / `#userconfig` still
-  // wraps the heading in healed inline code.
-  // Tried and reverted: reuse frozenPrefix (all-but-last blocks) plus close the
-  // unclosed tick before `# `. That caused a duplicate prose line until complete().
-  // (Reference definitions no longer collapse the projection: `stream` keeps
-  // the frozen blocks and resolves refs per block via `definitionSuffix`.)
   if (!live || !previous || !text.startsWith(previous.text)) return { text, blocks: stream(text, live) }
   const tail = previous.blocks.at(-1)
   const suffix = text.slice(previous.text.length)

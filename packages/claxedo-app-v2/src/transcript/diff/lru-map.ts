@@ -1,14 +1,3 @@
-/**
- * Insertion-ordered map with a most-recently-used eviction bound, exposing the
- * surface of the `lru_map` npm package (the vite configs alias the bare
- * `lru_map` specifier here).
- *
- * Values live in a one-field box, the same shape `scoped-cache.ts` uses. A bare
- * `Map<K, V>` cannot express "this key is present" when `V` itself includes
- * `undefined`, which forced every read to re-check `has` and then assert the
- * value back to `V`; boxing makes presence a fact the type system can see, so
- * no read needs an assertion.
- */
 type Box<V> = { value: V }
 
 export class LRUMap<K, V> {
@@ -20,7 +9,6 @@ export class LRUMap<K, V> {
     return this.map.size
   }
 
-  /** Read `key` and mark it most-recently-used. */
   get(key: K): V | undefined {
     const box = this.map.get(key)
     if (!box) return undefined
@@ -49,7 +37,6 @@ export class LRUMap<K, V> {
     this.map.clear()
   }
 
-  /** Evict the least-recently-used entry and return it. */
   shift(): [K, V] | undefined {
     const oldest = this.map.entries().next()
     if (oldest.done) return undefined
@@ -62,7 +49,6 @@ export class LRUMap<K, V> {
     return this.map.has(key)
   }
 
-  /** Read `key` without changing its recency. */
   find(key: K): V | undefined {
     return this.map.get(key)?.value
   }

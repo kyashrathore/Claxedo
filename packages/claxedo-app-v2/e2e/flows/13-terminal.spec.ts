@@ -98,33 +98,24 @@ test("13 terminal: run a command, its output replays from the server, reload rea
   }
 })
 
-test("13 terminal: a terminal closed in the rail or dead after a restart leaves the compact tabs too", async ({ stack, app }) => {
-  const workspace = await stack.daemon.makeWorkspace("terminal", "Terminal")
-  await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
-
-  await newShell(app)
-  await app.getByRole("button", { name: /^Close terminal: / }).click()
+async function expectNoTerminalTab(app: Page) {
   await expect(app.getByRole("button", { name: /^Close terminal: / })).toHaveCount(0)
   await app.getByRole("button", { name: "Hide Sidebar" }).click()
   await expect(compactTabs(app).first()).toBeVisible()
   await expect(compactTabs(app).filter({ hasText: /Terminal/ })).toHaveCount(0)
-  await app.getByRole("button", { name: "Show Sidebar" }).click()
+}
 
-  if (stack.app === "v2") {
-    await test.step("v2: a shell that exits leaves the rail, its pane and the compact tabs", async () => {
-      const exitedId = await newShell(app)
-      await expect(terminalPane(app, exitedId)).toHaveAttribute("data-terminal-connected", "true")
-      await app.getByRole("textbox", { name: "Terminal input" }).focus()
-      await app.keyboard.type("exit")
-      await app.keyboard.press("Enter")
-      await expect(terminalPane(app, exitedId)).toHaveCount(0)
-      await expect(app.getByRole("button", { name: /^Close terminal: / })).toHaveCount(0)
-      await app.getByRole("button", { name: "Hide Sidebar" }).click()
-      await expect(compactTabs(app).filter({ hasText: /Terminal/ })).toHaveCount(0)
-      await app.getByRole("button", { name: "Show Sidebar" }).click()
-    })
-  }
+test("13 terminal: a terminal closed in the rail leaves the compact tabs too", async ({ stack, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("terminal", "Terminal")
+  await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
+  await newShell(app)
+  await app.getByRole("button", { name: /^Close terminal: / }).click()
+  await expectNoTerminalTab(app)
+})
 
+test("13 terminal: a terminal dead after a restart is gone from the rail and the compact tabs on the next load", async ({ stack, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("terminal", "Terminal")
+  await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
   const deadId = await newShell(app)
   await app.goto("about:blank")
   const url = new URL(`/api/wr/pty/${encodeURIComponent(deadId)}`, stack.url)
@@ -132,23 +123,34 @@ test("13 terminal: a terminal closed in the rail or dead after a restart leaves 
   expect((await fetch(url, { method: "DELETE" })).ok).toBe(true)
   await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
   await expect(app.getByRole("button", { name: "Hide Sidebar" })).toBeVisible()
-  await expect(app.getByRole("button", { name: /^Close terminal: / })).toHaveCount(0)
-  await app.getByRole("button", { name: "Hide Sidebar" }).click()
-  await expect(compactTabs(app).first()).toBeVisible()
-  await expect(compactTabs(app).filter({ hasText: /Terminal/ })).toHaveCount(0)
+  await expectNoTerminalTab(app)
+})
 
-  if (stack.app === "v2") {
-    await test.step("v2: a daemon restart ends the open terminal in the rail, its pane and the compact tabs", async () => {
-      await app.getByRole("button", { name: "Show Sidebar" }).click()
-      const restartedId = await newShell(app)
-      await expect(terminalPane(app, restartedId)).toHaveAttribute("data-terminal-connected", "true")
-      await stack.daemon.restart()
-      await expect(terminalPane(app, restartedId)).toHaveCount(0, { timeout: 30_000 })
-      await expect(app.getByRole("button", { name: /^Close terminal: / })).toHaveCount(0)
-      await app.getByRole("button", { name: "Hide Sidebar" }).click()
-      await expect(compactTabs(app).filter({ hasText: /Terminal/ })).toHaveCount(0)
-    })
-  }
+test("13 terminal: a shell that exits leaves the rail, its pane and the compact tabs", async ({ stack, app }) => {
+  test.skip(stack.app === "v1", "today's app keeps an exited shell's pane and row")
+  const workspace = await stack.daemon.makeWorkspace("terminal", "Terminal")
+  await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
+  const exitedId = await newShell(app)
+  await expect(terminalPane(app, exitedId)).toHaveAttribute("data-terminal-connected", "true")
+  await app.getByRole("textbox", { name: "Terminal input" }).focus()
+  await app.keyboard.type("echo exit-ready-$((6*7))")
+  await app.keyboard.press("Enter")
+  await ptyReplay(app, workspace.directory, exitedId, "exit-ready-42")
+  await app.keyboard.type("exit")
+  await app.keyboard.press("Enter")
+  await expect(terminalPane(app, exitedId)).toHaveCount(0)
+  await expectNoTerminalTab(app)
+})
+
+test("13 terminal: a daemon restart ends the open terminal in the rail, its pane and the compact tabs", async ({ stack, app }) => {
+  test.skip(stack.app === "v1", "today's app keeps the dead terminal's rail row after a restart")
+  const workspace = await stack.daemon.makeWorkspace("terminal", "Terminal")
+  await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
+  const restartedId = await newShell(app)
+  await expect(terminalPane(app, restartedId)).toHaveAttribute("data-terminal-connected", "true")
+  await stack.daemon.restart()
+  await expect(terminalPane(app, restartedId)).toHaveCount(0, { timeout: 30_000 })
+  await expectNoTerminalTab(app)
 })
 
 test("13 terminal: a workspace whose folder is gone reads no terminal list", async ({ stack, app }) => {

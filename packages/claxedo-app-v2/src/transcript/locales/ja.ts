@@ -1,6 +1,6 @@
 import type { TranscriptTextKey } from "../i18n"
 
-export const dict: Partial<Record<TranscriptTextKey, string>> = {
+const translations: Partial<Record<TranscriptTextKey, string>> = {
   "transcript.sessionReview.selection.line": "{{line}} 行目",
   "transcript.sessionReview.selection.lines": "{{start}}-{{end}} 行目",
   "transcript.fileMedia.kind.image": "画像",
@@ -86,3 +86,5 @@ export const dict: Partial<Record<TranscriptTextKey, string>> = {
   "transcript.question.subtitle.answered": "{{count}}件回答済み",
   "transcript.question.answer.none": "(回答なし)",
 }
+
+export default translations

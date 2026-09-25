@@ -1,5 +1,4 @@
 import { For, Show, type JSX } from "solid-js"
-import { Select } from "@opencode-ai/ui/select"
 import {
   TASKS_BOUNDS,
   TASK_ATTACHMENT_MIMES,
@@ -9,7 +8,7 @@ import {
   type TaskDraft,
 } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
-import { Button } from "@/ui"
+import { Button, Select } from "@/ui"
 import { fieldReasonKey, type FieldReasons } from "../data/refusal"
 import { dictionary } from "../i18n"
 import type { TaskProject } from "../links"

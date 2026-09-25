@@ -104,10 +104,6 @@
   max-width: 60%;
 }
 
-.settings-row-control .v2-select {
-  max-width: 100%;
-}
-
 .settings-empty {
   padding: 24px 16px;
   text-align: center;
@@ -301,4 +297,9 @@
   font-size: var(--font-size-small);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.settings-font-field {
+  width: 220px;
+  max-width: 100%;
 }

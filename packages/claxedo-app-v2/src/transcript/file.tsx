@@ -80,11 +80,6 @@ export type FileSearchControl = {
   register: (handle: FileSearchHandle | null) => void
 }
 
-/**
- * Scrolling a file view to one line. The viewer owns this because it windows
- * its rows: a line outside the rendered window has no element to scroll to, so
- * only the viewer knows where that line will be.
- */
 export type FileRevealHandle = {
   revealLine: (line: number) => void
 }
@@ -147,10 +142,6 @@ const sharedKeys = [
 const textKeys = ["file", "reveal", ...sharedKeys] as const
 const diffKeys = ["fileDiff", "before", "after", "virtualize", ...sharedKeys] as const
 
-// ---------------------------------------------------------------------------
-// Shared viewer hook
-// ---------------------------------------------------------------------------
-
 type MouseHit = {
   line: number | undefined
   numberColumn: boolean
@@ -163,7 +154,6 @@ type ViewerConfig = {
   commentedLines: () => SelectedLineRange[]
   onLineSelectionEnd: (range: SelectedLineRange | null) => void
 
-  // mode-specific callbacks
   lineFromMouseEvent: (event: MouseEvent) => MouseHit
   setSelectedLines: (range: SelectedLineRange | null, preserve?: { root: ShadowRoot; text: Range }) => void
   updateSelection: (preserveTextSelection: boolean) => void
@@ -174,9 +164,6 @@ type ViewerConfig = {
   onDragReset: () => void
   markCommented: (root: ShadowRoot, ranges: SelectedLineRange[]) => void
 
-  // Find. A whole-file view windows its rows, so find reads the file's text for
-  // the match list and reveals the row a match needs; a diff has no single line
-  // list and leaves both undefined, which keeps its rendered-row scan.
   findLines?: () => readonly string[] | undefined
   revealFindLine?: (line: number) => void
 }
@@ -208,8 +195,6 @@ function useFileViewer(config: ViewerConfig) {
     revealLine: config.revealFindLine ? (line) => config.revealFindLine?.(line) : undefined,
   })
 
-  // -- selection scheduling --
-
   const scheduleSelectionUpdate = () => {
     if (selectionFrame !== undefined) return
     selectionFrame = requestAnimationFrame(() => {
@@ -230,8 +215,6 @@ function useFileViewer(config: ViewerConfig) {
       if (selected) config.setSelectedLines(selected)
     })
   }
-
-  // -- mouse handlers --
 
   const handleMouseDown = (event: MouseEvent) => {
     if (!config.enableLineSelection()) return
@@ -308,8 +291,6 @@ function useFileViewer(config: ViewerConfig) {
     if (!selection || selection.isCollapsed) return
     scheduleSelectionUpdate()
   }
-
-  // -- shared effects --
 
   onMount(() => {
     onCleanup(observeViewerScheme(getHost))
@@ -506,8 +487,6 @@ function useAnnotationRerender<A>(opts: {
     const active = opts.current()
     if (!active) return
     const annotations = opts.annotations()
-    // renderViewer always draws with empty annotations, so skip the extra rerender
-    // when this instance has nothing applied and nothing to apply.
     if (annotations.length === 0 && !applied.has(active)) return
     if (annotations.length === 0) applied.delete(active)
     else applied.add(active)
@@ -605,9 +584,6 @@ function createLocalVirtualStrategy(host: () => HTMLDivElement | undefined): Vir
       if (virtualizer && root === next) return virtualizer
 
       release()
-      // A text view rooted in an element is rooted in a panel scroller, which
-      // wants the panel window, not Pierre's page-sized one; a document root is
-      // the page, where the default already fits.
       virtualizer = new Virtualizer(
         next instanceof Document ? undefined : { overscrollSize: PANEL_OVERSCROLL_SIZE },
       )
@@ -694,10 +670,6 @@ function diffSelectionSide(node: Node | null): DiffSelectionSide | undefined {
   return findDiffSide(el)
 }
 
-// ---------------------------------------------------------------------------
-// Shared JSX shell
-// ---------------------------------------------------------------------------
-
 function ViewerShell(props: {
   mode: "text" | "diff"
   viewer: ReturnType<typeof useFileViewer>
@@ -706,7 +678,6 @@ function ViewerShell(props: {
 }) {
   return (
     <div
-      data-component="file"
       data-mode={props.mode}
       style={styleVariables}
       class="relative outline-none"
@@ -740,10 +711,6 @@ function ViewerShell(props: {
   )
 }
 
-// ---------------------------------------------------------------------------
-// TextViewer
-// ---------------------------------------------------------------------------
-
 function TextViewer<T>(props: TextFileProps<T>) {
   let instance: PierreFile<T> | VirtualizedFile<T> | undefined
   let viewer!: Viewer
@@ -751,11 +718,6 @@ function TextViewer<T>(props: TextFileProps<T>) {
   const [local, others] = splitProps(props, textKeys)
 
   const text = () => {
-    // `FileContents.contents` is declared `string`, but the value reaching a
-    // viewer comes from a tool payload that can carry anything. A malformed one
-    // must render as something the reader can act on: an empty pane hides that
-    // the payload was wrong, and `[object Object]` says nothing about what it
-    // held. `readableText` serializes it instead.
     const value: unknown = local.file.contents
     if (typeof value === "string") return value
     if (Array.isArray(value)) return value.join("\n")
@@ -768,14 +730,6 @@ function TextViewer<T>(props: TextFileProps<T>) {
     return Math.max(1, total)
   }
 
-  // A text view windows its rows, exactly like DiffViewer below: a workspace
-  // file tab mounts and disposes its viewer on every tab activation, so the
-  // cost of one mount must scale with the viewport, not with the file — a
-  // 3200-line file must not materialize all 3200 rows on open.
-  // `virtualized` records whether the current instance is windowed: the
-  // strategy yields no virtualizer without a document (SSR), and the plain
-  // viewer it falls back to needs the whole-file readiness and selection
-  // checks below.
   let virtualized = false
 
   const virtuals = createLocalVirtualStrategy(() => viewer.wrapper)
@@ -861,9 +815,6 @@ function TextViewer<T>(props: TextFileProps<T>) {
     onDragMove: () => {},
     onDragReset: () => {},
     markCommented: markCommentedFileLines,
-    // The rows are a window over the file; its text is what find counts and
-    // navigates, and `revealLine` is how a match below the window gets a row.
-    // Read lazily: nothing splits the file until someone searches it.
     findLines: () => fileFindLines(text()),
     revealFindLine: (line) => revealLine(line),
   }
@@ -911,16 +862,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
     find: viewer.find,
   })
 
-  /**
-   * Scroll one line into view. A rendered row is scrolled to exactly; a line
-   * outside the window has no element yet, so the viewer's own scroller is
-   * moved to where that line sits (rows are `codeMetrics.lineHeight` tall),
-   * which makes the virtualizer draw that window. The caller re-reveals from
-   * `onRendered`, and that pass lands on the now-rendered row.
-   */
   const revealLine = (line: number) => {
-    // Find reveals by line number now, so a line the file does not have has to
-    // be refused here rather than scrolling the viewer past its own end.
     if (line <= 0 || line > lineCount()) return
     const row = viewer.getRoot()?.querySelector(`[data-line="${CSS.escape(String(line))}"]`)
     if (row) {
@@ -939,14 +881,8 @@ function TextViewer<T>(props: TextFileProps<T>) {
     revealLine,
   })
 
-  // -- render instance --
-
   createEffect(() => {
     const opts = options()
-    // A text view highlights a whole file, so the pools' one difference
-    // (`lineDiffType`, read only when decorating a diff's line pair) cannot
-    // reach it: take whichever pool the app already warmed instead of booting
-    // a second one — see `getFileWorkerPool`.
     const workerPool = getFileWorkerPool()
     const virtualizer = virtuals.get()
     virtualized = virtualizer !== undefined
@@ -980,8 +916,6 @@ function TextViewer<T>(props: TextFileProps<T>) {
     annotations: () => (local.annotations as LineAnnotation<T>[] | undefined) ?? [],
   })
 
-  // -- cleanup --
-
   onCleanup(() => {
     instance?.cleanUp()
     instance = undefined
@@ -990,10 +924,6 @@ function TextViewer<T>(props: TextFileProps<T>) {
 
   return <ViewerShell mode="text" viewer={viewer} class={local.class} classList={local.classList} />
 }
-
-// ---------------------------------------------------------------------------
-// DiffViewer
-// ---------------------------------------------------------------------------
 
 function DiffViewer<T>(props: DiffFileProps<T>) {
   let instance: FileDiff<T> | undefined
@@ -1149,8 +1079,6 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
     find: viewer.find,
   })
 
-  // -- render instance --
-
   createEffect(() => {
     const opts = options()
     const workerPool = large() ? getWorkerPool("unified") : getWorkerPool(props.diffStyle)
@@ -1182,8 +1110,6 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
           instanceAfter === undefined ||
           !areFilesEqual(instanceBefore, before) ||
           !areFilesEqual(instanceAfter, after)
-    // Pierre beta virtualized instances retain their first diff target and resolve separator metrics at construction.
-    // Plain timeline diffs can retain the instance as content streams; virtualized viewers reset only when that is unsafe.
     const reset =
       instance !== undefined &&
       (instanceVirtualizer !== virtualizer ||
@@ -1240,8 +1166,6 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
     annotations: () => (local.annotations as DiffLineAnnotation<T>[] | undefined) ?? [],
   })
 
-  // -- cleanup --
-
   onCleanup(() => {
     instance?.cleanUp()
     instance = undefined
@@ -1258,10 +1182,6 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
 
   return <ViewerShell mode="diff" viewer={viewer} class={local.class} classList={local.classList} />
 }
-
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
 
 export function File<T>(props: FileProps<T>) {
   if (props.mode === "text") {

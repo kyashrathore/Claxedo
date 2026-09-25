@@ -1,8 +1,10 @@
-import { Show } from "solid-js"
-import { Tag } from "@/ui"
+import { Match, Show, Switch } from "solid-js"
+import { useAuth } from "@/auth"
 import { useTranslator } from "@/i18n"
+import { useServer } from "@/server"
+import { Button, showToast, Tag } from "@/ui"
 import type { OrgRole } from "@/server"
-import { dictionary } from "../i18n"
+import { accessDictionary } from "../i18n"
 import { useAccess } from "../store"
 import "./access.css"
 
@@ -12,8 +14,34 @@ const ROLE_KEY = {
   member: "access.org.role.member",
 } as const satisfies Record<OrgRole, string>
 
+function SignedOut() {
+  const t = useTranslator(accessDictionary)
+  const auth = useAuth()
+  const server = useServer()
+  const offered = () => server.capabilities()?.signedIn === true && auth.unavailable() === null
+  const signIn = () =>
+    void auth.signIn({ redirectUrl: window.location.href }).catch((error: unknown) => {
+      showToast({ title: t("access.org.signInFailed"), description: error instanceof Error ? error.message : String(error) })
+    })
+  return (
+    <Switch fallback={<p class="org-note">{t("access.org.signedOut")}</p>}>
+      <Match when={auth.state().kind === "signingIn"}>
+        <p class="org-note" role="status">{t("access.org.checking")}</p>
+      </Match>
+      <Match when={offered()}>
+        <div class="org-sign-in">
+          <p class="org-note">{t("access.org.signedOut")}</p>
+          <Button size="small" variant="secondary" onClick={signIn}>
+            {t("access.org.signIn")}
+          </Button>
+        </div>
+      </Match>
+    </Switch>
+  )
+}
+
 export function OrganizationSection() {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(accessDictionary)
   const access = useAccess()
   const user = () => {
     const who = access.principal()
@@ -21,9 +49,9 @@ export function OrganizationSection() {
   }
 
   return (
-    <div class="org-section" data-component="settings-organization">
+    <div class="org-section">
       <p class="org-intro">{t("access.org.description")}</p>
-      <Show when={user()} fallback={<p class="org-note">{t("access.org.signedOut")}</p>}>
+      <Show when={user()} fallback={<SignedOut />}>
         {(who) => (
           <Show when={who().orgId} fallback={<p class="org-note">{t("access.org.none")}</p>}>
             <div class="org-card">

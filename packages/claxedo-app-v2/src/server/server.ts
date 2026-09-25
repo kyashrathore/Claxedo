@@ -3,6 +3,7 @@ import { createSignal } from "solid-js"
 import { createAccountsApi } from "./accounts"
 import { createCapabilities, type CapabilitiesOwner } from "./capabilities"
 import { createCloudApi } from "./cloud"
+import { createAgentConnectionsApi } from "./agent-connections"
 import { createIntegrationsApi } from "./integrations"
 import { createSandboxProvidersApi } from "./sandbox-providers"
 import { createProviderConnectApi } from "./provider-connect"
@@ -105,6 +106,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     tasks: createTasksApi(transport),
     folders: createFoldersApi(transport),
     integrations: createIntegrationsApi(transport, queryClient),
+    agentConnections: createAgentConnectionsApi(transport, queryClient),
     sandboxProviders: createSandboxProvidersApi(transport, queryClient),
     providerConnect: createProviderConnectApi(transport, queryClient),
     providerCatalogs: createProviderCatalogsApi(transport, queryClient),

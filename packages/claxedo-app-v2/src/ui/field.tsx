@@ -85,11 +85,6 @@ function FieldRoot(props: ParentProps<FieldProps>) {
     const control = root.querySelector(CONTROL_SELECTOR)
     if (!(control instanceof HTMLInputElement) && !(control instanceof HTMLTextAreaElement)) return
 
-    const shellNode = control.closest(
-      ".v2-text-input",
-    )
-    const shell = shellNode instanceof HTMLElement ? shellNode : null
-
     control.id = controlId
     control.setAttribute("aria-labelledby", labelId)
 
@@ -102,10 +97,8 @@ function FieldRoot(props: ParentProps<FieldProps>) {
 
     if (ctx.invalid()) {
       control.setAttribute("aria-invalid", "true")
-      shell?.setAttribute("data-invalid", "")
     } else {
       control.removeAttribute("aria-invalid")
-      shell?.removeAttribute("data-invalid")
     }
   }
 

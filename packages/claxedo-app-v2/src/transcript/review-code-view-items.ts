@@ -10,18 +10,10 @@ type Entry<LAnnotation> = {
 export type ReviewCodeViewItemsInput<LAnnotation> = {
   diffs: readonly DiffSource[]
   open: ReadonlySet<string>
-  /** Files whose body the caller supplies instead of a parsed text diff. */
   customFiles?: ReadonlySet<string>
-  /**
-   * A file's comment annotations. Read for every file, not just rendered ones,
-   * because an annotation occupies document height wherever it sits. Return the
-   * same array while the file's comments and draft are unchanged: a new array
-   * is what tells CodeView to re-measure the item.
-   */
   annotations?: (file: string) => DiffLineAnnotation<LAnnotation>[] | undefined
 }
 
-/** Retain parsed content for the current document, independently of rendered DOM. */
 export function createReviewCodeViewItems<LAnnotation = undefined>() {
   let previous = new Map<string, Entry<LAnnotation>>()
   return ({ diffs, open, customFiles, annotations }: ReviewCodeViewItemsInput<LAnnotation>): CodeViewItem<LAnnotation>[] => {
@@ -52,8 +44,6 @@ export function createReviewCodeViewItems<LAnnotation = undefined>() {
         collapsed,
         version: (cached?.item.version ?? -1) + 1,
       }
-      // Copy the fields: callers can supply reactive store proxies whose values
-      // change in place. Keeping the proxy would hide a content replacement.
       next.set(diff.file, {
         source: { file: diff.file, patch: diff.patch, before: diff.before, after: diff.after },
         annotations: fileAnnotations,

@@ -11,7 +11,6 @@ export type ServerConfig = {
   readonly auth: AuthSource
   readonly cookies?: boolean
   readonly eventSocket?: boolean
-  readonly maxReconnectAttempts?: number
 }
 
 const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "[::1]"])
