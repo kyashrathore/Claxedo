@@ -33,6 +33,10 @@ export function relayHostVerificationEnv(
     options: WorkspaceSupervisorOptions
   },
 ): Record<string, string> {
+  const publicKeyPem = process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM?.trim()
+  if (entry.id === "local-brokering-test" && publicKeyPem) {
+    return workspaceRuntimeRelayVerificationEnv({ kind: "pem", verifyPem: publicKeyPem })
+  }
   if (entry.runtimeNetwork.relay === "local" || (!input.options.relay_url?.trim() && localControlPlaneConfigured(input.options))) {
     return workspaceRuntimeRelayVerificationEnv({ kind: "dev-unsafe-private-network" })
   }
