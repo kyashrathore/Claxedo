@@ -18,6 +18,7 @@ Order is flat and is the server's `human_turn_desc`: `lastHumanTurnAt` descendin
 | Concept | Home |
 | --- | --- |
 | Session rows, tombstones, pending entries, the fetch window and status per session | `list/` (`model.ts`, `rows.ts`, `statuses.ts`, `transition.ts`, `visible-rows.ts`, `reads.ts` for the first read, `loadMore` and re-reads, `store.ts`) |
+| Per-row reads: `rowOf`, `statusOf` and `view` re-run a reader only when that session's row, status or row view changes, and `order` only when a visible row joins, leaves or moves; `rows` changes when any visible row view does. Each keeps one signal per key being read, fed by one computation over the list's state (`list/keyed-reads.ts`), so a status event re-runs a constant number of store computations and then only that session's readers | `list/store.ts`, `list/keyed-reads.ts` |
 | Agent requests (permissions and questions) and their reply machine | `requests/` |
 | One session's transcript, todos, diff, goal, older pages, the optimistic user message and the queue | `transcript/` (`context.ts` holds one session's state; `events.ts`, `snapshot.ts`, `older.ts`, `send.ts`, `queue.ts` and `goal.ts` change it; `store.ts` composes the view) |
 | The subagents a session delegated to: read on open and on a stream gap, then `subagentUpdated` events, merged by `subagentKey` with a revision per field (a terminal status never reverts; the child session and provider are set once; tool-call edges are only added) | `transcript/subagents.ts`, `transcript/subagent-merge.ts` |

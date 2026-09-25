@@ -45,6 +45,8 @@ export type LoadMoreState =
 export type SessionList = {
   readonly state: Accessor<SessionListState>
   readonly rows: Accessor<readonly SessionRowView[]>
+  readonly order: Accessor<readonly SessionRef[]>
+  readonly view: (sessionId: SessionId) => SessionRowView | undefined
   readonly rowOf: (sessionId: SessionId) => SessionRow | undefined
   readonly hasMore: (placementIds: readonly PlacementId[]) => boolean
   readonly moreState: Accessor<LoadMoreState>

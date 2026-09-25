@@ -76,7 +76,7 @@ function fetchEvent(state: ListState, event: ListEvent): ListState | undefined {
     case "fetchFailed":
       return state.kind === "fetching" ? { ...data(state), kind: "failed", error: event.error } : state
     case "moreStarted":
-      if (state.kind !== "live" || state.more.kind === "loading" || !hasMorePages(state, event.placementIds)) return state
+      if (state.kind !== "live" || state.more.kind === "loading" || !hasMorePages(state.windows, event.placementIds)) return state
       return { ...state, more: { kind: "loading", held: [] } }
     case "moreFetched":
       if (state.kind !== "live" || state.more.kind !== "loading") return state

@@ -1,4 +1,4 @@
-import type { AgentRequest, SessionId } from "@/server"
+import type { AgentRequest, SessionId, SessionRef } from "@/server"
 import type { SessionRowView, SessionStatusView } from "@/session"
 import {
   compareOrder,
@@ -49,20 +49,33 @@ function cachedView(
   return { entry, status, waitingOnUser, view }
 }
 
+export type VisibleRows = {
+  readonly views: readonly SessionRowView[]
+  readonly byId: ReadonlyMap<SessionId, SessionRowView>
+}
+
 export function visibleRows(
   state: ListState,
   openRequests: ReadonlyMap<SessionId, readonly AgentRequest[]>,
   cache: RowViewCache,
-): readonly SessionRowView[] {
+): VisibleRows {
   const next = new Map<SessionId, CachedView>()
+  const byId = new Map<SessionId, SessionRowView>()
   const views = shownEntries(state).map(({ entry }) => {
     const id = entry.row.ref.sessionId
     const status = state.statuses.get(id)?.status ?? UNKNOWN_STATUS
     const waitingOnUser = (openRequests.get(id)?.length ?? 0) > 0
     const cached = cachedView(cache.current.get(id), entry, status, waitingOnUser)
     next.set(id, cached)
+    byId.set(id, cached.view)
     return cached.view
   })
   cache.current = next
-  return views
+  return { views, byId }
 }
+
+export const sameItems = <T>(previous: readonly T[], next: readonly T[]) =>
+  previous.length === next.length && previous.every((item, index) => item === next[index])
+
+export const sameSessions = (previous: readonly SessionRef[], next: readonly SessionRef[]) =>
+  previous.length === next.length && previous.every((ref, index) => ref.sessionId === next[index]?.sessionId)

@@ -163,8 +163,8 @@ export const windowRows = (window: FetchedWindow): readonly SessionRow[] => wind
 export const listedRows = (data: ListData): readonly SessionRow[] =>
   [...data.entries.values()].flatMap((entry) => (entry.kind === "confirmed" ? [entry.row] : []))
 
-export const hasMorePages = (data: ListData, placementIds: readonly PlacementId[]): boolean =>
-  placementIds.some((id) => data.windows.get(id)?.nextCursor !== undefined)
+export const hasMorePages = (windows: ListData["windows"], placementIds: readonly PlacementId[]): boolean =>
+  placementIds.some((id) => windows.get(id)?.nextCursor !== undefined)
 
 function laterHumanTurn(current: SessionRow, incoming: SessionRow): number | undefined {
   if (current.lastHumanTurnAt === undefined) return incoming.lastHumanTurnAt
