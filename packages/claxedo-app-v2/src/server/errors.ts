@@ -130,3 +130,7 @@ export function isAppError(value: unknown): value is AppError {
   const row = value as { class?: unknown; message?: unknown; retryable?: unknown }
   return typeof row.class === "string" && ERROR_CLASSES.has(row.class) && typeof row.message === "string" && typeof row.retryable === "boolean"
 }
+
+export function isGeminiQuotaRetry(message: string): boolean {
+  return message.includes("exceeded your current quota") && message.includes("gemini")
+}

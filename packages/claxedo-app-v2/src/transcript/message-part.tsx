@@ -1871,8 +1871,10 @@ function ToolImageStrip(props: { images: AgentFilePart[] }) {
             if (controller.signal.aborted) return
             objectUrl = URL.createObjectURL(blob)
             setLoaded(objectUrl)
-          }).catch(() => {
-            if (!controller.signal.aborted) setLoadFailed(true)
+          }).catch((error: unknown) => {
+            if (controller.signal.aborted) return
+            console.warn("A tool image could not be read", { error })
+            setLoadFailed(true)
           })
           onCleanup(() => {
             controller.abort()
@@ -2365,7 +2367,9 @@ ToolRegistry.register({
           const fileDiff = resolveFileDiff(source)
           if (fileDiff) return { fileDiff, hunkSeparators: fileDiff.isPartial ? "simple" : "line-info-basic" }
         }
-      } catch {}
+      } catch (error) {
+        console.warn("An edit's diff could not be resolved; its before and after show instead", { error })
+      }
 
       return {
         before: {

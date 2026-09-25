@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, on, onCleanup, Show } from "solid-js"
 import type { AgentRuntimeStatus } from "@claxedo/agent-runtime-contract"
+import { isGeminiQuotaRetry } from "@/server"
 import { useTranscriptI18n } from "./i18n"
 import { Card, Tooltip, Spinner } from "@/ui"
 
@@ -26,7 +27,7 @@ export function SessionRetry(props: { status: AgentRuntimeStatus; show?: boolean
   const message = createMemo(() => {
     const current = retry()
     if (!current) return ""
-    if (current.message.includes("exceeded your current quota") && current.message.includes("gemini")) {
+    if (isGeminiQuotaRetry(current.message)) {
       return i18n.t("transcript.sessionTurn.retry.geminiHot")
     }
     if (current.message.length > 80) return current.message.slice(0, 80) + "..."

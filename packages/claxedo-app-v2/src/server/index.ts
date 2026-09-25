@@ -21,7 +21,7 @@ export type { PermissionMode, PermissionModeState } from "./wire/permission-mode
 export type * from "./events"
 export * from "./ids"
 export type { AuthSource, ServerConfig } from "./config"
-export { ServerError, isAppError, isRetryable, toAppError } from "./errors"
+export { ServerError, isAppError, isGeminiQuotaRetry, isRetryable, toAppError } from "./errors"
 export { ServerContext, useServer } from "./context"
 export { createServer, type ServerHandle } from "./server"
 export { ServerProvider } from "./provider"
