@@ -5,7 +5,7 @@ import { useServer, type DiffSummary, type GitRefs, type PlacementId } from "@/s
 import { ReviewCodeView, type ReviewCodeViewRevealTarget } from "@/transcript"
 import { ClaxedoLogo as Mark, DelayedLoading, ScrollThumb, Spinner } from "@/ui"
 import { useReviewApi } from "../api"
-import { useReviewComments } from "../comments"
+import { useLineComments } from "../comments"
 import { createDiffContent } from "../diff-content"
 import { useErrorText } from "../errors"
 import { dictionary, type ReviewKey } from "../i18n"
@@ -146,7 +146,7 @@ function ReviewDiffList(props: {
   readonly onOpenFile: (path: string) => void
 }): JSX.Element {
   const review = useReview()
-  const comments = useReviewComments()
+  const comments = useLineComments("review")
   const errorText = useErrorText()
   const content = createDiffContent({
     placementId: props.placementId,

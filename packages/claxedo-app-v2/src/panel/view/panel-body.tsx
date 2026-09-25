@@ -4,7 +4,7 @@ import { DelayedLoading, MarkedProvider } from "@/ui"
 import { BrowserTabView } from "@/browser"
 import { FileTab, FilesNavigator } from "@/files"
 import { useTranslator } from "@/i18n"
-import { ReviewTab, SourceControlView } from "@/review"
+import { ReviewTab, SourceControlView, useLineComments } from "@/review"
 import { useServer, type PlacementId } from "@/server"
 import { usePreferences } from "@/settings"
 import { useShellRegistries, type PanelView } from "@/shell"
@@ -137,6 +137,7 @@ function ActiveTab(props: { readonly placementId: PlacementId }): JSX.Element {
     const current = tab()
     return current.kind === "plan" ? current : undefined
   }
+  const fileComments = useLineComments("file")
   const reveal = (path: string) => {
     const current = panel.fileReveal()
     return current?.path === path ? current : undefined
@@ -161,6 +162,7 @@ function ActiveTab(props: { readonly placementId: PlacementId }): JSX.Element {
               headerActive
               focusLine={reveal(path)?.line}
               focusNonce={reveal(path)?.version}
+              comments={fileComments}
             />
           </div>
         )}
