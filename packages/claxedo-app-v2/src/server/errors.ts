@@ -1,3 +1,4 @@
+import { asRecord } from "../lib/record"
 import type { AppError, ErrorClass } from "./types"
 
 declare module "@tanstack/solid-query" {
@@ -129,4 +130,19 @@ export function isAppError(value: unknown): value is AppError {
   if (!value || typeof value !== "object") return false
   const row = value as { class?: unknown; message?: unknown; retryable?: unknown }
   return typeof row.class === "string" && ERROR_CLASSES.has(row.class) && typeof row.message === "string" && typeof row.retryable === "boolean"
+}
+
+export function isGeminiQuotaRetry(message: string): boolean {
+  return message.includes("exceeded your current quota") && message.includes("gemini")
+}
+
+export function isTurnAdmissionConflict(error: unknown): boolean {
+  const data = asRecord(asRecord(error)?.data)
+  return data?.code === "turn_already_active" ||
+    data?.code === "session_turn_in_progress" ||
+    data?.message === "Session is already processing a message"
+}
+
+export function isCodexTurnAborted(data: unknown): boolean {
+  return asRecord(data)?.message === "Codex turn aborted"
 }

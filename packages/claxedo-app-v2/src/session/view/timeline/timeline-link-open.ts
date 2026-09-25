@@ -32,12 +32,8 @@ export function createTimelineLinkOpen(host: TimelineLinkHost) {
   const onOpenLink = (event: Event) => {
     const href = readString(event instanceof CustomEvent ? asRecord(event.detail) : undefined, "href")
     if (!href) return
-    let url: URL
-    try {
-      url = new URL(href)
-    } catch {
-      return
-    }
+    if (!URL.canParse(href)) return
+    const url = new URL(href)
 
     if (url.protocol === "http:" || url.protocol === "https:") {
       event.preventDefault()

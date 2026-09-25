@@ -842,7 +842,9 @@ export function MessageTimeline(props: MessageTimelineProps) {
       ([id, description]) => {
         if (!id || description) return
         if (parentMessages().length > 0) return
-        void Promise.resolve(host.syncSession?.(id)).catch(() => undefined)
+        void Promise.resolve(host.syncSession?.(id)).catch((error: unknown) => {
+          console.warn("The parent session could not be read for a subagent's title", { sessionId: id, error })
+        })
       },
       { defer: true },
     ),
@@ -1286,7 +1288,10 @@ export function MessageTimeline(props: MessageTimelineProps) {
           if (!revert || !id) return undefined
           return Promise.resolve(revert({ sessionID: id, messageID: diffSummaryRow().userMessageID }))
             .then(() => showToast({ title: host.t("ui.message.revertMessage") }))
-            .catch(() => showToast({ title: host.t("common.requestFailed"), variant: "error" }))
+            .catch((error: unknown) => {
+              console.warn("The turn could not be undone", { error })
+              showToast({ title: host.t("common.requestFailed"), variant: "error" })
+            })
         }
         return (
           <TimelineRowFrame row={diffSummaryRow}>

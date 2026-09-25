@@ -12,10 +12,6 @@ export function localPreviewUrl(output: string): string | undefined {
   const quote = output[match.index - 1]
   if (quote === '"' || quote === "'") return undefined
   const url = match[0].replace(/0\.0\.0\.0/, "127.0.0.1").replace(/[.,)]+$/, "")
-  try {
-    if (new URL(url).pathname.startsWith("/api/")) return undefined
-  } catch {
-    return undefined
-  }
+  if (!URL.canParse(url) || new URL(url).pathname.startsWith("/api/")) return undefined
   return url
 }

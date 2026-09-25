@@ -164,7 +164,8 @@ function completePatchContents(patch: string): { before: string; after: string }
     const text = (lines: Array<{ text: string; newline: boolean }>) =>
       lines.map((line) => line.text + (line.newline ? "\n" : "")).join("")
     return { before: text(before), after: text(after) }
-  } catch {
+  } catch (error) {
+    console.warn("A patch could not be split into before and after", { error })
     return undefined
   }
 }
@@ -176,7 +177,8 @@ function patchInput(file: string, patch: string): string | undefined {
     if (parsed.index || parsed.oldFileName || parsed.newFileName) return patch
     if (!parsed.hunks.length) return undefined
     return `Index: ${file}\n===================================================================\n--- ${file}\t\n+++ ${file}\t\n${patch}`
-  } catch {
+  } catch (error) {
+    console.warn("A patch could not be parsed", { file, error })
     return undefined
   }
 }

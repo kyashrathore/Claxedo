@@ -20,11 +20,7 @@ export function transcriptLinkHref(text: string | undefined): string | undefined
   if (!text) return undefined
   const candidate = text.trim().replace(trailingPunctuation, "")
   if (!linkText.test(candidate)) return undefined
-  try {
-    return new URL(candidate).toString()
-  } catch {
-    return undefined
-  }
+  return URL.canParse(candidate) ? new URL(candidate).toString() : undefined
 }
 
 /** Distinct links embedded in prose or tool output, in the order they appear. */

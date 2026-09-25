@@ -59,7 +59,8 @@ export function timelineAnchorFileHref(anchor: Element): string | undefined {
   if (!href || /^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("//") || href.startsWith("#")) return undefined
   try {
     return decodeURIComponent(href)
-  } catch {
+  } catch (error) {
+    console.warn("A link's path could not be decoded; it opens as written", { href, error })
     return href
   }
 }
@@ -91,18 +92,15 @@ export function timelineExternalSourceClickTarget(event: MouseEvent): string | u
   if (!anchor) return undefined
   const href = anchor.getAttribute("href")
   if (!href) return undefined
-  try {
-    const url = new URL(href)
-    if (url.protocol !== "http:" && url.protocol !== "https:") return undefined
-    if (
-      !target?.closest("img") &&
-      !anchor.matches('[data-slot="file-part-link"]') &&
-      !IMAGE_URL_PATH.test(url.pathname)
-    ) return undefined
-    return url.toString()
-  } catch {
-    return undefined
-  }
+  if (!URL.canParse(href)) return undefined
+  const url = new URL(href)
+  if (url.protocol !== "http:" && url.protocol !== "https:") return undefined
+  if (
+    !target?.closest("img") &&
+    !anchor.matches('[data-slot="file-part-link"]') &&
+    !IMAGE_URL_PATH.test(url.pathname)
+  ) return undefined
+  return url.toString()
 }
 
 /**
