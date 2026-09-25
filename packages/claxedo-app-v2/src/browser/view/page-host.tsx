@@ -1,10 +1,9 @@
 import { Show, onCleanup, type JSX } from "solid-js"
-import { useTranslator } from "@/i18n"
 import type { BrowserBridge, BrowserWebview } from "../bridge"
-import { dictionary } from "../i18n"
 import type { PickDelivery } from "../pick-to-composer"
 import type { BrowserTab } from "../tab"
 import { watchTheme } from "./guest-theme"
+import { WebPreview } from "./web-preview"
 import { attachWebviewEvents } from "./webview-events"
 
 const AGENT_BROWSER_PARTITION = "persist:agent-browser"
@@ -53,35 +52,5 @@ function DesktopPage(props: {
       partition={AGENT_BROWSER_PARTITION}
       class="absolute inset-0 h-full w-full"
     />
-  )
-}
-
-function WebPreview(props: { readonly tab: BrowserTab }): JSX.Element {
-  const t = useTranslator(dictionary)
-  const url = () => props.tab.state().url
-  const blocked = () => typeof location !== "undefined" && location.protocol === "https:" && url().startsWith("http:")
-  return (
-    <Show
-      when={url() && !blocked() ? url() : undefined}
-      fallback={
-        <div class="flex h-full w-full flex-col items-center justify-center gap-2 p-6 text-center text-sm text-muted-foreground">
-          <div class="font-medium text-text-base">
-            {blocked() ? t("browser.mixedContent.title") : t("browser.web.title")}
-          </div>
-          <div>{blocked() ? t("browser.mixedContent.hint") : t("browser.web.hint")}</div>
-        </div>
-      }
-    >
-      {(src) => (
-        <iframe
-          src={src()}
-          title={t("browser.preview.title")}
-          sandbox=""
-          referrerPolicy="no-referrer"
-          class="size-full border-0 bg-background-base"
-          onLoad={() => props.tab.send({ type: "loaded", url: src() })}
-        />
-      )}
-    </Show>
   )
 }

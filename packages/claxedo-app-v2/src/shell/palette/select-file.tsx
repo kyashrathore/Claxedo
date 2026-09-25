@@ -1,6 +1,6 @@
 import { createSignal, Match, onCleanup, Show, Switch, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { useClock } from "@/lib/clock"
+import { useAgeClock } from "@/lib/clock"
 import type { PlacementId } from "@/server"
 import { useDialog, ClaxedoIcon as Icon, Dialog, FileIcon, Keybind, List, getDirectory, getFilename } from "@/ui"
 import { shellDictionary } from "../i18n"
@@ -32,7 +32,7 @@ function FileRow(props: { readonly path: string }): JSX.Element {
 
 function SessionRow(props: { readonly item: PaletteEntry }): JSX.Element {
   const t = useTranslator(shellDictionary)
-  const now = useClock()
+  const now = useAgeClock(() => props.item.updated)
   const age = () => (props.item.updated ? relativeAge(props.item.updated, now()) : undefined)
   return (
     <div class="w-full flex items-center justify-between rounded-md pl-1">

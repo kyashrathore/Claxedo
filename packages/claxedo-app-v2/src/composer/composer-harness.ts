@@ -18,7 +18,6 @@ function harnessOfId(id: string): HarnessType {
   return native ? nativeHarness(native) : connectionHarness(id)
 }
 
-/** The harness, model and permission mode a composer key sends with, and the submission they make. */
 export function createComposerHarness(props: ComposerProps, key: Accessor<ComposerKey>, t: ReturnType<typeof useComposerText>) {
   const server = useServer()
   const store = useHarnessConfig()

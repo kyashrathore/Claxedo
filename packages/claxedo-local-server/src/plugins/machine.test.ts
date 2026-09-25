@@ -1,8 +1,9 @@
 import { describe, expect, test } from "vitest"
 import { initialLivePluginState, servedBundle, transitionLivePlugin, type LivePluginState } from "./machine"
 
-const first = { hash: "a".repeat(16), name: "Notes", version: "0.1.0" }
-const second = { hash: "b".repeat(16), name: "Notes", version: "0.2.0" }
+const manifest = { id: "notes", name: "Notes", version: "0.1.0", app: "./src/app.tsx", requires: [], server: { routes: [], operations: [] } }
+const first = { hash: "a".repeat(16), manifest, builtAt: "2026-09-25T10:00:00.000Z" }
+const second = { hash: "b".repeat(16), manifest: { ...manifest, version: "0.2.0" }, builtAt: "2026-09-25T10:05:00.000Z" }
 
 describe("live plugin build machine", () => {
   test("starts building with nothing served, or ready on the last good build", () => {

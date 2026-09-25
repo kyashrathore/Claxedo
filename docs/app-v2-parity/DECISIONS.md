@@ -236,3 +236,20 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - The signed desktop's merged session list reads the control plane through AccountPort: Electron main owns the credential and runs only named operations (`session.list` added to the closed set).
 - The daemon never receives the user's bearer.
 - Machine row publishing (S2) uses the machine's Host Tunnel Token, scoped to the workspaces still assigned to that host. That's a machine credential, not the user's.
+
+## Owner, 2026-09-25 19:45: no fixes to v1
+- v1 (`packages/claxedo-app` on dev) gets no fixes, including the "Too many redirects" crash in v1's route sync (`app-shell-route-sync.ts`) that the owner hit on a v1 build. v2 replaces v1 at the swap.
+
+## Orchestrator, 2026-09-25: Composer budget re-based after parity voided the frame swap
+- The plan's 5.5k Composer budget assumed swapping today's `PromptInputFrame` for upstream's `PromptInputV2` frame. The parity ruling (port v1's UI, don't restyle) voided that swap, so the composer is today's frame, moved.
+- The owner approved re-basing at 10:05 ("all good"), after the composer's no-comments triage.
+- After the triage (593 comment blocks: real constraints moved into `src/composer/README.md` under Constraints, the rest deleted), `src/composer` measured 10,147 lines. Splitting its 14 size violations by responsibility then added 835 lines of module seams (imports and prop types), to 10,982.
+- Merging feat/app-v2's hidden-pane command registration (`composer-commands.ts`) added 5 more, to 10,987.
+- The budget row is set to the measured 10,987, with no headroom, inside the owner's 11.1k; v1's composer is 12.3k.
+
+## Owner, 2026-09-25: desktop app plugins run in-app; residual accepted, users warned
+- On the desktop an app plugin runs in the app's own JavaScript, unsandboxed. It has the app's full access on this computer: it sees what the user sees, acts as the user on their server, reaches every desktop bridge (`window.api`), and can open links in the user's browser or the Browser tab that carry data out.
+- The owner accepts that residual. The desktop warning says it plainly and asks the user to turn on only app plugins they trust.
+- On the web an app plugin runs in a sandboxed frame (`sandbox="allow-scripts"`, never same-origin), reaches the server only through the host's manifest-checked calls, and the warning says so.
+- Approval is per manifest: a changed routes, operations or requires set stops the plugin until the user approves again and shows what changed; "Code changed since you approved" shows the build time.
+- Every user-visible string says "App plugins". Agent Plugins and the Marketplace keep their names.

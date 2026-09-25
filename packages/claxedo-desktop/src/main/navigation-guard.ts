@@ -67,6 +67,14 @@ export function isOpenableLinkUrl(input: string) {
   }
 }
 
+/**
+ * What the window does with a URL that is not the app document: v1 hands a safe
+ * one to the OS browser; v2 refuses it, because v2's live plugins run in this
+ * document and a plugin's `location` or `window.open` must not become a way to
+ * send data out. v2's own links leave through the `open-link` IPC instead.
+ */
+export type ExternalNavigation = "open" | "refuse"
+
 export type NavigationDecision =
   /** The app document itself — let it through. */
   | { action: "allow" }
@@ -79,9 +87,9 @@ export type NavigationDecision =
  * In-window navigation. `isTrusted` is the caller's app-document check
  * (`isTrustedMainRendererUrl`), injected so this stays electron-free.
  */
-export function navigationDecision(url: string, isTrusted: (input: string) => boolean): NavigationDecision {
+export function navigationDecision(url: string, isTrusted: (input: string) => boolean, external: ExternalNavigation): NavigationDecision {
   if (isTrusted(url)) return { action: "allow" }
-  return isSafeExternalUrl(url) ? { action: "external", url } : { action: "block", url }
+  return external === "open" && isSafeExternalUrl(url) ? { action: "external", url } : { action: "block", url }
 }
 
 /**
@@ -89,6 +97,6 @@ export function navigationDecision(url: string, isTrusted: (input: string) => bo
  * this window's webPreferences, preload included, so even a trusted-looking URL
  * gets routed rather than granted a bridge-bearing window of its own.
  */
-export function windowOpenDecision(url: string): Exclude<NavigationDecision, { action: "allow" }> {
-  return isSafeExternalUrl(url) ? { action: "external", url } : { action: "block", url }
+export function windowOpenDecision(url: string, external: ExternalNavigation): Exclude<NavigationDecision, { action: "allow" }> {
+  return external === "open" && isSafeExternalUrl(url) ? { action: "external", url } : { action: "block", url }
 }

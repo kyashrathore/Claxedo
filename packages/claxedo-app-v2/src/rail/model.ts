@@ -34,8 +34,12 @@ export function terminalNavigationStatus(item: TerminalItem): NavigationStatus {
   return status === "idle" && item.seen ? "done" : status
 }
 
+export function sessionAgeSince(row: SessionRowView): number {
+  return row.createdAt || row.updatedAt
+}
+
 export function sessionAge(row: SessionRowView, now: number): string {
-  return formatCompactAge(row.createdAt || row.updatedAt, now) ?? "<1m"
+  return formatCompactAge(sessionAgeSince(row), now) ?? "<1m"
 }
 
 export function sessionIdsByProject(refs: readonly SessionRef[]): ReadonlyMap<ProjectId, readonly SessionId[]> {

@@ -8,6 +8,7 @@ import { startDaemon, type Daemon } from "./daemon"
 import { startEgressGuard, type EgressGuard } from "./egress-guard"
 import { serveGitRemote, type GitRemote } from "./git-remote"
 import { serveLocalPages, type LocalPages } from "./local-pages"
+import { serveConnectionSink, type ConnectionSink } from "./connection-sink"
 import { claimPort, fixedDaemonPort, portFreed, portIsLeased, releasePort, reservePort } from "./ports"
 import { stopSandboxes } from "./sandboxes"
 import { startScriptedModelServer, type ScriptedModelServer } from "./scripted-model-server"
@@ -28,6 +29,7 @@ export type Stack = {
   events(directory: string, options?: EventStreamOptions): Promise<EventStream>
   gitRemote(name: string): Promise<GitRemote>
   localPages(pages: Readonly<Record<string, string>>): Promise<LocalPages>
+  connectionSink(): Promise<ConnectionSink>
   close(): Promise<void>
 }
 
@@ -110,6 +112,7 @@ export async function startStack(input: StackInput): Promise<Stack> {
     },
     gitRemote: (name) => startSideServer((port) => serveGitRemote({ root: path.join(dataDir, "git-remotes"), name, port })),
     localPages: (pages) => startSideServer((port) => serveLocalPages({ pages, port })),
+    connectionSink: () => startSideServer((port) => serveConnectionSink(port)),
     close: async () => {
       for (const stream of streams) stream.close()
       for (const { server, port } of sideServers) {

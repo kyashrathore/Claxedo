@@ -24,7 +24,6 @@ type CommandsInput = {
 
 type Register = (scope: string, options: () => CommandOption[]) => void
 
-/** The composer's palette and slash commands: choose a model, attach a file, shell and normal mode, goal. */
 export function registerComposerCommands(input: CommandsInput) {
   const commands = useCommands()
   const register: Register = (scope, options) => commands.register(scope, () => (input.hidden() ? [] : options()))

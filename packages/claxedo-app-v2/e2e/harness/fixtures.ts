@@ -2,6 +2,7 @@ import { test as base, expect, type Page, type TestInfo } from "@playwright/test
 import { ClaxedoApi } from "./api"
 import { appChoice, ensureAppBuilt, signedDistDir, type AppBuild } from "./app"
 import { launchDesktop, type Desktop } from "./desktop"
+import { recordDestinations, reportDestinations } from "./destinations"
 import { ensureDesktopBuilt, type DesktopBuild } from "./desktop-build"
 import { unexpectedEgress, type EgressAttempt } from "./egress-guard"
 import { releasePort, reservePort } from "./ports"
@@ -34,6 +35,11 @@ async function attachLogOnFailure(testInfo: TestInfo, attempts: EgressAttempt[],
 }
 
 export const test = base.extend<HarnessFixtures, HarnessWorkerFixtures>({
+  context: async ({ context }, use, testInfo) => {
+    const destinations = recordDestinations(context)
+    await use(context)
+    await reportDestinations(testInfo, destinations)
+  },
   stack: async ({}, use, testInfo) => {
     const stack = await startStack({ label: testInfo.titlePath.join(" ") })
     try {

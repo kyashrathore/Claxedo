@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, on, Show, untrack, type Accessor, type JSX } from "solid-js"
+import { createEffect, createMemo, createSignal, on, Show, untrack, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import type { SessionId } from "@/server"
 import type { SessionList, SessionRowView } from "@/session"
@@ -18,7 +18,6 @@ export type ProjectBlockProps = SessionRowMenuActions & {
   readonly active: boolean
   readonly activeSessionId: string | undefined
   readonly activeTerminalId: string | undefined
-  readonly now: Accessor<number>
   readonly list: SessionList
   readonly onSelect: (section: ProjectSection) => void
   readonly onNewTerminal: (section: ProjectSection) => void
@@ -84,7 +83,6 @@ function ProjectSessions(
         markerOf={props.markerOf}
         prepareDrag={props.prepareDrag}
         projectLabel={props.section.label}
-        now={props.now}
         onActivate={props.onActivate}
         onRename={props.onRename}
         onArchive={props.onArchive}

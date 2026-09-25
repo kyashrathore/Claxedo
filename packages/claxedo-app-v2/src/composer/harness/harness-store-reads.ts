@@ -63,9 +63,6 @@ export function harnessStoreWrites({ seed, setStore, applyPatch }: HarnessScopes
       seed(scope)
       setStore(scope, "connectionDeclaration", declaration)
     },
-    // State only. The level reaches the harness on the NEXT PROMPT via
-    // `harnessModelKeyForSubmit`'s `variant`, so there is nothing to push
-    // here — the same reason opencode's variant setter is a local write.
     setThoughtLevel: (scope: string, value: string | undefined) => applyPatch(scope, { selectedThoughtLevel: value }),
     setServiceTier: (scope: string, value: string | undefined) => applyPatch(scope, { selectedServiceTier: value }),
   }

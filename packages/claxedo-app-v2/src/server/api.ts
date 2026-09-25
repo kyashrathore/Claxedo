@@ -78,6 +78,7 @@ import type {
   TranscriptPage,
 } from "./types"
 import type { UsageRequest, UsageSummary } from "./usage-types"
+import type { LivePlugin } from "./live-plugin-types"
 
 export type SessionsApi = {
   readonly list: (input: SessionListInput) => Promise<SessionPage>
@@ -178,10 +179,14 @@ export type TasksApi = {
 }
 
 export type LivePluginsApi = {
+  readonly bundle: (pluginId: string, hash: string) => Promise<string>
   readonly remove: (pluginId: string) => Promise<void>
 }
 
 export type ServerQueries = {
+  readonly livePlugins: {
+    readonly list: () => FetchQuery<readonly LivePlugin[]>
+  }
   readonly projects: {
     readonly list: () => FetchQuery<readonly Project[]>
     readonly byId: (id: ProjectId) => FetchQuery<Project>
@@ -260,4 +265,5 @@ export type Server = {
   readonly queries: ServerQueries
   readonly attachPlacement: (id: PlacementId) => () => void
   readonly request: (path: string, init?: RequestInit) => Promise<Response>
+  readonly operation: (name: string, input: unknown) => Promise<unknown>
 }

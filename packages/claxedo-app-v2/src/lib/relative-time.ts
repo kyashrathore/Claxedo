@@ -25,6 +25,16 @@ export function formatCompactAge(ms: number, now = Date.now()): string | undefin
   return undefined
 }
 
+const MINUTE = 60_000
+const HOUR = 3_600_000
+const DAY = 86_400_000
+
+export function nextAgeChange(at: number, now: number): number {
+  const age = now - at
+  const step = age < HOUR ? MINUTE : age < DAY ? HOUR : DAY
+  return at + (Math.floor(age / step) + 1) * step
+}
+
 export function formatDateTimeMed(ms: number, locale?: string): string {
   return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(ms)
 }

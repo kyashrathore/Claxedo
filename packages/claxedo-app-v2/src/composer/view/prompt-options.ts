@@ -1,16 +1,3 @@
-// The pure option builders behind the composer's `@` and `/` popovers: given raw
-// agents, commands and documents, produce the lists a popover renders, plus the
-// grouping/ordering/active-row helpers that go with them.
-//
-// Deliberately separate from `popover-controller.ts`, which owns the LEGACY
-// reactive controller. Both composer engines — the legacy one and the v2
-// controller path — build their option lists from these functions, so the two
-// produce byte-identical lists. Keeping them here is what lets the legacy
-// controller be deleted without taking the shared builders with it.
-//
-// Nothing in this file is reactive: no Solid imports, no signals. That is the
-// point — it is all data in, data out, which is why it can be shared and tested
-// directly.
 import type { AtOption, SlashCommand } from "./slash-popover"
 
 export type PromptCommandOption = {
