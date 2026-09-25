@@ -100,6 +100,13 @@
       "import": "./dist/drivers/docker.mjs",
       "default": "./dist/drivers/docker.mjs"
     },
+    "./drivers/local-brokering": {
+      "development": "./src/drivers/local-brokering.ts",
+      "bun": "./src/drivers/local-brokering.ts",
+      "types": "./dist/drivers/local-brokering.d.ts",
+      "import": "./dist/drivers/local-brokering.mjs",
+      "default": "./dist/drivers/local-brokering.mjs"
+    },
     "./drivers/fetch-bridge": {
       "development": "./src/drivers/fetch-bridge.ts",
       "bun": "./src/drivers/fetch-bridge.ts",
@@ -180,6 +187,7 @@
     "access": "public"
   },
   "dependencies": {
+    "@claxedo/egress-broker": "workspace:*",
     "@claxedo/helpers": "workspace:*",
     "@claxedo/sandbox-contract": "workspace:*",
     "@daytona/sdk": "0.211.2",
