@@ -56,7 +56,9 @@ export async function connectAcp(input: StartInput, options: AcpConnectionOption
   } catch (error) {
     await retire()
     if (error instanceof AcpTransportError) throw error
-    throw new AcpTransportError("connection", "ACP initialization failed", error)
+    const exit = process ? await process.exited : undefined
+    throw new AcpTransportError("connection", exit?.code !== null && exit?.code !== undefined
+      ? `ACP initialization failed after process exited with code ${exit.code}` : "ACP initialization failed", error)
   }
 }
 
