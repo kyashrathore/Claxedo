@@ -1,5 +1,5 @@
 import { createMemo, type Accessor } from "solid-js"
-import { useServer, type HarnessConfigApi } from "@/server"
+import { useServer, type HarnessConfigApi, type Server } from "@/server"
 import { connectionHarness, harnessSelectionValue, nativeHarness, NATIVE_HARNESS_IDS, type NativeHarnessId } from "@/lib/harness-selection"
 import type { Submission } from "./model"
 import type { ComposerKey } from "./store"
@@ -35,7 +35,7 @@ export function createComposerHarness(props: ComposerProps, key: Accessor<Compos
     }
   })
   const selection = createMemo(() => controller.read(key()))
-  const permissionMode = permissionModeFor({ key, submit, scopeInput, selection, api: server.harnessConfig, t })
+  const permissionMode = permissionModeFor({ key, submit, scopeInput, selection, api: server.harnessConfig, queries: server.queries.harnesses, t })
   const harness = createMemo(() => {
     const type = submit.heldHarness(key()) ?? selection().harness
     return type ? server.capabilities()?.harnesses.find((info) => info.id === harnessSelectionId(type)) : undefined
@@ -66,6 +66,7 @@ function permissionModeFor(input: {
   scopeInput: Accessor<HarnessScopeInput>
   selection: Accessor<HarnessSelectionSnapshot>
   api: HarnessConfigApi
+  queries: Server["queries"]["harnesses"]
   t: ReturnType<typeof useComposerText>
 }) {
   const permissionHarness = () => {
@@ -74,6 +75,7 @@ function permissionModeFor(input: {
   }
   return createComposerPermissionSurface({
     api: input.api,
+    queries: input.queries,
     placementId: () => input.scopeInput().placementId,
     sessionRef: () => (input.submit.heldHarness(input.key()) ? undefined : input.scopeInput().sessionRef),
     harness: permissionHarness,

@@ -1,39 +1,12 @@
-import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js"
+import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { ClaxedoIcon as Icon, Button } from "@/ui"
 import type { ComposerSetup } from "../setup"
 
-export const HARNESS_HEALTH_POLL_INTERVAL_MS = 20_000
-
-export function SessionHealthPeek(props: { composer: ComposerSetup; active: () => boolean }) {
+export function SessionHealthPeek(props: { composer: ComposerSetup }) {
   const scope = () => props.composer.key()
   const readiness = createMemo(() => props.composer.harnessController.read(scope()).readiness)
-  const selectedHarness = createMemo(() => {
-    const harness = props.composer.harnessController.read(scope()).harness
-    return harness?.kind === "connection" ? `connection:${harness.connectionId}` : harness?.kind === "native" ? `native:${harness.harnessId}` : undefined
-  })
-  const turnActive = () => props.composer.working()
-  const degraded = createMemo(() => turnActive() && readiness() === "degraded")
+  const degraded = createMemo(() => props.composer.working() && readiness() === "degraded")
   const probe = () => void props.composer.harnessController.probeHealth(scope(), props.composer.harnessScopeInput())
-
-  createEffect(() => {
-    if (!props.active()) return
-    scope()
-    selectedHarness()
-    probe()
-    if (!turnActive()) return
-    const tick = () => {
-      if (document.visibilityState === "visible") probe()
-    }
-    const id = setInterval(tick, HARNESS_HEALTH_POLL_INTERVAL_MS)
-    const onVisible = () => {
-      if (document.visibilityState === "visible") probe()
-    }
-    document.addEventListener("visibilitychange", onVisible)
-    onCleanup(() => {
-      clearInterval(id)
-      document.removeEventListener("visibilitychange", onVisible)
-    })
-  })
 
   return (
     <Show when={degraded()}>

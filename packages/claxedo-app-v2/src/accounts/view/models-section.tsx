@@ -1,6 +1,6 @@
-import { createMemo, For, onMount, Show } from "solid-js"
+import { useQuery } from "@tanstack/solid-query"
+import { createMemo, For, Show } from "solid-js"
 import { createStore } from "solid-js/store"
-import { createHarnessConnectionsCatalog } from "@/composer"
 import { harnessDisplayLabel } from "@/lib/harness-catalog"
 import { connectionHarness, NATIVE_HARNESS_IDS, nativeHarness } from "@/lib/harness-selection"
 import { useServer } from "@/server"
@@ -20,10 +20,9 @@ const NATIVE: readonly ModelsHarness[] = NATIVE_HARNESS_IDS.map((id) => {
 
 function useModelsHarnesses() {
   const server = useServer()
-  const connections = createHarnessConnectionsCatalog({ api: server.harnessConfig })
-  onMount(() => void connections.refresh())
+  const connections = useQuery(() => server.queries.agentConnections.list())
   return createMemo((): readonly ModelsHarness[] => {
-    const catalog = connections.data()
+    const catalog = connections.data
     const enabled = catalog?.status === "supported" ? catalog.connections.filter((row) => row.enabled) : []
     return [...NATIVE, ...enabled.map((row): ModelsHarness => ({ slug: `connection:${row.connectionId}`, label: row.label, selection: connectionHarness(row.connectionId), kind: "connection" }))]
   })

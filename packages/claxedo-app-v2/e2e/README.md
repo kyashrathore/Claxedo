@@ -144,7 +144,7 @@ Script steps (`AcpStep`):
 | `{ kind: "permission", tool, title, path?, input?, text? }` | a pending tool call plus `session/request_permission`; allowed → completed, rejected → failed, cancelled → the turn stops |
 | `{ kind: "question", message, options? }` | `elicitation/create` (a question); the answer is echoed as text |
 | `{ kind: "subagent", name, task, steps }` | `subagent_spawned`, the inner steps under the child session, then `subagent_state_update: completed` |
-| `{ kind: "hold", name }` | Waits until `stack.acp.release(name)` |
+| `{ kind: "hold", name, ignoresCancel? }` | Waits until `stack.acp.release(name)`; a Stop ends the wait unless `ignoresCancel`, which plays an agent that never acknowledges a cancel |
 | `{ kind: "error", message }` | Fails the prompt with a JSON-RPC error (a turn error) |
 | `{ kind: "stop", reason }` | Ends the turn with that `StopReason` |
 
@@ -200,11 +200,18 @@ Moving `HOME` hides the login keychain from the `security` tool (it answers 44),
 
 ### v1 known bugs (flow 31)
 
-Flow 31 is v2's gate for the session list's races. On `--app=v1` it reads v1's rail through the same hooks, and four of its seven cases fail on bugs v1 has; v2 should pass all seven:
+Flow 31 is v2's gate for the session list's races. On `--app=v1` it reads v1's rail through the same hooks, and four of its eight cases fail on bugs v1 has; v2 should pass all eight:
 - **A delete lands during a fetch:** a row deleted while its page's read is held comes back when that page lands.
 - **A session is archived while a turn runs:** the archived session stays in the rail while it works.
 - **A thousand sessions:** a row loaded by paging shows no Working mark while the server reports it working.
 - **The app reconnects after missed events:** a session deleted while the streams were held stays listed, and one retitled then keeps its old title.
+
+### v1 differences (flows 4 and 12)
+
+Three cases run on v2 only; each records what v1 does instead:
+- **An agent that ignores Stop (flow 4):** v1 ends the turn at Stop and gates Send as "The selected agent is unavailable", so it never shows "The agent stopped responding".
+- **A killed agent (flow 4):** v1 keeps showing "Connected" after the agent's process dies.
+- **A read budget (flow 12):** v1 reads the agent connections, the harness options and the transcript twice when a session opens.
 
 ### `desktop` (the Electron app)
 
@@ -266,8 +273,8 @@ e2e/
     app.ts               --app selection and the dist-e2e build
     scripted-model-*.ts  the scripted model endpoint (chat, messages, responses dialects)
     installed-cli.ts     Claude / Codex CLI detection
-    acp/                 the scripted ACP agent: script.ts (types), turn.ts (steps), agent.ts (the process)
+    acp/                 the scripted ACP agent: script.ts (types), turn.ts (steps), agent.ts (the process), agent-process.ts (its PIDs under a stack's daemon)
     ports.ts, process.ts, health.ts
   parity/                bun run e2e:parity: v1 and v2 side by side (origin, seed, screens, settle, compare, report)
-  probes/                one-off probes (P0.7 harness status), not collected as flows
+  probes/                one-off probes (P0.7 harness status, harness health after a killed agent), not collected as flows
 ```

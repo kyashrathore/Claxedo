@@ -501,7 +501,7 @@ At 19:08 the owner said: finish in-progress work; start no new work.
 
 ## Next steps, in order
 
-0. **Plugins by asking any session** (DECISIONS "Owner, 2026-09-25 12:55"): authoring moves from the `claxedo plugin` CLI to three Claxedo MCP tools (`plugin.create`, `plugin.add`, `plugin.check`), and the skill reaches every harness. Queued after the performance audit.
+0. **Plugins by asking any session** (DECISIONS "Owner, 2026-09-25 12:55"): authoring moves from the `claxedo plugin` CLI to three Claxedo MCP tools (`plugin.create`, `plugin.add`, `plugin.check`), and the skill reaches every harness. Queued after the performance audit. The follow-up design, where plugin UI is A2UI JSON drawn with the app's own components and plugin logic runs sandboxed on every platform, is `docs/plans/2026-09-25-001-app-plugins-declarative-ui-plan.md`. For now app plugins stay as they are: sandboxed frame on the web, in-app on desktop with the user warned.
 1. **Owner:** test 4480 against 4481. Each difference becomes an inventory row or a DECISIONS line.
 2. **Owner:** sign off `v2/stream-slice`, exp-stream's five transcript fixes (see [Streaming at 60 Hz](#streaming-at-60-hz-exp-stream-2026-09-25)). Then merge it and run the whole corpus.
 3. **The seven panel rows that go to v1:**

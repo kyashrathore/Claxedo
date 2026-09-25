@@ -3,6 +3,8 @@ import type { QueryClient } from "@tanstack/solid-query"
 import type { Account, AccountCheck, EffectiveAccounts, MachineLogin } from "./account-types"
 import type { CloudCreateInput, CloudWorkspace, CodeHostConnection, CodeHostRepository } from "./cloud-types"
 import type { HarnessLogin, HarnessOptions } from "./harness-types"
+import type { PermissionModesRequest } from "./permission-modes"
+import type { PermissionModeState } from "./wire/permission-modes"
 import type { ConnectionState, ServerEvent } from "./events"
 import type { AgentConnectionsApi, AgentConnectionsQueries } from "./agent-connections"
 import type { IntegrationQueries, IntegrationsApi } from "./integrations"
@@ -221,6 +223,7 @@ export type ServerQueries = {
   readonly providerCatalogs: ProviderCatalogQueries
   readonly harnesses: {
     readonly options: (placementId: PlacementId, harness: string) => FetchQuery<HarnessOptions>
+    readonly permissionModes: (request: PermissionModesRequest) => FetchQuery<PermissionModeState>
     readonly logins: () => FetchQuery<readonly HarnessLogin[]>
   }
   readonly files: {

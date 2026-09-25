@@ -129,7 +129,7 @@ const ROUTE_RULES = [
   exact(["/experimental/session"], RouteDomain.AgentSessionRuntime, runtime),
   prefix(["/experimental"], RouteDomain.ClaxedoControlPlane, central),
   prefix(["/api/wr/hook"], RouteDomain.SandboxRuntime, runtime),
-  exact(["/api/wr/events"], RouteDomain.SandboxRuntime, runtime),
+  exact(["/api/wr/events", "/api/wr/session-activity"], RouteDomain.SandboxRuntime, runtime),
   exact(["/api/wr/health", "/api/wr/capabilities"], RouteDomain.SandboxRuntime, runtime),
   exact(
     ["/api/wr/config", "/api/wr/harness-config-options"],

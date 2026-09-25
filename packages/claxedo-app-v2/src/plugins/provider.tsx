@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/solid-query"
 import { createContext, createEffect, on, onCleanup, useContext, type Accessor, type JSX } from "solid-js"
-import type { PluginPlatform } from "@claxedo/plugin-api"
+import type { PluginCapability, PluginPlatform } from "@claxedo/plugin-api"
 import { useI18n } from "@/i18n"
 import { useServer } from "@/server"
 import { useSessionStores } from "@/session"
@@ -96,15 +96,25 @@ function useLiveApprovals(host: PluginHost, services: HostServices): (pluginId: 
   return request
 }
 
+function useOfferedCapabilities(services: HostServices, required: Accessor<ReadonlySet<PluginCapability>>) {
+  const tasks = useQuery(() => ({ ...services.server.queries.tasks.availability(), enabled: required().has("tasks") }))
+  const offered: Record<PluginCapability, () => boolean> = {
+    documents: () => services.server.capabilities()?.features.documents === true,
+    tasks: () => tasks.data?.kind === "available",
+  }
+  return (capability: PluginCapability) => offered[capability]()
+}
+
 export function PluginHostProvider(props: { readonly scope: string; readonly children: JSX.Element }): JSX.Element {
   const services = useHostServices()
   onCleanup(services.i18n.add(dictionary))
   const host = createPluginHost({
     preferences: createPluginPreferences(props.scope, safeModeRequested(window.location.search)),
-    features: () => services.server.capabilities()?.features,
+    offered: (capability) => offered(capability),
     activate: createActivate(services),
     removeLive: services.calls.removeLive,
   })
+  const offered = useOfferedCapabilities(services, host.required)
   for (const build of bundledPlugins()) host.put(build)
   onCleanup(host.dispose)
   const value: PluginsContext = {

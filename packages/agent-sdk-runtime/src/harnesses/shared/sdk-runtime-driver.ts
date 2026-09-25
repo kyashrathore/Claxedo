@@ -98,6 +98,7 @@ export type SdkRuntimeDriverHost = {
   pendingPermissions: Map<string, PendingPermission>
   pendingQuestions: Map<string, PendingQuestion>
   processObserver?: AgentProcessObserver
+  reportHealthChanged?: () => void
   transcriptRegistrar?: SdkRuntimeTranscriptRegistrar
   bindSession(input: { sessionId: string; directory: string; title?: string; agentSessionId: string }): void
   getAgentSessionId(sessionId: string): string | null | undefined

@@ -248,11 +248,16 @@ export abstract class AcpProcessManager {
       if (options?.dispose !== false) fencedRetirement(target.dispose(message))
     }
     if (options?.recover === false) return
+    this.markInterrupted(key, entry?.sessionIds ?? [], message)
+    this.options.reportHealthChanged?.()
+  }
+
+  private markInterrupted(key: ACPProcessKey, sessionIds: Iterable<string>, message: string) {
     if (this.store.markSessionsInterruptedByOwner) {
       this.store.markSessionsInterruptedByOwner(key, message)
       return
     }
-    for (const sessionId of entry?.sessionIds ?? []) {
+    for (const sessionId of sessionIds) {
       if (this.store.getSession?.(sessionId)) this.store.markSessionInterrupted?.(sessionId, message)
     }
   }
@@ -329,7 +334,7 @@ export abstract class AcpProcessManager {
     const launch = { args: this.processArgs(), env: this.currentEnv }
     const ownerId = `acp-${role}:${randomUUID()}`
     const launchId = randomUUID()
-    this.observedConnections ??= createACPConnectionObservations()
+    this.observedConnections ??= createACPConnectionObservations(() => this.options.reportHealthChanged?.())
     const update = this.observedConnections.begin(key, directory, role === "harness" ? "execution" : "discovery")
     try {
       const proc = new ACPProcess(

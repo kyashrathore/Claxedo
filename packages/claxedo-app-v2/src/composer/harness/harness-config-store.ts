@@ -1,15 +1,17 @@
+import { onCleanup } from "solid-js"
 import type { Server } from "@/server"
+import { sessionComposerKey } from "../store"
 import { createConfigOptionsProbe } from "./config-options-probe"
 import type { DraftDefaultStorage } from "./draft-defaults"
 import { createHarnessStore } from "./harness-store"
 import { harnessOptionsReads, harnessSelectionReads } from "./harness-store-reads"
 import { rememberDraftModel, resolveCurrentDraftDefault, wireHydrator, wireModelWriter, wireOptionsLoader, wireSwitcher, type FetchConfigOptions, type HarnessWiring } from "./harness-wiring"
 import { createScopeCaches } from "./scope-caches"
-import { commitHeldHarness, probeHarnessHealth } from "./session-harness"
+import { applyPushedHarnessHealth, commitHeldHarness, probeHarnessHealth } from "./session-harness"
 
 export function createHarnessConfigStore(server: Server, storage: DraftDefaultStorage) {
   const store = createHarnessStore(storage)
-  const wiring: HarnessWiring = { server, api: server.harnessConfig, store, caches: createScopeCaches(), hasConfigOptions: createConfigOptionsProbe(server.harnessConfig) }
+  const wiring: HarnessWiring = { server, api: server.harnessConfig, store, caches: createScopeCaches(), hasConfigOptions: createConfigOptionsProbe(server) }
   const optionsLoader = wireOptionsLoader(wiring)
   // A held pick's options are the picked harness's, which only the
   // placement-scoped read answers: the session read serves the harness the
@@ -19,6 +21,12 @@ export function createHarnessConfigStore(server: Server, storage: DraftDefaultSt
   const hydrator = wireHydrator(wiring, fetchConfigOptions)
   const modelWriter = wireModelWriter(wiring, fetchConfigOptions)
   const switcher = wireSwitcher(wiring, fetchConfigOptions)
+  onCleanup(
+    server.subscribe((event) => {
+      if (event.type !== "harnessHealthChanged") return
+      applyPushedHarnessHealth(wiring, sessionComposerKey(event.ref), { harnessHealth: event.health, connectionState: event.connectionState })
+    }),
+  )
   return {
     hydrate: hydrator.hydrate,
     reprobe: hydrator.reprobe,

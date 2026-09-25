@@ -179,11 +179,13 @@ export const localServer: Policy = {
   //    bundle, serves it and announces changes, so the app on this machine
   //    loads them without a release. Clone destination admission (`node:dns`)
   //    moved with the projects route into server-core's projects module.
-  //    73/30, no headroom.
-  //  - `plugins/source.ts` (owner: the daemon's live plugins): the machine
-  //    owner reads a plugin's files before approving it, without leaving the
-  //    registered folder. Node builtins only, so no package edge. 74/30, no
-  //    headroom.
+  //  - `workspace/runtime-dispatch/session-activity.ts` (owner: the runtime
+  //    dispatcher): the one status read across workspaces. Only the daemon
+  //    hosts every local runtime in-process, so it answers each workspace's
+  //    status, permissions and questions through that workspace's own
+  //    dispatch; it reaches `internals.ts` and the workspace store, both
+  //    already here.
+  //    74/30, no headroom.
   ceilings: { modules: 74, packages: 30 },
 
   emitted: {

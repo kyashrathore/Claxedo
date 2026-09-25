@@ -22,7 +22,6 @@ import { createRowViewCache, UNKNOWN_STATUS, visibleRows } from "./visible-rows"
 
 export type SessionListInternal = SessionList & {
   readonly start: () => void
-  readonly rowOf: (sessionId: SessionId) => SessionRow | undefined
   readonly statusOf: (sessionId: SessionId) => SessionStatusView
   readonly apply: (event: ServerEvent) => void
   readonly readRow: (row: SessionRow) => void

@@ -15,7 +15,7 @@ import {
  * refusal is repeated, which is what keeps one failed retirement from refusing
  * every later session for the life of the driver.
  */
-export function createLaunchRetention() {
+export function createLaunchRetention(onChange: () => void = () => {}) {
   let held: { identity: CreationIdentity; result: RetirementResult } | undefined
 
   const refusal = (result: RetirementResult) => new RecoveryCodedError(
@@ -26,6 +26,7 @@ export function createLaunchRetention() {
   return {
     hold(identity: CreationIdentity, result: RetirementResult) {
       held = { identity, result }
+      onChange()
     },
 
     /** The refusal as it stands, without re-reading the recorded process. */
@@ -43,6 +44,7 @@ export function createLaunchRetention() {
       const verdict = await verifyCreationIdentity(held.identity)
       if (verdict.state !== "exited" && verdict.state !== "identity_mismatch") return refusal(held.result)
       held = undefined
+      onChange()
       return undefined
     },
   }
