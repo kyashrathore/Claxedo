@@ -1,8 +1,6 @@
 import type { HarnessState, PlacementId, PlacementKind, SessionConfig, SessionRef } from "@/server"
 import { harnessHasConfigOptions, type HarnessType } from "./profile"
 
-export const MODEL_OPTIONS_RETRY_LIMIT = 5
-
 export type HarnessScopeInput = {
   placementId?: PlacementId
   sessionId?: string
@@ -16,14 +14,6 @@ export function shouldShowModelOptionsStaleWarning(input: {
   models: readonly { id: string; name: string }[] | null | undefined
 }) {
   return input.stale && (input.models?.length ?? 0) === 0
-}
-
-export function shouldRetryModelOptions(input: {
-  stale: boolean
-  tries: number
-  limit?: number
-}) {
-  return input.stale && input.tries < (input.limit ?? MODEL_OPTIONS_RETRY_LIMIT)
 }
 
 export function modelOptionsUnavailableMessage(input: {

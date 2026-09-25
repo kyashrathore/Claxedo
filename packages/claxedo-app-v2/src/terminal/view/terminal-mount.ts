@@ -7,6 +7,7 @@ import { attachTerminal, type Attachment } from "../attach"
 import { type TerminalConnection, type TerminalConnectionEvent, type TerminalRow } from "../model"
 import { isLikelyTui } from "../resize"
 import { monoFontFamily, observeTheme, terminalColors } from "./terminal-colors"
+import { openExternal } from "@/lib/external-link"
 
 export type TerminalMountInput = {
   readonly host: HTMLDivElement
@@ -41,7 +42,7 @@ function backendOptions(input: TerminalMountInput, likelyAgent: boolean): Termin
     screenReaderMode: input.screenReaderMode(),
     renderers: input.renderers,
     image: likelyAgent ? "paste" : "path",
-    onUrlClick: (_event, url) => window.open(url, "_blank", "noopener,noreferrer"),
+    onUrlClick: (_event, url) => openExternal(url),
     onFileLinkClick: (path, line, col) => {
       const target = resolveWorkspaceFileFocus(path, input.row()?.cwd ?? "")
       if (target) input.openFile({ path: target.path, line: line ?? target.line, col: col ?? target.col })

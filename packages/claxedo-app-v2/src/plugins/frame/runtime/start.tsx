@@ -1,6 +1,8 @@
 import { ErrorBoundary, type JSX } from "solid-js"
 import { render } from "solid-js/web"
 import type { PluginDefinition } from "@claxedo/plugin-api"
+import type { Translations } from "@/i18n"
+import { moduleDictionary } from "../../dictionary"
 import { failureReason } from "../../failure"
 import type { FoundMention, FrameBoot, FrameInvoke, RenderTarget } from "../protocol"
 import { createFrameApi, type FrameEntries } from "./api"
@@ -17,12 +19,12 @@ function applyDocument(boot: FrameBoot): void {
   html.style.colorScheme = boot.theme.colorScheme
 }
 
-async function importPlugin(code: string): Promise<PluginDefinition> {
+async function importPlugin(code: string): Promise<{ readonly definition: PluginDefinition; readonly dictionary?: Translations }> {
   const url = URL.createObjectURL(new Blob([code], { type: "text/javascript" }))
   try {
     const module = (await import(/* @vite-ignore */ url)) as { readonly default?: PluginDefinition }
     if (typeof module.default?.activate !== "function") throw new Error("the bundle's default export is not definePlugin(...)")
-    return module.default
+    return { definition: module.default, dictionary: moduleDictionary(module) }
   } finally {
     URL.revokeObjectURL(url)
   }
@@ -76,8 +78,8 @@ export async function startFrame(port: MessagePort, boot: FrameBoot): Promise<vo
   const entries = emptyEntries()
   const name = boot.context.pluginId
   try {
-    const definition = await importPlugin(boot.code)
-    const api = createFrameApi({ link, context: boot.context, entries, forward: !boot.target, signal: new AbortController().signal })
+    const { definition, dictionary } = await importPlugin(boot.code)
+    const api = createFrameApi({ link, context: boot.context, entries, dictionary, forward: !boot.target, signal: new AbortController().signal })
     await definition.activate(api)
     if (!boot.target) {
       link.onInvoke((invoke) => answer(entries, invoke))

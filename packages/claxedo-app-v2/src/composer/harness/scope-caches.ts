@@ -17,7 +17,6 @@ function pendingSlots<Value>() {
 
 function optionsCache(): HarnessOptionsLoaderCache {
   const seq = new Map<string, number>()
-  const tries = new Map<string, number>()
   return {
     nextSeq: (scope) => {
       const next = (seq.get(scope) ?? 0) + 1
@@ -25,9 +24,6 @@ function optionsCache(): HarnessOptionsLoaderCache {
       return next
     },
     getSeq: (scope) => seq.get(scope),
-    getTries: (scope) => tries.get(scope),
-    setTries: (scope, value) => void tries.set(scope, value),
-    clearTries: (scope) => void tries.delete(scope),
   }
 }
 
@@ -66,7 +62,6 @@ export function createScopeCaches() {
     getPending: switches.get,
     setPending: switches.set,
     removePending: switches.remove,
-    clearOptionsTries: (scope) => options.clearTries(scope),
   }
   return { options, hydrator: hydratorCache(), switcher, sessionModel: sessionModelCache() }
 }

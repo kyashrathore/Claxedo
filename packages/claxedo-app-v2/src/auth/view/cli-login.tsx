@@ -1,6 +1,7 @@
 import { useLocation } from "@solidjs/router"
 import { createEffect, createSignal, Show } from "solid-js"
-import { cliToken, localCallback, postToken, userIdentity } from "../cli-login-token"
+import { handOffCliCallback, localCallback } from "../cli-callback"
+import { cliCallbackFields, cliToken, userIdentity } from "../cli-login-token"
 import { useAuth } from "../provider"
 import "./auth.css"
 
@@ -17,8 +18,7 @@ export function CliLoginPage() {
     const token = await auth.token({ skipCache: true })
     if (!token) throw new Error("No signed Claxedo session is available.")
     const exchanged = await cliToken(token)
-    postToken({
-      callback,
+    const fields = cliCallbackFields({
       state,
       accessToken: exchanged.accessToken,
       refreshToken: exchanged.refreshToken,
@@ -26,6 +26,7 @@ export function CliLoginPage() {
       expiresIn: exchanged.expiresIn,
       identity: userIdentity(auth.user()),
     })
+    handOffCliCallback({ callback, fields }, (path) => window.location.assign(path))
   }
 
   createEffect(() => {
