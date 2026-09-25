@@ -7,7 +7,7 @@ import { waitForHealth } from "./health"
 import { isolatedEnv } from "./isolated-env"
 import { REPO_ROOT, SERVER_DIR, TSX_LOADER } from "./node-loader"
 import { writeScriptedModelCatalog } from "./model-catalog"
-import { captureOutput, stopProcess, type OwnedProcess } from "./process"
+import { captureOutput, exited, stopProcess, type OwnedProcess } from "./process"
 import type { ScriptedModelServer } from "./scripted-model-server"
 import { prepareScriptedServer } from "./scripted-world"
 import { directTransport } from "./transport"
@@ -35,6 +35,7 @@ export type Daemon = {
   log: () => string
   makeWorkspace: (name: string, projectName?: string) => Promise<Workspace>
   restart: (options?: { signed?: SignedDaemon }) => Promise<void>
+  killAndRestart: () => Promise<void>
   close: () => Promise<void>
 }
 
@@ -131,6 +132,12 @@ export async function startDaemon(input: DaemonInput): Promise<Daemon> {
       if (options.signed) env = { ...env, ...signedEnv(options.signed) }
       owned = launchDaemon(runtime, env, input.dataDir)
       await health(options.signed ? "signed daemon" : "restarted daemon")
+    },
+    killAndRestart: async () => {
+      owned.child.kill("SIGKILL")
+      await exited(owned.child)
+      owned = launchDaemon(runtime, env, input.dataDir)
+      await health("restarted daemon after kill")
     },
     close: () => stopProcess(owned.child),
   }

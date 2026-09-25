@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
 import { randomUUID } from "node:crypto"
+import fs from "node:fs"
+import path from "node:path"
 import { Readable, Writable } from "node:stream"
 import {
   AgentSideConnection,
@@ -20,6 +22,7 @@ import { playScript } from "./turn"
 
 const scriptDir = process.env[ACP_SCRIPT_DIR_ENV]
 if (!scriptDir) throw new Error(`${ACP_SCRIPT_DIR_ENV} is not set`)
+fs.writeFileSync(path.join(scriptDir, "agent.pid"), String(process.pid))
 const red = process.env[ACP_RED_ENV] === "1"
 
 function promptText(prompt: ContentBlock[]) {
@@ -53,7 +56,7 @@ class ScriptedAgent implements Agent {
   initialize(): InitializeResponse {
     return {
       protocolVersion: PROTOCOL_VERSION,
-      agentCapabilities: { loadSession: false, promptCapabilities: { image: true, embeddedContext: true } },
+      agentCapabilities: { loadSession: true, promptCapabilities: { image: true, embeddedContext: true } },
       authMethods: [],
       _meta: { jetbrains: { air: { version: 1, capabilities: ["nativeSubagentSessions"] } } },
     }
@@ -64,6 +67,10 @@ class ScriptedAgent implements Agent {
       sessionId: `scripted-${randomUUID()}`,
       modes: { currentModeId: "default", availableModes: [{ id: "default", name: "Default", description: "Scripted replies" }] },
     }
+  }
+
+  loadSession() {
+    return { modes: { currentModeId: "default", availableModes: [{ id: "default", name: "Default", description: "Scripted replies" }] } }
   }
 
   authenticate() {

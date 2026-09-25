@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import fs from "node:fs"
 import { RequestError, type AgentSideConnection, type PromptResponse, type SessionNotification } from "@agentclientprotocol/sdk"
 import { asString } from "@claxedo/helpers/guards"
-import { holdReleaseFile, type AcpScript, type AcpStep, type AcpToolStep } from "./script"
+import { holdEnteredFile, holdReleaseFile, type AcpScript, type AcpStep, type AcpToolStep } from "./script"
 
 export type TurnContext = {
   connection: AgentSideConnection
@@ -135,6 +135,7 @@ async function playSubagent(context: TurnContext, step: Extract<AcpStep, { kind:
 
 async function hold(context: TurnContext, name: string) {
   const file = holdReleaseFile(context.scriptDir, name)
+  fs.writeFileSync(holdEnteredFile(context.scriptDir, name), "entered")
   while (!context.signal.aborted) {
     if (fs.existsSync(file)) return
     await new Promise((resolve) => setTimeout(resolve, 50))
