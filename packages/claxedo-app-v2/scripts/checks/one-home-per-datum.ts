@@ -1,7 +1,9 @@
-import { codeExtensions, listFiles, parseArgs, under } from "./lib/files"
+import { readFileSync } from "node:fs"
+import { moduleStateExceptions } from "./data/module-state-exceptions"
+import { codeExtensions, listFiles, parseArgs, rel, under } from "./lib/files"
 import { importsOf, readSource, startLine, ts } from "./lib/parse"
 import { finish, type Violation } from "./lib/report"
-import { calleeName, isTopLevel, literalText, unwrap, walk } from "./lib/tree"
+import { calleeName, hasExportModifier, isTopLevel, literalText, unwrap, walk } from "./lib/tree"
 
 const pushedData = new Set([
   "session",
@@ -27,11 +29,16 @@ const retiredPackages = [/^@tanstack\/ai(-|\/|$)/, /^@solid-primitives\/event-bu
 const cacheWriters = new Set(["setQueryData", "setQueriesData"])
 const mutableContainers = new Set(["Map", "Set", "WeakMap", "WeakSet"])
 const stateFactories = new Set(["createSignal", "createStore", "createMutable", "createResource"])
+const mutators = ["add", "set", "delete", "clear"]
+
+type ModuleState = { readonly binding: string; readonly message: string }
 
 function main(): never {
   const { root } = parseArgs(process.argv.slice(2))
   const files = listFiles(root, ["src", "plugins"], codeExtensions)
   const violations: Violation[] = []
+  const used = new Set<string>()
+  const mutatedExports = exportedMutations(files)
   for (const file of files) {
     const { sf } = readSource(file)
     const inServer = under(root, file, "src/server")
@@ -40,10 +47,18 @@ function main(): never {
       violations.push({ file, line: startLine(node, sf), message: `imports ${specifier}; pushed data lives in the domain's Solid store` })
     }
     walk(sf, (node) => {
-      for (const message of [cacheWrite(node, inServer), queryKey(node, inServer), moduleState(node)]) {
+      for (const message of [cacheWrite(node, inServer), queryKey(node, inServer)]) {
         if (message) violations.push({ file, line: startLine(node, sf), message })
       }
+      for (const state of moduleState(node, sf, mutatedExports)) {
+        const exception = namedException(rel(root, file), state.binding)
+        if (exception) used.add(exception)
+        else violations.push({ file, line: startLine(node, sf), message: state.message })
+      }
     })
+  }
+  for (const { file, binding } of moduleStateExceptions) {
+    if (!used.has(`${file}#${binding}`)) violations.push({ file, line: 1, message: `named module-state exception ${binding} matches nothing; remove it from data/module-state-exceptions.ts` })
   }
   finish("one-home-per-datum", root, violations, files.length)
 }
@@ -72,15 +87,53 @@ function keySubject(array: ts.ArrayLiteralExpression): string | undefined {
   return undefined
 }
 
-function moduleState(node: ts.Node): string | undefined {
-  if (!ts.isVariableStatement(node) || !isTopLevel(node)) return undefined
+function namedException(file: string, binding: string): string | undefined {
+  const hit = moduleStateExceptions.find((exception) => exception.file === file && exception.binding === binding)
+  return hit ? `${hit.file}#${hit.binding}` : undefined
+}
+
+function moduleState(node: ts.Node, sf: ts.SourceFile, mutatedExports: ReadonlySet<string>): ModuleState[] {
+  if (!ts.isVariableStatement(node) || !isTopLevel(node)) return []
   const mutable = (node.declarationList.flags & (ts.NodeFlags.Const | ts.NodeFlags.Using)) === 0
-  if (mutable) return "module-level let or var; state lives in a store owned by a provider"
+  const states: ModuleState[] = []
   for (const declaration of node.declarationList.declarations) {
-    const reason = declaration.initializer ? mutableInitializer(unwrap(declaration.initializer)) : undefined
-    if (reason) return reason
+    const binding = ts.isIdentifier(declaration.name) ? declaration.name.text : declaration.name.getText(sf)
+    if (mutable) {
+      states.push({ binding, message: "module-level let or var; state lives in a store owned by a provider" })
+      continue
+    }
+    const initializer = declaration.initializer ? unwrap(declaration.initializer) : undefined
+    if (!initializer) continue
+    const exported = hasExportModifier(node)
+    if (isConstantCollection(initializer) && !mutatedIn(sf, binding) && !(exported && mutatedExports.has(binding))) continue
+    const message = mutableInitializer(initializer)
+    if (message) states.push({ binding, message })
   }
-  return undefined
+  return states
+}
+
+function isConstantCollection(expression: ts.Expression): boolean {
+  if (!ts.isNewExpression(expression) || !ts.isIdentifier(expression.expression)) return false
+  if (expression.expression.text !== "Set" && expression.expression.text !== "Map") return false
+  const args = expression.arguments ?? []
+  return args.length === 0 || (args.length === 1 && ts.isArrayLiteralExpression(unwrap(args[0]!)))
+}
+
+function mutatedIn(sf: ts.SourceFile, binding: string): boolean {
+  let mutated = false
+  walk(sf, (node) => {
+    if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression)) return
+    const target = unwrap(node.expression.expression)
+    if (ts.isIdentifier(target) && target.text === binding && mutators.includes(node.expression.name.text)) mutated = true
+  })
+  return mutated
+}
+
+function exportedMutations(files: readonly string[]): Set<string> {
+  const pattern = new RegExp(`\\b([A-Za-z_$][\\w$]*)\\s*\\??\\.\\s*(${mutators.join("|")})\\s*\\(`, "g")
+  const names = new Set<string>()
+  for (const file of files) for (const match of readFileSync(file, "utf8").matchAll(pattern)) if (match[1]) names.add(match[1])
+  return names
 }
 
 function mutableInitializer(expression: ts.Expression): string | undefined {
