@@ -4,41 +4,41 @@ import type { SessionErrorClass } from "./turn-recovery"
 import type { SummaryDiff } from "./message-timeline.data"
 
 export type TimelineRowMap = {
-  PreviousMessages: { userMessageID: string; count: number }
-  TurnGap: { userMessageID: string }
+  PreviousMessages: { userMessageId: string; count: number }
+  TurnGap: { userMessageId: string }
   CommentStrip: {
-    userMessageID: string
+    userMessageId: string
   }
   UserMessage: {
-    userMessageID: string
+    userMessageId: string
     anchor: boolean
   }
   TurnDivider: {
-    userMessageID: string
+    userMessageId: string
     label: "compaction" | "handoff" | "interrupted"
     harness?: string
     durationMs?: number
   }
   AssistantPart: {
-    userMessageID: string
+    userMessageId: string
     group: PartGroup
     previousAssistantPart: boolean
     lastAssistantPart: boolean
   }
-  Thinking: { userMessageID: string; reasoningHeading?: string }
-  Retry: { userMessageID: string }
-  TurnLoading: { userMessageID: string }
+  Thinking: { userMessageId: string; reasoningHeading?: string }
+  Retry: { userMessageId: string }
+  TurnLoading: { userMessageId: string }
   TurnFold: {
-    userMessageID: string
+    userMessageId: string
     durationMs?: number
     foldCount: number
     folded: boolean
     tokens?: number
     cost?: number
   }
-  DiffSummary: { userMessageID: string; diffs: SummaryDiff[] }
+  DiffSummary: { userMessageId: string; diffs: SummaryDiff[] }
   Error: {
-    userMessageID: string
+    userMessageId: string
     text: string
     presentation?: "turn-conflict"
     summary?: string
@@ -53,13 +53,13 @@ function taggedRow<Tag extends string, Fields extends object>(tag: Tag) {
   return (fields: Fields): TaggedRow<Tag, Fields> => ({ ...fields, _tag: tag })
 }
 
-function samePartRef(a: { messageID: string; partID: string }, b: { messageID: string; partID: string }) {
-  return a.messageID === b.messageID && a.partID === b.partID
+function samePartRef(a: { messageId: string; partId: string }, b: { messageId: string; partId: string }) {
+  return a.messageId === b.messageId && a.partId === b.partId
 }
 
 function samePartRefs(
-  a: ReadonlyArray<{ messageID: string; partID: string }>,
-  b: ReadonlyArray<{ messageID: string; partID: string }>,
+  a: ReadonlyArray<{ messageId: string; partId: string }>,
+  b: ReadonlyArray<{ messageId: string; partId: string }>,
 ) {
   return a.length === b.length && a.every((ref, index) => samePartRef(ref, b[index]))
 }
@@ -132,29 +132,29 @@ export namespace TimelineRow {
   export const key = (row: TimelineRow) => {
     switch (row._tag) {
       case "PreviousMessages":
-        return `previous-messages:${row.userMessageID}`
+        return `previous-messages:${row.userMessageId}`
       case "TurnGap":
-        return `turn-gap:${row.userMessageID}`
+        return `turn-gap:${row.userMessageId}`
       case "CommentStrip":
-        return `comment-strip:${row.userMessageID}`
+        return `comment-strip:${row.userMessageId}`
       case "UserMessage":
-        return `user-message:${row.userMessageID}`
+        return `user-message:${row.userMessageId}`
       case "TurnDivider":
-        return `turn-divider:${row.userMessageID}:${row.label}`
+        return `turn-divider:${row.userMessageId}:${row.label}`
       case "AssistantPart":
-        return `assistant-part:${row.userMessageID}:${row.group.key}`
+        return `assistant-part:${row.userMessageId}:${row.group.key}`
       case "Thinking":
-        return `thinking:${row.userMessageID}`
+        return `thinking:${row.userMessageId}`
       case "DiffSummary":
-        return `diff-summary:${row.userMessageID}`
+        return `diff-summary:${row.userMessageId}`
       case "Error":
-        return `error:${row.userMessageID}`
+        return `error:${row.userMessageId}`
       case "Retry":
-        return `retry:${row.userMessageID}`
+        return `retry:${row.userMessageId}`
       case "TurnLoading":
-        return `turn-loading:${row.userMessageID}`
+        return `turn-loading:${row.userMessageId}`
       case "TurnFold":
-        return `turn-fold:${row.userMessageID}`
+        return `turn-fold:${row.userMessageId}`
       default: {
         const exhaustive: never = row
         return exhaustive
@@ -184,7 +184,7 @@ export namespace TimelineRow {
 
   export function equals(a: TimelineRow, b: TimelineRow) {
     if (a === b) return true
-    if (a._tag !== b._tag || a.userMessageID !== b.userMessageID) return false
+    if (a._tag !== b._tag || a.userMessageId !== b.userMessageId) return false
     switch (a._tag) {
       case "PreviousMessages":
         return b._tag === "PreviousMessages" && a.count === b.count
@@ -226,20 +226,20 @@ export namespace TimelineRow {
     return row._tag === "CommentStrip" || (row._tag === "UserMessage" && row.anchor)
   }
 
-  export function contentMessageID(row: TimelineRow) {
+  export function contentMessageId(row: TimelineRow) {
     switch (row._tag) {
       case "UserMessage":
-        return row.userMessageID
+        return row.userMessageId
       case "AssistantPart":
-        return "ref" in row.group ? row.group.ref.messageID : row.group.refs[0]?.messageID
+        return "ref" in row.group ? row.group.ref.messageId : row.group.refs[0]?.messageId
       default:
         return undefined
     }
   }
 
-  export function contentPartID(row: TimelineRow) {
+  export function contentPartId(row: TimelineRow) {
     if (row._tag !== "AssistantPart") return undefined
-    return "ref" in row.group ? row.group.ref.partID : row.group.refs[0]?.partID
+    return "ref" in row.group ? row.group.ref.partId : row.group.refs[0]?.partId
   }
 
   export function reuse(previous: TimelineRow[] | undefined, rows: TimelineRow[]) {

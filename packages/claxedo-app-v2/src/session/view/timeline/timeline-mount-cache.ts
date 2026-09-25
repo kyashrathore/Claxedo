@@ -56,7 +56,7 @@ function turnFoldableCounts(rows: readonly TimelineRow.TimelineRow[]) {
   const counts: Record<string, number> = {}
   for (const row of rows) {
     if (row._tag !== "TurnFold") continue
-    counts[row.userMessageID] = row.foldCount
+    counts[row.userMessageId] = row.foldCount
   }
   return counts
 }
