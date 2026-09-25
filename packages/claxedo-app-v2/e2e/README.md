@@ -200,7 +200,7 @@ Moving `HOME` hides the login keychain from the `security` tool (it answers 44),
 
 ### v1 known bugs (flow 31)
 
-Flow 31 is v2's gate for the session list's races. On `--app=v1` it reads v1's rail through the same hooks, and four of its seven cases fail on bugs v1 has; v2 should pass all seven:
+Flow 31 is v2's gate for the session list's races. On `--app=v1` it reads v1's rail through the same hooks, and four of its eight cases fail on bugs v1 has; v2 should pass all eight:
 - **A delete lands during a fetch:** a row deleted while its page's read is held comes back when that page lands.
 - **A session is archived while a turn runs:** the archived session stays in the rail while it works.
 - **A thousand sessions:** a row loaded by paging shows no Working mark while the server reports it working.

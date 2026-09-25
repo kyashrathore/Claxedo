@@ -1,4 +1,4 @@
-import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, sendPrompt, UI, type AcpStep } from "../harness"
+import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, UI, type AcpStep } from "../harness"
 import {
   holdEventStreams,
   holdListRead,
@@ -33,6 +33,26 @@ test("31 an event arrives before the list response", async ({ stack, api, app })
   await read.release()
   await expectRailEqualsServer(app, checked)
   await stack.acp.release("working-during-read")
+})
+
+test("31 a list response after the session's own read keeps its stopped turn's outcome", async ({ stack, api, app }) => {
+  const { sessions, checked } = await setup(stack, api, app, ["Race stopped"], { open: false })
+  const [stopped] = sessions
+  await stack.acp.write("stopped-turn", { steps: [{ kind: "text", text: "Started before the stop" }, { kind: "hold", name: "stopped-turn" }] })
+  await api.promptAsync(checked.directory, stopped.id, `Run ${acpScriptToken("stopped-turn")}`)
+  const started = async () => assistantText(await api.messages(checked.directory, stopped.id))
+  await expect.poll(started, { message: "the turn played its text before the hold" }).toContain("Started before the stop")
+  await api.stopTurn(checked.directory, stopped.id)
+  await expectServerStatus(checked, stopped.id, "Idle")
+  const { workspaceId } = await api.resolveWorkspace(checked.directory)
+  await app.goto("about:blank")
+  const read = await holdListRead(app)
+  await app.goto(`${stack.url}${sessionRoute(workspaceId, stopped.id)}`)
+  await read.computed
+  await expect(app.getByRole("main").getByText("Started before the stop")).toBeVisible()
+  await read.release()
+  await expectRailEqualsServer(app, checked)
+  await expect(app.getByRole("main").getByText(/^You stopped after/)).toBeVisible()
 })
 
 test("31 a delete lands during a fetch", async ({ stack, api, app }) => {
