@@ -573,6 +573,12 @@ Every defect the reviews found, all fixed in this plan. Each regression test is 
 | C-14 | Unsigned desktop onboarding offers a cloud sandbox the daemon can't create (404), and saves a driver key nothing uses | UX | `execution-step.tsx:54`, `workspace-control-routes.ts:54` | v2 onboarding offers cloud only when a control plane that can create one is connected | App v2 | H34 |
 | T-1 | An e2e spec sets the dead startup key, so it likely tests nothing | Test | `real-session-directory-isolation.spec.ts:96` | Sets the real key, with a red run | P2 cloud, with C-9 | Its own red run |
 | T-2 | The sandbox worker's README cites a script that doesn't exist | Docs | `cloudflare-worker/README.md:92` | Fixed or removed | P2 cloud | — |
+| T-3 | `build:packages` is red on `dev`: `switchHarness` exceeds the lint gate's complexity limit (47) | Build | `agent-sdk-runtime/src/runtime/handoff-transaction.ts` | Split into named steps | P0 | Fixed in 5d6aa44139 |
+| T-4 | The architecture ratchets are red on `dev`: two Daytona scratch scripts that can't be committed as they are | Build | `sandbox-manager/verify-daytona-live*.ts` | Deleted | P0 | Fixed in fb1f0d5579 |
+| T-5 | The app typecheck is red on `dev`: raw values where the theme requires tokens | Build | `claxedo-app/src/app/styles/index.css` | `--radius-pill` and an exact-value `--shadow-thumb` token | P0 | Fixed in fb1f0d5579 |
+| T-6 | Unit suites and smoke scripts touch the developer's real harness state: the Claude CLI test writes `~/.claude/projects` transcripts the usage scanner counts, local-server tests and the server closure smoke rewrite `~/.codex/config.toml`, and SDK tests start the real `codex app-server` against `api.openai.com` with the developer's login | Test, security | `agent-sdk-runtime` and `workspace-runtime` preloads; `claxedo-local-server` vitest has none; `claxedo-server` closure smoke | A throwaway HOME for every suite and smoke, and no test reaching a vendor | P0 | The bun suites' preload landed in 7affdc4bec; local-server, the smoke and the vendor calls remain |
+| T-7 | The real-spawn terminal test drops output printed before its client attaches: its fake socket ignores the binary attach checkpoint | Test | `workspace-runtime/src/pty/real-spawn.test.ts` | The socket reads the checkpoint's screen | P0 | Fixed in b33b9de0e7 |
+| T-8 | Three desktop boot tests race the product on a loaded machine: one reads the discovery record after health (it's written only before the ready message), one kills the daemon before terminal history reaches disk, one uses an idle grace shorter than the identity read before ready | Test | `claxedo-desktop/scripts/claxedo-server-boot.test.ts` | Wait for what the product guarantees: the ready message, the history file, a grace longer than the identity read | P0 | Fixed in 86c897772a; each failed under 28 CPU burners before and passes after |
 
 ## The goal
 
@@ -1197,15 +1203,15 @@ Every slice deletes what it replaces.
   - `packages/process-ownership`, with every importer and packaging site repointed; policies re-measured.
   - The portable e2e harness.
   - The websocket ACP agent, the sandbox driver, the Windows lane, the Cursor backend decision.
-  - `Progress:`
+  - `Progress:` process ownership moved (8394b1378b); the portable harness runs H0 over ACP and pinned Pi with zero egress, green twice with a red run (71737a9fc5). The websocket agent, sandbox driver, Windows lane and Cursor decision remain.
 - [ ] **P0.2 Baseline.**
   - Translator and wire corpora recorded on `dev`.
   - B flows green on `dev` with targeted red runs.
   - Every defect's regression test recorded red on `dev`, H-4 included.
   - `Progress:`
 - [ ] **P0.5 Invariant map,** per test case, plus every fix commit. It must finish before P0.3 deletes anything. `Progress:`
-- [ ] **P0.3 Deletions:** the generated Codex protocol (generated at build, fresh-clone run), the harness factories, and the four add-ons with no implementer. `Progress:`
-- [ ] **P0.4 Checks and ratchet** at decision 12's numbers. `Progress:`
+- [ ] **P0.3 Deletions:** the generated Codex protocol (generated at build, fresh-clone run), the harness factories, and the four add-ons with no implementer. `Progress:` the protocol is generated at build from Codex 0.133.0, the version the sandbox runs, with a test that fails when the pins drift (b5ff388d93). The factories and add-ons wait for the invariant map.
+- [x] **P0.4 Checks and ratchet** at decision 12's numbers. `Progress:` `bun run check` in `packages/harness`, with a passing and a violating fixture per check and budgets in `budget.json` (1a1db3486d).
 - [ ] **P0.6 Profiles from docs:**
   - format and delivery per transport, with citations;
   - whether projection adds to or replaces the user's setup;
