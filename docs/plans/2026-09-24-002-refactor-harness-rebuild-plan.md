@@ -47,7 +47,7 @@ These are the jobs the layer does, whoever owns them today. Each gets exactly on
 | 5 | **Credentials** | Getting the person's selected provider account to the harness in the form the harness reads, without handing out the secret where avoidable | environment variables, config files (Codex `config.toml`, Pi `models.json`), SDK options, placeholders the broker fills | `src/registry/` credentials, plus each transport's `credentials.ts` |
 | 6 | **Session lifecycle** | Creating the harness's own session, reattaching after a restart, rebinding when the harness changes its id, closing | native session ids, resume calls (`resume`, `thread/resume`, `session/load`, `--session <file>`) | the transport (`start`, `attach`, `close`), with `SessionBroker.rebind` |
 | 7 | **Turn execution** | Sending a turn, streaming it, steering it mid-turn, cancelling it, and turns the harness starts itself (Codex goal turns) | `query()`, `turn/start`, `session/prompt`, RPC prompt, HTTP; `turn/steer` or streaming input; each protocol's cancel | the transport (`send`, `steer`, `cancel`), with `SessionBroker.admitProviderTurn` |
-| 8 | **Event translation** | Turning the harness's native stream into Claxedo's `AgentRuntimeEvent`s, and routing child-session events | SDK messages, 75 Codex notification methods, ACP `session/update`, Pi RPC lines, OpenCode server events | each transport's `translate/`, a pure function of state and event |
+| 8 | **Event translation** | Turning the harness's native stream into Claxedo's `AgentRuntimeEvent`s, and routing child-session events | SDK messages, 65 Codex notification methods, ACP `session/update`, Pi RPC lines, OpenCode server events | each transport's `translate/`, a pure function of state and event |
 | 9 | **Requests** | Permissions, questions and elicitations: bringing them to the person, grants ("allow always"), permission-mode limits, saving before releasing, cancelling | `canUseTool`, Codex server requests, ACP `request_permission` and elicitation, Pi extension UI, OpenCode `permission.asked` | `src/broker/`; who may answer stays in the routes' access policy |
 | 10 | **Config and capabilities** | Models, effort, permission modes; applying changes on the right timing; reads before a session exists | next turn versus next session; what a mode's `level` is | the transport's `config` group, plus `configure` |
 | 11 | **Goals** | Native goals (the harness runs them) and evaluated goals (Claxedo checks the work) | Codex `thread/goal/*`, Claude and Cursor `/goal` prompts, an ACP goal extension, none | the transport's `goals` group; the evaluated loop in the runtime host |
@@ -66,7 +66,7 @@ Rows 1–18 are the harness layer this plan rebuilds. Rows 19 and 20 are runtime
 ## What's wrong today
 
 **1. Every responsibility is spread across both adapter stacks.**
-- Two adapter cores, the SDK one and ACP's three-level class chain, each implement all 18 rows their own way.
+- Two adapter cores, the SDK one and ACP's three-level class chain, each implement all 20 rows their own way.
 - The contract that ties them together has **96 members:** 20 core, 26 across 17 add-ons, 7 goal actions, 14 host callbacks, 10 turn inputs and 19 driver members.
 - **197 of the 409 commits** on these four packages since the fork are fixes.
 
@@ -91,7 +91,7 @@ After the rebuild it's a transport (driver plus translator), a profile, and one 
 
 ## Does it need solving?
 
-**Some of it would be needed no matter what:** the 24 defects in the [defect register](#defect-register), and deleting the ~6.9k lines of generated and unimplemented code. None of these depend on the rebuild.
+**Some of it would be needed no matter what:** the defects in the [defect register](#defect-register) (36 rows at the P0.7 measurement), and deleting the ~6.9k lines of generated and unimplemented code. None of these depend on the rebuild.
 
 **All of them are fixed inside it anyway, as part of v2, not landed separately first:**
 - each fix goes where its code is being rebuilt, so nothing is fixed twice;
@@ -188,7 +188,7 @@ These drive every choice in Part 2. Where a choice seems arbitrary, one of these
 **What exists today for the cloud** (read from the code):
 - **The sandbox image preinstalls** Claude Code 2.1.150, Codex 0.133.0, Gemini CLI 0.43.0, Pi 0.85.1, `cursor-agent`, Amp and Factory's `droid`. There's no OpenCode CLI.
 - **A runtime takes its settings as one snapshot** (`POST /api/wr/config`, version 4): MCP servers, custom harnesses, the default harness, credential placeholders, plugin folders, commands.
-- **Only the Cloudflare and Daytona drivers can broker secrets** so the real key stays outside the sandbox. The others refuse a turn that needs one.
+- **Only the Cloudflare, Daytona and Vercel drivers can broker secrets** so the real key stays outside the sandbox. The others refuse a turn that needs one.
 - **The delivery path exists** (brokered secrets, settings snapshot, updates on change), but only the self-hosted server runs it, and hosted never does ([Cloud harnesses](#cloud-harnesses-how-a-person-configures-one)).
 
 ## Security posture
@@ -322,7 +322,7 @@ The harness layer holds the most valuable things Claxedo handles: people's provi
    - a leak through the remote filter;
    - a member's turn in an owner's Pi session, which spends the owner's profile;
    - an expired credential.
-7. **Every defect is a test first.** Each of the 24 defects gets a regression test that fails on `dev` today, at the boundary where the defect lives, before it's fixed. That proves the new tests catch exactly the kind of defect the old ones let through.
+7. **Every defect is a test first.** Each defect in the register gets a regression test that fails on `dev` today, at the boundary where the defect lives, before it's fixed. That proves the new tests catch exactly the kind of defect the old ones let through.
 
 **The honest costs:**
 - **A flow is slower than a unit test.** The corpora carry the fast feedback; flows are sharded on crabbox; a new flow qualifies with 20 runs once.
@@ -490,7 +490,7 @@ Decision 15 confirms that timing.
 **Outside `packages/harness`, these change:**
 - **`packages/process-ownership` (new):** the moved code, unchanged.
 - **`workspace-runtime`:**
-  - the runtime host (`runtime.ts` and `runtime/*`, 3,604 lines) and the projection code (3,222 lines), moved in unchanged;
+  - the runtime host (`runtime.ts` and `runtime/*`, 3,604 lines) and the projection code (3,181 lines), moved in unchanged;
   - the `spawn` service over `process-ownership`;
   - in P3, the runtime host calling the contract for every harness.
 - **`agent-runtime-contract`:** keeps `recovery.ts` whole, because the daemon lifecycle, the desktop, the apps and the MCP tools use it. It gains the event contracts (`agent-event-runtime/src/contracts`, 458 lines) that the apps read.
@@ -535,7 +535,7 @@ The app rebuild runs against today's server contracts. This plan keeps them.
 | --- | --- | --- |
 | Deleted: the generated Codex protocol, the harness factories, add-ons with no implementer | ~6.9k | No |
 | Moved to test support: the in-memory, SQLite and persisted-row test stores | 1,860 | No |
-| Moved unchanged: process ownership (2,222), the runtime host (3,604), projection (3,222) | ~9.0k | No |
+| Moved unchanged: process ownership (2,222), the runtime host (3,604), projection (3,181) | ~9.0k | No |
 | Rebuilt into `packages/harness` and trimmed: contract, broker, registry, transports, profiles, plus `agent-runtime-contract` | ~31.9k → ~19.2k at the merge (`packages/harness` 15.7k + `agent-runtime-contract` 3.5k), ~17.1k after P6 | Yes |
 
 The publish ceremony and acceptance scripts live under `packages/*/scripts/`, outside `src/`. They're deleted, but they aren't part of the 49.7k.
@@ -771,7 +771,7 @@ Everything users see today on every harness:
 | --- | --- | --- |
 | Launch and process ownership | 2,222 | `packages/process-ownership` |
 | Runtime host: `runtime.ts` and `runtime/*`, with recovery, admission, goal controller, titles and handoff | 3,604 | `workspace-runtime/src/host/` |
-| Projection: `client-presentation/*`, `compat-events.ts`, `turn-projection.ts`, `child-event-routing.ts`, `sse.ts` | 3,222 | `workspace-runtime/src/projection/` |
+| Projection: `client-presentation/*`, `compat-events.ts`, `turn-projection.ts`, `child-event-routing.ts`, `sse.ts` | 3,181 | `workspace-runtime/src/projection/` |
 | Event contracts, `agent-event-runtime/src/contracts` | 458 | `agent-runtime-contract` |
 | Translators: Claude (1,412 + `partial-json.ts` 98), Codex 1,313, Cursor 691, ACP 1,538, Pi 192 (comments removed, blank lines kept) | ~5.2k | `src/transports/*/translate/` |
 | Shared translator code | 552 | `src/translate/` |
@@ -1228,7 +1228,7 @@ Every slice deletes what it replaces.
   - OpenCode's config API;
   - Pi's skill and extension flags.
   - `Progress:`
-- [ ] **P0.7 Measurement manifest:** the file lists behind every number. `Progress:`
+- [x] **P0.7 Measurement manifest:** the file lists behind every number. `Progress:` done (`docs/harness-v2/measurements/`, `measure.sh` re-runs them). Every figure reproduced on `dev` except the projection (3,181, corrected here) and the Codex notification methods (65, corrected here). `agent-runtime-contract` is already 3,466 lines against its 3.5k budget, so P4's move of the 458 event-contract lines needs about 424 lines removed first, or a budget decision.
 
 ### P1: contract, broker, Pi
 
@@ -1519,7 +1519,7 @@ Run from the repo root on `dev` at `37563dc802`. P0.7 commits the file manifest 
 | Moved translators (comments removed, blank lines kept) | Claude 1,412 + `partial-json.ts` 98; Codex 1,313; ACP 1,538; Cursor 691; Pi 192 | `grep -vcE '^\s*(//\|\*\|/\*\|\*/)' <files>` |
 | Shared translator code | `core` 241, `value.ts` 69, `host-subagent` and `tool-*` 242; `contracts` 458 | `wc -l` |
 | Moved runtime host | `runtime.ts` 829 + `runtime/*` 2,775 = 3,604 | `find packages/agent-sdk-runtime/src/runtime -name '*.ts' ! -name '*.test.ts'` |
-| Moved projection | `client-presentation` 2,041, `compat-events` 471, `turn-projection` and `child-event-routing` 467, `sse` 243 = 3,222 | `wc -l` |
+| Moved projection | `client-presentation` 2,000, `compat-events` 471, `turn-projection` and `child-event-routing` 467, `sse` 243 = 3,181 | `wc -l` |
 | Process ownership | `launch` 1,424 + `process-observer` 189 + `process-lifecycle` 418 + `windows-process` 120 + `spawn-env` 71 = 2,222 | `wc -l` |
 | Fix commits by subject | event harnesses 35/72; SDK harnesses 117/245; launch 12/28; all four packages 197/409 | `git log --format=%s -- <path> \| grep -ci fix` |
 | Module-level mutable sites | 14 (listed in P0.7's manifest) | `grep -nE '^(let \|(export )?const [A-Za-z_]+ = new (Map\|Set\|WeakMap))'`, constant tables excluded |
