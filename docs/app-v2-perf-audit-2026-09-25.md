@@ -495,3 +495,34 @@ In "Greeting": open "+", close it, then open each item that opens something (Com
 - Opening the menu: 495 of v2's 532 mutations are `aria-hidden` writes on the icon sprite's `<symbol>` elements, and closing adds 165 more. That is the scenario-7 sprite finding, measured per region.
 - Shell-command mode re-renders the composer: 412–421 composer mutations and 839–858 `ButtonRoot` computations in both apps.
 - v2's Commands popover is 23× cheaper than v1's (236 vs 6,837 computations).
+
+## Scenario 9: streaming a real agent turn
+
+On the draft page of project "Claxedo", with Claude Code "Default (recommended)" selected: a prompt asking the agent to read `package.json` and `AGENTS.md` with its tools and write a ~1,200-word report with a TypeScript block, an 8-row table, a bash block and a Mermaid flowchart. No file changes. Sent with Enter. The workspace panel was opened on the new session, then measurement ran from about 2 s after send until the session was idle plus 2.5 s. Each run created one session. Every such session was then renamed `perf-audit <app> <mode> <run>` and archived through `PATCH /session/:id` (`scratchpad/audit/cleanup.mjs`), leaving the owner's 4-row rail as it was.
+
+The scripted stack (`bun run e2e:perf-stream`) was not run. It builds both apps first, and the real-harness runs answered the questions without a second stack.
+
+| Metric (one turn) | v1 run 2 | v2 runs 2 / 3 |
+|---|---|---|
+| Deltas (`message.part.delta` frames) | 714 | 785 / 772 |
+| Turn length (s) | 52.0 | 59.5 / 51.5 |
+| API requests during the turn | **129** (`queue` ×48, `status` ×21, `permission` ×17, `question` ×17, `message` ×11) | **20 / 18** |
+| DOM mutations | 19,673 | 13,018 / 11,068 |
+| **Solid computations re-run** | **150,836 (211 per delta)** | **11,461 / 10,503 (14 per delta)** |
+| Elements restyled / style recalcs | 27,541 / 5,263 | 30,816 / 5,310 · 35,188 / 6,285 |
+| Layouts / paints | 1,323 / 10,804 | 1,252 / 11,671 · 1,208 / 13,356 |
+| ScriptDuration / RecalcStyleDuration / LayoutDuration (ms) | 2,061 / 496 / 139 | 843 / 527 / 138 · 656 / 567 / 123 |
+| rAF callbacks | 753 | 1,598 / 1,494 |
+| Longest task / long tasks > 16 ms | 68 ms / 5 | 62 ms / 5 · 75 ms / 1 |
+| Worst long animation frame | 76 ms (Mermaid) | 72 ms / 80 ms (Mermaid, `chunk-TCVXKB7Q` = `mermaid.core`) |
+| JSEventListeners / Nodes growth | +1,081 / +14,230 | +59 / +4,507 · +37 / +4,642 |
+
+v2 streams with 13–14× fewer computations, 6–7× fewer requests and about 2.5× less script time than v1. Rendering work (restyle, layout, paint) is on par; that is the streaming text itself.
+
+v2 problems seen while streaming, beyond the invariant failures above:
+
+- **Mermaid renders on the main thread in one 62–87 ms task** (every run, both apps; the diagram renders once, when its fence closes). It is the only long animation frame of the turn, 4–5 dropped frames. Design fix: render off the visible frame (idle callback or a worker-side layout where Mermaid allows), or show the code block and render on demand.
+- **The scroll thumb's geometry is written 448 times per turn** (0.6 per delta) while it is invisible (`ScrollView.updateThumb`, `packages/ui/src/components/scroll-view.tsx:225`), and each write follows a `scrollHeight` read that forces style and layout. Design fix: skip thumb geometry while the thumb is hidden and compute it when it shows.
+- **The turn end re-fetches the placement's files and git state twice** (10 requests) even for a read-only turn: `invalidationKeys` treats `statusChanged → idle` as a file change (`src/server/queries.ts:67-68`), and idle arrives twice (`session.status` and `session.idle`). Design fix: invalidate on the file events or the turn's tool results; de-duplicate the idle transition.
+- **`SessionHealthPeek` polls the harness during every turn**: `setInterval(probe, 20_000)` plus a probe on each working-state change (`src/composer/view/health-peek.tsx:19-36`), 4–6 `agent-config/harness` requests per turn. v1 has the same poll.
+- **Background sessions wake frames.** Every event batch schedules `requestAnimationFrame` plus a 250 ms timeout (`src/server/wire/coalesce.ts:53-66`), whether or not anything visible depends on it. A background turn produced 240 rAF callbacks and 442 style recalcs (about 8 frames per second) while the visible page did not change (invariant 1). Design fix: flush events for sessions that are not on screen on a timer or microtask; request a frame only when a mounted view subscribes.
