@@ -1,7 +1,10 @@
 import type { WorkspaceSupervisorOptions } from "./runtime-env"
 import type { SandboxDriver } from "@claxedo/sandbox-manager"
+import type { SandboxDriverCatalogEntry } from "@claxedo/sandbox-manager/driver-catalog"
 
-export type ConfiguredWorkspaceSupervisorOptions = WorkspaceSupervisorOptions & { sandboxDriver?: SandboxDriver }
+export type InjectedSandboxDriver = SandboxDriver & { catalogEntry: SandboxDriverCatalogEntry<string> }
+
+export type ConfiguredWorkspaceSupervisorOptions = WorkspaceSupervisorOptions & { sandboxDriver?: InjectedSandboxDriver }
 
 let options: ConfiguredWorkspaceSupervisorOptions | undefined
 

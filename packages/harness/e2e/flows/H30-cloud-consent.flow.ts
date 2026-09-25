@@ -41,7 +41,7 @@ export async function run() {
     assert.ok(!(await sandboxFiles(first.home)).includes(key), "real cloud account key entered sandbox home files")
     assert.ok(!(await sandboxFiles(first.directory)).includes(key), "real cloud account key entered sandbox workspace files")
     if (!sandboxEnvironment(first.pid).includes(placeholder)) {
-      throw new Error(`C-12: active shared account did not reach its signed cloud workspace as a placeholder; delivered names: ${first.secretNames.join(",")}`)
+      throw new Error(`C-15: credential stored under the local org did not reach its signed cloud workspace as a placeholder; delivered names: ${first.secretNames.join(",")}`)
     }
 
     await sendJson(cloudTransport(stack), "PATCH", `${stack.url}/api/claxedo/credentials/${credential.id}/scope`, { scope: "local" }, "Revoking cloud consent")

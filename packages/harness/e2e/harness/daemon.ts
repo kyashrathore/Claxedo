@@ -33,6 +33,7 @@ export type SignedDaemon = {
 export type Daemon = {
   url: string
   cloudToken?: string
+  cloudMemberToken?: string
   port: number
   dataDir: string
   acpScriptDir: string
@@ -80,6 +81,7 @@ async function daemonEnv(input: DaemonInput): Promise<NodeJS.ProcessEnv> {
       CLAXEDO_ENABLE_DOCKER_SANDBOX: "1",
       CLAXEDO_DOCKER_SANDBOX_DEFAULT: "1",
       CLAXEDO_EMBEDDED_AUTH: "1",
+      CLAXEDO_SIGNED_CLOUD_AUTH: "1",
       BETTER_AUTH_URL: `http://127.0.0.1:${input.port}`,
       CLAXEDO_WORKSPACE_RELAY_URL: `http://127.0.0.1:${input.port}`,
     } : {}),
@@ -135,8 +137,9 @@ export async function startDaemon(input: DaemonInput): Promise<Daemon> {
   let env = await daemonEnv(input)
   const url = `http://127.0.0.1:${input.port}`
   const runtime = await daemonRuntime()
-  let owned = launchDaemon(runtime, input.cloud ? { ...env, CLAXEDO_EMBEDDED_AUTH: "0" } : env, input.dataDir, input.cloud)
+  let owned = launchDaemon(runtime, input.cloud ? { ...env, CLAXEDO_EMBEDDED_AUTH: "0", CLAXEDO_SIGNED_CLOUD_AUTH: "0" } : env, input.dataDir, input.cloud)
   let cloudToken: string | undefined
+  let cloudMemberToken: string | undefined
   const listening = `[claxedo-server] listening on ${url}`
   const health = (label: string) =>
     waitForHealth(`${url}/api/claxedo/health`, { label, log: owned.log, child: owned.child, ready: () => owned.log().includes(listening) })
@@ -157,6 +160,26 @@ export async function startDaemon(input: DaemonInput): Promise<Daemon> {
       if (!body.user?.id) throw new Error("Cloud stack signup returned no user id")
       cloudToken = signup.headers.get("set-auth-token") ?? undefined
       if (!cloudToken) throw new Error("Cloud stack signup returned no bearer token")
+      const memberSignup = await fetch(`${url}/api/auth/sign-up/email`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: url },
+        body: JSON.stringify({ email: "cloud-member-e2e@example.test", name: "Cloud Member E2E", password: "correct-horse-battery" }),
+      })
+      if (!memberSignup.ok) throw new Error(`Cloud stack member signup failed: ${memberSignup.status} ${await memberSignup.text()}`)
+      cloudMemberToken = memberSignup.headers.get("set-auth-token") ?? undefined
+      if (!cloudMemberToken) throw new Error("Cloud stack member signup returned no bearer token")
+      for (const [email, expectedToken] of [["cloud-e2e@example.test", cloudToken], ["cloud-member-e2e@example.test", cloudMemberToken]]) {
+        const signin = await fetch(`${url}/api/auth/sign-in/email`, {
+          method: "POST",
+          headers: { "content-type": "application/json", origin: url },
+          body: JSON.stringify({ email, password: "correct-horse-battery" }),
+        })
+        if (!signin.ok || !signin.headers.get("set-auth-token") || !expectedToken) {
+          throw new Error(`Cloud stack sign-in failed for ${email}: ${signin.status} ${await signin.text()}`)
+        }
+        if (email === "cloud-e2e@example.test") cloudToken = signin.headers.get("set-auth-token")!
+        else cloudMemberToken = signin.headers.get("set-auth-token")!
+      }
       await stopProcess(owned.child)
       env = { ...env, CLAXEDO_OPERATOR_SUBJECTS: body.user.id }
       owned = launchDaemon(runtime, env, input.dataDir, true)
@@ -171,6 +194,7 @@ export async function startDaemon(input: DaemonInput): Promise<Daemon> {
   return {
     url,
     ...(cloudToken ? { cloudToken } : {}),
+    ...(cloudMemberToken ? { cloudMemberToken } : {}),
     port: input.port,
     dataDir: input.dataDir,
     acpScriptDir: dirs.acpScriptDir,

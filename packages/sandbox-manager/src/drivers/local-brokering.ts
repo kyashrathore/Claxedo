@@ -73,7 +73,7 @@ async function closeHost(host: Host) {
   await fs.rm(host.directory, { recursive: true, force: true })
 }
 
-export function createLocalBrokeringSandboxDriver(options: LocalBrokeringDriverOptions): SandboxDriver {
+export function createLocalBrokeringSandboxDriver(options: LocalBrokeringDriverOptions): SandboxDriver & { catalogEntry: typeof localBrokeringTestDriverCatalogEntry } {
   if (process.platform !== "darwin") throw new Error("local brokering test driver requires macOS sandbox-exec network policy")
   const hosts = new Map<string, Host>()
   const allowedOrigins = new Set(options.allowedOrigins.map((origin) => new URL(origin).origin))
@@ -205,6 +205,7 @@ export function createLocalBrokeringSandboxDriver(options: LocalBrokeringDriverO
   return {
     id: "local-brokering-test",
     metadata: localBrokeringTestDriverCatalogEntry.metadata,
+    catalogEntry: localBrokeringTestDriverCatalogEntry,
     ensureHost,
     resumeHost: ({ ensure }) => ensureHost(ensure),
     inspect: async (target) => hosts.get(target.workspaceId ?? "")?.target,

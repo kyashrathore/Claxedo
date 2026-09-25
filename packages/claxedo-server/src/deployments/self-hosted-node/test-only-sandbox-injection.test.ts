@@ -9,4 +9,6 @@ test("product composition cannot select the local broker by id or environment", 
   const entry = await fs.readFile(new URL("./index.ts", import.meta.url), "utf8")
   expect(entry).toMatch(/startSelfHostedServer\(\{ port \}\)/)
   expect(entry).not.toContain("sandboxDriver:")
+  const composition = await fs.readFile(new URL("./app.ts", import.meta.url), "utf8")
+  expect(composition.slice(composition.indexOf("export function startServer("))).not.toContain("sandboxDriver")
 })

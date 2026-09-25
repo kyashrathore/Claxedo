@@ -6,7 +6,7 @@ export type EventStream = {
   close(): void
 }
 
-export type EventStreamOptions = { sessionId?: string; lastEventId?: string; workspaceId?: string; authorization?: string }
+export type EventStreamOptions = { sessionId?: string; lastEventId?: string; workspaceId?: string; relayWorkspaceId?: string; authorization?: string }
 
 function parseBlock(block: string): StreamFrame | undefined {
   let id: string | undefined
@@ -57,7 +57,9 @@ export function frameSessionId(frame: StreamFrame): string | undefined {
 }
 
 export async function openEventStream(url: string, directory: string, options: EventStreamOptions = {}): Promise<EventStream> {
-  const target = new URL("/api/wr/events", url)
+  const target = new URL(options.relayWorkspaceId
+    ? `/workspaces/${encodeURIComponent(options.relayWorkspaceId)}/api/wr/events`
+    : "/api/wr/events", url)
   target.searchParams.set("directory", directory)
   if (options.workspaceId) target.searchParams.set("workspaceId", options.workspaceId)
   if (options.sessionId) target.searchParams.set("sessionID", options.sessionId)

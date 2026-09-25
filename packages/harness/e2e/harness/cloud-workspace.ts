@@ -11,14 +11,13 @@ export async function cloudRuntimeUrl(stack: Stack, workspaceId: string) {
   return target
 }
 
-export function cloudRuntimeTransport(stack: Stack, workspaceId: string, runtimeUrl: string, runtimeToken: string): HttpTransport {
+export function cloudSessionTransport(stack: Stack, workspaceId: string): HttpTransport {
   return (request) => {
     const url = new URL(request.url)
     const control = url.pathname.startsWith("/api/workspace/resolve") || url.pathname.startsWith("/api/control/session-registrations/")
     if (control) return cloudTransport(stack, workspaceId)(request)
-    const target = new URL(url.pathname + url.search, runtimeUrl)
-    target.searchParams.set("directory", (url.searchParams.get("directory") ?? ""))
-    return directTransport({ ...request, url: target.toString(), headers: { ...request.headers, authorization: `Bearer ${runtimeToken}` } })
+    const target = new URL(`/workspaces/${encodeURIComponent(workspaceId)}${url.pathname}${url.search}`, stack.url)
+    return directTransport({ ...request, url: target.toString(), headers: { ...request.headers, authorization: `Bearer ${stack.daemon.cloudToken}` } })
   }
 }
 

@@ -22,11 +22,12 @@ import { localBuiltinToolGroupsReader } from "@claxedo/local-server/agent-plugin
 import { BUILTIN_TASKS_TOOL_GROUP } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import { createTasksSessionGrants, type TasksSessionGrants } from "@claxedo/server-core/tasks-host/session-grants"
 import { createSelfHostedTasksComposition } from "../../tasks/self-hosted-composition"
+import type { InjectedSandboxDriver } from "../../workspace/supervisor/options"
 
 export type SelfHostedStartOptions = {
   port: number
   env?: NodeJS.ProcessEnv
-  sandboxDriver?: import("@claxedo/sandbox-manager").SandboxDriver
+  sandboxDriver?: InjectedSandboxDriver
 }
 
 /**
