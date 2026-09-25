@@ -37,8 +37,9 @@ test("the stream keeps reconnecting past many failed attempts and re-reads the g
     },
     onState: (state) => states.push(state.kind),
   })
-  for (let step = 0; step < failures + 5 && gaps === 0; step += 1) {
+  for (let step = 0; step < failures + 5; step += 1) {
     await settle()
+    if (gaps > 0) break
     jest.advanceTimersByTime(15_000)
   }
   await settle()

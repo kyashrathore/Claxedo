@@ -4,7 +4,7 @@ Owns: the browser sign-in session with the identity provider (Better Auth), the 
 
 ## Concepts
 
-- `BrowserAuthAdapter` (`browser-auth.ts`): the provider-neutral contract. `better-auth-adapter.ts` is the one implementation, selected at build time by `vite.browser-auth.ts` (`VITE_CLAXEDO_AUTH_ADAPTER=better-auth`) and imported as `#browser-auth-adapter`.
+- `BrowserAuthAdapter` (`browser-auth.ts`): the provider-neutral contract. `better-auth-adapter.ts` is the one implementation: it composes `better-auth-client.ts` (the library's client, its results and the callback URL), `better-auth-session.ts` (the signals, the live descriptor, the session and `initialize`) and `better-auth-actions.ts` (sign-in, sign-up and sign-out). It is selected at build time by `vite.browser-auth.ts` (`VITE_CLAXEDO_AUTH_ADAPTER=better-auth`) and imported as `#browser-auth-adapter`.
 - `BrowserAuthDescriptor`: the live deployment's declaration, read from `GET /api/claxedo/auth/descriptor` and checked field by field against this build; a mismatch leaves the app signed out with the reason, never a startup failure.
 - `AuthUser`: the sanitized identity (id, name, email, image). No token ever reaches a component; `Auth.token()` exists for the CLI exchange only.
 - Origins (`origins.ts`): `apiOrigin()` is `VITE_CLAXEDO_SERVER_URL` or the page origin; `appOrigin()` is the page origin; `serverIssuesSessions()` is `VITE_CLAXEDO_ISSUES_SESSIONS !== "0"`.

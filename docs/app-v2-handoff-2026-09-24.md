@@ -16,6 +16,16 @@ Nothing is pushed, `packages/claxedo-app` is untouched, and there is no swap.
 
 The plan is `docs/plans/2026-09-24-001-refactor-app-rebuild-first-proof-plan.md`. Where it disagrees with the owner's parity rule, the rule wins (see [Better](#1-better-v2-looks-and-behaves-exactly-like-v1)).
 
+## 2026-09-25 11:00: the Mac rebooted under load
+
+- **Lost:** every lane agent, and the session scratchpad (`/private/tmp/...`): the lane briefs, the experiments' raw profiles and diffs, the benchmark verdict copies, and the probe scripts.
+- **Survived:** all committed work. The benchmark's raw runs survived too, under `~/test/agent-app-benchmark/artifacts/`.
+- **Saved as WIP commits:**
+  - the experiments' measurement tooling, on `v2/exp-idle` (586b065f77) and `v2/exp-scroll` (567f6ca83d);
+  - the in-progress edits in the shell, harness, adapter, session-screen and bench worktrees, left in place. The shell, harness and adapter lanes are relaunched on them.
+- **Worktrees:** those merged into their target and clean were removed to free memory and disk. Their branches remain.
+- **Servers restarted:** the daemon on 2598 (the owner's data), v2 on 4480, v1 on 4481.
+
 ## State at 06:50 on 2026-09-25 (after the night)
 
 - **feat/app-v2 b3cadffe69.** Every lane's work is merged. Not pushed.
@@ -391,6 +401,11 @@ At 19:08 the owner said: finish in-progress work; start no new work.
   - The fix: cache the heights from ResizeObserver entries and read only `scrollTop` per frame.
   - It can't land before the swap, because `packages/ui` is shared with today's app. Apply it when the used kit components move into the app.
 
+- **The kit's `ScrollView` unmounts its thumb (`packages/ui/src/components/scroll-view.tsx:451`, `<Show when={showThumb()}>`).**
+  - The thumb is the viewport's last sibling, so the viewport's `:last-child` flips whenever overflow starts or stops, for example on a short session's first long reply.
+  - The markdown rules `.ui-markdown>[data-markdown-block]:first-child>*:first-child` and `…:last-child>*:last-child` make the `:first-child`/`:last-child` invalidation "whole subtree". So the whole mounted transcript restyles once per flip.
+  - The fix: keep the thumb mounted with `hidden`. v2's own `ScrollThumb` got exactly that on feat e02a7e8cdd, and collapse-all's restyle fell from 1,324 to 673 elements.
+
 ## Streaming at 60 Hz (exp-stream, 2026-09-25)
 
 **Scenario:** a session with 22 earlier turns streams a 12k-character reply (headings, lists, 5 code fences, a table, Mermaid, 4 tool parts): 1,540 deltas, 8 characters every 25 ms, measured on production builds. At 1x every build holds 60 Hz; the differences show up in per-delta latency, CPU and memory, and at 4x throttle in missed frames.
@@ -419,7 +434,7 @@ At 19:08 the owner said: finish in-progress work; start no new work.
 - The corpus can now replay a live turn and compare it with today's app at every hold. Until now no case covered the streaming renderer.
 - **Checks on the tip:** the whole corpus plus flows 03, 04, 09 and 11, on web and phone, 37 passed.
 - **Write-up:** `docs/app-v2-stream-slice.md` (commit by commit, before/after, the case, the red run).
-- **Owner:** sign off, and it merges.
+- **Merged:** the owner signed it off at 11:50, and it's on feat as e9cd0024be.
 
 **Measured on the slice** (feat → slice, v1 in brackets, heap after a forced GC):
 
@@ -466,9 +481,11 @@ At 19:08 the owner said: finish in-progress work; start no new work.
   - Codex `cancelled`/`interrupted`;
   - Cursor `cancelled`.
 
-  `outcomeFromPayload` (`agent-sdk-runtime/src/runtime/turn-outcome.ts`) maps that idle to `{status: "completed"}`, and the turn's own producer finalizes with it. `finalizeCancelled` (`runtime/recovery.ts`) then finds the turn already finished and doesn't write its `{status: "cancelled", reason: "abort"}`. So neither app ever shows "Interrupted" after a Stop. Proven on v1 with the scripted ACP agent answering `cancelled` (lane-transcript-3; the ready corpus case is in `scratchpad/comments/interrupted-*`).
+  `outcomeFromPayload` (`agent-sdk-runtime/src/runtime/turn-outcome.ts`) maps that idle to `{status: "completed"}`, and the turn's own producer finalizes with it. `finalizeCancelled` (`runtime/recovery.ts`) then finds the turn already finished and doesn't write its `{status: "cancelled", reason: "abort"}`. So neither app ever shows "Interrupted" after a Stop. Proven on v1 with the scripted ACP agent answering `cancelled` (lane-transcript-3). The corpus case `interrupted-turn` is in progress on `v2/harness`.
   - **Fix:** a terminal cancelled event in the runtime vocabulary. It belongs in the harness rebuild (`docs/plans/2026-09-24-002-refactor-harness-rebuild-plan.md`).
   - Parity holds meanwhile, since v1 has the same defect.
+
+- **A v1 edge case, kept for parity:** a Mermaid diagram that renders small, then grows past the large-diagram threshold while streaming, keeps its full-screen button over the "Render diagram" placeholder. The deferred path's `.remove()` selects a slot nothing writes, in v1's session-ui too. The fix after the swap is `clearRichControls(wrapper)` in that branch, as the failure path already does.
 
 ## Deletion candidates
 

@@ -54,6 +54,9 @@ export function createElectronRendererV2(env: ConfigEnv): UserConfig {
     build: {
       ...app.build,
       outDir: undefined,
+      // electron-vite's renderer preset defaults minify off; without this the
+      // v2 renderer ships its main chunk unminified (6.7 MB instead of 3.7 MB).
+      minify: "esbuild",
       rollupOptions: {
         ...app.build?.rollupOptions,
         output: withoutManualChunks(app.build?.rollupOptions?.output),

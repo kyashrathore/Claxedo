@@ -7,14 +7,14 @@ import path from "node:path"
 // may overlap the server, but serverReady must still be resolved only after the
 // daemon-access hook and verified health boundary are installed.
 const entry = readFileSync(path.join(import.meta.dir, "index.ts"), "utf8")
-const initialize = entry.slice(entry.indexOf("async function initialize()"), entry.indexOf("function showMainWindow"))
+const initialize = entry.slice(entry.indexOf("async function initialize("), entry.indexOf("function showMainWindow"))
 const serverStart = entry.slice(
   entry.indexOf("async function startClaxedoServer("),
   entry.indexOf("async function setupServerConnection()"),
 )
 const setupServer = entry.slice(
   entry.indexOf("async function setupServerConnection()"),
-  entry.indexOf("async function initialize()"),
+  entry.indexOf("async function initialize("),
 )
 // The same flow, on its other side. The server child owns the only stamp for
 // "able to serve", so the cold startup wiring this file pins does not fit in
@@ -25,6 +25,19 @@ const childEntry = readFileSync(
 )
 
 describe("desktop cold startup wiring", () => {
+  test("forks the server before app readiness and hands the connection to initialize", () => {
+    const setupApp = entry.slice(entry.indexOf("function setupApp()"), entry.indexOf("function emitDeepLinks("))
+    const lock = setupApp.indexOf("app.requestSingleInstanceLock()")
+    const start = setupApp.indexOf("const serverConnection = setupServerConnection()")
+    const ready = setupApp.indexOf("app.whenReady()")
+
+    expect(lock).toBeGreaterThan(-1)
+    expect(start).toBeGreaterThan(lock)
+    expect(ready).toBeGreaterThan(start)
+    expect(setupApp).toContain("await initialize(serverConnection)")
+    expect(initialize).not.toContain("setupServerConnection()")
+  })
+
   test("loads the ordinary renderer while the embedded server starts", () => {
     const createWindow = initialize.indexOf("mainWindow = createMainWindow(globals)")
     const awaitServer = initialize.indexOf("await loadingTask")

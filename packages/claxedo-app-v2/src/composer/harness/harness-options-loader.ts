@@ -1,8 +1,10 @@
 import { ServerError, type HarnessOptions } from "@/server"
-import { applyHarnessOptionsResponse, type HarnessOptionsStatePatch } from "./options-state"
+import { applyHarnessOptionsResponse, type HarnessOptionsDecision, type HarnessOptionsStatePatch } from "./options-state"
 import { harnessSelectionId, type HarnessType } from "./profile"
 import { sameHarnessSelection } from "@/lib/harness-selection"
 import type { DraftDefaultApplication, ResolveDraftDefaultInput } from "./draft-default-policy"
+
+const RETRY_DELAY_MS = 1000
 
 export type HarnessOptionsLoaderCache = {
   nextSeq(scope: string): number
@@ -12,9 +14,7 @@ export type HarnessOptionsLoaderCache = {
   clearTries(scope: string): void
 }
 
-type HarnessOptionsTimer = ReturnType<typeof setTimeout> | undefined
-
-export function createHarnessOptionsLoader<ScopeInput>(input: {
+type LoaderInput<ScopeInput> = {
   /** `model` is the scope's selected model: effort levels and their default belong to it. */
   fetch(type: HarnessType, params?: ScopeInput, model?: string): Promise<HarnessOptions>
   currentHarness(scope: string): HarnessType | undefined
@@ -25,104 +25,34 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
   seed(scope: string): void
   applyPatch(scope: string, patch: HarnessOptionsStatePatch): void
   draftDefaultApplication?(scope: string, type: HarnessType): DraftDefaultApplication | undefined
-  resolveDraftDefault?(
-    application: DraftDefaultApplication,
-    input: Omit<ResolveDraftDefaultInput, "saved">,
-  ): boolean
+  resolveDraftDefault?(application: DraftDefaultApplication, input: Omit<ResolveDraftDefaultInput, "saved">): boolean
   setOptionsLoading(scope: string, value: boolean): void
   readState?(scope: string): { readiness?: string; configError?: string } | undefined
-  // Arrow properties, not methods: both are passed around as bare references
-  // below (`input.clearRetry ?? clearTimeout`), which is only sound for a
-  // function that carries no `this`.
-  scheduleRetry?: (run: () => void) => HarnessOptionsTimer
-  clearRetry?: (timer: HarnessOptionsTimer) => void
   cache: HarnessOptionsLoaderCache
-}) {
-  const optionTimers = new Map<string, HarnessOptionsTimer>()
+}
 
-  const clearTimer = (scope: string) => {
-    const timer = optionTimers.get(scope)
-    if (timer !== undefined) (input.clearRetry ?? ((handle) => clearTimeout(handle)))(timer)
-    optionTimers.delete(scope)
-  }
+type Request = { readonly scope: string; readonly type: HarnessType; readonly id: number; readonly draftDefault?: DraftDefaultApplication }
 
-  const load = async (
-    scope: string,
-    type: HarnessType,
-    params?: ScopeInput,
-  ): Promise<HarnessOptions | undefined> => {
+export function createHarnessOptionsLoader<ScopeInput>(input: LoaderInput<ScopeInput>) {
+  const retries = new Map<string, ReturnType<typeof setTimeout>>()
+  const load = async (scope: string, type: HarnessType, params?: ScopeInput): Promise<HarnessOptions | undefined> => {
     input.seed(scope)
-    clearTimer(scope)
-    const id = input.cache.nextSeq(scope)
-    const draftDefault = input.draftDefaultApplication?.(scope, type)
+    clearTimeout(retries.get(scope))
+    retries.delete(scope)
+    const request: Request = { scope, type, id: input.cache.nextSeq(scope), draftDefault: input.draftDefaultApplication?.(scope, type) }
     input.setOptionsLoading(scope, true)
-    /**
-     * A load whose result is no longer wanted still has to release the loading
-     * flag it raised: the model control renders "Loading models" straight off
-     * `optionsLoading` with no other exit, so a harness switch that outran its
-     * own in-flight request would leave the control stuck there for the life of
-     * the scope.
-     *
-     * The seq check is what makes that safe. When a NEWER load has taken the
-     * scope it raised the flag for itself and owns it until its own request
-     * settles; clearing here would drop the control out of its loading state
-     * while that request is still running.
-     */
-    const abandon = () => {
-      if (input.cache.getSeq(scope) === id) input.setOptionsLoading(scope, false)
-      return undefined
-    }
-    const superseded = () => input.cache.getSeq(scope) !== id || !sameHarnessSelection(input.currentHarness(scope), type)
+    const superseded = () => input.cache.getSeq(scope) !== request.id || !sameHarnessSelection(input.currentHarness(scope), type)
     try {
       const payload = await input.fetch(type, params, input.selectedModel(scope) || undefined)
-      if (superseded()) return abandon()
-
-      const tries = input.cache.getTries(scope) ?? 0
-      const decision = applyHarnessOptionsResponse({
-        type,
-        selectedModel: input.selectedModel(scope),
-        selectedThoughtLevel: input.selectedThoughtLevel?.(scope),
-        modelOptional: input.modelOptional?.(scope),
-        preserveSelectedModel: input.preserveSelectedModel?.(scope),
-        payload,
-        tries,
-      })
-      if (decision.clearTries) input.cache.clearTries(scope)
-      const resolvingDefault = !!draftDefault && !!input.resolveDraftDefault
-      const current = input.readState?.(scope)
-      if (current?.readiness === "error" && current.configError && decision.patch.configError === undefined) {
-        input.setOptionsLoading(scope, false)
-        return payload
-      }
-      input.applyPatch(scope, resolvingDefault
-        ? withoutSelection(decision.patch, payload.stale)
-        : decision.patch)
-      if (resolvingDefault && !payload.stale) {
-        const eligibleModels = (decision.patch.dynamicModels ?? []).map((model) => ({
-          providerId: harnessSelectionId(type),
-          modelId: model.id,
-        }))
-        input.resolveDraftDefault!(draftDefault, {
-          supportedHarnesses: [type],
-          eligibleModels,
-          ...(decision.patch.selectedModel
-            ? { declaredDefaultModel: { providerId: harnessSelectionId(type), modelId: decision.patch.selectedModel } }
-            : {}),
-        })
-      }
-      if (decision.retry) {
-        input.cache.setTries(scope, tries + 1)
-        optionTimers.set(
-          scope,
-          (input.scheduleRetry ?? ((run) => setTimeout(run, 1000)))(() => {
-            if (input.cache.getSeq(scope) !== id || !sameHarnessSelection(input.currentHarness(scope), type)) return
-            void load(scope, type, params)
-          }),
-        )
+      if (superseded()) return abandon(input, request)
+      if (applyOptions(input, request, payload)) {
+        retries.set(scope, setTimeout(() => {
+          if (!superseded()) void load(scope, type, params)
+        }, RETRY_DELAY_MS))
       }
       return payload
     } catch (error) {
-      if (superseded()) return abandon()
+      if (superseded()) return abandon(input, request)
       input.cache.clearTries(scope)
       input.applyPatch(scope, {
         dynamicModels: [],
@@ -135,10 +65,59 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
       return undefined
     }
   }
+  return { load }
+}
 
-  return {
-    load,
+/**
+ * A load whose result is no longer wanted still has to release the loading
+ * flag it raised: the model control renders "Loading models" straight off
+ * `optionsLoading` with no other exit, so a harness switch that outran its
+ * own in-flight request would leave the control stuck there for the life of
+ * the scope.
+ *
+ * The seq check is what makes that safe. When a NEWER load has taken the
+ * scope it raised the flag for itself and owns it until its own request
+ * settles; clearing here would drop the control out of its loading state
+ * while that request is still running.
+ */
+function abandon<ScopeInput>(input: LoaderInput<ScopeInput>, request: Request) {
+  if (input.cache.getSeq(request.scope) === request.id) input.setOptionsLoading(request.scope, false)
+  return undefined
+}
+
+/** Applies a fresh answer to the scope; true when the answer asks for another load. */
+function applyOptions<ScopeInput>(input: LoaderInput<ScopeInput>, request: Request, payload: HarnessOptions): boolean {
+  const { scope, type } = request
+  const tries = input.cache.getTries(scope) ?? 0
+  const decision = applyHarnessOptionsResponse({
+    type,
+    selectedModel: input.selectedModel(scope),
+    selectedThoughtLevel: input.selectedThoughtLevel?.(scope),
+    modelOptional: input.modelOptional?.(scope),
+    preserveSelectedModel: input.preserveSelectedModel?.(scope),
+    payload,
+    tries,
+  })
+  if (decision.clearTries) input.cache.clearTries(scope)
+  const current = input.readState?.(scope)
+  if (current?.readiness === "error" && current.configError && decision.patch.configError === undefined) {
+    input.setOptionsLoading(scope, false)
+    return false
   }
+  const resolvingDefault = request.draftDefault && input.resolveDraftDefault ? request.draftDefault : undefined
+  input.applyPatch(scope, resolvingDefault ? withoutSelection(decision.patch, payload.stale) : decision.patch)
+  if (resolvingDefault && !payload.stale) resolveDraftDefault(input, resolvingDefault, type, decision)
+  if (decision.retry) input.cache.setTries(scope, tries + 1)
+  return decision.retry
+}
+
+function resolveDraftDefault<ScopeInput>(input: LoaderInput<ScopeInput>, application: DraftDefaultApplication, type: HarnessType, decision: HarnessOptionsDecision) {
+  const providerId = harnessSelectionId(type)
+  input.resolveDraftDefault?.(application, {
+    supportedHarnesses: [type],
+    eligibleModels: (decision.patch.dynamicModels ?? []).map((model) => ({ providerId, modelId: model.id })),
+    ...(decision.patch.selectedModel ? { declaredDefaultModel: { providerId, modelId: decision.patch.selectedModel } } : {}),
+  })
 }
 
 function withoutSelection(patch: HarnessOptionsStatePatch, keepError: boolean): HarnessOptionsStatePatch {

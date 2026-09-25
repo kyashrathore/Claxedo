@@ -102,7 +102,7 @@ async function decideAfterClose(state: AttachState, error: AppError): Promise<vo
   const presence = await state.input.server.terminals.presence(state.input.placementId, state.input.terminalId)
   if (state.disposed) return
   const decision = decideReconnect({ presence, attempt })
-  if (decision.kind === "gone") return emit(state, { type: "ended" })
+  if (decision.kind === "gone") return emit(state, { type: "gone" })
   if (decision.kind === "giveUp") return emit(state, { type: "failed", failure: "closed", error })
   state.timer.schedule(decision.delayMs, () => {
     emit(state, { type: "retry" })

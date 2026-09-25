@@ -42,7 +42,8 @@ export function useCloseEndedTerminals(terminals: Terminals): void {
   createEffect(() => {
     for (const { contentId, state } of contents()) {
       const store = terminals.store(state.placementId)
-      if (store.load().kind === "ready" && !store.row(state.terminalId)) workbench.closeContent(contentId)
+      if (store.load().kind === "ready" && !store.row(state.terminalId) && !store.lost(state.terminalId))
+        workbench.closeContent(contentId)
     }
   })
 }
