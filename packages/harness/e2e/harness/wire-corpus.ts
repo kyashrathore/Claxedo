@@ -46,8 +46,47 @@ export function orderFramesByEntity(frames: unknown[]): Array<{ key: string; fra
   return [...groups].sort(([a], [b]) => a.localeCompare(b)).map(([key, frames]) => ({ key, frames }))
 }
 
+export function latestStatusSubject(frame: unknown): string | undefined {
+  const payload = object(object(object(frame).data).payload)
+  if (payload.type !== "runtime.diagnostic") return undefined
+  const properties = object(payload.properties)
+  const code = properties.code
+  if (typeof code !== "string") return undefined
+  if (code === "runtime.mcp_server_status") {
+    const server = object(properties.mcp).serverName
+    return typeof server === "string" ? `${code}:${server}` : undefined
+  }
+  if (code === "runtime.rate_limit") {
+    const limit = object(properties.rateLimit).limitId
+    return `${code}:${typeof limit === "string" ? limit : "account"}`
+  }
+  if (!code.endsWith(".unmapped_event")) return undefined
+  const diagnostic = object(properties.diagnostic)
+  const method = diagnostic.method
+  const native = object(diagnostic.raw)
+  const nativeKind = native.subtype ?? native.type
+  return `${code}:${typeof method === "string" ? method : "unknown"}:${typeof nativeKind === "string" ? nativeKind : ""}`
+}
+
 function faultedObservations(rows: Observation[]): Observation[] {
   const fault = process.env.CLAXEDO_E2E_CORPUS_FAULT
+  if (fault === "status-final-value" || fault === "status-extra-intermediate") {
+    const altered = structuredClone(rows)
+    for (const row of altered) {
+      if (row.kind !== "stream") continue
+      const index = row.frames.findLastIndex((frame) => latestStatusSubject(frame)?.startsWith("runtime.mcp_server_status:"))
+      if (index < 0) continue
+      const frame = row.frames[index] as Record<string, unknown>
+      if (fault === "status-extra-intermediate") {
+        row.frames.splice(index, 0, structuredClone(frame))
+      } else {
+        const properties = object(object(object(frame.data).payload).properties)
+        object(properties.mcp).status = "planted_failure"
+      }
+      return altered
+    }
+    throw new Error(`No MCP status frame for ${fault}`)
+  }
   if (fault !== "same-key-reorder" && fault !== "cross-key-swap") return rows
   const altered = structuredClone(rows)
   for (const row of altered) {
@@ -67,10 +106,14 @@ function faultedObservations(rows: Observation[]): Observation[] {
 export function comparisonShape(rows: Observation[]) {
   const ids = new Map<string, string>()
   const specials = new Map<string, string>()
-  const http = rows.map((row) => {
+  const http = rows.map((row, index) => {
     if (row.kind !== "http") return undefined
     if (flow === "H35.intermediate-release" && row.method === "GET" && /^\/session\/[^/]+$/.test(row.route.split("?")[0] ?? "")) {
-      return normalize({ ...row, body: { id: object(row.body).id } }, ids, specials)
+      return normalize({ ...row, body: { id: object(row.body).id } }, ids, specials, "", `http:${index}`)
+    }
+    if (flow === "H35.native-handoff" && row.method === "GET" && /^\/session\/[^/]+$/.test(row.route.split("?")[0] ?? "")) {
+      const { title: _title, titleSource: _titleSource, ...body } = object(row.body)
+      return normalize({ ...row, body }, ids, specials, "", `http:${index}`)
     }
     if (row.method === "GET" && row.route.startsWith("/api/claxedo/usage")) {
       const source = object(row.body)
@@ -83,9 +126,9 @@ export function comparisonShape(rows: Observation[]) {
           return aKey.localeCompare(bKey)
         }) }
       }
-      return normalize({ ...row, body }, ids, specials)
+      return normalize({ ...row, body }, ids, specials, "", `http:${index}`)
     }
-    return normalize(row, ids, specials)
+    return normalize(row, ids, specials, "", `http:${index}`)
   })
   return rows.map((row, index) => {
     if (row.kind === "http") return http[index]
@@ -101,10 +144,24 @@ export function comparisonShape(rows: Observation[]) {
       const bKey = String(normalize(b.key, new Map(ids), new Map(specials)))
       return aKey.localeCompare(bKey)
     })
-    const entities = groups.map((group) => ({
-      key: normalize(group.key, ids, specials),
-      frames: group.frames.map((frame) => normalize(frame, ids, specials)),
-    })).sort((a, b) => String(a.key).localeCompare(String(b.key)))
+    const entities = groups.map((group, groupIndex) => {
+      const scope = `entity:${index}:${groupIndex}`
+      const latest = new Map<string, unknown>()
+      const strict: unknown[] = []
+      for (const frame of group.frames) {
+        const subject = latestStatusSubject(frame)
+        if (subject) latest.set(subject, frame)
+        else strict.push(frame)
+      }
+      return {
+        key: normalize(group.key, ids, specials, "", scope),
+        frames: strict.map((frame) => normalize(frame, ids, specials, "", scope)),
+        latestStatuses: [...latest].sort(([a], [b]) => a.localeCompare(b)).map(([subject, frame]) => ({
+          subject: normalize(subject, ids, specials, "", scope),
+          frame: normalize(frame, ids, specials, "", scope),
+        })),
+      }
+    }).sort((a, b) => String(a.key).localeCompare(String(b.key)))
     return { kind: row.kind, route: normalize(row.route, ids, specials), entities }
   })
 }
@@ -123,68 +180,70 @@ function parsed(body: string): unknown {
   try { return JSON.parse(body) as unknown } catch { return body }
 }
 
-function special(specials: Map<string, string>, kind: string, value: string) {
+function special(specials: Map<string, string>, kind: string, value: string, scope: string) {
   const key = `${kind}:${value}`
   let mapped = specials.get(key)
   if (!mapped) {
-    const count = [...specials.keys()].filter((item) => item.startsWith(`${kind}:`)).length + 1
-    mapped = `<${kind}:${count}>`
+    const prefix = `<${kind}:${scope}:`
+    const count = [...specials.values()].filter((item) => item.startsWith(prefix)).length + 1
+    mapped = `${prefix}${count}>`
     specials.set(key, mapped)
   }
   return mapped
 }
 
-function normalize(value: unknown, ids: Map<string, string>, specials: Map<string, string>, key = ""): unknown {
-  if (Array.isArray(value)) return value.map((item) => normalize(item, ids, specials, key))
-  if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, normalize(item, ids, specials, name)]))
+function scopedId(ids: Map<string, string>, value: string, kind: string, scope: string): string {
+  let mapped = ids.get(value)
+  if (!mapped) {
+    const prefix = `<${kind}:${scope}:`
+    const count = [...ids.values()].filter((item) => item.startsWith(prefix)).length + 1
+    mapped = `${prefix}${count}>`
+    ids.set(value, mapped)
   }
+  return mapped
+}
+
+function normalize(value: unknown, ids: Map<string, string>, specials: Map<string, string>, key = "", scope = "value"): unknown {
+  if (Array.isArray(value)) return value.map((item) => normalize(item, ids, specials, key, scope))
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, normalize(item, ids, specials, name, scope)]))
+  }
+  if (/^(?:state|phase)$/i.test(key)) return value
   if (typeof value === "number" && (Math.abs(value) >= 100_000_000_000 || /(?:^ts$|^time$|^created$|^updated$|^archived$|^start$|^end$|at$|time$|timestamp|duration|elapsed|since|until)/i.test(key))) return "<time>"
   if (typeof value === "number" && key === "port") return "<port>"
-  if (typeof value === "number" && key === "pid") return special(specials, "pid", String(value))
+  if (typeof value === "number" && key === "pid") return special(specials, "pid", String(value), scope)
   if (typeof value !== "string") return value
-  if (/^(?:state|phase)$/i.test(key)) return value
   if (/(?:^ts$|^time$|^created$|^updated$|^archived$|at$|time$|timestamp|duration|elapsed|since|until)/i.test(key)) return "<time>"
-  if (key === "title" && /^Terminal [a-f0-9]{4}$/i.test(value)) return special(specials, "terminal-title", value)
-  if ((key === "processId" || key === "pid") && /^\d+$/.test(value)) return special(specials, "pid", value)
+  if (key === "title" && /^Terminal [a-f0-9]{4}$/i.test(value)) return special(specials, "terminal-title", value, scope)
+  if ((key === "processId" || key === "pid") && /^\d+$/.test(value)) return special(specials, "pid", value, scope)
   if ((key === "process_key" || key === "processKey") && /^[a-z][a-z0-9-]*:[a-f0-9]{32,}$/i.test(value)) {
-    let mapped = ids.get(value)
-    if (!mapped) { mapped = `<process:${ids.size + 1}>`; ids.set(value, mapped) }
-    return mapped
+    return scopedId(ids, value, "process", scope)
   }
   if (/^(?:repoName|repo|name|workspaceName)$/.test(key) && /-[a-zA-Z0-9]{6}$/.test(value)) {
-    let mapped = ids.get(value)
-    if (!mapped) { mapped = `<repo:${ids.size + 1}>`; ids.set(value, mapped) }
-    return mapped
+    return scopedId(ids, value, "repo", scope)
   }
   let result = value.includes("%2F") ? decodeURIComponent(value) : value
   result = result.replace(/(?:\/private)?\/var\/folders\/[^/]+\/[^/]+\/T\/claxedo-e2e-[^/\s"?]+|\/tmp\/claxedo-e2e-[^/\s"?]+/g, "<data-dir>")
   result = result.replace(/<data-dir>\/workspaces\/[^/\s"?]+/g, (directory) => {
-    let mapped = ids.get(directory)
-    if (!mapped) { mapped = `<workspace:${ids.size + 1}>`; ids.set(directory, mapped) }
-    return mapped
+    return scopedId(ids, directory, "workspace", scope)
   })
-  result = result.replace(/-private-var-folders-[^/]+/g, (directory) => special(specials, "encoded-workspace", directory))
+  result = result.replace(/-private-var-folders-[^/]+/g, (directory) => special(specials, "encoded-workspace", directory, scope))
   result = result.replace(/([?&](?:since|until)=)\d+/g, "$1<time>")
   result = result.replace(/(?:127\.0\.0\.1|localhost):\d+/g, "localhost:<port>")
-  result = result.replace(/\/tmp\/cc-socks\/\d+\.sock/g, (socket) => special(specials, "socket", socket))
-  result = result.replace(/\bpid (\d+)\b/g, (_match, pid: string) => `pid ${special(specials, "pid", pid)}`)
-  result = result.replace(/-p (\d+)\b/g, (_match, pid: string) => `-p ${special(specials, "pid", pid)}`)
-  result = result.replace(/subagent_[a-zA-Z0-9_-]+/g, (id) => special(specials, "subagent", id))
-  result = result.replace(/subagent-[a-f0-9]{8}/gi, (id) => special(specials, "subagent", id))
-  result = result.replace(/pty_[a-zA-Z0-9_-]+/g, (id) => special(specials, "pty", id))
-  result = result.replace(/\b1[7-9]\d{11}\b/g, (timestamp) => special(specials, "time-id", timestamp))
+  result = result.replace(/\/tmp\/cc-socks\/\d+\.sock/g, (socket) => special(specials, "socket", socket, scope))
+  result = result.replace(/\bpid (\d+)\b/g, (_match, pid: string) => `pid ${special(specials, "pid", pid, scope)}`)
+  result = result.replace(/-p (\d+)\b/g, (_match, pid: string) => `-p ${special(specials, "pid", pid, scope)}`)
+  result = result.replace(/subagent_[a-zA-Z0-9_-]+/g, (id) => special(specials, "subagent", id, scope))
+  result = result.replace(/subagent-[a-f0-9]{8}/gi, (id) => special(specials, "subagent", id, scope))
+  result = result.replace(/pty_[a-zA-Z0-9_-]+/g, (id) => special(specials, "pty", id, scope))
+  result = result.replace(/\b1[7-9]\d{11}\b/g, (timestamp) => special(specials, "time-id", timestamp, scope))
   result = result.replace(/(goal\.updated:.*:)(1[7-9]\d{8,11})$/, (_match, prefix: string, timestamp: string) =>
-    `${prefix}${special(specials, "time-id", timestamp)}`)
+    `${prefix}${special(specials, "time-id", timestamp, scope)}`)
   result = result.replace(/(?:ses|msg|prt|per|que|op|turn|tool|call|req|workspace|project|goal)_[a-zA-Z0-9_-]+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, (id) => {
-    let mapped = ids.get(id)
-    if (!mapped) { mapped = `<id:${ids.size + 1}>`; ids.set(id, mapped) }
-    return mapped
+    return scopedId(ids, id, "id", scope)
   })
   if (/(?:^id$|id$)/i.test(key) && result === value && (/^[a-f0-9]{12,}$/i.test(value) || (value.length >= 18 && /[A-Z]/.test(value) && /\d/.test(value))) && !/\s|\//.test(value)) {
-    let mapped = ids.get(value)
-    if (!mapped) { mapped = `<id:${ids.size + 1}>`; ids.set(value, mapped) }
-    return mapped
+    return scopedId(ids, value, "id", scope)
   }
   return result
 }

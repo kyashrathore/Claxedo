@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { comparisonShape, difference, frameEntity, normalizeWireCorpus } from "./wire-corpus"
+import { comparisonShape, difference, frameEntity, latestStatusSubject, normalizeWireCorpus } from "./wire-corpus"
 
 test("wire normalization preserves cross-channel identity, state, phase and order", () => {
   const result = normalizeWireCorpus({
@@ -40,6 +40,11 @@ test("goal event IDs normalize their embedded second timestamps", () => {
   expect(first).toEqual(second)
 })
 
+test("state and phase values remain literal even when numeric", () => {
+  expect(normalizeWireCorpus({ state: 1790000000000, phase: 1790000000000, observedAt: 1790000000000 }))
+    .toEqual({ state: 1790000000000, phase: 1790000000000, observedAt: "<time>" })
+})
+
 test("frame comparison keeps order inside an entity and accepts cross-entity interleaving", () => {
   const session = (id: string, phase: string) => ({ data: { payload: { type: "session.lifecycle", sessionID: id, phase } } })
   const frames = [session("ses_11111111", "creating"), session("ses_22222222", "creating"),
@@ -62,4 +67,41 @@ test("frame comparison keys messages, parts, requests and children separately", 
   expect(frameEntity(frame("question.replied", { requestID: "que_1", sessionID: "ses_1" }))).toBe("question:que_1")
   expect(frameEntity(frame("subagent.updated", { update: { sessionID: "ses_child" }, sessionID: "ses_parent" }))).toBe("child:ses_child")
   expect(frameEntity(frame("runtime.diagnostic", { sessionID: "ses_1", code: "unmapped_event" }))).toBe("session:ses_1")
+})
+
+test("vendor status comparison keeps only the final value per subject", () => {
+  const status = (value: string, server = "claxedo") => ({ data: { payload: { type: "runtime.diagnostic", properties: {
+    sessionID: "ses_11111111", code: "runtime.mcp_server_status", mcp: { serverName: server, status: value },
+  } } } })
+  const shaped = (frames: unknown[]) => comparisonShape([{ kind: "stream", route: "/events", frames }])
+  const baseline = shaped([status("starting"), status("ready"), status("ready", "other")])
+  expect(difference(baseline, shaped([status("ready"), status("ready", "other")]))).toBeUndefined()
+  expect(difference(baseline, shaped([status("starting"), status("failed"), status("ready", "other")]))).toContain("failed")
+  expect(latestStatusSubject(status("ready"))).toBe("runtime.mcp_server_status:claxedo")
+})
+
+test("latest-status subjects separate server, native event kind, and rate limit", () => {
+  const diagnostic = (code: string, properties: Record<string, unknown>) => ({ data: { payload: {
+    type: "runtime.diagnostic", properties: { sessionID: "ses_11111111", code, ...properties },
+  } } })
+  expect(latestStatusSubject(diagnostic("claude_sdk.unmapped_event", {
+    diagnostic: { method: "claude/system", raw: { type: "system", subtype: "init" } },
+  }))).toBe("claude_sdk.unmapped_event:claude/system:init")
+  expect(latestStatusSubject(diagnostic("codex_app_server.unmapped_event", {
+    diagnostic: { method: "thread/settings/updated", raw: {} },
+  }))).toBe("codex_app_server.unmapped_event:thread/settings/updated:")
+  expect(latestStatusSubject(diagnostic("runtime.rate_limit", {
+    rateLimit: { limitId: "codex" },
+  }))).toBe("runtime.rate_limit:codex")
+  expect(latestStatusSubject(diagnostic("pi.retry", {}))).toBeUndefined()
+})
+
+test("an extra ID in one entity does not renumber another entity", () => {
+  const frame = (sessionID: string, value: Record<string, unknown>) => ({ data: { payload: { type: "session.updated", properties: { sessionID, ...value } } } })
+  const shaped = (first: Record<string, unknown>) => comparisonShape([{ kind: "stream", route: "/events", frames: [
+    frame("ses_11111111", first), frame("ses_22222222", { info: { id: "msg_22222222" } }),
+  ] }]) as Array<{ entities: Array<{ key: string; frames: unknown[] }> }>
+  expect(shaped({ info: { id: "msg_11111111" } })[0]?.entities[1]).toEqual(
+    shaped({ unrelatedId: "req_aaaaaaaa", info: { id: "msg_11111111" } })[0]?.entities[1],
+  )
 })
