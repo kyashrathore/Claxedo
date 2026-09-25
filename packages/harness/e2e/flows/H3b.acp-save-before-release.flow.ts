@@ -30,11 +30,11 @@ export async function run() {
       (error: unknown) => {
         if (!(error instanceof ApiError)) return false
         console.log(`H3b ACP save refusal: HTTP ${error.status}`)
-        return error.status >= 500
+        return error.status === 500
       })
     await Bun.sleep(100)
     assert.deepEqual(await readPermissionReceipts(stack.acp.scriptDir), [],
-      "ACP released the permission answer to the agent before saving the reply")
+      "H-3: ACP released the permission answer to the agent before saving the reply")
     assert.ok((await api.permissions(directory)).some((row) => row.id === request.id), "failed save lost the pending request")
     assert.equal(stream.frames.some((frame) => frameType(frame) === "permission.replied" && frameSessionId(frame) === session.id), false)
     assert.equal((await api.session(directory, session.id)).id, session.id)

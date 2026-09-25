@@ -38,6 +38,7 @@ export async function run() {
     const stream = await stack.events(directory)
     const session = await api.createSession(directory, { harness: SCRIPTED_ACP_HARNESS, title: "H3 permissions" })
     await stack.acp.write("h3-once", { steps: [{ kind: "permission", tool: "execute", title: "Run once", text: "once allowed" }] })
+    const onceSince = stream.frames.length
     await api.promptAsync(directory, session.id, acpScriptToken("h3-once"))
     const once = await pending(api, directory, session.id, "Run once")
     const other = await api.createSession(directory, { harness: SCRIPTED_ACP_HARNESS, title: "H3 foreign owner" })
@@ -49,7 +50,8 @@ export async function run() {
     assert.deepEqual(await readPermissionReceipts(stack.acp.scriptDir), beforeForeign, "foreign reply reached the agent")
     await api.replyPermission(directory, other.id, foreign.id, "reject")
     await api.replyPermission(directory, session.id, once.id, "once")
-    await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id, { label: "once turn idle" })
+    await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id
+      && stream.frames.indexOf(frame) >= onceSince, { label: "once turn idle" })
     const afterOnce = await readPermissionReceipts(stack.acp.scriptDir)
     assert.equal(afterOnce.find((row) => row.title === "Run once")?.optionId, "allow-once")
     await refused(() => api.replyPermission(directory, session.id, once.id, "once"), 404)
@@ -60,6 +62,7 @@ export async function run() {
       { kind: "permission", tool: "execute", title: "Same command", text: "second allowed" },
       { kind: "permission", tool: "execute", title: "Different command", text: "third allowed" },
     ] })
+    const alwaysSince = stream.frames.length
     await api.promptAsync(directory, session.id, acpScriptToken("h3-always"))
     const always = await pending(api, directory, session.id, "Same command")
     await api.replyPermission(directory, session.id, always.id, "always")
@@ -71,14 +74,17 @@ export async function run() {
       "the agent did not receive both identical calls")
     assert.equal(granted.find((row) => row.title === "Same command")?.optionId, "allow-always")
     await api.replyPermission(directory, session.id, different.id, "once")
-    await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id && permissionFrames(stream, session.id, "permission.replied").length >= 3,
+    await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id
+      && stream.frames.indexOf(frame) >= alwaysSince && permissionFrames(stream, session.id, "permission.replied").length >= 3,
       { label: "always turn idle" })
 
     await stack.acp.write("h3-deny", { steps: [{ kind: "permission", tool: "execute", title: "Denied command" }] })
+    const denySince = stream.frames.length
     await api.promptAsync(directory, session.id, acpScriptToken("h3-deny"))
     const deny = await pending(api, directory, session.id, "Denied command")
     await api.replyPermission(directory, session.id, deny.id, "reject")
-    await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id && permissionFrames(stream, session.id, "permission.replied").length >= 4,
+    await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id
+      && stream.frames.indexOf(frame) >= denySince && permissionFrames(stream, session.id, "permission.replied").length >= 4,
       { label: "deny turn idle" })
     const afterDeny = await readPermissionReceipts(stack.acp.scriptDir)
     assert.equal(afterDeny.find((row) => row.title === "Denied command")?.optionId, "reject-once")

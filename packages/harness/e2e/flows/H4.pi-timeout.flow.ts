@@ -41,7 +41,7 @@ export async function run() {
     { label: "Pi extension timeout question" })
     await Bun.sleep(600)
     assert.ok(stream.frames.some((frame) => frameType(frame) === "question.expired" && frameSessionId(frame) === session.id),
-      "Pi timed-out dialog produced no expired request event")
+      "H-11: Pi timed-out dialog produced no expired request event")
     assert.equal((await api.questions(directory)).some((row) => row.sessionID === session.id), false,
       "Pi timed-out extension dialog remained pending")
     assert.deepEqual(JSON.parse(await fs.readFile(path.join(directory, "pi-dialog-receipt.json"), "utf8")), {

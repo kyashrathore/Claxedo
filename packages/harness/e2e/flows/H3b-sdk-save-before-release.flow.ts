@@ -50,7 +50,7 @@ export async function run() {
           (error: unknown) => {
             if (!(error instanceof ApiError)) return false
             console.log(`H3b ${harness.id} save refusal: HTTP ${error.status}`)
-            return error.status >= 500
+            return error.status === 500
           })
         assert.ok((await api.permissions(directory)).some((row) => row.id === request.id), `${harness.id} lost pending request`)
         assert.deepEqual(await api.messages(directory, session.id), beforeMessages, `${harness.id} advanced the stored turn`)

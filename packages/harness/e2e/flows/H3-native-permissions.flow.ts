@@ -63,8 +63,10 @@ export async function run() {
       await api.promptAsync(directory, other.id, `Run the command, then reply with exactly this one token: ${otherMarker}`)
       const foreign = await pending(api, directory, other.id)
       const repliesBefore = stream.frames.filter((frame) => frameType(frame) === "permission.replied").length
+      const foreignMessages = await api.messages(directory, other.id)
       await refused(() => api.replyPermission(directory, session.id, foreign.id, "once"), 409)
       assert.equal(stream.frames.filter((frame) => frameType(frame) === "permission.replied").length, repliesBefore)
+      assert.deepEqual(await api.messages(directory, other.id), foreignMessages, `${harness.id} delivered the foreign reply`)
       await assert.rejects(() => fs.access(foreignOutput), (error: unknown) => (error as NodeJS.ErrnoException).code === "ENOENT",
         `${harness.id} executed a foreign request`)
       await api.replyPermission(directory, other.id, foreign.id, "reject")
@@ -73,8 +75,10 @@ export async function run() {
       await idle(stream, session.id, `${harness.id} once idle`, onceSince)
       assert.equal(await fs.readFile(output, "utf8"), "approved")
       const replied = stream.frames.filter((frame) => frameType(frame) === "permission.replied" && frameSessionId(frame) === session.id).length
+      const onceMessages = await api.messages(directory, session.id)
       await refused(() => api.replyPermission(directory, session.id, once.id, "once"), 404)
       assert.equal(stream.frames.filter((frame) => frameType(frame) === "permission.replied" && frameSessionId(frame) === session.id).length, replied)
+      assert.deepEqual(await api.messages(directory, session.id), onceMessages, `${harness.id} delivered the duplicate reply`)
 
       const alwaysMarker = `H3_${harness.id.toUpperCase()}_ALWAYS`
       const same = path.join(stack.dataDir, `${harness.id}-same.txt`)
@@ -103,7 +107,11 @@ export async function run() {
       await api.replyPermission(directory, session.id, deny.id, "reject")
       await idle(stream, session.id, `${harness.id} deny idle`, denySince)
       await assert.rejects(() => fs.access(deniedFile), (error: unknown) => (error as NodeJS.ErrnoException).code === "ENOENT")
+      const deniedMessages = await api.messages(directory, session.id)
+      const deniedReplies = stream.frames.filter((frame) => frameType(frame) === "permission.replied" && frameSessionId(frame) === session.id).length
       await refused(() => api.replyPermission(directory, session.id, deny.id, "reject"), 404)
+      assert.equal(stream.frames.filter((frame) => frameType(frame) === "permission.replied" && frameSessionId(frame) === session.id).length, deniedReplies)
+      assert.deepEqual(await api.messages(directory, session.id), deniedMessages, `${harness.id} delivered the stale reply`)
       assert.equal((await api.permissions(directory)).some((row) => row.sessionID === session.id), false)
       const tools = (await api.messages(directory, session.id)).flatMap((message) => message.parts).filter((part) => part.type === "tool")
       assert.ok(tools.some((part) => (part.state as { status?: string } | undefined)?.status === "completed"))
