@@ -39,6 +39,8 @@ import {
 } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { requestHasAuthenticationCredential } from "@claxedo/server-core/platform/auth/authentication"
+import type { SandboxManagerPort } from "@claxedo/server-core/sandbox/manager-port"
+import { authorityRowBacking, readyCloudWorkspaces } from "@claxedo/server-core/workspace/cloud-runtime-readiness"
 import {
   EMPTY_SERVICE_CATALOG,
   projectServiceCatalogForBrowser,
@@ -64,6 +66,8 @@ export type HostedShellRouteOptions = {
   version?: string
   /** Signed project inventory source (the authority workspaces.list). */
   listWorkspaces?: (auth: SignedControlPlaneAuth) => Promise<unknown>
+  /** Whose lease says which cloud workspaces of that inventory are running. */
+  sandboxManager?: Pick<SandboxManagerPort, "target">
   /** Heartbeat cadence for the events stream (tests shrink this). */
   heartbeatMs?: number
   /**
@@ -210,7 +214,7 @@ function projectDisplayName(row: Record<string, unknown> | undefined, projectId:
 // and workspace store, which the Worker bundle cannot carry. The inventory
 // tells the app shell which directories a signed workspace occupies, and so
 // which runtime-owned reads (provider, files, PTY) take the relay.
-export function signedShellProjects(workspaces: unknown[], now: number) {
+export function signedShellProjects(workspaces: unknown[], now: number, readyCloud: ReadonlySet<string>) {
   const groups = new Map<string, {
     id: string
     name: string
@@ -245,16 +249,13 @@ export function signedShellProjects(workspaces: unknown[], now: number) {
     // group was opened by a bare row its name is still the raw project id, so
     // let a later row that DOES know the repo upgrade it.
     if (group.name === projectId) group.name = projectDisplayName(row, projectId)
+    const backing = authorityRowBacking(row)
     group.directories.push(workspaceId)
     group.workspaces[workspaceId] = {
       id: workspaceId,
-      // The row's own placement, passed through rather than restated: the app
-      // narrows this word once, in `placement-wire.ts`. A row naming no backing
-      // is the provisioner's, never the reader's own machine — defaulting the
-      // other way would put somebody else's workspace on this one.
-      backing: asString(row?.backing) === "local-worktree" ? "local-worktree" : "cloud-vm",
+      backing,
       workspace_name: workspaceName,
-      reachable: true,
+      reachable: backing === "local-worktree" || readyCloud.has(workspaceId),
       directory,
       ...(remoteDirectory ? { remote_directory: remoteDirectory } : {}),
       // Carried so the client can derive an owner/repo label of its own (the
@@ -544,8 +545,9 @@ async function signedProjects(c: Context, options: HostedShellRouteOptions, acti
     guardedWaitUntil(c)?.(options.activateOwner(auth))
   }
   if (!options.listWorkspaces) return []
-  const workspaces = await options.listWorkspaces(auth)
-  return signedShellProjects(Array.isArray(workspaces) ? workspaces : [], Date.now())
+  const listed = await options.listWorkspaces(auth)
+  const workspaces = Array.isArray(listed) ? listed : []
+  return signedShellProjects(workspaces, Date.now(), await readyCloudWorkspaces(options.sandboxManager, workspaces))
 }
 
 /**

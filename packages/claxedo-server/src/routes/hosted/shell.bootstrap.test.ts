@@ -95,4 +95,21 @@ describe("GET /api/claxedo/bootstrap on a hosted central", () => {
 
     expect(response.status).toBe(401)
   })
+
+  test("states each cloud workspace reachable only while the sandbox manager reports its lease ready", async () => {
+    const workspaces = [
+      { workspace_id: "ws_running", project_id: "proj_one", backing: "cloud-vm" },
+      { workspace_id: "ws_stopped", project_id: "proj_one", backing: "cloud-vm" },
+    ]
+    const sandboxManager = {
+      target: async (id: string) => id === "ws_running"
+        ? { status: "ready" as const, sandboxId: id, url: "http://sandbox.test", hostId: id, epoch: 1, homeRegion: "us-east" }
+        : { status: "unavailable" as const, reason: "runtime_lease_not_ready", leaseStatus: "stopped" as const },
+    }
+    const response = await HostedShellRoutes({ authConfig: signedConfig, verifier, listWorkspaces: async () => workspaces, sandboxManager })
+      .request("http://cp.test/api/claxedo/bootstrap", { headers: { authorization: "Bearer token-owner" } })
+
+    const body = await response.json() as { project: Array<{ workspaces: Record<string, { reachable: boolean }> }> }
+    expect(body.project[0]?.workspaces).toMatchObject({ ws_running: { reachable: true }, ws_stopped: { reachable: false } })
+  })
 })
