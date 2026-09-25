@@ -19,9 +19,8 @@ function upstreamStatus(status: SessionStatus): AgentRuntimeStatus | undefined {
         next: status.nextAt,
         ...("action" in status && status.action ? { action: status.action as NonNullable<Extract<AgentRuntimeStatus, { type: "retry" }>["action"]> } : {}),
       }
-    case "recovering":
-      return undefined
   }
+  return undefined
 }
 
 function recoveringMessage(status: Extract<SessionStatus, { kind: "recovering" }>) {

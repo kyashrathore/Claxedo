@@ -183,5 +183,6 @@ export async function playScript(context: TurnContext, script: AcpScript): Promi
     const result = await playStep(context, step)
     if (result) return result
   }
+  if (context.signal.aborted) return { stopReason: "cancelled" }
   return { stopReason: script.stopReason ?? "end_turn" }
 }
