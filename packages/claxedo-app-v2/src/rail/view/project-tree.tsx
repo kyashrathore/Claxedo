@@ -1,6 +1,5 @@
 import { createMemo, For, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { useClock } from "@/lib/clock"
 import { useProjectList } from "@/projects"
 import { useServer } from "@/server"
 import { useSessionStores, type SessionRowView } from "@/session"
@@ -37,7 +36,6 @@ export function ProjectTree(): JSX.Element {
     const route = routing.route()
     return route.kind === "terminal" ? route.terminalId : undefined
   }
-  const now = useClock()
   const workbench = useWorkbench()
   const prepareDrag = (row: RailRow) =>
     row.kind === "session"
@@ -75,7 +73,6 @@ export function ProjectTree(): JSX.Element {
                     active={!!current().projectId && current().projectId === activeProjectId()}
                     activeSessionId={activeSessionId()}
                     activeTerminalId={activeTerminalId()}
-                    now={now}
                     list={stores.list}
                     onSelect={select}
                     onNewTerminal={(section) => section.placementId && terminals.startNew(section.placementId)}

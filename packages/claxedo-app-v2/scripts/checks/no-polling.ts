@@ -4,7 +4,7 @@ import { finish, type Violation } from "./lib/report"
 import { enclosingFunction, functionName, unwrap, walk } from "./lib/tree"
 
 const timerOwners: Readonly<Record<string, string>> = {
-  "src/lib/clock.tsx": "the app's one clock: relative ages every 10 s",
+  "src/lib/age-clock.ts": "the app's one age clock: one timeout at the next instant a visible age label changes, none while the page is hidden",
   "src/lib/second-ticker.ts": "the clock's ref-counted 1 s tick, running only while a running tool's elapsed time or a retry countdown reads it",
 }
 const pacingOwners: Readonly<Record<string, string>> = {
