@@ -23,6 +23,7 @@ import { registerSessionCommands } from "./session-commands"
 import { recoverTurn } from "./turn-recovery-actions"
 import { floatingPeekStep, type FloatingPeekState } from "./floating-peek"
 import { PreviousMessagesRow, turnActive } from "./timeline"
+import { RunningWorkspace } from "./workspace-start"
 import "./session-screen.css"
 import "./session-floating.css"
 
@@ -157,21 +158,23 @@ function SessionBody(props: {
                 <SessionConnectionLine />
               </Show>
               <Show when={!parentId() && !props.readOnly} fallback={<ChildNotice t={t} readOnly={props.readOnly} onBack={toParent} />}>
-                <Composer
-                  composerKey={sessionComposerKey(props.view.ref)}
-                  placementId={props.view.ref.placementId}
-                  view={props.view}
-                  sessionHarness={props.view.row()?.harness}
-                  attachmentWorkspace={true}
-                  afterAccepted={() => {
-                    setSends((count) => count + 1)
-                    queueEdit.accepted()
-                  }}
-                  queuedEdit={queueEdit.edit}
-                  dropZone={() => body}
-                  collapsible={props.floating}
-                  registerRecovery={(next) => (recovery = next)}
-                />
+                <RunningWorkspace placementId={props.view.ref.placementId}>
+                  <Composer
+                    composerKey={sessionComposerKey(props.view.ref)}
+                    placementId={props.view.ref.placementId}
+                    view={props.view}
+                    sessionHarness={props.view.row()?.harness}
+                    attachmentWorkspace={true}
+                    afterAccepted={() => {
+                      setSends((count) => count + 1)
+                      queueEdit.accepted()
+                    }}
+                    queuedEdit={queueEdit.edit}
+                    dropZone={() => body}
+                    collapsible={props.floating}
+                    registerRecovery={(next) => (recovery = next)}
+                  />
+                </RunningWorkspace>
               </Show>
             </div>
           </Show>

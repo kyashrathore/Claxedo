@@ -9,6 +9,7 @@ import { draftSessionPaneKind } from "./draft-pane"
 import { sessionPaneKind } from "./session-pane"
 import { useSessionScreenText } from "./text"
 import { registerSessionCommands } from "./session-commands"
+import { RunningWorkspace } from "./workspace-start"
 import "./session-screen.css"
 
 export type DraftSessionState = {
@@ -48,14 +49,16 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
                   />
                 </div>
                 <div class="relative z-10 -mt-2">
-                  <Composer
-                    composerKey={key()}
-                    placementId={props.state.placementId}
-                    attachmentWorkspace={true}
-                    createSession={createSession}
-                    afterAccepted={(view) => workbench.replacePane(props.paneId, sessionPaneKind, view.ref)}
-                    dropZone={() => pane}
-                  />
+                  <RunningWorkspace placementId={props.state.placementId} startOnOpen>
+                    <Composer
+                      composerKey={key()}
+                      placementId={props.state.placementId}
+                      attachmentWorkspace={true}
+                      createSession={createSession}
+                      afterAccepted={(view) => workbench.replacePane(props.paneId, sessionPaneKind, view.ref)}
+                      dropZone={() => pane}
+                    />
+                  </RunningWorkspace>
                 </div>
               </div>
             </div>

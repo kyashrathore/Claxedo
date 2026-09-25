@@ -6,12 +6,20 @@ import type { PlacementId } from "./ids"
 import { queryKeys } from "./query-keys"
 import type { RuntimeRoute, Transport } from "./transport"
 import type { SessionRef } from "./types"
+import { isStoppedCloud } from "./placement-runtime"
+import { workspaceStopped } from "./wire/connection"
 import { bootstrapCatalog, type BootstrapCatalog, type PlacementRecord } from "./wire/placements"
 import type { Address } from "./wire/session-row"
+
+export type SessionHome =
+  | { readonly kind: "runtime"; readonly route: RuntimeRoute }
+  | { readonly kind: "central"; readonly workspaceId: string }
 
 export type Workspaces = Pick<PlacementsApi, "byId" | "list"> & {
   readonly address: Address
   readonly route: (ref: SessionRef | PlacementId) => Promise<RuntimeRoute>
+  readonly locate: (id: PlacementId) => Promise<RuntimeRoute>
+  readonly home: (ref: SessionRef) => Promise<SessionHome>
   readonly learn: (directory: string) => Promise<void>
   readonly catalog: () => BootstrapCatalog | undefined
   readonly load: () => Promise<BootstrapCatalog>
@@ -66,6 +74,26 @@ function placementReads(records: () => readonly PlacementRecord[]) {
   }
 }
 
+function placementRoutes(find: (id: PlacementId) => Promise<PlacementRecord | undefined>): Pick<Workspaces, "route" | "locate" | "home"> {
+  const placed = async (id: PlacementId) => {
+    const record = await find(id)
+    if (!record) throw new ServerError({ class: "not_found", message: `Placement ${id} is not in the catalog` })
+    return record
+  }
+  return {
+    route: async (ref) => {
+      const record = await placed(typeof ref === "string" ? ref : ref.placementId)
+      if (isStoppedCloud(record.placement)) throw workspaceStopped(record.route.workspaceId)
+      return record.route
+    },
+    locate: async (id) => (await placed(id)).route,
+    home: async (ref) => {
+      const record = await placed(ref.placementId)
+      return isStoppedCloud(record.placement) ? { kind: "central", workspaceId: record.route.workspaceId } : { kind: "runtime", route: record.route }
+    },
+  }
+}
+
 export function createWorkspaces(transport: Transport, queryClient: QueryClient): Workspaces {
   const key = queryKeys.bootstrap(transport.serverUrl)
   const watched = watchQuery(queryClient, key)
@@ -82,13 +110,10 @@ export function createWorkspaces(transport: Transport, queryClient: QueryClient)
     byId,
     list,
     address,
-    route: async (ref) => {
-      const id = typeof ref === "string" ? ref : ref.placementId
+    ...placementRoutes(async (id) => {
       await load()
-      const record = recordOf(id)
-      if (!record) throw new ServerError({ class: "not_found", message: `Placement ${id} is not in the catalog` })
-      return record.route
-    },
+      return recordOf(id)
+    }),
     learn: async (directory) => {
       if (relearned.has(directory)) return
       await reread()

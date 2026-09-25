@@ -1,7 +1,7 @@
 import type { Accessor } from "solid-js"
 import type { QueryClient } from "@tanstack/solid-query"
 import type { Account, AccountCheck, EffectiveAccounts, MachineLogin } from "./account-types"
-import type { CloudCreateInput, CloudWorkspace, CodeHostConnection, CodeHostRepository } from "./cloud-types"
+import type { CloudCreateInput, CloudWorkspace, CodeHostConnection, CodeHostRepository, WorkspaceStartProgress } from "./cloud-types"
 import type { HarnessLogin, HarnessOptions } from "./harness-types"
 import type { PermissionModesRequest } from "./permission-modes"
 import type { PermissionModeState } from "./wire/permission-modes"
@@ -134,7 +134,7 @@ export type GitApi = {
 
 export type CloudApi = {
   readonly create: (input: CloudCreateInput) => Promise<CloudWorkspace>
-  readonly start: (id: PlacementId) => Promise<void>
+  readonly start: (id: PlacementId, options?: { readonly onProgress?: (progress: WorkspaceStartProgress) => void }) => Promise<void>
   readonly stop: (id: PlacementId) => Promise<void>
   readonly remove: (id: PlacementId) => Promise<void>
 }

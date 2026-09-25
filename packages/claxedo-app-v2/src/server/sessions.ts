@@ -7,7 +7,7 @@ import { controlGoal, startGoal } from "./session-goal"
 import { createSessionQueue } from "./session-queue"
 import { readLatestTurn } from "./latest-turn"
 import { readTurn } from "./turn"
-import { listSessions, readOlder, readSession } from "./session-reads"
+import { homed, listSessions, readOlder, readSession } from "./session-reads"
 import { createStatusesRead } from "./session-statuses"
 import { stopTurn } from "./session-stop"
 import type { StatusOwner } from "./status"
@@ -89,8 +89,8 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
     },
     statuses: createStatusesRead(transport, workspaces, status),
     newMessageId,
-    ...createSessionQueue(transport, workspaces),
+    ...createSessionQueue(context),
     controlGoal: async (ref, action) => controlGoal(transport, await workspaces.route(ref), ref, action),
-    subagents: async (ref) => subagentsFromWire(await transport.runtimeJson<unknown>(await workspaces.route(ref), sessionEndpoint(ref, "/subagents"))),
+    subagents: (ref) => homed(context, ref, async (where) => subagentsFromWire(await transport.runtimeJson<unknown>(where, sessionEndpoint(ref, "/subagents"))), async () => []),
   }
 }

@@ -16,6 +16,10 @@ export type CloudWorkspace = {
   readonly status: CloudWorkspaceStatus
 }
 
+export type WorkspaceBootMode = "restore" | "resume" | "cold-start"
+
+export type WorkspaceStartProgress = { readonly kind: "provisioning"; readonly bootMode?: WorkspaceBootMode }
+
 export type CloudCreateInput = {
   readonly projectId: ProjectId
   readonly name?: string

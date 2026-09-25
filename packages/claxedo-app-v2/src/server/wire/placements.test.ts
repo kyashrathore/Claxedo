@@ -1,5 +1,6 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
+import { placementId } from "../ids"
 import { bootstrapCatalog } from "./placements"
 
 const hostedSignedBody = {
@@ -25,8 +26,8 @@ test("placements: a hosted central's signed bootstrap places each cloud workspac
 
   expect(catalog.declaration).toEqual({ hostAggregate: false, issuesSessions: true, documents: false })
   expect(catalog.placements.map(({ placement, route }) => ({ id: placement.id, kind: placement.kind, reachable: placement.reachable, route }))).toEqual([
-    { id: "ws_running", kind: "cloud", reachable: true, route: { directory: "workspace:ws_running", workspaceId: "ws_running", remote: true } },
-    { id: "ws_stopped", kind: "cloud", reachable: false, route: { directory: "workspace:ws_stopped", workspaceId: "ws_stopped", remote: true } },
+    { id: placementId("ws_running"), kind: "cloud", reachable: true, route: { directory: "workspace:ws_running", workspaceId: "ws_running", remote: true } },
+    { id: placementId("ws_stopped"), kind: "cloud", reachable: false, route: { directory: "workspace:ws_stopped", workspaceId: "ws_stopped", remote: true } },
   ])
 })
 
