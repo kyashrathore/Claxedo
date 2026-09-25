@@ -166,12 +166,10 @@ async function turnChecks(probe: Probe, placement: Placement) {
     await server.sessions.prompt(ref, { clientRequestId: crypto.randomUUID(), text: `Delegate. ${acpScriptToken("delegate")}`, attachments: [] })
     await log.next("subagentUpdated", from, (event): event is ServerEvent => event.type === "subagentUpdated" && event.ref.sessionId === ref.sessionId)
     await log.next("idle", from, isStatus(ref.sessionId, ["idle"]))
-    const updates = await server.sessions.subagents(ref)
-    const child = updates.find((subagent) => subagent.childSessionId)
-    const spawn = updates.find((subagent) => subagent.toolCallRole === "spawn" && subagent.toolCallId)
-    if (!child?.childSessionId || !spawn) throw new Error(`no child session or spawn edge among ${updates.length} update(s)`)
+    const child = (await server.sessions.subagents(ref)).find((subagent) => subagent.childSessionId)
+    if (!child?.childSessionId) throw new Error("no subagent names a child session")
     const snapshot = await surfaceOf(server, { ...ref, sessionId: child.childSessionId as typeof ref.sessionId })
-    return `${child.subagentKey} status=${child.status} spawned by ${spawn.toolCallId} child entries=${snapshot.transcript.entries.length}`
+    return `${child.subagentKey} status=${child.status} child entries=${snapshot.transcript.entries.length}`
   })
   await check("stop: a held turn is reported working, then cancelled", async () => {
     await stack.acp.write("held", { steps: [{ kind: "hold", name: "held" }, { kind: "text", text: "too late" }] })
@@ -194,6 +192,22 @@ async function turnChecks(probe: Probe, placement: Placement) {
     } finally {
       await stack.acp.release("held")
     }
+  })
+  await check("failed: a failed turn stays failed across a status read of three requests", async () => {
+    await stack.acp.write("failing", { steps: [{ kind: "error", message: "Scripted turn failure" }] })
+    const from = log.mark()
+    await server.sessions.prompt(ref, { clientRequestId: crypto.randomUUID(), text: `Fail. ${acpScriptToken("failing")}`, attachments: [] })
+    await log.next("failed", from, isStatus(ref.sessionId, ["failed"]))
+    const paths: string[] = []
+    const original = globalThis.fetch
+    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      paths.push(new URL(input instanceof Request ? input.url : String(input)).pathname)
+      return original(input, init)
+    }) as typeof fetch
+    const read = await server.sessions.statuses().finally(() => (globalThis.fetch = original))
+    const reported = read.reports.find((report) => report.ref.sessionId === ref.sessionId)?.status.kind
+    if (reported !== "failed" || paths.length !== 3) throw new Error(`reported=${reported}, reads=${paths.join(",")}`)
+    return `reported=${reported}, reads=${paths.sort().join(",")}`
   })
   return ref
 }

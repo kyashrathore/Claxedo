@@ -44,6 +44,11 @@ function label(row: Record<string, unknown>, directory: string) {
   return text(row.workspace_name) ?? text(row.workspaceName) ?? directory.split("/").filter(Boolean).pop() ?? directory
 }
 
+function gitRemoteOf(project: Record<string, unknown>, row: Record<string, unknown>): string | undefined {
+  const git = isRecord(project.git) ? project.git : {}
+  return text(row.repo_url) ?? text(row.repoUrl) ?? text(row.git_remote) ?? text(row.gitRemote) ?? text(git.remote)
+}
+
 function placementRecord(project: Record<string, unknown>, key: string, row: Record<string, unknown>, self: string | undefined): PlacementRecord | undefined {
   const id = text(row.workspaceId) ?? text(row.workspace_id) ?? text(row.id) ?? key
   const owner = text(project.id)
@@ -52,6 +57,7 @@ function placementRecord(project: Record<string, unknown>, key: string, row: Rec
   const location = text(row.remote_directory) ?? text(row.remoteDirectory) ?? directory
   const { remote, machine } = remoteOf(row, self)
   const root = directory === text(project.worktree)
+  const gitRemote = gitRemoteOf(project, row)
   return {
     placement: {
       id: placementId(id),
@@ -61,6 +67,7 @@ function placementRecord(project: Record<string, unknown>, key: string, row: Rec
       path: location,
       reachable: row.reachable === true,
       ...(machine ? { machineId: machine } : {}),
+      ...(gitRemote ? { gitRemote } : {}),
     },
     route: { directory: remote ? `workspace:${id}` : directory, workspaceId: id, remote },
   }
