@@ -10,7 +10,7 @@ import type { Context } from "hono"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
-import { embedded, ensureCloudRuntime, noWr, proxy, type RuntimeProxyOptions } from "./internals"
+import { embedded, ensureCloudRuntime, ingressOptions, noWr, proxy, type RuntimeProxyOptions } from "./internals"
 
 const DEFAULT_REMOTE_DIRECTORY = "/workspace"
 
@@ -37,11 +37,7 @@ async function localWorkspaceRelayProxyWithOptions(c: Context, options: RuntimeP
       // Host-tunnel traffic carries a relay-minted RHT; loopback browser traffic
       // may carry a control-plane JWT. `embedded()` stamps actor profile claims
       // for message author attribution without re-parsing an RHT as CP auth.
-      return await embedded(c, ws, pathname, {
-        ...(options.resolveRelayActor ? { resolveRelayActor: options.resolveRelayActor } : {}),
-        ...(options.requireRelayActor ? { requireRelayActor: true } : {}),
-        ...(options.verifyRelayIngress ? { verifyRelayIngress: true } : {}),
-      })
+      return await embedded(c, ws, pathname, ingressOptions(options))
     }
 
     const runtime = await ensureCloudRuntime(ws, options)

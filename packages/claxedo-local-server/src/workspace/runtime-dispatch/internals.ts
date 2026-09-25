@@ -444,11 +444,21 @@ export function embeddedRuntimeTargetUrl(requestUrl: URL, targetPath: string): U
   return new URL(targetPath + requestUrl.search, requestUrl)
 }
 
+export type IngressOptions = Pick<RuntimeProxyOptions, "resolveRelayActor" | "requireRelayActor" | "verifyRelayIngress">
+
+export function ingressOptions(options: RuntimeProxyOptions): IngressOptions {
+  return {
+    ...(options.resolveRelayActor ? { resolveRelayActor: options.resolveRelayActor } : {}),
+    ...(options.requireRelayActor ? { requireRelayActor: true } : {}),
+    ...(options.verifyRelayIngress ? { verifyRelayIngress: true } : {}),
+  }
+}
+
 export async function embedded(
   c: Context,
   ws: NonNullable<Awaited<ReturnType<typeof resolveWorkspace>>>,
   pathname?: string,
-  options?: Pick<RuntimeProxyOptions, "resolveRelayActor" | "requireRelayActor" | "verifyRelayIngress">,
+  options?: IngressOptions,
 ) {
   // Ahead of the runtime: a refused request must not start a workspace.
   const provenance = await resolveIngressProvenance(c.req.raw, ws.id, options)

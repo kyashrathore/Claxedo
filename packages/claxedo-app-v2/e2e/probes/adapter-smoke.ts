@@ -134,7 +134,7 @@ async function turnChecks(probe: Probe, placement: Placement) {
       await stack.acp.release("held")
     }
   })
-  await check("failed: a failed turn stays failed across a status read of three requests", async () => {
+  await check("failed: a failed turn stays failed across a status read of one request", async () => {
     await stack.acp.write("failing", { steps: [{ kind: "error", message: "Scripted turn failure" }] })
     const from = log.mark()
     await server.sessions.prompt(ref, { clientRequestId: crypto.randomUUID(), text: `Fail. ${acpScriptToken("failing")}`, attachments: [] })
@@ -147,7 +147,7 @@ async function turnChecks(probe: Probe, placement: Placement) {
     }) as typeof fetch
     const read = await server.sessions.statuses().finally(() => (globalThis.fetch = original))
     const reported = read.reports.find((report) => report.ref.sessionId === ref.sessionId)?.status.kind
-    if (reported !== "failed" || paths.length !== 3) throw new Error(`reported=${reported}, reads=${paths.join(",")}`)
+    if (reported !== "failed" || paths.join(",") !== "/api/wr/session-activity") throw new Error(`reported=${reported}, reads=${paths.join(",")}`)
     return `reported=${reported}, reads=${paths.sort().join(",")}`
   })
   return ref
