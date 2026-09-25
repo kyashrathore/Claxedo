@@ -92,10 +92,10 @@ The app asks one server for one page of a project's sessions, with one opaque cu
     - Boot, before: one list read per reachable placement plus `/api/wr/session-activity` on loopback, or three runtime reads per remote placement. After: one list read per project and nothing else.
 - [ ] **S5. History routing:** one owner in `src/server` routes by placement kind (control plane, relay or local), and offline machines render the published row.
   - Flows: a gone cloud sandbox renders its history; an offline machine renders its row and state.
-  - Progress:
-- [ ] **S6. Terminals:** live placements only, lazy per project.
+  - Progress: the router is signed-web's `readHistory`/`onRuntime` in `session-reads.ts` (control plane for cloud, runtime or relay otherwise). e7a2dda260 adds the offline-machine branch: its row from the published inventory, no transcript, nothing read from the machine, and a "machine offline" card. f2f74a70a7 serves the stored transcript's `latest-surface`. Proven by `session-reads.test.ts` (stopped cloud and offline machine); the two flows are unmet: the e2e harness stands up no cloud sandbox lifecycle or enrolled remote machine behind a relay for v2 (owner of that harness: signed-web / cloud lanes).
+- [x] **S6. Terminals:** live placements only, lazy per project.
   - Flow: a gone sandbox shows no terminal rows and makes no PTY request.
-  - Progress:
+  - Progress: 3d5d1d48c1: terminals are read only for an expanded project's live placements (reachability is honest since 84f91b15f5). Flow 38 counts PTY reads at boot and on expand; flow 13's "a workspace whose folder is gone reads no terminal list" covers an unreachable placement. The stopped-sandbox variant needs the same cloud harness as S5.
 
 ## Definition of done
 - [ ] In every mode (desktop signed out, desktop signed in, hosted web, self-hosted web, shared machines), the rail lists the right sessions in one true order, with working "Show more", proven by flows.
