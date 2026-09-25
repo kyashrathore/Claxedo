@@ -13,24 +13,32 @@ const UNTYPED_HOST_MODULES = `declare module "@claxedo/app-v2/ui"\n`
 
 const require = createRequire(import.meta.url)
 
-function typescriptCompiler(): string {
-  const native = createRequire(require.resolve("typescript/package.json"))
-    .resolve(`@typescript/typescript-${process.platform}-${process.arch}/package.json`)
-  return path.join(path.dirname(native), "lib", process.platform === "win32" ? "tsc.exe" : "tsc")
-}
+/**
+ * The compiler is TypeScript's native binary package for this platform, a
+ * direct optional dependency of this package rather than something reached
+ * through `typescript`: a packaged app stages it beside this code and ships
+ * no `typescript` at all.
+ */
+const NATIVE_COMPILER_PACKAGE = `@typescript/typescript-${process.platform}-${process.arch}`
 
-function hostModulePaths(): Record<string, string[]> {
+type CheckToolchain = Readonly<{ compiler: string; paths: Record<string, string[]> }>
+
+function checkToolchain(): CheckToolchain {
+  const native = path.dirname(require.resolve(`${NATIVE_COMPILER_PACKAGE}/package.json`))
   const solid = path.dirname(require.resolve("solid-js/package.json"))
   return {
-    "solid-js": [path.join(solid, "types/index.d.ts")],
-    "solid-js/web": [path.join(solid, "web/types/index.d.ts")],
-    "solid-js/store": [path.join(solid, "store/types/index.d.ts")],
-    "solid-js/jsx-runtime": [path.join(solid, "types/jsx.d.ts")],
-    "@claxedo/plugin-api": [require.resolve("@claxedo/plugin-api")],
+    compiler: path.join(native, "lib", process.platform === "win32" ? "tsc.exe" : "tsc"),
+    paths: {
+      "solid-js": [path.join(solid, "types/index.d.ts")],
+      "solid-js/web": [path.join(solid, "web/types/index.d.ts")],
+      "solid-js/store": [path.join(solid, "store/types/index.d.ts")],
+      "solid-js/jsx-runtime": [path.join(solid, "types/jsx.d.ts")],
+      "@claxedo/plugin-api": [require.resolve("@claxedo/plugin-api")],
+    },
   }
 }
 
-function typecheckConfig(rootDir: string, hostDeclarations: string) {
+function typecheckConfig(rootDir: string, hostDeclarations: string, paths: CheckToolchain["paths"]) {
   return {
     compilerOptions: {
       target: "ES2022",
@@ -44,7 +52,7 @@ function typecheckConfig(rootDir: string, hostDeclarations: string) {
       isolatedModules: true,
       types: [],
       lib: ["ES2022", "DOM", "DOM.Iterable"],
-      paths: hostModulePaths(),
+      paths,
     },
     files: [hostDeclarations],
     include: [path.join(rootDir, "**/*.ts"), path.join(rootDir, "**/*.tsx")],
@@ -52,9 +60,9 @@ function typecheckConfig(rootDir: string, hostDeclarations: string) {
   }
 }
 
-function runCompiler(configPath: string, cwd: string): Promise<{ code: number; output: string }> {
+function runCompiler(compiler: string, configPath: string, cwd: string): Promise<{ code: number; output: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(typescriptCompiler(), ["-p", configPath, "--pretty", "false"], { cwd, stdio: ["ignore", "pipe", "pipe"] })
+    const child = spawn(compiler, ["-p", configPath, "--pretty", "false"], { cwd, stdio: ["ignore", "pipe", "pipe"] })
     let output = ""
     child.stdout.setEncoding("utf8").on("data", (chunk: string) => { output += chunk })
     child.stderr.setEncoding("utf8").on("data", (chunk: string) => { output += chunk })
@@ -85,13 +93,14 @@ export function parseCompilerOutput(output: string, rootDir: string): PluginDiag
 }
 
 export async function typecheckPlugin(pkg: PluginPackage): Promise<PluginDiagnostic[]> {
+  const toolchain = checkToolchain()
   const scratch = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-plugin-check-"))
   try {
     const hostDeclarations = path.join(scratch, "host-modules.d.ts")
     const configPath = path.join(scratch, "tsconfig.json")
     await fs.writeFile(hostDeclarations, UNTYPED_HOST_MODULES)
-    await fs.writeFile(configPath, JSON.stringify(typecheckConfig(pkg.rootDir, hostDeclarations)))
-    const { code, output } = await runCompiler(configPath, pkg.rootDir)
+    await fs.writeFile(configPath, JSON.stringify(typecheckConfig(pkg.rootDir, hostDeclarations, toolchain.paths)))
+    const { code, output } = await runCompiler(toolchain.compiler, configPath, pkg.rootDir)
     const diagnostics = parseCompilerOutput(output, pkg.rootDir)
     if (code !== 0 && diagnostics.length === 0) {
       return [{ stage: "typecheck", message: `The TypeScript compiler exited with code ${code}: ${output.trim() || "no output"}` }]
