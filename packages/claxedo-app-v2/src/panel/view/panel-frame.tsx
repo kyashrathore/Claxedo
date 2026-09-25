@@ -1,6 +1,6 @@
-import { createEffect, createSignal, onCleanup, onMount, Show, type JSX, type ParentProps } from "solid-js"
+import { createEffect, createMemo, createSignal, onCleanup, onMount, Show, type JSX, type ParentProps } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { useServer } from "@/server"
+import { useServer, type PlacementId } from "@/server"
 import { dictionary } from "../i18n"
 import { usePanel } from "../store"
 import { PANEL_CLOSE_GRACE_MS, PANEL_MOTION } from "../width"
@@ -31,6 +31,11 @@ function WorkspacePanel(): JSX.Element {
     hideTimer = setTimeout(() => setExposed(false), PANEL_CLOSE_GRACE_MS)
   })
   onCleanup(() => clearTimeout(hideTimer))
+  const keptPlacement = createMemo<PlacementId | undefined>((previous) => {
+    const placement = panel.placementId()
+    if (exposed()) return placement
+    return placement === previous ? previous : undefined
+  }, undefined)
   onMount(() => {
     const parent = aside?.parentElement
     if (!parent) return
@@ -74,9 +79,9 @@ function WorkspacePanel(): JSX.Element {
         <PanelHeader />
       </div>
       <div class="relative min-h-0 flex-1">
-        <Show when={exposed()}>
+        <Show when={exposed() || keptPlacement() !== undefined}>
           <div data-testid="workspace-panel-body" class="absolute inset-0 overflow-auto">
-            <PanelBody />
+            <PanelBody exposed={exposed()} />
           </div>
         </Show>
       </div>

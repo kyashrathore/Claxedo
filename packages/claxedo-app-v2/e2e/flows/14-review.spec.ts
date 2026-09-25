@@ -1,7 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import type { Locator, Page } from "@playwright/test"
-import { acpScriptToken, apiRequests, assistantText, expect, git, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI } from "../harness"
+import { acpScriptToken, apiRequests, assistantText, expect, git, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI, watchPageWork } from "../harness"
 
 async function commentOnLine(panel: Locator, line: string, comment: string) {
   const gutter = panel.getByRole("button", { name: "Comment", exact: true }).first()
@@ -148,5 +148,35 @@ test("14 the files and git state are read again once after a turn that could wri
   expect(reads, "reads after a turn that could write").toContain("/api/wr/git/status")
   expect(reads.filter((path, index) => reads.indexOf(path) !== index), "read twice").toEqual([])
   expect(assistantText(await api.messages(workspace.directory, session.id))).toContain("Edited the README.")
+})
+
+test("14 switching back to a session whose panel was open shows the files tree as it was, without building it again", async ({ stack, api, app }) => {
+  test.skip(stack.app !== "v2", "v1 builds the panel body again on every return")
+  const workspace = await stack.daemon.makeWorkspace("return")
+  await fs.mkdir(path.join(workspace.directory, "docs"), { recursive: true })
+  await fs.writeFile(path.join(workspace.directory, "docs/notes.md"), "notes\n")
+  await git(workspace.directory, "add", "-A")
+  await git(workspace.directory, "commit", "-qm", "docs")
+  const withPanel = await api.createSession(workspace.directory, { title: "With panel", harness: SCRIPTED_ACP_HARNESS })
+  await api.createSession(workspace.directory, { title: "Without panel", harness: SCRIPTED_ACP_HARNESS })
+
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, withPanel.id)}`)
+  await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
+  await app.getByRole("button", { name: UI.openPanel }).click()
+  const panel = app.getByRole("complementary", { name: "Workspace panel" })
+  await panel.getByRole("treeitem", { name: "docs", exact: true }).click()
+  await expect(panel.getByRole("treeitem", { name: /^notes\.md/ })).toBeVisible()
+  const work = await watchPageWork(app, { nodes: { tree: '[data-component="filetree"]' } })
+  const rail = app.getByRole("navigation", { name: UI.rail })
+  await rail.getByRole("button", { name: "Without panel", exact: true }).click()
+  await expect(app.getByRole("button", { name: UI.openPanel })).toBeVisible()
+  await expect(panel).toHaveCount(0)
+  await rail.getByRole("button", { name: "With panel", exact: true }).click()
+  await expect(panel.getByRole("treeitem", { name: /^notes\.md/ })).toBeVisible()
+
+  const seen = await work()
+  expect(seen.removed.tree ?? 0, "files trees removed").toBe(0)
+  expect(seen.added.tree ?? 0, "files trees added").toBe(0)
+  expect((await api.session(workspace.directory, withPanel.id)).title).toBe("With panel")
 })
 
