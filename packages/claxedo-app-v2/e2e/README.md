@@ -139,7 +139,7 @@ Script steps (`AcpStep`):
 | `{ kind: "reasoning", text }` | `agent_thought_chunk` |
 | `{ kind: "image", data, mimeType }` | an image content block |
 | `{ kind: "plan", entries }` | a `plan` update (todo list) |
-| `{ kind: "tool", tool, title, input?, text?, content?, locations?, status?, output? }` | `tool_call` then `tool_call_update`; `tool` is an ACP `ToolKind` (`read`, `edit`, `delete`, `move`, `search`, `execute`, `think`, `fetch`, `other`) |
+| `{ kind: "tool", tool, title, input?, text?, content?, locations?, status?, output? }` | `tool_call` then `tool_call_update`; `tool` is an ACP `ToolKind` (`read`, `edit`, `delete`, `move`, `search`, `execute`, `think`, `fetch`, `other`); `status: "in_progress"` sends only the `tool_call`, so the tool stays running (follow it with a `hold`) |
 | `{ kind: "diff", path, oldText, newText }` | an `edit` tool call whose content is a diff |
 | `{ kind: "permission", tool, title, path?, input?, text? }` | a pending tool call plus `session/request_permission`; allowed → completed, rejected → failed, cancelled → the turn stops |
 | `{ kind: "question", message, options? }` | `elicitation/create` (a question); the answer is echoed as text |
