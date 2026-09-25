@@ -119,9 +119,9 @@ The daemon runs `packages/claxedo-server`'s self-hosted entry from the spec's da
 
 A bare repository with one commit (`README.md` holding `<name>-source`), served over dumb HTTP from the spec's data directory on a port from the run's range: `{ url, source, close }`. Clone it the way a user would paste a URL; it closes with the stack. `git(cwd, ...args)` and `gitFolder(root, name)` run git with a test identity and make a fresh one-commit repository.
 
-### `stack.localPages(pages, held?)`
+### `stack.localPages(pages, { held?, secure? })`
 
-A loopback web server on a port from the run's range that answers each path in `pages` (path to HTML), never answers a path in `held` (an external host that hangs, such as an image that never loads), and answers 404 for anything else: `{ url, requested, close }`. `requested` lists every path asked for, in order, so a spec can prove what the app loaded. It closes with the stack. Flow 27 links its pages from an agent reply, because v1 opens loopback links in the workspace panel's browser tab.
+A loopback web server on a port from the run's range that answers each path in `pages` (path to HTML), never answers a path in `held` (an external host that hangs, such as an image that never loads), and answers 404 for anything else: `{ url, requested, close }`. `secure` serves it over HTTPS with a self-signed certificate (the config sets `ignoreHTTPSErrors`), for content v2's policy admits only over `https:`, such as a transcript image. `requested` lists every path asked for, in order, so a spec can prove what the app loaded. It closes with the stack. Flow 27 links its pages from an agent reply, because v1 opens loopback links in the workspace panel's browser tab.
 
 ### `stack.acp`
 
