@@ -1,7 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import type { Locator, Page } from "@playwright/test"
-import { acpScriptToken, expect, git, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI } from "../harness"
+import { acpScriptToken, apiRequests, assistantText, expect, git, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI, watchPageWork } from "../harness"
 
 async function commentOnLine(panel: Locator, line: string, comment: string) {
   const gutter = panel.getByRole("button", { name: "Comment", exact: true }).first()
@@ -150,4 +150,65 @@ test("14 searching files narrows the tree to the matches, reads no folder while 
   await panel.getByRole("button", { name: "Clear search" }).click()
   for (const name of ["top.md", "docs", "other.ts", "needle.ts", "needle-notes.md"]) await expect(row(name)).toBeVisible()
   expect(listings.sort()).toEqual(["src", "src/deep"])
+})
+
+test("14 the files and git state are read again once after a turn that could write, and not after a turn that only read", async ({ stack, api, app }) => {
+  test.skip(stack.app !== "v2", "v1 polls the files and git state")
+  const workspace = await stack.daemon.makeWorkspace("turn-reads")
+  const notes = path.join(workspace.directory, "README.md")
+  await stack.acp.write("read-only", { steps: [{ kind: "tool", tool: "read", title: "Read README.md", locations: [{ path: notes }], text: "turn-reads\n" }, { kind: "text", text: "Only read the README." }] })
+  await stack.acp.write("edit", { steps: [{ kind: "diff", path: notes, oldText: "turn-reads\n", newText: "turn-reads, edited\n" }, { kind: "text", text: "Edited the README." }] })
+  const session = await api.createSession(workspace.directory, { title: "Turn reads", harness: SCRIPTED_ACP_HARNESS })
+
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
+  await app.getByRole("button", { name: UI.openPanel }).click()
+  const panel = app.getByRole("complementary", { name: "Workspace panel" })
+  await expect(panel.getByRole("treeitem", { name: /^README\.md/ })).toBeVisible()
+  const settled = apiRequests(app, stack.url)
+  await settled()
+  const filesAndGit = (paths: readonly string[]) => paths.filter((path) => /^\/api\/wr\/(file|git|diff)(\/|$)/.test(path)).sort()
+
+  await api.prompt(workspace.directory, session.id, `Read the README. ${acpScriptToken("read-only")}`)
+  await expect(app.getByText("Only read the README.")).toBeVisible()
+  await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
+  expect(filesAndGit(await settled()), "reads after a turn that only read").toEqual([])
+
+  await api.prompt(workspace.directory, session.id, `Edit the README. ${acpScriptToken("edit")}`)
+  await expect(app.getByText("Edited the README.")).toBeVisible()
+  await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
+  const reads = filesAndGit(await settled())
+  expect(reads, "reads after a turn that could write").toContain("/api/wr/git/status")
+  expect(reads.filter((path, index) => reads.indexOf(path) !== index), "read twice").toEqual([])
+  expect(assistantText(await api.messages(workspace.directory, session.id))).toContain("Edited the README.")
+})
+
+test("14 switching back to a session whose panel was open shows the files tree as it was, without building it again", async ({ stack, api, app }) => {
+  test.skip(stack.app !== "v2", "v1 builds the panel body again on every return")
+  const workspace = await stack.daemon.makeWorkspace("return")
+  await fs.mkdir(path.join(workspace.directory, "docs"), { recursive: true })
+  await fs.writeFile(path.join(workspace.directory, "docs/notes.md"), "notes\n")
+  await git(workspace.directory, "add", "-A")
+  await git(workspace.directory, "commit", "-qm", "docs")
+  const withPanel = await api.createSession(workspace.directory, { title: "With panel", harness: SCRIPTED_ACP_HARNESS })
+  await api.createSession(workspace.directory, { title: "Without panel", harness: SCRIPTED_ACP_HARNESS })
+
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, withPanel.id)}`)
+  await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
+  await app.getByRole("button", { name: UI.openPanel }).click()
+  const panel = app.getByRole("complementary", { name: "Workspace panel" })
+  await panel.getByRole("treeitem", { name: "docs", exact: true }).click()
+  await expect(panel.getByRole("treeitem", { name: /^notes\.md/ })).toBeVisible()
+  const work = await watchPageWork(app, { nodes: { tree: '[data-component="filetree"]' } })
+  const rail = app.getByRole("navigation", { name: UI.rail })
+  await rail.getByRole("button", { name: "Without panel", exact: true }).click()
+  await expect(app.getByRole("button", { name: UI.openPanel })).toBeVisible()
+  await expect(panel).toHaveCount(0)
+  await rail.getByRole("button", { name: "With panel", exact: true }).click()
+  await expect(panel.getByRole("treeitem", { name: /^notes\.md/ })).toBeVisible()
+
+  const seen = await work()
+  expect(seen.removed.tree ?? 0, "files trees removed").toBe(0)
+  expect(seen.added.tree ?? 0, "files trees added").toBe(0)
+  expect((await api.session(workspace.directory, withPanel.id)).title).toBe("With panel")
 })

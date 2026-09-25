@@ -40,6 +40,7 @@ export const queryKeys = {
   fileTree: (server: string, placementId: PlacementId, path: string) => ["server", server, "files", placementId, "tree", path] as const,
   fileContent: (server: string, placementId: PlacementId, path: string) => ["server", server, "files", placementId, "content", path] as const,
   fileSearch: (server: string, placementId: PlacementId, query: string, entries: FileSearchEntries) => ["server", server, "files", placementId, "search", entries, query] as const,
+  filesAll: (server: string) => ["server", server, "files"] as const,
   filesOf: (server: string, placementId: PlacementId) => ["server", server, "files", placementId] as const,
   gitStatus: (server: string, placementId: PlacementId) => ["server", server, "git", placementId, "status"] as const,
   gitLog: (server: string, placementId: PlacementId, limit: number) => ["server", server, "git", placementId, "log", limit] as const,
@@ -47,5 +48,6 @@ export const queryKeys = {
   gitBases: (server: string, placementId: PlacementId) => ["server", server, "git", placementId, "bases"] as const,
   gitDiff: (server: string, placementId: PlacementId, scope: DiffScope) => ["server", server, "git", placementId, "diff", scope] as const,
   gitDiffFile: (server: string, placementId: PlacementId, scope: DiffScope, file: string) => ["server", server, "git", placementId, "diff", scope, file] as const,
+  gitAll: (server: string) => ["server", server, "git"] as const,
   gitOf: (server: string, placementId: PlacementId) => ["server", server, "git", placementId] as const,
 } as const

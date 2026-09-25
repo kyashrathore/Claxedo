@@ -19,6 +19,7 @@ import { createDockFollow } from "./dock-follow"
 import { SessionTimelineSkeleton } from "./session-timeline-skeleton"
 import { createSessionScreenKeydownHandler } from "./session-screen-keydown"
 import { SessionConnectionLine } from "./connection-line"
+import { commitDeltasEachFrame } from "./delta-frames"
 import { registerSessionCommands } from "./session-commands"
 import { recoverTurn } from "./turn-recovery-actions"
 import { floatingPeekStep, type FloatingPeekState } from "./floating-peek"
@@ -77,7 +78,7 @@ function SessionBody(props: {
   }
   const scroll = createTimelineScroll({ view: () => props.view, active: () => props.active, working })
   const todo = createTodoDock(() => props.view)
-  const lift = () => (todo.open() && !props.floating ? 36 : 0)
+  const blocked = () => props.view.requests().length > 0
   const users = createMemo(() => userMessages(props.view))
   const [peekToggles, setPeekToggles] = createSignal(0)
   const [sends, setSends] = createSignal(0)
@@ -100,7 +101,7 @@ function SessionBody(props: {
     active: driving,
     dialogActive: () => dialog.active,
     inputEl: () => body?.querySelector<HTMLDivElement>('[data-component="prompt-input"]') ?? undefined,
-    composerBlocked: () => props.view.requests().length > 0 || !!parentId(),
+    composerBlocked: () => blocked() || !!parentId(),
     prompt: { cursor: () => draft().cursor, length: () => promptText(draft().prompt).length },
     markScrollGesture: () => scroll.props.onMarkScrollGesture(),
   })
@@ -148,11 +149,11 @@ function SessionBody(props: {
       >
         <div class="w-full px-3 pointer-events-auto md:max-w-192 md:mx-auto 2xl:max-w-[880px]">
           <SessionDocks view={props.view} />
-          <Show when={props.view.requests().length === 0}>
+          <div hidden={blocked()}>
             <Show when={todo.open()}>
               <TodoDockSlot view={props.view} dock={todo} />
             </Show>
-            <div class="relative z-10" style={{ "margin-top": `${-lift()}px` }}>
+            <div class="relative z-10">
               <Show when={!props.readOnly}>
                 <SessionConnectionLine />
               </Show>
@@ -163,6 +164,7 @@ function SessionBody(props: {
                   view={props.view}
                   sessionHarness={props.view.row()?.harness}
                   attachmentWorkspace={true}
+                  hidden={blocked()}
                   afterAccepted={() => {
                     setSends((count) => count + 1)
                     queueEdit.accepted()
@@ -174,7 +176,7 @@ function SessionBody(props: {
                 />
               </Show>
             </div>
-          </Show>
+          </div>
         </div>
       </div>
     </div>
@@ -188,6 +190,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
   const panel = usePanel()
   const floating = () => !props.readOnly && panel.maximized() && props.active
   const view = createMemo(() => stores.open(props.sessionRef))
+  commitDeltasEachFrame(view)
   const failure = () => {
     const state = view().state()
     return state.kind === "failed" ? state : undefined

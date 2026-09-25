@@ -1,5 +1,4 @@
 export { expect, test, type HarnessFixtures } from "./fixtures"
-export { apiRequests } from "./api-requests"
 export {
   ApiError,
   ClaxedoApi,
@@ -34,3 +33,5 @@ export { appChoice, type AppChoice } from "./app"
 export { expectWithinV1Baseline, settled, type V1Surface } from "./a11y"
 export { sessionRoute, UI } from "./ui-names"
 export { sendPrompt, type SendOptions } from "./composer"
+export { apiRequests } from "./requests"
+export { watchPageWork, type PageWork, type PageWorkInput } from "./page-work"

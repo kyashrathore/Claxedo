@@ -76,7 +76,7 @@ function fetchEvent(state: ListState, event: ListEvent): ListState | undefined {
     case "fetchFailed":
       return state.kind === "fetching" ? { ...data(state), kind: "failed", error: event.error } : state
     case "moreStarted":
-      if (state.kind !== "live" || state.more.kind === "loading" || !hasMorePages(state, event.placementIds)) return state
+      if (state.kind !== "live" || state.more.kind === "loading" || !hasMorePages(state.windows, event.placementIds)) return state
       return { ...state, more: { kind: "loading", held: [] } }
     case "moreFetched":
       if (state.kind !== "live" || state.more.kind !== "loading") return state
@@ -114,6 +114,8 @@ export function transition(state: ListState, event: ListEvent): ListState {
       return withData(state, upsertRow(state, event.row))
     case "statusRead":
       return withData(state, statusRead(state, event.ref, event.status, event.sentAt))
+    case "statusesFetched":
+      return withData(state, statusesRead(state, event.read, event.sentAt, event.rows))
     case "sessionOpened":
       return withData(state, openSession(state, event.sessionId))
     case "sessionClosed":
