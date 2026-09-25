@@ -28,13 +28,13 @@
     "@claxedo/helpers": "workspace:*",
     "@claxedo/plugin-api": "workspace:*",
     "babel-preset-solid": "1.9.12",
-    "esbuild": "0.25.12"
+    "esbuild": "0.25.12",
+    "solid-js": "catalog:",
+    "typescript": "catalog:"
   },
   "devDependencies": {
     "@tsconfig/node-lts": "22.0.4",
     "@types/babel__core": "7.20.5",
-    "@types/bun": "catalog:",
-    "solid-js": "catalog:",
-    "typescript": "catalog:"
+    "@types/bun": "catalog:"
   }
 }

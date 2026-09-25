@@ -32,6 +32,14 @@ async function formatted(messages: Message[], kind: "error" | "warning"): Promis
   return (await formatMessages(messages, { kind, color: false })).map((message) => message.trimEnd())
 }
 
+function bundleDiagnostic(message: Message) {
+  const { location } = message
+  return {
+    ...(location ? { file: location.file, line: location.line, column: location.column + 1 } : {}),
+    message: message.text,
+  }
+}
+
 export async function buildPluginApp(options: PluginBuildOptions): Promise<PluginBuild> {
   const pkg = await readPluginPackage(options.rootDir)
   try {
@@ -50,12 +58,12 @@ export async function buildPluginApp(options: PluginBuildOptions): Promise<Plugi
       plugins: [runtimeShimPlugin(), solidJsxPlugin()],
     })
     const output = result.outputFiles.find((file) => file.path.endsWith(".js")) ?? result.outputFiles[0]
-    if (!output) throw new PluginBuildError("bundle", [`${pkg.appEntry}: esbuild produced no output`])
+    if (!output) throw new PluginBuildError("bundle", [{ file: pkg.manifest.app, message: "esbuild produced no output" }])
     const code = output.text
     return { manifest: pkg.manifest, code, hash: pluginBundleHash(pkg.manifest, code), warnings: await formatted(result.warnings, "warning") }
   } catch (error) {
     if (error instanceof PluginBuildError) throw error
-    if (isBuildFailure(error)) throw new PluginBuildError("bundle", await formatted(error.errors, "error"))
+    if (isBuildFailure(error)) throw new PluginBuildError("bundle", error.errors.map(bundleDiagnostic))
     throw error
   }
 }

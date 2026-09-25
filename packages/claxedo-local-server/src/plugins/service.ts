@@ -112,9 +112,10 @@ export function createLivePluginService(options: LivePluginServiceOptions): Live
     try {
       const built = await buildPluginApp({ rootDir: record.entry.directory })
       if (built.manifest.id !== record.entry.id) {
-        throw new PluginBuildError("manifest", [
-          `${record.entry.directory}: the manifest id changed from ${record.entry.id} to ${built.manifest.id}; remove the folder and add it again`,
-        ])
+        throw new PluginBuildError("manifest", [{
+          file: "package.json",
+          message: `the manifest id changed from ${record.entry.id} to ${built.manifest.id}; remove the folder and add it again`,
+        }])
       }
       const bundle = { hash: built.hash, manifest: built.manifest, builtAt: new Date().toISOString() }
       await saveLivePluginBundle(root, record.entry.id, { ...bundle, code: built.code })
