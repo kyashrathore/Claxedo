@@ -1,9 +1,9 @@
-import type { ConfigOperations, HarnessSession } from "../../contract"
+import type { ConfigOperations, DraftLaunch, HarnessSession } from "../../contract"
 import type { SessionConfig } from "@claxedo/agent-runtime-contract"
 import type { AcpEntry } from "./index"
 
 export function acpConfig(entryFor: (session: HarnessSession) => AcpEntry,
-  entryIn: (directory: string) => AcpEntry): ConfigOperations {
+  probe: (draft: DraftLaunch, mode: "probe" | "peek") => Promise<AcpEntry["options"]>): ConfigOperations {
   const operations: ConfigOperations = {
     read: async (session) => entryFor(session).start.config,
     update: async (session, update) => {
@@ -23,14 +23,14 @@ export function acpConfig(entryFor: (session: HarnessSession) => AcpEntry,
       entry.start = { ...entry.start, config }
       return entry.start.config
     },
-    options: async (target) => {
-      const options = "session" in target ? entryFor(target.session).options : entryIn(target.draft.directory).options
+    options: async (target, mode) => {
+      const options = "session" in target ? entryFor(target.session).options : await probe(target.draft, mode)
       return options.map(({ id, name, type, category, currentValue, description }) => ({ id, name, type,
         ...(category ? { category } : {}), currentValue, ...(description ? { description } : {}) }))
     },
     permissionModes: async (target) => {
-      const entry = "session" in target ? entryFor(target.session) : entryIn(target.draft.directory)
-      return { appliesFrom: "next-turn", modes: entry.options.filter((option) => option.category === "mode").flatMap((option) =>
+      const options = "session" in target ? entryFor(target.session).options : await probe(target.draft, "probe")
+      return { appliesFrom: "next-turn", modes: options.filter((option) => option.category === "mode").flatMap((option) =>
         option.type === "select" ? option.options.flatMap((item) => "value" in item ? [{ id: item.value, name: item.name }] : item.options.map((value) => ({ id: value.value, name: value.name }))) : []) }
     },
     setPermissionMode: async (session, modeId) => {

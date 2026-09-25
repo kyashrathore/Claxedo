@@ -52,7 +52,7 @@ These are the jobs the layer does, whoever owns them today. Each gets exactly on
 | 10 | **Config and capabilities** | Models, effort, permission modes; applying changes on the right timing; reads before a session exists | next turn versus next session; what a mode's `level` is | the transport's `config` group, plus `configure` |
 | 11 | **Goals** | Native goals (the harness runs them) and evaluated goals (Claxedo checks the work) | Codex `thread/goal/*`, Claude and Cursor `/goal` prompts, an ACP goal extension, none | the transport's `goals` group; the evaluated loop in the runtime host |
 | 12 | **Subagents** | Seeing child agents, mapping them to child sessions, attributing usage | SDK task events, Codex collab calls, ACP draft #1992 | `src/broker/` |
-| 13 | **Usage** | Per-turn usage, quota windows, usage that arrives after a turn ends | where each harness reports it | `src/broker/` (`TurnBroker.meter`, `SessionBroker.meter`) |
+| 13 | **Usage** | Per-turn usage, quota windows, usage that arrives after a turn ends | where each harness reports it | a turn's `usage` events in its stream; `src/broker/` (`SessionBroker.meter`) for usage after a turn ends |
 | 14 | **Naming** | Titles and renames | a side request, or the harness's own name | the runtime host decides when; the transport's `naming` group does it |
 | 15 | **Projection: skills, MCP servers, plugins** | Putting the person's tools into the harness the way *that harness* documents | plugin folders, a Codex marketplace, `~/.cursor/plugins/local`, OpenCode's host hooks, Pi flags; delivered by SDK option, file or protocol | `src/profiles/` (format), each transport (delivery) |
 | 16 | **MCP resolution** | Which MCP servers a session gets: Claxedo's own, the person's configured ones, plugin ones; and what may reach a remote harness | stdio versus HTTP or SSE; local versus remote | `src/capabilities/`, with the one remote filter |
@@ -216,7 +216,7 @@ The harness layer holds the most valuable things Claxedo handles: people's provi
 | **A harness in a cloud sandbox** | The sandbox, and placeholders for provider keys | The sandbox. The provider's network layer attaches real keys only on requests to provider hosts (H-1) |
 | **A remote harness** (someone else's machine) | Only what its API receives | **Untrusted:** never Claxedo's own MCP server or bearer, never stdio servers, never brokered credentials. Plugin tokens only with endpoint-bound consent (integration plan) |
 | **A member acting through a share** | Exactly what the share allows (a `send` share can prompt) | The route's access policy decides who. The turn spends the session owner's accounts, like every turn in that session |
-| **Harness output**: model text, tool results, events, elicitation forms | Nothing | Untrusted input. Translators check shapes (ACP `validation.ts`); unknown events become typed `unrecognized` events; form patterns are checked in a bounded worker pool; Claxedo never runs harness output as its own instructions |
+| **Harness output**: model text, tool results, events, elicitation forms | Nothing | Untrusted input. Translators check shapes (ACP `validation.ts`); unknown events become diagnostics with code `unrecognized-event`; form patterns are checked in a bounded worker pool; Claxedo never runs harness output as its own instructions |
 | **What an agent says about itself** (name, version) | Nothing | Descriptive only. It can pick a profile's format and never grants plugin authority |
 
 ### Rules the harness layer enforces
@@ -685,6 +685,7 @@ This is a security boundary. The broker takes over what today's code enforces, a
   - saved before the allow is released.
 - **Option substitution as today:** never widen "once" to "always"; "deny" may become "reject always"; answer `cancelled` when nothing fits (`acp/permission-options.ts:21-34`).
 - **Save, then release.** The SDK path does this today. **ACP releases first** (`acp/index.ts:609-610`); this plan fixes it (H-3).
+- **An answer is final once saved.** An abort before the save is saved as `cancelled`; an abort after it leaves the saved answer standing, and the turn's own cancel stops the turn. The saved answer is therefore always the one the harness got, under a store where the first write wins.
 - **Cancel:** each protocol's own cancel answer: ACP `cancelled`, `deny` on the SDK path. Never "allow".
 - **Expiry:** a harness can expire its own dialog (Pi dialogs carry a `timeout`). The request then ends as `expired`.
 - **Permission-mode limits:** the ceiling helpers (`permission-ceiling.ts`, 65 lines) move into the broker. Every mode a transport reports declares its `level`.
@@ -912,7 +913,7 @@ The ACP transport runs Claude, Codex and Cursor through their wrappers. **A nati
 - **OpenCode (embedded engine):**
   - permission and question requests through the broker, answered through the engine's interaction port;
   - message history and its pages come from the runtime store, as they do today.
-- **Every transport:** events it doesn't recognize become a typed `unrecognized` event, visible and counted.
+- **Every transport:** events it doesn't recognize become a `diagnostic` event with code `unrecognized-event`, visible and counted; its raw payload is capped at 4 KB.
 
 ## The contract
 
@@ -921,12 +922,12 @@ The ACP transport runs Claude, Codex and Cursor through their wrappers. **A nati
 ```ts
 export interface HarnessTransport {
   readonly kind: TransportKind
-  capabilities(context: CapabilityContext): Promise<HarnessCapabilities>
+  capabilities(context: CapabilityContext): Promise<TransportCapabilities>
   start(input: StartInput, session: SessionBroker): Promise<HarnessSession>
-  attach(binding: HarnessBinding, session: SessionBroker): Promise<HarnessSession>
+  attach(input: AttachInput, session: SessionBroker): Promise<HarnessSession>
   send(session: HarnessSession, turn: TurnInput, broker: TurnBroker): AsyncIterable<RoutedEvent>
-  cancel(session: HarnessSession, turn: TurnRef, deadline: Deadline): Promise<CancelOutcome>
-  configure(update: ConfigUpdate): Promise<ConfigApplied>
+  cancel(session: HarnessSession, turn: TurnRef, deadline: Deadline): Promise<AdapterCancelOutcome>
+  configure(session: HarnessSession, update: TransportConfigUpdate): Promise<ConfigApplied>
   close(session: HarnessSession): Promise<void>
   dispose(): Promise<void>
   readonly steer?: SteerOperations
@@ -940,50 +941,86 @@ export interface HarnessTransport {
   readonly health?: HealthOperations
 }
 
-export type RoutedEvent = { event: AgentRuntimeEvent; route?: { child: string }; source?: EventSource }
+export type DraftLaunch = Omit<StartInput, "sessionId" | "title" | "instructions">
+export type StartInput = {
+  sessionId: string
+  workspaceId: string
+  directory: string
+  locality: Locality
+  owner: TurnActor
+  config: SessionConfig
+  projection: PluginProjection
+  credentials: ResolvedCredentials
+  model?: PromptModel
+  title?: string
+  instructions?: string
+}
+export type AttachInput = Omit<StartInput, "title" | "instructions"> & { binding: HarnessBinding }
+export type TransportConfigUpdate = { credentials?: ResolvedCredentials; projection?: PluginProjection }
+export type ConfigApplied =
+  | { state: "applied" }
+  | { state: "deferred"; until: "after-active-turns" | "next-session" }
+  | { state: "refused"; reason: string }
+export type ConfigTarget = { session: HarnessSession } | { draft: DraftLaunch }
+export type EventRoute = { kind: "parent" } | { kind: "child"; correlationKey?: string }
+export type RoutedEvent = { event: AgentRuntimeEvent; route?: EventRoute; source?: EventSource }
+export type ProviderTurnSettlement = { state: "completed" } | { state: "failed"; error: string } | { state: "cancelled" }
+export type ProviderTurnResult =
+  | { admitted: true; turnId: string; settled: Promise<ProviderTurnSettlement> }
+  | { admitted: false; reason: "busy" | "closed" }
+export type OutsideTurnEvent = AgentRuntimeEventOf<
+  | "rate-limit" | "auth-status" | "mcp-server-status" | "available-commands-update" | "config-update"
+  | "session-info" | "session-title" | "session-agent" | "harness-notice" | "diagnostic"
+>
 
 export interface SessionBroker {
+  readonly sessionId: string
+  ask(request: TurnRequest, options?: { signal?: AbortSignal }): Promise<RequestAnswer>
+  completeElicitation(elicitationId: string): Promise<void>
   rebind(upstreamSessionId: string): Promise<void>
-  persistHandoff(context: HandoffContext): Promise<void>
+  persistHandoff(context: SessionHandoff): Promise<void>
   admitProviderTurn(input: ProviderTurnInput, run: (broker: TurnBroker) => AsyncIterable<RoutedEvent>): Promise<ProviderTurnResult>
   meter(usage: OutsideTurnUsage): void
-  goal: { read(): GoalSnapshot | null; publish(snapshot: GoalSnapshot | null): Promise<void> }
+  publish(event: OutsideTurnEvent): Promise<void>
+  goal: { read(): RuntimeGoalSnapshot | null; publish(snapshot: RuntimeGoalSnapshot | null): Promise<void> }
   config(): SessionConfig
-  reportFailure(failure: OwnerFailure): void
+  reportFailure(error: unknown): void
 }
 
 export interface TurnBroker {
   readonly signal: AbortSignal
   readonly origin: TurnOrigin
-  ask(request: TurnRequest): Promise<RequestAnswer>
+  ask(request: TurnRequest, options?: { signal?: AbortSignal }): Promise<RequestAnswer>
+  completeElicitation(elicitationId: string): Promise<void>
   observeSubagent(observation: SubagentObservation): Promise<ChildSessionRef | undefined>
-  associateChild(correlationKey: string, target: ChildTarget): void
-  meter(usage: UsageRecord): void
+  associateChild(correlationKey: string, child: ChildSessionRef): void
 }
 
 export interface RequestBroker {
-  list(scope: RequestScope): Promise<PendingRequest[]>
-  answer(id: string, answer: RequestAnswer, actor: AuthorizedActor): Promise<AnswerResult>
-  askAtStart(request: StartRequest): Promise<RequestAnswer>
+  list(scope: RequestScope): readonly PendingRequest[]
+  answer(requestId: string, answer: RequestAnswer, target: { sessionId: string } | { start: AgentSessionStartBinding }): Promise<AnswerResult>
 }
 
 export interface HarnessServices {
   spawn(command: SpawnCommand, options: SpawnOptions): Promise<OwnedProcess>
-  firstPartyMcp(sessionId: string, locality: Locality): McpServer | undefined
+  firstPartyMcp(sessionId: string, locality: Locality): McpServerSpec | undefined
   transcripts: TranscriptRegistrar
-  validationPool: ValidationPool
+  patternEvaluator: ElicitationPatternEvaluator
   log: Logger
   clock: Clock
 }
 ```
 
 - **`StartInput` carries:**
-  - directory, `locality`, model and config;
+  - session and workspace ids, directory, `locality`, model and config;
   - the instruction block, only when the capabilities declare `instructionChannel: "thread-start"` (other channels compose it per turn, as today);
   - the profile's projection;
   - resolved credentials selected by the session's owner.
 - **`TurnInput` carries:** the prompt, origin, model, effort, the prior todos (the Claude translator's seed) and the per-turn system block for per-turn channels.
-- **`ConfigUpdate`:** model, effort, permission mode, credential and placeholder renewals, MCP and projection changes. Each change carries its timing: `immediate`, `after-active-turns` (Pi refuses a mid-turn rotation) or `next-session` (Cursor's permission mode). `ConfigApplied` reports readiness, replacing `waitForConfigReady`.
+- **`TransportConfigUpdate`:** resolved credential and projection changes. Session model and permission mode use `config.update` and `config.setPermissionMode`; turn model and effort use `TurnInput`. Timing is declared in capabilities as `immediate`, `after-active-turns`, `next-turn` or `next-session`. `configure` receives one affected session at a time. `ConfigApplied` reports `applied`, `deferred` (`after-active-turns` or `next-session`) or `refused`.
+- **Draft reads:** `ConfigTarget.draft` contains the resolved launch context without a session id, title or instructions. A probe answers requests `cancelled` through the harness protocol, never presents them to a person, and retires its process.
+- **Outside a turn:** `SessionBroker.publish` carries session metadata and diagnostics; `meter` carries usage. Provider-turn admission returns before its non-rejecting `settled` promise resolves.
+- **Rejected additions:** `TurnInput.serviceTier` duplicates `turn.prompt.serviceTier`, which the Codex transport reads. `TurnInput.credentials` would select the sender's account, while credentials belong to the session owner and refresh through `configure(session, …)`. Turn usage stays in the streamed `usage` event, so `TurnBroker.meter` is absent.
 - **Turn admission and fencing stay in the moved runtime host.** A transport keeps only its protocol's own active-turn state, as an instance field.
 
 ### The operation map
@@ -1019,9 +1056,9 @@ Every member of today's surface has one owner. The list is taken from `adapter-c
 | `goals`: `readCapabilities`, `read`, `start`, `pause`, `resume`, `stop`, `delete` | the `goals` group, with accepted and failed results and stop before interrupt |
 | `listPermissions`, `respondPermission` | `RequestBroker.list`, `.answer` |
 | `listQuestions`, `replyQuestion`, `rejectQuestion` | `RequestBroker.list`, `.answer` |
-| `replySessionStartQuestion`, `rejectSessionStartQuestion` | `RequestBroker.answer` on a start request |
+| `replySessionStartQuestion`, `rejectSessionStartQuestion` | `SessionBroker.ask` creates a start request; `RequestBroker.answer` replies to it |
 | `listDraftPermissionModes`, `listPermissionModes`, `setPermissionMode` | `config.permissionModes({ draft \| session })`, `config.setPermissionMode`; each mode with `level` |
-| `probeConfigOptions`, `peekConfigOptions` | `config.options({ draft \| session, peek })` |
+| `probeConfigOptions`, `peekConfigOptions` | `config.options({ draft: DraftLaunch } \| { session }, "probe" \| "peek")` |
 | `applyConfig`, `waitForConfigReady` | `configure` and `ConfigApplied` |
 | `revert`, `unrevert`, `shell`, `summarize` | deleted; routes keep 501 |
 | `executeCommand`, `getMessagePage` | deleted. No app calls the command route, which answers 501 like `shell`; message pages come from the runtime store |

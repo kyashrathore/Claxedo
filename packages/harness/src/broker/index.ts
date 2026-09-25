@@ -19,7 +19,7 @@ export function createTurnBroker(owner: BrokerOwner, context: TurnBrokerContext)
   return {
     signal: context.signal,
     origin: context.origin,
-    ask: (request) => owner.requests.askTurn(context, request),
+    ask: (request, options) => owner.requests.askTurn(context, request, options),
     completeElicitation: (elicitationId) => owner.requests.completeElicitation(context.authority.sessionId, context.authority.connectionId, elicitationId),
     observeSubagent: (observation) => owner.subagents.observe(context.authority.sessionId, observation),
     associateChild: (correlationKey, child) => owner.subagents.associate(context.authority.sessionId, correlationKey, child),
@@ -33,7 +33,7 @@ export function createSessionBroker(owner: BrokerOwner, context: SessionBrokerCo
     context.start.operationId !== context.operationId)) throw new Error("Session start binding does not match broker context")
   return {
     sessionId: context.sessionId,
-    ask: (request) => owner.requests.askStart(context, request),
+    ask: (request, options) => owner.requests.askStart(context, request, options),
     completeElicitation: (elicitationId) => {
       if (!context.start) throw new Error("Session completion requires a start binding")
       return owner.requests.completeElicitation(context.sessionId, context.start.connectionId, elicitationId)
@@ -55,6 +55,7 @@ export function createSessionBroker(owner: BrokerOwner, context: SessionBrokerCo
       }
       ports.meterUsage(usage)
     },
+    publish: (event) => ports.publishSessionEvent(context.sessionId, event),
     goal: goalPort(ports, context.sessionId),
     config: () => ports.config(context.sessionId),
     reportFailure: (error) => ports.reportOwnerFailure(context.sessionId, error),
