@@ -206,6 +206,13 @@ Flow 31 is v2's gate for the session list's races. On `--app=v1` it reads v1's r
 - **A thousand sessions:** a row loaded by paging shows no Working mark while the server reports it working.
 - **The app reconnects after missed events:** a session deleted while the streams were held stays listed, and one retitled then keeps its old title.
 
+### v1 differences (flows 4 and 12)
+
+Three cases run on v2 only; each records what v1 does instead:
+- **An agent that ignores Stop (flow 4):** v1 ends the turn at Stop and gates Send as "The selected agent is unavailable", so it never shows "The agent stopped responding".
+- **A killed agent (flow 4):** v1 keeps showing "Connected" after the agent's process dies.
+- **A read budget (flow 12):** v1 reads the agent connections, the harness options and the transcript twice when a session opens.
+
 ### `desktop` (the Electron app)
 
 Specs tagged `@desktop` (`test("…", { tag: "@desktop" }, async ({ desktop }) => …)`) run only in the `desktop` project; `web` and `phone` skip them. The `desktop` fixture builds `packages/claxedo-desktop` for the chosen app when its sources or the app's are newer than the last build (`bun run prebuild`, then `electron-vite build`, with `CLAXEDO_DESKTOP_RENDERER=v2` for v2; about a minute, recorded as a "desktop build" annotation), then launches `out/main/index.js` through Playwright's Electron driver. The app runs isolated like a stack: `HOME`, `XDG_*`, its user data and its server data in the spec's data directory, an empty `ZDOTDIR`, the egress guard, and its own scripted model server and ACP scripts. Its embedded server listens on a port from the run's range and is prepared exactly like the daemon.
