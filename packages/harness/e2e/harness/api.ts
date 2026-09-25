@@ -133,6 +133,10 @@ export class ClaxedoApi {
     return this.call<SessionRow>("GET", `/session/${encodeURIComponent(id)}`, { directory })
   }
 
+  sessionStart(directory: string, id: string) {
+    return this.call<{ status: string; binding: { sessionId: string } }>("GET", `/session-start/${encodeURIComponent(id)}`, { directory })
+  }
+
   sessions(directory: string) {
     return this.call<SessionRow[]>("GET", "/session", { directory })
   }
@@ -191,6 +195,12 @@ export class ClaxedoApi {
 
   questions(directory: string) {
     return this.call<QuestionRow[]>("GET", "/question", { directory })
+  }
+
+  usageBySession(since: number, until: number) {
+    return this.call<{ claxedo: { totals: { input: number; output: number } }; breakdown: { rows: Array<{ value: string; input: number; output: number }> } }>(
+      "GET", "/api/claxedo/usage", { query: { view: "claxedo", group: "session", since: String(since), until: String(until) } },
+    )
   }
 
   replyQuestion(directory: string, questionId: string, answers: string[][]) {
