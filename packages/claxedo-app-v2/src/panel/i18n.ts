@@ -13,6 +13,7 @@ const en = {
   "panel.restore": "Restore workspace panel width",
   "panel.resize": "Resize workspace panel",
   "panel.addTab": "Add workspace tab",
+  "panel.add.file": "File",
   "panel.add.browser": "Browser",
   "panel.noPlacement": "Select a workspace to use this panel.",
   "panel.markdown.preview": "Preview markdown",

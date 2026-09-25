@@ -19,6 +19,8 @@ import { createPanelTabs } from "./tabs-store"
 import { clampPanelWidth, PANEL_PHONE_MAX_WIDTH, restingPanelWidth, workbenchInset } from "./width"
 import type { ReviewWorkspaceTab, WorkspacePanelNavigator } from "./workspace-tabs"
 
+export type PanelShowOptions = { readonly navigator?: WorkspacePanelNavigator | null }
+
 export type Panel = {
   readonly placementId: Accessor<PlacementId | undefined>
   readonly sessionId: Accessor<string>
@@ -37,7 +39,7 @@ export type Panel = {
   readonly toggleFullWidth: () => void
   readonly toggle: () => void
   readonly close: () => void
-  readonly show: (focus?: PanelFocus) => void
+  readonly show: (focus?: PanelFocus, options?: PanelShowOptions) => void
   readonly activate: (tabId: string) => void
   readonly closeTab: (tabId: string) => void
   readonly toggleNavigator: (navigator: WorkspacePanelNavigator) => void
@@ -45,10 +47,7 @@ export type Panel = {
   readonly reviewFocus: Accessor<ReviewFocus | undefined>
 }
 
-type PanelSize = Pick<
-  Panel,
-  "phone" | "fullWidth" | "width" | "available" | "setAvailable" | "chooseWidth" | "toggleFullWidth"
->
+type PanelSize = Pick<Panel, "phone" | "fullWidth" | "width" | "available" | "setAvailable" | "chooseWidth">
 
 const PanelContext = createContext<Panel>()
 
@@ -57,7 +56,7 @@ function readWidth(value: unknown): number | null | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined
 }
 
-function createPanelSize(): PanelSize {
+function createPanelSize(): PanelSize & { readonly setFullWidth: (fullWidth: boolean) => void } {
   const phone = createMediaQuery(`(max-width: ${PANEL_PHONE_MAX_WIDTH}px)`)
   const [chosen, setChosen] = persistedSignal<number | null>(preferenceKey("panel", "width"), null, readWidth)
   const [fullWidth, setFullWidth] = createSignal(false)
@@ -72,7 +71,34 @@ function createPanelSize(): PanelSize {
     available,
     setAvailable: (value) => setAvailable(value),
     chooseWidth: (value) => setChosen(Math.round(clampPanelWidth(value, available()))),
-    toggleFullWidth: () => setFullWidth((value) => !value),
+    setFullWidth: (value) => setFullWidth(value),
+  }
+}
+
+function createOpenRules(input: {
+  readonly layout: ReturnType<typeof useShellLayout>
+  readonly tabs: ReturnType<typeof createPanelTabs>
+  readonly size: PanelSize
+  readonly setFullWidth: (fullWidth: boolean) => void
+}): Pick<Panel, "toggle" | "toggleFullWidth" | "show"> {
+  const { layout, tabs, size, setFullWidth } = input
+  const onReview = () => tabs.activeTab().kind === "review"
+  return {
+    toggle: () => {
+      if (layout.panelShown()) setFullWidth(false)
+      else if (onReview()) tabs.defaultNavigator()
+      layout.send({ type: "togglePanel" })
+    },
+    toggleFullWidth: () => {
+      const next = !size.fullWidth()
+      setFullWidth(next)
+      if (next && tabs.navigator() === null && onReview()) tabs.setNavigator("changes")
+    },
+    show: (focus, options) => {
+      if (focus) tabs.focus(focus)
+      if (options?.navigator !== undefined) tabs.setNavigator(options.navigator)
+      layout.send({ type: "showPanel" })
+    },
   }
 }
 
@@ -82,7 +108,7 @@ export function PanelProvider(props: ParentProps): JSX.Element {
   const session = useActiveSession()
   const sessionId = () => session()?.sessionId ?? ""
   const tabs = createPanelTabs(placementId, sessionId)
-  const size = createPanelSize()
+  const { setFullWidth, ...size } = createPanelSize()
   const close = () => layout.send({ type: "hidePanel" })
   const panel: Panel = {
     ...size,
@@ -98,15 +124,8 @@ export function PanelProvider(props: ParentProps): JSX.Element {
         fullWidth: size.fullWidth(),
         width: size.width(),
       }),
-    toggle: () => {
-      if (!layout.panelShown()) tabs.defaultNavigator()
-      layout.send({ type: "togglePanel" })
-    },
+    ...createOpenRules({ layout, tabs, size, setFullWidth }),
     close,
-    show: (focus) => {
-      if (focus) tabs.focus(focus)
-      layout.send({ type: "showPanel" })
-    },
     closeTab: (tabId) => closeReviewWorkspaceTab({ id: tabId, closePanel: close, closeTab: tabs.closeTab }),
   }
   return <PanelContext.Provider value={panel}>{props.children}</PanelContext.Provider>
