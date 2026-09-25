@@ -21,7 +21,7 @@ Today's component reached into the app through context hooks: the SDK client, th
 | `useSettings().general.*` | `settings`: the five accessors the timeline reads |
 | `useTranscriptTypography().typography` | `transcriptTypography` |
 | `useLanguage().t` | `t: TimelineTranslate`, typed on the 38 keys the timeline uses (`TimelineTextKey`) |
-| `usePlatform()` | `platform`: `openLink`, `openPath?`, `showItemInFolder?`, `renderMermaid?` |
+| `usePlatform()` | `platform`: `openLink`, `renderMermaid?` |
 | `useClaxedoState().workspacePanel.open(...)` with `workspaceDir`, `targetPaneId`, `navigator: null` | `openFocus(focus)`: the host opens each focus as a workspace-panel tab; a `subagent` tab belongs to the session holding the pane |
 | `layout.showContent(layout.openSession(...))` at phone width | `openSessionInPane(sessionId, label?)` |
 | `sdk.client.find.files({ query, dirs: "false" })` | `findFiles(query, signal)`: exact-path candidates; resolves to `[]` on a failed lookup, never rejects |
@@ -131,9 +131,9 @@ The row builder is `Timeline.constructMessageRows` (`message-timeline.data.ts`);
 ## Why links and files open this way
 
 - A subagent's transcript opens as a workspace-panel tab, not a second pane: splitting took the reader's turn down to half width. Below the `md` boundary the panel would cover that turn, so there the child takes the pane.
-- A file opens in the workspace side panel (the same path terminal file links take), not `platform.openPath`, which is desktop-only and hands the file to the OS; without `navigator: "files"`, which would slide the tree drawer over the tab just opened.
+- A file opens in the workspace side panel (the same path terminal file links take), without `navigator: "files"`, which would slide the tree drawer over the tab just opened.
 - Anchors are handled in the capture phase so `preventDefault` beats the markdown's `target="_blank"`: in Electron a bubble-phase handler opened the link in both a browser and the panel. A click that ends a text selection is not a navigation. The renderer marks every link `_blank`, including scheme-less local paths like `[README.md](/Users/…/README.md)`, which the browser would open as a dead tab on the app origin; links with a scheme, protocol-relative links and in-page anchors keep browser behavior, and modifier or middle clicks are left alone. Markdown image tiles own the full-image preview, even inside a link.
-- Leaving the event uncancelled hands the link back to the anchor's own `_blank`, so a target this host has no route for behaves as before. A loopback URL is a dev server of this workspace (the "Local preview" chip treats it so), whatever its spelling. A Windows file URL carries the drive letter inside the path (`/C:/…`).
+- Leaving the event uncancelled hands the link back to the anchor's own `_blank`, so a target this host has no route for behaves as before. A loopback URL is a dev server of this workspace (the "Local preview" chip treats it so), whatever its spelling.
 - Path chips render mentions as `@path`, and the sigil is stripped before resolving; a path that really starts with `@` (an npm scope folder) is indistinguishable, and the mention reading wins.
 - The context menu's path comes from the chip's text or, for filename slots that render only the basename, from `data-path`; falling back to the slot text would fabricate `<placement>/<basename>` for Open, Copy and Reveal.
 - The open-file event's detail rides on a DOM `CustomEvent`, so it is read structurally.
