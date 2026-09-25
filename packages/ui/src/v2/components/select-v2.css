@@ -172,14 +172,14 @@
   pointer-events: none;
 }
 
-[data-component="select-v2"] .ui-select-v2-chevron-icon {
+[data-component="select-v2"] [data-slot="select-v2-chevron"] svg {
   display: block;
   flex: none;
   transform: rotate(180deg);
   transform-origin: 50% 50%;
 }
 
-[data-component="select-v2"][data-expanded] .ui-select-v2-chevron-icon {
+[data-component="select-v2"][data-expanded] [data-slot="select-v2-chevron"] svg {
   transform: rotate(0deg);
 }
 
@@ -247,7 +247,7 @@
     outline: none;
   }
 
-  > [role="option"] + [role="option"] {
+  > *:not([role="presentation"]) + *:not([role="presentation"]) {
     margin-top: 2px;
   }
 }

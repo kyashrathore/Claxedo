@@ -1,5 +1,5 @@
 import { type FilteredListProps, useFilteredList } from "@opencode-ai/ui/hooks"
-import { createEffect, createMemo, createSelector, For, type JSX, on, Show } from "solid-js"
+import { createEffect, For, type JSX, on, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { useI18n } from "../context/i18n"
@@ -89,12 +89,6 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
   }
 
   const { filter, grouped, flat, active, setActive, onKeyDown, onInput, refetch } = useFilteredList<T>(props)
-  const isActive = createSelector(active)
-  const isCurrent = createSelector(() => props.current)
-  const categories = createMemo(() => grouped.latest.map((group) => group.category), [], {
-    equals: (a, b) => a.length === b.length && a.every((category, index) => category === b[index]),
-  })
-  const itemsOf = (category: string) => grouped.latest.find((group) => group.category === category)?.items ?? []
 
   const searchProps = () => (typeof props.search === "object" ? props.search : {})
   const searchAction = () => searchProps().action
@@ -335,24 +329,23 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
             </div>
           }
         >
-          <For each={categories()}>
-            {(category, groupIndex) => {
-              const items = createMemo(() => itemsOf(category))
-              const isLastGroup = () => groupIndex() === categories().length - 1
+          <For each={grouped.latest}>
+            {(group, groupIndex) => {
+              const isLastGroup = () => groupIndex() === grouped.latest.length - 1
               return (
                 <div data-slot="list-group">
-                  <Show when={category}>
-                    <GroupHeader group={{ category, items: items() }} />
+                  <Show when={group.category}>
+                    <GroupHeader group={group} />
                   </Show>
                   <div data-slot="list-items">
-                    <For each={items()}>
+                    <For each={group.items}>
                       {(item, i) => {
                         const node = (
                           <button
                             data-slot="list-item" class="ui-list-item"
                             data-key={props.key(item)}
-                            data-active={isActive(props.key(item))}
-                            data-selected={isCurrent(item)}
+                            data-active={props.key(item) === active()}
+                            data-selected={item === props.current}
                             onClick={() => handleSelect(item, i())}
                             onKeyDown={handleKey}
                             type="button"
@@ -367,7 +360,7 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
                             }}
                           >
                             {props.children(item)}
-                            <Show when={isCurrent(item)}>
+                            <Show when={item === props.current}>
                               <span data-slot="list-item-selected-icon" class="ui-list-item-selected-icon">
                                 <Icon name="check-small" />
                               </span>
@@ -379,7 +372,7 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
                                 </span>
                               )}
                             </Show>
-                            {props.divider && (i() !== items().length - 1 || (showAdd() && isLastGroup())) && (
+                            {props.divider && (i() !== group.items.length - 1 || (showAdd() && isLastGroup())) && (
                               <span data-slot="list-item-divider" class="ui-list-item-divider" />
                             )}
                           </button>
@@ -394,7 +387,7 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
               )
             }}
           </For>
-          <Show when={categories().length === 0 && showAdd()}>
+          <Show when={grouped.latest.length === 0 && showAdd()}>
             <div data-slot="list-group">
               <div data-slot="list-items">{renderAdd()}</div>
             </div>

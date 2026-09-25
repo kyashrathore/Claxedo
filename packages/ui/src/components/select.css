@@ -118,7 +118,7 @@
       outline: none;
     }
 
-    > [role="option"] + [role="option"] {
+    > *:not([role="presentation"]) + *:not([role="presentation"]) {
       margin-top: 2px;
     }
   }
