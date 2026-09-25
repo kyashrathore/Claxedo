@@ -137,7 +137,7 @@ export function runConformance(input: ConformanceInput): void {
           expect(events.some((item) => item.event.type === "tool-start")).toBe(true)
           expect(events.some((item) => item.event.type === "tool-output")).toBe(true)
         }
-        if (capabilities.commands) expect(await context.transport.commands?.list(context.backend.directory)).toBeArray()
+        if (capabilities.commands) expect(await context.transport.commands?.list({ session: context.session })).toBeArray()
         if (capabilities.titles === "harness") {
           expect(context.transport.naming).toBeDefined()
           await context.transport.naming?.rename?.(context.session, "Conformance title")
@@ -244,7 +244,7 @@ export function runConformance(input: ConformanceInput): void {
       const context = await setup(input)
       try {
         if (!context.backend.uiCommand) return
-        const commands = await context.transport.commands?.list(context.backend.directory)
+        const commands = await context.transport.commands?.list({ session: context.session })
         expect(commands?.some((command) => command.name === context.backend.uiCommand)).toBe(true)
         const running = collect(context.transport, context.session, context.turn(`/${context.backend.uiCommand} choose`), context.turnBroker())
         const question = await pendingQuestion(context)
@@ -419,6 +419,35 @@ export function runConformance(input: ConformanceInput): void {
           expect(await context.services.processes.at(-1)!.exited).toBeDefined()
         }
         expect(await context.transport.config.options({ draft }, "probe")).toEqual(first)
+      } finally { await context.close() }
+    }, 60_000)
+
+    test("a draft launch lists commands and retires its process", async () => {
+      const context = await setup(input)
+      try {
+        const capabilities = await context.transport.capabilities({ directory: context.backend.directory, sessionId: context.session.binding.sessionId })
+        if (!capabilities.commands) return
+        const { sessionId: _sessionId, title: _title, instructions: _instructions, ...draft } = context.start
+        const before = context.services.processes.length
+        const commands = await context.transport.commands?.list({ draft })
+        expect(commands).toBeArray()
+        expect(commands?.length).toBeGreaterThan(0)
+        if (context.backend.locality !== "remote") {
+          expect(context.services.processes).toHaveLength(before + 1)
+          expect(await context.services.processes.at(-1)!.exited).toBeDefined()
+        }
+      } finally { await context.close() }
+    }, 60_000)
+
+    test("agent listing uses its session or draft target", async () => {
+      const context = await setup(input)
+      try {
+        const capabilities = await context.transport.capabilities({ directory: context.backend.directory, sessionId: context.session.binding.sessionId })
+        if (!capabilities.agents) return
+        const sessionAgents = await context.transport.agents?.list({ session: context.session })
+        expect(sessionAgents?.length).toBeGreaterThan(0)
+        const { sessionId: _sessionId, title: _title, instructions: _instructions, ...draft } = context.start
+        expect(await context.transport.agents?.list({ draft })).toEqual(sessionAgents)
       } finally { await context.close() }
     }, 60_000)
 

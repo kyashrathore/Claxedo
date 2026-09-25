@@ -24,7 +24,8 @@ import type {
   AgentMessagePageInput,
 } from "@claxedo/agent-sdk-runtime/adapters"
 import type { AgentMessageReadInput, AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
-import { AgentMessagePageError, hasAdapterCapability, isAgentHarnessEngineError } from "@claxedo/agent-sdk-runtime/adapters"
+import { AgentMessagePageError, hasAdapterCapability } from "@claxedo/agent-sdk-runtime/adapters"
+import { isAgentHarnessEngineError } from "@claxedo/harness/contract"
 import {
   admitSessionInstructions,
   IMMUTABLE_SESSION_CONFIG_FIELDS,

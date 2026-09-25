@@ -1,10 +1,18 @@
-import { spawn as nodeSpawn } from "node:child_process"
+import { execFileSync, spawn as nodeSpawn } from "node:child_process"
 import type { HarnessServices, OwnedProcess, SpawnCommand, SpawnOptions } from "../../contract"
 
 export type TestServices = HarnessServices & {
   processes: OwnedProcess[]
   entries: { level: string; message: string }[]
   transcriptRows: Map<string, unknown[]>
+}
+
+function groupHasLiveMember(pgid: number): boolean {
+  const rows = execFileSync("/bin/ps", ["-A", "-o", "pgid=", "-o", "stat="], { encoding: "utf8" })
+  return rows.split("\n").some((row) => {
+    const match = /^\s*(\d+)\s+(\S+)/.exec(row)
+    return match?.[1] === String(pgid) && !match[2]?.startsWith("Z")
+  })
 }
 
 function childProcess(command: SpawnCommand, _options: SpawnOptions): OwnedProcess {
@@ -31,16 +39,16 @@ function childProcess(command: SpawnCommand, _options: SpawnOptions): OwnedProce
           return true
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code === "ESRCH") return false
-          if ((error as NodeJS.ErrnoException).code === "EPERM") return true
+          if ((error as NodeJS.ErrnoException).code === "EPERM") return groupHasLiveMember(pid)
           throw error
         }
       }
       try { stop("SIGTERM") }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error }
+      catch (error) { if (!["ESRCH", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error }
       await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, Math.min(100, Math.max(1, deadline.at - Date.now()))))])
       if (alive()) {
         try { stop("SIGKILL") }
-        catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error }
+        catch (error) { if (!["ESRCH", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error }
       }
       while (alive() && Date.now() < deadline.at && !deadline.signal.aborted) {
         await new Promise((resolve) => setTimeout(resolve, 10))

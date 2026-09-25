@@ -1,7 +1,7 @@
 import { translateStopReason } from "@claxedo/agent-event-runtime/harnesses/acp"
 import type { CreateElicitationRequest, RequestPermissionRequest, SessionNotification, SessionConfigOption } from "@agentclientprotocol/sdk"
 import type {
-  AttachInput, ConfigApplied, HarnessServices, HarnessSession, HarnessTransport, McpServerSpec,
+  AttachInput, ConfigApplied, ConfigTarget, HarnessServices, HarnessSession, HarnessTransport, McpServerSpec,
   ProjectedMcpServer, RoutedEvent, SessionBroker, StartInput, TransportCapabilities,
   TransportConfigUpdate, TurnBroker, TurnInput, TurnRef, Deadline,
 } from "../../contract"
@@ -56,7 +56,15 @@ export class AcpTransport implements HarnessTransport {
     connection: (_directory: string, sessionId?: string) => ({ state: sessionId && !this.entries.has(sessionId) ? "disconnected" as const : "ready" as const, processes: [] }),
     runtime: (_directory: string, sessionId?: string) => ({ status: sessionId && !this.entries.has(sessionId) ? "unavailable" as const : "ok" as const }),
   }
-  private readonly commandOperations = { list: async (directory: string) => this.byDirectory(directory).commands }
+  private readonly commandOperations = { list: async (target: ConfigTarget) => "session" in target
+    ? this.entry(target.session).commands : this.probes.commands(target.draft) }
+  private readonly agentOperations = { list: async (target: ConfigTarget) => {
+    const options = "session" in target ? this.entry(target.session).options : await this.probes.options(target.draft, "probe")
+    return options.filter((option) => option.category === "mode" && option.type === "select").flatMap((option) =>
+      option.type === "select" ? option.options.flatMap((item) => "value" in item
+        ? [{ name: item.value, description: item.name, mode: "primary" }]
+        : item.options.map((value) => ({ name: value.value, description: value.name, mode: "primary" }))) : [])
+  } }
   private readonly configOperations = acpConfig((session: HarnessSession) => this.entry(session), (draft, mode) => this.probes.options(draft, mode))
   private readonly forkOperations = { fork: async (session: HarnessSession, _messageId: string) => {
     const entry = this.entry(session)
@@ -64,7 +72,8 @@ export class AcpTransport implements HarnessTransport {
       cwd: session.directory, mcpServers: this.mcp(entry).map(acpMcp) })
     return { upstreamSessionId: result.sessionId }
   } }
-  get commands() { return [...this.entries.values()].some((entry) => entry.commands.length > 0) ? this.commandOperations : undefined }
+  get commands() { return this.commandOperations }
+  get agents() { return this.agentOperations }
   get config() { return this.configOperations }
   get fork() { return [...this.entries.values()].some((entry) => entry.peer.handshake.agentCapabilities?.sessionCapabilities?.fork) ? this.forkOperations : undefined }
 
@@ -83,19 +92,13 @@ export class AcpTransport implements HarnessTransport {
       requests: { permissions: true, questions: false, elicitation: true },
       steer: false, subagents: Boolean(entry && supportsAcpSubagents(entry.peer.handshake)),
       goals: { implemented: false, available: false, actions: [], recovery: "blocked", optionalFields: [] },
-      fork: Boolean(declared?.sessionCapabilities?.fork), agents: false, commands: Boolean(entry?.commands.length), todos: false,
+      fork: Boolean(declared?.sessionCapabilities?.fork), agents: Boolean(entry?.options.some((option) => option.category === "mode")), commands: Boolean(entry?.commands.length), todos: false,
       history: "store", titles: "none", pluginIntake: { mcp: this.connection.supportsMcpServers === false ? "none" : "session", skills: "none" },
       mcpTransports: { stdio: this.connection.kind === "process" && this.connection.supportsMcpServers !== false,
         http: this.connection.supportsMcpServers !== false && mcp?.http === true,
         sse: this.connection.supportsMcpServers !== false && mcp?.sse === true },
       timing: { model: "immediate", effort: "immediate", permissionMode: "immediate", credentials: "after-active-turns" },
     }
-  }
-
-  private byDirectory(directory: string): AcpEntry {
-    const entry = [...this.entries.values()].find((item) => item.session.directory === directory)
-    if (!entry) throw new AcpTransportError("session", "ACP directory has no session")
-    return entry
   }
 
   private entry(session: HarnessSession): AcpEntry {

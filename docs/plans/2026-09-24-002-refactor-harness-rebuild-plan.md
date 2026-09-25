@@ -566,6 +566,10 @@ Every defect the reviews found, all fixed in this plan. Each regression test is 
 | H-16 | A harness without todos answers the todo read as an empty list: Pi declares no todos, yet `GET /session/:id/todo` returns `200 []`, because a truthy empty replay returns before the capability check (found by H37) | Correctness | the todo route in `workspace-runtime/src/routes/session-core.ts` | The capability decides first: a typed `unsupported_operation`, which the app's todo reads treat as no todos | P3 | H37.todo |
 | H-17 | Deleting a session whose harness switch is still pending leaves the kept source process running: deletion reaches only the target adapter, not the runtime's release of the kept source (found by H35) | Availability | session deletion in `workspace-runtime` (`releaseKeptHandoffSource` is never reached) | Deletion through the runtime's own session transaction, which retires a kept source | P3 | H35.delete |
 | H-18 | Pi accepts a response whose `command` differs from the pending request, settling that request before Pi's real reply (found by H18) | Correctness | `agent-sdk-runtime/src/harnesses/pi/rpc-process.ts` `receive()` | The Pi RPC transport answers each request only from a reply matching its id and command. It ignores an unknown id (a late reply after a timeout) and a mismatched command, each as a diagnostic, and keeps waiting for the real reply until the request's own timeout | P3 | H18 |
+| H-19 | Cursor holds one backend binding per process: the SDK reads `CURSOR_BACKEND_URL` once, and today's driver refuses a second binding with `CursorBackendUrlFrozenError` (found by H25) | Availability | `agent-sdk-runtime/src/harnesses/cursor/auth.ts`, `driver.ts` | The Cursor transport hosts one SDK worker per backend binding | P2 Cursor | H25 |
+| H-20 | Brokered Cursor cannot finish a turn: after exchanging the placeholder at `/auth/exchange_user_api_key`, the SDK sends the returned access token on Connect RPCs, but the broker accepts only its signed placeholder (found by H1.cursor and H25) | Availability | `agent-sdk-runtime/src/harnesses/cursor/driver.ts`, `egress-broker/src/broker.ts` | The broker exchanges the real key, keeps the access token, and gives the SDK a placeholder for it to substitute on later calls; the real token never enters the harness process | P2 Cursor, egress broker | H1.cursor, H25 |
+| H-21 | An uncaught Cursor SDK `ConnectError` ends the self-hosted daemon (found by H1.cursor and H25) | Availability | `agent-sdk-runtime/src/harnesses/cursor/driver.ts`, `claxedo-server/src/deployments/self-hosted-node/index.ts` | A Cursor SDK failure fails only that session's turn; the P2 Cursor worker per binding isolates it from the daemon | P2 Cursor | H1.cursor, H25 |
+| H-22 | With no stored Cursor account selected, the driver deletes the machine owner's `CURSOR_BACKEND_URL` before the SDK loads; the guarded probe attempted `api2.cursor.sh` and `api.cursor.com` instead of the explicit endpoint | Availability | `agent-sdk-runtime/src/harnesses/cursor/auth.ts` | Keep the machine owner's explicit endpoint when no product binding is selected | P2 Cursor | Cursor machine-owner endpoint regression |
 | C-1 | Hosted never delivers provider credentials to a cloud sandbox | Availability | `supervisor/sandbox.ts:108` is the only caller | The delivery path run on hosted, over the existing brokering | P2 cloud | H19 (local and live), H30 |
 | C-2 | Hosted has no settings store and never sends the settings snapshot; its provider screen is a stub | Availability | `config-sync.ts` (self-hosted only); `routes/hosted/shell.ts:170-175` | A D1 settings store, snapshot push and fan-out on hosted | P2 cloud | H28 |
 | C-3 | OpenCode fails in a hosted sandbox | Availability | `runtime-boot.ts:141-143`, `workspace/runtime.ts:564-568` | Composed when a session asks for it | P2 OpenCode, cloud | H19, OpenCode case |
@@ -1049,14 +1053,14 @@ Every member of today's surface has one owner. The list is taken from `adapter-c
 | `deleteSession` | `close` |
 | `readHarnessCapabilities` | `capabilities` |
 | `executeTurn` | `send`, yielding routed events |
-| `listCommands` | the moved command discovery (the SDK and ACP read it today, `sdk-runtime-adapter.ts:699`, `acp/index.ts:492`), plus the optional `commands.list` (Pi's `get_commands`) |
+| `listCommands` | `commands.list(ConfigTarget)` reads the named session or probes a draft; Pi uses `get_commands`, ACP waits for `available_commands_update` |
 | `readConnectionState`, `readRuntimeHealth` | `health` |
 | `dispose` | `dispose`: end turns, answer pending requests with their cancel, close |
 | **Add-ons** | |
 | `cancelTurn` | `cancel` |
 | `steerTurn` | `steer.steer`, with the result states `accepted`, `unknown`, `unsupported`, `no_active_turn`, and the runtime's fallback to the queue |
 | `forkSession` (ACP) | `fork` |
-| `listAgents` (ACP) | `agents` |
+| `listAgents` (ACP) | `agents.list(ConfigTarget)` reads the named session or probes a draft |
 | `getTodos` | the runtime store for `/session/:id/todo`; the seed through `TurnInput`; the `todos` capability flag |
 | `goals`: `readCapabilities`, `read`, `start`, `pause`, `resume`, `stop`, `delete` | the `goals` group, with accepted and failed results and stop before interrupt |
 | `listPermissions`, `respondPermission` | `RequestBroker.list`, `.answer` |
@@ -1285,7 +1289,7 @@ Every slice deletes what it replaces.
   - the machine owner's sessions on their own Pi, whoever sends the turn; other owners' sessions brokered;
   - `get_commands`; all nine extension-UI methods (H-5, H-6);
   - the conformance suite green against the pinned Pi; H1, H4, H6, H12, H18 and H20 go green at the P3 cutover.
-  - `Progress:` the transport (518 lines) and profile (94) merged (dd82818f5a); H18 and H20 red at H-5 and H-6 on today's adapter. Open: a `.js` Pi binary runs whatever `node` is on PATH, `process.env` defaults belong in the composition, and `commands.list` needs a live session.
+  - `Progress:` the transport and profile merged (dd82818f5a); follow-ups route `.js` through the composed runtime, pass environment and owner path from composition, match Pi reply id and command, and list draft commands through a retired probe. H18 and H20 remain red on today's adapter until P3.
 
 ### P2: transports, profiles and cloud delivery, in parallel
 

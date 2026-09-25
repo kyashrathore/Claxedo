@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
 import type { Clock, Deadline, OwnedProcess } from "../../contract"
+import { unrecognizedEvent } from "../../translate/unrecognized"
 import { PiTransportError } from "./errors"
 
 export type PiMessage = Record<string, unknown> & { type: string }
@@ -14,7 +15,8 @@ export class PiRpc {
   private exitReported = false
   private retirement?: Promise<void>
 
-  constructor(readonly process: OwnedProcess, private readonly clock: Clock) {
+  constructor(readonly process: OwnedProcess, private readonly clock: Clock,
+    private readonly diagnostic: (event: ReturnType<typeof unrecognizedEvent>) => void) {
     process.stdout.setEncoding("utf8")
     process.stdout.on("data", (chunk: string) => this.read(chunk))
     process.stdout.on("error", (error: Error) => this.fail(new PiTransportError("process", "Pi stdout failed", error)))
@@ -61,8 +63,10 @@ export class PiRpc {
     if (message.type === "response") {
       if (typeof message.id !== "string") throw new Error("Pi RPC response has no id")
       const pending = this.pending.get(message.id)
-      if (!pending) throw new Error(`Pi RPC response has unknown id ${message.id}`)
-      if (message.command !== pending.command) throw new Error(`Pi RPC response command does not match ${pending.command}`)
+      if (!pending || message.command !== pending.command) {
+        this.diagnostic(unrecognizedEvent("pi.rpc", `response.${String(message.command)}`, message))
+        return
+      }
       this.pending.delete(message.id)
       this.clock.clearTimeout(pending.timer)
       if (message.success === true) pending.resolve(message.data)

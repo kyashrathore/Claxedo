@@ -43,6 +43,7 @@
     "@claxedo/agent-runtime-contract": "workspace:*",
     "@claxedo/agent-sdk-runtime": "workspace:*",
     "@claxedo/egress-broker": "workspace:*",
+    "@claxedo/harness": "workspace:*",
     "@claxedo/helpers": "workspace:*",
     "@claxedo/sandbox-contract": "workspace:*",
     "@claxedo/tasks": "workspace:*",

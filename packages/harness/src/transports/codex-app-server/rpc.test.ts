@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import { PassThrough } from "node:stream"
 import type { OwnedProcess } from "../../contract"
 import { CodexRpc } from "./rpc"
+import { CodexRequestRefusal } from "./errors"
 
 function peer() {
   const stdin = new PassThrough()
@@ -37,4 +38,12 @@ test("Codex failed request handler replies with JSON-RPC error and stays usable"
   stdout.write(`${JSON.stringify({ id: 1, method: "next", params: {} })}\n`)
   await new Promise((resolve) => setTimeout(resolve, 0))
   expect(frames[1]).toEqual({ id: 1, result: { ok: true } })
+})
+
+test("Codex typed request refusal stays distinct from an internal error", async () => {
+  const { rpc, stdout, frames } = peer()
+  rpc.onRequest(async () => { throw new CodexRequestRefusal(-32000, "Authentication unavailable") })
+  stdout.write(`${JSON.stringify({ id: 0, method: "account/chatgptAuthTokens/refresh", params: {} })}\n`)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(frames[0]).toMatchObject({ id: 0, error: { code: -32000 } })
 })

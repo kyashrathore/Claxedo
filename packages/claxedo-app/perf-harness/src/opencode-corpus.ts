@@ -3,9 +3,9 @@ import { isRecord } from "./json-fields"
 import type { EventMessagePartUpdated, EventMessageUpdated } from "@claxedo/agent-event-runtime/client-presentation"
 import {
   importOpenCodeFixtureSessions,
-  openCodePartId,
   type OpenCodeFixtureSession,
   type OpenCodeFixtureReadback,
+  openCodePartId,
 } from "@claxedo/workspace-runtime/testing"
 
 type Data = Record<string, unknown>

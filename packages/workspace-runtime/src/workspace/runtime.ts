@@ -1,3 +1,4 @@
+import { OpenCodeSdkHarnessAdapter } from "../opencode/harness-adapter"
 import type { SessionConfig, SessionConfigUpdate } from "@claxedo/agent-runtime-contract"
 import { Log } from "../log"
 import type { AgentProcessObserver } from "@claxedo/process-ownership/process-observer"
@@ -31,7 +32,7 @@ import {
   type AgentRuntimeStoreWithRecovery,
 } from "@claxedo/agent-sdk-runtime/adapters"
 import type { AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
-import { OpenCodeSdkHarnessAdapter, WorkspaceScope, type OpenCodeRuntime } from "../opencode/index"
+import { WorkspaceScope, type OpenCodeRuntime } from "@claxedo/harness/opencode-sdk"
 import type { CompatEnvelope } from "@claxedo/agent-sdk-runtime/compat-events"
 import type { SubagentAdmissionStore } from "@claxedo/agent-sdk-runtime/subagent-admission"
 import type { Hono } from "hono"
