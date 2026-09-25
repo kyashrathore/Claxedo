@@ -15,7 +15,7 @@ export type HarnessHealthStatus = "ok" | "degraded" | "unavailable"
 export type HarnessHealth = { status?: HarnessHealthStatus; reason?: string }
 export type HarnessConnectionState = { connectionId: string; state: "configured" | "connecting" | "ready" | "auth-required" | "disconnected" | "failed" }
 /** `thoughtLevel` is the effort a bound session saved; only its config carries one. */
-export type HarnessState = { type?: HarnessType; model?: string | null; modelProviderID?: string | null; thoughtLevel?: string; activeType?: HarnessType; status?: "configured" | "ready" | "applying" | "error"; error?: string; ready?: boolean; workspaceId?: string; harnessHealth?: HarnessHealth; connectionState?: HarnessConnectionState }
+export type HarnessState = { type?: HarnessType; model?: string | null; modelProviderId?: string | null; thoughtLevel?: string; activeType?: HarnessType; status?: "configured" | "ready" | "applying" | "error"; error?: string; ready?: boolean; workspaceId?: string; harnessHealth?: HarnessHealth; connectionState?: HarnessConnectionState }
 
 export const DEFAULT_HARNESS_MODEL = { id: "default", name: "Default (recommended)" }
 const harnessStatuses = ["configured", "ready", "applying", "error"] as const
@@ -64,8 +64,8 @@ export function isNativeSdkHarness(type: HarnessType) {
  * Pi is its own provider; Pi reports `vendor/model` ids and keeps its own id as
  * the key while labelling the group by vendor.
  */
-export function harnessModelPickerProvider(harness: HarnessType, item: { id: string; providerID?: string }) {
-  const harnessId = item.providerID ?? harnessSelectionId(harness)
+export function harnessModelPickerProvider(harness: HarnessType, item: { id: string; providerId?: string }) {
+  const harnessId = item.providerId ?? harnessSelectionId(harness)
   const label = harnessDisplayLabel(harnessId)
   if (!isNativeHarness(harness, "pi")) return { id: harnessId, name: label }
   const slash = item.id.indexOf("/")
@@ -116,7 +116,7 @@ export function decodeHarnessState(value: unknown): HarnessState | undefined {
   return {
     ...(type ? { type } : {}),
     ...(typeof raw.model === "string" || raw.model === null ? { model: raw.model } : {}),
-    ...(typeof raw.modelProviderID === "string" || raw.modelProviderID === null ? { modelProviderID: raw.modelProviderID } : {}),
+    ...(typeof raw.modelProviderID === "string" || raw.modelProviderID === null ? { modelProviderId: raw.modelProviderID } : {}),
     ...(activeType ? { activeType } : {}),
     ...(status ? { status } : {}),
     ...(typeof raw.error === "string" ? { error: raw.error } : {}),
@@ -154,8 +154,8 @@ export function decodeSessionConfig(value: unknown) {
     harness: decodeHarnessState({ harness: raw.harness, activeHarness: raw.harness }),
     model: model && (typeof model.modelID === "string" || model.modelID === null)
       ? {
-          modelID: model.modelID,
-          ...(typeof model.providerID === "string" || model.providerID === null ? { providerID: model.providerID } : {}),
+          modelId: model.modelID,
+          ...(typeof model.providerID === "string" || model.providerID === null ? { providerId: model.providerID } : {}),
         }
       : null,
     variant: typeof raw.variant === "string" && raw.variant ? raw.variant : undefined,

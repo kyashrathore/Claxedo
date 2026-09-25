@@ -56,7 +56,7 @@ export function shouldHydrateDraftFromHarnessStatus(input: { placementKind?: Pla
 
 export function harnessStateFromSessionConfig(input: {
   harness?: HarnessState
-  model?: { providerID?: string | null; modelID?: string | null } | null
+  model?: { providerId?: string | null; modelId?: string | null } | null
   variant?: string
 }): HarnessState | undefined {
   const harness = input.harness
@@ -65,8 +65,8 @@ export function harnessStateFromSessionConfig(input: {
   return {
     ...harness,
     type,
-    model: harness.model ?? input.model?.modelID ?? undefined,
-    modelProviderID: harness.modelProviderID ?? input.model?.providerID ?? undefined,
+    model: harness.model ?? input.model?.modelId ?? undefined,
+    modelProviderId: harness.modelProviderId ?? input.model?.providerId ?? undefined,
     ...(input.variant ? { thoughtLevel: input.variant } : {}),
     status: "ready",
     ready: true,

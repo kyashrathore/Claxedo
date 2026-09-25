@@ -121,7 +121,7 @@ export function harnessStatusPatch(input: {
     harnessMode: harnessMode(want),
     harness: want,
     selectedModel: input.data.model ?? input.current?.selectedModel ?? "",
-    selectedModelProvider: input.data.modelProviderID ?? input.current?.selectedModelProvider,
+    selectedModelProvider: input.data.modelProviderId ?? input.current?.selectedModelProvider,
     readiness,
     connectionState: want.kind === "connection" && input.data.connectionState?.connectionId === want.connectionId
       ? input.data.connectionState

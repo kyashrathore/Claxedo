@@ -99,14 +99,14 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
         : decision.patch)
       if (resolvingDefault && !payload.stale) {
         const eligibleModels = (decision.patch.dynamicModels ?? []).map((model) => ({
-          providerID: harnessSelectionId(type),
-          modelID: model.id,
+          providerId: harnessSelectionId(type),
+          modelId: model.id,
         }))
         input.resolveDraftDefault!(draftDefault, {
           supportedHarnesses: [type],
           eligibleModels,
           ...(decision.patch.selectedModel
-            ? { declaredDefaultModel: { providerID: harnessSelectionId(type), modelID: decision.patch.selectedModel } }
+            ? { declaredDefaultModel: { providerId: harnessSelectionId(type), modelId: decision.patch.selectedModel } }
             : {}),
         })
       }

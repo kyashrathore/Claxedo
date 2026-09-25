@@ -15,7 +15,7 @@ export type SessionPermissionWriter = {
    * throwing, which is the honest outcome: there is genuinely no route to it.
    */
   setPermissionMode?: (input: {
-    sessionID: string
+    sessionId: string
     modeId: string
   }) => Promise<{ currentModeId?: string }>
 }
@@ -66,7 +66,7 @@ export function permissionModeDeliverable(kind: PermissionModeDelivery["kind"]) 
  */
 export async function applyPermissionMode(input: {
   delivery: PermissionModeDelivery
-  sessionID: string
+  sessionId: string
   client: SessionPermissionWriter
 }): Promise<PermissionModeApplied> {
   const { delivery } = input
@@ -78,7 +78,7 @@ export async function applyPermissionMode(input: {
     return { kind: "not-wired", delivery: delivery.kind }
   }
   const state = await input.client.setPermissionMode({
-    sessionID: input.sessionID,
+    sessionId: input.sessionId,
     modeId: delivery.modeId,
   })
   // The harness's read-back, not the request. `kept` differing from

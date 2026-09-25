@@ -6,7 +6,7 @@ import { jsonInit, withQuery, type Transport } from "./transport"
 import type { SessionRef } from "./types"
 import type { Workspaces } from "./workspaces"
 import { readHarnessOptions, type HarnessOptionsRequest } from "./harness-options"
-import type { HarnessOptions } from "./types"
+import type { HarnessOptions, ModelChoice } from "./types"
 import { harnessIdentity, harnessSelectionQuery } from "./wire/harness-selection"
 import { permissionModeStateFromWire, type PermissionModeState } from "./wire/permission-modes"
 
@@ -15,7 +15,7 @@ const CONNECTIONS_PATH = "/api/claxedo/agent-config/connections"
 
 export type SessionConfigPatch = {
   readonly harness?: string
-  readonly model?: { readonly providerID: string; readonly modelID: string }
+  readonly model?: ModelChoice
   readonly variant?: string
 }
 
@@ -49,7 +49,7 @@ export function createHarnessConfigApi(transport: Transport, workspaces: Workspa
     updateSessionConfig: async (ref, patch) =>
       transport.runtime(await workspaces.route(ref), sessionEndpoint(ref, "/config"), jsonInit("PATCH", {
         ...(patch.harness ? { harness: harnessIdentity(patch.harness) } : {}),
-        ...(patch.model ? { model: patch.model } : {}),
+        ...(patch.model ? { model: { providerID: patch.model.providerId, modelID: patch.model.modelId } } : {}),
         ...(patch.variant !== undefined ? { variant: patch.variant } : {}),
       })),
     connections: async () => {

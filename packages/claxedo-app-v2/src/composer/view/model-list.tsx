@@ -49,7 +49,7 @@ function comparePickerProviderGroups(
 export type PickerState = {
   list: () => PickerItem[]
   current: () => PickerItem | undefined
-  set: (item: { modelID: string; providerID: string } | undefined, options?: { recent?: boolean }) => void
+  set: (item: { modelId: string; providerId: string } | undefined, options?: { recent?: boolean }) => void
 }
 
 /**
@@ -109,7 +109,7 @@ export const ModelList: Component<{
         )
       }
       onSelect={(x) => {
-        props.model.set(x ? { modelID: x.id, providerID: x.provider.id } : undefined, {
+        props.model.set(x ? { modelId: x.id, providerId: x.provider.id } : undefined, {
           recent: true,
         })
         props.onSelect()

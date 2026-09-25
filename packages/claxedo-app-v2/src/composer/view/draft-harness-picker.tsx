@@ -1,14 +1,13 @@
 import { createEffect, createMemo, createUniqueId, onMount, type JSX } from "solid-js"
-import type { PlacementId } from "@/server"
+import type { ModelChoice, PlacementId } from "@/server"
 import type { HarnessSelection } from "@/lib/harness-selection"
 import { useHarnessConfig } from "../harness/context"
 import { createHarnessSelectionController } from "../harness/controller"
-import type { ModelKey } from "../harness/model-key"
 import { AgentHarnessSelector } from "./agent-harness-selector"
 
 export type DraftHarnessChoice = {
   readonly harness: HarnessSelection | undefined
-  readonly model: ModelKey | undefined
+  readonly model: ModelChoice | undefined
   readonly effort: string | undefined
 }
 

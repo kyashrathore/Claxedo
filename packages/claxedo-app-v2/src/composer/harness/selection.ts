@@ -1,6 +1,5 @@
-import type { HarnessOptionChoice } from "@/server"
+import type { HarnessOptionChoice, ModelChoice } from "@/server"
 import type { HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
-import type { ModelKey } from "./model-key"
 import {
   harnessDisplayLabel,
   harnessSelectionId,
@@ -16,7 +15,7 @@ export type HarnessSelectionState = {
   readonly harness?: HarnessType
   readonly selectedModel?: string
   readonly selectedModelProvider?: string
-  readonly dynamicModels?: readonly (HarnessOptionChoice & { providerID?: string })[] | null
+  readonly dynamicModels?: readonly (HarnessOptionChoice & { providerId?: string })[] | null
   readonly readiness: HarnessReadiness
   readonly optionsLoading: boolean
   readonly configError?: string
@@ -36,7 +35,7 @@ export function harnessDisplayName(state: Pick<HarnessSelectionState, "harness">
   return harnessDisplayLabel(harnessSelectionId(state.harness))
 }
 
-export type HarnessModelChoice = HarnessOptionChoice & { providerID?: string }
+export type HarnessModelChoice = HarnessOptionChoice & { providerId?: string }
 
 function isTerminalModelOptionsError(state: Pick<HarnessSelectionState, "configError" | "optionsLoading">) {
   if (!state.configError || state.optionsLoading) return false
@@ -54,33 +53,33 @@ export function harnessModels(
     if (!raw || state.dynamicModels.some((item) => item.id === raw)) return [...state.dynamicModels]
     if (isClientDefaultPlaceholder(raw)) return [...state.dynamicModels]
     return [
-      { id: raw, name: raw, providerID: state.selectedModelProvider },
+      { id: raw, name: raw, providerId: state.selectedModelProvider },
       ...state.dynamicModels,
     ]
   }
   if (isTerminalModelOptionsError(state)) return []
   if (isClientDefaultPlaceholder(raw)) return []
-  return [{ id: raw, name: raw, providerID: state.selectedModelProvider }]
+  return [{ id: raw, name: raw, providerId: state.selectedModelProvider }]
 }
 
-export function harnessModelKeyForSubmit(state: HarnessSelectionState): ModelKey | undefined {
+export function harnessModelKeyForSubmit(state: HarnessSelectionState): ModelChoice | undefined {
   if (!state.harness) return undefined
   if (state.harness.kind === "connection" && state.connectionDeclaration?.connectionId === state.harness.connectionId && state.connectionDeclaration.modelSelection?.status === "unsupported") return undefined
   const raw = state.selectedModel ?? ""
   if (connectionAllowsNoModel(state) && isClientDefaultPlaceholder(raw)) return undefined
   if (!raw) return undefined
   if (isClientDefaultPlaceholder(raw) && !state.dynamicModels?.some((item) => item.id === raw)) return undefined
-  const match = harnessModels(state).find((item) => item.id === raw && (!state.selectedModelProvider || !item.providerID || item.providerID === state.selectedModelProvider))
+  const match = harnessModels(state).find((item) => item.id === raw && (!state.selectedModelProvider || !item.providerId || item.providerId === state.selectedModelProvider))
   if (!match || match.connected === false) return undefined
   // A catalog harness submits a provider/model pair from the catalog; a bare
   // model id with no provider (a hydrated harness status) is not yet a key.
-  const providerID = isCatalogHarness(state.harness)
+  const providerId = isCatalogHarness(state.harness)
     ? state.selectedModelProvider
     : state.selectedModelProvider ?? harnessSelectionId(state.harness)
-  if (!providerID) return undefined
+  if (!providerId) return undefined
   return {
-    providerID,
-    modelID: raw,
+    providerId,
+    modelId: raw,
     // Effort rides the model key's `variant` and travels with the prompt. A
     // harness turn is one `query()` and the SDK takes `effort` per query, so
     // the level travels WITH the prompt instead of being pushed at the running
@@ -102,7 +101,7 @@ export function harnessServiceTierForSubmit(state: Pick<HarnessSelectionState, "
 export function harnessModelNameForSubmit(state: HarnessSelectionState) {
   const model = harnessModelKeyForSubmit(state)
   if (!model) return undefined
-  return harnessModels(state).find((item) => item.id === model.modelID && (!item.providerID || item.providerID === model.providerID))?.name
+  return harnessModels(state).find((item) => item.id === model.modelId && (!item.providerId || item.providerId === model.providerId))?.name
 }
 
 export function harnessReadyForSubmit(state: HarnessSelectionState) {

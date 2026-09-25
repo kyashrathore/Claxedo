@@ -1,6 +1,5 @@
-import type { HarnessOptionChoice } from "@/server"
+import type { HarnessOptionChoice, ModelChoice } from "@/server"
 import type { HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
-import type { ModelKey } from "./model-key"
 import type { HarnessModelChoice, HarnessReadiness } from "./selection"
 import type { HarnessConnectionState, HarnessType } from "./profile"
 import type { DraftDefaultLabels } from "./draft-defaults"
@@ -26,10 +25,10 @@ export type HarnessSelectionControllerStore = {
   /** Transition a never-settling harness to the terminal "error" readiness. */
   markUnavailable(scope: string): void
   setHarness(scope: string, type: HarnessType, input?: HarnessScopeInput): void | Promise<void>
-  setModel(scope: string, model: ModelKey, input?: HarnessScopeInput, labels?: DraftDefaultLabels): void | Promise<void>
+  setModel(scope: string, model: ModelChoice, input?: HarnessScopeInput, labels?: DraftDefaultLabels): void | Promise<void>
   setThoughtLevel(scope: string, value: string | undefined): void
   setServiceTier(scope: string, value: string | undefined): void
-  rememberDraftModel(scope: string, model: ModelKey, input?: HarnessScopeInput, labels?: DraftDefaultLabels): void | boolean
+  rememberDraftModel(scope: string, model: ModelChoice, input?: HarnessScopeInput, labels?: DraftDefaultLabels): void | boolean
   resolveDraftDefault(scope: string, input: Omit<ResolveDraftDefaultInput, "saved">): boolean
   harness(scope: string): HarnessType | undefined
   /** The harness picked for an existing session that its next send switches it to. */
@@ -45,20 +44,20 @@ export type HarnessSelectionControllerStore = {
   setServiceTier(scope: string, value: string | undefined): void
   selectedServiceTier(scope: string): string | undefined
   selectedModel(scope: string): string
-  selectedModelKey(scope: string): ModelKey | undefined
+  selectedModelKey(scope: string): ModelChoice | undefined
   optionsStale(scope: string): boolean
   optionsLoading(scope: string): boolean
   configError(scope: string): string | undefined
   draftDefaultState(scope: string): DraftDefaultResult["state"] | undefined
   draftDefaultLabels(scope: string): DraftDefaultLabels | undefined
-  draftDefaultModel(scope: string): ModelKey | undefined
+  draftDefaultModel(scope: string): ModelChoice | undefined
   draftDefaultAuthority?(scope: string): DraftDefaultAuthority | undefined
 }
 
 export type HarnessSubmitControllerStore = HarnessSelectionControllerStore & {
   promote(from: string, to: string): void
   harnessReadyForSubmit(scope: string): boolean
-  harnessModelKeyForSubmit(scope: string): ModelKey | undefined
+  harnessModelKeyForSubmit(scope: string): ModelChoice | undefined
   settledModel?(scope: string): Promise<void>
   harnessServiceTierForSubmit(scope: string): string | undefined
   releaseHeldHarness?(scope: string): void
@@ -79,13 +78,13 @@ export type HarnessSelectionSnapshot = {
   /** Faster tiers the CURRENT model offers; empty when it runs at one speed. */
   serviceTiers: readonly HarnessOptionChoice[]
   selectedServiceTier: string | undefined
-  selectedModelKey?: ModelKey
+  selectedModelKey?: ModelChoice
   optionsStale: boolean
   optionsLoading: boolean
   configError: string | undefined
   draftDefaultState?: DraftDefaultResult["state"]
   draftDefaultLabels?: DraftDefaultLabels
-  draftDefaultModel?: ModelKey
+  draftDefaultModel?: ModelChoice
   draftDefaultAuthority?: DraftDefaultAuthority
 }
 
@@ -101,7 +100,7 @@ export function createHarnessSelectionController(store: HarnessSelectionControll
         connectionState: store.connectionState?.(scope),
         models: store.models(scope),
         selectedModel: store.selectedModel(scope),
-        selectedModelProvider: selectedModelKey?.providerID,
+        selectedModelProvider: selectedModelKey?.providerId,
         thoughtLevels: store.thoughtLevels(scope),
         selectedThoughtLevel: store.selectedThoughtLevel(scope),
         serviceTiers: store.serviceTiers(scope),
@@ -123,11 +122,11 @@ export function createHarnessSelectionController(store: HarnessSelectionControll
     markUnavailable: (scope: string) => store.markUnavailable(scope),
     setHarness: (scope: string, type: HarnessType, input?: HarnessScopeInput) =>
       store.setHarness(scope, type, input),
-    setModel: (scope: string, model: ModelKey, input?: HarnessScopeInput, labels?: DraftDefaultLabels) =>
+    setModel: (scope: string, model: ModelChoice, input?: HarnessScopeInput, labels?: DraftDefaultLabels) =>
       store.setModel(scope, model, input, labels),
     setThoughtLevel: (scope: string, value: string | undefined) => store.setThoughtLevel(scope, value),
     setServiceTier: (scope: string, value: string | undefined) => store.setServiceTier(scope, value),
-    rememberDraftModel: (scope: string, model: ModelKey, input?: HarnessScopeInput, labels?: DraftDefaultLabels) =>
+    rememberDraftModel: (scope: string, model: ModelChoice, input?: HarnessScopeInput, labels?: DraftDefaultLabels) =>
       store.rememberDraftModel(scope, model, input, labels),
     resolveDraftDefault: (scope: string, input: Omit<ResolveDraftDefaultInput, "saved">) =>
       store.resolveDraftDefault(scope, input),

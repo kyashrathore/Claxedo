@@ -1,16 +1,16 @@
 import { Button, Dialog } from "@/ui"
 import type { useDialog } from "@/ui"
-import type { ModelKey } from "../harness/model-key"
+import type { ModelChoice } from "@/server"
 import { ModelList, type PickerItem } from "./model-list"
 
 export type ModelDialogChoice = {
   readonly items: readonly PickerItem[]
-  readonly current: ModelKey | undefined
-  readonly choose: (model: ModelKey) => void
+  readonly current: ModelChoice | undefined
+  readonly choose: (model: ModelChoice) => void
 }
 
 export function showModelDialog(dialog: ReturnType<typeof useDialog>, labels: { title: string; connect: string }, choice: ModelDialogChoice, connect: () => void) {
-  const current = () => choice.items.find((item) => item.id === choice.current?.modelID && item.provider.id === choice.current.providerID)
+  const current = () => choice.items.find((item) => item.id === choice.current?.modelId && item.provider.id === choice.current.providerId)
   dialog.show(() => (
     <Dialog
       title={labels.title}

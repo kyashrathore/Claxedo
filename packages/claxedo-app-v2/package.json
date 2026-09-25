@@ -15,7 +15,7 @@
     "build:local": "VITE_CLAXEDO_AUTH_ADAPTER=better-auth node ./node_modules/vite/bin/vite.js build --config vite.local.config.ts",
     "typecheck": "tsgo --noEmit -p tsconfig.json",
     "typecheck:e2e": "tsgo --noEmit -p tsconfig.e2e.json",
-    "test": "bun test src",
+    "test": "bun test --conditions browser src",
     "check": "bun scripts/checks/run.ts",
     "e2e": "bun ./e2e/run.ts",
     "e2e:parity": "bun ./e2e/parity/run.ts"
