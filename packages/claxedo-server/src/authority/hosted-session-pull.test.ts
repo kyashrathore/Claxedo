@@ -60,6 +60,7 @@ describe("hosted session pull", () => {
     const svc = services()
     const target = vi.fn(async () => ({
       status: "ready" as const,
+      routingId: "routing_test",
       workspaceId: "ws_1",
       sandboxId: "sandbox_1",
       url: "https://runtime-direct.example.test",
@@ -118,6 +119,7 @@ describe("hosted session pull", () => {
       expect.objectContaining({
         workspaceId: "ws_1",
         hostId: "host_manager",
+        routingId: "routing_test",
         orgId: "org_1",
         role: "editor",
         principalKind: "user",
@@ -268,6 +270,7 @@ describe("hosted session pull", () => {
     svc.sandbox.sandboxManager = {
       target: vi.fn(async () => ({
         status: "ready",
+        routingId: "routing_test",
         workspaceId: "ws_1",
         sandboxId: "sandbox_1",
         url: "https://runtime-direct.example.test",
@@ -324,6 +327,7 @@ describe("hosted session pull", () => {
     svc.sandbox.sandboxManager = {
       target: vi.fn(async () => ({
         status: "ready",
+        routingId: "routing_test",
         workspaceId: "ws_1",
         sandboxId: "sandbox_1",
         url: "https://runtime-direct.example.test",

@@ -82,12 +82,11 @@ describe("workspace relay Cloudflare Worker entrypoint", () => {
     ])
   })
 
-  test("resolver client caches target and revocation responses within configured TTLs", async () => {
+  test("resolver client revalidates targets and caches revocation responses", async () => {
     const requests: Request[] = []
     const client = workspaceRelayWorkerResolverClient({
       CLAXEDO_RELAY_RESOLVER_URL: "https://central.test/internal/relay",
       CLAXEDO_RELAY_RESOLVER_TOKEN: "resolver-token",
-      CLAXEDO_RELAY_TARGET_CACHE_TTL_MS: "10000",
       CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS: "10000",
     }, async (url, init) => {
       const request = new Request(url, init)
@@ -109,6 +108,7 @@ describe("workspace relay Cloudflare Worker entrypoint", () => {
     await client.revocation({ jti: "jti_1", workspaceId: "ws_1", hostId: "host_1" })
 
     expect(requests.map((request) => new URL(request.url).pathname)).toEqual([
+      "/internal/relay/target",
       "/internal/relay/target",
       "/internal/relay/revocation",
     ])
@@ -182,4 +182,17 @@ describe("workspace relay Cloudflare Worker entrypoint", () => {
     expect(served.status).toBe(401)
     await expect(served.json()).resolves.toMatchObject({ error: { code: "runtime_access_token_required" } })
   })
+})
+
+test("Worker resolver transmits identity and preserves a stale-token authentication rejection", async () => {
+  const requests: URL[] = []
+  const resolver = workspaceRelayWorkerResolverClient({
+    CLAXEDO_RELAY_RESOLVER_URL: "https://resolver.test",
+    CLAXEDO_RELAY_RESOLVER_TOKEN: "secret",
+  }, async (input) => {
+    requests.push(new URL(String(input)))
+    return Response.json({ error: { code: "runtime_access_token_invalid" } }, { status: 401 })
+  })
+  await expect(resolver.target("ws_1", "host_1", "old")).rejects.toMatchObject({ code: "runtime_access_token_invalid" })
+  expect(requests[0]?.searchParams.get("routingId")).toBe("old")
 })

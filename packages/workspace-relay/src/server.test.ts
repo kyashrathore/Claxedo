@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createHash } from "node:crypto"
 import { decodeJwt, decodeProtectedHeader, exportJWK, generateKeyPair } from "jose"
-import { mintRelayHostToken, mintRuntimeAccessToken, verifyRelayHostToken } from "./auth"
+import { WorkspaceRelayAuthError, mintRelayHostToken, mintRuntimeAccessToken, verifyRelayHostToken } from "./auth"
 import { CURRENT_CHANNEL_IDENTITY_VERSION } from "@claxedo/workspace-relay-protocol"
 import { createWorkspaceRelayDirectory } from "./directory"
 import type { RuntimeAccessVerifierClaims } from "@claxedo/workspace-relay-protocol"
@@ -2542,4 +2542,33 @@ describe("forwarding a session recovery request", () => {
     expect(body).toEqual({ error: { code: "upstream_unavailable", message: "Workspace upstream is unavailable" } })
     expect(body.kind).toBeUndefined()
   })
+})
+
+test("stale routing tokens are rejected before forwarding even after a positive request", async () => {
+  const runtime = await generateKeyPair("EdDSA")
+  const host = await generateKeyPair("EdDSA")
+  let current = "old"
+  let forwarded = 0
+  const relay = createWorkspaceRelay({
+    runtimeAccessKey: runtime.publicKey,
+    relayHostSigningKey: host.privateKey,
+    relayHostAlgorithm: "EdDSA",
+    resolveTarget: (claims) => {
+      if (claims.routing_id !== current) throw new WorkspaceRelayAuthError("runtime_access_token_invalid", "stale route")
+      return { workspaceId: claims.workspace_id, hostId: claims.host_id, baseUrl: "https://reused.test", backing: "cloud-vm" }
+    },
+    fetch: (async () => { forwarded++; return Response.json({ ok: true }) }) as unknown as typeof fetch,
+  })
+  const mint = (routingId: string) => mintRuntimeAccessToken({
+    principalKind: "user", actorKind: "human", actorId: "actor", orgId: "org",
+    workspaceId: "workspace", hostId: "host", role: "owner", routingId,
+  }, runtime.privateKey, "EdDSA")
+  const old = await mint("old")
+  const request = (token: string) => relay.request("http://relay.test/workspaces/workspace/health", { headers: { authorization: `Bearer ${token}` } })
+  expect((await request(old)).status).toBe(200)
+  current = "new"
+  expect((await request(old)).status).toBe(401)
+  expect((await request(await mint("new"))).status).toBe(200)
+  expect((await request(old)).status).toBe(401)
+  expect(forwarded).toBe(2)
 })

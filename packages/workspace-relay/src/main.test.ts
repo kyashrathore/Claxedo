@@ -20,7 +20,7 @@ import {
   RUNTIME_ACCESS_TOKEN_ACTIVE_CHECK_INTERVAL_MS_DEFAULT,
   checkHostTunnelGeneration,
   createCachedHostGenerationClient,
-  createCachedTargetClient,
+  createCoalescedTargetClient,
   createHostGenerationResolverLookup,
   hostTunnelIncumbentOutranks,
   parseHostGenerationResult,
@@ -249,7 +249,7 @@ describe("runtimeAccessTokenRevocationDelayMs", () => {
   })
 })
 
-describe("createCachedTargetClient", () => {
+describe("createCoalescedTargetClient", () => {
   const target: WorkspaceRelayTarget = {
     workspaceId: "ws_1",
     hostId: "host_1",
@@ -257,26 +257,37 @@ describe("createCachedTargetClient", () => {
     backing: "cloud-vm",
   }
 
-  test("caches positive target lookups by workspace and host", async () => {
+  test("revalidates completed target lookups", async () => {
     let calls = 0
-    const clock = makeFakeNow(1_000_000)
-    const cached = createCachedTargetClient(async () => {
+    const cached = createCoalescedTargetClient(async () => {
       calls++
       return target
-    }, { ttlMs: 5_000, now: clock.now })
+    })
 
     await expect(cached({ workspaceId: "ws_1", hostId: "host_1" })).resolves.toEqual(target)
-    await expect(cached({ workspaceId: "ws_1", hostId: "host_1" })).resolves.toEqual(target)
-    expect(calls).toBe(1)
-
-    clock.advance(5_001)
     await expect(cached({ workspaceId: "ws_1", hostId: "host_1" })).resolves.toEqual(target)
     expect(calls).toBe(2)
+
+    await expect(cached({ workspaceId: "ws_1", hostId: "host_1" })).resolves.toEqual(target)
+    expect(calls).toBe(3)
+  })
+
+  test("every target lookup carries the supplied routing identity", async () => {
+    const asked: (string | undefined)[] = []
+    const cached = createCoalescedTargetClient(async (args) => {
+      asked.push(args.routingId)
+      return { ...target, baseUrl: `https://runtime.test/lease-${args.routingId}` }
+    })
+
+    await expect(cached({ workspaceId: "ws_1", hostId: "host_1", routingId: "1" })).resolves.toMatchObject({ baseUrl: "https://runtime.test/lease-1" })
+    await expect(cached({ workspaceId: "ws_1", hostId: "host_1", routingId: "2" })).resolves.toMatchObject({ baseUrl: "https://runtime.test/lease-2" })
+    await expect(cached({ workspaceId: "ws_1", hostId: "host_1", routingId: "2" })).resolves.toMatchObject({ baseUrl: "https://runtime.test/lease-2" })
+    expect(asked).toEqual(["1", "2", "2"])
   })
 
   test("does not retain missing targets after the in-flight lookup completes", async () => {
     let calls = 0
-    const cached = createCachedTargetClient(async () => {
+    const cached = createCoalescedTargetClient(async () => {
       calls++
       return undefined
     })
@@ -289,7 +300,7 @@ describe("createCachedTargetClient", () => {
   test("concurrent target misses share one underlying lookup", async () => {
     let calls = 0
     let resolve!: (result: WorkspaceRelayTarget) => void
-    const cached = createCachedTargetClient(async () => {
+    const cached = createCoalescedTargetClient(async () => {
       calls++
       return await new Promise<WorkspaceRelayTarget>((done) => {
         resolve = done
@@ -297,26 +308,28 @@ describe("createCachedTargetClient", () => {
     })
     const first = cached({ workspaceId: "ws_1", hostId: "host_1" })
     const second = cached({ workspaceId: "ws_1", hostId: "host_1" })
+    await Promise.resolve()
     resolve(target)
     await expect(Promise.all([first, second])).resolves.toEqual([target, target])
     expect(calls).toBe(1)
   })
 
-  test("evicts old target entries when the cache reaches its size bound", async () => {
+  test("bounds retained in-flight lookups without retaining completed answers", async () => {
     let calls = 0
-    const clock = makeFakeNow(1_000_000)
-    const cached = createCachedTargetClient(async () => {
-      calls++
-      return target
-    }, { ttlMs: 10_000, now: clock.now })
-
-    for (let index = 0; index <= 8_192; index++) {
-      await cached({ workspaceId: `ws_${index}`, hostId: "host_1" })
-    }
-    await cached({ workspaceId: "ws_0", hostId: "host_1" })
-
+    let finish!: () => void
+    const waiting = new Promise<void>((resolve) => { finish = resolve })
+    const lookup = createCoalescedTargetClient(async () => { calls++; await waiting; return target })
+    const requests = Array.from({ length: 8_193 }, (_, index) => lookup({ workspaceId: `ws_${index}`, hostId: "host_1" }))
+    requests.push(lookup({ workspaceId: "ws_0", hostId: "host_1" }))
+    requests.push(lookup({ workspaceId: "ws_8192", hostId: "host_1" }))
+    await Promise.resolve()
     expect(calls).toBe(8_194)
+    finish()
+    await Promise.all(requests)
+    await lookup({ workspaceId: "ws_0", hostId: "host_1" })
+    expect(calls).toBe(8_195)
   })
+
 })
 
 describe("createResolverClient", () => {
@@ -327,7 +340,7 @@ describe("createResolverClient", () => {
     backing: "cloud-vm",
   }
 
-  test("caches positive target resolver responses by workspace and host", async () => {
+  test("revalidates positive target resolver responses", async () => {
     const originalFetch = globalThis.fetch
     const requests: Array<{ url: URL; authorization: string | null }> = []
     globalThis.fetch = (async (input, init) => {
@@ -342,15 +355,38 @@ describe("createResolverClient", () => {
     }) as typeof fetch
 
     try {
-      const client = createResolverClient("https://resolver.test/", "resolver_token", { targetCacheTtlMs: 10_000 })
+      const client = createResolverClient("https://resolver.test/", "resolver_token")
       await expect(client.target("ws_1", "host_1")).resolves.toEqual(target)
       await expect(client.target("ws_1", "host_1")).resolves.toEqual(target)
 
-      expect(requests.length).toBe(1)
+      expect(requests.length).toBe(2)
       expect(requests[0]?.url.pathname).toBe("/target")
       expect(requests[0]?.url.searchParams.get("workspaceId")).toBe("ws_1")
       expect(requests[0]?.url.searchParams.get("hostId")).toBe("host_1")
       expect(requests[0]?.authorization).toBe("Bearer resolver_token")
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  test("asks the resolver again for a token minted against a new routing identity of the same host", async () => {
+    const originalFetch = globalThis.fetch
+    const answers = [`${target.baseUrl}/lease-1`, `${target.baseUrl}/lease-2`]
+    const requests: URL[] = []
+    globalThis.fetch = (async (input) => {
+      requests.push(new URL(input instanceof Request ? input.url : String(input)))
+      return new Response(JSON.stringify({ ...target, baseUrl: answers[requests.length - 1] }), {
+        headers: { "content-type": "application/json" },
+      })
+    }) as typeof fetch
+
+    try {
+      const client = createResolverClient("https://resolver.test/", "resolver_token")
+      await expect(client.target("ws_1", "host_1", "1")).resolves.toMatchObject({ baseUrl: `${target.baseUrl}/lease-1` })
+      await expect(client.target("ws_1", "host_1", "2")).resolves.toMatchObject({ baseUrl: `${target.baseUrl}/lease-2` })
+
+      expect(requests.map((url) => url.searchParams.get("hostId"))).toEqual(["host_1", "host_1"])
+      expect(requests.map((url) => url.searchParams.get("routingId"))).toEqual(["1", "2"])
     } finally {
       globalThis.fetch = originalFetch
     }
@@ -360,15 +396,12 @@ describe("createResolverClient", () => {
 describe("resolverClientCacheOptionsFromEnv", () => {
   test("uses secure production defaults and accepts positive overrides", () => {
     expect(resolverClientCacheOptionsFromEnv({})).toEqual({
-      targetCacheTtlMs: 30_000,
       revocationCacheTtlMs: 10_000,
       hostGenerationCacheTtlMs: 10_000,
     })
     expect(resolverClientCacheOptionsFromEnv({
-      CLAXEDO_RELAY_TARGET_CACHE_TTL_MS: "15000",
       CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS: "5000",
     })).toEqual({
-      targetCacheTtlMs: 15_000,
       revocationCacheTtlMs: 5_000,
       hostGenerationCacheTtlMs: 10_000,
     })
@@ -378,14 +411,12 @@ describe("resolverClientCacheOptionsFromEnv", () => {
     expect(resolverClientCacheOptionsFromEnv({
       CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS: "2000",
     })).toEqual({
-      targetCacheTtlMs: 30_000,
       revocationCacheTtlMs: 10_000,
       hostGenerationCacheTtlMs: 2_000,
     })
     expect(resolverClientCacheOptionsFromEnv({
       CLAXEDO_RELAY_HOST_GENERATION_URL: " https://central.test/internal/relay/host-generation ",
     })).toEqual({
-      targetCacheTtlMs: 30_000,
       revocationCacheTtlMs: 10_000,
       hostGenerationUrl: "https://central.test/internal/relay/host-generation",
       hostGenerationCacheTtlMs: 10_000,
@@ -1476,4 +1507,48 @@ describe("parseMetricsToken (T31)", () => {
     expect(parseMetricsToken({ CLAXEDO_RELAY_METRICS_TOKEN: "" })).toBeUndefined()
     expect(parseMetricsToken({ CLAXEDO_RELAY_METRICS_TOKEN: "   " })).toBeUndefined()
   })
+})
+
+test("routing fence is checked again after a positive lookup, including replay after a newer identity", async () => {
+  let current = "old"
+  const lookup = createCoalescedTargetClient(async (args) => args.routingId === current
+    ? { workspaceId: "ws_1", hostId: "host_1", baseUrl: `https://${current}.test`, backing: "cloud-vm" }
+    : undefined)
+  const old = { workspaceId: "ws_1", hostId: "host_1", routingId: "old" }
+  expect(await lookup(old)).toBeDefined()
+  current = "new"
+  expect(await lookup({ ...old, routingId: "new" })).toMatchObject({ baseUrl: "https://new.test" })
+  expect(await lookup(old)).toBeUndefined()
+})
+
+test("concurrent identities never share an in-flight lookup", async () => {
+  const resolvers: (() => void)[] = []
+  const asked: (string | undefined)[] = []
+  const lookup = createCoalescedTargetClient(async (args) => {
+    asked.push(args.routingId)
+    await new Promise<void>((resolve) => resolvers.push(resolve))
+    return undefined
+  })
+  const old = lookup({ workspaceId: "ws_1", hostId: "host_1", routingId: "old" })
+  const fresh = lookup({ workspaceId: "ws_1", hostId: "host_1", routingId: "new" })
+  await Promise.resolve()
+  expect(asked).toEqual(["old", "new"])
+  for (const resolve of resolvers) resolve()
+  await Promise.all([old, fresh])
+})
+
+test("Bun resolver transmits identity and preserves a stale-token authentication rejection", async () => {
+  const original = globalThis.fetch
+  const requests: URL[] = []
+  globalThis.fetch = (async (input) => {
+    requests.push(new URL(String(input)))
+    return Response.json({ error: { code: "runtime_access_token_invalid" } }, { status: 401 })
+  }) as typeof fetch
+  try {
+    await expect(createResolverClient("https://resolver.test", "secret").target("ws_1", "host_1", "old"))
+      .rejects.toMatchObject({ code: "runtime_access_token_invalid" })
+    expect(requests[0]?.searchParams.get("routingId")).toBe("old")
+  } finally {
+    globalThis.fetch = original
+  }
 })

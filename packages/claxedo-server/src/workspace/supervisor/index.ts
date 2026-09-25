@@ -435,10 +435,14 @@ function sandboxReadyResult(
   lease: SandboxLeaseRow | undefined,
   fallbackHomeRegion: SandboxLease["homeRegion"],
 ): SandboxEnsureResult & SandboxTargetResult {
+  if (lease && !lease.routing_id) {
+    return { status: "unavailable", reason: "runtime_lease_not_ready", error: "runtime_lease_not_ready", homeRegion: fallbackHomeRegion }
+  }
   return {
     status: "ready",
     ...target,
     epoch: lease?.epoch ?? 0,
+    routingId: lease?.routing_id ?? undefined,
     homeRegion: (lease?.home_region ?? fallbackHomeRegion),
   }
 }

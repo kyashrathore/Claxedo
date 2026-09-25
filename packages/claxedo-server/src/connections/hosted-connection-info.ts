@@ -128,7 +128,7 @@ async function mintCloudConnection(
     workspaceId: string
     homeRegion: ClaxedoRegion
     relayUrl: string
-    target: { hostId: string; epoch: number; driverResourceId?: string }
+    target: { hostId: string; epoch: number; routingId?: string; driverResourceId?: string }
     previousJti?: string
   },
 ) {
@@ -150,6 +150,7 @@ async function mintCloudConnection(
     orgId,
     workspaceId,
     hostId: target.hostId,
+    routingId: target.routingId,
     role,
   })
   await authority.recordRuntimeAccessToken(auth, {

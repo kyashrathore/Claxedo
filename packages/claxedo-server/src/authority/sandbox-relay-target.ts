@@ -96,6 +96,7 @@ export function sandboxRelayTargetLookup(input: {
         timeoutMsFromEnv("CLAXEDO_SANDBOX_TARGET_TIMEOUT_MS", 5_000, input.env),
       )
       if (target.status === "ready" && target.hostId === args.hostId) {
+        if (!args.routingId || args.routingId !== target.routingId) return { found: false, code: "runtime_access_token_invalid" }
         const headers = upstreamHeaders(target)
         touch(args.workspaceId, args.waitUntil)
         return {
@@ -106,6 +107,7 @@ export function sandboxRelayTargetLookup(input: {
         }
       }
     }
+    if (args.routingId) return { found: false, code: "runtime_access_token_invalid" }
     // A machine-placed workspace has no sandbox lease; resolve the registered
     // host link.
     const tunnelled = await resolveHostTunnel(args)

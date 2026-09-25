@@ -21,6 +21,7 @@ export type Hit = {
   url: string
   relay?: {
     hostId: string
+    routingId?: string
     homeRegion?: ClaxedoRegion
     orgId: string
   }
@@ -190,6 +191,7 @@ export async function ensureCloudRuntime(
       ? {
           relay: {
             hostId: result.hostId,
+            routingId: result.routingId,
             homeRegion: normalizeClaxedoRegion(result.homeRegion, options.defaultHomeRegion ?? "us-east"),
             orgId: ws.org_id,
           },
@@ -302,6 +304,7 @@ export async function proxy(c: Context, hit: Hit, options?: {
     const token = await options.relayProvider.mintRuntimeAccessToken({
       workspaceId: hit.workspaceId,
       hostId: hit.relay.hostId,
+      routingId: hit.relay.routingId,
       ...principal,
       ttlMs: 10 * 60_000,
     })

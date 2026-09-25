@@ -19,7 +19,7 @@ import {
   REVOCATION_CACHE_TTL_MS_DEFAULT,
   createCachedHostGenerationClient,
   createCachedRevocationClient,
-  createCachedTargetClient,
+  createCoalescedTargetClient,
   createHostGenerationResolverLookup,
   parseRuntimeAccessTokenActiveResult,
   parseWorkspaceRelayTarget,
@@ -29,15 +29,15 @@ import {
   type WorkspaceRelayTarget,
 } from "./server"
 import {
+  WorkspaceRelayAuthError,
   deriveRelayHostKid,
   deriveRelayHostPublicKey,
   type RelayKey,
   type RuntimeAccessTokenClaims,
 } from "./auth"
 
-export { createCachedRevocationClient, createCachedTargetClient } from "./server"
+export { createCachedRevocationClient, createCoalescedTargetClient } from "./server"
 
-const BUN_TARGET_CACHE_TTL_MS_DEFAULT = 30_000
 const BUN_REVOCATION_CACHE_TTL_MS_DEFAULT = REVOCATION_CACHE_TTL_MS_DEFAULT
 const BUN_HOST_GENERATION_CACHE_TTL_MS_DEFAULT = 10_000
 const BUN_RUNTIME_ACCESS_TOKEN_CACHE_TTL_MS_DEFAULT = 10_000
@@ -371,7 +371,6 @@ export function directHttpConcurrencyFromEnv(env: DirectHttpConcurrencyEnv): num
 }
 
 export type ResolverClientCacheOptions = {
-  targetCacheTtlMs?: number
   revocationCacheTtlMs?: number
   /**
    * Absolute URL of the control plane's host-generation lookup. Unset derives
@@ -383,7 +382,6 @@ export type ResolverClientCacheOptions = {
 }
 
 export type ResolverClientCacheEnv = {
-  CLAXEDO_RELAY_TARGET_CACHE_TTL_MS?: string | undefined
   CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS?: string | undefined
   CLAXEDO_RELAY_HOST_GENERATION_URL?: string | undefined
   CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS?: string | undefined
@@ -392,7 +390,6 @@ export type ResolverClientCacheEnv = {
 export function resolverClientCacheOptionsFromEnv(env: ResolverClientCacheEnv): ResolverClientCacheOptions {
   const hostGenerationUrl = trimToUndefined(env.CLAXEDO_RELAY_HOST_GENERATION_URL)
   return {
-    targetCacheTtlMs: positiveInteger(env.CLAXEDO_RELAY_TARGET_CACHE_TTL_MS) ?? BUN_TARGET_CACHE_TTL_MS_DEFAULT,
     revocationCacheTtlMs: positiveInteger(env.CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS) ?? BUN_REVOCATION_CACHE_TTL_MS_DEFAULT,
     ...(hostGenerationUrl ? { hostGenerationUrl } : {}),
     hostGenerationCacheTtlMs: positiveInteger(env.CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS) ?? BUN_HOST_GENERATION_CACHE_TTL_MS_DEFAULT,
@@ -411,7 +408,9 @@ export function createResolverClient(
     const url = new URL(`${root}/target`)
     url.searchParams.set("workspaceId", args.workspaceId)
     url.searchParams.set("hostId", args.hostId)
+    if (args.routingId) url.searchParams.set("routingId", args.routingId)
     const res = await fetch(url, { headers })
+    if (res.status === 401) throw new WorkspaceRelayAuthError("runtime_access_token_invalid", "Sandbox routing identity is no longer current")
     if (res.status === 404) return undefined
     if (!res.ok) throw new Error(`relay target resolver failed: ${res.status} ${await res.text()}`)
     // Same boundary parse the Cloudflare worker applies (`worker.ts`): the
@@ -438,9 +437,7 @@ export function createResolverClient(
     if (!result) throw new Error("relay revocation resolver returned a malformed result")
     return result
   }
-  const target = createCachedTargetClient(targetUncached, {
-    ttlMs: options.targetCacheTtlMs ?? BUN_TARGET_CACHE_TTL_MS_DEFAULT,
-  })
+  const target = createCoalescedTargetClient(targetUncached)
   const revocation = createCachedRevocationClient(revocationUncached, {
     ttlMs: options.revocationCacheTtlMs ?? BUN_REVOCATION_CACHE_TTL_MS_DEFAULT,
   })
@@ -449,7 +446,8 @@ export function createResolverClient(
     { ttlMs: options.hostGenerationCacheTtlMs ?? BUN_HOST_GENERATION_CACHE_TTL_MS_DEFAULT },
   )
   return {
-    target: (workspaceId: string, hostId: string): Promise<WorkspaceRelayTarget | undefined> => target({ workspaceId, hostId }),
+    target: (workspaceId: string, hostId: string, routingId?: string): Promise<WorkspaceRelayTarget | undefined> =>
+      target({ workspaceId, hostId, ...(routingId !== undefined ? { routingId } : {}) }),
     revocation,
     hostGeneration,
   }
@@ -725,7 +723,6 @@ async function main() {
   const relayHostPublicKeys: RelayHostPublicKey[] = [relayHostMaterial.current]
   if (relayHostMaterial.next) relayHostPublicKeys.push(relayHostMaterial.next)
   const resolver = createResolverClient(resolverUrl, resolverToken, resolverClientCacheOptionsFromEnv({
-    CLAXEDO_RELAY_TARGET_CACHE_TTL_MS: process.env.CLAXEDO_RELAY_TARGET_CACHE_TTL_MS,
     CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS: process.env.CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS,
     CLAXEDO_RELAY_HOST_GENERATION_URL: process.env.CLAXEDO_RELAY_HOST_GENERATION_URL,
     CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS: process.env.CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS,
@@ -766,7 +763,7 @@ async function main() {
     auditAcceptSampleRate,
     ...(metricsToken ? { metricsToken } : {}),
     resolveTarget: (claims: RuntimeAccessTokenClaims) =>
-      resolver.target(claims.workspace_id, claims.host_id),
+      resolver.target(claims.workspace_id, claims.host_id, claims.routing_id),
     isRuntimeAccessTokenActive: (claims: RuntimeAccessTokenClaims) =>
       resolver.revocation({
         jti: claims.jti,

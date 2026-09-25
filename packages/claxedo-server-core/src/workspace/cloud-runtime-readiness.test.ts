@@ -9,7 +9,8 @@ function manager(leases: Record<string, SandboxTargetResult["status"]>) {
     target: async (id: string): Promise<SandboxTargetResult> => {
       asked.push(id)
       return leases[id] === "ready"
-        ? { status: "ready", sandboxId: id, url: "http://sandbox.test", hostId: id, epoch: 1, homeRegion: "us-east" }
+        ? { status: "ready",
+      routingId: "routing_test", sandboxId: id, url: "http://sandbox.test", hostId: id, epoch: 1, homeRegion: "us-east" }
         : { status: "unavailable", reason: "runtime_lease_missing" }
     },
   }
