@@ -5,7 +5,7 @@ import { sessionEndpoint, type SessionContext } from "./session-context"
 import { NO_GOAL, readGoalState } from "./session-goal"
 import { readRequests } from "./session-requests"
 import { withQuery, type RuntimeRoute } from "./transport"
-import type { SessionReads, SessionRef, SessionStatus, SessionSurface, Todo, TranscriptPage } from "./types"
+import type { SessionReads, SessionRef, SessionStatus, SessionSurfaceRead, Todo, TranscriptPage } from "./types"
 import type { SessionHome } from "./workspaces"
 import { isWorkspaceStopped } from "./wire/connection"
 import { sessionRowFromSession } from "./wire/session-row"
@@ -47,7 +47,7 @@ function readHistory(context: SessionContext, ref: SessionRef, home: SessionHome
   return readPage(context, home.route, withQuery(sessionEndpoint(ref, "/message"), page))
 }
 
-async function readSurface(context: SessionContext, ref: SessionRef, home: SessionHome, session: AgentPresentationSession | undefined): Promise<SessionSurface> {
+async function readSurface(context: SessionContext, ref: SessionRef, home: SessionHome, session: AgentPresentationSession | undefined): Promise<SessionSurfaceRead> {
   const [transcript, row] = await Promise.all([
     readHistory(context, ref, home),
     session ? sessionRowFromSession(session, ref) : readCentralRow(context.transport, home.route.workspaceId, ref),

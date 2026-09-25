@@ -1,7 +1,6 @@
 import { createMemo, createSignal, type Accessor } from "solid-js"
-import type { AgentRequest, AgentRequestReply, AppError, RequestId, Server, ServerEvent, SessionId, SessionRef } from "@/server"
+import { toAppError, type AgentRequest, type AgentRequestReply, type AppError, type RequestId, type Server, type ServerEvent, type SessionId, type SessionRef } from "@/server"
 import type { RequestState } from "@/session"
-import { toAppError } from "./app-error"
 import { EXPIRED, applyRequestsEvent, initialRequestsData, isOpenRequest, readErrorOf, type RequestsData, type RequestsEvent } from "./model"
 
 export type RequestsInternal = {

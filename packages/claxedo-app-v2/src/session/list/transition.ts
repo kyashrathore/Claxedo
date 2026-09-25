@@ -108,7 +108,7 @@ function fetchEvent(state: ListState, event: ListEvent): ListState | undefined {
   }
 }
 
-export function transition(state: ListState, event: ListEvent): ListState {
+export function listTransition(state: ListState, event: ListEvent): ListState {
   switch (event.type) {
     case "sessionUpserted":
     case "sessionRemoved":

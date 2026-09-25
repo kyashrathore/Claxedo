@@ -47,7 +47,7 @@ export function buildIdOf(build: PluginBuild): string {
   return build.origin.kind === "live" ? build.origin.hash : build.manifest.version
 }
 
-export function transition(state: PluginState, event: PluginEvent): PluginState {
+export function pluginTransition(state: PluginState, event: PluginEvent): PluginState {
   switch (event.type) {
     case "switchedOn":
       return state.kind === "on" || state.kind === "swapping" ? state : { kind: "loading", build: event.build }
@@ -111,7 +111,7 @@ function crashed(state: PluginState, reason: string): PluginState {
 }
 
 export function pluginMachine(): Machine<PluginState, PluginEvent> {
-  return machine<PluginState, PluginEvent>({ kind: "off" }, transition)
+  return machine<PluginState, PluginEvent>({ kind: "off" }, pluginTransition)
 }
 
 export function failedBuildId(state: PluginState): string | undefined {

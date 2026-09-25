@@ -7,13 +7,13 @@ export class FrameCallError extends Error {
 
 export type Settled = { readonly id: number; readonly ok: true; readonly value: unknown } | { readonly id: number; readonly ok: false; readonly reason: string }
 
-export type Requests = {
+export type PendingCalls = {
   readonly open: () => { readonly id: number; readonly result: Promise<unknown> }
   readonly settle: (settled: Settled) => void
   readonly failAll: (reason: string) => void
 }
 
-export function createRequests(): Requests {
+export function createPendingCalls(): PendingCalls {
   const pending = new Map<number, { readonly resolve: (value: unknown) => void; readonly reject: (error: Error) => void }>()
   let next = 1
   return {

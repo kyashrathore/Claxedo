@@ -1,5 +1,4 @@
-import type { SessionReads, SessionSurface, TranscriptPage } from "@/server"
-import { toAppError } from "../requests"
+import { toAppError, type SessionReads, type SessionSurfaceRead, type TranscriptPage } from "@/server"
 import type { TranscriptContext } from "./context"
 import { replaceLatest } from "./conversation"
 import { applyTranscriptEvent } from "./events"
@@ -12,7 +11,7 @@ function hasOlderLoaded(context: TranscriptContext, transcript: TranscriptPage):
   return first !== undefined && context.data.messages.some((message) => !isPendingMessage(message) && message.id < first)
 }
 
-function landSurface(context: TranscriptContext, surface: SessionSurface): void {
+function landSurface(context: TranscriptContext, surface: SessionSurfaceRead): void {
   const current = context.phase.state()
   const held = isReading(current) ? current.held : []
   context.deps.list.readRow(surface.row)

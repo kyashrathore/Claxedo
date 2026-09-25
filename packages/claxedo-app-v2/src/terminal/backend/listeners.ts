@@ -1,5 +1,5 @@
+import type { TerminalSize } from "@/server"
 import type { Disposer } from "@/shell"
-import type { TerminalSize } from "./types"
 
 export type BackendListeners = {
   readonly emitData: (data: string) => void

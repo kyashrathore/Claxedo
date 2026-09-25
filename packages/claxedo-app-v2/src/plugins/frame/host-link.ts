@@ -6,7 +6,7 @@ import { failureReason } from "../failure"
 import { performCall } from "./host-calls"
 import { registerOnHost, type FrameSlots, type Invoke } from "./host-registrations"
 import type { FrameMirror, FrameToHost, HostCall, HostToFrame } from "./protocol"
-import { createRequests } from "./requests"
+import { createPendingCalls } from "./pending-calls"
 
 export type FrameControl = {
   readonly slots: FrameSlots
@@ -39,7 +39,7 @@ export function frameMirror(api: PluginApi, services: HostServices): FrameMirror
 
 export function createHostLink(input: HostLinkInput): HostLink {
   const { port, api, control } = input
-  const requests = createRequests()
+  const requests = createPendingCalls()
   const registered = new Map<number, Disposer>()
   const send = (message: HostToFrame) => port.postMessage(message)
   const invoke: Invoke = (frameInvoke) => {

@@ -2,7 +2,7 @@
 import { expect, test } from "bun:test"
 import { placementId, projectId, sessionId, type ListedStatus, type ProjectId, type SessionRow } from "@/server"
 import { initialListState, type FetchedPage, type FetchedWindow, type ListState } from "./model"
-import { transition } from "./transition"
+import { listTransition } from "./transition"
 import { visibleOrder } from "./visible-rows"
 
 const ALPHA = projectId("prj_alpha")
@@ -26,8 +26,8 @@ function window(pages: FetchedPage[], failures: FetchedWindow["failures"] = [], 
   return { pages, failures, sentAt }
 }
 
-function run(state: ListState, ...events: Parameters<typeof transition>[1][]): ListState {
-  return events.reduce(transition, state)
+function run(state: ListState, ...events: Parameters<typeof listTransition>[1][]): ListState {
+  return events.reduce(listTransition, state)
 }
 
 const shown = (state: ListState) => visibleOrder(state).map((ref) => ref.sessionId as string)

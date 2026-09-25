@@ -1,7 +1,7 @@
 import { createStore, reconcile } from "solid-js/store"
 import { failureReason } from "../../failure"
 import type { FrameInvoke, FrameMirror, FrameToHost, HostCall, HostToFrame, Registration } from "../protocol"
-import { createRequests } from "../requests"
+import { createPendingCalls } from "../pending-calls"
 
 export type InvokeHandler = (invoke: FrameInvoke) => unknown
 
@@ -15,7 +15,7 @@ export type FrameLink = {
 
 export function createFrameLink(port: MessagePort, initial: FrameMirror): FrameLink {
   const [mirror, setMirror] = createStore<FrameMirror>(initial)
-  const requests = createRequests()
+  const requests = createPendingCalls()
   const send = (message: FrameToHost) => port.postMessage(message)
   let invokeHandler: InvokeHandler | undefined
   let nextKey = 1

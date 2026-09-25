@@ -17,7 +17,7 @@ The plugin host. It runs the first-party plugins that `bundled.ts` lists from `p
 
 ## State machine
 
-`PluginState` and `transition` in `model.ts`:
+`PluginState` and `pluginTransition` in `model.ts`:
 
 | From | Event | To |
 | --- | --- | --- |

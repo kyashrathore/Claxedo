@@ -151,14 +151,14 @@ export type SessionGoalState = {
   readonly available: boolean
 }
 
-export type SessionSurface = {
+export type SessionSurfaceRead = {
   readonly row: SessionRow
   readonly transcript: TranscriptPage
   readonly diff: readonly FileDiff[]
 }
 
 export type SessionReads = {
-  readonly surface: Promise<SessionSurface>
+  readonly surface: Promise<SessionSurfaceRead>
   readonly status: Promise<SessionStatus>
   readonly requests: Promise<readonly AgentRequest[]>
   readonly todos: Promise<readonly Todo[]>
