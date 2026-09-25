@@ -50,6 +50,8 @@ export type AssignmentAck = { workspaceId: string; revision: number }
 export type HostEndpoints = {
   relay?: { url: string; jwksUrl: string }
   authority?: { sessionAuthorityUrl: string }
+  /** Where this machine publishes its sessions' list rows with its Host Tunnel Token. */
+  sessionRows?: { url: string }
 }
 
 /**
@@ -400,10 +402,11 @@ export function createHostConnector(options: ConnectorOptions) {
       await options.onScope?.(result.scope)
       scopeRevision = result.scope.revision
     }
-    if (result.relay || result.authority) {
+    if (result.relay || result.authority || result.sessionRows) {
       const endpoints: HostEndpoints = {
         ...(result.relay ? { relay: result.relay } : {}),
         ...(result.authority ? { authority: result.authority } : {}),
+        ...(result.sessionRows ? { sessionRows: result.sessionRows } : {}),
       }
       const serialized = JSON.stringify(endpoints)
       if (serialized !== deliveredEndpoints) {

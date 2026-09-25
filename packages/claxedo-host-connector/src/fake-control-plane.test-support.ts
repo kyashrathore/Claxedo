@@ -201,7 +201,10 @@ export function createFakeControlPlane(
 
   const endpoints = () => ({
     relay: { url: relayUrl, jwks_url: `${relayUrl}/.well-known/jwks.json` },
-    authority: { session_authority_url: `${url}/api/runtime-authority/session-authorize` },
+    authority: {
+      session_authority_url: `${url}/api/runtime-authority/session-authorize`,
+      session_rows_url: `${url}/api/claxedo/host/session-rows`,
+    },
   })
 
   /**

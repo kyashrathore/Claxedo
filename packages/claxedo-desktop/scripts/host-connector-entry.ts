@@ -308,8 +308,9 @@ export function runHostConnectorChild(port: ChildPort, deps: ChildDeps = { fetch
         const next: HostConnectorServingEndpoints = {
           ...(delivered.relay ? { relayJwksUrl: delivered.relay.jwksUrl } : {}),
           ...(delivered.authority ? { sessionAuthorityUrl: delivered.authority.sessionAuthorityUrl } : {}),
+          ...(delivered.sessionRows ? { sessionRowsUrl: delivered.sessionRows.url } : {}),
         }
-        endpoints = next.relayJwksUrl === undefined && next.sessionAuthorityUrl === undefined ? undefined : next
+        endpoints = Object.keys(next).length === 0 ? undefined : next
       },
       onServing: (tunnel) => send({ type: "serving", tunnel: tunnel ?? null, ...(endpoints ? { endpoints } : {}) }),
       // Stored, then opened, then forwarded — as three steps on purpose. The

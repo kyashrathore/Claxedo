@@ -72,6 +72,7 @@ export type HostConnectorSharedWorkspace = { workspaceId: string; displayName?: 
 export type HostConnectorServingEndpoints = {
   relayJwksUrl?: string
   sessionAuthorityUrl?: string
+  sessionRowsUrl?: string
 }
 
 /**
@@ -233,12 +234,15 @@ function servingEndpoints(value: unknown): HostConnectorServingEndpoints | undef
   if (!input) return undefined
   const relayJwksUrl = input.relayJwksUrl
   const sessionAuthorityUrl = input.sessionAuthorityUrl
+  const sessionRowsUrl = input.sessionRowsUrl
   if (relayJwksUrl !== undefined && !isNonEmptyString(relayJwksUrl)) return undefined
   if (sessionAuthorityUrl !== undefined && !isNonEmptyString(sessionAuthorityUrl)) return undefined
-  if (relayJwksUrl === undefined && sessionAuthorityUrl === undefined) return undefined
+  if (sessionRowsUrl !== undefined && !isNonEmptyString(sessionRowsUrl)) return undefined
+  if (relayJwksUrl === undefined && sessionAuthorityUrl === undefined && sessionRowsUrl === undefined) return undefined
   return {
     ...(isNonEmptyString(relayJwksUrl) ? { relayJwksUrl } : {}),
     ...(isNonEmptyString(sessionAuthorityUrl) ? { sessionAuthorityUrl } : {}),
+    ...(isNonEmptyString(sessionRowsUrl) ? { sessionRowsUrl } : {}),
   }
 }
 
