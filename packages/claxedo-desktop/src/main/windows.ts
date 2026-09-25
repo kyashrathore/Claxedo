@@ -5,13 +5,14 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 import log from "electron-log/main.js"
 
 import { isBrowserTabEnabled } from "./browser/flag"
-import { IS_PACKAGED } from "./constants"
+import { IS_PACKAGED, RENDERER } from "./constants"
 import { resolveDevIdentity, tintIcon } from "./dev-identity"
 import { parseWindowSize } from "./window-size"
 import {
   MAIN_RENDERER_DOCUMENT,
   navigationDecision,
   windowOpenDecision,
+  type ExternalNavigation,
   type NavigationDecision,
 } from "./navigation-guard"
 import { trustWindowWithBridge } from "./ipc-caller-guard"
@@ -36,6 +37,8 @@ const root = dirname(fileURLToPath(import.meta.url))
  * contribution chunk inside this base composition, never a second document.
  */
 const RENDERER_DOCUMENT = MAIN_RENDERER_DOCUMENT
+
+const EXTERNAL_NAVIGATION: ExternalNavigation = RENDERER === "v2" ? "refuse" : "open"
 
 function iconsDir() {
   return IS_PACKAGED ? join(process.resourcesPath, "icons") : join(root, "../../resources/icons")
@@ -153,15 +156,33 @@ export function wireNavigationGuard(wc: WebContents) {
     else if (decision.action === "block") log.warn(`[security] blocked ${context} to ${decision.url}`)
   }
   wc.on("will-navigate", (event, urlString) => {
-    const decision = navigationDecision(urlString, isTrustedMainRendererUrl)
+    const decision = navigationDecision(urlString, isTrustedMainRendererUrl, EXTERNAL_NAVIGATION)
     if (decision.action === "allow") return
     event.preventDefault()
     perform(decision, "main-window navigation")
   })
   wc.setWindowOpenHandler(({ url }) => {
-    perform(windowOpenDecision(url), "window.open")
+    perform(windowOpenDecision(url, EXTERNAL_NAVIGATION), "window.open")
     return { action: "deny" as const }
   })
+}
+
+const RENDERER_DOCUMENTS = [RENDERER_DOCUMENT, "loading.html"]
+
+function packagedDocumentUrl(html: string) {
+  return pathToFileURL(join(root, `../renderer/${html}`)).href
+}
+
+export function isRendererDocumentUrl(input: string) {
+  return RENDERER_DOCUMENTS.some((html) =>
+    isTrustedRendererDocumentUrl(input, { devServerUrl: process.env.ELECTRON_RENDERER_URL, packagedIndexUrl: packagedDocumentUrl(html) }),
+  )
+}
+
+export function rendererDocumentUrlPatterns() {
+  const devUrl = process.env.ELECTRON_RENDERER_URL
+  if (devUrl) return [`${new URL(devUrl).origin}/*`]
+  return RENDERER_DOCUMENTS.map((html) => `${packagedDocumentUrl(html)}*`)
 }
 
 export function isTrustedMainRendererUrl(input: string) {

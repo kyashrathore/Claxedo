@@ -3,6 +3,7 @@ import { ClaxedoIcon as Icon, Button, Spinner, TextField } from "@/ui"
 import { CONTEXT_COPY, createProviderConnect, type ProviderConnect, type ConnectFormInput } from "../connect-form"
 import { useAccountsText } from "../i18n"
 import { ConnectCommand } from "./connect-command"
+import { openExternal } from "@/lib/external-link"
 
 function ExternalLink(props: { readonly href: string; readonly children: JSX.Element }) {
   return (
@@ -75,7 +76,7 @@ function PasteForm(props: { readonly form: ProviderConnect; readonly credentialI
       <Show when={form().selected()?.command}>{(command) => <ConnectCommand command={command()} />}</Show>
       <Show when={form().selected()?.spec.url}>
         {(url) => (
-          <Button class="w-auto" type="button" size="large" variant="secondary" data-action="provider-connect-open-key-page" onClick={() => window.open(url(), "_blank", "noopener")}>
+          <Button class="w-auto" type="button" size="large" variant="secondary" data-action="provider-connect-open-key-page" onClick={() => openExternal(url())}>
             <span class="flex items-center gap-1.5">
               {t("provider.connect.method.openKeyPage")}
               <Icon name="open-external" size="small" />

@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url"
 import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { dirname } from "node:path"
 import { resolveBrowserAuthBuildSelection } from "./vite.browser-auth"
+import { webContentSecurityPolicyPlugin } from "./vite.content-security-policy"
 
 /**
  * The chunks the authenticated app awaits BEFORE first paint. app/entry/app.tsx's
@@ -146,7 +147,7 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
     || env.VITE_CLAXEDO_SERVER_URL
     || "http://127.0.0.1:2593"
   return {
-    plugins: [claxedoWorkspaceSource(), solidPlugin(), tailwindcss(), bootChunkModulepreloadPlugin()],
+    plugins: [claxedoWorkspaceSource(), solidPlugin(), tailwindcss(), bootChunkModulepreloadPlugin(), webContentSecurityPolicyPlugin(env.VITE_CLAXEDO_SERVER_URL)],
     publicDir: "public",
     server: {
       host: "0.0.0.0",
