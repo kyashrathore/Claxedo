@@ -1,10 +1,10 @@
 import type { LivePluginsApi } from "./api"
 import { responseError, toAppError } from "./errors"
 import { fetchQuery } from "./fetch-query"
-import type { LivePlugin, LivePluginSource, LivePluginSourceText } from "./live-plugin-types"
+import type { LivePlugin } from "./live-plugin-types"
 import { queryKeys } from "./query-keys"
-import { withQuery, type Transport } from "./transport"
-import { parseLivePlugins, parseLivePluginSource, parseLivePluginSourceText } from "./wire/live-plugins"
+import type { Transport } from "./transport"
+import { parseLivePlugins } from "./wire/live-plugins"
 
 const LIVE_PLUGINS_PATH = "/api/claxedo/live-plugins"
 
@@ -16,14 +16,6 @@ export function livePluginQueries(transport: Transport) {
   const server = transport.serverUrl
   return {
     list: () => fetchQuery<readonly LivePlugin[]>(queryKeys.livePlugins(server), async () => parseLivePlugins(await transport.json<unknown>(LIVE_PLUGINS_PATH))),
-    source: (pluginId: string) =>
-      fetchQuery<LivePluginSource>(queryKeys.livePluginSource(server, pluginId), async () =>
-        parseLivePluginSource(await transport.json<unknown>(`${pluginPath(pluginId)}/source`)),
-      ),
-    sourceFile: (pluginId: string, path: string) =>
-      fetchQuery<LivePluginSourceText>(queryKeys.livePluginSourceFile(server, pluginId, path), async () =>
-        parseLivePluginSourceText(await transport.json<unknown>(withQuery(`${pluginPath(pluginId)}/source/file`, { path }))),
-      ),
   }
 }
 

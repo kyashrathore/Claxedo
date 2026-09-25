@@ -1,6 +1,6 @@
 import { pluginManifestSchema } from "@claxedo/plugin-api"
 import { ServerError } from "../errors"
-import type { LivePlugin, LivePluginSource, LivePluginSourceText, LivePluginStatus } from "../live-plugin-types"
+import type { LivePlugin, LivePluginStatus } from "../live-plugin-types"
 
 const STATUSES: ReadonlySet<string> = new Set<LivePluginStatus>(["building", "ready", "failed"])
 
@@ -16,11 +16,6 @@ function text(value: unknown, label: string): string {
 
 function optionalText(value: unknown, label: string): string | null {
   return value === null ? null : text(value, label)
-}
-
-function count(value: unknown, label: string): number {
-  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return value
-  throw new ServerError({ class: "internal", message: `${label} is not a size` })
 }
 
 function status(value: unknown, label: string): LivePluginStatus {
@@ -57,19 +52,3 @@ export function parseLivePlugins(body: unknown): readonly LivePlugin[] {
   return plugins.map(livePlugin)
 }
 
-export function parseLivePluginSource(body: unknown): LivePluginSource {
-  const listing = record(body, "The plugin's source listing")
-  if (!Array.isArray(listing.files)) throw new ServerError({ class: "internal", message: "The plugin's source listing has no files" })
-  return {
-    files: listing.files.map((value, index) => {
-      const file = record(value, `Source file ${index}`)
-      return { path: text(file.path, `Source file ${index} path`), size: count(file.size, `Source file ${index} size`) }
-    }),
-    truncated: listing.truncated === true,
-  }
-}
-
-export function parseLivePluginSourceText(body: unknown): LivePluginSourceText {
-  const file = record(body, "The source file")
-  return { path: text(file.path, "The source file path"), size: count(file.size, "The source file size"), text: text(file.text, "The source file text") }
-}

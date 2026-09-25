@@ -78,7 +78,7 @@ import type {
   TranscriptPage,
 } from "./types"
 import type { UsageRequest, UsageSummary } from "./usage-types"
-import type { LivePlugin, LivePluginSource, LivePluginSourceText } from "./live-plugin-types"
+import type { LivePlugin } from "./live-plugin-types"
 
 export type SessionsApi = {
   readonly list: (input: SessionListInput) => Promise<SessionPage>
@@ -185,8 +185,6 @@ export type LivePluginsApi = {
 export type ServerQueries = {
   readonly livePlugins: {
     readonly list: () => FetchQuery<readonly LivePlugin[]>
-    readonly source: (pluginId: string) => FetchQuery<LivePluginSource>
-    readonly sourceFile: (pluginId: string, path: string) => FetchQuery<LivePluginSourceText>
   }
   readonly projects: {
     readonly list: () => FetchQuery<readonly Project[]>

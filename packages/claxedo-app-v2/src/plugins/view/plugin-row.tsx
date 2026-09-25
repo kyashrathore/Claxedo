@@ -2,15 +2,13 @@ import { createSignal, Show, type JSX } from "solid-js"
 import { useI18n } from "@/i18n"
 import { formatDateTimeMed } from "@/lib/relative-time"
 import { unreachable } from "@/lib/machine"
-import { useServer } from "@/server"
-import { Switch, Tag, Button, useDialog } from "@/ui"
+import { Switch, Tag, Button } from "@/ui"
 import { approvalLetsRun } from "../approval"
 import { failureReason } from "../failure"
 import { usePluginsText, type PluginsKey, type PluginsText } from "../i18n"
 import { failureOf, type PluginState, type PluginSummary } from "../model"
 import { usePluginHost } from "../provider"
 import { PluginManifestSummary } from "./plugin-manifest"
-import { openPluginSource } from "./source-dialog"
 
 function stateKey(state: PluginState): PluginsKey {
   switch (state.kind) {
@@ -49,8 +47,6 @@ function detailOf(t: PluginsText, plugin: PluginSummary, locale: string): string
 function RowActions(props: { readonly plugin: PluginSummary; readonly expanded: boolean; readonly toggle: () => void }): JSX.Element {
   const t = usePluginsText()
   const host = usePluginHost()
-  const server = useServer()
-  const dialog = useDialog()
   const [removeFailure, setRemoveFailure] = createSignal<string>()
   const remove = async () => {
     setRemoveFailure(undefined)
@@ -66,9 +62,6 @@ function RowActions(props: { readonly plugin: PluginSummary; readonly expanded: 
         {t("plugins.details")}
       </Button>
       <Show when={props.plugin.origin.kind === "live"}>
-        <Button type="button" variant="ghost" size="small" onClick={() => openPluginSource(dialog, server, { id: props.plugin.id, name: props.plugin.name })}>
-          {t("plugins.viewCode")}
-        </Button>
         <Button type="button" variant="ghost" size="small" onClick={() => void remove()}>
           {t("plugins.remove")}
         </Button>

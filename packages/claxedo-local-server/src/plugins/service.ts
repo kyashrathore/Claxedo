@@ -44,7 +44,6 @@ export type LivePluginService = {
   add(directory: string): Promise<LivePluginRow>
   remove(id: string): Promise<boolean>
   bundle(id: string, hash: string): Promise<string | undefined>
-  directory(id: string): string | undefined
   settled(): Promise<void>
   dispose(): void
 }
@@ -186,7 +185,6 @@ export function createLivePluginService(options: LivePluginServiceOptions): Live
       return true
     },
     bundle: (id, hash) => readLivePluginBundle(root, id, hash),
-    directory: (id) => plugins.get(id)?.entry.directory,
     settled: async () => {
       await ready
       await Promise.all([...plugins.values()].map((record) => record.queue))

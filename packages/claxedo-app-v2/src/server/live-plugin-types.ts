@@ -13,9 +13,3 @@ export type LivePlugin = {
   readonly builtAt: string | null
   readonly lastError: string | null
 }
-
-export type LivePluginSourceFile = { readonly path: string; readonly size: number }
-
-export type LivePluginSource = { readonly files: readonly LivePluginSourceFile[]; readonly truncated: boolean }
-
-export type LivePluginSourceText = { readonly path: string; readonly size: number; readonly text: string }

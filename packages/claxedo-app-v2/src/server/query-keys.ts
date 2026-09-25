@@ -20,8 +20,6 @@ export const queryKeys = {
     ["server", server, "plugin-skill", request.pluginInstanceId, request.skill, request.projectId ?? ""] as const,
   marketplaceMachine: (server: string) => ["server", server, "plugin-machine-installed"] as const,
   livePlugins: (server: string) => ["server", server, "live-plugins"] as const,
-  livePluginSource: (server: string, pluginId: string) => ["server", server, "live-plugins", pluginId, "source"] as const,
-  livePluginSourceFile: (server: string, pluginId: string, path: string) => ["server", server, "live-plugins", pluginId, "source", path] as const,
   tasks: (server: string) => ["server", server, "tasks", "availability"] as const,
   tasksAll: (server: string) => ["server", server, "tasks"] as const,
   cloud: (server: string) => ["server", server, "cloud"] as const,
