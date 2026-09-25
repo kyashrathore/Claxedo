@@ -110,6 +110,60 @@ test("OpenCode loads projected MCP and skills through engine hooks without writi
   } finally { await context.close(); await mcp.close() }
 }, 60_000)
 
+test("two sessions in one directory call first-party tools with their own identity", async () => {
+  const port = await reservePort()
+  const calls: Array<{ session: string; authorization: string; name: string }> = []
+  const mcp = Bun.serve({ hostname: "127.0.0.1", port, async fetch(request) {
+    const session = new URL(request.url).searchParams.get("session") ?? ""
+    const authorization = request.headers.get("authorization") ?? ""
+    if (authorization !== `Bearer first-party-${session}` || !["s1", "s2"].includes(session)) return new Response("Unauthorized", { status: 401 })
+    const message = await request.json() as { id: number; method: string; params?: { name?: string } }
+    if (message.method !== "initialize" && request.headers.get("mcp-session-id") !== `mcp-${session}`) {
+      return new Response("MCP session mismatch", { status: 400 })
+    }
+    if (message.method === "tools/call") calls.push({ session, authorization, name: message.params?.name ?? "" })
+    const result = message.method === "initialize"
+      ? { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "first-party", version: "1" } }
+      : message.method === "tools/list"
+        ? { tools: [{ name: "claxedo_proof", description: "Return the calling identity", inputSchema: { type: "object" } }] }
+        : { content: [{ type: "text", text: `FIRST_PARTY:${session}` }] }
+    return new Response(`event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: message.id, result })}\n\n`,
+      { headers: { "content-type": "text/event-stream", "mcp-session-id": `mcp-${session}` } })
+  } })
+  let context: Awaited<ReturnType<typeof setupConformance>> | undefined
+  try {
+    context = await setupConformance({ name: "opencode-session-tools", backend: async () => {
+      const state = await backend()
+      state.configureServices = (services) => { services.firstPartyMcp = (sessionId) => ({ kind: "http", name: "claxedo",
+        url: `http://127.0.0.1:${port}/mcp?session=${sessionId}`, headers: { Authorization: `Bearer first-party-${sessionId}` } }) }
+      return state
+    }, makeTransport: (services, state) => transport(services, state as OpenCodeBackend) })
+    const second = await context.transport.start({ ...context.start, sessionId: "s2" }, { ...context.sessionBroker,
+      rebind: async () => undefined })
+    const state = context.backend as OpenCodeBackend
+    state.server.scriptTool({ name: "claxedo_proof", input: {}, whenPromptIncludes: "FIRSTONE" })
+    expect(JSON.stringify(await collect(context, context.turn("Call claxedo_proof for FIRSTONE")))).toContain("FIRST_PARTY:s1")
+    state.server.scriptTool({ name: "claxedo_proof", input: {}, whenPromptIncludes: "FIRSTTWO" })
+    const secondEvents = []
+    for await (const event of context.transport.send(second, context.turn("Call claxedo_proof for FIRSTTWO"), context.turnBroker())) secondEvents.push(event)
+    expect(JSON.stringify(secondEvents)).toContain("FIRST_PARTY:s2")
+    expect(calls).toEqual([
+      { session: "s1", authorization: "Bearer first-party-s1", name: "claxedo_proof" },
+      { session: "s2", authorization: "Bearer first-party-s2", name: "claxedo_proof" },
+    ])
+    const forged = await fetch(`http://127.0.0.1:${port}/mcp?session=s2`, { method: "POST",
+      headers: { Authorization: "Bearer first-party-s1", "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "claxedo_proof", arguments: {} } }) })
+    expect(forged.status).toBe(401)
+    expect(calls).toHaveLength(2)
+    expect(await fs.readdir(context.backend.directory)).not.toContain("opencode.json")
+  } finally {
+    await context?.close()
+    await mcp.stop(true)
+    releasePort(port)
+  }
+}, 60_000)
+
 test("one embedded engine refuses a different owner", async () => {
   const context = await setupConformance({ name: "opencode-owner", backend,
     makeTransport: (services, state) => transport(services, state as OpenCodeBackend) })

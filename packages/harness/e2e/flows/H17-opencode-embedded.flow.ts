@@ -53,7 +53,7 @@ export async function run() {
         }
         if (stream.frames.some((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id
           && stream.frames.indexOf(frame) >= permissionSince)) {
-          throw new Error(`P3: today's OpenCode adapter ended the shell turn without permission; model replies: ${JSON.stringify(stack.scripted.requests.map((request) => request.reply))}; last turn: ${JSON.stringify(current.lastTurn)}`)
+          throw new Error(`H-23: OpenCode permission mode shell=ask, question=allow; shell tool call ${JSON.stringify(stack.scripted.requests.filter((request) => request.prompt.includes("H17PERMISSION")).map((request) => request.reply))} ended without a permission request; last turn: ${JSON.stringify(current.lastTurn)}`)
         }
         return undefined
       }, "permission")
@@ -81,10 +81,10 @@ export async function run() {
       await api.replyQuestion(directory, question.id, [["Yes"]])
       await idle(stream, session.id, questionSince)
       if (!stream.frames.some((frame) => frameType(frame) === "question.asked" && frameSessionId(frame) === session.id)) {
-        failures.push("P3: today's OpenCode adapter omitted the live question.asked frame")
+        failures.push(`H-23: OpenCode question was answered and stored but no live question.asked frame appeared; answer: ${JSON.stringify(stack.scripted.requests.filter((request) => request.prompt.includes("Yes")).map((request) => request.reply))}`)
       }
       assert.ok(stack.scripted.requests.some((request) => request.prompt.includes("Yes") && request.dialect === "chat"))
-    } catch (error) { failures.push(`P3: today's OpenCode question path: ${error instanceof Error ? error.message : String(error)}`) }
+    } catch (error) { failures.push(`H-23: today's OpenCode question path: ${error instanceof Error ? error.message : String(error)}`) }
 
     try {
       release = stack.scripted.holdTextReplies("H17INFLIGHT")

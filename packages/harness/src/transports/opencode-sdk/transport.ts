@@ -5,6 +5,7 @@ import { openCodeLaunchDocument } from "../../profiles/opencode/index.js"
 import { openCodeCapabilities } from "./capabilities.js"
 import { providerOverlays } from "./credentials.js"
 import { OpenCodeOwnerMismatchError, OpenCodeTransportError } from "./errors.js"
+import { firstPartyTools } from "./first-party-tools.js"
 import { eventAssistantMessageID, eventSessionID, terminal } from "./translate/event.js"
 import { createOpenCodeRuntime, type OpenCodeRuntime, type OpenCodeRuntimeOptions } from "./runtime.js"
 import { WorkspaceScope } from "./scope.js"
@@ -48,8 +49,7 @@ export class OpenCodeSdkTransport implements HarnessTransport {
   }
 
   private async applyProjection(input: StartInput, scope: WorkspaceScope): Promise<void> {
-    const first = this.services.firstPartyMcp(input.sessionId, input.locality)
-    const document = openCodeLaunchDocument(input.projection, first)
+    const document = openCodeLaunchDocument(input.projection)
     const content = JSON.stringify(document)
     const current = this.documents.get(scope.directory)
     if (current && current.content !== content && [...current.users].some((id) => id !== input.sessionId)) {
@@ -72,7 +72,14 @@ export class OpenCodeSdkTransport implements HarnessTransport {
       binding: { sessionId: input.sessionId, workspaceId: input.workspaceId, directory: scope.directory,
         connectionId: "opencode-sdk", upstreamSessionId: row.id } }
     this.entries.set(input.sessionId, { session, start: input, broker, scope, upstream: row.id, active: false })
-    try { await broker.rebind(row.id) }
+    try {
+      const firstParty = this.services.firstPartyMcp(input.sessionId, input.locality)
+      if (firstParty) {
+        const registration = await firstPartyTools(firstParty, input.sessionId)
+        await this.runtime.tools.registerSession({ scope, sessionID: row.id, ...registration })
+      }
+      await broker.rebind(row.id)
+    }
     catch (error) { this.entries.delete(input.sessionId); throw error }
     return session
   }
