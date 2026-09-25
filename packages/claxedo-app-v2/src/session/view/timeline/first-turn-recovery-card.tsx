@@ -1,6 +1,7 @@
 import { createSignal, Show, type ParentProps } from "solid-js"
 import { ClaxedoIcon as Icon, Button, Card, Tooltip } from "@/ui"
 import { ClaxedoIconButton as IconButton } from "@/ui"
+import type { DispatchContext } from "./provider-error-detail"
 import { sessionRecovery, sessionRecoveryDescription, type SessionErrorClass } from "./turn-recovery"
 
 function RawDetail(props: { detail: string }) {
@@ -97,10 +98,8 @@ export function TimelineErrorPresentation(props: {
   text: string
   summary?: string
   error?: unknown
-  providerID?: string
-  modelID?: string
   onAction: (value: SessionErrorClass) => unknown
-}) {
+} & DispatchContext) {
   return (
     <Show
       when={props.presentation === "turn-conflict"}
@@ -133,10 +132,8 @@ export function FirstTurnRecoveryCard(props: {
   detail?: string
   summary?: string
   error?: unknown
-  providerID?: string
-  modelID?: string
   onAction: (kind: SessionErrorClass) => unknown
-}) {
+} & DispatchContext) {
   const recovery = () => sessionRecovery(props.kind, props.error, { providerID: props.providerID, modelID: props.modelID })
   const description = () =>
     props.summary ??
