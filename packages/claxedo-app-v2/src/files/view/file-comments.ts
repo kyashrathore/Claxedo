@@ -80,7 +80,15 @@ export function createFileComments(input: {
     onDelete: (comment) => input.store.remove(comment.id),
     editSubmitLabel: t("files.comment.save"),
   })
-  const enabled = () => input.store.enabled()
+  return commentProps(controller, comments, () => input.store.enabled(), input.setSelected)
+}
+
+function commentProps(
+  controller: ReturnType<typeof createLineCommentController<Comment>>,
+  comments: Accessor<Comment[]>,
+  enabled: Accessor<boolean>,
+  setSelected: (range: SelectedLineRange | null) => void,
+): FileCommentProps {
   return {
     get enableGutterUtility() {
       return enabled()
@@ -98,7 +106,7 @@ export function createFileComments(input: {
     },
     renderAnnotation: controller.renderAnnotation,
     renderGutterUtility: (getHoveredRow) => (enabled() ? (controller.renderGutterUtility(getHoveredRow) ?? null) : null),
-    onLineSelected: (range) => (enabled() ? controller.onLineSelected(range) : input.setSelected(range)),
+    onLineSelected: (range) => (enabled() ? controller.onLineSelected(range) : setSelected(range)),
     onLineNumberSelectionEnd: (range) => enabled() && controller.onLineSelectionEnd(range),
     onLineSelectionEnd: (range) => enabled() && controller.onLineSelectionEnd(range),
   }
