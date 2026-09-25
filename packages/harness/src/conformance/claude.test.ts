@@ -106,9 +106,10 @@ async function backend(): Promise<ClaudeBackend> {
       model: { providerID: "anthropic", modelID: "default" } }),
     hold: (marker) => {
       const release = server.holdTextReplies(marker)
-      if (marker === "PISTEER") setTimeout(release, 300)
+      if (marker === "PISTEER") void server.textGateReached(marker).then(() => setTimeout(release, 300))
       return release
     },
+    held: (marker) => server.textGateReached(marker),
     scriptTool: (name, input) => server.scriptTool({ name: name === "read" ? "Read" : name, input: name === "read" ? { file_path: path.join(directory, "conformance.txt") } : input }),
     close: async () => {
       try {
