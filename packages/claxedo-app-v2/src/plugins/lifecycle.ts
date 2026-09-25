@@ -13,66 +13,71 @@ export type PluginLifecycle = {
   readonly dispose: () => void
 }
 
+type ActivationRunner = {
+  readonly start: (next: PluginBuild) => Promise<void>
+  readonly stop: () => void
+  readonly settledOn: (buildId: string) => boolean
+}
+
+function createActivationRunner(machine: ReturnType<typeof pluginMachine>, activate: Activate): ActivationRunner {
+  let running: Activation | undefined
+  let starting: string | undefined
+  let attempt = 0
+  const stop = () => {
+    attempt++
+    starting = undefined
+    running?.dispose()
+    running = undefined
+  }
+  const crash = (current: number, reason: string) => {
+    if (current !== attempt) return
+    stop()
+    machine.send({ type: "crashed", reason })
+  }
+  const start = async (next: PluginBuild) => {
+    const current = ++attempt
+    const id = buildIdOf(next)
+    starting = id
+    machine.send(running ? { type: "swapStarted", to: id } : { type: "switchedOn", build: id })
+    try {
+      const activation = await activate(next, (reason) => crash(current, reason))
+      if (current !== attempt) return activation.dispose()
+      starting = undefined
+      running?.dispose()
+      running = activation
+      machine.send({ type: "activated" })
+    } catch (error) {
+      if (current !== attempt) return
+      starting = undefined
+      machine.send({ type: "activationFailed", reason: failureReason(error) })
+    }
+  }
+  const settledOn = (id: string) => running?.build === id || starting === id || failedBuildId(machine.state()) === id
+  return { start, stop, settledOn }
+}
+
 export function createPluginLifecycle(initial: PluginBuild, wanted: (build: PluginBuild) => boolean, activate: Activate): PluginLifecycle {
   return createRoot((disposeRoot) => {
     const [build, setBuild] = createSignal(initial)
     const machine = pluginMachine()
-    let running: Activation | undefined
-    let starting: string | undefined
-    let attempt = 0
-
-    const stop = () => {
-      attempt++
-      starting = undefined
-      running?.dispose()
-      running = undefined
-    }
-
-    const crash = (current: number, reason: string) => {
-      if (current !== attempt) return
-      stop()
-      machine.send({ type: "crashed", reason })
-    }
-
-    const start = async (next: PluginBuild) => {
-      const current = ++attempt
-      const id = buildIdOf(next)
-      starting = id
-      machine.send(running ? { type: "swapStarted", to: id } : { type: "switchedOn", build: id })
-      try {
-        const activation = await activate(next, (reason) => crash(current, reason))
-        if (current !== attempt) return activation.dispose()
-        starting = undefined
-        running?.dispose()
-        running = activation
-        machine.send({ type: "activated" })
-      } catch (error) {
-        if (current !== attempt) return
-        starting = undefined
-        machine.send({ type: "activationFailed", reason: failureReason(error) })
-      }
-    }
-
+    const runner = createActivationRunner(machine, activate)
     createEffect(
       on([() => wanted(build()), build], ([isWanted, next]) => {
         if (!isWanted) {
-          stop()
+          runner.stop()
           machine.send({ type: "switchedOff" })
           return
         }
-        const id = buildIdOf(next)
-        if (running?.build === id || starting === id || failedBuildId(machine.state()) === id) return
-        void start(next)
+        if (!runner.settledOn(buildIdOf(next))) void runner.start(next)
       }),
     )
-
     return {
       id: initial.manifest.id,
       build,
       setBuild,
       state: machine.state,
       dispose: () => {
-        stop()
+        runner.stop()
         disposeRoot()
       },
     }

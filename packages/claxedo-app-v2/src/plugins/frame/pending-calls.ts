@@ -1,3 +1,5 @@
+import { failureReason } from "../failure"
+
 export class FrameCallError extends Error {
   constructor(reason: string) {
     super(reason)
@@ -33,5 +35,15 @@ export function createPendingCalls(): PendingCalls {
       for (const waiting of pending.values()) waiting.reject(new FrameCallError(reason))
       pending.clear()
     },
+  }
+}
+
+export type CallResult = { readonly type: "result" } & Settled
+
+export async function answerCall(send: (result: CallResult) => void, id: number, work: () => unknown): Promise<void> {
+  try {
+    send({ type: "result", id, ok: true, value: await work() })
+  } catch (error) {
+    send({ type: "result", id, ok: false, reason: failureReason(error) })
   }
 }

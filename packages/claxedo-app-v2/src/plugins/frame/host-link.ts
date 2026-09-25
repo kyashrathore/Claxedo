@@ -5,8 +5,8 @@ import { sessionStatusOf } from "../bindings/data"
 import { failureReason } from "../failure"
 import { performCall } from "./host-calls"
 import { registerOnHost, type FrameSlots, type Invoke } from "./host-registrations"
-import type { FrameMirror, FrameToHost, HostCall, HostToFrame } from "./protocol"
-import { createPendingCalls } from "./pending-calls"
+import type { FrameMirror, FrameToHost, HostToFrame, Registration } from "./protocol"
+import { answerCall, createPendingCalls } from "./pending-calls"
 
 export type FrameControl = {
   readonly slots: FrameSlots
@@ -37,38 +37,42 @@ export function frameMirror(api: PluginApi, services: HostServices): FrameMirror
   }
 }
 
+function createFrameRegistrations(api: PluginApi, control: FrameControl | undefined, invoke: Invoke) {
+  const registered = new Map<number, Disposer>()
+  return {
+    register: (key: number, registration: Registration) => {
+      if (!control) return
+      try {
+        registered.set(key, registerOnHost(api, registration, control.slots, invoke))
+      } catch (error) {
+        control.failed(failureReason(error))
+      }
+    },
+    unregister: (key: number) => {
+      registered.get(key)?.()
+      registered.delete(key)
+    },
+    disposeAll: () => {
+      for (const dispose of registered.values()) dispose()
+      registered.clear()
+    },
+  }
+}
+
 export function createHostLink(input: HostLinkInput): HostLink {
   const { port, api, control } = input
   const requests = createPendingCalls()
-  const registered = new Map<number, Disposer>()
   const send = (message: HostToFrame) => port.postMessage(message)
   const invoke: Invoke = (frameInvoke) => {
     const { id, result } = requests.open()
     send({ type: "invoke", id, invoke: frameInvoke })
     return result
   }
-  const answer = async (id: number, call: HostCall) => {
-    try {
-      send({ type: "result", id, ok: true, value: await performCall(api, call) })
-    } catch (error) {
-      send({ type: "result", id, ok: false, reason: failureReason(error) })
-    }
-  }
-  const register = (key: number, message: Extract<FrameToHost, { type: "register" }>) => {
-    if (!control) return
-    try {
-      registered.set(key, registerOnHost(api, message.registration, control.slots, invoke))
-    } catch (error) {
-      control.failed(failureReason(error))
-    }
-  }
+  const registrations = createFrameRegistrations(api, control, invoke)
   const receive = (message: FrameToHost) => {
-    if (message.type === "register") return register(message.key, message)
-    if (message.type === "unregister") {
-      registered.get(message.key)?.()
-      return registered.delete(message.key)
-    }
-    if (message.type === "call") return void answer(message.id, message.call)
+    if (message.type === "register") return registrations.register(message.key, message.registration)
+    if (message.type === "unregister") return registrations.unregister(message.key)
+    if (message.type === "call") return void answerCall(send, message.id, () => performCall(api, message.call))
     if (message.type === "result") return requests.settle(message)
     if (message.type === "activated") return control?.activated()
     control?.failed(message.reason)
@@ -81,8 +85,7 @@ export function createHostLink(input: HostLinkInput): HostLink {
   return {
     dispose: () => {
       disposeMirror()
-      for (const dispose of registered.values()) dispose()
-      registered.clear()
+      registrations.disposeAll()
       requests.failAll("The plugin frame closed")
       port.close()
     },
