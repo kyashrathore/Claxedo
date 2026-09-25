@@ -66,8 +66,8 @@ export type RuntimeAccessTokenClaims = {
   host_id: string
   role: RelayRole
   channel_identity?: ChannelIdentityClaim
-  /** The sandbox lease epoch the token was minted against; a restarted sandbox has a new one. */
-  lease_epoch?: number
+  /** Present for cloud workspaces; assigned atomically with the sandbox address. */
+  routing_id?: string
   exp: number
   iat: number
   jti: string
@@ -118,6 +118,7 @@ export type HostTunnelTokenClaims = {
 export class WorkspaceRelayAuthError extends Error {
   constructor(
     public readonly code:
+      | "runtime_access_token_invalid"
       | "invalid_relay_token"
       | "relay_token_workspace_mismatch"
       | "relay_token_host_mismatch"
@@ -140,7 +141,7 @@ type RuntimeInput = {
   hostId: string
   role: RelayRole
   channelIdentity?: ChannelIdentityInput
-  leaseEpoch?: number
+  routingId?: string
   ttlSeconds?: number
   jti?: string
   now?: number
@@ -403,7 +404,7 @@ export async function mintRuntimeAccessToken(input: RuntimeInput, key: RelaySign
     workspace_id: input.workspaceId,
     host_id: input.hostId,
     role: input.role,
-    ...(input.leaseEpoch !== undefined ? { lease_epoch: input.leaseEpoch } : {}),
+    ...(input.routingId !== undefined ? { routing_id: input.routingId } : {}),
   })
     .setProtectedHeader({ alg: requireAlgorithm(alg) })
     .setIssuer(runtimeAccessTokenIssuer)
@@ -608,7 +609,7 @@ function runtimeClaims(payload: JWTPayload): RuntimeAccessTokenClaims | undefine
   const actorProfile = actorProfileClaims(payload)
   if (!actorProfile) return undefined
   const channel_identity = channelIdentityClaims(payload)
-  const lease_epoch = numberClaim(payload, "lease_epoch")
+  const routing_id = stringClaim(payload, "routing_id")
   return {
     iss: runtimeAccessTokenIssuer,
     aud: runtimeAccessTokenAudience,
@@ -617,7 +618,7 @@ function runtimeClaims(payload: JWTPayload): RuntimeAccessTokenClaims | undefine
     actor_kind,
     ...actorProfile,
     ...(channel_identity ? { channel_identity } : {}),
-    ...(lease_epoch !== undefined && Number.isSafeInteger(lease_epoch) && lease_epoch > 0 ? { lease_epoch } : {}),
+    ...(routing_id !== undefined ? { routing_id } : {}),
     org_id,
     workspace_id,
     host_id,

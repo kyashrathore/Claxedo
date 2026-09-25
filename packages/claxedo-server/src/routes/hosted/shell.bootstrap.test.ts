@@ -103,7 +103,7 @@ describe("GET /api/claxedo/bootstrap on a hosted central", () => {
     ]
     const sandboxManager = {
       target: async (id: string) => id === "ws_running"
-        ? { status: "ready" as const, sandboxId: id, url: "http://sandbox.test", hostId: id, epoch: 1, homeRegion: "us-east" }
+        ? { status: "ready" as const, routingId: "routing_test", sandboxId: id, url: "http://sandbox.test", hostId: id, epoch: 1, homeRegion: "us-east" }
         : { status: "unavailable" as const, reason: "runtime_lease_not_ready", leaseStatus: "stopped" as const },
     }
     const response = await HostedShellRoutes({ authConfig: signedConfig, verifier, listWorkspaces: async () => workspaces, sandboxManager })

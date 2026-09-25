@@ -15,7 +15,7 @@ import type { RelayHostPublicKey, RuntimeAccessTokenActiveResult, WorkspaceRelay
 import {
   createCachedHostGenerationClient,
   createCachedRevocationClient,
-  createCachedTargetClient,
+  createCoalescedTargetClient,
   createHostGenerationResolverLookup,
   parseRuntimeAccessTokenActiveResult,
   parseWorkspaceRelayTarget,
@@ -23,7 +23,7 @@ import {
   type RevocationLookup,
   type TargetLookup,
 } from "./server"
-import { deriveRelayHostKid, deriveRelayHostPublicKey, type RelayKey, type RuntimeAccessTokenClaims } from "./auth"
+import { WorkspaceRelayAuthError, deriveRelayHostKid, deriveRelayHostPublicKey, type RelayKey, type RuntimeAccessTokenClaims } from "./auth"
 
 type WorkspaceRelayWorkerBindings = {
   WORKSPACE_RELAY_ROOM?: WorkspaceRelayDurableObjectNamespace
@@ -42,7 +42,6 @@ type WorkspaceRelayWorkerBindings = {
   CLAXEDO_RELAY_TRACE_SAMPLE_RATE?: string
   CLAXEDO_RELAY_TRACE_FORCE_SECRET?: string
   CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS?: string
-  CLAXEDO_RELAY_TARGET_CACHE_TTL_MS?: string
   /**
    * Absolute URL of the control plane's host-generation lookup. Unset derives
    * `<resolver base>/host-generation` from the same base `/target` and
@@ -57,7 +56,7 @@ type WorkspaceRelayWorkerBindings = {
 export type WorkspaceRelayWorkerEnv = Record<string, unknown> & WorkspaceRelayWorkerBindings
 
 type ResolverClient = {
-  target(workspaceId: string, hostId: string, leaseEpoch?: number): Promise<WorkspaceRelayTarget | undefined>
+  target(workspaceId: string, hostId: string, routingId?: string): Promise<WorkspaceRelayTarget | undefined>
   revocation(args: { jti: string; workspaceId: string; hostId: string }): Promise<RuntimeAccessTokenActiveResult>
   hostGeneration: HostGenerationLookup
 }
@@ -149,11 +148,13 @@ export function workspaceRelayWorkerResolverClient(env: WorkspaceRelayWorkerEnv,
   const root = workspaceRelayWorkerResolverUrl(env)
   const token = requireText(env, "CLAXEDO_RELAY_RESOLVER_TOKEN")
   const headers = { accept: "application/json", authorization: `Bearer ${token}` }
-  const targetUncached: TargetLookup = async ({ workspaceId, hostId }) => {
+  const targetUncached: TargetLookup = async ({ workspaceId, hostId, routingId }) => {
     const url = new URL(`${root}/target`)
     url.searchParams.set("workspaceId", workspaceId)
     url.searchParams.set("hostId", hostId)
+    if (routingId) url.searchParams.set("routingId", routingId)
     const res = await fetcher(url, { headers })
+    if (res.status === 401) throw new WorkspaceRelayAuthError("runtime_access_token_invalid", "Sandbox routing identity is no longer current")
     if (res.status === 404 || res.status === 409) return undefined
     if (!res.ok) throw new Error(`relay target resolver failed: ${res.status}`)
     const target = parseWorkspaceRelayTarget(await res.json())
@@ -177,9 +178,8 @@ export function workspaceRelayWorkerResolverClient(env: WorkspaceRelayWorkerEnv,
     if (!result) throw new Error("relay revocation resolver returned a malformed result")
     return result
   }
-  const targetCacheTtlMs = positiveInteger(env.CLAXEDO_RELAY_TARGET_CACHE_TTL_MS)
+  const target = createCoalescedTargetClient(targetUncached)
   const revocationCacheTtlMs = positiveInteger(env.CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS)
-  const target = createCachedTargetClient(targetUncached, (targetCacheTtlMs ? { ttlMs: targetCacheTtlMs } : {}))
   const revocation = createCachedRevocationClient(revocationUncached, (revocationCacheTtlMs ? { ttlMs: revocationCacheTtlMs } : {}))
   const hostGenerationCacheTtlMs = positiveInteger(env.CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS)
   const hostGeneration = createCachedHostGenerationClient(
@@ -190,7 +190,7 @@ export function workspaceRelayWorkerResolverClient(env: WorkspaceRelayWorkerEnv,
     (hostGenerationCacheTtlMs ? { ttlMs: hostGenerationCacheTtlMs } : {}),
   )
   return {
-    target: (workspaceId, hostId, leaseEpoch) => target({ workspaceId, hostId, ...(leaseEpoch !== undefined ? { leaseEpoch } : {}) }),
+    target: (workspaceId, hostId, routingId) => target({ workspaceId, hostId, ...(routingId !== undefined ? { routingId } : {}) }),
     revocation,
     hostGeneration,
   }
@@ -211,7 +211,7 @@ export async function workspaceRelayDurableObjectOptions(
     ...(positiveInteger(env.CLAXEDO_RELAY_TUNNEL_CHANNEL_CAP) ? { tunnelChannelCap: positiveInteger(env.CLAXEDO_RELAY_TUNNEL_CHANNEL_CAP) } : {}),
     ...(sampleRate(env.CLAXEDO_RELAY_TRACE_SAMPLE_RATE) !== undefined ? { traceSampleRate: sampleRate(env.CLAXEDO_RELAY_TRACE_SAMPLE_RATE) } : {}),
     ...(trimToUndefined(env.CLAXEDO_RELAY_TRACE_FORCE_SECRET) ? { traceForceHeaderSecret: trimToUndefined(env.CLAXEDO_RELAY_TRACE_FORCE_SECRET) } : {}),
-    resolveTarget: (claims: RuntimeAccessTokenClaims) => resolver.target(claims.workspace_id, claims.host_id, claims.lease_epoch),
+    resolveTarget: (claims: RuntimeAccessTokenClaims) => resolver.target(claims.workspace_id, claims.host_id, claims.routing_id),
     isRuntimeAccessTokenActive: (claims: RuntimeAccessTokenClaims) =>
       resolver.revocation({
         jti: claims.jti,

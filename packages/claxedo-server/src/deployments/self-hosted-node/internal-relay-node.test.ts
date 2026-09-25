@@ -18,13 +18,14 @@ describe("local relay target lookup", () => {
           url: "https://runtime.example.test/ws_1/",
           hostId: "host_1",
           epoch: 1,
+          routingId: "routing_test",
           homeRegion: "us-east",
         })),
         touch,
       } as never,
     })
 
-    await expect(lookup({ workspaceId: "ws_1", hostId: "host_1" })).resolves.toEqual({
+    await expect(lookup({ workspaceId: "ws_1", hostId: "host_1", routingId: "routing_test" })).resolves.toEqual({
       found: true,
       baseUrl: "https://runtime.example.test/ws_1/",
       backing: "cloud-vm",
@@ -84,6 +85,7 @@ describe("local relay target lookup", () => {
     })
 
     await expect(lookup({ workspaceId: "ws_api", hostId: "host_box" })).resolves.toMatchObject({ found: true, backing: "local-worktree" })
+    await expect(lookup({ workspaceId: "ws_api", hostId: "host_box", routingId: "old-cloud" })).resolves.toEqual({ found: false, code: "runtime_access_token_invalid" })
   })
 
   test("local target existence uses SandboxManager host id when available", async () => {
@@ -96,6 +98,7 @@ describe("local relay target lookup", () => {
           url: "https://runtime.example.test/ws_1/",
           hostId: "host_1",
           epoch: 1,
+          routingId: "routing_test",
           homeRegion: "us-east",
         })),
       } as never,

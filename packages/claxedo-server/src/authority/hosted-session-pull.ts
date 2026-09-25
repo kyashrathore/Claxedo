@@ -165,7 +165,7 @@ type RuntimePullInput = {
   workspaceId: string
   ws: Workspace
   hostId: string
-  leaseEpoch?: number
+  routingId?: string
   homeRegion: ClaxedoRegion
   role: RelayRole
   path: string
@@ -196,7 +196,7 @@ async function runtimeFetch(
   const token = await provider.mintRuntimeAccessToken({
     workspaceId: input.workspaceId,
     hostId: input.hostId,
-    leaseEpoch: input.leaseEpoch,
+    routingId: input.routingId,
     principalKind: "user",
     auth: signed,
     ...await resolveRuntimeActor(requireAuthority(services), signed),

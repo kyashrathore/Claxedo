@@ -594,6 +594,7 @@ describe("hosted connection", () => {
     const sandboxManager = {
       target: vi.fn(async () => ({
         status: "ready",
+        routingId: "routing_test",
         sandboxId: "sandbox_1",
         url: "https://runtime.test/ws_1",
         hostId: "host_cloud_1",
@@ -609,7 +610,7 @@ describe("hosted connection", () => {
       expect.anything(),
       expect.objectContaining({ workspaceId: "ws_1", hostId: "host_cloud_1" }),
     )
-    expect(ratSigner).toHaveBeenCalledWith(expect.objectContaining({ hostId: "host_cloud_1", leaseEpoch: 8 }))
+    expect(ratSigner).toHaveBeenCalledWith(expect.objectContaining({ hostId: "host_cloud_1", routingId: "routing_test" }))
     expect(authority.auditAllow).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -778,6 +779,7 @@ describe("hosted connection rate limiting (mint-only)", () => {
   test("provisioning polls bypass the budget but actual mints still hit the cap", async () => {
     const ready = {
       status: "ready",
+      routingId: "routing_test",
       sandboxId: "sandbox_1",
       url: "https://runtime.test/ws_1",
       hostId: "host_cloud_1",
@@ -947,7 +949,7 @@ describe("hosted cloud workspace create (POST /create)", () => {
     // route hands the whole chain — ensure AND the runtime provisioning that
     // follows a ready lease — to executionCtx.waitUntil.
     const authority = fakeAuthority({ createCloudWorkspace: vi.fn(async () => ({ workspace_id: "ignored" })) })
-    const ensure = vi.fn(async () => ({ status: "ready", epoch: 1, homeRegion: "us-east", sandboxId: "sb_1", url: "https://sb.test" }))
+    const ensure = vi.fn(async () => ({ status: "ready", routingId: "routing_test", epoch: 1, homeRegion: "us-east", sandboxId: "sb_1", url: "https://sb.test" }))
     const preparation = { secrets: [] }
     const prepareRuntime = vi.fn(async () => preparation)
     const provisionRuntime = vi.fn(async () => undefined)
@@ -970,7 +972,7 @@ describe("hosted cloud workspace create (POST /create)", () => {
 
   test("launches the sandbox with the readable environment its runtime preparation resolved", async () => {
     const authority = fakeAuthority({ createCloudWorkspace: vi.fn(async () => ({ workspace_id: "ignored" })) })
-    const ensure = vi.fn(async () => ({ status: "ready", epoch: 1, homeRegion: "us-east", sandboxId: "sb_1", url: "https://sb.test" }))
+    const ensure = vi.fn(async () => ({ status: "ready", routingId: "routing_test", epoch: 1, homeRegion: "us-east", sandboxId: "sb_1", url: "https://sb.test" }))
     const preparation = {
       env: { WORKSPACE_RUNTIME_MCP_TOOL_GROUPS: "sessions,subagents" },
       state: { kind: "test-plan" },

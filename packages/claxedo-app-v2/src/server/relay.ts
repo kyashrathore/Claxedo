@@ -1,3 +1,4 @@
+import { startWorkspace } from "./workspace-start"
 import { responseError, toAppError } from "./errors"
 import { connectionAnswerFromWire, workspaceStopped, type RelayConnection } from "./wire/connection"
 
@@ -54,7 +55,7 @@ export function createRelay(request: Request): Relay {
   return {
     fetch: async (workspaceId, path, init) => {
       const response = await send(await fresh(workspaceId), path, init)
-      return response.status === 401 ? send(await connection(workspaceId, true), path, init) : response
+      return response.status === 401 ? send(await hold(workspaceId, startWorkspace(request, workspaceId)), path, init) : response
     },
     webSocket: async (workspaceId, path) => {
       const link = await fresh(workspaceId)

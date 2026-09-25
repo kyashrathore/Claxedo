@@ -46,13 +46,13 @@ const base = {
 }
 
 describe("workspace relay auth", () => {
-  test("carries the lease epoch a token was minted against, and none when the mint named none", async () => {
+  test("carries the routing identity a token was minted against, and none when the mint named none", async () => {
     const key = await keys()
-    const leased = await verifyRuntimeAccessToken(await mintRuntimeAccessToken({ ...base, leaseEpoch: 3 }, key.privateKey, "EdDSA"), key.publicKey, { workspaceId: "ws_1", hostId: "host_1" })
+    const leased = await verifyRuntimeAccessToken(await mintRuntimeAccessToken({ ...base, routingId: "route-3" }, key.privateKey, "EdDSA"), key.publicKey, { workspaceId: "ws_1", hostId: "host_1" })
     const unleased = await verifyRuntimeAccessToken(await mintRuntimeAccessToken(base, key.privateKey, "EdDSA"), key.publicKey, { workspaceId: "ws_1", hostId: "host_1" })
 
-    expect(leased.lease_epoch).toBe(3)
-    expect(unleased.lease_epoch).toBeUndefined()
+    expect(leased.routing_id).toBe("route-3")
+    expect(unleased.routing_id).toBeUndefined()
   })
 
   test("verifies Runtime Access Tokens for the expected workspace and host", async () => {

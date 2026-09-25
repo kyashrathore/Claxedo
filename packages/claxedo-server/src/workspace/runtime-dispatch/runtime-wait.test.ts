@@ -290,6 +290,7 @@ describe("workspaceRuntimeProxy startup wait", () => {
         hostId: "host_1",
         url: "http://manager-runtime.test",
         epoch: 3,
+        routingId: "routing_test",
         homeRegion: "eu-west" as const,
       })),
       touch: vi.fn(async () => ({ touched: true, status: "ready" as const })),
@@ -312,7 +313,7 @@ describe("workspaceRuntimeProxy startup wait", () => {
     expect(relayProvider.mintRuntimeAccessToken).toHaveBeenCalledWith({
       workspaceId: "ws_1",
       hostId: "host_1",
-      leaseEpoch: 3,
+      routingId: "routing_test",
       principalKind: "service",
       actorId: "control-plane",
       actorKind: "agent",

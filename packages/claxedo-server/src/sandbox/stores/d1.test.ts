@@ -14,7 +14,7 @@ import { createD1SandboxLeaseStore } from "./d1"
 
 // Only the lease table: `sandbox_leases` references nothing, so the real
 // migration is the whole schema this store needs.
-const MIGRATIONS = ["0022_sandbox_leases.sql"]
+const MIGRATIONS = ["0022_sandbox_leases.sql", "0043_sandbox_routing_identity.sql"]
 
 const NOW = 1_900_000_000_000
 const STALE_AFTER_MS = 30_000
@@ -487,4 +487,31 @@ describe("d1 sandbox lease store", () => {
       sandboxId: "sandbox_ws_1",
     })
   })
+})
+
+for (const action of ["resume", "release"] as const) {
+  test(`routing identity persists and changes after ${action} with the same epoch and host`, async () => {
+    const { target, leaseStore } = await store()
+    await leaseStore.acquire("ws_1", ACQUIRE)
+    const first = await leaseStore.recordTarget("ws_1", 1, { labels: {}, sandboxId: "sandbox_1", hostId: "host_1", url: "https://old.test" })
+    if (action === "release") {
+      await leaseStore.release("ws_1")
+      await leaseStore.acquire("ws_1", ACQUIRE)
+    }
+    const second = await leaseStore.recordTarget("ws_1", 1, { labels: {}, sandboxId: "sandbox_1", hostId: "host_1", url: "https://new.test" })
+    expect(second?.routingId).toEqual(expect.any(String))
+    expect(second?.routingId).not.toBe(first?.routingId)
+    expect((await createD1SandboxLeaseStore({ database: target }).get("ws_1"))?.routingId).toBe(second?.routingId)
+  })
+}
+
+test("a delayed same-address record cannot resurrect an identity replaced at the same epoch", async () => {
+  const { target, leaseStore } = await store()
+  await leaseStore.acquire("ws_1", ACQUIRE)
+  const old = { sandboxId: "sandbox_1", hostId: "host_1", url: "https://old.test", labels: {} }
+  await leaseStore.recordTarget("ws_1", 1, old)
+  const delayed = createD1SandboxLeaseStore({ database: raceBeforeFirstWrite(target, () =>
+    leaseStore.recordTarget("ws_1", 1, { ...old, url: "https://new.test" })) })
+  expect(await delayed.recordTarget("ws_1", 1, old)).toBeUndefined()
+  expect((await leaseStore.get("ws_1"))?.url).toBe("https://new.test")
 })

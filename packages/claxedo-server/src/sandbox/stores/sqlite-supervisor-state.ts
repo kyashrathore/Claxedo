@@ -63,6 +63,7 @@ export function sandboxLeaseFromRow(lease: SandboxLeaseRow): SandboxLease {
     homeRegion: (lease.home_region ?? "us-east"),
     driver: lease.driver,
     epoch: lease.epoch,
+    routingId: lease.routing_id ?? undefined,
     status: sandboxLeaseStatus(lease.status),
     retryCount: lease.retry_count,
     updatedAt: lease.updated_at,

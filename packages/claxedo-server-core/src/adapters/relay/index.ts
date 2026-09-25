@@ -105,7 +105,7 @@ export function createControlPlaneRelayProvider(options: ControlPlaneRelayProvid
         orgId: input.orgId,
         workspaceId: input.workspaceId,
         hostId: input.hostId,
-        ...(input.leaseEpoch !== undefined ? { leaseEpoch: input.leaseEpoch } : {}),
+        ...(input.routingId !== undefined ? { routingId: input.routingId } : {}),
         role: input.role,
         ...(ttlSeconds === undefined ? {} : { ttlSeconds }),
       })

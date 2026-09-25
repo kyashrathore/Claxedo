@@ -454,6 +454,7 @@ describe("control plane HTTP protocol", () => {
     })
     const target = vi.fn(async () => ({
       status: "ready" as const,
+      routingId: "routing_test",
       hostId: "host_cloud",
       epoch: 3,
       homeRegion: "eu-west",
@@ -483,7 +484,7 @@ describe("control plane HTTP protocol", () => {
     })).resolves.toMatchObject({ ok: true })
 
     expect(target).toHaveBeenCalledWith("ws_1")
-    expect(mintRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({ hostId: "host_cloud", leaseEpoch: 3 }))
+    expect(mintRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({ hostId: "host_cloud", routingId: "routing_test" }))
     expect(mintRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({ orgId: "org_1" }))
     expect(mintRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({ role: "owner", principalKind: "user" }))
     expect(getRelayEndpoint).toHaveBeenCalledWith("ws_1", "eu-west")
@@ -832,6 +833,7 @@ describe("control plane HTTP protocol", () => {
     svc.defaultHomeRegion = "eu-west"
     const target = vi.fn(async () => ({
       status: "ready" as const,
+      routingId: "routing_test",
       sandboxId: "sandbox_1",
       url: "https://runtime-direct.example.test",
       hostId: "host_manager",
@@ -913,6 +915,7 @@ describe("control plane HTTP protocol", () => {
     svc.sandbox.sandboxManager = {
       target: vi.fn(async () => ({
         status: "ready" as const,
+        routingId: "routing_test",
         sandboxId: "sandbox_1",
         url: "https://runtime-direct.example.test",
         hostId: "host_manager",

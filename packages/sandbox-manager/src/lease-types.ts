@@ -38,6 +38,7 @@ export type SandboxLeaseRow = {
   driver_resource_id: string | null
   driver_snapshot_id: string | null
   sandbox_id: string | null
+  routing_id?: string | null
   url: string | null
   retry_count: number
   next_retry_at: number | null

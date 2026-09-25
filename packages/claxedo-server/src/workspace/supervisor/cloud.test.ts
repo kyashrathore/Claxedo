@@ -322,6 +322,7 @@ function lease(workspaceId: string, driverId = "daytona"): SandboxLeaseRow {
   return {
     workspace_id: workspaceId,
     lease_id: `lease-${workspaceId}`,
+    routing_id: `routing-${workspaceId}`,
     epoch: 1,
     status: "pending",
     driver: driverId,
@@ -400,6 +401,7 @@ vi.mock("../../sandbox/stores/sqlite-supervisor-state", () => {
     homeRegion: input.home_region ?? "us-east",
     driver: input.driver,
     epoch: input.epoch,
+    routingId: input.routing_id,
     status: status(input.status),
     retryCount: input.retry_count,
     createdAt: input.created_at,
@@ -553,6 +555,7 @@ vi.mock("../../sandbox/stores/sqlite-supervisor-state", () => {
         const next = {
           ...current,
           status: "ready" as const,
+          routing_id: crypto.randomUUID(),
           sandbox_id: target.sandboxId,
           url: target.url,
           lease_id: target.hostId ?? current.lease_id,

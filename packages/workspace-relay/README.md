@@ -112,15 +112,20 @@ workspace id, host id, expiry, issue time, and JTI. Runtime access tokens also
 bind role. Relay-host tokens additionally bind the placement: `cloud-vm` or
 `local-worktree`.
 
-A runtime access token for a cloud workspace also carries `lease_epoch`, the
-sandbox lease generation its host id was read from; the control plane's lease
-store increments it on every acquire, so a woken sandbox has a new epoch under
-the same host id. The `/target` cache is keyed by workspace, host and that
-epoch, so the first token minted after a wake resolves the new address instead
-of the old lease's cached one. The cache TTL is not what keeps that fresh: it
-sets how often the relay re-asks the resolver, and each ask touches the lease
-(the driver's keep-alive), and it bounds how long a token of a since-stopped
-epoch is still forwarded to that epoch's address.
+A cloud runtime access token carries `routing_id`, a UUID owned by the lease
+store's address transition. It changes when the address or resource changes and
+on a new acquisition, including after lease deletion. The resolver requires the
+signed identity to match the current ready lease; otherwise it returns 401
+`runtime_access_token_invalid`. The app renews through connection POST once.
+
+Target lookups only coalesce while in flight, keyed by workspace, host and routing
+identity. Completed answers are never retained. Each subsequent lookup checks
+current authority, even when a newer identity has already been served. A request
+already resolving or forwarding when the lease changes can finish with its
+previous snapshot; established streams are not disconnected by this fence. The
+runtime receives a relay-host token, so it does not independently fence the
+original routing identity. This costs a control-plane lookup per request rather
+than allowing a stale positive-cache window. The relay does not retry upstream failures.
 
 ### Revocation And Active Checks
 
@@ -255,7 +260,7 @@ production fail-closed gate at `src/main.ts`.
 | `CLAXEDO_RELAY_RESOLVER_TOKEN` | Bearer token the relay sends to the resolver. **Required in production.** |
 | `CLAXEDO_RELAY_HOST_GENERATION_URL` | Optional absolute URL of the host-generation lookup. Unset (the normal case) derives `<CLAXEDO_RELAY_RESOLVER_URL>/host-generation`; set it only when the lookup lives at a different origin than the rest of the resolver. There is no way to turn the fence off on a resolver-backed relay. |
 | `CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS` | Cache TTL for host-generation answers. Defaults to 10000. A superseded tunnel closes within the re-check interval (30 s) plus this TTL. |
-| `CLAXEDO_RELAY_TARGET_CACHE_TTL_MS`, `CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS` | Cache TTLs for `/target` (default 30000 on Bun, 5000 on the Worker) and `/revocation` (default 10000) answers. The target entry is keyed by workspace, host and lease epoch, so the TTL is the resolver re-ask (lease keep-alive) cadence, not what makes a woken sandbox's address visible. |
+| `CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS` | Cache TTL for `/revocation` answers (default 10000 ms). Target answers are not retained. |
 | `CLAXEDO_RELAY_JWKS_URL` | Optional remote JWKS the relay uses to verify runtime-access tokens. |
 | `CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM` | Inline public key (alternative to JWKS). |
 | `CLAXEDO_RELAY_HOST_VERIFY_PEM` | Public PEM the relay uses to verify host-tunnel tokens. |

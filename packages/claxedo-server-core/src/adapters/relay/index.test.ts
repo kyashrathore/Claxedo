@@ -161,10 +161,10 @@ describe("control-plane relay provider", () => {
       orgId: "org_1",
       role: "owner",
       ttlMs: 30 * 60_000,
-      leaseEpoch: 7,
+      routingId: "route-7",
     })
 
-    expect(runtimeAccessTokenSigner).toHaveBeenCalledWith(expect.objectContaining({ hostId: "host_1", leaseEpoch: 7 }))
+    expect(runtimeAccessTokenSigner).toHaveBeenCalledWith(expect.objectContaining({ hostId: "host_1", routingId: "route-7" }))
   })
 
   test("honors in-bounds ttlMs and clamps out-of-bounds ttlMs to the signer bounds", async () => {

@@ -45,7 +45,7 @@ async function mintSignedCloudConnection(
   auth: SignedControlPlaneAuth,
   ws: Workspace,
   context: { authority: WorkspaceAuthority; result: WorkspaceOpenResult },
-  lease: { hostId: string; epoch: number },
+  lease: { hostId: string; epoch: number; routingId?: string },
   previousJti?: string,
 ) {
   const { authority, result } = context
@@ -73,7 +73,7 @@ async function mintSignedCloudConnection(
     orgId,
     workspaceId: ws.id,
     hostId,
-    leaseEpoch: lease.epoch,
+    routingId: lease.routingId,
     role,
   })
   await authority.recordRuntimeAccessToken(auth, {
@@ -238,7 +238,7 @@ async function localLoopbackConnection(
   request: Request,
   ws: Workspace,
   current: Workspace,
-  lease: { hostId: string; epoch: number },
+  lease: { hostId: string; epoch: number; routingId?: string },
 ) {
   const { hostId } = lease
   const orgId = current.org_id ?? ws.org_id
@@ -248,7 +248,7 @@ async function localLoopbackConnection(
         orgId,
         workspaceId: ws.id,
         hostId,
-        leaseEpoch: lease.epoch,
+        routingId: lease.routingId,
         role: "owner",
       })
     : {

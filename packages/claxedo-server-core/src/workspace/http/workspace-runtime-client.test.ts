@@ -24,6 +24,7 @@ function ready(hostId: string, homeRegion: string, epoch: number) {
     hostId,
     homeRegion,
     epoch,
+    routingId: `route-${epoch}`,
   }
 }
 
@@ -137,9 +138,9 @@ describe("WorkspaceRuntimeClient", () => {
         accessToken: expect.objectContaining({ token: "token-host-b", hostId: "host-b" }),
       }),
     )
-    expect(vi.mocked(relay.mintRuntimeAccessToken).mock.calls.map(([input]) => [input.hostId, input.leaseEpoch])).toEqual([
-      ["host-a", 1],
-      ["host-b", 2],
+    expect(vi.mocked(relay.mintRuntimeAccessToken).mock.calls.map(([input]) => [input.hostId, input.routingId])).toEqual([
+      ["host-a", "route-1"],
+      ["host-b", "route-2"],
     ])
   })
 

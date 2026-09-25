@@ -60,7 +60,7 @@ export async function resolveWorkspaceRuntimeTarget(
   }
   return {
     hostId: target.hostId,
-    leaseEpoch: target.epoch,
+    routingId: target.routingId,
     homeRegion: normalizeClaxedoRegion(
       target.homeRegion,
       services.defaultHomeRegion ?? defaultHomeRegion(),
