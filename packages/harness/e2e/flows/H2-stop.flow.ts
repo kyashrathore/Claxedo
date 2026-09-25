@@ -7,7 +7,7 @@ import { operation, readRecovery, stopRequest, submitRecovery, waitForTurnTarget
 import { startStack, type Stack } from "../harness/stack"
 import { frameSessionId, frameType } from "../harness/stream"
 
-type Case = { name: string; harness: { id: string; access: "native" | "connection" }; model?: { providerId: string; modelId: string }; state: "succeeded" | "needs_action" }
+type Case = { name: string; harness: { id: string; access: "native" | "connection" }; model?: { providerId: string; modelId: string }; state: "succeeded" | "needs_action"; command?: boolean; cleanup?: "owned" }
 
 const CASES: Case[] = [
   { name: "acp", harness: SCRIPTED_ACP_HARNESS, state: "needs_action" },
@@ -16,7 +16,7 @@ const CASES: Case[] = [
   { name: "codex", harness: { id: "codex", access: "native" }, model: { providerId: "codex", modelId: "gpt-5.5" }, state: "succeeded" },
 ]
 
-async function stopCase(stack: Stack, api: ClaxedoApi, item: Case) {
+export async function stopCase(stack: Stack, api: ClaxedoApi, item: Case) {
   const workspace = await stack.daemon.makeWorkspace(`h2-${item.name}`)
   const stream = await stack.events(workspace.directory)
   const session = await api.createSession(workspace.directory, { harness: item.harness, title: `H2 ${item.name}`, ...(item.model ? { model: item.model } : {}) })
@@ -25,7 +25,11 @@ async function stopCase(stack: Stack, api: ClaxedoApi, item: Case) {
   if (item.name === "acp") {
     await stack.acp.write(`h2-${item.name}`, { steps: [{ kind: "text", text: `Holding ${marker}` }, { kind: "hold", name: `h2-${item.name}` }] })
   } else {
-    release = stack.scripted.holdTextReplies(marker)
+    if (item.command) {
+      stack.scripted.scriptTool({ name: "exec_command", input: { cmd: "sleep 120", yield_time_ms: 1000 }, whenPromptIncludes: marker })
+      release = stack.scripted.holdTextReplies("Process running with session ID")
+    }
+    else release = stack.scripted.holdTextReplies(marker)
   }
   try {
     await api.promptAsync(workspace.directory, session.id, item.name === "acp" ? `${marker} ${acpScriptToken(`h2-${item.name}`)}` : marker)
@@ -37,13 +41,20 @@ async function stopCase(stack: Stack, api: ClaxedoApi, item: Case) {
         await new Promise((resolve) => setTimeout(resolve, 50))
       }
       assert.ok(stack.scripted.requests.some((request) => request.prompt.includes(marker)), `${item.name} never reached the scripted model: ${stack.daemon.log()}`)
+      if (item.command) {
+        const deadline = Date.now() + 20_000
+        while (!stack.scripted.requests.some((request) => request.prompt.includes("Process running with session ID")) && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 50))
+        }
+        assert.ok(stack.scripted.requests.some((request) => request.prompt.includes("Process running with session ID")), "Codex did not run the scripted command")
+      }
     }
     const submitted = await submitRecovery(stack.url, workspace.directory, session.id, stopRequest(target))
     const stopped = operation(submitted, item.state)
     assert.equal(stopped.target.scope, "turn")
     assert.equal(stopped.facts.execution.value, "terminal")
     assert.equal(stopped.facts.persistence.value, "committed")
-    assert.equal(stopped.facts.cleanup.value, item.state === "succeeded" ? "verified_clear" : "unknown")
+    assert.equal(stopped.facts.cleanup.value, item.cleanup ?? (item.state === "succeeded" ? "verified_clear" : "unknown"))
     const read = await readRecovery(stack.url, workspace.directory, session.id, stopped.operationId)
     assert.deepEqual(operation(read, item.state), stopped)
     await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id, { label: `${item.name} stopped session.idle` })

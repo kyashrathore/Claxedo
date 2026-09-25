@@ -35,7 +35,7 @@ export type Daemon = {
   log: () => string
   makeWorkspace: (name: string, projectName?: string) => Promise<Workspace>
   restart: (options?: { signed?: SignedDaemon }) => Promise<void>
-  killAndRestart: () => Promise<void>
+  killAndRestart: (options?: { pathPrefix?: string }) => Promise<void>
   close: () => Promise<void>
 }
 
@@ -45,6 +45,9 @@ export type DaemonInput = {
   guardUrl: string
   port: number
   red: boolean
+  pathPrefix?: string
+  piExecutable?: string
+  claudeExecutable?: string
 }
 
 type DaemonDirs = { acpScriptDir: string; workspaces: string }
@@ -59,12 +62,16 @@ async function daemonDirs(dataDir: string): Promise<DaemonDirs> {
 }
 
 async function daemonEnv(input: DaemonInput): Promise<NodeJS.ProcessEnv> {
+  const isolated = await isolatedEnv(input.dataDir, input.guardUrl)
   return {
-    ...(await isolatedEnv(input.dataDir, input.guardUrl)),
+    ...isolated,
     CLAXEDO_OPENCODE_CATALOG_CACHE: await writeScriptedModelCatalog(input.dataDir),
     CLAXEDO_DATA_DIR: input.dataDir,
     CLAXEDO_SERVER_PORT: String(input.port),
     TSX_TSCONFIG_PATH: path.join(SERVER_DIR, "tsconfig.json"),
+    ...(input.pathPrefix ? { PATH: `${input.pathPrefix}${path.delimiter}${isolated.PATH}` } : {}),
+    ...(input.piExecutable ? { PI_EXECUTABLE: input.piExecutable } : {}),
+    ...(input.claudeExecutable ? { CLAUDE_CODE_EXECUTABLE: input.claudeExecutable } : {}),
   }
 }
 
@@ -133,9 +140,10 @@ export async function startDaemon(input: DaemonInput): Promise<Daemon> {
       owned = launchDaemon(runtime, env, input.dataDir)
       await health(options.signed ? "signed daemon" : "restarted daemon")
     },
-    killAndRestart: async () => {
+    killAndRestart: async (options = {}) => {
       owned.child.kill("SIGKILL")
       await exited(owned.child)
+      if (options.pathPrefix) env = { ...env, PATH: `${options.pathPrefix}${path.delimiter}${env.PATH}` }
       owned = launchDaemon(runtime, env, input.dataDir)
       await health("restarted daemon after kill")
     },

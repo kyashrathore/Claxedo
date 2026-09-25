@@ -3,7 +3,6 @@ import { promisify } from "node:util"
 import { scriptedAcpConnection, SCRIPTED_ACP_CONNECTION_ID } from "./acp/connection"
 import type { ScriptedModelServer } from "./scripted-model-server"
 import { connectScriptedProviders } from "./scripted-providers"
-import { routeNativeModels } from "./native-models"
 import { sendJson, type HttpTransport } from "./transport"
 
 const execFileAsync = promisify(execFile)
@@ -24,7 +23,6 @@ async function installScriptedAcp(transport: HttpTransport, url: string, scriptD
 
 export async function prepareScriptedServer(transport: HttpTransport, url: string, world: ScriptedWorld) {
   await connectScriptedProviders(transport, url, world.scripted)
-  await routeNativeModels(transport, url, world.scripted)
   await sendJson(transport, "POST", `${url}/api/claxedo/agent-config/harness`, { harness: { kind: "native", harnessId: "pi" } }, "Pi as the default harness")
   await installScriptedAcp(transport, url, world.acpScriptDir, world.red)
 }

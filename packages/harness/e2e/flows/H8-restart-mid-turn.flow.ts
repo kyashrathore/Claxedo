@@ -3,6 +3,7 @@ import { ClaxedoApi, assistantText } from "../harness/api"
 import { SCRIPTED_ACP_HARNESS } from "../harness/acp/connection"
 import { acpScriptToken } from "../harness/acp/script"
 import { waitForAcpHold } from "../harness/acp/hold"
+import { blockProcessIdentity } from "../harness/process-identity-fault"
 import { waitForTurnTarget } from "../harness/recovery-http"
 import { startStack } from "../harness/stack"
 import { frameSessionId, frameType } from "../harness/stream"
@@ -22,8 +23,15 @@ export async function run() {
     await waitForTurnTarget(stack.url, workspace.directory, session.id)
     await before.waitFor((frame) => frameType(frame) === "message.part.delta" && frameSessionId(frame) === session.id, { label: "first turn live text" })
     await waitForAcpHold(stack.acp.scriptDir, "h8-held")
+    const terminal = await fetch(new URL(`/workspaces/${encodeURIComponent(workspace.id)}/api/wr/pty`, stack.url), {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-claxedo-directory": workspace.directory },
+      body: JSON.stringify({ command: "/bin/cat", args: [], cwd: ".", sessionId: session.id }),
+    })
+    assert.equal(terminal.status, 200, await terminal.text())
     before.close()
-    await stack.daemon.killAndRestart()
+    const fault = await blockProcessIdentity(stack.dataDir)
+    await stack.daemon.killAndRestart({ pathPrefix: fault.bin })
     const recovering = await api.session(workspace.directory, session.id)
     assert.equal(recovering.status, "recovering")
     const refused = await fetch(new URL(`/session/${encodeURIComponent(session.id)}/prompt_async?directory=${encodeURIComponent(workspace.directory)}`, stack.url), {
@@ -31,6 +39,9 @@ export async function run() {
     })
     assert.equal(refused.status, 503, stack.daemon.log())
     assert.match(await refused.text(), /workspace_launch_unreconciled/)
+
+    await fault.release()
+    await stack.daemon.killAndRestart()
 
     const after = await stack.events(workspace.directory)
     const deadline = Date.now() + 20_000
