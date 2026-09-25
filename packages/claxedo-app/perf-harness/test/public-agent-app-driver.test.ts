@@ -88,7 +88,7 @@ function harness(extraSessionIds: string[] = []) {
       panelExecutions.push({ benchmarkCase, target, preset })
       return measurement()
     },
-    shutdown: async () => ({ terminated: [], survivors: [] }),
+    shutdown: async () => ({ terminated: [], survivors: [], forced: [] }),
   })
   return { driver, activations, launches, navigationExecutions, panelExecutions }
 }

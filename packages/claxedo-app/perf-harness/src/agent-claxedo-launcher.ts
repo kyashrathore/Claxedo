@@ -297,6 +297,8 @@ export function startupClockEnv(runDirectory: string): Record<string, string> {
   return { CLAXEDO_DIAG_STARTUP_CLOCK: startupClockPath(runDirectory) }
 }
 
+const DESCENDANT_EXIT_GRACE_MS = 5_000;
+
 export async function launchPackagedClaxedo(input: {
   executable: string;
   isolatedProfilePath: string;
@@ -379,9 +381,17 @@ export async function launchPackagedClaxedo(input: {
       await Promise.race([application.exited, Bun.sleep(3_000)]);
     }
     page?.close();
+    // The daemon outlives the Electron root by its idle grace (~1 s) and then
+    // removes local-daemon.json itself; killing it first leaves the record
+    // behind, and the next launch of that profile measures crash recovery.
+    let survivors = await refreshKnown();
+    const graceDeadline = performance.now() + DESCENDANT_EXIT_GRACE_MS;
+    while (survivors.length && performance.now() < graceDeadline) {
+      await Bun.sleep(50);
+      survivors = await refreshKnown();
+    }
     const forced = new Map<string, OwnedProcess>();
     const deadline = performance.now() + 3_000;
-    let survivors = await refreshKnown();
     while (survivors.length && performance.now() < deadline) {
       for (const item of survivors) {
         forced.set(`${item.pid}:${item.startTimeMs}`, ownedRecord(item));

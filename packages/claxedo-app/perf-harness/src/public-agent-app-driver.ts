@@ -125,7 +125,7 @@ type DriverDependencies = {
     destination: Target,
     preset?: PublicPanelLoadPreset,
   ): Promise<NavigationMeasurement>
-  shutdown(): Promise<ShutdownResult>
+  shutdown(): Promise<LaunchShutdown>
 }
 
 type PanelMeasurement = Awaited<ReturnType<typeof executeWorkspacePanelAction>>
@@ -133,6 +133,7 @@ type NavigationMeasurement = Awaited<ReturnType<typeof executeSessionNavigation>
 
 /** What a shutdown accounts for: every process it ended, and every one it did not. */
 type ShutdownResult = { terminated: OwnedProcess[]; survivors: OwnedProcess[] }
+type LaunchShutdown = ShutdownResult & { forced: OwnedProcess[] }
 
 export type ClaxedoPublicDriver = {
   hello(): Promise<Record<string, unknown>>
@@ -292,10 +293,10 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
       return execution(benchmarkCase.caseId, clock, readinessReceipt(clock.end))
     },
     shutdown: async () => {
-      const result = await dependencies.shutdown()
+      const { terminated, survivors } = await dependencies.shutdown()
       active = false
       visitedDestinations = new Set()
-      return result
+      return { terminated, survivors }
     },
   }
 }
@@ -408,10 +409,13 @@ async function makeDefaultDependencies(applicationId: ApplicationId): Promise<Dr
     current = undefined
     activeStateRoot = undefined
     removeActiveState = false
-    if (!launch) return { terminated: [], survivors: [] }
+    if (!launch) return { terminated: [], survivors: [], forced: [] }
     const result = await launch.shutdown()
     if (removeState && result.survivors.length === 0 && stateRoot) await rm(stateRoot, { recursive: true, force: true })
-    return { terminated: result.terminated, survivors: result.survivors }
+    if (result.forced.length > 0) {
+      process.stderr.write(`claxedo-driver: shutdown force-killed ${result.forced.map((item) => `${item.category}:${item.pid}`).join(", ")}\n`)
+    }
+    return { terminated: result.terminated, survivors: result.survivors, forced: result.forced }
   }
 
   const startState = async (stateRoot: string, disposable: boolean): Promise<ActiveLaunch> => {
@@ -502,6 +506,9 @@ async function makeDefaultDependencies(applicationId: ApplicationId): Promise<Dr
         await startState(p1, false)
         const initialized = await closeCurrent()
         if (initialized.survivors.length > 0) throw new Error("Claxedo P1 initialization left a surviving process")
+        if (initialized.forced.length > 0) {
+          throw new Error("Claxedo P1 initialization force-killed its daemon; the initialized state would start with a stale daemon record")
+        }
       }
       try {
         await seedInitializedState()
