@@ -37,6 +37,7 @@ import {
   type SqliteAuthorityDb,
   type WorkspaceAction,
 } from "./workspace-authority-store"
+import { readSqliteSessionPage, type SessionPageRow } from "./session-page"
 import { trimToUndefined } from "@claxedo/helpers/string"
 
 const MESSAGE_PAGE_CURSOR_PREFIX = "sawmp1:"
@@ -66,6 +67,10 @@ type SessionRow = {
   max_event_ordinal: number
   snapshot_hash: string | null
   deleted_at: number | null
+  archived_at: number | null
+  status: string | null
+  status_at: number | null
+  awaiting_input: number
 }
 const AUTHOR_KINDS = ["human", "agent"] as const
 
@@ -636,6 +641,18 @@ export function createSqlitePrivateSessionAuthority(input: {
         .filter((row) => hasPrivateAccess(db, actor.token_identifier, row, "read", workspace.org_id))
         .map((row) => publicSession(db, row, actor.token_identifier))
     },
+    async listSessionPage(auth, value) {
+      const db = input.database()
+      const actor = actorForAuth(auth)
+      return readSqliteSessionPage<SessionRow & SessionPageRow>(db, value, (row) =>
+        hasPrivateAccess(db, actor.token_identifier, row, "read", row.org_id))
+        .map((row) => ({
+          ...publicSession(db, row, actor.token_identifier),
+          workspace_id: row.workspace_id,
+          project_id: row.project_id,
+          ...listFields(row),
+        }))
+    },
     async resolveSession(auth, value) {
       const db = input.database()
       const actor = actorForAuth(auth)
@@ -897,6 +914,15 @@ function publicSession(db: SqliteAuthorityDb, row: SessionRow, viewerActorId: st
     ...(creator?.public_id ? { owner_public_id: creator.public_id } : {}),
     ...(creator?.name ? { owner_name: creator.name } : {}),
     ...(creator?.image_url ? { owner_avatar_url: creator.image_url } : {}),
+  }
+}
+
+function listFields(row: SessionRow) {
+  return {
+    ...(row.archived_at === null ? {} : { archived_at: row.archived_at }),
+    ...(row.status === null || row.status_at === null
+      ? {}
+      : { status: row.status, status_at: row.status_at, awaiting_input: row.awaiting_input === 1 }),
   }
 }
 

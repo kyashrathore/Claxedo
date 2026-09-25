@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest"
 import type { ControlPlaneServices } from "../authority/services"
-import { parseSessionListQuery, SessionListAuthorityError, sessionListErrorResponse, signedSessionList } from "./list"
+import { parseSessionListQuery, sessionListErrorResponse, signedSessionList } from "./list"
 
 const signed = {
   mode: "signed" as const,
@@ -12,108 +12,89 @@ function services(authority: Record<string, unknown>) {
   return { authority } as unknown as ControlPlaneServices
 }
 
-/** The route's own parser, so the query under test is the one a request builds. */
 function query(search: string) {
   return parseSessionListQuery(new URL(`https://control.test/api/control/session-list?${search}`))
 }
 
+function row(sessionId: string, workspaceId: string, lastHumanTurnAt?: number) {
+  return {
+    session_id: sessionId,
+    workspace_id: workspaceId,
+    project_id: "prj_1",
+    created_at: 1,
+    updated_at: 2,
+    ...(lastHumanTurnAt === undefined ? {} : { last_human_turn_at: lastHumanTurnAt }),
+  }
+}
+
 describe("signedSessionList", () => {
-  /**
-   * The registry only ever receives sessions created THROUGH it. A machine-placed
-   * workspace's host holds the rest, so this read must name the runtime as the
-   * authority rather than answer a truncated list the client cannot tell apart
-   * from an empty workspace.
-   */
-  test("refuses a machine-placed workspace with the runtime named as the session authority", async () => {
-    const listSessions = vi.fn(async () => [])
-    const svc = services({
-      openWorkspace: vi.fn(async () => ({
-        role: "owner",
-        workspace: { backing: "local-worktree", org_id: "org_1" },
-      })),
-      listSessions,
-    })
-
-    const error = await signedSessionList(svc, signed, query("scope=workspace&workspaceId=ws_1"))
-      .then(() => undefined, (err: unknown) => err)
-
-    expect(error).toBeInstanceOf(SessionListAuthorityError)
-    expect(error).toMatchObject({
-      status: 409,
-      code: "workspace_runtime_session_authority",
-      message: "Sessions of workspace ws_1 are listed by the machine that serves it",
-    })
-    expect(listSessions).not.toHaveBeenCalled()
-    expect(sessionListErrorResponse(error)?.status).toBe(409)
-  })
-
-  test("serves a cloud workspace from the registry", async () => {
-    const svc = services({
-      openWorkspace: vi.fn(async () => ({
-        role: "owner",
-        workspace: { backing: "cloud-vm", org_id: "org_1" },
-      })),
-      listSessions: vi.fn(async () => [
-        { session_id: "ses_cloud", title: "cloud", created_at: 1, updated_at: 2 },
-      ]),
-    })
-
-    const response = await signedSessionList(svc, signed, query("scope=workspace&workspaceId=ws_cloud"))
-
-    expect(response.items?.map((item) => item.sessionId)).toEqual(["ses_cloud"])
-  })
-
-  /**
-   * A project can hold both kinds. The registry answers for its cloud
-   * workspaces; the machine-placed ones are read by the client over their own
-   * relay, so listing them here would render a truncated duplicate.
-   */
-  test("omits a project's machine-placed workspaces from the registry union", async () => {
-    const listSessions = vi.fn(async (_auth: unknown, args: { workspaceId: string }) => [
-      { session_id: `ses_${args.workspaceId}`, title: args.workspaceId, created_at: 1, updated_at: 2 },
-    ])
-    const svc = services({
-      listWorkspaces: vi.fn(async () => [
-        { workspace_id: "ws_cloud", project_id: "prj_1", backing: "cloud-vm" },
-        { workspace_id: "ws_host", project_id: "prj_1", backing: "local-worktree" },
-      ]),
-      listSessions,
-    })
-
-    const response = await signedSessionList(svc, signed, query("scope=project&projectId=prj_1"))
-
-    expect(listSessions).toHaveBeenCalledTimes(1)
-    expect(listSessions).toHaveBeenCalledWith(signed, { workspaceId: "ws_cloud" })
-    expect(response.items?.map((item) => item.sessionId)).toEqual(["ses_ws_cloud"])
-  })
-
-  /**
-   * The union re-spreads every row to attach the workspace and project it was
-   * read for, so a column the authority stamped is one spread away from being
-   * dropped — and the loss would read as a plausible creation order.
-   */
-  test("keeps the authority's last human turn as the project union's order", async () => {
-    const svc = services({
-      listWorkspaces: vi.fn(async () => [
-        { workspace_id: "ws_one", project_id: "prj_1", backing: "cloud-vm" },
-        { workspace_id: "ws_two", project_id: "prj_1", backing: "cloud-vm" },
-      ]),
-      listSessions: vi.fn(async (_auth: unknown, args: { workspaceId: string }) => [
-        args.workspaceId === "ws_one"
-          ? { session_id: "ses_prompted", created_at: 1, updated_at: 9, last_human_turn_at: 7 }
-          : { session_id: "ses_quiet", created_at: 5, updated_at: 5 },
-      ]),
-    })
-
+  test("reads one keyset page of the project across its cloud and machine workspaces", async () => {
+    const listSessionPage = vi.fn(async () => [row("ses_cloud", "ws_cloud", 9), row("ses_host", "ws_host", 5), row("ses_more", "ws_host")])
     const response = await signedSessionList(
-      svc,
+      services({ listSessionPage }),
       signed,
-      query("scope=project&projectId=prj_1&sort=human_turn_desc"),
+      query("scope=project&projectId=prj_1&sort=human_turn_desc&limit=2"),
     )
 
-    expect(response.items?.map((item) => [item.sessionId, item.lastHumanTurnAt])).toEqual([
-      ["ses_prompted", 7],
-      ["ses_quiet", undefined],
+    expect(listSessionPage).toHaveBeenCalledWith(signed, {
+      projectId: "prj_1",
+      sort: "human_turn_desc",
+      archived: "active",
+      limit: 3,
+    })
+    expect(response.items?.map((item) => item.sessionRef)).toEqual([
+      "workspace:ws_cloud:session:ses_cloud",
+      "workspace:ws_host:session:ses_host",
     ])
+    expect(response.nextCursor).toBeTypeOf("string")
+  })
+
+  test("resumes the keyset from the cursor's row", async () => {
+    const listSessionPage = vi.fn(async () => [row("ses_a", "ws_1", 9), row("ses_b", "ws_1", 5)])
+    const first = await signedSessionList(services({ listSessionPage }), signed, query("scope=workspace&workspaceId=ws_1&sort=human_turn_desc&limit=1"))
+    listSessionPage.mockResolvedValueOnce([row("ses_b", "ws_1", 5)])
+
+    await signedSessionList(
+      services({ listSessionPage }),
+      signed,
+      query(`scope=workspace&workspaceId=ws_1&sort=human_turn_desc&limit=1&cursor=${first.nextCursor}`),
+    )
+
+    expect(listSessionPage).toHaveBeenLastCalledWith(signed, {
+      workspaceId: "ws_1",
+      sort: "human_turn_desc",
+      archived: "active",
+      limit: 2,
+      after: { updatedAt: 2, createdAt: 1, lastHumanTurnAt: 9, sessionRef: "workspace:ws_1:session:ses_a" },
+    })
+  })
+
+  test("refuses a view the registry's rows cannot answer", async () => {
+    const listSessionPage = vi.fn(async () => [])
+    const error = await signedSessionList(services({ listSessionPage }), signed, query("scope=project&projectId=prj_1&groupBy=workspace"))
+      .then(() => undefined, (err: unknown) => err)
+
+    expect(sessionListErrorResponse(error)?.status).toBe(400)
+    expect(listSessionPage).not.toHaveBeenCalled()
+  })
+
+  test("refuses a list that names neither a project nor a workspace", async () => {
+    const error = await signedSessionList(services({ listSessionPage: vi.fn() }), signed, query("scope=global"))
+      .then(() => undefined, (err: unknown) => err)
+
+    expect(sessionListErrorResponse(error)?.status).toBe(400)
+  })
+
+  test("refuses a cursor minted for another query", async () => {
+    const listSessionPage = vi.fn(async () => [row("ses_a", "ws_1", 9), row("ses_b", "ws_1", 5)])
+    const first = await signedSessionList(services({ listSessionPage }), signed, query("scope=workspace&workspaceId=ws_1&limit=1"))
+
+    const error = await signedSessionList(
+      services({ listSessionPage }),
+      signed,
+      query(`scope=workspace&workspaceId=ws_2&limit=1&cursor=${first.nextCursor}`),
+    ).then(() => undefined, (err: unknown) => err)
+
+    expect(sessionListErrorResponse(error)?.status).toBe(400)
   })
 })

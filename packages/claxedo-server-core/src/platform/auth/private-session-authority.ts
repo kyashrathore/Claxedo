@@ -1,3 +1,4 @@
+import type { SessionListKeysetPage } from "../../session/navigation-list"
 import type { SignedControlPlaneAuth } from "./auth"
 
 /** Canonical application actor identity. Provider subjects never cross this port. */
@@ -40,6 +41,14 @@ export type RegisterRuntimePrivateSessionInput = PrivateSessionRuntimePrincipal 
   workspaceId: string
   title?: string
 }
+
+/**
+ * One keyset page of the sessions the caller may read in a project or one
+ * workspace, in the session list's order, each row naming its workspace and
+ * project. Authorization is the list query's own predicate, so a page is never
+ * short because rows were dropped after the read.
+ */
+export type SessionPageQuery = SessionListKeysetPage & ({ projectId: string } | { workspaceId: string })
 
 export type AdoptRuntimePrivateSessionInput = PrivateSessionRuntimePrincipal & {
   sessionId: string
@@ -251,6 +260,7 @@ export type PrivateSessionAuthority = {
     auth: SignedControlPlaneAuth,
     input: { workspaceId: string },
   ) => Promise<PrivateSessionInventoryRow[]>
+  listSessionPage: (auth: SignedControlPlaneAuth, input: SessionPageQuery) => Promise<PrivateSessionInventoryRow[]>
   resolveSession: (auth: SignedControlPlaneAuth, input: { sessionId: string }) => Promise<unknown>
   readSessionMessages: (
     auth: SignedControlPlaneAuth,
@@ -297,6 +307,7 @@ export const PRIVATE_SESSION_AUTHORITY_METHODS = [
   "grantSessionParticipant",
   "revokeSessionParticipant",
   "listSessions",
+  "listSessionPage",
   "resolveSession",
   "readSessionMessages",
   "syncSessionMessages",

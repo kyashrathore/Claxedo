@@ -24,6 +24,7 @@ import {
   type PrivateSessionRuntimePrincipal,
   type ReservePrivateSessionInput,
   type SessionAccessQuestion,
+  type SessionPageQuery,
   type SessionWriteClass,
   type TransitionPrivateSessionRegistrationInput,
 } from "@claxedo/server-core/platform/auth/private-session-authority"
@@ -46,6 +47,7 @@ import {
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { asRecord, numberField, parseJson } from "@claxedo/server-core/platform/json/index"
 import { organizationRoleRankSql } from "./host-access-authority"
+import { readD1SessionPage } from "./session-page"
 
 export const D1_SESSION_AUTHORITY_METHODS = [
   "authorizeSessionRead",
@@ -1465,6 +1467,14 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       .bind(workspaceId, ...repeat(who.actorId, SESSION_ACCESS_BINDINGS.read))
       .all<SessionRow>()
     return result.results.map(sessionJson)
+  }
+
+  async listSessionPage(auth: SignedControlPlaneAuth, query: SessionPageQuery) {
+    const who = await this.requirePrincipal(auth)
+    return await readD1SessionPage(this.database, query, {
+      sql: actorSessionAccessSql("?", "s", "read"),
+      params: repeat(who.actorId, SESSION_ACCESS_BINDINGS.read),
+    })
   }
 
   async resolveSession(auth: SignedControlPlaneAuth, args: { sessionId: string }) {

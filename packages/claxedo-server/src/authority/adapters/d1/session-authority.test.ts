@@ -15,6 +15,7 @@ import {
   exerciseSessionTurnAuthorityConformance,
   exerciseSessionTurnGrantConformance,
 } from "@claxedo/server-core/platform/auth/session-turn-authority.conformance"
+import { exerciseSessionPageConformance } from "@claxedo/server-core/platform/auth/session-page.conformance"
 
 import { buildSessionListResponse, parseSessionListQuery } from "../../../session/list"
 import { D1WorkspaceAuthority } from "./workspace-authority"
@@ -1258,6 +1259,46 @@ function sessionListQuery(search: string) {
     ),
   )
 }
+
+describe("D1 session list pages", () => {
+  test("satisfies the provider-neutral session-page conformance surface", async () => {
+    const input = await setup()
+    const { alice, bob } = await sharedWorkspace(input)
+    const second = await input.workspace.createWorkspace(alice, {
+      workspaceId: "ws_second",
+      orgId: "org_acme",
+      displayName: "second",
+      repoUrl: "https://github.com/acme/main.git",
+      backing: "local-worktree",
+    })
+    const stranger = await signed(input.workspace, "stranger")
+    await input.workspace.createHostedOrganization(stranger, { name: "Elsewhere", orgId: "org_elsewhere" })
+    const theirs = await input.workspace.createWorkspace(stranger, {
+      workspaceId: "ws_theirs",
+      orgId: "org_elsewhere",
+      displayName: "theirs",
+      repoUrl: "https://github.com/elsewhere/theirs.git",
+      backing: "cloud-vm",
+    })
+    const user = (auth: SignedControlPlaneAuth) => ({
+      auth,
+      runtime: { principalKind: "user" as const, actorId: auth.principal!.actorId, actorKind: "human" as const },
+    })
+
+    const report = await exerciseSessionPageConformance({
+      authority: input.sessions,
+      projectId: second.project_id,
+      workspaceIds: ["ws_main", "ws_second"],
+      reader: user(alice),
+      colleague: user(bob),
+      stranger: { ...user(stranger), projectId: theirs.project_id, workspaceId: "ws_theirs" },
+    })
+
+    expect(report.pages).toBeGreaterThanOrEqual(3)
+    expect(report.strangerSees).toEqual([])
+    expect(report.readerSeesOfStrangersProject).toEqual([])
+  })
+})
 
 describe("D1 session authority, shares of a session this plane never registered", () => {
   test("answers the organization it belongs to and refuses everyone else", async () => {

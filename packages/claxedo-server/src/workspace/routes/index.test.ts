@@ -296,6 +296,7 @@ function services(): ControlPlaneServices {
       deleteWorkspace: vi.fn(async () => ({})),
       createCloudWorkspace: vi.fn(async () => ({})),
       listSessions: vi.fn(async () => []),
+      listSessionPage: vi.fn(async () => []),
       readSessionMessages: vi.fn(async () => ({ allowed: true, messages: [] })),
       syncSessionMessages: vi.fn(async () => ({})),
       upsertSessionVisibility: vi.fn(async () => ({})),

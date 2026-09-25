@@ -25,6 +25,7 @@ import {
   buildSessionListResponse,
   parseSessionListQuery,
   sessionListStoreFilter,
+  sessionListIsKeysetPageable,
   sessionListStorePageFilter,
 } from "@claxedo/server-core/session/navigation-list"
 import { getProjectWorkspace, resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
@@ -276,10 +277,7 @@ export function SessionMetaRoutes(options: Options = {}) {
           }))
         }
         if (resolved) await options.refreshSessionProjection?.(resolved)
-        const canUseBoundedProjection = query.groupBy === "none" &&
-          query.environment.length === 0 &&
-          query.git.length === 0
-        if (canUseBoundedProjection) {
+        if (sessionListIsKeysetPageable(query)) {
           return c.json(buildSessionListResponse({
             query,
             sessions: await listSessionNavigationMetas(sessionListStorePageFilter(query)),

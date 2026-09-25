@@ -5,6 +5,7 @@ import type {
   AuthorizeRuntimePrivateSessionInput,
   PrivateSessionRuntimePrincipal,
   RegisterRuntimePrivateSessionInput,
+  SessionPageQuery,
 } from "./private-session-authority"
 import type { SessionShareLevel } from "./session-share-level"
 
@@ -578,6 +579,7 @@ export type WorkspaceAuthority = {
     auth: SignedControlPlaneAuth,
     args: { workspaceId: string },
   ) => Promise<AuthoritySessionInventoryRow[]>
+  listSessionPage: (auth: SignedControlPlaneAuth, args: SessionPageQuery) => Promise<AuthoritySessionInventoryRow[]>
   resolveSession?: (auth: SignedControlPlaneAuth, args: { sessionId: string }) => Promise<unknown>
   readSessionMessages: (
     auth: SignedControlPlaneAuth,

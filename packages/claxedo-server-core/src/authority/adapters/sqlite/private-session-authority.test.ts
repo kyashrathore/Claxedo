@@ -16,6 +16,7 @@ import {
   exerciseSessionTurnAuthorityConformance,
   exerciseSessionTurnGrantConformance,
 } from "@claxedo/server-core/platform/auth/session-turn-authority.conformance"
+import { exerciseSessionPageConformance } from "@claxedo/server-core/platform/auth/session-page.conformance"
 import { createSqliteWorkspaceAuthority } from "./workspace-authority"
 import { openAuthorityDb, upsertUser } from "./workspace-authority-store"
 
@@ -704,5 +705,73 @@ describe("SQLite private-session authority, write classes", () => {
       creatorHoldsBothClasses: true,
       absentClassAsksAboutTheTurn: true,
     })
+  })
+})
+
+describe("SQLite session list pages", () => {
+  test("satisfies the provider-neutral session-page conformance runner", async () => {
+    const reader = auth("reader")
+    const colleague = auth("colleague")
+    const stranger = auth("stranger")
+    const { store, seed } = authorityWithSeed()
+    await store.usersMe(colleague)
+    await store.createCloudWorkspace(reader, { workspaceId: "workspace_one", displayName: "One" })
+    const projectId = (seed().prepare(`SELECT project_id FROM workspaces WHERE workspace_id = ?`)
+      .get("workspace_one") as { project_id: string }).project_id
+    await store.createCloudWorkspace(reader, { workspaceId: "workspace_two", displayName: "Two", projectId })
+    orgMember(seed, "workspace_one", colleague.user.tokenIdentifier, "admin")
+    await store.createCloudWorkspace(stranger, { workspaceId: "workspace_stranger", displayName: "Theirs" })
+    const strangerProjectId = (seed().prepare(`SELECT project_id FROM workspaces WHERE workspace_id = ?`)
+      .get("workspace_stranger") as { project_id: string }).project_id
+    const user = (value: SignedControlPlaneAuth) => ({
+      auth: value,
+      runtime: { principalKind: "user" as const, actorId: value.user.tokenIdentifier, actorKind: "human" as const },
+    })
+
+    const report = await exerciseSessionPageConformance({
+      authority: store,
+      projectId,
+      workspaceIds: ["workspace_one", "workspace_two"],
+      reader: user(reader),
+      colleague: user(colleague),
+      stranger: { ...user(stranger), projectId: strangerProjectId, workspaceId: "workspace_stranger" },
+    })
+
+    expect(report.pages).toBeGreaterThanOrEqual(3)
+    expect(report.strangerSees).toEqual([])
+    expect(report.readerSeesOfStrangersProject).toEqual([])
+  })
+
+  test("fills a page past more refused rows than one scan reads", async () => {
+    const reader = auth("reader")
+    const colleague = auth("colleague")
+    const { store, seed } = authorityWithSeed()
+    await store.usersMe(colleague)
+    await store.createCloudWorkspace(reader, { workspaceId: "workspace_one", displayName: "One" })
+    orgMember(seed, "workspace_one", colleague.user.tokenIdentifier, "admin")
+    const register = async (who: SignedControlPlaneAuth, sessionId: string) => {
+      await store.reserveSession(who, { operationId: `op_${sessionId}`, sessionId, workspaceId: "workspace_one", kind: "create" })
+      await store.registerRuntimeSession({
+        principalKind: "user",
+        actorId: who.user.tokenIdentifier,
+        actorKind: "human",
+        operationId: `op_${sessionId}`,
+        sessionId,
+        workspaceId: "workspace_one",
+      })
+    }
+    for (const index of [1, 2, 3]) await register(reader, `ses_reader_${index}`)
+    for (let index = 0; index < 70; index++) await register(colleague, `ses_colleague_${String(index).padStart(2, "0")}`)
+    seed().prepare(`UPDATE session_history SET created_at = 1 WHERE session_id LIKE 'ses_reader_%'`).run()
+    seed().prepare(`UPDATE session_history SET created_at = 2 WHERE session_id LIKE 'ses_colleague_%'`).run()
+
+    const rows = await store.listSessionPage(reader, {
+      workspaceId: "workspace_one",
+      sort: "human_turn_desc",
+      archived: "active",
+      limit: 3,
+    })
+
+    expect(rows.map((row) => row.session_id)).toEqual(["ses_reader_3", "ses_reader_2", "ses_reader_1"])
   })
 })
