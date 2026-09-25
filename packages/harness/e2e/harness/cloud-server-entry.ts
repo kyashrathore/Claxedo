@@ -22,6 +22,7 @@ const sandboxDriver = createLocalBrokeringSandboxDriver({
     path.join(REPO_ROOT, "packages/workspace-runtime/src/cli.ts"),
   ],
   allowedOrigins: [`http://127.0.0.1:${port}`, modelUrl],
+  upstreams: { "https://api.openai.com": modelUrl },
   controlPlaneOrigin: `http://127.0.0.1:${port}`,
   ...(process.env.CLAXEDO_WORKSPACE_RELAY_URL ? { relayOrigin: process.env.CLAXEDO_WORKSPACE_RELAY_URL } : {}),
   inheritedEnv: {

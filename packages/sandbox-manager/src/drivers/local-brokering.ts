@@ -1,8 +1,11 @@
-import { spawn, type ChildProcess } from "node:child_process"
+import { execFileSync, spawn, type ChildProcess } from "node:child_process"
+import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs"
 import fs from "node:fs/promises"
-import { createServer, type Server } from "node:http"
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
+import { createServer as createHttpsServer } from "node:https"
 import net from "node:net"
 import path from "node:path"
+import type { Duplex } from "node:stream"
 import { substituteNativeSecrets } from "@claxedo/egress-broker"
 import type { SandboxBrokeredSecret, SandboxDriver, SandboxDriverEnsureInput, SandboxTarget } from ".."
 import { localBrokeringTestDriverCatalogEntry } from "../driver-catalog"
@@ -15,6 +18,7 @@ export type LocalBrokeringDriverOptions = {
   allowedOrigins: readonly string[]
   controlPlaneOrigin: string
   relayOrigin?: string
+  upstreams?: Readonly<Record<string, string>>
   inheritedEnv?: Record<string, string>
 }
 
@@ -24,6 +28,31 @@ type Host = {
   directory: string
   target: SandboxTarget
   secrets: SandboxBrokeredSecret[]
+  tunnels: Set<Duplex>
+}
+
+function createTestAuthority(root: string) {
+  const privateDirectory = realpathSync(mkdtempSync(path.join(root, "local-broker-ca-")))
+  const certificate = path.join(root, `${path.basename(privateDirectory)}.pem`)
+  const key = path.join(privateDirectory, "ca.key")
+  execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", certificate, "-days", "1", "-subj", "/CN=Claxedo local broker test CA", "-addext", "basicConstraints=critical,CA:TRUE"], { stdio: "ignore" })
+  return { certificate, privateDirectory, key, leaves: new Map<string, { key: Buffer; cert: Buffer }>() }
+}
+
+function certificateForHost(authority: ReturnType<typeof createTestAuthority>, hostname: string) {
+  const existing = authority.leaves.get(hostname)
+  if (existing) return existing
+  const directory = mkdtempSync(path.join(authority.privateDirectory, "leaf-"))
+  const keyFile = path.join(directory, "leaf.key")
+  const requestFile = path.join(directory, "leaf.csr")
+  const certificateFile = path.join(directory, "leaf.pem")
+  const extensionFile = path.join(directory, "leaf.ext")
+  writeFileSync(extensionFile, `subjectAltName=DNS:${hostname}\n`)
+  execFileSync("openssl", ["req", "-new", "-newkey", "rsa:2048", "-nodes", "-keyout", keyFile, "-out", requestFile, "-subj", `/CN=${hostname}`], { stdio: "ignore" })
+  execFileSync("openssl", ["x509", "-req", "-in", requestFile, "-CA", authority.certificate, "-CAkey", authority.key, "-CAcreateserial", "-out", certificateFile, "-days", "1", "-extfile", extensionFile], { stdio: "ignore" })
+  const leaf = { key: readFileSync(keyFile), cert: readFileSync(certificateFile) }
+  authority.leaves.set(hostname, leaf)
+  return leaf
 }
 
 function listen(server: Server): Promise<number> {
@@ -70,6 +99,7 @@ async function closeHost(host: Host) {
     child.kill("SIGTERM")
     await new Promise<void>((resolve) => child.once("exit", () => resolve()))
   }
+  for (const tunnel of host.tunnels) tunnel.destroy()
   host.proxy.closeAllConnections()
   await new Promise<void>((resolve) => host.proxy.close(() => resolve()))
   await fs.rm(host.directory, { recursive: true, force: true })
@@ -77,8 +107,17 @@ async function closeHost(host: Host) {
 
 export function createLocalBrokeringSandboxDriver(options: LocalBrokeringDriverOptions): SandboxDriver & { catalogEntry: typeof localBrokeringTestDriverCatalogEntry } {
   if (process.platform !== "darwin") throw new Error("local brokering test driver requires macOS sandbox-exec network policy")
+  const authority = createTestAuthority(options.root)
   const hosts = new Map<string, Host>()
   const allowedOrigins = new Set(options.allowedOrigins.map((origin) => new URL(origin).origin))
+  const upstreams = new Map(Object.entries(options.upstreams ?? {}).map(([origin, upstream]) => {
+    const parsed = new URL(origin)
+    const destination = new URL(upstream)
+    if (parsed.protocol !== "https:" || parsed.origin !== origin || parsed.port || destination.protocol !== "http:" || !["localhost", "127.0.0.1", "[::1]"].includes(destination.hostname)) {
+      throw new Error("local broker upstreams require exact HTTPS origins and loopback HTTP destinations")
+    }
+    return [parsed.origin, destination.origin] as const
+  }))
   const directOrigins = [options.controlPlaneOrigin, options.relayOrigin].filter((origin): origin is string => origin !== undefined).map((origin) => new URL(origin))
   const directDestinations = directOrigins.map((url) => {
     if (!(["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) && ["http:", "https:"].includes(url.protocol))) {
@@ -119,10 +158,8 @@ export function createLocalBrokeringSandboxDriver(options: LocalBrokeringDriverO
       labels: input.labels,
       driver: { id: "local-brokering-test", resourceId: `${input.workspaceId}-${input.epoch}` },
     }
-    const proxy = createServer(async (request, response) => {
+    async function forward(request: IncomingMessage, response: ServerResponse, targetUrl: URL, destination: URL) {
       try {
-        const targetUrl = new URL(request.url ?? "")
-        if (!allowedOrigins.has(targetUrl.origin)) throw new Error("destination_refused")
         const method = request.method ?? "GET"
         const incoming = new Headers()
         for (const [name, values] of Object.entries(request.headers)) {
@@ -133,7 +170,7 @@ export function createLocalBrokeringSandboxDriver(options: LocalBrokeringDriverO
         for (const name of ["host", "connection", "proxy-connection", "content-length", "transfer-encoding"]) headers.delete(name)
         const chunks: Buffer[] = []
         if (method !== "GET" && method !== "HEAD") for await (const chunk of request) chunks.push(Buffer.from(chunk))
-        const upstream = await fetch(targetUrl, {
+        const upstream = await fetch(destination, {
           method,
           headers,
           body: chunks.length ? new Uint8Array(Buffer.concat(chunks)) : undefined,
@@ -144,10 +181,64 @@ export function createLocalBrokeringSandboxDriver(options: LocalBrokeringDriverO
       } catch {
         response.writeHead(403).end("local sandbox egress refused")
       }
+    }
+    const proxy = createServer((request, response) => {
+      try {
+        const targetUrl = new URL(request.url ?? "")
+        if (!allowedOrigins.has(targetUrl.origin)) throw new Error("destination_refused")
+        void forward(request, response, targetUrl, targetUrl)
+      } catch {
+        response.writeHead(403).end("local sandbox egress refused")
+      }
     })
-    proxy.on("connect", (_request, socket) => socket.end("HTTP/1.1 403 Forbidden\r\ncontent-length: 0\r\n\r\n"))
+    proxy.on("connect", (request, socket, head) => {
+      const match = /^([a-z0-9.-]+):443$/i.exec(request.url ?? "")
+      const hostname = match?.[1]?.toLowerCase()
+      const origin = hostname ? `https://${hostname}` : undefined
+      const destination = origin && upstreams.get(origin)
+      if (!hostname || !destination || !host.secrets.some((secret) => secret.hosts.includes(hostname))) {
+        socket.end("HTTP/1.1 403 Forbidden\r\ncontent-length: 0\r\n\r\n")
+        return
+      }
+      const leaf = certificateForHost(authority, hostname)
+      const secure = createHttpsServer(leaf, (innerRequest, innerResponse) => {
+        const hostHeader = innerRequest.headers.host?.toLowerCase()
+        if (hostHeader !== hostname && hostHeader !== `${hostname}:443`) {
+          innerResponse.writeHead(403).end("local sandbox egress refused")
+          return
+        }
+        const url = new URL(innerRequest.url ?? "", origin)
+        if (url.origin !== origin) {
+          innerResponse.writeHead(403).end("local sandbox egress refused")
+          return
+        }
+        void forward(innerRequest, innerResponse, url, new URL(`${url.pathname}${url.search}`, destination))
+      })
+      secure.listen(0, "127.0.0.1", () => {
+        const address = secure.address()
+        if (!address || typeof address === "string") {
+          socket.destroy(new Error("local TLS listener has no port"))
+          return
+        }
+        const bridge = net.connect(address.port, "127.0.0.1", () => {
+          socket.write("HTTP/1.1 200 Connection Established\r\n\r\n", () => {
+            if (head.length) bridge.write(head)
+            socket.pipe(bridge).pipe(socket)
+            socket.resume()
+          })
+        })
+        bridge.on("error", () => socket.destroy())
+        socket.on("error", () => bridge.destroy())
+        socket.on("close", () => {
+          bridge.destroy()
+          secure.close()
+          host.tunnels.delete(socket)
+        })
+        host.tunnels.add(socket)
+      })
+    })
     proxy.on("upgrade", (_request, socket) => socket.end("HTTP/1.1 403 Forbidden\r\ncontent-length: 0\r\n\r\n"))
-    const host: Host = { directory, target, secrets: [...(input.secrets ?? [])], proxy, child: undefined }
+    const host: Host = { directory, target, secrets: [...(input.secrets ?? [])], proxy, child: undefined, tunnels: new Set() }
     try {
       const proxyPort = await listen(proxy)
       const proxyUrl = `http://127.0.0.1:${proxyPort}`
@@ -173,11 +264,12 @@ export function createLocalBrokeringSandboxDriver(options: LocalBrokeringDriverO
         NO_PROXY: directOrigins.map((url) => url.host).join(","),
         no_proxy: directOrigins.map((url) => url.host).join(","),
         NODE_USE_ENV_PROXY: "1",
+        NODE_EXTRA_CA_CERTS: authority.certificate,
       }
       for (const secret of host.secrets) {
         if (Object.values(env).some((value) => value.includes(secret.value))) throw new Error("brokered secret entered sandbox environment")
       }
-      const networkPolicy = `(version 1) (allow default) (deny network-outbound) (allow process-exec (literal "/bin/ps") (with no-sandbox)) ${[`localhost:${proxyPort}`, ...directDestinations].map((destination) => `(allow network-outbound (remote tcp ${JSON.stringify(destination)}))`).join(" ")}`
+      const networkPolicy = `(version 1) (allow default) (deny network-outbound) (deny file-read* (subpath ${JSON.stringify(authority.privateDirectory)})) (allow process-exec (literal "/bin/ps") (with no-sandbox)) ${[`localhost:${proxyPort}`, ...directDestinations].map((destination) => `(allow network-outbound (remote tcp ${JSON.stringify(destination)}))`).join(" ")}`
       const child = spawn("/usr/bin/sandbox-exec", ["-p", networkPolicy, options.executable, ...options.args], {
         cwd: workspace,
         env,
