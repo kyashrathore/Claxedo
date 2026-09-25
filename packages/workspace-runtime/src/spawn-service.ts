@@ -1,5 +1,6 @@
 import type { HarnessServices, OwnedProcess, SpawnCommand, SpawnOptions } from "@claxedo/harness/contract"
 import { launchOwnedProcess, retirementSettled, type LaunchOwnershipStore } from "@claxedo/process-ownership/launch"
+import { harnessSpawnEnv } from "@claxedo/process-ownership/spawn-env"
 
 export function createSpawnService(ownership: LaunchOwnershipStore): HarnessServices["spawn"] {
   return async (command: SpawnCommand, options: SpawnOptions): Promise<OwnedProcess> => {
@@ -9,7 +10,7 @@ export function createSpawnService(ownership: LaunchOwnershipStore): HarnessServ
       ...(options.sessionId ? { scope: { sessionId: options.sessionId, directory: command.cwd } } : { scope: { directory: command.cwd } }),
       payload: { command: command.file, args: [...command.args] },
       cwd: command.cwd,
-      env: { ...command.env },
+      env: harnessSpawnEnv(command.env),
     })
     const { child } = launch
     if (!child.stdin || !child.stdout || !child.stderr || launch.payloadPid === undefined) {
