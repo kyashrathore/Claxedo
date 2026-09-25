@@ -18,10 +18,6 @@ export type AppPluginAuthoringOptions = {
   service?: () => LivePluginService
 }
 
-async function exists(file: string) {
-  return fs.lstat(file).then(() => true, () => false)
-}
-
 function isInside(root: string, candidate: string) {
   const relative = path.relative(root, candidate)
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
@@ -57,7 +53,7 @@ export function appPluginAuthoring(options: AppPluginAuthoringOptions): AppPlugi
       const { manifest, files } = appPluginScaffold(input.name)
       const [root = ""] = options.roots
       const target = resolveInside(input.directory ?? path.join(root, APP_PLUGIN_FOLDER, manifest.id))
-      if ((await exists(target)) && (await fs.readdir(target)).length > 0) {
+      if ((await fs.readdir(target).catch(() => [])).length > 0) {
         throw new AppPluginAuthoringError(`${target} already exists and is not empty; choose another name or folder`)
       }
       await service().ready
