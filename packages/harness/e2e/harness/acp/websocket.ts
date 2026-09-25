@@ -9,7 +9,7 @@ type StreamMessage = Stream["readable"] extends ReadableStream<infer Message> ? 
 export type ScriptedAcpWebSocket = { url: string; close(): Promise<void> }
 
 export async function startScriptedAcpWebSocket(scriptDir: string, options: { restoreMode?: "load" | "resume"; dropMethod?: string; holdMethod?: string;
-  startupQuestion?: boolean; source?: string } = {}): Promise<ScriptedAcpWebSocket> {
+  startupQuestion?: boolean; source?: string; groups?: readonly string[] } = {}): Promise<ScriptedAcpWebSocket> {
   const port = await reservePort()
   const sockets = new Set<Bun.ServerWebSocket<SocketState>>()
   try {
@@ -31,7 +31,7 @@ export async function startScriptedAcpWebSocket(scriptDir: string, options: { re
             write(message) { socket.send(JSON.stringify(message)) },
           })
           new AgentSideConnection((connection) => new ScriptedAgent(connection, scriptDir, socket.data.headers, false, options.restoreMode,
-            options.startupQuestion), { readable, writable })
+            options.startupQuestion, options.groups), { readable, writable })
         },
         async message(socket, message) {
           const value = JSON.parse(typeof message === "string" ? message : Buffer.from(message).toString("utf8")) as StreamMessage
