@@ -73,7 +73,7 @@ async function arrange(stack: Stack, api: ClaxedoApi, corpusCase: CorpusCase) {
   const session = await api.createSession(workspace.directory, { title: corpusCase.title, harness: SCRIPTED_ACP_HARNESS })
   const target = { directory: workspace.directory, sessionId: session.id }
   const holdsImage = JSON.stringify(corpusCase.replay.turns).includes("{{heldImage}}")
-  const heldImage = holdsImage ? `${(await stack.localPages({}, [HELD_IMAGE])).url}${HELD_IMAGE}` : ""
+  const heldImage = holdsImage ? `${(await stack.localPages({}, { held: [HELD_IMAGE], secure: true })).url}${HELD_IMAGE}` : ""
   const turns = inWorkspace(corpusCase.replay.turns, workspace.directory, heldImage).map((turn, index) => ({ ...turn, name: `${corpusCase.id}-${index}` }))
   for (const [index, turn] of turns.entries()) {
     if (!turn.live) await playTurn(stack, api, target, turn, index + 1)

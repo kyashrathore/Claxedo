@@ -10,7 +10,7 @@ export type TlsTrust = { caPath: string; spki: string }
 
 export type TlsFront = { url: string; trust: TlsTrust; close(): Promise<void> }
 
-async function selfSignedCertificate(dir: string) {
+export async function selfSignedCertificate(dir: string) {
   const key = path.join(dir, "front-key.pem")
   const cert = path.join(dir, "front-cert.pem")
   await promisify(execFile)("openssl", [

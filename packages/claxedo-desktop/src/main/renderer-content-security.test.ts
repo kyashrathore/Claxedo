@@ -24,7 +24,7 @@ describe("the v2 renderer policy", () => {
   test("names exactly the daemon's origin for every network directive", () => {
     const policy = rendererContentSecurityPolicy("http://127.0.0.1:2593")
     expect(directive(policy, "connect-src")).toBe("connect-src 'self' http://127.0.0.1:2593 ws://127.0.0.1:2593")
-    expect(directive(policy, "img-src")).toBe("img-src 'self' data: blob: http://127.0.0.1:2593")
+    expect(directive(policy, "img-src")).toBe("img-src 'self' data: blob: https: http://127.0.0.1:2593")
     expect(directive(policy, "default-src")).toBe("default-src 'self'")
     expect(directive(policy, "script-src")).toBe("script-src 'self' 'wasm-unsafe-eval' blob:")
     expect(directive(policy, "frame-src")).toBe("frame-src 'none'")
