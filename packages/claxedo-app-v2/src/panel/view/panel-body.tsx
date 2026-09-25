@@ -60,9 +60,10 @@ function NavigatorColumn(props: { readonly placementId: PlacementId }): JSX.Elem
   const preferences = usePreferences()
   const left = () => preferences.appearance.navigatorSide === "left"
   const selected = () => panel.navigator() !== null && !panel.phone()
-  const [visited, setVisited] = createSignal(selected())
+  const shown = () => panel.open() && selected()
+  const [visited, setVisited] = createSignal(shown())
   createEffect(() => {
-    if (selected()) setVisited(true)
+    if (shown()) setVisited(true)
   })
   return (
     <Show when={visited()}>
@@ -223,7 +224,7 @@ function WorkspacePending(props: { readonly placementId: PlacementId }): JSX.Ele
   )
 }
 
-export function PanelBody(props: { readonly exposed: boolean }): JSX.Element {
+export function PanelBody(props: { readonly tabsShown: boolean }): JSX.Element {
   const t = useTranslator(dictionary)
   const panel = usePanel()
   return (
@@ -245,7 +246,7 @@ export function PanelBody(props: { readonly exposed: boolean }): JSX.Element {
                 data-workspace-panel-session-id={panel.sessionId()}
               >
                 <NavigatorColumn placementId={placementId} />
-                <Show when={props.exposed}>
+                <Show when={props.tabsShown}>
                   <WorkspacePending placementId={placementId} />
                 </Show>
                 <div class="h-full min-w-0 flex-1">
@@ -253,7 +254,7 @@ export function PanelBody(props: { readonly exposed: boolean }): JSX.Element {
                     <div id="review-panel" class="relative flex-1 min-w-0 flex flex-col h-full">
                       <div class="flex min-h-0 flex-1 flex-col bg-background-stronger">
                         <div class="relative min-h-0 flex-1 overflow-hidden contain-strict">
-                          <Show when={props.exposed}>
+                          <Show when={props.tabsShown}>
                             <ActiveTab placementId={placementId} />
                           </Show>
                         </div>
