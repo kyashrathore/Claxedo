@@ -1,8 +1,9 @@
 // target layer: account
 
 import { createSignal, onCleanup } from "solid-js"
-import type { AccountPort, AccountState, HostedOperationName } from "./account-port"
-import { decodeHostedResult } from "./hosted-operations"
+import type { AccountPort, AccountState } from "./account-port"
+import type { HostedOperationName } from "@claxedo/account-contract"
+import { decodeHostedResult } from "@claxedo/account-contract"
 import { hasBridgeMembers, preloadAccountBridge } from "./preload-bridge"
 
 /**

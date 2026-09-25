@@ -5,6 +5,7 @@ import type { ProjectsApi } from "./api"
 import { queryKeys } from "./query-keys"
 import { jsonInit, type Transport } from "./transport"
 import type { FetchQuery, Project } from "./types"
+import type { Workspaces } from "./workspaces"
 import { oneProjectFromWire, projectsFromWire, projectSourceBody } from "./wire/projects"
 
 const PROJECTS_PATH = "/api/claxedo/projects"
@@ -13,10 +14,18 @@ function projectPath(id: ProjectId) {
   return `${PROJECTS_PATH}/${encodeURIComponent(id)}`
 }
 
-export function projectQueries(transport: Transport) {
+export function projectQueries(transport: Transport, workspaces: Pick<Workspaces, "accountProjects">) {
+  const list = async () => {
+    const [local, account] = await Promise.all([transport.json<unknown>(PROJECTS_PATH), workspaces.accountProjects()])
+    return [...projectsFromWire(local), ...account]
+  }
+  const byId = async (id: ProjectId) => {
+    const account = (await workspaces.accountProjects()).find((project) => project.id === id)
+    return account ?? oneProjectFromWire(await transport.json<unknown>(projectPath(id)))
+  }
   return {
-    list: (): FetchQuery<readonly Project[]> => fetchQuery(queryKeys.projects(transport.serverUrl), async () => projectsFromWire(await transport.json<unknown>(PROJECTS_PATH))),
-    byId: (id: ProjectId): FetchQuery<Project> => fetchQuery(queryKeys.project(transport.serverUrl, id), async () => oneProjectFromWire(await transport.json<unknown>(projectPath(id)))),
+    list: (): FetchQuery<readonly Project[]> => fetchQuery(queryKeys.projects(transport.serverUrl), list),
+    byId: (id: ProjectId): FetchQuery<Project> => fetchQuery(queryKeys.project(transport.serverUrl, id), () => byId(id)),
   }
 }
 

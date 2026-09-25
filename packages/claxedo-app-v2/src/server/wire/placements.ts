@@ -73,7 +73,7 @@ function placementRecord(project: Record<string, unknown>, key: string, row: Rec
   }
 }
 
-function placementsFromProjects(projects: unknown, self: string | undefined): PlacementRecord[] {
+export function placementsFromProjects(projects: unknown, self: string | undefined): PlacementRecord[] {
   if (!Array.isArray(projects)) return []
   const records: PlacementRecord[] = []
   for (const candidate of projects) {

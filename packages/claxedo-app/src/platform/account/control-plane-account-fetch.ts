@@ -7,7 +7,7 @@
  */
 import { authFetch } from "@/platform/api/api"
 import { hostedControlCall, parseHostedHttpError, signedAccountRun } from "@/platform/account/hosted-control-call"
-import type { HostedOperationName } from "@/platform/account/account-port"
+import type { HostedOperationName } from "@claxedo/account-contract"
 import { recordOrEmpty } from "@/lib/record"
 import { errorMessage } from "@/lib/server-errors"
 

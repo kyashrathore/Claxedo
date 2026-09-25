@@ -2,7 +2,8 @@
 
 import type { AuthSession } from "@/platform/auth/auth-session"
 import { authDisplayEmail, type AuthDisplayUser } from "@/platform/auth/auth-display"
-import type { AccountPort, AccountState, HostedOperationName } from "./account-port"
+import type { AccountPort, AccountState } from "./account-port"
+import type { HostedOperationName } from "@claxedo/account-contract"
 
 /**
  * The browser's `AccountPort`: the session it already has, behind the port.

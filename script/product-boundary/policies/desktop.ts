@@ -703,8 +703,15 @@ export const desktopRendererUnsigned: Policy = {
   // through the same workspaces feature port. Owner: `app/workbench/rail`. No
   // new package edge.
   //
-  // Exact measured 1157 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1157, packages: 58 },
+  // -1 module / +1 package (2026-09-25): the hosted-operation names and their
+  // result decoders moved from `platform/account/hosted-operations.ts` into
+  // `@claxedo/account-contract`, the one owner Electron main's route table and
+  // both renderers (v1 and v2) import. A dependency-neutral contract package
+  // (it reaches only `@claxedo/helpers/guards`, already here); no capability
+  // and no transport.
+  //
+  // Exact measured 1156 modules / 59 packages, with no headroom.
+  ceilings: { modules: 1156, packages: 59 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
@@ -798,7 +805,11 @@ export const desktopHostedContribution: Policy = {
   // the runtime-neutral surface — no `node:` import can appear there, those live
   // behind `/fs`, `/path`, `/process`, `/net` — so it is safe on a renderer
   // graph. Module count is unchanged at 47; only the package edge moved.
-  ceilings: { modules: 47, packages: 2 },
+  // -1 module / +1 package (2026-09-25): `platform/account/hosted-operations.ts`
+  // left this graph for `@claxedo/account-contract`, the operation names and
+  // decoders Electron main's route table is typed against; the renderer entry
+  // closure guard's pinned hosted set drops it accordingly.
+  ceilings: { modules: 46, packages: 3 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-hosted-contributions.json",
     minModules: 4,

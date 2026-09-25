@@ -1,11 +1,11 @@
 import { createContext, useContext, type ParentProps } from "solid-js"
-import type { BrowserAuthAdapter } from "./browser-auth"
+import type { AccountBinding } from "./binding"
 import { createAuth, type Auth } from "./store"
 
 const AuthContext = createContext<Auth>()
 
-export function AuthProvider(props: ParentProps<{ readonly adapter: BrowserAuthAdapter }>) {
-  const auth = createAuth(props.adapter)
+export function AuthProvider(props: ParentProps<{ readonly binding: AccountBinding }>) {
+  const auth = createAuth(props.binding)
   return <AuthContext.Provider value={auth}>{props.children}</AuthContext.Provider>
 }
 

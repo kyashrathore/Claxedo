@@ -8,6 +8,7 @@ import { serveConnectionSink, type ConnectionSink } from "./connection-sink"
 import { appChoice, type AppChoice } from "./app"
 import { DESKTOP_DIR, DESKTOP_MAIN } from "./desktop-build"
 import { startEgressGuard, type EgressGuard } from "./egress-guard"
+import type { TlsTrust } from "./tls-front"
 import { isolatedEnv } from "./isolated-env"
 import { writeScriptedModelCatalog } from "./model-catalog"
 import { releasePort, reservePort } from "./ports"
@@ -70,7 +71,9 @@ async function startWorld(label: string): Promise<DesktopWorld> {
   return { dataDir, serverPort: ports[2], egress, scripted, acpScriptDir, close }
 }
 
-async function desktopEnv(world: DesktopWorld) {
+export type DesktopAccount = { coreOrigin: string; trust: TlsTrust }
+
+async function desktopEnv(world: DesktopWorld, account: DesktopAccount | undefined) {
   const zdotdir = path.join(world.dataDir, "zdotdir")
   await fs.mkdir(zdotdir, { recursive: true })
   const entries = {
@@ -80,15 +83,26 @@ async function desktopEnv(world: DesktopWorld) {
     CLAXEDO_DATA_DIR: path.join(world.dataDir, "server-data"),
     CLAXEDO_SERVER_PORT: String(world.serverPort),
     ZDOTDIR: zdotdir,
+    ...(account ? { CLAXEDO_CORE_ORIGIN: account.coreOrigin, NODE_EXTRA_CA_CERTS: account.trust.caPath } : {}),
   }
   return Object.fromEntries(Object.entries(entries).filter((entry): entry is [string, string] => entry[1] !== undefined))
 }
 
-async function launchElectron(world: DesktopWorld) {
+const MOCK_KEYCHAIN = "use-mock-keychain"
+
+async function refuseRealKeychain(app: ElectronApplication) {
+  if (process.platform !== "darwin") return
+  const cut = await app.evaluate(({ app: main }, name) => main.commandLine.hasSwitch(name), MOCK_KEYCHAIN)
+  if (!cut) throw new Error(`a signed desktop runs only with --${MOCK_KEYCHAIN}: without it safeStorage writes this Mac's login keychain`)
+}
+
+async function launchElectron(world: DesktopWorld, account: DesktopAccount | undefined) {
+  const trust = account ? [`--ignore-certificate-errors-spki-list=${account.trust.spki}`] : []
+  const keychain = process.platform === "darwin" ? [`--${MOCK_KEYCHAIN}`] : []
   return electron.launch({
-    args: [DESKTOP_MAIN, `--user-data-dir=${path.join(world.dataDir, "chromium")}`],
+    args: [DESKTOP_MAIN, `--user-data-dir=${path.join(world.dataDir, "chromium")}`, ...keychain, ...trust],
     cwd: DESKTOP_DIR,
-    env: await desktopEnv(world),
+    env: await desktopEnv(world, account),
     timeout: 60_000,
   })
 }
@@ -154,11 +168,11 @@ function desktopHandle(world: DesktopWorld, parts: DesktopParts): Desktop {
   }
 }
 
-export async function launchDesktop(input: { label: string; red: boolean }): Promise<Desktop> {
+export async function launchDesktop(input: { label: string; red: boolean; account?: DesktopAccount }): Promise<Desktop> {
   const world = await startWorld(input.label)
   let app: ElectronApplication
   try {
-    app = await launchElectron(world)
+    app = await launchElectron(world, input.account)
   } catch (error) {
     await world.close()
     throw error
@@ -186,6 +200,7 @@ export async function launchDesktop(input: { label: string; red: boolean }): Pro
   }
   const url = `http://127.0.0.1:${world.serverPort}`
   try {
+    if (input.account) await refuseRealKeychain(app)
     const window = await shellWindow(app)
     await serverPublished(window)
     const transport = pageTransport(window)
@@ -193,7 +208,12 @@ export async function launchDesktop(input: { label: string; red: boolean }): Pro
     await window.reload()
     return desktopHandle(world, { app, window, transport, connectionSink, log, close })
   } catch (error) {
-    await close()
-    throw new Error(`the desktop did not start:\n${log().split("\n").slice(-40).join("\n")}`, { cause: error })
+    const failure = new Error(`the desktop did not start:\n${log().split("\n").slice(-40).join("\n")}`, { cause: error })
+    try {
+      await close()
+    } catch (closing) {
+      console.error("closing a desktop that did not start failed too", closing)
+    }
+    throw failure
   }
 }

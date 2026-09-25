@@ -29,7 +29,12 @@ export async function ensureDesktopBuilt(app: AppChoice): Promise<DesktopBuild> 
   const mtime = desktopSourceMtime(app)
   if (buildIsCurrent(app, mtime)) return { built: false, ms: Date.now() - started }
   if (app === "v1") await ensureWorkspacePackagesBuilt()
-  const env = { ...process.env, CLAXEDO_DESKTOP_RENDERER: app === "v2" ? "v2" : undefined, VITE_CLAXEDO_AUTH_ADAPTER: "better-auth" }
+  const env = {
+    ...process.env,
+    CLAXEDO_DESKTOP_RENDERER: app === "v2" ? "v2" : undefined,
+    VITE_CLAXEDO_HOSTED_ACTIVATION: app === "v2" ? "true" : undefined,
+    VITE_CLAXEDO_AUTH_ADAPTER: "desktop",
+  }
   await step("desktop prebuild", "prebuild", env)
   await step(`desktop ${app} build`, "build:inner", env)
   fs.writeFileSync(STAMP, JSON.stringify({ app, sourceMtime: desktopSourceMtime(app), builtAt: Date.now() }))

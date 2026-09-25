@@ -1,31 +1,25 @@
-// target layer: account
-
 /**
- * The one app-owned registry of hosted operation IDs and their result shapes.
+ * What each hosted operation name means to a renderer: whether it may be
+ * retried, and how its answer is read.
  *
- * `account-port.ts` says the renderer names an operation rather than building a
- * request. This says what each name means to the renderer: what it takes, and
- * what comes back. Electron main holds the matching method-and-path table;
- * `architecture/account-port.guard.test.ts` holds the two equal.
+ * No transport lives here: no bearer, URL, method or fetch. Electron main holds
+ * the method-and-path table and types it against `HostedOperationName`, so a
+ * registry that could express a request would be a place to open the closed set
+ * in passing.
  *
- * Deliberately contains no transport. No bearer, no URL, no method, no fetch —
- * not because those are inconvenient here, but because a registry that could
- * express them would be a place to add a fourteenth operation that happens to
- * take a path. The value of a closed set is that it cannot be opened in
- * passing.
- *
- * Decoders rather than casts. A hosted response that changed shape should fail
- * where it arrives, naming the operation, instead of surfacing three components
- * later as `undefined is not an object`.
+ * Decoders rather than casts: a hosted response that changed shape fails where
+ * it arrives, naming the operation.
  */
-
-import type { HostedOperationName } from "./account-port"
-import { asRecord } from "@/lib/record"
-import { readArray } from "@/lib/record"
+import { asRecord } from "@claxedo/helpers/guards"
+import type { HostedOperationName } from "./operation-name"
 
 export type { HostedOperationName }
 
-/** What a caller passes. Parameters, never a request shape. */
+function rows(value: Record<string, unknown>, key: string): unknown[] {
+  const field = value[key]
+  return Array.isArray(field) ? field : []
+}
+
 export type HostedOperationInput = Record<string, string | number | boolean | undefined>
 
 export type DecodeResult<T> = { ok: true; value: T } | { ok: false; reason: string }
@@ -92,11 +86,9 @@ function sessionPeople(raw: unknown): DecodeResult<Record<string, unknown>> {
   if (typeof shape.value.can_manage_shares !== "boolean") {
     return { ok: false, reason: 'expected a boolean "can_manage_shares"' }
   }
-  // `withArrays` above is what proves these three are arrays; read them back
-  // through the same evidence rather than re-asserting it three times.
-  const teams = readArray(shape.value, "teams") ?? []
-  const participants = readArray(shape.value, "participants") ?? []
-  const grants = readArray(shape.value, "grants") ?? []
+  const teams = rows(shape.value, "teams")
+  const participants = rows(shape.value, "participants")
+  const grants = rows(shape.value, "grants")
   for (const [index, team] of teams.entries()) {
     const row = object(team)
     if (!row.ok) return { ok: false, reason: `expected teams[${index}] to be an object` }
@@ -277,6 +269,12 @@ export const HOSTED_OPERATIONS = {
   "session.list": { safe: true, decode: withArrays("sessions") },
   // Paginated rail navigation list (`GET /api/control/session-list`).
   "session.navigationList": { safe: true, decode: object },
+  // One keyset page of a project's sessions (`{ items, nextCursor? }`), for
+  // the signed desktop's two-source list. `session.navigationList` stays v1's.
+  "session.page": { safe: true, decode: withArrays("items") },
+  // The account's project catalog (`GET /project`): the bootstrap's `project`
+  // rows, each with its workspaces keyed by workspace id.
+  "project.catalog": { safe: true, decode: array },
   "session.projection.register": { safe: false, decode: object },
   "session.projection.checkpoint": { safe: false, decode: object },
   "session.projection.repair": { safe: false, decode: object },
@@ -383,5 +381,5 @@ export function decodeHostedResult<N extends HostedOperationName>(name: N, raw: 
 
 /** Whether the renderer may retry this operation on its own. */
 export function isSafeOperation(name: HostedOperationName) {
-  return  HOSTED_OPERATIONS[name]?.safe
+  return HOSTED_OPERATIONS[name].safe
 }

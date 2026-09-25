@@ -1,28 +1,30 @@
 import { createEffect, type Accessor } from "solid-js"
-import type { BrowserAuthAdapter, BrowserAuthMethod, BrowserAuthSignInOptions, BrowserAuthSignUpOptions, BrowserAuthState } from "./browser-auth"
+import type { AccountBinding, ControlPlaneAccess, AccountSession } from "./binding"
+import type { BrowserAuthMethod, BrowserAuthSignInOptions, BrowserAuthSignUpOptions } from "./browser-auth"
 import type { AuthUser } from "./display-user"
 import { authMachine, type AuthState } from "./model"
-import { apiOrigin, appOrigin, serverIssuesSessions } from "./origins"
 
 export type Auth = {
   readonly state: Accessor<AuthState>
   readonly user: Accessor<AuthUser | null>
   readonly methods: Accessor<readonly BrowserAuthMethod[]>
   readonly unavailable: Accessor<string | null>
+  readonly identityResolving: Accessor<boolean>
+  readonly offered: (serverIssuesSessions: boolean) => boolean
   readonly signIn: (options?: BrowserAuthSignInOptions) => Promise<void>
   readonly signUp: (options?: BrowserAuthSignUpOptions) => Promise<void>
   readonly signOut: () => Promise<void>
   readonly refresh: () => Promise<void>
-  readonly token: (options?: { skipCache?: boolean }) => Promise<string | null>
+  readonly controlPlane: ControlPlaneAccess
 }
 
-function followAdapter(browser: BrowserAuthState, auth: ReturnType<typeof authMachine>) {
+function followSession(session: AccountSession, auth: ReturnType<typeof authMachine>) {
   const settle = () => {
-    const reason = browser.unavailable()
-    auth.send({ type: "settled", user: browser.user(), ...(reason ? { reason } : {}) })
+    const reason = session.unavailable()
+    auth.send({ type: "settled", user: session.user(), ...(reason ? { reason } : {}) })
   }
   createEffect(() => {
-    if (browser.loading()) auth.send({ type: "started" })
+    if (session.loading()) auth.send({ type: "started" })
     else settle()
   })
   return async (task: () => Promise<void>) => {
@@ -35,34 +37,31 @@ function followAdapter(browser: BrowserAuthState, auth: ReturnType<typeof authMa
   }
 }
 
-function startBrowserAuth(adapter: BrowserAuthAdapter): Promise<void> {
-  return adapter.initialize({ apiOrigin: apiOrigin(), appOrigin: appOrigin(), issuesSessions: serverIssuesSessions() })
-}
-
-export function createAuth(adapter: BrowserAuthAdapter): Auth {
-  const browser = adapter.useAuth()
-  startBrowserAuth(adapter).catch((error: unknown) => console.error("Browser sign-in could not start", { error }))
-  const auth = authMachine(browser.loading() ? { kind: "signingIn" } : { kind: "signedOut" })
-  const run = followAdapter(browser, auth)
+export function createAuth(binding: AccountBinding): Auth {
+  const session = binding.open()
+  const auth = authMachine(session.loading() ? { kind: "signingIn" } : { kind: "signedOut" })
+  const run = followSession(session, auth)
   return {
     state: auth.state,
-    user: browser.user,
-    methods: browser.methods,
-    unavailable: browser.unavailable,
-    signIn: (options) => run(() => browser.signIn(options)),
-    signUp: (options) => run(() => browser.signUp(options)),
+    user: session.user,
+    methods: session.methods,
+    unavailable: session.unavailable,
+    identityResolving: session.identityResolving,
+    offered: session.offered,
+    signIn: (options) => run(() => session.signIn(options)),
+    signUp: (options) => run(() => session.signUp(options)),
     signOut: async () => {
-      await browser.signOut()
+      await session.signOut()
       auth.send({ type: "signedOut" })
     },
     refresh: async () => {
       try {
-        await browser.refreshSession()
+        await session.refresh()
       } catch (error) {
         auth.send({ type: "expired" })
         throw error
       }
     },
-    token: browser.getToken,
+    controlPlane: session.controlPlane,
   }
 }
