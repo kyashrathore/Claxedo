@@ -170,7 +170,7 @@ These drive every choice in Part 2. Where a choice seems arbitrary, one of these
 | **Typed errors, no swallowing** | Each transport's `errors.ts`; no `.catch(() =>` | Every failure has a class and is shown or logged |
 | **No ambient state** | 14 module-level mutable sites become instance fields or three named owners | Two workspaces in one process can't interfere |
 | **Small, named units** | Files under 300 lines, functions under 40, no `utils` | An agent can read a whole unit |
-| **Strangler, with deletion in the same slice** | One transport at a time; the old code goes in the same slice; the bridge is branch-only | There's never a second path left behind |
+| **Prove each part, then cut over once** | Every transport passes the conformance suite against its real harness program before P3; P3 points the runtime at all of them and deletes the old adapters in the same slice | There's never a second path left behind, and no temporary adapter to remove |
 | **Characterization before change** | The translator corpus and wire corpus are recorded on `dev` before anything moves | "Unchanged" is a comparison, not a hope |
 | **Ratchets** | Per-part line budgets and architecture ceilings that only go down | Regressions fail the build, not a review |
 
@@ -482,9 +482,9 @@ Decision 15 confirms that timing.
    | `src/transports/<kind>/` | one transport each: `claude-sdk`, `codex-app-server`, `cursor-sdk`, `acp`, `pi-rpc`, and `opencode-http` if decision 2 keeps it |
    | `src/profiles/<harness>/` | one profile per harness |
 
-4. **Transports move one at a time.** Each slice builds one transport, points the runtime at it, and deletes that transport's old code in the same slice.
-   - A temporary bridge in `workspace-runtime`'s `ensureSessionAdapter` presents a new transport as today's `AgentHarnessAdapter`. The Runtime lane owns it.
-   - The bridge contradicts the root rule against compatibility bridges, so it needs your explicit approval (decision 14): branch-only, deleted in P3, and no merge while it exists.
+4. **Each transport is proven on its own, then the runtime cuts over once** (decision 14).
+   - A transport lane builds its transport and passes the conformance suite (`packages/harness/src/conformance/`): the suite drives the transport through the contract, with the real broker over in-memory runtime ports, against the real harness program answering from the scripted model server or the scripted ACP agent.
+   - P3 points the runtime host at every transport in one slice and deletes every old adapter in the same slice. The flows gate that slice.
 5. **Today's server contracts stay.** That covers every route, event, payload, frame and recovery operation either app, the MCP tools or the daemon reads. It's proven by the wire corpus.
 6. **You review, then one merge.**
 
@@ -493,7 +493,7 @@ Decision 15 confirms that timing.
 - **`workspace-runtime`:**
   - the runtime host (`runtime.ts` and `runtime/*`, 3,604 lines) and the projection code (3,222 lines), moved in unchanged;
   - the `spawn` service over `process-ownership`;
-  - the bridge, branch-only.
+  - in P3, the runtime host calling the contract for every harness.
 - **`agent-runtime-contract`:** keeps `recovery.ts` whole, because the daemon lifecycle, the desktop, the apps and the MCP tools use it. It gains the event contracts (`agent-event-runtime/src/contracts`, 458 lines) that the apps read.
 - **Both apps: import paths only.** 13 production files in `claxedo-app` import `@claxedo/agent-event-runtime`, and v2 mirrors them under `src/legacy/` plus `session/view/timeline/message-author.tsx`. They move to `agent-runtime-contract` in one change before P4, coordinated with the app plan.
 - **`claxedo-local-server`, `claxedo-server`, desktop, CLI:**
@@ -630,7 +630,7 @@ Every defect the reviews found, all fixed in this plan. Each regression test is 
 - **Stored config.** `connections` entries and the `/connections` routes keep their shape.
 - **Stored runtime data.** Unchanged. The recovery engine and its tables move with the runtime host.
 - **Pi.** Owner sessions move to the user's own Pi session directory. Member sessions keep today's brokered profiles.
-- **No switches.** The bridge, if approved, is branch-only.
+- **No switches and no bridge.** The runtime cuts over to the new transports in one slice (decision 14).
 
 ## Areas that need extra care
 
@@ -1083,7 +1083,6 @@ The conventions live in `packages/harness/AGENTS.md` (Appendix A). The checks ru
 - desktop main `99/26`;
 - the `isolation.buildPackages` lists (`local-server.ts:209-212`, `server.ts:151-154`), edited in P4.
 
-The bridge lives in `workspace-runtime`, so `agent-sdk-runtime`'s own file ceilings (for example `runtime.ts` 829) aren't touched while it shrinks.
 
 ## Tests
 
@@ -1226,17 +1225,18 @@ Every slice deletes what it replaces.
 - [ ] **P1.0 Contract frozen:** the operation map complete, every row callable. `Progress:`
 - [ ] **P1.1 The runtime host and projection moved** into `workspace-runtime` unchanged, and `spawn` implemented. Wire corpus unchanged. `Progress:`
 - [ ] **P1.2 Broker:** requests with the full contract, grants and ceilings, start requests, subagents, goal plumbing and provider turns, usage, cancel. `Progress:`
+- [ ] **P1.4 Conformance suite** (`packages/harness/src/conformance/`): one set of cases every transport runs through the contract, with the real broker over in-memory runtime ports and the transport's real harness program behind the scripted model server or the scripted ACP agent. It carries the kept invariants the invariant map assigns to transports. `Progress:`
 - [ ] **P1.3 Pi transport and profile:**
   - owner sessions on the user's own Pi, by turn origin; members brokered as today;
   - `get_commands`; all nine extension-UI methods (H-5, H-6);
-  - H1, H4, H6, H12, H18, H20 green.
+  - the conformance suite green against the pinned Pi; H1, H4, H6, H12, H18 and H20 go green at the P3 cutover.
   - `Progress:`
 
 ### P2: transports, profiles and cloud delivery, in parallel
 
-- [ ] **Claude SDK,** with the `claude-code` profile and its SDK delivery; H1–H15 eligible. `Progress:`
-- [ ] **Codex app-server,** with `CODEX_HOME` composed from credentials and the profile (H-4); goals and provider turns; thread recovery. `Progress:`
-- [ ] **Cursor SDK,** with a worker per backend binding; H25. `Progress:`
+- [ ] **Claude SDK,** with the `claude-code` profile and its SDK delivery; the conformance suite green; H1–H15 eligible at P3. `Progress:`
+- [ ] **Codex app-server,** with `CODEX_HOME` composed from credentials and the profile (H-4); goals and provider turns; thread recovery; the conformance suite green; its flows at P3. `Progress:`
+- [ ] **Cursor SDK,** with a worker per backend binding; the conformance suite green; H25 at P3. `Progress:`
 - [ ] **ACP:**
   - one transport, extension files, `restore/`;
   - the remote filter at new, load, resume and fork;
@@ -1244,7 +1244,7 @@ Every slice deletes what it replaces.
   - save before release (H-3);
   - instance state, not a process-wide counter (H-8);
   - `claude-agent-acp`'s `_meta` delivery;
-  - H16, H21, H24, H26; defects H-1, H-2, H-3, H-8 green.
+  - the conformance suite green; H16, H21, H24, H26 and defects H-1, H-2, H-3, H-8 green at P3.
   - `Progress:`
 - [ ] **OpenCode, one path** (decision 2), with provider credentials in every placement (H-7, C-3, C-11). The embedded engine and its two add-ons deleted in the same slice. `Progress:`
 - [ ] **Cloud: one repository and hosted delivery (C-1, C-2).**
@@ -1264,9 +1264,9 @@ Every slice deletes what it replaces.
 - [ ] **Cloud: image and docs (C-13, T-2):** every agent program pinned by version and checksum; the README fixed. `Progress:`
 - [ ] **App v2 items** (the consent toggle for C-6, C-14, decision 16), built through the app plan. H34. `Progress:`
 
-### P3: the bridge goes
+### P3: the cutover
 
-- [ ] The runtime host calls the contract directly; the bridge deleted; the wire corpus unchanged. `Progress:`
+- [ ] The runtime host calls the contract for every harness in one slice, and every old adapter is deleted in the same slice. Every eligible flow green; both corpora unchanged. `Progress:`
 
 ### P4: cleanup
 
@@ -1295,7 +1295,7 @@ Each is corpus-proven, with your sign-off.
 **Setup:**
 - The worktree has its own install.
 - **The orchestrator freezes P1.0 first,** and owns `package.json`, `src/contract/` and `src/registry/`.
-- **The Runtime lane owns the bridge,** in `workspace-runtime`'s `ensureSessionAdapter`.
+- **The Runtime lane owns the P3 cutover** in `workspace-runtime`.
 
 | Lane | Owns | Delivers |
 | --- | --- | --- |
@@ -1305,7 +1305,7 @@ Each is corpus-proven, with your sign-off.
 | **Map** | the invariant map | P0.5 |
 | **Profiles** | `src/profiles/**` and the docs research, one agent per harness | P0.6, P2 profiles |
 | **Checks** | checks, ratchet, manifest | P0.4, P0.7 |
-| **Runtime** | the moved host and projection, `spawn`, the bridge | P1.1, P3 |
+| **Runtime** | the moved host and projection, `spawn`, the cutover | P1.1, P3 |
 | **Broker** | `src/broker/**` | P1.2 |
 | **Pi**, **Claude**, **Codex**, **Cursor**, **ACP**, **OpenCode** | their `src/transports/<kind>/**` | P1.3, P2 |
 | **Cleanup** | app import paths (with the app plan), test stores, glue, package deletions | P4 |
@@ -1352,7 +1352,7 @@ Each is corpus-proven, with your sign-off.
     - Going lower means cutting behavior: OpenCode through ACP (−0.85k); Claude through `claude-agent-acp`, which loses SDK plugins, per-owner usage and per-turn effort.
     - **Recommendation:** accept.
 13. **Adapters from third parties.** **Recommendation:** first-party only, until there's a trust model.
-14. **The bridge or an atomic cutover.** **Recommendation:** the bridge, branch-only, in `workspace-runtime`.
+14. **The bridge or an atomic cutover.** Settled (2026-09-25): an atomic cutover, with no bridge. Each transport is proven by the conformance suite before P3; P3 cuts the runtime over once and the flows gate it.
 15. **The turn row, one journal and write-once projection (D3)** go with the server-contract rebuild, not here. **Recommendation:** confirm.
 16. **The remote notice:** the additive `locality` field and a not-applied list on the connection reference, with the UI in the app plan; or documentation only for now. **Recommendation:** the additive field.
 17. **ACP save-before-release.** Settled: fixed in this plan (H-3).
@@ -1485,7 +1485,7 @@ I verified every finding below against the code before changing the plan.
 | Moving process ownership into `workspace-runtime` creates a cycle and breaks the desktop allowance | delivery, re-review | Its own dependency-free package, first; every packaging site listed |
 | `adapters.ts`, `log.ts`, `target.ts` and `paths.ts` are live; the test stores' importers cross packages; deletions were planned before the invariant map | delivery | They go with their importers; stores move to test support in P4; P0.5 comes before P0.3 |
 | Gates that can't be met at their phase; missing infrastructure; harness portability; qualification cost | delivery, re-review | Gates only for eligible flows; infrastructure in P0.1; the portability edit list; run counts and sharding |
-| Ratchet ceilings, `isolation.buildPackages`, DIVERGENCE, app imports of `agent-event-runtime` | delivery | A per-slice ratchet checklist; the bridge in `workspace-runtime`; app import paths in P4 |
+| Ratchet ceilings, `isolation.buildPackages`, DIVERGENCE, app imports of `agent-event-runtime` | delivery | A per-slice ratchet checklist; the cutover in `workspace-runtime`; app import paths in P4 |
 | Claude SDK plugins go through an SDK option; `claude-agent-acp` reads neither folders nor `plugins`; brokered Codex rebuilds its home; Cursor's folder is machine-wide | transports | Profile = format, with delivery per transport; H-4; machine-scoped Cursor |
 | Cursor needs a host per binding, and the SDK has no per-instance setting | transports | A `worker_threads` worker per binding, budgeted |
 | Translators import shared modules and vendor SDKs | transports | `src/translate/` moved unchanged; the transport boundary allows its vendor SDK |

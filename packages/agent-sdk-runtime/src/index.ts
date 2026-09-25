@@ -117,11 +117,7 @@ export type {
 } from "./connection-provider"
 export { defaultSessionModel, resolveSessionModel, resolveTurnSystem } from "./session-model"
 export { renderSessionHandoff } from "./session-handoff"
-export {
-  createMemorySubagentAdmissionStore,
-  createSubagentAdmissionBoundary,
-  UnknownHostSubagentKeyError,
-} from "./subagent-admission"
+export { createMemorySubagentAdmissionStore, createSubagentAdmissionBoundary } from "./subagent-admission"
 export type { AdmittedSubagentObservation, SubagentAdmissionBoundary, SubagentAdmissionStore } from "./subagent-admission"
 export {
   AUTO_LEVEL_ORDER,
