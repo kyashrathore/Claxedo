@@ -23,7 +23,7 @@ async function backend(): Promise<CursorBackend> {
   server.script("conformance", { steps: [{ kind: "text", text: "PICONFORM" }], usage: { inputTokens: 7, outputTokens: 11 } })
   server.defaultScript("conformance")
   return {
-    directory, server, env: { ...process.env, ...egressProxyEnv(guard.url) },
+    execution: "in-process", directory, server, env: { ...process.env, ...egressProxyEnv(guard.url) },
     harness: { id: "cursor", access: "native" }, model: { providerID: "cursor", modelID: "scripted" },
     credentials: { providers: { cursor: { baseUrl: server.url, placeholder: "cursor-conformance-placeholder", authMode: "bearer" } },
       secrets: {}, leaseGeneration: "conformance" },
