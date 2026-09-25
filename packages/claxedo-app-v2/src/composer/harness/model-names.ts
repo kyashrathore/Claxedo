@@ -2,7 +2,7 @@ import { createRoot } from "solid-js"
 import { produce, type SetStoreFunction, type Store } from "solid-js/store"
 import { isRecord } from "@/lib/record"
 import { persistedStore, preferenceKey } from "@/lib/persisted"
-import type { ModelRef } from "./model-visibility"
+import type { ModelChoice } from "@/server"
 
 type NameRecord = Record<string, string>
 
@@ -20,13 +20,13 @@ function namesStore() {
   return shared
 }
 
-const nameKey = (model: ModelRef) => `${model.providerId}:${model.modelId}`
+const nameKey = (model: ModelChoice) => `${model.providerId}:${model.modelId}`
 
 export function useModelNames() {
   const [store, setStore] = namesStore()
   return {
-    name: (model: ModelRef): string | undefined => store[nameKey(model)],
-    remember: (model: ModelRef, name: string) => {
+    name: (model: ModelChoice): string | undefined => store[nameKey(model)],
+    remember: (model: ModelChoice, name: string) => {
       const key = nameKey(model)
       if (store[key] === name && Object.keys(store).at(-1) === key) return
       setStore(

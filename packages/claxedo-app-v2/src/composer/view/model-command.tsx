@@ -3,13 +3,13 @@ import type { useDialog } from "@/ui"
 import type { ModelKey } from "../harness/model-key"
 import { ModelList, type PickerItem } from "./model-list"
 
-export type ModelChoice = {
+export type ModelDialogChoice = {
   readonly items: readonly PickerItem[]
   readonly current: ModelKey | undefined
   readonly choose: (model: ModelKey) => void
 }
 
-export function showModelDialog(dialog: ReturnType<typeof useDialog>, labels: { title: string; connect: string }, choice: ModelChoice, connect: () => void) {
+export function showModelDialog(dialog: ReturnType<typeof useDialog>, labels: { title: string; connect: string }, choice: ModelDialogChoice, connect: () => void) {
   const current = () => choice.items.find((item) => item.id === choice.current?.modelID && item.provider.id === choice.current.providerID)
   dialog.show(() => (
     <Dialog

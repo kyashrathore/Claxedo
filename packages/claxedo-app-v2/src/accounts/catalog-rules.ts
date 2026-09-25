@@ -1,9 +1,8 @@
+import { POPULAR_PROVIDERS } from "@/composer"
 import type { ProviderSource } from "@/server"
 import type { AccountsKey } from "./i18n"
 
 const FULL_CATALOG_LIMIT = 24
-
-const POPULAR_PROVIDERS: readonly string[] = ["opencode", "opencode-go", "anthropic", "github-copilot", "openai", "google", "openrouter", "vercel"]
 
 export const MODELS_PREVIEW_COUNT = 10
 

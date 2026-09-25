@@ -2,17 +2,7 @@ import { type Component, createMemo, Show } from "solid-js"
 import { Tag, List, Tooltip } from "@/ui"
 import { ModelTooltip } from "./model-tooltip"
 import { useComposerText } from "../text"
-
-const popularProviders = [
-  "opencode",
-  "opencode-go",
-  "anthropic",
-  "github-copilot",
-  "openai",
-  "google",
-  "openrouter",
-  "vercel",
-]
+import { POPULAR_PROVIDERS } from "../harness/provider-catalog"
 
 export type PickerItem = {
   id: string
@@ -47,8 +37,8 @@ function comparePickerProviderGroups(
 
   const aProvider = a.items[0]?.provider.id ?? ""
   const bProvider = b.items[0]?.provider.id ?? ""
-  const aRank = popularProviders.indexOf(aProvider)
-  const bRank = popularProviders.indexOf(bProvider)
+  const aRank = POPULAR_PROVIDERS.indexOf(aProvider)
+  const bRank = POPULAR_PROVIDERS.indexOf(bProvider)
   const aPopular = aRank >= 0
   const bPopular = bRank >= 0
   if (aPopular && !bPopular) return -1
