@@ -1,0 +1,57 @@
+{
+  "adapter": "scripted-acp",
+  "initialState": {
+    "client": "scripted-acp",
+    "lastMessageId": null,
+    "assistantTextByMessageId": {},
+    "assistantThinkingByMessageId": {},
+    "status": "idle",
+    "turn": 0,
+    "tools": {}
+  },
+  "calls": [
+    {
+      "state": {
+        "client": "scripted-acp",
+        "lastMessageId": null,
+        "assistantTextByMessageId": {},
+        "assistantThinkingByMessageId": {},
+        "status": "idle",
+        "turn": 0,
+        "tools": {}
+      },
+      "event": {
+        "source": "acp.jsonrpc",
+        "method": "session/update",
+        "payload": {
+          "availableCommands": [
+            {
+              "name": "scripted",
+              "description": "Run a named scripted reply"
+            }
+          ],
+          "sessionUpdate": "available_commands_update"
+        }
+      },
+      "context": {
+        "harness": "scripted-acp",
+        "threadId": "scripted-0fcca9d8-5ac6-4eb5-917a-7e7f4dc90777"
+      },
+      "callbacks": [],
+      "output": {
+        "events": [
+          {
+            "type": "available-commands-update",
+            "commands": [
+              {
+                "name": "scripted",
+                "description": "Run a named scripted reply"
+              }
+            ]
+          }
+        ],
+        "diagnostics": []
+      }
+    }
+  ]
+}

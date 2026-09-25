@@ -10,6 +10,7 @@ import { connectScriptedProviders } from "../harness/scripted-providers"
 import { startStack, type Stack } from "../harness/stack"
 import { directTransport } from "../harness/transport"
 import { assertStoredPartsMatchLive, assertTurnFinished, waitForIdle } from "../harness/turn-observations"
+import { frameSessionId, frameType } from "../harness/stream"
 
 async function acpParts(stack: Stack, api: ClaxedoApi) {
   const directory = (await stack.daemon.makeWorkspace("h1-acp")).directory
@@ -94,6 +95,9 @@ async function modelParts(stack: Stack, api: ClaxedoApi, harness: "pi" | "claude
     assert.ok(stream.frames.some((frame) => JSON.stringify(frame).includes(expectedTodo)), `${harness} todo was not streamed`)
   }
   assert.ok(stack.scripted.requests.some((request) => request.prompt.includes(marker)), `${harness} did not reach the scripted model`)
+  if (harness === "pi") await stream.waitFor((frame) => frameType(frame) === "session.updated" && frameSessionId(frame) === session.id
+    && (frame.data.payload as { properties?: { info?: { titleSource?: string } } }).properties?.info?.titleSource === "harness",
+  { label: "Pi parts turn title" })
   assert.equal((await api.session(directory, session.id)).id, session.id)
   console.log(`H1 ${harness}: scripted model, live text, stored text, finish, and session readback passed`)
 }

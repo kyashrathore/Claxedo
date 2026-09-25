@@ -5,21 +5,19 @@ import { ApiError, ClaxedoApi, type PermissionRow } from "../harness/api"
 import { unexpectedEgress } from "../harness/egress-guard"
 import { refusePermissionReplySave } from "../harness/refuse-permission-save"
 import { startStack } from "../harness/stack"
-import { frameSessionId, frameType } from "../harness/stream"
+import { frameSessionId, frameType, type EventStream } from "../harness/stream"
 
 const HARNESSES = [
   { id: "claude", providerId: "anthropic", modelId: "claude-sonnet-4-5", tool: "Bash", permissionMode: "default" },
   { id: "codex", providerId: "openai", modelId: "gpt-4.1", tool: "exec_command", permissionMode: "workspace-write" },
 ] as const
 
-async function pending(api: ClaxedoApi, directory: string, sessionId: string, diagnostics: () => unknown): Promise<PermissionRow> {
-  const deadline = Date.now() + 30_000
-  do {
-    const request = (await api.permissions(directory)).find((row) => row.sessionID === sessionId)
-    if (request) return request
-    await Bun.sleep(100)
-  } while (Date.now() < deadline)
-  throw new Error(`${sessionId} did not ask permission: ${JSON.stringify(diagnostics())}; messages ${JSON.stringify(await api.messages(directory, sessionId))}`)
+async function pending(api: ClaxedoApi, stream: EventStream, directory: string, sessionId: string, diagnostics: () => unknown): Promise<PermissionRow> {
+  await stream.waitFor((frame) => frameType(frame) === "permission.asked" && frameSessionId(frame) === sessionId,
+    { label: `permission for ${sessionId}`, timeoutMs: 30_000 })
+  const request = (await api.permissions(directory)).find((row) => row.sessionID === sessionId)
+  if (request) return request
+  throw new Error(`${sessionId} did not retain permission after permission.asked: ${JSON.stringify(diagnostics())}; messages ${JSON.stringify(await api.messages(directory, sessionId))}`)
 }
 
 export async function run() {
@@ -39,7 +37,7 @@ export async function run() {
       const session = await api.createSession(directory, { harness: { id: harness.id, access: "native" },
         permissionMode: harness.permissionMode, model: { providerId: harness.providerId, modelId: harness.modelId } })
       await api.promptAsync(directory, session.id, `Run the requested command, then reply with exactly this one token: ${marker}`)
-      const request = await pending(api, directory, session.id, () => ({
+      const request = await pending(api, stream, directory, session.id, () => ({
         counts: stack.scripted.counts(), egress: stack.egress.attempts, log: stack.daemon.log().slice(-3000),
       }))
       assert.ok(stream.frames.some((frame) => frameType(frame) === "permission.asked" && frameSessionId(frame) === session.id))

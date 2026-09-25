@@ -118,6 +118,9 @@ async function piAttachments(stack: Stack, api: ClaxedoApi) {
   assert.match(assistantText(messages), new RegExp(marker))
   const requests = stack.scripted.requests.slice(before)
   assert.ok(requests.some((request) => request.prompt.includes(PNG)), "Pi did not pass image to scripted model")
+  await stream.waitFor((frame) => frameType(frame) === "session.updated" && frameSessionId(frame) === session.id
+    && (frame.data.payload as { properties?: { info?: { titleSource?: string } } }).properties?.info?.titleSource === "harness",
+  { label: "Pi attachment turn title" })
   assert.equal((await api.session(directory, session.id)).id, session.id)
   console.log("H11 Pi: image reached model; text file refusal is live and stored; session readback passed")
 }

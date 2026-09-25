@@ -2,21 +2,19 @@ import assert from "node:assert/strict"
 import { ClaxedoApi, assistantText, type QuestionRow } from "../harness/api"
 import { unexpectedEgress } from "../harness/egress-guard"
 import { startStack } from "../harness/stack"
-import { frameSessionId, frameType } from "../harness/stream"
+import { frameSessionId, frameType, type EventStream } from "../harness/stream"
 
 const NATIVE = [
   { id: "claude", providerId: "anthropic", modelId: "claude-sonnet-4-5", tool: "AskUserQuestion" },
   { id: "codex", providerId: "openai", modelId: "gpt-4.1", tool: "request_user_input" },
 ] as const
 
-async function pending(api: ClaxedoApi, directory: string, sessionId: string): Promise<QuestionRow> {
-  const deadline = Date.now() + 60_000
-  do {
-    const row = (await api.questions(directory)).find((item) => item.sessionID === sessionId)
-    if (row) return row
-    await Bun.sleep(100)
-  } while (Date.now() < deadline)
-  throw new Error(`${sessionId} did not ask a native question`)
+async function pending(api: ClaxedoApi, stream: EventStream, directory: string, sessionId: string): Promise<QuestionRow> {
+  await stream.waitFor((frame) => frameType(frame) === "question.asked" && frameSessionId(frame) === sessionId,
+    { label: `native question for ${sessionId}`, timeoutMs: 60_000 })
+  const row = (await api.questions(directory)).find((item) => item.sessionID === sessionId)
+  assert.ok(row, `${sessionId} did not retain a native question after question.asked`)
+  return row
 }
 
 export async function run() {
@@ -43,7 +41,7 @@ export async function run() {
       const session = await api.createSession(directory, { harness: { id: harness.id, access: "native" },
         model: { providerId: harness.providerId, modelId: harness.modelId } })
       await api.promptAsync(directory, session.id, `Ask the questions, then reply with exactly this one token: ${marker}`)
-      const row = await pending(api, directory, session.id)
+      const row = await pending(api, stream, directory, session.id)
       assert.ok(stream.frames.some((frame) => frameType(frame) === "question.asked" && frameSessionId(frame) === session.id))
       await api.replyQuestion(directory, row.id, [["Staging"], ["Keep the test isolated"]])
       await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id,

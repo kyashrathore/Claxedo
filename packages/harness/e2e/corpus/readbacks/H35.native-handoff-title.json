@@ -1,0 +1,26 @@
+{
+  "flow": "H35.native-handoff",
+  "difference": "$.observations.20.body.title and titleSource",
+  "recorded": {
+    "method": "GET",
+    "route": "/session/<id:http:12:1>?directory=<workspace:http:0:1>",
+    "status": 200,
+    "body": {
+      "id": "<id:http:12:1>",
+      "title": "Say H35CODEXSOURCE",
+      "titleSource": "user",
+      "status": "idle"
+    }
+  },
+  "observed": {
+    "method": "GET",
+    "route": "/session/<id:http:12:1>?directory=<workspace:http:0:1>",
+    "status": 200,
+    "body": {
+      "id": "<id:http:12:1>",
+      "title": "Scripted Session",
+      "titleSource": "harness",
+      "status": "idle"
+    }
+  }
+}
