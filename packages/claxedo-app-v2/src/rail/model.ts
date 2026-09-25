@@ -1,5 +1,5 @@
 import { formatCompactAge } from "@/lib/relative-time"
-import type { MachineId, Placement, ProjectId } from "@/server"
+import type { MachineId, Placement, ProjectId, SessionId, SessionRef } from "@/server"
 import type { SessionRowView } from "@/session"
 import type { TerminalItem } from "@/terminal"
 
@@ -38,33 +38,29 @@ export function sessionAge(row: SessionRowView, now: number): string {
   return formatCompactAge(row.createdAt || row.updatedAt, now) ?? "<1m"
 }
 
-export function rowsByProject(rows: readonly SessionRowView[]): ReadonlyMap<ProjectId, readonly SessionRowView[]> {
-  const grouped = new Map<ProjectId, SessionRowView[]>()
-  for (const row of rows) {
-    if (row.archivedAt !== undefined || row.parentSessionId !== undefined) continue
-    const group = grouped.get(row.ref.projectId)
-    if (group) group.push(row)
-    else grouped.set(row.ref.projectId, [row])
+export function sessionIdsByProject(refs: readonly SessionRef[]): ReadonlyMap<ProjectId, readonly SessionId[]> {
+  const grouped = new Map<ProjectId, SessionId[]>()
+  for (const ref of refs) {
+    const group = grouped.get(ref.projectId)
+    if (group) group.push(ref.sessionId)
+    else grouped.set(ref.projectId, [ref.sessionId])
   }
   return grouped
 }
 
-export function siblingAfterArchive(rows: readonly SessionRowView[], archived: SessionRowView): SessionRowView | undefined {
-  const index = rows.findIndex((row) => row.ref.sessionId === archived.ref.sessionId)
+export function siblingAfterArchive(sessionIds: readonly SessionId[], archived: SessionId): SessionId | undefined {
+  const index = sessionIds.indexOf(archived)
   if (index === -1) return undefined
-  return rows[index + 1] ?? rows[index - 1]
+  return sessionIds[index + 1] ?? sessionIds[index - 1]
 }
 
 export type RailRow =
   | { readonly kind: "terminal"; readonly key: string; readonly terminal: TerminalItem }
   | { readonly kind: "session"; readonly key: string; readonly session: SessionRowView }
 
-export function railRows(terminals: readonly TerminalItem[], sessions: readonly SessionRowView[]): readonly RailRow[] {
-  return [
-    ...terminals.map((terminal): RailRow => ({ kind: "terminal", key: `terminal:${terminal.placementId}:${terminal.terminalId}`, terminal })),
-    ...sessions.map((session): RailRow => ({ kind: "session", key: `session:${session.ref.sessionId}`, session })),
-  ]
-}
+export const terminalRowKey = (terminal: TerminalItem) => `terminal:${terminal.placementId}:${terminal.terminalId}`
+
+export const sessionRowKey = (sessionId: SessionId) => `session:${sessionId}`
 
 export type SessionMarkerKind = "cloud" | "machine" | "worktree"
 

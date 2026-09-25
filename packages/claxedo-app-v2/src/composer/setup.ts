@@ -25,6 +25,7 @@ export type ComposerProps = {
   readonly sessionHarness?: string
   readonly attachmentWorkspace: boolean
   readonly readOnly?: boolean
+  readonly hidden?: boolean
   readonly createSession?: (submission: Submission) => Promise<SessionView>
   readonly afterAccepted?: (view: SessionView) => void
   readonly queuedEdit?: { readonly active: () => boolean; readonly cancel: () => void; readonly replace: (input: PromptInput) => Promise<boolean> }
@@ -85,7 +86,7 @@ function createReaderFor(input: {
     key: input.key,
     store: input.store,
     editor: input.refs.editor,
-    zone: () => input.props.dropZone?.() ?? input.refs.root(),
+    zone: () => (input.props.hidden ? undefined : (input.props.dropZone?.() ?? input.refs.root())),
     isDialogActive: () => !!dialog.active,
     target: () => {
       const current = input.selection.harness()
@@ -142,7 +143,7 @@ export function createComposer(props: ComposerProps) {
   props.registerRecovery?.(
     createRecovery({ store, key, controller: selection.controller, scopeInput: selection.scopeInput, send: () => send.send(), dialog: useDialog(), t }),
   )
-  registerComposerCommands({ key, harness: selection, controller, refs, send, goalAvailable, t })
+  registerComposerCommands({ key, harness: selection, controller, refs, send, goalAvailable, hidden: () => props.hidden === true, t })
   createEffect(() => setQuery(controller.suggestionQuery()))
   const draft = () => store.draft(key())
   const shared = { t, key, store, refs, send, reader, suggestions, controller, dragging, draft, working, goalAvailable }

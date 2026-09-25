@@ -74,11 +74,9 @@ function WorkspacePanel(): JSX.Element {
         <PanelHeader />
       </div>
       <div class="relative min-h-0 flex-1">
-        <Show when={exposed()}>
-          <div data-testid="workspace-panel-body" class="absolute inset-0 overflow-auto">
-            <PanelBody />
-          </div>
-        </Show>
+        <div data-testid="workspace-panel-body" class="absolute inset-0 overflow-auto">
+          <PanelBody tabsShown={exposed()} />
+        </div>
       </div>
     </aside>
   )

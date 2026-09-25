@@ -1,5 +1,5 @@
 import { machine, type Machine } from "@/lib/machine"
-import { listsSessions, type PlacementId, type Server, type SessionRow, type SessionStatusRead } from "@/server"
+import { listsSessions, type AppError, type PlacementId, type Server, type SessionRow, type SessionStatusRead } from "@/server"
 import { toAppError, type RequestsInternal } from "../requests"
 import { unreadPlacementsOf } from "./statuses"
 import {
@@ -12,6 +12,7 @@ import {
   type ListEvent,
   type ListState,
   type RereadMode,
+  listedRows,
 } from "./model"
 
 const PAGE_SIZE = 5
@@ -71,15 +72,40 @@ function afterRead(context: ReadContext): void {
   void reread(context, waiting.mode)
 }
 
-async function fetchFirst(context: ReadContext): Promise<void> {
+type StatusesResult = { readonly kind: "read"; readonly read: SessionStatusRead } | { readonly kind: "failed"; readonly error: AppError }
+
+type PendingStatuses = { readonly result: Promise<StatusesResult>; readonly sentAt: number }
+
+function landStatuses(context: ReadContext, result: StatusesResult, sentAt: number): void {
+  if (result.kind === "failed") return console.warn("The sessions' statuses could not be read", result.error)
+  const rows = listedRows(context.list.state())
+  readRequests(context.requests, rows, result.read, sentAt)
+  context.list.send({ type: "statusesFetched", read: result.read, sentAt, rows })
+}
+
+async function fetchFirstRows(context: ReadContext): Promise<PendingStatuses | undefined> {
   const { send } = context.list
   send({ type: "fetchStarted" })
   try {
-    send({ type: "fetched", window: await readWindow(context, await firstPageTargets(context), true) })
+    const targets = await firstPageTargets(context)
+    const sentAt = Date.now()
+    const result = context.server.sessions.statuses().then(
+      (read): StatusesResult => ({ kind: "read", read }),
+      (cause): StatusesResult => ({ kind: "failed", error: toAppError(cause) }),
+    )
+    const pages = await Promise.all(targets.map((target) => readPage(context, target)))
+    send({ type: "fetched", window: { pages, sentAt, statuses: undefined } })
+    return { result, sentAt }
   } catch (cause) {
     send({ type: "fetchFailed", error: toAppError(cause) })
+    return undefined
   }
+}
+
+async function fetchFirst(context: ReadContext): Promise<void> {
+  const statuses = await fetchFirstRows(context)
   afterRead(context)
+  if (statuses) landStatuses(context, await statuses.result, statuses.sentAt)
 }
 
 function nextPageTargets(state: ListState, placementIds: readonly PlacementId[]): PageTarget[] {

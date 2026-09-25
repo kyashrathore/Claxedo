@@ -1,6 +1,6 @@
 import type { PluginApi, SessionAttachment, SessionRef, SessionStatus } from "@claxedo/plugin-api"
 import { uuid } from "@/lib/uuid"
-import type { Placement, PromptAttachment } from "@/server"
+import { sessionId, type Placement, type PromptAttachment } from "@/server"
 import type { SessionRowView } from "@/session"
 import { sessionPath } from "@/shell"
 import { currentProjectId, PluginEntryError, type BindingScope } from "./services"
@@ -32,7 +32,7 @@ function placementFor(scope: BindingScope, projectId: string): Placement {
 }
 
 function rowOf(scope: BindingScope, ref: SessionRef): SessionRowView | undefined {
-  return scope.services.sessions.list.rows().find((row) => row.ref.sessionId === ref.sessionId)
+  return scope.services.sessions.list.view(sessionId(ref.sessionId))
 }
 
 export function sessionStatusOf(row: SessionRowView | undefined): SessionStatus {

@@ -1,4 +1,4 @@
-import { createMemo } from "solid-js"
+import { createMemo, type Accessor } from "solid-js"
 import { machine, type Machine } from "@/lib/machine"
 import { uuid } from "@/lib/uuid"
 import {
@@ -16,9 +16,10 @@ import {
 import type { LoadMoreState, SessionList, SessionListState, SessionStatusView } from "@/session"
 import { toAppError, type RequestsInternal } from "../requests"
 import { hasMorePages, initialListState, type ListEvent, type ListState } from "./model"
+import { createKeyedReads } from "./keyed-reads"
 import { createListReads, type ListReads } from "./reads"
 import { transition } from "./transition"
-import { createRowViewCache, UNKNOWN_STATUS, visibleRows } from "./visible-rows"
+import { createRowViewCache, rowViews, UNKNOWN_STATUS, visibleOrder } from "./visible-rows"
 
 export type SessionListInternal = SessionList & {
   readonly start: () => void
@@ -96,27 +97,39 @@ function applyServerEvent(list: Machine<ListState, ListEvent>, reads: ListReads,
   }
 }
 
-function rowOf(state: ListState, sessionId: SessionId): SessionRow | undefined {
-  const entry = state.entries.get(sessionId)
-  return entry && entry.kind !== "tombstone" ? entry.row : undefined
+function createRowReads(state: Accessor<ListState>, requests: RequestsInternal, windows: Accessor<ListState["windows"]>) {
+  const cache = createRowViewCache()
+  const entries = createMemo(() => state().entries)
+  const statuses = createMemo(() => state().statuses)
+  const order = createMemo(() => visibleOrder({ entries: entries(), windows: windows() }))
+  const views = createMemo(() => rowViews({ order: order(), data: { entries: entries(), statuses: statuses() }, openRequests: requests.openBySession(), cache }))
+  const entryOf = createKeyedReads(entries)
+  const statusOf = createKeyedReads(statuses)
+  return {
+    order,
+    view: createKeyedReads(views),
+    rowOf: (sessionId: SessionId) => {
+      const entry = entryOf(sessionId)
+      return entry && entry.kind !== "tombstone" ? entry.row : undefined
+    },
+    statusOf: (sessionId: SessionId) => statusOf(sessionId)?.status ?? UNKNOWN_STATUS,
+  }
 }
 
 export function createSessionList(server: Server, requests: RequestsInternal): SessionListInternal {
   const list = machine(initialListState, transition)
   const reads = createListReads(server, requests, list)
-  const cache = createRowViewCache()
   const { state, send } = list
+  const windows = createMemo(() => state().windows)
   return {
+    ...createRowReads(state, requests, windows),
     state: createMemo(() => publicState(state())),
-    rows: createMemo(() => visibleRows(state(), requests.openBySession(), cache)),
-    hasMore: (placementIds) => hasMorePages(state(), placementIds),
+    hasMore: (placementIds) => hasMorePages(windows(), placementIds),
     moreState: createMemo(() => moreState(state())),
     loadMore: reads.loadMore,
     reload: () => reads.reread("replace"),
     create: (input) => createSession(server, list, input),
     start: () => void reads.fetchFirst(),
-    rowOf: (sessionId) => rowOf(state(), sessionId),
-    statusOf: (sessionId) => state().statuses.get(sessionId)?.status ?? UNKNOWN_STATUS,
     apply: (event) => applyServerEvent(list, reads, event),
     readRow: (row) => send({ type: "rowRead", row }),
     readStatus: (ref, status, sentAt) => send({ type: "statusRead", ref, status, sentAt }),

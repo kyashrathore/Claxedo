@@ -1,5 +1,5 @@
 import type { Accessor } from "solid-js"
-import { settingsPath, useCommands, useShellRoute } from "@/shell"
+import { settingsPath, useCommands, useShellRoute, type CommandOption } from "@/shell"
 import { useDialog } from "@/ui"
 import type { ComposerHarness } from "./composer-harness"
 import type { ComposerController } from "./controller"
@@ -18,16 +18,20 @@ type CommandsInput = {
   readonly refs: ComposerRefs
   readonly send: ReturnType<typeof createComposerSend>
   readonly goalAvailable: Accessor<boolean>
+  readonly hidden: Accessor<boolean>
   readonly t: ReturnType<typeof useComposerText>
 }
+
+type Register = (scope: string, options: () => CommandOption[]) => void
 
 /** The composer's palette and slash commands: choose a model, attach a file, shell and normal mode, goal. */
 export function registerComposerCommands(input: CommandsInput) {
   const commands = useCommands()
-  registerModelChooser(input, commands)
+  const register: Register = (scope, options) => commands.register(scope, () => (input.hidden() ? [] : options()))
+  registerModelChooser(input, register)
   const { t, controller } = input
   registerPromptModeCommands({
-    register: (scope, options) => commands.register(scope, options),
+    register,
     mode: () => controller.state.mode,
     pick: () => input.refs.fileInput()?.click(),
     setMode: controller.setMode,
@@ -44,11 +48,11 @@ export function registerComposerCommands(input: CommandsInput) {
   })
 }
 
-function registerModelChooser({ key, harness, t }: CommandsInput, commands: ReturnType<typeof useCommands>) {
+function registerModelChooser({ key, harness, t }: CommandsInput, register: Register) {
   const dialog = useDialog()
   const routing = useShellRoute()
   registerModelCommand({
-    register: (scope, options) => commands.register(scope, options),
+    register,
     available: () => !!harness.selection().harness,
     open: () => {
       const scope = key()

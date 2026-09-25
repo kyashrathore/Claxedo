@@ -231,3 +231,8 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - History is routed by placement kind: control plane for cloud, relay for machines, local runtime for local.
 - Terminals only for live placements.
 - The plan is `docs/plans/2026-09-25-002-session-sources-plan.md`.
+
+## Owner, 2026-09-25 18:40: the account credential stays behind AccountPort
+- The signed desktop's merged session list reads the control plane through AccountPort: Electron main owns the credential and runs only named operations (`session.list` added to the closed set).
+- The daemon never receives the user's bearer.
+- Machine row publishing (S2) uses the machine's Host Tunnel Token, scoped to the workspaces still assigned to that host. That's a machine credential, not the user's.
