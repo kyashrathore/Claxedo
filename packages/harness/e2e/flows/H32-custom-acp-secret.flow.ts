@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto"
 import { ClaxedoApi, ApiError, assistantText } from "../harness/api"
 import { scriptedAcpConnection } from "../harness/acp/connection"
 import { acpScriptToken } from "../harness/acp/script"
-import { cloudSessionTransport, cloudTransport, createCloudWorkspace, waitCloudConnection, reachCloudRuntime } from "../harness/cloud-workspace"
+import { cloudSessionTransport, cloudTransport, createCloudWorkspace, waitCloudConnection } from "../harness/cloud-workspace"
 import { startStack } from "../harness/stack"
 import { frameType, openEventStream } from "../harness/stream"
 import { sendJson } from "../harness/transport"
@@ -29,20 +29,20 @@ export async function run() {
     const connection = await waitCloudConnection(stack, workspace.id)
     assert.equal(connection.status, 200, `Cloud connection: ${connection.body}`)
     const api = new ClaxedoApi(stack.url, cloudSessionTransport(stack, workspace.id), { reserveSessions: true })
-    const stream = await reachCloudRuntime(openEventStream(stack.url, workspace.directory, {
+    const stream = await openEventStream(stack.url, workspace.directory, {
       relayWorkspaceId: workspace.id,
       authorization: `Bearer ${stack.daemon.cloudToken}`,
-    }))
+    })
     try {
       let session: Awaited<ReturnType<typeof api.createSession>>
       try {
         session = await api.createSession(workspace.directory, { harness: { id: connectionId, access: "connection" } })
       } catch (error) {
+        if (error instanceof ApiError && /not configured|connection.*not found|unknown connection/i.test(error.body)) {
+          throw new Error(`C-4: custom ACP connection was absent from the cloud sandbox: ${error.body}`, { cause: error })
+        }
         if (error instanceof ApiError && /unavailable|secret|credential/i.test(error.body)) {
           throw new Error(`C-10: sandbox runtime could not lease the custom ACP secret: ${error.body}`, { cause: error })
-        }
-        if (error instanceof ApiError && /connection|harness/i.test(error.body)) {
-          throw new Error(`C-4: custom ACP connection was absent from the cloud sandbox: ${error.body}`, { cause: error })
         }
         throw error
       }
