@@ -361,7 +361,6 @@ function renderMermaidBlocks(root: HTMLElement) {
       traceMermaid("defer", source)
       wrapper.setAttribute("data-mermaid-state", "deferred")
       wrapper.querySelector('[data-slot="mermaid-diagram"]')?.remove()
-      wrapper.querySelector('[data-slot="mermaid-view-button"]')?.remove()
       const existing = wrapper.querySelector<HTMLElement>('[data-slot="mermaid-render-button"]')
       if (existing?.dataset.mermaidSource !== source) {
         existing?.remove()

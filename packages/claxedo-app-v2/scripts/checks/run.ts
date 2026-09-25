@@ -28,6 +28,7 @@ async function main(): Promise<never> {
   const typechecks: Step[] = [
     { name: "typecheck", command: ["bun", "run", "typecheck"] },
     { name: "typecheck checks", command: [join(packageRoot, "node_modules/.bin/tsgo"), "--noEmit", "-p", "scripts/checks/tsconfig.json"] },
+    { name: "typecheck codemods", command: [join(packageRoot, "node_modules/.bin/tsgo"), "--noEmit", "-p", "scripts/codemods/tsconfig.json"] },
     { name: "unit tests", command: ["bun", "test", "src"] },
   ]
   const outcomes: Outcome[] = []
