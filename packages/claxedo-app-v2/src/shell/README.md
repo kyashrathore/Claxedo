@@ -72,6 +72,10 @@ Rules in those sheets that code cannot explain:
 
 `AuthProvider` → registries → `I18nProvider` → `ThemeProvider` → `ShellRouter` → the server scope → `AppShell`. The server scope (`ServerProvider`, `SessionStoresProvider`, projects' `ProjectListProvider`, `DialogProvider`) is keyed by the signed-in user: signed in, `createServer` gets a bearer token source from `useAuth().token`; signed out, expired or signing in, no auth. Only a change of user rebuilds it, so a token refresh does not. `App` takes an optional `router` (for example `MemoryRouter` for a `file://` renderer; the default is the history router) and an optional `serverUrl` (the desktop's embedded server, known only at runtime; without it `createServer` uses the build's `VITE_CLAXEDO_SERVER_URL` or the page origin).
 
+## Sign-in (`sign-in-gate.ts`)
+
+On a server that issues sessions (`capabilities.signedIn`, from the bootstrap's `deployment.issuesSessions`), a reader who is signed out or whose session expired is sent to `/login` with the URL replaced, as today's app does, and nothing of the shell renders; the original URL is not kept, as today. While sign-in settles the splash holds. A server that issues no sessions, or one whose bootstrap has not been read, never redirects.
+
 ## Home (`home-redirect.tsx`)
 
 `/` is never a screen of its own, as in today's app. When the projects list has loaded and is empty (`onboardingNeeded`), the shell replaces the URL with the onboarding screen; loading and failed lists never redirect. Otherwise it replaces `/` with the draft of the active workspace: the placement of the restored focused pane, else the folder placement of the first project `useProjectList()` lists.
