@@ -11,7 +11,7 @@
  * variants and cost, which that catalog reads from here.
  */
 import { engineRead } from "./engine-read"
-import type { OpenCodeHost } from "./host"
+import { openCodeLocationClient, type OpenCodeHost } from "./host"
 import type { WorkspaceScope } from "./scope"
 import { arr, rec, str } from "../json-value"
 
@@ -66,7 +66,7 @@ function rows(response: unknown): readonly Record<string, unknown>[] {
 export function createCatalogPort(host: OpenCodeHost): OpenCodeCatalogPort {
   return {
     async agents(scope) {
-      const client = await host.client()
+      const client = await openCodeLocationClient(host, scope.directory)
       const response = await engineRead("agent.list", scope, () => client.agent.list({ location: { directory: scope.directory } }))
       return rows(response).map((row) => {
         const model = modelRef(row.model)
@@ -81,7 +81,7 @@ export function createCatalogPort(host: OpenCodeHost): OpenCodeCatalogPort {
     },
 
     async commands(scope) {
-      const client = await host.client()
+      const client = await openCodeLocationClient(host, scope.directory)
       const response = await engineRead("command.list", scope, () => client.command.list({ location: { directory: scope.directory } }))
       return rows(response).map((row) => {
         const model = modelRef(row.model)
@@ -95,7 +95,7 @@ export function createCatalogPort(host: OpenCodeHost): OpenCodeCatalogPort {
     },
 
     async models(scope) {
-      const client = await host.client()
+      const client = await openCodeLocationClient(host, scope.directory)
       const response = await engineRead("model.list", scope, () => client.model.list({ location: { directory: scope.directory } }))
       return rows(response).flatMap((row) => {
         const ref = modelRef(row)
