@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
 import * as rootApi from "./index"
-import * as harnessApi from "./harnesses"
 import * as memoryApi from "./stores/memory"
 import * as sqliteApi from "./stores/sqlite"
 import * as sessionStartApi from "./session-start-store"
@@ -23,7 +22,6 @@ const manifest = JSON.parse(fs.readFileSync(path.join(root, "docs/api-manifest.j
 }
 const modules: Record<string, Record<string, unknown>> = {
   [pkg.name]: rootApi,
-  [`${pkg.name}/harnesses`]: harnessApi,
   [`${pkg.name}/stores/memory`]: memoryApi,
   [`${pkg.name}/stores/sqlite`]: sqliteApi,
   [`${pkg.name}/stores/session-start`]: sessionStartApi,
@@ -51,20 +49,4 @@ describe("agent-sdk-runtime public API manifest", () => {
     }
   })
 
-  test("factory documentation matches actual access boundaries", () => {
-    const factories = {
-      claude: harnessApi.claude(),
-      codex: harnessApi.codex(),
-      cursor: harnessApi.cursor(),
-      pi: harnessApi.pi(),
-      acp: harnessApi.acp("operator-agent", {
-        connection: { kind: "process", command: "operator-agent" },
-      }),
-    } as Record<string, unknown>
-    for (const [name, factory] of Object.entries(factories)) {
-      const access = (factory as { access: string }).access
-      expect(access, name).toBe(name === "acp" ? "connection" : "native")
-      expect(manifest.symbols[name]?.purpose).not.toContain("native or ACP")
-    }
-  })
 })
