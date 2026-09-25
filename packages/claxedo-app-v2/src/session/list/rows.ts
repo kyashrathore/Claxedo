@@ -78,9 +78,17 @@ function withWindows<S extends ListData>(data: S, window: FetchedWindow, change:
   const windows = new Map(data.windows)
   change(windows)
   const failures = new Map(data.failures)
-  for (const page of window.pages) failures.delete(page.projectId)
-  for (const failed of window.failures) failures.set(failed.projectId, failed.error)
-  return { ...data, windows, failures }
+  const degraded = new Set(data.degraded)
+  for (const page of window.pages) {
+    failures.delete(page.projectId)
+    if (page.degraded) degraded.add(page.projectId)
+    else degraded.delete(page.projectId)
+  }
+  for (const failed of window.failures) {
+    failures.set(failed.projectId, failed.error)
+    degraded.delete(failed.projectId)
+  }
+  return { ...data, windows, failures, degraded }
 }
 
 function mergePages<S extends ListData>(data: S, window: FetchedWindow): S {

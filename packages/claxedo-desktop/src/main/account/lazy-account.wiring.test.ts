@@ -19,7 +19,7 @@ describe("lazy account production wiring", () => {
 
   test("restored account state does not gate the local renderer", () => {
     const ready = main.indexOf("void account.ready.catch")
-    const initialize = main.indexOf("await initialize()", ready)
+    const initialize = main.indexOf("await initialize(", ready)
     expect(ready).toBeGreaterThan(-1)
     expect(initialize).toBeGreaterThan(ready)
     expect(main).not.toContain("await account.ready")

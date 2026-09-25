@@ -1,6 +1,6 @@
 import { authFetch, getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
 import { signedAccountRun } from "@/platform/account/hosted-control-call"
-import { decodeHostedResult } from "@/platform/account/hosted-operations"
+import { decodeHostedResult } from "@claxedo/account-contract"
 import { localWorkspaceAssociationId, workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"

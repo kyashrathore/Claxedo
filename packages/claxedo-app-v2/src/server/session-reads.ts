@@ -5,43 +5,14 @@ import { sessionEndpoint, type SessionContext } from "./session-context"
 import { NO_GOAL, readGoalState } from "./session-goal"
 import { readRequests } from "./session-requests"
 import { withQuery, type RuntimeRoute } from "./transport"
-import type { ListedStatus, SessionListInput, SessionPage, SessionReads, SessionRef, SessionRow, SessionStatus, SessionSurface, Todo, TranscriptPage } from "./types"
-import type { SessionId } from "./ids"
+import type { SessionReads, SessionRef, SessionStatus, SessionSurface, Todo, TranscriptPage } from "./types"
 import type { SessionHome } from "./workspaces"
 import { isWorkspaceStopped } from "./wire/connection"
-import { listedStatusFromListItem, sessionRowFromListItem, sessionRowFromSession } from "./wire/session-row"
+import { sessionRowFromSession } from "./wire/session-row"
 import { OLDER_CURSOR_HEADER, transcriptPageFromWire } from "./wire/transcript"
 
 const OLDER_PAGE_SIZE = 50
 const STOPPED_STATUS: SessionStatus = { kind: "idle" }
-
-async function listedOf(context: SessionContext, items: readonly unknown[]) {
-  const { address } = context.workspaces
-  const rows: SessionRow[] = []
-  const statuses = new Map<SessionId, ListedStatus>()
-  for (const item of items) {
-    let row = sessionRowFromListItem(item, address)
-    const directory = (item as { directory?: unknown }).directory
-    if (!row && typeof directory === "string") {
-      await context.workspaces.learn(directory)
-      row = sessionRowFromListItem(item, address)
-    }
-    if (!row) continue
-    rows.push(row)
-    const listed = listedStatusFromListItem(item)
-    if (listed) statuses.set(row.ref.sessionId, { ...listed, status: context.status.listed(row.ref, listed.status) })
-  }
-  return { rows, statuses }
-}
-
-export async function listSessions(context: SessionContext, options: SessionListInput): Promise<SessionPage> {
-  const { transport } = context
-  const listPath = transport.loopback ? "/api/claxedo/session-list" : "/api/control/session-list"
-  const query = { scope: "project", projectId: options.projectId, sort: "human_turn_desc", limit: options.limit, after: options.after }
-  const body = await transport.json<{ items?: unknown; nextAfter?: unknown }>(withQuery(listPath, query))
-  const listed = await listedOf(context, Array.isArray(body.items) ? body.items : [])
-  return { ...listed, ...(typeof body.nextAfter === "string" ? { nextAfter: body.nextAfter } : {}) }
-}
 
 export async function onRuntime<T>(
   context: SessionContext,

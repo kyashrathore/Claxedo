@@ -3,6 +3,7 @@ import type { DiffScope, FileSearchEntries } from "./git-types"
 
 export const queryKeys = {
   bootstrap: (server: string) => ["server", server, "bootstrap"] as const,
+  accountCatalog: (server: string) => ["server", server, "account-catalog"] as const,
   projects: (server: string) => ["server", server, "projects"] as const,
   project: (server: string, id: ProjectId) => ["server", server, "projects", id] as const,
   placements: (server: string) => ["server", server, "placements"] as const,

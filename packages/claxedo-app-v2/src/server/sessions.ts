@@ -7,7 +7,9 @@ import { controlGoal, startGoal } from "./session-goal"
 import { createSessionQueue } from "./session-queue"
 import { readLatestTurn } from "./latest-turn"
 import { readTurn } from "./turn"
-import { onRuntime, listSessions, readOlder, readSession } from "./session-reads"
+import { listSessions } from "./session-list"
+import { onRuntime, readOlder, readSession } from "./session-reads"
+import type { HostedAccount } from "./account"
 import { stopTurn } from "./session-stop"
 import type { StatusOwner } from "./status"
 import { jsonInit, withQuery, type Transport } from "./transport"
@@ -77,8 +79,8 @@ async function patchSession(context: SessionContext, ref: SessionRef, patch: Rec
   await context.transport.runtimeJson<unknown>(await context.workspaces.route(ref), sessionEndpoint(ref), jsonInit("PATCH", patch))
 }
 
-export function createSessionsApi(transport: Transport, workspaces: Workspaces, status: StatusOwner, wakes: WorkspaceWakes, projection: SessionProjection): SessionsApi {
-  const context: SessionContext = { transport, workspaces, status }
+export function createSessionsApi(transport: Transport, workspaces: Workspaces, status: StatusOwner, wakes: WorkspaceWakes, projection: SessionProjection, account?: HostedAccount): SessionsApi {
+  const context: SessionContext = { transport, workspaces, status, ...(account ? { account } : {}) }
   const newMessageId = createMessageIds()
   return {
     list: (options) => listSessions(context, options),

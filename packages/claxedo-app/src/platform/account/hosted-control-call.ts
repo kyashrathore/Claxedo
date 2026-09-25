@@ -1,6 +1,6 @@
-import type { HostedOperationName } from "./account-port"
+import type { HostedOperationName } from "@claxedo/account-contract"
 import type { AccountBridge } from "./electron-account-port"
-import { decodeHostedResult, type DecodedHostedResult } from "./hosted-operations"
+import { decodeHostedResult, type DecodedHostedResult } from "@claxedo/account-contract"
 import { hasBridgeMembers, preloadAccountBridge } from "./preload-bridge"
 import { readField, readString } from "@/lib/record"
 import { errorMessage } from "@/lib/server-errors"

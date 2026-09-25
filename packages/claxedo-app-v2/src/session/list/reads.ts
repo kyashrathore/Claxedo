@@ -33,7 +33,7 @@ type PageTarget = { readonly projectId: ProjectId; readonly after?: string }
 
 async function readPage(context: ReadContext, target: PageTarget): Promise<FetchedPage> {
   const page = await context.server.sessions.list({ projectId: target.projectId, after: target.after, limit: PAGE_SIZE })
-  return { projectId: target.projectId, rows: page.rows, statuses: page.statuses, nextAfter: page.nextAfter }
+  return { projectId: target.projectId, rows: page.rows, statuses: page.statuses, nextAfter: page.nextAfter, degraded: page.degraded === true }
 }
 
 async function firstPageTargets(context: ReadContext): Promise<PageTarget[]> {

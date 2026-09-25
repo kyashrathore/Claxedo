@@ -18,7 +18,7 @@ function SignedOut() {
   const t = useTranslator(accessDictionary)
   const auth = useAuth()
   const server = useServer()
-  const offered = () => server.capabilities()?.signedIn === true && auth.unavailable() === null
+  const offered = () => auth.offered(server.capabilities()?.signedIn === true)
   const signIn = () =>
     void auth.signIn({ redirectUrl: window.location.href }).catch((error: unknown) => {
       showToast({ title: t("access.org.signInFailed"), description: error instanceof Error ? error.message : String(error) })

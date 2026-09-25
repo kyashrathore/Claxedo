@@ -1,4 +1,5 @@
-import { browserAuthAdapter } from "#browser-auth-adapter"
+import { accountBinding } from "#account-binding"
+import type { RunHostedOperation } from "@claxedo/account-contract"
 import { createMemo, onCleanup, Show, type JSX, type ParentProps } from "solid-js"
 import { AuthProvider, useAuth, type Auth, type AuthState } from "@/auth"
 import { I18nProvider } from "@/i18n"
@@ -19,13 +20,17 @@ function principalOf(state: AuthState): string | undefined {
   return state.kind === "signedIn" ? state.user.id : undefined
 }
 
-function authSource(auth: Auth, principal: string | undefined): AuthSource {
-  if (principal === undefined) return { kind: "none" }
-  return { kind: "bearer", token: async (options) => (await auth.token({ skipCache: options?.fresh })) ?? undefined }
+type ServerAccess = { readonly auth: AuthSource; readonly account?: RunHostedOperation }
+
+function serverAccess(auth: Auth, principal: string | undefined): ServerAccess {
+  if (principal === undefined) return { auth: { kind: "none" } }
+  const access = auth.controlPlane
+  if (access.kind === "port") return { auth: { kind: "none" }, account: access.run }
+  return { auth: { kind: "bearer", token: async (options) => (await access.token({ skipCache: options?.fresh })) ?? undefined } }
 }
 
-function ServerScope(props: ParentProps<{ readonly auth: AuthSource; readonly serverUrl?: string }>): JSX.Element {
-  const server = createServer({ serverUrl: props.serverUrl, auth: props.auth })
+function ServerScope(props: ParentProps<{ readonly access: ServerAccess; readonly serverUrl?: string }>): JSX.Element {
+  const server = createServer({ serverUrl: props.serverUrl, ...props.access })
   return (
     <ServerProvider server={server}>
       <SessionStoresProvider>
@@ -48,7 +53,7 @@ function SignedServer(props: ParentProps<{ readonly serverUrl?: string }>): JSX.
   return (
     <Show when={{ principal: principal() }} keyed>
       {(scope) => (
-        <ServerScope auth={authSource(auth, scope.principal)} serverUrl={props.serverUrl}>
+        <ServerScope access={serverAccess(auth, scope.principal)} serverUrl={props.serverUrl}>
           {props.children}
         </ServerScope>
       )}
@@ -60,7 +65,7 @@ export function App(props: AppProps): JSX.Element {
   onCleanup(mountSpriteShelf(document.body))
   const registries = createShellRegistries(firstParty)
   return (
-    <AuthProvider adapter={browserAuthAdapter}>
+    <AuthProvider binding={accountBinding}>
       <ShellRegistriesContext.Provider value={registries}>
         <I18nProvider>
           <ThemeProvider defaultTheme="codex" onThemeApplied={syncIconLibraryWithTheme}>

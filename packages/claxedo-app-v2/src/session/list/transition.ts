@@ -28,6 +28,7 @@ function data(state: ListState): ListData {
     open: state.open,
     windows: state.windows,
     failures: state.failures,
+    degraded: state.degraded,
   }
 }
 

@@ -6,9 +6,6 @@ import {
   isSafeOperation,
 } from "./hosted-operations"
 
-// Decoder behavior belongs here. Architecture/account-port.guard.test.ts holds
-// the port, main route table, decoder registry and reviewed matrix in agreement.
-
 describe("decodeHostedResult", () => {
   test("requires the complete session People capability envelope", () => {
     expect(decodeHostedResult("session.shares.list", {
@@ -166,6 +163,17 @@ describe("decodeHostedResult", () => {
     expect(decodeHostedResult("workspace.resolve", null)).toBe(null as never)
     expect(decodeHostedResult("workspace.resolve", { workspaceId: "ws_1" })).toEqual({ workspaceId: "ws_1" })
     expect(() => decodeHostedResult("workspace.resolve", [])).toThrow(/expected an object/)
+  })
+})
+
+describe("the signed desktop's session sources", () => {
+  test("a session page is an items envelope", () => {
+    expect(decodeHostedResult("session.page", { items: [], nextCursor: "k" })).toEqual({ items: [], nextCursor: "k" })
+    expect(() => decodeHostedResult("session.page", { groups: [] })).toThrow(/session\.page.*items/)
+  })
+
+  test("a session page is a read a renderer may retry", () => {
+    expect(isSafeOperation("session.page")).toBe(true)
   })
 })
 

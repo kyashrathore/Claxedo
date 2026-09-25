@@ -18,16 +18,10 @@
     white-space: pre-wrap;
   }
 
-  > *:first-child {
+  > [data-markdown-block] > [data-markdown-edge~="first"] {
     margin-top: 0;
   }
-  > *:last-child {
-    margin-bottom: 0;
-  }
-  > [data-markdown-block]:first-child > *:first-child {
-    margin-top: 0;
-  }
-  > [data-markdown-block]:last-child > *:last-child {
+  > [data-markdown-block] > [data-markdown-edge~="last"] {
     margin-bottom: 0;
   }
 

@@ -13,15 +13,15 @@
  * ones no product surface uses. The whole value of this port is that the set of
  * things it can be asked to do is CLOSED and reviewable.
  *
- * `HostedOperationName` is that set. `architecture/account-port.guard.test.ts`
- * holds it equal to the app registry and Electron main's route table, and
- * `architecture/hosted-operation-inventory.test.ts` requires every module that
- * reaches authenticated transport to be declared.
+ * `HostedOperationName` (`@claxedo/account-contract`) is that set; Electron
+ * main's route table is typed against it, and every module that reaches
+ * authenticated transport must be declared in the hosted-operation inventory.
  *
  * The browser binds this port to its own session; Electron binds it to IPC.
  * Neither implementation hands a token, a cookie, a URL, or a method back to
  * the renderer.
  */
+import type { HostedOperationName } from "@claxedo/account-contract"
 import type { BrowserAuthSignInOptions } from "../auth/browser-auth"
 
 /** Sanitized identity. Deliberately the same shape a `Principal` may hold. */
@@ -62,107 +62,6 @@ export type AccountState =
    * work stays available throughout.
    */
   | { status: "unavailable"; reason: "no-secure-storage" | "callback-failed" | "revoked" }
-
-/**
- * The operations the renderer may ask for, by name.
- *
- * Declared HERE and not in `hosted-operations.ts`, even though that module owns
- * each operation's decoder: this file is the port's contract and must stay
- * import-free, so it can be read on its own and so the import graph can see it
- * as the pure type contract it is. The registry imports this union and is
- * checked against it.
- *
- * A string union rather than a free-form key: an implementation that must
- * satisfy every member cannot quietly gain a passthrough, and a caller naming
- * something absent fails to compile rather than at runtime.
- */
-export type HostedOperationName =
-  | "account.mode"
-  | "account.compatibility"
-  | "account.cliExchange"
-  | "account.agentSettings.read"
-  | "account.agentSettings.write"
-  | "agentPlugins.catalog"
-  | "agentPlugins.catalog.refresh"
-  | "agentPlugins.catalog.project"
-  | "agentPlugins.catalog.project.refresh"
-  | "agentPlugins.activation"
-  | "agentPlugins.organizationDefault"
-  | "agentPlugins.update"
-  | "agentPlugins.skill"
-  | "agentPlugins.runtimeSelf"
-  | "agentPlugins.skill.project"
-  | "agentPlugins.sources.list"
-  | "agentPlugins.sources.add"
-  | "agentPlugins.sources.remove"
-  | "connections.list"
-  | "connections.connect"
-  | "connections.attempt"
-  | "connections.disconnect"
-  // One per host the list route names, because it answers rows only under a
-  // named host and the host-less call is always empty.
-  | "workspace.list.provisioner"
-  | "workspace.list.machine"
-  | "workspace.resolve"
-  | "workspace.create"
-  | "workspace.lifecycle"
-  | "workspace.checkpoints.list"
-  | "workspace.checkpoints.create"
-  | "workspace.checkpoints.restore"
-  | "workspace.connection.mint"
-  | "workspace.connection.refresh"
-  | "host.enrollCurrentMachine"
-  | "host.enrollmentNonce"
-  | "host.renameCurrentMachine"
-  | "workspace.assignHost"
-  | "workspace.unassignHost"
-  | "session.list"
-  | "session.navigationList"
-  | "session.projection.register"
-  | "session.projection.checkpoint"
-  | "session.projection.repair"
-  | "controlPlane.events"
-  | "session.shares.list"
-  | "session.shares.grant"
-  | "session.shares.revoke"
-  | "session.participants.add"
-  | "org.list"
-  | "org.create"
-  | "org.teams.list"
-  | "org.teams.create"
-  | "org.ensureDefaultTeam"
-  | "team.members.list"
-  | "team.members.add"
-  | "team.members.remove"
-  | "team.projects.grant"
-   
-   
-   
-  | "connections.repositories"
-   
-  | "connections.reverify"
-  | "documents.list"
-  | "documents.get"
-  | "documents.create"
-  | "documents.update"
-  | "documents.content.get"
-  | "documents.content.put"
-  | "documents.snapshots"
-  | "documents.snapshots.restore"
-  | "documents.workSource"
-  | "documents.workSourcePin"
-  | "documents.statuses"
-  | "documents.export"
-  | "documents.agentOpen"
-  | "documents.runtimeConflictResolve"
-  | "documents.moveToRepository"
-  | "documents.fromRepo"
-  | "session.create"
-  | "session.messages"
-  | "session.gateway"
-  | "billing.checkout"
-  | "billing.portal"
-  | "usage.cloudFacts"
 
 export type AccountPort = {
   /** Current account state. Reactive in the renderer; a snapshot here. */

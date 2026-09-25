@@ -253,3 +253,8 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - On the web an app plugin runs in a sandboxed frame (`sandbox="allow-scripts"`, never same-origin), reaches the server only through the host's manifest-checked calls, and the warning says so.
 - Approval is per manifest: a changed routes, operations or requires set stops the plugin until the user approves again and shows what changed; "Code changed since you approved" shows the build time.
 - Every user-visible string says "App plugins". Agent Plugins and the Marketplace keep their names.
+
+## Owner, 2026-09-25 22:40: transcript images load from the web; plugin frames stay strict
+- The app page keeps v1's image rule: `img-src` allows `https:`, so web images in agent replies load as in v1.
+- On the web, each app plugin's sandboxed frame gets its own stricter policy on top: no outside images or media. A frame can only tighten the inherited policy.
+- Desktop in-app plugins can load outside images. That's part of the desktop residual already accepted and warned about.

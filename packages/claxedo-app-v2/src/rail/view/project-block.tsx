@@ -39,6 +39,7 @@ function createProjectPaging(props: ProjectBlockProps) {
     more,
     loadingMore: () => props.list.moreState(projectId()).kind === "loading",
     pageError: () => props.list.moreState(projectId()).kind === "failed",
+    degraded: () => loaded() && props.list.pageDegraded(projectId()),
     loadingInitial: () => !loaded() && !failed() && props.sessionIds.length === 0,
     errorInitial: () => failed() && props.sessionIds.length === 0,
     emptyLoaded: () => loaded() && !failed() && props.sessionIds.length === 0,
@@ -107,6 +108,11 @@ function ProjectSessions(
       <Show when={props.paging.pageError()}>
         <SessionListNotice variant="error" actionLabel={t("rail.retry")} onAction={props.paging.loadMore}>
           {t("rail.loadMoreFailed")}
+        </SessionListNotice>
+      </Show>
+      <Show when={props.paging.degraded()}>
+        <SessionListNotice variant="error" actionLabel={t("rail.retry")} onAction={() => void props.list.reload()}>
+          {t("rail.partialLoad")}
         </SessionListNotice>
       </Show>
       <Show when={props.paging.doneLoaded()}>

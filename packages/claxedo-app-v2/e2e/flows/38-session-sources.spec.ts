@@ -1,5 +1,18 @@
 import type { Page } from "@playwright/test"
-import { apiRequests, expect, SCRIPTED_ACP_HARNESS, test, UI, type ClaxedoApi, type Stack } from "../harness"
+import {
+  apiRequests,
+  cloudTurn,
+  expect,
+  makeCloudWorkspace,
+  SCRIPTED_ACP_HARNESS,
+  sessionRoute,
+  startCloudWorkspace,
+  stopCloudWorkspace,
+  test,
+  UI,
+  type ClaxedoApi,
+  type Stack,
+} from "../harness"
 
 type ListItem = { readonly sessionId: string; readonly title: string; readonly archivedAt?: number | null }
 
@@ -100,17 +113,46 @@ test("38 a project whose page cannot be read leaves every other project's rows, 
 
 test("38 terminals are read only for an expanded project's live placements", async ({ stack, api, app }) => {
   test.skip(stack.app !== "v2", "v1 lists every placement's terminals at boot")
-  const open = await stack.daemon.makeWorkspace("terminals-open", "Terminals Open")
-  const closed = await stack.daemon.makeWorkspace("terminals-closed", "Terminals Closed")
-  await createAll(api, open.directory, ["Keeps its project open"])
+  const quiet = await stack.daemon.makeWorkspace("terminals-quiet", "Terminals Quiet")
+  const first = await stack.daemon.makeWorkspace("terminals-a", "Terminals A")
+  const second = await stack.daemon.makeWorkspace("terminals-b", "Terminals B")
+  await createAll(api, first.directory, ["Keeps its project open"])
   await app.goto("about:blank")
   const settled = apiRequests(app, stack.url)
   await app.goto(`${stack.url}/`)
-  await expect(projectRows(app, open.projectId)).toHaveCount(1)
+  await expect(projectRows(app, first.projectId)).toHaveCount(1)
   const boot = await settled()
-  expect(boot.filter((path) => path === "/api/wr/pty"), "terminal lists at boot").toHaveLength(1)
+  const group = (projectId: string) => app.locator(`[data-testid="project-group"][data-project-id="${projectId}"]`)
+  const expanded = await app.getByRole("button", { name: "Collapse project" }).count()
+  expect(boot.filter((path) => path === "/api/wr/pty"), "terminal lists at boot, one per expanded project").toHaveLength(expanded)
 
-  await app.locator(`[data-testid="project-group"][data-project-id="${closed.projectId}"]`).getByRole("button", { name: "Expand project" }).click()
-  const expanded = await settled()
-  expect(expanded.filter((path) => path === "/api/wr/pty"), "terminal lists after expanding").toHaveLength(1)
+  const candidates = [quiet, first, second]
+  const counts = await Promise.all(candidates.map((project) => group(project.projectId).getByRole("button", { name: "Expand project" }).count()))
+  const collapsed = candidates[counts.findIndex((count) => count > 0)]
+  if (!collapsed) throw new Error("every project opened at boot; none is collapsed to expand")
+  await group(collapsed.projectId).getByRole("button", { name: "Expand project" }).click()
+  expect((await settled()).filter((path) => path === "/api/wr/pty"), "terminal lists after expanding one more").toHaveLength(1)
+})
+
+test("38 a stopped sandbox's session paints its stored surface, and its project reads no terminal list and wakes nothing", async ({ signedCloud, page }) => {
+  test.setTimeout(120_000)
+  const workspace = await makeCloudWorkspace(signedCloud, "Stored")
+  await startCloudWorkspace(signedCloud, workspace)
+  const sessionId = await cloudTurn(signedCloud, workspace, { title: "Stored turn", script: "stored", reply: "Kept by the control plane" })
+  await stopCloudWorkspace(signedCloud, workspace)
+  await signedCloud.signIn(page, signedCloud.owner)
+  const reads: string[] = []
+  page.on("request", (request) => {
+    const url = new URL(request.url())
+    reads.push(`${request.method()} ${url.pathname}${url.search}`)
+  })
+
+  await page.goto(`${signedCloud.url}${sessionRoute(workspace.id, sessionId)}`)
+  await expect(page.getByText("Kept by the control plane")).toBeVisible()
+  await expect(page.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "Stored turn" })).toBeVisible()
+
+  expect(reads.filter((read) => read.includes(`/api/control/sessions/${sessionId}/messages`) && read.includes("view=latest-surface"))).toHaveLength(1)
+  expect(reads.filter((read) => read.includes(`/workspaces/${workspace.id}/`)), "runtime reads of the stopped sandbox").toEqual([])
+  expect(reads.filter((read) => read.startsWith(`POST /api/workspace/${workspace.id}/connection`)), "wakes").toEqual([])
+  expect(reads.filter((read) => read.includes("/api/wr/pty")), "terminal lists").toEqual([])
 })

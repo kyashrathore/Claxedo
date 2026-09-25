@@ -21,7 +21,7 @@ The app asks one server for one page of a project's sessions, with one opaque cu
 | Connection | List owner | Sources it merges |
 |---|---|---|
 | Desktop, signed out | the daemon | the local projection |
-| Desktop, signed in | the app's one session-source owner in `src/server`, composing exactly two pages: the daemon's local page and the control plane's page, read through the AccountPort operation `session.list` | local projection + the control plane (cloud workspaces, shared machines) |
+| Desktop, signed in | the app's one session-source owner in `src/server`, composing exactly two pages: the daemon's local page and the control plane's page, read through the AccountPort operation `session.page` | local projection + the control plane (cloud workspaces, shared machines) |
 | Web (hosted or self-hosted) | the control plane (or the self-hosted node) | its own store (D1 or SQLite) |
 
 ### 2. Machines publish session rows to the control plane
@@ -73,12 +73,16 @@ The app asks one server for one page of a project's sessions, with one opaque cu
 - [x] **S2. Machine publisher:** the daemon publishes rows and status on change and on reconnect, bounded with backoff. Tests use a fake control plane; an offline control plane queues nothing unbounded.
   - Progress: 2fa2eaf949 (the URL rides the heartbeat to the daemon), af707f5fbb (publisher: coalesced, 250 ms debounce, 100-row chunks, 1 s→60 s jittered backoff, a 1000-session cap that collapses to one full resync, a 401 waits for the next credential), ca5d7c95c3 (change notices come from the projection's own writers; an unreadable row backs off). Tests against a fake control plane, including a real daemon booted in-process.
 - [ ] **S3. Signed desktop merged list through AccountPort:**
-  - add `session.list` to the closed `HostedOperationName` set and to Electron main's route table;
+  - add `session.page` to the closed `HostedOperationName` set and to Electron main's route table;
   - the guard tests hold the registry and main equal;
   - the app's session-source owner merges the daemon page and the account page with a composite cursor;
   - when the account source fails, the page is the local rows plus a `degraded` marker, never a failure;
   - no bearer is ever pushed to the daemon.
-  - Progress: blocked on `lane-desktop-account` (the v2 AccountPort owner, `session.page`, the signed desktop catalog and project link). The server contract it calls is ready (`scope=project`, `after`, `nextAfter`); the two-source merge in `src/server` follows its port.
+  - Progress: code done; the paired-project flows are open.
+    - The port, `session.page` and the account catalog (`Workspaces.accountProjectIds`) are lane-desktop-account's (e32ce4033c).
+    - 403e9ff7ae: `src/server/session-list.ts` composes the daemon page and one `session.page` per paired account project. `session-sources.ts` merges them with the shared `after` key (`wire/list-order.ts`), dedupes by `sessionRef` and slices to `limit`. A failed account source makes the page local rows plus `degraded`, and the rail shows a Retry notice. An account-only project's page is required, so a failure there is a page failure. Unit tests: `session-sources.test.ts` (one order under one key, sessions created between pages, dedupe, degraded, a failed daemon page fails, the key round trip) and `session-list.test.ts` (source selection per project kind, an account-only failure, a paired project degraded). The daemon request carries no account credential; only Electron main holds it.
+    - Flow 39 (@desktop): an account-only project lists the account's first five sessions in the account's order beside a local project, and Show more continues to all seven. Red with the account source removed (the account project's rows stay empty), green with it. Flow 21 passes with its sign-in moved into `signInDesktop`.
+    - Open, with S5's offline-machine flow (one harness item): "local and account rows in one true order in one project" and "a failing account page shows the local rows plus the degraded notice". Both need a paired project. The unit tests above cover them until then.
 - [ ] **S4. App switch:**
   - `src/session/list` reads one page per project from one endpoint;
   - status comes from events;
@@ -92,10 +96,15 @@ The app asks one server for one page of a project's sessions, with one opaque cu
     - Boot, before: one list read per reachable placement plus `/api/wr/session-activity` on loopback, or three runtime reads per remote placement. After: one list read per project and nothing else.
 - [ ] **S5. History routing:** one owner in `src/server` routes by placement kind (control plane, relay or local), and offline machines render the published row.
   - Flows: a gone cloud sandbox renders its history; an offline machine renders its row and state.
-  - Progress: the router is signed-web's `readHistory`/`onRuntime` in `session-reads.ts` (control plane for cloud, runtime or relay otherwise). e7a2dda260 adds the offline-machine branch: its row from the published inventory, no transcript, nothing read from the machine, and a "machine offline" card. f2f74a70a7 serves the stored transcript's `latest-surface`. Proven by `session-reads.test.ts` (stopped cloud and offline machine); the two flows are unmet: the e2e harness stands up no cloud sandbox lifecycle or enrolled remote machine behind a relay for v2 (owner of that harness: signed-web / cloud lanes).
+  - Progress: the router is signed-web's `readHistory`/`onRuntime` in `session-reads.ts` (control plane for cloud, runtime or relay otherwise). e7a2dda260 adds the offline-machine branch: its row from the published inventory, no transcript, nothing read from the machine, and a "machine offline" card. f2f74a70a7 serves the stored transcript's `latest-surface`. Proven by `session-reads.test.ts` (stopped cloud and offline machine), flow 24 (signed-web: a gone sandbox renders from the control plane and nothing wakes it) and flow 38's stopped-sandbox case (the stored surface read, no runtime read, no wake, no terminal list). The offline-machine flow is an open item (owner: a relay/remote-access harness lane), shared with S3's two paired-project flows. Unit coverage stands in until then. A paired project is a desktop workspace the control plane also serves, and no e2e path makes one without an enrolled host. The flows need:
+    1. a second daemon (local-server or self-hosted node) enrolled against the signed stack as a machine (invitation redeem or account enrollment with the connector);
+    2. one of its workspaces assigned and acked, so `host_online` is true, the relay tunnel is up and the S2 publisher pushes its rows with the tunnel token;
+    3. the owner's browser listing that project;
+    4. that daemon stopped and its lease left to expire (or the enrollment paused), so `host_online` turns false; then assert the row still renders, the "machine offline" card shows, and no request reaches `/workspaces/<id>/`.
+    5. for S3: a signed desktop with that workspace also open locally, sessions created on both sides, then the one-order and Show-more assertions, and the degraded notice once the account page fails.
 - [x] **S6. Terminals:** live placements only, lazy per project.
   - Flow: a gone sandbox shows no terminal rows and makes no PTY request.
-  - Progress: 3d5d1d48c1: terminals are read only for an expanded project's live placements (reachability is honest since 84f91b15f5). Flow 38 counts PTY reads at boot and on expand; flow 13's "a workspace whose folder is gone reads no terminal list" covers an unreachable placement. The stopped-sandbox variant needs the same cloud harness as S5.
+  - Progress: 3d5d1d48c1: terminals are read only for an expanded project's live placements (reachability is honest since 84f91b15f5). Flow 38 counts PTY reads at boot and on expand; flow 13's "a workspace whose folder is gone reads no terminal list" covers an unreachable placement. Flow 38's stopped-sandbox case proves no PTY read for a stopped sandbox.
 
 ## Definition of done
 - [ ] In every mode (desktop signed out, desktop signed in, hosted web, self-hosted web, shared machines), the rail lists the right sessions in one true order, with working "Show more", proven by flows.
