@@ -169,3 +169,7 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - The owner's rule: if keeping hidden panes mounted doesn't buy much, remove it to prevent memory bloat.
 - **Measured on packaged v2:** unmounting hidden panes costs +8.5 ms per return to a visited session (16 → 24.5 ms median) and saves ~12 MiB of JS heap and ~680 DOM nodes with 8 small sessions open, more on heavy sessions.
 - **Decision:** hidden session, draft and page panes unmount; the data store and timeline snapshots stay. Terminals stay mounted (xterm state).
+
+## Orchestrator, 2026-09-25: a preset slot never writes the composer's draft default (a v1 bug, not ported)
+- v1's preset slot runs the composer's harness selector under a draft scope. Every harness or model pick in it, including the seed applied when an existing preset opens, is saved as the workspace's draft default. Opening a Pi preset makes the next new session open on Pi.
+- **v2:** a new slot still opens on the draft default (the harness last used for a draft in the first workspace, else the folder's harness). The slot never writes it back: `DraftHarnessPicker` passes `saveDraftDefault: false`, so its picks stay in the slot.

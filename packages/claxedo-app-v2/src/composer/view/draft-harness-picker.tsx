@@ -20,7 +20,7 @@ export function DraftHarnessPicker(props: {
 }): JSX.Element {
   const controller = createHarnessSelectionController(useHarnessConfig())
   const scope = `draft:picker:${createUniqueId()}`
-  const scopeInput = createMemo(() => ({ placementId: props.placementId }))
+  const scopeInput = createMemo(() => ({ placementId: props.placementId, saveDraftDefault: false as const }))
   onMount(() => {
     const seed = props.seed
     if (!seed.harness) return
