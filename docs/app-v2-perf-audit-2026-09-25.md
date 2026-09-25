@@ -36,7 +36,7 @@ Method:
 Ranked by user impact:
 
 1. **Typing in the Files "Search files..." box re-renders the whole tree on every keystroke, and clearing it blocks the main thread for about 100 ms.** Proven.
-   - Measured, v2, per keystroke of "session" with the panel open: **22–32 ms tasks** on the first five keys; **2,036–2,892 elements restyled per key, even when the results do not change** ("o" and "n": the same 70 rows, still 2,041 restyled and 1,284 computations); 13,756–16,343 computations; up to 793 mutations; and **10–18 `GET /api/wr/file` directory listings per key** (45 in total) plus one `find/file` per key.
+   - Measured, v2, per keystroke of "session" with the panel open: **22–32 ms tasks** on the first five keys; **2,036–2,892 elements restyled per key, even when the results do not change** ("o" and "n": the same 70 rows, still 2,041 restyled and 1,284 computations); 1,284–16,343 computations per key (13,756–16,343 on the first three); up to 793 mutations; **10, 14 and 18 `GET /api/wr/file` directory listings on the first three keys** (45 in total), plus one `find/file` per key.
    - Clearing the query: a **98–106 ms task** (LoAF 100–108 ms, in the input event handler), 33,995–52,597 computations, 4,785–9,329 elements restyled.
    - v1: the same design, same order of cost (38,683 computations and 60 requests for the 7 keys; the clear takes 95 ms, LoAF 103 ms). Clearing is heavier in v2 (52,597 vs 30,202 computations in the same pass).
    - Cause:
@@ -439,7 +439,7 @@ Severity order: battery/idle, then lag, then wasted work. Each finding gives (a)
 
 Added by the widened scope (scenarios 9–13). The Files-search finding ranks above all of the above for lag. The dock and coalescer findings rank with finding 3 for battery.
 
-13. **Files search re-renders the whole tree on every keystroke; clearing blocks for 98–106 ms.** See the exploratory finding 1 at the top: per key 2,000–2,900 restyled, 13,000–16,000 computations and 10–18 directory fetches (`src/files/view/files-navigator.tsx:68,103-106`, `src/files/view/file-tree.tsx:155,161-169,185-189`). Shared design; heavier in v2.
+13. **Files search re-renders the whole tree on every keystroke; clearing blocks for 98–106 ms.** See the exploratory finding 1 at the top: per key 2,000–2,900 restyled, up to 16,000 computations and up to 18 directory fetches (`src/files/view/files-navigator.tsx:68,103-106`, `src/files/view/file-tree.tsx:155,161-169,185-189`). Shared design; heavier in v2.
 14. **Background sessions wake frames**: 240 rAF callbacks and 442 style recalcs per background turn (`src/server/wire/coalesce.ts:53-66`). Battery. v2 only in this form; v1 runs 2,206 recalcs of its own.
 15. **A question or permission dock unmounts the composer and todo dock** (`src/session/view/session-screen.tsx:151`), and the re-mount re-fetches `connections` and `permission-mode`. Shared.
 16. **Status events re-run every rail row's computations**: 159 computations outside the own row per background turn. The session-list `state()` object is replaced on each status change, so `statusOf` and `rows` recompute for all rows (`src/session/list/statuses.ts:4-8`, `store.ts:111-120`). Wasted compute; there are no DOM writes.
