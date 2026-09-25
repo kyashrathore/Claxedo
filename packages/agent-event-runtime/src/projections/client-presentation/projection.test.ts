@@ -17,6 +17,16 @@ function makeProjection() {
 }
 
 describe("createClientPresentationProjection", () => {
+  test("marks the message a cancelled turn completes, and only that terminal", () => {
+    const terminal = <T extends { type: string }>(payloads: T[]) => payloads.filter((payload) => payload.type !== "message.updated")
+    expect(terminal(makeProjection().ingest({ type: "cancelled", sessionId: "session-1" }).map((event) => event.payload))).toMatchObject([
+      { type: "message.completed", properties: { sessionID: "session-1", messageID: "msg_turn_1_r", cancelled: true } },
+      { type: "session.idle", properties: { sessionID: "session-1" } },
+    ])
+    const finished = terminal(makeProjection().ingest({ type: "finish", sessionId: "session-1" }).map((event) => event.payload))[0]
+    expect(finished).toEqual({ type: "message.completed", properties: { sessionID: "session-1", messageID: "msg_turn_1_r" } })
+  })
+
   test("preserves native approval details in the persisted permission payload", () => {
     const projection = makeProjection()
     expect(projection.ingest({ type: "permission-request", requestId: "approval", tool: "command", paths: ["/repo"], details: { command: "printf output > /tmp/result", reason: "Write result" } })[0]?.payload).toMatchObject({

@@ -465,7 +465,10 @@ function localRunTerminalEvents(
             { type: "finish", sessionId: row.runId },
           ] satisfies AgentRuntimeEvent[]
         case "cancelled":
-          return [{ type: "session-status", status: "idle" }] satisfies AgentRuntimeEvent[]
+          return [
+            { type: "session-status", status: "idle" },
+            { type: "cancelled", sessionId: row.runId },
+          ] satisfies AgentRuntimeEvent[]
         case "error":
           return [
             { type: "session-status", status: "error" },

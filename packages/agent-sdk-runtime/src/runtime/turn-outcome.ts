@@ -2,11 +2,13 @@ import type { AgentRuntimeStreamEvent, AgentTurnOutcome } from "../index"
 
 export function isTerminalRuntimePayload(payload: AgentRuntimeStreamEvent) {
   if ("properties" in payload) return payload.type === "session.idle" || payload.type === "session.error"
-  return payload.type === "finish" || payload.type === "error" || payload.type === "session-status" && payload.status === "error"
+  return payload.type === "finish" || payload.type === "cancelled" || payload.type === "error"
+    || payload.type === "session-status" && payload.status === "error"
 }
 
 export function outcomeFromPayload(payload: AgentRuntimeStreamEvent): AgentTurnOutcome | undefined {
   if ("properties" in payload) {
+    if (payload.type === "message.completed" && payload.properties.cancelled) return cancelledOutcome()
     if (payload.type === "session.idle") return { status: "completed", completedAt: Date.now() }
     if (payload.type === "session.error") {
       return { status: "failed", completedAt: Date.now(), error: compatErrorMessage(payload.properties.error) }
@@ -14,12 +16,17 @@ export function outcomeFromPayload(payload: AgentRuntimeStreamEvent): AgentTurnO
     return undefined
   }
   if (payload.type === "finish") return { status: "completed", completedAt: Date.now() }
+  if (payload.type === "cancelled") return cancelledOutcome()
   if (payload.type === "session-status" && payload.status === "idle") return { status: "completed", completedAt: Date.now() }
   if (payload.type === "session-status" && payload.status === "error") {
     return { status: "failed", completedAt: Date.now(), error: "session error" }
   }
   if (payload.type === "error") return { status: "failed", completedAt: Date.now(), error: payload.error }
   return undefined
+}
+
+export function cancelledOutcome(): AgentTurnOutcome {
+  return { status: "cancelled", completedAt: Date.now(), reason: "abort" }
 }
 
 export function mergeOutcome(previous: AgentTurnOutcome | undefined, next: AgentTurnOutcome | undefined) {

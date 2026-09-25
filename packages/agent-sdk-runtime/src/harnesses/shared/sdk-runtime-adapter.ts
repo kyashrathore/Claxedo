@@ -651,6 +651,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       // Settled through the same projector so the persisted status and the
       // native runtime feed both observe idle.
       parentProjector.project({ type: "session-status", status: "idle" }, source)
+      yield { type: "cancelled", sessionId: id }
       return
     }
     if (!promptError) return

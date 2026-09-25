@@ -601,6 +601,19 @@ describe("codexAppServerAdapter", () => {
     ])
   })
 
+  test("ends a cancelled or interrupted turn as cancelled, never as finished", () => {
+    for (const status of ["cancelled", "interrupted"]) {
+      expect(runtime().ingest({
+        source: "codex.app-server",
+        method: "turn/completed",
+        payload: { sessionId: "session-1", turn: { status } },
+      }).events).toMatchObject([
+        { type: "session-status", status: "idle" },
+        { type: "cancelled", sessionId: "session-1" },
+      ])
+    }
+  })
+
   test("accumulates usage across every request of a turn and resets on turn boundaries", () => {
     const agent = runtime()
     const tokenUsageEvent = (total: Record<string, number>, last: Record<string, number>) =>
