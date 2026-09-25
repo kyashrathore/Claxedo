@@ -91,7 +91,8 @@ function placementRoutes(find: (id: PlacementId) => Promise<PlacementRecord | un
     locate: async (id) => (await placed(id)).route,
     home: async (ref) => {
       const record = await placed(ref.placementId)
-      return { route: record.route, central: record.placement.kind === "cloud", live: !isStoppedCloud(record.placement) }
+      const offlineMachine = record.route.remote && record.placement.kind !== "cloud" && !record.placement.reachable
+      return { route: record.route, central: record.placement.kind === "cloud", live: !isStoppedCloud(record.placement) && !offlineMachine }
     },
   }
 }

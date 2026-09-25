@@ -81,7 +81,7 @@ test("38 a project whose page cannot be read leaves every other project's rows, 
   await createAll(api, broken.directory, ["Broken one"])
   let failing = true
   await app.route(new RegExp(`/api/claxedo/session-list\\?.*projectId=${broken.projectId}`), (route) =>
-    failing ? route.fulfill({ status: 503, contentType: "application/json", body: '{"error":{"message":"unavailable"}}' }) : route.continue())
+    failing ? route.abort("connectionrefused") : route.fallback())
   await app.goto(`${stack.url}/`)
 
   const rail = app.getByRole("navigation", { name: UI.rail })

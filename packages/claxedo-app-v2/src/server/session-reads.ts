@@ -67,8 +67,11 @@ async function readPage(context: SessionContext, where: RuntimeRoute, path: stri
   return transcriptPageFromWire(await response.json(), response.headers.get(OLDER_CURSOR_HEADER))
 }
 
+const NO_TRANSCRIPT: TranscriptPage = { entries: [] }
+
 function readHistory(context: SessionContext, ref: SessionRef, home: SessionHome, before?: string): Promise<TranscriptPage> {
   if (home.central) return readCentralPage(context.transport, home.route.workspaceId, ref, before === undefined ? { view: "latest-surface" } : { before })
+  if (!home.live) return Promise.resolve(NO_TRANSCRIPT)
   const page = before === undefined ? { view: "latest-surface" } : { limit: OLDER_PAGE_SIZE, before }
   return readPage(context, home.route, withQuery(sessionEndpoint(ref, "/message"), page))
 }
