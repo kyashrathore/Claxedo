@@ -7,11 +7,10 @@
 - project surfaces.
 
 It is **not** at the plan's "Ready for you" (P6):
-- some of the owner's bugs are still open (see [Owner-reported bugs](#owner-reported-bugs));
-- the owner deferred several v1 surfaces at 19:08: settings sections, onboarding, Marketplace and Tasks;
-- 10 of the app's 17 checks fail;
-- app plus kit is over the line budget;
-- the benchmark has never run against v2.
+- the publication benchmark (2026-09-25) gives 7 workspace-panel rows to v1 by 1–6 ms, and misses the start and idle-memory targets (see [the full suite](#benchmark-publication-run-2-full-suite-2026-09-25-07190741));
+- exp-stream's five transcript streaming fixes wait for the owner's sign-off on `v2/stream-slice`;
+- `bun run check` still fails on several checks; the lanes are taking them to zero, domain by domain;
+- the Composer is over its line budget: the budget assumed a frame swap that the parity ruling voided.
 
 Nothing is pushed, `packages/claxedo-app` is untouched, and there is no swap.
 
