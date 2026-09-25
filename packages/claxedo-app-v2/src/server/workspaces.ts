@@ -125,6 +125,7 @@ export function createWorkspaces(transport: Transport, queryClient: QueryClient)
       relearned.clear()
       await reread()
       await queryClient.invalidateQueries({ queryKey: queryKeys.placements(transport.serverUrl) })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.projects(transport.serverUrl) })
     },
     dispose: watched.dispose,
   }
