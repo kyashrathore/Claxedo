@@ -16,20 +16,23 @@ const parts: readonly Part[] = [
   { name: "Browser tabs", budget: 1100, folders: ["src/browser"] },
   { name: "Shell and platform", budget: 6500, folders: ["src/shell", "src/auth", "src/i18n", "src/lib", "src/*"], except: ["src/lib/machine.ts"] },
   { name: "Terminal", budget: 4300, folders: ["src/terminal"] },
-  { name: "Settings", budget: 5200, folders: ["src/settings", "src/machines"] },
+  { name: "Settings, with accounts and machines", budget: 5200, folders: ["src/settings", "src/accounts", "src/machines"] },
   { name: "Access", budget: 1000, folders: ["src/access"] },
   { name: "Review, git, files", budget: 4300, folders: ["src/review", "src/files", "src/git"] },
   { name: "Projects and cloud", budget: 3000, folders: ["src/projects", "src/cloud"] },
   { name: "Onboarding and usage", budget: 1800, folders: ["src/onboarding", "src/usage"] },
   { name: "Plugin host", budget: 1700, folders: ["src/plugins"] },
   { name: "Marketplace", budget: 1800, folders: ["src/marketplace"] },
+  { name: "Tasks, an app domain; the plan's number is the Tasks plugin's", budget: 2500, folders: ["src/tasks"] },
+  { name: "Notifications (no plan number; measured 2026-09-25, for review)", budget: 129, folders: ["src/notifications"] },
+  { name: "Workspace panel (no plan number; measured 2026-09-25, for review)", budget: 1750, folders: ["src/panel"] },
   { name: "Moved in from the session feature (lands in rail and review)", budget: 600, folders: [] },
   { name: "State-machine helper", budget: 100, folders: ["src/lib/machine.ts"] },
   { name: "UI kit (src/ui) and kept transcript renderers (src/transcript)", budget: 20000, folders: ["src/ui", "src/transcript"] },
 ]
 const totalBudget = 94000
 const pluginsBudget = 7000
-const pluginBudgets: Readonly<Record<string, number>> = { tasks: 2500, pages: 3000, "compact-tabs": 600, "codex-theme": 600 }
+const pluginBudgets: Readonly<Record<string, number>> = { pages: 3000, "compact-tabs": 600, "codex-theme": 600 }
 
 function main(): never {
   const { root } = parseArgs(process.argv.slice(2))
