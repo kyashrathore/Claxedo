@@ -74,12 +74,12 @@ export function pageTurnFoldableCounts(page: {
     else byTurn.set(message.parentID, [message])
   }
   const counts: Record<string, number> = {}
-  for (const [userMessageID, assistantMessages] of byTurn) {
+  for (const [userMessageId, assistantMessages] of byTurn) {
     const count = Timeline.turnFoldableGroupCount({
       assistantMessages,
-      getMessageParts: (messageID) => parts.get(messageID) ?? emptyParts,
+      getMessageParts: (messageId) => parts.get(messageId) ?? emptyParts,
     })
-    if (count > 0) counts[userMessageID] = count
+    if (count > 0) counts[userMessageId] = count
   }
   return counts
 }

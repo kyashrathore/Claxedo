@@ -15,7 +15,7 @@ function RawDetail(props: { detail: string }) {
 
   return (
     <div class="mt-2 min-w-0">
-      <div class="group flex min-w-0 items-center gap-1" data-slot="turn-error-detail-header">
+      <div class="group flex min-w-0 items-center gap-1">
         <button
           type="button"
           class="flex min-h-6 min-w-0 flex-1 items-center gap-1 text-left"
@@ -50,7 +50,7 @@ function RawDetail(props: { detail: string }) {
         </Show>
       </div>
       <Show when={open()}>
-        <div class="mt-1 whitespace-pre-wrap break-words pl-5 font-mono text-12-regular text-text-weaker select-text" data-slot="turn-error-detail-body">
+        <div class="mt-1 whitespace-pre-wrap break-words pl-5 font-mono text-12-regular text-text-weaker select-text">
           {props.detail}
         </div>
       </Show>
