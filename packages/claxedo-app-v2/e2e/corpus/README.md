@@ -43,7 +43,12 @@ The corpus is the proof that the transcript moved without changing: every case r
 - `ready` is text the last turn shows; the case waits for it before comparing.
 - Turns are sent with ascending message ids, as the app sends them: both apps order a transcript by message id, and the runtime gives a prompt without one a random id.
 - A session opens on the latest turn's text-only surface, then reads the whole turn. The case holds that full read until the first turn row paints, so both apps always paint the surface first; a turn with work then keeps its "Worked for …" header, as it does on a real machine, where the surface wins that race.
-- `interactions` run in order after the transcript is on screen (`scroll` to `top` or `bottom`, `toggleFold` of the n-th Worked header, `reload`); the comparison is taken after each one.
+- A turn marked `"live": true` streams with the session open: it is sent once the transcript is on screen, and its steps pace their text with `delayMs` and stop at `hold` steps. The case compares what is on screen at each hold, so it proves the streaming renderer, not only the settled one. A live case's durations (the text part's agent and time, the Worked header's label) are hidden from its screenshots and replaced in its trees, since they depend on how long the holds lasted.
+- `interactions` run in order after the transcript is on screen, and the comparison is taken after each one:
+  - `scroll` to `top` or `bottom`, `toggleFold` of the n-th Worked header, `reload`;
+  - `release` a live turn's `hold`, wait for its `ready` text and a DOM that has stopped changing, and, with `settles`, for the session to go idle;
+  - `markRows` remembers the turn rows on screen, and `rowsKept` asserts they are still the same elements;
+  - `detachedNodes` asserts, after a forced collection, that at most `max` DOM nodes live outside the document. Today's app leaks the controls it builds for a streaming table, so it records no budget.
 - `invariant` is the sentence the case protects, so a failing comparison reads as a behavior, not a pixel.
 
 ## Running
