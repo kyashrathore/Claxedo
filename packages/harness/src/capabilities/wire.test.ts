@@ -41,5 +41,5 @@ test("ACP child can report abort unavailable", () => {
 
 test("wire mapping does not retain OpenCode-only reconnect policy", () => {
   const source = capabilities({ permissions: false, questions: false, todos: true, subagents: false, configOwner: "runtime" })
-  expect(wireConnectionCapabilities(source, { harness: "pending", transport: "opencode-http" }).reconnect).toBe(false)
+  expect(wireConnectionCapabilities(source, { harness: "pending", transport: "opencode-v2" }).reconnect).toBe(false)
 })
