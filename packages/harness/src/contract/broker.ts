@@ -23,6 +23,7 @@ export type PermissionOption = {
 export type PermissionRequest = {
   kind: "permission"
   requestId: string
+  expiresAt?: number
   permission: AgentPermission
   options?: readonly PermissionOption[]
   grantKey?: string
@@ -31,12 +32,15 @@ export type PermissionRequest = {
 export type QuestionRequest = {
   kind: "question"
   requestId: string
+  expiresAt?: number
   question: AgentQuestion
 }
 
 export type ElicitationRequest = {
   kind: "elicitation"
   requestId: string
+  expiresAt?: number
+  elicitationId?: string
   mode: "form" | "url"
   message: string
   schema?: unknown
@@ -80,6 +84,7 @@ export interface TurnBroker {
   readonly signal: AbortSignal
   readonly origin: TurnOrigin
   ask(request: TurnRequest): Promise<RequestAnswer>
+  completeElicitation(elicitationId: string): Promise<void>
   observeSubagent(observation: SubagentObservation): Promise<ChildSessionRef | undefined>
   associateChild(correlationKey: string, child: ChildSessionRef): void
 }
@@ -87,6 +92,7 @@ export interface TurnBroker {
 export interface SessionBroker {
   readonly sessionId: string
   ask(request: TurnRequest): Promise<RequestAnswer>
+  completeElicitation(elicitationId: string): Promise<void>
   rebind(upstreamSessionId: string): Promise<void>
   persistHandoff(context: SessionHandoff): Promise<void>
   admitProviderTurn(
@@ -108,6 +114,7 @@ export type PendingRequest = {
   sessionId: string
   request: TurnRequest
   askedAt: number
+  upstreamSessionId?: string
   start?: AgentSessionStartBinding
 }
 

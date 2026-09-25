@@ -557,6 +557,8 @@ Every defect the reviews found, all fixed in this plan. Each regression test is 
 | H-6 | Pi can't run the person's own setup (pinned version, Claxedo profile, injected extension) | Product | `pi/executable.ts`, `agent-dir.ts`, `title-extension.ts` | Pi as a custom harness for the owner's turns | P1.3 | H18, H20 |
 | H-7 | The OpenCode server transport fails any turn where OpenCode asks permission | Availability | `opencode-server-adapter/src/adapter.ts:221` | Requests through the broker and OpenCode's reply endpoints, or OpenCode through ACP (decision 2) | P2 OpenCode | H17 |
 | H-8 | ACP's process-wide prompt counter makes a config restart wait on other workspaces' turns (inferred) | Correctness | `acp/turn-runner.ts:52`, `acp/index.ts:682` | Instance state | P2 ACP | H21 |
+| H-9 | Archiving a session leaves its own running turn running: `PATCH /session/:id` cancels admitted turns only in child sessions (found by H12 on the ACP harness) | Correctness | `workspace-runtime/src/routes/session-core.ts` | Archive cancels and settles the session's own admitted turn | P3 | H12 |
+| H-10 | Codex never receives the user's configured MCP servers: the driver keeps them in `currentMcp`, but `threadConfig` sends only the first-party server (found by H14) | Availability | `codex/driver.ts:151-169` | The Codex transport sends every projected server | P2 Codex | H14 |
 | C-1 | Hosted never delivers provider credentials to a cloud sandbox | Availability | `supervisor/sandbox.ts:108` is the only caller | The delivery path run on hosted, over the existing brokering | P2 cloud | H19 (local and live), H30 |
 | C-2 | Hosted has no settings store and never sends the settings snapshot; its provider screen is a stub | Availability | `config-sync.ts` (self-hosted only); `routes/hosted/shell.ts:170-175` | A D1 settings store, snapshot push and fan-out on hosted | P2 cloud | H28 |
 | C-3 | OpenCode fails in a hosted sandbox | Availability | `runtime-boot.ts:141-143`, `workspace/runtime.ts:564-568` | Composed when a session asks for it, or OpenCode through ACP | P2 OpenCode, cloud | H19, OpenCode case |
@@ -1158,7 +1160,7 @@ Runs are sharded by harness with separate `CLAXEDO_E2E_PORT_RANGE`s, on crabbox 
 | H4 | Questions: free text, forms, ACP startup elicitation, URL consent, validation cancelled mid-way; Pi dialogs including `timeout` | B; N for Pi `timeout` |
 | H5 | Subagents with usage attributed to the owner | B |
 | H6 | Goals: start and stop (Claude, Cursor), pause and resume (Codex, an ACP agent with the extension), Codex provider-started turns, evaluated (Claude, Pi) | B |
-| H7 | Steer, including `unknown` falling back to the queue | B |
+| H7 | Steer, including an `unknown` result: the steer is held as provider-owned and never resent, because the harness may already have it (`session/delivery-owner.ts`) | B |
 | H8 | Restart mid-turn: the session is `recovering`, 503 while launches are unresolved, then usable | B |
 | H9 | Harness process dies mid-turn | B |
 | H10 | Config changes on their declared timing, including a credential renewal during a long session and a refused widening of a child's permission mode | B |

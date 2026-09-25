@@ -1,7 +1,7 @@
 import { validateElicitationUrl, type AgentQuestion } from "@claxedo/agent-runtime-contract"
 import type { PendingRequest } from "../../contract/broker"
 
-export function elicitationQuestion(pending: PendingRequest): AgentQuestion {
+export function elicitationQuestion(pending: PendingRequest, connectionId: string): AgentQuestion {
   const request = pending.request
   if (request.kind !== "elicitation") throw new Error("Elicitation required")
   if (request.mode === "url") {
@@ -14,6 +14,7 @@ export function elicitationQuestion(pending: PendingRequest): AgentQuestion {
   return {
     id: request.requestId,
     sessionID: pending.sessionId,
+    harnessPayload: { connectionId },
     questions: [{
       header: request.mode === "url" ? "Connect" : "Answer",
       question,

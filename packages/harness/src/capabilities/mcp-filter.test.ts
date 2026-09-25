@@ -10,8 +10,11 @@ const servers: ProjectedMcpServer[] = [
   { origin: "plugin", kind: "http", name: "plugin-tool", url: "https://plugin.example", headers: { Authorization: "Bearer plugin" } },
 ]
 
-test("local sessions keep every projected server", () => {
-  expect(filterMcpServers({ servers, locality: "local", supportsMcpServers: false }).servers).toEqual(servers)
+test("local sessions honor an unsupported MCP flag", () => {
+  const result = filterMcpServers({ servers, locality: "local", supportsMcpServers: false })
+  expect(result.servers).toEqual([])
+  expect(result.notApplied).toHaveLength(servers.length)
+  expect(filterMcpServers({ servers, locality: "local" }).servers).toEqual(servers)
 })
 
 test.each([
