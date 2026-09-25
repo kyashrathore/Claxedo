@@ -1,4 +1,4 @@
-import { For, Show, type JSX } from "solid-js"
+import { createSignal, For, Show, type JSX } from "solid-js"
 import type { Preset, TaskStatus, TaskSummary } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
 import { Button, DropdownMenu, Icon, IconButton } from "@/ui"
@@ -182,12 +182,13 @@ export function TaskStartControl(props: {
   readonly task: StartTask
   readonly offer: TaskStartOffer
   readonly testIdPrefix: string
+  readonly onMenuOpenChange?: (open: boolean) => void
 }): JSX.Element {
   const t = useTranslator(dictionary)
   return (
     <span class="tsk-split" data-busy={props.offer.busy ? "true" : undefined}>
       <MainPart {...props} />
-      <DropdownMenu placement="bottom-end">
+      <DropdownMenu placement="bottom-end" onOpenChange={props.onMenuOpenChange}>
         <DropdownMenu.Trigger
           as={IconButton}
           icon="chevron-down"
@@ -209,10 +210,11 @@ export function TaskRowActions(props: {
   readonly busy?: boolean
   readonly testIdPrefix: string
   readonly onStatusChange: (input: { taskId: string; revision: number; status: TaskStatus }) => void
+  readonly onMenuOpenChange?: (open: boolean) => void
 }): JSX.Element {
   const t = useTranslator(dictionary)
   return (
-    <DropdownMenu placement="bottom-end">
+    <DropdownMenu placement="bottom-end" onOpenChange={props.onMenuOpenChange}>
       <DropdownMenu.Trigger
         as={IconButton}
         icon="three-dots"
@@ -239,4 +241,18 @@ export function TaskRowActions(props: {
       </DropdownMenu.Portal>
     </DropdownMenu>
   )
+}
+
+export function createRowToolsMenus() {
+  const [open, setOpen] = createSignal<ReadonlySet<string>>(new Set())
+  return {
+    open: () => open().size > 0,
+    track: (menu: string) => (isOpen: boolean) =>
+      setOpen((current) => {
+        const next = new Set(current)
+        if (isOpen) next.add(menu)
+        else next.delete(menu)
+        return next
+      }),
+  }
 }

@@ -1,8 +1,14 @@
 @import "@opencode-ai/ui/styles/tailwind";
 @import "@opencode-ai/ui/v2/styles/tailwind.css";
 
+@source not "../../../../claxedo-app/src";
+@source not "../../../../claxedo-desktop/src/renderer";
 @source "../../";
 @source not "../../legacy";
+@source "../../../../session-ui/src";
+@source not "../../../../session-ui/src/**/*.test.*";
+@source not "../../../../session-ui/src/**/*.stories.*";
+@source not "../../../../session-ui/src/components/transcript-lab-fixture.*";
 @source "../../../index.html";
 @source "../../../index.local.html";
 

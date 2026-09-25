@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, on, onCleanup, Show, type JSX } from "solid-js"
+import { createEffect, createMemo, createSignal, on, Show, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useTranslator } from "@/i18n"
 import type { PlacementId } from "@/server"
@@ -7,7 +7,7 @@ import { useFilesApi } from "../api"
 import { dictionary } from "../i18n"
 import { buildKinds } from "../model"
 import { useFiles } from "../store"
-import { createTreeSource } from "../tree-source"
+import { createSearchView } from "../search-view"
 import { FileTree } from "./file-tree"
 
 const VISIBLE_LIMIT = 24
@@ -19,35 +19,16 @@ export type FilesNavigatorProps = {
   readonly onOpenFile: (path: string) => void
 }
 
-function revealActivePath(input: {
+function expandToActivePath(input: {
   readonly path: () => string | undefined
   readonly active: () => boolean
   readonly expand: (dir: string) => void
-  readonly scroller: () => HTMLDivElement | undefined
 }): void {
   createEffect(
     on([input.path, input.active], ([path, active]) => {
       if (!path || !active) return
       const segments = path.split("/").slice(0, -1)
       for (const [index] of segments.entries()) input.expand(segments.slice(0, index + 1).join("/"))
-      const reveal = () => {
-        const row = input.scroller()?.querySelector(`[data-file-tree-path="${CSS.escape(path)}"]`)
-        row?.scrollIntoView({ block: "nearest" })
-        return !!row
-      }
-      let observer: MutationObserver | undefined
-      const frame = requestAnimationFrame(() => {
-        const scroller = input.scroller()
-        if (reveal() || !scroller) return
-        observer = new MutationObserver(() => {
-          if (reveal()) observer?.disconnect()
-        })
-        observer.observe(scroller, { childList: true, subtree: true })
-      })
-      onCleanup(() => {
-        cancelAnimationFrame(frame)
-        observer?.disconnect()
-      })
     }),
   )
 }
@@ -88,54 +69,45 @@ function SearchRow(): JSX.Element {
 export function FilesNavigator(props: FilesNavigatorProps): JSX.Element {
   const t = useTranslator(dictionary)
   const api = useFilesApi()
-  const files = useFiles()
-  const source = createTreeSource(
+  const search = createSearchView(
     () => props.placementId,
     () => props.active,
   )
-  const query = createMemo(() => files.search().trim())
-  const search = useQuery(() => ({ ...api.search(props.placementId, query()), enabled: query().length > 0 }))
+  const source = search.listing
   const status = useQuery(() => ({ ...api.changes(props.placementId), enabled: props.active }))
   const kinds = createMemo(() => buildKinds(status.data))
   const changed = createMemo(() =>
     [...(status.data?.staged ?? []), ...(status.data?.unstaged ?? [])].map((change) => change.path),
   )
-  const allowed = createMemo<readonly string[] | undefined>((previous) => {
-    if (!query()) return undefined
-    return search.isSuccess ? search.data : previous
-  }, undefined)
-  const searchPending = () => !!query() && search.isPending
-  const emptySearch = () => !!query() && search.isSuccess && (allowed()?.length ?? 0) === 0
-  const showTree = () => !searchPending() && !emptySearch()
+  const showTree = () => !search.pending() && !search.empty()
   const [scroller, setScroller] = createSignal<HTMLDivElement>()
   const dataReady = () => source.state("").loaded && source.children("").length > 0
-  revealActivePath({ path: () => props.activePath, active: () => props.active, expand: source.expand, scroller })
+  expandToActivePath({ path: () => props.activePath, active: () => props.active, expand: source.expand })
   return (
     <div
       data-testid="workspace-files-navigator"
       data-mode="files"
-      data-file-tree-shell-ready={dataReady() || (!query() && source.state("").loading) ? "true" : undefined}
+      data-file-tree-shell-ready={dataReady() || (!search.query() && source.state("").loading) ? "true" : undefined}
       data-file-tree-data-ready={dataReady() ? "true" : undefined}
       class="flex size-full min-h-0 flex-col"
     >
       <SearchRow />
       <ScrollView class="min-h-0 flex-1" viewportRef={setScroller}>
-        <Show when={searchPending()}>
+        <Show when={search.pending()}>
           <div class="flex h-24 items-center justify-center">
             <DelayedLoading>
               <Spinner class="h-4 w-4 text-text-weak" />
             </DelayedLoading>
           </div>
         </Show>
-        <Show when={emptySearch()}>
+        <Show when={search.empty()}>
           <div class="px-3 py-6 text-center text-12-regular text-text-weak">{t("files.noResults")}</div>
         </Show>
         <div style={{ "content-visibility": showTree() ? "visible" : "hidden" }}>
           <FileTree
-            source={source}
-            path=""
-            enabled={props.active && showTree()}
-            allowed={allowed()}
+            source={search.source()}
+            scroller={scroller}
+            reveal={props.active ? props.activePath : undefined}
             modified={changed()}
             kinds={kinds()}
             active={props.activePath}

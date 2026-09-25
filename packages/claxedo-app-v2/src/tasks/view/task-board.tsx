@@ -9,7 +9,7 @@ import { TASK_STATUS_KEYS, taskKey, type TaskDateField } from "../model"
 import { LoadMore } from "./load-more"
 import { TaskStatusIcon } from "./status-control"
 import { AgeCell, ProgressCell, SessionMark, type SubtaskProgress } from "./task-cells"
-import { TaskRowActions, TaskStartControl } from "./task-row-controls"
+import { createRowToolsMenus, TaskRowActions, TaskStartControl } from "./task-row-controls"
 
 export type TaskBoardProps = {
   readonly tasks: readonly TaskSummary[]
@@ -42,12 +42,14 @@ function BoardCard(props: {
 }): JSX.Element {
   const t = useTranslator(dictionary)
   const selected = () => props.board.selectedTaskId === props.task.id
+  const menus = createRowToolsMenus()
   return (
     <div
       class="tsk-card tsk-rise"
       style={{ "--tsk-i": String(props.order) }}
       data-testid={`tasks-board-card-${props.task.id}`}
       data-selected={selected() ? "true" : undefined}
+      data-tools-open={menus.open() ? "true" : undefined}
       data-dragging={props.drag.dragging() === props.task.id ? "true" : undefined}
       draggable={props.task.archivedAt === null}
       onClick={() => props.board.onSelect(props.task.id)}
@@ -76,13 +78,14 @@ function BoardCard(props: {
       </div>
       <span class="tsk-row-tools" onClick={(event) => event.stopPropagation()}>
         <Show when={props.board.startOffer}>
-          {(offer) => <TaskStartControl task={props.task} offer={offer()(props.task)} testIdPrefix="tasks-board" />}
+          {(offer) => <TaskStartControl task={props.task} offer={offer()(props.task)} testIdPrefix="tasks-board" onMenuOpenChange={menus.track("start")} />}
         </Show>
         <TaskRowActions
           task={props.task}
           busy={props.board.busyTaskId === props.task.id}
           testIdPrefix="tasks-board"
           onStatusChange={(input) => props.board.onStatusChange(input)}
+          onMenuOpenChange={menus.track("actions")}
         />
       </span>
     </div>

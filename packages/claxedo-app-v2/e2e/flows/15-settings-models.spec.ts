@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test"
-import { expect, sessionRoute, test, type Stack } from "../harness"
+import { apiRequests, expect, sessionRoute, test, type Stack } from "../harness"
 import { MODELS, openSection, openSettings } from "./15-settings.navigation"
 
 type Credential = { readonly id: string; readonly provider_id: string; readonly label?: string; readonly is_active?: boolean }
@@ -144,4 +144,22 @@ test("15 settings: a model switched off in Models leaves the composer's picker",
     picker = await claudeModels(app)
     await expect(picker.getByText("Haiku", { exact: true }).first()).toBeVisible()
   })
+})
+
+test("15 settings: Models reads each agent's options, catalog and accounts once", async ({ stack, app, isMobile }) => {
+  test.skip(stack.app !== "v2", "v1 reads the same set; this pins v2's reads to it")
+  const workspace = await stack.daemon.makeWorkspace("reads", "Reads")
+  await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
+  await openSettings(stack, app, isMobile)
+  const settled = apiRequests(app, stack.url)
+  await settled()
+  await openSection(stack, app, isMobile, MODELS)
+  const cursor = harnessSection(app, "Cursor")
+  await cursor.getByRole("tab", { name: "Models" }).click()
+  await expect(cursor.getByText(/^Loading/)).toBeHidden()
+  const reads = await settled()
+  expect(reads.filter((path, index) => reads.indexOf(path) !== index), "read twice").toEqual([])
+  expect(reads.filter((path) => path.startsWith("/api/claxedo/agent-config/harness/options")).sort()).toEqual(
+    ["claude", "codex", "cursor", "pi", "scripted-acp"].map((harness) => `/api/claxedo/agent-config/harness/options?${harness}`),
+  )
 })

@@ -176,3 +176,26 @@ test("12 a boot reads neither Tasks nor pi's provider catalog, an open reads eac
   expect(await open("Beta"), "revisiting Beta").toEqual([])
   expect((await api.sessions(workspace.directory)).map((session) => session.title).sort()).toEqual(["Alpha", "Beta"])
 })
+
+test("12 opening a menu hides the page without touching each icon in the sprite", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("sprite", "Sprite")
+  const session = await api.createSession(workspace.directory, { title: "Sprite", harness: SCRIPTED_ACP_HARNESS })
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
+  await expect.poll(() => app.evaluate(() => document.querySelectorAll("svg symbol").length)).toBeGreaterThan(20)
+  await app.evaluate(() => {
+    const writes: string[] = []
+    new MutationObserver((records) => {
+      for (const record of records) writes.push(record.target instanceof Element ? record.target.tagName.toLowerCase() : "?")
+    }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ["aria-hidden"] })
+    Reflect.set(window, "__claxedoAriaHiddenWrites", writes)
+  })
+  const menu = app.getByRole("menu")
+  await app.getByRole("button", { name: UI.signedOutAccount }).click()
+  await expect(menu).toBeVisible()
+  await app.keyboard.press("Escape")
+  await expect(menu).toBeHidden()
+  const writes = await app.evaluate(() => Reflect.get(window, "__claxedoAriaHiddenWrites") as string[])
+  expect(writes.filter((tag) => tag === "symbol"), "aria-hidden writes on sprite symbols").toEqual([])
+  expect(writes.length).toBeLessThanOrEqual(20)
+})

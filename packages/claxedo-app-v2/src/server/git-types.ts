@@ -9,6 +9,8 @@ export type FileNode = {
 
 export type FileContent = AgentFileContent
 
+export type FileSearchEntries = "files" | "all"
+
 export type ChangeStatus = "added" | "modified" | "deleted" | "renamed" | "untracked" | "conflicted"
 
 export type FileChange = {

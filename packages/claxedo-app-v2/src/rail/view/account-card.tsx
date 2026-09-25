@@ -1,4 +1,4 @@
-import { createMemo, Show, type JSX } from "solid-js"
+import { createMemo, createSignal, Show, type JSX } from "solid-js"
 import { useAuth } from "@/auth"
 import { useTranslator } from "@/i18n"
 import { failureMessage } from "@/lib/failure"
@@ -71,6 +71,7 @@ export function AccountCard(props: { readonly anchor: () => HTMLElement | undefi
   const routing = useShellRoute()
   const view = useAccountView()
   let trigger: HTMLButtonElement | undefined
+  const [open, setOpen] = createSignal(false)
   const select = (action: () => void) => () => {
     trigger?.focus()
     action()
@@ -82,7 +83,7 @@ export function AccountCard(props: { readonly anchor: () => HTMLElement | undefi
   const signIn = () => settle(auth.signIn({ redirectUrl: window.location.href }), t("rail.account.signInFailed"))
   const signOut = () => settle(auth.signOut(), t("rail.account.signOutFailed"))
   return (
-    <DropdownMenu placement="top-start" gutter={6} sameWidth getAnchorRect={(trigger) => (props.anchor() ?? trigger)?.getBoundingClientRect()}>
+    <DropdownMenu placement="top-start" gutter={6} sameWidth onOpenChange={setOpen} getAnchorRect={(trigger) => (props.anchor() ?? trigger)?.getBoundingClientRect()}>
       <DropdownMenu.Trigger
         ref={(element: HTMLButtonElement) => (trigger = element)}
         aria-label={view().label}
@@ -94,7 +95,7 @@ export function AccountCard(props: { readonly anchor: () => HTMLElement | undefi
         <span class="min-w-0 flex-1 truncate text-13-medium">
           {view().label}
         </span>
-        <Icon name="chevron-down" size="small" class="shrink-0 rotate-180 text-icon-weak-base opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 group-data-[expanded]:opacity-100" />
+        <Icon name="chevron-down" size="small" class={`shrink-0 rotate-180 text-icon-weak-base opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100${open() ? " opacity-100" : ""}`} />
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content class="z-[220]" style={{ "max-width": "calc(100vw - 16px)" }}>

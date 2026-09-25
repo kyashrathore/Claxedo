@@ -1,255 +1,141 @@
-import { createEffect, createMemo, createSignal, For, Match, Show, Switch, untrack, type JSX } from "solid-js"
+import { createEffect, createMemo, createSignal, For, on, onMount, Show, type Accessor, type JSX } from "solid-js"
+import { createStore } from "solid-js/store"
+import { createVirtualizer } from "@tanstack/solid-virtual"
 import { useTranslator } from "@/i18n"
-import { FailureNotice } from "@/lib/failure"
 import type { FileNode } from "@/server"
-import { ClaxedoIconV2 as IconV2, Collapsible } from "@/ui"
 import { dictionary } from "../i18n"
 import type { ChangeKind } from "../model"
+import { treeRows, type RevealBatches, type TreeRow } from "../tree-rows"
 import type { TreeSource } from "../tree-source"
-import {
-  buildAllowedFilter,
-  dirsToExpand,
-  expandedDepths,
-  fileTreeRevealWindow,
-  filteredNodes,
-  resolveTreeKeyAction,
-  treeKey,
-  type FileTreeFilter,
-} from "../tree-helpers"
-import { FileRowIcon, FileTreeNode, ShowMore, TreeLoading, visibleKind, type TreeMarks } from "./file-tree-node"
+import type { TreeMarks } from "./file-tree-node"
+import { TreeRowView, type TreeRowContext } from "./file-tree-row"
+import { createTreeKeys } from "./file-tree-keys"
 
-const MAX_DEPTH = 128
+const ROW_GAP = 2
+const OVERSCAN = 12
+const ESTIMATES: Readonly<Record<TreeRow["kind"], number>> = { node: 24, more: 28, loading: 8, failed: 64, cycle: 24 }
 
 export type FileTreeProps = {
   readonly source: TreeSource
-  readonly path: string
+  readonly scroller: Accessor<HTMLElement | undefined>
   readonly active?: string
-  readonly enabled?: boolean
-  readonly level?: number
-  readonly allowed?: readonly string[]
+  readonly reveal?: string
   readonly modified?: readonly string[]
   readonly kinds?: ReadonlyMap<string, ChangeKind>
   readonly visibleLimit?: number
   readonly loadingEpisode?: string
   readonly onFileClick?: (file: FileNode) => void
-  readonly _filter?: FileTreeFilter
-  readonly _marks?: TreeMarks
-  readonly _deeps?: ReadonlyMap<string, number>
-  readonly _chain?: readonly string[]
 }
 
-const handleTreeKeyDown: JSX.EventHandler<HTMLDivElement, KeyboardEvent> = (event) => {
-  const items = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[role="treeitem"]'))
-  const current = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>('[role="treeitem"]') : null
-  const expandedAttr = current?.getAttribute("aria-expanded")
-  const action = resolveTreeKeyAction({
-    key: event.key,
-    index: current ? items.indexOf(current) : -1,
-    count: items.length,
-    expanded: expandedAttr === null || expandedAttr === undefined ? undefined : expandedAttr === "true",
-  })
-  if (action.kind === "none") return
-  event.preventDefault()
-  if (action.kind === "toggle") current?.click()
-  else items[action.index]?.focus()
+function createBatches(source: () => TreeSource) {
+  const [batches, setBatches] = createStore<Record<string, RevealBatches>>({})
+  createEffect(on(source, () => setBatches((current) => Object.fromEntries(Object.keys(current).map((dir) => [dir, { before: 0, after: 0 }]))), { defer: true }))
+  return {
+    of: (dir: string): RevealBatches => batches[dir] ?? { before: 0, after: 0 },
+    grow: (dir: string, side: "before" | "after") => {
+      const current = batches[dir] ?? { before: 0, after: 0 }
+      setBatches(dir, { ...current, [side]: current[side] + 1 })
+    },
+  }
 }
 
-function DirectoryRow(props: {
-  readonly tree: FileTreeProps
-  readonly node: FileNode
-  readonly level: number
-  readonly marks: TreeMarks
-  readonly deeps: ReadonlyMap<string, number>
-  readonly filter: FileTreeFilter | undefined
-  readonly chain: readonly string[]
-}): JSX.Element {
-  const expanded = () => props.tree.source.state(props.node.path).expanded
-  const deep = () => props.deeps.get(props.node.path) ?? -1
-  return (
-    <Collapsible
-      variant="ghost"
-      class="w-full"
-      data-scope="filetree"
-      forceMount={false}
-      open={expanded()}
-      onOpenChange={(open) =>
-        open ? props.tree.source.expand(props.node.path) : props.tree.source.collapse(props.node.path)
-      }
-    >
-      <Collapsible.Trigger
-        role="treeitem"
-        aria-level={props.level + 1}
-        aria-selected={props.node.path === props.tree.active}
-      >
-        <FileTreeNode
-          node={props.node}
-          level={props.level}
-          active={props.tree.active}
-          kinds={props.tree.kinds}
-          marks={props.marks}
-        >
-          <div class="flex size-4 items-center justify-center text-icon-weak-base transition-colors group-hover/filetree:text-icon-base">
-            <IconV2 name={expanded() ? "chevron-down" : "chevron-right"} size="small" />
-          </div>
-        </FileTreeNode>
-      </Collapsible.Trigger>
-      <Collapsible.Content class="relative pt-0.5">
-        <div
-          classList={{
-            "absolute top-0 bottom-0 w-px pointer-events-none bg-border-weak-base opacity-0 transition-opacity duration-150 ease-out motion-reduce:transition-none": true,
-            "group-hover/filetree:opacity-100": expanded() && deep() === props.level,
-            "group-hover/filetree:opacity-50": !(expanded() && deep() === props.level),
-          }}
-          style={`left: ${Math.max(0, 8 + props.level * 12 - 4) + 8}px`}
-        />
-        <Show
-          when={props.level < MAX_DEPTH && !props.chain.includes(treeKey(props.node.path))}
-          fallback={<div class="px-2 py-1 text-12-regular text-text-weak">...</div>}
-        >
-          <FileTree
-            {...props.tree}
-            path={props.node.path}
-            level={props.level + 1}
-            _filter={props.filter}
-            _marks={props.marks}
-            _deeps={props.deeps}
-            _chain={props.chain}
-          />
-        </Show>
-      </Collapsible.Content>
-    </Collapsible>
-  )
+function sameRow(a: TreeRow | undefined, b: TreeRow | undefined): boolean {
+  if (a === b) return true
+  if (!a || !b || a.kind !== b.kind) return false
+  if (a.kind === "node" && b.kind === "node") return a.node === b.node && a.level === b.level
+  if (a.kind === "more" && b.kind === "more") return a.count === b.count
+  if (a.kind === "loading" && b.kind === "loading") return a.level === b.level
+  if (a.kind === "failed" && b.kind === "failed") return a.error === b.error
+  return a.kind === "cycle"
 }
 
-function FileRow(props: {
-  readonly tree: FileTreeProps
-  readonly node: FileNode
-  readonly level: number
-  readonly marks: TreeMarks
-}): JSX.Element {
-  return (
-    <FileTreeNode
-      node={props.node}
-      level={props.level}
-      active={props.tree.active}
-      kinds={props.tree.kinds}
-      marks={props.marks}
-      as="button"
-      type="button"
-      role="treeitem"
-      aria-level={props.level + 1}
-      aria-selected={props.node.path === props.tree.active}
-      data-file-tree-path={props.node.path}
-      onClick={() => props.tree.onFileClick?.(props.node)}
-    >
-      <div class="w-4 shrink-0" />
-      <FileRowIcon
-        node={props.node}
-        kind={props.node.ignored ? undefined : visibleKind(props.node, props.tree.kinds, props.marks)}
-      />
-    </FileTreeNode>
-  )
-}
-
-function createTreeLevel(props: FileTreeProps, level: number) {
-  const filter = createMemo(() => props._filter ?? (props.allowed ? buildAllowedFilter(props.allowed) : undefined))
-  const marks = createMemo((): TreeMarks => {
-    if (props._marks) return props._marks
+function createMarks(props: FileTreeProps) {
+  return createMemo((): TreeMarks => {
     const out = new Set<string>([...(props.modified ?? []), ...(props.kinds?.keys() ?? [])])
     return out.size === 0 ? undefined : out
   })
-  const deeps = createMemo(() => props._deeps ?? expandedDepths(props.source, props.path, level))
-  createEffect(() => {
-    if (props.enabled === false) return
-    const dirs = dirsToExpand({
-      level,
-      filter: filter(),
-      expanded: (dir) => untrack(() => props.source.state(dir).expanded),
-    })
-    for (const dir of dirs) props.source.expand(dir)
-  })
-  const nodes = createMemo(() => filteredNodes(props.source, props.path, filter()))
-  return { filter, marks, deeps, nodes }
 }
 
 export function FileTree(props: FileTreeProps): JSX.Element {
   const t = useTranslator(dictionary)
-  const level = props.level ?? 0
-  const batchSize = () => props.visibleLimit ?? Number.POSITIVE_INFINITY
-  const [batchesBefore, setBatchesBefore] = createSignal(0)
-  const [batchesAfter, setBatchesAfter] = createSignal(0)
-  const chain = [...(props._chain ?? []), treeKey(props.path)]
-  const tree = createTreeLevel(props, level)
-  createEffect(() => {
-    void props.path
-    void props.allowed
-    setBatchesBefore(0)
-    setBatchesAfter(0)
+  const batches = createBatches(() => props.source)
+  const rows = createMemo(() =>
+    treeRows({ source: props.source, active: props.active, batchSize: props.visibleLimit ?? Number.POSITIVE_INFINITY, batches: batches.of }),
+  )
+  const indexByKey = createMemo(() => new Map(rows().map((row, index) => [row.key, index])))
+  let container: HTMLDivElement | undefined
+  const [margin, setMargin] = createSignal(0)
+  onMount(() => {
+    const scroller = props.scroller()
+    if (!container || !scroller) return
+    setMargin(container.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop)
   })
-  const reveal = createMemo(() =>
-    fileTreeRevealWindow({
-      paths: tree.nodes().map((node) => node.path),
-      active: props.active,
-      batchSize: batchSize(),
-      batchesBefore: batchesBefore(),
-      batchesAfter: batchesAfter(),
+  const virtualizer = createVirtualizer<HTMLElement, HTMLDivElement>({
+    get count() {
+      return rows().length
+    },
+    getScrollElement: () => props.scroller() ?? null,
+    estimateSize: (index) => ESTIMATES[rows()[index]?.kind ?? "node"],
+    get getItemKey() {
+      const current = rows()
+      return (index: number) => current[index]?.key ?? `removed:${index}`
+    },
+    get scrollMargin() {
+      return margin()
+    },
+    gap: ROW_GAP,
+    overscan: OVERSCAN,
+  })
+  const visible = createMemo(() => virtualizer.getVirtualItems().map((item) => String(item.key)), [], {
+    equals: (a, b) => a.length === b.length && a.every((key, index) => key === b[index]),
+  })
+  const starts = createMemo(() => new Map(virtualizer.getVirtualItems().map((item) => [String(item.key), item.start])))
+  const marks = createMarks(props)
+  const context: TreeRowContext = {
+    source: () => props.source,
+    active: () => props.active,
+    kinds: () => props.kinds,
+    marks,
+    loadingEpisode: () => props.loadingEpisode,
+    showMore: batches.grow,
+    onFileClick: (file) => props.onFileClick?.(file),
+  }
+  const scrollTo = (index: number) => virtualizer.scrollToIndex(index, { align: "auto" })
+  const keys = createTreeKeys({ rows, visible, container: () => container, scrollTo })
+  const [pendingReveal, setPendingReveal] = createSignal<string>()
+  createEffect(on(() => props.reveal, setPendingReveal))
+  createEffect(
+    on([pendingReveal, indexByKey], ([path, index]) => {
+      const at = path === undefined ? undefined : index.get(path)
+      if (at === undefined) return
+      scrollTo(at)
+      setPendingReveal(undefined)
     }),
   )
-  const hiddenAfter = () => Math.max(0, tree.nodes().length - reveal().end)
-  const dir = () => props.source.state(props.path)
   return (
     <div
+      ref={container}
       data-component="filetree"
-      class="flex flex-col gap-0.5"
-      role={level === 0 ? "tree" : "group"}
-      aria-label={level === 0 ? t("files.tree") : undefined}
-      onKeyDown={level === 0 ? handleTreeKeyDown : undefined}
+      role="tree"
+      aria-label={t("files.tree")}
+      style={{ position: "relative", width: "100%", height: `${virtualizer.getTotalSize()}px` }}
+      onKeyDown={keys.onKeyDown}
     >
-      <Switch>
-        <Match when={dir().error}>
-          {(error) => (
-            <FailureNotice
-              title={t("files.loadFailed")}
-              message={error().message}
-              retryLabel={t("files.retry")}
-              onRetry={dir().retry}
-            />
-          )}
-        </Match>
-        <Match when={dir().loading && tree.nodes().length === 0}>
-          <TreeLoading level={level} episode={props.loadingEpisode} />
-        </Match>
-      </Switch>
-      <Show when={reveal().start > 0}>
-        <ShowMore
-          count={Math.min(reveal().start, batchSize())}
-          onClick={() => setBatchesBefore((current) => current + 1)}
-        />
-      </Show>
-      <For each={tree.nodes().slice(reveal().start, reveal().end)}>
-        {(node) => (
-          <Show
-            when={node.kind === "directory"}
-            fallback={<FileRow tree={props} node={node} level={level} marks={tree.marks()} />}
-          >
-            <DirectoryRow
-              tree={props}
-              node={node}
-              level={level}
-              marks={tree.marks()}
-              deeps={tree.deeps()}
-              filter={tree.filter()}
-              chain={chain}
-            />
-          </Show>
-        )}
+      <For each={visible()}>
+        {(key) => {
+          const index = createMemo(() => indexByKey().get(key))
+          const row = createMemo(() => rows()[indexByKey().get(key) ?? -1], undefined, { equals: sameRow })
+          return (
+            <div
+              data-index={index()}
+              ref={(element) => queueMicrotask(() => element.isConnected && virtualizer.measureElement(element))}
+              style={{ position: "absolute", top: "0", left: "0", width: "100%", display: "flex", "flex-direction": "column", transform: `translateY(${(starts().get(key) ?? 0) - margin()}px)` }}
+            >
+              <Show when={row()}>{(current) => <TreeRowView tree={context} row={current()} />}</Show>
+            </div>
+          )
+        }}
       </For>
-      <Show when={hiddenAfter() > 0}>
-        <ShowMore
-          count={Math.min(hiddenAfter(), batchSize())}
-          onClick={() => setBatchesAfter((current) => current + 1)}
-        />
-      </Show>
     </div>
   )
 }

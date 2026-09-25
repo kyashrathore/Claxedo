@@ -259,13 +259,14 @@
   .tsk-card:focus-within .tsk-row-tools,
   .tsk-column:hover .tsk-column-head .ui-icon-button,
   .tsk-column-head:focus-within .ui-icon-button,
-  .tsk-row-tools:has([data-expanded]) {
+  .tsk-tr[data-tools-open] .tsk-row-tools,
+  .tsk-card[data-tools-open] .tsk-row-tools {
     opacity: 1;
   }
 
   .tsk-tr:hover .tsk-props,
   .tsk-tr:focus-within .tsk-props,
-  .tsk-tr:has(.tsk-row-tools [data-expanded]) .tsk-props {
+  .tsk-tr[data-tools-open] .tsk-props {
     visibility: hidden;
   }
 }

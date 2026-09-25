@@ -1,12 +1,15 @@
-import { createMemo, createSignal, For, onCleanup, Show } from "solid-js"
+import { createMemo, createSelector, createSignal, For, onCleanup, Show } from "solid-js"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { PALETTE_ID, useCommands, type Commands } from "@/shell"
 import { showToast, Button, TextField } from "@/ui"
 import { useTranslator } from "@/i18n"
 import { settingsDictionary } from "../i18n"
-import { clearsKeybinding, filterRows, groupRows, keybindingFromEvent, type KeybindingRow } from "../keybindings"
+import { clearsKeybinding, filterRows, firstRows, groupRows, keybindingFromEvent, type KeybindingRow } from "../keybindings"
+import { createRevealLimit } from "./reveal"
 import { SettingsGroup, SettingsList } from "./section"
 
+const FIRST_ROWS = 40
+const ROWS_PER_FRAME = 60
 
 function keybindingRows(commands: Commands, labels: { readonly palette: string; readonly general: string }): KeybindingRow[] {
   const options = commands.options().filter((option) => commands.has(option.id))
@@ -22,7 +25,12 @@ export function KeybindingsSection() {
   const [recording, setRecording] = createSignal<string>()
   const [query, setQuery] = createSignal("")
   const rows = createMemo(() => keybindingRows(commands, { palette: t("settings.keybindings.palette"), general: t("settings.keybindings.group.general") }))
+  const rowById = createMemo(() => new Map(rows().map((row) => [row.id, row])))
   const groups = createMemo(() => groupRows(filterRows(rows(), query())))
+  const limit = createRevealLimit(() => rows().length, FIRST_ROWS, ROWS_PER_FRAME)
+  const shown = createMemo(() => firstRows(groups(), limit()))
+  const categories = createMemo(() => [...shown().keys()], [], { equals: (a, b) => a.length === b.length && a.every((category, index) => category === b[index]) })
+  const isRecording = createSelector(recording)
 
   const stop = () => {
     if (recording() === undefined) return
@@ -60,14 +68,19 @@ export function KeybindingsSection() {
         <TextField label={t("settings.keybindings.search")} hideLabel placeholder={t("settings.keybindings.search")} value={query()} onChange={setQuery} />
         <Button size="small" variant="secondary" onClick={resetAll} disabled={!commands.overridden()}>{t("settings.keybindings.reset")}</Button>
       </div>
-      <For each={groups()}>
-        {([category, list]) => (
-          <SettingsGroup title={category}>
-            <SettingsList>
-              <For each={list}>{(row) => <KeybindingRowView row={row} recording={recording() === row.id} onStart={() => start(row.id)} />}</For>
-            </SettingsList>
-          </SettingsGroup>
-        )}
+      <For each={categories()}>
+        {(category) => {
+          const ids = createMemo(() => (shown().get(category) ?? []).map((row) => row.id))
+          return (
+            <SettingsGroup title={category}>
+              <SettingsList>
+                <For each={ids()}>
+                  {(id) => <Show when={rowById().get(id)}>{(row) => <KeybindingRowView row={row()} recording={isRecording(id)} onStart={() => start(id)} />}</Show>}
+                </For>
+              </SettingsList>
+            </SettingsGroup>
+          )
+        }}
       </For>
       <Show when={query() && groups().length === 0}>
         <p class="settings-note">{t("settings.keybindings.empty")}</p>

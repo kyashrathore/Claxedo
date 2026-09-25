@@ -2,7 +2,7 @@ import { fetchQuery } from "./fetch-query"
 import type { PlacementId } from "./ids"
 import { queryKeys } from "./query-keys"
 import { withQuery, type Transport } from "./transport"
-import type { FileContent, FileNode } from "./git-types"
+import type { FileContent, FileNode, FileSearchEntries } from "./git-types"
 import type { FetchQuery } from "./types"
 import type { Workspaces } from "./workspaces"
 
@@ -27,8 +27,8 @@ export function fileQueries(transport: Transport, workspaces: Workspaces) {
       })
     })
   const content = (placementId: PlacementId, path: string): FetchQuery<FileContent> => fetchQuery(queryKeys.fileContent(server, placementId, path), async () => transport.runtimeJson<FileContent>(await workspaces.route(placementId), withQuery(`${FILE_PATH}/content`, { path })))
-  const search = (placementId: PlacementId, query: string): FetchQuery<readonly string[]> => fetchQuery(queryKeys.fileSearch(server, placementId, query), async () => {
-      const rows = await transport.runtimeJson<unknown[]>(await workspaces.route(placementId), withQuery(SEARCH_PATH, { query, limit: SEARCH_LIMIT }))
+  const search = (placementId: PlacementId, query: string, entries: FileSearchEntries): FetchQuery<readonly string[]> => fetchQuery(queryKeys.fileSearch(server, placementId, query, entries), async () => {
+      const rows = await transport.runtimeJson<unknown[]>(await workspaces.route(placementId), withQuery(SEARCH_PATH, { query, limit: SEARCH_LIMIT, dirs: entries === "all" }))
       return rows.filter((row): row is string => typeof row === "string")
     })
   return { tree, content, search }

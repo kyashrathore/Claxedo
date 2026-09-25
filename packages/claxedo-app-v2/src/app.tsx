@@ -1,6 +1,6 @@
 import { accountBinding } from "#account-binding"
 import type { RunHostedOperation } from "@claxedo/account-contract"
-import { createMemo, Show, type JSX, type ParentProps } from "solid-js"
+import { createMemo, onCleanup, Show, type JSX, type ParentProps } from "solid-js"
 import { AuthProvider, useAuth, type Auth, type AuthState } from "@/auth"
 import { I18nProvider } from "@/i18n"
 import { ClockProvider } from "@/lib/clock"
@@ -12,7 +12,7 @@ import { AttentionAlerts } from "@/notifications"
 import { PreferencesProvider, usePreferences } from "@/settings"
 import { AppShell, createShellRegistries, ShellRegistriesContext, ShellRouter, type ShellRouterComponent } from "@/shell"
 import { firstParty } from "./registry"
-import { DialogProvider, syncIconLibraryWithTheme, ThemeProvider } from "@/ui"
+import { DialogProvider, mountSpriteShelf, syncIconLibraryWithTheme, ThemeProvider } from "@/ui"
 
 export type AppProps = { readonly router?: ShellRouterComponent; readonly serverUrl?: string }
 
@@ -62,6 +62,7 @@ function SignedServer(props: ParentProps<{ readonly serverUrl?: string }>): JSX.
 }
 
 export function App(props: AppProps): JSX.Element {
+  onCleanup(mountSpriteShelf(document.body))
   const registries = createShellRegistries(firstParty)
   return (
     <AuthProvider binding={accountBinding}>
