@@ -121,7 +121,11 @@ import { InternalRelayResolverRoutes } from "../shared-routes/internal-relay"
 import { hostConnectEndpointOptions } from "../../workspace/route-support"
 import { localRelayTargetExists, localRelayTargetLookup } from "./internal-relay-node"
 import { BootstrapRoutes } from "@claxedo/local-server/self-hosted-execution"
-import { hostTunnelTokenSigner, runtimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
+import {
+  hostTunnelTokenSigner,
+  hostTunnelTokenVerifier,
+  runtimeAccessTokenSigner,
+} from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { createControlPlaneRelayProvider } from "@claxedo/server-core/adapters/relay/index"
 import { WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
 import {
@@ -171,6 +175,7 @@ import { sessionMeta } from "@claxedo/server-core/session/meta/index"
 import { ClaxedoDB } from "../../platform/db"
 import { RemoteAccessRoutes } from "../../routes/remote-access"
 import { HostEnrollmentRoutes, HostInvitationRoutes } from "../../routes/hosted/host-enrollment"
+import { HostSessionRowsRoutes } from "../../routes/hosted/host-session-rows"
 import { createRemoteAccessService, unavailableRemoteAccessService } from "./remote-access-service"
 import { localHostIdentity, signHostPayload } from "../../workspace/local-host"
 import { hasMachineHostTunnel, startMachineHostTunnel, stopMachineHostTunnel } from "../../host-tunnel"
@@ -1185,6 +1190,7 @@ export function createSelfHostedApp(
   )
   app.route("/", ProviderAuthRoutes(services, authRouteOptions(services)))
   app.route("/api/claxedo/host/enrollments", HostEnrollmentRoutes(services, workspaceRouteOptions(services)))
+  app.route("/api/claxedo/host/session-rows", HostSessionRowsRoutes(services))
   app.route("/api/claxedo/host/invitations", HostInvitationRoutes(services, workspaceRouteOptions(services)))
   app.route("/api/claxedo/remote-access", RemoteAccessRoutes({
     deviceLoginConfigured: !!process.env.CLAXEDO_DEVICE_LOGIN_ISSUER?.trim(),
@@ -1727,6 +1733,7 @@ function localRelayFromEnv(
       ? {
           runtimeAccessTokenSigner: runtimeSigner,
           hostTunnelTokenSigner: hostSigner,
+          hostTunnelTokenVerifier: hostTunnelTokenVerifier(),
         }
       : {}),
     ...(relayUrl && relayUrls && runtimeSigner && hostSigner

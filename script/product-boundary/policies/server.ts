@@ -39,7 +39,7 @@ export const serverSelfHosted: Policy = {
     requiredPackages: ["@claxedo/local-server", "better-sqlite3", "better-auth"],
   },
   /**
-   * Measured 127 modules / 41 packages, with no headroom.
+   * Measured 128 modules / 41 packages, with no headroom.
    *
    * The reviewed owners this entry is allowed to reach beyond the single
    * binary's own usage pipeline: `@claxedo/local-server`'s Agent Plugins and
@@ -124,8 +124,14 @@ export const serverSelfHosted: Policy = {
    * shares with the owner grant, which this entry did not reach before
    * because it composes no owner grants. No package edge: jose and the
    * server-core auth ports were already here.
+   *
+   * `src/routes/hosted/host-session-rows.ts` is the reviewed owner of the
+   * session rows an enrolled machine publishes with its Host Tunnel Token:
+   * this box is a control plane machines enroll with, so it takes their rows
+   * as the hosted plane does. No package edge: zod, hono and the server-core
+   * authority port were already here.
    */
-  ceilings: { modules: 127, packages: 41 },
+  ceilings: { modules: 128, packages: 41 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",

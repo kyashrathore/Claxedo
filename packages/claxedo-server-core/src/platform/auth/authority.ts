@@ -8,6 +8,7 @@ import type {
   SessionPageQuery,
 } from "./private-session-authority"
 import type { SessionShareLevel } from "./session-share-level"
+import type { HostSessionRowsAuthority } from "./host-session-rows"
 
 export {
   DEFAULT_SESSION_SHARE_LEVEL,
@@ -580,6 +581,7 @@ export type WorkspaceAuthority = {
     args: { workspaceId: string },
   ) => Promise<AuthoritySessionInventoryRow[]>
   listSessionPage: (auth: SignedControlPlaneAuth, args: SessionPageQuery) => Promise<AuthoritySessionInventoryRow[]>
+  publishHostSessionRows?: HostSessionRowsAuthority["publishHostSessionRows"]
   resolveSession?: (auth: SignedControlPlaneAuth, args: { sessionId: string }) => Promise<unknown>
   readSessionMessages: (
     auth: SignedControlPlaneAuth,
