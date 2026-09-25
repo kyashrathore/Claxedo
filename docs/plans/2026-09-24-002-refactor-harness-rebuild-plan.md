@@ -252,7 +252,7 @@ The harness layer holds the most valuable things Claxedo handles: people's provi
 | **The first-party MCP bearer (owner-acting, 24 hours) is sent to remote ACP agents** | `acp/process-manager.ts:343-348` | H-1: the remote filter in P2 |
 | **Stdio MCP servers are sent to remote ACP agents** | `mcp-resolver.ts:284-290` through `process-manager.ts:344` | H-2: the remote filter |
 | **ACP releases a permission before saving the reply** | `acp/index.ts:609-610` | H-3 |
-| **No identity of the actor reaches a transport** | `AgentExecutionBinding`, `PromptInput` | `TurnInput.origin` (C-12) |
+| **No identity of the actor reaches a transport** | `AgentExecutionBinding`, `PromptInput` | `StartInput.owner` for credentials and `TurnInput.origin` for authorization and audit (C-12) |
 | **Reusing today's Pi code on the owner's folder would wipe their login** | `pi/auth.ts:119-121`, `:160` | The owner transport never writes the folder |
 | **Brokered Codex very likely starts without plugins.** An availability gap, not a leak | `codex/broker.ts:47-52` | H-4 |
 | **Three harnesses in the cloud image are installed by unpinned `curl \| bash` installers** (`cursor-agent`, Amp, `droid`). A supply-chain risk | `scripts/sandbox/Dockerfile`, `cloudflare-worker/Dockerfile` | C-13 |
@@ -576,7 +576,7 @@ Every defect the reviews found, all fixed in this plan. Each regression test is 
 | C-9 | The startup harness key is half-renamed: drivers write `WORKSPACE_RUNTIME_RUNNER`, the runtime reads other names | Correctness | `sandbox-manager/src/runtime-env.ts:51`, `runtime-boot.ts:99-113` | One name, written and read | P2 cloud | H19, default-harness case |
 | C-10 | The sandbox-side secret resolver isn't connected | Availability | `connection-secrets.ts:84` (no callers); `workspace/runtime.ts:920-925` | Connected through the registry | P2 cloud | H32 |
 | C-11 | OpenCode never receives provider credentials in any sandbox | Availability | `opencode-runtime.ts:15` | Providers bound | P2 OpenCode | H19, OpenCode case |
-| C-12 | Accounts are picked per org everywhere, never per person | Correctness, security | `registry.ts:185`; activation carries no actor; the broker's identity is `"operator"` | Owner written, actor carried, credentials chosen by `TurnInput.origin` | P1.3, P2 cloud | H31 |
+| C-12 | Accounts are picked per org everywhere, never per person | Correctness, security | `registry.ts:185`; activation carries no actor; the broker's identity is `"operator"` | Owner written, actor carried, credentials chosen by the session's owner (`StartInput.owner`, `selectSessionCredentials`) | P1.3, P2 cloud | H31 |
 | C-13 | Three agent programs in the image come from unpinned `curl \| bash` installers | Security (supply chain) | the sandbox Dockerfiles | Pinned by version and checksum | P2 cloud | An image check that fails on any unpinned install |
 | C-14 | Unsigned desktop onboarding offers a cloud sandbox the daemon can't create (404), and saves a driver key nothing uses | UX | `execution-step.tsx:54`, `workspace-control-routes.ts:54` | v2 onboarding offers cloud only when a control plane that can create one is connected | App v2 | H34 |
 | T-1 | An e2e spec sets the dead startup key, so it likely tests nothing | Test | `real-session-directory-isolation.spec.ts:96` | Sets the real key, with a red run | P2 cloud, with C-9 | Its own red run |
