@@ -109,6 +109,11 @@ Style: 6,285 style recalcs for 772 deltas (8 per delta). Invalidated nodes resol
   - From scenario 9 on, an init script rewrites `127.0.0.1:2593` to `127.0.0.1:2598` in `fetch`, XHR, `WebSocket` and `EventSource`. The daemon's CORS allows the v1 origin, and streams are live.
   - Re-measured with the live bridge, v1's idle polling is unchanged: 9 requests per 30 s on the draft page (`health` ×3, `status`, `permission` and `question` ×2 each) and 24 on an open session. The v1 polling reported in scenarios 1–8 is real.
   - Request counts come from `page.on("request")` in both modes.
+- Added for scenarios 9–13:
+  - **Computations**: in the dev build, Solid's `runComputation` (Vite deps chunk `chunk-4Z4CCSDB.js`, identical in both apps) is patched in the browser only, through a Playwright route that rewrites the served file. Each re-run is counted under the names of its nearest three component owners (`Comp.name`, which solid-refresh wraps). Computations with no component owner are counted as `root:` plus their source.
+  - **Regions**: each mutation's target is classified with `closest()` into the regions listed under the invariants. Style-invalidation node ids from the trace are resolved to regions after the run.
+  - **Events**: `JSON.parse` is wrapped to count event-stream frames by `type`, which gives the delta count.
+  - **Longest task**: the longest `RunTask` on the renderer main thread in each action's trace.
 - The owner's data has 4 sessions with local data (project "Claxedo"); the other 7 projects are unavailable fixture records. "Switch among 5 sessions" therefore uses all 4.
 
 ## Scenario 1: cold boot to rail painted, then 30 s idle
@@ -506,11 +511,16 @@ These counts did not vary across runs, so each can be an exact or ceiling assert
 | Settings (menu + item) | 0 | 748 | 853 | 12 | 33 | 37 | 11 |
 | Back to session | 3 | 47–67 | 397–489 | 3–6 | 49 | 19 | 2 |
 | Resize, each direction | 0 | 9 | 312 | 5 | 4 | 2 | 1 |
+| Streaming turn, per delta (panel open) | 0.02 | 14.3 (9.2 in the streaming message) | 45 | 1.6 | 17 | – | 0.85 |
+| Background turn, per delta | 0.01 | 0.002 | 1.1 | 0 | 0 | 0.6 rAF | 0.04 |
+| Files search, per key (cold) | 11–19 | 169–793 | 2,000–2,900 | 3–8 | 40–120 | – | 10–25 |
+| Files search clear | 0 | 378–644 | 4,785–9,329 | 4–22 | – | – | 72–184 |
+| Panel maximize / restore / close | 0 | 31–59 | 5,136–5,416 | 19–28 | 46–126 | – | 6–17 |
 | Heap after boot, after GC | 32,764 KB, 1,460 Nodes, 153 listeners | | | | | | |
 
 ## Scenario 10: switching sessions with the workspace panel open, then switching panel tabs
 
-The panel was opened on "Greeting", `docs/ci-green-staging-handoff-2026-09-23.md` was opened as a file tab, then the 4 sessions were switched twice (unvisited, then visited). The harness now also counts Solid computations re-run per component owner and DOM mutations per region (rail row, panel, composer, timeline turns, shell). It does this by patching Solid's dev `runComputation` in the browser (see Method addendum below). 1 run each here; the counts repeat from scenario 3.
+The panel was opened on "Greeting", `docs/ci-green-staging-handoff-2026-09-23.md` was opened as a file tab, then the 4 sessions were switched twice (unvisited, then visited). The harness now also counts Solid computations re-run per component owner and DOM mutations per region (rail row, panel, composer, timeline turns, shell). It does this by patching Solid's dev `runComputation` in the browser (see Method). 1 run each here; the counts repeat from scenario 3.
 
 | Switch (visited pass) | v1 panel mutations | v2 panel mutations | v1 restyled | v2 restyled | v1 longest task | v2 longest task | v2 computations |
 |---|---|---|---|---|---|---|---|
