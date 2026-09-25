@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto"
-import type { SubagentObservation } from "@claxedo/agent-runtime-contract"
+import { UnknownHostSubagentKeyError, type SubagentObservation } from "@claxedo/agent-runtime-contract"
 import type { RuntimeDiagnostic, SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
 
 export type AdmittedSubagentObservation = {
@@ -96,17 +96,6 @@ export async function admitSubagentObservation(
       },
     })
     return undefined
-  }
-}
-
-export class UnknownHostSubagentKeyError extends Error {
-  constructor(
-    readonly parentSessionId: string,
-    readonly observationId: string,
-    readonly subagentKey: string | undefined,
-  ) {
-    super(`subagent observation ${observationId} names claxedo row ${subagentKey ?? "<none>"}, which ${parentSessionId} never created`)
-    this.name = "UnknownHostSubagentKeyError"
   }
 }
 

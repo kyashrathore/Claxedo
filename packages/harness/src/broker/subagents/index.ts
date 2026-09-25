@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import type { SubagentObservation } from "@claxedo/agent-runtime-contract"
+import { UnknownHostSubagentKeyError, type SubagentObservation } from "@claxedo/agent-runtime-contract"
 import type { ChildSessionRef } from "../../contract/broker"
 import type { BrokerPorts } from "../ports"
 
@@ -38,7 +38,7 @@ export class SubagentBroker {
         this.ports.subagentAdmissionStore.markPublished(sessionId, observation.observationId)
       }
     } catch (error) {
-      if (!(error instanceof Error) || error.name !== "UnknownHostSubagentKeyError") throw error
+      if (!(error instanceof UnknownHostSubagentKeyError)) throw error
       await this.ports.publishSubagentDiagnostic(sessionId, {
         code: "subagent-binding-unknown",
         message: error.message,

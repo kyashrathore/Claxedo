@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { ElicitationValidationError, type AgentSessionStartBinding, type SubagentObservation } from "@claxedo/agent-runtime-contract"
+import { ElicitationValidationError, UnknownHostSubagentKeyError, type AgentSessionStartBinding, type SubagentObservation } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent, SubagentUpdatedEvent } from "@claxedo/agent-event-runtime/contracts"
 import type { PendingRequest, RequestAnswer } from "../contract/broker"
 import type { BrokerEvent, BrokerPorts, SubagentAdmissionStore, TurnAuthority } from "./ports"
@@ -51,9 +51,7 @@ class MemoryPorts implements BrokerPorts {
       const host = observation.subagentKey ? [...this.admissionRows.values()].find((row) =>
         row.event.subagentKey === observation.subagentKey && row.event.childSessionId) : undefined
       if (observation.providerKind === "claxedo" && observation.toolCallId && !host) {
-        const error = new Error(`subagent observation ${observation.observationId} names claxedo row ${observation.subagentKey ?? "<none>"}, which ${parentSessionId} never created`)
-        error.name = "UnknownHostSubagentKeyError"
-        throw error
+        throw new UnknownHostSubagentKeyError(parentSessionId, observation.observationId, observation.subagentKey)
       }
       const related = host ?? [...this.admissionRows.values()].find((row) =>
         observation.providerId && row.observation.providerId === observation.providerId)

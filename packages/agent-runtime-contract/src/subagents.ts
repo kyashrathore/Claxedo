@@ -71,3 +71,14 @@ export type SubagentObservation = {
   attention?: number
   wake?: SubagentWake
 }
+
+export class UnknownHostSubagentKeyError extends Error {
+  constructor(
+    readonly parentSessionId: string,
+    readonly observationId: string,
+    readonly subagentKey: string | undefined,
+  ) {
+    super(`subagent observation ${observationId} names claxedo row ${subagentKey ?? "<none>"}, which ${parentSessionId} never created`)
+    this.name = "UnknownHostSubagentKeyError"
+  }
+}
