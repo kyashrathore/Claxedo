@@ -1304,7 +1304,7 @@ Every slice deletes what it replaces.
   - instance state, not a process-wide counter (H-8);
   - `claude-agent-acp`'s `_meta` delivery;
   - the conformance suite green; H16, H21, H24, H26 and defects H-1, H-2, H-3, H-8 green at P3.
-  - `Progress:` merged (2ffc7cfc4a): the transport, `restore/`, process and websocket agents in the suite. Open: the draft probe and startup-request retirement (contract pass), streamable-HTTP conformance, optional handshake groups, and its kept rows.
+  - `Progress:` merged (2ffc7cfc4a): the transport, `restore/`, process and websocket agents in the suite. The `hv2/acp-followups` lane adds streamable-HTTP conformance, handshake-declared steer/agents/goals/health groups, bounded restoration, focused kept-row tests and a clocked draft-probe timeout proved ten times alongside flows. H16 and H26 stay green; H21 and H24 remain expected red on the pre-cutover runtime. P3 cutover and the process observer's descriptor-chain proof remain.
 - [ ] **OpenCode, one path: the embedded engine** (decision 2).
   - The engine moved from `workspace-runtime/src/opencode` behind `HarnessTransport` into `src/transports/opencode-sdk/`, split to the 300-line file limit.
   - Provider credentials in every placement (C-3, C-11), applied without aborting a running turn; requests through the broker.

@@ -9,22 +9,30 @@ const scriptDir = process.env[ACP_SCRIPT_DIR_ENV]
 if (!scriptDir) throw new Error(`${ACP_SCRIPT_DIR_ENV} is not set`)
 
 agent()
-  .onRequest("initialize", () => ({
-    protocolVersion: PROTOCOL_VERSION,
-    agentCapabilities: { loadSession: false },
-    authMethods: [],
-  }))
+  .onRequest("initialize", async (context) => {
+    if (process.env.SCRIPTED_ACP_INIT_QUESTION === "1") {
+      const response = await context.client.request("elicitation/create", {
+        requestId: context.requestId, mode: "form", message: "Choose during initialization",
+        requestedSchema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"] },
+      })
+      await recordElicitationReceipt(scriptDir, { sessionId: "initialize", message: "Choose during initialization",
+        action: response.action, ...(response.action === "accept" ? { content: response.content } : {}) })
+    }
+    return { protocolVersion: PROTOCOL_VERSION, agentCapabilities: { loadSession: false }, authMethods: [] }
+  })
   .onRequest("session/new", async (context) => {
-    const response = await context.client.request("elicitation/create", {
-      requestId: context.requestId,
-      mode: "form",
-      message: "Choose before session creation",
-      requestedSchema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"] },
-    })
-    await recordElicitationReceipt(scriptDir, {
-      sessionId: "startup", message: "Choose before session creation", action: response.action,
-      ...(response.action === "accept" ? { content: response.content } : {}),
-    })
+    if (process.env.SCRIPTED_ACP_SKIP_NEW_QUESTION !== "1") {
+      const response = await context.client.request("elicitation/create", {
+        requestId: context.requestId,
+        mode: "form",
+        message: "Choose before session creation",
+        requestedSchema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"] },
+      })
+      await recordElicitationReceipt(scriptDir, {
+        sessionId: "startup", message: "Choose before session creation", action: response.action,
+        ...(response.action === "accept" ? { content: response.content } : {}),
+      })
+    }
     return { sessionId: `scripted-startup-${randomUUID()}` }
   })
   .onRequest("session/prompt", async (context) => {
