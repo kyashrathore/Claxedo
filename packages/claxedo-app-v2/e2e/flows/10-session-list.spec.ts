@@ -1,5 +1,5 @@
 import type { Locator, Page } from "@playwright/test"
-import { acpScriptToken, ApiError, assistantText, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI, type ClaxedoApi, type SessionRow, type Stack, type Workspace } from "../harness"
+import { acpScriptToken, ApiError, assistantText, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI, watchPageWork, type ClaxedoApi, type SessionRow, type Stack, type Workspace } from "../harness"
 
 type ListItem = { readonly sessionId: string; readonly title: string; readonly archivedAt?: number | null; readonly parentSessionId?: string | null }
 
@@ -99,3 +99,29 @@ test("10 session list: the project's rows, live status, rename, archive and dele
   expect(await serverOrder(stack.url)).toEqual(["Charlie renamed"])
   await expect.poll(() => rowTitles(app)).toEqual(["Charlie renamed"])
 })
+
+test("10 a background turn changes only its own rail row and wakes no animation frame", async ({ stack, api, app }) => {
+  test.skip(stack.app !== "v2", "v1 re-renders every rail row and polls statuses")
+  const workspace = await stack.daemon.makeWorkspace("isolation", "Isolation")
+  const create = (title: string) => api.createSession(workspace.directory, { title, harness: SCRIPTED_ACP_HARNESS })
+  const open = await create("Open")
+  const background = await create("Background")
+  await create("Third")
+  const reply = Array.from({ length: 30 }, (_, index) => `Background paragraph ${index + 1}.`).join("\n\n")
+  await stack.acp.write("background", { steps: [{ kind: "hold", name: "background" }, { kind: "text", text: `${reply}\n\nThe background reply ends here.`, chunks: 150, delayMs: 10 }] })
+
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, open.id)}`)
+  await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
+  const mark = row(app, "Background").locator("[data-sidebar-status]")
+  await api.promptAsync(workspace.directory, background.id, `Write at length. ${acpScriptToken("background")}`)
+  await expect(mark).toHaveAttribute("data-sidebar-status", "working")
+  const work = await watchPageWork(app, { regions: { ownRow: `[data-testid="rail-sidebar-session-row"][data-session-id="${background.id}"]` } })
+  await stack.acp.release("background")
+  await expect.poll(async () => assistantText(await api.messages(workspace.directory, background.id))).toContain("The background reply ends here.")
+  await expect(mark).toHaveCount(0)
+
+  const seen = await work()
+  expect(seen.animationFrames, "animation frames asked for during the background turn").toBe(0)
+  expect(Object.keys(seen.mutations), "regions the background turn changed").toEqual(["ownRow"])
+})
+

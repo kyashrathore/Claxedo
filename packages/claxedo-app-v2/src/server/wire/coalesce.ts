@@ -48,28 +48,40 @@ function coalesceEvents(events: readonly ServerEvent[]): ServerEvent[] {
   return out.filter((event): event is ServerEvent => event !== undefined)
 }
 
-const HIDDEN_PAGE_FLUSH_MS = 250
+const NO_FRAME_FLUSH_MS = 250
 
-function nextFrame(run: () => void) {
-  if (typeof requestAnimationFrame !== "function") {
-    setTimeout(run, 16)
-    return
-  }
-  const timer = setTimeout(() => {
-    cancelAnimationFrame(frame)
-    run()
-  }, HIDDEN_PAGE_FLUSH_MS)
-  const frame = requestAnimationFrame(() => {
-    clearTimeout(timer)
-    run()
-  })
+export type Wake = {
+  readonly frame: (run: () => void) => () => void
+  readonly later: (run: () => void) => () => void
 }
 
-export function createCoalescer(emit: (events: readonly ServerEvent[]) => void, schedule: (run: () => void) => void = nextFrame): Coalescer {
+function later(run: () => void) {
+  const timer = setTimeout(run, NO_FRAME_FLUSH_MS)
+  return () => clearTimeout(timer)
+}
+
+function frame(run: () => void) {
+  if (typeof requestAnimationFrame !== "function") return later(run)
+  const timer = setTimeout(run, NO_FRAME_FLUSH_MS)
+  const handle = requestAnimationFrame(run)
+  return () => {
+    clearTimeout(timer)
+    cancelAnimationFrame(handle)
+  }
+}
+
+const browserWake: Wake = { frame, later }
+
+export function createCoalescer(
+  emit: (events: readonly ServerEvent[]) => void,
+  needsFrame: (event: ServerEvent) => boolean,
+  wake: Wake = browserWake,
+): Coalescer {
   let queue: ServerEvent[] = []
-  let scheduled = false
+  let pending: { readonly frame: boolean; readonly cancel: () => void } | undefined
   const flush = () => {
-    scheduled = false
+    pending?.cancel()
+    pending = undefined
     if (queue.length === 0) return
     const batch = queue
     queue = []
@@ -78,9 +90,10 @@ export function createCoalescer(emit: (events: readonly ServerEvent[]) => void, 
   return {
     push: (event) => {
       queue.push(event)
-      if (scheduled) return
-      scheduled = true
-      schedule(flush)
+      const asksFrame = needsFrame(event)
+      if (pending && (pending.frame || !asksFrame)) return
+      pending?.cancel()
+      pending = { frame: asksFrame, cancel: asksFrame ? wake.frame(flush) : wake.later(flush) }
     },
     flush,
   }

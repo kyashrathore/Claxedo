@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js"
+import { createEffect, createMemo, createRenderEffect, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js"
 import { Composer, promptText, sessionComposerKey, useComposerStore, type ComposerRecovery } from "@/composer"
 import { usePhone } from "@/lib/viewport"
 import { FailureBoundary, FailureNotice } from "@/lib/failure"
@@ -184,7 +184,9 @@ function SessionBody(props: {
 export function SessionSurface(props: SessionSurfaceProps) {
   const t = useSessionScreenText()
   const phone = usePhone()
+  const server = useServer()
   const stores = useSessionStores()
+  createRenderEffect(() => onCleanup(server.showSession(props.sessionRef.sessionId)))
   const panel = usePanel()
   const floating = () => !props.readOnly && panel.maximized() && props.active
   const view = createMemo(() => stores.open(props.sessionRef))

@@ -5,6 +5,7 @@ import type { ServerEvent } from "./events"
 import { invalidateFor } from "./queries"
 import type { StatusOwner } from "./status"
 import { createTurnWrites, type TurnWrites } from "./turn-writes"
+import type { SessionId } from "./ids"
 import type { SessionRef } from "./types"
 import type { Workspaces } from "./workspaces"
 import { createCoalescer, type Coalescer } from "./wire/coalesce"
@@ -14,6 +15,7 @@ export type EventIntake = {
   readonly frame: (raw: unknown) => void
   readonly gap: () => void
   readonly subscribe: (listener: (event: ServerEvent) => void) => () => void
+  readonly showSession: (sessionId: SessionId) => () => void
   readonly dispose: () => void
 }
 
@@ -51,6 +53,29 @@ function publisher(input: IntakeInput, listeners: Listeners, writes: TurnWrites,
   }
 }
 
+function sessionOf(event: ServerEvent): SessionId | undefined {
+  if (event.type === "sessionUpserted") return event.row.ref.sessionId
+  return "ref" in event ? event.ref.sessionId : undefined
+}
+
+function createShownSessions() {
+  const shown = new Map<SessionId, number>()
+  return {
+    show: (sessionId: SessionId) => {
+      shown.set(sessionId, (shown.get(sessionId) ?? 0) + 1)
+      return () => {
+        const count = (shown.get(sessionId) ?? 1) - 1
+        if (count > 0) shown.set(sessionId, count)
+        else shown.delete(sessionId)
+      }
+    },
+    needsFrame: (event: ServerEvent) => {
+      const sessionId = sessionOf(event)
+      return sessionId === undefined || shown.has(sessionId)
+    },
+  }
+}
+
 async function placed(workspaces: Workspaces, coalescer: Coalescer, frame: Frame): Promise<boolean> {
   const directory = placementDirectory(frame)
   if (!directory || workspaces.address.placementFor(directory, frame.workspaceId)) return true
@@ -72,7 +97,8 @@ async function mapFrame(workspaces: Workspaces, coalescer: Coalescer, frame: Fra
 
 export function createEventIntake(input: IntakeInput): EventIntake {
   const listeners: Listeners = new Set()
-  const coalescer: Coalescer = createCoalescer(publisher(input, listeners, createTurnWrites(), () => coalescer))
+  const shown = createShownSessions()
+  const coalescer: Coalescer = createCoalescer(publisher(input, listeners, createTurnWrites(), () => coalescer), shown.needsFrame)
   let queue: Promise<void> = Promise.resolve()
   return {
     frame: (raw) => {
@@ -85,6 +111,7 @@ export function createEventIntake(input: IntakeInput): EventIntake {
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
+    showSession: shown.show,
     dispose: () => {
       coalescer.flush()
       listeners.clear()

@@ -133,6 +133,7 @@ export function createServer(config: ServerConfig): ServerHandle {
     capabilities: capabilities.value,
     queryClient,
     subscribe: intake.subscribe,
+    showSession: intake.showSession,
     ...serverApis(transport, workspaces, status, queryClient, queries),
     queries,
     retryConnection: startup.retry,
