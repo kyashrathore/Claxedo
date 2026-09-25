@@ -167,7 +167,9 @@ export function wireNavigationGuard(wc: WebContents) {
   })
 }
 
-const RENDERER_DOCUMENTS = [RENDERER_DOCUMENT, "loading.html"]
+const LOADING_DOCUMENT = "loading.html"
+
+const RENDERER_DOCUMENTS = [RENDERER_DOCUMENT, LOADING_DOCUMENT]
 
 function packagedDocumentUrl(html: string) {
   return pathToFileURL(join(root, `../renderer/${html}`)).href
@@ -227,7 +229,7 @@ export function createLoadingWindow(globals: Globals) {
     onDestroyed: (listener) => win.webContents.once("destroyed", listener),
   })
 
-  loadWindow(win, "loading.html")
+  loadWindow(win, LOADING_DOCUMENT)
   injectGlobals(win, globals)
 
   return win
