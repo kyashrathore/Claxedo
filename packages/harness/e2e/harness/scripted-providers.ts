@@ -1,7 +1,7 @@
 import type { ScriptedModelServer } from "./scripted-model-server"
 import { sendJson, type HttpTransport } from "./transport"
 
-export const SCRIPTED_PROVIDER_IDS = ["anthropic", "openai", "claude-sdk", "codex-app-server"] as const
+export const SCRIPTED_PROVIDER_IDS = ["anthropic", "openai", "groq", "claude-sdk", "codex-app-server"] as const
 
 export type ScriptedProviderId = (typeof SCRIPTED_PROVIDER_IDS)[number]
 

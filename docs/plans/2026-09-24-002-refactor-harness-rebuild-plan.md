@@ -47,7 +47,7 @@ These are the jobs the layer does, whoever owns them today. Each gets exactly on
 | 5 | **Credentials** | Getting the person's selected provider account to the harness in the form the harness reads, without handing out the secret where avoidable | environment variables, config files (Codex `config.toml`, Pi `models.json`), SDK options, placeholders the broker fills | `src/registry/` credentials, plus each transport's `credentials.ts` |
 | 6 | **Session lifecycle** | Creating the harness's own session, reattaching after a restart, rebinding when the harness changes its id, closing | native session ids, resume calls (`resume`, `thread/resume`, `session/load`, `--session <file>`) | the transport (`start`, `attach`, `close`), with `SessionBroker.rebind` |
 | 7 | **Turn execution** | Sending a turn, streaming it, steering it mid-turn, cancelling it, and turns the harness starts itself (Codex goal turns) | `query()`, `turn/start`, `session/prompt`, RPC prompt, HTTP; `turn/steer` or streaming input; each protocol's cancel | the transport (`send`, `steer`, `cancel`), with `SessionBroker.admitProviderTurn` |
-| 8 | **Event translation** | Turning the harness's native stream into Claxedo's `AgentRuntimeEvent`s, and routing child-session events | SDK messages, 75 Codex notification methods, ACP `session/update`, Pi RPC lines, OpenCode server events | each transport's `translate/`, a pure function of state and event |
+| 8 | **Event translation** | Turning the harness's native stream into Claxedo's `AgentRuntimeEvent`s, and routing child-session events | SDK messages, 65 Codex notification methods, ACP `session/update`, Pi RPC lines, OpenCode server events | each transport's `translate/`, a pure function of state and event |
 | 9 | **Requests** | Permissions, questions and elicitations: bringing them to the person, grants ("allow always"), permission-mode limits, saving before releasing, cancelling | `canUseTool`, Codex server requests, ACP `request_permission` and elicitation, Pi extension UI, OpenCode `permission.asked` | `src/broker/`; who may answer stays in the routes' access policy |
 | 10 | **Config and capabilities** | Models, effort, permission modes; applying changes on the right timing; reads before a session exists | next turn versus next session; what a mode's `level` is | the transport's `config` group, plus `configure` |
 | 11 | **Goals** | Native goals (the harness runs them) and evaluated goals (Claxedo checks the work) | Codex `thread/goal/*`, Claude and Cursor `/goal` prompts, an ACP goal extension, none | the transport's `goals` group; the evaluated loop in the runtime host |
@@ -66,7 +66,7 @@ Rows 1–18 are the harness layer this plan rebuilds. Rows 19 and 20 are runtime
 ## What's wrong today
 
 **1. Every responsibility is spread across both adapter stacks.**
-- Two adapter cores, the SDK one and ACP's three-level class chain, each implement all 18 rows their own way.
+- Two adapter cores, the SDK one and ACP's three-level class chain, each implement all 20 rows their own way.
 - The contract that ties them together has **96 members:** 20 core, 26 across 17 add-ons, 7 goal actions, 14 host callbacks, 10 turn inputs and 19 driver members.
 - **197 of the 409 commits** on these four packages since the fork are fixes.
 
@@ -91,7 +91,7 @@ After the rebuild it's a transport (driver plus translator), a profile, and one 
 
 ## Does it need solving?
 
-**Some of it would be needed no matter what:** the 24 defects in the [defect register](#defect-register), and deleting the ~6.9k lines of generated and unimplemented code. None of these depend on the rebuild.
+**Some of it would be needed no matter what:** the defects in the [defect register](#defect-register) (36 rows at the P0.7 measurement), and deleting the ~6.9k lines of generated and unimplemented code. None of these depend on the rebuild.
 
 **All of them are fixed inside it anyway, as part of v2, not landed separately first:**
 - each fix goes where its code is being rebuilt, so nothing is fixed twice;
@@ -188,7 +188,7 @@ These drive every choice in Part 2. Where a choice seems arbitrary, one of these
 **What exists today for the cloud** (read from the code):
 - **The sandbox image preinstalls** Claude Code 2.1.150, Codex 0.133.0, Gemini CLI 0.43.0, Pi 0.85.1, `cursor-agent`, Amp and Factory's `droid`. There's no OpenCode CLI.
 - **A runtime takes its settings as one snapshot** (`POST /api/wr/config`, version 4): MCP servers, custom harnesses, the default harness, credential placeholders, plugin folders, commands.
-- **Only the Cloudflare and Daytona drivers can broker secrets** so the real key stays outside the sandbox. The others refuse a turn that needs one.
+- **Only the Cloudflare, Daytona and Vercel drivers can broker secrets** so the real key stays outside the sandbox. The others refuse a turn that needs one.
 - **The delivery path exists** (brokered secrets, settings snapshot, updates on change), but only the self-hosted server runs it, and hosted never does ([Cloud harnesses](#cloud-harnesses-how-a-person-configures-one)).
 
 ## Security posture
@@ -215,7 +215,7 @@ The harness layer holds the most valuable things Claxedo handles: people's provi
 | **A harness Claxedo starts on this machine** | What the owner's user account can do | The same trust as the owner. Claxedo layers over it and doesn't pretend to sandbox it |
 | **A harness in a cloud sandbox** | The sandbox, and placeholders for provider keys | The sandbox. The provider's network layer attaches real keys only on requests to provider hosts (H-1) |
 | **A remote harness** (someone else's machine) | Only what its API receives | **Untrusted:** never Claxedo's own MCP server or bearer, never stdio servers, never brokered credentials. Plugin tokens only with endpoint-bound consent (integration plan) |
-| **A member acting through a share** | Exactly what the share allows (a `send` share can prompt) | The route's access policy decides who. The turn's origin reaches the transport, so a member's turn never uses the owner's own logins |
+| **A member acting through a share** | Exactly what the share allows (a `send` share can prompt) | The route's access policy decides who. The turn spends the session owner's accounts, like every turn in that session |
 | **Harness output**: model text, tool results, events, elicitation forms | Nothing | Untrusted input. Translators check shapes (ACP `validation.ts`); unknown events become typed `unrecognized` events; form patterns are checked in a bounded worker pool; Claxedo never runs harness output as its own instructions |
 | **What an agent says about itself** (name, version) | Nothing | Descriptive only. It can pick a profile's format and never grants plugin authority |
 
@@ -231,10 +231,9 @@ The harness layer holds the most valuable things Claxedo handles: people's provi
    - Grants are scoped to the session and to the harness connection that asked; a grant never answers another harness.
    - "Once" never widens to "always".
    - Cancel never allows.
-4. **Identity follows the turn, not the session.** The owner's own credentials (their Pi login) are used only for turns the owner started, on the desktop or loopback runtime.
-   - Everything else is brokered.
-   - A mismatch is refused.
-   - A queued turn is checked again when it's re-issued.
+4. **Credentials follow the session's owner, not the turn's sender** (owner ruling, 2026-09-25). Every turn in a session spends the owner's accounts, including a turn a member sends through a `send` share.
+   - The owner's own machine logins (their Pi login, for example) serve the owner's sessions on the desktop or loopback runtime; everywhere else the owner's chosen accounts are brokered.
+   - The sender decides who may send and is recorded for audit; it never selects credentials.
 5. **A person's own setup is never modified.**
    - The owner's Pi folder is never written.
    - Claude and Codex homes are composed in folders Claxedo owns, never the person's own.
@@ -321,9 +320,9 @@ The harness layer holds the most valuable things Claxedo handles: people's provi
 6. **The negative cases are first-class,** each a flow with its red run:
    - stale, duplicate and foreign replies;
    - a leak through the remote filter;
-   - a member's turn trying the owner's Pi profile;
+   - a member's turn in an owner's Pi session, which spends the owner's profile;
    - an expired credential.
-7. **Every defect is a test first.** Each of the 24 defects gets a regression test that fails on `dev` today, at the boundary where the defect lives, before it's fixed. That proves the new tests catch exactly the kind of defect the old ones let through.
+7. **Every defect is a test first.** Each defect in the register gets a regression test that fails on `dev` today, at the boundary where the defect lives, before it's fixed. That proves the new tests catch exactly the kind of defect the old ones let through.
 
 **The honest costs:**
 - **A flow is slower than a unit test.** The corpora carry the fast feedback; flows are sharded on crabbox; a new flow qualifies with 20 runs once.
@@ -491,7 +490,7 @@ Decision 15 confirms that timing.
 **Outside `packages/harness`, these change:**
 - **`packages/process-ownership` (new):** the moved code, unchanged.
 - **`workspace-runtime`:**
-  - the runtime host (`runtime.ts` and `runtime/*`, 3,604 lines) and the projection code (3,222 lines), moved in unchanged;
+  - the runtime host (`runtime.ts` and `runtime/*`, 3,604 lines) and the projection code (3,181 lines), moved in unchanged;
   - the `spawn` service over `process-ownership`;
   - in P3, the runtime host calling the contract for every harness.
 - **`agent-runtime-contract`:** keeps `recovery.ts` whole, because the daemon lifecycle, the desktop, the apps and the MCP tools use it. It gains the event contracts (`agent-event-runtime/src/contracts`, 458 lines) that the apps read.
@@ -536,7 +535,7 @@ The app rebuild runs against today's server contracts. This plan keeps them.
 | --- | --- | --- |
 | Deleted: the generated Codex protocol, the harness factories, add-ons with no implementer | ~6.9k | No |
 | Moved to test support: the in-memory, SQLite and persisted-row test stores | 1,860 | No |
-| Moved unchanged: process ownership (2,222), the runtime host (3,604), projection (3,222) | ~9.0k | No |
+| Moved unchanged: process ownership (2,222), the runtime host (3,604), projection (3,181) | ~9.0k | No |
 | Rebuilt into `packages/harness` and trimmed: contract, broker, registry, transports, profiles, plus `agent-runtime-contract` | ~31.9k → ~19.2k at the merge (`packages/harness` 15.7k + `agent-runtime-contract` 3.5k), ~17.1k after P6 | Yes |
 
 The publish ceremony and acceptance scripts live under `packages/*/scripts/`, outside `src/`. They're deleted, but they aren't part of the 49.7k.
@@ -561,6 +560,7 @@ Every defect the reviews found, all fixed in this plan. Each regression test is 
 | H-10 | Codex never receives the user's configured MCP servers: the driver keeps them in `currentMcp`, but `threadConfig` sends only the first-party server (found by H14) | Availability | `codex/driver.ts:151-169` | The Codex transport sends every projected server | P2 Codex | H14 |
 | H-11 | A Pi dialog with a timeout never records an expired request: the driver ends the dialog on its own timer but asks as an ordinary question without the deadline (found by H4) | Correctness | `pi/driver.ts` `question()` | The dialog becomes a broker request with `expiresAt`, and the broker persists `expired` | P1.3 | H4.pi |
 | H-12 | The app's `/compact` always fails on a harness that declares commands: it calls the summarize route, which no adapter ever implemented (409 before P0.3, 501 after) | Product | `claxedo-app/src/features/session/ui/use-session-commands.tsx` `session.compact` | `/compact` runs the harness's own compact command through `CommandOperations`, or isn't offered | P3 | — |
+| H-13 | Native turns never store the assistant message's tokens: Claude's `result` usage, Codex's `thread/tokenUsage/updated` and Pi's `message_end` usage each become a `session.usage` event with the right message id, and session totals are right, but the stored assistant `info.tokens` stays zero (ACP stores them; found by H13) | Correctness | the runtime projection that folds `session.usage` into stored messages | Usage folds into the assistant message it names, for every harness | P3 | H13.claude, H13.codex, H13.pi |
 | C-1 | Hosted never delivers provider credentials to a cloud sandbox | Availability | `supervisor/sandbox.ts:108` is the only caller | The delivery path run on hosted, over the existing brokering | P2 cloud | H19 (local and live), H30 |
 | C-2 | Hosted has no settings store and never sends the settings snapshot; its provider screen is a stub | Availability | `config-sync.ts` (self-hosted only); `routes/hosted/shell.ts:170-175` | A D1 settings store, snapshot push and fan-out on hosted | P2 cloud | H28 |
 | C-3 | OpenCode fails in a hosted sandbox | Availability | `runtime-boot.ts:141-143`, `workspace/runtime.ts:564-568` | Composed when a session asks for it, or OpenCode through ACP | P2 OpenCode, cloud | H19, OpenCode case |
@@ -705,20 +705,19 @@ This is a security boundary. The broker takes over what today's code enforces, a
 
 ### 4. Pi and credentials
 
-**The machine owner uses their own Pi login, and nobody else does.** Enforcing that needs the identity of **the turn**, not the session:
-- The routes already know a request's provenance (`session-access-policy.ts:689-691`, owner grants) and record the origin of queued and background turns (`session/delivery-owner.ts:227-231`).
-- That origin goes into `TurnInput.origin`.
-- **The owner profile runs only when** the turn's origin is the machine owner acting directly or through their own grant, **and** the runtime is the desktop or loopback daemon.
-- **Everything else runs brokered,** as today, in a separate Claxedo-owned profile. That includes a `send` share, a member's queued prompt re-issued later, and every cloud runtime.
-- **A turn whose origin doesn't match its session's profile is refused** with a typed error, checked again when a queued turn is re-issued.
+**A session runs on its owner's credentials, whoever sends the turn** (owner ruling, 2026-09-25):
+- **`StartInput.owner` names the session's owner,** and the profile is chosen once, at start and attach.
+- **The owner profile runs when** the session's owner is the machine owner **and** the runtime is the desktop or loopback daemon, for every turn in that session, including a member's turn through a `send` share and a queued prompt re-issued later.
+- **Every other session runs brokered,** in a separate Claxedo-owned profile, and so does every cloud runtime.
+- **The turn's sender reaches `TurnInput.origin`** for authorization and audit only. The routes already know a request's provenance (`session-access-policy.ts:689-691`, owner grants) and record the origin of queued and background turns (`session/delivery-owner.ts:227-231`).
 
 **The owner's Pi folder is never written.** No `auth.json` scrub, no model overlays, no title extension, no managed-file deletion. Today's code would destroy the user's login (`pi/auth.ts:119-121`, `:160`).
 
 Flows H18 and H20 check that the user's `auth.json` is byte-identical afterwards, and cover:
-- owner;
-- member through a `send` share;
-- queued re-issue;
-- expired, missing, and concurrent owner and member.
+- the owner's turn;
+- a member's turn through a `send` share, which spends the owner's profile;
+- a queued re-issue;
+- expired and missing accounts.
 
 ## What stays and what goes, for users
 
@@ -772,7 +771,7 @@ Everything users see today on every harness:
 | --- | --- | --- |
 | Launch and process ownership | 2,222 | `packages/process-ownership` |
 | Runtime host: `runtime.ts` and `runtime/*`, with recovery, admission, goal controller, titles and handoff | 3,604 | `workspace-runtime/src/host/` |
-| Projection: `client-presentation/*`, `compat-events.ts`, `turn-projection.ts`, `child-event-routing.ts`, `sse.ts` | 3,222 | `workspace-runtime/src/projection/` |
+| Projection: `client-presentation/*`, `compat-events.ts`, `turn-projection.ts`, `child-event-routing.ts`, `sse.ts` | 3,181 | `workspace-runtime/src/projection/` |
 | Event contracts, `agent-event-runtime/src/contracts` | 458 | `agent-runtime-contract` |
 | Translators: Claude (1,412 + `partial-json.ts` 98), Codex 1,313, Cursor 691, ACP 1,538, Pi 192 (comments removed, blank lines kept) | ~5.2k | `src/transports/*/translate/` |
 | Shared translator code | 552 | `src/translate/` |
@@ -979,7 +978,7 @@ export interface HarnessServices {
   - directory, `locality`, model and config;
   - the instruction block, only when the capabilities declare `instructionChannel: "thread-start"` (other channels compose it per turn, as today);
   - the profile's projection;
-  - resolved credentials selected by the turn's origin.
+  - resolved credentials selected by the session's owner.
 - **`TurnInput` carries:** the prompt, origin, model, effort, the prior todos (the Claude translator's seed) and the per-turn system block for per-turn channels.
 - **`ConfigUpdate`:** model, effort, permission mode, credential and placeholder renewals, MCP and projection changes. Each change carries its timing: `immediate`, `after-active-turns` (Pi refuses a mid-turn rotation) or `next-session` (Cursor's permission mode). `ConfigApplied` reports readiness, replacing `waitForConfigReady`.
 - **Turn admission and fencing stay in the moved runtime host.** A transport keeps only its protocol's own active-turn state, as an instance field.
@@ -1176,7 +1175,7 @@ Runs are sharded by harness with separate `CLAXEDO_E2E_PORT_RANGE`s, on crabbox 
 | H17 | OpenCode server prompts | N; only if kept |
 | H18 | Pi for the owner: an extension command via `get_commands`, `setStatus` and a widget; mismatched RPC; `auth.json` unchanged | N |
 | H19 | Cloud workspace: one turn per harness | B once the sandbox driver exists |
-| H20 | Pi credentials by turn origin: owner, `send` share, queued re-issue, expired, missing, concurrent | N |
+| H20 | Pi credentials by session owner: the owner's turn, a member's turn through a `send` share (spends the owner's profile), a queued re-issue, expired and missing accounts | N |
 | H21 | Two workspaces: an ACP config restart in one doesn't wait on the other | N |
 | H22 | Checkpoint drain with `needs_action` handled as today | B |
 | H23 | Windows: spawn, cancel, retirement | B once the Windows lane exists |
@@ -1187,7 +1186,7 @@ Runs are sharded by harness with separate `CLAXEDO_E2E_PORT_RANGE`s, on crabbox 
 | H28 | Hosted settings reach a sandbox: the person's HTTP MCP server with a brokered token arrives; a local-command MCP server arrives only if the image or an install spec provides it; a settings change reaches a running sandbox | N (C-2, C-8) |
 | H29 | Self-hosted cold start with no key-pair environment: keys are created, the snapshot arrives, the sandbox is ready | N (C-5) |
 | H30 | Cloud consent: allowing an account puts it in the sandbox as a placeholder; revoking it removes it; the real key never appears inside the sandbox | N (C-1, C-6) |
-| H31 | Per-person accounts: two people, two accounts; each person's turns spend their own; a member's turn never spends the owner's | N (C-12) |
+| H31 | Per-person accounts: two people, two accounts; each person's sessions spend their own; a member's turn in the owner's session spends the owner's | N (C-12) |
 | H32 | A custom ACP harness with a secret runs in a cloud sandbox; the secret is leased, and refused once revoked | N (C-4, C-10) |
 | H33 | A default-harness change, commands and a plugin reach a running self-hosted sandbox | N (C-7) |
 | H34 | Unsigned desktop onboarding offers no cloud sandbox; signed onboarding does, and the workspace is created | N (C-14, app v2) |
@@ -1229,7 +1228,7 @@ Every slice deletes what it replaces.
   - OpenCode's config API;
   - Pi's skill and extension flags.
   - `Progress:`
-- [ ] **P0.7 Measurement manifest:** the file lists behind every number. `Progress:`
+- [x] **P0.7 Measurement manifest:** the file lists behind every number. `Progress:` done (`docs/harness-v2/measurements/`, `measure.sh` re-runs them). Every figure reproduced on `dev` except the projection (3,181, corrected here) and the Codex notification methods (65, corrected here). `agent-runtime-contract` is already 3,466 lines against its 3.5k budget, so P4's move of the 458 event-contract lines needs about 424 lines removed first, or a budget decision.
 
 ### P1: contract, broker, Pi
 
@@ -1238,7 +1237,7 @@ Every slice deletes what it replaces.
 - [ ] **P1.2 Broker:** requests with the full contract, grants and ceilings, start requests, subagents, goal plumbing and provider turns, usage, cancel. `Progress:`
 - [ ] **P1.4 Conformance suite** (`packages/harness/src/conformance/`): one set of cases every transport runs through the contract, with the real broker over in-memory runtime ports and the transport's real harness program behind the scripted model server or the scripted ACP agent. It carries the kept invariants the invariant map assigns to transports. `Progress:`
 - [ ] **P1.3 Pi transport and profile:**
-  - owner sessions on the user's own Pi, by turn origin; members brokered as today;
+  - the machine owner's sessions on their own Pi, whoever sends the turn; other owners' sessions brokered;
   - `get_commands`; all nine extension-UI methods (H-5, H-6);
   - the conformance suite green against the pinned Pi; H1, H4, H6, H12, H18 and H20 go green at the P3 cutover.
   - `Progress:`
@@ -1343,8 +1342,8 @@ Each is corpus-proven, with your sign-off.
    - **Recommendation:** ACP. That saves 0.85k.
 3. **Harness switching mid-session.** It moves unchanged with the runtime host; nothing to decide here.
 4. **Protocol recovery inside transports.** **Recommendation:** keep it.
-5. **Pi credentials.**
-   - **Recommendation:** owner profile only when the turn's origin is the machine owner and the runtime is the desktop or loopback daemon.
+5. **Pi credentials.** Decided 2026-09-25: credentials follow the session's owner, not the turn's sender.
+   - The machine owner's sessions use their own Pi on the desktop or loopback daemon, for every turn.
    - Everything else is brokered.
 6. **Pi MCP and owner titles.**
    - **Recommendation:** MCP follows Pi's docs (P0.6).
@@ -1378,7 +1377,7 @@ Each is corpus-proven, with your sign-off.
 
 1. **The contract misses an operation.** Mitigated by the operation map from the full member list, and P1.0 freezing only when every row is callable.
 2. **Moves change behavior.** Mitigated by the wire corpus across live, stored, replay, control and cross-channel identity, and by the translator corpus with multi-step turns.
-3. **Credentials.** Owner profiles are selected by turn origin, never write the user's folder, and are covered by H18 and H20.
+3. **Credentials.** A session's profile comes from its owner, never writes the user's folder, and is covered by H18 and H20.
 4. **Remote leakage.** No first-party server, no stdio, and no plugin tokens go to remote harnesses; H24 covers it.
 5. **Budgets.** Translators move at measured size; P6 needs corpus proof; a missed gate goes back to you.
 6. **Qualification time.** About 90–100 variants, sharded on crabbox, with run counts per gate stated.
@@ -1395,7 +1394,7 @@ Each is corpus-proven, with your sign-off.
 - [ ] Translators moved; the invariant map complete; the translator corpus identical.
 - [ ] Profiles with format and delivery per transport; H14 and H15 green.
 - [ ] Remote rules in one filter; H24 green.
-- [ ] Pi owner by turn origin, the user's folder untouched; H18 and H20 green.
+- [ ] Pi sessions on their owner's profile, the user's folder untouched; H18 and H20 green.
 - [ ] Cursor workers per binding; H25 green.
 - [ ] Old packages deleted; app import paths moved; `isolation.buildPackages` updated.
 - [ ] Zero comments, no swallowed errors, process-wide state only in named owners; checks and architecture ratchets green.
@@ -1489,7 +1488,7 @@ I verified every finding below against the code before changing the plan.
 | Writing each frame once changes ACP multi-step turns on the wire | runtime | Projection moves unchanged; the corpus records multi-step turns and cross-channel identity |
 | The contract lacked re-attach, config and credential refresh, request replies, todos, outside-turn usage, goal publishing, a provider-turn event sink, child routing, `instructionChannel`, `sessionConfigOwner`, `listCommands`, archive, draft config reads, the `ConnectionProvider` hooks | re-review 2, contract | A full operation map from every member, with `attach`, `configure`, `RequestBroker`, `RoutedEvent` and the `SessionBroker` additions |
 | Claxedo's own MCP server, with an owner-acting 24-hour bearer, goes to remote ACP agents; `mcpCapabilities` has no `stdio`; the URL is loopback and optional | security, re-review | One remote filter at every call; `firstPartyMcp` is optional and local-only; H24 |
-| No actor identity reaches the Pi transport; shares and queued turns | security | Profile selected by turn origin; refusal on mismatch; desktop or loopback only |
+| A session's credentials depend on who sends a turn | security | The profile comes from the session's owner and a sender never changes it; the owner's machine logins only on desktop or loopback |
 | Today's Pi code would wipe the user's `auth.json` | security | The owner's folder is never written; H18 and H20 check it byte-for-byte |
 | "Allow always" grants are answered inside transports; option substitution; permission-mode ceilings | security | Grants, substitution and ceilings in the broker, with `level` on every mode |
 | Startup requests, free text and forms, the wider authority key, and who may answer | re-review, security | `RequestBroker` with start requests and answer variants; actor authorization stays in the routes |
@@ -1520,7 +1519,7 @@ Run from the repo root on `dev` at `37563dc802`. P0.7 commits the file manifest 
 | Moved translators (comments removed, blank lines kept) | Claude 1,412 + `partial-json.ts` 98; Codex 1,313; ACP 1,538; Cursor 691; Pi 192 | `grep -vcE '^\s*(//\|\*\|/\*\|\*/)' <files>` |
 | Shared translator code | `core` 241, `value.ts` 69, `host-subagent` and `tool-*` 242; `contracts` 458 | `wc -l` |
 | Moved runtime host | `runtime.ts` 829 + `runtime/*` 2,775 = 3,604 | `find packages/agent-sdk-runtime/src/runtime -name '*.ts' ! -name '*.test.ts'` |
-| Moved projection | `client-presentation` 2,041, `compat-events` 471, `turn-projection` and `child-event-routing` 467, `sse` 243 = 3,222 | `wc -l` |
+| Moved projection | `client-presentation` 2,000, `compat-events` 471, `turn-projection` and `child-event-routing` 467, `sse` 243 = 3,181 | `wc -l` |
 | Process ownership | `launch` 1,424 + `process-observer` 189 + `process-lifecycle` 418 + `windows-process` 120 + `spawn-env` 71 = 2,222 | `wc -l` |
 | Fix commits by subject | event harnesses 35/72; SDK harnesses 117/245; launch 12/28; all four packages 197/409 | `git log --format=%s -- <path> \| grep -ci fix` |
 | Module-level mutable sites | 14 (listed in P0.7's manifest) | `grep -nE '^(let \|(export )?const [A-Za-z_]+ = new (Map\|Set\|WeakMap))'`, constant tables excluded |

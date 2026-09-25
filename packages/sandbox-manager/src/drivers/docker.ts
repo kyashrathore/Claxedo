@@ -27,7 +27,7 @@ export type DockerSandboxDriverOptions = {
   runtimePort?: number
   runtimeCommand?: string
   workspaceDir?: string
-  runner?: string
+  nativeHarness?: string
   env?: (input: SandboxDriverEnsureInput, host: { id: string }) => Record<string, string> | Promise<Record<string, string>>
   syncLocalAuth?: boolean
   authHome?: string
@@ -218,7 +218,7 @@ export function createDockerSandboxDriver(options: DockerSandboxDriverOptions): 
       host: "0.0.0.0",
       source: input.source,
       env: input.env,
-      runner: options.runner,
+      nativeHarness: options.nativeHarness,
     })
   }
 

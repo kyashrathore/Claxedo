@@ -61,7 +61,7 @@ export type ModalSandboxDriverOptions = {
   runtimePort?: number
   runtimeCommand?: string
   workspaceDir?: string
-  runner?: string
+  nativeHarness?: string
   controlEnv?: WorkspaceRuntimeControlEnv
   env?: (input: SandboxDriverEnsureInput, host: { id: string }) => Record<string, string> | Promise<Record<string, string>>
   timeoutMs?: number
@@ -150,7 +150,7 @@ export function createModalSandboxDriver(options: ModalSandboxDriverOptions): Sa
       host: "0.0.0.0",
       source: input.source,
       env: input.env,
-      runner: options.runner,
+      nativeHarness: options.nativeHarness,
       controlEnv: options.controlEnv,
     })
   }

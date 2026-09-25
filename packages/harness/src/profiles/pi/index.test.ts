@@ -2,12 +2,11 @@ import { describe, expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { CredentialSelectionError } from "../../registry/credentials"
 import { piEnvironment, piProjectionArgs, preparePiProfile, selectPiProfile, type PiProfileOptions } from "./index"
 
 const credentials = { providers: {}, secrets: {}, leaseGeneration: "g1" }
-const owner = { actor: { kind: "machine-owner" as const }, via: "loopback" as const, reissued: false }
-const member = { actor: { kind: "person" as const, userId: "member" }, via: "relay" as const, reissued: false }
+const owner = { kind: "machine-owner" as const }
+const member = { kind: "person" as const, userId: "member" }
 
 describe("Pi profile selection", () => {
   test("keeps the owner's files unchanged and isolates brokered credentials", async () => {
@@ -36,16 +35,13 @@ describe("Pi profile selection", () => {
     } finally { await fs.rm(root, { recursive: true, force: true }) }
   })
 
-  test("rejects mismatched and reissued origins", () => {
+  test("selects a profile from session ownership and placement", () => {
     const options: PiProfileOptions = { placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: true, stateRoot: "/tmp/pi-test" }
-    const grant = { actor: { kind: "person" as const, userId: "owner" }, via: "owner-grant" as const, reissued: false }
-    expect(selectPiProfile(grant, credentials, "/work", "grant-session", options).kind).toBe("owner-login")
-    expect(selectPiProfile({ ...grant, via: "relay" }, credentials, "/work", "relay-session", options).kind).toBe("brokered")
-    expect(selectPiProfile({ ...member, reissued: true }, credentials, "/work", "queued-session", options).kind).toBe("brokered")
-    expect(() => selectPiProfile(member, credentials, "/work", "session", options, "owner-login")).toThrow(CredentialSelectionError)
-    expect(() => selectPiProfile({ ...member, reissued: true }, credentials, "/work", "session", options, "owner-login"))
-      .toThrow(CredentialSelectionError)
-    expect(() => selectPiProfile(owner, credentials, "/work", "session", options, "brokered")).toThrow(CredentialSelectionError)
+    expect(selectPiProfile({ kind: "person", userId: "owner" }, credentials, "/work", "owner-session", options).kind).toBe("owner-login")
+    expect(selectPiProfile(member, credentials, "/work", "member-session", options).kind).toBe("brokered")
+    expect(selectPiProfile(member, credentials, "/work", "member-session", options, "owner-login").kind).toBe("brokered")
+    expect(selectPiProfile(owner, credentials, "/work", "cloud-session", { ...options, placement: "cloud" }).kind).toBe("brokered")
+    expect(selectPiProfile(owner, credentials, "/work", "restricted-session", { ...options, canUseOwnLogin: false }).kind).toBe("brokered")
   })
 
   test("isolates concurrent member overlays within one workspace", async () => {

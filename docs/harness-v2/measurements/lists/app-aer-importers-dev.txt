@@ -1,0 +1,15 @@
+packages/claxedo-app/src/app/providers/global-sdk/goal-events.ts
+packages/claxedo-app/src/platform/runtime/agent/agent-runtime-goal-client.ts
+packages/claxedo-app/src/features/session/ui/composer/session-goal-dock.vitest.tsx
+packages/claxedo-app/src/features/session/ui/composer/session-composer-region.vitest.tsx
+packages/claxedo-app/src/features/session/ui/composer/session-composer-region.tsx
+packages/claxedo-app/src/features/session/ui/composer/session-goal-dock.tsx
+packages/claxedo-app/src/features/session/ui/message-author.tsx
+packages/claxedo-app/src/features/session/subagents/subagent-presentation.ts
+packages/claxedo-app/src/features/session/subagents/subagent-registry.ts
+packages/claxedo-app/src/features/session/composer/ui/submit-goal.ts
+packages/claxedo-app/src/features/session/composer/prompt-input-props.ts
+packages/claxedo-app/src/features/session/data/session-types.ts
+packages/claxedo-app/src/features/session/store/session-goal-cache.ts
+packages/claxedo-app/src/features/session/store/session-goal-query.ts
+packages/claxedo-app/src/features/session/conversation/agent-conversation.ts

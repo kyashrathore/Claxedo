@@ -7,11 +7,12 @@ LABEL org.opencontainers.image.source="https://github.com/kyashrathore/Claxedo"
 ENV DEBIAN_FRONTEND=noninteractive
 ENV SHELL=/bin/bash
 ENV PATH=/root/.local/bin:/root/.amp/bin:$PATH
+ENV AMP_SKIP_UPDATE_CHECK=1 FACTORY_DROID_AUTO_UPDATE_ENABLED=false
 
 # System tools needed for git clone, native compilation, and process management
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-      bash zsh ca-certificates curl git openssh-client \
+      bash zsh ca-certificates curl git gzip openssh-client \
       procps iproute2 netcat-openbsd \
       python3 make g++ && \
     rm -rf /var/lib/apt/lists/*
@@ -22,13 +23,13 @@ RUN npm i -g --min-release-age=2 \
       @anthropic-ai/claude-code@2.1.150 \
       @openai/codex@0.133.0 \
       @google/gemini-cli@0.43.0 \
-      @earendil-works/pi-coding-agent@0.85.1 && \
-    curl https://cursor.com/install -fsS | bash && \
-    curl -fsSL https://ampcode.com/install.sh | bash && \
-    curl -fsSL https://app.factory.ai/cli | sh && \
+      @earendil-works/pi-coding-agent@0.85.1
+
+COPY .build/install-agent-artifacts.sh /tmp/install-agent-artifacts.sh
+RUN sh /tmp/install-agent-artifacts.sh && \
     ln -sf /root/.local/bin/agent /usr/local/bin/agent && \
     ln -sf /root/.local/bin/cursor-agent /usr/local/bin/cursor-agent && \
-    ln -sf /root/.local/bin/amp /usr/local/bin/amp && \
+    ln -sf /root/.amp/bin/amp /usr/local/bin/amp && \
     ln -sf /root/.local/bin/droid /usr/local/bin/droid && \
     command -v claude && \
     command -v codex && \

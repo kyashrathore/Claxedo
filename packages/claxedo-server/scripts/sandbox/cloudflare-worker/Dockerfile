@@ -3,6 +3,7 @@ FROM docker.io/cloudflare/sandbox:0.12.9
 LABEL org.opencontainers.image.source="https://github.com/kyashrathore/Claxedo"
 
 ENV PATH=/root/.local/bin:/root/.amp/bin:$PATH
+ENV AMP_SKIP_UPDATE_CHECK=1 FACTORY_DROID_AUTO_UPDATE_ENABLED=false
 
 # Direct terminal-agent CLIs baked into the image. These are the single biggest
 # contributor to image size (claude ~228MB, codex ~218MB,
@@ -12,8 +13,6 @@ ENV PATH=/root/.local/bin:/root/.amp/bin:$PATH
 # NOTE: `wrangler deploy` cannot inject --build-arg, so the DEFAULT below is what
 # ships via wrangler. Override only for local `docker build`.
 ARG CLAXEDO_NPM_AGENTS="@anthropic-ai/claude-code@2.1.150 @openai/codex@0.133.0 @google/gemini-cli@0.43.0 @earendil-works/pi-coding-agent@0.85.1"
-# Set to "1" to also install the curl-based agents (cursor, amp, droid) — adds
-# ~430MB and most deployments don't use them, so off by default.
 ARG CLAXEDO_CURL_AGENTS="1"
 
 # Install build tools for native deps (better-sqlite3, node-pty). `git` is named
@@ -21,7 +20,7 @@ ARG CLAXEDO_CURL_AGENTS="1"
 # and agents clone from inside the sandbox; whether the base image happens to
 # carry it is not something this image should depend on.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl ca-certificates git make g++ python3 xz-utils && \
+    apt-get install -y --no-install-recommends curl ca-certificates git gzip make g++ python3 xz-utils && \
     rm -rf /var/lib/apt/lists/* && \
     command -v git
 
@@ -34,6 +33,7 @@ RUN apt-get update && \
 # on PATH; the sandbox's own container
 # server is a self-contained binary and does not resolve node from PATH.
 RUN curl -fsSL https://nodejs.org/dist/v24.18.0/node-v24.18.0-linux-x64.tar.xz -o /tmp/node24.tar.xz && \
+    printf '%s  %s\n' 55aa7153f9d88f28d765fcdad5ae6945b5c0f98a36881703817e4c450fa76742 /tmp/node24.tar.xz | sha256sum -c - && \
     mkdir -p /opt/node-24 && \
     tar -xJf /tmp/node24.tar.xz -C /opt/node-24 --strip-components=1 && \
     rm /tmp/node24.tar.xz && \
@@ -42,21 +42,18 @@ ENV PATH=/opt/node-24/bin:$PATH
 
 # Global CLI tools used by direct terminal agents and materialized MCP configs.
 # tsx is always needed by the runtime; the agent set is configurable above.
-RUN npm i -g --min-release-age=2 tsx@4.22.3 ${CLAXEDO_NPM_AGENTS} && \
-    if [ "${CLAXEDO_CURL_AGENTS}" = "1" ]; then \
-      curl https://cursor.com/install -fsS | bash && \
-      curl -fsSL https://ampcode.com/install.sh | bash && \
-      curl -fsSL https://app.factory.ai/cli | sh && \
+RUN npm i -g --min-release-age=2 tsx@4.22.3 ${CLAXEDO_NPM_AGENTS}
+
+COPY .build/install-agent-artifacts.sh /tmp/install-agent-artifacts.sh
+RUN if [ "${CLAXEDO_CURL_AGENTS}" = "1" ]; then \
+      sh /tmp/install-agent-artifacts.sh && \
       ln -sf /root/.local/bin/agent /usr/local/bin/agent && \
       ln -sf /root/.local/bin/cursor-agent /usr/local/bin/cursor-agent && \
-      ln -sf /root/.local/bin/amp /usr/local/bin/amp && \
+      ln -sf /root/.amp/bin/amp /usr/local/bin/amp && \
       ln -sf /root/.local/bin/droid /usr/local/bin/droid && \
       command -v cursor-agent && command -v amp && command -v droid; \
     fi && \
-    command -v claude && \
-    command -v codex && \
-    command -v gemini && \
-    command -v pi
+    command -v claude && command -v codex && command -v gemini && command -v pi
 
 # Claxedo workspace-runtime host: an in-repo esbuild bundle (built by
 # scripts/sandbox/build-sandbox-image.ts into .build/) plus a generated
