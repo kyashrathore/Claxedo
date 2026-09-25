@@ -72,10 +72,15 @@ export async function openEventStream(url: string, directory: string, options: E
   const frames: StreamFrame[] = []
   const listeners = new Set<(frame: StreamFrame) => void>()
   const droppedFrameType = process.env.CLAXEDO_E2E_DROP_FRAME_TYPE
-  const pumping = pump(response.body, (frame) => {
+  const failures = new Set<(error: unknown) => void>()
+  let failure: { error: unknown } | undefined
+  void pump(response.body, (frame) => {
     if (droppedFrameType && frameType(frame) === droppedFrameType) return
     frames.push(frame)
     for (const listener of listeners) listener(frame)
+  }).catch((error: unknown) => {
+    failure = { error }
+    for (const fail of failures) fail(error)
   })
   return {
     frames,
@@ -83,21 +88,30 @@ export async function openEventStream(url: string, directory: string, options: E
       new Promise<StreamFrame>((resolve, reject) => {
         const existing = frames.find(match)
         if (existing) return resolve(existing)
-        const timer = setTimeout(() => {
+        if (failure) return reject(new Error(`event stream failed before ${waitOptions.label}: ${String(failure.error)}`, { cause: failure.error }))
+        const done = () => {
+          clearTimeout(timer)
           listeners.delete(listener)
+          failures.delete(fail)
+        }
+        const timer = setTimeout(() => {
+          done()
           reject(new Error(`event stream never delivered ${waitOptions.label} within ${waitOptions.timeoutMs ?? 30_000}ms`))
         }, waitOptions.timeoutMs ?? 30_000)
         const listener = (frame: StreamFrame) => {
           if (!match(frame)) return
-          clearTimeout(timer)
-          listeners.delete(listener)
+          done()
           resolve(frame)
         }
+        const fail = (error: unknown) => {
+          done()
+          reject(new Error(`event stream failed before ${waitOptions.label}: ${String(error)}`, { cause: error }))
+        }
         listeners.add(listener)
+        failures.add(fail)
       }),
     close: () => {
       controller.abort()
-      void pumping
     },
   }
 }
