@@ -61,3 +61,28 @@ test("spawn observes output and retires the child and its descendant", async () 
     await rm(cwd, { recursive: true, force: true })
   }
 })
+
+test("spawn scrubs the runtime's internal secrets from every harness environment", async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), "harness-spawn-env-"))
+  const ownership = volatileLaunchOwnership()
+  let owned: Awaited<ReturnType<ReturnType<typeof createSpawnService>>> | undefined
+  try {
+    owned = await createSpawnService(ownership)({
+      file: "/bin/sh",
+      args: ["-c", "printf 'ENV:%s|%s|%s\\n' \"${CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM-unset}\" \"${CLAXEDO_SERVER_URL-unset}\" \"${HARNESS_PLAIN-unset}\""],
+      cwd,
+      env: {
+        PATH: process.env.PATH ?? "/usr/bin:/bin",
+        CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: "private-key-material",
+        CLAXEDO_SERVER_URL: "http://127.0.0.1:4100",
+        HARNESS_PLAIN: "kept",
+      },
+    }, { role: "harness", label: "env scrub", sessionId: "spawn-env-test" })
+    const output = await waitForOutput(owned.stdout, /ENV:.*\n/)
+    expect(output).toContain("ENV:unset|http://127.0.0.1:4100|kept")
+    await owned.exited
+  } finally {
+    if (owned) await owned.retire({ at: Date.now() + 5_000, signal: new AbortController().signal })
+    await rm(cwd, { recursive: true, force: true })
+  }
+})

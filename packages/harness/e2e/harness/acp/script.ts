@@ -37,6 +37,7 @@ export type AcpStep =
   | { kind: "text"; text: string; chunks?: number }
   | { kind: "usage"; used: number; size: number }
   | { kind: "prompt" }
+  | { kind: "env-digest"; name: string }
   | { kind: "mcp"; marker: string }
   | { kind: "reasoning"; text: string }
   | { kind: "image"; data: string; mimeType: string }

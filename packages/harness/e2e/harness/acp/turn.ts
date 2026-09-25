@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import fs from "node:fs"
 import { RequestError, type AgentSideConnection, type PromptResponse, type SessionNotification } from "@agentclientprotocol/sdk"
 import { asString } from "@claxedo/helpers/guards"
@@ -174,6 +174,11 @@ async function playStep(context: TurnContext, step: AcpStep): Promise<PromptResp
     case "prompt":
       await sendText(context, context.prompt)
       return undefined
+    case "env-digest": {
+      const value = process.env[step.name]
+      await sendText(context, value === undefined ? "ENV_MISSING" : createHash("sha256").update(value).digest("hex"))
+      return undefined
+    }
     case "mcp": {
       if (!context.mcpUrl) throw new Error("Scripted ACP received no configured HTTP MCP server")
       const response = await fetch(context.mcpUrl, {

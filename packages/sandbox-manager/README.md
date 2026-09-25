@@ -11,6 +11,13 @@ The package owns the generic pieces:
 - `SandboxDriver`
 - provider drivers for Cloudflare, Daytona, Docker, fetch bridge, Modal, and Vercel
 
+`drivers/local-brokering` is a macOS test driver. The e2e self-hosted stack
+injects its instance programmatically; it has no product driver ID or product
+configuration path. It runs the workspace runtime in a private directory under
+`sandbox-exec`, permitting outbound TCP only to its HTTP proxy. The proxy uses
+the egress broker's placeholder substitution and rejects unknown origins and
+CONNECT tunnels. It is not a production sandbox provider.
+
 It deliberately does not own Claxedo product auth, billing, app storage schema, routes, or relay tokens. Applications provide those through adapters and call `createSandboxManager`.
 
 ## Install
