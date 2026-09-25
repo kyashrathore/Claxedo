@@ -245,7 +245,7 @@ Shots: `session-v1-390.png`, `panel-open-v1-390.png`, `changes-nav-v1-390.png`, 
 
 Every row was re-read against v1's source and today's v2, and the visible ones were compared with the parity screens (`bun run e2e:parity`, panel screens) and with probes that ran the same steps on both apps on the e2e stack. The "v2" columns above describe the build the inventory was taken on. The marks below replace them.
 
-**Tally (108 rows):** matches 75 · approved difference 12 · fixed in this sweep 18 · open 3. TOOL-008 counts as fixed (its File item); its Context item is still listed as open below.
+**Tally (108 rows):** matches 75 · approved difference 12 · fixed in this sweep 19 · open 2. TOOL-008 counts as fixed (its File item); its Context item is still listed as open below.
 
 Fixed in this sweep:
 
@@ -262,6 +262,7 @@ Fixed in this sweep:
 | 58df634b74 | TOOL-125 |
 | fed834ebab | TOOL-054, TOOL-053 |
 | e216ef6ec3 | TOOL-095 (Create PR, from the placement's git remote) |
+| 5d8b20bf50 | TOOL-129 (a lost PTY is recreated from its disk history; flow 13 asserts it on both apps) |
 | 8f5b941e43 | TOOL-121 (the creator's Project / destination / Workspace chips, the create note, launching in a new worktree or sandbox; custom commands are gone with the Terminals section, Owner 00:50) |
 
 Approved differences: TOOL-003 (Owner 22:05); TOOL-004, TOOL-007's process tabs (the Processes pane, "Earlier removals"); TOOL-031 (approved #11); TOOL-124's scrollbar (Owner 22:28); TOOL-126's `window.open` and TOOL-185's hover preload (Owner 16:45: no global providers, no v1 performance patches); TOOL-131 (Orchestrator 18:25); TOOL-193, TOOL-160, TOOL-161 (Owner 23:05); TOOL-009 and TOOL-145 (Orchestrator 2026-09-25 entries).
@@ -273,7 +274,6 @@ Open:
 | TOOL-008 | "+ > Context" is hidden because nothing registers a `context` panel view (v1's session Context tab). | the session screen's domain |
 | TOOL-051 | "Add to Documents" needs the Documents surface, which v2 does not have yet; the action is absent (no dead button). | deferred surfaces (handoff) |
 | TOOL-120 | The creator has no rail row ("New Terminal") and no `/w/<id>/terminal/new` route. | shell-4 (DECISIONS 19:00 item 6) |
-| TOOL-129 | v1 recreates a PTY the server no longer holds from its disk history (`previousPtyId`). v2 ends it, and flow 13 asserts that. Ruling needed. | main |
 
 Found in the sweep, not in the rows above:
 - `--surface-base-hover` resolves to white in v2 (v1: `#0000000a`), so the selected panel tab and every other `bg-surface-base-hover` draw no fill. Sent to lane-settings-access-3.
