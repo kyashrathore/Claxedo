@@ -67,7 +67,7 @@ names an id and access mode and constructs an adapter with the runtime context.
 Concrete adapters are exported from `@claxedo/agent-sdk-runtime/adapters`.
 
 Claxedo's embedded OpenCode adapter is owned by
-`@claxedo/workspace-runtime/opencode`.
+`@claxedo/harness/opencode-sdk`.
 
 ## Advanced Adapter API
 

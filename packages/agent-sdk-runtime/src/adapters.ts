@@ -1,7 +1,6 @@
 export type { AgentHarnessAdapter, AgentHarnessAdapterCore, AgentHarnessAdapterHealth, AgentHarnessAdapterHealthContext, AgentInteractionResult, AgentGoalResource, AgentMessagePage, AgentMessagePageInput, AgentHarnessAdapterProcessOptions, AgentTurnWriteContext, AgentConfigOptions, AgentHandoffSessionOptions, AgentPreparedHandoffSession, AgentSessionCreateOptions, ResolvedHarnessModel, SupportsCancel, SupportsAgents, SupportsCommands, SupportsConfigOptions, SupportsFork, SupportsGoals, SupportsMessagePages, SupportsPermissions, SupportsQuestions, SupportsRuntimeConfig, SupportsTodos } from "./adapter-contract"
 export { requireGoalResource, resolvedModelFromConfigOptions } from "./adapter-contract"
 export { AgentMessagePageError } from "./message-page"
-export { AgentHarnessEngineError, isAgentHarnessEngineError } from "./harness-engine-error"
 export {
   GOAL_ACTIONS,
   GOAL_OPTIONAL_FIELDS,

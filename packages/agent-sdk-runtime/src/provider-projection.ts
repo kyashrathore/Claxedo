@@ -1,4 +1,4 @@
-import type { PlaceholderEnvironment, ProviderBinding, ProviderProjection, ProviderUnavailable } from "@claxedo/agent-runtime-contract"
+import { isProviderUnavailable, type PlaceholderEnvironment, type ProviderBinding, type ProviderProjection } from "@claxedo/agent-runtime-contract"
 
 const AUTH_MODES = ["api-key", "bearer"] as const
 const BINDING_KEYS = new Set(["baseUrl", "placeholder", "placeholderEnv", "authMode", "expiresAt", "apiPath"])
@@ -12,10 +12,6 @@ const UNAVAILABLE_KEYS = new Set(["unavailable", "reason"])
  * engine's provider overlay carries `baseURL`/`apiKey` — and a second copy of
  * the predicate beside each of them is how two of them came to disagree.
  */
-export function isProviderUnavailable(row: object): row is ProviderUnavailable {
-  return "unavailable" in row
-}
-
 export function providerProjection(
   input: unknown,
   env: PlaceholderEnvironment = {},

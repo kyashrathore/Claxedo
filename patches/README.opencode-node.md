@@ -17,8 +17,8 @@ existing `script/apply-dependency-patches.ts` postinstall step.
   test fails on beta-19271 without this hunk and passes with it; it covers
   disable, re-enable, workspace isolation and restart.
 
-The runtime is owned by `packages/workspace-runtime/src/opencode` and exposed
-as `@claxedo/workspace-runtime/opencode`. Bun is not needed to execute it.
+The runtime is owned by `packages/harness/src/transports/opencode-sdk` and exposed
+as `@claxedo/harness/opencode-sdk`. Bun is not needed to execute it.
 Beta-19271 activates SDK plugins asynchronously per location. Catalog and
 plugin-backed workspace reads call `plugin.awaitActivation` for that location
 before reading engine state.
@@ -32,7 +32,7 @@ Verification from `packages/workspace-runtime`:
 node scripts/node-sdk-smoke.mjs
 node scripts/node-host-smoke.mjs
 ELECTRON_RUN_AS_NODE=1 /path/to/electron scripts/node-sdk-smoke.mjs
-bun test src/opencode
+bun test ../harness/src/transports/opencode-sdk
 bun run build
 ```
 

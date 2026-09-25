@@ -36,7 +36,7 @@ export function verifyOpenCodeSdkResources(resources: string, expected: Record<s
 }
 
 export function embeddedSdkPins() {
-  const owner = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, "../../workspace-runtime/package.json"), "utf8"))
+  const owner = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, "../../harness/package.json"), "utf8"))
   return {
     "@opencode-ai/sdk": owner.dependencies["@opencode-ai/sdk"],
     "@opencode-ai/core": owner.dependencies["@opencode-ai/sdk"],
