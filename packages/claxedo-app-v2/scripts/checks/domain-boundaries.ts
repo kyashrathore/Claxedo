@@ -4,6 +4,8 @@ import { finish, type Violation } from "./lib/report"
 
 type Unit = { readonly kind: "domain" | "plugin" | "shared" | "root" | "outside"; readonly name: string }
 
+const pluginRegistry = "src/plugins/bundled.ts"
+
 function main(): never {
   const { root } = parseArgs(process.argv.slice(2))
   const resolve = createResolver(compilerOptions())
@@ -14,7 +16,7 @@ function main(): never {
     const home = unitOf(root, file)
     for (const { specifier, node } of importsOf(sf)) {
       const target = resolve(file, specifier)
-      const message = target ? crossing(root, home, target) : undefined
+      const message = target ? crossing(root, file, home, target) : undefined
       if (message) violations.push({ file, line: startLine(node, sf), message: `${message} (${specifier})` })
     }
   }
@@ -31,11 +33,14 @@ function unitOf(root: string, file: string): Unit {
   return { kind: "outside", name: "" }
 }
 
-function crossing(root: string, home: Unit, target: string): string | undefined {
+function crossing(root: string, file: string, home: Unit, target: string): string | undefined {
   const unit = unitOf(root, target)
   if (unit.kind === "outside" || unit.kind === "shared" || unit.kind === "root") return undefined
   if (unit.kind === home.kind && unit.name === home.name) return undefined
-  if (unit.kind === "plugin") return `imports plugin ${unit.name}; plugins share code only through the plugin api`
+  if (unit.kind === "plugin") {
+    if (rel(root, file) === pluginRegistry) return undefined
+    return `imports plugin ${unit.name}; only ${pluginRegistry} composes the first-party plugins, and plugins share code only through the plugin api`
+  }
   const path = rel(root, target)
   if (path === `src/${unit.name}/index.ts` || path === `src/${unit.name}/index.tsx`) return undefined
   return `imports ${path} directly; import the domain through src/${unit.name}/index.ts`
