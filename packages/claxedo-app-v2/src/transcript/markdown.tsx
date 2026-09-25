@@ -1,12 +1,8 @@
-import { useMarked, transcriptMarkdownExtensions } from "@opencode-ai/ui/context/marked"
+import { useMarked, transcriptMarkdownExtensions, useDialog, ImagePreview, checksum, reportUiError, Icon, IconButtonV2, TooltipV2 } from "@/ui"
 import { codeTheme } from "./code-theme"
 import { useTranscriptI18n } from "./i18n"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { ImagePreview } from "@opencode-ai/ui/image-preview"
 import { useData } from "./data"
 import morphdom from "morphdom"
-import { checksum } from "@opencode-ai/ui/utils/encode"
-import { reportUiError } from "@opencode-ai/ui/utils/report-error"
 import {
   type Accessor,
   type ComponentProps,
@@ -20,9 +16,6 @@ import {
   splitProps,
 } from "solid-js"
 import { isServer, render } from "solid-js/web"
-import { Icon } from "@opencode-ai/ui/icon"
-import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
-import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { bundledLanguages } from "shiki"
 import { Marked } from "marked"
 import { canReusePendingBlock, project, type Block, type Projection } from "./markdown-stream"

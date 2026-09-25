@@ -1,4 +1,4 @@
-import { getFilename } from "@opencode-ai/ui/utils/path"
+import { getFilename } from "@/ui"
 
 export type FolderRow = {
   absolute: string

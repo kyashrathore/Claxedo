@@ -34,7 +34,7 @@ export function createStatusesRead(transport: Transport, workspaces: Workspaces,
   }
   return async () => {
     await workspaces.load()
-    const placements = workspaces.list()
+    const placements = workspaces.list().filter((placement) => placement.reachable)
     const settled = await Promise.allSettled(placements.map(placementReports))
     const reports: SessionStatusReport[] = []
     const failures: { placementId: Placement["id"]; error: ServerError }[] = []

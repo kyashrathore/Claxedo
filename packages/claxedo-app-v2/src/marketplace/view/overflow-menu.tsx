@@ -1,6 +1,5 @@
 import type { JSX } from "solid-js"
-import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
-import { Icon } from "@opencode-ai/ui/icon"
+import { DropdownMenu, Icon } from "@/ui"
 import { GHOST_ICON_BUTTON } from "./chrome"
 
 export function OverflowMenu(props: { readonly label: string; readonly children: JSX.Element }): JSX.Element {

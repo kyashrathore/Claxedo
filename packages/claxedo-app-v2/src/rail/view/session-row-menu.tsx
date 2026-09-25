@@ -40,7 +40,6 @@ export function SessionRowMenu(props: SessionRowMenuActions & { readonly at: { x
   return (
     <Portal>
       <div
-        data-slot="session-navigation-menu-dismiss"
         class="fixed inset-0 z-[90]"
         onClick={() => props.onDismiss()}
         onContextMenu={(event) => {
@@ -53,7 +52,6 @@ export function SessionRowMenu(props: SessionRowMenuActions & { readonly at: { x
         aria-label={t("rail.sessionMenu", { title: props.row.title })}
         data-surface="overlay"
         data-overlay-shell="prominent"
-        data-slot="session-navigation-menu"
         class="fixed z-[91] min-w-40 bg-background-stronger p-1"
         style={{ left: `${props.at.x}px`, top: `${props.at.y}px` }}
         onKeyDown={(event) => event.key === "Escape" && props.onDismiss()}

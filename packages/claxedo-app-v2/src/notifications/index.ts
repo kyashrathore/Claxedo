@@ -1,4 +1,4 @@
 export type { AlertKind, AlertPreferences } from "./alerts"
 export { AttentionAlerts } from "./attention-alerts"
-export { DEFAULT_SOUND, isSoundChoice, playSound, SOUNDS, type SoundChoice, type SoundId } from "./sounds"
+export { createSoundPlayer, DEFAULT_SOUND, isSoundChoice, SOUNDS, type SoundChoice, type SoundId, type SoundPlayer } from "./sounds"
 export { requestSystemNotifications } from "./system"

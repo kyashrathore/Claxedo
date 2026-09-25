@@ -1,5 +1,5 @@
 import { createSignal, onCleanup, onMount, Show, type JSX } from "solid-js"
-import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
+import { ResizeHandle } from "@/ui"
 import { useTranslator } from "@/i18n"
 import type { PluginCandidate, PluginHarness, PluginToolGroup } from "@/server"
 import { dictionary } from "../i18n"

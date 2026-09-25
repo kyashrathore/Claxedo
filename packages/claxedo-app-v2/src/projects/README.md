@@ -47,6 +47,7 @@ The Environment, Workspace and Branch chips drive the draft's target (`createDra
 Context row invariants, kept from v1:
 - The chips are rebuilt whenever any input moves, so the row keys pickers by position (`Index`); keying by reference would remount an open picker and close it.
 - A picker renders its panel once per showing (`untrack`), so a rebuilt chip cannot replace the form and drop what the user typed.
+- The row's styles live in `view/context-row.css`, keyed by its own classes and each chip's `data-chip`. Chip labels hide when the draft's `session-new-design` container is 20rem or narrower, except the Workspace chip's, so the strip stays on one line and still names the worktree. The same sheet sets the picker rows' two-line rhythm and the outlined project avatars.
 - `hold(true)` keeps the popover open while the create form has handed focus to the folder dialog; otherwise the outside-dismiss rules unmount the form under the dialog.
 - Searchable pickers bind a document keydown (`search-keydown.ts`): arrow keys move the highlighted row while printable keys still edit the search field, whose own value is the query's source of truth.
 - The row keeps 4px of itself visible under the composer, which overlaps it by `-mt-2`; the footer actions sit outside `List`'s scroll box so its scroll mask never fades them.

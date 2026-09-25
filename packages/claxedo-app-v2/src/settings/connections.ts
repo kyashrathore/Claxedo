@@ -1,5 +1,4 @@
 import { createStore } from "solid-js/store"
-import { decodeHarnessConnectionsCatalog, type HarnessConnectionsCatalog } from "@claxedo/agent-runtime-contract"
 import { machine, unreachable, type Transition } from "@/lib/machine"
 import type { ConnectionScope, IntegrationConnectOutcome, IntegrationFailure } from "@/server"
 
@@ -7,17 +6,6 @@ export function verifyFailedMessage(reason: unknown): string {
   if (reason === "unauthorized") return "The provided credentials were rejected. Check the values and try again."
   if (reason === "network") return "Could not reach the integration to verify the credentials. Try again."
   return "Verification failed. Try again."
-}
-
-export async function loadAgentConnections(): Promise<HarnessConnectionsCatalog> {
-  const response = await fetch("/api/claxedo/agent-config/connections", { credentials: "include" })
-  if (!response.ok) throw new Error(`Failed to load agent connections (${response.status})`)
-  return decodeHarnessConnectionsCatalog(await response.json())
-}
-
-export async function removeAgentConnection(connectionId: string): Promise<void> {
-  const response = await fetch(`/api/claxedo/agent-config/connections/${encodeURIComponent(connectionId)}`, { method: "DELETE", credentials: "include" })
-  if (!response.ok) throw new Error(`Remove failed (${response.status})`)
 }
 
 export type ConnectState =

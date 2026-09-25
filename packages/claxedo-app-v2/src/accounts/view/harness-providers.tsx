@@ -1,11 +1,9 @@
-import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
-import { Tag } from "@opencode-ai/ui/tag"
 import { createEffect, createMemo, createSignal, For, onMount, Show } from "solid-js"
 import { createProviderCatalog } from "@/composer"
 import { harnessDisplayLabel } from "@/lib/harness-catalog"
 import { SettingsEmpty, SettingsList } from "@/settings"
 import { toAppError, useServer, type CatalogProvider } from "@/server"
-import { ClaxedoIcon as Icon, ClaxedoIconButton as IconButton, showToast, useDialog, Button } from "@/ui"
+import { ClaxedoIcon as Icon, ClaxedoIconButton as IconButton, showToast, useDialog, Button, ProviderIcon, Tag } from "@/ui"
 import { canDisconnectProvider, catalogProviders, providerNote, providerSourceTag } from "../catalog-rules"
 import { useAccountsText } from "../i18n"
 import { DialogCustomProvider } from "./custom-provider-dialog"
@@ -14,7 +12,7 @@ import { SearchField } from "./search-field"
 
 export function createHarnessProviders(harness: () => string) {
   const server = useServer()
-  const catalog = createProviderCatalog({ api: server.harnessConfig, harness })
+  const catalog = createProviderCatalog({ server, harness, eager: true })
   const detailed = new Set<string>()
   createEffect(() => {
     const unsourced = catalog.connected().filter((provider) => provider.source === undefined && !detailed.has(provider.id))
@@ -67,8 +65,8 @@ function CatalogNote(props: { readonly harness: string; readonly machine: string
   const vars = () => ({ harness: harnessDisplayLabel(props.harness), workspace: props.machine })
   return (
     <SettingsEmpty>
-      <Show when={props.error} fallback={<span data-component={`${props.harness}-catalog-empty`}>{t("settings.providers.catalog.empty", vars())}</span>}>
-        {(reason) => <span data-component={`${props.harness}-catalog-error`}>{t("settings.providers.catalog.error", { ...vars(), reason: reason() })}</span>}
+      <Show when={props.error} fallback={<span>{t("settings.providers.catalog.empty", vars())}</span>}>
+        {(reason) => <span>{t("settings.providers.catalog.error", { ...vars(), reason: reason() })}</span>}
       </Show>
     </SettingsEmpty>
   )
@@ -94,7 +92,7 @@ export function HarnessProvidersSection(props: { readonly providers: HarnessProv
     return key ? t(key) : undefined
   }
   return (
-    <div class="flex flex-col gap-3" data-component={`${harness()}-providers-section`}>
+    <div class="flex flex-col gap-3">
       <Show when={catalog().error() || (!catalog().loading() && catalog().resolved() && items().length === 0)}>
         <CatalogNote harness={harness()} machine={props.providers.machine()} error={catalog().error()} />
       </Show>

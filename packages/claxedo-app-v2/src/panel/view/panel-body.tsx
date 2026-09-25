@@ -1,6 +1,6 @@
 import { createEffect, createSignal, Match, Show, Switch, type JSX } from "solid-js"
 import { Dynamic } from "solid-js/web"
-import { MarkedProvider } from "@opencode-ai/ui/context/marked"
+import { MarkedProvider } from "@/ui"
 import { BrowserTabView } from "@/browser"
 import { FileTab, FilesNavigator } from "@/files"
 import { useTranslator } from "@/i18n"
@@ -144,7 +144,7 @@ function ActiveTab(props: { readonly placementId: PlacementId }): JSX.Element {
   return (
     <Switch>
       <Match when={tab().kind === "review"}>
-        <div data-testid="workspace-review-body" class="absolute inset-0 flex h-full flex-col overflow-hidden">
+        <div data-testid="review-pane-root" class="absolute inset-0 flex h-full flex-col overflow-hidden">
           <ReviewTab
             placementId={props.placementId}
             focus={panel.reviewFocus()}

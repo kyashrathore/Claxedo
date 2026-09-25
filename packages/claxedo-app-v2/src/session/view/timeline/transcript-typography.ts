@@ -1,10 +1,5 @@
 import { createMemo, type Accessor } from "solid-js"
-import { useThemeOptional } from "@opencode-ai/ui/theme/context"
-import {
-  composeTranscriptTypography,
-  DEFAULT_TRANSCRIPT_TYPOGRAPHY,
-  type PairedTranscriptTypography,
-} from "@opencode-ai/ui/theme/transcript-typography"
+import { useThemeOptional, composeTranscriptTypography, DEFAULT_TRANSCRIPT_TYPOGRAPHY, type PairedTranscriptTypography } from "@/ui"
 
 export function useTranscriptTypography(): Accessor<PairedTranscriptTypography> {
   const themes = useThemeOptional()

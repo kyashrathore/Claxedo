@@ -1,9 +1,7 @@
-import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
-import { TextField } from "@opencode-ai/ui/text-field"
 import { batch, createSignal, For } from "solid-js"
 import { createStore, produce, type SetStoreFunction } from "solid-js/store"
 import { toAppError, useServer } from "@/server"
-import { ClaxedoIconButton as IconButton, showToast, useDialog, Button, Dialog } from "@/ui"
+import { ClaxedoIconButton as IconButton, showToast, useDialog, Button, Dialog, ProviderIcon, TextField } from "@/ui"
 import { headerRow, modelRow, validateCustomProvider, type FormState } from "../custom-provider"
 import { useAccountsText, type AccountsKey } from "../i18n"
 
@@ -64,13 +62,13 @@ function PairRows(props: { readonly list: RowList; readonly form: FormState; rea
 
 function ProviderFields(props: { readonly form: FormState; readonly setForm: SetStoreFunction<FormState> }) {
   const t = useAccountsText()
-  const set = (key: "providerID" | "name" | "baseURL" | "apiKey", value: string) => {
+  const set = (key: "providerId" | "name" | "baseURL" | "apiKey", value: string) => {
     props.setForm(key, value)
     if (key !== "apiKey") props.setForm("err", key, undefined)
   }
   return (
     <div class="flex flex-col gap-4">
-      <TextField autofocus label={t("provider.custom.field.providerID.label")} placeholder={t("provider.custom.field.providerID.placeholder")} description={t("provider.custom.field.providerID.description")} value={props.form.providerID} onChange={(value) => set("providerID", value)} validationState={props.form.err.providerID ? "invalid" : undefined} error={props.form.err.providerID} />
+      <TextField autofocus label={t("provider.custom.field.providerID.label")} placeholder={t("provider.custom.field.providerID.placeholder")} description={t("provider.custom.field.providerID.description")} value={props.form.providerId} onChange={(value) => set("providerId", value)} validationState={props.form.err.providerId ? "invalid" : undefined} error={props.form.err.providerId} />
       <TextField label={t("provider.custom.field.name.label")} placeholder={t("provider.custom.field.name.placeholder")} value={props.form.name} onChange={(value) => set("name", value)} validationState={props.form.err.name ? "invalid" : undefined} error={props.form.err.name} />
       <TextField label={t("provider.custom.field.baseURL.label")} placeholder={t("provider.custom.field.baseURL.placeholder")} value={props.form.baseURL} onChange={(value) => set("baseURL", value)} validationState={props.form.err.baseURL ? "invalid" : undefined} error={props.form.err.baseURL} />
       <TextField label={t("provider.custom.field.apiKey.label")} placeholder={t("provider.custom.field.apiKey.placeholder")} description={t("provider.custom.field.apiKey.description")} value={props.form.apiKey} onChange={(value) => set("apiKey", value)} />
@@ -111,7 +109,7 @@ function useSave(props: { readonly existing: ReadonlySet<string>; readonly onSav
 export function DialogCustomProvider(props: { readonly existing: ReadonlySet<string>; readonly onSaved: () => Promise<void> }) {
   const t = useAccountsText()
   const dialog = useDialog()
-  const [form, setForm] = createStore<FormState>({ providerID: "", name: "", baseURL: "", apiKey: "", models: [modelRow()], headers: [headerRow()], err: {} })
+  const [form, setForm] = createStore<FormState>({ providerId: "", name: "", baseURL: "", apiKey: "", models: [modelRow()], headers: [headerRow()], err: {} })
   const { saving, save } = useSave(props, form, setForm)
   return (
     <Dialog title={<IconButton tabIndex={-1} icon="arrow-left" variant="ghost" onClick={() => dialog.close()} aria-label={t("common.goBack")} />} transition>

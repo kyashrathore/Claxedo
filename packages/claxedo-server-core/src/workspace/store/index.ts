@@ -78,7 +78,7 @@ export type Workspace = {
  * facts only the serving process can answer — whether its directory is still
  * there, and how the runtime that will serve it composed session access.
  */
-export type CatalogWorkspace = Workspace & { session_authority?: HostSessionAuthority }
+export type CatalogWorkspace = Workspace & { session_authority?: HostSessionAuthority; reachable: boolean }
 
 /**
  * A project: a repository and a name. Where it executes is a workspace
@@ -774,9 +774,11 @@ export async function listProjects() {
       ))
       const sessionAuthority = localWorkspaceRuntimeSessionAuthority()
       for (const row of [root, ...others]) {
+        const available = status.get(workspaceKey(row)) ?? true
         workspaces[workspaceKey(row)] = {
           ...row,
-          available: status.get(workspaceKey(row)) ?? true,
+          available,
+          reachable: available && (row.kind !== "cloud" || cloudWorkspaceReady(row.id)),
           // Declared only for the workspaces this process actually serves. A
           // `cloud` row names a runtime on another machine, whose composition
           // this server has no standing to state; its client learns that one

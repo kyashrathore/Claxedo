@@ -174,8 +174,6 @@ function controlEvent(frame: Frame, address: Address): ServerEvent | undefined {
     case "session.inventory.changed":
     case "session.share.changed":
       return { type: "sessionsChanged", ...scoped }
-    case "document.changed":
-      return { type: "documentsChanged", ...scoped }
     case "usage.quota.changed":
       return { type: "usageChanged" }
     case "plugins.changed":

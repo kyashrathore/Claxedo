@@ -17,6 +17,108 @@ Nothing is pushed, `packages/claxedo-app` is untouched, and there is no swap.
 
 The plan is `docs/plans/2026-09-24-001-refactor-app-rebuild-first-proof-plan.md`. Where it disagrees with the owner's parity rule, the rule wins (see [Better](#1-better-v2-looks-and-behaves-exactly-like-v1)).
 
+## State at 06:50 on 2026-09-25 (after the night)
+
+- **feat/app-v2 b3cadffe69.** Every lane's work is merged. Not pushed.
+- **Code:**
+  - live v2 is 99.3k lines (86.4k at the first handoff). The growth is ported v1 features: Tasks, Marketplace, the Settings sections, onboarding, the account cards, notifications and sounds;
+  - `src/ui` is 2.8k lines (10.3k at the first handoff): v2's own copies of Toast, Tooltip, Dialog, Button, Select, TextInput, Icon and 29 unused components are deleted;
+  - `src/legacy` is 143.8k lines;
+  - e2e is 6.9k lines.
+- **`bun run check`: 7 of 17 pass** (typecheck ×2, v2-only, adapter-boundary, no-directory-identity, access-boundary, protected-areas).
+  - no-comments 1,772 (2,104 at the first handoff)
+  - claxedo-names 978 (1,111)
+  - one-owner 108 (239)
+  - one-home-per-datum 76 (81)
+  - size 59 (73)
+  - no-swallowed-errors 54 (56)
+  - domain-boundaries 4 (36)
+  - no-polling 5
+  - e2e-hygiene 3
+  - budget 15 parts over
+  - The shell, rail, workbench, ui, projects, accounts, onboarding and cloud folders are at 0 on most checks. The biggest remaining piles are the transcript's comments and names, which triage into the corpus first.
+- **Owner bugs from the night, all fixed and merged:**
+  - subagents in their turn, and as a panel tab;
+  - question dock after Stop (a runtime event fix);
+  - todo dock;
+  - terminals in the rail and compact tabs;
+  - the file-click and toggle freezes (a store write loop);
+  - the Goal-less session failing to open (runtime);
+  - 36 → 0 404s on session load;
+  - close all tabs → New Session;
+  - duplicate New Session tabs;
+  - scrollbars;
+  - the rail foot (account card + Usage);
+  - phone rules;
+  - contrast sliders only for Codex;
+  - the settings regroup;
+  - the Tasks and Marketplace pages;
+  - Presets.
+- **Performance:**
+  - cold session switch 126–625 ms → 21–46 ms, from transcript-first paint;
+  - the provider catalog loads once, on demand: 31–33 → 0 reads at launch for existing sessions;
+  - hidden panes unmount: +9 ms per return, −15 MiB heap with 8 open;
+  - the rail no longer remounts on every route change.
+  - The benchmark's proper run started 06:50 on b3cadffe69, with every other lane paused.
+- **Experiments (paused at the limit, results pending):** exp-stream (60 Hz while streaming), exp-scroll (scrolling and interaction), exp-idle (idle CPU, memory, start). Their worktrees are `~/test/opencode-app-v2-lanes/exp-*`, and their notes are in `scratchpad/perf/<exp>/`.
+
+### Benchmark, publication run 1 (fast pair, 2026-09-25 07:16)
+
+Both apps were packaged from 6d9c0a91a9 (b3cadffe69 plus driver fixes), on AC, on a quiet host with every lane paused. Every observation was valid. Raw data: `~/test/agent-app-benchmark/artifacts/comparisons/claxedo-v1-vs-v2-fast-macos-arm64-headed-20260925-0716-pub/`.
+
+| Row | v1 median (p95) | v2 median (p95) | Verdict |
+|---|---|---|---|
+| App start, fresh | 1.35 s (1.52) | 1.28 s (1.33) | tie |
+| App start, existing | 1.30 s (1.60) | 1.26 s (1.30) | tie |
+| Unvisited switch, same ws | 83.3 ms (691.7) | 24.9 ms (33.2) | v2 3.35× faster |
+| Unvisited switch, other ws | 41.5 ms (717.5) | 24.9 ms (42.6) | v2 1.67× faster |
+| Return visited | 16.5 ms | 16.7 ms | tie |
+| RSS idle after launch | 963 MiB | 764 MiB | v2 1.26× lower |
+| RSS after workload | 1,050 MiB | 779 MiB | v2 1.35× lower |
+| CPU idle | 70.0% | 0.4% | v2 lower |
+
+**Gate so far:**
+- No row goes to v1.
+- **Met:** idle CPU (0.4%, target ≤ 4.4%).
+- **Not met:** idle memory (764 MiB, target ≤ 700), and app start (1.28 s, target ≤ 1.1 s, a tie). exp-idle's start and memory findings are the next lever.
+- Long rows and the panel open return come from the full-suite run.
+
+### Benchmark, publication run 2 (full suite, 2026-09-25 07:19–07:41)
+
+The build was the same (6d9c0a91a9), and the host was just as quiet. v2 had 0 invalid observations out of 380. v1 had 8 invalid, all at 128 MiB history navigation, so those two rows are withheld. There are 49 rows. Raw data: `~/test/agent-app-benchmark/artifacts/comparisons/claxedo-v1-vs-v2-user-flows-macos-arm64-headed-20260925-0719-pub/`.
+
+**v2 wins:**
+- **Unvisited switch:** 33 ms, p95 33 ms, against v1's 41 ms, p95 353–396 ms.
+- **Every size switch from 1 to 128 MiB:** 1.25–1.37× faster.
+- **1 MiB in one row:** 54.7 ms against 964 ms, 17.6× faster.
+- **First visit in history navigation:** 1.5–1.8× faster.
+- **Panel open return:** 15.6 ms against 32.3, 2.1× faster.
+- **Panel open:** 53–90 ms against 135, 1.5–2.5× faster.
+- **Expand-all heavy.**
+- **RSS:** 775 against 1,051 MiB after launch, and 821 against 1,096 MiB after the workload.
+- **CPU idle:** 0.4% against 6.8%.
+- **Existing-profile start:** 1.36 against 2.22 s.
+
+**Ties:** return to a visited session, close-panel, switch-file-tab, and the long-row 8 and 32 MiB rows (988 ms against 1.09 s, which isn't a reliable difference).
+
+**Rows that go to v1 (gate "no row to today's app": FAILS):**
+
+| Row | v1 | v2 |
+|---|---|---|
+| files-to-review, heavy | 15.2 ms | 17.4 ms |
+| review-to-files, moderate | 16.6 ms | 17.9 ms |
+| review-to-files, heavy | 24.9 ms | 27.9 ms |
+| open-file, light (no prefetch, disclosed) | 26.1 ms | 32.4 ms |
+| collapse-all, light / moderate / heavy | 24.1 / 24.4 / 24.8 ms | 26.7 / 26.9 / 27.8 ms |
+
+**Must-win targets:**
+- **Met:** idle CPU, panel open return, and long rows (988 ms, target ≤ 1 s, though it ties v1).
+- **Not met:** idle memory (775 MiB, target ≤ 700) and fresh start (1.41 s, target ≤ 1.1, a tie).
+- **Owners:**
+  - exp-scroll profiles the seven panel rows and names what v2 does extra per action;
+  - exp-idle owns start and memory.
+  - Either one's fixes land through the owning lane.
+
 ## The goal in four parts
 
 The owner's words: better, performant, easy code, less LOC. Each part gives the rule, where it stands (observed on `feat/app-v2`), and what is next.
@@ -239,6 +341,9 @@ Updated 21:40, after the owner switched accounts and the lanes resumed.
 
 ## Owner questions still open
 
+- **Teams inside an org:** v1's Settings → Orgs & Teams (org create and switch, teams, members) uses the hosted org-team API. On a local build it shows only "Bearer token is required". v2 keeps its Organization section and adds v1's sign-in and error states. Team management waits on this decision; the plan recommends dropping teams.
+- **Machines remote access:** enable, pause and revoke, the device QR code, and machine rename or revoke need v1's `machineRemoteAccess` platform port. That's the desktop Host Connector, or an HTTP binding on hosted. Not ported; v1's local build binds none either.
+
 - **`/welcome`:** the owner asked "why remove /welcome?" (02:30). The v1 inventory row PROJ-001 says v1 has no `/welcome` route and draws the first-project canvas at `/`. projects-app's 7c245ba6e1 did that and is reverted until the owner rules. Keeping `/welcome` is fine if the owner prefers it.
 - **Browser Back after a rail click:** v2 returns to the previous session, while v1 stays on the current one. Keep v2's or match v1?
 - **The daemon restart on 2598** that picks up the two runtime fixes (Stop settles questions; no-Goal harnesses). It ends open terminals and running turns.
@@ -267,9 +372,30 @@ At 19:08 the owner said: finish in-progress work; start no new work.
 - **Flows not yet written:** 17–25, 28, 32, 34–36. The signed flows need the self-hosted Node signed fixture.
 - **Stopped lanes with WIP:** live plugins, hosted projects on D1, the checks lane.
 
+## Plan deviations taken during the night
+
+- **Tasks is an app domain (`src/tasks`), not the `plugins/tasks` plugin.** Moving it into the plugin needs three host changes:
+  - a `tab` flag (and icon) on plugin pages;
+  - `sessions.open` taking a `workspaceId`;
+  - the rail's `/tasks` row claimed by the plugin.
+  That's about 2–3 hours of rework with no user benefit now.
+- **Over budget, awaiting a scope review, not squeezed:**
+  - Marketplace: 2,384 lines against 1,800.
+  - Tasks: 3,514 lines plus 1,343 of v1 CSS, against a plugin budget of 2,500.
+- **Hidden session, draft and page panes unmount**; terminals stay mounted (fd195fe7be). Measured: +8.5 ms per return to a visited session, ~12 MiB less JS heap with 8 sessions open.
+
+## Performance findings to apply at the swap
+
+- **The kit's `ScrollView` (`packages/ui/src/components/scroll-view.tsx:225`, `updateThumb`)** reads `scrollTop`, `scrollHeight` and `clientHeight` every frame while scrolling. That forces the layout the virtualizer just dirtied: about 0.8 ms per wheel event, 49 ms of 350 ms busy while wheel-scrolling an 8 MiB session.
+  - The fix: cache the heights from ResizeObserver entries and read only `scrollTop` per frame.
+  - It can't land before the swap, because `packages/ui` is shared with today's app. Apply it when the used kit components move into the app.
+
 ## Server gaps found by the parity work
 
 - **Harness health is pull-only.** v1's composer health peek ("The agent stopped responding / Check again") polls `/api/wr/health` every 20 s during a turn, because no event carries `degraded` or `harness_process_lost`. Publish a health change when a driver records a process error, for example a `harness.health` event, and the peek's timer can go.
+- **The provider catalog route always answers with the whole catalog.** `GET /api/claxedo/agent-config/providers?nativeHarness=opencode` (`claxedo-local-server/src/agent-config/routes/provider-routes.ts`) returns models.dev's full list, 2,325,904 bytes and 1.6 s cold on the owner's machine, and ignores the `provider` parameter both apps send for one provider's detail, so a detail read costs the same as the index. v2 now reads the catalog once per harness through one cached query (`server.queries.providerCatalogs`), and skips the detail read whenever the index already holds a provider's models, as it always does here. The remaining 1.6 s first read needs the server: honor `provider` to return that provider alone, and add a summary form (connected providers with their models, the rest with ids and names) for the pickers.
+- **Session config carries no model display name.** An existing session's config names its model by id only, so v2's closed picker labels it from a per-browser display-name cache (`composer/harness/model-names.ts`) rather than read the whole provider catalog at mount. With the name in the session config the cache can go.
+- **A new draft's harness options cold-start a process.** `GET /api/claxedo/agent-config/harness/options?nativeHarness=pi` starts `pi --no-session` on every read: 2.4–9.9 s under load, while Send shows "Loading models…". v1 behaves identically. Fix it server-side: cache the options per harness, or keep one warm process.
 - **Fixed in the runtime today (take effect after a daemon restart or rebuild):**
   - a stopped turn publishes the questions and permissions it settles (2b7f71a178);
   - a harness without Goals reports them as not implemented, so its sessions open (09caeef9dd).

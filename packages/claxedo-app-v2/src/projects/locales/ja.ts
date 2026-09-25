@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "projects.cancel": "キャンセル",
   "projects.save": "保存",
   "projects.saving": "保存中...",
@@ -19,4 +19,15 @@ export const dictionary = {
   "projects.edit.startup.description": "新しいワークスペース (ワークツリー) を作成した後に実行されます。",
   "projects.edit.startup.placeholder": "例: bun install",
   "projects.edit.action": "編集",
+  "projects.close": "閉じる",
+  "projects.chip.project": "プロジェクト",
+  "projects.chip.self": "このコンピュータ",
+  "projects.chip.workspace": "ワークスペース",
+  "projects.create.continue": "送信",
+  "projects.connect.connecting": "接続中…",
+  "projects.settings.group": "設定",
+  "projects.placement.open": "開く",
+  "projects.add.name": "名前",
+  "projects.edit.environment": "環境",
+  "projects.title": "プロジェクト",
 }

@@ -1,10 +1,8 @@
 import { createEffect, createMemo, createSignal, on, onCleanup, Show, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { Spinner } from "@opencode-ai/ui/spinner"
 import { useTranslator } from "@/i18n"
 import type { PlacementId } from "@/server"
-import { ClaxedoIcon as Icon, DelayedLoading } from "@/ui"
-import { ScrollView } from "@opencode-ai/ui/scroll-view"
+import { ClaxedoIcon as Icon, DelayedLoading, Spinner, ScrollView } from "@/ui"
 import { useFilesApi } from "../api"
 import { dictionary } from "../i18n"
 import { buildKinds } from "../model"
@@ -110,9 +108,16 @@ export function FilesNavigator(props: FilesNavigatorProps): JSX.Element {
   const emptySearch = () => !!query() && search.isSuccess && (allowed()?.length ?? 0) === 0
   const showTree = () => !searchPending() && !emptySearch()
   const [scroller, setScroller] = createSignal<HTMLDivElement>()
+  const dataReady = () => source.state("").loaded && source.children("").length > 0
   revealActivePath({ path: () => props.activePath, active: () => props.active, expand: source.expand, scroller })
   return (
-    <div data-testid="workspace-files-navigator" data-mode="files" class="flex size-full min-h-0 flex-col">
+    <div
+      data-testid="workspace-files-navigator"
+      data-mode="files"
+      data-file-tree-shell-ready={dataReady() || (!query() && source.state("").loading) ? "true" : undefined}
+      data-file-tree-data-ready={dataReady() ? "true" : undefined}
+      class="flex size-full min-h-0 flex-col"
+    >
       <SearchRow />
       <ScrollView class="min-h-0 flex-1" viewportRef={setScroller}>
         <Show when={searchPending()}>

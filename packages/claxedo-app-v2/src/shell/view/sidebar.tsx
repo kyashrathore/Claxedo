@@ -1,12 +1,11 @@
 import { Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { shellDictionary } from "../i18n"
 import { useShellLayout } from "../layout"
 import { trackRailPeek } from "./rail-peek"
 import { Region } from "./region"
 import { SidebarGrip } from "./sidebar-grip"
-import { ClaxedoIcon as Icon, ClaxedoIconButton as IconButton } from "@/ui"
+import { ClaxedoIcon as Icon, ClaxedoIconButton as IconButton, Tooltip } from "@/ui"
 
 export type SidebarProps = {
   readonly mode: "main" | "settings"

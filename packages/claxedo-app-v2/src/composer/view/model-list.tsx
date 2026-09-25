@@ -1,7 +1,5 @@
 import { type Component, createMemo, Show } from "solid-js"
-import { Tag } from "@opencode-ai/ui/tag"
-import { List } from "@opencode-ai/ui/list"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
+import { Tag, List, Tooltip } from "@/ui"
 import { ModelTooltip } from "./model-tooltip"
 import { useComposerText } from "../text"
 

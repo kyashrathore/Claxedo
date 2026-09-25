@@ -38,9 +38,9 @@ async function openGeneralSettings(stack: Stack, app: Page): Promise<void> {
   await app.getByRole("button", { name: UI.signedOutAccount }).click()
   await app.getByRole("menuitem", { name: "Settings" }).click()
   if (stack.app === "v2") {
-    await test.step("v2 approved: v2's settings sidebar and layout; the language row is in Appearance (DECISIONS Owner, 16:45)", async () => {
-      await app.getByRole("link", { name: "Appearance", exact: true }).click()
-      await expect(app.getByRole("heading", { level: 1, name: "Appearance" })).toBeVisible()
+    await test.step("v2 approved: no General section; Language is its own section (DECISIONS Owner, 00:55)", async () => {
+      await app.getByRole("group", { name: "App" }).getByRole("link", { name: "Language", exact: true }).click()
+      await expect(app.getByRole("heading", { level: 1, name: "Language" })).toBeVisible()
     })
     return
   }

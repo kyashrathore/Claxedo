@@ -169,3 +169,7 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - The owner's rule: if keeping hidden panes mounted doesn't buy much, remove it to prevent memory bloat.
 - **Measured on packaged v2:** unmounting hidden panes costs +8.5 ms per return to a visited session (16 → 24.5 ms median) and saves ~12 MiB of JS heap and ~680 DOM nodes with 8 small sessions open, more on heavy sessions.
 - **Decision:** hidden session, draft and page panes unmount; the data store and timeline snapshots stay. Terminals stay mounted (xterm state).
+
+## Orchestrator, 04:20: a preset never rewrites the composer's draft default
+- In v1, opening an existing Tasks preset rewrites the composer's saved draft default to that preset's harness: a side effect of reusing the composer's picker scope.
+- **v2:** the preset picker reads the draft default to seed a new slot and never writes it back.

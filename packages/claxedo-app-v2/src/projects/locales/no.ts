@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "projects.cancel": "Avbryt",
   "projects.save": "Lagre",
   "projects.saving": "Lagrer...",
@@ -19,4 +19,16 @@ export const dictionary = {
   "projects.edit.startup.description": "Kjører etter at et nytt arbeidsområde (worktree) er opprettet.",
   "projects.edit.startup.placeholder": "f.eks. bun install",
   "projects.edit.action": "Rediger",
+  "projects.close": "Lukk",
+  "projects.chip.project": "Prosjekt",
+  "projects.chip.self": "Denne maskinen",
+  "projects.chip.workspace": "Arbeidsområde",
+  "projects.create.continue": "Send inn",
+  "projects.connect.connecting": "Kobler til…",
+  "projects.settings.group": "Innstillinger",
+  "projects.placement.open": "Åpne",
+  "projects.add.name": "Navn",
+  "projects.edit.environment": "Miljø",
+  "projects.environment.value.placeholder": "verdi",
+  "projects.title": "Prosjekter",
 }

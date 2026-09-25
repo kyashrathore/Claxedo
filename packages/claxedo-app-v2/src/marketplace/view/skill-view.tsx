@@ -1,6 +1,6 @@
 import { Match, Switch, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { MarkedProvider } from "@opencode-ai/ui/context/marked"
+import { MarkedProvider } from "@/ui"
 import { useTranslator } from "@/i18n"
 import { useServer } from "@/server"
 import { Markdown } from "@/transcript"

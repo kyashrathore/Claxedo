@@ -22,7 +22,7 @@ export function applyTranscriptEvent(context: TranscriptContext, event: Transcri
     case "partRemoved":
       return removePart(context.setData, event.messageId, event.partId)
     case "todosChanged":
-      return context.setData("todos", [...event.todos])
+      return context.todos.changed(event.todos)
     case "diffChanged":
       return context.setData("diff", [...event.diff])
     case "goalChanged":

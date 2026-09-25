@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "provider.connect.title.harness": "Conectar {{harness}}",
   "provider.connect.title.engine": "Conectar {{vendor}} para {{engine}}",
   "provider.connect.selectMethod": "Seleccionar método de inicio de sesión para {{vendor}}.",

@@ -1,4 +1,4 @@
-import type { SessionSnapshot } from "@/server"
+import type { SessionReads, SessionSurface, TranscriptPage } from "@/server"
 import { toAppError } from "../requests"
 import type { TranscriptContext } from "./context"
 import { replaceLatest } from "./conversation"
@@ -7,26 +7,39 @@ import { isPendingMessage } from "./merge"
 import { completeLatestTurn, surfaceFragments } from "./latest-turn"
 import { isReading } from "./model"
 
-function hasOlderLoaded(context: TranscriptContext, snapshot: SessionSnapshot): boolean {
-  const first = snapshot.transcript.entries[0]?.info.id
+function hasOlderLoaded(context: TranscriptContext, transcript: TranscriptPage): boolean {
+  const first = transcript.entries[0]?.info.id
   return first !== undefined && context.data.messages.some((message) => !isPendingMessage(message) && message.id < first)
 }
 
-function landSnapshot(context: TranscriptContext, snapshot: SessionSnapshot, sentAt: number): void {
+function landSurface(context: TranscriptContext, surface: SessionSurface): void {
   const current = context.phase.state()
   const held = isReading(current) ? current.held : []
-  context.deps.list.readRow(snapshot.row)
-  context.deps.list.readStatus(context.ref, snapshot.status, sentAt)
-  if (snapshot.requests.kind === "read") context.deps.requests.read(context.ref, snapshot.requests.requests, sentAt)
-  else context.deps.requests.readFailed(context.ref, snapshot.requests.error)
-  replaceLatest(context.setData, snapshot.transcript)
-  context.setData("fragmentParts", surfaceFragments(snapshot.transcript))
-  if (!hasOlderLoaded(context, snapshot)) context.setOlderCursor(snapshot.transcript.olderCursor)
-  context.setData("todos", [...snapshot.todos])
-  context.setData("diff", [...snapshot.diff])
-  context.goal.read(snapshot.goal)
+  context.deps.list.readRow(surface.row)
+  replaceLatest(context.setData, surface.transcript)
+  context.setData("fragmentParts", surfaceFragments(surface.transcript))
+  if (!hasOlderLoaded(context, surface.transcript)) context.setOlderCursor(surface.transcript.olderCursor)
+  context.setData("diff", [...surface.diff])
   for (const event of held) applyTranscriptEvent(context, event)
   context.phase.send({ type: "readLanded" })
+}
+
+function landSide<T>(context: TranscriptContext, what: string, read: Promise<T>, land: (value: T) => void): void {
+  read.then(land, (cause) => {
+    const error = toAppError(cause)
+    if (error.class !== "not_found") console.warn(`A session's ${what} could not be read`, { sessionId: context.ref.sessionId, error })
+  })
+}
+
+function landSides(context: TranscriptContext, reads: SessionReads, sentAt: number): void {
+  const { ref, deps } = context
+  landSide(context, "status", reads.status, (status) => deps.list.readStatus(ref, status, sentAt))
+  reads.requests.then(
+    (requests) => deps.requests.read(ref, requests, sentAt),
+    (cause) => deps.requests.readFailed(ref, toAppError(cause)),
+  )
+  landSide(context, "todos", reads.todos, (todos) => context.todos.read(todos, sentAt))
+  landSide(context, "goal", reads.goal, context.goal.read)
 }
 
 export function readSnapshot(context: TranscriptContext): Promise<void> {
@@ -39,8 +52,10 @@ export function readSnapshot(context: TranscriptContext): Promise<void> {
 async function readOnce(context: TranscriptContext): Promise<void> {
   context.phase.send({ type: "readStarted" })
   const sentAt = Date.now()
+  const reads = context.server.sessions.read(context.ref)
+  landSides(context, reads, sentAt)
   try {
-    landSnapshot(context, await context.server.sessions.snapshot(context.ref), sentAt)
+    landSurface(context, await reads.surface)
     await completeLatestTurn(context)
   } catch (cause) {
     const error = toAppError(cause)

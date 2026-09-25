@@ -3,9 +3,11 @@ import type { QueryClient } from "@tanstack/solid-query"
 import type { Account, AccountCheck, EffectiveAccounts, MachineLogin } from "./account-types"
 import type { CloudCreateInput, CloudWorkspace, CodeHostConnection, CodeHostRepository } from "./cloud-types"
 import type { ConnectionState, ServerEvent } from "./events"
+import type { AgentConnectionsApi, AgentConnectionsQueries } from "./agent-connections"
 import type { IntegrationQueries, IntegrationsApi } from "./integrations"
 import type { SandboxProviderQueries, SandboxProvidersApi } from "./sandbox-providers"
 import type { ProviderConnectApi, ProviderConnectQueries } from "./provider-connect"
+import type { ProviderCatalogQueries, ProviderCatalogsApi } from "./provider-catalogs"
 import type { FolderQueries, FoldersApi } from "./folders"
 import type { HarnessConfigApi } from "./harness-config"
 import type {
@@ -24,6 +26,7 @@ import type {
   WorktreeCreateInput,
 } from "./git-types"
 import type { PlacementId, ProjectId, RequestId, TerminalId } from "./ids"
+import type { TasksClient } from "@claxedo/tasks/client"
 import type {
   MachineInstalled,
   MarketplaceCatalog,
@@ -68,7 +71,7 @@ import type {
   SessionPage,
   SessionRef,
   SessionRow,
-  SessionSnapshot,
+  SessionReads,
   SessionStatusRead,
   Subagent,
   TranscriptPage,
@@ -77,7 +80,7 @@ import type { UsageRequest, UsageSummary } from "./usage-types"
 
 export type SessionsApi = {
   readonly list: (input: SessionListInput) => Promise<SessionPage>
-  readonly snapshot: (ref: SessionRef) => Promise<SessionSnapshot>
+  readonly read: (ref: SessionRef) => SessionReads
   readonly older: (ref: SessionRef, cursor: string) => Promise<TranscriptPage>
   readonly latestTurn: (ref: SessionRef) => Promise<TranscriptPage>
   readonly turn: (ref: SessionRef, turnId: string) => Promise<TranscriptPage>
@@ -153,6 +156,25 @@ export type MarketplaceApi = {
   readonly removeSource: (id: string) => Promise<void>
 }
 
+export type TaskListKey = {
+  readonly projectId: string
+  readonly status: string | null
+  readonly parent: "any" | "root"
+  readonly includeArchived: boolean
+}
+
+export type TasksApi = {
+  readonly client: TasksClient
+  readonly keys: {
+    readonly scope: readonly unknown[]
+    readonly capabilities: readonly unknown[]
+    readonly presets: (includeArchived: boolean) => readonly unknown[]
+    readonly list: (filter: TaskListKey) => readonly unknown[]
+    readonly detail: (taskId: string) => readonly unknown[]
+    readonly children: (taskId: string) => readonly unknown[]
+  }
+}
+
 export type LivePluginsApi = {
   readonly remove: (pluginId: string) => Promise<void>
 }
@@ -180,7 +202,6 @@ export type ServerQueries = {
     readonly machineInstalled: () => FetchQuery<MachineInstalled>
   }
   readonly tasks: { readonly availability: () => FetchQuery<FeatureAvailability> }
-  readonly documents: { readonly availability: () => FetchQuery<FeatureAvailability> }
   readonly codeHost: {
     readonly connections: () => FetchQuery<readonly CodeHostConnection[]>
     readonly repositories: (connectionId: string) => FetchQuery<readonly CodeHostRepository[]>
@@ -188,8 +209,10 @@ export type ServerQueries = {
   readonly cloud: { readonly list: () => FetchQuery<readonly CloudWorkspace[]> }
   readonly folders: FolderQueries
   readonly integrations: IntegrationQueries
+  readonly agentConnections: AgentConnectionsQueries
   readonly sandboxProviders: SandboxProviderQueries
   readonly providerConnect: ProviderConnectQueries
+  readonly providerCatalogs: ProviderCatalogQueries
   readonly harnesses: {
     readonly options: (placementId: PlacementId, harness: string) => FetchQuery<HarnessOptions>
     readonly logins: () => FetchQuery<readonly HarnessLogin[]>
@@ -222,10 +245,13 @@ export type Server = {
   readonly cloud: CloudApi
   readonly accounts: AccountsApi
   readonly marketplace: MarketplaceApi
+  readonly tasks: TasksApi
   readonly folders: FoldersApi
   readonly integrations: IntegrationsApi
+  readonly agentConnections: AgentConnectionsApi
   readonly sandboxProviders: SandboxProvidersApi
   readonly providerConnect: ProviderConnectApi
+  readonly providerCatalogs: ProviderCatalogsApi
   readonly livePlugins: LivePluginsApi
   readonly harnessConfig: HarnessConfigApi
   readonly queries: ServerQueries

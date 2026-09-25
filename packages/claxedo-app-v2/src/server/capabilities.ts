@@ -1,7 +1,6 @@
 import { AGENT_HARNESS_IDS, HARNESS_EFFORT_LEVELS, HARNESS_TABLE } from "@claxedo/agent-runtime-contract"
 import { createSignal, type Accessor } from "solid-js"
 import { probeAvailability } from "./availability"
-import { DOCUMENTS_PATH } from "./documents"
 import { toAppError } from "./errors"
 import { thisMachine, thisMachineId } from "./machines"
 import { TASKS_PRESETS_PATH } from "./tasks"
@@ -73,12 +72,11 @@ export function createCapabilities(transport: Transport, workspaces: Workspaces)
   const [value, setValue] = createSignal<Capabilities | undefined>(undefined)
   const load = async () => {
     const declaration = (await workspaces.load()).declaration
-    const [pi, tasks, documents] = await Promise.all([
+    const [pi, tasks] = await Promise.all([
       settle("The pi provider catalog", piConnected(transport)),
       settle("Tasks", probeAvailability(transport, TASKS_PRESETS_PATH)),
-      settle("Documents", probeAvailability(transport, DOCUMENTS_PATH)),
     ])
-    const features = { tasks: tasks.ok && tasks.value.kind === "available", documents: documents.ok && documents.value.kind === "available" }
+    const features = { tasks: tasks.ok && tasks.value.kind === "available", documents: declaration.documents }
     setValue(capabilitiesOf(declaration, transport.loopback, harnessesFrom(pi, transport.loopback), features))
   }
   return { value, load }

@@ -1,4 +1,4 @@
-import { checksum } from "@opencode-ai/ui/utils/encode"
+import { checksum } from "@/ui"
 import type { ModelKey } from "./model-key"
 import { harnessSelectionKey, isHarnessSelection, type HarnessSelection } from "@/lib/harness-selection"
 import { isCatalogHarnessId } from "@/lib/harness-selection"

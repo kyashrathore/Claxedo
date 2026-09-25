@@ -32,13 +32,10 @@ import {
   TurnFoldRow,
   WorkGroup,
 } from "@/transcript"
-import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { isPhoneWidth } from "@/lib/viewport"
-import { ClaxedoIcon as Icon } from "@/ui"
+import { ClaxedoIcon as Icon, FileIcon, ScrollView, resolveTranscriptTypography, transcriptTypographyStyle, showToast, Binary, getFilename } from "@/ui"
 import { ClaxedoSessionRetry } from "./claxedo-session-retry"
 import { TimelineErrorPresentation } from "./first-turn-recovery-card"
-import { ScrollView } from "@opencode-ai/ui/scroll-view"
-import { resolveTranscriptTypography, transcriptTypographyStyle } from "@opencode-ai/ui/theme/transcript-typography"
 import { TimelineQueuedMessages } from "./timeline-queued-messages"
 import type {
   AgentAssistantMessage as AssistantMessage,
@@ -46,9 +43,6 @@ import type {
   AgentPresentationMessage as MessageType,
   AgentToolPart as ToolPart,
 } from "@claxedo/agent-runtime-contract"
-import { showToast } from "@opencode-ai/ui/toast"
-import { Binary } from "@opencode-ai/ui/utils/binary"
-import { getFilename } from "@opencode-ai/ui/utils/path"
 import { createTimelineListGestures } from "./message-timeline-list-gestures"
 import { useData } from "@/transcript"
 import { sessionTitle } from "./session-title"
