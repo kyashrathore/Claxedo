@@ -62,7 +62,6 @@
       height: 46px;
       border: none;
 
-      /* inset box-shadows do not paint over <img> content, so the hairline is an overlay */
       &::after {
         content: "";
         position: absolute;
@@ -282,13 +281,9 @@
   }
 }
 
-/* Both image surfaces — an attachment on a message, and an image a `read` returned. */
 [data-slot="file-part-image"],
 [data-slot="tool-image-thumbnail"] {
   display: block;
-  /* Thumbnail, not the artefact: 320px is the bounded-block width already used for
-     message comments, 240px the height shared with bash and tool output. Clicking
-     opens the full-size preview. */
   max-width: min(100%, 320px);
   max-height: 240px;
   object-fit: contain;
@@ -418,7 +413,6 @@
   color: var(--transcript-reasoning-color, var(--v2-text-text-muted));
   line-height: var(--transcript-reasoning-line-height, var(--line-height-normal));
 
-  /* Collapsed "Thought for Ns" body (T18): muted 13px, no big top margin. */
   [data-component="reasoning-content"] .ui-markdown {
     margin-top: 4px;
   }
@@ -633,13 +627,11 @@
   }
 
   [data-slot="message-part-title-filename"] {
-    /* No text-transform - preserve original filename casing */
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     font-weight: var(--font-weight-regular);
-    /* File-link affordance (T8, D§3.5): dotted underline reads as an openable file. */
     text-decoration: underline dotted 0.5px;
     text-underline-offset: 2px;
     text-decoration-color: var(--border-weak-base);
@@ -706,7 +698,6 @@
     overflow: hidden;
   }
 
-  /* Hide scrollbar */
   scrollbar-width: none;
   -ms-overflow-style: none;
 
@@ -845,7 +836,6 @@
     line-height: var(--transcript-meta-line-height, var(--line-height-large));
   }
 
-  /* Severity is carried by this 16px glyph, not by colouring the text (D§1). */
   .ui-diagnostic-icon {
     display: inline-flex;
     align-items: center;
@@ -1636,7 +1626,6 @@ body:not([data-new-layout]) {
     border: 1px solid var(--border-weak-base);
   }
 
-  /* Uniform dim for edit/write rows (T1) — matches the tool-row tone; hover lifts text. */
   [data-component="edit-trigger"],
   .ui-write-trigger {
     color: var(--text-weak);
@@ -1801,7 +1790,6 @@ body:not([data-new-layout]) {
   }
 }
 
-/* Every capped tool result exposes its scroll range without requiring hover. */
 .ui-scrollable-output,
 .ui-work-group-list {
   scrollbar-width: auto;
@@ -1824,7 +1812,6 @@ body:not([data-new-layout]) {
   }
 }
 
-/* 240px shows a dozen lines of output before the reader has to scroll or reveal the rest. */
 .ui-scrollable-output {
   max-height: var(--transcript-output-cap, 240px);
   overflow-y: auto;

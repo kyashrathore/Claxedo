@@ -38,7 +38,5 @@ export function createMessageNavDeferredMount(
     },
     { initialValue: false },
   )
-  // Idle readiness is optional presentation state. Keep its latest value
-  // reactive without enrolling the pending idle promise in the pane Suspense.
   return () => ready.latest
 }

@@ -8,14 +8,6 @@ import { asRecord } from "@claxedo/helpers/guards"
 import { claxedoToolArguments } from "./claxedo-tool-view"
 import { safeLinkHref } from "./safe-link"
 
-/**
- * The one line under a subagent's name. `description` is whatever the runtime last
- * wrote to the row, and a finished subagent writes its own summary there — prose,
- * markdown headings and all — so it is flattened and clamped to a line's worth here.
- * Handing the full text to the layout instead leaves the row's width to whatever the
- * surrounding CSS happens to allow, and a paragraph then runs out of the transcript
- * column.
- */
 export function subagentSubtitle(subagent: Pick<SubagentView, "description" | "mode" | "resolution">) {
   return [
     clampLabel(subagent.description),
@@ -25,16 +17,10 @@ export function subagentSubtitle(subagent: Pick<SubagentView, "description" | "m
   ].filter(Boolean).join(" · ")
 }
 
-/**
- * One row of delegated work: a deterministic glyph, the agent's name, the one line
- * that says what it was asked to do, and its status. The first 3 show, the rest sit
- * behind a toggle. Activating a chip opens the child session.
- */
 type ChipModel = {
   key: string
   childSessionId?: string
   name: string
-  /** What the child runs: its configuration slot or harness, model and effort. */
   detail?: string
   description?: string
   mode?: SubagentView["mode"]
@@ -48,9 +34,7 @@ type ChipModel = {
 export function dispatchSubagentOpen(target: EventTarget | null, input: {
   childSessionId?: string
   subagentKey: string
-  /** The agent's name, so the surface that opens the transcript can title it. */
   label?: string
-  /** The row's one-line summary, for that surface's header. */
   description?: string
   interaction: boolean
   openable: boolean
@@ -68,13 +52,6 @@ export function dispatchSubagentOpen(target: EventTarget | null, input: {
   }))
 }
 
-/**
- * What a spawn asked the child to run, read from the spawn call's own input:
- * `create_subagent` names a configuration slot or a harness and a model;
- * Claude's Agent tool names a model. The runtime's view of the child carries
- * none of this, so the tool input is the only place it survives. Effort is
- * left out: the chip has one line, and the slot already implies it.
- */
 export function subagentSpawnDetail(input: Record<string, unknown> | undefined): string | undefined {
   const args = claxedoToolArguments(input)
   const model = args.model
@@ -99,13 +76,6 @@ function chipFromView(view: SubagentView, detail?: string): ChipModel {
   }
 }
 
-/**
- * One chip per row. The same subagent resolves from more than one tool call in a
- * turn — a parallel batch answers in a single message, and an interaction row
- * points back at the spawn it messaged — and each resolution would otherwise
- * draw the reader another agent that never existed. The spawn is the canonical
- * resolution, so it wins the row.
- */
 export function subagentChips(views: SubagentView[], details?: ReadonlyMap<string, string>) {
   const chips = new Map<string, ChipModel>()
   for (const view of views) {
@@ -116,11 +86,6 @@ export function subagentChips(views: SubagentView[], details?: ReadonlyMap<strin
   return [...chips.values()]
 }
 
-/**
- * An interaction row is not its own transcript — it reports a message sent to a
- * subagent already spawned earlier in this turn. Activating it takes the reader
- * to that spawn row instead of opening anything.
- */
 function scrollToCanonicalSpawn(chip: ChipModel) {
   const canonical = document.querySelector<HTMLElement>(
     `[data-session-timeline-session-id="${CSS.escape(chip.parentSessionId)}"] [data-subagent-key="${CSS.escape(chip.key)}"][data-subagent-role="spawn"]`,
@@ -146,22 +111,10 @@ function statusLabel(status: ChipModel["status"], i18n: TranscriptI18n) {
   return i18n.t(STATUS_KEYS[status])
 }
 
-/**
- * A chip the surface gave a session href to is an anchor, so cmd/middle-click
- * must reach the browser's own "open in a new tab" instead of being swallowed by
- * the in-app open. A chip without an href is a button and has no such meaning to
- * defer to, so it keeps handling every click.
- */
 export function subagentChipHandlesClick(input: { modified: boolean; hasHref: boolean }) {
   return !(input.modified && input.hasHref)
 }
 
-/**
- * Where a click goes once neither the scroll-to-spawn nor the surrounding
- * surface has claimed it. A transcript that is not `openable` — never bound, or
- * gone — has nothing to navigate to, so an interaction row whose spawn is no
- * longer on screen stops here rather than routing to a session that cannot load.
- */
 export function subagentChipUnclaimedClick(input: {
   openable: boolean
   canNavigate: boolean
@@ -175,7 +128,6 @@ export function subagentChipUnclaimedClick(input: {
 export function SubagentChipRow(props: {
   parts?: AgentToolPart[]
   subagents?: SubagentView[]
-  /** The spawn input behind `subagents`, when the caller holds it rather than the parts. */
   spawnInput?: Record<string, unknown>
 }) {
   const data = useData()
@@ -224,8 +176,6 @@ export function SubagentChipRow(props: {
             )
             const interaction = () => chip.toolCallRole === "interaction"
             const openable = () => chip.resolution === "ready" && !!chip.childSessionId
-            // An interaction row is a pointer back into this transcript, not a
-            // second route to the child, so it never becomes an anchor.
             const href = () =>
               !interaction() && openable() && chip.childSessionId
                 ? safeLinkHref(data.sessionHref?.(chip.childSessionId))
@@ -251,10 +201,6 @@ export function SubagentChipRow(props: {
                 event.preventDefault()
                 return
               }
-              // No surface claimed the open — a standalone reader, where following
-              // the session's own route is the only way in. With neither a router
-              // nor an href the click has nowhere to go and the anchor, if there
-              // is one, keeps its own navigation.
               if (subagentChipUnclaimedClick({
                 openable: openable(),
                 canNavigate: !!data.navigateToSession,

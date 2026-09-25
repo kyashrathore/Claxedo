@@ -1,38 +1,12 @@
-// A failed turn's wire error carries more than `data.message`: the engine's
-// APIError (packages/opencode/src/session/message-v2.ts, wire shape
-// `ApiError` in packages/sdk/js/src/gen/types.gen.ts) also carries
-// `statusCode`, `responseBody` and `responseHeaders`. The recovery card used to
-// read only `data.message`, so an owner staring at an expired key saw a bare
-// relay string and could not tell auth failure from gateway flake.
-//
-// This module splits that error in two, matching the §5 rule of the retired
-// error proposal: `summary` is a sentence a human reads,
-// `detail` is the provider's own bytes, verbatim, for the collapsed disclosure.
 import { harnessDisplayLabel, harnessLabelForProviderId } from "@/lib/harness-catalog"
 import { asRecord } from "@claxedo/helpers/guards"
 
 export type ProviderErrorDetail = {
-  /**
-   * One human sentence naming what failed, why, and what to do. Always
-   * present for a real turn error — there is no "no more detail" state.
-   */
   summary?: string
-  /** The provider's own status/message/body, verbatim. Collapsed in the UI. */
   detail?: string
-  /**
-   * The provider's HTTP status when it reported one. Its presence means we
-   * have something more specific to say than any error-class sentence.
-   */
   status?: number
 }
 
-// Upstream relays (the opencode gateway among them) prefix the provider's own
-// message with `Error from provider (<displayName>): `. That display name is
-// the RELAY's label for the upstream account — "Console" is the Anthropic
-// Console/platform account, not a provider named Console — so it reads as a
-// bug in our UI. Strip the prefix and keep the label separately: the summary
-// names the provider we actually dispatched to, the detail keeps the original
-// line so nothing the provider said is lost.
 const RELAY_PREFIX = /^Error from provider(?:\s*\(([^)]*)\))?:\s*/i
 
 export function stripRelayPrefix(message: string) {
@@ -64,7 +38,6 @@ function statusSummary(status: number) {
   return "The model provider returned an unexpected response"
 }
 
-// The third thing every failure must say: what the user can actually do.
 const REPAIRS: Record<number, string> = {
   400: "Try another model, or retry the turn.",
   401: "Check your API key in Settings, then try again.",
@@ -89,17 +62,8 @@ function repair(status: number) {
   return "Try again."
 }
 
-/**
- * Names the provider that actually served (or refused) the turn. Prefers the
- * message we dispatched with over any relay-supplied label, because the relay
- * label describes the relay's own upstream account and is what produced the
- * misleading "(Console)".
- */
 export function providerLabel(input: { providerID?: string; modelID?: string; relayLabel?: string }) {
   const id = input.providerID?.trim()
-  // Operator ACP connections dispatch with their `acp:<slug>` key as the
-  // provider id; derive their product label the same way the harness selector
-  // does instead of echoing the raw key.
   if (id) {
     const named = PROVIDER_NAMES[id] ?? harnessLabelForProviderId(id)
     if (named) return named
@@ -150,11 +114,6 @@ function text(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined
 }
 
-/**
- * A non-string `message` still has to reach the user as something readable —
- * `String(value)` would surface a bare "[object Object]" for the object bodies
- * some providers send, so serialize it instead.
- */
 function serialized(value: unknown) {
   if (value === undefined || value === null) return undefined
   if (typeof value === "string") return value
@@ -167,11 +126,6 @@ function serialized(value: unknown) {
   }
 }
 
-/**
- * Splits a wire turn error into the human summary and the verbatim provider
- * detail. `context` carries what we dispatched with, so the summary can name
- * the real provider even when the relay mislabels it.
- */
 export function providerErrorDetail(
   error: unknown,
   context?: { providerID?: string; modelID?: string },
@@ -185,17 +139,11 @@ export function providerErrorDetail(
   const body = text(data.responseBody)
   const provider = providerLabel({ providerID: context?.providerID, modelID: context?.modelID, relayLabel })
 
-  // Detail: the provider's own words, verbatim, nothing re-derived. Message and
-  // body are both kept — the body often carries the machine-readable code the
-  // message omits — but never duplicated when the message already is the body.
   const parts: string[] = []
   if (message) parts.push(message)
   if (body && body !== message) parts.push(body)
   const detail = parts.length ? parts.join("\n") : undefined
 
-  // Summary: who failed, what kind of failure, and what to do about it. There
-  // is no generic-shrug branch. A real HTTP status supports a provider-level
-  // diagnosis; a status-less error does not prove the provider was unreachable.
   const summary = (() => {
     if (status !== undefined) {
       const head = statusSummary(status)

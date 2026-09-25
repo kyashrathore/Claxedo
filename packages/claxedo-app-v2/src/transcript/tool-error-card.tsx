@@ -61,7 +61,6 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
     if (!key.includes(".")) return key
     return i18n.t(key)
   })
-  /** The subtitle link a caller supplied, dropped unless it survives the scheme policy. */
   const href = createMemo(() => safeLinkHref(split.href))
   const cleaned = createMemo(() => split.error.replace(/^Error:\s*/, "").trim())
   const tail = createMemo(() => {
@@ -80,12 +79,6 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
     return head[0] ? head[0].toUpperCase() + head.slice(1) : i18n.t("transcript.toolErrorCard.failed")
   })
 
-  /**
-   * With no subtitle given, the text before the first ": " has become the
-   * subtitle and the body is the rest. A caller that names the subtitle itself
-   * has taken nothing from the text, so a colon inside a sentence must not cut
-   * the sentence's head off.
-   */
   const body = createMemo(() => {
     if (split.subtitle) return cleaned()
     const parts = tail().split(": ")

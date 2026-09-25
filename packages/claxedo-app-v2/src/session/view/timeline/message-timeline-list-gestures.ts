@@ -1,10 +1,6 @@
 import { normalizeWheelDelta, shouldMarkBoundaryGesture } from "./message-gesture"
 import type { MessageTimelineProps } from "./message-timeline-props"
 
-/**
- * The scroller a gesture belongs to: `root` unless the event started inside a
- * nested `[data-scrollable]` box, such as a capped tool output.
- */
 function boundaryTarget(root: HTMLElement, target: EventTarget | null) {
   const current = target instanceof Element ? target : undefined
   const nested = current?.closest("[data-scrollable]")
@@ -36,12 +32,6 @@ function markBoundaryGesture(input: {
   }
 }
 
-/**
- * The timeline list's wheel, touch, pointer and scroll handlers.
- *
- * `props` is carried rather than spread so every read stays a reactive prop
- * access at the moment the browser dispatches the event.
- */
 export function createTimelineListGestures(input: {
   props: MessageTimelineProps
   prepareInteractionScroll: () => void
@@ -100,17 +90,12 @@ export function createTimelineListGestures(input: {
   }
 
   const onPointerDown = (event: PointerEvent & { currentTarget: HTMLDivElement }) => {
-    // A pointer press on a control is an action, not a scroll gesture. Expanding
-    // the cold virtual range here would replace the pressed row between
-    // pointerdown and click, so the browser never delivers the click to
-    // timeline controls such as WorkGroup and recovery-card buttons.
     const target = event.target instanceof Element ? event.target : undefined
     if (target?.closest("button, a, input, textarea, select, [role='button'], [role='menuitem']")) return
     input.prepareInteractionScroll()
     input.props.onMarkScrollGesture(event.target)
   }
 
-  // Drag-to-select starts on a child node, not the list — mark it so autoscroll yields.
   const onPointerMove = (event: PointerEvent) => {
     if (event.buttons === 1) input.props.onMarkScrollGesture(event.target)
   }
@@ -121,7 +106,6 @@ export function createTimelineListGestures(input: {
     input.updateViewportMessage(event.currentTarget)
     input.props.onScheduleScrollState(event.currentTarget)
     input.props.onHistoryScroll()
-    // The virtualizer and resizeItem re-anchor own bottom-following.
     if (input.props.hasScrollGesture()) {
       input.props.onUserScroll()
       input.props.onAutoScrollHandleScroll()

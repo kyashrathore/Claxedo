@@ -131,7 +131,6 @@ interface Diagnostic {
 
 interface DiagnosticsResult {
   items: Diagnostic[]
-  /** Total error-severity diagnostics before the cap was applied. */
   total: number
 }
 
@@ -215,12 +214,6 @@ export interface MessagePartProps {
   onContentRendered?: () => void
   showAssistantCopyPartID?: string | null
   turnDurationMs?: number
-  /**
-   * Turn-level abort signal supplied by the timeline. SDK-runtime harnesses
-   * (codex/claude/cursor/ACP) never stamp MessageAbortedError on abort — they leave the
-   * turn's last assistant message unsettled — so `message.error` alone under-detects
-   * interruptions; only the caller can see the whole turn plus session status.
-   */
   turnInterrupted?: boolean
   useV2Actions?: boolean
 }
@@ -275,12 +268,6 @@ export type PartComponent = Component<MessagePartProps>
 
 export const PART_MAPPING: Record<string, PartComponent | undefined> = {}
 
-/**
- * Every renderer below is registered under exactly one `part.type`, so `Part` only ever
- * hands it that variant. The registry's value type is the wide `MessagePartProps`, so each
- * renderer restates the invariant by checking the discriminant — which is also what lets
- * TypeScript narrow the union. Reaching the throw means the registry was wired wrong.
- */
 function wrongPartType(expected: AgentContentPart["type"], part: AgentContentPart): Error {
   return new Error(`the "${expected}" renderer received a "${part.type}" part`)
 }
@@ -405,7 +392,6 @@ export type ToolInfo = {
   icon: IconProps["name"]
   title: string
   subtitle?: string
-  /** Secondary `key=value` chips, shown after the subtitle. */
   args?: string[]
 }
 
@@ -732,7 +718,6 @@ export function AssistantParts(
     messages: AgentAssistantMessage[]
     working?: boolean
     showReasoningSummaries?: boolean
-    /** Folds a settled turn's machinery behind one "Worked for Xs" divider. */
     foldSettledTurn?: boolean
     turnInterrupted?: boolean
     turnErrored?: boolean
@@ -923,11 +908,6 @@ export function AssistantMessageDisplay(props: {
   )
 }
 
-/**
- * A run of read/list/glob/grep folded to one "Explored" line. `parts` drives the header
- * counts only; the member rows are passed in as children and render through their own
- * tool renderers, so an expanded group holds ordinary tool rows.
- */
 export function ContextToolGroup(props: {
   parts: AgentToolPart[]
   busy?: boolean
@@ -1011,17 +991,9 @@ export function ContextToolGroup(props: {
   )
 }
 
-/**
- * WorkGroup — generalizes ContextToolGroup for a run of anything the agent did.
- * Collapsed by default; header = category icon + segmented summary + gated chevron.
- * Expanded body is a 224px scroll region with edge fades when it overflows; member rows
- * are passed in as children (the app renders them so per-part open state persists) and retain
- * their tool-specific icons so the expanded list identifies each operation.
- */
 export function WorkGroup(props: {
   parts: AgentToolPart[]
   busy?: boolean
-  /** A member row is open: the list grows to fit it instead of scrolling a diff through a 224px window. */
   memberOpen?: boolean
   open?: boolean
   onOpenChange?: (open: boolean) => void
@@ -1038,7 +1010,6 @@ export function WorkGroup(props: {
   )
   const summary = createMemo(() => workGroupSummary(props.parts))
   const icon = createMemo(() => workGroupIcon(props.parts))
-  // Stay active between members until execution moves past this group.
   const title = createMemo(
     () => workGroupActiveLabel(props.parts, i18n, props.busy) ?? workGroupTitle(summary(), pending(), i18n),
   )
@@ -1515,19 +1486,15 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     () => part().tool === "question" && (part().state.status === "pending" || part().state.status === "running"),
   )
 
-  // The child registry owns whether delegation happened. A wrapper can fail or
-  // be interrupted after admitting a child; keep that child's transcript chip.
   const boundSubagents = createMemo(() => isSubagentToolPart(part())
     ? data.resolveSubagents?.(part().sessionID, part().callID) ?? []
     : [])
 
-  /** The failure text of an errored tool call. */
   const toolError = createMemo(() => {
     const state = part().state
     return state.status === "error" ? state.error : undefined
   })
 
-  /** When the call began. A pending call has not started, so it has no timestamp yet. */
   const toolStartedAt = createMemo(() => {
     const state = part().state
     return state.status === "pending" ? undefined : state.time.start
@@ -1537,23 +1504,15 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   const emptyMetadata: Record<string, unknown> = {}
 
   const input = () => part().state.input ?? emptyInput
-  /**
-   * A pending call has not run, so it carries no metadata at all -- that is the
-   * one status `AgentToolState` omits the field from, and reading through it was
-   * the error the suppression here used to hide. Every started status declares
-   * it, optionally except when completed.
-   */
   const partMetadata = () => {
     const state = part().state
     if (state.status === "pending") return emptyMetadata
     return state.metadata ?? emptyMetadata
   }
-  /** Output exists only once the call completes; every earlier status has none. */
   const toolOutput = createMemo(() => {
     const state = part().state
     return state.status === "completed" ? state.output : undefined
   })
-  /** Like `output`, the contract carries attachments only on a completed call. */
   const toolAttachments = createMemo(() => {
     const state = part().state
     return state.status === "completed" ? state.attachments : undefined
@@ -1575,9 +1534,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     return taskId()
   })
 
-  /** An explicit first-party server identity takes precedence over bare native tool names. */
   const claxedo = createMemo(() => claxedoToolName(part().tool, input()))
-  /** What a refused first-party call was about, for the error card's subtitle and link. */
   const claxedoSubject = createMemo(() => {
     const name = claxedo()
     if (!name) return undefined
@@ -1839,11 +1796,6 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
   )
 }
 
-/**
- * Opens an image in the full-view dialog. `show` resolves when Solid's transition
- * settles; nothing here waits on the dialog being on screen, and the transition promise
- * does not reject.
- */
 function useImagePreview() {
   const dialog = useDialog()
   return (url: string, alt?: string) => void dialog.show(() => <ImagePreview src={url} alt={alt} />)
@@ -1919,14 +1871,6 @@ function ToolImageStrip(props: { images: AgentFilePart[] }) {
   )
 }
 
-/**
- * The images a tool call produced. Every adapter harvests an image block from any tool
- * result — a screenshot from an MCP server as readily as a `read` of a png — so this
- * hangs off the tool row itself rather than off the one renderer that can expect them.
- *
- * The strip is a separate component so that a row with no images asks for neither the
- * dialog nor the data context, and `useDialog` throws where there is no provider.
- */
 export function ToolAttachments(props: { attachments?: AgentFilePart[] }) {
   const images = createMemo(() => (props.attachments ?? []).filter((file) => file.mime.startsWith("image/")))
   return (
@@ -1997,8 +1941,6 @@ PART_MAPPING["file"] = function FilePartDisplay(props) {
   const name = createMemo(() => part().filename ?? getFilename(part().url) ?? part().url)
   const isImage = createMemo(() => part().mime.startsWith("image/"))
   const isAudio = createMemo(() => part().mime.startsWith("audio/"))
-  // part.url is tool/agent output — a rejected scheme renders the label inert
-  // rather than binding a target the click handler would refuse anyway.
   const href = createMemo(() => transcriptLinkHref(part().url))
 
   return (
@@ -2051,7 +1993,6 @@ ToolRegistry.register({
   render(props) {
     const data = useData()
     const i18n = useTranscriptI18n()
-    // The registered name, not props.tool: an alias (`read_file`) renders here too.
     const info = createMemo(() => getToolInfo("read", props.input))
     const loaded = createMemo(() => {
       if (props.status !== "completed") return []
@@ -2147,8 +2088,6 @@ ToolRegistry.register({
       if (typeof value !== "string") return ""
       return value
     })
-    // input.url is the tool call's argument — a rejected scheme renders the
-    // label inert rather than binding a target the click handler would refuse.
     const href = createMemo(() => transcriptLinkHref(url()))
     return (
       <BasicTool
@@ -2241,8 +2180,6 @@ ToolRegistry.register({
     const i18n = useTranscriptI18n()
     const pending = () => props.status === "pending" || props.status === "running"
     const sawPending = pending()
-    // Row reads "Ran <command>" — verb + the real command, not a static "Shell"
-    // label with the login-shell wrapper trailing behind it.
     const displayCommand = createMemo(() =>
       stripShellWrapper(String(props.input.command ?? props.metadata.command ?? "")),
     )
@@ -2253,8 +2190,6 @@ ToolRegistry.register({
     })
     const [copied, setCopied] = createSignal(false)
 
-    // Dev-server preview row: surface a "Local preview · 127.0.0.1:port" chip when the
-    // command output advertises a listening localhost URL. Pure client-side regex.
     const localUrl = createMemo(() => {
       if (pending()) return undefined
       return localPreviewUrl(stripAnsi(props.output || props.metadata.output || ""))
@@ -2281,10 +2216,6 @@ ToolRegistry.register({
               <span data-slot="basic-tool-tool-title">
                 <TextShimmer text={pending() ? "Running" : "Ran"} active={pending()} />
               </span>
-              {/* Keep the command in the header while running and while expanded — the
-                  verb alone ("Running") says nothing, and a long command is exactly when
-                  the reader needs to know which one it is. The input carries `command` as
-                  soon as its partial JSON parses, well before the call returns. */}
               <Show when={displayCommand()}>
                 <ShellSubmessage text={displayCommand()} animate={sawPending && !open()} />
               </Show>
@@ -2482,7 +2413,7 @@ ToolRegistry.register({
                   </div>
                 </Show>
               </div>
-              <div data-slot="message-part-actions">{/* <DiffChanges diff={diff} /> */}</div>
+              <div data-slot="message-part-actions"></div>
             </div>
           }
         >
@@ -2794,8 +2725,6 @@ ToolRegistry.register({
   name: "skill",
   render(props) {
     const i18n = useTranscriptI18n()
-    // Claude's dynamic-tool lane persists the skill id on `input.skill`; the
-    // OpenCode lane uses `input.name`.
     const name = createMemo(() => props.input.name || props.input.skill)
     const title = createMemo(() => name() || i18n.t("transcript.tool.skill"))
     const running = createMemo(() => props.status === "pending" || props.status === "running")
@@ -2812,8 +2741,6 @@ ToolRegistry.register({
       </div>
     )
 
-    // A completed skill whose frame carried no output still names its call — the
-    // row must open to that rather than swallow the click onto nothing.
     const body = createMemo(() => props.output || (name() ? `Skill: ${name()}` : undefined))
 
     return (
@@ -2886,15 +2813,6 @@ ToolRegistry.register({
   },
 })
 
-/**
- * Harness tool-name aliases. The registry above uses OpenCode's vocabulary, but Claxedo
- * also drives Codex, which names its shell tool `command` (input `{command, kind}`).
- * Unaliased names fall through to `GenericTool` — an "Called `command`" row with a raw
- * key=value arg dump, an MCP icon, and no children (so it can't even expand). Aliasing
- * maps them onto the real renderer so they get the right icon/verb, an expandable output
- * pane, and — because the grouping pass keys off these names — they fold into work groups.
- * Registered after the definitions above so the targets exist.
- */
 for (const [alias, target] of toolNameAliases()) {
   if (ToolRegistry.render(alias)) continue
   const render = ToolRegistry.render(target)
