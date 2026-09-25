@@ -43,6 +43,7 @@ async function backend(): Promise<CodexBackend> {
     owner: { kind: "person", userId: "member" },
     origin: { actor: { kind: "person", userId: "member" }, via: "relay", reissued: false },
     hold: (marker) => server.holdTextReplies(marker),
+    held: (marker) => server.textGateReached(marker),
     close: async () => {
       console.log(`Codex outbound attempts: ${JSON.stringify(guard.attempts)}`)
       const unexpected = unexpectedEgress(guard.attempts)

@@ -167,6 +167,20 @@ describe("native provider delivery", () => {
     })
   })
 
+  test("Cursor exchange credentials stay outside a cloud sandbox", async () => {
+    const credential = await shared({ provider_id: "cursor-sdk", kind: "api_key", secret: "cursor-private-key" })
+    setActiveCredentials([credential.id])
+
+    const deliveries = await nativeProviderDeliveries({ secretBrokering: "native" })
+    expect(nativeProviderSecrets(deliveries)).toEqual([])
+    expect(nativeProviderAuth(deliveries)).toEqual({
+      "cursor-sdk": { unavailable: true, reason: "native_delivery_needs_token_exchange" },
+    })
+    expect(JSON.stringify(deliveries)).not.toContain("cursor-private-key")
+    expect(credentialReach({ provider_id: "cursor-sdk", kind: "api_key" }))
+      .toEqual({ local: true, cloud: false, reason: "native_delivery_needs_token_exchange" })
+  })
+
   test("a driver that cannot broker refuses the turn instead of the provisioning", async () => {
     const credential = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY })
     setActiveCredentials([credential.id])

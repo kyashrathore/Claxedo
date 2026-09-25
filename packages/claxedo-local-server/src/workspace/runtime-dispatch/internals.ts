@@ -6,7 +6,9 @@ import { ensureEmbeddedWorkspaceRuntime, type EmbeddedWorkspaceRuntimeConfigMode
 import { routeOwnership, RouteHandler } from "@claxedo/server-core/platform/governance/route-ownership"
 import { normalizeClaxedoRegion, type ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import type { RelayProvider } from "@claxedo/server-core/adapters/relay/index"
+import type { RelayTokenInput } from "@claxedo/server-core/adapters/relay-port"
 import type { RuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { EMBEDDED_RELAY_HOST_AUTH_HEADER } from "./embedded-relay-host-auth"
 import { resolveIngressProvenance } from "./ingress-provenance"
@@ -28,10 +30,12 @@ export type Hit = {
 export type RuntimeProxyOptions = {
   sandboxManager?: Pick<SandboxManagerPort, "ensure" | "touch">
   relayProvider?: RelayProvider
+  mintLocalRelayHostToken?: (input: RelayTokenInput & { parentJti: string }) => Promise<string>
   defaultHomeRegion?: ClaxedoRegion
   resolveRelayActor?: (request: Request, workspaceId: string) => Promise<(RuntimeActor & {
     orgId: string
     role: "viewer" | "editor" | "admin" | "owner"
+    auth?: SignedControlPlaneAuth
   }) | undefined>
   /** Signed deployments must never fall back to the synthetic local owner. */
   requireRelayActor?: boolean
@@ -241,12 +245,13 @@ export async function proxy(c: Context, hit: Hit, options?: {
   forwardedBy?: string
   sandboxManager?: Pick<SandboxManagerPort, "ensure" | "touch">
   relayProvider?: RelayProvider
+  mintLocalRelayHostToken?: RuntimeProxyOptions["mintLocalRelayHostToken"]
   defaultHomeRegion?: ClaxedoRegion
   resolveRelayActor?: RuntimeProxyOptions["resolveRelayActor"]
   requireRelayActor?: boolean
 }) {
   const url = new URL(c.req.url)
-  const target = await proxyTarget(hit, options, (options?.pathname ?? url.pathname) + url.search)
+  const path = (options?.pathname ?? url.pathname) + url.search
   const headers = new Headers(c.req.raw.headers)
   headers.set("x-workspace-id", hit.workspaceId)
   if (hit.workspaceName) headers.set("x-workspace-name", hit.workspaceName)
@@ -296,15 +301,35 @@ export async function proxy(c: Context, hit: Hit, options?: {
           orgId: hit.relay.orgId,
           role: "owner" as const,
         }
-    const token = await options.relayProvider.mintRuntimeAccessToken({
+    const tokenInput = {
       workspaceId: hit.workspaceId,
       hostId: hit.relay.hostId,
       ...principal,
+      ...(actor?.auth ? { auth: actor.auth } : {}),
       ttlMs: 10 * 60_000,
-    })
+    }
+    const token = await options.relayProvider.mintRuntimeAccessToken(tokenInput)
+    if (options.mintLocalRelayHostToken) {
+      if (!actor?.auth) throw new Error("Local cloud relay requires a signed caller")
+      headers.set("authorization", `Bearer ${await options.mintLocalRelayHostToken({ ...tokenInput, parentJti: token.jti })}`)
+      const target = new URL(path, hit.url)
+      if (target.searchParams.has("directory")) target.searchParams.set("directory", hit.directory)
+      return await forwardRuntimeRequest(c, target, headers, hit, options, url)
+    }
     headers.set("authorization", `Bearer ${token.token}`)
   }
+  const target = await proxyTarget(hit, options, path)
+  return await forwardRuntimeRequest(c, target, headers, hit, options, url)
+}
 
+async function forwardRuntimeRequest(
+  c: Context,
+  target: URL,
+  headers: Headers,
+  hit: Hit,
+  options: Parameters<typeof proxy>[2],
+  url: URL,
+) {
   const req = new Request(target.toString(), {
     method: c.req.method,
     headers,
@@ -483,4 +508,3 @@ export async function embedded(
     headers: runtimeProxyResponseHeaders(res.headers),
   })
 }
-

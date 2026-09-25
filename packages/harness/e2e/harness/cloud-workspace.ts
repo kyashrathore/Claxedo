@@ -53,11 +53,19 @@ export async function cloudConnection(stack: Stack, id: string) {
 }
 
 export async function waitCloudConnection(stack: Stack, id: string) {
+  const until = Date.now() + 60_000
+  let result: { status: number; body: string }
   await new Promise((resolve) => setTimeout(resolve, 8_000))
-  const readback = await fetch(`${stack.url}/api/workspace/${encodeURIComponent(id)}/connection`, {
-    headers: { authorization: `Bearer ${stack.daemon.cloudToken}` },
-  })
-  return { status: readback.status, body: await readback.text() }
+  do {
+    const readback = await fetch(`${stack.url}/api/workspace/${encodeURIComponent(id)}/connection`, {
+      headers: { authorization: `Bearer ${stack.daemon.cloudToken}` },
+    })
+    result = { status: readback.status, body: await readback.text() }
+    const body = JSON.parse(result.body) as { status?: string; runtimeAccessToken?: string }
+    if (result.status !== 200 || body.runtimeAccessToken) return result
+    await new Promise((resolve) => setTimeout(resolve, 8_000))
+  } while (Date.now() < until)
+  return result
 }
 
 export async function setCloudCredentialScope(stack: Stack, providerId: string, scope: "local" | "shared") {
@@ -78,14 +86,4 @@ export async function setCloudCredentialScope(stack: Stack, providerId: string, 
 
 export async function activateCloudCredential(stack: Stack, id: string) {
   await sendJson(cloudTransport(stack), "POST", `${stack.url}/api/claxedo/credentials/activate`, { ids: [id] }, "Activating cloud credential")
-}
-
-const SIGNED_MINT_REFUSAL = /A user-principal runtime token must be minted for a signed caller/
-
-export async function reachCloudRuntime<T>(attempt: Promise<T>): Promise<T> {
-  try { return await attempt }
-  catch (error) {
-    if (SIGNED_MINT_REFUSAL.test(String(error))) throw new Error(`C-16: the proxy minted the signed caller no runtime token: ${String(error).slice(0, 300)}`, { cause: error })
-    throw error
-  }
 }

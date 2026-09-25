@@ -14,6 +14,7 @@ export async function run() {
       { kind: "text", text: "CURSOR-PROOF-ANSWER" },
     ], usage: { inputTokens: 7, outputTokens: 11 } })
     if (process.env.H1_CURSOR_REFUSE_RUN === "1") stack.cursor[0].refuseRun("proof", 503)
+    if (process.env.H1_CURSOR_REFUSE_PATH) stack.cursor[0].refusePath(process.env.H1_CURSOR_REFUSE_PATH, 403)
     await routeCursorAccount(stack, 0)
     await storeCursorAccount(stack)
     const workspace = await stack.daemon.makeWorkspace("h1-cursor")
@@ -43,6 +44,11 @@ export async function run() {
     assert.ok(stream.frames.some((frame) => frameSessionId(frame) === session.id && frameType(frame) === "message.part.updated"), "Cursor emitted no live part")
     assert.equal((await api.session(workspace.directory, session.id)).id, session.id)
     assert.ok(stack.cursor[0].requests.some((request) => request.path === "/agent.v1.AgentService/RunSSE"))
+    const exchange = stack.cursor[0].requests.find((request) => request.path === "/auth/exchange_user_api_key")
+    assert.equal(exchange?.headers.authorization, "Bearer cursor-placeholder")
+    for (const request of stack.cursor[0].requests.filter((item) => item.path.startsWith("/aiserver.v1.") || item.path.startsWith("/agent.v1."))) {
+      assert.equal(request.headers.authorization, "Bearer scripted-access-token")
+    }
     assert.deepEqual(unexpectedEgress(stack.egress.attempts), [])
     console.log(`H1 Cursor: live frames, stored text and tool, session readback; outbound attempts: ${JSON.stringify(stack.egress.attempts)}`)
   } catch (error) {

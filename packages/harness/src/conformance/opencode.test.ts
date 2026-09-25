@@ -28,7 +28,7 @@ async function backend(): Promise<OpenCodeBackend> {
   const rotated: Array<{ port: number; server: Awaited<ReturnType<typeof startScriptedModelServer>> }> = []
   let permissionPrimed = false
   return {
-    execution: "embedded", root, directory, server, expectedMcp: "config",
+    execution: "in-process", root, directory, server, expectedMcp: "config",
     harness: { id: "opencode", access: "native" }, model: { providerID: "proof", modelID: "proof" },
     credentials: { providers: { proof: { baseUrl: server.v1Url, placeholder: "opencode-placeholder-one", authMode: "api-key" } },
       secrets: {}, leaseGeneration: "one" },
@@ -45,6 +45,7 @@ async function backend(): Promise<OpenCodeBackend> {
       return "Use the shell tool to write OPENCODEPERMISSION to conformance-permission.txt"
     },
     hold: (marker) => server.holdTextReplies(marker),
+    held: (marker) => server.textGateReached(marker),
     scriptTool: (name, input) => server.scriptTool({ name, input }),
     rotate: async () => {
       const port = await reservePort()

@@ -7,7 +7,8 @@ import { MemoryPorts, authority, origin } from "./memory-ports"
 import { createTestServices, type TestServices } from "./services"
 
 export type ConformanceBackend = {
-  execution?: "process" | "embedded"
+  execution?: "process" | "in-process"
+  agent?: string
   directory: string
   harness: StartInput["config"]["harness"]
   model: PromptModel
@@ -25,6 +26,7 @@ export type ConformanceBackend = {
   onSetup?(context: { owner: ReturnType<typeof createRequestBroker>; ports: MemoryPorts }): void
   authFile?: string
   hold?(marker: string): () => void
+  held?(marker: string): Promise<void>
   scriptTool?(name: string, input: unknown): void
   uiCommand?: string
   rotate?(): Promise<{ credentials: ResolvedCredentials; observed(): boolean }>
@@ -71,7 +73,7 @@ async function setup(input: ConformanceInput) {
   })
   const close = async () => { await transport.dispose(); await backend.close() }
   return { backend, services, ports, owner, transport, start, session, sessionBroker, turnBroker,
-    turn: (message: string) => turn(backend.model, message, turnOrigin), close }
+    turn: (message: string) => turn(backend.model, backend.agent ?? "build", message, turnOrigin), close }
 }
 
 export { setup as setupConformance }
@@ -98,10 +100,15 @@ async function pendingPermission(context: Awaited<ReturnType<typeof setup>>) {
   throw new Error("ACP permission did not reach the broker")
 }
 
-function turn(model: PromptModel, message: string, turnOrigin: TurnOrigin): TurnInput {
+async function heldRequest(backend: ConformanceBackend, marker: string): Promise<void> {
+  if (!backend.held) throw new Error("A backend that holds a reply must report when the held request arrives")
+  await backend.held(marker)
+}
+
+function turn(model: PromptModel, agent: string, message: string, turnOrigin: TurnOrigin): TurnInput {
   return {
     turnId: "t1", userMessageId: "u1", assistantMessageId: "a1", origin: turnOrigin, model,
-    prompt: { agent: "pi", assistantMessageId: "a1", parts: [{ type: "text", text: message }] }, todos: [],
+    prompt: { agent, assistantMessageId: "a1", parts: [{ type: "text", text: message }] }, todos: [],
   }
 }
 
@@ -116,7 +123,7 @@ export function runConformance(input: ConformanceInput): void {
     test("starts a real harness, streams text and usage, and closes it", async () => {
       const context = await setup(input)
       try {
-        if (context.backend.execution === "embedded") expect(context.services.processes).toHaveLength(0)
+        if (context.backend.execution === "in-process") expect(context.services.processes).toHaveLength(0)
         expect(context.session.binding.workspaceId).toBe(context.start.workspaceId)
         const events = await collect(context.transport, context.session, context.turn(context.backend.textCommand ?? "Reply with exactly this one token: PICONFORM"), context.turnBroker())
         expect(events.some((item) => item.event.type === "text-delta" && item.event.delta.includes("PICONFORM"))).toBe(true)
@@ -125,7 +132,7 @@ export function runConformance(input: ConformanceInput): void {
         const capabilities = await context.transport.capabilities({ directory: context.backend.directory })
         if (context.backend.expectedMcp) expect(capabilities.pluginIntake.mcp).toBe(context.backend.expectedMcp)
         await context.transport.close(context.session)
-        if (context.backend.execution === "embedded") expect(context.services.processes).toHaveLength(0)
+        if (context.backend.execution === "in-process") expect(context.services.processes).toHaveLength(0)
         else expect((await Promise.all(context.services.processes.map((process) => process.exited))).every((exit) => exit.code !== null || exit.signal !== null)).toBe(true)
       } finally { await context.close() }
     }, 60_000)
@@ -159,9 +166,14 @@ export function runConformance(input: ConformanceInput): void {
         if (!capabilities.steer || !context.backend.hold) return
         const release = context.backend.hold("PISTEER")
         const running = collect(context.transport, context.session, context.turn("Reply with exactly this one token: PISTEER"), context.turnBroker())
-        await new Promise((resolve) => setTimeout(resolve, 100))
-        const result = await context.transport.steer?.steer(context.session, { turnId: "t1", assistantMessageId: "a1" },
+        await heldRequest(context.backend, "PISTEER")
+        const steer = () => context.transport.steer?.steer(context.session, { turnId: "t1", assistantMessageId: "a1" },
           context.turn("Reply with exactly this one token: PISTEERFOLLOW"))
+        let result = await steer()
+        for (let attempt = 0; result && !result.ok && result.status === "no_active_turn" && attempt < 500; attempt++) {
+          await new Promise((resolve) => setTimeout(resolve, 10))
+          result = await steer()
+        }
         expect(result?.ok).toBe(true)
         release()
         const events = await running
@@ -177,7 +189,7 @@ export function runConformance(input: ConformanceInput): void {
           const release = context.backend.hold("PICANCEL")
           const controller = new AbortController()
           const running = collect(context.transport, context.session, context.turn("Reply with exactly this one token: PICANCEL"), context.turnBroker(controller.signal))
-          await new Promise((resolve) => setTimeout(resolve, 300))
+          await heldRequest(context.backend, "PICANCEL")
           const update = await context.transport.configure(context.session, { credentials: context.backend.credentials })
           if (capabilities.timing.credentials === "after-active-turns") expect(update.state).toBe("refused")
           const outcome = await context.transport.cancel(context.session, { turnId: "t1", assistantMessageId: "a1" }, { at: Date.now() + 5_000, signal: controller.signal })
@@ -223,13 +235,13 @@ export function runConformance(input: ConformanceInput): void {
         await collect(context.transport, context.session, context.turn("PIATTACH"), context.turnBroker())
         await context.transport.close(context.session)
         const attached = await context.transport.attach({ ...context.start, binding: context.session.binding }, context.sessionBroker)
-        if (context.backend.execution === "embedded") expect(context.services.processes).toHaveLength(0)
+        if (context.backend.execution === "in-process") expect(context.services.processes).toHaveLength(0)
         expect(attached.binding.upstreamSessionId).toBe(context.session.binding.upstreamSessionId)
         const events = await collect(context.transport, attached, context.turn("PIRESUMED"), context.turnBroker())
         expect(events.flatMap((item) => item.event.type === "text-delta" ? [item.event.delta] : []).join("").length).toBeGreaterThan(0)
         expect(events.some((item) => item.event.type === "finish")).toBe(true)
         await context.transport.close(attached)
-        expect(context.services.processes).toHaveLength(context.backend.execution === "embedded" || context.backend.locality === "remote" ? 0 : 2)
+        expect(context.services.processes).toHaveLength(context.backend.execution === "in-process" || context.backend.locality === "remote" ? 0 : 2)
       } finally { await context.close() }
     }, 60_000)
 
@@ -393,7 +405,7 @@ export function runConformance(input: ConformanceInput): void {
             await new Promise((resolve) => setTimeout(resolve, 10))
           }
           expect(pending).toBeDefined()
-        } else await new Promise((resolve) => setTimeout(resolve, 300))
+        } else await heldRequest(context.backend, "CONFORMANCESECOND")
         const secondProcess = context.services.processes.at(-1)
         const update = await context.transport.configure(context.session, { credentials: {
           ...context.backend.credentials, leaseGeneration: "session-one-only",
@@ -418,7 +430,7 @@ export function runConformance(input: ConformanceInput): void {
         ])
         expect(first).toEqual(second)
         expect(first.length).toBeGreaterThan(0)
-        if (context.backend.execution === "embedded") expect(context.services.processes).toHaveLength(0)
+        if (context.backend.execution === "in-process") expect(context.services.processes).toHaveLength(0)
         else if (context.backend.locality !== "remote") {
           expect(context.services.processes).toHaveLength(before + 1)
           expect(await context.services.processes.at(-1)!.exited).toBeDefined()
@@ -437,7 +449,7 @@ export function runConformance(input: ConformanceInput): void {
         const commands = await context.transport.commands?.list({ draft })
         expect(commands).toBeArray()
         expect(commands?.length).toBeGreaterThan(0)
-        if (context.backend.execution === "embedded") expect(context.services.processes).toHaveLength(0)
+        if (context.backend.execution === "in-process") expect(context.services.processes).toHaveLength(0)
         else if (context.backend.locality !== "remote") {
           expect(context.services.processes).toHaveLength(before + 1)
           expect(await context.services.processes.at(-1)!.exited).toBeDefined()
@@ -454,7 +466,7 @@ export function runConformance(input: ConformanceInput): void {
         expect(sessionAgents?.length).toBeGreaterThan(0)
         const { sessionId: _sessionId, title: _title, instructions: _instructions, ...draft } = context.start
         expect(await context.transport.agents?.list({ draft })).toEqual(sessionAgents)
-        if (context.backend.execution === "embedded") expect(context.services.processes).toHaveLength(0)
+        if (context.backend.execution === "in-process") expect(context.services.processes).toHaveLength(0)
       } finally { await context.close() }
     }, 60_000)
 
