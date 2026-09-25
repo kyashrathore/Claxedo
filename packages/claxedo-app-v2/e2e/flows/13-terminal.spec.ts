@@ -142,15 +142,21 @@ test("13 terminal: a shell that exits leaves the rail, its pane and the compact 
   await expectNoTerminalTab(app)
 })
 
-test("13 terminal: a daemon restart ends the open terminal in the rail, its pane and the compact tabs", async ({ stack, app }) => {
-  test.skip(stack.app === "v1", "today's app keeps the dead terminal's rail row after a restart")
+test("13 terminal: a daemon restart recreates the open terminal from its history", async ({ stack, app }) => {
   const workspace = await stack.daemon.makeWorkspace("terminal", "Terminal")
   await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
   const restartedId = await newShell(app)
   await expect(terminalPane(app, restartedId)).toHaveAttribute("data-terminal-connected", "true")
+  await app.getByRole("textbox", { name: "Terminal input" }).focus()
+  await app.keyboard.type("echo tools-restart-$((6*7))")
+  await app.keyboard.press("Enter")
+  await ptyReplay(app, workspace.directory, restartedId, "tools-restart-42")
   await stack.daemon.restart()
-  await expect(terminalPane(app, restartedId)).toHaveCount(0, { timeout: 30_000 })
-  await expectNoTerminalTab(app)
+  await expect.poll(() => serverTerminalIds(stack.url, workspace.directory), { timeout: 45_000 }).toHaveLength(1)
+  const [recreatedId] = await serverTerminalIds(stack.url, workspace.directory)
+  expect(recreatedId).not.toBe(restartedId)
+  expect(await ptyReplay(app, workspace.directory, recreatedId, "tools-restart-42")).toContain("tools-restart-42")
+  await expect(app.getByRole("button", { name: /^Close terminal: / })).toHaveCount(1)
 })
 
 test("13 terminal: a workspace whose folder is gone reads no terminal list", async ({ stack, app }) => {

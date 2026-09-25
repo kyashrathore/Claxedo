@@ -181,3 +181,11 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - **Cancelled turns (runtime, both apps):** fixed now, in this branch. A Stop records `cancelled`, and both apps show "Interrupted".
 - **Desktop launch code shared with v1:** start fixes may change it on this branch (early server fork, the stale-daemon file, the compile cache). v1 built from this branch gets the same wins, so the benchmark's v1 baseline is built from `dev`.
 - **Server gaps:** fixed in this branch. That means the pi harness options cold start, the providers route's `provider` parameter and summary form, a pushed harness-health event replacing the composer's poll, and one status read across workspaces.
+
+## Orchestrator, 2026-09-25: panel width survives close (v1 side effect not ported; owner approved 10:05)
+- v1 keeps a dragged panel width in the panel shell, which it disposes after the close motion, so every reopen starts at 70% (TOOL-009).
+- **v2:** the chosen width persists (localStorage, per scope) across close and reload; maximize still restores it.
+
+## Orchestrator, 2026-09-25: browser pick sends text (v1's file part is broken)
+- v1 adds a picked element as a file chip whose path is the page URL, and sends it as a `file://<folder>/<url>` part the agent cannot read (TOOL-145).
+- **v2:** a text chip "<tag> on <host>" whose text carries the page URL, the element's selector and HTML snippet, and the comment; the screenshot goes in as an image.

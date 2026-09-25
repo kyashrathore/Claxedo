@@ -93,3 +93,28 @@ test("14 a file three folders deep opens from the files tree without blocking th
   await expect(panel.getByText("three folders down").first()).toBeVisible()
   expect(await longest(), "the longest task while the file opened, in ms").toBeLessThan(1_000)
 })
+
+test("14 Review keeps its scroll position through a file tab and back", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("scrollback")
+  await fs.writeFile(path.join(workspace.directory, "long.txt"), Array.from({ length: 300 }, (_, i) => `line ${i}`).join("\n"))
+  await fs.writeFile(path.join(workspace.directory, "other.txt"), "other\n")
+  const session = await api.createSession(workspace.directory, { title: "Scroll", harness: SCRIPTED_ACP_HARNESS })
+
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
+  await app.getByRole("button", { name: UI.openPanel }).click()
+  const panel = app.getByRole("complementary", { name: "Workspace panel" })
+  const review = panel.getByTestId("review-pane-root")
+  await review.getByRole("button", { name: "Toggle diff for long.txt" }).click()
+  await expect(review.getByText("line 5", { exact: true }).first()).toBeVisible()
+  const scroller = review.locator("[data-scrollable='true']").first()
+  await scroller.evaluate((element) => (element.scrollTop = 900))
+  await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBeGreaterThan(200)
+
+  await panel.getByRole("treeitem", { name: /^other\.txt/ }).click()
+  await expect(panel.getByTestId("tab-file-root")).toBeVisible()
+  await panel.getByTestId("workspace-tab-scroll").getByText("Review", { exact: true }).click()
+  await expect
+    .poll(() => review.locator("[data-scrollable='true']").first().evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(200)
+})
