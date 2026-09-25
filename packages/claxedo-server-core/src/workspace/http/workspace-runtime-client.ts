@@ -165,6 +165,7 @@ export function createWorkspaceRuntimeClient(input: {
       relayProvider.mintRuntimeAccessToken({
         workspaceId: ws.id,
         hostId: active.hostId,
+        leaseEpoch: active.epoch,
         ...principal,
         ttlMs: 10 * 60_000,
       }),

@@ -150,6 +150,7 @@ async function mintCloudConnection(
     orgId,
     workspaceId,
     hostId: target.hostId,
+    leaseEpoch: target.epoch,
     role,
   })
   await authority.recordRuntimeAccessToken(auth, {

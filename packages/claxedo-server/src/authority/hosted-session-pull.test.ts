@@ -118,6 +118,7 @@ describe("hosted session pull", () => {
       expect.objectContaining({
         workspaceId: "ws_1",
         hostId: "host_manager",
+        leaseEpoch: 7,
         orgId: "org_1",
         role: "editor",
         principalKind: "user",

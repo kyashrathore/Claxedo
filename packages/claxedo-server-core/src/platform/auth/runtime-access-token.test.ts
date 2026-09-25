@@ -112,6 +112,18 @@ describe("runtimeAccessTokenSigner", () => {
       .resolves.toMatchObject({ actor_id: "actor_1" })
   })
 
+  test("stamps the lease epoch a cloud token was minted against and nothing when none is named", async () => {
+    const { privatePem, publicPem } = await ed25519PrivateKeyPem()
+    process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM = privatePem
+    process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = publicPem
+
+    const sign = runtimeAccessTokenSigner()
+    const scope = { ...HUMAN_ACTOR, orgId: "o", workspaceId: "w", hostId: "h", role: "editor" as const }
+
+    expect(decodeJwt((await sign({ ...scope, leaseEpoch: 4 })).runtimeAccessToken)).toMatchObject({ lease_epoch: 4 })
+    expect(decodeJwt((await sign(scope)).runtimeAccessToken)).not.toHaveProperty("lease_epoch")
+  })
+
   test("kid is stable across multiple mints with the same key", async () => {
     const { privatePem, publicPem } = await ed25519PrivateKeyPem()
     process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM = privatePem

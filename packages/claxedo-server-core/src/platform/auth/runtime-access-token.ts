@@ -71,6 +71,8 @@ type RuntimeAccessTokenSignerBaseInput = {
   role: RelayRole
   /** Present only for a token a channel binding authorized; the relay checks its generation. */
   channelIdentity?: ChannelIdentityInput
+  /** The cloud sandbox lease epoch the host id was read from; the relay keys its target cache by it. */
+  leaseEpoch?: number
   /** Requested TTL; always clamped to `RUNTIME_ACCESS_TOKEN_TTL_BOUNDS_SECONDS`. */
   ttlSeconds?: number
 }
@@ -236,6 +238,7 @@ export function runtimeAccessTokenSigner(env: NodeJS.ProcessEnv = process.env): 
       org_id: input.orgId,
       workspace_id: input.workspaceId,
       host_id: input.hostId,
+      ...(input.leaseEpoch !== undefined ? { lease_epoch: input.leaseEpoch } : {}),
       role: input.role,
     })
       .setProtectedHeader({ alg, kid })

@@ -82,7 +82,7 @@ describe("hosted document runtime broker", () => {
         authorizeSessionRead,
         openWorkspace: vi.fn(async () => ({ role: "editor", workspace: { workspace_id: "ws_1", org_id: "org_1", project_id: "project_1" } })),
       },
-      sandbox: { sandboxManager: { target: vi.fn(async () => ({ status: "ready", hostId: "host_1", homeRegion: "us-east" })) } },
+      sandbox: { sandboxManager: { target: vi.fn(async () => ({ status: "ready", hostId: "host_1", epoch: 5, homeRegion: "us-east" })) } },
       relay: { provider: {
         mintRuntimeAccessToken: vi.fn(async () => ({ token: "runtime-token", expiresAt: Date.now() + 300_000 })),
         getRelayEndpoint: vi.fn(async () => "https://relay.test"),
@@ -101,7 +101,7 @@ describe("hosted document runtime broker", () => {
     })
     expect(opened.path).toContain("document_1")
     expect(authorizeSessionRead).toHaveBeenCalledWith(auth, { sessionId: "session_1", workspaceId: "ws_1" })
-    expect(services.relay.provider!.mintRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({ role: "editor" }))
+    expect(services.relay.provider!.mintRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({ role: "editor", hostId: "host_1", leaseEpoch: 5 }))
   })
 
   test("registers the write capability after hydration ACK and before runtime activation", async () => {

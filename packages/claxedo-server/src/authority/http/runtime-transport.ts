@@ -116,6 +116,7 @@ async function runtimeFetch(
   const token = await provider.mintRuntimeAccessToken({
     workspaceId: input.workspaceId,
     hostId: target.hostId,
+    leaseEpoch: target.leaseEpoch,
     ...(input.auth?.mode === "signed"
       ? { principalKind: "user" as const, auth: input.auth, ...await resolveRuntimeActor(requireAuthority(services), input.auth) }
       : CONTROL_PLANE_RUNTIME_ACTOR),

@@ -609,6 +609,7 @@ describe("hosted connection", () => {
       expect.anything(),
       expect.objectContaining({ workspaceId: "ws_1", hostId: "host_cloud_1" }),
     )
+    expect(ratSigner).toHaveBeenCalledWith(expect.objectContaining({ hostId: "host_cloud_1", leaseEpoch: 8 }))
     expect(authority.auditAllow).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({

@@ -138,6 +138,35 @@ describe("control-plane relay provider", () => {
     expect(recordRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({ channelIdentity, jti: "rat_jti" }))
   })
 
+  test("forwards the cloud lease epoch to the signer", async () => {
+    const runtimeAccessTokenSigner = vi.fn(async () => ({
+      runtimeAccessToken: "rat_1",
+      tokenExpiresAt: 2_000,
+      jti: "rat_jti",
+    }))
+    const provider = createControlPlaneRelayProvider({
+      relay: { relayUrl: "https://relay.test" },
+      runtimeAccessTokenSigner,
+      hostTunnelTokenSigner: vi.fn(),
+      targetLookup: vi.fn(),
+      recordRuntimeAccessToken: vi.fn(async () => {}),
+    })
+
+    await provider.mintRuntimeAccessToken({
+      principalKind: "service",
+      actorId: "control-plane",
+      actorKind: "agent",
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      orgId: "org_1",
+      role: "owner",
+      ttlMs: 30 * 60_000,
+      leaseEpoch: 7,
+    })
+
+    expect(runtimeAccessTokenSigner).toHaveBeenCalledWith(expect.objectContaining({ hostId: "host_1", leaseEpoch: 7 }))
+  })
+
   test("honors in-bounds ttlMs and clamps out-of-bounds ttlMs to the signer bounds", async () => {
     const hostTunnelTokenSigner = vi.fn(async () => ({
       hostTunnelToken: "htt_1",

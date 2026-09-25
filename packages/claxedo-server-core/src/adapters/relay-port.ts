@@ -42,6 +42,8 @@ export type RelayTokenInput = {
   actorName?: string
   actorAvatarUrl?: string
   ttlMs: number
+  /** The cloud sandbox lease epoch `hostId` was read from; absent for a machine-placed workspace. */
+  leaseEpoch?: number
   /**
    * The signed caller a USER-principal token is minted for.
    *

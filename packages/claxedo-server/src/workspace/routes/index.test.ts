@@ -1958,6 +1958,7 @@ describe("workspace routes signed control plane authority", () => {
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "ws_1",
+      leaseEpoch: 1,
       role: "owner",
     })
     expect(svc.authority?.recordRuntimeAccessToken).toHaveBeenCalledWith(
@@ -2045,6 +2046,7 @@ describe("workspace routes signed control plane authority", () => {
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_manager",
+      leaseEpoch: 4,
       role: "owner",
     })
     expect(svc.authority?.recordRuntimeAccessToken).toHaveBeenCalledWith(
@@ -2289,6 +2291,7 @@ describe("workspace routes signed control plane authority", () => {
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_manager",
+      leaseEpoch: 4,
       role: "owner",
     })
     expect(svc.authority?.usersMe).not.toHaveBeenCalled()
@@ -2854,6 +2857,7 @@ describe("workspace routes signed control plane authority", () => {
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "ws_1",
+      leaseEpoch: 1,
       role: "owner",
     })
     expect(svc.authority?.recordRuntimeAccessToken).toHaveBeenCalledWith(

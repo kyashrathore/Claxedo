@@ -45,10 +45,11 @@ async function mintSignedCloudConnection(
   auth: SignedControlPlaneAuth,
   ws: Workspace,
   context: { authority: WorkspaceAuthority; result: WorkspaceOpenResult },
-  hostId: string,
+  lease: { hostId: string; epoch: number },
   previousJti?: string,
 ) {
   const { authority, result } = context
+  const { hostId } = lease
   const role = relayRole(result.role)
   const actor = await resolveRuntimeActor(authority, auth)
   const relayUrl = configuredRelayUrl(options)
@@ -72,6 +73,7 @@ async function mintSignedCloudConnection(
     orgId,
     workspaceId: ws.id,
     hostId,
+    leaseEpoch: lease.epoch,
     role,
   })
   await authority.recordRuntimeAccessToken(auth, {
@@ -168,7 +170,7 @@ export async function cloudConnectionInfo(
       status: 409,
     } as const
   }
-  return mintSignedCloudConnection(services, options, auth, ws, gate, target.hostId, previousJti)
+  return mintSignedCloudConnection(services, options, auth, ws, gate, target, previousJti)
 }
 
 /**
@@ -210,7 +212,7 @@ export async function cloudConnectionStatus(
       },
     } as const
   }
-  return mintSignedCloudConnection(services, options, auth, ws, gate, target.hostId)
+  return mintSignedCloudConnection(services, options, auth, ws, gate, target)
 }
 
 async function ensureCloudRuntimeTarget(
@@ -236,8 +238,9 @@ async function localLoopbackConnection(
   request: Request,
   ws: Workspace,
   current: Workspace,
-  hostId: string,
+  lease: { hostId: string; epoch: number },
 ) {
+  const { hostId } = lease
   const orgId = current.org_id ?? ws.org_id
   const token = options.runtimeAccessTokenSigner && orgId
     ? await options.runtimeAccessTokenSigner({
@@ -245,6 +248,7 @@ async function localLoopbackConnection(
         orgId,
         workspaceId: ws.id,
         hostId,
+        leaseEpoch: lease.epoch,
         role: "owner",
       })
     : {
@@ -307,7 +311,7 @@ export async function localLoopbackCloudConnectionInfo(
       status: 409,
     } as const
   }
-  return localLoopbackConnection(options, request, ws, current, target.hostId)
+  return localLoopbackConnection(options, request, ws, current, target)
 }
 
 /** The loopback counterpart of `cloudConnectionStatus`: a read, never an ensure. */
@@ -344,7 +348,7 @@ export async function localLoopbackCloudConnectionStatus(
     } as const
   }
   const current = (await resolveWorkspace({ workspaceId: ws.id })) ?? ws
-  return localLoopbackConnection(options, request, ws, current, target.hostId)
+  return localLoopbackConnection(options, request, ws, current, target)
 }
 
 function localLoopbackRelayUrl(request: Request, options: WorkspaceRouteOptions) {

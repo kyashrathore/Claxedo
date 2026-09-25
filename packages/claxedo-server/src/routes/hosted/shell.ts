@@ -392,6 +392,7 @@ async function harnessRelayFetch(
   const token = await provider.mintRuntimeAccessToken({
     workspaceId: input.workspaceId,
     hostId: target.hostId,
+    leaseEpoch: target.leaseEpoch,
     principalKind: "user",
     auth,
     ...(await resolveRuntimeActor(requireAuthority(services), auth)),
