@@ -20,7 +20,7 @@
 | DOM nodes after a forced collection | 48.6k → 3.7k (v1 48.7k) | 48.6k → 3.7k (v1 48.8k) |
 
 - One v1 run at 4x stopped following the stream (it ended 5,964 px above the end), so it is left out. This has happened in two separate benches.
-- Raw data: `slice1/` and `slice4/` in `/private/tmp/claude-501/-Users-yashvardhansingh-test-opencode/b8fc7026-28c0-4b62-97e7-6646f6620b5a/scratchpad/perf/exp-stream/` (JSON, CPU profiles, heap profiles). Source maps are in `dists/v2feat` and `dists/v2slice` there.
+- Raw data (JSON, CPU and heap profiles) was in a temporary folder that the 2026-09-25 reboot cleared. Re-measure with `bun run e2e:perf-stream` (the first commit on the slice).
 
 **Checks run on the slice tip:**
 - The whole corpus (flow 30) plus flows 03, 04, 09 and 11 on web and phone: 37 passed, both before and after the final merge of feat/app-v2 9a9f077d17. The benchmark ran on the tip before that merge; the merge brought no change to the four files the slice edits.
