@@ -1,3 +1,5 @@
+import { isHostedOperationName, type HostedOperationName } from "@claxedo/account-contract"
+import type { HostedAccount } from "./account"
 import { ServerError } from "./errors"
 import { withQuery, type Transport } from "./transport"
 
@@ -53,7 +55,7 @@ function scopeQuery(input: Input): OperationRequest["query"] {
 
 type Operation = (name: string, input: Input) => OperationRequest
 
-const OPERATIONS: Readonly<Record<string, Operation>> = {
+const OPERATIONS: Readonly<Partial<Record<HostedOperationName, Operation>>> = {
   "documents.list": (_name, input) => ({ method: "GET", path: DOCUMENTS, query: scopeQuery(input) }),
   "documents.statuses": (_name, input) => ({ method: "GET", path: `${DOCUMENTS}/statuses`, query: scopeQuery(input) }),
   "documents.get": (name, input) => ({ method: "GET", path: documentPath(name, input) }),
@@ -72,20 +74,30 @@ const OPERATIONS: Readonly<Record<string, Operation>> = {
 export type Operations = { readonly run: (name: string, input: unknown) => Promise<unknown> }
 
 export function hostedOperationRequest(name: string, input: unknown): OperationRequest {
-  const operation = OPERATIONS[name]
+  const operation = isHostedOperationName(name) ? OPERATIONS[name] : undefined
   if (!operation) throw invalid(name, "this server offers no such operation to the app")
   return operation(name, inputOf(name, input))
 }
 
-export function createOperations(transport: Transport): Operations {
-  return {
-    run: (name, input) => {
-      const request = hostedOperationRequest(name, input)
-      return transport.json<unknown>(request.query ? withQuery(request.path, request.query) : request.path, {
-        method: request.method,
-        ...(request.ifMatch ? { headers: { "If-Match": request.ifMatch } } : {}),
-        ...(request.body ? { body: JSON.stringify(request.body) } : {}),
-      })
-    },
+function onServer(transport: Transport): Operations["run"] {
+  return (name, input) => {
+    const request = hostedOperationRequest(name, input)
+    return transport.json<unknown>(request.query ? withQuery(request.path, request.query) : request.path, {
+      method: request.method,
+      ...(request.ifMatch ? { headers: { "If-Match": request.ifMatch } } : {}),
+      ...(request.body ? { body: JSON.stringify(request.body) } : {}),
+    })
   }
+}
+
+function onAccount(account: HostedAccount): Operations["run"] {
+  return async (name, input) => {
+    hostedOperationRequest(name, input)
+    if (!isHostedOperationName(name)) throw invalid(name, "this server offers no such operation to the app")
+    return account.run(name, inputOf(name, input))
+  }
+}
+
+export function createOperations(transport: Transport, account: HostedAccount | undefined): Operations {
+  return { run: account ? onAccount(account) : onServer(transport) }
 }

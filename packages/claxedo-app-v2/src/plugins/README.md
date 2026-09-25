@@ -60,7 +60,7 @@ A failed build is not retried until a new build arrives or the plugin is switche
 
 ## Server access
 
-`api.ts` is the host's only way to the server: `server.request` for a plugin's `server.fetch` (after the manifest check), the adapter's live plugin list, bundle and removal. `server.operation` goes to the adapter's `operation`, which sends the `documents.*` operations to the connected server's `/documents` routes (the daemon's unsigned, the control plane's when signed on the web), as today's app does without the account bridge. The signed desktop, where today's app runs them through the account bridge in main, is not served: v2 has no account layer yet. A plugin's requests carry the viewing user's credentials and nothing else, and the server applies that user's access.
+`api.ts` is the host's only way to the server: `server.request` for a plugin's `server.fetch` (after the manifest check), the adapter's live plugin list, bundle and removal. `server.operation` goes to the adapter's `operation`, the one routing owner for the `documents.*` operations: on the web and the unsigned desktop they go to the connected server's `/documents` routes (the daemon's unsigned, the control plane's when signed on the web); on a signed desktop they cross Electron main by name, as today's app runs them through its account bridge. A plugin's requests carry the viewing user's credentials and nothing else, and the server applies that user's access.
 
 ## Flows
 
