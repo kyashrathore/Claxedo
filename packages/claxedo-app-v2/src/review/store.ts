@@ -1,15 +1,15 @@
 import { createComponent, createContext, useContext, type Accessor, type JSX, type ParentProps } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useShellRoute } from "@/shell"
-import { persistedSignal, preferenceKey } from "@/lib/persisted"
 import type { DiffScope, PlacementId } from "@/server"
-import { defaultScope, readDiffStyle, type DiffStyle } from "./model"
+import { defaultScope, type DiffStyle } from "./model"
 
 type PlacementReview = {
   readonly scope: DiffScope
   readonly open: readonly string[]
   readonly forced: readonly string[]
   readonly message: string
+  readonly style: DiffStyle
 }
 
 export type Review = {
@@ -30,7 +30,7 @@ export type Review = {
 
 const ReviewContext = createContext<Review>()
 
-const emptyReview: PlacementReview = { scope: defaultScope, open: [], forced: [], message: "" }
+const emptyReview: PlacementReview = { scope: defaultScope, open: [], forced: [], message: "", style: "unified" }
 
 function toggled(list: readonly string[], item: string): readonly string[] {
   return list.includes(item) ? list.filter((entry) => entry !== item) : [...list, item]
@@ -39,7 +39,6 @@ function toggled(list: readonly string[], item: string): readonly string[] {
 export function ReviewProvider(props: ParentProps): JSX.Element {
   const placementId = useShellRoute().placementId
   const [state, setState] = createStore<Record<string, PlacementReview>>({})
-  const [style, setStyle] = persistedSignal<DiffStyle>(preferenceKey("review", "diffStyle"), "unified", readDiffStyle)
   const current = () => {
     const id = placementId()
     return id === undefined ? emptyReview : (state[id] ?? emptyReview)
@@ -57,8 +56,8 @@ export function ReviewProvider(props: ParentProps): JSX.Element {
     expand: (file) =>
       write((previous) => (previous.open.includes(file) ? previous : { ...previous, open: [...previous.open, file] })),
     toggleOpen: (file) => write((previous) => ({ ...previous, open: toggled(previous.open, file) })),
-    style,
-    setStyle: (next) => setStyle(next),
+    style: () => current().style,
+    setStyle: (style) => write((previous) => ({ ...previous, style })),
     forced: (file) => current().forced.includes(file),
     force: (file) => write((previous) => ({ ...previous, forced: [...previous.forced, file] })),
     message: () => current().message,

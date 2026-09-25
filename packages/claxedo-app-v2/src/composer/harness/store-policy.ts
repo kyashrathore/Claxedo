@@ -14,6 +14,7 @@ export type HarnessScopeInput = {
   sessionRef?: SessionRef
   /** The harness the session's row names, shown while its config cannot be read. */
   sessionHarness?: HarnessType
+  saveDraftDefault?: false
 }
 
 export function isDraftScope(scope: string) {

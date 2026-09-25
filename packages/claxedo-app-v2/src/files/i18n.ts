@@ -1,6 +1,8 @@
 import type { Translations } from "@/i18n"
 
 const en = {
+  "files.comment.submit": "Comment",
+  "files.comment.save": "Save",
   "files.search": "Search files...",
   "files.clearSearch": "Clear search",
   "files.showMore": "Show {{count}} more",
