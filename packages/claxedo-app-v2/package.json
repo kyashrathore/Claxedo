@@ -17,7 +17,8 @@
     "typecheck:e2e": "tsgo --noEmit -p tsconfig.e2e.json",
     "check": "bun scripts/checks/run.ts",
     "e2e": "bun ./e2e/run.ts",
-    "e2e:parity": "bun ./e2e/parity/run.ts"
+    "e2e:parity": "bun ./e2e/parity/run.ts",
+    "e2e:perf-stream": "bun ./e2e/perf/run.ts"
   },
   "license": "MIT",
   "devDependencies": {

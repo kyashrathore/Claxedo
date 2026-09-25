@@ -21,7 +21,7 @@ export type AcpToolStep = {
 }
 
 export type AcpStep =
-  | { kind: "text"; text: string; chunks?: number }
+  | { kind: "text"; text: string; chunks?: number; delayMs?: number }
   | { kind: "reasoning"; text: string }
   | { kind: "image"; data: string; mimeType: string }
   | { kind: "plan"; entries: PlanEntry[] }

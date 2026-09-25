@@ -39,9 +39,11 @@ function splitText(text: string, chunks: number) {
   return out.length ? out : [text]
 }
 
-async function sendText(context: TurnContext, text: string, chunks = 1) {
+async function sendText(context: TurnContext, text: string, chunks = 1, delayMs = 0) {
   for (const piece of splitText(text, chunks)) {
+    if (context.signal.aborted) return
     await update(context, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: piece } })
+    if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs))
   }
 }
 
@@ -143,7 +145,7 @@ async function hold(context: TurnContext, name: string) {
 async function playStep(context: TurnContext, step: AcpStep): Promise<PromptResponse | undefined> {
   switch (step.kind) {
     case "text":
-      await sendText(context, step.text, step.chunks)
+      await sendText(context, step.text, step.chunks, step.delayMs)
       return undefined
     case "reasoning":
       await update(context, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: step.text } })
