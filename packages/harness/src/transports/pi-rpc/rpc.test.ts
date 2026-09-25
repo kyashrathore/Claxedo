@@ -12,7 +12,8 @@ function fixture(retire: () => Promise<RetireOutcome> = async () => ({ stopped: 
   const process: OwnedProcess = { pid: 42, stdin, stdout, stderr, exited, retire }
   const clock: Clock = { now: Date.now, setTimeout: (callback, ms) => setTimeout(callback, ms),
     clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>) }
-  return { stdin, stdout, exit, rpc: new PiRpc(process, clock) }
+  const diagnostics: ReturnType<typeof import("../../translate/unrecognized").unrecognizedEvent>[] = []
+  return { stdin, stdout, exit, diagnostics, rpc: new PiRpc(process, clock, (event) => diagnostics.push(event)) }
 }
 
 async function command(stdin: PassThrough): Promise<{ id: string; type: string }> {
@@ -20,20 +21,40 @@ async function command(stdin: PassThrough): Promise<{ id: string; type: string }
 }
 
 describe("Pi RPC wire", () => {
-  test.each(["wrong id", "wrong command"])("refuses a response with %s", async (fault) => {
+  test("reports malformed replies and waits for the real reply", async () => {
     const f = fixture()
     const sent = command(f.stdin)
     const answer = f.rpc.request("get_state")
     const request = await sent
-    const response = { type: "response", id: fault === "wrong id" ? "other" : request.id,
-      command: fault === "wrong command" ? "prompt" : request.type, success: true, data: {} }
-    f.stdout.write(`${JSON.stringify(response)}\n`)
-    await expect(answer).rejects.toThrow()
-    expect(f.rpc.alive).toBe(false)
-    expect(f.rpc.exited).toBe(false)
+    f.stdout.write(`${JSON.stringify({ type: "response", id: "other", command: "get_state", success: false })}\n`)
+    f.stdout.write(`${JSON.stringify({ type: "response", id: request.id, command: "prompt", success: false })}\n`)
+    expect(f.diagnostics.map((event) => event.diagnostic.code)).toEqual(["unrecognized-event", "unrecognized-event"])
+    expect(f.diagnostics.map((event) => event.diagnostic.method)).toEqual(["response.get_state", "response.prompt"])
+    expect(f.rpc.alive).toBe(true)
+    f.stdout.write(`${JSON.stringify({ type: "response", id: request.id, command: request.type, success: true, data: { sessionId: "real" } })}\n`)
+    expect(await answer).toEqual({ sessionId: "real" })
     f.exit({ code: 0, signal: null })
-    await f.rpc.process.exited
-    expect(f.rpc.exited).toBe(true)
+  })
+
+  test("an unparseable record fails a pending request", async () => {
+    const f = fixture()
+    const answer = f.rpc.request("get_state")
+    f.stdout.write("not-json\n")
+    await expect(answer).rejects.toThrow("Invalid Pi RPC record")
+    expect(f.rpc.alive).toBe(false)
+    f.exit({ code: 0, signal: null })
+  })
+
+  test("reports a late reply after its request times out", async () => {
+    const f = fixture()
+    const sent = command(f.stdin)
+    const answer = f.rpc.request("get_state", {}, 1)
+    const request = await sent
+    await expect(answer).rejects.toThrow("Pi get_state timed out")
+    f.stdout.write(`${JSON.stringify({ type: "response", id: request.id, command: request.type, success: true })}\n`)
+    expect(f.diagnostics).toHaveLength(1)
+    expect(f.rpc.alive).toBe(true)
+    f.exit({ code: 0, signal: null })
   })
 
   test("splits only on LF and preserves Unicode separators", async () => {

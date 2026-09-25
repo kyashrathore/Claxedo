@@ -1,5 +1,5 @@
 import type { SandboxLeaseRow } from "./lease-types"
-import { sandboxDriverCatalog } from "./driver-catalog"
+import { sandboxDriverCatalog, type SandboxDriverCatalogEntry } from "./driver-catalog"
 import type { SandboxDriverID } from "@claxedo/sandbox-contract"
 
 export type SandboxDecision =
@@ -34,17 +34,14 @@ export const DEFAULT_WORKSPACE_HOST_DECISION_CONFIG: SandboxDecisionConfig = {
   healthTimeoutMs: 60_000,
 }
 
-export function sandboxDriverPlacement(driver: SandboxDriverID): SandboxDriverPlacement {
-  const metadata = sandboxDriverCatalog[driver].metadata
+export function sandboxDriverPlacement(driver: SandboxDriverID | SandboxDriverCatalogEntry<string>): SandboxDriverPlacement {
+  const entry = typeof driver === "string" ? sandboxDriverCatalog[driver] : driver
+  const metadata = entry.metadata
   return {
     canPauseAndRestartSameResource: metadata.persistence.resume === "same-sandbox",
     canCreateFilesystemSnapshot: metadata.persistence.capture === "filesystem"
       || metadata.persistence.capture === "directories",
-    canStartFromPreparedImage: driver === "exe"
-      || driver === "daytona"
-      || driver === "modal"
-      || driver === "box"
-      || driver === "docker",
+    canStartFromPreparedImage: entry.preparedImage,
     canStopExplicitly: metadata.hostStopBehavior !== "not-supported",
     hasHealthProbe: true,
   }

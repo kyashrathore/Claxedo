@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto"
 import fs from "node:fs/promises"
-import os from "node:os"
 import path from "node:path"
 import { piCredentialProviderIDs, type PromptModel } from "@claxedo/agent-runtime-contract"
 import type { PluginProjection, ResolvedCredentials, TurnActor } from "../../contract"
@@ -18,7 +17,7 @@ export type PiProfileOptions = {
   machineOwnerUserId: string
   canUseOwnLogin: boolean
   stateRoot: string
-  ownerAgentDir?: string
+  ownerAgentDir: string
 }
 
 const providerPaths: Record<string, { path: string; env: readonly string[] }> = {
@@ -51,7 +50,7 @@ export function selectPiProfile(
   return {
     kind,
     credentials: selected,
-    agentDir: kind === "owner-login" ? options.ownerAgentDir ?? process.env.PI_CODING_AGENT_DIR ?? path.join(os.homedir(), ".pi", "agent") : path.join(stateDir, "profiles", session),
+    agentDir: kind === "owner-login" ? options.ownerAgentDir : path.join(stateDir, "profiles", session),
     sessionDir: path.join(stateDir, "sessions", session),
   }
 }
