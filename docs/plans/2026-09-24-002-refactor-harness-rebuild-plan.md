@@ -1235,20 +1235,20 @@ Every slice deletes what it replaces.
 
 ### P1: contract, broker, Pi
 
-- [ ] **P1.0 Contract frozen:** the operation map complete, every row callable. `Progress:`
+- [ ] **P1.0 Contract frozen:** the operation map complete, every row callable. `Progress:` the contract is in `packages/harness/src/contract/`; the transport lanes' proposals are folded in once by the contract pass (`hv2/contract-pass`).
 - [ ] **P1.1 The runtime host and projection moved** into `workspace-runtime` unchanged, and `spawn` implemented. Wire corpus unchanged. `Progress:` `sse.ts` moved and the `spawn` service built over `process-ownership` (3658717af4). The host, the rest of the projection, `compat-events.ts`, `turn-projection.ts` and `child-event-routing.ts` move in the P3 cutover slice: today's drivers import them, so moving them earlier would invert the dependency.
-- [ ] **P1.2 Broker:** requests with the full contract, grants and ceilings, start requests, subagents, goal plumbing and provider turns, usage, cancel. `Progress:`
-- [ ] **P1.4 Conformance suite** (`packages/harness/src/conformance/`): one set of cases every transport runs through the contract, with the real broker over in-memory runtime ports and the transport's real harness program behind the scripted model server or the scripted ACP agent. It carries the kept invariants the invariant map assigns to transports. `Progress:`
+- [ ] **P1.2 Broker:** requests with the full contract, grants and ceilings, start requests, subagents, goal plumbing and provider turns, usage, cancel. `Progress:` merged (0e3c8e2b99) with two review rounds' fixes (7039146100, ec4f6c5b56). Provider-turn admission, live rebind, abort-aware asks and outside-turn events come with the contract pass.
+- [ ] **P1.4 Conformance suite** (`packages/harness/src/conformance/`): one set of cases every transport runs through the contract, with the real broker over in-memory runtime ports and the transport's real harness program behind the scripted model server or the scripted ACP agent. It carries the kept invariants the invariant map assigns to transports. `Progress:` `runConformance` runs the real Pi 0.85.1, the real Codex 0.133.0 and the scripted ACP agent (process and websocket) through the real broker; permission cases came with ACP (93d3b2e8a9).
 - [ ] **P1.3 Pi transport and profile:**
   - the machine owner's sessions on their own Pi, whoever sends the turn; other owners' sessions brokered;
   - `get_commands`; all nine extension-UI methods (H-5, H-6);
   - the conformance suite green against the pinned Pi; H1, H4, H6, H12, H18 and H20 go green at the P3 cutover.
-  - `Progress:`
+  - `Progress:` the transport (518 lines) and profile (94) merged (dd82818f5a); H18 and H20 red at H-5 and H-6 on today's adapter. Open: a `.js` Pi binary runs whatever `node` is on PATH, `process.env` defaults belong in the composition, and `commands.list` needs a live session.
 
 ### P2: transports, profiles and cloud delivery, in parallel
 
-- [ ] **Claude SDK,** with the `claude-code` profile and its SDK delivery; the conformance suite green; H1–H15 eligible at P3. `Progress:`
-- [ ] **Codex app-server,** with `CODEX_HOME` composed from credentials and the profile (H-4); goals and provider turns; thread recovery; the conformance suite green; its flows at P3. `Progress:`
+- [ ] **Claude SDK,** with the `claude-code` profile and its SDK delivery; the conformance suite green; H1–H15 eligible at P3. `Progress:` the transport (398 lines) and profile (38) are built in `hv2/claude-transport` with the real CLI in the suite; unmerged until the contract pass lands, then native goals, model and effort discovery, attachments, profile parity and its kept rows.
+- [ ] **Codex app-server,** with `CODEX_HOME` composed from credentials and the profile (H-4); goals and provider turns; thread recovery; the conformance suite green; its flows at P3. `Progress:` merged (6c1cba7e5d): 666 lines, the composed home (H-4), projected MCP servers (H-10), the real Codex 0.133.0 in the suite. Open: provider-started goal turns end to end, and kept rows (the grant matrix, request-id concurrency, disposal during initialize, model precedence).
 - [ ] **Cursor SDK,** with a worker per backend binding; the conformance suite green; H25 at P3. `Progress:`
 - [ ] **ACP:**
   - one transport, extension files, `restore/`;
@@ -1258,13 +1258,13 @@ Every slice deletes what it replaces.
   - instance state, not a process-wide counter (H-8);
   - `claude-agent-acp`'s `_meta` delivery;
   - the conformance suite green; H16, H21, H24, H26 and defects H-1, H-2, H-3, H-8 green at P3.
-  - `Progress:`
+  - `Progress:` merged (2ffc7cfc4a): the transport, `restore/`, process and websocket agents in the suite. Open: the draft probe and startup-request retirement (contract pass), streamable-HTTP conformance, optional handshake groups, and its kept rows.
 - [ ] **OpenCode, one path: the embedded engine** (decision 2).
   - The engine moved from `workspace-runtime/src/opencode` behind `HarnessTransport` into `src/transports/opencode-sdk/`, split to the 300-line file limit.
   - Provider credentials in every placement (C-3, C-11), applied without aborting a running turn; requests through the broker.
   - The conformance suite green; H17 at P3.
   - The server adapter and `OPENCODE_URL` go in P4's package deletions (H-7).
-  - `Progress:`
+  - `Progress:` decided 2026-09-25; part 1, the engine moved into the transport's folder, runs in `hv2/opencode-sdk`; part 2, the transport, follows the contract pass.
 - [ ] **Cloud: one repository and hosted delivery (C-1, C-2).**
   - One repository for credentials and settings, D1 and SQLite behind it.
   - The delivery path run on hosted: brokered provider secrets per person, the settings snapshot, fan-out, credential reconciliation.
