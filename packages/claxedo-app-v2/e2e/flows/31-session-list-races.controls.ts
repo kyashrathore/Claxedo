@@ -15,7 +15,7 @@ import type { Checked } from "./31-session-list-races.oracle"
 type SetupOptions = { readonly open?: boolean; readonly workspaces?: number }
 
 const LIST_ROUTE = /\/api\/claxedo\/session-list/
-const STATUS_ROUTE = /\/session\/status(\?|$)/
+const STATUS_ROUTE = /\/(session\/status|api\/wr\/session-activity)(\?|$)/
 export const STREAM_PATH = "/api/wr/events"
 const CONTROL_STREAM_PATH = "/api/cp/events"
 
