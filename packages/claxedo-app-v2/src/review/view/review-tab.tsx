@@ -11,6 +11,7 @@ import { useErrorText } from "../errors"
 import { dictionary, type ReviewKey } from "../i18n"
 import { isBaseReviewMode, scopeOf, selectionOf, type ReviewSelection } from "../intent"
 import { useReview } from "../store"
+import { createReviewScrollRestoration } from "../scroll-restoration"
 import { createCodeViewComments } from "./code-view-comments"
 import { ReviewCodeViewFileHeader, ReviewRowBody } from "./review-file-row"
 import { ReviewToolbar } from "./review-toolbar"
@@ -158,6 +159,12 @@ function ReviewDiffList(props: {
   const [frame, setFrame] = createSignal<HTMLDivElement>()
   const [scroller, setScroller] = createSignal<HTMLDivElement>()
   const paint = createPaintAccounting(() => content.diffs().map((diff) => diff.file))
+  const restoration = createReviewScrollRestoration({
+    position: review.scroll,
+    publish: review.setScroll,
+    anchorExists: (path) => props.summaries.some((summary) => summary.file === path),
+  })
+  onCleanup(restoration.dispose)
   return (
     <div
       ref={setFrame}
@@ -170,7 +177,12 @@ function ReviewDiffList(props: {
     >
       <ReviewCodeView
         class="claxedo-workspace-review h-full [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        scrollRef={setScroller}
+        scrollRef={(element) => {
+          setScroller(element)
+          restoration.bind(element)
+        }}
+        anchorTopRef={restoration.bindAnchorTop}
+        onScrollEvent={restoration.remember}
         onDiffRendered={paint.painted}
         diffs={content.diffs()}
         diffStyle={review.style()}

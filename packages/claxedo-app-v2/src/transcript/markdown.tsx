@@ -157,7 +157,7 @@ function createCopyButton(labels: CopyLabels) {
   let setLabelsRef: CopyButtonState["setLabels"] | undefined
   let setCopiedRef: CopyButtonState["setCopied"] | undefined
   const dispose = render(() => {
-    const [labelState, setLabels] = createSignal(labels, { equals: false })
+    const [labelState, setLabels] = createSignal(labels, { equals: sameCopyLabels })
     const [copied, setCopied] = createSignal(false)
     setLabelsRef = setLabels
     setCopiedRef = setCopied
@@ -166,6 +166,10 @@ function createCopyButton(labels: CopyLabels) {
   if (!setLabelsRef || !setCopiedRef) throw new Error("markdown copy button rendered without its setters")
   copyButtonState.set(host, { setLabels: setLabelsRef, setCopied: setCopiedRef, dispose })
   return host
+}
+
+function sameCopyLabels(left: CopyLabels, right: CopyLabels) {
+  return left.copy === right.copy && left.copied === right.copied
 }
 
 function MarkdownCopyButton(props: { labels: Accessor<CopyLabels>; copied: Accessor<boolean> }) {
@@ -410,39 +414,54 @@ function renderMermaidBlocks(root: HTMLElement) {
   }
 }
 
-function ensureTableWrapper(table: HTMLTableElement, labels: CopyLabels) {
-  const current = table.closest('[data-component="markdown-table"]')
-  const wrapper = current instanceof HTMLElement ? current : document.createElement("div")
-  if (!current) {
-    const parent = table.parentElement
-    if (!parent) return
-    const viewport = document.createElement("div")
-    wrapper.setAttribute("data-component", "markdown-table")
-    wrapper.setAttribute("data-markdown-rich", "table")
-    viewport.setAttribute("data-slot", "markdown-table-scroll")
-    parent.replaceChild(wrapper, table)
-    viewport.appendChild(table)
-    wrapper.appendChild(viewport)
-  }
+function ensureTableWrapper(table: HTMLTableElement) {
+  if (table.closest('[data-component="markdown-table"]')) return
+  const parent = table.parentElement
+  if (!parent) return
+  const wrapper = document.createElement("div")
+  const viewport = document.createElement("div")
+  wrapper.setAttribute("data-component", "markdown-table")
+  wrapper.setAttribute("data-markdown-rich", "table")
+  viewport.setAttribute("data-slot", "markdown-table-scroll")
+  parent.replaceChild(wrapper, table)
+  viewport.appendChild(table)
+  wrapper.appendChild(viewport)
+}
 
-  const existingCopy = wrapper.querySelector('[data-slot="markdown-copy-button"]')
-  const copy = existingCopy instanceof HTMLElement ? existingCopy : createCopyButton(labels)
-  if (!(existingCopy instanceof HTMLElement)) wrapper.appendChild(copy)
-  setCopyState(copy, labels, copy.dataset.copied === "true")
+function decorateTables(root: HTMLDivElement) {
+  for (const table of Array.from(root.querySelectorAll("table"))) ensureTableWrapper(table)
+}
+
+function ensureTableControls(wrapper: HTMLElement, labels: CopyLabels) {
+  ensureCopyButton(wrapper, labels)
   const openTable = markdownTableViewer
     ? () => {
-        const clone = table.cloneNode(true)
+        const clone = wrapper.querySelector("table")?.cloneNode(true)
         if (clone instanceof HTMLTableElement) markdownTableViewer?.(clone)
       }
     : undefined
-  ensureRichControls(wrapper, "Open table full screen", table.textContent ?? "", openTable)
+  ensureRichControls(wrapper, "Open table full screen", "table", openTable)
 }
 
-function decorateTables(root: HTMLDivElement, labels: CopyLabels) {
-  const tables = Array.from(root.querySelectorAll("table"))
-  for (const table of tables) {
-    if (table instanceof HTMLTableElement) ensureTableWrapper(table, labels)
+function ensureCopyButton(wrapper: HTMLElement, labels: CopyLabels) {
+  const [first, ...extra] = Array.from(wrapper.querySelectorAll<HTMLElement>('[data-slot="markdown-copy-button"]'))
+  for (const button of extra) {
+    disposeCopyButton(button)
+    button.remove()
   }
+  if (first) return
+  wrapper.appendChild(createCopyButton(labels))
+}
+
+function attachControls(root: Element, labels: CopyLabels) {
+  for (const wrapper of Array.from(root.querySelectorAll<HTMLElement>('[data-component="markdown-code"]'))) ensureCopyButton(wrapper, labels)
+  for (const wrapper of Array.from(root.querySelectorAll<HTMLElement>('[data-component="markdown-table"]'))) ensureTableControls(wrapper, labels)
+}
+
+function isControl(node: Node) {
+  if (!(node instanceof HTMLElement)) return false
+  const slot = node.getAttribute("data-slot")
+  return slot === "markdown-copy-button" || slot === "markdown-view-button" || slot === "markdown-rich-controls"
 }
 
 function traceMermaid(
@@ -508,35 +527,18 @@ function applyCodeMetadata(wrapper: HTMLElement, language: string | undefined) {
   else delete wrapper.dataset.codeKind
 }
 
-function ensureCodeWrapper(block: HTMLPreElement, labels: CopyLabels) {
+function ensureCodeWrapper(block: HTMLPreElement) {
   const parent = block.parentElement
   if (!parent) return
-  const wrapped = parent.getAttribute("data-component") === "markdown-code"
-  if (!wrapped) {
-    const wrapper = document.createElement("div")
-    wrapper.setAttribute("data-component", "markdown-code")
-    applyCodeMetadata(wrapper, codeLanguage(block))
-    parent.replaceChild(wrapper, block)
-    wrapper.appendChild(block)
-    wrapper.appendChild(createCopyButton(labels))
+  if (parent.getAttribute("data-component") === "markdown-code") {
+    applyCodeMetadata(parent, codeLanguage(block))
     return
   }
-
-  applyCodeMetadata(parent, codeLanguage(block))
-
-  const buttons = Array.from(parent.querySelectorAll('[data-slot="markdown-copy-button"]')).filter(
-    (el): el is HTMLButtonElement => el instanceof HTMLButtonElement,
-  )
-
-  if (buttons.length === 0) {
-    parent.appendChild(createCopyButton(labels))
-    return
-  }
-
-  for (const button of buttons.slice(1)) {
-    disposeCopyButton(button)
-    button.remove()
-  }
+  const wrapper = document.createElement("div")
+  wrapper.setAttribute("data-component", "markdown-code")
+  applyCodeMetadata(wrapper, codeLanguage(block))
+  parent.replaceChild(wrapper, block)
+  wrapper.appendChild(block)
 }
 
 function markCodeLinks(root: HTMLDivElement) {
@@ -682,18 +684,11 @@ export function stabilizeImages(
   }
 }
 
-function decorate(
-  root: HTMLDivElement,
-  labels: CopyLabels,
-  data?: { directory: string; fileUrl?: (path: string) => string | undefined },
-) {
-  const blocks = Array.from(root.querySelectorAll("pre"))
-  for (const block of blocks) {
-    ensureCodeWrapper(block, labels)
-  }
+function decorate(root: HTMLDivElement, data?: { directory: string; fileUrl?: (path: string) => string | undefined }) {
+  for (const block of Array.from(root.querySelectorAll("pre"))) ensureCodeWrapper(block)
   markInlineCode(root)
   markCodeLinks(root)
-  decorateTables(root, labels)
+  decorateTables(root)
   stabilizeImages(root, data)
   renderMermaidBlocks(root)
 }
@@ -831,6 +826,13 @@ export function Markdown(
   const [root, setRoot] = createSignal<HTMLDivElement>()
   const owner = createUniqueId()
   const activeCodeKeys = new Set<string>()
+  let liveBlock: RenderedBlock | undefined
+  const renderSync = (index: number, block: Block): RenderedBlock => {
+    if (block.mode !== "live") return syncBlock(owner, local.cacheKey, index, block)
+    const key = markdownBlockKey(owner, local.cacheKey, index, block.mode)
+    if (liveBlock?.key !== key || liveBlock.raw !== block.raw) liveBlock = syncBlock(owner, local.cacheKey, index, block)
+    return liveBlock
+  }
   const projection = createMemo<Projection | undefined>((previous) => {
     const started = rendererClock()
     const result = project(previous, local.text, local.streaming ?? false)
@@ -885,6 +887,8 @@ export function Markdown(
             }
           }
 
+          if (src.streaming && block.mode === "live") return renderSync(index, block)
+
           if (key) {
             const cached = getCachedMarkdown(key)
             if (cached?.raw === block.raw) {
@@ -938,7 +942,7 @@ export function Markdown(
     const result = html.latest
     if (!result) return
     const projected = projection()!
-    const content = pendingBlocks(result, projected, local.cacheKey, owner, local.streaming)
+    const content = pendingBlocks(result, projected, local.streaming, renderSync)
     if (!local.streaming && content.length === 1 && content[0]?.key === "initial") return
     const wasPlain = container.dataset.markdownStage === "plain"
     delete container.dataset.markdownStage
@@ -1003,9 +1007,8 @@ export function Markdown(
 function pendingBlocks(
   result: RenderResult | undefined,
   projection: Projection | undefined,
-  cacheKey: string | undefined,
-  owner: string,
   streaming: boolean | undefined,
+  renderSync: (index: number, block: Block) => RenderedBlock,
 ) {
   if (!result) return []
   if (!projection || result.text === projection.text) return result.blocks
@@ -1015,10 +1018,10 @@ function pendingBlocks(
     const current = initial ? undefined : result.blocks[index]
     if (block.mode === "code") {
       if (current?.mode === "code" && canReusePendingBlock(current, block)) return current
-      return syncBlock(owner, cacheKey, index, block)
+      return renderSync(index, block)
     }
     if (current && current.mode !== "code" && current.raw === block.raw && "html" in current) return current
-    return syncBlock(owner, cacheKey, index, block)
+    return renderSync(index, block)
   })
 }
 
@@ -1055,33 +1058,25 @@ function updateBlock(
   next.style.display = "contents"
   replaceSanitizedMarkup(next, block.html)
   const decorateStarted = rendererClock()
-  decorate(next, labels, data)
+  decorate(next, data)
   traceRenderer(`markdown.decorate.${block.mode}.chars-${block.raw.length}`, decorateStarted)
 
   if (!(current instanceof HTMLDivElement)) {
     container.appendChild(next)
+    attachControls(next, labels)
     traceRenderer(`markdown.block.${block.mode}.chars-${block.raw.length}`, started)
     return
   }
 
   morphdom(current, next, {
-    onBeforeElUpdated: (fromEl, toEl) => {
-      if (
-        fromEl instanceof HTMLElement &&
-        toEl instanceof HTMLElement &&
-        fromEl.getAttribute("data-slot") === "markdown-copy-button" &&
-        toEl.getAttribute("data-slot") === "markdown-copy-button"
-      ) {
-        return false
-      }
-      if (fromEl.isEqualNode(toEl)) return false
-      return true
-    },
+    onBeforeElUpdated: (fromEl, toEl) => !fromEl.isEqualNode(toEl),
     onBeforeNodeDiscarded: (node) => {
+      if (isControl(node)) return false
       if (node instanceof Element) disposeMarkdownControls(node)
       return true
     },
   })
+  attachControls(current, labels)
   traceRenderer(`markdown.block.${block.mode}.chars-${block.raw.length}`, started)
 }
 

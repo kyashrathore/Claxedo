@@ -14,6 +14,7 @@ export const moduleStateExceptions: readonly ModuleStateException[] = [
   { file: `${timeline}/mermaid-timeline.ts`, binding: "installed", reason: "install-once guard for the Mermaid renderer registration" },
   { file: `${timeline}/table-timeline.ts`, binding: "installed", reason: "install-once guard for the table viewer registration" },
   { file: `${timeline}/timeline-mount-cache.ts`, binding: "snapshots", reason: protectedCache, cap: "64 sessions (MAX_SESSIONS)" },
+  { file: `${timeline}/message-timeline.data.ts`, binding: "textPresence", reason: "per-part memo of whether a streaming part has text, so a turn row tracks presence rather than every text delta", cap: "weak on the part" },
   { file: `${timeline}/turn-fold-store.ts`, binding: "turnFoldCache", reason: protectedCache, cap: "16 sessions (MAX_SESSIONS)" },
   { file: `${transcript}/basic-tool.tsx`, binding: "deferredFrame", reason: "the one animation frame that drains deferred tool bodies" },
   { file: `${transcript}/diff/file-find.ts`, binding: "hosts", reason: "the mounted find hosts the page-wide find shortcut routes to", cap: "one per mounted viewer" },

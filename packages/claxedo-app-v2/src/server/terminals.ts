@@ -49,7 +49,11 @@ async function createTerminal(transport: Transport, where: RuntimeRoute, input: 
 }
 
 async function presenceOf(transport: Transport, where: RuntimeRoute, terminalId: TerminalId): Promise<TerminalPresence> {
-  const response = await transport.runtime(where, terminalPath(terminalId))
+  const response = await transport.runtime(where, terminalPath(terminalId)).catch((error: unknown) => {
+    console.warn("Terminal presence could not be read", { terminalId, error })
+    return undefined
+  })
+  if (!response) return "unreachable"
   if (response.ok) return "live"
   if (response.status !== 404) return "unreachable"
   return (await responseErrorCode(response)) === PTY_NOT_FOUND ? "gone" : "unreachable"

@@ -2,7 +2,6 @@ import type { Translations } from "@/i18n"
 
 const en = {
   "terminal.title": "Terminal",
-  "terminal.title.numbered": "Terminal {{number}}",
   "terminal.connectionLost.title": "Connection Lost",
   "terminal.connectionLost.description":
     "The terminal connection was interrupted. This can happen when the server restarts.",
@@ -48,7 +47,6 @@ const lost = (title: string, description: string): Localized => ({
 
 const named = (title: string): Localized => ({
   "terminal.title": title,
-  "terminal.title.numbered": `${title} {{number}}`,
 })
 
 export const dictionary = {
@@ -104,7 +102,3 @@ export const dictionary = {
   zht: { ...named("終端機"), ...lost("連線中斷", "終端機連線已中斷。這可能會在伺服器重新啟動時發生。") },
 } satisfies Translations<TerminalKey>
 
-export const defaultTitleTemplates: readonly string[] = Object.values(dictionary).flatMap((strings: Localized) => {
-  const template = strings["terminal.title.numbered"]
-  return template === undefined ? [] : [template]
-})
