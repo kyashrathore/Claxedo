@@ -27,8 +27,7 @@ function seeded(context: ScreenContext): SeedData {
 
 function sessionPath(context: ScreenContext) {
   const seed = seeded(context)
-  const route = context.app === "v1" ? "session" : "s"
-  return `/w/${seed.workspace.id}/${route}/${seed.sessionId}`
+  return `/w/${seed.workspace.id}/session/${seed.sessionId}`
 }
 
 function composer({ page, app }: ScreenContext): Locator {
