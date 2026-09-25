@@ -1,4 +1,8 @@
 @layer touch {
+  :root {
+    --touch-target: 44px;
+  }
+
   @media (pointer: coarse) {
     .v2-segmented-control-item,
     .v2-field-label-info,

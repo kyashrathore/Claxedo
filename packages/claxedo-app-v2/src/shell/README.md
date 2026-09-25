@@ -23,7 +23,7 @@ The workspace panel and the domains whose state is kept per placement (terminal,
 
 ## Look (`styles/`)
 
-The app wears today's app's look: `main.tsx` loads `styles/index.css` (the kit's Tailwind and session styles, plus the app's own layers) and `styles/ui-overrides.css` (the Codex overrides: SF Pro Text, zero letter-spacing, overlay geometry, hidden scrollbars), then the kit's menu, select and tooltip sheets, in that order. `ThemeProvider` from `@opencode-ai/ui/theme` runs the kit's theme set with Codex as the default and keeps the icon library in step with the theme. The root stays at the browser's 16px; the older `src/ui` sheet no longer sets the root's size, font or colors.
+The app wears today's app's look. `src/styles.ts` loads every global sheet once, in cascade order: `src/ui/styles.css` (the layer order, the touch layer and the reduced-motion rule), `styles/index.css` (the app's one Tailwind build: the kit's Tailwind, theme and v2 tokens, scanning v2's source and `index.html`, plus the app's own layers), `styles/ui-overrides.css` (the Codex overrides: SF Pro Text, zero letter-spacing, overlay geometry, hidden scrollbars), the kit's menu, select and tooltip sheets, `styles/app-shell.css`, and `src/transcript/styles.css` (the renderers' sheets, which v2 owns; session-ui's copies are never loaded). Each rule has one of these owners, and no sheet is a second Tailwind build. `ThemeProvider` from `@opencode-ai/ui/theme` runs the kit's theme set with Codex as the default and keeps the icon library in step with the theme. The root stays at the browser's 16px.
 
 Rules in those sheets that code cannot explain:
 
