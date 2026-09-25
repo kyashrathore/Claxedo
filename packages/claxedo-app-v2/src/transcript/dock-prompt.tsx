@@ -10,11 +10,10 @@ export function DockPrompt(props: {
   ref?: (el: HTMLDivElement) => void
   onKeyDown?: JSX.EventHandlerUnion<HTMLDivElement, KeyboardEvent>
 }) {
-  const slot = (name: string) => `${props.kind}-${name}`
+  const slot = (name: "body" | "header" | "content" | "footer") => `${props.kind}-${name}` as const
 
   return (
     <div
-      data-component="dock-prompt"
       class="ui-dock-prompt"
       data-kind={props.kind}
       data-collapsed={props.collapsed ? "true" : undefined}

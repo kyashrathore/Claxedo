@@ -15,7 +15,7 @@ const STATUS_ICONS: Record<string, IconProps["name"]> = {
   done: "circle-check",
 }
 
-function CardLink(props: { link: ClaxedoLink; slot: string; class?: string }) {
+function CardLink(props: { link: ClaxedoLink; slot: "basic-tool-tool-subtitle" | "claxedo-tool-row-link" | "claxedo-tool-fact-link"; class?: string }) {
   const data = useData()
   const href = () =>
     safeLinkHref(props.link.kind === "task" ? data.taskHref?.(props.link.id) : data.sessionHref?.(props.link.id))
@@ -78,14 +78,14 @@ export function ClaxedoTool(props: ToolProps) {
         </Show>
         <Show when={view().subject}>
           {(subject) => (
-            <span data-slot={view().link ? "basic-tool-tool-arg" : "basic-tool-tool-subtitle"} class={view().link ? "ui-basic-tool-tool-arg" : undefined} title={subject()}>
+            <span data-slot={view().link ? undefined : "basic-tool-tool-subtitle"} class={view().link ? "ui-basic-tool-tool-arg" : undefined} title={subject()}>
               {subject()}
             </span>
           )}
         </Show>
         <Show when={view().status}>{(status) => <StatusPill status={status()} />}</Show>
         <Show when={view().note}>
-          {(note) => <span data-slot="basic-tool-tool-arg" class="ui-basic-tool-tool-arg">{note()}</span>}
+          {(note) => <span class="ui-basic-tool-tool-arg">{note()}</span>}
         </Show>
       </div>
     </div>
