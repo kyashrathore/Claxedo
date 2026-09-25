@@ -1,5 +1,6 @@
+import { ServerError, type HarnessOptions } from "@/server"
 import { applyHarnessOptionsResponse, type HarnessOptionsStatePatch } from "./options-state"
-import { harnessSelectionId, optionsResponse, type HarnessType, type OptionsResponse } from "./profile"
+import { harnessSelectionId, type HarnessType } from "./profile"
 import { sameHarnessSelection } from "@/lib/harness-selection"
 import type { DraftDefaultApplication, ResolveDraftDefaultInput } from "./draft-default-policy"
 
@@ -15,7 +16,7 @@ type HarnessOptionsTimer = ReturnType<typeof setTimeout> | undefined
 
 export function createHarnessOptionsLoader<ScopeInput>(input: {
   /** `model` is the scope's selected model: effort levels and their default belong to it. */
-  fetch(type: HarnessType, params?: ScopeInput, model?: string): Promise<Response>
+  fetch(type: HarnessType, params?: ScopeInput, model?: string): Promise<HarnessOptions>
   currentHarness(scope: string): HarnessType | undefined
   selectedModel(scope: string): string | undefined
   modelOptional?(scope: string): boolean
@@ -30,7 +31,6 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
   ): boolean
   setOptionsLoading(scope: string, value: boolean): void
   readState?(scope: string): { readiness?: string; configError?: string } | undefined
-  errorMessage(res: Response, fallback: string): Promise<string>
   // Arrow properties, not methods: both are passed around as bare references
   // below (`input.clearRetry ?? clearTimeout`), which is only sound for a
   // function that carries no `this`.
@@ -50,7 +50,7 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
     scope: string,
     type: HarnessType,
     params?: ScopeInput,
-  ): Promise<OptionsResponse | undefined> => {
+  ): Promise<HarnessOptions | undefined> => {
     input.seed(scope)
     clearTimer(scope)
     const id = input.cache.nextSeq(scope)
@@ -74,24 +74,7 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
     }
     const superseded = () => input.cache.getSeq(scope) !== id || !sameHarnessSelection(input.currentHarness(scope), type)
     try {
-      const res = await input.fetch(type, params, input.selectedModel(scope) || undefined)
-      if (!res.ok) {
-        if (superseded()) return abandon()
-        const configError = await input.errorMessage(res, "Failed to load model options")
-        if (superseded()) return abandon()
-        input.cache.clearTries(scope)
-        input.applyPatch(scope, {
-          dynamicModels: [],
-          selectedModel: "",
-          optionsSource: "empty",
-          optionsStale: true,
-          optionsLoading: false,
-          configError,
-        })
-        return undefined
-      }
-
-      const payload = optionsResponse(await res.json())
+      const payload = await input.fetch(type, params, input.selectedModel(scope) || undefined)
       if (superseded()) return abandon()
 
       const tries = input.cache.getTries(scope) ?? 0
@@ -138,7 +121,7 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
         )
       }
       return payload
-    } catch {
+    } catch (error) {
       if (superseded()) return abandon()
       input.cache.clearTries(scope)
       input.applyPatch(scope, {
@@ -147,7 +130,7 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
         optionsSource: "empty",
         optionsStale: true,
         optionsLoading: false,
-        configError: "Failed to load model options",
+        configError: error instanceof ServerError && error.status !== undefined ? error.message : "Failed to load model options",
       })
       return undefined
     }

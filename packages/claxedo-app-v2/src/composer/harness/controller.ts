@@ -1,7 +1,8 @@
+import type { HarnessOptionChoice } from "@/server"
 import type { HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
 import type { ModelKey } from "./model-key"
 import type { HarnessModelChoice, HarnessReadiness } from "./selection"
-import type { HarnessConnectionState, HarnessModelOption, HarnessType } from "./profile"
+import type { HarnessConnectionState, HarnessType } from "./profile"
 import type { DraftDefaultLabels } from "./draft-defaults"
 import type { DraftDefaultResult, DraftDefaultAuthority, ResolveDraftDefaultInput } from "./draft-default-policy"
 import type { HarnessScopeInput } from "./store-policy"
@@ -37,10 +38,10 @@ export type HarnessSelectionControllerStore = {
   readiness(scope: string): HarnessReadiness
   connectionState?(scope: string): HarnessConnectionState | undefined
   models(scope: string): HarnessModelChoice[]
-  thoughtLevels(scope: string): HarnessModelOption[]
+  thoughtLevels(scope: string): readonly HarnessOptionChoice[]
   setThoughtLevel(scope: string, value: string | undefined): void
   selectedThoughtLevel(scope: string): string | undefined
-  serviceTiers(scope: string): HarnessModelOption[]
+  serviceTiers(scope: string): readonly HarnessOptionChoice[]
   setServiceTier(scope: string, value: string | undefined): void
   selectedServiceTier(scope: string): string | undefined
   selectedModel(scope: string): string
@@ -73,10 +74,10 @@ export type HarnessSelectionSnapshot = {
   selectedModel: string
   selectedModelProvider?: string
   /** Reasoning/thinking levels for the CURRENT model, when offered. */
-  thoughtLevels: HarnessModelOption[]
+  thoughtLevels: readonly HarnessOptionChoice[]
   selectedThoughtLevel: string | undefined
   /** Faster tiers the CURRENT model offers; empty when it runs at one speed. */
-  serviceTiers: HarnessModelOption[]
+  serviceTiers: readonly HarnessOptionChoice[]
   selectedServiceTier: string | undefined
   selectedModelKey?: ModelKey
   optionsStale: boolean

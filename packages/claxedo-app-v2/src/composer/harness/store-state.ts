@@ -1,3 +1,4 @@
+import type { HarnessOptionChoice, HarnessOptionsSource } from "@/server"
 import type { HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
 import {
   desiredHarness,
@@ -5,10 +6,8 @@ import {
   harnessHasConfigOptions,
   type HarnessHealthStatus,
   type HarnessConnectionState,
-  type HarnessModelOption,
   type HarnessState,
   type HarnessType,
-  type OptionsSource,
 } from "./profile"
 import { harnessMode, type HarnessReadiness } from "./selection"
 import type { DraftDefault } from "./draft-defaults"
@@ -20,17 +19,17 @@ export type HarnessStoreState = {
   harness?: HarnessType
   selectedModel: string
   selectedModelProvider?: string
-  dynamicModels: HarnessModelOption[] | null
+  dynamicModels: readonly HarnessOptionChoice[] | null
   /** Reasoning/thinking levels the harness offers; `[]` = none, `null` = unknown. */
-  thoughtLevels: HarnessModelOption[] | null
+  thoughtLevels: readonly HarnessOptionChoice[] | null
   selectedThoughtLevel: string | undefined
   /** Faster tiers the selected model offers; `[]` = none, `null` = unknown. */
-  serviceTiers: HarnessModelOption[] | null
+  serviceTiers: readonly HarnessOptionChoice[] | null
   selectedServiceTier: string | undefined
   readiness: HarnessReadiness
   connectionDeclaration?: HarnessConnectionRef
   connectionState?: HarnessConnectionState
-  optionsSource: OptionsSource
+  optionsSource: HarnessOptionsSource
   optionsStale: boolean
   optionsLoading: boolean
   configError?: string

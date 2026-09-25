@@ -5,19 +5,13 @@ import { sessionEndpoint } from "./session-context"
 import { jsonInit, withQuery, type Transport } from "./transport"
 import type { SessionRef } from "./types"
 import type { Workspaces } from "./workspaces"
+import { readHarnessOptions, type HarnessOptionsRequest } from "./harness-options"
+import type { HarnessOptions } from "./types"
 import { harnessIdentity, harnessSelectionQuery } from "./wire/harness-selection"
 import { permissionModeStateFromWire, type PermissionModeState } from "./wire/permission-modes"
 
 const HARNESS_PATH = "/api/claxedo/agent-config/harness"
-const HARNESS_OPTIONS_PATH = "/api/claxedo/agent-config/harness/options"
 const CONNECTIONS_PATH = "/api/claxedo/agent-config/connections"
-
-export type HarnessOptionsRequest = {
-  readonly placementId: PlacementId
-  readonly harness: string
-  readonly sessionId?: string
-  readonly model?: string
-}
 
 export type SessionConfigPatch = {
   readonly harness?: string
@@ -30,7 +24,7 @@ export type HarnessConfigApi = {
   /** Today's app keys a workspace by its folder when this machine serves it, and by its workspace id otherwise. */
   readonly workspaceKey: (placementId: PlacementId) => string | undefined
   readonly folderHarness: (placementId: PlacementId, sessionId?: string) => Promise<Response>
-  readonly options: (request: HarnessOptionsRequest) => Promise<Response>
+  readonly options: (request: HarnessOptionsRequest) => Promise<HarnessOptions>
   readonly sessionConfig: (ref: SessionRef) => Promise<Response>
   readonly updateSessionConfig: (ref: SessionRef, patch: SessionConfigPatch) => Promise<Response>
   readonly connections: () => Promise<HarnessConnectionsCatalog>
@@ -50,13 +44,7 @@ export function createHarnessConfigApi(transport: Transport, workspaces: Workspa
     },
     folderHarness: async (placementId, sessionId) =>
       transport.request(withQuery(HARNESS_PATH, { workspaceId: await workspaceId(placementId), sessionId })),
-    options: async (request) =>
-      transport.request(withQuery(HARNESS_OPTIONS_PATH, {
-        workspaceId: await workspaceId(request.placementId),
-        ...harnessSelectionQuery(request.harness),
-        sessionId: request.sessionId,
-        model: request.model,
-      })),
+    options: (request) => readHarnessOptions(transport, workspaces, request),
     sessionConfig: async (ref) => transport.runtime(await workspaces.route(ref), sessionEndpoint(ref, "/config")),
     updateSessionConfig: async (ref, patch) =>
       transport.runtime(await workspaces.route(ref), sessionEndpoint(ref, "/config"), jsonInit("PATCH", {

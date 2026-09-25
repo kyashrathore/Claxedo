@@ -1,3 +1,4 @@
+import type { HarnessOptionChoice } from "@/server"
 import type { HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
 import type { ModelKey } from "./model-key"
 import {
@@ -5,7 +6,6 @@ import {
   harnessSelectionId,
   isCatalogHarness,
   isClientDefaultPlaceholder,
-  type HarnessModelOption,
   type HarnessType,
 } from "./profile"
 
@@ -16,13 +16,13 @@ export type HarnessSelectionState = {
   readonly harness?: HarnessType
   readonly selectedModel?: string
   readonly selectedModelProvider?: string
-  readonly dynamicModels?: readonly (HarnessModelOption & { providerID?: string })[] | null
+  readonly dynamicModels?: readonly (HarnessOptionChoice & { providerID?: string })[] | null
   readonly readiness: HarnessReadiness
   readonly optionsLoading: boolean
   readonly configError?: string
   /** Chosen reasoning/thinking level, when the harness offers any. */
   readonly selectedThoughtLevel?: string
-  readonly serviceTiers?: readonly HarnessModelOption[] | null
+  readonly serviceTiers?: readonly HarnessOptionChoice[] | null
   readonly selectedServiceTier?: string
 }
 
@@ -36,7 +36,7 @@ export function harnessDisplayName(state: Pick<HarnessSelectionState, "harness">
   return harnessDisplayLabel(harnessSelectionId(state.harness))
 }
 
-export type HarnessModelChoice = HarnessModelOption & { providerID?: string }
+export type HarnessModelChoice = HarnessOptionChoice & { providerID?: string }
 
 function isTerminalModelOptionsError(state: Pick<HarnessSelectionState, "configError" | "optionsLoading">) {
   if (!state.configError || state.optionsLoading) return false

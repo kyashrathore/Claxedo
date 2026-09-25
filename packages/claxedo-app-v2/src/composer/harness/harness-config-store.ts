@@ -1,4 +1,4 @@
-import type { Server } from "@/server"
+import type { HarnessOptions, Server } from "@/server"
 import { createHarnessConnectionsCatalog } from "./connection-catalog"
 import { createHarnessOptionsLoader, type HarnessOptionsLoaderCache } from "./harness-options-loader"
 import { createHarnessHydrator, type HarnessHydratorCache } from "./harness-hydrator"
@@ -9,25 +9,12 @@ import { createHarnessStatusActions } from "./harness-status-actions"
 import type { HarnessScopeInput } from "./store-policy"
 import { decodeHarnessState, harnessHasConfigOptions, harnessSelectionId, isCatalogHarness } from "./profile"
 import { harnessHealthReadiness } from "./store-state"
-import type { HarnessType, OptionsResponse } from "./profile"
+import type { HarnessType } from "./profile"
 import type { DraftDefaultLabels, DraftDefaultStorage } from "./draft-defaults"
 import type { ModelKey } from "./model-key"
 import type { ResolveDraftDefaultInput } from "./draft-default-policy"
 
 type ScopeInput = HarnessScopeInput
-
-function record(value: unknown): Record<string, unknown> | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
-  return Object.fromEntries(Object.entries(value))
-}
-
-async function errorMessage(res: Response, fallback: string) {
-  const body = record(await res.json().catch(() => undefined))
-  if (typeof body?.error === "string") return body.error
-  const error = record(body?.error)
-  if (typeof error?.message === "string") return error.message
-  return fallback
-}
 
 function pendingSlots<Value>() {
   const slots = new Map<string, Value>()
@@ -107,7 +94,7 @@ export function createHarnessConfigStore(server: Server, storage: DraftDefaultSt
 
   const optionsLoader = createHarnessOptionsLoader<ScopeInput>({
     fetch: (type, params, model) => {
-      if (!params?.placementId) return Promise.resolve(Response.json({ options: [], source: "empty", stale: false } satisfies OptionsResponse))
+      if (!params?.placementId) return Promise.resolve({ source: "empty", stale: false, offersOptions: false, serviceTiers: [] })
       return api.options({
         placementId: params.placementId,
         harness: harnessSelectionId(type),
@@ -129,7 +116,6 @@ export function createHarnessConfigStore(server: Server, storage: DraftDefaultSt
       const state = harnessStore.state(scope)
       return state ? { readiness: state.readiness, configError: state.configError } : undefined
     },
-    errorMessage,
     cache: caches.options,
   })
 
@@ -140,7 +126,7 @@ export function createHarnessConfigStore(server: Server, storage: DraftDefaultSt
     scope: string,
     type: HarnessType,
     input?: ScopeInput,
-  ): Promise<OptionsResponse | undefined> {
+  ): Promise<HarnessOptions | undefined> {
     return optionsLoader.load(scope, type, harnessStore.heldHarness(scope) && input ? { ...input, sessionId: undefined } : input)
   }
 

@@ -251,19 +251,27 @@ export type HarnessInfo = {
   readonly goalMode: "native" | "evaluated" | "none"
 }
 
-export type HarnessModel = {
-  readonly model: ModelChoice
-  readonly name: string
-  readonly connected: boolean
-  readonly efforts: readonly string[]
-}
+/** `description` carries the version and context window ("Opus 4.8 with 1M context"), which `name` omits. */
+export type HarnessOptionChoice = { readonly id: string; readonly name: string; readonly description?: string; readonly connected?: boolean }
+
+export type HarnessOptionSelect = { readonly choices: readonly HarnessOptionChoice[]; readonly current?: string }
+
+export type HarnessOptionsSource = "harness" | "catalog" | "empty"
 
 export type HarnessLogin = { readonly harness: string; readonly signedIn: boolean; readonly providerIds: readonly string[] }
 
+/**
+ * `models` is absent when the harness lists none, and `thoughtLevels` when it offers fewer than two.
+ * `resolvedModel` is the model the harness names as current for its next turn, never a catalog default.
+ */
 export type HarnessOptions = {
-  readonly models: readonly HarnessModel[]
-  readonly current?: ModelChoice
-  readonly efforts: readonly string[]
+  readonly source: HarnessOptionsSource
+  readonly stale: boolean
+  readonly offersOptions: boolean
+  readonly models?: HarnessOptionSelect
+  readonly thoughtLevels?: HarnessOptionSelect
+  readonly serviceTiers: readonly HarnessOptionChoice[]
+  readonly resolvedModel?: HarnessOptionChoice
 }
 
 export type Capabilities = {

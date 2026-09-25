@@ -18,7 +18,7 @@ export type HarnessScopeInput = {
 
 export function shouldShowModelOptionsStaleWarning(input: {
   stale: boolean
-  models: { id: string; name: string }[] | null | undefined
+  models: readonly { id: string; name: string }[] | null | undefined
 }) {
   return input.stale && (input.models?.length ?? 0) === 0
 }
