@@ -191,6 +191,7 @@
       "isPermissionCeilingError",
       "isProviderUnavailable",
       "isRuntimeGoalStatus",
+      "isTerminalRuntimePayload",
       "live",
       "liveProviderBinding",
       "modelConfigOption",
