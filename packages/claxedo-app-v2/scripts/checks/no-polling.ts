@@ -3,7 +3,14 @@ import { readSource, startLine, ts } from "./lib/parse"
 import { finish, type Violation } from "./lib/report"
 import { enclosingFunction, functionName, unwrap, walk } from "./lib/tree"
 
-const timerOwners = ["src/server/transport.ts", "src/server/status.ts"]
+const timerOwners: Readonly<Record<string, string>> = {
+  "src/lib/clock.tsx": "the app's one clock: relative ages every 10 s",
+  "src/lib/second-ticker.ts": "the clock's ref-counted 1 s tick, running only while a running tool's elapsed time or a retry countdown reads it",
+}
+const pacingOwners: Readonly<Record<string, string>> = {
+  "src/transcript/message-part.tsx": "paced reveal of streamed text more than 512 chars behind, in 24 ms steps, as today; exp-stream owns any change to it",
+  "src/terminal/backend/clipboard.ts": "paced write of a paste over 16,384 chars to the PTY in 4,096-char chunks every 5 ms, as v1",
+}
 const timers = new Set(["setInterval", "setTimeout"])
 const globals = new Set(["window", "globalThis", "self"])
 const intervalOptions = new Set(["refetchInterval", "refetchIntervalInBackground"])
@@ -14,24 +21,26 @@ function main(): never {
   const violations: Violation[] = []
   for (const file of files) {
     const { sf } = readSource(file)
-    const owner = timerOwners.includes(rel(root, file))
+    const path = rel(root, file)
+    const owner = path in timerOwners
+    const paces = owner || path in pacingOwners
     walk(sf, (node) => {
-      const message = polling(node, owner)
+      const message = polling(node, owner, paces)
       if (message) violations.push({ file, line: startLine(node, sf), message })
     })
   }
   finish("no-polling", root, violations, files.length)
 }
 
-function polling(node: ts.Node, owner: boolean): string | undefined {
+function polling(node: ts.Node, owner: boolean, paces: boolean): string | undefined {
   if (ts.isPropertyAssignment(node) && ts.isIdentifier(node.name) && intervalOptions.has(node.name.text)) {
     return `${node.name.text} polls; events invalidate the query instead`
   }
   if (!ts.isCallExpression(node)) return undefined
   const timer = timerName(node)
-  if (timer === "setInterval") return "setInterval polls; wait for the server's event instead"
-  if (timer === "setTimeout" && !owner && loops(node)) {
-    return "setTimeout loop polls; only src/server/transport.ts re-arms a timer (and status.ts if P0.7 requires it)"
+  if (timer === "setInterval" && !owner) return "setInterval polls; wait for the server's event, or read the clock in src/lib/clock.tsx"
+  if (timer === "setTimeout" && !paces && loops(node)) {
+    return "setTimeout loop polls; only the named timer and pacing owners in no-polling.ts re-arm a timer"
   }
   return undefined
 }

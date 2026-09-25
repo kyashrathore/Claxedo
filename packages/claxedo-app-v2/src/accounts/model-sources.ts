@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/solid-query"
 import { createProviderCatalog, harnessModelPickerProvider, modelGroupKey } from "@/composer"
 import { isCatalogHarnessId, type HarnessSelection } from "@/lib/harness-selection"
 import { inCatalogOrder, primaryPlacement, useProjects } from "@/projects"
-import { toAppError, useServer, type HarnessModel, type PlacementId } from "@/server"
+import { toAppError, useServer, type HarnessOptionChoice, type PlacementId } from "@/server"
 import { catalogProviders } from "./catalog-rules"
 
 export type ModelItem = { readonly id: string; readonly name: string; readonly provider: { readonly id: string; readonly name: string }; readonly connected?: boolean }
@@ -38,13 +38,13 @@ export function useSettingsScope(): Accessor<SettingsScope> {
   })
 }
 
-export function harnessGroups(selection: HarnessSelection, models: readonly HarnessModel[]): SourceGroup[] {
+export function harnessGroups(selection: HarnessSelection, models: readonly HarnessOptionChoice[]): SourceGroup[] {
   const groups = new Map<string, { providerId: string; providerName: string; items: ModelItem[] }>()
   for (const model of models) {
-    const provider = harnessModelPickerProvider(selection, { id: model.model.modelId })
+    const provider = harnessModelPickerProvider(selection, { id: model.id })
     const key = `${provider.id}\n${provider.name}`
     const group = groups.get(key) ?? { providerId: provider.id, providerName: provider.name, items: [] }
-    group.items.push({ id: model.model.modelId, name: model.name, provider, connected: model.connected })
+    group.items.push({ id: model.id, name: model.name, provider, connected: model.connected })
     groups.set(key, group)
   }
   return [...groups.entries()].map(([key, group]) => ({
@@ -65,14 +65,14 @@ function useHarnessModels(selection: HarnessSelection, placement: Accessor<Setti
   return createMemo((): ModelSource => {
     const loading = query.isPending && query.fetchStatus !== "idle"
     const error = query.error ? toAppError(query.error).message : undefined
-    const groups = harnessGroups(selection, query.data?.models ?? [])
+    const groups = harnessGroups(selection, query.data?.models?.choices ?? [])
     return { loading, ...(error ? { error } : {}), empty: !loading && !error && groups.length === 0, groups }
   })
 }
 
 function useCatalogModels(harness: string): Accessor<ModelSource> {
   const server = useServer()
-  const catalog = createProviderCatalog({ api: server.harnessConfig, harness: () => harness })
+  const catalog = createProviderCatalog({ server, harness: () => harness, eager: true })
   const [hydrating, setHydrating] = createSignal(true)
   const providers = createMemo(() => catalogProviders([...catalog.all().values()], catalog.connected().map((item) => item.id), "", []))
   let hydrated = ""

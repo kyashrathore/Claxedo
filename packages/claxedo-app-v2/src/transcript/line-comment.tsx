@@ -1,9 +1,5 @@
-import { useFilteredList } from "@opencode-ai/ui/hooks"
-import { getDirectory, getFilename } from "@opencode-ai/ui/utils/path"
+import { useFilteredList, getDirectory, getFilename, Button, FileIcon, Icon } from "@/ui"
 import { createSignal, For, onMount, Show, splitProps, type JSX } from "solid-js"
-import { Button } from "@opencode-ai/ui/button"
-import { FileIcon } from "@opencode-ai/ui/file-icon"
-import { Icon } from "@opencode-ai/ui/icon"
 import { installLineCommentStyles } from "./line-comment-styles"
 import { useTranscriptI18n } from "./i18n"
 
@@ -39,10 +35,6 @@ export type LineCommentAnchorProps = {
   variant?: LineCommentVariant
   icon?: "comment" | "plus"
   buttonLabel?: string
-  // These are attached through Solid's `on:` namespace (a direct addEventListener,
-  // not the delegated `onClick`), so they take the handler union that slot accepts.
-  // The anchor hangs click/hover on its button in the default layout and on the popover
-  // div when `inline` hides that button, so neither may assume a specific element.
   onClick?: JSX.EventHandlerWithOptionsUnion<HTMLElement, MouseEvent>
   onMouseEnter?: JSX.EventHandlerWithOptionsUnion<HTMLElement, MouseEvent>
   onPopoverFocusOut?: JSX.EventHandlerWithOptionsUnion<HTMLDivElement, FocusEvent>

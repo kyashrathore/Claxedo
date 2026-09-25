@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "projects.cancel": "Cancelar",
   "projects.save": "Salvar",
   "projects.saving": "Salvando...",
@@ -19,4 +19,16 @@ export const dictionary = {
   "projects.edit.startup.description": "Executa após criar um novo espaço de trabalho (worktree).",
   "projects.edit.startup.placeholder": "ex: bun install",
   "projects.edit.action": "Editar",
+  "projects.close": "Fechar",
+  "projects.chip.project": "Projeto",
+  "projects.chip.self": "Este computador",
+  "projects.chip.workspace": "Espaço de trabalho",
+  "projects.create.continue": "Enviar",
+  "projects.connect.connecting": "Conectando…",
+  "projects.settings.group": "Configurações",
+  "projects.placement.open": "Abrir",
+  "projects.add.name": "Nome",
+  "projects.edit.environment": "Ambiente",
+  "projects.environment.value.placeholder": "valor",
+  "projects.title": "Projetos",
 }

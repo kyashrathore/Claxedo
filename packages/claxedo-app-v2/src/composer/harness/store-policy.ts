@@ -1,10 +1,5 @@
-import type { PlacementId, PlacementKind, SessionRef } from "@/server"
-import {
-  harnessHasConfigOptions,
-  pickHarness,
-  type HarnessState,
-  type HarnessType,
-} from "./profile"
+import type { HarnessState, PlacementId, PlacementKind, SessionConfig, SessionRef } from "@/server"
+import { harnessHasConfigOptions, type HarnessType } from "./profile"
 
 export const MODEL_OPTIONS_RETRY_LIMIT = 5
 
@@ -14,15 +9,12 @@ export type HarnessScopeInput = {
   sessionRef?: SessionRef
   /** The harness the session's row names, shown while its config cannot be read. */
   sessionHarness?: HarnessType
-}
-
-export function isDraftScope(scope: string) {
-  return scope.startsWith("draft:")
+  saveDraftDefault?: false
 }
 
 export function shouldShowModelOptionsStaleWarning(input: {
   stale: boolean
-  models: { id: string; name: string }[] | null | undefined
+  models: readonly { id: string; name: string }[] | null | undefined
 }) {
   return input.stale && (input.models?.length ?? 0) === 0
 }
@@ -58,19 +50,15 @@ export function shouldHydrateDraftFromHarnessStatus(input: { placementKind?: Pla
   return input.placementKind !== undefined && input.placementKind !== "cloud"
 }
 
-export function harnessStateFromSessionConfig(input: {
-  harness?: HarnessState
-  model?: { providerID?: string | null; modelID?: string | null } | null
-  variant?: string
-}): HarnessState | undefined {
+export function harnessStateFromSessionConfig(input: SessionConfig): HarnessState | undefined {
   const harness = input.harness
-  const type = pickHarness(harness?.type)
+  const type = harness?.type
   if (!harness || !type) return undefined
   return {
     ...harness,
     type,
-    model: harness.model ?? input.model?.modelID ?? undefined,
-    modelProviderID: harness.modelProviderID ?? input.model?.providerID ?? undefined,
+    model: harness.model ?? input.model?.modelId ?? undefined,
+    modelProviderId: harness.modelProviderId ?? input.model?.providerId ?? undefined,
     ...(input.variant ? { thoughtLevel: input.variant } : {}),
     status: "ready",
     ready: true,

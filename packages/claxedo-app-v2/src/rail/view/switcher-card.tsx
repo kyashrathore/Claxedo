@@ -1,11 +1,10 @@
 import { Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { ProjectAvatar } from "@opencode-ai/ui/v2/project-avatar-v2"
 import { railDictionary } from "../i18n"
 import type { NavigationStatus } from "../model"
 import type { SwitcherItem } from "../switcher-items"
 import { NavigationStatusMark } from "./navigation-row"
-import { ClaxedoIcon as Icon, type ClaxedoIconProps } from "@/ui"
+import { ClaxedoIcon as Icon, type ClaxedoIconProps, ProjectAvatar } from "@/ui"
 
 function orGlobal(value: string | undefined, global: string): string {
   return value?.trim() || global
@@ -46,7 +45,7 @@ function MetadataRow(props: { readonly icon: ClaxedoIconProps["name"]; readonly 
   return (
     <Show when={props.value?.trim()}>
       {(text) => (
-        <div data-slot="switcher-metadata-row" class="grid min-h-[20px] grid-cols-[16px_64px_minmax(0,1fr)] items-center gap-x-2.5">
+        <div class="grid min-h-[20px] grid-cols-[16px_64px_minmax(0,1fr)] items-center gap-x-2.5">
           <span class="flex items-center justify-center text-icon-weak-base">
             <Icon name={props.icon} size="small" />
           </span>
@@ -63,14 +62,14 @@ function MetadataRow(props: { readonly icon: ClaxedoIconProps["name"]; readonly 
 const STATUS_TEXT = { working: "rail.card.working", permission: "rail.card.waiting", error: "rail.card.failed" } as const
 
 function statusKey(status: NavigationStatus) {
-  return status === "idle" ? undefined : STATUS_TEXT[status]
+  return status === "idle" || status === "done" ? undefined : STATUS_TEXT[status]
 }
 
 export function SwitcherCard(props: { readonly item: SwitcherItem }): JSX.Element {
   const t = useTranslator(railDictionary)
   const project = () => orGlobal(props.item.projectLabel, t("rail.global"))
   return (
-    <div data-slot="switcher-metadata-card" class="w-[320px] bg-[var(--overlay-surface)] p-3">
+    <div class="switcher-metadata-card w-[320px] bg-[var(--overlay-surface)] p-3">
       <div class="mb-2.5 flex items-center gap-2.5">
         <ProjectAvatar fallback={project()} variant="outline" class="size-8 shrink-0" />
         <div class="min-w-0 flex-1">

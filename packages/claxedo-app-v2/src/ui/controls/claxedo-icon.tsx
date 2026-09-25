@@ -50,26 +50,20 @@ export interface ClaxedoIconProps extends Omit<ComponentProps<"svg">, "name"> {
   size?: "small" | "normal" | "medium" | "large"
 }
 
-const spriteID = "claxedo-icon-sprite"
+const spriteId = "claxedo-icon-sprite"
 const symbol = (name: string) => `claxedo-icon-${name}`
-let spriteInserted = false
+const spriteMarkup = Object.entries(claxedoIcons)
+  .map(([name, path]) => `<symbol id="${symbol(name)}" viewBox="0 0 20 20">${path}</symbol>`)
+  .join("")
 
 function ensureSprite() {
-  if (spriteInserted) return
   if (typeof document === "undefined") return
-  const markup = Object.entries(claxedoIcons)
-    .map(([name, path]) => `<symbol id="${symbol(name)}" viewBox="0 0 20 20">${path}</symbol>`)
-    .join("")
-  const existing = document.getElementById(spriteID)
-  if (existing) {
-    existing.innerHTML = markup
-    spriteInserted = true
-    return
-  }
-  const svg = ensureSvgSpriteHost(spriteID)
+  const existing = document.getElementById(spriteId)
+  if (existing?.getAttribute("data-length") === String(spriteMarkup.length)) return
+  const svg = existing ?? ensureSvgSpriteHost(spriteId)
   if (!svg) return
-  svg.innerHTML = markup
-  spriteInserted = true
+  svg.innerHTML = spriteMarkup
+  svg.setAttribute("data-length", String(spriteMarkup.length))
 }
 
 const customGlyphs = {

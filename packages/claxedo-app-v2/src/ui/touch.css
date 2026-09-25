@@ -1,16 +1,12 @@
 @layer touch {
   @media (pointer: coarse) {
     .v2-segmented-control-item,
-    .v2-select[data-appearance="inline"],
-    .v2-text-input-icon-button,
     .v2-field-label-info,
     .v2-scroll-view-thumb {
       position: relative;
     }
 
     .v2-segmented-control-item::before,
-    .v2-select[data-appearance="inline"]::before,
-    .v2-text-input-icon-button::before,
     .v2-field-label-info::before,
     .v2-scroll-view-thumb::before {
       content: "";
@@ -18,11 +14,7 @@
       inset: min(0px, calc(50% - var(--touch-target) / 2));
     }
 
-    [data-component="v2-menu-item"],
-    [data-slot="v2-menu-group-label"],
-    [data-component="switch"],
-    .v2-text-input,
-    .v2-select:not([data-appearance="inline"]) {
+    [data-component="switch"] {
       min-height: var(--touch-target);
     }
   }

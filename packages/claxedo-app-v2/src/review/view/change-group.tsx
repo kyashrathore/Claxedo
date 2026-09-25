@@ -1,10 +1,8 @@
 import { For, Show, type JSX } from "solid-js"
-import { DiffChanges } from "@opencode-ai/ui/diff-changes"
-import { Spinner } from "@opencode-ai/ui/spinner"
 import { basename, parentPath } from "@/files"
 import { useTranslator } from "@/i18n"
 import type { ChangeStatus } from "@/server"
-import { ClaxedoIcon as Icon, SemanticIcon } from "@/ui"
+import { ClaxedoIcon as Icon, SemanticIcon, DiffChanges, Spinner } from "@/ui"
 import type { GitAction } from "../git-actions"
 import { dictionary, type ReviewKey } from "../i18n"
 
@@ -107,7 +105,6 @@ export function ChangeRow(props: {
     >
       <button
         type="button"
-        data-slot="open"
         class="flex h-full min-w-0 flex-1 items-center gap-1.5 text-left"
         onClick={() => props.onOpen()}
       >

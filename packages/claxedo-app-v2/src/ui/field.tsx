@@ -85,11 +85,6 @@ function FieldRoot(props: ParentProps<FieldProps>) {
     const control = root.querySelector(CONTROL_SELECTOR)
     if (!(control instanceof HTMLInputElement) && !(control instanceof HTMLTextAreaElement)) return
 
-    const shellNode = control.closest(
-      "[data-component='v2-text-input'], [data-component='v2-textarea'], [data-component='v2-inline-input']",
-    )
-    const shell = shellNode instanceof HTMLElement ? shellNode : null
-
     control.id = controlId
     control.setAttribute("aria-labelledby", labelId)
 
@@ -102,10 +97,8 @@ function FieldRoot(props: ParentProps<FieldProps>) {
 
     if (ctx.invalid()) {
       control.setAttribute("aria-invalid", "true")
-      shell?.setAttribute("data-invalid", "")
     } else {
       control.removeAttribute("aria-invalid")
-      shell?.removeAttribute("data-invalid")
     }
   }
 
@@ -125,9 +118,9 @@ function FieldRoot(props: ParentProps<FieldProps>) {
       <div
         {...rest}
         ref={rootRef}
-        data-component="v2-field"
         data-invalid={local.invalid ? "" : undefined}
         classList={{
+          "v2-field": true,
           ...local.classList,
           [local.class ?? ""]: !!local.class,
         }}

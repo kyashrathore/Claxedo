@@ -36,12 +36,12 @@ function ModelsSection() {
   const list = useModelsHarnesses()
   const [tabs, setTabs] = createStore<Record<string, HarnessTab>>({})
   return (
-    <div class="settings-body" data-component="settings-models-page">
+    <div class="settings-body">
       <SettingsIntro description={t("settings.models.description")} />
       <MachineScanStatus accounts={accounts} />
       <Show
         when={scope().placement}
-        fallback={<p class="text-12-regular text-text-weak" data-component="models-no-workspace">{scope().loading ? t("settings.scope.workspace.loading") : t("settings.scope.workspace.empty")}</p>}
+        fallback={<p class="text-12-regular text-text-weak">{scope().loading ? t("settings.scope.workspace.loading") : t("settings.scope.workspace.empty")}</p>}
       >
         {(placement) => (
           <div class="flex flex-col gap-10">

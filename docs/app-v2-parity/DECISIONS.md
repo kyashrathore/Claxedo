@@ -169,3 +169,15 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - The owner's rule: if keeping hidden panes mounted doesn't buy much, remove it to prevent memory bloat.
 - **Measured on packaged v2:** unmounting hidden panes costs +8.5 ms per return to a visited session (16 → 24.5 ms median) and saves ~12 MiB of JS heap and ~680 DOM nodes with 8 small sessions open, more on heavy sessions.
 - **Decision:** hidden session, draft and page panes unmount; the data store and timeline snapshots stay. Terminals stay mounted (xterm state).
+
+## Orchestrator, 2026-09-25: a preset slot never writes the composer's draft default (a v1 bug, not ported)
+- v1's preset slot runs the composer's harness selector under a draft scope. Every harness or model pick in it, including the seed applied when an existing preset opens, is saved as the workspace's draft default. Opening a Pi preset makes the next new session open on Pi.
+- **v2:** a new slot still opens on the draft default (the harness last used for a draft in the first workspace, else the folder's harness). The slot never writes it back: `DraftHarnessPicker` passes `saveDraftDefault: false`, so its picks stay in the slot.
+
+## Owner, 2026-09-25 10:05: "all good" on the six open calls
+- **Panel width (TOOL-009):** a dragged panel width survives closing the panel. v1 forgets it because it disposes the shell.
+- **Browser pick (TOOL-145):** a pick sends a text chip with the page, the element and the comment. v1's file chip sends a `file://` part the agent can't read.
+- **Composer budget:** the plan's 5.5k assumed the PromptInputV2 frame swap, which the parity ruling voided. The budget is re-based to the composer's measured size after its no-comments triage (11.1k after the cuts; v1's composer is 12.3k).
+- **Cancelled turns (runtime, both apps):** fixed now, in this branch. A Stop records `cancelled`, and both apps show "Interrupted".
+- **Desktop launch code shared with v1:** start fixes may change it on this branch (early server fork, the stale-daemon file, the compile cache). v1 built from this branch gets the same wins, so the benchmark's v1 baseline is built from `dev`.
+- **Server gaps:** fixed in this branch. That means the pi harness options cold start, the providers route's `provider` parameter and summary form, a pushed harness-health event replacing the composer's poll, and one status read across workspaces.

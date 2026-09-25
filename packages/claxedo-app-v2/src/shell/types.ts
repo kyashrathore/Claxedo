@@ -34,6 +34,7 @@ export type PaneRoute =
 export type PaneKind<State = Json> = {
   readonly kind: string
   readonly singleton?: boolean
+  readonly keepMounted?: boolean
   readonly title: (state: State) => string
   readonly icon?: string
   readonly view: Component<PaneProps<State>>
@@ -46,6 +47,7 @@ export type PaneKind<State = Json> = {
 export type AnyPaneKind = {
   readonly kind: string
   readonly singleton?: boolean
+  readonly keepMounted?: boolean
   readonly title: (state: never) => string
   readonly icon?: string
   readonly view: Component<PaneProps<never>>

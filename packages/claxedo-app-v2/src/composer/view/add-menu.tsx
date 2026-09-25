@@ -1,6 +1,5 @@
 import { For, Show, type Accessor, type JSX } from "solid-js"
-import { Icon } from "@opencode-ai/ui/icon"
-import { MenuV2 } from "@opencode-ai/ui/v2/menu-v2"
+import { Icon, MenuV2 } from "@/ui"
 import { COMPOSER_MENU_CLASS } from "./menu-metrics"
 
 /** The agent pair that the "Plan mode" toggle stands in for. When a workspace
@@ -32,11 +31,8 @@ export function planModeAgents(names: readonly string[]) {
  * menu teach the keyboard path instead of duplicating it.
  *
  * Commands/Context deliberately do NOT insert a `/` or `@` character: both
- * lists populate on an empty query (`prompt-options.ts#promptAtOptions`),
- * so opening the surface is the whole action and the editor stays clean.
- * (On the flagged CONTROLLER engine — `composer/v2/engine-contract.ts` — the two
- * entries dispatch upstream's `commands.open`/`context.open` instead, which DO
- * seed the trigger character into the draft. Same surfaces, upstream's spelling.)
+ * lists populate on an empty query, so opening the surface is the whole action
+ * and the editor stays clean.
  *
  * The standalone "Documents" entry upstream has no equivalent of is gone: the
  * `documents.open` row is the first entry of the Commands popover

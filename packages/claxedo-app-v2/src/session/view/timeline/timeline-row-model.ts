@@ -1,87 +1,65 @@
-// The message timeline's row model: the tagged TimelineRow union, its
-// constructors, keys, structural equality, and identity-preserving reuse.
-// Pure data — no rendering, no row construction policy (that lives in
-// message-timeline.data.ts's Timeline.constructMessageRows, alongside the
-// SummaryDiff type referenced here; that import is type-only, so no runtime
-// cycle exists).
 import type { PartGroup } from "@/transcript"
+import type { DispatchContext } from "./provider-error-detail"
 import type { SessionErrorClass } from "./turn-recovery"
 import type { SummaryDiff } from "./message-timeline.data"
 
 export type TimelineRowMap = {
-  /** Sits above the first rendered turn (`userMessageID`) while `count` older turns stay off-screen. */
-  PreviousMessages: { userMessageID: string; count: number }
-  TurnGap: { userMessageID: string }
+  PreviousMessages: { userMessageId: string; count: number }
+  TurnGap: { userMessageId: string }
   CommentStrip: {
-    userMessageID: string
+    userMessageId: string
   }
   UserMessage: {
-    userMessageID: string
+    userMessageId: string
     anchor: boolean
   }
   TurnDivider: {
-    userMessageID: string
+    userMessageId: string
     label: "compaction" | "handoff" | "interrupted"
     harness?: string
     durationMs?: number
   }
   AssistantPart: {
-    userMessageID: string
+    userMessageId: string
     group: PartGroup
     previousAssistantPart: boolean
     lastAssistantPart: boolean
   }
-  Thinking: { userMessageID: string; reasoningHeading?: string }
-  Retry: { userMessageID: string }
-  /** The turn's body is held back until its full read lands; drawn as a loader once the wait is noticeable. */
-  TurnLoading: { userMessageID: string }
+  Thinking: { userMessageId: string; reasoningHeading?: string }
+  Retry: { userMessageId: string }
+  TurnLoading: { userMessageId: string }
   TurnFold: {
-    userMessageID: string
+    userMessageId: string
     durationMs?: number
     foldCount: number
     folded: boolean
     tokens?: number
     cost?: number
   }
-  DiffSummary: { userMessageID: string; diffs: SummaryDiff[] }
+  DiffSummary: { userMessageId: string; diffs: SummaryDiff[] }
   Error: {
-    userMessageID: string
+    userMessageId: string
     text: string
     presentation?: "turn-conflict"
-    /**
-     * The human sentence for the row's PRIMARY line, composed here alongside
-     * the raw text so the first paint is already readable. `text` is the raw
-     * provider bytes and belongs only in the collapsed disclosure.
-     */
     summary?: string
     recoveryClass?: SessionErrorClass
     error?: unknown
-    providerID?: string
-    modelID?: string
-  }
+  } & DispatchContext
 }
 
 type TaggedRow<Tag extends string, Fields extends object> = Readonly<Fields> & { readonly _tag: Tag }
 
-/**
- * A constructor for one tagged row.
- *
- * Rows are plain frozen-shape records rather than class instances: nothing ever
- * asks `instanceof`, and the class form could only be typed by asserting through
- * `unknown`, because `Object.assign(this, fields)` is opaque to TypeScript.
- * A factory states the same contract with no assertion.
- */
 function taggedRow<Tag extends string, Fields extends object>(tag: Tag) {
   return (fields: Fields): TaggedRow<Tag, Fields> => ({ ...fields, _tag: tag })
 }
 
-function samePartRef(a: { messageID: string; partID: string }, b: { messageID: string; partID: string }) {
-  return a.messageID === b.messageID && a.partID === b.partID
+function samePartRef(a: { messageId: string; partId: string }, b: { messageId: string; partId: string }) {
+  return a.messageId === b.messageId && a.partId === b.partId
 }
 
 function samePartRefs(
-  a: ReadonlyArray<{ messageID: string; partID: string }>,
-  b: ReadonlyArray<{ messageID: string; partID: string }>,
+  a: ReadonlyArray<{ messageId: string; partId: string }>,
+  b: ReadonlyArray<{ messageId: string; partId: string }>,
 ) {
   return a.length === b.length && a.every((ref, index) => samePartRef(ref, b[index]))
 }
@@ -95,12 +73,6 @@ function samePartGroup(a: PartGroup, b: PartGroup) {
   return "refs" in b && samePartRefs(a.refs, b.refs)
 }
 
-/**
- * `SummaryDiff` is `AgentSnapshotFileDiff & { file: string }`, a closed contract
- * shape — comparing its fields by name states that, where the previous
- * `Object.keys` walk had to assert the key type and silently agreed whenever two
- * diffs happened to carry the same NUMBER of keys.
- */
 function sameSummaryDiff(a: SummaryDiff, b: SummaryDiff) {
   return a.file === b.file && a.patch === b.patch && a.additions === b.additions &&
     a.deletions === b.deletions && a.status === b.status
@@ -160,29 +132,29 @@ export namespace TimelineRow {
   export const key = (row: TimelineRow) => {
     switch (row._tag) {
       case "PreviousMessages":
-        return `previous-messages:${row.userMessageID}`
+        return `previous-messages:${row.userMessageId}`
       case "TurnGap":
-        return `turn-gap:${row.userMessageID}`
+        return `turn-gap:${row.userMessageId}`
       case "CommentStrip":
-        return `comment-strip:${row.userMessageID}`
+        return `comment-strip:${row.userMessageId}`
       case "UserMessage":
-        return `user-message:${row.userMessageID}`
+        return `user-message:${row.userMessageId}`
       case "TurnDivider":
-        return `turn-divider:${row.userMessageID}:${row.label}`
+        return `turn-divider:${row.userMessageId}:${row.label}`
       case "AssistantPart":
-        return `assistant-part:${row.userMessageID}:${row.group.key}`
+        return `assistant-part:${row.userMessageId}:${row.group.key}`
       case "Thinking":
-        return `thinking:${row.userMessageID}`
+        return `thinking:${row.userMessageId}`
       case "DiffSummary":
-        return `diff-summary:${row.userMessageID}`
+        return `diff-summary:${row.userMessageId}`
       case "Error":
-        return `error:${row.userMessageID}`
+        return `error:${row.userMessageId}`
       case "Retry":
-        return `retry:${row.userMessageID}`
+        return `retry:${row.userMessageId}`
       case "TurnLoading":
-        return `turn-loading:${row.userMessageID}`
+        return `turn-loading:${row.userMessageId}`
       case "TurnFold":
-        return `turn-fold:${row.userMessageID}`
+        return `turn-fold:${row.userMessageId}`
       default: {
         const exhaustive: never = row
         return exhaustive
@@ -212,7 +184,7 @@ export namespace TimelineRow {
 
   export function equals(a: TimelineRow, b: TimelineRow) {
     if (a === b) return true
-    if (a._tag !== b._tag || a.userMessageID !== b.userMessageID) return false
+    if (a._tag !== b._tag || a.userMessageId !== b.userMessageId) return false
     switch (a._tag) {
       case "PreviousMessages":
         return b._tag === "PreviousMessages" && a.count === b.count
@@ -246,46 +218,28 @@ export namespace TimelineRow {
     }
   }
 
-  /**
-   * The row's OWN message id, distinct from the turn key: a UserMessage row
-   * is its user message; an AssistantPart row belongs to the assistant
-   * message its parts came from (`data-message-id` carries the TURN key).
-   * External observers verifying "this exact message painted" read the
-   * `data-content-message-id` attribute stamped from this.
-   */
-  /**
-   * Rows a reading position can be restored against. The previous-messages row
-   * is keyed by the first rendered turn, so the reveal it anchors re-keys or
-   * removes it, leaving the restore nothing to find.
-   */
   export function anchorsReadingPosition(row: TimelineRow) {
     return row._tag !== "PreviousMessages"
   }
 
-  /** Rows that anchor a user-message position (scroll targets, row index). */
   export function anchorsMessage(row: TimelineRow) {
     return row._tag === "CommentStrip" || (row._tag === "UserMessage" && row.anchor)
   }
 
-  export function contentMessageID(row: TimelineRow) {
+  export function contentMessageId(row: TimelineRow) {
     switch (row._tag) {
       case "UserMessage":
-        return row.userMessageID
+        return row.userMessageId
       case "AssistantPart":
-        return "ref" in row.group ? row.group.ref.messageID : row.group.refs[0]?.messageID
+        return "ref" in row.group ? row.group.ref.messageId : row.group.refs[0]?.messageId
       default:
         return undefined
     }
   }
 
-  /**
-   * Part-level identity beside the message-level one: assistant messages
-   * render one row PER PART GROUP (all sharing the message id), so content
-   * verification needs to know WHICH part a row shows.
-   */
-  export function contentPartID(row: TimelineRow) {
+  export function contentPartId(row: TimelineRow) {
     if (row._tag !== "AssistantPart") return undefined
-    return "ref" in row.group ? row.group.ref.partID : row.group.refs[0]?.partID
+    return "ref" in row.group ? row.group.ref.partId : row.group.refs[0]?.partId
   }
 
   export function reuse(previous: TimelineRow[] | undefined, rows: TimelineRow[]) {

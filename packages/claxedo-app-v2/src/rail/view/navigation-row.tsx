@@ -48,9 +48,9 @@ export function NavigationRow(props: NavigationRowProps): JSX.Element {
     >
       <button
         type="button"
-        data-slot="navigation-row-activate"
         aria-label={props.label}
         aria-current={props.active ? "page" : undefined}
+        data-slot="navigation-row-activate"
         class="ui-navigation-row-activate absolute inset-0 rounded-md outline-none touch-pan-y focus-visible:ring-2 focus-visible:ring-border-interactive-base"
         onClick={() => props.onActivate()}
       />
@@ -62,7 +62,6 @@ export function NavigationRow(props: NavigationRowProps): JSX.Element {
 export function NavigationRowGlyph(props: { readonly children: JSX.Element }): JSX.Element {
   return (
     <span
-      data-slot="navigation-row-glyph"
       class="absolute left-4 top-1/2 -translate-y-1/2 z-[1] pointer-events-none flex size-4 items-center justify-center"
     >
       {props.children}
@@ -93,7 +92,15 @@ export function NavigationStatusMark(props: { readonly status: NavigationStatus;
         </span>
       </Match>
       <Match when={props.status !== "idle"}>
-        <span aria-hidden="true" {...data()} class="size-1.5 shrink-0 rounded-full bg-icon-interactive-base" />
+        <span
+          aria-hidden="true"
+          {...data()}
+          class="size-1.5 shrink-0 rounded-full"
+          classList={{
+            "bg-icon-interactive-base": props.status === "permission" || props.status === "error",
+            "bg-text-weak": props.status === "done",
+          }}
+        />
       </Match>
     </Switch>
   )

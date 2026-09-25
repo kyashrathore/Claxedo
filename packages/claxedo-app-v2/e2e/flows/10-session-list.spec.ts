@@ -27,8 +27,8 @@ function row(app: Page, title: string): Locator {
   return rows(app).filter({ has: app.getByRole("button", { name: title, exact: true }) })
 }
 
-function rowTitles(app: Page) {
-  return rows(app).locator("[data-slot=session-navigation-title]")
+function rowTitles(app: Page): Promise<string[]> {
+  return rows(app).locator('[data-slot="navigation-row-activate"]').evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label") ?? ""))
 }
 
 async function sessionAction(stack: Stack, app: Page, workspace: Workspace, session: SessionRow, action: string): Promise<void> {
@@ -74,7 +74,7 @@ test("10 session list: the project's rows, live status, rename, archive and dele
   const charlie = await create("Charlie")
 
   await app.goto(`${stack.url}/`)
-  await expect(rowTitles(app)).toHaveText(await serverOrder(stack.url))
+  await expect.poll(() => rowTitles(app)).toEqual(await serverOrder(stack.url))
 
   await liveStatus(stack, api, app, workspace.directory, bravo)
 
@@ -97,5 +97,5 @@ test("10 session list: the project's rows, live status, rename, archive and dele
   await expect.poll(() => sessionStatusCode(api, workspace.directory, bravo.id)).toBe(404)
 
   expect(await serverOrder(stack.url)).toEqual(["Charlie renamed"])
-  await expect(rowTitles(app)).toHaveText(["Charlie renamed"])
+  await expect.poll(() => rowTitles(app)).toEqual(["Charlie renamed"])
 })

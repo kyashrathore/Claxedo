@@ -1,12 +1,8 @@
-import { useMarked, transcriptMarkdownExtensions } from "@opencode-ai/ui/context/marked"
+import { useMarked, transcriptMarkdownExtensions, useDialog, ImagePreview, checksum, reportUiError, Icon, IconButtonV2, TooltipV2 } from "@/ui"
 import { codeTheme } from "./code-theme"
 import { useTranscriptI18n } from "./i18n"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { ImagePreview } from "@opencode-ai/ui/image-preview"
-import { useData } from "./data"
+import { useOptionalData } from "./data"
 import morphdom from "morphdom"
-import { checksum } from "@opencode-ai/ui/utils/encode"
-import { reportUiError } from "@opencode-ai/ui/utils/report-error"
 import {
   type Accessor,
   type ComponentProps,
@@ -20,9 +16,6 @@ import {
   splitProps,
 } from "solid-js"
 import { isServer, render } from "solid-js/web"
-import { Icon } from "@opencode-ai/ui/icon"
-import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
-import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { bundledLanguages } from "shiki"
 import { Marked } from "marked"
 import { canReusePendingBlock, project, type Block, type Projection } from "./markdown-stream"
@@ -87,7 +80,6 @@ function fallback(markdown: string) {
 
 const syncParser = new Marked(...transcriptMarkdownExtensions)
 
-/** First-frame HTML for live tokens and cold remounts. Escaped source is not markdown. */
 function syncRichHtml(src: string) {
   try {
     const parsed = syncParser.parse(src, { async: false })
@@ -244,27 +236,8 @@ function disposeMarkdownControls(root: Element) {
 
 const shellLanguages = new Set(["bash", "sh", "shell", "zsh", "fish", "console", "terminal"])
 
-/**
- * Mermaid — the app registers a renderer (it owns the `mermaid` dep + theming);
- * session-ui stays dependency-free and just calls back. Rendering is idempotent and
- * self-healing: if the block cache replaces the DOM node, decorate re-runs and re-renders.
- * Errors fall back to the plain code block (never mermaid's own error graphics).
- *
- * SECURITY: the diagram source is assistant output, so the SVG that comes back is
- * untrusted no matter what the registered renderer does internally — mermaid's own
- * `securityLevel: "strict"` pass is the exact control its >=11.1.0 <11.10.0
- * advisories bypass. Every SVG therefore goes through `sanitizeSvg` before it can
- * reach `innerHTML`, and an empty result is treated as a render failure rather
- * than a reason to fall back to the raw string.
- */
 let mermaidRenderer: ((source: string) => Promise<string>) | undefined
 let mermaidViewer: ((source: string) => void) | undefined
-/**
- * Renders in flight, by source. A rich pass can replace a fenced block's
- * wrapper while its first render is still pending (the SVG cache is only
- * populated on completion), so the replacement wrapper joins the pending
- * render instead of asking the renderer for the same diagram again.
- */
 const mermaidInFlight = new Map<string, Promise<string>>()
 
 function renderMermaidSource(source: string): Promise<string> {
@@ -378,16 +351,12 @@ function renderMermaidBlocks(root: HTMLElement) {
     const code = wrapper.querySelector("code")
     const language = code?.className.match(/(?:^|\s)language-([^\s]+)/)?.[1]
     if (language !== "mermaid" || !code) continue
-    // Marked/Shiki preserve the fence-closing line break for nested blocks,
-    // while the streaming code projection omits it for top-level fences.
-    // Mermaid should receive the same canonical fence body from both paths.
     const source = (code.textContent ?? "").trimEnd()
     if (!source.trim()) continue
     if (largeMermaid(source) && wrapper.dataset.mermaidRenderRequested !== source) {
       traceMermaid("defer", source)
       wrapper.setAttribute("data-mermaid-state", "deferred")
       wrapper.querySelector('[data-slot="mermaid-diagram"]')?.remove()
-      wrapper.querySelector('[data-slot="mermaid-view-button"]')?.remove()
       const existing = wrapper.querySelector<HTMLElement>('[data-slot="mermaid-render-button"]')
       if (existing?.dataset.mermaidSource !== source) {
         existing?.remove()
@@ -420,12 +389,7 @@ function renderMermaidBlocks(root: HTMLElement) {
     void renderMermaidSource(source)
       .then((svg) => {
         traceMermaid("generate", source, renderStarted)
-        // Guard against streaming: skip if the source changed while rendering.
         if (wrapper.getAttribute("data-mermaid-source") !== source) return
-        // Fail closed. `sanitizeSvg` returns "" when it cannot vouch for the
-        // markup (no DOMPurify, or the sanitizer threw); throwing here routes
-        // into the catch below, which keeps the plain code block visible. The
-        // raw `svg` must never reach the DOM.
         const sanitizeStarted = rendererClock()
         const safe = sanitizeSvg(svg)
         traceMermaid("sanitize", source, sanitizeStarted)
@@ -435,8 +399,8 @@ function renderMermaidBlocks(root: HTMLElement) {
         commitMermaidDiagram(wrapper, source, safe)
         traceMermaid("commit", source, commitStarted)
       })
-      .catch(() => {
-        // Fallback: keep the code block, clear the marker so a later retry is possible.
+      .catch((error: unknown) => {
+        console.warn("A mermaid diagram could not be rendered; its code block stays", { error })
         wrapper.querySelector('[data-slot="mermaid-diagram"]')?.remove()
         clearRichControls(wrapper)
         wrapper.removeAttribute("data-mermaid-source")
@@ -497,7 +461,6 @@ function rendererClock(): number | undefined {
   return performance.now()
 }
 
-/** The debug hooks the perf harness hangs off `window`; absent in a normal session. */
 interface PerfTraceWindow extends Window {
   __claxedoPerfTrace?: boolean
   __claxedoPerfRendererPhases?: Array<{ name: string; durationMs: number }>
@@ -615,15 +578,6 @@ function markInlineCode(root: HTMLDivElement) {
   }
 }
 
-/**
- * Per-URL image fetch outcomes, shared across every markdown render in the
- * session. Streaming replaces markdown blocks repeatedly, and a bare <img>
- * re-fetches on every replacement: the browser paints alt text, then the
- * broken-image glyph, then repeats on the next block swap — a flickering
- * layout shift for any URL that never loads. Rendering a stable chip until a
- * URL proves loadable makes the failure state a single fixed box, and the
- * outcome map makes the proof one probe per URL instead of one per render.
- */
 const imageOutcomes = new Map<string, "ok" | "error">()
 const imageProbes = new Map<string, Set<(ok: boolean) => void>>()
 
@@ -660,14 +614,6 @@ function imageFallbackChip(img: HTMLImageElement, loading = false): HTMLElement 
   return chip
 }
 
-/**
- * Transcript markdown can name a workspace file (`file://` URL, absolute path,
- * or relative path) instead of an http(s) URL — a `file:` or absolute src can
- * never be fetched by this origin, so it must be resolved through the
- * workspace's raw-file route before probing. Returns `undefined` when the src
- * cannot be fetched at all (a file outside the workspace root, or a host with
- * no file route).
- */
 function imageSource(src: string, data?: { directory: string; fileUrl?: (path: string) => string | undefined }): string | undefined {
   if (/^(https?:)?\/\//i.test(src) || src.startsWith("data:") || src.startsWith("blob:")) return src
   const fileUrl = data?.fileUrl
@@ -677,7 +623,8 @@ function imageSource(src: string, data?: { directory: string; fileUrl?: (path: s
   if (src.startsWith("file://")) {
     try {
       path = decodeURIComponent(src.slice("file://".length))
-    } catch {
+    } catch (error) {
+      console.warn("A file:// image source could not be decoded", { src, error })
       return undefined
     }
   }
@@ -714,9 +661,6 @@ export function stabilizeImages(
       continue
     }
     if (src.startsWith("data:") || imageOutcomes.get(src) === "ok") {
-      // The img has to stay where it is until the tile takes its place —
-      // appending it into the detached tile first would make replaceWith a
-      // no-op and drop the image from the render.
       const tile = imageTile(img, src)
       img.replaceWith(tile)
       tile.appendChild(img)
@@ -754,16 +698,12 @@ function decorate(
   renderMermaidBlocks(root)
 }
 
-// Capture, so no descendant can stop a click before the link is offered to the
-// host; a host that claims links from further up still gets there first.
 function setupLinkOpen(root: HTMLDivElement, openImage?: (src: string, alt?: string) => void) {
   const handleClick = (event: MouseEvent) => {
     const target = event.target instanceof Element ? event.target : undefined
     const tile = target?.closest('[data-component="markdown-image-tile"]')
     const img = tile?.querySelector("img")
     if (openImage && img && event.button === 0) {
-      // Read the live DOM: morphdom preserves nodes but does not replace their
-      // event listeners when a streaming block changes its image or source.
       event.preventDefault()
       event.stopPropagation()
       openImage(img.src, img.getAttribute("alt") ?? undefined)
@@ -851,7 +791,6 @@ function cachedRenderResult(
     if (cached?.raw !== block.raw) return []
     return [{ key: `${owner}:${cacheKey}`, mode: block.mode, ...cached }]
   })
-  // A partial hit is no hit: the caller falls back to a synchronous render of the whole text.
   if (blocks.length !== projection.blocks.length) return undefined
   return { text, blocks }
 }
@@ -878,7 +817,6 @@ export function Markdown(
     text: string
     cacheKey?: string
     streaming?: boolean
-    /** Delay rich work for a newly mounted completed body. Set to 0 for an explicitly non-interactive surface. */
     richAfterMs?: number
     class?: string
     classList?: Record<string, boolean>
@@ -887,31 +825,12 @@ export function Markdown(
   const [local, others] = splitProps(props, ["text", "cacheKey", "streaming", "richAfterMs", "class", "classList"])
   const marked = useMarked()
   const i18n = useTranscriptI18n()
-  // A host without a dialog layer cannot offer the full-view preview; image
-  // tiles then render identically but clicks do nothing.
-  const dialog = (() => {
-    try {
-      return useDialog()
-    } catch {
-      return undefined
-    }
-  })()
-  const openImage = dialog ? (src: string, alt?: string) => void dialog.show(() => <ImagePreview src={src} alt={alt} />) : undefined
-  // Hosts without the session data provider cannot resolve workspace-relative
-  // image sources; their images stay fallback chips rather than broken fetches.
-  const data = (() => {
-    try {
-      return useData()
-    } catch {
-      return undefined
-    }
-  })()
+  const dialog = useDialog()
+  const openImage = (src: string, alt?: string) => void dialog.show(() => <ImagePreview src={src} alt={alt} />)
+  const data = useOptionalData()
   const [root, setRoot] = createSignal<HTMLDivElement>()
   const owner = createUniqueId()
   const activeCodeKeys = new Set<string>()
-  // Completed and streaming bodies both commit real markdown on the first
-  // frame (cache or sync parse). The async native parser upgrades highlight
-  // and math without a plain-text first paint.
   const projection = createMemo<Projection | undefined>((previous) => {
     const started = rendererClock()
     const result = project(previous, local.text, local.streaming ?? false)
@@ -954,8 +873,6 @@ export function Markdown(
             if (!block.complete) traceRenderer(`markdown.highlightmiss.incomplete.chars-${block.src.length}`)
             else if (!getCachedCodeHighlight(block.src, codeLanguageName(block.language), codeTheme.name))
               traceRenderer(`markdown.highlightmiss.no-entry.chars-${block.src.length}`)
-            // Completed blocks read through the module-scope highlight cache
-            // inside `code()`, so a remount resolves without a worker round trip.
             const result = await code(block.src, block.language, blockKey, block.complete)
             traceRenderer(`markdown.highlight.chars-${block.src.length}.language-${result.language}`, started)
             return {
@@ -993,7 +910,8 @@ export function Markdown(
         }),
       )
         .then((blocks) => ({ text: src.text, blocks }) satisfies RenderResult)
-        .catch(() => {
+        .catch((error: unknown) => {
+          console.warn("Markdown blocks could not be rendered", { error })
           if (!src.streaming) return { text: src.text, blocks: [] } satisfies RenderResult
           return syncRenderResult(src.text, src.projection, owner, src.key)
         })
@@ -1006,10 +924,6 @@ export function Markdown(
   let copyCleanup: (() => void) | undefined
   let linkCleanup: (() => void) | undefined
 
-  // This owns the Markdown DOM itself, so its initial commit belongs to
-  // Solid's render phase. A deferred user effect left a fully mounted text row
-  // empty for one animation frame; the timeline then could not expose
-  // canonical first-fold text until the following frame.
   createRenderEffect(() => {
     const container = root()
     if (!container) return
@@ -1021,12 +935,7 @@ export function Markdown(
       return
     }
 
-    // `html()` suspends while the asynchronous parser is pending. Suspending
-    // here bubbles to the pane boundary and disconnects the entire session
-    // surface. `latest` is reactive without throwing the pending promise.
     const result = html.latest
-    // First paint is cache or sync-parsed HTML. Do not commit escaped source
-    // (`initial`) for a completed body — that is the plain→markdown flash.
     if (!result) return
     const projected = projection()!
     const content = pendingBlocks(result, projected, local.cacheKey, owner, local.streaming)
@@ -1035,9 +944,6 @@ export function Markdown(
     delete container.dataset.markdownStage
     if (wasPlain) container.replaceChildren()
     if (content.length === 0) {
-      // End-of-stream and cold completed waits must not wipe tokens that
-      // already painted. Keep the last streamed DOM until the matching rich
-      // result arrives.
       if (!local.streaming && container.childElementCount > 0) return
       disposeMarkdownControls(container)
       container.replaceChildren()
@@ -1131,11 +1037,6 @@ function updateBlock(
   const current = container.children[index]
   if (block.mode === "code") {
     const node = updateCodeBlock(container, current, block, labels)
-    // A top-level ```mermaid fence is *always* a `mode: "code"` block, and this
-    // path never reaches `decorate()`, so mermaid has to be driven from here or
-    // it never runs at all. Gated on `complete`: a half-streamed fence cannot
-    // parse, and each failed attempt clears the marker, so an ungated call would
-    // re-render on every token until the fence closes.
     if (block.complete) renderMermaidBlocks(node)
     traceRenderer(`markdown.block.code.chars-${block.raw.length}`, started)
     return

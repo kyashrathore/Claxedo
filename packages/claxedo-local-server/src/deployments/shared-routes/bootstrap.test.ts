@@ -180,7 +180,7 @@ describe("BootstrapRoutes", () => {
       healthy: true,
       version: "9.9.9-test",
       events: { hostAggregate: true },
-      deployment: { issuesSessions: true },
+      deployment: { issuesSessions: true, documents: true },
     })
   })
 
@@ -194,7 +194,7 @@ describe("BootstrapRoutes", () => {
     const body = await response.json()
     expect(body.path).toBeDefined()
     expect(body.project).toEqual([])
-    expect(body.deployment).toEqual({ issuesSessions: false })
+    expect(body.deployment).toEqual({ issuesSessions: false, documents: true })
   })
 
   test("declares it in the signed body too", async () => {
@@ -261,6 +261,7 @@ describe("the signed bootstrap project inventory", () => {
       id: "ws_2",
       backing: "cloud-vm",
       workspace_name: "ws_2",
+      reachable: true,
       directory: "workspace:ws_2",
     })
   })

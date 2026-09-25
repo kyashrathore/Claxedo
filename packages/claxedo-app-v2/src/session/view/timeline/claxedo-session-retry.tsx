@@ -1,6 +1,5 @@
 import { Show } from "solid-js"
-import { Card } from "@opencode-ai/ui/card"
-import { Spinner } from "@opencode-ai/ui/spinner"
+import { Card, Spinner } from "@/ui"
 import type { AgentRuntimeStatus } from "@claxedo/agent-runtime-contract"
 import type { SessionStatus } from "@/server"
 import { SessionRetry as UpstreamSessionRetry } from "@/transcript"
@@ -20,9 +19,8 @@ function upstreamStatus(status: SessionStatus): AgentRuntimeStatus | undefined {
         next: status.nextAt,
         ...("action" in status && status.action ? { action: status.action as NonNullable<Extract<AgentRuntimeStatus, { type: "retry" }>["action"]> } : {}),
       }
-    case "recovering":
-      return undefined
   }
+  return undefined
 }
 
 function recoveringMessage(status: Extract<SessionStatus, { kind: "recovering" }>) {
@@ -41,13 +39,13 @@ export function ClaxedoSessionRetry(props: { status: SessionStatus; show?: boole
     >
       {(status) => (
         <Show when={props.show ?? true}>
-          <div data-slot="session-turn-retry">
+          <div>
             <Card variant="warning" class="error-card">
               <div class="flex items-start gap-2">
                 <Spinner class="size-4 mt-0.5" />
                 <div class="min-w-0">
-                  <div data-slot="session-turn-retry-message">{recoveringMessage(status())}</div>
-                  <div data-slot="session-turn-retry-info">{status().message}</div>
+                  <div>{recoveringMessage(status())}</div>
+                  <div>{status().message}</div>
                 </div>
               </div>
             </Card>

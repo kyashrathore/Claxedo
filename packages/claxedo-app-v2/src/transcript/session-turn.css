@@ -63,9 +63,6 @@
     }
   }
 
-  /* Nothing for the first 100ms: a full read that lands within that window
-     paints the turn as if it had never been held, and only a longer wait earns
-     a loader. */
   [data-slot="session-turn-loading"] {
     display: flex;
     align-items: center;

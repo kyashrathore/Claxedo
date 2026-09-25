@@ -1,4 +1,4 @@
-import { checksum } from "@opencode-ai/ui/utils/encode"
+import { checksum } from "@/ui"
 import DOMPurify from "dompurify"
 import { transcriptLinkUriPattern } from "./transcript-link"
 
@@ -8,16 +8,7 @@ export type MarkdownCacheEntry = {
   html: string
 }
 
-// Sized to the workbench's visible working set, not to one component: with up
-// to MAX_OPEN_SURFACES (10) mounted surfaces × ~15 virtualized rows × a few
-// blocks each, ~200 entries thrashed on every multi-session sweep — a remount
-// then repaints the raw-text fallback and swaps to parsed HTML a frame later,
-// shifting layout. Entry- AND byte-capped so worst-case residency stays
-// bounded (~8 MB of UTF-16 html+raw, so roughly twice that resident).
 export const markdownCacheLimits = {
-  // Entries sized so the byte budget is the binding cap: typical parsed
-  // blocks run 1-3 KB, so ~4096 entries saturate ~8 MB. A tighter entry cap
-  // silently reintroduced thrash at ~25 blocks per session visit.
   entries: 4096,
   bytes: 8_000_000,
 }
@@ -29,10 +20,6 @@ function entryBytes(value: MarkdownCacheEntry) {
 }
 const config = {
   USE_PROFILES: { html: true, mathMl: true },
-  // The same schemes the transcript's own linkifier recognises, so a target the
-  // app can route survives the sanitizer instead of reaching the page as an
-  // anchor with no href. A `data:` image is unaffected: DOMPurify checks those
-  // against DATA_URI_TAGS ahead of this pattern.
   ALLOWED_URI_REGEXP: transcriptLinkUriPattern,
   SANITIZE_NAMED_PROPS: true,
   FORBID_TAGS: ["style"],
@@ -59,33 +46,8 @@ export function sanitizeMarkdown(html: string) {
   return DOMPurify.sanitize(html, config)
 }
 
-/**
- * SVG sanitization for rendered mermaid diagrams.
- *
- * `renderMermaidBlocks` in markdown.tsx assigns mermaid's rendered SVG into
- * `innerHTML`, and the diagram source is assistant output — anything that can
- * steer what the model emits (a poisoned file the agent read, tool output, an
- * injected web page) can steer what lands in that sink. Mermaid's own
- * `securityLevel: "strict"` pass is not sufficient alone: strict mode is
- * precisely what the advisories against mermaid `>=11.1.0 <11.10.0` bypass, so
- * mermaid's output is treated as untrusted and re-sanitized here.
- *
- * `sanitizeMarkdown`'s `config` above cannot be reused for this: it is an
- * HTML/MathML profile that allows only `svg` and `path`, so every `<g>`,
- * `<text>`, `<rect>` and `<marker>` in a diagram is stripped and what reaches
- * the page is an empty box. SVG needs its own profile.
- */
-
-// Same-document fragments, relative paths, and http(s)/mailto only: DOMPurify's
-// default URI allowlist minus the schemes a diagram has no business using
-// (ftp/tel/callto/sms/cid/xmpp/matrix). `javascript:`, `data:`, `vbscript:` and
-// `blob:` fail every branch — a bare scheme is rejected because the third branch
-// requires the run of scheme characters to end in something other than `:`.
 const SAFE_SVG_URI = /^(?:(?:https?|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i
 
-// Mirrors DOMPurify's own ATTR_WHITESPACE: the characters a browser discards
-// before resolving a URL. Without this `java\tscript:alert(1)` smuggles a
-// scheme past the test above and is then reassembled by the parser.
 const URI_WHITESPACE = /[\u0000-\u0020\u00A0\u1680\u180E\u2000-\u2029\u205F\u3000]/g
 
 export function isSafeSvgUri(value: string) {
@@ -95,14 +57,6 @@ export function isSafeSvgUri(value: string) {
 const CSS_AT_RULE = /@(?:import|namespace)\b/gi
 const CSS_URL = /url\(\s*(['"]?)([^)]*?)\1\s*\)/gi
 
-/**
- * Mermaid ships a diagram's entire theme in a single `<style>` element, so
- * dropping the element leaves correct-but-unstyled shapes. Keep it, and instead
- * neutralize the two things stylesheet text can still do from inside an SVG:
- * pull in a remote sheet (`@import`) and phone home through a resource URL.
- * `url(#…)` is left intact — that is the same-document form mermaid uses for
- * markers and gradients, and rewriting it would cost every arrowhead.
- */
 export function hardenSvgCss(css: string) {
   return css
     .replace(CSS_AT_RULE, "@blocked")
@@ -112,20 +66,7 @@ export function hardenSvgCss(css: string) {
 export const svgConfig = {
   USE_PROFILES: { svg: true, svgFilters: true },
   ALLOWED_URI_REGEXP: SAFE_SVG_URI,
-  // Mermaid's theme lives here; the hook below hardens its contents.
   ADD_TAGS: ["style"],
-  // Most of these already sit outside DOMPurify's `svg` profile; naming them
-  // keeps the policy explicit and pins it if that profile ever widens.
-  // `foreignObject` is the classic SVG-sanitizer bypass — it switches namespace
-  // to HTML mid-document; `use` can reference an external document; `animate`
-  // and `set` can retarget another element's attributes after sanitization.
-  //
-  // `image`/`feImage` are different: they ARE in the svg profile, and `image` is
-  // one of DOMPurify's DEFAULT_DATA_URI_TAGS, which means `<image href="data:…">`
-  // is waved through *ahead of* ALLOWED_URI_REGEXP and no URI policy can stop it
-  // (verified against DOMPurify 3.3.1). Mermaid emits neither element in any
-  // diagram type this app renders, so forbidding them costs nothing and is the
-  // only way to close that exemption.
   FORBID_TAGS: [
     "script",
     "foreignObject",
@@ -138,16 +79,8 @@ export const svgConfig = {
     "handler",
     "listener",
   ],
-  // Drop the subtree as well, so a stripped `foreignObject` cannot spill its
-  // markup back into the diagram as text.
   FORBID_CONTENTS: ["script", "foreignObject"],
-  // DOMPurify drops every `on*` handler already (they appear in no allowlist).
-  // These are pinned because they are what an SVG payload actually reaches for,
-  // including the SMIL-only ones that have no HTML equivalent.
   FORBID_ATTR: ["onload", "onerror", "onclick", "onmouseover", "onbegin", "onend", "onrepeat", "onfocusin"],
-  // Must stay off. It rewrites `id`/`name` to `user-content-*`, which would break
-  // mermaid's `#id`-scoped stylesheet and its `url(#marker)` references: the
-  // diagram would render unstyled and without arrowheads.
   SANITIZE_NAMED_PROPS: false,
 }
 
@@ -156,29 +89,22 @@ type SvgPurifier = {
   sanitize(source: string, config: typeof svgConfig): string
 }
 
-// A dedicated instance, not the shared one: the `<style>` hook below must not run
-// during `sanitizeMarkdown`, and markdown's `rel=noopener` hook must not run here.
 const svgPurifier =
   typeof window === "undefined" || !DOMPurify.isSupported ? undefined : (DOMPurify(window) as SvgPurifier & {
     addHook: (typeof DOMPurify)["addHook"]
   })
 
 svgPurifier?.addHook("afterSanitizeElements", (node) => {
-  // SVG elements report a lowercase `nodeName`; HTML ones report uppercase.
   if (node.nodeName?.toLowerCase() !== "style") return
   node.textContent = hardenSvgCss(node.textContent ?? "")
 })
 
-/**
- * Returns "" when the SVG cannot be safely rendered. Callers must treat an empty
- * result as "render nothing" and must never fall back to the raw string: an
- * unrenderable diagram is a far better outcome than an unsanitized one.
- */
 export function sanitizeSvg(svg: string, purifier: SvgPurifier | undefined = svgPurifier) {
   if (!purifier?.isSupported) return ""
   try {
     return purifier.sanitize(svg, svgConfig)
-  } catch {
+  } catch (error) {
+    console.warn("An SVG could not be sanitized, so it is not shown", { error })
     return ""
   }
 }
@@ -189,8 +115,6 @@ export function getCachedMarkdown(key: string) {
 
 export function touchCachedMarkdown(key: string, value: MarkdownCacheEntry) {
   const bytes = entryBytes(value)
-  // An entry larger than the whole budget would evict everything and still
-  // overflow; skip it instead of thrashing the cache.
   if (bytes > markdownCacheLimits.bytes) return
   const existing = cache.get(key)
   if (existing) {
@@ -212,12 +136,6 @@ export function markdownCacheStats() {
   return { entries: cache.size, bytes: totalBytes }
 }
 
-/**
- * Sanitized mermaid SVG keyed by diagram source. Remounted rows are fresh DOM,
- * so without this a cached markdown body still re-renders mermaid asynchronously
- * and pops the diagram in after first paint. Only post-`sanitizeSvg` markup
- * is stored.
- */
 export const mermaidSvgCacheLimits = {
   entries: 256,
   bytes: 2_000_000,
@@ -266,8 +184,6 @@ export async function preloadMarkdown(
   cacheKey: string,
   parser: { parse(text: string): string | Promise<string> },
 ) {
-  // This module sits on the boot path through session-kit-loaders; the block
-  // projector pulls in marked, which only the markdown chunk may load.
   const { project } = await import("./markdown-stream")
   await Promise.all(
     project(undefined, text, false).blocks.map(async (block, index) => {

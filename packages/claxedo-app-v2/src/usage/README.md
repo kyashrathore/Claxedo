@@ -5,7 +5,8 @@ Owns: how much the user's agents used, read from the server's usage summary (`se
 ## Concepts
 
 - **Usage limits** (`view: "quota"`): each connected account's quota windows (`session`, `weekly`, `weekly_opus` and whatever else the provider reports), how much of each is used and when it resets. An account the user's agents run on is marked in use.
-- **Usage through Claxedo** (`view: "claxedo"`): the turns Claxedo ran in the last 7 or 30 local days, their tokens (input, output, reasoning, cache) and estimated cost, grouped by provider or by model, 25 rows a page.
+- **Usage through Claxedo** (`view: "claxedo"`): the turns Claxedo ran in the last 7, 30 or 90 local days, their tokens (input, output, reasoning, cache) and estimated cost, a bar per day for the chosen measure, grouped by provider or by model, 25 rows a page.
+- **Refresh** sends a `refresh_nonce`, so the server checks the quotas again instead of answering from its last read; a refresh it declines because the last one was too recent reports `throttledUntil`, shown as the time the next check can run.
 - There is no "Total" view: counting usage Claxedo didn't run was dropped.
 
 ## Data

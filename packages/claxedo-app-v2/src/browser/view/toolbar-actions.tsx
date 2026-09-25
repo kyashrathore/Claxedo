@@ -1,12 +1,30 @@
 import { createEffect, type JSX } from "solid-js"
-import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useTranslator } from "@/i18n"
-import { ClaxedoIcon as Icon, showToast } from "@/ui"
-import { dictionary } from "../i18n"
+import { ClaxedoIcon as Icon, showToast, DropdownMenu, Tooltip, type ToastVariant } from "@/ui"
+import { dictionary, type BrowserKey } from "../i18n"
+import type { BrowserNotice } from "../model"
 import type { BrowserTab } from "../tab"
 
-const TOAST_MS = 2500
+type ToastStyle = { readonly variant: ToastVariant; readonly duration: number }
+
+const DEFAULT_TOAST: ToastStyle = { variant: "default", duration: 2500 }
+
+const TOAST_STYLE: Partial<Readonly<Record<BrowserKey, ToastStyle>>> = {
+  "browser.toast.copied": { variant: "success", duration: 1500 },
+  "browser.toast.copyFailed": { variant: "error", duration: 2500 },
+  "browser.toast.screenshot": { variant: "success", duration: 2000 },
+  "browser.toast.screenshotFailed": { variant: "error", duration: 3500 },
+  "browser.toast.hardReloadFailed": { variant: "error", duration: 2500 },
+  "browser.toast.devToolsFailed": { variant: "error", duration: 3500 },
+  "browser.toast.cookiesCleared": { variant: "success", duration: 2500 },
+  "browser.toast.cookiesFailed": { variant: "error", duration: 3500 },
+  "browser.toast.pickSent": { variant: "success", duration: 2000 },
+  "browser.toast.pickLocal": { variant: "default", duration: 3000 },
+}
+
+function toastStyle(notice: BrowserNotice): ToastStyle {
+  return ("key" in notice ? TOAST_STYLE[notice.key] : undefined) ?? DEFAULT_TOAST
+}
 
 async function copyUrl(tab: BrowserTab): Promise<void> {
   const url = tab.state().url
@@ -37,7 +55,7 @@ export function useNoticeToasts(tab: () => BrowserTab | undefined): void {
     const current = tab()
     const notice = current?.notice()
     if (!current || !notice) return
-    showToast({ title: "key" in notice ? t(notice.key, notice.params) : notice.text, duration: TOAST_MS })
+    showToast({ title: "key" in notice ? t(notice.key, notice.params) : notice.text, ...toastStyle(notice) })
     current.notify(undefined)
   })
 }

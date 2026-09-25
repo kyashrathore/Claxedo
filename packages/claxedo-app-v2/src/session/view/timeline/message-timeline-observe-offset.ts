@@ -26,20 +26,6 @@ export function createObservedRectHandler<T extends { width: number; height: num
   }
 }
 
-// Ported from upstream packages/app/src/pages/session/timeline/observe-element-offset.ts (#36643),
-// with restore-first reconnect semantics.
-// When the timeline's scroll element is detached and re-inserted under a
-// persistent host (a workbench slot move, a suspense re-attach), the browser
-// resets its native scroll position while the virtualizer's `scrollOffset`
-// still holds the authoritative place. The stock offset observer never
-// re-fires for the restored element, so the two disagree forever. This wrapper
-// watches for the element's removal/reinsertion and reconciles: it writes the
-// virtualizer's stored offset back to the element — delivering the reset
-// native offset instead would re-render the range at the top and then
-// re-anchor to the bottom, two full row-set rebuilds inside one long
-// main-thread task. Only when the write does not stick (the restored element
-// genuinely cannot reach the stored offset) is the native offset delivered so
-// the virtualizer re-derives its range from reality.
 export function observeElementOffsetReconnectAware<TScrollElement extends Element, TItemElement extends Element>(
   instance: Virtualizer<TScrollElement, TItemElement>,
   callback: (offset: number, isScrolling: boolean) => void,
@@ -103,11 +89,6 @@ export function observeElementOffsetReconnectAware<TScrollElement extends Elemen
     if (!active) return
     for (const record of records) {
       if (record.target === element || element.contains(record.target)) continue
-      // The observer has to live at the persistent route root so it can see an
-      // element move between slots. Most mutations under that root cannot
-      // detach this viewport, though. A relevant removal must target one of
-      // the viewport's captured ancestors and actually remove the viewport or
-      // an ancestor containing it; additions matter only after such a removal.
       if (
         !removed &&
         ancestors.has(record.target) &&
@@ -128,7 +109,6 @@ export function observeElementOffsetReconnectAware<TScrollElement extends Elemen
       startCheck()
     }
   })
-  // Session routes are replaced below persistent main; body is the fallback for isolated hosts.
   observer.observe(root, { childList: true, subtree: true })
 
   return () => {

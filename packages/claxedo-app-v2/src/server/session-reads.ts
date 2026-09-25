@@ -1,10 +1,10 @@
 import type { AgentPresentationSession } from "@claxedo/agent-runtime-contract"
-import { responseError, toAppError } from "./errors"
+import { responseError } from "./errors"
 import { sessionEndpoint, type SessionContext } from "./session-context"
 import { readGoalState } from "./session-goal"
 import { readRequests } from "./session-statuses"
 import { withQuery, type RuntimeRoute } from "./transport"
-import type { SessionListInput, SessionPage, SessionRef, SessionRequestsRead, SessionRow, SessionSnapshot, TranscriptPage } from "./types"
+import type { SessionListInput, SessionPage, SessionReads, SessionRef, SessionRow, Todo, TranscriptPage } from "./types"
 import { sessionRowFromListItem, sessionRowFromSession } from "./wire/session-row"
 import { OLDER_CURSOR_HEADER, transcriptPageFromWire } from "./wire/transcript"
 
@@ -43,32 +43,19 @@ async function readPage(context: SessionContext, where: RuntimeRoute, path: stri
   return transcriptPageFromWire(await response.json(), response.headers.get(OLDER_CURSOR_HEADER))
 }
 
-async function readSessionRequests(context: SessionContext, where: RuntimeRoute, ref: SessionRef): Promise<SessionRequestsRead> {
-  try {
-    const items = await readRequests(context.transport, where, ref.sessionId)
-    return { kind: "read", requests: items.map((item) => item.request) }
-  } catch (error) {
-    return { kind: "failed", error: toAppError(error) }
-  }
-}
-
-export async function readSnapshot(context: SessionContext, ref: SessionRef): Promise<SessionSnapshot> {
+export function readSession(context: SessionContext, ref: SessionRef): SessionReads {
   const { transport } = context
-  const where = await context.workspaces.route(ref)
-  const [row, transcript, requests, todos, goal] = await Promise.all([
-    transport.runtimeJson<AgentPresentationSession>(where, sessionEndpoint(ref)),
-    readPage(context, where, withQuery(sessionEndpoint(ref, "/message"), { view: "latest-surface" })),
-    readSessionRequests(context, where, ref),
-    transport.runtimeJson<SessionSnapshot["todos"]>(where, sessionEndpoint(ref, "/todo")),
-    readGoalState(transport, where, ref),
-  ])
+  const where = context.workspaces.route(ref)
+  const transcript = where.then((route) => readPage(context, route, withQuery(sessionEndpoint(ref, "/message"), { view: "latest-surface" })))
+  const row = where.then((route) => transport.runtimeJson<AgentPresentationSession>(route, sessionEndpoint(ref)))
+  const requests = where.then(async (route) => (await readRequests(transport, route, ref.sessionId)).map((item) => item.request))
+  const todos = where.then((route) => transport.runtimeJson<readonly Todo[]>(route, sessionEndpoint(ref, "/todo")))
+  const goal = where.then((route) => readGoalState(transport, route, ref))
   return {
-    row: sessionRowFromSession(row, ref),
-    status: await context.status.read(where, ref.sessionId, row),
-    transcript,
+    surface: Promise.all([row, transcript]).then(([session, page]) => ({ row: sessionRowFromSession(session, ref), transcript: page, diff: session.summary?.diffs ?? [] })),
+    status: Promise.all([where, row]).then(([route, session]) => context.status.read(route, ref, session)),
     requests,
     todos,
-    diff: row.summary?.diffs ?? [],
     goal,
   }
 }

@@ -1,11 +1,5 @@
 import type { Todo } from "@/server"
-import { AnimatedNumber } from "@opencode-ai/ui/animated-number"
-import { Checkbox } from "@opencode-ai/ui/checkbox"
-import { DockTray } from "@opencode-ai/ui/dock-surface"
-import { ClaxedoIconButton as IconButton } from "@/ui"
-import { useSpring } from "@opencode-ai/ui/motion-spring"
-import { TextReveal } from "@opencode-ai/ui/text-reveal"
-import { TextStrikethrough } from "@opencode-ai/ui/text-strikethrough"
+import { ClaxedoIconButton as IconButton, AnimatedNumber, Checkbox, DockTray, useSpring, TextReveal, TextStrikethrough } from "@/ui"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { Index, createEffect, createMemo } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -135,7 +129,6 @@ export function SessionTodoDock(props: {
             </Index>
           </span>
           <div
-            data-slot="session-todo-preview"
             class="ml-1 min-w-0 overflow-hidden"
             style={{
               flex: "1 1 auto",
@@ -176,7 +169,6 @@ export function SessionTodoDock(props: {
         </div>
 
         <div
-          data-slot="session-todo-list"
           aria-hidden={props.collapsed || off()}
           classList={{
             "pointer-events-none": hide() > 0.1,

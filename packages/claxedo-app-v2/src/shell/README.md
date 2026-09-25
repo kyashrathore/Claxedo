@@ -34,12 +34,39 @@ Rules in those sheets that code cannot explain:
   - The palette gets an 8 px gutter and a 14 px radius, concentric with its rows. The palette and the page-scale dialogs dim their backdrop because the shared 0.2 alpha is invisible on dark chrome. The overlay is a sibling of the dialog layer, so the backdrop is selected from `<body>`, and it moves at the dialog's own 150 ms in and 100 ms out.
   - The main column is a positioned layer above the panel. The floating session stack's `z-index` is otherwise trapped in its pane's `contain: strict` context.
 - `styles/index.css`:
-  - The terminal font is `font-display: swap`. It is 1 MB, and text never waits on it.
-  - The composer's dropdown normalisation is unlayered and uses a doubled class. The menu, select and list sheets ship unlayered rules, which beat any `@layer components` rule, and Vite's injection order is not guaranteed.
-  - One surface, elevation and row spec covers the composer's `+` menu, selects and popover lists, so neighbouring menus keep one rhythm. Their width clamp is viewport-relative because they float above the pane.
-  - The slider's thumb offset is a literal. The slider reads it back through `getComputedStyle`, which returns a custom property's text unresolved.
-  - The dock collapses by container query on the space it owns. The harness/model chip keeps its label, because it is the only control naming what will answer.
-  - The collapsed composer is driven by an attribute, not `:focus-within`. Its menus are portaled, and focus entering one would fold the card under it.
+  - **The terminal font** is `font-display: swap`. It is 1 MB, and text never waits for it.
+  - **The new-session content** (`session-new-design`) and the getting-started card are size containers, so what they hold lays out by the space they get rather than by the viewport.
+  - **The composer's menus share one surface, elevation and row spec.** That covers the `+` menu, the harness/model picker and the popover lists, so neighbouring menus keep one rhythm.
+    - The rules are unlayered and use a doubled class, because the menu, select and list sheets ship unlayered rules that beat any `@layer components` rule, and Vite's injection order is not guaranteed.
+    - Their width clamps to the viewport, not the pane, because they float above it.
+  - **The harness/model picker** enters with a 150 ms slide from its header, and animates its surface's height with `interpolate-size: allow-keywords`. Both are off under reduced motion.
+  - **The effort slider's geometry is literal custom properties.** The slider reads them back through `getComputedStyle`, which returns a custom property's text unresolved, so a `calc()` there would read as 0.
+  - **The dock collapses by container query** (`prompt-composer`, 560 px) on the space it owns. The harness/model chip keeps its label, because it is the only control naming what will answer.
+  - **The collapsed composer** is driven by the `data-composer-collapsed` attribute, not `:focus-within`, because its menus are portaled and focus entering one would fold the card under it.
+
+- `styles/ui-overrides.css`, today's app's override sheet:
+  - **Semantic surfaces are theme-agnostic.** A role a theme does not override inherits the generic token (`SEMANTIC_THEME_ROLE_FALLBACKS` in `packages/ui/src/theme/resolve.ts`), so one selector serves every theme and Codex only supplies values.
+  - **Floating surfaces rebind the page palette to the overlay palette** for their subtree. `[data-surface="overlay"]` comes from DropdownMenu; `.overlay-palette` is the opt-in for pickers built outside the menu primitives. It is inert in a theme with no overlay overrides. Only hand-authored shells get their paint forced, because a forced rule on `[data-surface="overlay"]` would take the paint from every DropdownMenu.
+  - **The composer dock** binds only the ring colour its mask paints with.
+  - **The icon interaction grammar** (`data-icon-interaction`) is theme-agnostic:
+    - passive glyphs stay quiet on row hover;
+    - row actions brighten without a second pill;
+    - standalone controls get a hover surface;
+    - a pressed binary control shows by glyph and foreground.
+  - **Filled primary icon buttons keep their inverse foreground.** Without that rule the composer's send arrow paints the colour of its circle in every theme, and no component test catches a cascade conflict.
+  - **Every searchable picker's field** gets one inset fill. The List paints its search with the shell surface, which is a grey slab on a light menu. The merged harness/model picker's field doubles its class to clear index.css's (0,3,0) rule.
+  - **The Codex layer covers only what a colour token cannot express:** typography, SVG geometry and elevation.
+    - Elevation is Codex's own: a half-pixel stroke from the foreground at 12% plus two light black washes, the same in dark mode.
+    - Shadows live here because theme `overrides` are validated as colours.
+    - The composer is borderless at 20 px radius with a 90% blurred fill.
+    - The user bubble is foreground/5 at 16 px radius.
+    - Navigation rows are 30 px at 10 px radius.
+    - Its shell selectors stay scoped to Codex and keyed by `data-testid`, because moving them onto `data-surface` would repaint the other 37 themes.
+  - **The sidebar's edge falloff is an inset shadow.** The sidebar clips its overflow and the workbench paints over anything outside it.
+  - **Positioners opt out of overlay chrome** with a doubled class. An example is the tooltip that only places the session card.
+  - **Codex tooltips are not inverted:** they use the overlay family, as the shipped app does.
+  - **The composer and timeline widths** are restored to 800/1000 px, because 500/700 is too narrow for split panes.
+  - **The timeline skeleton's bars** use the muted text role so they read on every page background, and are staggered into a wave.
 
 ## Composition (`src/app.tsx`)
 
@@ -49,7 +76,7 @@ Rules in those sheets that code cannot explain:
 
 `/` is never a screen of its own, as in today's app. When the projects list has loaded and is empty (`onboardingNeeded`), the shell replaces the URL with the onboarding screen; loading and failed lists never redirect. Otherwise it replaces `/` with the draft of the active workspace: the placement of the restored focused pane, else the folder placement of the first project `useProjectList()` lists.
 
-## Registries (`registries.ts`, `registry.ts`)
+## Registries (`registries.ts`; the first-party entries in `src/registry.ts`)
 
 One `Registry<Entry>` per region and concept: `pages`, `paneKinds`, `panelViews` (the workspace panel's "context" and "subagent" tab views, registered by the domains that own them so `src/panel` never imports them), `settingsSections`, `sidebarItems`, `overlays`, `commands`, `mentions`, `themes`, `iconSkins`, `routes`. `registry.ts` holds the static first-party arrays that import each domain's exports; plugins `add()` entries while they are on and dispose them when off.
 

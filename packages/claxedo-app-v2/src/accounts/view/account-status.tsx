@@ -19,18 +19,18 @@ export const ACCOUNT_REACH_KEYS = {
   },
 } as const satisfies Record<AccountReach, { places: ReadonlyArray<{ icon: string; label: AccountsKey }>; note: AccountsKey }>
 
-export const AccountReachMarks: Component<{ reach: AccountReach; component: string; t: AccountsText; class?: string; iconClass?: string }> = (props) => (
-  <span class={props.class} data-component={props.component} data-reach={props.reach}>
+export const AccountReachMarks: Component<{ reach: AccountReach; t: AccountsText; class?: string; iconClass?: string }> = (props) => (
+  <span class={props.class} data-reach={props.reach}>
     <For each={ACCOUNT_REACH_KEYS[props.reach].places}>
       {(place) => <ClaxedoIcon name={place.icon} size="small" class={props.iconClass} role="img" aria-hidden="false" aria-label={props.t(place.label)} />}
     </For>
   </span>
 )
 
-export const CheckedAge: Component<{ at: number; component: string; t: AccountsText; locale?: string; class?: string }> = (props) => {
+export const CheckedAge: Component<{ at: number; t: AccountsText; locale?: string; class?: string }> = (props) => {
   const now = useClock()
   return (
-    <span class={props.class} data-component={props.component} aria-label={props.t("common.lastChecked", { ago: formatRelativeTime(props.at, props.locale, now()) })}>
+    <span class={props.class} aria-label={props.t("common.lastChecked", { ago: formatRelativeTime(props.at, props.locale, now()) })}>
       {formatCompactAge(props.at, now()) ?? props.t("common.justNow")}
     </span>
   )

@@ -2,7 +2,7 @@ import { createRoot } from "solid-js"
 import { produce, type SetStoreFunction, type Store } from "solid-js/store"
 import { isRecord } from "@/lib/record"
 import { persistedStore, preferenceKey } from "@/lib/persisted"
-import type { ModelKey } from "./model-key"
+import type { ModelChoice } from "@/server"
 
 type Visibility = "show" | "hide"
 
@@ -24,7 +24,7 @@ export function modelGroupKey(providerId: string, sampleModelId: string | undefi
   return slash > 0 && sampleModelId ? `${providerId}/${sampleModelId.slice(0, slash)}` : providerId
 }
 
-const modelEntry = (model: ModelKey) => `${model.providerID}:${model.modelID}`
+const modelEntry = (model: ModelChoice) => `${model.providerId}:${model.modelId}`
 
 let shared: [Store<VisibilityRecord>, SetStoreFunction<VisibilityRecord>] | undefined
 
@@ -33,18 +33,18 @@ function visibilityStore() {
   return shared
 }
 
-export function resolveModelVisibility(input: { readonly model: ModelKey; readonly defaults: Readonly<Record<string, string>>; readonly user?: Visibility; readonly group?: Visibility; readonly connected?: boolean }): boolean {
+export function resolveModelVisibility(input: { readonly model: ModelChoice; readonly defaults: Readonly<Record<string, string>>; readonly user?: Visibility; readonly group?: Visibility; readonly connected?: boolean }): boolean {
   if (input.user !== undefined) return input.user === "show"
   if (input.group !== undefined) return input.group === "show"
   if (input.connected === false) return false
-  const fallback = input.defaults[input.model.providerID]
-  return fallback === undefined || fallback === input.model.modelID
+  const fallback = input.defaults[input.model.providerId]
+  return fallback === undefined || fallback === input.model.modelId
 }
 
 export function useModelVisibility() {
   const [store, setStore] = visibilityStore()
   return {
-    visible: (model: ModelKey, context: ModelVisibilityContext = {}) =>
+    visible: (model: ModelChoice, context: ModelVisibilityContext = {}) =>
       resolveModelVisibility({
         model,
         defaults: context.defaults ?? {},
@@ -52,8 +52,8 @@ export function useModelVisibility() {
         ...(context.group === undefined || !store.groups[context.group] ? {} : { group: store.groups[context.group] }),
         ...(context.connected === undefined ? {} : { connected: context.connected }),
       }),
-    setVisibility: (model: ModelKey, state: boolean) => setStore("entries", modelEntry(model), state ? "show" : "hide"),
-    setGroupVisibility: (group: string, state: boolean, models: readonly ModelKey[]) => {
+    setVisibility: (model: ModelChoice, state: boolean) => setStore("entries", modelEntry(model), state ? "show" : "hide"),
+    setGroupVisibility: (group: string, state: boolean, models: readonly ModelChoice[]) => {
       setStore("groups", group, state ? "show" : "hide")
       setStore(
         "entries",
@@ -65,4 +65,3 @@ export function useModelVisibility() {
   }
 }
 
-export type ModelVisibility = ReturnType<typeof useModelVisibility>

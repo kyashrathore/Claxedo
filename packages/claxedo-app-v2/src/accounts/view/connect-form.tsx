@@ -1,7 +1,5 @@
-import { Spinner } from "@opencode-ai/ui/spinner"
-import { TextField } from "@opencode-ai/ui/text-field"
 import { For, Match, Show, Switch, type JSX } from "solid-js"
-import { ClaxedoIcon as Icon, Button } from "@/ui"
+import { ClaxedoIcon as Icon, Button, Spinner, TextField } from "@/ui"
 import { CONTEXT_COPY, createProviderConnect, type ProviderConnect, type ConnectFormInput } from "../connect-form"
 import { useAccountsText } from "../i18n"
 import { ConnectCommand } from "./connect-command"
@@ -19,7 +17,7 @@ function MethodPicker(props: { readonly form: ProviderConnect }) {
   return (
     <div class="flex flex-col gap-2">
       <span class="text-14-regular text-text-base">{t("provider.connect.selectMethod", { vendor: props.form.vars().vendor ?? "" })}</span>
-      <div class="flex flex-col gap-1" data-component="provider-connect-methods" role="radiogroup">
+      <div class="flex flex-col gap-1" role="radiogroup">
         <For each={props.form.options()}>
           {(option) => (
             <button
@@ -32,7 +30,7 @@ function MethodPicker(props: { readonly form: ProviderConnect }) {
               onClick={() => props.form.pickMethod(option.index)}
             >
               <span class="flex min-w-0 flex-col gap-0.5">
-                <span data-slot="method-title" class="text-13-medium text-text-strong">{props.form.methodCopy(option, "title")}</span>
+                <span class="text-13-medium text-text-strong">{props.form.methodCopy(option, "title")}</span>
                 <span class="text-12-regular text-text-weak">{props.form.methodCopy(option, "for")}</span>
               </span>
               <Icon name="chevron-right" size="small" class="shrink-0 text-icon-weak-base" />
@@ -48,8 +46,8 @@ function ChosenMethod(props: { readonly form: ProviderConnect; readonly choosing
   return (
     <Show when={props.form.selected()}>
       {(option) => (
-        <div class="flex flex-col gap-1.5" data-component="provider-connect-method" data-method-type={option().type}>
-          <Show when={props.choosing} fallback={<span data-slot="method-title" class="text-12-regular text-text-weak">{props.form.methodCopy(option(), "title")}</span>}>
+        <div class="flex flex-col gap-1.5" data-method-type={option().type}>
+          <Show when={props.choosing} fallback={<span class="text-12-regular text-text-weak">{props.form.methodCopy(option(), "title")}</span>}>
             <button
               type="button"
               class="-mx-1 flex w-fit items-center gap-1.5 rounded-md border-none bg-transparent px-1 py-0.5 text-12-regular text-text-weak transition-colors hover:text-text-base"
@@ -57,7 +55,7 @@ function ChosenMethod(props: { readonly form: ProviderConnect; readonly choosing
               onClick={() => props.form.pickMethod(-1)}
             >
               <Icon name="arrow-left" size="small" />
-              <span data-slot="method-title">{props.form.methodCopy(option(), "title")}</span>
+              <span>{props.form.methodCopy(option(), "title")}</span>
             </button>
           </Show>
           <span class="text-13-regular text-text-base">{props.form.methodCopy(option(), "how")}</span>
@@ -198,7 +196,7 @@ function ConnectStep(props: { readonly form: ProviderConnect; readonly input: Co
   return (
     <Switch>
       <Match when={form().options().length === 0}>
-        <p class="text-13-regular text-text-base" data-component="provider-connect-unavailable">{t("provider.connect.hosted.signsElsewhere", form().vars())}</p>
+        <p class="text-13-regular text-text-base">{t("provider.connect.hosted.signsElsewhere", form().vars())}</p>
       </Match>
       <Match when={form().pastes()}>
         <PasteForm form={form()} {...(props.input.credentialId ? { credentialId: props.input.credentialId } : {})} />

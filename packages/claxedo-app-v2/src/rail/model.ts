@@ -3,7 +3,7 @@ import type { MachineId, Placement, ProjectId } from "@/server"
 import type { SessionRowView } from "@/session"
 import type { TerminalItem } from "@/terminal"
 
-export type NavigationStatus = "idle" | "working" | "permission" | "error"
+export type NavigationStatus = "idle" | "working" | "permission" | "error" | "done"
 
 export const SESSION_GROUP_PAGE_SIZE = 5
 
@@ -20,6 +20,18 @@ export function navigationStatus(row: SessionRowView): NavigationStatus {
     default:
       return "idle"
   }
+}
+
+const TERMINAL_STATUS: Readonly<Record<NonNullable<TerminalItem["agentStatus"]>, NavigationStatus>> = {
+  working: "working",
+  waitingOnUser: "permission",
+  failed: "error",
+  idle: "idle",
+}
+
+export function terminalNavigationStatus(item: TerminalItem): NavigationStatus {
+  const status = item.agentStatus ? TERMINAL_STATUS[item.agentStatus] : "idle"
+  return status === "idle" && item.seen ? "done" : status
 }
 
 export function sessionAge(row: SessionRowView, now: number): string {

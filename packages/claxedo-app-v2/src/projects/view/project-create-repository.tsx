@@ -1,7 +1,6 @@
 import { createMemo, For, Show, type JSX } from "solid-js"
 import type { AppError, CodeHostConnection, CodeHostRepository } from "@/server"
-import { Field } from "@/ui"
-import { Select } from "@opencode-ai/ui/select"
+import { Field, Select } from "@/ui"
 import { useProjectsText } from "../i18n"
 
 export type CreateFormLook = {
@@ -98,7 +97,6 @@ function RepositoryRows(props: RepositoryListProps & { matches: readonly CodeHos
             type="button"
             role="radio"
             aria-checked={props.selected === repository.fullName}
-            data-slot="project-create-repository"
             class={`flex items-center gap-2 px-2.5 py-1.5 text-left ${row()} text-text-strong hover:bg-surface-raised-base-hover focus-visible:bg-surface-raised-base-hover focus-visible:outline-none aria-checked:bg-surface-raised-base-active`}
             onClick={() => props.onSelect(repository.fullName)}
           >
@@ -130,14 +128,12 @@ export function RepositoryList(props: RepositoryListProps) {
         aria-label={t("projects.add.search")}
         autocomplete="off"
         spellcheck={false}
-        data-slot="project-create-repository-search"
         class={`${props.look.box} ${props.look.comfortable ? "text-14-regular" : "text-13-regular"} w-full min-w-0 text-text-strong placeholder:text-text-weak/60 focus:outline-none focus:border-border-interactive-base`}
         ref={(element) => props.leadField?.(element)}
       />
       <div
         role="radiogroup"
         aria-label={t("projects.add.repositories")}
-        data-slot="project-create-repository-list"
         class={`flex max-h-56 flex-col overflow-y-auto rounded-md border border-border-base ${props.look.comfortable ? "max-h-72" : ""}`}
       >
         <RepositoryRows {...props} matches={matches()} />

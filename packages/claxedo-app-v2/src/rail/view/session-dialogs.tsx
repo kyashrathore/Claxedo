@@ -1,9 +1,7 @@
 import { createSignal, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { failureMessage } from "@/lib/failure"
-import { Dialog, showToast, useDialog } from "@/ui"
-import { TextField } from "@opencode-ai/ui/text-field"
-import { Button } from "@opencode-ai/ui/button"
+import { Dialog, showToast, useDialog, TextField, Button } from "@/ui"
 import { railDictionary } from "../i18n"
 
 function useSubmit(run: () => Promise<void>, failureTitle: () => string) {

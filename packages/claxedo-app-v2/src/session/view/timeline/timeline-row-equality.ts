@@ -1,13 +1,6 @@
-// Identity-based equality gates for the per-message timeline row memos,
-// split from message-timeline.tsx (size budget). Unchanged messages keep
-// their object identities across conversation snapshots, so element-wise
-// `===` is exact and cheap.
 import type { AgentContentPart as PartType } from "@claxedo/agent-runtime-contract"
 import type { TurnOutcome } from "./model"
 
-// Identity-based equality gates for the per-message row memos. Unchanged
-// messages keep their object identities across conversation snapshots, so
-// element-wise `===` is exact and cheap.
 export function sameArrayItems<T>(previous: readonly T[], next: readonly T[]) {
   if (previous === next) return true
   if (previous.length !== next.length) return false
@@ -26,9 +19,6 @@ export function samePartsRecord(previous: Record<string, PartType[]>, next: Reco
   return true
 }
 
-// `lastTurn` rides on the directory session-cache row, whose object identity
-// changes on every cache write; compare the fields the timeline consumes so a
-// row refresh with an unchanged outcome does not invalidate every turn.
 export function sameTurnOutcome(previous: TurnOutcome | undefined, next: TurnOutcome | undefined) {
   if (previous === next) return true
   if (!previous || !next) return false

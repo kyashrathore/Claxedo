@@ -1,5 +1,5 @@
-import { checksum } from "@opencode-ai/ui/utils/encode"
-import type { ModelKey } from "./model-key"
+import { checksum } from "@/ui"
+import type { ModelChoice } from "@/server"
 import { harnessSelectionKey, isHarnessSelection, type HarnessSelection } from "@/lib/harness-selection"
 import { isCatalogHarnessId } from "@/lib/harness-selection"
 import { asRecord } from "@/lib/record"
@@ -23,7 +23,7 @@ export type DraftDefaultLabels = {
  * back.
  */
 export type DraftDefaultHarnessChoice = {
-  model?: ModelKey
+  model?: ModelChoice
   labels?: DraftDefaultLabels
 }
 
@@ -93,9 +93,9 @@ export function decodeDraftDefaultRecord(input: string | null) {
     const row = asRecord(JSON.parse(input))
     if (!row) return undefined
     if (row.version !== VERSION) return undefined
-    const record = decodeRecord(row)
-    return record
-  } catch {
+    return decodeRecord(row)
+  } catch (error) {
+    console.warn("A saved draft default is not JSON and is ignored", error)
     return undefined
   }
 }
@@ -130,18 +130,23 @@ export function createDraftDefaultPreferences(storage: DraftDefaultStorage) {
       return load(input)?.byHarness[harnessSelectionKey(harness)]
     },
     save(input: Omit<DraftDefaultScope, "fallbackWorkspaceKey">, value: DraftDefault) {
-      const choice = decodeChoice(value)
-      if (!choice || !isHarnessSelection(value.harness) || !modelBelongsToHarness(choice.model, value.harness)) return false
-      const current = load(input)
-      const record = decodeRecord({
-        version: VERSION,
-        byHarness: { ...current?.byHarness, [harnessSelectionKey(value.harness)]: choice },
-        lastHarness: value.harness,
-      })
-      if (!record) return false
+      if (!isHarnessSelection(value.harness)) return false
+      const slot = harnessSelectionKey(value.harness)
+      const choice: DraftDefaultHarnessChoice = { ...(value.model ? { model: value.model } : {}), ...(value.labels ? { labels: value.labels } : {}) }
+      const record = decodeRecord(storedRecord({ version: VERSION, byHarness: { ...load(input)?.byHarness, [slot]: choice }, lastHarness: value.harness }))
+      if (!record?.byHarness[slot]) return false
       return safeWrite(storage, key(input.serverUrl, input.workspaceKey), record)
     },
   }
+}
+
+// Today's app reads the same record, so a stored model keeps its `providerID`/`modelID` keys.
+function storedRecord(record: DraftDefaultRecord): Record<string, unknown> {
+  const byHarness = Object.fromEntries(Object.entries(record.byHarness).map(([slot, choice]) => [slot, {
+    ...choice,
+    ...(choice.model ? { model: { providerID: choice.model.providerId, modelID: choice.model.modelId, ...(choice.model.variant ? { variant: choice.model.variant } : {}) } } : {}),
+  }]))
+  return { ...record, byHarness }
 }
 
 function decodeRecord(row: Record<string, unknown>): DraftDefaultRecord | undefined {
@@ -176,23 +181,23 @@ function decodeChoice(input: unknown): DraftDefaultHarnessChoice | undefined {
   }
 }
 
-function modelBelongsToHarness(model: ModelKey | undefined, harness: HarnessSelection) {
+function modelBelongsToHarness(model: ModelChoice | undefined, harness: HarnessSelection) {
   if (!model) return true
   if (harness.kind === "connection" || isCatalogHarnessId(harness.harnessId)) return true
-  return model.providerID === harness.harnessId
+  return model.providerId === harness.harnessId
 }
 
-function decodeModel(input: unknown): ModelKey | undefined {
+function decodeModel(input: unknown): ModelChoice | undefined {
   if (input === undefined) return undefined
   const row = asRecord(input)
   if (!row) return undefined
-  const providerID = id(row.providerID)
-  const modelID = id(row.modelID)
-  if (!providerID || !modelID) return undefined
+  const providerId = id(row.providerID)
+  const modelId = id(row.modelID)
+  if (!providerId || !modelId) return undefined
 
   const variant = row.variant === undefined ? undefined : id(row.variant)
   if (row.variant !== undefined && !variant) return undefined
-  return { providerID, modelID, ...(variant ? { variant } : {}) }
+  return { providerId, modelId, ...(variant ? { variant } : {}) }
 }
 
 function decodeLabels(input: unknown): DraftDefaultLabels | undefined {
@@ -209,16 +214,18 @@ function decodeLabels(input: unknown): DraftDefaultLabels | undefined {
 function safeRead(storage: DraftDefaultStorage, key: string) {
   try {
     return decodeDraftDefaultRecord(storage.getItem(key))
-  } catch {
+  } catch (error) {
+    console.warn(`The draft default ${key} could not be read`, error)
     return undefined
   }
 }
 
 function safeWrite(storage: DraftDefaultStorage, key: string, record: DraftDefaultRecord) {
   try {
-    storage.setItem(key, JSON.stringify(record))
+    storage.setItem(key, JSON.stringify(storedRecord(record)))
     return true
-  } catch {
+  } catch (error) {
+    console.warn(`The draft default ${key} could not be saved`, error)
     return false
   }
 }
@@ -226,7 +233,9 @@ function safeWrite(storage: DraftDefaultStorage, key: string, record: DraftDefau
 function safeRemove(storage: DraftDefaultStorage, key: string) {
   try {
     storage.removeItem?.(key)
-  } catch {}
+  } catch (error) {
+    console.warn(`The moved draft default ${key} could not be removed`, error)
+  }
 }
 
 function id(input: unknown) {

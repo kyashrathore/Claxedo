@@ -1,14 +1,14 @@
 import { For } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { Switch } from "@/ui"
-import { dictionary, type Keys } from "../i18n"
+import { settingsDictionary, type SettingsKey } from "../i18n"
 import { usePreferences, type TranscriptPreferences } from "../preferences"
 import { SettingsRow } from "./section"
 
 type TranscriptToggle = {
   readonly key: keyof TranscriptPreferences
-  readonly title: Keys
-  readonly description: Keys
+  readonly title: SettingsKey
+  readonly description: SettingsKey
   readonly action: string
 }
 
@@ -34,7 +34,7 @@ const TRANSCRIPT_TOGGLES: readonly TranscriptToggle[] = [
 ]
 
 export function TranscriptRows() {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(settingsDictionary)
   const preferences = usePreferences()
   return (
     <For each={TRANSCRIPT_TOGGLES}>

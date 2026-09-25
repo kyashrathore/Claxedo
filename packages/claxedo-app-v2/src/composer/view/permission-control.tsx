@@ -1,6 +1,4 @@
 import { For, Show, type Accessor, type JSX } from "solid-js"
-import { MenuV2 } from "@opencode-ai/ui/v2/menu-v2"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { COMPOSER_MENU_CLASS } from "./menu-metrics"
 import type { PermissionModeGroups, PermissionModeRow } from "../permission/permission-mode"
 import {
@@ -11,7 +9,7 @@ import {
 // check in). `ClaxedoIconV2` is still the one used there because it carries the
 // COMPACT size scale — a 14px check in the 16px indicator slot — rather than
 // the shared primitive's 16px.
-import { ClaxedoIcon as Icon, ClaxedoIconV2 as BareIcon } from "@/ui"
+import { ClaxedoIcon as Icon, ClaxedoIconV2 as BareIcon, MenuV2, Tooltip } from "@/ui"
 
 /** Runtime-reported modes, their delivery caveats, and explicit unavailable states. */
 export function PromptPermissionControl(props: {
@@ -96,7 +94,6 @@ export function PromptPermissionControl(props: {
                     when={groups().harness.rows.length > 0}
                     fallback={
                       <p
-                        data-slot="permission-modes-unavailable"
                         class="text-balance px-2.5 py-2 text-sm leading-[var(--line-height-prose-compact)] text-v2-text-text-faint"
                       >
                         {groups().harness.unavailable}
@@ -191,7 +188,6 @@ function ModeRow(props: {
           </span>
           <Show when={detail()}>
             <span
-              data-slot="permission-mode-description"
               class="whitespace-normal text-xs leading-[var(--line-height-15)] text-v2-text-text-faint"
             >
               {detail()}
@@ -199,7 +195,6 @@ function ModeRow(props: {
           </Show>
           <Show when={caveat()}>
             <span
-              data-slot="permission-mode-caveat"
               class="whitespace-normal text-xs leading-[var(--line-height-15)]"
               // The composer is v2 UI, so this is the v2 warning foreground.
               // Not `--text-danger`: that token is not defined by the theme

@@ -12,12 +12,6 @@ export function clearReadyWatcher(state: ReadyWatcher) {
   state.observer = undefined
 }
 
-/**
- * The nearest ancestor that scrolls `el` vertically, or `undefined` when nothing above it does.
- *
- * `pierre/virtualizer.ts` walks the same chain but also treats the deprecated
- * `overflow: overlay` as scrollable; the two are kept apart deliberately.
- */
 export function scrollParent(el: HTMLElement): HTMLElement | undefined {
   let parent = el.parentElement
   while (parent) {

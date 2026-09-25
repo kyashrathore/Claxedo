@@ -1,13 +1,9 @@
 import { createSignal, Show, type ParentProps } from "solid-js"
-import { Button } from "@opencode-ai/ui/button"
-import { Card } from "@opencode-ai/ui/card"
-import { ClaxedoIcon as Icon } from "@/ui"
+import { ClaxedoIcon as Icon, Button, Card, Tooltip } from "@/ui"
 import { ClaxedoIconButton as IconButton } from "@/ui"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
+import type { DispatchContext } from "./provider-error-detail"
 import { sessionRecovery, sessionRecoveryDescription, type SessionErrorClass } from "./turn-recovery"
 
-// Raw-detail disclosure: collapsed by default, chevron-gated, copyable when open.
-// Mirrors the pattern in packages/session-ui/src/components/tool-error-card.tsx:128-149.
 function RawDetail(props: { detail: string }) {
   const [open, setOpen] = createSignal(false)
   const [copied, setCopied] = createSignal(false)
@@ -20,7 +16,7 @@ function RawDetail(props: { detail: string }) {
 
   return (
     <div class="mt-2 min-w-0">
-      <div class="group flex min-w-0 items-center gap-1" data-slot="turn-error-detail-header">
+      <div class="group flex min-w-0 items-center gap-1">
         <button
           type="button"
           class="flex min-h-6 min-w-0 flex-1 items-center gap-1 text-left"
@@ -55,7 +51,7 @@ function RawDetail(props: { detail: string }) {
         </Show>
       </div>
       <Show when={open()}>
-        <div class="mt-1 whitespace-pre-wrap break-words pl-5 font-mono text-12-regular text-text-weaker select-text" data-slot="turn-error-detail-body">
+        <div class="mt-1 whitespace-pre-wrap break-words pl-5 font-mono text-12-regular text-text-weaker select-text">
           {props.detail}
         </div>
       </Show>
@@ -102,10 +98,8 @@ export function TimelineErrorPresentation(props: {
   text: string
   summary?: string
   error?: unknown
-  providerID?: string
-  modelID?: string
   onAction: (value: SessionErrorClass) => unknown
-}) {
+} & DispatchContext) {
   return (
     <Show
       when={props.presentation === "turn-conflict"}
@@ -136,17 +130,10 @@ export function TimelineErrorPresentation(props: {
 export function FirstTurnRecoveryCard(props: {
   kind: SessionErrorClass
   detail?: string
-  /**
-   * The already-composed human sentence. Passed in by the timeline so the
-   * first paint is readable; the card only derives it when a caller has none.
-   */
   summary?: string
-  /** The raw wire error, so the description can name the provider's own status. */
   error?: unknown
-  providerID?: string
-  modelID?: string
   onAction: (kind: SessionErrorClass) => unknown
-}) {
+} & DispatchContext) {
   const recovery = () => sessionRecovery(props.kind, props.error, { providerID: props.providerID, modelID: props.modelID })
   const description = () =>
     props.summary ??

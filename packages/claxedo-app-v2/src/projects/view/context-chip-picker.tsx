@@ -1,9 +1,7 @@
 import { createEffect, createMemo, onCleanup, Show, untrack, type JSX } from "solid-js"
 import { Popover as Kobalte } from "@kobalte/core/popover"
 import { createStore } from "solid-js/store"
-import { Icon } from "@opencode-ai/ui/icon"
-import { List, type ListRef } from "@opencode-ai/ui/list"
-import { ProjectAvatar } from "@opencode-ai/ui/v2/project-avatar-v2"
+import { Icon, List, type ListRef, ProjectAvatar } from "@/ui"
 import { COMPOSER_MENU_CLASS } from "@/composer"
 import { handleDocumentSearchKeydown } from "../search-keydown"
 import type { ContextChip, ContextChipAvatar, ContextChipOption } from "./context-row"
@@ -12,13 +10,13 @@ const FOOTER_ROW =
   "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-13-regular text-text-weak transition-colors duration-150 hover:bg-[var(--overlay-surface-hover)] hover:text-text-base"
 
 function ChipAvatar(props: { avatar: ContextChipAvatar }) {
-  return <ProjectAvatar data-slot="context-chip-avatar" fallback={props.avatar.fallback} src={props.avatar.src} variant="outline" />
+  return <ProjectAvatar class="context-chip-avatar" fallback={props.avatar.fallback} src={props.avatar.src} variant="outline" />
 }
 
 function ChipTrigger(props: { chip: ContextChip }) {
   return (
     <Kobalte.Trigger
-      data-slot={props.chip.slot}
+      data-chip={props.chip.slot}
       type="button"
       aria-label={props.chip.ariaLabel}
       disabled={props.chip.disabled}
@@ -34,7 +32,7 @@ function ChipTrigger(props: { chip: ContextChip }) {
       >
         {(avatar) => <ChipAvatar avatar={avatar()} />}
       </Show>
-      <span data-slot="context-chip-label" class="ui-context-chip-label truncate">
+      <span class="ui-context-chip-label truncate">
         {props.chip.label}
       </span>
     </Kobalte.Trigger>
@@ -45,7 +43,7 @@ function ChipOptionRow(props: { option: ContextChipOption }) {
   return (
     <>
       <Show when={props.option.avatar}>{(avatar) => <ChipAvatar avatar={avatar()} />}</Show>
-      <div data-slot="context-chip-row" class="flex min-w-0 flex-1 flex-col items-start">
+      <div class="context-chip-row flex min-w-0 flex-1 flex-col items-start">
         <span class="truncate">{props.option.label}</span>
         <Show when={props.option.detail}>
           <span class="truncate text-v2-text-text-faint">{props.option.detail}</span>
@@ -55,10 +53,10 @@ function ChipOptionRow(props: { option: ContextChipOption }) {
   )
 }
 
-function ChipFooter(props: { slot: string; label: string; onClick: () => void }) {
+function ChipFooter(props: { label: string; onClick: () => void }) {
   return (
     <div class="mt-1 shrink-0 border-t border-v2-border-border-muted p-1 pt-1">
-      <button data-slot={props.slot} type="button" class={FOOTER_ROW} onClick={() => props.onClick()}>
+      <button type="button" class={FOOTER_ROW} onClick={() => props.onClick()}>
         <Icon name="plus-small" size="small" class="shrink-0" />
         <span class="truncate">{props.label}</span>
       </button>
@@ -72,7 +70,7 @@ function ChipList(props: { chip: ContextChip; ref: (ref: ListRef) => void; close
     <>
       <List
         ref={props.ref}
-        class="flex-1 min-h-0 p-1 [&_[data-slot=list-scroll]]:flex-1 [&_[data-slot=list-scroll]]:min-h-0"
+        class="flex-1 min-h-0 p-1 [&_.ui-list-scroll]:flex-1 [&_.ui-list-scroll]:min-h-0"
         search={props.chip.search ? { placeholder: props.chip.search.placeholder, autofocus: true } : undefined}
         emptyMessage={props.chip.emptyMessage}
         items={() => props.chip.options}
@@ -90,7 +88,6 @@ function ChipList(props: { chip: ContextChip; ref: (ref: ListRef) => void; close
       <Show when={props.chip.action}>
         {(action) => (
           <ChipFooter
-            slot="context-chip-action"
             label={action().label}
             onClick={() => {
               props.close()
@@ -99,7 +96,7 @@ function ChipList(props: { chip: ContextChip; ref: (ref: ListRef) => void; close
           />
         )}
       </Show>
-      <Show when={props.chip.panel}>{(panel) => <ChipFooter slot="context-chip-panel-open" label={panel().label} onClick={props.openPanel} />}</Show>
+      <Show when={props.chip.panel}>{(panel) => <ChipFooter label={panel().label} onClick={props.openPanel} />}</Show>
     </>
   )
 }
@@ -145,7 +142,7 @@ export function ContextChipPicker(props: { chip: ContextChip }): JSX.Element {
     if (!showPanel()) return undefined
     return untrack(() => chip().panel?.render({ close: state.close, back: state.back, hold: (active) => state.setStore("hold", active) }))
   })
-  const searchInput = () => contentRef?.querySelector<HTMLInputElement>('[data-slot="list-search"] input') ?? undefined
+  const searchInput = () => contentRef?.querySelector<HTMLInputElement>(".ui-list-search-wrapper input") ?? undefined
   createEffect(() => {
     if (!state.isOpen() || !chip().search) return
     bindSearchTypeahead(searchInput, (value) => listRef?.setFilter(value))
@@ -178,7 +175,7 @@ export function ContextChipPicker(props: { chip: ContextChip }): JSX.Element {
           <Kobalte.Title class="sr-only">{chip().ariaLabel}</Kobalte.Title>
           <Show when={panelContent()}>
             {(content) => (
-              <div data-slot="context-chip-panel" class="flex min-h-0 flex-col p-2">
+              <div class="flex min-h-0 flex-col p-2">
                 {content()}
               </div>
             )}

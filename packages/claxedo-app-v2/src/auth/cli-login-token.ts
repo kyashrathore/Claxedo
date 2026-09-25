@@ -2,18 +2,16 @@ import { asRecord, readField } from "@/lib/record"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { asFiniteNumber } from "@claxedo/helpers/guards"
 import type { AuthUser } from "./display-user"
+import { authResponseBody } from "./better-auth-error"
 import { apiOrigin } from "./origins"
 
 export function localCallback(input: string | null): string | undefined {
   if (!input) return undefined
-  try {
-    const url = new URL(input)
-    if (url.protocol !== "http:") return undefined
-    if (url.hostname !== "127.0.0.1" && url.hostname !== "localhost" && url.hostname !== "[::1]") return undefined
-    return url.toString()
-  } catch {
-    return undefined
-  }
+  if (!URL.canParse(input)) return undefined
+  const url = new URL(input)
+  if (url.protocol !== "http:") return undefined
+  if (url.hostname !== "127.0.0.1" && url.hostname !== "localhost" && url.hostname !== "[::1]") return undefined
+  return url.toString()
 }
 
 export function userIdentity(user: AuthUser | null): string {
@@ -35,7 +33,7 @@ export async function cliToken(browserToken: string): Promise<CliTokenResult> {
       authorization: `Bearer ${browserToken}`,
     },
   })
-  const body: unknown = await response.json().catch(() => undefined)
+  const body = await authResponseBody(response)
   if (!response.ok) {
     throw new Error(trimToUndefined(readField(readField(body, "error"), "message")) ?? "CLI token exchange failed.")
   }

@@ -1,5 +1,5 @@
 import { Show } from "solid-js"
-import { Spinner } from "@opencode-ai/ui/spinner"
+import { Spinner } from "@/ui"
 import { useServer, type ConnectionState } from "@/server"
 import { useSessionScreenText } from "./text"
 

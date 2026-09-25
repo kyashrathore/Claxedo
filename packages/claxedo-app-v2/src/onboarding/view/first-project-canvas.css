@@ -205,31 +205,31 @@
   animation-delay: var(--first-project-delay, 0ms);
 }
 
-.first-project-card [data-slot="project-create-form"] > * {
+.first-project-card [data-step-panel="project"] > form > * {
   animation: first-project-rise 380ms cubic-bezier(0.2, 0, 0, 1) both;
 }
 
-.first-project-card [data-slot="project-create-form"] > *:nth-child(1) {
+.first-project-card [data-step-panel="project"] > form > *:nth-child(1) {
   animation-delay: 130ms;
 }
 
-.first-project-card [data-slot="project-create-form"] > *:nth-child(2) {
+.first-project-card [data-step-panel="project"] > form > *:nth-child(2) {
   animation-delay: 170ms;
 }
 
-.first-project-card [data-slot="project-create-form"] > *:nth-child(3) {
+.first-project-card [data-step-panel="project"] > form > *:nth-child(3) {
   animation-delay: 210ms;
 }
 
-.first-project-card [data-slot="project-create-form"] > *:nth-child(4) {
+.first-project-card [data-step-panel="project"] > form > *:nth-child(4) {
   animation-delay: 250ms;
 }
 
-.first-project-card [data-slot="project-create-form"] > *:nth-child(5) {
+.first-project-card [data-step-panel="project"] > form > *:nth-child(5) {
   animation-delay: 290ms;
 }
 
-.first-project-card [data-slot="project-create-form"] > *:nth-child(n + 6) {
+.first-project-card [data-step-panel="project"] > form > *:nth-child(n + 6) {
   animation-delay: 290ms;
 }
 
@@ -246,7 +246,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .first-project-reveal,
-  .first-project-card [data-slot="project-create-form"] > *,
+  .first-project-card [data-step-panel="project"] > form > *,
   .first-project-glow::before {
     animation: none;
   }

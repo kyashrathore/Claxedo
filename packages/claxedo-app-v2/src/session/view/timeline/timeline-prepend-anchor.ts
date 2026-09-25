@@ -25,14 +25,6 @@ export function applyTimelinePrependAnchor(
 ) {
   const element = root.querySelector<HTMLElement>(timelinePrependAnchorSelector(anchor.key))
   if (!element) {
-    // The anchored row can be virtualized out entirely — e.g. a reveal that
-    // prepends more than a viewport's worth of rows while the scroller sits at
-    // the top: the anchor lands far below the visible range and never mounts,
-    // so the DOM measurement above has nothing to correct against and the
-    // viewport silently stays on the prepended content. Fall back to the
-    // virtualizer's own offset for the row so the compensating write still
-    // happens; once the write scrolls the row back into range, the precise
-    // DOM path takes over on the following frames.
     const start = resolveRowStart?.(anchor.key)
     if (start === undefined) return "missing"
     const target = Math.max(0, start - anchor.offset)
@@ -54,7 +46,6 @@ function escapeTimelineKey(key: string) {
   return globalThis.CSS?.escape?.(key) ?? key.replace(/["\\]/g, "\\$&")
 }
 
-/** Keeps the same row in view while history or a retained surface is restored. */
 export function createTimelinePrependAnchor(input: {
   root: () => HTMLElement | undefined
   displayed: () => boolean
@@ -90,13 +81,6 @@ export function createTimelinePrependAnchor(input: {
     capture: () => { loading = true; update() },
     restore: () => { loading = false; apply() },
     clear,
-    /**
-     * Hand the viewport to the reader's gesture without dropping the restore it
-     * owes. A gesture routinely arrives before the loop's first frame, and the
-     * virtualizer anchors a settled transcript to the start, so a restore that
-     * is only cleared leaves the reader on the top of the revealed history,
-     * where the next scroll event reveals the batch above it.
-     */
     settle: () => {
       const root = input.root()
       if (frames.running && root && anchor) applyTimelinePrependAnchor(root, anchor, input.resolveRowStart)

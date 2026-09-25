@@ -1,22 +1,9 @@
-// Standalone presentational rows for the message timeline: the thinking
-// shimmer, the "N previous messages" reveal row, and the per-turn diff summary
-// (with its accordion, hover preview, and undo affordance). These render purely
-// from props — no timeline, virtualizer, or session state — which is why they
-// live beside message-timeline.tsx rather than inside it.
 import { createMemo, For, Show, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
 import { Tooltip as KobalteTooltip } from "@kobalte/core/tooltip"
-import { Accordion } from "@opencode-ai/ui/accordion"
-import { DiffChanges } from "@opencode-ai/ui/diff-changes"
-import { ClaxedoIcon as Icon } from "@/ui"
-import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
-import { TextReveal } from "@opencode-ai/ui/text-reveal"
-import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
-import { Spinner } from "@opencode-ai/ui/spinner"
-import { getDirectory, getFilename } from "@opencode-ai/ui/utils/path"
+import { ClaxedoIcon as Icon, Accordion, DiffChanges, StickyAccordionHeader, TextReveal, TextShimmer, Spinner, getDirectory, getFilename, useFileComponent } from "@/ui"
 import { normalize } from "@/transcript"
-import { useFileComponent } from "@opencode-ai/ui/context/file"
 import type { SummaryDiff } from "./message-timeline.data"
 import type { TimelineTranslate } from "./model"
 
@@ -32,7 +19,6 @@ export function TimelineThinkingRow(props: { reasoningHeading?: string; showReas
   )
 }
 
-/** Stands in for a turn body held back until its full read lands; its reveal delay lives in session-turn.css. */
 export function TimelineLoadingRow() {
   return (
     <div data-slot="session-turn-loading" aria-busy="true">
@@ -44,7 +30,6 @@ export function TimelineLoadingRow() {
 export function PreviousMessagesRow(props: {
   count: number
   onReveal: () => void
-  /** When set, the row is a toggle: `true` shows the collapse label instead of the count. */
   expanded?: boolean
   testId?: string
   t: TimelineTranslate
@@ -63,10 +48,6 @@ export function PreviousMessagesRow(props: {
         data-testid={props.testId ?? "timeline-previous-messages"}
         data-count={props.count}
         aria-expanded={props.expanded ? "true" : "false"}
-        // Chromium focuses a button on mousedown. In the floating card that
-        // blurs the composer, the composer folds, and this bottom-anchored row
-        // moves ~52px under the pointer before mouseup, so the click lands on
-        // whatever is behind the card and never reaches this button.
         onMouseDown={(event) => event.preventDefault()}
         onClick={(event) => {
           event.stopPropagation()
@@ -119,7 +100,6 @@ export function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[]; onUndo?: (
         <Show when={props.onUndo}>
           <button
             type="button"
-            data-slot="session-turn-diffs-undo"
             class="text-12-medium text-text-weak hover:text-text-strong active:scale-[0.96] transition-transform disabled:opacity-50 cursor-pointer bg-transparent border-none px-1"
             disabled={state.undoing}
             onClick={(event) => {
@@ -160,7 +140,7 @@ export function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[]; onUndo?: (
                             <span data-slot="session-turn-diff-filename">{getFilename(diff.file)}</span>
                           </span>
                           <div data-slot="session-turn-diff-meta">
-                            <span data-slot="session-turn-diff-changes">
+                            <span>
                               <DiffChanges changes={diff} />
                             </span>
                             <span data-slot="session-turn-diff-chevron">

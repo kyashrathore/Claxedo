@@ -1,5 +1,5 @@
 import { createMemo } from "solid-js"
-import { AnimatedNumber } from "@opencode-ai/ui/animated-number"
+import { AnimatedNumber } from "@/ui"
 
 function split(text: string) {
   const match = /{{\s*count\s*}}/.exec(text)
@@ -49,7 +49,7 @@ export function AnimatedCountLabel(props: { count: number; one: string; other: s
       <AnimatedNumber value={props.count} />
       <span data-slot="tool-count-label-word">
         <span data-slot="tool-count-label-stem">{stem()}</span>
-        <span data-slot="tool-count-label-suffix" class="ui-tool-count-label-suffix" data-active={showTail() ? "true" : "false"}>
+        <span class="ui-tool-count-label-suffix" data-active={showTail() ? "true" : "false"}>
           <span data-slot="tool-count-label-suffix-inner">{tail()}</span>
         </span>
       </span>

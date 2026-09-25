@@ -36,7 +36,6 @@ export function MessageAuthorAvatar(props: { author: ClaxedoMessageAuthor }) {
 
   return (
     <div
-      data-component="message-author-avatar"
       class="mt-1 flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border-weak-base bg-background-stronger text-11-medium text-text-strong"
       aria-label={props.author.name || "Message author"}
       title={props.author.name || undefined}
@@ -48,7 +47,6 @@ export function MessageAuthorAvatar(props: { author: ClaxedoMessageAuthor }) {
             when={initials()}
             fallback={
               <svg
-                data-slot="message-author-generic"
                 aria-hidden="true"
                 viewBox="0 0 20 20"
                 class="size-4 text-text-weak"
@@ -58,13 +56,12 @@ export function MessageAuthorAvatar(props: { author: ClaxedoMessageAuthor }) {
               </svg>
             }
           >
-            <span data-slot="message-author-initials" aria-hidden="true">{initials()}</span>
+            <span aria-hidden="true">{initials()}</span>
           </Show>
         }
       >
         {(src) => (
           <img
-            data-slot="message-author-image"
             class="size-full object-cover"
             src={src()}
             alt={props.author.name || "Message author"}
@@ -84,13 +81,12 @@ export function MessageAuthorLane(props: { message: MessageWithAuthor; children:
   return (
     <Show when={author()} fallback={content()}>
       {(author) => (
-        <div data-slot="message-author-lane" class="flex w-full items-start justify-end gap-2">
-          <div data-slot="message-author-content" class="min-w-0 flex-1">{content()}</div>
-          <div data-slot="message-author-meta" class="flex shrink-0 flex-col items-center gap-1">
+        <div class="flex w-full items-start justify-end gap-2">
+          <div class="min-w-0 flex-1">{content()}</div>
+          <div class="flex shrink-0 flex-col items-center gap-1">
             <MessageAuthorAvatar author={author()} />
             <Show when={author().name.trim()}>
               <span
-                data-slot="message-author-name"
                 class="max-w-[4.75rem] truncate text-center text-11-regular text-text-weak"
                 title={author().name}
               >

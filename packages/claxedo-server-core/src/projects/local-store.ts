@@ -7,7 +7,6 @@ import type { RepoAddressResolver } from "@claxedo/sandbox-contract"
 import { dataDir } from "../platform/runtime/lib/paths"
 import type { SignedControlPlaneAuth } from "../platform/auth/auth"
 import {
-  cloudWorkspaceReady,
   deleteProjectRecord,
   deleteWorkspace,
   ensureWorkspace,
@@ -149,7 +148,7 @@ async function projectView(id: string, catalog: CatalogProject | undefined, reco
     repoUrl: workspace?.repo_url ?? null,
     ...(catalog?.icon ? { icon: catalog.icon } : {}),
     ...(catalog?.commands ? { commands: catalog.commands } : {}),
-    available: Object.values(catalog?.workspaces ?? {}).some((placement) => placement.available && (placement.kind !== "cloud" || cloudWorkspaceReady(placement.id))),
+    available: Object.values(catalog?.workspaces ?? {}).some((placement) => placement.reachable),
     created_at: known.created_at,
     updated_at: Math.max(known.updated_at, catalog?.time.updated ?? 0),
   }

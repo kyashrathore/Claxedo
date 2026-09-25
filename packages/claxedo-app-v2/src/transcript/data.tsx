@@ -1,3 +1,4 @@
+import { createContext, useContext, type ParentProps } from "solid-js"
 import type {
   AgentContentPart,
   AgentFilePart,
@@ -7,7 +8,6 @@ import type {
   AgentRuntimeStatus,
   AgentSnapshotFileDiff,
 } from "@claxedo/agent-runtime-contract"
-import { createSimpleContext } from "@opencode-ai/ui/context"
 import type { PreloadMultiFileDiffResult } from "@pierre/diffs/ssr"
 
 export type NormalizedProviderListResponse = {
@@ -18,13 +18,6 @@ export type NormalizedProviderListResponse = {
   connected: Array<string>
 }
 
-/**
- * A session row as this view needs one.
- *
- * `slug` and `version` are required on `AgentPresentationSession` and read
- * nowhere in this package; inventory-sourced rows carry neither, so demanding
- * them only forced the caller to assert. Complete rows still satisfy this.
- */
 type DataSession =
   & Omit<AgentPresentationSession, "slug" | "version">
   & Partial<Pick<AgentPresentationSession, "slug" | "version">>
@@ -37,28 +30,28 @@ type Data = {
   provider?: NormalizedProviderListResponse
   session: DataSession[]
   session_status: {
-    [sessionID: string]: AgentRuntimeStatus
+    [sessionId: string]: AgentRuntimeStatus
   }
   session_diff: {
-    [sessionID: string]: AgentSnapshotFileDiff[]
+    [sessionId: string]: AgentSnapshotFileDiff[]
   }
   session_diff_preload?: {
-    [sessionID: string]: PreloadMultiFileDiffResult<any, undefined>[]
+    [sessionId: string]: PreloadMultiFileDiffResult<any, undefined>[]
   }
   message: {
-    [sessionID: string]: AgentPresentationMessage[]
+    [sessionId: string]: AgentPresentationMessage[]
   }
   part: {
-    [messageID: string]: AgentContentPart[]
+    [messageId: string]: AgentContentPart[]
   }
   part_text_accum_delta?: {
-    [partID: string]: string
+    [partId: string]: string
   }
 }
 
-export type NavigateToSessionFn = (sessionID: string) => void
+export type NavigateToSessionFn = (sessionId: string) => void
 
-export type SessionHrefFn = (sessionID: string) => string
+export type SessionHrefFn = (sessionId: string) => string
 
 export type TaskHrefFn = (taskId: string) => string
 
@@ -77,41 +70,54 @@ export type SubagentView = {
   ambient: boolean
 }
 
-export const { use: useData, provider: DataProvider } = createSimpleContext({
-  name: "Data",
-  init: (props: {
-    data: Data
-    directory: string
-    onNavigateToSession?: NavigateToSessionFn
-    onSessionHref?: SessionHrefFn
-    onTaskHref?: TaskHrefFn
-    onClaxedoToolHref?: (tool: string, input: Record<string, unknown>, output?: string) => string | undefined
-    resolveSubagents?: (
-      parentSessionId: string,
-      toolCallId?: string,
-      hostableCallIds?: ReadonlySet<string>,
-    ) => SubagentView[]
-    /**
-     * A workspace-relative path to a URL the browser can fetch. Tool attachments that
-     * stayed on disk carry only a path, so without this they have nothing to render.
-     */
-    fileUrl?: (path: string) => string | undefined
-    readToolImage?: (attachment: AgentFilePart, signal: AbortSignal) => Promise<Blob>
-  }) => {
-    return {
-      get store() {
-        return props.data
-      },
-      get directory() {
-        return props.directory
-      },
-      navigateToSession: props.onNavigateToSession,
-      sessionHref: props.onSessionHref,
-      taskHref: props.onTaskHref,
-      claxedoToolHref: props.onClaxedoToolHref,
-      resolveSubagents: props.resolveSubagents,
-      fileUrl: props.fileUrl,
-      readToolImage: props.readToolImage,
-    }
-  },
-})
+export type DataProviderProps = {
+  data: Data
+  directory: string
+  onNavigateToSession?: NavigateToSessionFn
+  onSessionHref?: SessionHrefFn
+  onTaskHref?: TaskHrefFn
+  onClaxedoToolHref?: (tool: string, input: Record<string, unknown>, output?: string) => string | undefined
+  resolveSubagents?: (
+    parentSessionId: string,
+    toolCallId?: string,
+    hostableCallIds?: ReadonlySet<string>,
+  ) => SubagentView[]
+  fileUrl?: (path: string) => string | undefined
+  readToolImage?: (attachment: AgentFilePart, signal: AbortSignal) => Promise<Blob>
+}
+
+function transcriptData(props: DataProviderProps) {
+  return {
+    get store() {
+      return props.data
+    },
+    get directory() {
+      return props.directory
+    },
+    navigateToSession: props.onNavigateToSession,
+    sessionHref: props.onSessionHref,
+    taskHref: props.onTaskHref,
+    claxedoToolHref: props.onClaxedoToolHref,
+    resolveSubagents: props.resolveSubagents,
+    fileUrl: props.fileUrl,
+    readToolImage: props.readToolImage,
+  }
+}
+
+type RendererData = ReturnType<typeof transcriptData>
+
+const DataContext = createContext<RendererData>()
+
+export function DataProvider(props: ParentProps<DataProviderProps>) {
+  return <DataContext.Provider value={transcriptData(props)}>{props.children}</DataContext.Provider>
+}
+
+export function useData(): RendererData {
+  const data = useContext(DataContext)
+  if (!data) throw new Error("useData needs a DataProvider above it")
+  return data
+}
+
+export function useOptionalData(): RendererData | undefined {
+  return useContext(DataContext)
+}

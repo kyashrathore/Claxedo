@@ -146,7 +146,7 @@ function SessionBody(props: {
         class="ui-session-prompt-dock w-full flex flex-col justify-center items-center pointer-events-none shrink-0 pb-3"
         classList={{ "session-floating-dock": props.floating }}
       >
-        <div data-slot="session-screen-dock" class="w-full px-3 pointer-events-auto md:max-w-192 md:mx-auto 2xl:max-w-[880px]">
+        <div class="w-full px-3 pointer-events-auto md:max-w-192 md:mx-auto 2xl:max-w-[880px]">
           <SessionDocks view={props.view} />
           <Show when={props.view.requests().length === 0}>
             <Show when={todo.open()}>

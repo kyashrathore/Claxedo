@@ -3,8 +3,7 @@ import type { AgentQuestion } from "@claxedo/agent-runtime-contract"
 import type { AgentRequestReply } from "@/server"
 import type { RequestState } from "@/session"
 import { DockPrompt } from "@/transcript"
-import { Button } from "@opencode-ai/ui/button"
-import { ClaxedoIconButton as IconButton } from "@/ui"
+import { ClaxedoIconButton as IconButton, Button } from "@/ui"
 import { useSessionScreenText } from "../text"
 import { createDockAction, type DockAction } from "./dock-action"
 import { createQuestionAnswers, type QuestionAnswers } from "./question-answers"
@@ -19,9 +18,9 @@ function QuestionHeader(props: { answers: QuestionAnswers; busy: boolean }) {
     t("sessionScreen.question.progress", { current: Math.min(draft().tab + 1, props.answers.total()), total: props.answers.total() })
   return (
     <>
-      <div data-slot="question-header-title" class="ui-question-header-title">{summary()}</div>
+      <div class="ui-question-header-title">{summary()}</div>
       <Show when={draft().collapsed}>
-        <div data-slot="question-header-preview" class="ui-question-header-preview">{props.answers.question()?.question}</div>
+        <div class="ui-question-header-preview">{props.answers.question()?.question}</div>
       </Show>
       <div data-slot="question-header-actions">
         <Show when={props.answers.total() > 1}>
@@ -42,7 +41,6 @@ function QuestionHeader(props: { answers: QuestionAnswers; busy: boolean }) {
           </div>
         </Show>
         <IconButton
-          data-slot="question-collapse"
           icon="chevron-down"
           size="normal"
           variant="ghost"
@@ -152,7 +150,7 @@ export function QuestionDock(props: {
       footer={<QuestionFooter answers={answers} busy={busy()} stop={stop} onStop={props.onStop} onDismiss={dismiss} onNext={next} />}
     >
       <Show when={replyError(props.replyState) ?? stop.error()}>{(error) => <div role="alert" data-slot="question-error" data-error-class={error().class}>{error().message}</div>}</Show>
-      <div id={textId} data-slot="question-text" class="ui-question-text">{answers.question()?.question}</div>
+      <div id={textId} class="ui-question-text">{answers.question()?.question}</div>
       <div data-slot="question-hint">{t(answers.multi() ? "sessionScreen.question.multiHint" : "sessionScreen.question.singleHint")}</div>
       <div data-slot="question-options" role={answers.multi() ? "group" : "radiogroup"} aria-labelledby={textId}>
         <For each={answers.options()}>

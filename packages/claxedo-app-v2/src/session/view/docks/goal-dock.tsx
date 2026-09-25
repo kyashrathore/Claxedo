@@ -1,7 +1,5 @@
 import { For, Show, createSignal } from "solid-js"
-import { Button } from "@opencode-ai/ui/button"
-import { Dialog } from "@opencode-ai/ui/dialog"
-import { ClaxedoIcon as Icon } from "@/ui"
+import { ClaxedoIcon as Icon, Button, Dialog } from "@/ui"
 import { useDialog } from "@/ui"
 import type { SessionScreenTextKey } from "../i18n"
 import { useSessionScreenText } from "../text"
@@ -75,21 +73,18 @@ export function GoalDock(props: { goal: GoalSnapshot; actions: GoalActions }) {
 
   return (
     <section
-      data-component="session-goal-dock"
       data-expanded={expanded() ? "true" : undefined}
       aria-label={t("sessionScreen.goal.title")}
       class="mb-2 min-w-0 rounded-xl border border-border-weak-base bg-background-base"
     >
       <button
         type="button"
-        data-slot="session-goal-toggle"
         aria-expanded={expanded() ? "true" : "false"}
         onClick={() => setExpanded((value) => !value)}
         class="group/goal flex h-8 w-full min-w-0 items-center gap-2 rounded-xl px-3 text-left focus-visible:outline-none"
       >
         <span class="shrink-0 text-12-medium text-text-strong">{t("sessionScreen.goal.title")}</span>
         <span
-          data-slot="session-goal-status"
           data-status={props.goal.status}
           aria-live="polite"
           class="shrink-0 rounded-full bg-surface-raised-base px-2 py-0.5 text-11-medium text-text-base"
@@ -97,7 +92,7 @@ export function GoalDock(props: { goal: GoalSnapshot; actions: GoalActions }) {
           {t(STATUS_KEYS[props.goal.status])}
         </span>
         <Show when={!expanded()}>
-          <span data-slot="session-goal-objective-preview" class="min-w-0 flex-1 truncate text-13-regular text-text-weak">
+          <span class="min-w-0 flex-1 truncate text-13-regular text-text-weak">
             {props.goal.objective}
           </span>
         </Show>
@@ -106,7 +101,7 @@ export function GoalDock(props: { goal: GoalSnapshot; actions: GoalActions }) {
         </span>
       </button>
       <Show when={expanded()}>
-        <div data-slot="session-goal-body" class="flex min-w-0 flex-wrap items-end gap-2 px-3 pb-2">
+        <div class="flex min-w-0 flex-wrap items-end gap-2 px-3 pb-2">
           <div class="min-w-[min(100%,16rem)] flex-1">
             <p class="break-words text-13-regular text-text-base">{props.goal.objective}</p>
             <Show when={props.goal.lastReason}>

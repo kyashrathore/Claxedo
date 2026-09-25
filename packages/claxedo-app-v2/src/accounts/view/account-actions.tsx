@@ -5,10 +5,10 @@ import { useAccountsText } from "../i18n"
 import type { AccountReach } from "../model"
 import { ACCOUNT_REACH_KEYS, AccountReachMarks } from "./account-status"
 
-export function LabelHint(props: { readonly value: string; readonly component: string; readonly children: JSX.Element }) {
+export function LabelHint(props: { readonly value: string; readonly children: JSX.Element }) {
   return (
     <Tooltip value={props.value} placement="top">
-      <span class="flex items-center" data-component={props.component} onClick={(event) => event.preventDefault()}>
+      <span class="flex items-center" onClick={(event) => event.preventDefault()}>
         {props.children}
       </span>
     </Tooltip>
@@ -18,8 +18,8 @@ export function LabelHint(props: { readonly value: string; readonly component: s
 export function Reach(props: { readonly reach: AccountReach }) {
   const t = useAccountsText()
   return (
-    <LabelHint value={t(ACCOUNT_REACH_KEYS[props.reach].note)} component="agent-account-reach">
-      <AccountReachMarks reach={props.reach} component="agent-account-reach-marks" t={t} class="flex items-center gap-1" iconClass="icon-weak-base" />
+    <LabelHint value={t(ACCOUNT_REACH_KEYS[props.reach].note)}>
+      <AccountReachMarks reach={props.reach} t={t} class="flex items-center gap-1" iconClass="icon-weak-base" />
     </LabelHint>
   )
 }
@@ -90,7 +90,6 @@ export function AccountActions(props: AccountActionsProps) {
       <span
         class="flex shrink-0 min-w-11 items-center justify-end gap-1 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
         classList={{ "opacity-0": !props.confirming }}
-        data-component="agent-account-actions"
       >
         <Show when={props.confirming} fallback={<RestingActions {...props} />}>
           <ConfirmRemove {...props} />

@@ -25,6 +25,7 @@ export type TerminalStore = {
   readonly drop: (terminalId: TerminalId) => void
   readonly close: (terminalId: TerminalId) => Promise<void>
   readonly loadAgentStatus: (terminalId: TerminalId) => Promise<void>
+  readonly clearSeen: (terminalId: TerminalId) => void
 }
 
 export type TerminalLaunch = { readonly command?: string; readonly title?: string }
@@ -51,7 +52,11 @@ function createTerminalRows() {
     remove: (terminalId: TerminalId) => setState("rows", (rows) => rows.filter((row) => row.id !== terminalId)),
     setAgentStatus: (terminalId: TerminalId, agentStatus: TerminalAgentStatus) => {
       const at = index(terminalId)
-      if (at !== -1) setState("rows", at, (row) => ({ ...row, agentStatus }))
+      if (at !== -1) setState("rows", at, (row) => ({ ...row, agentStatus, seen: agentStatus !== "idle" || row.seen }))
+    },
+    clearSeen: (terminalId: TerminalId) => {
+      const at = index(terminalId)
+      if (at !== -1 && state.rows[at]?.seen) setState("rows", at, (row) => ({ ...row, seen: false }))
     },
   }
 }
@@ -131,5 +136,6 @@ export function createTerminalStore(input: TerminalStoreInput): TerminalStore {
       const status = await api.agentStatus(placementId, terminalId)
       if (status) rows.setAgentStatus(terminalId, status)
     },
+    clearSeen: rows.clearSeen,
   }
 }

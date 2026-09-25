@@ -1,4 +1,3 @@
-/* AgentGlyph (T12) — stable per-agent mark; slow scan while the child runs. */
 .ui-agent-glyph {
   display: inline-flex;
   align-items: center;

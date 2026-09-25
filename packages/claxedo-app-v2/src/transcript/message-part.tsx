@@ -32,8 +32,7 @@ import type {
   AgentUserMessage,
 } from "@claxedo/agent-runtime-contract"
 import { useData } from "./data"
-import { useFileComponent } from "@opencode-ai/ui/context/file"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { useFileComponent, useDialog, Accordion, StickyAccordionHeader, Collapsible, FileIcon, Icon, Checkbox, DiffChanges, ImagePreview, getDirectory as _getDirectory, getFilename, checksum, Tooltip, IconButton, IconV2, IconButtonV2, ButtonV2, TooltipV2, TextShimmer, type IconProps } from "@/ui"
 import { type TranscriptI18n, useTranscriptI18n } from "./i18n"
 import { BasicTool, GenericTool, shellExitCode, ToolExitCode } from "./basic-tool"
 import { ScrollableOutput } from "./scrollable-output"
@@ -43,31 +42,14 @@ import { TurnFoldRow } from "./turn-fold-row"
 import { workGroupActiveLabel, workGroupIcon, workGroupSummary, workGroupTitle } from "./work-group-summary"
 import { SubagentChipRow } from "./subagent-chip"
 import { dispatchPlanOpen, readPlanToolInput } from "./plan-tool"
-import { Accordion } from "@opencode-ai/ui/accordion"
-import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
-import { Collapsible } from "@opencode-ai/ui/collapsible"
-import { FileIcon } from "@opencode-ai/ui/file-icon"
-import { Icon } from "@opencode-ai/ui/icon"
 import { ToolErrorCard } from "./tool-error-card"
 import { ClaxedoTool } from "./claxedo-tool"
 import { claxedoToolName, claxedoToolTitle, claxedoToolView } from "./claxedo-tool-view"
 import { QuestionCard } from "./question-card"
 import { isQuestionDeclined } from "./question-result"
-import { Checkbox } from "@opencode-ai/ui/checkbox"
-import { DiffChanges } from "@opencode-ai/ui/diff-changes"
 import { Markdown } from "./markdown"
-import { ImagePreview } from "@opencode-ai/ui/image-preview"
-import { getDirectory as _getDirectory, getFilename } from "@opencode-ai/ui/utils/path"
 import { AttachmentCardV2 } from "./attachment-card-v2"
 import { CommentCardV2 } from "./comment-card-v2"
-import { checksum } from "@opencode-ai/ui/utils/encode"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { IconButton } from "@opencode-ai/ui/icon-button"
-import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
-import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
-import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
-import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
-import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
 import { formatDuration } from "./format-duration"
 import { localPreviewUrl } from "./local-preview"
 import { stripShellWrapper } from "./shell-wrapper"
@@ -149,7 +131,6 @@ interface Diagnostic {
 
 interface DiagnosticsResult {
   items: Diagnostic[]
-  /** Total error-severity diagnostics before the cap was applied. */
   total: number
 }
 
@@ -170,22 +151,22 @@ function DiagnosticsDisplay(props: { diagnostics: DiagnosticsResult }): JSX.Elem
   const overflow = () => props.diagnostics.total - props.diagnostics.items.length
   return (
     <Show when={props.diagnostics.items.length > 0}>
-      <div data-component="diagnostics" class="ui-diagnostics">
+      <div class="ui-diagnostics">
         <For each={props.diagnostics.items}>
           {(diagnostic) => (
             <div data-slot="diagnostic">
-              <span data-slot="diagnostic-icon" class="ui-diagnostic-icon" aria-label={i18n.t("transcript.messagePart.diagnostic.error")}>
+              <span class="ui-diagnostic-icon" aria-label={i18n.t("transcript.messagePart.diagnostic.error")}>
                 <Icon name="circle-ban-sign" size="small" />
               </span>
-              <span data-slot="diagnostic-location" class="ui-diagnostic-location">
+              <span class="ui-diagnostic-location">
                 [{diagnostic.range.start.line + 1}:{diagnostic.range.start.character + 1}]
               </span>
-              <span data-slot="diagnostic-message" class="ui-diagnostic-message">{diagnostic.message}</span>
+              <span class="ui-diagnostic-message">{diagnostic.message}</span>
             </div>
           )}
         </For>
         <Show when={overflow() > 0}>
-          <div data-slot="diagnostic-overflow" class="ui-diagnostic-overflow">{i18n.t("transcript.messagePart.diagnostic.more", { count: overflow() })}</div>
+          <div class="ui-diagnostic-overflow">{i18n.t("transcript.messagePart.diagnostic.more", { count: overflow() })}</div>
         </Show>
       </div>
     </Show>
@@ -196,13 +177,13 @@ export interface MessageProps {
   message: AgentPresentationMessage
   parts: AgentContentPart[]
   actions?: UserActions
-  showAssistantCopyPartID?: string | null
+  showAssistantCopyPartId?: string | null
   showReasoningSummaries?: boolean
   useV2Actions?: boolean
   comments?: UserMessageComment[]
 }
 
-export type SessionAction = (input: { sessionID: string; messageID: string }) => Promise<void> | void
+export type SessionAction = (input: { sessionId: string; messageId: string }) => Promise<void> | void
 
 export type UserActions = {
   fork?: SessionAction
@@ -231,14 +212,8 @@ export interface MessagePartProps {
   deferToolContent?: boolean
   virtualizeDiff?: boolean
   onContentRendered?: () => void
-  showAssistantCopyPartID?: string | null
+  showAssistantCopyPartId?: string | null
   turnDurationMs?: number
-  /**
-   * Turn-level abort signal supplied by the timeline. SDK-runtime harnesses
-   * (codex/claude/cursor/ACP) never stamp MessageAbortedError on abort — they leave the
-   * turn's last assistant message unsettled — so `message.error` alone under-detects
-   * interruptions; only the caller can see the whole turn plus session status.
-   */
   turnInterrupted?: boolean
   useV2Actions?: boolean
 }
@@ -293,12 +268,6 @@ export type PartComponent = Component<MessagePartProps>
 
 export const PART_MAPPING: Record<string, PartComponent | undefined> = {}
 
-/**
- * Every renderer below is registered under exactly one `part.type`, so `Part` only ever
- * hands it that variant. The registry's value type is the wide `MessagePartProps`, so each
- * renderer restates the invariant by checking the discriminant — which is also what lets
- * TypeScript narrow the union. Reaching the throw means the registry was wired wrong.
- */
 function wrongPartType(expected: AgentContentPart["type"], part: AgentContentPart): Error {
   return new Error(`the "${expected}" renderer received a "${part.type}" part`)
 }
@@ -417,15 +386,12 @@ function getDirectory(path: string | undefined) {
   const data = useData()
   return relativizeProjectPath(_getDirectory(path), data.directory)
 }
-
-import type { IconProps } from "@opencode-ai/ui/icon"
 import { resolveFileDiff } from "./session-diff"
 
 export type ToolInfo = {
   icon: IconProps["name"]
   title: string
   subtitle?: string
-  /** Secondary `key=value` chips, shown after the subtitle. */
   args?: string[]
 }
 
@@ -613,7 +579,7 @@ export function partDefaultOpen(part: AgentContentPart, shell = false, edit = fa
 type GroupMember = { message: AgentAssistantMessage; part: AgentToolPart }
 
 type PartGroupSlots = {
-  showAssistantCopyPartID?: string | null
+  showAssistantCopyPartId?: string | null
   turnDurationMs?: number
   useV2Actions?: boolean
   shellToolDefaultOpen?: boolean
@@ -623,7 +589,7 @@ type PartGroupSlots = {
 function PartGroups(
   props: PartGroupSlots & {
     groups: PartGroup[]
-    message: (messageID: string) => AgentAssistantMessage | undefined
+    message: (messageId: string) => AgentAssistantMessage | undefined
     part: (ref: PartRef) => AgentContentPart | undefined
     busyGroupKey?: string
   },
@@ -642,7 +608,7 @@ function PartGroups(
     if (group.type === "part") return emptyMembers
     return group.refs
       .map((ref) => {
-        const message = props.message(ref.messageID)
+        const message = props.message(ref.messageId)
         const part = props.part(ref)
         if (!message || part?.type !== "tool") return undefined
         return { message, part }
@@ -708,7 +674,7 @@ function PartGroups(
                 const message = createMemo(() => {
                   const entry = entryAccessor()
                   if (entry.type !== "part") return undefined
-                  return props.message(entry.ref.messageID)
+                  return props.message(entry.ref.messageId)
                 })
                 const item = createMemo(() => {
                   const entry = entryAccessor()
@@ -724,7 +690,7 @@ function PartGroups(
                           <Part
                             part={item()}
                             message={message()}
-                            showAssistantCopyPartID={props.showAssistantCopyPartID}
+                            showAssistantCopyPartId={props.showAssistantCopyPartId}
                             turnDurationMs={props.turnDurationMs}
                             useV2Actions={props.useV2Actions}
                             defaultOpen={partDefaultOpen(
@@ -752,7 +718,6 @@ export function AssistantParts(
     messages: AgentAssistantMessage[]
     working?: boolean
     showReasoningSummaries?: boolean
-    /** Folds a settled turn's machinery behind one "Worked for Xs" divider. */
     foldSettledTurn?: boolean
     turnInterrupted?: boolean
     turnErrored?: boolean
@@ -775,7 +740,7 @@ export function AssistantParts(
           list(data.store.part?.[message.id], emptyParts)
             .filter((part) => renderable(part, props.showReasoningSummaries ?? true))
             .map((part) => ({
-              messageID: message.id,
+              messageId: message.id,
               part,
             })),
         ),
@@ -786,7 +751,7 @@ export function AssistantParts(
 
   const last = createMemo(() => grouped().at(-1)?.key)
 
-  const partOf = (ref: PartRef) => part().get(ref.messageID)?.get(ref.partID)
+  const partOf = (ref: PartRef) => part().get(ref.messageId)?.get(ref.partId)
   const [foldChoice, setFoldChoice] = createSignal<boolean | undefined>(undefined)
   const settled = createMemo(() => props.messages.some(assistantMessageSettled))
   const foldableCount = createMemo(() => countFoldableGroups(grouped(), partOf))
@@ -818,10 +783,10 @@ export function AssistantParts(
       </Show>
       <PartGroups
         groups={visibleGroups()}
-        message={(messageID) => msgs().get(messageID)}
+        message={(messageId) => msgs().get(messageId)}
         part={partOf}
         busyGroupKey={props.working ? last() : undefined}
-        showAssistantCopyPartID={props.showAssistantCopyPartID}
+        showAssistantCopyPartId={props.showAssistantCopyPartId}
         turnDurationMs={props.turnDurationMs}
         useV2Actions={props.useV2Actions}
         shellToolDefaultOpen={props.shellToolDefaultOpen}
@@ -848,7 +813,7 @@ function ExaOutput(props: { output?: string }) {
           <For each={links()}>
             {(url) => (
               <a
-                data-slot="exa-tool-link" class="ui-exa-tool-link"
+ class="ui-exa-tool-link"
                 href={url}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -900,7 +865,7 @@ export function Message(props: MessageProps) {
           <AssistantMessageDisplay
             message={message()}
             parts={props.parts}
-            showAssistantCopyPartID={props.showAssistantCopyPartID}
+            showAssistantCopyPartId={props.showAssistantCopyPartId}
             showReasoningSummaries={props.showReasoningSummaries}
             useV2Actions={props.useV2Actions}
           />
@@ -913,7 +878,7 @@ export function Message(props: MessageProps) {
 export function AssistantMessageDisplay(props: {
   message: AgentAssistantMessage
   parts: AgentContentPart[]
-  showAssistantCopyPartID?: string | null
+  showAssistantCopyPartId?: string | null
   showReasoningSummaries?: boolean
   useV2Actions?: boolean
 }) {
@@ -924,7 +889,7 @@ export function AssistantMessageDisplay(props: {
         props.parts
           .filter((part) => renderable(part, props.showReasoningSummaries ?? true))
           .map((part) => ({
-            messageID: props.message.id,
+            messageId: props.message.id,
             part,
           })),
       ),
@@ -936,18 +901,13 @@ export function AssistantMessageDisplay(props: {
     <PartGroups
       groups={grouped()}
       message={() => props.message}
-      part={(ref) => part().get(ref.partID)}
-      showAssistantCopyPartID={props.showAssistantCopyPartID}
+      part={(ref) => part().get(ref.partId)}
+      showAssistantCopyPartId={props.showAssistantCopyPartId}
       useV2Actions={props.useV2Actions}
     />
   )
 }
 
-/**
- * A run of read/list/glob/grep folded to one "Explored" line. `parts` drives the header
- * counts only; the member rows are passed in as children and render through their own
- * tool renderers, so an expanded group holds ordinary tool rows.
- */
 export function ContextToolGroup(props: {
   parts: AgentToolPart[]
   busy?: boolean
@@ -984,7 +944,7 @@ export function ContextToolGroup(props: {
             data-slot="context-tool-group-title"
             class="min-w-0 flex items-center gap-2 text-14-medium text-text-strong"
           >
-            <span data-slot="context-tool-group-label" class="shrink-0">
+            <span class="shrink-0">
               <ToolStatusTitle
                 active={pending()}
                 activeText={i18n.t("transcript.sessionTurn.status.gatheringContext")}
@@ -993,7 +953,6 @@ export function ContextToolGroup(props: {
               />
             </span>
             <span
-              data-slot="context-tool-group-summary"
               class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-normal text-text-base"
             >
               <AnimatedCountList
@@ -1031,17 +990,9 @@ export function ContextToolGroup(props: {
   )
 }
 
-/**
- * WorkGroup — generalizes ContextToolGroup for a run of anything the agent did.
- * Collapsed by default; header = category icon + segmented summary + gated chevron.
- * Expanded body is a 224px scroll region with edge fades when it overflows; member rows
- * are passed in as children (the app renders them so per-part open state persists) and retain
- * their tool-specific icons so the expanded list identifies each operation.
- */
 export function WorkGroup(props: {
   parts: AgentToolPart[]
   busy?: boolean
-  /** A member row is open: the list grows to fit it instead of scrolling a diff through a 224px window. */
   memberOpen?: boolean
   open?: boolean
   onOpenChange?: (open: boolean) => void
@@ -1058,7 +1009,6 @@ export function WorkGroup(props: {
   )
   const summary = createMemo(() => workGroupSummary(props.parts))
   const icon = createMemo(() => workGroupIcon(props.parts))
-  // Stay active between members until execution moves past this group.
   const title = createMemo(
     () => workGroupActiveLabel(props.parts, i18n, props.busy) ?? workGroupTitle(summary(), pending(), i18n),
   )
@@ -1091,7 +1041,7 @@ export function WorkGroup(props: {
           <span data-slot="work-group-icon">
             <Icon name={icon()} size="small" />
           </span>
-          <span data-slot="work-group-summary" class="ui-work-group-summary">
+          <span class="ui-work-group-summary">
             <TextShimmer text={title()} active={pending()} />
           </span>
           <Collapsible.Arrow />
@@ -1100,7 +1050,7 @@ export function WorkGroup(props: {
       <Collapsible.Content>
         <div
           ref={listRef}
-          data-component="work-group-list" class="ui-work-group-list"
+ class="ui-work-group-list"
           data-scrollable
           data-overflowing={overflowing() && !props.memberOpen ? "true" : undefined}
           data-member-open={props.memberOpen ? "true" : undefined}
@@ -1177,11 +1127,11 @@ export function UserMessageDisplay(props: {
   )
 
   const model = createMemo(() => {
-    const providerID = props.message.model?.providerID
-    const modelID = props.message.model?.modelID
-    if (!providerID || !modelID) return ""
-    const match = data.store.provider?.all?.get(providerID)
-    return match?.models?.[modelID]?.name ?? modelID
+    const providerId = props.message.model?.providerID
+    const modelId = props.message.model?.modelID
+    if (!providerId || !modelId) return ""
+    const match = data.store.provider?.all?.get(providerId)
+    return match?.models?.[modelId]?.name ?? modelId
   })
   const timefmt = createMemo(() => new Intl.DateTimeFormat(i18n.intlTag(), { timeStyle: "short" }))
 
@@ -1217,8 +1167,8 @@ export function UserMessageDisplay(props: {
     void Promise.resolve()
       .then(() =>
         act({
-          sessionID: props.message.sessionID,
-          messageID: props.message.id,
+          sessionId: props.message.sessionID,
+          messageId: props.message.id,
         }),
       )
       .finally(() => setState("busy", false))
@@ -1237,7 +1187,7 @@ export function UserMessageDisplay(props: {
                 when={newLayout() && type === "file"}
                 fallback={
                   <div
-                    data-slot="user-message-attachment" class="ui-user-message-attachment"
+ class="ui-user-message-attachment"
                     data-type={type}
                     data-clickable={type === "image" ? "true" : undefined}
                     title={type === "file" ? name : undefined}
@@ -1250,7 +1200,7 @@ export function UserMessageDisplay(props: {
                       fallback={
                         <div data-slot="user-message-attachment-file">
                           <FileIcon node={{ path: name, type: "file" }} />
-                          <span data-slot="user-message-attachment-name" class="ui-user-message-attachment-name">{name}</span>
+                          <span class="ui-user-message-attachment-name">{name}</span>
                         </div>
                       }
                     >
@@ -1306,7 +1256,7 @@ export function UserMessageDisplay(props: {
       </Show>
       <Show when={props.useV2Actions}>{renderAttachments()}</Show>
       <Show when={text() || (props.useV2Actions && messageComments().length > 0)}>
-        <div data-slot="user-message-copy-wrapper" class="ui-user-message-copy-wrapper">
+        <div class="ui-user-message-copy-wrapper">
           <Show when={metaHead() || metaTail()}>
             <span data-slot="user-message-meta-wrap">
               <Show when={metaHead()}>
@@ -1315,7 +1265,7 @@ export function UserMessageDisplay(props: {
                 </span>
               </Show>
               <Show when={metaHead() && metaTail()}>
-                <span data-slot="user-message-meta-sep" class="text-12-regular text-text-weak cursor-default">
+                <span class="text-12-regular text-text-weak cursor-default">
                   {"\u00A0\u00B7\u00A0"}
                 </span>
               </Show>
@@ -1415,7 +1365,7 @@ export function Part(props: MessagePartProps) {
         deferToolContent={props.deferToolContent}
         virtualizeDiff={props.virtualizeDiff}
         onContentRendered={props.onContentRendered}
-        showAssistantCopyPartID={props.showAssistantCopyPartID}
+        showAssistantCopyPartId={props.showAssistantCopyPartId}
         turnDurationMs={props.turnDurationMs}
         turnInterrupted={props.turnInterrupted}
         useV2Actions={props.useV2Actions}
@@ -1429,7 +1379,7 @@ export interface ToolProps {
   metadata: Record<string, any>
   tool: string
   toolCallId?: string
-  sessionID?: string
+  sessionId?: string
   output?: string
   status?: string
   startedAt?: number
@@ -1535,19 +1485,15 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     () => part().tool === "question" && (part().state.status === "pending" || part().state.status === "running"),
   )
 
-  // The child registry owns whether delegation happened. A wrapper can fail or
-  // be interrupted after admitting a child; keep that child's transcript chip.
   const boundSubagents = createMemo(() => isSubagentToolPart(part())
     ? data.resolveSubagents?.(part().sessionID, part().callID) ?? []
     : [])
 
-  /** The failure text of an errored tool call. */
   const toolError = createMemo(() => {
     const state = part().state
     return state.status === "error" ? state.error : undefined
   })
 
-  /** When the call began. A pending call has not started, so it has no timestamp yet. */
   const toolStartedAt = createMemo(() => {
     const state = part().state
     return state.status === "pending" ? undefined : state.time.start
@@ -1557,23 +1503,15 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   const emptyMetadata: Record<string, unknown> = {}
 
   const input = () => part().state.input ?? emptyInput
-  /**
-   * A pending call has not run, so it carries no metadata at all -- that is the
-   * one status `AgentToolState` omits the field from, and reading through it was
-   * the error the suppression here used to hide. Every started status declares
-   * it, optionally except when completed.
-   */
   const partMetadata = () => {
     const state = part().state
     if (state.status === "pending") return emptyMetadata
     return state.metadata ?? emptyMetadata
   }
-  /** Output exists only once the call completes; every earlier status has none. */
   const toolOutput = createMemo(() => {
     const state = part().state
     return state.status === "completed" ? state.output : undefined
   })
-  /** Like `output`, the contract carries attachments only on a completed call. */
   const toolAttachments = createMemo(() => {
     const state = part().state
     return state.status === "completed" ? state.attachments : undefined
@@ -1595,9 +1533,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     return taskId()
   })
 
-  /** An explicit first-party server identity takes precedence over bare native tool names. */
   const claxedo = createMemo(() => claxedoToolName(part().tool, input()))
-  /** What a refused first-party call was about, for the error card's subtitle and link. */
   const claxedoSubject = createMemo(() => {
     const name = claxedo()
     if (!name) return undefined
@@ -1659,7 +1595,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               input={input()}
               tool={part().tool}
               toolCallId={part().callID}
-              sessionID={part().sessionID}
+              sessionId={part().sessionID}
               metadata={partMetadata()}
               output={toolOutput()}
               status={part().state.status}
@@ -1778,8 +1714,8 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   })
   const showCopy = createMemo(() => {
     if (props.message.role !== "assistant") return isLastTextPart()
-    if (props.showAssistantCopyPartID === null) return false
-    if (typeof props.showAssistantCopyPartID === "string") return props.showAssistantCopyPartID === part().id
+    if (props.showAssistantCopyPartId === null) return false
+    if (typeof props.showAssistantCopyPartId === "string") return props.showAssistantCopyPartId === part().id
     return isLastTextPart()
   })
   const [copied, setCopied] = createSignal(false)
@@ -1800,7 +1736,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
           <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
         </div>
         <Show when={showCopy()}>
-          <div data-slot="text-part-copy-wrapper" class="ui-text-part-copy-wrapper" data-interrupted={interrupted() ? "" : undefined}>
+          <div class="ui-text-part-copy-wrapper" data-interrupted={interrupted() ? "" : undefined}>
             <MessageActionButton
               icon={copied() ? "check" : "copy"}
               label={copied() ? i18n.t("transcript.message.copied") : i18n.t("transcript.message.copyResponse")}
@@ -1859,11 +1795,6 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
   )
 }
 
-/**
- * Opens an image in the full-view dialog. `show` resolves when Solid's transition
- * settles; nothing here waits on the dialog being on screen, and the transition promise
- * does not reject.
- */
 function useImagePreview() {
   const dialog = useDialog()
   return (url: string, alt?: string) => void dialog.show(() => <ImagePreview src={url} alt={alt} />)
@@ -1891,8 +1822,10 @@ function ToolImageStrip(props: { images: AgentFilePart[] }) {
             if (controller.signal.aborted) return
             objectUrl = URL.createObjectURL(blob)
             setLoaded(objectUrl)
-          }).catch(() => {
-            if (!controller.signal.aborted) setLoadFailed(true)
+          }).catch((error: unknown) => {
+            if (controller.signal.aborted) return
+            console.warn("A tool image could not be read", { error })
+            setLoadFailed(true)
           })
           onCleanup(() => {
             controller.abort()
@@ -1907,7 +1840,7 @@ function ToolImageStrip(props: { images: AgentFilePart[] }) {
           return data.fileUrl?.(location.path)
         })
         return (
-          <div data-component="tool-image" class="ui-tool-image">
+          <div class="ui-tool-image">
             <Show when={src()} fallback={<ToolImageUnavailable name={name()} location={image.location} onRetry={loadFailed() ? retry : undefined} />}>
               {(url) => {
                 const [failed, setFailed] = createSignal(false)
@@ -1937,14 +1870,6 @@ function ToolImageStrip(props: { images: AgentFilePart[] }) {
   )
 }
 
-/**
- * The images a tool call produced. Every adapter harvests an image block from any tool
- * result — a screenshot from an MCP server as readily as a `read` of a png — so this
- * hangs off the tool row itself rather than off the one renderer that can expect them.
- *
- * The strip is a separate component so that a row with no images asks for neither the
- * dialog nor the data context, and `useDialog` throws where there is no provider.
- */
 export function ToolAttachments(props: { attachments?: AgentFilePart[] }) {
   const images = createMemo(() => (props.attachments ?? []).filter((file) => file.mime.startsWith("image/")))
   return (
@@ -1965,7 +1890,7 @@ function ToolImageUnavailable(props: { name: string; location?: AgentFileLocatio
     </>
   )
   return (
-    <div data-slot="tool-image-unavailable" class="ui-tool-image-unavailable">
+    <div class="ui-tool-image-unavailable">
       <Show
         when={unretained()}
         fallback={
@@ -2015,12 +1940,10 @@ PART_MAPPING["file"] = function FilePartDisplay(props) {
   const name = createMemo(() => part().filename ?? getFilename(part().url) ?? part().url)
   const isImage = createMemo(() => part().mime.startsWith("image/"))
   const isAudio = createMemo(() => part().mime.startsWith("audio/"))
-  // part.url is tool/agent output — a rejected scheme renders the label inert
-  // rather than binding a target the click handler would refuse anyway.
   const href = createMemo(() => transcriptLinkHref(part().url))
 
   return (
-    <div data-component="file-part" data-timeline-part-id={part().id}>
+    <div data-timeline-part-id={part().id}>
       <Switch
         fallback={
           <Show
@@ -2028,7 +1951,7 @@ PART_MAPPING["file"] = function FilePartDisplay(props) {
             fallback={
               <span data-slot="file-part-link">
                 <FileIcon node={{ path: name(), type: "file" }} />
-                <span data-slot="file-part-link-name">{name()}</span>
+                <span>{name()}</span>
               </span>
             }
           >
@@ -2042,7 +1965,7 @@ PART_MAPPING["file"] = function FilePartDisplay(props) {
                 onClick={handleTranscriptLinkClick}
               >
                 <FileIcon node={{ path: name(), type: "file" }} />
-                <span data-slot="file-part-link-name">{name()}</span>
+                <span>{name()}</span>
               </a>
             )}
           </Show>
@@ -2057,7 +1980,7 @@ PART_MAPPING["file"] = function FilePartDisplay(props) {
           />
         </Match>
         <Match when={isAudio()}>
-          <audio data-slot="file-part-audio" controls src={part().url} aria-label={name()} />
+          <audio controls src={part().url} aria-label={name()} />
         </Match>
       </Switch>
     </div>
@@ -2069,7 +1992,6 @@ ToolRegistry.register({
   render(props) {
     const data = useData()
     const i18n = useTranscriptI18n()
-    // The registered name, not props.tool: an alias (`read_file`) renders here too.
     const info = createMemo(() => getToolInfo("read", props.input))
     const loaded = createMemo(() => {
       if (props.status !== "completed") return []
@@ -2086,7 +2008,7 @@ ToolRegistry.register({
         />
         <For each={loaded()}>
           {(filepath) => (
-            <div data-component="tool-loaded-file" class="ui-tool-loaded-file">
+            <div class="ui-tool-loaded-file">
               <Icon name="enter" size="small" />
               <span>
                 {i18n.t("transcript.tool.loaded")} {relativizeProjectPath(filepath, data.directory)}
@@ -2165,8 +2087,6 @@ ToolRegistry.register({
       if (typeof value !== "string") return ""
       return value
     })
-    // input.url is the tool call's argument — a rejected scheme renders the
-    // label inert rather than binding a target the click handler would refuse.
     const href = createMemo(() => transcriptLinkHref(url()))
     return (
       <BasicTool
@@ -2247,7 +2167,7 @@ ToolRegistry.register({
   render(props) {
     const data = useData()
     const subagents = createMemo(() =>
-      props.sessionID ? data.resolveSubagents?.(props.sessionID, props.toolCallId) ?? [] : []
+      props.sessionId ? data.resolveSubagents?.(props.sessionId, props.toolCallId) ?? [] : []
     )
     return <SubagentChipRow subagents={subagents()} spawnInput={props.input} />
   },
@@ -2259,8 +2179,6 @@ ToolRegistry.register({
     const i18n = useTranscriptI18n()
     const pending = () => props.status === "pending" || props.status === "running"
     const sawPending = pending()
-    // Row reads "Ran <command>" — verb + the real command, not a static "Shell"
-    // label with the login-shell wrapper trailing behind it.
     const displayCommand = createMemo(() =>
       stripShellWrapper(String(props.input.command ?? props.metadata.command ?? "")),
     )
@@ -2271,8 +2189,6 @@ ToolRegistry.register({
     })
     const [copied, setCopied] = createSignal(false)
 
-    // Dev-server preview row: surface a "Local preview · 127.0.0.1:port" chip when the
-    // command output advertises a listening localhost URL. Pure client-side regex.
     const localUrl = createMemo(() => {
       if (pending()) return undefined
       return localPreviewUrl(stripAnsi(props.output || props.metadata.output || ""))
@@ -2299,10 +2215,6 @@ ToolRegistry.register({
               <span data-slot="basic-tool-tool-title">
                 <TextShimmer text={pending() ? "Running" : "Ran"} active={pending()} />
               </span>
-              {/* Keep the command in the header while running and while expanded — the
-                  verb alone ("Running") says nothing, and a long command is exactly when
-                  the reader needs to know which one it is. The input carries `command` as
-                  soon as its partial JSON parses, well before the call returns. */}
               <Show when={displayCommand()}>
                 <ShellSubmessage text={displayCommand()} animate={sawPending && !open()} />
               </Show>
@@ -2311,8 +2223,8 @@ ToolRegistry.register({
           </div>
         )}
       >
-        <div data-component="bash-output" class="ui-bash-output">
-          <div data-slot="bash-copy" class="ui-bash-copy">
+        <div class="ui-bash-output">
+          <div class="ui-bash-copy">
             <TooltipV2 value={copied() ? i18n.t("transcript.message.copied") : i18n.t("transcript.message.copy")} placement="top">
               <IconButtonV2
                 icon={<IconV2 name={copied() ? "check" : "outline-copy"} size="small" />}
@@ -2342,8 +2254,8 @@ ToolRegistry.register({
           <span data-slot="local-preview-icon">
             <Icon name="window-cursor" size="small" />
           </span>
-          <span data-slot="local-preview-verb" class="ui-local-preview-verb">Local preview</span>
-          <span data-slot="local-preview-url" class="ui-local-preview-url">{localLabel()}</span>
+          <span class="ui-local-preview-verb">Local preview</span>
+          <span class="ui-local-preview-url">{localLabel()}</span>
         </a>
       </Show>
       </>
@@ -2385,7 +2297,9 @@ ToolRegistry.register({
           const fileDiff = resolveFileDiff(source)
           if (fileDiff) return { fileDiff, hunkSeparators: fileDiff.isPartial ? "simple" : "line-info-basic" }
         }
-      } catch {}
+      } catch (error) {
+        console.warn("An edit's diff could not be resolved; its before and after show instead", { error })
+      }
 
       return {
         before: {
@@ -2498,13 +2412,13 @@ ToolRegistry.register({
                   </div>
                 </Show>
               </div>
-              <div data-slot="message-part-actions">{/* <DiffChanges diff={diff} /> */}</div>
+              <div data-slot="message-part-actions"></div>
             </div>
           }
         >
           <Show when={props.input.content && path()}>
             <ToolFileAccordion path={path()}>
-              <div data-component="write-content" class="ui-write-content">
+              <div class="ui-write-content">
                 <Dynamic
                   component={fileComponent}
                   mode="text"
@@ -2772,12 +2686,12 @@ ToolRegistry.register({
         }}
       >
         <Show when={todos().length}>
-          <div data-component="todos" class="ui-todos">
+          <div class="ui-todos">
             <For each={todos()}>
               {(todo: AgentTodo) => (
                 <Checkbox readOnly checked={todo.status === "completed"}>
                   <span
-                    data-slot="message-part-todo-content" class="ui-message-part-todo-content"
+ class="ui-message-part-todo-content"
                     data-completed={todo.status === "completed" ? "completed" : undefined}
                   >
                     {todo.content}
@@ -2810,8 +2724,6 @@ ToolRegistry.register({
   name: "skill",
   render(props) {
     const i18n = useTranscriptI18n()
-    // Claude's dynamic-tool lane persists the skill id on `input.skill`; the
-    // OpenCode lane uses `input.name`.
     const name = createMemo(() => props.input.name || props.input.skill)
     const title = createMemo(() => name() || i18n.t("transcript.tool.skill"))
     const running = createMemo(() => props.status === "pending" || props.status === "running")
@@ -2828,8 +2740,6 @@ ToolRegistry.register({
       </div>
     )
 
-    // A completed skill whose frame carried no output still names its call — the
-    // row must open to that rather than swallow the click onto nothing.
     const body = createMemo(() => props.output || (name() ? `Skill: ${name()}` : undefined))
 
     return (
@@ -2859,9 +2769,9 @@ ToolRegistry.register({
     const plan = createMemo(() => readPlanToolInput(props.input))
     const open = (event: MouseEvent) => {
       const markdown = plan().markdown
-      if (!markdown || !props.sessionID || !props.toolCallId) return
+      if (!markdown || !props.sessionId || !props.toolCallId) return
       dispatchPlanOpen(event.currentTarget, {
-        sessionId: props.sessionID,
+        sessionId: props.sessionId,
         planId: props.toolCallId,
         title: plan().title,
         markdown,
@@ -2902,15 +2812,6 @@ ToolRegistry.register({
   },
 })
 
-/**
- * Harness tool-name aliases. The registry above uses OpenCode's vocabulary, but Claxedo
- * also drives Codex, which names its shell tool `command` (input `{command, kind}`).
- * Unaliased names fall through to `GenericTool` — an "Called `command`" row with a raw
- * key=value arg dump, an MCP icon, and no children (so it can't even expand). Aliasing
- * maps them onto the real renderer so they get the right icon/verb, an expandable output
- * pane, and — because the grouping pass keys off these names — they fold into work groups.
- * Registered after the definitions above so the targets exist.
- */
 for (const [alias, target] of toolNameAliases()) {
   if (ToolRegistry.render(alias)) continue
   const render = ToolRegistry.render(target)

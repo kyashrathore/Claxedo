@@ -1,11 +1,11 @@
 import { createEffect, createSignal, Match, Show, Switch, type JSX } from "solid-js"
 import { Dynamic } from "solid-js/web"
-import { MarkedProvider } from "@opencode-ai/ui/context/marked"
+import { DelayedLoading, MarkedProvider } from "@/ui"
 import { BrowserTabView } from "@/browser"
 import { FileTab, FilesNavigator } from "@/files"
 import { useTranslator } from "@/i18n"
-import { ReviewTab, SourceControlView } from "@/review"
-import type { PlacementId } from "@/server"
+import { ReviewTab, SourceControlView, useLineComments } from "@/review"
+import { useServer, type PlacementId } from "@/server"
 import { usePreferences } from "@/settings"
 import { useShellRegistries, type PanelView } from "@/shell"
 import { Markdown } from "@/transcript"
@@ -137,6 +137,7 @@ function ActiveTab(props: { readonly placementId: PlacementId }): JSX.Element {
     const current = tab()
     return current.kind === "plan" ? current : undefined
   }
+  const fileComments = useLineComments("file")
   const reveal = (path: string) => {
     const current = panel.fileReveal()
     return current?.path === path ? current : undefined
@@ -144,7 +145,7 @@ function ActiveTab(props: { readonly placementId: PlacementId }): JSX.Element {
   return (
     <Switch>
       <Match when={tab().kind === "review"}>
-        <div data-testid="workspace-review-body" class="absolute inset-0 flex h-full flex-col overflow-hidden">
+        <div data-testid="review-pane-root" class="absolute inset-0 flex h-full flex-col overflow-hidden">
           <ReviewTab
             placementId={props.placementId}
             focus={panel.reviewFocus()}
@@ -161,6 +162,7 @@ function ActiveTab(props: { readonly placementId: PlacementId }): JSX.Element {
               headerActive
               focusLine={reveal(path)?.line}
               focusNonce={reveal(path)?.version}
+              comments={fileComments}
             />
           </div>
         )}
@@ -200,6 +202,27 @@ function ActiveTab(props: { readonly placementId: PlacementId }): JSX.Element {
   )
 }
 
+function WorkspacePending(props: { readonly placementId: PlacementId }): JSX.Element {
+  const t = useTranslator(dictionary)
+  const server = useServer()
+  const offline = () => server.placements.byId(props.placementId)?.reachable === false
+  const connecting = () => server.connection().kind === "connecting"
+  return (
+    <Show when={offline() || connecting()}>
+      <div
+        data-testid="workspace-review-pending"
+        class="absolute inset-0 z-10 flex min-w-0 items-center justify-center bg-background-base px-6 text-center text-compact text-text-weak"
+      >
+        <Show when={!offline()} fallback={<span>{t("panel.unavailable")}</span>}>
+          <DelayedLoading>
+            <span>{t("panel.connecting")}</span>
+          </DelayedLoading>
+        </Show>
+      </div>
+    </Show>
+  )
+}
+
 export function PanelBody(): JSX.Element {
   const t = useTranslator(dictionary)
   const panel = usePanel()
@@ -222,6 +245,7 @@ export function PanelBody(): JSX.Element {
                 data-workspace-panel-session-id={panel.sessionId()}
               >
                 <NavigatorColumn placementId={placementId} />
+                <WorkspacePending placementId={placementId} />
                 <div class="h-full min-w-0 flex-1">
                   <div class="relative flex size-full min-h-0 overflow-hidden bg-background-base h-full">
                     <div id="review-panel" class="relative flex-1 min-w-0 flex flex-col h-full">

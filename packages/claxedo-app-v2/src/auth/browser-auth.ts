@@ -109,36 +109,30 @@ function present(value: unknown): value is string {
 }
 
 function exactOrigin(value: string) {
-  try {
-    const url = new URL(value)
-    return (
-      url.protocol === "https:" &&
-      url.origin === value &&
-      url.pathname === "/" &&
-      !url.search &&
-      !url.hash &&
-      !url.username &&
-      !url.password
-    )
-  } catch {
-    return false
-  }
+  if (!URL.canParse(value)) return false
+  const url = new URL(value)
+  return (
+    url.protocol === "https:" &&
+    url.origin === value &&
+    url.pathname === "/" &&
+    !url.search &&
+    !url.hash &&
+    !url.username &&
+    !url.password
+  )
 }
 
 function exactUrl(value: string) {
-  try {
-    const url = new URL(value)
-    return (
-      url.protocol === "https:" &&
-      `${url.origin}${url.pathname === "/" ? "" : url.pathname}` === value &&
-      !url.search &&
-      !url.hash &&
-      !url.username &&
-      !url.password
-    )
-  } catch {
-    return false
-  }
+  if (!URL.canParse(value)) return false
+  const url = new URL(value)
+  return (
+    url.protocol === "https:" &&
+    `${url.origin}${url.pathname === "/" ? "" : url.pathname}` === value &&
+    !url.search &&
+    !url.hash &&
+    !url.username &&
+    !url.password
+  )
 }
 
 function stringArray(value: unknown): string[] | undefined {

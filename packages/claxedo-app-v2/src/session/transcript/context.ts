@@ -5,8 +5,7 @@ import type { Server, SessionRef } from "@/server"
 import type { OlderState } from "@/session"
 import type { SessionListInternal } from "../list"
 import type { RequestsInternal } from "../requests"
-import { appendDelta, dropQueuedStubs, type SetTranscript } from "./conversation"
-import { createDeltaBuffer, type DeltaBuffer } from "./deltas"
+import { dropQueuedStubs, type SetTranscript } from "./conversation"
 import { createSessionGoal, type SessionGoalStore } from "./goal"
 import {
   OLDER_IDLE,
@@ -21,6 +20,7 @@ import {
 } from "./model"
 import { createQueue, type QueueInternal } from "./queue"
 import { createSessionSubagents, type SessionSubagentsStore } from "./subagents"
+import { createSessionTodos, type SessionTodosStore } from "./todos"
 
 export type TranscriptDeps = {
   readonly list: SessionListInternal
@@ -37,9 +37,9 @@ export type TranscriptContext = {
   readonly older: Machine<OlderState, OlderEvent>
   readonly olderCursor: Accessor<string | undefined>
   readonly setOlderCursor: Setter<string | undefined>
-  readonly deltas: DeltaBuffer
   readonly queue: QueueInternal
   readonly goal: SessionGoalStore
+  readonly todos: SessionTodosStore
   readonly subagents: SessionSubagentsStore
   readonly snapshotRead: { current: Promise<void> | undefined }
   readonly olderRead: { current: Promise<void> | undefined }
@@ -58,9 +58,9 @@ export function createTranscriptContext(server: Server, ref: SessionRef, deps: T
     older: machine(OLDER_IDLE, olderTransition),
     olderCursor,
     setOlderCursor,
-    deltas: createDeltaBuffer((messageId, partId, field, text) => appendDelta(setData, data, messageId, partId, field, text)),
     queue: createQueue(server, ref, (items) => dropQueuedStubs(setData, data, items)),
     goal: createSessionGoal(server, ref),
+    todos: createSessionTodos(),
     subagents: createSessionSubagents(server, ref),
     snapshotRead: { current: undefined },
     olderRead: { current: undefined },

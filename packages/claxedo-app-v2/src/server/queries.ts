@@ -1,12 +1,13 @@
 import type { QueryClient } from "@tanstack/solid-query"
+import { agentConnectionQueries } from "./agent-connections"
 import { integrationQueries } from "./integrations"
 import { sandboxProviderQueries } from "./sandbox-providers"
 import { providerConnectQueries } from "./provider-connect"
+import { providerCatalogQueries } from "./provider-catalogs"
 import { folderQueries } from "./folders"
 import { fetchQuery } from "./fetch-query"
 import { accountQueries } from "./accounts"
 import { cloudQueries } from "./cloud"
-import { documentQueries } from "./documents"
 import type { ServerEvent } from "./events"
 import { fileQueries } from "./files"
 import { gitQueries } from "./git"
@@ -46,7 +47,6 @@ export function createQueries(transport: Transport, workspaces: Workspaces): Ser
     usage: usageQueries(transport),
     marketplace: marketplaceQueries(transport),
     tasks: taskQueries(transport),
-    documents: documentQueries(transport),
     codeHost: cloud.codeHost,
     cloud: cloud.cloud,
     files: fileQueries(transport, workspaces),
@@ -54,8 +54,10 @@ export function createQueries(transport: Transport, workspaces: Workspaces): Ser
     harnesses: harnessQueries(transport, workspaces),
     folders: folderQueries(transport),
     integrations: integrationQueries(transport),
+    agentConnections: agentConnectionQueries(transport),
     sandboxProviders: sandboxProviderQueries(transport),
     providerConnect: providerConnectQueries(transport),
+    providerCatalogs: providerCatalogQueries(transport),
   }
 }
 
@@ -72,12 +74,10 @@ function invalidationKeys(server: string, event: ServerEvent): readonly (readonl
       return [queryKeys.bootstrap(server), queryKeys.placements(server), queryKeys.projects(server), queryKeys.machines(server), queryKeys.cloud(server)]
     case "pluginsChanged":
       return [queryKeys.marketplaceAll(server), queryKeys.marketplaceSources(server)]
-    case "documentsChanged":
-      return [queryKeys.documents(server)]
     case "usageChanged":
       return [queryKeys.usageAll(server)]
     case "streamGap":
-      return [queryKeys.bootstrap(server), queryKeys.placements(server), queryKeys.projects(server), queryKeys.machines(server), queryKeys.documents(server), queryKeys.cloud(server)]
+      return [queryKeys.bootstrap(server), queryKeys.placements(server), queryKeys.projects(server), queryKeys.machines(server), queryKeys.cloud(server)]
     default:
       return []
   }

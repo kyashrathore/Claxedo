@@ -1,20 +1,8 @@
 import { type Component, createMemo, Show } from "solid-js"
-import { Tag } from "@opencode-ai/ui/tag"
-import { List } from "@opencode-ai/ui/list"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
+import { Tag, List, Tooltip } from "@/ui"
 import { ModelTooltip } from "./model-tooltip"
 import { useComposerText } from "../text"
-
-const popularProviders = [
-  "opencode",
-  "opencode-go",
-  "anthropic",
-  "github-copilot",
-  "openai",
-  "google",
-  "openrouter",
-  "vercel",
-]
+import { POPULAR_PROVIDERS } from "../harness/provider-catalog"
 
 export type PickerItem = {
   id: string
@@ -49,8 +37,8 @@ function comparePickerProviderGroups(
 
   const aProvider = a.items[0]?.provider.id ?? ""
   const bProvider = b.items[0]?.provider.id ?? ""
-  const aRank = popularProviders.indexOf(aProvider)
-  const bRank = popularProviders.indexOf(bProvider)
+  const aRank = POPULAR_PROVIDERS.indexOf(aProvider)
+  const bRank = POPULAR_PROVIDERS.indexOf(bProvider)
   const aPopular = aRank >= 0
   const bPopular = bRank >= 0
   if (aPopular && !bPopular) return -1
@@ -61,7 +49,7 @@ function comparePickerProviderGroups(
 export type PickerState = {
   list: () => PickerItem[]
   current: () => PickerItem | undefined
-  set: (item: { modelID: string; providerID: string } | undefined, options?: { recent?: boolean }) => void
+  set: (item: { modelId: string; providerId: string } | undefined, options?: { recent?: boolean }) => void
 }
 
 /**
@@ -80,7 +68,7 @@ export const ModelList: Component<{
 
   return (
     <List
-      class="flex-1 min-h-0 [&_[data-slot=list-scroll]]:flex-1 [&_[data-slot=list-scroll]]:min-h-0"
+      class="composer-model-list flex-1 min-h-0"
       search={{ placeholder: t("dialog.model.search.placeholder"), autofocus: true }}
       emptyMessage={t("dialog.model.empty")}
       key={(x) => `${x.provider.id}:${x.id}`}
@@ -121,7 +109,7 @@ export const ModelList: Component<{
         )
       }
       onSelect={(x) => {
-        props.model.set(x ? { modelID: x.id, providerID: x.provider.id } : undefined, {
+        props.model.set(x ? { modelId: x.id, providerId: x.provider.id } : undefined, {
           recent: true,
         })
         props.onSelect()
