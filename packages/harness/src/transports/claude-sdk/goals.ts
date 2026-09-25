@@ -1,13 +1,13 @@
 import type { SDKActiveGoalMessage, SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { AgentGoalMutationResult } from "@claxedo/agent-runtime-contract"
-import type { HarnessSession, RoutedEvent, SessionBroker, StartInput, TurnBroker } from "../../contract"
+import type { HarnessSession, ProviderTurnSettlement, RoutedEvent, SessionBroker, StartInput, TurnBroker } from "../../contract"
 import { ClaudeProcess } from "./process"
 import { ClaudeQueryLauncher } from "./query-options"
 import { observeClaudeSessionMessage } from "./session-events"
 import { claudeTranslator, translateClaude } from "./translate"
 import { errorMessage } from "@claxedo/helpers"
 
-type Running = { turnId: string; abort: AbortController; settled: Promise<unknown> }
+type Running = { turnId: string; abort: AbortController; settled: Promise<ProviderTurnSettlement> }
 
 export class ClaudeGoals {
   private readonly running = new Map<string, Running>()
@@ -53,9 +53,10 @@ export class ClaudeGoals {
     } finally { clearTimeout(timeout) }
   }
 
-  async cancel(sessionId: string): Promise<void> {
+  async cancel(sessionId: string): Promise<ProviderTurnSettlement | undefined> {
     const running = this.running.get(sessionId)
-    if (running) { running.abort.abort(); await running.settled }
+    if (running) { running.abort.abort(); return running.settled }
+    return undefined
   }
 
   turnId(sessionId: string): string | undefined { return this.running.get(sessionId)?.turnId }
@@ -66,11 +67,13 @@ export class ClaudeGoals {
     const processes = new Set<ClaudeProcess>()
     const stream = await this.launcher.launch({ session, input, broker, turnBroker, prompt, abort, processes, runtime,
       assistantMessageId: session.binding.sessionId, clear })
+    let sawResult = false
     try {
       for await (const message of stream as AsyncIterable<SDKMessage | SDKActiveGoalMessage>) {
         const observed = await observeClaudeSessionMessage(message, session, broker, abort.signal)
         if (observed.kind === "active-goal") continue
         const current = observed.message
+        if (current.type === "result") sawResult = true
         if (clear) {
           if (current.type === "result" && current.subtype === "success" && !current.is_error && current.num_turns === 0) {
             confirm?.()
@@ -79,6 +82,7 @@ export class ClaudeGoals {
         }
         if (turnBroker) for (const event of await translateClaude(current, runtime, tasks, turnBroker)) yield event
       }
+      if (!sawResult && !abort.signal.aborted) throw new Error("Claude Goal stream ended without a result")
     } finally {
       stream.close()
       await Promise.all([...processes].map((child) => child.retire({ at: Date.now() + 5_000, signal: new AbortController().signal })))

@@ -1,6 +1,6 @@
 import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk"
 import type { AgentPermissionMode, SessionConfig } from "@claxedo/agent-runtime-contract"
-import { CLAUDE_DENY_FLOOR } from "../../profiles/claude-code"
+import { claudePermissionSettings } from "../../profiles/claude-code"
 import { TransportError } from "../../contract/errors"
 
 export const sdkModes = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"] as const satisfies readonly PermissionMode[]
@@ -15,7 +15,6 @@ export const modes: AgentPermissionMode[] = [
   { id: "bypassPermissions", name: "Bypass permissions", level: "full" },
 ]
 
-export const denyFloor = CLAUDE_DENY_FLOOR
 const protocolPermissionMap = { allow: "allow", ask: "ask", deny: "deny", additionalDirectories: "additionalDirectories" } as const
 
 export function permissionOptions(config: SessionConfig) {
@@ -30,7 +29,6 @@ export function permissionOptions(config: SessionConfig) {
     return row.filter((value: unknown): value is string => typeof value === "string")
   }
   return { permissionMode: selected, allowDangerouslySkipPermissions: modeId === "bypassPermissions" ? true as const : undefined,
-    additionalDirectories: values(protocolPermissionMap.additionalDirectories), settings: { permissions: {
-      allow: values(protocolPermissionMap.allow), ask: values(protocolPermissionMap.ask), deny: [...values(protocolPermissionMap.deny), ...denyFloor],
-    } } }
+    additionalDirectories: values(protocolPermissionMap.additionalDirectories),
+    settings: claudePermissionSettings(values(protocolPermissionMap.allow), values(protocolPermissionMap.ask), values(protocolPermissionMap.deny)) }
 }

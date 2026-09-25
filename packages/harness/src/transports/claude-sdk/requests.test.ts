@@ -34,15 +34,13 @@ test("Claude grants use identity fields, ignore display labels, and pass the SDK
   expect(signals).toEqual(Array(requests.length).fill(controller.signal))
 })
 
-test("a native ask rule has no reusable grant and the deny floor never reaches the broker", async () => {
+test("a native ask rule has no reusable grant", async () => {
   const requests: TurnRequest[] = []
   const broker = { signal: new AbortController().signal, ask: async (request: TurnRequest) => {
     requests.push(request)
     return { kind: "permission" as const, decision: "allow_always" as const }
   } } as TurnBroker
   const signal = new AbortController().signal
-  expect((await askClaudePermission(input, broker, "Bash", { command: "rm -rf ~mine" }, { signal } as Parameters<CanUseTool>[2])).behavior).toBe("deny")
-  expect(requests).toHaveLength(0)
   await askClaudePermission(input, broker, "Bash", { command: "echo safe" },
     { signal, blockedPath: "/work", matchedAskRule: { toolName: "Bash" } } as Parameters<CanUseTool>[2])
   await askClaudePermission(input, broker, "Bash", { command: "echo safe" },

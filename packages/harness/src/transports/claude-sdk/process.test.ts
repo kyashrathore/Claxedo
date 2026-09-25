@@ -74,3 +74,20 @@ test("a reused PID identity is refused by the owned retirement boundary", async 
     .rejects.toMatchObject({ transport: "claude", code: "process", message: "identity_mismatch" })
   expect(calls).toEqual([5_000_003])
 })
+
+test("Claude stderr and process failures never expose child text to the service logger", async () => {
+  const secret = "private-stderr-token"
+  const logs: unknown[] = []
+  const owned: OwnedProcess = { pid: 5_000_004, stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(),
+    exited: new Promise(() => {}), retire: async () => ({ stopped: false, error: { code: "denied", message: secret } }) }
+  const log = { debug: (...values: unknown[]) => logs.push(values), info() {}, warn() {},
+    error: (...values: unknown[]) => logs.push(values) }
+  const process = new ClaudeProcess({ spawn: async () => owned, log } as unknown as HarnessServices,
+    { command: "claude", args: [], env: {}, signal: new AbortController().signal }, "s1")
+  await process.started
+  owned.stderr.emit("data", Buffer.from(secret))
+  process.kill()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(JSON.stringify(logs)).not.toContain(secret)
+  expect(JSON.stringify(logs).length).toBeLessThan(4096)
+})
