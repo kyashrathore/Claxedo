@@ -227,6 +227,11 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - Terminals only for live placements.
 - The plan is `docs/plans/2026-09-25-002-session-sources-plan.md`.
 
+## Owner, 2026-09-25 18:40: the account credential stays behind AccountPort
+- The signed desktop's merged session list reads the control plane through AccountPort: Electron main owns the credential and runs only named operations (`session.list` added to the closed set).
+- The daemon never receives the user's bearer.
+- Machine row publishing (S2) uses the machine's Host Tunnel Token, scoped to the workspaces still assigned to that host. That's a machine credential, not the user's.
+
 ## Owner, 2026-09-25: desktop app plugins run in-app; residual accepted, users warned
 - On the desktop an app plugin runs in the app's own JavaScript, unsandboxed. It has the app's full access on this computer: it sees what the user sees, acts as the user on their server, reaches every desktop bridge (`window.api`), and can open links in the user's browser or the Browser tab that carry data out.
 - The owner accepts that residual. The desktop warning says it plainly and asks the user to turn on only app plugins they trust.
