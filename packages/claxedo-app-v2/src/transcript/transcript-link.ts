@@ -4,18 +4,12 @@ export { transcriptLinkUriPattern } from "@/ui"
 
 const prefixAlternation = transcriptLinkPrefixes.map((prefix) => prefix.replace(/[./]/g, "\\$&")).join("|")
 
-/** Not `transcriptLinkRunSource`: an exact match ends at a paren, a run inside prose may open one. */
 const linkText = new RegExp(`^(?:${prefixAlternation})[^\\s<>()\`"']+$`, "i")
 
 const linkInText = new RegExp(transcriptLinkRunSource(transcriptLinkPrefixes), "gi")
 
 const trailingPunctuation = /[),.;:!?]+$/
 
-/**
- * The href for a value that is meant to BE a link — a markdown code span, an
- * already-extracted match. Returns undefined for prose that merely contains
- * one, so `curl https://example.com` stays a command.
- */
 export function transcriptLinkHref(text: string | undefined): string | undefined {
   if (!text) return undefined
   const candidate = text.trim().replace(trailingPunctuation, "")
@@ -23,7 +17,6 @@ export function transcriptLinkHref(text: string | undefined): string | undefined
   return URL.canParse(candidate) ? new URL(candidate).toString() : undefined
 }
 
-/** Distinct links embedded in prose or tool output, in the order they appear. */
 export function transcriptLinks(text: string | undefined): string[] {
   if (!text) return []
   const seen = new Set<string>()
@@ -34,12 +27,6 @@ export function transcriptLinks(text: string | undefined): string[] {
   return [...seen]
 }
 
-/**
- * Hands the link to whatever surface is hosting the transcript. A host claims
- * it by cancelling the event; an uncancelled event leaves the anchor's own
- * `target="_blank"` default in place, which is what the storybook lab and a
- * plain web build rely on.
- */
 export function dispatchTranscriptLinkOpen(target: EventTarget | null, href: string): boolean {
   if (!target) return false
   return !target.dispatchEvent(
@@ -53,10 +40,6 @@ export function handleTranscriptLinkClick(event: MouseEvent) {
   const anchor = target?.closest("a[href]")
   if (!anchor) return
   const raw = anchor.getAttribute("href") ?? ""
-  // A target the sanitizer would refuse never reaches default navigation —
-  // whatever button or modifiers carried the click. Returning early here is
-  // what makes a rejected `javascript:`/`data:` bind a no-op instead of an
-  // anchor the browser still resolves on its own.
   if (!transcriptLinkUriAllowed(raw)) {
     event.preventDefault()
     return

@@ -11,7 +11,6 @@ export type WorkGroupCounts = {
   commands: number
   fetched: number
   searched: number
-  /** Members no named bucket claims, in order, so the summary can still name them. */
   other: AgentToolPart[]
 }
 
@@ -49,16 +48,10 @@ export function workGroupIcon(parts: AgentToolPart[]): IconProps["name"] {
   return icon && rest.length === 0 ? icon : "wrench"
 }
 
-/** How a row names one call: the action its name reads as, or the name itself. */
 function toolLabel(part: AgentToolPart, i18n: TranscriptI18n) {
   return toolActionPhrase(part.tool, i18n) ?? canonicalToolName(part.tool)
 }
 
-/**
- * The members the named buckets leave over. A single call is named the way its own row
- * names it; a run of one tool is counted by that tool; a mixed run has no shared name
- * to count by, so it says how many calls it hides.
- */
 function otherSegment(parts: AgentToolPart[], pending: boolean, i18n: TranscriptI18n): string | undefined {
   const first = parts[0]
   if (!first) return undefined
@@ -69,8 +62,6 @@ function otherSegment(parts: AgentToolPart[], pending: boolean, i18n: Transcript
   const labels = [...new Set(parts.map((part) => toolLabel(part, i18n).toLowerCase()))]
   const [name] = labels
   if (labels.length === 1 && name) {
-    // A run of one tool counts by that tool: a pluralizable name keeps the
-    // "ran 2 skills" shape, an opaque one keeps its label verbatim.
     if (/^[a-z][a-z0-9]*$/.test(name)) {
       return pending ? `running ${name}s` : `ran ${parts.length} ${name}s`
     }
@@ -79,8 +70,6 @@ function otherSegment(parts: AgentToolPart[], pending: boolean, i18n: Transcript
   return pending ? `running ${labels.join(", ")}` : `used ${labels.join(", ")}`
 }
 
-// Segmented summary: present-continuous while running, past tense when settled;
-// leading segment sentence-case, followers lowercase, joined with " · ".
 function workGroupSegments(counts: WorkGroupCounts, pending: boolean, i18n: TranscriptI18n): string[] {
   const segs: string[] = []
   if (counts.edited > 0)
@@ -101,16 +90,9 @@ export function workGroupTitle(counts: WorkGroupCounts, pending: boolean, i18n: 
   return segs.map((seg, i) => (i === 0 ? seg.charAt(0).toUpperCase() + seg.slice(1) : seg)).join(" · ")
 }
 
-/**
- * "active" header kind: while a member is still running, the group header shows
- * that member's live summary instead of the settled aggregate — so a long run of tool
- * calls stays ONE row that keeps updating, rather than appending a row per call.
- */
 export function workGroupActiveLabel(parts: AgentToolPart[], i18n: TranscriptI18n, busy = false): string | undefined {
   const active = parts.find((part) => part.state.status === "pending" || part.state.status === "running")
     ?? (busy ? parts.at(-1) : undefined)
-  // `busy` belongs to the trailing group of the active turn. A completed member
-  // does not close that group; the next transcript group or turn completion does.
   if (!active) return undefined
   const input = (active.state.input ?? {})
   const text = (key: string) => (typeof input[key] === "string" ? (input[key]) : undefined)

@@ -161,8 +161,6 @@ ${lineCommentStyles}
 
 `
 
-// `diffStyle` is declared on the non-generic `BaseDiffOptions`, so these defaults do not
-// vary with a diff's annotation type.
 export function createDefaultOptions(style: BaseDiffOptions["diffStyle"]) {
   return {
     theme: codeTheme.name,

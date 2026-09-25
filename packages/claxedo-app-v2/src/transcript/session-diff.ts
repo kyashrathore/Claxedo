@@ -1,8 +1,5 @@
 import { parseDiffFromFile, parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs"
 
-// The parsed-diff contract downstream surfaces program against. Re-exported
-// here because this module is the app's edge into @pierre/diffs' parsing —
-// callers hold resolved metadata without importing the renderer package.
 export type { FileDiffMetadata } from "@pierre/diffs"
 import { parsePatch } from "diff"
 import type { AgentReviewFileDiff } from "@claxedo/agent-runtime-contract"
@@ -21,38 +18,8 @@ export type ViewDiff = {
 const diffCacheLimit = 16
 const fileDiffCache = new Map<string, FileDiffMetadata>()
 
-/**
- * Serial for the `cacheKey` stamped on every resolved diff, minted once per
- * DISTINCT diff content by `resolveFileDiff` below.
- */
 let fileDiffSerial = 0
 
-/**
- * Parse one review/tool diff into the metadata `@pierre/diffs` renders from.
- *
- * The result is cached under the diff's exact content — the file name plus the
- * patch, or the file name plus both sides — so the same diff resolved twice
- * (hover then click, two surfaces showing one file) parses once.
- *
- * Every resolved diff carries a `cacheKey`. `@pierre/diffs` uses it for two
- * things, and both need it to mean "this exact content":
- *
- *  - `WorkerPoolManager` keys its highlight LRU on it. Without a key
- *    `getDiffResultCache` returns undefined for every lookup, so a highlight
- *    already computed for a file could never be reused: expanding a row ran
- *    the plain AST on the main thread and then re-rendered the whole shadow
- *    tree when the worker's result arrived.
- *  - `areDiffTargetsEqual` treats two metadata objects as the same target iff
- *    their keys match, which is what lets a renderer skip rebuilding rows.
- *
- * The key is the serial minted for the cache entry, so it is derived from
- * content by construction: identical content shares one entry and therefore
- * one key, and any change to the file name, the patch or either side is a
- * different entry and mints a NEW key. A changed diff can never inherit the
- * previous content's highlight — the failure mode a hashed key would risk on
- * collision. Eviction can hand the same content a second key later, which
- * only costs a re-highlight.
- */
 export function resolveFileDiff(diff: DiffSource): FileDiffMetadata {
   const key = contentKey(diff)
   const hit = fileDiffCache.get(key)
@@ -69,12 +36,6 @@ export function resolveFileDiff(diff: DiffSource): FileDiffMetadata {
   return value
 }
 
-/**
- * Exact content identity of a diff source, so no two different sources can
- * produce one key. A file name holds no NUL, so the separator after it is
- * unambiguous; file CONTENTS can, so the two-sided form length-prefixes the
- * sides rather than relying on a separator between them.
- */
 function contentKey(diff: DiffSource) {
   if (typeof diff.patch === "string") return `patch\0${diff.file}\0${diff.patch}`
   const before = typeof diff.before === "string" ? diff.before : ""
@@ -101,8 +62,6 @@ export function normalize(diff: ReviewDiff): ViewDiff {
   }
 }
 
-/** A diff's text for one side. Parsed content is all this needs, so a caller
- *  holding only the resolved metadata does not have to invent the counts. */
 export function text(diff: Pick<ViewDiff, "fileDiff">, side: "deletions" | "additions") {
   if (side === "deletions") return diff.fileDiff.deletionLines.join("")
   return diff.fileDiff.additionLines.join("")
@@ -119,11 +78,9 @@ function completePatchContents(patch: string): { before: string; after: string }
   try {
     const parsed = parsePatch(patch)[0]
     if (!parsed || (!parsed.index && !parsed.oldFileName && !parsed.newFileName)) return undefined
-    // Snapshot and VCS producers request full context. Tool patches use jsdiff's shorter default context.
     if (!patch.startsWith("diff --git ") && !/^--- [^\n]*\t\r?\n\+\+\+ [^\n]*\t(?:\r?\n|$)/m.test(patch)) {
       return undefined
     }
-    // Full patches collapse into one leading hunk. Separated hunks omit ranges and must stay partial.
     if (parsed.hunks.length !== 1) return undefined
 
     const hunk = parsed.hunks[0]

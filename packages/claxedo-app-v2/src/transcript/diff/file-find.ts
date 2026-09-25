@@ -13,11 +13,6 @@ export type FindHost = {
   isOpen: () => boolean
 }
 
-/**
- * How many frames a reveal is followed for before find gives up on the row.
- * A virtualizer draws the new window within a frame or two of the scroll; ten
- * is generous for a slow frame and still ends in a sixth of a second.
- */
 const REVEAL_SETTLE_FRAMES = 10
 
 const hosts = new Set<FindHost>()
@@ -89,11 +84,6 @@ function installShortcuts() {
 const FIND_HIGHLIGHT = "opencode-find"
 const FIND_HIGHLIGHT_CURRENT = "opencode-find-current"
 
-/**
- * The CSS Custom Highlight registry, or `undefined` where the API is absent.
- * `CSS.highlights` and `Highlight` are typed by lib.dom but only exist in recent
- * browsers, so both are probed at runtime — once here, for every caller.
- */
 function highlightRegistry(): HighlightRegistry | undefined {
   if (typeof CSS === "undefined" || typeof Highlight !== "function") return undefined
   return CSS.highlights
@@ -114,16 +104,7 @@ type CreateFileFindOptions = {
   wrapper: () => HTMLElement | undefined
   overlay: () => HTMLDivElement | undefined
   getRoot: () => ShadowRoot | undefined
-  /**
-   * The file's own lines, when this viewer renders a WINDOW over them.
-   *
-   * Given them, the match list is computed from the text and the rendered rows
-   * only supply the ranges to paint — so the count is the file's count and a
-   * match below the fold is reachable. Omitted (a diff, whose two sides are not
-   * one line list), find reads the rendered rows exactly as it always did.
-   */
   lines?: () => readonly string[] | undefined
-  /** Bring `line` into the rendered window; the rows arrive asynchronously. */
   revealLine?: (line: number) => void
 }
 
@@ -133,8 +114,6 @@ export function createFileFind(opts: CreateFileFindOptions) {
   let mode: "highlights" | "overlay" = "overlay"
   let hits: Array<Range | undefined> = []
   let matches: FileFindMatch[] = []
-  // Set when the active match's row is not rendered yet: the reveal is asked
-  // for here and the scroll happens in the `apply` the arriving rows trigger.
   let scrollWhenRevealed = false
   let revealFrame: number | undefined
   let revealFramesLeft = 0
@@ -187,7 +166,6 @@ export function createFileFind(opts: CreateFileFindOptions) {
 
     for (let i = 0; i < hits.length; i++) {
       const range = hits[i]
-      // A match whose row the window does not hold has no range to draw.
       if (!range) continue
       const active = i === currentIndex
       for (const rect of Array.from(range.getClientRects())) {
@@ -269,7 +247,6 @@ export function createFileFind(opts: CreateFileFindOptions) {
       (node): node is HTMLElement => node instanceof HTMLElement,
     )
 
-  /** Every occurrence of `value` inside one rendered row, as DOM ranges. */
   const scanRow = (col: HTMLElement, value: string) => {
     const needle = value.toLowerCase()
     const ranges: Range[] = []
@@ -323,15 +300,6 @@ export function createFileFind(opts: CreateFileFindOptions) {
   const scan = (root: ShadowRoot, value: string) =>
     renderedRows(root).flatMap((col) => scanRow(col, value))
 
-  /**
-   * The file's matches, paired with a range for each one whose row is rendered.
-   *
-   * The list and its order come from the text; the ranges come from the DOM, so
-   * a row whose highlighting splits its text differently than the source still
-   * highlights at the offsets its own text actually has. A line that is not
-   * rendered contributes matches with no range — countable, navigable, and
-   * paintable as soon as `revealLine` brings the row in.
-   */
   const scanWindowed = (root: ShadowRoot, value: string, lines: readonly string[]) => {
     const found = fileFindMatches(lines, value)
     if (found.length === 0) return { found, ranges: [] as Array<Range | undefined> }
@@ -391,8 +359,6 @@ export function createFileFind(opts: CreateFileFindOptions) {
     setState("index", currentIndex)
 
     const active = ranges[currentIndex]
-    // A match the window does not hold yet is still the active one: ask for its
-    // row and let the observer re-apply when it lands.
     const wantsScroll = args?.scroll === true || scrollWhenRevealed
     if (wantsScroll && !active && total > 0) {
       const line = matches[currentIndex]?.line
@@ -420,16 +386,6 @@ export function createFileFind(opts: CreateFileFindOptions) {
     scheduleOverlay()
   }
 
-  /**
-   * Catch up with the rows a reveal is bringing in.
-   *
-   * A windowed viewer draws the rows for a scroll position, and `revealLine`
-   * only moves the scroll — the rows arrive a frame or two later, outside this
-   * module. So a reveal re-applies on the next few frames and stops as soon as
-   * the match it asked for has a range (`apply` clears `scrollWhenRevealed`
-   * when it scrolls to it). Bounded and self-terminating: no frame loop
-   * survives the handshake, and a find nobody revealed from never starts one.
-   */
   const stopRevealPump = () => {
     if (revealFrame !== undefined) cancelAnimationFrame(revealFrame)
     revealFrame = undefined
@@ -438,7 +394,6 @@ export function createFileFind(opts: CreateFileFindOptions) {
     windowFrame = undefined
   }
 
-  /** Re-apply once on the next frame, coalescing a burst of scroll events. */
   const pumpWindow = () => {
     if (windowFrame !== undefined) return
     if (typeof requestAnimationFrame === "undefined") return
@@ -463,7 +418,6 @@ export function createFileFind(opts: CreateFileFindOptions) {
     })
   }
 
-  /** Ask the viewer for `line`'s row, then follow it in until it is drawn. */
   const revealMatchLine = (line: number) => {
     if (!opts.revealLine) return false
     scrollWhenRevealed = true
@@ -503,8 +457,6 @@ export function createFileFind(opts: CreateFileFindOptions) {
 
     const active = hits[currentIndex]
     if (!active) {
-      // The match is outside the rendered window. Ask for its row; the window
-      // observer re-applies when it exists and the scroll happens there.
       const line = matches[currentIndex]?.line
       if (line !== undefined) revealMatchLine(line)
       return
@@ -566,10 +518,6 @@ export function createFileFind(opts: CreateFileFindOptions) {
     const root = scrollParent(wrapper) ?? wrapper
     createResizeObserver(root, update)
 
-    // A windowed viewer's rendered rows are a function of this scroller's
-    // position, so scrolling is the one thing that can change which matches
-    // have a range to paint. Nothing to re-apply for a viewer that renders its
-    // whole file, which is why this is tied to having a line source.
     if (!opts.lines) return
     makeEventListener(root, "scroll", () => pumpWindow(), { passive: true })
   })
