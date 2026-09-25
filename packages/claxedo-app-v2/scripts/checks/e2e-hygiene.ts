@@ -57,7 +57,14 @@ function sleeps(node: ts.Node, spec: boolean): string | undefined {
   if (!ts.isCallExpression(node)) return undefined
   const name = calleeName(node)
   if (name === "waitForTimeout") return "waitForTimeout sleeps; wait on a visible state"
+  if (isTestTimeout(node)) return undefined
   return spec && name !== undefined && sleepCallees.has(name) ? `${name} sleeps; wait on a visible state` : undefined
+}
+
+// `test.setTimeout(ms)` sets Playwright's per-test budget; it waits for nothing.
+function isTestTimeout(call: ts.CallExpression): boolean {
+  const callee = unwrap(call.expression)
+  return ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression) && callee.expression.text === "test" && callee.name.text === "setTimeout"
 }
 
 function cssClass(node: ts.Node): string | undefined {

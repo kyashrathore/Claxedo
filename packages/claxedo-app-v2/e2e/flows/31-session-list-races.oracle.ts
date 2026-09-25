@@ -27,7 +27,7 @@ export async function railRows(app: Page): Promise<RailRow[]> {
   const rows = await app.getByTestId("rail-sidebar-session-row").evaluateAll((elements) =>
     elements.map((row) => ({
       sessionId: row.getAttribute("data-session-id") ?? "",
-      title: row.querySelector(".ui-session-navigation-title")?.textContent?.trim() ?? "",
+      title: row.querySelector('[data-slot="navigation-row-activate"]')?.getAttribute("aria-label") ?? "",
       mark: row.querySelector("[data-sidebar-status]")?.getAttribute("data-sidebar-status") ?? "",
     })),
   )
