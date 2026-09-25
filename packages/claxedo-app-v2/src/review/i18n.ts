@@ -57,6 +57,7 @@ const en = {
   "review.showBranchDiff": "Show branch diff vs",
   "review.directory": "dir: {{directory}}",
   "review.noDirectory": "no directory bound to this panel",
+  "review.via": "via {{url}}",
   "review.change.added": "Added",
   "review.change.removed": "Removed",
   "review.change.modified": "Modified",

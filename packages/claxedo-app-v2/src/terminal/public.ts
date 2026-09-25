@@ -11,6 +11,7 @@ export type TerminalItem = {
   readonly terminalId: TerminalId
   readonly title: string
   readonly agentStatus?: TerminalAgentStatus
+  readonly seen: boolean
 }
 
 export type TerminalList = {
@@ -38,6 +39,7 @@ export function useTerminals(): TerminalList {
           terminalId: row.id,
           title: row.title,
           ...(row.agentStatus ? { agentStatus: row.agentStatus } : {}),
+          seen: row.seen === true,
         })),
     retain: runtime.retain,
     createTerminal: async (placementId, launch) => (await runtime.store(placementId).create(launch)).id,

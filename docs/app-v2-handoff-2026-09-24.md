@@ -7,11 +7,10 @@
 - project surfaces.
 
 It is **not** at the plan's "Ready for you" (P6):
-- some of the owner's bugs are still open (see [Owner-reported bugs](#owner-reported-bugs));
-- the owner deferred several v1 surfaces at 19:08: settings sections, onboarding, Marketplace and Tasks;
-- 10 of the app's 17 checks fail;
-- app plus kit is over the line budget;
-- the benchmark has never run against v2.
+- the publication benchmark (2026-09-25) gives 7 workspace-panel rows to v1 by 1–6 ms, and misses the start and idle-memory targets (see [the full suite](#benchmark-publication-run-2-full-suite-2026-09-25-07190741));
+- exp-stream's five transcript streaming fixes wait for the owner's sign-off on `v2/stream-slice`;
+- `bun run check` still fails on several checks; the lanes are taking them to zero, domain by domain;
+- the Composer is over its line budget: the budget assumed a frame swap that the parity ruling voided.
 
 Nothing is pushed, `packages/claxedo-app` is untouched, and there is no swap.
 
@@ -421,13 +420,20 @@ At 19:08 the owner said: finish in-progress work; start no new work.
 
 ## Server gaps found by the parity work
 
-- **Harness health is pull-only.** v1's composer health peek ("The agent stopped responding / Check again") polls `/api/wr/health` every 20 s during a turn, because no event carries `degraded` or `harness_process_lost`. Publish a health change when a driver records a process error, for example a `harness.health` event, and the peek's timer can go.
+- **Harness health is pull-only.** The composer's health peek ("The agent stopped responding / Check again") polls every 20 s during a turn: v1 reads `/api/wr/health`, v2 reads `GET /api/claxedo/agent-config/harness?workspaceId=…&sessionId=…` (`harnessHealth.status`, `connectionState`). It is the one no-polling finding left, because no event carries `degraded` or `harness_process_lost`. Publish a health change when a driver records a process error, for example a `harness.health` event, and the peek's timer can go.
 - **The provider catalog route always answers with the whole catalog.** `GET /api/claxedo/agent-config/providers?nativeHarness=opencode` (`claxedo-local-server/src/agent-config/routes/provider-routes.ts`) returns models.dev's full list, 2,325,904 bytes and 1.6 s cold on the owner's machine, and ignores the `provider` parameter both apps send for one provider's detail, so a detail read costs the same as the index. v2 now reads the catalog once per harness through one cached query (`server.queries.providerCatalogs`), and skips the detail read whenever the index already holds a provider's models, as it always does here. The remaining 1.6 s first read needs the server: honor `provider` to return that provider alone, and add a summary form (connected providers with their models, the rest with ids and names) for the pickers.
 - **Session config carries no model display name.** An existing session's config names its model by id only, so v2's closed picker labels it from a per-browser display-name cache (`composer/harness/model-names.ts`) rather than read the whole provider catalog at mount. With the name in the session config the cache can go.
 - **A new draft's harness options cold-start a process.** `GET /api/claxedo/agent-config/harness/options?nativeHarness=pi` starts `pi --no-session` on every read: 2.4–9.9 s under load, while Send shows "Loading models…". v1 behaves identically. Fix it server-side: cache the options per harness, or keep one warm process.
 - **Fixed in the runtime today (take effect after a daemon restart or rebuild):**
   - a stopped turn publishes the questions and permissions it settles (2b7f71a178);
   - a harness without Goals reports them as not implemented, so its sessions open (09caeef9dd).
+- **No read across workspaces.** Boot makes 3 reads per reachable placement (`/session/status`, `/permission`, `/question`, which is v1's set since 8c551d4757) on top of the session-list page. v1 reads only for workspaces with rows on screen. A single cross-workspace status read on the server would make boot one request.
+- **Left open by the adapter lane:**
+  - `SessionRow.harness` from `config.harness.id`;
+  - the "Untitled session" fallback;
+  - creating a worktree doesn't invalidate the root git queries;
+  - the scripted ACP subagent step sends no tool call, so no live check exercises `toolCallEdges`;
+  - adapter probes need `bun run pi:install` in agent-sdk-runtime first (Playwright's global setup does it, the probe doesn't).
 
 ## Deletion candidates
 
@@ -448,9 +454,9 @@ At 19:08 the owner said: finish in-progress work; start no new work.
 1. **Owner:** test 4480 against 4481. Each difference becomes an inventory row or a DECISIONS line.
 2. **Owner:** sign off `v2/stream-slice`, exp-stream's five transcript fixes (see [Streaming at 60 Hz](#streaming-at-60-hz-exp-stream-2026-09-25)). Then merge it and run the whole corpus.
 3. **The seven panel rows that go to v1:**
-   - lane-tools-3 ports v1's retained file-tab mount, which covers review→files and open-file;
-   - exp-scroll names the cause of collapse-all and files→Review heavy.
-   - Then rerun the workspace-panel lane.
+   - exp-scroll found the cause: `src/review/diff-content.ts` `request()` writes a new file list on every CodeView emit and scroll frame, so the 24 diff queries and the Review list rebuild each time. Making it a no-op for an unchanged list takes collapse-all from 32.0 to 23.2 ms busy JS per click (v1 27.3), and idle CPU with Review open from 8.8% to 1.4% (v1 3.6%).
+   - v1 doesn't keep visited file tabs mounted either: retaining them blanks Pierre's viewer on reveal. The one tab gap is Review's scroll restoration, which lane-tools-3 is porting.
+   - Then lane-bench-3 reruns the workspace-panel lane.
 4. **Start (≤ 1.1 s) and idle memory (≤ 700 MiB):** exp-idle's findings, applied through the owning lanes.
 5. **Checks to zero:** transcript and timeline comments and names first, with comments triaged into corpus cases or README lines; then the remaining domains. Split files by responsibility; never squeeze.
 6. **Move the transcript's module caches and singletons into provider-owned stores**, as their own corpus-proven slice with a bench rerun. Until then they're named exceptions in one-home-per-datum.

@@ -50,7 +50,8 @@ function refFor(view: SessionView, id: string): SessionRef {
 }
 
 function openFocus(input: TimelineHostInput, focus: TimelineFocus): void {
-  input.panel.show(focus.kind === "subagent" ? { ...focus, parentSessionId: input.panel.sessionId() } : focus)
+  const options = focus.kind === "file" ? undefined : { navigator: null }
+  input.panel.show(focus.kind === "subagent" ? { ...focus, parentSessionId: input.panel.sessionId() } : focus, options)
 }
 
 async function findFiles(input: TimelineHostInput, query: string): Promise<readonly string[]> {

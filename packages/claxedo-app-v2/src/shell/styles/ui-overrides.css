@@ -632,9 +632,7 @@ html[data-theme="codex"] {
   --shell-surface-header: var(--codex-surface);
   --settings-surface-content: var(--codex-surface);
   --shell-surface-composer: var(--codex-control);
-  --control-surface: var(--codex-control);
   --control-surface-active: var(--codex-control);
-  --tab-surface-selected: var(--codex-control);
   --overlay-surface: var(--codex-control);
   --overlay-surface-hover: var(--codex-hover);
   --overlay-surface-input: var(--codex-selected);
@@ -643,8 +641,6 @@ html[data-theme="codex"] {
   --surface-raised-stronger-non-alpha: var(--codex-control);
   --settings-surface-card: var(--codex-elevated-secondary);
   --shell-surface-context-card: var(--codex-elevated-secondary);
-  --surface-base-hover: var(--codex-hover);
-  --row-surface-hover: var(--codex-hover);
   --row-surface-selected: var(--codex-selected);
   --border-weak-base: var(--codex-border);
   --border-weaker-base: var(--codex-border-light);
