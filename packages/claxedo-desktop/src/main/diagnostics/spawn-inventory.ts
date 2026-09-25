@@ -440,6 +440,17 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     source: { file: "packages/agent-sdk-runtime/src/test-utils/pinned-pi.ts", callee: "spawnSync", calls: 1 },
   },
   {
+    id: "stand-in-home-test-run",
+    family: "Test suites run under a stand-in home",
+    classification: "non-production",
+    owner: "harness",
+    linkage: "none",
+    observation: "none",
+    stop: "unsupported",
+    kill: "unsupported",
+    source: { file: "packages/agent-sdk-runtime/src/test-utils/stand-in-home.mjs", callee: "spawn", calls: 1 },
+  },
+  {
     id: "first-party-mcp-fixture-git",
     family: "Live first-party MCP fixture repository setup",
     classification: "non-production",

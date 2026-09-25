@@ -90,6 +90,9 @@ async function productionFiles() {
     "packages/claxedo-server-core/src",
     "packages/workspace-runtime/src",
     "packages/agent-sdk-runtime/src",
+    // The launch gate, creation identity probes and retirement start children
+    // for every harness and terminal the desktop runs.
+    "packages/process-ownership/src",
     // Electron main reaches this package's credential writer, whose Windows
     // permission step is a spawn. Leaving the package unscanned would let a
     // child the app can start sit outside the inventory this file claims is
