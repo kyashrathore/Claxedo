@@ -192,3 +192,10 @@ A **Settings → Projects** section lists the projects and holds their managemen
 
 ## Owner, 2026-09-25 11:50: streaming slice signed off
 - The owner signed off `v2/stream-slice` (the protected-area rule for `src/transcript` and the timeline): open-block re-lex, one parse of the open block, controls built on the committed DOM, rows tracking whether a part has text, and one purifier. It merged into feat as e9cd0024be. The fixes are described commit by commit in `docs/app-v2-stream-slice.md`.
+
+## Owner, 2026-09-25 12:55: plugins are made by asking any session
+- The owner wants to ask any Claxedo session "add me a plugin" and get it. No CLI, and no harness-specific setup.
+- **Decision:** plugin authoring becomes three tools on the Claxedo MCP server, which every harness connects to: `plugin.create` (scaffold), `plugin.add` (register with the daemon, which builds, watches and notifies the app as today) and `plugin.check` (typecheck and build, returning errors).
+- The authoring skill describes those tools and reaches every harness, not only OpenCode's `config.skills`.
+- The app's one-time confirmation before a new plugin runs stays.
+- The `claxedo plugin` CLI goes once the tools land.
