@@ -231,3 +231,6 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - The signed desktop's merged session list reads the control plane through AccountPort: Electron main owns the credential and runs only named operations (`session.list` added to the closed set).
 - The daemon never receives the user's bearer.
 - Machine row publishing (S2) uses the machine's Host Tunnel Token, scoped to the workspaces still assigned to that host. That's a machine credential, not the user's.
+
+## Owner, 2026-09-25 19:45: no fixes to v1
+- v1 (`packages/claxedo-app` on dev) gets no fixes, including the "Too many redirects" crash in v1's route sync (`app-shell-route-sync.ts`) that the owner hit on a v1 build. v2 replaces v1 at the swap.
