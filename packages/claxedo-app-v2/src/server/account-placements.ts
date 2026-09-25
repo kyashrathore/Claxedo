@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/solid-query"
 import type { HostedAccount } from "./account"
 import { linkAccountCatalog, type LinkedCatalog } from "./account-link"
+import { readArray } from "../lib/record"
 import { toAppError } from "./errors"
 import { queryKeys } from "./query-keys"
 import { accountCatalogFromWire, type AccountCatalog } from "./wire/account-catalog"
@@ -15,12 +16,15 @@ export type AccountPlacements = {
 
 export function createAccountPlacements(account: HostedAccount, serverUrl: string, queryClient: QueryClient): AccountPlacements {
   const key = queryKeys.accountCatalog(serverUrl)
-  const read = async () => accountCatalogFromWire(await account.run("project.catalog"))
+  const read = async () => {
+    const [provisioned, machines] = await Promise.all([account.run("workspace.list.provisioner"), account.run("workspace.list.machine")])
+    return accountCatalogFromWire([...(readArray(provisioned, "workspaces") ?? []), ...(readArray(machines, "workspaces") ?? [])])
+  }
   const fetch = async (staleTime: number) => {
     try {
       await queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime })
     } catch (error) {
-      console.error("The account's project catalog could not be read; the rail lists this machine's placements alone", { error: toAppError(error) })
+      console.error("The account's workspace catalog could not be read; the rail lists this machine's placements alone", { error: toAppError(error) })
     }
   }
   let last: { local: readonly PlacementRecord[]; account: AccountCatalog; linked: LinkedCatalog } | undefined

@@ -272,9 +272,6 @@ export const HOSTED_OPERATIONS = {
   // One keyset page of a project's sessions (`{ items, nextCursor? }`), for
   // the signed desktop's two-source list. `session.navigationList` stays v1's.
   "session.page": { safe: true, decode: withArrays("items") },
-  // The account's project catalog (`GET /project`): the bootstrap's `project`
-  // rows, each with its workspaces keyed by workspace id.
-  "project.catalog": { safe: true, decode: array },
   "session.projection.register": { safe: false, decode: object },
   "session.projection.checkpoint": { safe: false, decode: object },
   "session.projection.repair": { safe: false, decode: object },

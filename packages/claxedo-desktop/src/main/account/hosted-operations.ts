@@ -241,7 +241,6 @@ export const HOSTED_OPERATIONS = {
     query: ["projectId", "limit"],
     optionalQuery: ["sort", "after"],
   },
-  "project.catalog": { method: "GET", path: "/project" },
   "session.projection.register": {
     method: "POST",
     path: "/api/control/workspaces/:workspaceId/sessions/:sessionId/register",

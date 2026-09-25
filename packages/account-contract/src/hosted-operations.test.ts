@@ -172,14 +172,8 @@ describe("the signed desktop's session sources", () => {
     expect(() => decodeHostedResult("session.page", { groups: [] })).toThrow(/session\.page.*items/)
   })
 
-  test("the project catalog is a bare list of projects", () => {
-    expect(decodeHostedResult("project.catalog", [{ id: "prj_1", workspaces: {} }])).toEqual([{ id: "prj_1", workspaces: {} }])
-    expect(() => decodeHostedResult("project.catalog", { projects: [] })).toThrow(/project\.catalog.*array/)
-  })
-
-  test("both are reads a renderer may retry", () => {
+  test("a session page is a read a renderer may retry", () => {
     expect(isSafeOperation("session.page")).toBe(true)
-    expect(isSafeOperation("project.catalog")).toBe(true)
   })
 })
 
