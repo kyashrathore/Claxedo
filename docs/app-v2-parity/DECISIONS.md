@@ -173,3 +173,11 @@ A **Settings → Projects** section lists the projects and holds their managemen
 ## Orchestrator, 2026-09-25: a preset slot never writes the composer's draft default (a v1 bug, not ported)
 - v1's preset slot runs the composer's harness selector under a draft scope. Every harness or model pick in it, including the seed applied when an existing preset opens, is saved as the workspace's draft default. Opening a Pi preset makes the next new session open on Pi.
 - **v2:** a new slot still opens on the draft default (the harness last used for a draft in the first workspace, else the folder's harness). The slot never writes it back: `DraftHarnessPicker` passes `saveDraftDefault: false`, so its picks stay in the slot.
+
+## Orchestrator, 2026-09-25: panel width survives close (v1 side effect not ported; for the owner's review)
+- v1 keeps a dragged panel width in the panel shell, which it disposes after the close motion, so every reopen starts at 70% (TOOL-009).
+- **v2:** the chosen width persists (localStorage, per scope) across close and reload; maximize still restores it.
+
+## Orchestrator, 2026-09-25: browser pick sends text (v1's file part is broken)
+- v1 adds a picked element as a file chip whose path is the page URL, and sends it as a `file://<folder>/<url>` part the agent cannot read (TOOL-145).
+- **v2:** a text chip "<tag> on <host>" whose text carries the page URL, the element's selector and HTML snippet, and the comment; the screenshot goes in as an image.
