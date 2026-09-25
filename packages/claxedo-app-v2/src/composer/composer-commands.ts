@@ -21,7 +21,6 @@ type CommandsInput = {
   readonly t: ReturnType<typeof useComposerText>
 }
 
-/** The composer's palette and slash commands: choose a model, attach a file, shell and normal mode, goal. */
 export function registerComposerCommands(input: CommandsInput) {
   const commands = useCommands()
   registerModelChooser(input, commands)

@@ -7,22 +7,16 @@ import { POPULAR_PROVIDERS } from "../harness/provider-catalog"
 export type PickerItem = {
   id: string
   name: string
-  /** Harness-supplied detail line. Display names are short marketing labels
-   * ("Sonnet", "Opus"), so this is the only place the version and context
-   * window appear — e.g. "Opus 4.8 with 1M context · $5/$25 per Mtok". */
   description?: string
   provider: {
     id: string
     name: string
   }
   latest?: boolean
-  /** The server's answer to whether this model can run now; absent where it does not say. */
   connected?: boolean
-  /** Set by the server when the model costs nothing to run. */
   free?: boolean
 }
 
-/** A provider group is connected when any of its models can run. */
 function groupConnected(items: readonly PickerItem[]) {
   return items.some((item) => item.connected !== false)
 }
@@ -52,10 +46,6 @@ export type PickerState = {
   set: (item: { modelId: string; providerId: string } | undefined, options?: { recent?: boolean }) => void
 }
 
-/**
- * The composer's merged harness→model picker hosts this list inside its own
- * disclosure: search, provider grouping and the connected/free/latest tags.
- */
 export const ModelList: Component<{
   onSelect: () => void
   model: PickerState
@@ -125,14 +115,10 @@ export const ModelList: Component<{
             <Show when={i.latest}>
               <Tag>{t("model.tag.latest")}</Tag>
             </Show>
-            {/* A group that is not connected says so once in its header. */}
             <Show when={i.connected === false && runnableProviders().has(i.provider.id)}>
               <Tag>{t("command.provider.connect")}</Tag>
             </Show>
           </div>
-          {/* Display names are short labels ("Sonnet", "Opus"); the version and
-              context window live only here, so give it its own line rather than
-              truncating it away next to the name. */}
           <Show when={i.description}>
             <span class="line-clamp-2 text-12-regular text-text-weak">{i.description}</span>
           </Show>

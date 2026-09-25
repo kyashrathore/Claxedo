@@ -54,9 +54,7 @@ type ModelWriterInput<ScopeInput extends HarnessScopeInput> = {
   acceptsDraftModel(scope: string, model: ModelChoice): boolean
   currentModel(scope: string): ModelChoice | undefined
   setSelectedModel(scope: string, model: ModelChoice): void
-  /** A held pick is not the session's harness yet, so its model is a choice the next send carries. */
   holdsHarness(scope: string): boolean
-  /** Effort levels and their default belong to the model, so a new one re-asks the harness. */
   reloadOptions(scope: string, params?: ScopeInput): Promise<void> | void
   rememberDraftModel(scope: string, model: ModelChoice, input?: ScopeInput, labels?: DraftDefaultLabels): void
   runtime: {
@@ -81,7 +79,6 @@ export function createHarnessModelWriter<ScopeInput extends HarnessScopeInput>(i
   }
   return {
     setModel,
-    /** Settles once the scope's in-flight model save has landed or been rolled back. */
     settledModel: async (scope: string) => {
       await Promise.allSettled([saving.get(scope)])
     },
@@ -110,8 +107,6 @@ async function saveSessionModel<ScopeInput extends HarnessScopeInput>(
   try {
     await run
   } catch (error) {
-    // A session runs its saved model, so a save that failed must not leave
-    // the picker showing one the next turn will not run on.
     const shown = input.currentModel(scope)
     if (previous && shown?.providerId === model.providerId && shown.modelId === model.modelId) input.setSelectedModel(scope, previous)
     throw error

@@ -15,7 +15,6 @@ export type HarnessOptionsLoaderCache = {
 }
 
 type LoaderInput<ScopeInput> = {
-  /** `model` is the scope's selected model: effort levels and their default belong to it. */
   fetch(type: HarnessType, params?: ScopeInput, model?: string): Promise<HarnessOptions>
   currentHarness(scope: string): HarnessType | undefined
   selectedModel(scope: string): string | undefined
@@ -68,24 +67,11 @@ export function createHarnessOptionsLoader<ScopeInput>(input: LoaderInput<ScopeI
   return { load }
 }
 
-/**
- * A load whose result is no longer wanted still has to release the loading
- * flag it raised: the model control renders "Loading models" straight off
- * `optionsLoading` with no other exit, so a harness switch that outran its
- * own in-flight request would leave the control stuck there for the life of
- * the scope.
- *
- * The seq check is what makes that safe. When a NEWER load has taken the
- * scope it raised the flag for itself and owns it until its own request
- * settles; clearing here would drop the control out of its loading state
- * while that request is still running.
- */
 function abandon<ScopeInput>(input: LoaderInput<ScopeInput>, request: Request) {
   if (input.cache.getSeq(request.scope) === request.id) input.setOptionsLoading(request.scope, false)
   return undefined
 }
 
-/** Applies a fresh answer to the scope; true when the answer asks for another load. */
 function applyOptions<ScopeInput>(input: LoaderInput<ScopeInput>, request: Request, payload: HarnessOptions): boolean {
   const { scope, type } = request
   const tries = input.cache.getTries(scope) ?? 0

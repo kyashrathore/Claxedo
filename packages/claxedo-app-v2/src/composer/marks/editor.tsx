@@ -39,7 +39,6 @@ export function ImageMarkEditor(props: ImageMarkEditorProps) {
   const [drag, setDrag] = createSignal<{ start: Point; current: Point }>()
   const [stage, setStage] = createSignal<HTMLDivElement>()
   const stageSize = createElementSize(stage)
-  /** The image scaled down, never up, to the room the dialog leaves it, so Save stays on screen. */
   const measured = () => !!size() && !!stageSize.width && !!stageSize.height
   const shown = () => {
     const natural = size()
@@ -67,7 +66,6 @@ export function ImageMarkEditor(props: ImageMarkEditorProps) {
     }
   }
 
-  /** Keeps a typed comment, and drops a new mark the user never commented on. */
   const settle = () => {
     const current = editing()
     if (!current) return
@@ -131,7 +129,6 @@ export function ImageMarkEditor(props: ImageMarkEditorProps) {
     return markFromDrag(current.start, current.current, imageSize, 0)
   })
 
-  /** Beside the mark where the stage has room, so the box never hides the image being marked; below it otherwise. */
   const boxPosition = (mark: ImageMark) => {
     const natural = size()
     const stageWidth = stageSize.width

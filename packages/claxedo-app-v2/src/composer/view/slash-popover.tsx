@@ -24,16 +24,9 @@ export interface SlashCommand {
   source?: "command" | "mcp" | "skill"
 }
 
-/**
- * Stable id the composer's `role="combobox"` points its `aria-controls` at and
- * the popover container carries as its `role="listbox"` id. Shared so the two
- * halves of the combobox/listbox relationship can't drift.
- */
 export const PROMPT_POPOVER_LISTBOX_ID = "prompt-popover-listbox"
 
-/** `aria-activedescendant` id for an @-mention option. */
 export const promptAtOptionId = (key: string) => `prompt-at-option-${key}`
-/** `aria-activedescendant` id for a slash-command option. */
 export const promptSlashOptionId = (id: string) => `prompt-slash-option-${id}`
 
 type PromptPopoverProps = {

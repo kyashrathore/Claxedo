@@ -128,7 +128,6 @@ export function persistedEntryOf(value: unknown): PersistedEntry | undefined {
   }
 }
 
-/** Today's app keeps each session's draft and history in localStorage per server, so both survive a reload. */
 export function createComposerPersistence(storage: Storage | undefined, serverUrl: string): ComposerPersistence {
   const storageKey = (key: string) => `claxedo:composer:${serverUrl}:${key}`
   return {

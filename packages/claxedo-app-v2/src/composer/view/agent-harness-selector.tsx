@@ -47,17 +47,6 @@ function HarnessOptionIcon(props: { harness?: HarnessType }) {
   return <Icon name="pi" size="small" class="shrink-0" />
 }
 
-/*
- * Icon markup belongs in menu rows, never a Kobalte Select trigger.
- *
- * Kobalte names its Select trigger with `aria-labelledby` pointing at the
- * value span. With a plain string in there Chrome resolves that reference and
- * the button is named "Claude"; with icon markup in there it marks the
- * reference invalid and computes an empty accessible name. The current
- * HarnessModelPicker trigger is a Popover with an explicit `aria-label`,
- * which is why it may carry the harness mark instead.
- */
-
 type Item = {
   id: string
   name: string
@@ -71,9 +60,7 @@ type Item = {
 
 interface AgentHarnessSelectorProps {
   triggerStyle?: JSX.CSSProperties
-  /** Whether the current session already exists. Existing sessions hand off through session config. */
   sessionLocked?: boolean
-  /** The composer's key: the harness store files this pane's selection under it. */
   scope: string
   scopeInput: HarnessScopeInput
   active?: boolean
@@ -144,10 +131,6 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const harness = createMemo(() => {
     return selection().harness
   })
-  // The provider catalog used by the embedded OpenCode SDK.
-  // Keyed per harness id, so switching between catalog harnesses re-reads the
-  // right catalog; an empty id disables the query while no catalog harness is
-  // selected, so a Claude or connection draft never fetches a catalog.
   const visibility = useModelVisibility()
   const catalogProviders = createProviderCatalog({ server, harness: () => catalogHarnessId(harness()) ?? "" })
   const draftPane = () => !sessionId() || sessionId() === "new"
@@ -175,9 +158,6 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         .map((item) => ({ providerId: item.provider.id, modelId: item.id })),
     }
   })
-  // A catalog restored from storage keeps only each connected provider's
-  // default model, so its rows, effort levels and draft-default answer are
-  // wrong until every connected provider's detail has been merged back in.
   const catalogHydrationKey = () => JSON.stringify([
     catalogProviders.queryKey(),
     catalogProviders.connected().map((provider) => provider.id).sort(),
@@ -210,17 +190,12 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
       return
     }
   })
-  // The retained OpenCode catalog admission owner accounts for the remaining
-  // picker effect-state write in the architecture baseline (91 total).
-  // Adopt a sole connected catalog model with its authoritative provider id.
   createEffect(() => {
     const currentHarness = harness()
     if (!currentHarness || !isCatalogHarness(currentHarness)) return
     if (sessionLocked()) return
     if (!catalogReady()) return
-    // Already submit-ready (auto-picked here, saved-default-resolved, or user-picked).
     if (selection().selectedModelKey || picked()) return
-    // A saved-but-unavailable model owns the surface (shows its own error) — don't override it.
     if (selection().draftDefaultState === "saved-model-unavailable") return
     const connectedModels = catalogRows().rows.filter((row) => row.connected)
     if (connectedModels.length !== 1) return
@@ -233,29 +208,17 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
       { provider: only.provider.name, model: only.name },
     )
   })
-  // A coarse boolean memo: only notifies when the polling boundary is crossed,
-  // never on unrelated store writes. The re-probe effect below depends on this
-  // (not a raw `selection().readiness` read) so a re-probe that re-applies the
-  // same "polling" status cannot re-run the effect and reset the attempt cap.
   const isPolling = createMemo(() => selection().readiness === "polling")
   const isError = () => selection().readiness === "error"
 
-  // Bounded re-probe for a harness stuck Connecting. Hydration is one-shot, so
-  // without this a genuinely slow harness (`ready:false`/`status:"applying"`)
-  // would poll forever. While polling, re-probe on an interval; if it never
-  // settles, transition to the terminal "Unavailable" state. onCleanup cancels
-  // the loop on settle or scope/route change.
   watchHarnessReprobe({
     active: () => {
       if (props.active === false) return false
-      // Track scope/placement/session so a route change restarts with a fresh cap.
       const nextScope = scope()
       const nextPlacement = placementId()
       sessionId()
       return !!nextScope && !!nextPlacement && isPolling()
     },
-    // reprobe/onExhausted fire from the loop's timer callback, outside any
-    // reactive computation, so these reads create no tracked dependencies.
     reprobe: () => {
       if (!placementId()) return
       void props.harnessController.reprobe(scope(), scopeInput())
@@ -266,9 +229,6 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const optionsLoading = () => selection().optionsLoading
   const [switchingHarness, setSwitchingHarness] = createSignal<HarnessType | undefined>()
   const harnessSwitching = () => !!switchingHarness()
-  // Tracks whether the harness menu was actually opened before a value change
-  // arrived, so a stray typeahead-while-closed keystroke cannot silently switch
-  // the harness. Reset after each selection is evaluated.
   let openedViaMenu = false
   const rows = createMemo<Item[]>(() => {
     const currentHarness = harness()
@@ -301,8 +261,6 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         const hit = rows().find(
           (item) => item.id === command.model?.modelId && item.provider.id === command.model.providerId,
         )
-        // A catalog model's levels are its own: one the new model lacks must
-        // not ride the next prompt behind a control that no longer offers it.
         const level = selection().selectedThoughtLevel
         if (catalogSelected() && level && !catalogVariants(command.model).includes(level)) {
           props.harnessController.setThoughtLevel(scope(), undefined)
@@ -373,9 +331,6 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const modelDisabled = createMemo(() => {
     return !harness() || managedDefaultModel() || modelLoading() || isError() || modelUnavailable() || modelOptionsFailed()
   })
-  // Names a model, or says there is none — never reports an error. Failures are
-  // the notice row's job: duplicating "Unavailable" here, in the readiness
-  // pill, and in the dot's tooltip would say the same thing three times.
   const knownModelName = () => {
     const providerId = selection().selectedModelProvider
     const modelId = selection().selectedModel
@@ -399,16 +354,12 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     if (!hasModelOptions()) return isCatalogHarness(harness()) ? `No ${harnessDisplayLabel(harnessSelectionId(harness()!))} models available` : "Select model"
     return selection().selectedModel || "Select model"
   })
-  // Soft, non-actionable reasons the control itself is inert. These stay on the
-  // control they explain instead of becoming a fifth widget beside it — and they
-  // never escalate to the notice row, which is reserved for things that broke.
   const modelHint = createMemo(() => {
     if (managedDefaultModel() && harness()) return `Model is managed by ${harnessOptionLabel(harness()!)}`
     if (isStale() && !modelOptionsFailed()) return "Model list may be outdated"
     return undefined
   })
 
-  // One row, one message, one action — see `harness-notice.ts` for the ordering.
   const needsProviderSetup = createMemo(() => {
     if (modelOptionsFailed()) return false
     if (harness() && isCatalogHarness(harness())) {
@@ -417,7 +368,6 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     return !managedDefaultModel() && !modelLoading() && !hasModelOptions() && !isPolling() && !isError()
   })
   const notice = createMemo<ComposerNotice | undefined>(() => {
-    // A backgrounded pane must not publish over the visible one.
     if (props.active === false || !selection().isHarnessMode) return undefined
     const resolved = resolveHarnessNotice({
       harnessLabel: harness() ? harnessOptionLabel(harness()!) : "Agent",
@@ -454,11 +404,6 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
       },
     }
   })
-  // Extracted from the old Kobalte `Select`'s inline `onSelect` so the merged
-  // picker can call the same side effects. `openedViaMenu` existed because
-  // Kobalte re-fires onChange with the current value when its options
-  // collection changes identity; the picker only ever calls this from a real
-  // click, so intent is passed explicitly.
   const applyHarness = (r: HarnessType | undefined) => {
     openedViaMenu = true
           const current = harness()
@@ -502,8 +447,6 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const activeModelLabel = createMemo(() => modelLabel() || "Select model")
   const harnessThoughtLevels = createMemo(() => selection().thoughtLevels ?? [])
   const catalogSelected = createMemo(() => !!harness() && isCatalogHarness(harness()))
-  // A catalog harness's levels are the engine variants its catalog carries for
-  // the selected model; "default" (no variant) leads them.
   const catalogVariants = (model: { providerId?: string; modelId?: string }) => {
     const provider = model.providerId ? catalogProviders.all().get(model.providerId) : undefined
     const row = Object.values(provider?.models ?? {}).find((item) => item.id === model.modelId)
@@ -518,8 +461,6 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const activeCurrentVariant = createMemo(() => selection().selectedThoughtLevel)
   const harnessLevelName = (value: string) =>
     harnessThoughtLevels().find((item) => item.id === value)?.name ?? value
-  // One toggle, so the model's first faster tier is "fast". Codex reports
-  // exactly one (`priority`, "Fast") on every model that has any.
   const fastTier = createMemo(() => (catalogSelected() ? undefined : selection().serviceTiers[0]))
   const fastControl = createMemo(() => {
     const tier = fastTier()
@@ -538,15 +479,6 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
 
   return (
     <>
-      {/* One control for the three questions that are really one decision:
-          harness → model → effort. See harness-model-picker.tsx. The trigger
-          keeps the harness mark and the model name, so a live session still
-          states which harness it is on without spending a second chip on it.
-
-          Safe to put an icon in this trigger, unlike the Select it replaces:
-          Kobalte's Select names its trigger via `aria-labelledby` pointing at
-          the value span, which markup invalidates (see the note above the Item
-          type). This is a Popover trigger with an explicit `aria-label`. */}
       <HarnessModelPicker
         harness={harness}
         harnessOptions={harnessOptions()}
@@ -562,12 +494,6 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         }}
         onHarnessSelect={applyHarness}
         modelError={() => {
-          // The same resolved notice the composer row shows, rendered inside
-          // the Model section too. The row explains the failure globally; the
-          // section replaces the list, because a working search box over zero
-          // rows claims "this harness has no models" when the truth is that
-          // loading them failed. Only list-invalidating failures qualify — a
-          // merely stale list still has usable rows and stays a hint.
           const failure = notice()
           if (!failure || failure.tone !== "critical") return undefined
           return {
@@ -601,9 +527,6 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         })}
       />
 
-      {/* Readiness indicator. Connecting is progress, not a fault, so it stays
-          inline; the settled failure it can escalate into is published to the
-          composer notice row instead. */}
       <Show when={!isPolling() && selection().connectionState && ["configured", "connecting", "ready"].includes(selection().connectionState!.state)}>
         <span class="text-11-regular text-text-weak px-1.5 flex items-center" data-connection-state={selection().connectionState?.state}
           title={selection().connectionState?.state === "ready" ? "ACP handshake completed. Authentication is checked by the agent when needed." : selection().connectionState?.state === "configured" ? "Configured; no active agent connection has completed a handshake." : "Waiting for the agent handshake."}>

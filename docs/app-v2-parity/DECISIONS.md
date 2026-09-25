@@ -226,3 +226,8 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - History is routed by placement kind: control plane for cloud, relay for machines, local runtime for local.
 - Terminals only for live placements.
 - The plan is `docs/plans/2026-09-25-002-session-sources-plan.md`.
+
+## Orchestrator, 2026-09-25: Composer budget re-based after parity voided the frame swap
+- The plan's 5.5k Composer budget assumed swapping today's `PromptInputFrame` for upstream's `PromptInputV2` frame. The parity ruling (port v1's UI, don't restyle) voided that swap, so the composer is today's frame, moved.
+- The owner approved re-basing at 10:05 ("all good"), after the composer's no-comments triage.
+- After the triage (593 comment blocks: real constraints moved into `src/composer/README.md` under Constraints, the rest deleted), `src/composer` measures 10,147 lines. The budget row is set to exactly that, with no headroom; v1's composer is 12.3k.

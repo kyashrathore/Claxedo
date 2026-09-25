@@ -40,7 +40,6 @@ export const PromptInputFrame: Component<{
   newSession: Accessor<boolean>
   mode: Accessor<PromptInputMode>
   dirty: Accessor<boolean>
-  /** One-row layout; the geometry lives under `[data-composer-collapsed]` in index.css. */
   collapsed: Accessor<boolean>
   draggingType: Accessor<PromptDraggingType>
   designPlaceholder: Accessor<string>
@@ -119,8 +118,6 @@ export const PromptInputFrame: Component<{
   workspaceRoleBlocked: Accessor<boolean>
   t: (key: ComposerTextKey) => string
 }> = (props) => {
-  // `aria-activedescendant` target: the currently-highlighted option in the open
-  // popover, or undefined when nothing is active / the popover is closed.
   const activeDescendant = () => {
     if (props.popover === "at" && props.atActive) return promptAtOptionId(props.atActive)
     if (props.popover === "slash" && props.slashActive) return promptSlashOptionId(props.slashActive)
@@ -151,31 +148,14 @@ export const PromptInputFrame: Component<{
     )
   }
 
-  // The new-session screen hosts the notice row itself, above the
-  // project/worktree context row, so the composer must not open a second
-  // channel there — the nearest provider wins, and an inner one would strand
-  // the outer row empty. Everywhere else (the docked session composer) the
-  // composer card IS the top of the stack, so it hosts the row.
   const inherited = useComposerNoticeChannel()
   const own = inherited ? undefined : createComposerNoticeChannel()
   const notice = () => own?.current()
 
-  // Re-providing the inherited channel is a no-op, and wrapping unconditionally
-  // keeps the subtree inside a Provider element — Solid resolves context through
-  // the owner created at render, so a pre-built JSX tree handed to a Provider
-  // afterwards would never see it.
   return (
   <ComposerNoticeProvider channel={inherited ?? own!}>
   <div
     ref={props.rootRef}
-    // Load-bearing beyond naming: this is the CSS container ROOT. Its only
-    // consumer is `[data-component="composer-frame"]` in index.css, which sets
-    // `container-name: prompt-composer` — the box the composer's responsive
-    // collapse measures. Rename or drop it and the `@container prompt-composer`
-    // block stops matching entirely: every `.composer-compact-only` mark stays
-    // `display: none` and no control label ever hides, so the toolbar silently
-    // stops collapsing at narrow widths. Nothing catches that — the collapse is
-    // a container query, which jsdom does not resolve.
     data-component="composer-frame"
     classList={{
       "relative size-full flex flex-col gap-0": true,
@@ -208,24 +188,12 @@ export const PromptInputFrame: Component<{
     <ComposerNoticeRow notice={notice()} />
     <DockShellForm
       data-component={props.newSession() ? "session-new-composer" : "session-composer"}
-      // Theming hooks, not geometry. `data-surface` lets a theme paint the
-      // composer as a named shell surface alongside the sidebar and header;
-      // `data-dock-border-underlay` picks the v2 elevation, now carried as
-      // `--dock-shell-visual-shadow` plus a 0.5px ring that masks overlapping
-      // surfaces (see dock-surface.css).
       data-surface="composer"
       data-dock-border-underlay="v2"
       data-composer-collapsed={props.collapsed() || undefined}
       onSubmit={props.handleSubmit}
       classList={{
-        // Deliberately no `shadow-[var(--v2-elevation-raised)]` here. Tailwind
-        // utilities are imported at `layer(utilities)` and dock-surface.css at
-        // `layer(components)`, so the utility would win the `box-shadow`
-        // cascade outright and drop the ring — same elevation, no mask. The
-        // attribute above restores the identical elevation value with it.
         "group/prompt-input min-h-[96px] w-full rounded-xl bg-v2-background-bg-base": true,
-        // Overlap the notice row's bottom lip so the two read as one stacked
-        // card, the same way the composer overlaps the context row upstairs.
         "relative z-10 -mt-2": !!notice(),
         "border-icon-info-active border-dashed": props.draggingType() !== null,
         [props.className ?? ""]: !!props.className,
@@ -271,13 +239,6 @@ export const PromptInputFrame: Component<{
             data-component="prompt-input"
             ref={props.editorRef}
             onFocus={props.onEditorFocus}
-            // WAI-ARIA "combobox with list autocomplete": while an @-mention /
-            // slash popover is open the editor is a `combobox` controlling the
-            // `role="listbox"` in `PromptPopover` (axe requires `aria-expanded`
-            // AND `aria-controls` together on `combobox`, so both are present
-            // only when open). When closed it stays a plain multi-line
-            // `textbox` — `combobox` does not allow `aria-multiline`, and a
-            // `combobox` missing `aria-controls` would trip `aria-required-attr`.
             role={props.popover !== null ? "combobox" : "textbox"}
             aria-multiline={props.popover === null ? "true" : undefined}
             aria-expanded={props.popover !== null ? true : undefined}
@@ -285,13 +246,12 @@ export const PromptInputFrame: Component<{
             aria-autocomplete={props.popover !== null ? "list" : undefined}
             aria-activedescendant={activeDescendant()}
             aria-label={props.designPlaceholder()}
-            // Editable while the harness polls; only submit is gated.
             contenteditable="true"
             autocapitalize={props.mode() === "normal" ? "sentences" : "off"}
             autocorrect={props.mode() === "normal" ? "on" : "off"}
             spellcheck={props.mode() === "normal"}
             inputMode="text"
-            // @ts-expect-error Solid's JSX types do not include autocomplete on contenteditable nodes.
+            // @ts-expect-error
             autocomplete="off"
             onInput={props.onEditorInput}
             onPaste={props.onEditorPaste}
@@ -301,9 +261,6 @@ export const PromptInputFrame: Component<{
             onKeyDown={props.onEditorKeyDown}
             classList={{
               "select-text": true,
-              // What the user typed reads at full strength; only the placeholder
-              // below is dimmed. These were both `text-faint`, which made real
-              // input look like a leftover hint.
               "min-h-[52px] w-full px-4 pt-4 pb-2 focus:outline-none whitespace-pre-wrap leading-5 text-compact font-body text-v2-text-text-base [font-family:var(--font-family-sans)]": true,
               "[&_[data-type=file]]:text-syntax-property": true,
               "[&_[data-type=agent]]:text-syntax-type": true,
