@@ -1,8 +1,11 @@
 import type { Readable, Writable } from "node:stream"
 
-export function webReadable(output: Readable): ReadableStream<Uint8Array> {
-  const chunks: AsyncIterator<Buffer> = output[Symbol.asyncIterator]()
-  return new ReadableStream<Uint8Array>({
+export function processByteStreams(process: { stdin: Writable; stdout: Readable }): {
+  input: ReadableStream<Uint8Array>
+  output: WritableStream<Uint8Array>
+} {
+  const chunks: AsyncIterator<Buffer> = process.stdout[Symbol.asyncIterator]()
+  const input = new ReadableStream<Uint8Array>({
     async pull(controller) {
       const next = await chunks.next()
       if (next.done) controller.close()
@@ -10,12 +13,10 @@ export function webReadable(output: Readable): ReadableStream<Uint8Array> {
     },
     async cancel() { await chunks.return?.() },
   })
-}
-
-export function webWritable(input: Writable): WritableStream<Uint8Array> {
-  return new WritableStream<Uint8Array>({
-    write: (chunk) => new Promise<void>((resolve, reject) => { input.write(chunk, (error) => error ? reject(error) : resolve()) }),
-    close: () => new Promise<void>((resolve) => { input.end(() => resolve()) }),
-    abort: () => { input.destroy() },
+  const output = new WritableStream<Uint8Array>({
+    write: (chunk) => new Promise<void>((resolve, reject) => { process.stdin.write(chunk, (error) => error ? reject(error) : resolve()) }),
+    close: () => new Promise<void>((resolve) => { process.stdin.end(() => resolve()) }),
+    abort: () => { process.stdin.destroy() },
   })
+  return { input, output }
 }
