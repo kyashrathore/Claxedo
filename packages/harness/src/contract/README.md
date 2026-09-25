@@ -28,6 +28,7 @@ Everything a transport sees. The types say the shapes; this file says the rules 
   - `after-active-turns` means that session's own turn, so a change in one workspace never waits on another's.
   - A transport that shares one process across sessions applies an update once and answers each session.
 - **Credentials follow the session's owner (`StartInput.owner`).** `TurnInput.origin` is for authorization and audit only.
+- **Command and agent listing name their target.** A session target reads that session's process. A draft target uses its launch context, cancels requests without a person, bounds discovery, and retires the probe.
 
 ## Events
 
