@@ -1,5 +1,6 @@
 import { expectWritesAtMost, watchWrites } from "../corpus/writes"
 import { releaseHold, startLiveTurn } from "../corpus/live"
+import { wholeListRestyles } from "../corpus/restyle"
 import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI, type Stack } from "../harness"
 
 function sessionUrl(stack: Stack, workspaceId: string, sessionId: string): string {
@@ -60,4 +61,26 @@ test("30 a reply streaming behind the collapsed floating transcript shows in ful
   await peek.click()
   await expect(app.getByText("The hidden reply ends here.")).toBeVisible()
   expect(assistantText(await api.messages(workspace.directory, session.id))).toContain("The hidden reply ends here.")
+})
+
+test("30 scrolling a long transcript adds and removes rows without restyling the whole list", async ({ stack, api, app, isMobile }) => {
+  test.skip(isMobile, "the wheel scroll is the desktop gesture")
+  const workspace = await stack.daemon.makeWorkspace("scroll")
+  const session = await api.createSession(workspace.directory, { title: "Scroll", harness: SCRIPTED_ACP_HARNESS })
+  for (let turn = 1; turn <= 24; turn += 1) {
+    await stack.acp.write(`scroll-${turn}`, { steps: [{ kind: "text", text: `Answer ${turn} has a few lines.\n\n- one\n- two\n- three\n\nEnd of answer ${turn}.` }] })
+    await api.prompt(workspace.directory, session.id, `Question ${turn}. ${acpScriptToken(`scroll-${turn}`)}`)
+  }
+
+  await app.goto(sessionUrl(stack, workspace.id, session.id))
+  await expect(app.getByText("End of answer 24.")).toBeVisible()
+  await app.getByRole("region", { name: "scrollable content" }).hover()
+  const restyles = await wholeListRestyles(app, stack.app, async () => {
+    for (let tick = 0; tick < 20; tick += 1) await app.mouse.wheel(0, -150)
+    await expect(app.getByText("End of answer 24.")).not.toBeInViewport()
+  })
+  if (restyles !== undefined) expect(restyles, "whole-list restyles while rows enter and leave").toBe(0)
+
+  const messages = await api.messages(workspace.directory, session.id)
+  expect(messages.filter((message) => message.info.role === "user")).toHaveLength(24)
 })
