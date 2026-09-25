@@ -88,33 +88,35 @@ export type HarnessSelectionSnapshot = {
   draftDefaultAuthority?: DraftDefaultAuthority
 }
 
+function readSelection(store: HarnessSelectionControllerStore, scope: string): HarnessSelectionSnapshot {
+  const selectedModelKey = store.selectedModelKey(scope)
+  return {
+    harness: store.harness(scope),
+    canCreateWithoutModel: store.canCreateWithoutModel?.(scope),
+    isHarnessMode: store.isHarnessMode(scope),
+    readiness: store.readiness(scope),
+    connectionState: store.connectionState?.(scope),
+    models: store.models(scope),
+    selectedModel: store.selectedModel(scope),
+    selectedModelProvider: selectedModelKey?.providerId,
+    thoughtLevels: store.thoughtLevels(scope),
+    selectedThoughtLevel: store.selectedThoughtLevel(scope),
+    serviceTiers: store.serviceTiers(scope),
+    selectedServiceTier: store.selectedServiceTier(scope),
+    selectedModelKey,
+    optionsStale: store.optionsStale(scope),
+    optionsLoading: store.optionsLoading(scope),
+    configError: store.configError(scope),
+    draftDefaultState: store.draftDefaultState(scope),
+    draftDefaultLabels: store.draftDefaultLabels(scope),
+    draftDefaultModel: store.draftDefaultModel(scope),
+    draftDefaultAuthority: store.draftDefaultAuthority?.(scope),
+  }
+}
+
 export function createHarnessSelectionController(store: HarnessSelectionControllerStore) {
   return {
-    read(scope: string): HarnessSelectionSnapshot {
-      const selectedModelKey = store.selectedModelKey(scope)
-      return {
-        harness: store.harness(scope),
-        canCreateWithoutModel: store.canCreateWithoutModel?.(scope),
-        isHarnessMode: store.isHarnessMode(scope),
-        readiness: store.readiness(scope),
-        connectionState: store.connectionState?.(scope),
-        models: store.models(scope),
-        selectedModel: store.selectedModel(scope),
-        selectedModelProvider: selectedModelKey?.providerId,
-        thoughtLevels: store.thoughtLevels(scope),
-        selectedThoughtLevel: store.selectedThoughtLevel(scope),
-        serviceTiers: store.serviceTiers(scope),
-        selectedServiceTier: store.selectedServiceTier(scope),
-        selectedModelKey,
-        optionsStale: store.optionsStale(scope),
-        optionsLoading: store.optionsLoading(scope),
-        configError: store.configError(scope),
-        draftDefaultState: store.draftDefaultState(scope),
-        draftDefaultLabels: store.draftDefaultLabels(scope),
-        draftDefaultModel: store.draftDefaultModel(scope),
-        draftDefaultAuthority: store.draftDefaultAuthority?.(scope),
-      }
-    },
+    read: (scope: string) => readSelection(store, scope),
     setConnectionDeclaration: (scope: string, declaration: HarnessConnectionRef | undefined) => store.setConnectionDeclaration?.(scope, declaration),
     hydrate: (scope: string, input?: HarnessScopeInput) => store.hydrate(scope, input),
     reprobe: (scope: string, input?: HarnessScopeInput) => store.reprobe(scope, input),
