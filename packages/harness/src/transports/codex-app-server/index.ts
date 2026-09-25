@@ -46,12 +46,6 @@ function codexRetirementDeadline(services: HarnessServices): Deadline {
   return { at: services.clock.now() + 10_000, signal: new AbortController().signal }
 }
 
-function sameCredentialOrigin(left: StartInput["origin"], right: TurnInput["origin"]): boolean {
-  if (left.via !== right.via) return false
-  if (left.actor.kind === "machine-owner") return right.actor.kind === "machine-owner"
-  return right.actor.kind === "person" && left.actor.userId === right.actor.userId
-}
-
 function reasoningEffort(value: string | null | undefined): v2.TurnStartParams["effort"] {
   if (value == null) return undefined
   if (value === "none" || value === "minimal" || value === "low" || value === "medium" || value === "high" || value === "xhigh") return value
@@ -200,7 +194,6 @@ export class CodexAppServerTransport implements HarnessTransport {
 
   async *send(session: HarnessSession, turn: TurnInput, broker: TurnBroker): AsyncIterable<RoutedEvent> {
     const entry = this.entry(session)
-    if (!sameCredentialOrigin(entry.start.origin, turn.origin)) throw new CodexTransportError("configuration", "Turn origin does not match Codex credentials")
     if (entry.state !== "ready") throw new CodexTransportError("session", "Codex turn already active")
     entry.state = "busy"
     entry.turn = { broker }

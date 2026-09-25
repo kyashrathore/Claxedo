@@ -4,7 +4,7 @@ import { projectCodexThreadConfig } from "."
 
 const input: StartInput = {
   sessionId: "s1", directory: "/work", locality: "local",
-  origin: { actor: { kind: "machine-owner" }, via: "loopback", reissued: false },
+  owner: { kind: "machine-owner" },
   config: { harness: { id: "codex", access: "native" } },
   projection: { generation: "g1", pluginRoots: [], notApplied: [], mcpServers: [
     { kind: "stdio", name: "configured", command: "server", args: ["--port", "47501"], env: { TOKEN: "sentinel" }, origin: "configured" },
