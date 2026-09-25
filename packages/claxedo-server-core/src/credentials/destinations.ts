@@ -18,6 +18,8 @@ export type ProviderDestination = {
   origin: string
   methods: readonly string[]
   pathPrefixes: readonly string[]
+  exactPaths?: readonly string[]
+  exchange?: Readonly<{ path: string; tokenField: string }>
   /**
    * Where the vendor's API root sits under the binding path. A harness whose
    * client appends the whole vendor path itself (Claude Code, the Cursor SDK)
@@ -111,15 +113,182 @@ const openaiDestination: ProviderRow = (material) => material.form === "subscrip
  * a different origin the same variable also redirects, so a brokered Cursor
  * turn cannot read that catalog and falls back to its default model.
  */
+const cursorServiceMethods = [
+  ["agent.v1.AgentService", `
+    Run RunSSE RunPoll NameAgent UpdateConversationMetadata CreateTranscriptOverview GetUsableModels
+    GetDefaultModelForCli GetAllowedModelIntents UploadConversationBlobs
+    UploadLocalAgentRunToPromptQuality GetSignedUrlForAttachedMedia NotifyConversationClone
+    GetNewChatNudgeLegacyModelPicker GetNewChatNudgeParameterizedModelPicker
+  `],
+  ["aiserver.v1.BidiService", `
+    BidiAppend
+  `],
+  ["aiserver.v1.DashboardService", `
+    GetTeams GetMe GetAgenticOnboardingConfig GetUserOrganizations SetUserDefaultTeam
+    GetOrganizationMembers GetOrganizationMember ListOrganizationIdentityProviders
+    UpdateOrganizationIdentityProviderSsoSettings SetOrganizationIdentityProviderAllowDomainJoin
+    AddOrganizationIdentityProviderDomainJoin RemoveOrganizationIdentityProviderDomainJoin
+    MergeOrganizationIdentityProvider PreflightMergeOrganizationIdentityProvider
+    GetOrganizationMergeIdpRequest ListOrganizationMergeIdpRequests MoveOrganizationMemberToTeam
+    SetOrganizationMemberTeams BulkMoveOrganizationMembers StartBulkMoveOrganizationMembers
+    GetBackgroundJob SetOrganizationMemberRole UpdateOrganization UpdateOrganizationTeam
+    CreateOrganizationTeam GetOrganizationTeamAdminCandidates GetDirectoryGroups
+    UpdateDirectoryGroupSettings GetOrganizationGroups GetOrganizationGroup GetOrganizationGroupMembers
+    CreateOrganizationGroup UpdateOrganizationGroup DeleteOrganizationGroup AddOrganizationGroupMembers
+    RemoveOrganizationGroupMembers UpdateOrganizationGroupMember GetOrganizationGroupAutorunSettings
+    UpdateOrganizationGroupAutorunSettings GetOrganizationGroupModelAllowlist
+    UpdateOrganizationGroupModelAllowlist GetOrganizationGroupAutoReviewSettings
+    UpdateOrganizationGroupAutoReviewSettings GetOrganizationGroupSmartAutoSettings
+    UpdateOrganizationGroupSmartAutoSettings CreateOrganizationGroupAnthropicCyberEnrollmentUrl
+    GetTeamGroups GetTeamGroup GetTeamGroupMembers CreateTeamGroup UpdateTeamGroup DeleteTeamGroup
+    AddTeamGroupMembers RemoveTeamGroupMembers GetGroups GetGroupMembers CreateGroup UpdateGroup
+    DeleteGroup AddGroupMembers RemoveGroupMembers BulkAssignGroupMembers PreviewAttachGroupToDirectory
+    DetachGroupFromDirectory GetScimConflicts ListScimDirectories GetOrganizationScimConfigurationLinks
+    CreateScimDirectory UpdateScimDirectorySyncSettings DeleteScimDirectory ListScimGroupsFromUpstream
+    ListScimTargetMappings ListOrganizationGroupTargetMappings CreateScimTargetMapping
+    DeleteScimTargetMapping GetActivationCheckoutUrl CheckPromotionEligibility ActivatePromotion
+    GetTeamCustomerPortalUrl GetTeamMembers SendTeamInvite GetTeamInviteLink AcceptInvite
+    GetTeamInviteMetadata ListContactImportConnections GetGoogleContactImportAuthUrl
+    ConnectGoogleContactImportCallback ListContactImportContacts GetContactImportAvatar
+    DisconnectContactImportConnection CreateTeam GetJoinableTeamsByDomain JoinTeamByDomain
+    UpdateTeamDomainJoinSetting GetTeamMemberDomains GetTeamIdForReactivation ChangeSeat
+    ChangeTeamSubscription ConnectGithubCallback RegisterGithubCursorCode PrepareGithubConnectFlow
+    CompleteGithubConnectFlow DisconnectGithub PrepareSetupGithubEnterpriseApp
+    FinishSetupGithubEnterpriseApp ListGithubEnterpriseApps DeleteGithubEnterpriseApp
+    SetupGitlabEnterpriseInstance ListGitlabEnterpriseInstances
+    SetGitlabEnterpriseHostControlledServiceAccountToken RotateGitlabEnterpriseWebhookSecret
+    DeleteGitlabEnterpriseInstance SetupBitbucketServerInstance ListBitbucketServerInstances
+    UpdateBitbucketServerInstanceToken DeleteBitbucketServerInstance SyncGitlabRepos UpdateRole
+    RemoveMember GetMemberRemovalInsights GetSignUpType GetHardLimit SetHardLimit GetSpendLimitPolicy
+    SetSpendLimitPolicy GetOrgTeamBudgets SetOrgTeamBudget GetOrgDailySpendByCategory
+    EnableOnDemandSpend DeleteAccount SendDownloadEmail GetMonthlyInvoice ListInvoiceCycles
+    GetDailySpendByCategory GetPricingHistory ListBackgroundComposerSecrets
+    CreateBackgroundComposerSecret CreateBackgroundComposerSecretBatch RevokeBackgroundComposerSecret
+    UpdateBackgroundComposerSecret GetMcpConfig GetEffectiveMcpConfigForUser GetAvailableMcpServers
+    GetMcpServerUsageSummary SetMcpConfig UpdateUserDefaultMcpSettings MarkMcpServersSeen
+    StoreMcpOAuthToken GetMcpOAuthTokens ListSandMcpTools ExecuteSandMcpTool McpOAuthRefreshLockBegin
+    McpOAuthRefreshLockRelease DeleteMcpOAuthToken ValidateMcpOAuthTokens CheckHttpMcpStatus
+    StoreMcpOAuthPendingState GetMcpOAuthPendingState CompleteMcpOAuth GetPluginMcpConfig
+    BatchGetPluginMcpConfig AddMcpServersFromPlugin MoveUserMcpServerToTeam
+    MigrateTeamMcpServersToDefaultMarketplace ProbeMcpUrl CreateTeamWithFreeTrial CreateTeamWithOrg
+    GetTeamHasValidPaymentMethod GetTeamPrivacyModeForced SwitchTeamPrivacyMode UpdateFastRequests
+    GetFastRequests GetDownloadLink GetCliDownloadUrl GetSsoConfigurationLinks
+    GetScimConfigurationLinks SetAdminOnlyUsagePricing GetYearlyUpgradeEligibility UpgradeToYearly
+    GetEnterpriseCTAEligibility GetUsageBasedPremiumRequests SetUsageBasedPremiumRequests GetReferrals
+    GetReferralCodes CreateP2PReferralLink GetP2PReferralStatus SendP2PReferralInvites
+    GetP2PReferralHistory CheckReferralAllowlist CheckReferralCode RedeemGiftCode GetTeamRepos
+    GetTeamReposOrEmptyIfNotInTeam GetTeamRules CreateTeamRule UpdateTeamRule DeleteTeamRule
+    GetTeamHooks CreateTeamHook UpdateTeamHook DeleteTeamHook GetTeamCommands CreateTeamCommand
+    UpdateTeamCommand DeleteTeamCommand GetGlobalCommands GetRepoSlashCommands
+    GetBackgroundComposerSlashCommands GetCloudAgentPluginsSnapshot GetBugbotTeamRules
+    CreateBugbotTeamRule UpdateBugbotTeamRule DeleteBugbotTeamRule GetBugbotLearnedRules
+    UpdateBugbotLearnedRule DeleteBugbotLearnedRule CreateBugbotManualRepositoryRule
+    GetBugbotManualRepositoryRules UpdateBugbotManualRepositoryRule DeleteBugbotManualRepositoryRule
+    RunDiamondToBugbotMigration GetBugbotRuleAnalytics GetBugbotRuleById CreateTeamRepo DeleteTeamRepo
+    AddRepoPattern RemoveRepoPattern SetTeamRepoType GetTeamAdminSettings
+    GetTeamAdminSettingsOrEmptyIfNotInTeam GetBaseTeamAdminSettings UpdateTeamAdminSettings
+    SetTeamNoZdrModelConsent SetOrganizationNoZdrModelConsent SetUserNoZdrModelConsent
+    SetTeamMemberNoZdrModelConsent GetNoZdrModelConsentStatus UpdateTeamInviteLinkTTLSetting
+    UpdateTeamMemberInviteSetting GetProtectedGitScopes CreateProtectedGitScope DeleteProtectedGitScope
+    CreateTeamFreeTrialCode CreateTeamFreeTrialCodeInternal CreateTeamsTrialV2ReferralCode
+    GetTeamAnalytics GetUserAnalytics GetTeamRawData GetClientUsageData GetCurrentPeriodUsage
+    GetUsageSignalsProjectionSnapshot GetPlanInfo VerifyAppleTransaction GetCursorReviewEntitlement
+    GetUsageLimitPolicyStatus GetUsageLimitStatusAndActiveGrants GetCreditGrantsBalance
+    GetClientVisibleCreditGrants GetAdvancedAnalyticsEnabled GetTokenUsage ValidateBedrockIamRole
+    GetTeamSpend GetTeamSeatUpgradeRecommendations GetPendingSeatTierUpgradeRequests
+    GetCurrentBillingCycle GetMonthlyBillingCycle GetBugbotSettings GetBugbotAnalyticsV2
+    GetBugBotPRAnalytics GetGithubInstallations GetBugbotSuggestedRepos GetScmConnectionStatus
+    GetInstallationRepos FetchAllInstallationRepos GetInstallationGithubUsers GetUserAdminOrganizations
+    GetTeamGithubUsers AddGithubUsersToTeam GetUserPullRequests GetUserReviewRequests
+    GetPullRequestForBranch UpdateGithubRepoSettings UpdateGithubInstallationSettings
+    UpdateAllGithubRepoSettings UpdateGithubInstallationTeamScope UpdateSelfGithubAllowlist
+    GetTeamBugbotSettings UpdateTeamBugbotSettings MigrateTeamBugbotToUsageBasedBilling
+    GetBugbotMergedPrScanSummary GetBugbotMode UpdateBugbotMode GetBugBotProUserMode
+    UpdateBugBotProUserMode GetBugbotUserSettings UpdateBugbotUserSettings
+    GetFullSelfDrivingUserSettings UpdateFullSelfDrivingUserSettings ListFullSelfDrivingRepoSettings
+    SetFullSelfDrivingRepoEnabled GetFullSelfDrivingTeamSettings UpdateFullSelfDrivingTeamSettings
+    ListFullSelfDrivingTeamRepoSettings SetFullSelfDrivingTeamRepoEnabled
+    ListFullSelfDrivingActiveAgents ListFullSelfDrivingTeamActiveAgents UpdateFullSelfDrivingPrConfig
+    GetBugBotProUserSettings UpdateBugBotProUserSettings MigrateBugBotProUserToUsageBasedBilling
+    GetGlassEarlyPreviewEnrollment EnrollInGlassEarlyPreview UnenrollFromGlassEarlyPreview
+    RecordBugbotDeeplinkEvent RecordBugbotDeeplinkEventUnauthenticated RevokeBugBotLicenses
+    RevokeUserBugbotLicense StartBugbotBackfillLearning GetBugbotBackfillStatus SetSlackAuth
+    GetSlackTeamSettings UpdateSlackTeamSettings GetSlackSettings GetSlackModelOptions
+    GetSlackInstallUrl GetSlackInstallUrlPublic GetSlackInstallUrlPublicWithUserScopes
+    GetFilteredUsageEvents GetAggregatedUsageEvents GetAuditLogs GetOrganizationAuditLogs
+    GetUserPrivacyMode SetUserPrivacyMode WebAcknowledgeGracePeriodDisclaimer
+    SkipPrivacyModeGracePeriod NeedsPrivacyModeMigration UpdateTeamPrivacyModeMigrationOptOut
+    ShareConversation GetSharedConversation GetPublicSharedConversation ListSharedConversations
+    DeleteSharedConversation UpdateSharedConversationVisibility ShareCanvas GetSharedCanvas
+    GetPublicSharedCanvas ListSharedCanvases DeleteSharedCanvas LookupSharedCanvasByKey
+    GetTeamSharedConversationSettings UpdateTeamSharedConversationSettings GetTeamSharedCanvasSettings
+    UpdateTeamSharedCanvasSettings GetTeamPublicProfileSettings UpdateTeamPublicProfileSettings
+    GetTeamSmartAutoSettings UpdateTeamSmartAutoSettings GetUserSmartAutoSettings
+    UpdateUserSmartAutoSettings GetTeamBackgroundAgentSettings UpdateTeamBackgroundAgentSettings
+    GetRepoSourcePreference UpdateUserRepoSourcePreference UpdateTeamRepoSourcePreference
+    ResolvePrCreationForge RevokeTeamInviteLink ListTeamInviteLinks UpdateUserName
+    UploadUserProfilePicture UpdateUserProfilePicture ListInvoices ListBlockingCheckoutInvoices
+    GetRemainingRefunds GetServiceAccountSpendLimit SetServiceAccountSpendLimit SetUserHardLimit
+    SetUserMonthlyLimit ToggleMarketingEmailOpt GetMarketingEmailOpt GetGlobalLeaderboardOptIn
+    SetGlobalLeaderboardOptIn CreateTeamApiKey RevokeTeamApiKey ListTeamApiKeys
+    CreateOrganizationApiKey RevokeOrganizationApiKey ListOrganizationApiKeys
+    CreateAutomationWebhookApiKey CreateTeamServiceAccount ListTeamServiceAccounts
+    DeleteTeamServiceAccount ArchiveTeamServiceAccount RotateServiceAccountApiKey
+    GetTeamRepositoriesForServiceAccountScope UpdateServiceAccountRepoScope CreateUserApiKey
+    RevokeUserApiKey ListUserApiKeys ConfirmGithubInstallation UpdateTeamName
+    UpdateTeamDashboardAnalyticsSetting UpdateTeamScimRequireUserDirectorySetting
+    GetTeamScimRequireUserDirectoryPreview GetSlackUserSettings UpdateSlackUserSettings
+    GetSlackRepoRoutingRules CreateSlackRepoRoutingRule UpdateSlackRepoRoutingRule
+    DeleteSlackRepoRoutingRule IsOnNewPricing GetLinearAuthUrl ConnectLinearCallback
+    GetMicrosoftTeamsLinkContext SetMicrosoftTeamsAuth GetLinearStatus DisconnectLinear GetLinearTeams
+    GetLinearSettings UpdateLinearTeamSetting UpdateLinearProjectSetting GetLinearLabels
+    GetLinearIssues GetPagerDutyAuthUrl ConnectPagerDutyCallback GetPagerDutyStatus
+    GetPagerDutyServices DisconnectPagerDuty GetJiraInstallUrl LinkJiraInstallation GetJiraStatus
+    GetBitbucketForgeStatus DisconnectJira DisconnectBitbucketForge GetJiraProjects GetJiraTeamSettings
+    UpdateJiraTeamSettings GetJiraRoutingRules CreateJiraRoutingRule UpdateJiraRoutingRule
+    DeleteJiraRoutingRule LinkJiraUser ListJiraUserLinks UnlinkJiraUser DeleteBedrockIamRole
+    UnlinkSlackAccess ListSlackConversations ListMicrosoftTeamsChannels GetSlackConversationsByIds
+    LogSlackbotAuthConversionFunnel LogClickedConnectSlack CheckUserApiKeyAccess
+    IsAllowedFreeTrialUsage IsNextSetupRunFree CompletedLinkSlackAccount NotifyTeamAdmins
+    GetAdminNotificationStatus OptOutNewPricing SubmitFeedback SubmitFeedbackAnon
+    GetActiveOffboardingBanner ClientAction ListUsageAlerts CreateUsageAlerts DeleteUsageAlerts
+    UpdateUsageAlerts RequestIndividualLimitsOptOut ListMarketplacePlugins GetUserProfile
+    UpdateUserProfile ClaimUserProfileHandle GetPublicProfileByHandle GetViewableProfileByHandle
+    GetTeamMemberProfileByHandle GetPlugin CreatePlugin ParseGitHubRepoForPlugins
+    ParsePluginPublisherRepoInternal PreviewReindexPluginRepoInternal ApplyReindexPluginRepoInternal
+    PreviewMigrateReindexPluginRepoInternal ApplyMigrateReindexPluginRepoInternal
+    CreateSupportImpersonationSessionInternal SubmitPluginForApproval ApprovePlugin RejectPlugin
+    ListUserPluginInstalls InstallUserPlugin UpdateUserPluginInstall UninstallUserPlugin
+    ListTeamPluginInstalls GetTeamPluginPopularity GetTeamPluginPrimitiveUsage
+    ListTeamAvailableMarketplacePlugins GetTeamPinnedMarketplacePlugins
+    UpdateTeamPinnedMarketplacePlugins InstallTeamPlugin UpdateTeamPluginInstall UninstallTeamPlugin
+    GetEffectiveUserPlugins ResolvePluginsByRef ListMarketplaces AddMarketplace
+    GetOrCreateDefaultTeamMarketplace UpdateMarketplace RemoveMarketplace RefreshMarketplace
+    ReindexAndApplyTeamMarketplaceChanges RegisterMarketplaceAndPlugins UpdateTeamMarketplaceConfig
+    SetTeamMarketplaceRepository SetMarketplaceOriginDistribution
+    GetMarketplaceOriginDistributionStatus SetTeamMarketplacePluginPolicies
+    SetTeamMarketplacePluginPolicyVariables ApplyTeamMarketplaceRequiredPlugins
+    LinkPluginsToTeamMarketplace UnlinkPluginsFromTeamMarketplace PreviewTeamMarketplaceMcpImpact
+    GetManagedSkills GetCursorUserState SetJobData ListCrews GetCrew CreateCrew UpdateCrew DeleteCrew
+    ListCrewArchetypes GetCrewActivity TriggerCrewStandup GetCrewStats GetCrewStandupDigest
+    DraftCrewBrief CrewWriteBack
+  `],
+  ["aiserver.v1.ServerConfigService", `
+    GetServerConfig
+  `],
+] as const
+
 const cursorDestination: ProviderRow = () => ({
   origin: "https://api2.cursor.sh",
   methods: ["POST", "GET"],
-  pathPrefixes: [
+  pathPrefixes: [],
+  exactPaths: [
     "/auth/exchange_user_api_key",
-    "/agent.v1.AgentService/RunSSE",
-    "/aiserver.v1.BidiService/BidiAppend",
-    "/aiserver.v1.DashboardService/GetTeamReposOrEmptyIfNotInTeam",
+    "/v1/models",
+    ...cursorServiceMethods.flatMap(([service, methods]) =>
+      methods.trim().split(/\s+/).map((method) => `/${service}/${method}`)),
   ],
+  exchange: { path: "/auth/exchange_user_api_key", tokenField: "accessToken" },
   apiPath: "",
   injection: { header: "Authorization", scheme: "Bearer" },
 })
@@ -182,6 +351,9 @@ function customProviderRow(providerId: string, org: CredentialOrgScope | undefin
   if (!config) return undefined
   const url = new URL(config.baseURL)
   const apiPath = url.pathname.replace(/\/+$/, "")
+  if (providerId === "cursor" || providerId === "cursor-sdk") {
+    return (material) => ({ ...cursorDestination(material), origin: url.origin })
+  }
   return () => ({
     origin: url.origin,
     methods: ["POST", "GET"],
