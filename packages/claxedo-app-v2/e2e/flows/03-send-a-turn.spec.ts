@@ -67,3 +67,43 @@ test("03 a new session's first send creates the session and its draft pane becom
   const sent = (await api.messages(workspace.directory, created.id)).filter((message) => message.info.role === "user")
   expect(JSON.stringify(sent)).toContain("Start the draft session")
 })
+
+test("03 two sessions stream at once: the second's reply shows while the first still runs, in the foreground and after a switch", async ({ stack, api, app, isMobile }) => {
+  test.skip(isMobile, "the switch goes through the desktop rail; flow 33 owns the phone rail")
+  const workspace = await stack.daemon.makeWorkspace("concurrent", "Concurrent")
+  const alpha = await api.createSession(workspace.directory, { title: "Alpha", harness: SCRIPTED_ACP_HARNESS })
+  const bravo = await api.createSession(workspace.directory, { title: "Bravo", harness: SCRIPTED_ACP_HARNESS })
+  await stack.acp.write("alpha", { steps: [{ kind: "text", text: "Alpha has started." }, { kind: "hold", name: "alpha" }, { kind: "text", text: "Alpha has finished." }] })
+  await stack.acp.write("bravo", { steps: [{ kind: "text", text: "Bravo streams in the foreground.", chunks: 4, delayMs: 50 }] })
+  await stack.acp.write("bravo-background", {
+    steps: [{ kind: "hold", name: "bravo-background" }, { kind: "text", text: "Bravo streamed in the background.", chunks: 4, delayMs: 50 }, { kind: "hold", name: "bravo-end" }],
+  })
+  const rail = app.getByRole("navigation", { name: UI.rail })
+  const alphaText = async () => assistantText(await api.messages(workspace.directory, alpha.id))
+
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, alpha.id)}`)
+  await sendPrompt(app, `Start Alpha. ${acpScriptToken("alpha")}`)
+  await expect(app.getByText("Alpha has started.")).toBeVisible()
+
+  await rail.getByRole("button", { name: "Bravo", exact: true }).click()
+  await expect(app).toHaveURL(new RegExp(bravo.id))
+  await sendPrompt(app, `Start Bravo. ${acpScriptToken("bravo")}`)
+  await expect(app.getByText("Bravo streams in the foreground.")).toBeVisible()
+  expect(await alphaText()).not.toContain("Alpha has finished.")
+
+  await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
+  await sendPrompt(app, `Again. ${acpScriptToken("bravo-background")}`)
+  await rail.getByRole("button", { name: "Alpha", exact: true }).click()
+  await expect(app).toHaveURL(new RegExp(alpha.id))
+  await expect(app.getByText("Alpha has started.")).toBeVisible()
+  await stack.acp.release("bravo-background")
+  await expect.poll(async () => assistantText(await api.messages(workspace.directory, bravo.id))).toContain("Bravo streamed in the background.")
+  await rail.getByRole("button", { name: "Bravo", exact: true }).click()
+  await expect(app).toHaveURL(new RegExp(bravo.id))
+  await expect(app.getByText("Bravo streamed in the background.")).toBeVisible()
+  expect(await alphaText()).not.toContain("Alpha has finished.")
+
+  await stack.acp.release("alpha")
+  await stack.acp.release("bravo-end")
+  await expect.poll(alphaText).toContain("Alpha has finished.")
+})
