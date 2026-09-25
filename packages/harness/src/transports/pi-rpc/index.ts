@@ -103,7 +103,7 @@ export class PiRpcTransport implements HarnessTransport {
   }
 
   async start(input: StartInput, broker: { rebind(upstreamSessionId: string): Promise<void> }): Promise<HarnessSession> {
-    const profile = selectPiProfile(input.origin, input.credentials, input.directory, input.sessionId, this.options)
+    const profile = selectPiProfile(input.owner, input.credentials, input.directory, input.sessionId, this.options)
     const rpc = await this.launch(input, profile)
     const session = await this.remember(input, profile, rpc)
     try { await broker.rebind(session.binding.upstreamSessionId) }
@@ -116,7 +116,7 @@ export class PiRpcTransport implements HarnessTransport {
   }
 
   async attach(input: AttachInput, broker: { rebind(upstreamSessionId: string): Promise<void> }): Promise<HarnessSession> {
-    const profile = selectPiProfile(input.origin, input.credentials, input.directory, input.sessionId, this.options)
+    const profile = selectPiProfile(input.owner, input.credentials, input.directory, input.sessionId, this.options)
     const rpc = await this.launch(input, profile, await this.sessionFile(profile, input.binding.upstreamSessionId))
     const session = await this.remember(input, profile, rpc)
     if (session.binding.upstreamSessionId !== input.binding.upstreamSessionId) {
@@ -158,7 +158,6 @@ export class PiRpcTransport implements HarnessTransport {
 
   async *send(session: HarnessSession, turn: TurnInput, broker: TurnBroker): AsyncIterable<RoutedEvent> {
     const entry = this.entry(session)
-    selectPiProfile(turn.origin, entry.profile.credentials, session.directory, session.binding.sessionId, this.options, entry.profile.kind)
     if (entry.busy) throw new PiTransportError("session", "Pi turn already active")
     entry.busy = true
     entry.settled = false
@@ -215,7 +214,7 @@ export class PiRpcTransport implements HarnessTransport {
       const start = { ...entry.start,
         ...(update.credentials ? { credentials: update.credentials } : {}),
         ...(update.projection ? { projection: update.projection } : {}) }
-      const profile = selectPiProfile(start.origin, start.credentials, start.directory, start.sessionId, this.options, entry.profile.kind)
+      const profile = selectPiProfile(start.owner, start.credentials, start.directory, start.sessionId, this.options, entry.profile.kind)
       await preparePiProfile(profile, start.model)
       await entry.rpc.retire(deadline(this.services.clock))
       const rpc = await this.launch(start, profile, await this.sessionFile(profile, entry.session.binding.upstreamSessionId))

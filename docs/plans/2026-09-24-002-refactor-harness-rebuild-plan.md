@@ -704,20 +704,19 @@ This is a security boundary. The broker takes over what today's code enforces, a
 
 ### 4. Pi and credentials
 
-**The machine owner uses their own Pi login, and nobody else does.** Enforcing that needs the identity of **the turn**, not the session:
-- The routes already know a request's provenance (`session-access-policy.ts:689-691`, owner grants) and record the origin of queued and background turns (`session/delivery-owner.ts:227-231`).
-- That origin goes into `TurnInput.origin`.
-- **The owner profile runs when** the session's owner is the machine owner **and** the runtime is the desktop or loopback daemon, for every turn in that session, whoever sends it.
-- **Everything else runs brokered,** as today, in a separate Claxedo-owned profile. That includes a `send` share, a member's queued prompt re-issued later, and every cloud runtime.
-- **A turn whose origin doesn't match its session's profile is refused** with a typed error, checked again when a queued turn is re-issued.
+**A session runs on its owner's credentials, whoever sends the turn** (owner ruling, 2026-09-25):
+- **`StartInput.owner` names the session's owner,** and the profile is chosen once, at start and attach.
+- **The owner profile runs when** the session's owner is the machine owner **and** the runtime is the desktop or loopback daemon, for every turn in that session, including a member's turn through a `send` share and a queued prompt re-issued later.
+- **Every other session runs brokered,** in a separate Claxedo-owned profile, and so does every cloud runtime.
+- **The turn's sender reaches `TurnInput.origin`** for authorization and audit only. The routes already know a request's provenance (`session-access-policy.ts:689-691`, owner grants) and record the origin of queued and background turns (`session/delivery-owner.ts:227-231`).
 
 **The owner's Pi folder is never written.** No `auth.json` scrub, no model overlays, no title extension, no managed-file deletion. Today's code would destroy the user's login (`pi/auth.ts:119-121`, `:160`).
 
 Flows H18 and H20 check that the user's `auth.json` is byte-identical afterwards, and cover:
-- owner;
-- member through a `send` share;
-- queued re-issue;
-- expired, missing, and concurrent owner and member.
+- the owner's turn;
+- a member's turn through a `send` share, which spends the owner's profile;
+- a queued re-issue;
+- expired and missing accounts.
 
 ## What stays and what goes, for users
 

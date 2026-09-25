@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import type { PromptModel } from "@claxedo/agent-runtime-contract"
-import type { HarnessSession, HarnessTransport, PluginProjection, ResolvedCredentials, RoutedEvent, StartInput, TurnInput, TurnOrigin } from "../../contract"
+import type { HarnessSession, HarnessTransport, PluginProjection, ResolvedCredentials, RoutedEvent, StartInput, TurnActor, TurnInput, TurnOrigin } from "../../contract"
 import { createRequestBroker, createSessionBroker, createTurnBroker } from "../../broker"
 import { MemoryPorts, authority, origin } from "./memory-ports"
 import { createTestServices, type TestServices } from "./services"
@@ -11,8 +11,9 @@ export type ConformanceBackend = {
   harness: StartInput["config"]["harness"]
   model: PromptModel
   credentials: ResolvedCredentials
+  owner: TurnActor
   origin?: TurnOrigin
-  mismatchOrigin?: TurnOrigin
+  sharedSender?: TurnOrigin
   projection?: PluginProjection
   expectedMcp?: "session" | "config" | "none"
   authFile?: string
@@ -42,7 +43,7 @@ async function setup(input: ConformanceInput) {
   })
   const transport = input.makeTransport(services, backend)
   const start: StartInput = {
-    sessionId: "s1", directory: backend.directory, locality: "local", origin: turnOrigin,
+    sessionId: "s1", directory: backend.directory, locality: "local", owner: backend.owner,
     config: { harness: backend.harness, model: backend.model }, model: backend.model,
     projection: backend.projection ?? { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] },
     credentials: backend.credentials,
@@ -172,16 +173,15 @@ export function runConformance(input: ConformanceInput): void {
       } finally { await context.close() }
     }, 60_000)
 
-    test("refuses a turn whose origin does not match the session profile", async () => {
+    test("keeps the session profile for a shared sender and queued reissue", async () => {
       const context = await setup(input)
       try {
-        if (!context.backend.mismatchOrigin) return
+        if (!context.backend.sharedSender) return
         for (const reissued of [false, true]) {
-          const mismatched = { ...context.turn("PIORIGINMISMATCH"), origin: { ...context.backend.mismatchOrigin, reissued } }
-          await expect(collect(context.transport, context.session, mismatched, context.turnBroker())).rejects.toMatchObject({ code: "origin_mismatch" })
+          const shared = { ...context.turn("Reply with exactly this one token: PISHARED"), origin: { ...context.backend.sharedSender, reissued } }
+          const events = await collect(context.transport, context.session, shared, context.turnBroker())
+          expect(events.some((item) => item.event.type === "finish")).toBe(true)
         }
-        const events = await collect(context.transport, context.session, context.turn("Reply with exactly this one token: PIVALIDORIGIN"), context.turnBroker())
-        expect(events.some((item) => item.event.type === "finish")).toBe(true)
       } finally { await context.close() }
     }, 60_000)
 
