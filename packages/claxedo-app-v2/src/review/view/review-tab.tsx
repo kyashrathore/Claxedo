@@ -122,6 +122,9 @@ function ReviewEmpty(props: { readonly placementId: PlacementId; readonly select
             {(path) => t("review.directory", { directory: path() })}
           </Show>
         </div>
+        <div class="text-11-regular font-mono text-text-weak/40 max-w-full break-all">
+          {t("review.via", { url: server.harnessConfig.serverUrl })}
+        </div>
       </div>
     </div>
   )
