@@ -196,8 +196,14 @@ export const localServer: Policy = {
   //    host-serving's credential listener, the runtime registry and
   //    `platform/json.ts`, all already here, and server-core's session-rows
   //    contract, which costs no package.
-  //    79/30, no headroom.
-  ceilings: { modules: 79, packages: 30 },
+  //  - `session/list/{session-list-page,merged-session-page}.ts` (owner: the
+  //    daemon's session list, the one list owner on desktop): one keyset page
+  //    per project or workspace, read from every store that holds its
+  //    sessions and merged in the list's order under one cursor. They reach
+  //    the projection's keyset read and server-core's navigation list, both
+  //    already here.
+  //    81/30, no headroom.
+  ceilings: { modules: 81, packages: 30 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

@@ -14,23 +14,17 @@ import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import {
-  listSessionNavigationMetas,
   listSessionMetas,
   parseSessionMeta,
   putSessionMeta,
   sessionMeta,
   type SessionMeta,
 } from "@claxedo/server-core/session/meta/index"
-import {
-  buildSessionListResponse,
-  parseSessionListQuery,
-  sessionListStoreFilter,
-  sessionListIsKeysetPageable,
-  sessionListStorePageFilter,
-} from "@claxedo/server-core/session/navigation-list"
-import { getProjectWorkspace, resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
+import { parseSessionListQuery } from "@claxedo/server-core/session/navigation-list"
+import { getProjectWorkspace, listWorkspaces, resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { asRecord } from "@claxedo/helpers/guards"
+import { localSessionListPage, signedSessionListPage } from "../list/session-list-page"
 
 type Options = {
   services?: ControlPlaneServicesContract
@@ -136,23 +130,6 @@ async function authorizeWorkspaceRead(
   await authority.openWorkspace(auth, { workspaceId })
 }
 
-async function authorizedProjectWorkspaceIds(
-  auth: SignedControlPlaneAuth,
-  options: Options,
-  projectId: string,
-) {
-  const workspaces = await requireAuthority(options.services).listWorkspaces(auth)
-  if (!Array.isArray(workspaces)) return new Set<string>()
-  return new Set(workspaces.flatMap((input) => {
-    const row = asRecord(input)
-    if (!row) return []
-    const rowProjectId = nonEmptyString(row.project_id) ?? nonEmptyString(row.projectID) ?? nonEmptyString(row.projectId)
-    if (rowProjectId !== projectId) return []
-    const workspaceId = nonEmptyString(row.workspace_id) ?? nonEmptyString(row.workspaceID) ?? nonEmptyString(row.workspaceId)
-    return workspaceId ? [workspaceId] : []
-  }))
-}
-
 function responseMeta(input: SessionMeta | undefined, auth: SignedControlPlaneAuth | undefined, sessionId: string) {
   const fallback = { sessionID: sessionId, tags: [], attachments: [] }
   if (!input) return fallback
@@ -245,48 +222,18 @@ export function SessionMetaRoutes(options: Options = {}) {
       if (authResult.error) return c.json(authResult.error, authResult.status)
       try {
         const query = parseSessionListQuery(new URL(c.req.url))
-        if (authResult.auth && query.scope === "project" && query.projectId) {
-          // Two narrowings, not one: a rank on the project is not a rank on
-          // each of its workspaces, and a rank on a workspace is not access
-          // to the sessions inside it, which the authority answers per row
-          // from creator, participant or share.
-          const authorized = await authorizedProjectWorkspaceIds(authResult.auth, options, query.projectId)
-          const authority = requireAuthority(options.services)
-          const projectId = query.projectId
-          const sessions = (await Promise.all(
-            [...authorized].map(async (workspaceId) => {
-              const rows = await authority.listSessions(authResult.auth!, { workspaceId })
-              return (Array.isArray(rows) ? rows : []).map((row) => ({
-                ...(row && typeof row === "object" ? row : {}),
-                workspace_id: workspaceId,
-                project_id: projectId,
-              }))
-            }),
-          )).flat()
-          return c.json(buildSessionListResponse({ query, sessions }))
+        const named = query.scope === "project" && query.projectId && !c.req.query("workspaceId") && !c.req.query("directory")
+          ? undefined
+          : await workspace(c)
+        if (authResult.auth) {
+          return c.json(await signedSessionListPage(requireAuthority(options.services), authResult.auth, { query, workspace: named }))
         }
-        const resolved = await workspace(c)
-        await authorizeWorkspaceRead(authResult.auth, options, resolved?.id)
-        if (authResult.auth && resolved?.id) {
-          const sessions = await requireAuthority(options.services).listSessions(authResult.auth, {
-            workspaceId: resolved.id,
-          })
-          return c.json(buildSessionListResponse({
-            query,
-            sessions: Array.isArray(sessions) ? sessions : [],
-          }))
-        }
-        if (resolved) await options.refreshSessionProjection?.(resolved)
-        if (sessionListIsKeysetPageable(query)) {
-          return c.json(buildSessionListResponse({
-            query,
-            sessions: await listSessionNavigationMetas(sessionListStorePageFilter(query)),
-            cursorApplied: true,
-          }))
-        }
-        return c.json(buildSessionListResponse({
+        return c.json(await localSessionListPage({
           query,
-          sessions: await listSessionMetas(sessionListStoreFilter(query)),
+          workspace: named,
+          projectWorkspaces: async () => (await listWorkspaces()).filter((item) =>
+            item.project_id === query.projectId && item.kind !== "cloud"),
+          ...(options.refreshSessionProjection ? { refreshSessionProjection: options.refreshSessionProjection } : {}),
         }))
       } catch (err) {
         if (err instanceof Error && err.message === "invalid_session_list_cursor") {
