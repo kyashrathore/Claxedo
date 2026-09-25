@@ -1,15 +1,12 @@
-import type { AdapterCancelOutcome, AgentGoalMutationFailure, AgentGoalMutationResult, AgentGoalStartInput, AgentPermissionMode, AgentPermissionModeState, AutoLevel, GoalCapabilities, PermissionDecision, SessionConfig, SessionConfigUpdate, SessionTitleRequest, SteerResult } from "@claxedo/agent-runtime-contract"
+import type { AdapterCancelOutcome, AgentGoalMutationResult, AgentGoalStartInput, AgentPermissionModeState, GoalCapabilities, PermissionDecision, SessionConfig, SessionConfigUpdate, SessionTitleRequest, SteerResult } from "@claxedo/agent-runtime-contract"
 import { isRecord } from "@claxedo/agent-runtime-contract"
 import type { CompatEvent } from "./compat-events"
 import type {
   AgentExecutionBinding,
-  CleanupFact,
   ConnectionRuntimeStatus,
   AgentSessionStartBinding,
   AgentQuestionAnswer,
-  ExecutionFact,
   HarnessInstructionChannel,
-  RecoveryErrorCode,
   SessionModelGroup,
 } from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"

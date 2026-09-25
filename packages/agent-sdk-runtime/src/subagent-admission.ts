@@ -1,14 +1,6 @@
 import { createHash, randomUUID } from "node:crypto"
 import type { SubagentObservation } from "@claxedo/agent-runtime-contract"
-import type {
-  RuntimeDiagnostic,
-  SubagentMode,
-  SubagentStatus,
-  SubagentToolCallRole,
-  SubagentTranscript,
-  SubagentUpdatedEvent,
-  SubagentWake,
-} from "@claxedo/agent-event-runtime"
+import type { RuntimeDiagnostic, SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
 
 export type AdmittedSubagentObservation = {
   parentSessionId: string

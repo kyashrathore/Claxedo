@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process"
 import fs from "node:fs"
 import path from "path"
 import { pathToFileURL } from "node:url"
+import { isRecord } from "@claxedo/agent-runtime-contract"
 import { readApiManifest, readPackageJson } from "./manifest-files"
 
 const root = path.resolve(import.meta.dirname, "..")
@@ -25,10 +26,13 @@ if (process.argv.includes("--generate")) {
     fs.writeFileSync(path.join(root, "docs/api-manifest.json"), `${JSON.stringify(updated, null, 2)}\n`)
     process.exit(0)
   }
-  const hashes = JSON.parse(execFileSync("bun", ["scripts/verify-publish.ts", "--print-declaration-hashes"], {
+  const hashes: unknown = JSON.parse(execFileSync("bun", ["scripts/verify-publish.ts", "--print-declaration-hashes"], {
     cwd: root,
     encoding: "utf8",
-  })) as Record<string, string>
+  }))
+  if (!isRecord(hashes) || !Object.values(hashes).every((hash) => typeof hash === "string")) {
+    throw new Error("verify-publish printed no map of declaration hashes")
+  }
   const valueExports = Object.fromEntries(await Promise.all(Object.entries(manifest.valueExports)
     .filter(([name]) => name in entrypoints)
     .map(async ([name]) => {

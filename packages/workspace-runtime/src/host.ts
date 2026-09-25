@@ -1,4 +1,3 @@
-import type { SessionConfig, SessionConfigUpdate } from "@claxedo/agent-runtime-contract"
 export { workspaceRuntimeBus } from "./bus"
 export type { WorkspaceRuntimeEvent, PtyInfo } from "./bus"
 export {

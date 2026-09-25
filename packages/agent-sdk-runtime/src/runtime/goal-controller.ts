@@ -127,7 +127,7 @@ export function createRuntimeGoalController(input: RuntimeGoalControllerInput) {
         throw new AgentRuntimeGoalError("goal_action_unavailable", message)
       }
     }
-    const result = await context.resource[mutation](sessionId, context.directory) as AgentGoalMutationResult
+    const result = await context.resource[mutation](sessionId, context.directory)
     if (result.ok && mutation !== "resume" && input.store.getSession(sessionId)?.status === "busy") {
       input.cancelCapturedTurn(capture, context.directory)
     }

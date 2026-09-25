@@ -1,4 +1,4 @@
-import type { PlaceholderEnvironment, ProviderBinding, ProviderBindingSource, ProviderProjection, ProviderProjectionSource, ProviderUnavailable } from "@claxedo/agent-runtime-contract"
+import type { PlaceholderEnvironment, ProviderBinding, ProviderProjection, ProviderUnavailable } from "@claxedo/agent-runtime-contract"
 
 const AUTH_MODES = ["api-key", "bearer"] as const
 const BINDING_KEYS = new Set(["baseUrl", "placeholder", "placeholderEnv", "authMode", "expiresAt", "apiPath"])

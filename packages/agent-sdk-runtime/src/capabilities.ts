@@ -1,5 +1,5 @@
 import { isRecord } from "@claxedo/agent-runtime-contract"
-import type { GoalAction, GoalCapabilities, GoalOptionalField } from "@claxedo/agent-runtime-contract"
+import type { GoalAction, GoalCapabilities } from "@claxedo/agent-runtime-contract"
 import type {
   AgentCapabilities,
   HarnessEffortLevels,
