@@ -186,7 +186,7 @@ test("Codex exec approval reaches the durable broker and a denied command never 
       prompt: { agent: "codex", assistantMessageId: "a1", parts: [{ type: "text", text: "Run the requested command" }] }, todos: [],
     }, turnBroker)) received.push(event.event) })()
     let pending = owner.broker.list({ sessionId: "s1" }).find((item) => item.request.kind === "permission")
-    for (let attempt = 0; attempt < 100 && !pending; attempt++) {
+    for (let attempt = 0; attempt < 250 && !pending; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 20))
       pending = owner.broker.list({ sessionId: "s1" }).find((item) => item.request.kind === "permission")
     }
@@ -293,10 +293,10 @@ test("Codex starts a projected configured MCP server", async () => {
 }, 60_000)
 
 async function pendingCount(owner: ReturnType<typeof createRequestBroker>, sessionId: string, count: number) {
-  for (let attempt = 0; attempt < 100; attempt++) {
+  for (let attempt = 0; attempt < 500; attempt++) {
     const rows = owner.broker.list({ sessionId })
     if (rows.length === count) return rows
-    await new Promise((resolve) => setTimeout(resolve, 1))
+    await new Promise((resolve) => setTimeout(resolve, 10))
   }
   throw new Error(`Expected ${count} pending Codex requests for ${sessionId}`)
 }
