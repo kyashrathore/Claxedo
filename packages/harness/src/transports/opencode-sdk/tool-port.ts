@@ -8,13 +8,14 @@ export type SessionTool = Readonly<{
   inputSchema: Readonly<Record<string, unknown>>
   outputSchema?: Readonly<Record<string, unknown>>
 
-  callbackUrl?: string
 }>
+
+export type SessionToolCall = Readonly<{ name: string; toolCallID: string; input: unknown }>
 
 export type SessionToolRegistration = Readonly<{
   scope: WorkspaceScope
   sessionID: string
-  callbackUrl: string
+  execute(call: SessionToolCall): Promise<unknown>
   tools: readonly SessionTool[]
 }>
 
@@ -53,19 +54,7 @@ async function executeTool(
   if (!registration || !active || registration.scope.directory !== directory) {
     throw new Error(`Tool ${tool.name} is not registered for Session ${String(toolContext.sessionID)}`)
   }
-  const response = await fetch(active.callbackUrl ?? registration.callbackUrl, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      sessionID: String(toolContext.sessionID),
-      name: tool.name,
-      toolCallID: String(toolContext.id),
-      input,
-    }),
-  })
-  const body = await response.text()
-  if (!response.ok) throw new Error(`Claxedo tool ${tool.name} failed (${response.status}): ${body}`)
-  const value = body ? JSON.parse(body) : null
+  const value = await registration.execute({ name: tool.name, toolCallID: String(toolContext.id), input })
   return { content: typeof value === "string" ? value : JSON.stringify(value) }
 }
 
@@ -82,6 +71,7 @@ function createToolPlugin(
             name: tool.name,
             description: tool.description,
             input: tool.inputSchema,
+            options: { codemode: false },
             execute: (input: unknown, toolContext: { sessionID: unknown; id: unknown }) =>
               executeTool(sessions, context.location.directory, tool, input, toolContext),
           })

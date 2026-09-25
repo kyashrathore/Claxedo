@@ -105,3 +105,20 @@ test("an extra ID in one entity does not renumber another entity", () => {
     shaped({ unrelatedId: "req_aaaaaaaa", info: { id: "msg_11111111" } })[0]?.entities[1],
   )
 })
+
+test("generated workspace IDs match across relay routes, queries, and payloads while route shape stays literal", () => {
+  const workspace = "ws_muh7abhv_bq6dxzpr13qrxyp9"
+  const other = "ws_muh7as9k_hajsh1bg13qrxyp9"
+  const observations = (id: string, route = "/api/wr/events") => comparisonShape([
+    { kind: "stream", route: `/workspaces/${id}${route}?workspaceId=${id}`, frames: [] },
+    { kind: "http", method: "GET", route: `/api/workspace/resolve?workspaceId=${id}`, status: 200, body: { workspaceId: id } },
+  ]) as Array<{ route: string; body?: { workspaceId: string } }>
+  const expected = observations(workspace)
+  const actual = observations(other)
+  expect(difference(expected, actual)).toBeUndefined()
+  const placeholder = actual[1]?.body?.workspaceId
+  expect(placeholder).toBeDefined()
+  expect(actual[0]?.route).toContain(`/workspaces/${placeholder}/`)
+  expect(actual[0]?.route).toContain(`workspaceId=${placeholder}`)
+  expect(difference(expected, observations(other, "/api/wr/renamed-events"))).toContain("route")
+})
