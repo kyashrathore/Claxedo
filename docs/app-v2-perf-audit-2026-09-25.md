@@ -187,7 +187,7 @@ Where the extra restyles happen (trace with `invalidationTracking` and `timeline
 - 73% of v2's restyled elements (8,348 of 11,394) come from 20 recalcs that each follow a whole-subtree invalidation (`Invalidation set invalidates subtree`, `allDescendantsMightBeInvalid: true`) of one element: the virtual list container `[data-timeline-virtual-content]`'s subtree, 466 elements. The invalidation set is the `:first-child` pseudo set, scheduled from Solid's `reconcileArrays` as rows are inserted and removed.
 - The same `:first-child` whole-subtree set fires in v1 (46 subtree invalidations in both apps), but in v1 it lands on small elements: the largest is the childless bottom spacer `div.pointer-events-none.h-16` (907 elements restyled in total).
 - The recalcs are flushed synchronously inside `requestAnimationFrame` by the scroll thumb's geometry read: `updateThumb` (`packages/ui/src/components/scroll-view.tsx:225`, reading `scrollHeight`/`clientHeight`) forces 19 recalcs restyling 7,791 elements in v2 against 13 recalcs and 817 elements in v1. `scroll-view.tsx` is shared by both apps; it is the flush point, not the cause.
-- Ruled out by experiment on the live v2 page: disabling `src/transcript/styles.css` (11,207 restyled), `src/ui/styles.css` (11,212) or the entire `shell/styles/index.css` (10,437) leaves the count unchanged, and inserting a stable first child into the scroll viewport (v1 has a `div.sticky` there; v2 does not) changes nothing (11,199). The whole-subtree invalidation is therefore not caused by the duplicated stylesheets. Which rule turns the container's `:first-child` change into a subtree invalidation is **not yet identified** (see Suspected).
+- Ruled out by experiment: every positional rule, every `:has()` rule, the duplicated sheets (disabled together) and every non-core sheet. Inserting a stable first child into the scroll viewport (v1 has a `div.sticky` there) changes nothing either. The trigger is the virtual list's re-render on `Virtualizer.notify` (22 of 25 whole-list restyles), not a CSS rule. See Suspected for the full bisection.
 
 Session-open requests v2 makes twice:
 
@@ -375,7 +375,7 @@ Severity order: battery/idle, then lag, then wasted work. Each finding gives (a)
    - (b) 4,696 → 11,394 elements restyled. RecalcStyleDuration 40 → 73 ms. Forced recalcs inside `requestAnimationFrame` at the thumb read: 13 → 19, restyling 817 → 7,791 elements.
    - (c) 73% of v2's restyles follow whole-subtree `:first-child` invalidations of `[data-timeline-virtual-content]` (466 elements), flushed synchronously by `ScrollView.updateThumb` (`packages/ui/src/components/scroll-view.tsx:225`). The rule is not yet identified (see Suspected).
    - (d) The invalidation set exists in v1 but lands on a childless spacer there.
-   - (e) Find the featureless `:first-child … *` rule and give it a feature (class) in its descendant part. Read the thumb geometry from cached `ResizeObserver`/scroll values instead of `scrollHeight` inside rAF.
+   - (e) Bisection shows no CSS rule is responsible (see Suspected); change how the virtual list re-renders on `Virtualizer.notify` so the container's subtree is not invalidated. Read the thumb geometry from cached `ResizeObserver`/scroll values instead of `scrollHeight` inside rAF.
 3. **A 10 s clock tick runs for the app's lifetime** (battery/idle).
    - (a) S1, 30 s idle.
    - (b) 3 interval callbacks per 30 s, 0 DOM changes. v1 has 27 timer callbacks and 10 requests in the same window, so v2 is far better.
@@ -457,7 +457,18 @@ Where v2 is already better than v1 and must stay that way: idle network (0 vs 10
 
 ## Suspected (not proven)
 
-- **The rule behind the scroll subtree invalidation.** The trace names the `:first-child` pseudo invalidation set with `allDescendantsMightBeInvalid` on the list container, scheduled from Solid's `reconcileArrays`. Disabling `shell/styles/index.css`, `src/ui/styles.css` or `src/transcript/styles.css` did not remove it, and the container's own DOM, attributes and matched positional rules are identical to v1's. Next step: disable the remaining 39 sheets one at a time with `bisect-css.mjs`, or read Blink's `InvalidationSet` dump (`--vmodule=invalidation_set*=2`) for the set id.
+- **The scroll subtree restyle is not caused by a CSS rule.** Bisection, all v2, 30 × −100 px wheel on "Local changes review" (baseline 10,440–11,230 elements restyled):
+  - Deleting all 87 positional rules through CSSOM (`:first-child`, `:last-child`, `:nth-*`, `:only-*`, including nested `&:first-child`): 10,466.
+  - Deleting all 50 `:has()` rules: 10,453.
+  - Disabling both duplicate copies together (`src/ui/styles.css` + `src/transcript/styles.css`; disabling one copy at a time proved nothing, because the other copy still carried the rules): 11,155.
+  - Disabling every sheet except the core layout sheets: 11,176. Also disabling `src/ui/styles.css` and `app-shell.css`: 11,321. Disabling `shell/styles/index.css` instead: 10,437. Disabling everything stops the scroller, so no measurement is possible.
+  - No stylesheet is injected during the scroll.
+  - Inline style writes match v1: row `top`/`height`, thumb and spacer `transform`, no custom properties.
+  - v2 inserts fewer elements than v1 (1,637 vs 2,167) and moves only 7 nodes (65 elements).
+
+  Both apps end with the same 466-element list, so about 9,000 of v2's restyles hit elements that already exist: about 20 whole-list recalcs. The trace attributes them to one path: of the 25 whole-subtree restyles of `[data-timeline-virtual-content]`, **22 are triggered from `@tanstack/solid-virtual`'s `onChange` → `Virtualizer.notify`**, i.e. Solid re-rendering the row list; 1 from `prepareScrollOverscan` and 1 from `prependPage` (`src/session/transcript/conversation.ts:59`). v1 runs the same `notify` path, but its `:first-child` whole-subtree set is scheduled on the childless bottom spacer (`div.pointer-events-none.h-16`, 907 restyled in total), not on the list container.
+  - Conclusion: there is no author rule to change. The difference lies in what v2's `MessageTimeline` does to the list container on each virtualizer notify, which makes Blink schedule the `:first-child` pseudo invalidation on the container itself.
+  - Next step: diff v2's and v1's `onChange` handling of the virtual list (`src/session/view/timeline/message-timeline.tsx` `createVirtualizer` options and the `For` over `virtualRowKeys`), using `--vmodule=style_invalidator*=2` or a Blink debug build to name the element whose pseudo state changed.
 - **Why Tasks refetches on leave.** The request and its initiator are proven; that `activeProjectId()` flips first is read from code, not traced.
 - **Full-viewport paint per keystroke** (shared, same in both): each key reports a 1280×800 Paint on the root layer. This may be `chromium-headless-shell` software raster reporting the layer bounds rather than the damage rect. Check in headed Chrome with paint flashing.
 - **Panel focus into "Search files..."** keeps a caret blinking (60 frames per 30 s idle). This is a product behaviour, not a defect; listed because it is the only source of idle frames in v2.
