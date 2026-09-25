@@ -14,7 +14,10 @@ The package owns the generic pieces:
 `drivers/local-brokering` is a macOS test driver. The e2e self-hosted stack
 injects its instance programmatically; it has no product driver ID or product
 configuration path. It runs the workspace runtime in a private directory under
-`sandbox-exec`, permitting outbound TCP only to its HTTP proxy. The proxy uses
+`sandbox-exec`, permitting outbound TCP to its HTTP proxy and the specified
+control-plane and relay loopback ports. The profile lets only `/bin/ps` execute
+outside the sandbox because macOS refuses its setuid binary inside
+`sandbox-exec`; the runtime stays under the network policy. The proxy uses
 the egress broker's placeholder substitution and rejects unknown origins and
 CONNECT tunnels. It is not a production sandbox provider.
 

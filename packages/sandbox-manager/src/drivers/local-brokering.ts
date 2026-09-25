@@ -177,7 +177,7 @@ export function createLocalBrokeringSandboxDriver(options: LocalBrokeringDriverO
       for (const secret of host.secrets) {
         if (Object.values(env).some((value) => value.includes(secret.value))) throw new Error("brokered secret entered sandbox environment")
       }
-      const networkPolicy = `(version 1) (allow default) (deny network-outbound) ${[ `localhost:${proxyPort}`, ...directDestinations ].map((destination) => `(allow network-outbound (remote tcp ${JSON.stringify(destination)}))`).join(" ")}`
+      const networkPolicy = `(version 1) (allow default) (deny network-outbound) (allow process-exec (literal "/bin/ps") (with no-sandbox)) ${[`localhost:${proxyPort}`, ...directDestinations].map((destination) => `(allow network-outbound (remote tcp ${JSON.stringify(destination)}))`).join(" ")}`
       const child = spawn("/usr/bin/sandbox-exec", ["-p", networkPolicy, options.executable, ...options.args], {
         cwd: workspace,
         env,

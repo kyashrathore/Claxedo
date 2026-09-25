@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { ClaxedoApi, assistantText } from "../harness/api"
 import { activateCloudCredential, cloudSessionTransport, cloudTransport, createCloudWorkspace, waitCloudConnection } from "../harness/cloud-workspace"
 import { startStack } from "../harness/stack"
-import { frameType, openEventStream } from "../harness/stream"
+import { frameSessionId, frameType, openEventStream } from "../harness/stream"
 import { sendJson } from "../harness/transport"
 
 export async function run() {
@@ -24,7 +24,9 @@ export async function run() {
       const model = { providerId: "pi", modelId: "openai/gpt-4.1" }
       const session = await api.createSession(workspace.directory, { harness: { id: "pi", access: "native" }, model })
       await api.prompt(workspace.directory, session.id, "Reply with CLOUDPITURN", { model })
-      await stream.waitFor((frame) => frameType(frame) === "session.idle", { label: "cloud Pi idle" })
+      const settled = await stream.waitFor((frame) => frameSessionId(frame) === session.id
+        && (frameType(frame) === "session.idle" || frameType(frame) === "session.error"), { label: "cloud Pi settlement", timeoutMs: 60_000 })
+      assert.equal(frameType(settled), "session.idle", `Cloud Pi turn failed before idle: ${JSON.stringify(settled)}; model requests: ${stack.scripted.requests.length}`)
       const messages = await api.messages(workspace.directory, session.id)
       if (!assistantText(messages).includes("CLOUDPITURN")) {
         throw new Error(`C-15: signed cloud Pi turn had no usable owner credential; messages: ${JSON.stringify(messages)}`)
