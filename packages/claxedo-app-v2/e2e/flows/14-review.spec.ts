@@ -1,7 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import type { Locator, Page } from "@playwright/test"
-import { acpScriptToken, expect, git, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI } from "../harness"
+import { acpScriptToken, apiRequests, assistantText, expect, git, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI } from "../harness"
 
 async function commentOnLine(panel: Locator, line: string, comment: string) {
   const gutter = panel.getByRole("button", { name: "Comment", exact: true }).first()
@@ -118,3 +118,35 @@ test("14 Review keeps its scroll position through a file tab and back", async ({
     .poll(() => review.locator("[data-scrollable='true']").first().evaluate((element) => element.scrollTop))
     .toBeGreaterThan(200)
 })
+
+test("14 the files and git state are read again once after a turn that could write, and not after a turn that only read", async ({ stack, api, app }) => {
+  test.skip(stack.app !== "v2", "v1 polls the files and git state")
+  const workspace = await stack.daemon.makeWorkspace("turn-reads")
+  const notes = path.join(workspace.directory, "README.md")
+  await stack.acp.write("read-only", { steps: [{ kind: "tool", tool: "read", title: "Read README.md", locations: [{ path: notes }], text: "turn-reads\n" }, { kind: "text", text: "Only read the README." }] })
+  await stack.acp.write("edit", { steps: [{ kind: "diff", path: notes, oldText: "turn-reads\n", newText: "turn-reads, edited\n" }, { kind: "text", text: "Edited the README." }] })
+  const session = await api.createSession(workspace.directory, { title: "Turn reads", harness: SCRIPTED_ACP_HARNESS })
+
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
+  await app.getByRole("button", { name: UI.openPanel }).click()
+  const panel = app.getByRole("complementary", { name: "Workspace panel" })
+  await expect(panel.getByRole("treeitem", { name: /^README\.md/ })).toBeVisible()
+  const settled = apiRequests(app, stack.url)
+  await settled()
+  const filesAndGit = (paths: readonly string[]) => paths.filter((path) => /^\/api\/wr\/(file|git|diff)(\/|$)/.test(path)).sort()
+
+  await api.prompt(workspace.directory, session.id, `Read the README. ${acpScriptToken("read-only")}`)
+  await expect(app.getByText("Only read the README.")).toBeVisible()
+  await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
+  expect(filesAndGit(await settled()), "reads after a turn that only read").toEqual([])
+
+  await api.prompt(workspace.directory, session.id, `Edit the README. ${acpScriptToken("edit")}`)
+  await expect(app.getByText("Edited the README.")).toBeVisible()
+  await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
+  const reads = filesAndGit(await settled())
+  expect(reads, "reads after a turn that could write").toContain("/api/wr/git/status")
+  expect(reads.filter((path, index) => reads.indexOf(path) !== index), "read twice").toEqual([])
+  expect(assistantText(await api.messages(workspace.directory, session.id))).toContain("Edited the README.")
+})
+

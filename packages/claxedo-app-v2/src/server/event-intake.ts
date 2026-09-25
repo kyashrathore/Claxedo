@@ -4,6 +4,7 @@ import { toAppError } from "./errors"
 import type { ServerEvent } from "./events"
 import { invalidateFor } from "./queries"
 import type { StatusOwner } from "./status"
+import { createTurnWrites, type TurnWrites } from "./turn-writes"
 import type { SessionRef } from "./types"
 import type { Workspaces } from "./workspaces"
 import { createCoalescer, type Coalescer } from "./wire/coalesce"
@@ -34,7 +35,7 @@ async function settleHeld(input: IntakeInput, ref: SessionRef, coalescer: Coales
   }
 }
 
-function publisher(input: IntakeInput, listeners: Listeners, coalescer: () => Coalescer) {
+function publisher(input: IntakeInput, listeners: Listeners, writes: TurnWrites, coalescer: () => Coalescer) {
   return (events: readonly ServerEvent[]) => {
     batch(() => {
       for (const event of events) {
@@ -43,7 +44,7 @@ function publisher(input: IntakeInput, listeners: Listeners, coalescer: () => Co
           void settleHeld(input, admission.ref, coalescer())
           continue
         }
-        invalidateFor(input.queryClient, input.serverUrl, admission.event)
+        invalidateFor(input.queryClient, input.serverUrl, admission.event, writes.endsWritingTurn(admission.event))
         for (const listener of listeners) listener(admission.event)
       }
     })
@@ -71,7 +72,7 @@ async function mapFrame(workspaces: Workspaces, coalescer: Coalescer, frame: Fra
 
 export function createEventIntake(input: IntakeInput): EventIntake {
   const listeners: Listeners = new Set()
-  const coalescer: Coalescer = createCoalescer(publisher(input, listeners, () => coalescer))
+  const coalescer: Coalescer = createCoalescer(publisher(input, listeners, createTurnWrites(), () => coalescer))
   let queue: Promise<void> = Promise.resolve()
   return {
     frame: (raw) => {
