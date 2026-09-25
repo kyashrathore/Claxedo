@@ -79,6 +79,7 @@ const en = {
   "review.sourceControl.commitAndPush": "Commit & Push",
   "review.sourceControl.amend": "Amend last commit",
   "review.sourceControl.publish": "Publish Branch",
+  "review.sourceControl.createPr": "Create PR",
   "review.sourceControl.push": "Push",
   "review.sourceControl.upToDate": "Up to date",
   "review.sourceControl.group.staged": "Staged changes",

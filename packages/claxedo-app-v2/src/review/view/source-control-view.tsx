@@ -19,6 +19,7 @@ import { useReview } from "../store"
 import { ChangeGroup, type ChangeEntry } from "./change-group"
 import { CommitGraph } from "./commit-graph"
 import { CompareGroup } from "./compare-group"
+import { useCompareUrl } from "../create-pr"
 import { PushRow } from "./push-row"
 import { CommitBox, type CommitVariant } from "./source-control-commit-box"
 import "./source-control.css"
@@ -137,6 +138,7 @@ export function SourceControlView(props: SourceControlViewProps): JSX.Element {
   }))
   const status = () => statusQuery.data ?? EMPTY_STATUS
   const branch = () => status().branch
+  const compareUrl = useCompareUrl(() => props.placementId, branch)
   const [selectedPath, setSelectedPath] = createSignal<string>()
   const activePath = () => props.activePath ?? selectedPath()
   const open = (entry: ChangeEntry, scope: DiffScope) => {
@@ -184,6 +186,7 @@ export function SourceControlView(props: SourceControlViewProps): JSX.Element {
       <PushRow
         status={status()}
         pending={git.pending() === "push"}
+        compareUrl={compareUrl()}
         onPush={(setUpstream) => void git.push(setUpstream)}
       />
       <div class="flex min-h-0 flex-1 flex-col">
