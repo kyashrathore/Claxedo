@@ -214,6 +214,11 @@ A **Settings → Projects** section lists the projects and holds their managemen
   4. If it's on: the app connects or reconnects, and attaches live streaming when a turn is running.
 - No dimming in the rail: rows and projects look the same whatever their sandbox's state.
 - v1's cloud startup view isn't ported; the dock's waking-up state replaces it.
+- (Owner, via the lead, 18:40) Runtime-only parts (status, permissions, questions, todos, goal) are read from the sandbox only while it runs; while it's gone they're absent, with no errors. The dock's state and the card are states of one machine. Waking handles `provisioning` by the server's `retryAfterMs`, and a refused start (409) is a clear failure with a retry.
+- **As built (lane signed-web):**
+  - Sandbox state: the catalog's `reachable` for a cloud placement is its sandbox lease, read without a wake (`readyCloudWorkspaces` in server-core, both signed catalogs). A runtime read uses `GET /api/workspace/:id/connection`, which never starts compute; only `POST` does, and only a send (or an explicit start) posts it.
+  - One machine per placement, owned by the adapter (`src/server/workspace-wakes.ts`, `wake-machine.ts`), read as `server.cloud.runtime(placementId)`: `live`, `asleep`, `waking(bootMode?)`, `wakeFailed(error)`.
+  - Copy: asleep "This workspace is asleep. Your next message wakes it."; waking "Waking up the workspace…", plus "Resuming its sandbox" or "Restoring it from a snapshot" when the server names the boot mode; failed "Couldn't wake the workspace." with the server's reason and Try again. The composer stays usable while asleep; the message is sent once the sandbox is up, and a failed wake keeps the draft.
 
 ## Owner, 2026-09-25 17:45: session sources, merged on the server
 - One list owner per connection:
@@ -234,3 +239,17 @@ A **Settings → Projects** section lists the projects and holds their managemen
 
 ## Owner, 2026-09-25 19:45: no fixes to v1
 - v1 (`packages/claxedo-app` on dev) gets no fixes, including the "Too many redirects" crash in v1's route sync (`app-shell-route-sync.ts`) that the owner hit on a v1 build. v2 replaces v1 at the swap.
+
+## Orchestrator, 2026-09-25: Composer budget re-based after parity voided the frame swap
+- The plan's 5.5k Composer budget assumed swapping today's `PromptInputFrame` for upstream's `PromptInputV2` frame. The parity ruling (port v1's UI, don't restyle) voided that swap, so the composer is today's frame, moved.
+- The owner approved re-basing at 10:05 ("all good"), after the composer's no-comments triage.
+- After the triage (593 comment blocks: real constraints moved into `src/composer/README.md` under Constraints, the rest deleted), `src/composer` measured 10,147 lines. Splitting its 14 size violations by responsibility then added 835 lines of module seams (imports and prop types), to 10,982.
+- Merging feat/app-v2's hidden-pane command registration (`composer-commands.ts`) added 5 more, to 10,987.
+- The budget row is set to the measured 10,987, with no headroom, inside the owner's 11.1k; v1's composer is 12.3k.
+
+## Owner, 2026-09-25: desktop app plugins run in-app; residual accepted, users warned
+- On the desktop an app plugin runs in the app's own JavaScript, unsandboxed. It has the app's full access on this computer: it sees what the user sees, acts as the user on their server, reaches every desktop bridge (`window.api`), and can open links in the user's browser or the Browser tab that carry data out.
+- The owner accepts that residual. The desktop warning says it plainly and asks the user to turn on only app plugins they trust.
+- On the web an app plugin runs in a sandboxed frame (`sandbox="allow-scripts"`, never same-origin), reaches the server only through the host's manifest-checked calls, and the warning says so.
+- Approval is per manifest: a changed routes, operations or requires set stops the plugin until the user approves again and shows what changed; "Code changed since you approved" shows the build time.
+- Every user-visible string says "App plugins". Agent Plugins and the Marketplace keep their names.

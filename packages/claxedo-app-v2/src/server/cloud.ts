@@ -7,6 +7,7 @@ import { jsonInit, withQuery, type Transport } from "./transport"
 import type { CloudWorkspace, CodeHostConnection, CodeHostRepository } from "./cloud-types"
 import type { FetchQuery, Project } from "./types"
 import { cloudWorkspaceFromRow, codeHostConnectionsFromWire, codeHostRepositoryFromRow } from "./wire/cloud"
+import type { WorkspaceWakes } from "./workspace-wakes"
 import type { Workspaces } from "./workspaces"
 
 const INTEGRATIONS_PATH = "/api/claxedo/integrations"
@@ -39,7 +40,7 @@ function sourceBody(project: Project) {
   return {}
 }
 
-export function createCloudApi(transport: Transport, workspaces: Workspaces, project: (id: ProjectId) => Promise<Project>): CloudApi {
+export function createCloudApi(transport: Transport, workspaces: Workspaces, wakes: WorkspaceWakes, project: (id: ProjectId) => Promise<Project>): CloudApi {
   const at = (id: PlacementId, suffix = "") => `/api/workspace/${encodeURIComponent(id)}${suffix}`
   return {
     create: async (options) => {
@@ -55,9 +56,8 @@ export function createCloudApi(transport: Transport, workspaces: Workspaces, pro
       if (!workspace) throw new ServerError({ class: "internal", message: "The cloud workspace create answered without a workspace id" })
       return workspace
     },
-    start: async (id) => {
-      await transport.json<unknown>(at(id, "/connection"), jsonInit("POST", {}))
-    },
+    start: wakes.start,
+    runtime: wakes.runtime,
     stop: async (id) => {
       await transport.json<unknown>(at(id, "/lifecycle/stop"), jsonInit("POST", {}))
     },

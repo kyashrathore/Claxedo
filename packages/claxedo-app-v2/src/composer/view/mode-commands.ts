@@ -20,7 +20,6 @@ type ModeCommandsInput = {
   mode: Accessor<PromptComposerEditMode>
   pick: VoidFunction
   setMode: (mode: PromptComposerEditMode) => void
-  /** Goal entry-point gate: unknown capabilities count as selectable — `armGoal` resolves the truth. */
   goalSelectable: Accessor<boolean>
   armGoal: VoidFunction
   labels: {

@@ -55,6 +55,7 @@ import { AgentConfigRoutes, sessionMetaProjectionTap } from "@claxedo/local-serv
 import { SessionMetaRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { LocalWorkspaceRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { requireSignedControlPlaneRoute, ShellRoutes } from "@claxedo/local-server/self-hosted-execution"
+import { LIVE_PLUGINS_ROUTE_PATH, LivePluginRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { ProjectRoutes } from "@claxedo/server-core/projects/routes"
 import { localProjectStore, systemRepoAddresses } from "@claxedo/server-core/projects/local-store"
 import { WorkspaceRoutes } from "../../workspace/routes/index"
@@ -927,6 +928,7 @@ export function createSelfHostedApp(
                   ...actor,
                   orgId,
                   role: relayRole(workspace.role),
+                  auth,
                 }
               }
             } catch (error) {
@@ -1124,6 +1126,7 @@ export function createSelfHostedApp(
   app.use("/api/claxedo/plugins", operator)
   app.use("/api/claxedo/plugins/*", operator)
   app.use("/api/claxedo/remote-access/enable", operator)
+  app.route(LIVE_PLUGINS_ROUTE_PATH, LivePluginRoutes(authRouteOptions(services), { authorizeMachineOwner: authorizeOperator }))
   app.route("/", JwksRoutes(process.env))
   app.route(
     "/",

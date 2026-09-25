@@ -1,7 +1,7 @@
 import { resolveIconArtworkLibrary } from "@opencode-ai/ui/icon-artwork-policy"
 import { CODEX_CUSTOM_ARTWORK } from "@opencode-ai/ui/codex-custom-artwork"
 import { HARNESS_BRAND_ARTWORK } from "@opencode-ai/ui/harness-brand-artwork"
-import { createEffect, Show, splitProps, type ComponentProps } from "solid-js"
+import { createEffect, Show, splitProps, useContext, type ComponentProps, type JSX } from "solid-js"
 import {
   ensureSvgSpriteHost,
   OpenCodeIcon as UpstreamIcon,
@@ -16,6 +16,7 @@ import {
   type CodexGlyphName,
 } from "@/ui/icons/codex"
 import { openCodeIconLibrary } from "@/ui/icons/opencode"
+import { IconSkinContext } from "@/ui/icons/skin"
 
 const claxedoIcons = {
   ...CODEX_CUSTOM_ARTWORK,
@@ -146,27 +147,45 @@ function upstreamProps(props: ClaxedoIconProps) {
   return others
 }
 
+function Skinned(props: { readonly name: ClaxedoIconName; readonly children: JSX.Element }): JSX.Element {
+  const skin = useContext(IconSkinContext)
+  if (!skin) return props.children
+  return (
+    <Show when={skin()?.[props.name]} fallback={props.children}>
+      {(draw) => (
+        <span data-icon={props.name} data-icon-skin="" aria-hidden="true">
+          {draw()()}
+        </span>
+      )}
+    </Show>
+  )
+}
+
 export function ClaxedoIcon(props: ClaxedoIconProps) {
   const upstream = () => upstreamProps(props)
   return (
-    <Show
-      when={resolveIconArtworkLibrary(props.name, props.library ?? iconLibrary()) === "codex"}
-      fallback={<UpstreamIcon {...upstream()} name={openCodeIconLibrary.resolve(props.name)} />}
-    >
-      <CodexGlyph {...props} />
-    </Show>
+    <Skinned name={props.name}>
+      <Show
+        when={resolveIconArtworkLibrary(props.name, props.library ?? iconLibrary()) === "codex"}
+        fallback={<UpstreamIcon {...upstream()} name={openCodeIconLibrary.resolve(props.name)} />}
+      >
+        <CodexGlyph {...props} />
+      </Show>
+    </Skinned>
   )
 }
 
 export function ClaxedoIconV2(props: ClaxedoIconProps) {
   const upstream = () => upstreamProps(props)
   return (
-    <Show
-      when={resolveIconArtworkLibrary(props.name, props.library ?? iconLibrary()) === "codex"}
-      fallback={<UpstreamIcon {...upstream()} name={openCodeIconLibrary.resolve(props.name)} />}
-    >
-      <CodexGlyph {...props} bare />
-    </Show>
+    <Skinned name={props.name}>
+      <Show
+        when={resolveIconArtworkLibrary(props.name, props.library ?? iconLibrary()) === "codex"}
+        fallback={<UpstreamIcon {...upstream()} name={openCodeIconLibrary.resolve(props.name)} />}
+      >
+        <CodexGlyph {...props} bare />
+      </Show>
+    </Skinned>
   )
 }
 

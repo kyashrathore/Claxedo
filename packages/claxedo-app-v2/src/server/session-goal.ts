@@ -4,7 +4,7 @@ import { jsonInit, type RuntimeRoute, type Transport } from "./transport"
 import type { GoalAction, SessionGoal, SessionGoalState, SessionRef } from "./types"
 import { GOAL_ACTION_ROUTES, GOAL_UNAVAILABLE, goalMutationFromWire, goalStateFromWire } from "./wire/goal"
 
-const NO_GOAL: SessionGoalState = { goal: undefined, actions: [], available: false }
+export const NO_GOAL: SessionGoalState = { goal: undefined, actions: [], available: false }
 
 export async function readGoalState(transport: Transport, where: RuntimeRoute, ref: SessionRef): Promise<SessionGoalState> {
   try {

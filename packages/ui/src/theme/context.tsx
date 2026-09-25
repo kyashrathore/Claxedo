@@ -1,7 +1,7 @@
 // @refresh reload
 
 import { createEffect, onMount } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createStore, produce } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createSimpleContext } from "../context/helper"
 import { oc2Theme } from "./default-theme"
@@ -325,6 +325,11 @@ export const { use: useTheme, useOptional: useThemeOptional, provider: ThemeProv
       setTheme,
       setColorScheme,
       registerTheme: (theme: DesktopTheme) => setStore("themes", theme.id, theme),
+      unregisterTheme: (id: string) => {
+        if (id === "oc-2" || knownThemes().has(id) || !store.themes[id]) return
+        setStore("themes", produce((themes) => void delete themes[id]))
+        if (store.themeId === id) setTheme(normalize(props.defaultTheme) ?? "oc-2")
+      },
       previewTheme: (id: string) => {
         const next = normalize(id)
         if (!next) return

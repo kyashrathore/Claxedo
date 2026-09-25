@@ -7,11 +7,12 @@ import { controlGoal, startGoal } from "./session-goal"
 import { createSessionQueue } from "./session-queue"
 import { readLatestTurn } from "./latest-turn"
 import { readTurn } from "./turn"
-import { listSessions, readOlder, readSession } from "./session-reads"
+import { onRuntime, listSessions, readOlder, readSession } from "./session-reads"
 import { stopTurn } from "./session-stop"
 import type { StatusOwner } from "./status"
 import { jsonInit, withQuery, type Transport } from "./transport"
 import type { AgentRequestReply, PromptDelivery, PromptInput, SessionCreateInput, SessionRef, SessionRow } from "./types"
+import type { WorkspaceWakes } from "./workspace-wakes"
 import type { Workspaces } from "./workspaces"
 import { createMessageIds } from "./wire/ascending-id"
 import { harnessIdentity, harnessSelectionQuery } from "./wire/harness-selection"
@@ -28,7 +29,8 @@ function createBody(input: SessionCreateInput) {
   }
 }
 
-async function createSession(context: SessionContext, input: SessionCreateInput): Promise<SessionRow> {
+async function createSession(context: SessionContext, wakes: WorkspaceWakes, input: SessionCreateInput): Promise<SessionRow> {
+  await wakes.wakeIfStopped(input.placementId)
   const where = await context.workspaces.route(input.placementId)
   const placement = context.workspaces.byId(input.placementId)
   if (!placement) throw new ServerError({ class: "not_found", message: `Placement ${input.placementId} is not in the catalog` })
@@ -53,7 +55,8 @@ async function replyToRequest(context: SessionContext, ref: SessionRef, id: Requ
   await transport.runtimeJson<unknown>(where, questionPath("reject"), { method: "POST" })
 }
 
-async function sendPrompt(context: SessionContext, ref: SessionRef, input: PromptInput, messageId: string): Promise<PromptDelivery> {
+async function sendPrompt(context: SessionContext, wakes: WorkspaceWakes, ref: SessionRef, input: PromptInput, messageId: string): Promise<PromptDelivery> {
+  await wakes.wakeIfStopped(ref.placementId)
   const where = await context.workspaces.route(ref)
   if (input.goal) {
     await startGoal(context.transport, where, ref, input.goal.objective)
@@ -67,7 +70,7 @@ async function patchSession(context: SessionContext, ref: SessionRef, patch: Rec
   await context.transport.runtimeJson<unknown>(await context.workspaces.route(ref), sessionEndpoint(ref), jsonInit("PATCH", patch))
 }
 
-export function createSessionsApi(transport: Transport, workspaces: Workspaces, status: StatusOwner): SessionsApi {
+export function createSessionsApi(transport: Transport, workspaces: Workspaces, status: StatusOwner, wakes: WorkspaceWakes): SessionsApi {
   const context: SessionContext = { transport, workspaces, status }
   const newMessageId = createMessageIds()
   return {
@@ -76,8 +79,8 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
     older: (ref, cursor) => readOlder(context, ref, cursor),
     latestTurn: (ref) => readLatestTurn(context, ref),
     turn: (ref, turnId) => readTurn(context, ref, turnId),
-    create: (input) => createSession(context, input),
-    prompt: (ref, input) => sendPrompt(context, ref, input, input.messageId ?? newMessageId()),
+    create: (input) => createSession(context, wakes, input),
+    prompt: (ref, input) => sendPrompt(context, wakes, ref, input, input.messageId ?? newMessageId()),
     stop: async (ref) => stopTurn(transport, await workspaces.route(ref), ref),
     reply: (ref, id, answer) => replyToRequest(context, ref, id, answer),
     rename: (ref, title) => patchSession(context, ref, { title }),
@@ -87,8 +90,8 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
       status.forget(ref)
     },
     newMessageId,
-    ...createSessionQueue(transport, workspaces),
+    ...createSessionQueue(context),
     controlGoal: async (ref, action) => controlGoal(transport, await workspaces.route(ref), ref, action),
-    subagents: async (ref) => subagentsFromWire(await transport.runtimeJson<unknown>(await workspaces.route(ref), sessionEndpoint(ref, "/subagents"))),
+    subagents: (ref) => onRuntime(context, ref, async (where) => subagentsFromWire(await transport.runtimeJson<unknown>(where, sessionEndpoint(ref, "/subagents"))), async () => []),
   }
 }

@@ -70,11 +70,11 @@ function services(input: { workspaces?: unknown[] } = {}): ControlPlaneServicesC
       listWorkspaces: vi.fn(async () => input.workspaces ?? []),
       // Participant-scoped list in production; for these route tests the local
       // projection store is the seeded source of truth for which sessions exist.
+      // The rows carry what the authority's own rows carry, which names neither
+      // the workspace nor the project.
       listSessions: vi.fn(async (_auth, args: { workspaceId: string }) =>
         (await listSessionMetas({ workspaceID: args.workspaceId })).map((row) => ({
           session_id: row.sessionID,
-          workspace_id: row.workspaceID,
-          project_id: row.projectID,
           title: row.title,
           created_at: row.createdAt,
           updated_at: row.updatedAt,

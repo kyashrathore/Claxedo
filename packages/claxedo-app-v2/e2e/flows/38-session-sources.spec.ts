@@ -35,9 +35,9 @@ async function createAll(api: ClaxedoApi, directory: string, titles: readonly st
   for (const title of titles) await api.createSession(directory, { title, harness: SCRIPTED_ACP_HARNESS })
 }
 
-test.skip(({ isMobile }) => isMobile, "flow 34 runs at desktop width; flow 33 owns the phone rail")
+test.skip(({ isMobile }) => isMobile, "flow 38 runs at desktop width; flow 33 owns the phone rail")
 
-test("34 a project's rail is one order across its folder and its worktree, a true prefix at every Show more", async ({ stack, api, app }) => {
+test("38 a project's rail is one order across its folder and its worktree, a true prefix at every Show more", async ({ stack, api, app }) => {
   test.skip(stack.app !== "v2", "v1 cuts each placement at its own tail")
   const workspace = await stack.daemon.makeWorkspace("sources", "Sources")
   const worktree = await worktreeOf(stack, workspace.id)
@@ -57,7 +57,7 @@ test("34 a project's rail is one order across its folder and its worktree, a tru
   await expect(more).toHaveCount(0)
 })
 
-test("34 a boot reads one page per project and no status, permission, question or wake", async ({ stack, api, app }) => {
+test("38 a boot reads one page per project and no status, permission, question or wake", async ({ stack, api, app }) => {
   test.skip(stack.app !== "v2", "v1 reads each placement's page and statuses")
   const projects = [await stack.daemon.makeWorkspace("boot-a", "Boot A"), await stack.daemon.makeWorkspace("boot-b", "Boot B")]
   for (const project of projects) await createAll(api, project.directory, [`${project.projectId} one`, `${project.projectId} two`])
@@ -73,7 +73,7 @@ test("34 a boot reads one page per project and no status, permission, question o
   expect(boot.filter((path) => /\/connection|\/start$|\/wake/.test(path)), "wakes at boot").toEqual([])
 })
 
-test("34 a project whose page cannot be read leaves every other project's rows, and a retry loads it", async ({ stack, api, app }) => {
+test("38 a project whose page cannot be read leaves every other project's rows, and a retry loads it", async ({ stack, api, app }) => {
   test.skip(stack.app !== "v2", "v1 blanks the rail on one failed read")
   const healthy = await stack.daemon.makeWorkspace("healthy", "Healthy")
   const broken = await stack.daemon.makeWorkspace("broken", "Broken")

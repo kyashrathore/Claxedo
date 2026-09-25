@@ -24,6 +24,7 @@ import { registerSessionCommands } from "./session-commands"
 import { recoverTurn } from "./turn-recovery-actions"
 import { floatingPeekStep, type FloatingPeekState } from "./floating-peek"
 import { PreviousMessagesRow, turnActive } from "./timeline"
+import { WorkspaceSleepCard } from "./workspace-sleep"
 import "./session-screen.css"
 import "./session-floating.css"
 
@@ -158,6 +159,7 @@ function SessionBody(props: {
                 <SessionConnectionLine />
               </Show>
               <Show when={!parentId() && !props.readOnly} fallback={<ChildNotice t={t} readOnly={props.readOnly} onBack={toParent} />}>
+                <WorkspaceSleepCard placementId={props.view.ref.placementId} />
                 <Composer
                   composerKey={sessionComposerKey(props.view.ref)}
                   placementId={props.view.ref.placementId}

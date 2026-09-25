@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { releaseAcpHold, writeAcpScript, type AcpScript } from "./acp/script"
 import { ClaxedoApi } from "./api"
+import { serveConnectionSink, type ConnectionSink } from "./connection-sink"
 import { appChoice, type AppChoice } from "./app"
 import { DESKTOP_DIR, DESKTOP_MAIN } from "./desktop-build"
 import { startEgressGuard, type EgressGuard } from "./egress-guard"
@@ -29,6 +30,7 @@ export type Desktop = {
   egress: EgressGuard
   acp: { scriptDir: string; write(name: string, script: AcpScript): Promise<void>; release(name: string): Promise<void> }
   makeWorkspace(name: string, projectName?: string): Promise<Workspace>
+  connectionSink(): Promise<ConnectionSink>
   log(): string
   close(): Promise<void>
 }
@@ -120,7 +122,14 @@ function captureOutput(app: ElectronApplication) {
   return () => output.join("")
 }
 
-type DesktopParts = { app: ElectronApplication; window: Page; transport: HttpTransport; log: () => string; close: () => Promise<void> }
+type DesktopParts = {
+  app: ElectronApplication
+  window: Page
+  transport: HttpTransport
+  connectionSink: () => Promise<ConnectionSink>
+  log: () => string
+  close: () => Promise<void>
+}
 
 function desktopHandle(world: DesktopWorld, parts: DesktopParts): Desktop {
   const url = `http://127.0.0.1:${world.serverPort}`
@@ -139,6 +148,7 @@ function desktopHandle(world: DesktopWorld, parts: DesktopParts): Desktop {
       release: (name) => releaseAcpHold(world.acpScriptDir, name),
     },
     makeWorkspace: (name, projectName) => makeWorkspace(parts.transport, url, path.join(world.dataDir, "workspaces"), name, projectName),
+    connectionSink: parts.connectionSink,
     log: parts.log,
     close: parts.close,
   }
@@ -154,7 +164,23 @@ export async function launchDesktop(input: { label: string; red: boolean }): Pro
     throw error
   }
   const log = captureOutput(app)
+  const sinks: ConnectionSink[] = []
+  const connectionSink = async () => {
+    const port = await reservePort()
+    try {
+      const sink = await serveConnectionSink(port)
+      sinks.push(sink)
+      return sink
+    } catch (error) {
+      releasePort(port)
+      throw error
+    }
+  }
   const close = async () => {
+    for (const sink of sinks) {
+      await sink.close()
+      releasePort(sink.port)
+    }
     await app.close()
     await world.close()
   }
@@ -165,7 +191,7 @@ export async function launchDesktop(input: { label: string; red: boolean }): Pro
     const transport = pageTransport(window)
     await prepareScriptedServer(transport, url, { scripted: world.scripted, acpScriptDir: world.acpScriptDir, red: input.red })
     await window.reload()
-    return desktopHandle(world, { app, window, transport, log, close })
+    return desktopHandle(world, { app, window, transport, connectionSink, log, close })
   } catch (error) {
     await close()
     throw new Error(`the desktop did not start:\n${log().split("\n").slice(-40).join("\n")}`, { cause: error })

@@ -1,22 +1,10 @@
-import { createEffect, onCleanup } from "solid-js"
+import { createEffect, onCleanup, type Accessor } from "solid-js"
+import type { HarnessScopeInput, HarnessSelectionController } from "./controller"
 import {
   startHarnessReprobeLoop,
   type ReprobeScheduler,
 } from "./reprobe"
 
-/**
- * Reactive glue that runs a bounded harness re-probe loop
- * (`startHarnessReprobeLoop`) ONLY while `active()` is true (i.e. the selected
- * harness readiness is "polling"). The moment `active()` flips false — the
- * harness settled to "ready"/"error", the scope/route changed, or the owner is
- * disposed — the effect re-runs and `onCleanup` cancels the in-flight loop, so a
- * settled harness is never re-probed and a scope change restarts with a fresh cap.
- *
- * `active` MUST be backed by a coarse memo (a boolean that only notifies when
- * polling toggles), not a raw readiness read: otherwise every unrelated store
- * write during a re-probe would re-run this effect, cancel the loop, and reset
- * the attempt counter — defeating the cap. See `agent-harness-selector.tsx`.
- */
 export function watchHarnessReprobe(input: {
   active: () => boolean
   reprobe: () => void
@@ -35,5 +23,30 @@ export function watchHarnessReprobe(input: {
       schedule: input.schedule,
     })
     onCleanup(() => loop.cancel())
+  })
+}
+
+export function watchScopeHarnessReprobe(input: {
+  active: Accessor<boolean | undefined>
+  scope: Accessor<string>
+  scopeInput: Accessor<HarnessScopeInput>
+  placementId: Accessor<HarnessScopeInput["placementId"]>
+  sessionId: Accessor<HarnessScopeInput["sessionId"]>
+  polling: Accessor<boolean>
+  controller: Accessor<HarnessSelectionController>
+}) {
+  watchHarnessReprobe({
+    active: () => {
+      if (input.active() === false) return false
+      const nextScope = input.scope()
+      const nextPlacement = input.placementId()
+      input.sessionId()
+      return !!nextScope && !!nextPlacement && input.polling()
+    },
+    reprobe: () => {
+      if (!input.placementId()) return
+      void input.controller().reprobe(input.scope(), input.scopeInput())
+    },
+    onExhausted: () => input.controller().markUnavailable(input.scope()),
   })
 }

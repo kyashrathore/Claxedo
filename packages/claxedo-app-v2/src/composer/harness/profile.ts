@@ -15,12 +15,10 @@ export const DEFAULT_HARNESS_MODEL = { id: "default", name: "Default (recommende
 
 export { CATALOG_HARNESS_IDS, isCatalogHarnessId }
 
-/** Whether a harness selection reads the Claxedo provider catalog (see `CATALOG_HARNESS_IDS`). */
 export function isCatalogHarness(type: HarnessType | undefined): boolean {
   return type?.kind === "native" && isCatalogHarnessId(type.harnessId)
 }
 
-/** The catalog a harness selection reads, when it reads one. */
 export function catalogHarnessId(type: HarnessType | undefined) {
   return type?.kind === "native" && isCatalogHarnessId(type.harnessId) ? type.harnessId : undefined
 }
@@ -36,16 +34,10 @@ export function harnessProfile(id: HarnessType) {
   }
 }
 
-/** Native SDK harnesses that can be backstopped with a static catalog when live listing fails. */
 export function isNativeSdkHarness(type: HarnessType) {
   return type.kind === "native" && ["claude", "codex", "cursor"].includes(type.harnessId)
 }
 
-/**
- * The provider row a harness-reported model is shown under. Every harness but
- * Pi is its own provider; Pi reports `vendor/model` ids and keeps its own id as
- * the key while labelling the group by vendor.
- */
 export function harnessModelPickerProvider(harness: HarnessType, item: { id: string; providerId?: string }) {
   const harnessId = item.providerId ?? harnessSelectionId(harness)
   const label = harnessDisplayLabel(harnessId)

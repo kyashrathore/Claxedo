@@ -1330,7 +1330,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
             onOpenFile={openFileInPanel}
             onDismiss={() => setContextMenu(undefined)}
             resolvePath={(path) => resolveTimelineFilePath(path, host.placementPath)}
-            showItemInFolder={host.platform.showItemInFolder}
           />
         )}
       </Show>

@@ -1,7 +1,7 @@
 import type { Accessor } from "solid-js"
 import type { QueryClient } from "@tanstack/solid-query"
 import type { Account, AccountCheck, EffectiveAccounts, MachineLogin } from "./account-types"
-import type { CloudCreateInput, CloudWorkspace, CodeHostConnection, CodeHostRepository } from "./cloud-types"
+import type { CloudCreateInput, CloudWorkspace, CodeHostConnection, CodeHostRepository, WorkspaceRuntime } from "./cloud-types"
 import type { HarnessLogin, HarnessOptions } from "./harness-types"
 import type { PermissionModesRequest } from "./permission-modes"
 import type { PermissionModeState } from "./wire/permission-modes"
@@ -77,6 +77,7 @@ import type {
   TranscriptPage,
 } from "./types"
 import type { UsageRequest, UsageSummary } from "./usage-types"
+import type { LivePlugin } from "./live-plugin-types"
 
 export type SessionsApi = {
   readonly list: (input: SessionListInput) => Promise<SessionPage>
@@ -133,6 +134,7 @@ export type GitApi = {
 export type CloudApi = {
   readonly create: (input: CloudCreateInput) => Promise<CloudWorkspace>
   readonly start: (id: PlacementId) => Promise<void>
+  readonly runtime: (id: PlacementId) => WorkspaceRuntime
   readonly stop: (id: PlacementId) => Promise<void>
   readonly remove: (id: PlacementId) => Promise<void>
 }
@@ -175,10 +177,14 @@ export type TasksApi = {
 }
 
 export type LivePluginsApi = {
+  readonly bundle: (pluginId: string, hash: string) => Promise<string>
   readonly remove: (pluginId: string) => Promise<void>
 }
 
 export type ServerQueries = {
+  readonly livePlugins: {
+    readonly list: () => FetchQuery<readonly LivePlugin[]>
+  }
   readonly projects: {
     readonly list: () => FetchQuery<readonly Project[]>
     readonly byId: (id: ProjectId) => FetchQuery<Project>
@@ -256,4 +262,5 @@ export type Server = {
   readonly harnessConfig: HarnessConfigApi
   readonly queries: ServerQueries
   readonly request: (path: string, init?: RequestInit) => Promise<Response>
+  readonly operation: (name: string, input: unknown) => Promise<unknown>
 }

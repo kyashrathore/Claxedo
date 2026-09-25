@@ -23,7 +23,7 @@ The workspace panel and the domains whose state is kept per placement (terminal,
 
 ## Look (`styles/`)
 
-The app wears today's app's look: `main.tsx` loads `styles/index.css` (the kit's Tailwind and session styles, plus the app's own layers) and `styles/ui-overrides.css` (the Codex overrides: SF Pro Text, zero letter-spacing, overlay geometry, hidden scrollbars), then the kit's menu, select and tooltip sheets, in that order. `ThemeProvider` from `@opencode-ai/ui/theme` runs the kit's theme set with Codex as the default and keeps the icon library in step with the theme. The root stays at the browser's 16px; the older `src/ui` sheet no longer sets the root's size, font or colors.
+The app wears today's app's look. `src/styles.ts` loads every global sheet once, in cascade order: `src/ui/styles.css` (the layer order, the touch layer and the reduced-motion rule), `styles/index.css` (the app's one Tailwind build: the kit's Tailwind, theme and v2 tokens, scanning v2's source and `index.html`, plus the app's own layers), `styles/ui-overrides.css` (the Codex overrides: SF Pro Text, zero letter-spacing, overlay geometry, hidden scrollbars), the kit's menu, select and tooltip sheets, `styles/app-shell.css`, and `src/transcript/styles.css` (the renderers' sheets, which v2 owns; session-ui's copies are never loaded). Each rule has one of these owners, and no sheet is a second Tailwind build. `ThemeProvider` from `@opencode-ai/ui/theme` runs the kit's theme set with Codex as the default and keeps the icon library in step with the theme. The root stays at the browser's 16px.
 
 Rules in those sheets that code cannot explain:
 
@@ -72,13 +72,17 @@ Rules in those sheets that code cannot explain:
 
 `AuthProvider` → registries → `I18nProvider` → `ThemeProvider` → `ShellRouter` → the server scope → `AppShell`. The server scope (`ServerProvider`, `SessionStoresProvider`, projects' `ProjectListProvider`, `DialogProvider`) is keyed by the signed-in user: signed in, `createServer` gets a bearer token source from `useAuth().token`; signed out, expired or signing in, no auth. Only a change of user rebuilds it, so a token refresh does not. `App` takes an optional `router` (for example `MemoryRouter` for a `file://` renderer; the default is the history router) and an optional `serverUrl` (the desktop's embedded server, known only at runtime; without it `createServer` uses the build's `VITE_CLAXEDO_SERVER_URL` or the page origin).
 
+## Sign-in (`sign-in-gate.ts`)
+
+On a server that issues sessions (`capabilities.signedIn`, from the bootstrap's `deployment.issuesSessions`), a reader who is signed out or whose session expired is sent to `/login` with the URL replaced, as today's app does, and nothing of the shell renders; the original URL is not kept, as today. While sign-in settles the splash holds. A server that issues no sessions, or one whose bootstrap has not been read, never redirects.
+
 ## Home (`home-redirect.tsx`)
 
 `/` is never a screen of its own, as in today's app. When the projects list has loaded and is empty (`onboardingNeeded`), the shell replaces the URL with the onboarding screen; loading and failed lists never redirect. Otherwise it replaces `/` with the draft of the active workspace: the placement of the restored focused pane, else the folder placement of the first project `useProjectList()` lists.
 
 ## Registries (`registries.ts`; the first-party entries in `src/registry.ts`)
 
-One `Registry<Entry>` per region and concept: `pages`, `paneKinds`, `panelViews` (the workspace panel's "context" and "subagent" tab views, registered by the domains that own them so `src/panel` never imports them), `settingsSections`, `sidebarItems`, `overlays`, `commands`, `mentions`, `themes`, `iconSkins`, `routes`. `registry.ts` holds the static first-party arrays that import each domain's exports; plugins `add()` entries while they are on and dispose them when off.
+One `Registry<Entry>` per region and concept: `pages`, `paneKinds`, `panelViews` (the workspace panel's "context" and "subagent" tab views, registered by the domains that own them so `src/panel` never imports them), `settingsSections`, `sidebarItems`, `overlays`, `commands`, `mentions`, `themes`, `iconSkins`, `routes`. `registry.ts` holds the static first-party arrays that import each domain's exports; plugins `add()` entries while they are on and dispose them when off. `view/registered-appearance.tsx` is the reader for `themes` and `iconSkins`: each theme entry is registered with the kit's `ThemeProvider` as OC-2 with the entry's tokens as v2 overrides (so Appearance lists it) and unregistered when its entry goes, which falls back to the default theme if it was selected; the skin whose id is the selected theme's is provided to `ClaxedoIcon` through `IconSkinContext`.
 
 ## Command palette (`palette/`)
 

@@ -75,7 +75,6 @@ export type HistoryComment = {
 export type HistoryEntry = { prompt: Prompt; comments: HistoryComment[] }
 export type History = Record<EditorMode, HistoryEntry[]>
 
-/** What a send carries about who answers it: the harness, its model and effort, and the fast tier. */
 export type Submission = {
   readonly harness?: string
   readonly model?: ModelChoice

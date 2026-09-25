@@ -62,6 +62,22 @@ export function sessionRowFromSession(info: AgentSession, ref: SessionRef): Sess
   }
 }
 
+export function sessionRowFromCentral(item: unknown, ref: SessionRef): SessionRow | undefined {
+  if (!item || typeof item !== "object") return undefined
+  const row = item as Record<string, unknown>
+  if (text(row.session_id) !== ref.sessionId) return undefined
+  const createdAt = number(row.created_at)
+  if (createdAt === undefined) return undefined
+  const lastHumanTurnAt = number(row.last_human_turn_at)
+  return {
+    ref,
+    title: text(row.title) ?? ref.sessionId,
+    createdAt,
+    updatedAt: number(row.updated_at) ?? createdAt,
+    ...(lastHumanTurnAt !== undefined ? { lastHumanTurnAt } : {}),
+  }
+}
+
 const WORKING: ListedStatus["status"] = { kind: "working" }
 const IDLE: ListedStatus["status"] = { kind: "idle" }
 

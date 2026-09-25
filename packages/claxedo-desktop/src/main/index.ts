@@ -115,7 +115,8 @@ import {
   setDefaultServerUrl,
   setWslConfig,
 } from "./server"
-import { createMainWindow, isTrustedMainRendererUrl, setDockIcon } from "./windows"
+import { createMainWindow, isRendererDocumentUrl, isTrustedMainRendererUrl, rendererDocumentUrlPatterns, setDockIcon } from "./windows"
+import { rendererContentSecurityListener } from "./renderer-content-security"
 import { createStartAtLogin } from "./start-at-login"
 import {
   matchesDiagnosticsBinding,
@@ -160,6 +161,11 @@ const serverReady = defer<ServerReadyData>()
  * `renderer-daemon-access.ts`.
  */
 const daemonEndpoint = defer<DaemonEndpoint>()
+/**
+ * The origin of the server this window will talk to, known as soon as main
+ * picks the port or adopts a daemon: the v2 document's policy names it.
+ */
+const serverOrigin = defer<string>()
 const daemon = createDaemonFetch({ endpoint: () => daemonEndpoint.promise })
 const logger = initLogging()
 const richContentRendererPath = resolveRichContentRendererPath({
@@ -251,7 +257,7 @@ function setupApp() {
   // unhandled before initialize() attaches.
   logger.log("setting up server connection")
   const serverConnection = setupServerConnection()
-  serverConnection.catch(() => undefined)
+  serverConnection.catch((error: unknown) => serverOrigin.reject(error instanceof Error ? error : new Error(String(error))))
 
   app.on("second-instance", (_event: Event, argv: string[]) => {
     const urls = argv.filter((arg: string) => arg.startsWith("claxedo://"))
@@ -340,6 +346,7 @@ function desktopServerDataDir() {
 
 async function startClaxedoServer(serverDataDir: string): Promise<{ url: string; discovery: ClaxedoDaemonDiscovery }> {
   const claxedoPort = await findFreePort(resolveBaseServerPort())
+  serverOrigin.resolve(`http://127.0.0.1:${claxedoPort}`)
   const serverPath = getClaxedoServerPath()
   const claxedoServerCompileCachePath = getClaxedoServerCompileCachePath()
   logger.log("starting claxedo-server with embedded OpenCode SDK", { serverPath, claxedoPort })
@@ -549,12 +556,14 @@ async function setupServerConnection(): Promise<ServerConnection> {
   const explicitDevelopmentUrl = !IS_PACKAGED ? process.env.CLAXEDO_SERVER_URL?.trim() : undefined
   if (explicitDevelopmentUrl && await checkHealth(explicitDevelopmentUrl)) {
     logger.log("dev: using explicitly configured claxedo-server", { url: explicitDevelopmentUrl })
+    serverOrigin.resolve(new URL(explicitDevelopmentUrl).origin)
     return { variant: "existing", url: explicitDevelopmentUrl, capability: declaredDaemonCapability() }
   }
 
   const customUrl = getSavedServerUrl()
 
   if (customUrl && (await checkHealthOrAskRetry(customUrl))) {
+    serverOrigin.resolve(new URL(customUrl).origin)
     return { variant: "existing", url: customUrl, capability: declaredDaemonCapability() }
   }
 
@@ -567,6 +576,7 @@ async function setupServerConnection(): Promise<ServerConnection> {
       pid: discovery.pid,
       generation: discovery.generation,
     })
+    serverOrigin.resolve(new URL(daemonUrl).origin)
     return { variant: "daemon", url: daemonUrl, discovery }
   }
 
@@ -613,6 +623,16 @@ class DaemonUnresolvedError extends Error {
 }
 
 async function initialize(serverConnectionStarted: Promise<ServerConnection>) {
+  if (RENDERER === "v2") {
+    session.defaultSession.webRequest.onHeadersReceived(
+      { urls: rendererDocumentUrlPatterns() },
+      rendererContentSecurityListener({
+        serverOrigin: serverOrigin.promise,
+        isRendererDocument: isRendererDocumentUrl,
+        devServerUrl: process.env.ELECTRON_RENDERER_URL,
+      }),
+    )
+  }
   const loadingTask = (async () => {
     try {
       const serverConnection = await serverConnectionStarted

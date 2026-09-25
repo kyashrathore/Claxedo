@@ -1,6 +1,7 @@
 import { isLoopbackUrl, resolveServerUrl, type AuthSource, type ServerConfig } from "./config"
 import { responseError, responseErrorCode, toAppError } from "./errors"
 import { createRelay } from "./relay"
+import { startWorkspace, type StartOptions } from "./workspace-start"
 
 export type RuntimeRoute = {
   readonly directory: string
@@ -16,6 +17,7 @@ export type Transport = {
   readonly runtimeSocket: (route: RuntimeRoute, path: string) => Promise<WebSocket>
   readonly json: <T>(path: string, init?: RequestInit) => Promise<T>
   readonly runtimeJson: <T>(route: RuntimeRoute, path: string, init?: RequestInit) => Promise<T>
+  readonly startRuntime: (workspaceId: string, options?: StartOptions) => Promise<void>
 }
 
 function socketUrl(serverUrl: string, path: string) {
@@ -112,6 +114,10 @@ export function createTransport(config: ServerConfig): Transport {
     runtimeSocket,
     json: async (path, init) => readJson(await request(path, init), label(path, init)),
     runtimeJson: async (route, path, init) => readJson(await runtime(route, path, init), label(path, init)),
+    startRuntime: async (workspaceId, options) => {
+      const link = await startWorkspace(request, workspaceId, options)
+      if (!loopback) relay.adopt(link)
+    },
   }
 }
 

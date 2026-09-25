@@ -35,9 +35,14 @@ function followAdapter(browser: BrowserAuthState, auth: ReturnType<typeof authMa
   }
 }
 
+function startBrowserAuth(adapter: BrowserAuthAdapter): Promise<void> {
+  return adapter.initialize({ apiOrigin: apiOrigin(), appOrigin: appOrigin(), issuesSessions: serverIssuesSessions() })
+}
+
 export function createAuth(adapter: BrowserAuthAdapter): Auth {
   const browser = adapter.useAuth()
-  const auth = authMachine()
+  startBrowserAuth(adapter).catch((error: unknown) => console.error("Browser sign-in could not start", { error }))
+  const auth = authMachine(browser.loading() ? { kind: "signingIn" } : { kind: "signedOut" })
   const run = followAdapter(browser, auth)
   return {
     state: auth.state,
@@ -60,8 +65,4 @@ export function createAuth(adapter: BrowserAuthAdapter): Auth {
     },
     token: browser.getToken,
   }
-}
-
-export function startBrowserAuth(adapter: BrowserAuthAdapter): Promise<void> {
-  return adapter.initialize({ apiOrigin: apiOrigin(), appOrigin: appOrigin(), issuesSessions: serverIssuesSessions() })
 }

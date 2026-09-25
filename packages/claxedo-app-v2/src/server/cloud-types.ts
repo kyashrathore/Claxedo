@@ -1,4 +1,5 @@
 import type { PlacementId, ProjectId } from "./ids"
+import type { AppError } from "./types"
 
 export type CloudWorkspaceStatus =
   | { readonly kind: "provisioning"; readonly step: string }
@@ -15,6 +16,16 @@ export type CloudWorkspace = {
   readonly branch?: string
   readonly status: CloudWorkspaceStatus
 }
+
+export type WorkspaceBootMode = "restore" | "resume" | "cold-start"
+
+export type WorkspaceStartProgress = { readonly kind: "provisioning"; readonly bootMode?: WorkspaceBootMode }
+
+export type WorkspaceRuntime =
+  | { readonly kind: "live" }
+  | { readonly kind: "asleep" }
+  | { readonly kind: "waking"; readonly bootMode?: WorkspaceBootMode }
+  | { readonly kind: "wakeFailed"; readonly error: AppError }
 
 export type CloudCreateInput = {
   readonly projectId: ProjectId
