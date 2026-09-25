@@ -68,7 +68,7 @@ async function readPage(context: SessionContext, where: RuntimeRoute, path: stri
 }
 
 function readHistory(context: SessionContext, ref: SessionRef, home: SessionHome, before?: string): Promise<TranscriptPage> {
-  if (home.central) return readCentralPage(context.transport, home.route.workspaceId, ref, before)
+  if (home.central) return readCentralPage(context.transport, home.route.workspaceId, ref, before === undefined ? { view: "latest-surface" } : { before })
   const page = before === undefined ? { view: "latest-surface" } : { limit: OLDER_PAGE_SIZE, before }
   return readPage(context, home.route, withQuery(sessionEndpoint(ref, "/message"), page))
 }

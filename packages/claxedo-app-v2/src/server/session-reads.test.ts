@@ -71,7 +71,7 @@ test("session reads: a stopped cloud workspace's session renders from the contro
   expect(await reads.requests).toEqual([])
   expect(await reads.todos).toEqual([])
   expect(await reads.goal).toEqual(NO_GOAL)
-  expect(server.requests).toContain("/api/control/sessions/ses_1/messages?workspaceId=ws_cloud&limit=50")
+  expect(server.requests).toContain("/api/control/sessions/ses_1/messages?workspaceId=ws_cloud&view=latest-surface")
   expect(server.runtimeCalls).toEqual([])
 
   await readOlder(server.context, ref, "cursor_older")
@@ -112,6 +112,6 @@ test("session reads: a running cloud workspace's session still reads its history
   expect(surface.row).toMatchObject({ title: "Live title", updatedAt: 30 })
   expect(surface.transcript.entries.map((entry) => entry.info.id)).toEqual(["msg_1", "msg_2"])
   expect(await reads.status).toEqual({ kind: "idle" })
-  expect(server.requests).toContain("/api/control/sessions/ses_1/messages?workspaceId=ws_cloud&limit=50")
+  expect(server.requests).toContain("/api/control/sessions/ses_1/messages?workspaceId=ws_cloud&view=latest-surface")
   expect(server.runtimeCalls.some((path) => path.includes("/message"))).toBe(false)
 })

@@ -8,6 +8,7 @@ import type {
   SessionPageQuery,
 } from "./private-session-authority"
 import type { SessionShareLevel } from "./session-share-level"
+import type { LatestView } from "../../session/latest-view-page"
 import type { HostSessionRowsAuthority } from "./host-session-rows"
 
 export {
@@ -585,7 +586,7 @@ export type WorkspaceAuthority = {
   resolveSession?: (auth: SignedControlPlaneAuth, args: { sessionId: string }) => Promise<unknown>
   readSessionMessages: (
     auth: SignedControlPlaneAuth,
-    args: { sessionId: string; workspaceId: string; limit?: number; before?: string },
+    args: { sessionId: string; workspaceId: string; limit?: number; before?: string; view?: LatestView },
   ) => Promise<unknown>
   syncSessionMessages: (
     auth: SignedControlPlaneAuth,

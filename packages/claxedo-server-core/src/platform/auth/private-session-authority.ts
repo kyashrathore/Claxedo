@@ -1,5 +1,6 @@
 import type { SessionListKeysetPage } from "../../session/navigation-list"
 import type { SignedControlPlaneAuth } from "./auth"
+import type { LatestView } from "../../session/latest-view-page"
 
 /** Canonical application actor identity. Provider subjects never cross this port. */
 export type PrivateSessionActor = {
@@ -264,7 +265,7 @@ export type PrivateSessionAuthority = {
   resolveSession: (auth: SignedControlPlaneAuth, input: { sessionId: string }) => Promise<unknown>
   readSessionMessages: (
     auth: SignedControlPlaneAuth,
-    input: { sessionId: string; workspaceId: string; limit?: number; before?: string },
+    input: { sessionId: string; workspaceId: string; limit?: number; before?: string; view?: LatestView },
   ) => Promise<unknown>
   syncSessionMessages: (
     auth: SignedControlPlaneAuth,

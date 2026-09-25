@@ -17,6 +17,7 @@ import {
   exerciseSessionTurnGrantConformance,
 } from "@claxedo/server-core/platform/auth/session-turn-authority.conformance"
 import { exerciseSessionPageConformance } from "@claxedo/server-core/platform/auth/session-page.conformance"
+import { exerciseLatestViewConformance } from "@claxedo/server-core/platform/auth/latest-view.conformance"
 import { createSqliteWorkspaceAuthority } from "./workspace-authority"
 import { openAuthorityDb, upsertUser } from "./workspace-authority-store"
 
@@ -773,5 +774,19 @@ describe("SQLite session list pages", () => {
     })
 
     expect(rows.map((row) => row.session_id)).toEqual(["ses_reader_3", "ses_reader_2", "ses_reader_1"])
+  })
+})
+
+describe("SQLite latest views", () => {
+  test("satisfies the provider-neutral latest-view conformance runner", async () => {
+    const creator = auth("creator")
+    const { store } = authorityWithSeed()
+    await store.createCloudWorkspace(creator, { workspaceId: "workspace_main", displayName: "Main" })
+
+    await expect(exerciseLatestViewConformance({
+      authority: store,
+      workspaceId: "workspace_main",
+      creator: { auth: creator, runtime: { principalKind: "user", actorId: creator.user.tokenIdentifier, actorKind: "human" } },
+    })).resolves.toEqual({ surface: ["u2", "a2"], turn: ["u2", "a2-tool", "a2"] })
   })
 })
