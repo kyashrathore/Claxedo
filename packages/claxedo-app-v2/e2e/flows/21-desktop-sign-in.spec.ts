@@ -32,7 +32,7 @@ test("21 desktop sign-in: main signs in through the system browser, the card nam
 
   await card.click()
   await window.getByRole("menuitem", { name: "Log out" }).click()
-  await expect(window.getByRole("button", { name: "Sign in", exact: true })).toBeVisible()
+  await expect(window.getByRole("button", { name: UI.signInAccount, exact: true })).toBeVisible()
   await expect(machineProject).toHaveCount(0)
   await expect(cloudProject).toHaveCount(0)
   await expect(rail.getByText("Local App")).toBeVisible()
