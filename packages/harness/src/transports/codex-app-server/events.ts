@@ -1,7 +1,8 @@
 import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
 import { codexAppServerAdapter } from "@claxedo/agent-event-runtime/harnesses/codex"
-import type { RoutedEvent } from "../../contract"
+import type { RoutedEvent, SessionBroker } from "../../contract"
 import type { RpcMessage } from "./rpc"
+import { unrecognizedEvent } from "../../translate/unrecognized"
 
 export class CodexEvents {
   private readonly runtime
@@ -11,7 +12,16 @@ export class CodexEvents {
   ingest(message: RpcMessage): RoutedEvent[] {
     if (!message.method) return []
     return this.runtime.ingest({ source: "codex.app-server", method: message.method, payload: message.params }).events
-      .map((event) => ({ event, source: { dir: "in" as const, method: message.method! } }))
+      .map((event) => ({ event: event.type === "diagnostic" && event.diagnostic.code === "codex_app_server.unmapped_event" ?
+        unrecognizedEvent("codex.app-server", message.method!, message.params) : event,
+        source: { dir: "in" as const, method: message.method! } }))
+  }
+}
+
+export async function publishCodexQuota(broker: Pick<SessionBroker, "publish">, threadId: string,
+  message: RpcMessage): Promise<void> {
+  for (const item of new CodexEvents(threadId).ingest(message)) {
+    if (item.event.type === "rate-limit") await broker.publish(item.event)
   }
 }
 

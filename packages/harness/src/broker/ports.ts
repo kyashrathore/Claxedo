@@ -12,6 +12,7 @@ import type { AgentRuntimeEvent, RuntimeDiagnostic, SubagentUpdatedEvent } from 
 import type {
   ChildSessionRef,
   OutsideTurnUsage,
+  OutsideTurnEvent,
   PendingRequest,
   RequestScope,
   ProviderTurnInput,
@@ -68,6 +69,7 @@ export interface BrokerPorts {
     run: (turnId: string, signal: AbortSignal) => Promise<void>,
   ): Promise<ProviderTurnResult>
   drainProviderEvent(sessionId: string, turnId: string, event: RoutedEvent): Promise<void>
+  publishSessionEvent(sessionId: string, event: OutsideTurnEvent): Promise<void>
   meterUsage(usage: OutsideTurnUsage): void
   readonly subagentAdmissionStore: SubagentAdmissionStore
   admitChildSession(parentSessionId: string, childSessionId: string, observation: SubagentObservation): Promise<ChildSessionRef>

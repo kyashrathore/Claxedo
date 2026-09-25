@@ -3,7 +3,7 @@ import { codexMcpApproval } from "@claxedo/agent-event-runtime/harnesses/codex"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import type { TurnBroker } from "../../contract"
 import type { RpcMessage } from "./rpc"
-import { CodexTransportError } from "./errors"
+import { CodexRequestRefusal, CodexTransportError } from "./errors"
 
 const approvalMethods = [
   "item/commandExecution/requestApproval", "item/fileChange/requestApproval",
@@ -24,14 +24,15 @@ function decisionResponse(method: string, decision: string, params: Record<strin
   return { decision: allow ? session ? "acceptForSession" : "accept" : decision === protocolDecisionMapping.deny ? "decline" : "cancel" }
 }
 
-async function approval(method: string, params: Record<string, unknown>, message: RpcMessage, broker: RequestBroker, sessionId: string): Promise<unknown> {
+async function approval(method: string, params: Record<string, unknown>, message: RpcMessage, broker: RequestBroker, sessionId: string,
+  context?: { directory: string; permissionMode?: string }): Promise<unknown> {
   const requestId = randomUUID()
   const command = typeof params.command === "string" ? params.command : JSON.stringify(params.changes ?? params.permissions ?? {})
   const { threadId: _threadId, turnId: _turnId, itemId: _itemId, startedAtMs: _startedAtMs, approvalId: _approvalId, ...keyParams } = params
   const answer = await broker.ask({ kind: "permission", requestId,
     permission: { id: requestId, sessionID: sessionId, permission: method, title: command,
       patterns: [command], always: [], metadata: { method, params }, harnessPayload: message },
-    grantKey: JSON.stringify([method, keyParams]),
+    grantKey: JSON.stringify([method, context?.directory, context?.permissionMode, keyParams]),
     options: [
       { optionId: protocolDecisionMapping.once, kind: protocolDecisionMapping.once, name: "Allow once" },
       { optionId: protocolDecisionMapping.always, kind: protocolDecisionMapping.always, name: "Allow for session" },
@@ -79,12 +80,14 @@ async function elicitation(params: Record<string, unknown>, message: RpcMessage,
     return { action: "cancel" }
 }
 
-export async function answerCodexRequest(message: RpcMessage, broker: RequestBroker, sessionId: string): Promise<unknown> {
+export async function answerCodexRequest(message: RpcMessage, broker: RequestBroker, sessionId: string,
+  context?: { directory: string; permissionMode?: string }): Promise<unknown> {
   const { method } = message
   if (!method) throw new CodexTransportError("protocol", "Codex request has no method")
   const params = asRecordOrEmpty(message.params)
-  if (approvalMethods.some((name) => name === method)) return approval(method, params, message, broker, sessionId)
+  if (approvalMethods.some((name) => name === method)) return approval(method, params, message, broker, sessionId, context)
   if (method === "item/tool/requestUserInput") return question(params, message, broker, sessionId)
   if (method === "mcpServer/elicitation/request") return elicitation(params, message, broker, sessionId)
-  throw new CodexTransportError("protocol", `Unsupported Codex request ${method}`)
+  if (method === "item/tool/call") return { contentItems: [{ type: "inputText", text: `Dynamic tool ${asString(params.tool) ?? "call"} is unavailable.` }], success: false }
+  throw new CodexRequestRefusal(-32601, `Unsupported Codex request ${method}`)
 }

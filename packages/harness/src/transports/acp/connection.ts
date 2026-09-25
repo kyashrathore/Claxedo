@@ -21,6 +21,7 @@ export type AcpHandlers = {
   complete(notification: CompleteElicitationNotification): Promise<void> | void
   update(notification: SessionNotification): Promise<void> | void
   extension(sessionId: string, update: unknown): Promise<void> | void
+  unknown(sessionId: string, method: string, payload: unknown): Promise<void> | void
 }
 
 export type AcpPeer = {
@@ -30,14 +31,15 @@ export type AcpPeer = {
   retire(): Promise<void>
 }
 
-export async function connectAcp(input: StartInput, options: AcpConnectionOptions, services: HarnessServices, handlers: AcpHandlers): Promise<AcpPeer> {
+export async function connectAcp(input: StartInput, options: AcpConnectionOptions, services: HarnessServices, handlers: AcpHandlers,
+  role: "harness" | "probe" = "harness"): Promise<AcpPeer> {
   if ((options.kind === "process") !== (input.locality === "local")) {
     throw new AcpTransportError("configuration", "ACP connection kind does not match locality")
   }
-  const { process, stream } = await openStream(input, options, services)
+  const { process, stream } = await openStream(input, options, services, role)
   const startup = new AcpStartupDeadline(services.clock, options.startupTimeoutMs ?? 10_000, "initialize")
   let initializing = true
-  const inbound = extensionStream(stream, (sessionId, update) => handlers.extension(sessionId, update))
+  const inbound = extensionStream(stream, handlers)
   const agent = new ClientSideConnection(() => ({
     requestPermission: (request) => initializing ? startup.request(() => handlers.permission(request)) : handlers.permission(request),
     sessionUpdate: (notification) => handlers.update(notification),
@@ -54,11 +56,13 @@ export async function connectAcp(input: StartInput, options: AcpConnectionOption
   } catch (error) {
     await retire()
     if (error instanceof AcpTransportError) throw error
-    throw new AcpTransportError("connection", "ACP initialization failed", error)
+    const exit = process ? await process.exited : undefined
+    throw new AcpTransportError("connection", exit?.code !== null && exit?.code !== undefined
+      ? `ACP initialization failed after process exited with code ${exit.code}` : "ACP initialization failed", error)
   }
 }
 
-function extensionStream(stream: Stream, receive: AcpHandlers["extension"]): Stream {
+function extensionStream(stream: Stream, handlers: AcpHandlers): Stream {
   const reader = stream.readable.getReader()
   const readable = new ReadableStream<StreamMessage>({
     async pull(controller) {
@@ -66,7 +70,9 @@ function extensionStream(stream: Stream, receive: AcpHandlers["extension"]): Str
         const item = await reader.read()
         if (item.done) { controller.close(); return }
         const extension = subagentWire(item.value)
-        if (extension) { await receive(extension.sessionId, extension.update); continue }
+        if (extension) { await handlers.extension(extension.sessionId, extension.update); continue }
+        const unknown = unrecognizedWire(item.value)
+        if (unknown) { await handlers.unknown(unknown.sessionId, "session/update", unknown.update); continue }
         controller.enqueue(item.value)
         return
       }
@@ -74,6 +80,29 @@ function extensionStream(stream: Stream, receive: AcpHandlers["extension"]): Str
     cancel(reason) { return reader.cancel(reason) },
   })
   return { readable, writable: stream.writable }
+}
+
+function knownUpdate(type: string): boolean {
+  switch (type) {
+    case "agent_message_chunk": case "agent_thought_chunk": case "user_message_chunk": case "tool_call":
+    case "tool_call_update": case "plan": case "plan_update": case "plan_removed":
+    case "available_commands_update": case "current_mode_update": case "config_option_update":
+    case "session_info_update": case "usage_update": return true
+    default: return false
+  }
+}
+
+function unrecognizedWire(message: unknown): { sessionId: string; update: unknown } | undefined {
+  if (!message || typeof message !== "object" || !("method" in message) || message.method !== "session/update" ||
+    !("params" in message)) return undefined
+  const params = message.params
+  if (!params || typeof params !== "object" || !("sessionId" in params) || typeof params.sessionId !== "string" ||
+    !("update" in params)) return undefined
+  const update = params.update
+  if (!update || typeof update !== "object" || !("sessionUpdate" in update) ||
+    typeof update.sessionUpdate !== "string" || knownUpdate(update.sessionUpdate) ||
+    update.sessionUpdate === "subagent_spawned" || update.sessionUpdate === "subagent_state_update") return undefined
+  return { sessionId: params.sessionId, update }
 }
 
 type StreamMessage = Stream["readable"] extends ReadableStream<infer Message> ? Message : never
@@ -90,11 +119,12 @@ function subagentWire(message: unknown): { sessionId: string; update: unknown } 
   return { sessionId: params.sessionId, update }
 }
 
-async function openStream(input: StartInput, options: AcpConnectionOptions, services: HarnessServices): Promise<{ process?: OwnedProcess; stream: Stream }> {
+async function openStream(input: StartInput, options: AcpConnectionOptions, services: HarnessServices,
+  role: "harness" | "probe"): Promise<{ process?: OwnedProcess; stream: Stream }> {
   if (options.kind === "process") {
     const process = await services.spawn({ file: options.command, args: options.args ?? [], cwd: input.directory,
       env: { ...processEnv(), ...options.env, ...input.credentials.secrets } },
-      { role: "harness", label: "ACP", sessionId: input.sessionId })
+      { role, label: "ACP", sessionId: input.sessionId })
     const stream = ndJsonStream(Writable.toWeb(process.stdin) as WritableStream<Uint8Array>, Readable.toWeb(process.stdout) as ReadableStream<Uint8Array>)
     return { process, stream }
   }

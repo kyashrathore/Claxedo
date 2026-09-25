@@ -10,7 +10,7 @@ import path from "node:path"
 import { createServer } from "node:http"
 import type { AgentRuntimeStreamEvent } from "@claxedo/agent-sdk-runtime"
 import { OpenCodeSdkHarnessAdapter } from "./harness-adapter"
-import { createOpenCodeRuntime } from "./runtime"
+import { createOpenCodeRuntime } from "@claxedo/harness/opencode-sdk/runtime"
 
 type ChatRequest = { messages?: Array<{ role?: string }> }
 type UsageEvent = Extract<AgentRuntimeStreamEvent, { type: "usage" }>

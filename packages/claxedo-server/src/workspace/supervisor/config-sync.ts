@@ -5,9 +5,8 @@ import {
   stateConfigToken,
   supervisorBackplaneHeaders,
 } from "./control-token"
-import { sandboxDriverCatalog } from "@claxedo/sandbox-manager/driver-catalog"
 import { runtimeWorkspaceDir } from "./state"
-import { supervisorSandboxDriverId } from "./driver-id"
+import { supervisorDriverIdentity } from "./driver-id"
 import type { WorkspaceRuntimeState } from "./store"
 import { numberField, readJsonRecord } from "@claxedo/server-core/platform/json/index"
 
@@ -22,7 +21,7 @@ export async function runtimeConfigSnapshot(state: WorkspaceRuntimeState) {
     // promise: a driver that cannot broker must refuse the turn here, because
     // nothing downstream of this snapshot can tell that it could not.
     ...(scope === "shared"
-      ? { secretBrokering: sandboxDriverCatalog[await supervisorSandboxDriverId(state)].metadata.secretBrokering }
+      ? { secretBrokering: (await supervisorDriverIdentity(state)).entry.metadata.secretBrokering }
       : {}),
   })
 }

@@ -1,6 +1,6 @@
 import fs from "node:fs"
 import path from "node:path"
-import { createOpenCodeRuntime, WorkspaceScope, type ModelEntry, type OpenCodeRuntime } from "@claxedo/workspace-runtime/opencode"
+import { createOpenCodeRuntime, WorkspaceScope, type ModelEntry, type OpenCodeRuntime } from "@claxedo/harness/opencode-sdk"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 

@@ -185,10 +185,81 @@ describe("request broker", () => {
     expect(ports.subagents).toHaveLength(1)
     await expect(turn.observeSubagent({ observationId: "o1", subagentKey: "agent", providerKind: "claxedo", toolCallId: "tool", toolCallRole: "interaction" })).rejects.toThrow("conflicting content")
     const session = createSessionBroker(owner, { sessionId: "s1", workspaceId: "w1", directory: "/work", origin })
-    expect(await session.admitProviderTurn({ reason: "goal" }, async function* () {
+    const admission = await session.admitProviderTurn({ reason: "goal" }, async function* () {
       yield { event: { type: "text-delta", delta: "hello" } }
-    })).toEqual({ admitted: true, turnId: "t1" })
+    })
+    expect(admission).toMatchObject({ admitted: true, turnId: "t1" })
+    if (admission.admitted) expect(await admission.settled).toEqual({ state: "completed" })
     expect(ports.drained).toHaveLength(1)
+  })
+
+  test("a provider turn the runtime cancels before its run ends settles cancelled", async () => {
+    const { ports, owner } = setup()
+    const session = createSessionBroker(owner, { sessionId: "s1", workspaceId: "w1", directory: "/work", origin })
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const result = await session.admitProviderTurn({ reason: "goal" }, async function* (turn) {
+      yield { event: { type: "text-delta", delta: "started" } }
+      await held
+      if (turn.signal.aborted) throw new Error("interrupted by the runtime")
+    })
+    expect(result.admitted).toBe(true)
+    ports.cancelProviderTurn()
+    release()
+    if (result.admitted) expect(await result.settled).toEqual({ state: "cancelled" })
+  })
+
+  test("provider settlement captures failure without rejecting and session events keep their id", async () => {
+    const { ports, owner } = setup()
+    const session = createSessionBroker(owner, { sessionId: "s1", workspaceId: "w1", directory: "/work", origin })
+    const result = await session.admitProviderTurn({ reason: "goal" }, async function* () {
+      throw new Error("goal failed")
+      yield { event: { type: "text-delta", delta: "unreachable" } }
+    })
+    expect(result.admitted).toBe(true)
+    if (result.admitted) expect(await result.settled).toEqual({ state: "failed", error: "Error: goal failed" })
+    await session.publish({ type: "harness-notice", code: "session.ready", message: "Ready", severity: "info" })
+    expect(ports.sessionEvents).toEqual([{ sessionId: "s1", event: {
+      type: "harness-notice", code: "session.ready", message: "Ready", severity: "info",
+    } }])
+  })
+
+  test("request abort persists cancellation before resolving and refuses a late answer", async () => {
+    const { ports, owner, turn } = setup()
+    const controller = new AbortController()
+    const waiting = turn.ask(question("signal-abort"), { signal: controller.signal })
+    await tick()
+    controller.abort()
+    expect(await waiting).toEqual({ kind: "cancelled" })
+    expect(ports.saved.at(-1)?.answer).toEqual({ kind: "cancelled" })
+    expect(await owner.broker.answer("signal-abort", { kind: "rejected" }, { sessionId: "s1" })).toMatchObject({ refusal: "stale" })
+  })
+
+  test("rebind changes later ask identity while an earlier ask stays answerable", async () => {
+    const { ports, owner, turn } = setup()
+    const first = turn.ask(question("before-rebind"))
+    await tick()
+    const session = createSessionBroker(owner, { sessionId: "s1", workspaceId: "w1", directory: "/work", origin })
+    await session.rebind("up2")
+    const second = turn.ask(question("after-rebind"))
+    await tick()
+    expect(owner.broker.list({ sessionId: "s1" }).map((row) => row.upstreamSessionId)).toEqual(["up1", "up2"])
+    expect(await owner.broker.answer("before-rebind", { kind: "rejected" }, { sessionId: "s1" })).toMatchObject({ ok: true })
+    expect(await owner.broker.answer("after-rebind", { kind: "rejected" }, { sessionId: "s1" })).toMatchObject({ ok: true })
+    expect(await Promise.all([first, second])).toEqual([{ kind: "rejected" }, { kind: "rejected" }])
+    expect(ports.current.get("s1")?.upstreamSessionId).toBe("up2")
+  })
+
+  test("memory ports filter directory rows and keep the first answer", async () => {
+    const { ports } = setup()
+    const row: PendingRequest = { sessionId: "s1", request: question("first-write"), askedAt: 10, upstreamSessionId: "up1" }
+    ports.pendingRows.set(JSON.stringify(["s1", "first-write"]), row)
+    expect(ports.readPending({ directory: "/work" })).toEqual([row])
+    expect(ports.readPending({ directory: "/elsewhere" })).toEqual([])
+    await ports.persistAnswer(row, { kind: "cancelled" }, false)
+    await ports.persistAnswer(row, { kind: "rejected" }, false)
+    expect(ports.readAnswer("s1", "first-write")).toEqual({ kind: "cancelled" })
+    expect(ports.saved).toHaveLength(1)
   })
 
   test("subagent admission survives broker restart without resetting revisions or republishing", async () => {
@@ -332,23 +403,40 @@ describe("broker review regressions", () => {
     expect(await reask).toEqual({ kind: "answers", answers: [["ok"]] })
   })
 
-  test("F19 abort during grant persistence records cancellation after the grant event", async () => {
-    const { ports, controller, turn } = setup()
-    ports.states.set("s1", { brokerGrants: [JSON.stringify(["c1", "same"])] })
+  test("F19 a saved grant answer stands when the turn aborts after the save", async () => {
+    for (const race of ["persist", "publish"] as const) {
+      const { ports, controller, turn } = setup()
+      ports.states.set("s1", { brokerGrants: [JSON.stringify(["c1", "same"])] })
+      if (race === "persist") {
+        const persist = ports.persistAnswer.bind(ports)
+        ports.persistAnswer = async (...args) => {
+          const result = await persist(...args)
+          controller.abort()
+          return result
+        }
+      } else {
+        const publish = ports.publish.bind(ports)
+        ports.publish = async (event) => { await publish(event); controller.abort() }
+      }
+      const answer = await turn.ask(permission(`grant-${race}-race`, "same"))
+      expect(answer).toMatchObject({ kind: "permission", decision: "allow_always" })
+      expect(ports.saved.map((row) => row.answer)).toEqual([answer])
+    }
+  })
+
+  test("a person's answer stands when the turn aborts during its save", async () => {
+    const { ports, owner, controller, turn } = setup()
+    const waiting = turn.ask(permission("commit-race"))
+    await tick()
     const persist = ports.persistAnswer.bind(ports)
     ports.persistAnswer = async (...args) => {
       const result = await persist(...args)
-      if (args[2]) controller.abort()
+      controller.abort()
       return result
     }
-    expect(await turn.ask(permission("grant-race", "same"))).toEqual({ kind: "cancelled" })
-    expect(ports.saved.at(-1)?.answer).toEqual({ kind: "cancelled" })
-    const duringPublish = setup()
-    duringPublish.ports.states.set("s1", { brokerGrants: [JSON.stringify(["c1", "same"])] })
-    const publish = duringPublish.ports.publish.bind(duringPublish.ports)
-    duringPublish.ports.publish = async (event) => { await publish(event); duringPublish.controller.abort() }
-    expect(await duringPublish.turn.ask(permission("grant-publish-race", "same"))).toEqual({ kind: "cancelled" })
-    expect(duringPublish.ports.saved.at(-1)?.answer).toEqual({ kind: "cancelled" })
+    expect(await owner.broker.answer("commit-race", { kind: "permission", decision: "allow_once" }, { sessionId: "s1" })).toMatchObject({ ok: true })
+    expect(await waiting).toMatchObject({ kind: "permission", decision: "allow_once" })
+    expect(ports.saved.map((row) => row.answer)).toEqual([expect.objectContaining({ kind: "permission", decision: "allow_once" })])
   })
 
   test("F20 admission preserves evaluator codes, skips empty checks and honours prior abort", async () => {

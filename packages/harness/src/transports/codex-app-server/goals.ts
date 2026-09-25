@@ -2,9 +2,11 @@ import { isRuntimeGoalStatus, type AgentGoalMutationResult, type RuntimeGoalSnap
 import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import type { HarnessSession, NativeGoalOperations, SessionBroker } from "../../contract"
 import { CodexTransportError } from "./errors"
+import type { CodexTerminals } from "./terminals"
 import type { CodexRpc } from "./rpc"
 
-type GoalEntry = { rpc: CodexRpc; broker: SessionBroker; goal: RuntimeGoalSnapshot | null; providerTurn?: { id: string }; turn?: { id?: string } }
+type GoalEntry = { rpc: CodexRpc; broker: SessionBroker; goal: RuntimeGoalSnapshot | null; terminals: CodexTerminals;
+  providerTurn?: { id: string }; turn?: { id?: string } }
 
 export function snapshotFromCodexGoal(sessionId: string, value: unknown): RuntimeGoalSnapshot {
   const goal = asRecordOrEmpty(value)
@@ -50,7 +52,8 @@ async function clearGoalState(resolve: ResolveGoalEntry, session: HarnessSession
 async function interrupt(resolve: ResolveGoalEntry, session: HarnessSession): Promise<void> {
   const entry = resolve(session)
   const turnId = entry.providerTurn?.id ?? entry.turn?.id
-  if (turnId) await entry.rpc.request("turn/interrupt", { threadId: session.binding.upstreamSessionId, turnId })
+  if (!turnId) return
+  await entry.terminals.stop(turnId, { at: Date.now() + 10_000, signal: new AbortController().signal })
 }
 
 export function createCodexGoals(resolve: ResolveGoalEntry): NativeGoalOperations {

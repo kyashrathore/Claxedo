@@ -6,12 +6,12 @@ import { createSessionRoutes, type SessionLifecycleEvent, type SessionRouteConte
 import type { ChildSessionHost } from "./session-children"
 import type { AgentHarnessFactory, AgentMessage, AgentPermission, AgentQuestion, AgentRuntime, AgentRuntimeStreamEvent, AgentSession, HarnessCapabilities, RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
 import {
-  AgentHarnessEngineError,
   AgentMessagePageError,
   type AgentHarnessAdapter,
   type AgentMessagePage,
   type AgentMessagePageInput,
 } from "@claxedo/agent-sdk-runtime/adapters"
+import { AgentHarnessEngineError } from "@claxedo/harness/contract"
 import { AgentRuntimeTurnConflictError, createAgentRuntime } from "@claxedo/agent-sdk-runtime"
 import { createMemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
 import { messagePartUpdated, messageUpdated, sessionIdle, type CompatEnvelope } from "../compat-events"

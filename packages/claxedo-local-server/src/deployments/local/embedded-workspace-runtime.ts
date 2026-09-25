@@ -24,7 +24,7 @@ import {
   type WorkspaceRuntimeServerOptions,
 } from "@claxedo/workspace-runtime"
 import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
-import type { OpenCodeRuntime } from "@claxedo/workspace-runtime/opencode"
+import type { OpenCodeRuntime } from "@claxedo/harness/opencode-sdk"
 import type { WorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { configureLocalWorkspaceRuntime } from "@claxedo/server-core/workspace/local-runtime-port"

@@ -23,7 +23,7 @@ import { stageOpenCodePatches } from "./stage-opencode-patches"
 
 const ROOT = path.resolve(import.meta.dirname, "..")
 const DIST = path.join(ROOT, "dist")
-const PUBLIC_ENTRIES = ["index", "relay", "client", "host", "exposure", "config", "routes", "http", "route-contribution", "testing", "opencode", "projection"] as const
+const PUBLIC_ENTRIES = ["index", "relay", "client", "host", "exposure", "config", "routes", "http", "route-contribution", "testing", "projection"] as const
 
 // Dependencies that stay external (consumers install them)
 const LIBRARY_EXTERNALS = [
@@ -36,6 +36,8 @@ const LIBRARY_EXTERNALS = [
   "@claxedo/process-ownership",
   "@claxedo/process-ownership/*",
   "@claxedo/agent-event-runtime",
+  "@claxedo/harness",
+  "@claxedo/harness/*",
   "@claxedo/agent-event-runtime/*",
 ]
 

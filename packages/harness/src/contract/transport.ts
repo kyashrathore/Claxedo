@@ -8,7 +8,6 @@ import type {
   AgentPermissionModeState,
   AgentTodo,
   ConnectionRuntimeStatus,
-  PromptModel,
   RuntimeGoalSnapshot,
   SessionConfig,
   SessionConfigUpdate,
@@ -33,9 +32,9 @@ export type ConfigApplied =
   | { state: "deferred"; until: "after-active-turns" | "next-session" }
   | { state: "refused"; reason: string }
 
-export type ConfigTarget =
-  | { session: HarnessSession }
-  | { draft: { directory: string; model?: PromptModel } }
+export type DraftLaunch = Omit<StartInput, "sessionId" | "title" | "instructions">
+
+export type ConfigTarget = { session: HarnessSession } | { draft: DraftLaunch }
 
 export type TransportHealth = {
   status: "ok" | "degraded" | "unavailable"
@@ -75,11 +74,11 @@ export interface NamingOperations {
 }
 
 export interface CommandOperations {
-  list(directory: string): Promise<readonly AgentCommand[]>
+  list(target: ConfigTarget): Promise<readonly AgentCommand[]>
 }
 
 export interface AgentListOperations {
-  list(directory: string): Promise<readonly AgentAgent[]>
+  list(target: ConfigTarget): Promise<readonly AgentAgent[]>
 }
 
 export interface ForkOperations {
@@ -98,7 +97,7 @@ export interface HarnessTransport {
   attach(input: AttachInput, session: SessionBroker): Promise<HarnessSession>
   send(session: HarnessSession, turn: TurnInput, broker: TurnBroker): AsyncIterable<RoutedEvent>
   cancel(session: HarnessSession, turn: TurnRef, deadline: Deadline): Promise<AdapterCancelOutcome>
-  configure(update: TransportConfigUpdate): Promise<ConfigApplied>
+  configure(session: HarnessSession, update: TransportConfigUpdate): Promise<ConfigApplied>
   close(session: HarnessSession): Promise<void>
   dispose(): Promise<void>
   readonly steer?: SteerOperations

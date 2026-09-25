@@ -3,26 +3,24 @@ import path from "node:path"
 
 export default defineConfig({
   resolve: {
-    alias: {
-      "@claxedo/workspace-runtime/opencode": path.resolve(import.meta.dirname, "../workspace-runtime/src/opencode.ts"),
-      "@claxedo/workspace-runtime/config": path.resolve(import.meta.dirname, "../workspace-runtime/src/config.ts"),
-      "@claxedo/workspace-runtime/exposure": path.resolve(import.meta.dirname, "../workspace-runtime/src/exposure.ts"),
-      "@claxedo/workspace-runtime/host": path.resolve(import.meta.dirname, "../workspace-runtime/src/host.ts"),
-      "@claxedo/workspace-runtime/projection": path.resolve(import.meta.dirname, "../workspace-runtime/src/projection.ts"),
-      "@claxedo/workspace-runtime/relay": path.resolve(import.meta.dirname, "../workspace-runtime/src/relay.ts"),
-      "@claxedo/workspace-runtime/routes": path.resolve(import.meta.dirname, "../workspace-runtime/src/routes.ts"),
+    alias: [
+      { find: /^@claxedo\/harness\/opencode-sdk\/(.+)$/, replacement: path.resolve(import.meta.dirname, "../harness/src/transports/opencode-sdk/$1.ts") },
+      { find: /^@claxedo\/harness\/opencode-sdk$/, replacement: path.resolve(import.meta.dirname, "../harness/src/transports/opencode-sdk/index.ts") },
+      { find: /^@claxedo\/workspace-runtime\/config$/, replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/config.ts") },
+      { find: /^@claxedo\/workspace-runtime\/exposure$/, replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/exposure.ts") },
+      { find: /^@claxedo\/workspace-runtime\/host$/, replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/host.ts") },
+      { find: /^@claxedo\/workspace-runtime\/projection$/, replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/projection.ts") },
+      { find: /^@claxedo\/workspace-runtime\/relay$/, replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/relay.ts") },
+      { find: /^@claxedo\/workspace-runtime\/routes$/, replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/routes.ts") },
       // Aliased alongside the rest so a test exercises the runtime SOURCE, not
       // a dist that may lag it. Without the alias a consumer resolving through
       // its own dist would pull a second copy of the runtime into the module
       // graph.
-      "@claxedo/workspace-runtime/http": path.resolve(import.meta.dirname, "../workspace-runtime/src/http.ts"),
-      "@claxedo/workspace-runtime/client": path.resolve(import.meta.dirname, "../workspace-runtime/src/client.ts"),
-      "@claxedo/workspace-runtime/route-contribution": path.resolve(
-        import.meta.dirname,
-        "../workspace-runtime/src/route-contribution.ts",
-      ),
-      "@claxedo/workspace-runtime": path.resolve(import.meta.dirname, "../workspace-runtime/src/index.ts"),
-    },
+      { find: /^@claxedo\/workspace-runtime\/http$/, replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/http.ts") },
+      { find: /^@claxedo\/workspace-runtime\/client$/, replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/client.ts") },
+      { find: /^@claxedo\/workspace-runtime\/route-contribution$/, replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/route-contribution.ts") },
+      { find: /^@claxedo\/workspace-runtime$/, replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/index.ts") },
+    ],
   },
   test: {
     testTimeout: 60_000,

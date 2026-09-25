@@ -24,6 +24,7 @@ export class MemoryPorts implements BrokerPorts {
   startStatus: "starting" | "created" | "failed" = "starting"
   startBinding?: AgentSessionStartBinding
   pendingRows = new Map<string, PendingRequest>()
+  directories = new Map<string, string>([["s1", "/work"]])
   publishGate?: Promise<void>
   onReadPermissionState?: () => void
   failures: unknown[] = []
@@ -89,6 +90,8 @@ export class MemoryPorts implements BrokerPorts {
   }
   currentTurnAuthority(sessionId: string) { return this.current.get(sessionId) }
   async persistAnswer(pending: PendingRequest, answer: RequestAnswer, automatic: boolean, grantKey?: string): Promise<readonly AgentRuntimeEvent[]> {
+    const key = JSON.stringify([pending.sessionId, pending.request.requestId])
+    if (this.answers.has(key)) return []
     if (this.failPersist) throw new Error("disk unavailable")
     if (grantKey && this.failGrant) throw new Error("grant write unavailable")
     if (grantKey) {
@@ -97,8 +100,8 @@ export class MemoryPorts implements BrokerPorts {
       this.states.set(pending.sessionId, { ...state, brokerGrants: [...new Set([...grants, grantKey])] })
     }
     this.saved.push({ pending, answer, automatic })
-    this.answers.set(JSON.stringify([pending.sessionId, pending.request.requestId]), answer)
-    this.pendingRows.delete(JSON.stringify([pending.sessionId, pending.request.requestId]))
+    this.answers.set(key, answer)
+    this.pendingRows.delete(key)
     return []
   }
   readAnswer(sessionId: string, requestId: string) { return this.answers.get(JSON.stringify([sessionId, requestId])) }
@@ -107,7 +110,8 @@ export class MemoryPorts implements BrokerPorts {
     this.published.push(event)
   }
   readPending(scope: { sessionId: string } | { directory: string }) {
-    return [...this.pendingRows.values()].filter((row) => "sessionId" in scope ? row.sessionId === scope.sessionId : row.start?.directory === scope.directory)
+    return [...this.pendingRows.values()].filter((row) => "sessionId" in scope ? row.sessionId === scope.sessionId :
+      this.directories.get(row.sessionId) === scope.directory)
   }
   readStart(sessionId: string) {
     const binding = this.startBinding
@@ -122,12 +126,21 @@ export class MemoryPorts implements BrokerPorts {
   }
   readGoal(_sessionId: string) { return null }
   async publishGoal(_sessionId: string, _snapshot: null) {}
+  providerTurn?: AbortController
+  cancelProviderTurn() { this.providerTurn?.abort() }
   async admitProviderTurn(_sessionId: string, _input: unknown, run: (id: string, signal: AbortSignal) => Promise<void>) {
-    await run("t1", new AbortController().signal)
-    return { admitted: true as const, turnId: "t1" }
+    const controller = new AbortController()
+    this.providerTurn = controller
+    const settled = Promise.resolve().then(() => run("t1", controller.signal)).then(
+      () => controller.signal.aborted ? { state: "cancelled" as const } : { state: "completed" as const },
+      (error: unknown) => controller.signal.aborted ? { state: "cancelled" as const } : { state: "failed" as const, error: String(error) },
+    )
+    return { admitted: true as const, turnId: "t1", settled }
   }
   async drainProviderEvent(_sessionId: string, _turnId: string, event: unknown) { this.drained.push(event) }
   meterUsage(_usage: unknown) {}
+  sessionEvents: { sessionId: string; event: unknown }[] = []
+  async publishSessionEvent(sessionId: string, event: unknown) { this.sessionEvents.push({ sessionId, event }) }
   async admitChildSession(_sessionId: string, childSessionId: string, _observation: SubagentObservation) {
     return this.children.get(childSessionId) ?? { sessionId: childSessionId, assistantMessageId: "assistant", created: 10 }
   }
@@ -135,9 +148,11 @@ export class MemoryPorts implements BrokerPorts {
   async publishSubagentDiagnostic(_sessionId: string, diagnostic: unknown) {
     this.diagnostics.push(diagnostic)
   }
-  async rebind(_sessionId: string, _upstream: string) {}
+  async rebind(sessionId: string, upstream: string) {
+    const current = this.current.get(sessionId)
+    if (current) this.current.set(sessionId, { ...current, upstreamSessionId: upstream })
+  }
   async persistHandoff(_sessionId: string, _context: unknown) {}
   config(_sessionId: string): never { throw new Error("unused") }
   reportOwnerFailure(_sessionId: string, error: unknown) { this.failures.push(error) }
 }
-

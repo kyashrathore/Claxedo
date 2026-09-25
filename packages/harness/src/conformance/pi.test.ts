@@ -1,6 +1,8 @@
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { expect, test } from "bun:test"
+import { createTestServices } from "./test-support/services"
 import { runConformance, type ConformanceBackend } from "./test-support/run"
 import { ensurePinnedPi, PINNED_PI } from "../../e2e/harness/pinned-pi"
 import { reservePort, releasePort } from "../../e2e/harness/ports"
@@ -54,6 +56,7 @@ async function backend(): Promise<PiBackend> {
     model: { providerID: "pi", modelID: "openai/gpt-4.1" },
     credentials: { providers: {}, secrets: {}, leaseGeneration: "conformance" },
     hold: (marker) => server.holdTextReplies(marker),
+    held: (marker) => server.textGateReached(marker),
     scriptTool: (name, input) => server.scriptTool({ name, input }),
     close: async () => { await server.close(); releasePort(port); await fs.rm(root, { recursive: true, force: true }) },
   }
@@ -66,10 +69,38 @@ runConformance({
     const pi = state as PiBackend
     return new PiRpcTransport(services, {
       binary: PINNED_PI, placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: true,
-      stateRoot: path.join(pi.root, "claxedo"), ownerAgentDir: pi.agentDir,
+      stateRoot: path.join(pi.root, "claxedo"), ownerAgentDir: pi.agentDir, runtime: process.execPath, env: process.env,
     })
   },
 })
+
+test("Pi script uses the composed runtime even when PATH starts with a failing node", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-script-runtime-"))
+  const bin = path.join(root, "bin")
+  await fs.mkdir(bin)
+  const marker = path.join(root, "wrong-node")
+  await fs.writeFile(path.join(bin, "node"), `#!/bin/sh\ntouch '${marker}'\nexit 91\n`, { mode: 0o755 })
+  const script = path.join(root, "pi.js")
+  await fs.writeFile(script, `const readline = require("node:readline");
+readline.createInterface({ input: process.stdin }).on("line", (line) => {
+  const request = JSON.parse(line);
+  process.stdout.write(JSON.stringify({ type: "response", id: request.id, command: request.type,
+    success: true, data: { sessionId: "composed-runtime" } }) + "\\n");
+});`)
+  const services = createTestServices()
+  const transport = new PiRpcTransport(services, { binary: script, runtime: process.execPath,
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` }, placement: "loopback",
+    machineOwnerUserId: "owner", canUseOwnLogin: true, stateRoot: path.join(root, "state"), ownerAgentDir: path.join(root, "agent") })
+  try {
+    const session = await transport.start({ sessionId: "s1", workspaceId: "w1", directory: root, locality: "local",
+      owner: { kind: "machine-owner" }, config: { harness: { id: "pi", access: "native" } },
+      projection: { generation: "g1", pluginRoots: [], mcpServers: [], notApplied: [] },
+      credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" } }, { rebind: async () => {} } as never)
+    expect(session.binding.upstreamSessionId).toBe("composed-runtime")
+    await transport.close(session)
+    await expect(fs.access(marker)).rejects.toMatchObject({ code: "ENOENT" })
+  } finally { await transport.dispose(); await fs.rm(root, { recursive: true, force: true }) }
+}, 15_000)
 
 runConformance({
   name: "pi-rpc brokered",
@@ -102,7 +133,7 @@ runConformance({
     const pi = state as PiBackend
     return new PiRpcTransport(services, {
       binary: PINNED_PI, placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: true,
-      stateRoot: path.join(pi.root, "claxedo"), ownerAgentDir: pi.agentDir,
+      stateRoot: path.join(pi.root, "claxedo"), ownerAgentDir: pi.agentDir, runtime: process.execPath, env: process.env,
     })
   },
 })

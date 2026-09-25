@@ -28,6 +28,7 @@ export type HarnessSession = {
 
 export type StartInput = {
   sessionId: string
+  workspaceId: string
   directory: string
   locality: Locality
   title?: string

@@ -1,13 +1,13 @@
 {
-  "H1-turn-parts": "H-28",
-  "H2-stop": "H-20",
-  "H3-native-permissions": "H-21, H-25",
-  "H5-native-subagents": "H-22",
-  "H6-goals": "H-23",
-  "H7.unknown-held": "H-26; unsynchronized queue readback",
-  "H8-restart-mid-turn": "H-24",
-  "H11-attachments": "H-25",
-  "H12-title-archive": "H-19",
-  "H35.native-handoff": "H-25",
-  "H37.options-per-turn": "H-27"
+  "H1-turn-parts": "diagnostic frame order (comparator rule pending)",
+  "H2-stop": "H-25",
+  "H3-native-permissions": "H-26; diagnostic frame count",
+  "H5-native-subagents": "H-27",
+  "H6-goals": "H-28",
+  "H7.unknown-held": "H-30; diagnostic frame count",
+  "H8-restart-mid-turn": "H-29",
+  "H11-attachments": "diagnostic frame count (comparator rule pending)",
+  "H12-title-archive": "H-24",
+  "H35.native-handoff": "diagnostic frame count (comparator rule pending)",
+  "H37.options-per-turn": "diagnostic frame count (comparator rule pending)"
 }

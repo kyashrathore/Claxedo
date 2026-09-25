@@ -52,7 +52,7 @@ These are the jobs the layer does, whoever owns them today. Each gets exactly on
 | 10 | **Config and capabilities** | Models, effort, permission modes; applying changes on the right timing; reads before a session exists | next turn versus next session; what a mode's `level` is | the transport's `config` group, plus `configure` |
 | 11 | **Goals** | Native goals (the harness runs them) and evaluated goals (Claxedo checks the work) | Codex `thread/goal/*`, Claude and Cursor `/goal` prompts, an ACP goal extension, none | the transport's `goals` group; the evaluated loop in the runtime host |
 | 12 | **Subagents** | Seeing child agents, mapping them to child sessions, attributing usage | SDK task events, Codex collab calls, ACP draft #1992 | `src/broker/` |
-| 13 | **Usage** | Per-turn usage, quota windows, usage that arrives after a turn ends | where each harness reports it | `src/broker/` (`TurnBroker.meter`, `SessionBroker.meter`) |
+| 13 | **Usage** | Per-turn usage, quota windows, usage that arrives after a turn ends | where each harness reports it | a turn's `usage` events in its stream; `src/broker/` (`SessionBroker.meter`) for usage after a turn ends |
 | 14 | **Naming** | Titles and renames | a side request, or the harness's own name | the runtime host decides when; the transport's `naming` group does it |
 | 15 | **Projection: skills, MCP servers, plugins** | Putting the person's tools into the harness the way *that harness* documents | plugin folders, a Codex marketplace, `~/.cursor/plugins/local`, OpenCode's host hooks, Pi flags; delivered by SDK option, file or protocol | `src/profiles/` (format), each transport (delivery) |
 | 16 | **MCP resolution** | Which MCP servers a session gets: Claxedo's own, the person's configured ones, plugin ones; and what may reach a remote harness | stdio versus HTTP or SSE; local versus remote | `src/capabilities/`, with the one remote filter |
@@ -216,7 +216,7 @@ The harness layer holds the most valuable things Claxedo handles: people's provi
 | **A harness in a cloud sandbox** | The sandbox, and placeholders for provider keys | The sandbox. The provider's network layer attaches real keys only on requests to provider hosts (H-1) |
 | **A remote harness** (someone else's machine) | Only what its API receives | **Untrusted:** never Claxedo's own MCP server or bearer, never stdio servers, never brokered credentials. Plugin tokens only with endpoint-bound consent (integration plan) |
 | **A member acting through a share** | Exactly what the share allows (a `send` share can prompt) | The route's access policy decides who. The turn spends the session owner's accounts, like every turn in that session |
-| **Harness output**: model text, tool results, events, elicitation forms | Nothing | Untrusted input. Translators check shapes (ACP `validation.ts`); unknown events become typed `unrecognized` events; form patterns are checked in a bounded worker pool; Claxedo never runs harness output as its own instructions |
+| **Harness output**: model text, tool results, events, elicitation forms | Nothing | Untrusted input. Translators check shapes (ACP `validation.ts`); unknown events become diagnostics with code `unrecognized-event`; form patterns are checked in a bounded worker pool; Claxedo never runs harness output as its own instructions |
 | **What an agent says about itself** (name, version) | Nothing | Descriptive only. It can pick a profile's format and never grants plugin authority |
 
 ### Rules the harness layer enforces
@@ -566,16 +566,17 @@ The P0.2 expected-red defects below must turn green on the branch. The wire corp
 | H-16 | A harness without todos answers the todo read as an empty list: Pi declares no todos, yet `GET /session/:id/todo` returns `200 []`, because a truthy empty replay returns before the capability check (found by H37) | Correctness | the todo route in `workspace-runtime/src/routes/session-core.ts` | The capability decides first: a typed `unsupported_operation`, which the app's todo reads treat as no todos | P3 | H37.todo |
 | H-17 | Deleting a session whose harness switch is still pending leaves the kept source process running: deletion reaches only the target adapter, not the runtime's release of the kept source (found by H35) | Availability | session deletion in `workspace-runtime` (`releaseKeptHandoffSource` is never reached) | Deletion through the runtime's own session transaction, which retires a kept source | P3 | H35.delete |
 | H-18 | Pi accepts a response whose `command` differs from the pending request, settling that request before Pi's real reply (found by H18) | Correctness | `agent-sdk-runtime/src/harnesses/pi/rpc-process.ts` `receive()` | The Pi RPC transport answers each request only from a reply matching its id and command. It ignores an unknown id (a late reply after a timeout) and a mismatched command, each as a diagnostic, and keeps waiting for the real reply until the request's own timeout | P3 | H18 |
-| H-19 | H12 emits different `session.updated` sequences for one session, including an update without `info.slug`; [two recordings and diff](../../packages/harness/e2e/corpus/races/H12-title-archive.json) | Correctness | session update publication in `workspace-runtime` | Serialize updates for one session and preserve the canonical session info | P3 | H12-title-archive corpus, excluded until fixed |
-| H-20 | H2 Stop emitted `session.idle` and `session.status` in opposite order for one session in one comparison; twelve later retries matched, so a paired capture is pending | Correctness | session stop lifecycle in `workspace-runtime` | Publish the terminal status and idle in one stable session order | P3 | H2-stop corpus, excluded until fixed |
-| H-21 | H3 native permissions emitted `session.updated` and `session.status` in opposite order for one session in one comparison; a paired capture is pending | Correctness | native permission/session lifecycle in `workspace-runtime` | Establish one order for request and session updates | P3 | H3-native-permissions corpus, excluded until fixed |
-| H-22 | H5 native child session status and idle changed order under the same child key; [two recordings and diff](../../packages/harness/e2e/corpus/races/H5-native-subagents.json) | Correctness | child session lifecycle in `workspace-runtime` | Serialize the child terminal status and idle | P3 | H5-native-subagents corpus, excluded until fixed |
-| H-23 | H6 Goal turn omitted an aborted assistant `message.updated` on one run; a separate run showed optional Claude diagnostics, and a clean paired capture is pending | Correctness | Goal turn message publication in `workspace-runtime` and harness diagnostics | Publish a stable message sequence for a Goal turn; identify the diagnostic producer separately when reproduced | P3 | H6-goals corpus, excluded until fixed |
-| H-24 | H8 restart emitted `pty.created` on one run but not another; [two recordings and diff](../../packages/harness/e2e/corpus/races/H8-restart-mid-turn.json) | Correctness | terminal creation across daemon recovery in `workspace-runtime` | Make terminal creation observable once across the restart boundary | P3 | H8-restart-mid-turn corpus, excluded until fixed |
-| H-25 | Codex MCP startup emitted an optional `runtime.mcp_server_status` frame in H3, H11, or H35; [H3 pair](../../packages/harness/e2e/corpus/races/H3-native-permissions.json), [H35 pair](../../packages/harness/e2e/corpus/races/H35.native-handoff.json); H11's pair is pending | Correctness | Codex runtime diagnostic publication | Publish the MCP startup result deterministically for a session | P3 | H3-native-permissions, H11-attachments, H35.native-handoff corpora, excluded until fixed |
-| H-26 | Claude SDK initialization emitted a different count of `claude_sdk.unmapped_event` frames under one session; [two recordings and diff](../../packages/harness/e2e/corpus/races/H7.unknown-held.json) | Correctness | Claude translator diagnostic publication in `agent-event-runtime` | Publish each native initialization diagnostic once in a stable session sequence | P3 | H7.unknown-held corpus, excluded until fixed |
-| H-27 | Codex rate-limit diagnostics changed count under one session; [two recordings and diff](../../packages/harness/e2e/corpus/races/H37.options-per-turn.json) | Correctness | Codex runtime diagnostic publication | Publish a stable rate-limit diagnostic sequence for the turn | P3 | H37.options-per-turn corpus, excluded until fixed |
-| H-28 | H1 emitted `runtime.mcp_server_status` and `codex_app_server.unmapped_event` in opposite order for one session; the first comparison differed at `$.observations.25.entities.7.frames.4.data.payload.id`, and 20 targeted retries did not reproduce it, so a paired capture is pending | Correctness | Codex runtime diagnostic publication | Serialize same-session diagnostic events | P3 | H1-turn-parts corpus, excluded until fixed |
+| H-19 | Cursor holds one backend binding per process: the SDK reads `CURSOR_BACKEND_URL` once, and today's driver refuses a second binding with `CursorBackendUrlFrozenError` (found by H25) | Availability | `agent-sdk-runtime/src/harnesses/cursor/auth.ts`, `driver.ts` | The Cursor transport hosts one SDK worker per backend binding | P2 Cursor | H25 |
+| H-20 | Brokered Cursor cannot finish a turn: after exchanging the placeholder at `/auth/exchange_user_api_key`, the SDK sends the returned access token on Connect RPCs, but the broker accepts only its signed placeholder (found by H1.cursor and H25) | Availability | `agent-sdk-runtime/src/harnesses/cursor/driver.ts`, `egress-broker/src/broker.ts` | The broker exchanges the real key, keeps the access token, and gives the SDK a placeholder for it to substitute on later calls; the real token never enters the harness process | P2 Cursor, egress broker | H1.cursor, H25 |
+| H-21 | An uncaught Cursor SDK `ConnectError` ends the self-hosted daemon (found by H1.cursor and H25) | Availability | `agent-sdk-runtime/src/harnesses/cursor/driver.ts`, `claxedo-server/src/deployments/self-hosted-node/index.ts` | A Cursor SDK failure fails only that session's turn; the P2 Cursor worker per binding isolates it from the daemon | P2 Cursor | H1.cursor, H25 |
+| H-22 | With no stored Cursor account selected, the driver deletes the machine owner's `CURSOR_BACKEND_URL` before the SDK loads; the guarded probe attempted `api2.cursor.sh` and `api.cursor.com` instead of the explicit endpoint | Availability | `agent-sdk-runtime/src/harnesses/cursor/auth.ts` | Keep the machine owner's explicit endpoint when no product binding is selected | P2 Cursor | Cursor machine-owner endpoint regression |
+| H-24 | H12 emits different `session.updated` sequences for one session, including an update without `info.slug`; [two recordings and diff](../../packages/harness/e2e/corpus/races/H12-title-archive.json) | Correctness | session update publication in `workspace-runtime` | Serialize updates for one session and preserve the canonical session info | P3 | H12-title-archive corpus, excluded until fixed |
+| H-25 | H2 Stop emitted `session.idle` and `session.status` in opposite order for one session in one comparison; twelve later retries matched, so a paired capture is pending | Correctness | session stop lifecycle in `workspace-runtime` | Publish the terminal status and idle in one stable session order | P3 | H2-stop corpus, excluded until fixed |
+| H-26 | H3 native permissions emitted `session.updated` and `session.status` in opposite order for one session in one comparison; a paired capture is pending | Correctness | native permission/session lifecycle in `workspace-runtime` | Establish one order for request and session updates | P3 | H3-native-permissions corpus, excluded until fixed |
+| H-27 | H5 native child session status and idle changed order under the same child key; [two recordings and diff](../../packages/harness/e2e/corpus/races/H5-native-subagents.json) | Correctness | child session lifecycle in `workspace-runtime` | Serialize the child terminal status and idle | P3 | H5-native-subagents corpus, excluded until fixed |
+| H-28 | H6 Goal turn omitted an aborted assistant `message.updated` on one run; a separate run showed optional Claude diagnostics, and a clean paired capture is pending | Correctness | Goal turn message publication in `workspace-runtime` and harness diagnostics | Publish a stable message sequence for a Goal turn; identify the diagnostic producer separately when reproduced | P3 | H6-goals corpus, excluded until fixed |
+| H-29 | H8 restart emitted `pty.created` on one run but not another; [two recordings and diff](../../packages/harness/e2e/corpus/races/H8-restart-mid-turn.json) | Correctness | terminal creation across daemon recovery in `workspace-runtime` | Make terminal creation observable once across the restart boundary | P3 | H8-restart-mid-turn corpus, excluded until fixed |
+| H-30 | H7's held queue row moves from `dispatching` to `unknown` after `session.idle` with no published event, so a client sees the change only by polling and the corpus has no synchronized readback | Correctness | the runtime's queue publication in `workspace-runtime` | Publish the queue state change, and H7 awaits it before its readback | P3 | H7.unknown-held corpus recording compares twice |
 | C-1 | Hosted never delivers provider credentials to a cloud sandbox | Availability | `supervisor/sandbox.ts:108` is the only caller | The delivery path run on hosted, over the existing brokering | P2 cloud | H19 (local and live), H30 |
 | C-2 | Hosted has no settings store and never sends the settings snapshot; its provider screen is a stub | Availability | `config-sync.ts` (self-hosted only); `routes/hosted/shell.ts:170-175` | A D1 settings store, snapshot push and fan-out on hosted | P2 cloud | H28 |
 | C-3 | OpenCode fails in a hosted sandbox | Availability | `runtime-boot.ts:141-143`, `workspace/runtime.ts:564-568` | Composed when a session asks for it | P2 OpenCode, cloud | H19, OpenCode case |
@@ -590,6 +591,8 @@ The P0.2 expected-red defects below must turn green on the branch. The wire corp
 | C-12 | Accounts are picked per org everywhere, never per person | Correctness, security | `registry.ts:185`; activation carries no actor; the broker's identity is `"operator"` | Owner written, actor carried, credentials chosen by the session's owner (`StartInput.owner`, `selectSessionCredentials`) | P1.3, P2 cloud | H31 |
 | C-13 | Three agent programs in the image come from unpinned `curl \| bash` installers | Security (supply chain) | the sandbox Dockerfiles | Pinned by version and checksum | P2 cloud | An image check that fails on any unpinned install |
 | C-14 | Unsigned desktop onboarding offers a cloud sandbox the daemon can't create (404), and saves a driver key nothing uses | UX | `execution-step.tsx:54`, `workspace-control-routes.ts:54` | v2 onboarding offers cloud only when a control plane that can create one is connected | App v2 | H34 |
+| C-15 | The self-hosted credential route writes a signed user's account under `__local__`, while the signed cloud workspace has its real organization id, so an active shared account is absent from its sandbox snapshot | Availability | `self-hosted-node/app.ts` passes `authenticate` without `authConfig`/`verifier` to `CredentialRoutes`; `credential.ts` then defaults to unsigned-local org resolution | Pass the signed auth config and verifier to the credential route's canonical `requestOrg` resolver | P2 cloud | H30, H19.pi |
+| C-16 | A signed person can't reach their self-hosted cloud workspace: the runtime proxy mints a user-principal runtime token without the verified caller, and the token record refuses it with 503 (found by H19) | Availability | `claxedo-local-server/src/workspace/runtime-dispatch/internals.ts` calls `relayProvider.mintRuntimeAccessToken` without `auth`; `claxedo-server/src/authority/relay-token-record.ts` requires the signed caller | The verified signed caller passed through the canonical proxy mint and its caller-scoped token record | P2 cloud | H19, H19.pi, H32 |
 | T-1 | An e2e spec sets the dead startup key, so it likely tests nothing | Test | `real-session-directory-isolation.spec.ts:96` | Sets the real key, with a red run | P2 cloud, with C-9 | Its own red run |
 | T-2 | The sandbox worker's README cites a script that doesn't exist | Docs | `cloudflare-worker/README.md:92` | Fixed or removed | P2 cloud | — |
 | T-3 | `build:packages` is red on `dev`: `switchHarness` exceeds the lint gate's complexity limit (47) | Build | `agent-sdk-runtime/src/runtime/handoff-transaction.ts` | Split into named steps | P0 | Fixed in 5d6aa44139 |
@@ -698,6 +701,7 @@ This is a security boundary. The broker takes over what today's code enforces, a
   - saved before the allow is released.
 - **Option substitution as today:** never widen "once" to "always"; "deny" may become "reject always"; answer `cancelled` when nothing fits (`acp/permission-options.ts:21-34`).
 - **Save, then release.** The SDK path does this today. **ACP releases first** (`acp/index.ts:609-610`); this plan fixes it (H-3).
+- **An answer is final once saved.** An abort before the save is saved as `cancelled`; an abort after it leaves the saved answer standing, and the turn's own cancel stops the turn. The saved answer is therefore always the one the harness got, under a store where the first write wins.
 - **Cancel:** each protocol's own cancel answer: ACP `cancelled`, `deny` on the SDK path. Never "allow".
 - **Expiry:** a harness can expire its own dialog (Pi dialogs carry a `timeout`). The request then ends as `expired`.
 - **Permission-mode limits:** the ceiling helpers (`permission-ceiling.ts`, 65 lines) move into the broker. Every mode a transport reports declares its `level`.
@@ -925,7 +929,7 @@ The ACP transport runs Claude, Codex and Cursor through their wrappers. **A nati
 - **OpenCode (embedded engine):**
   - permission and question requests through the broker, answered through the engine's interaction port;
   - message history and its pages come from the runtime store, as they do today.
-- **Every transport:** events it doesn't recognize become a typed `unrecognized` event, visible and counted.
+- **Every transport:** events it doesn't recognize become a `diagnostic` event with code `unrecognized-event`, visible and counted; its raw payload is capped at 4 KB.
 
 ## The contract
 
@@ -934,12 +938,12 @@ The ACP transport runs Claude, Codex and Cursor through their wrappers. **A nati
 ```ts
 export interface HarnessTransport {
   readonly kind: TransportKind
-  capabilities(context: CapabilityContext): Promise<HarnessCapabilities>
+  capabilities(context: CapabilityContext): Promise<TransportCapabilities>
   start(input: StartInput, session: SessionBroker): Promise<HarnessSession>
-  attach(binding: HarnessBinding, session: SessionBroker): Promise<HarnessSession>
+  attach(input: AttachInput, session: SessionBroker): Promise<HarnessSession>
   send(session: HarnessSession, turn: TurnInput, broker: TurnBroker): AsyncIterable<RoutedEvent>
-  cancel(session: HarnessSession, turn: TurnRef, deadline: Deadline): Promise<CancelOutcome>
-  configure(update: ConfigUpdate): Promise<ConfigApplied>
+  cancel(session: HarnessSession, turn: TurnRef, deadline: Deadline): Promise<AdapterCancelOutcome>
+  configure(session: HarnessSession, update: TransportConfigUpdate): Promise<ConfigApplied>
   close(session: HarnessSession): Promise<void>
   dispose(): Promise<void>
   readonly steer?: SteerOperations
@@ -953,50 +957,86 @@ export interface HarnessTransport {
   readonly health?: HealthOperations
 }
 
-export type RoutedEvent = { event: AgentRuntimeEvent; route?: { child: string }; source?: EventSource }
+export type DraftLaunch = Omit<StartInput, "sessionId" | "title" | "instructions">
+export type StartInput = {
+  sessionId: string
+  workspaceId: string
+  directory: string
+  locality: Locality
+  owner: TurnActor
+  config: SessionConfig
+  projection: PluginProjection
+  credentials: ResolvedCredentials
+  model?: PromptModel
+  title?: string
+  instructions?: string
+}
+export type AttachInput = Omit<StartInput, "title" | "instructions"> & { binding: HarnessBinding }
+export type TransportConfigUpdate = { credentials?: ResolvedCredentials; projection?: PluginProjection }
+export type ConfigApplied =
+  | { state: "applied" }
+  | { state: "deferred"; until: "after-active-turns" | "next-session" }
+  | { state: "refused"; reason: string }
+export type ConfigTarget = { session: HarnessSession } | { draft: DraftLaunch }
+export type EventRoute = { kind: "parent" } | { kind: "child"; correlationKey?: string }
+export type RoutedEvent = { event: AgentRuntimeEvent; route?: EventRoute; source?: EventSource }
+export type ProviderTurnSettlement = { state: "completed" } | { state: "failed"; error: string } | { state: "cancelled" }
+export type ProviderTurnResult =
+  | { admitted: true; turnId: string; settled: Promise<ProviderTurnSettlement> }
+  | { admitted: false; reason: "busy" | "closed" }
+export type OutsideTurnEvent = AgentRuntimeEventOf<
+  | "rate-limit" | "auth-status" | "mcp-server-status" | "available-commands-update" | "config-update"
+  | "session-info" | "session-title" | "session-agent" | "harness-notice" | "diagnostic"
+>
 
 export interface SessionBroker {
+  readonly sessionId: string
+  ask(request: TurnRequest, options?: { signal?: AbortSignal }): Promise<RequestAnswer>
+  completeElicitation(elicitationId: string): Promise<void>
   rebind(upstreamSessionId: string): Promise<void>
-  persistHandoff(context: HandoffContext): Promise<void>
+  persistHandoff(context: SessionHandoff): Promise<void>
   admitProviderTurn(input: ProviderTurnInput, run: (broker: TurnBroker) => AsyncIterable<RoutedEvent>): Promise<ProviderTurnResult>
   meter(usage: OutsideTurnUsage): void
-  goal: { read(): GoalSnapshot | null; publish(snapshot: GoalSnapshot | null): Promise<void> }
+  publish(event: OutsideTurnEvent): Promise<void>
+  goal: { read(): RuntimeGoalSnapshot | null; publish(snapshot: RuntimeGoalSnapshot | null): Promise<void> }
   config(): SessionConfig
-  reportFailure(failure: OwnerFailure): void
+  reportFailure(error: unknown): void
 }
 
 export interface TurnBroker {
   readonly signal: AbortSignal
   readonly origin: TurnOrigin
-  ask(request: TurnRequest): Promise<RequestAnswer>
+  ask(request: TurnRequest, options?: { signal?: AbortSignal }): Promise<RequestAnswer>
+  completeElicitation(elicitationId: string): Promise<void>
   observeSubagent(observation: SubagentObservation): Promise<ChildSessionRef | undefined>
-  associateChild(correlationKey: string, target: ChildTarget): void
-  meter(usage: UsageRecord): void
+  associateChild(correlationKey: string, child: ChildSessionRef): void
 }
 
 export interface RequestBroker {
-  list(scope: RequestScope): Promise<PendingRequest[]>
-  answer(id: string, answer: RequestAnswer, actor: AuthorizedActor): Promise<AnswerResult>
-  askAtStart(request: StartRequest): Promise<RequestAnswer>
+  list(scope: RequestScope): readonly PendingRequest[]
+  answer(requestId: string, answer: RequestAnswer, target: { sessionId: string } | { start: AgentSessionStartBinding }): Promise<AnswerResult>
 }
 
 export interface HarnessServices {
   spawn(command: SpawnCommand, options: SpawnOptions): Promise<OwnedProcess>
-  firstPartyMcp(sessionId: string, locality: Locality): McpServer | undefined
+  firstPartyMcp(sessionId: string, locality: Locality): McpServerSpec | undefined
   transcripts: TranscriptRegistrar
-  validationPool: ValidationPool
+  patternEvaluator: ElicitationPatternEvaluator
   log: Logger
   clock: Clock
 }
 ```
 
 - **`StartInput` carries:**
-  - directory, `locality`, model and config;
+  - session and workspace ids, directory, `locality`, model and config;
   - the instruction block, only when the capabilities declare `instructionChannel: "thread-start"` (other channels compose it per turn, as today);
   - the profile's projection;
   - resolved credentials selected by the session's owner.
 - **`TurnInput` carries:** the prompt, origin, model, effort, the prior todos (the Claude translator's seed) and the per-turn system block for per-turn channels.
-- **`ConfigUpdate`:** model, effort, permission mode, credential and placeholder renewals, MCP and projection changes. Each change carries its timing: `immediate`, `after-active-turns` (Pi refuses a mid-turn rotation) or `next-session` (Cursor's permission mode). `ConfigApplied` reports readiness, replacing `waitForConfigReady`.
+- **`TransportConfigUpdate`:** resolved credential and projection changes. Session model and permission mode use `config.update` and `config.setPermissionMode`; turn model and effort use `TurnInput`. Timing is declared in capabilities as `immediate`, `after-active-turns`, `next-turn` or `next-session`. `configure` receives one affected session at a time. `ConfigApplied` reports `applied`, `deferred` (`after-active-turns` or `next-session`) or `refused`.
+- **Draft reads:** `ConfigTarget.draft` contains the resolved launch context without a session id, title or instructions. A probe answers requests `cancelled` through the harness protocol, never presents them to a person, and retires its process.
+- **Outside a turn:** `SessionBroker.publish` carries session metadata and diagnostics; `meter` carries usage. Provider-turn admission returns before its non-rejecting `settled` promise resolves.
+- **Rejected additions:** `TurnInput.serviceTier` duplicates `turn.prompt.serviceTier`, which the Codex transport reads. `TurnInput.credentials` would select the sender's account, while credentials belong to the session owner and refresh through `configure(session, …)`. Turn usage stays in the streamed `usage` event, so `TurnBroker.meter` is absent.
 - **Turn admission and fencing stay in the moved runtime host.** A transport keeps only its protocol's own active-turn state, as an instance field.
 
 ### The operation map
@@ -1020,21 +1060,21 @@ Every member of today's surface has one owner. The list is taken from `adapter-c
 | `deleteSession` | `close` |
 | `readHarnessCapabilities` | `capabilities` |
 | `executeTurn` | `send`, yielding routed events |
-| `listCommands` | the moved command discovery (the SDK and ACP read it today, `sdk-runtime-adapter.ts:699`, `acp/index.ts:492`), plus the optional `commands.list` (Pi's `get_commands`) |
+| `listCommands` | `commands.list(ConfigTarget)` reads the named session or probes a draft; Pi uses `get_commands`, ACP waits for `available_commands_update` |
 | `readConnectionState`, `readRuntimeHealth` | `health` |
 | `dispose` | `dispose`: end turns, answer pending requests with their cancel, close |
 | **Add-ons** | |
 | `cancelTurn` | `cancel` |
 | `steerTurn` | `steer.steer`, with the result states `accepted`, `unknown`, `unsupported`, `no_active_turn`, and the runtime's fallback to the queue |
 | `forkSession` (ACP) | `fork` |
-| `listAgents` (ACP) | `agents` |
+| `listAgents` (ACP) | `agents.list(ConfigTarget)` reads the named session or probes a draft |
 | `getTodos` | the runtime store for `/session/:id/todo`; the seed through `TurnInput`; the `todos` capability flag |
 | `goals`: `readCapabilities`, `read`, `start`, `pause`, `resume`, `stop`, `delete` | the `goals` group, with accepted and failed results and stop before interrupt |
 | `listPermissions`, `respondPermission` | `RequestBroker.list`, `.answer` |
 | `listQuestions`, `replyQuestion`, `rejectQuestion` | `RequestBroker.list`, `.answer` |
-| `replySessionStartQuestion`, `rejectSessionStartQuestion` | `RequestBroker.answer` on a start request |
+| `replySessionStartQuestion`, `rejectSessionStartQuestion` | `SessionBroker.ask` creates a start request; `RequestBroker.answer` replies to it |
 | `listDraftPermissionModes`, `listPermissionModes`, `setPermissionMode` | `config.permissionModes({ draft \| session })`, `config.setPermissionMode`; each mode with `level` |
-| `probeConfigOptions`, `peekConfigOptions` | `config.options({ draft \| session, peek })` |
+| `probeConfigOptions`, `peekConfigOptions` | `config.options({ draft: DraftLaunch } \| { session }, "probe" \| "peek")` |
 | `applyConfig`, `waitForConfigReady` | `configure` and `ConfigApplied` |
 | `revert`, `unrevert`, `shell`, `summarize` | deleted; routes keep 501 |
 | `executeCommand`, `getMessagePage` | deleted. No app calls the command route, which answers 501 like `shell`; message pages come from the runtime store |
@@ -1248,20 +1288,20 @@ Every slice deletes what it replaces.
 
 ### P1: contract, broker, Pi
 
-- [ ] **P1.0 Contract frozen:** the operation map complete, every row callable. `Progress:` the contract is in `packages/harness/src/contract/`; the transport lanes' proposals are folded in once by the contract pass (`hv2/contract-pass`).
+- [ ] **P1.0 Contract frozen:** the operation map complete, every row callable. `Progress:` the contract pass merged the transport lanes' proposals once (57b4fbc379), and the rules the types can't show are in `src/contract/README.md`. Since then: command and agent lists by `ConfigTarget` (3386e5d037), and a provider turn the runtime cancels before its run ends settles `cancelled` (2b998d3d00). Every row is callable once P3 composes the transports.
 - [ ] **P1.1 The runtime host and projection moved** into `workspace-runtime` unchanged, and `spawn` implemented. Wire corpus unchanged. `Progress:` `sse.ts` moved and the `spawn` service built over `process-ownership` (3658717af4). The host, the rest of the projection, `compat-events.ts`, `turn-projection.ts` and `child-event-routing.ts` move in the P3 cutover slice: today's drivers import them, so moving them earlier would invert the dependency.
-- [ ] **P1.2 Broker:** requests with the full contract, grants and ceilings, start requests, subagents, goal plumbing and provider turns, usage, cancel. `Progress:` merged (0e3c8e2b99) with two review rounds' fixes (7039146100, ec4f6c5b56). Provider-turn admission, live rebind, abort-aware asks and outside-turn events come with the contract pass.
-- [ ] **P1.4 Conformance suite** (`packages/harness/src/conformance/`): one set of cases every transport runs through the contract, with the real broker over in-memory runtime ports and the transport's real harness program behind the scripted model server or the scripted ACP agent. It carries the kept invariants the invariant map assigns to transports. `Progress:` `runConformance` runs the real Pi 0.85.1, the real Codex 0.133.0 and the scripted ACP agent (process and websocket) through the real broker; permission cases came with ACP (93d3b2e8a9).
+- [ ] **P1.2 Broker:** requests with the full contract, grants and ceilings, start requests, subagents, goal plumbing and provider turns, usage, cancel. `Progress:` merged (0e3c8e2b99) with two review rounds' fixes (7039146100, ec4f6c5b56). Provider-turn admission, live rebind, abort-aware asks and outside-turn events merged with the contract pass (57b4fbc379). The real `BrokerPorts` over the runtime store is P3's first part (`hv2/p3-ports`).
+- [ ] **P1.4 Conformance suite** (`packages/harness/src/conformance/`): one set of cases every transport runs through the contract, with the real broker over in-memory runtime ports and the transport's real harness program behind the scripted model server or the scripted ACP agent. It carries the kept invariants the invariant map assigns to transports. `Progress:` `runConformance` runs the real Pi 0.85.1, the real Codex 0.133.0 and the scripted ACP agent (process and websocket) through the real broker; permission cases came with ACP (93d3b2e8a9), and ACP's streamable-HTTP peer runs the shared cases too (33a6f7f3f9). Ports are leased across processes (4c9c7f6cd0), so parallel runs never collide.
 - [ ] **P1.3 Pi transport and profile:**
   - the machine owner's sessions on their own Pi, whoever sends the turn; other owners' sessions brokered;
   - `get_commands`; all nine extension-UI methods (H-5, H-6);
   - the conformance suite green against the pinned Pi; H1, H4, H6, H12, H18 and H20 go green at the P3 cutover.
-  - `Progress:` the transport (518 lines) and profile (94) merged (dd82818f5a); H18 and H20 red at H-5 and H-6 on today's adapter. Open: a `.js` Pi binary runs whatever `node` is on PATH, `process.env` defaults belong in the composition, and `commands.list` needs a live session.
+  - `Progress:` the transport and profile merged (dd82818f5a); follow-ups route `.js` through the composed runtime, pass environment and owner path from composition, match Pi reply id and command, and list draft commands through a retired probe. H18 and H20 remain red on today's adapter until P3.
 
 ### P2: transports, profiles and cloud delivery, in parallel
 
 - [ ] **Claude SDK,** with the `claude-code` profile and its SDK delivery; the conformance suite green; H1–H15 eligible at P3. `Progress:` the transport (398 lines) and profile (38) are built in `hv2/claude-transport` with the real CLI in the suite; unmerged until the contract pass lands, then native goals, model and effort discovery, attachments, profile parity and its kept rows.
-- [ ] **Codex app-server,** with `CODEX_HOME` composed from credentials and the profile (H-4); goals and provider turns; thread recovery; the conformance suite green; its flows at P3. `Progress:` merged (6c1cba7e5d): 666 lines, the composed home (H-4), projected MCP servers (H-10), the real Codex 0.133.0 in the suite. Open: provider-started goal turns end to end, and kept rows (the grant matrix, request-id concurrency, disposal during initialize, model precedence).
+- [ ] **Codex app-server,** with `CODEX_HOME` composed from credentials and the profile (H-4); goals and provider turns; thread recovery; the conformance suite green; its flows at P3. `Progress:` merged (6c1cba7e5d): 666 lines, the composed home (H-4), projected MCP servers (H-10), the real Codex 0.133.0 in the suite. Follow-ups merged (2b998d3d00): stopping an ended turn counts as stopped, background terminals are verified and cleaned up, provider-started goal turns, live models and options, owner ChatGPT token refresh, and typed dynamic-tool refusals. Open: the owner-refresh and background-terminal side effects against a live account, which the isolated suite can't reach.
 - [ ] **Cursor SDK,** with a worker per backend binding; the conformance suite green; H25 at P3. `Progress:`
 - [ ] **ACP:**
   - one transport, extension files, `restore/`;
@@ -1271,7 +1311,7 @@ Every slice deletes what it replaces.
   - instance state, not a process-wide counter (H-8);
   - `claude-agent-acp`'s `_meta` delivery;
   - the conformance suite green; H16, H21, H24, H26 and defects H-1, H-2, H-3, H-8 green at P3.
-  - `Progress:` merged (2ffc7cfc4a): the transport, `restore/`, process and websocket agents in the suite. Open: the draft probe and startup-request retirement (contract pass), streamable-HTTP conformance, optional handshake groups, and its kept rows.
+  - `Progress:` merged (2ffc7cfc4a): the transport, `restore/`, process and websocket agents in the suite. Follow-ups merged (33a6f7f3f9): streamable-HTTP conformance, handshake-declared steer/agents/goals/health groups, bounded restoration, focused kept-row tests, and a draft-probe timeout on a manual clock. H16 and H26 stay green; H21 and H24 remain expected red on the pre-cutover runtime. P3 cutover and the process observer's descriptor-chain proof remain.
 - [ ] **OpenCode, one path: the embedded engine** (decision 2).
   - The engine moved from `workspace-runtime/src/opencode` behind `HarnessTransport` into `src/transports/opencode-sdk/`, split to the 300-line file limit.
   - Provider credentials in every placement (C-3, C-11), applied without aborting a running turn; requests through the broker.

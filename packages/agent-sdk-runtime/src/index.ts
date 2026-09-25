@@ -152,7 +152,6 @@ export {
   sessionModelGroupJson,
 } from "@claxedo/agent-runtime-contract"
 export {
-  isProviderUnavailable,
   liveProviderBinding,
   providerBinding,
   providerProjection,

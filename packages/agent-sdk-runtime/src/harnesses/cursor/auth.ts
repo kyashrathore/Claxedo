@@ -1,5 +1,5 @@
 import type { ProviderProjection } from "@claxedo/agent-runtime-contract"
-import { isProviderUnavailable } from "../../provider-projection"
+import { isProviderUnavailable } from "@claxedo/agent-runtime-contract"
 
 /** The environment variable the installed SDK reads; `CURSOR_API_ENDPOINT` is not it. */
 export const CURSOR_BACKEND_URL_ENV = "CURSOR_BACKEND_URL"
