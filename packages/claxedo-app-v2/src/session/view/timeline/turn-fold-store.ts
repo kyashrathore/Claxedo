@@ -6,9 +6,9 @@ const turnFoldCache = new Map<string, FoldState>()
 const MAX_SESSIONS = 16
 
 export interface TurnFoldStore {
-  isFolded(userMessageID: string): boolean | undefined
-  setFolded(userMessageID: string, value: boolean): void
-  reset(userMessageID: string): void
+  isFolded(userMessageId: string): boolean | undefined
+  setFolded(userMessageId: string, value: boolean): void
+  reset(userMessageId: string): void
   persist(): void
 }
 
@@ -16,14 +16,14 @@ export function createTurnFoldStore(sessionKey: string): TurnFoldStore {
   const [state, setState] = createStore<FoldState>({ ...turnFoldCache.get(sessionKey) })
 
   return {
-    isFolded(userMessageID) {
-      return state[userMessageID]
+    isFolded(userMessageId) {
+      return state[userMessageId]
     },
-    setFolded(userMessageID, value) {
-      setState(userMessageID, value)
+    setFolded(userMessageId, value) {
+      setState(userMessageId, value)
     },
-    reset(userMessageID) {
-      setState(userMessageID, undefined)
+    reset(userMessageId) {
+      setState(userMessageId, undefined)
     },
     persist() {
       turnFoldCache.delete(sessionKey)

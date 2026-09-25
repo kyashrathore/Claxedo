@@ -18,7 +18,7 @@ type Pending = {
 
 let worker: Worker | undefined
 let disabled: Error | undefined
-let nextID = 0
+let nextId = 0
 const pending = new Map<number, Pending>()
 const states = new Map<string, MarkdownWorkerState>()
 const keys = new Set<string>()
@@ -35,7 +35,7 @@ const transport = createWorkerTransport<Extract<MarkdownWorkerRequest, { type: "
 
 export function highlightStreamingCode(key: string, text: string, language: string, complete = false) {
   getWorker()
-  const id = ++nextID
+  const id = ++nextId
   latest.set(key, id)
   keys.delete(key)
   keys.add(key)

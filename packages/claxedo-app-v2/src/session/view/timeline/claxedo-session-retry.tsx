@@ -40,13 +40,13 @@ export function ClaxedoSessionRetry(props: { status: SessionStatus; show?: boole
     >
       {(status) => (
         <Show when={props.show ?? true}>
-          <div data-slot="session-turn-retry">
+          <div>
             <Card variant="warning" class="error-card">
               <div class="flex items-start gap-2">
                 <Spinner class="size-4 mt-0.5" />
                 <div class="min-w-0">
-                  <div data-slot="session-turn-retry-message">{recoveringMessage(status())}</div>
-                  <div data-slot="session-turn-retry-info">{status().message}</div>
+                  <div>{recoveringMessage(status())}</div>
+                  <div>{status().message}</div>
                 </div>
               </div>
             </Card>

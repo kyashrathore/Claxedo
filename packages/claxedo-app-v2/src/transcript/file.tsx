@@ -678,7 +678,6 @@ function ViewerShell(props: {
 }) {
   return (
     <div
-      data-component="file"
       data-mode={props.mode}
       style={styleVariables}
       class="relative outline-none"

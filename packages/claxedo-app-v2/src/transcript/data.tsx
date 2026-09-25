@@ -30,28 +30,28 @@ type Data = {
   provider?: NormalizedProviderListResponse
   session: DataSession[]
   session_status: {
-    [sessionID: string]: AgentRuntimeStatus
+    [sessionId: string]: AgentRuntimeStatus
   }
   session_diff: {
-    [sessionID: string]: AgentSnapshotFileDiff[]
+    [sessionId: string]: AgentSnapshotFileDiff[]
   }
   session_diff_preload?: {
-    [sessionID: string]: PreloadMultiFileDiffResult<any, undefined>[]
+    [sessionId: string]: PreloadMultiFileDiffResult<any, undefined>[]
   }
   message: {
-    [sessionID: string]: AgentPresentationMessage[]
+    [sessionId: string]: AgentPresentationMessage[]
   }
   part: {
-    [messageID: string]: AgentContentPart[]
+    [messageId: string]: AgentContentPart[]
   }
   part_text_accum_delta?: {
-    [partID: string]: string
+    [partId: string]: string
   }
 }
 
-export type NavigateToSessionFn = (sessionID: string) => void
+export type NavigateToSessionFn = (sessionId: string) => void
 
-export type SessionHrefFn = (sessionID: string) => string
+export type SessionHrefFn = (sessionId: string) => string
 
 export type TaskHrefFn = (taskId: string) => string
 

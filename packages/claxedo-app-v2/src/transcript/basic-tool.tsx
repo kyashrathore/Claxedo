@@ -279,7 +279,6 @@ export function BasicTool(props: BasicToolProps) {
                       <For each={title().args}>
                         {(arg) => (
                           <span
-                            data-slot="basic-tool-tool-arg"
                             classList={{
                               "ui-basic-tool-tool-arg": true,
                               [title().argsClass ?? ""]: !!title().argsClass,
@@ -544,7 +543,7 @@ export function GenericTool(props: {
   const output = () => (typeof props.output === "string" ? props.output.trim() : "")
 
   return (
-    <div data-component="generic-tool">
+    <div>
       <BasicTool
         icon={genericToolIcon(props.tool, props.input)}
         status={props.status}
