@@ -7,14 +7,12 @@ import { acpScriptToken, type AcpScript } from "../harness/acp/script"
 import { startStack, type Stack } from "../harness/stack"
 import { frameSessionId, frameType, type EventStream } from "../harness/stream"
 
-async function pending(api: ClaxedoApi, directory: string, sessionId: string): Promise<QuestionRow> {
-  const deadline = Date.now() + 30_000
-  do {
-    const row = (await api.questions(directory)).find((item) => item.sessionID === sessionId)
-    if (row) return row
-    await Bun.sleep(50)
-  } while (Date.now() < deadline)
-  throw new Error(`Question for ${sessionId} never became pending`)
+async function pending(api: ClaxedoApi, stream: EventStream, directory: string, sessionId: string): Promise<QuestionRow> {
+  await stream.waitFor((frame) => frameType(frame) === "question.asked" && frameSessionId(frame) === sessionId,
+    { label: `question for ${sessionId}` })
+  const row = (await api.questions(directory)).find((item) => item.sessionID === sessionId)
+  assert.ok(row, `Question for ${sessionId} was not pending after question.asked`)
+  return row
 }
 
 async function questionTurn(input: {
@@ -25,7 +23,7 @@ async function questionTurn(input: {
   const session = await api.createSession(directory, { harness: SCRIPTED_ACP_HARNESS, title: `H4 ${name}` })
   await stack.acp.write(name, script)
   await api.promptAsync(directory, session.id, acpScriptToken(name))
-  const row = await pending(api, directory, session.id)
+  const row = await pending(api, stream, directory, session.id)
   assert.ok(stream.frames.some((frame) => frameType(frame) === "question.asked" && frameSessionId(frame) === session.id))
   await api.replyQuestion(directory, row.id, input.answer(row))
   await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id,
@@ -62,14 +60,11 @@ export async function run() {
       expected: "accept", action: "accept" })
     await installStartupAcp(stack.url, stack.acp.scriptDir)
     const creating = api.createSession(directory, { harness: STARTUP_ACP_HARNESS, title: "H4 startup" })
-    const startupDeadline = Date.now() + 30_000
-    let startup = (await api.questions(directory)).find((row) =>
+    await stream.waitFor((frame) => frameType(frame) === "question.asked"
+      && JSON.stringify((frame.data.payload as { properties?: unknown }).properties ?? "").includes("Choose before session creation"),
+    { label: "startup question" })
+    const startup = (await api.questions(directory)).find((row) =>
       (row.questions as Array<{ question?: string }>)[0]?.question?.includes("Choose before session creation"))
-    while (!startup && Date.now() < startupDeadline) {
-      await Bun.sleep(50)
-      startup = (await api.questions(directory)).find((row) =>
-        (row.questions as Array<{ question?: string }>)[0]?.question?.includes("Choose before session creation"))
-    }
     assert.ok(startup, "startup elicitation was absent while session/new was pending")
     assert.ok(stream.frames.some((frame) => frameType(frame) === "question.asked" && frameSessionId(frame) === startup.sessionID),
       "startup elicitation was absent from live frames")
@@ -88,7 +83,7 @@ export async function run() {
       type: "object", properties: { answer: { type: "string", pattern: "^(a+)+$" } }, required: ["answer"],
     } }] })
     await api.promptAsync(directory, validation.id, acpScriptToken("validation-cancel"))
-    const validationQuestion = await pending(api, directory, validation.id)
+    const validationQuestion = await pending(api, stream, directory, validation.id)
     const validating = api.replyQuestion(directory, validationQuestion.id,
       [[JSON.stringify({ answer: `${"a".repeat(32_000)}!` })]]).then(() => null, (error: unknown) => error)
     await Bun.sleep(30)

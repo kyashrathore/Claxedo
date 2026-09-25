@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { normalizeWireCorpus } from "./wire-corpus"
+import { comparisonShape, difference, frameEntity, normalizeWireCorpus } from "./wire-corpus"
 
 test("wire normalization preserves cross-channel identity, state, phase and order", () => {
   const result = normalizeWireCorpus({
@@ -32,4 +32,34 @@ test("wire normalization keeps temporary runtime identities linked", () => {
   expect(result.live.id).toBe(result.stored.id)
   expect(result.stored.error).toContain(`pid ${result.live.pid}`)
   expect(result.stored.error).toContain(`-p ${result.live.pid}`)
+})
+
+test("goal event IDs normalize their embedded second timestamps", () => {
+  const first = normalizeWireCorpus({ id: "goal.updated:ses_11111111:1790334985" })
+  const second = normalizeWireCorpus({ id: "goal.updated:ses_11111111:1790337074" })
+  expect(first).toEqual(second)
+})
+
+test("frame comparison keeps order inside an entity and accepts cross-entity interleaving", () => {
+  const session = (id: string, phase: string) => ({ data: { payload: { type: "session.lifecycle", sessionID: id, phase } } })
+  const frames = [session("ses_11111111", "creating"), session("ses_22222222", "creating"),
+    session("ses_11111111", "created"), session("ses_22222222", "created")]
+  const shaped = (value: unknown[]) => comparisonShape([{ kind: "stream", route: "/events", frames: value }])
+  expect(difference(shaped(frames), shaped([frames[1], frames[0], frames[3], frames[2]]))).toBeUndefined()
+  expect(difference(shaped(frames), shaped([frames[2], frames[1], frames[0], frames[3]]))).toContain("phase")
+  expect(difference(shaped(frames), shaped([frames[0], frames[1], frames[2]]))).toContain("frames")
+  const diagnostic = { data: { payload: { type: "runtime.diagnostic", properties: { sessionID: "ses_11111111", code: "unmapped_event" } } } }
+  expect(difference(shaped([frames[0], diagnostic]), shaped([diagnostic, frames[0]]))).toContain("type")
+  expect(difference(shaped(frames), shaped([{ data: { type: "heartbeat" } }, ...frames]))).toBeUndefined()
+  expect(frameEntity(frames[0])).toBe("session:ses_11111111")
+})
+
+test("frame comparison keys messages, parts, requests and children separately", () => {
+  const frame = (type: string, properties: Record<string, unknown>) => ({ data: { payload: { type, properties } } })
+  expect(frameEntity(frame("message.updated", { info: { id: "msg_1" }, sessionID: "ses_1" }))).toBe("message:msg_1")
+  expect(frameEntity(frame("message.part.updated", { part: { id: "prt_1" }, sessionID: "ses_1" }))).toBe("part:prt_1")
+  expect(frameEntity(frame("permission.asked", { id: "per_1", sessionID: "ses_1" }))).toBe("permission:per_1")
+  expect(frameEntity(frame("question.replied", { requestID: "que_1", sessionID: "ses_1" }))).toBe("question:que_1")
+  expect(frameEntity(frame("subagent.updated", { update: { sessionID: "ses_child" }, sessionID: "ses_parent" }))).toBe("child:ses_child")
+  expect(frameEntity(frame("runtime.diagnostic", { sessionID: "ses_1", code: "unmapped_event" }))).toBe("session:ses_1")
 })
