@@ -43,19 +43,19 @@ export function SessionRetry(props: { status: AgentRuntimeStatus; show?: boolean
 
   return (
     <Show when={retry() && (props.show ?? true)}>
-      <div data-slot="session-turn-retry">
+      <div>
         <Card variant="error" class="error-card">
           <div class="flex items-start gap-2">
             <Spinner class="size-4 mt-0.5" />
             <div class="min-w-0">
-              <Show when={truncated()} fallback={<div data-slot="session-turn-retry-message">{message()}</div>}>
+              <Show when={truncated()} fallback={<div>{message()}</div>}>
                 <Tooltip value={retry()?.message ?? ""} placement="top">
-                  <div data-slot="session-turn-retry-message" class="cursor-help truncate">
+                  <div class="cursor-help truncate">
                     {message()}
                   </div>
                 </Tooltip>
               </Show>
-              <Show when={info()}>{(line) => <div data-slot="session-turn-retry-info">{line()}</div>}</Show>
+              <Show when={info()}>{(line) => <div>{line()}</div>}</Show>
             </div>
           </div>
         </Card>

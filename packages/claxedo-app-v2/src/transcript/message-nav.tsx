@@ -184,7 +184,7 @@ export function MessageNav<M extends MessageNavMessage>(
                     }}
                     onClick={() => selectCompactMessage(message)}
                   >
-                    <span data-slot="message-nav-tick-line" class="ui-message-nav-tick-line" />
+                    <span class="ui-message-nav-tick-line" />
                   </button>
                 </li>
               )
@@ -197,13 +197,13 @@ export function MessageNav<M extends MessageNavMessage>(
               const preview = () => local.getPreview?.(message)
               return (
                 <HoverCard.Content
-                  data-slot="message-nav-turn-preview" class="ui-message-nav-turn-preview"
+ class="ui-message-nav-turn-preview"
                   onClick={() => selectCompactMessage(message)}
                 >
                   <div data-slot="message-nav-preview-copy">
-                    <p data-slot="message-nav-preview-user" class="ui-message-nav-preview-user">{preview()?.user ?? fallbackLabel(message)}</p>
+                    <p class="ui-message-nav-preview-user">{preview()?.user ?? fallbackLabel(message)}</p>
                     <Show when={preview()?.assistant}>
-                      {(assistant) => <p data-slot="message-nav-preview-assistant" class="ui-message-nav-preview-assistant">{assistant()}</p>}
+                      {(assistant) => <p class="ui-message-nav-preview-assistant">{assistant()}</p>}
                     </Show>
                   </div>
                 </HoverCard.Content>
@@ -230,7 +230,7 @@ export function MessageNav<M extends MessageNavMessage>(
           return (
             <li data-slot="message-nav-item">
               <button
-                data-slot="message-nav-message-button" class="ui-message-nav-message-button"
+ class="ui-message-nav-message-button"
                 data-message-id={message.id}
                 onClick={handleClick}
                 onKeyDown={handleKeyPress}
@@ -259,7 +259,7 @@ export function MessageNav<M extends MessageNavMessage>(
     <Show when={local.size === "normal" || local.messages.length > 10}>
       <Switch>
         <Match when={local.size === "compact"}>
-          <div data-component="message-nav-hovercard" class={local.class}>
+          <div class={local.class}>
             <HoverCard
               open={activePreview() !== undefined}
               onOpenChange={(next) => {

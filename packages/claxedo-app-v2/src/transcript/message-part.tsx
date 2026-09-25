@@ -151,22 +151,22 @@ function DiagnosticsDisplay(props: { diagnostics: DiagnosticsResult }): JSX.Elem
   const overflow = () => props.diagnostics.total - props.diagnostics.items.length
   return (
     <Show when={props.diagnostics.items.length > 0}>
-      <div data-component="diagnostics" class="ui-diagnostics">
+      <div class="ui-diagnostics">
         <For each={props.diagnostics.items}>
           {(diagnostic) => (
             <div data-slot="diagnostic">
-              <span data-slot="diagnostic-icon" class="ui-diagnostic-icon" aria-label={i18n.t("transcript.messagePart.diagnostic.error")}>
+              <span class="ui-diagnostic-icon" aria-label={i18n.t("transcript.messagePart.diagnostic.error")}>
                 <Icon name="circle-ban-sign" size="small" />
               </span>
-              <span data-slot="diagnostic-location" class="ui-diagnostic-location">
+              <span class="ui-diagnostic-location">
                 [{diagnostic.range.start.line + 1}:{diagnostic.range.start.character + 1}]
               </span>
-              <span data-slot="diagnostic-message" class="ui-diagnostic-message">{diagnostic.message}</span>
+              <span class="ui-diagnostic-message">{diagnostic.message}</span>
             </div>
           )}
         </For>
         <Show when={overflow() > 0}>
-          <div data-slot="diagnostic-overflow" class="ui-diagnostic-overflow">{i18n.t("transcript.messagePart.diagnostic.more", { count: overflow() })}</div>
+          <div class="ui-diagnostic-overflow">{i18n.t("transcript.messagePart.diagnostic.more", { count: overflow() })}</div>
         </Show>
       </div>
     </Show>
@@ -589,7 +589,7 @@ type PartGroupSlots = {
 function PartGroups(
   props: PartGroupSlots & {
     groups: PartGroup[]
-    message: (messageID: string) => AgentAssistantMessage | undefined
+    message: (messageId: string) => AgentAssistantMessage | undefined
     part: (ref: PartRef) => AgentContentPart | undefined
     busyGroupKey?: string
   },
@@ -783,7 +783,7 @@ export function AssistantParts(
       </Show>
       <PartGroups
         groups={visibleGroups()}
-        message={(messageID) => msgs().get(messageID)}
+        message={(messageId) => msgs().get(messageId)}
         part={partOf}
         busyGroupKey={props.working ? last() : undefined}
         showAssistantCopyPartID={props.showAssistantCopyPartID}
@@ -813,7 +813,7 @@ function ExaOutput(props: { output?: string }) {
           <For each={links()}>
             {(url) => (
               <a
-                data-slot="exa-tool-link" class="ui-exa-tool-link"
+ class="ui-exa-tool-link"
                 href={url}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -944,7 +944,7 @@ export function ContextToolGroup(props: {
             data-slot="context-tool-group-title"
             class="min-w-0 flex items-center gap-2 text-14-medium text-text-strong"
           >
-            <span data-slot="context-tool-group-label" class="shrink-0">
+            <span class="shrink-0">
               <ToolStatusTitle
                 active={pending()}
                 activeText={i18n.t("transcript.sessionTurn.status.gatheringContext")}
@@ -953,7 +953,6 @@ export function ContextToolGroup(props: {
               />
             </span>
             <span
-              data-slot="context-tool-group-summary"
               class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-normal text-text-base"
             >
               <AnimatedCountList
@@ -1042,7 +1041,7 @@ export function WorkGroup(props: {
           <span data-slot="work-group-icon">
             <Icon name={icon()} size="small" />
           </span>
-          <span data-slot="work-group-summary" class="ui-work-group-summary">
+          <span class="ui-work-group-summary">
             <TextShimmer text={title()} active={pending()} />
           </span>
           <Collapsible.Arrow />
@@ -1051,7 +1050,7 @@ export function WorkGroup(props: {
       <Collapsible.Content>
         <div
           ref={listRef}
-          data-component="work-group-list" class="ui-work-group-list"
+ class="ui-work-group-list"
           data-scrollable
           data-overflowing={overflowing() && !props.memberOpen ? "true" : undefined}
           data-member-open={props.memberOpen ? "true" : undefined}
@@ -1128,11 +1127,11 @@ export function UserMessageDisplay(props: {
   )
 
   const model = createMemo(() => {
-    const providerID = props.message.model?.providerID
-    const modelID = props.message.model?.modelID
-    if (!providerID || !modelID) return ""
-    const match = data.store.provider?.all?.get(providerID)
-    return match?.models?.[modelID]?.name ?? modelID
+    const providerId = props.message.model?.providerID
+    const modelId = props.message.model?.modelID
+    if (!providerId || !modelId) return ""
+    const match = data.store.provider?.all?.get(providerId)
+    return match?.models?.[modelId]?.name ?? modelId
   })
   const timefmt = createMemo(() => new Intl.DateTimeFormat(i18n.intlTag(), { timeStyle: "short" }))
 
@@ -1188,7 +1187,7 @@ export function UserMessageDisplay(props: {
                 when={newLayout() && type === "file"}
                 fallback={
                   <div
-                    data-slot="user-message-attachment" class="ui-user-message-attachment"
+ class="ui-user-message-attachment"
                     data-type={type}
                     data-clickable={type === "image" ? "true" : undefined}
                     title={type === "file" ? name : undefined}
@@ -1201,7 +1200,7 @@ export function UserMessageDisplay(props: {
                       fallback={
                         <div data-slot="user-message-attachment-file">
                           <FileIcon node={{ path: name, type: "file" }} />
-                          <span data-slot="user-message-attachment-name" class="ui-user-message-attachment-name">{name}</span>
+                          <span class="ui-user-message-attachment-name">{name}</span>
                         </div>
                       }
                     >
@@ -1257,7 +1256,7 @@ export function UserMessageDisplay(props: {
       </Show>
       <Show when={props.useV2Actions}>{renderAttachments()}</Show>
       <Show when={text() || (props.useV2Actions && messageComments().length > 0)}>
-        <div data-slot="user-message-copy-wrapper" class="ui-user-message-copy-wrapper">
+        <div class="ui-user-message-copy-wrapper">
           <Show when={metaHead() || metaTail()}>
             <span data-slot="user-message-meta-wrap">
               <Show when={metaHead()}>
@@ -1266,7 +1265,7 @@ export function UserMessageDisplay(props: {
                 </span>
               </Show>
               <Show when={metaHead() && metaTail()}>
-                <span data-slot="user-message-meta-sep" class="text-12-regular text-text-weak cursor-default">
+                <span class="text-12-regular text-text-weak cursor-default">
                   {"\u00A0\u00B7\u00A0"}
                 </span>
               </Show>
@@ -1380,7 +1379,7 @@ export interface ToolProps {
   metadata: Record<string, any>
   tool: string
   toolCallId?: string
-  sessionID?: string
+  sessionId?: string
   output?: string
   status?: string
   startedAt?: number
@@ -1596,7 +1595,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               input={input()}
               tool={part().tool}
               toolCallId={part().callID}
-              sessionID={part().sessionID}
+              sessionId={part().sessionID}
               metadata={partMetadata()}
               output={toolOutput()}
               status={part().state.status}
@@ -1737,7 +1736,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
           <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
         </div>
         <Show when={showCopy()}>
-          <div data-slot="text-part-copy-wrapper" class="ui-text-part-copy-wrapper" data-interrupted={interrupted() ? "" : undefined}>
+          <div class="ui-text-part-copy-wrapper" data-interrupted={interrupted() ? "" : undefined}>
             <MessageActionButton
               icon={copied() ? "check" : "copy"}
               label={copied() ? i18n.t("transcript.message.copied") : i18n.t("transcript.message.copyResponse")}
@@ -1841,7 +1840,7 @@ function ToolImageStrip(props: { images: AgentFilePart[] }) {
           return data.fileUrl?.(location.path)
         })
         return (
-          <div data-component="tool-image" class="ui-tool-image">
+          <div class="ui-tool-image">
             <Show when={src()} fallback={<ToolImageUnavailable name={name()} location={image.location} onRetry={loadFailed() ? retry : undefined} />}>
               {(url) => {
                 const [failed, setFailed] = createSignal(false)
@@ -1891,7 +1890,7 @@ function ToolImageUnavailable(props: { name: string; location?: AgentFileLocatio
     </>
   )
   return (
-    <div data-slot="tool-image-unavailable" class="ui-tool-image-unavailable">
+    <div class="ui-tool-image-unavailable">
       <Show
         when={unretained()}
         fallback={
@@ -1944,7 +1943,7 @@ PART_MAPPING["file"] = function FilePartDisplay(props) {
   const href = createMemo(() => transcriptLinkHref(part().url))
 
   return (
-    <div data-component="file-part" data-timeline-part-id={part().id}>
+    <div data-timeline-part-id={part().id}>
       <Switch
         fallback={
           <Show
@@ -1952,7 +1951,7 @@ PART_MAPPING["file"] = function FilePartDisplay(props) {
             fallback={
               <span data-slot="file-part-link">
                 <FileIcon node={{ path: name(), type: "file" }} />
-                <span data-slot="file-part-link-name">{name()}</span>
+                <span>{name()}</span>
               </span>
             }
           >
@@ -1966,7 +1965,7 @@ PART_MAPPING["file"] = function FilePartDisplay(props) {
                 onClick={handleTranscriptLinkClick}
               >
                 <FileIcon node={{ path: name(), type: "file" }} />
-                <span data-slot="file-part-link-name">{name()}</span>
+                <span>{name()}</span>
               </a>
             )}
           </Show>
@@ -1981,7 +1980,7 @@ PART_MAPPING["file"] = function FilePartDisplay(props) {
           />
         </Match>
         <Match when={isAudio()}>
-          <audio data-slot="file-part-audio" controls src={part().url} aria-label={name()} />
+          <audio controls src={part().url} aria-label={name()} />
         </Match>
       </Switch>
     </div>
@@ -2009,7 +2008,7 @@ ToolRegistry.register({
         />
         <For each={loaded()}>
           {(filepath) => (
-            <div data-component="tool-loaded-file" class="ui-tool-loaded-file">
+            <div class="ui-tool-loaded-file">
               <Icon name="enter" size="small" />
               <span>
                 {i18n.t("transcript.tool.loaded")} {relativizeProjectPath(filepath, data.directory)}
@@ -2168,7 +2167,7 @@ ToolRegistry.register({
   render(props) {
     const data = useData()
     const subagents = createMemo(() =>
-      props.sessionID ? data.resolveSubagents?.(props.sessionID, props.toolCallId) ?? [] : []
+      props.sessionId ? data.resolveSubagents?.(props.sessionId, props.toolCallId) ?? [] : []
     )
     return <SubagentChipRow subagents={subagents()} spawnInput={props.input} />
   },
@@ -2224,8 +2223,8 @@ ToolRegistry.register({
           </div>
         )}
       >
-        <div data-component="bash-output" class="ui-bash-output">
-          <div data-slot="bash-copy" class="ui-bash-copy">
+        <div class="ui-bash-output">
+          <div class="ui-bash-copy">
             <TooltipV2 value={copied() ? i18n.t("transcript.message.copied") : i18n.t("transcript.message.copy")} placement="top">
               <IconButtonV2
                 icon={<IconV2 name={copied() ? "check" : "outline-copy"} size="small" />}
@@ -2255,8 +2254,8 @@ ToolRegistry.register({
           <span data-slot="local-preview-icon">
             <Icon name="window-cursor" size="small" />
           </span>
-          <span data-slot="local-preview-verb" class="ui-local-preview-verb">Local preview</span>
-          <span data-slot="local-preview-url" class="ui-local-preview-url">{localLabel()}</span>
+          <span class="ui-local-preview-verb">Local preview</span>
+          <span class="ui-local-preview-url">{localLabel()}</span>
         </a>
       </Show>
       </>
@@ -2419,7 +2418,7 @@ ToolRegistry.register({
         >
           <Show when={props.input.content && path()}>
             <ToolFileAccordion path={path()}>
-              <div data-component="write-content" class="ui-write-content">
+              <div class="ui-write-content">
                 <Dynamic
                   component={fileComponent}
                   mode="text"
@@ -2687,12 +2686,12 @@ ToolRegistry.register({
         }}
       >
         <Show when={todos().length}>
-          <div data-component="todos" class="ui-todos">
+          <div class="ui-todos">
             <For each={todos()}>
               {(todo: AgentTodo) => (
                 <Checkbox readOnly checked={todo.status === "completed"}>
                   <span
-                    data-slot="message-part-todo-content" class="ui-message-part-todo-content"
+ class="ui-message-part-todo-content"
                     data-completed={todo.status === "completed" ? "completed" : undefined}
                   >
                     {todo.content}
@@ -2770,9 +2769,9 @@ ToolRegistry.register({
     const plan = createMemo(() => readPlanToolInput(props.input))
     const open = (event: MouseEvent) => {
       const markdown = plan().markdown
-      if (!markdown || !props.sessionID || !props.toolCallId) return
+      if (!markdown || !props.sessionId || !props.toolCallId) return
       dispatchPlanOpen(event.currentTarget, {
-        sessionId: props.sessionID,
+        sessionId: props.sessionId,
         planId: props.toolCallId,
         title: plan().title,
         markdown,

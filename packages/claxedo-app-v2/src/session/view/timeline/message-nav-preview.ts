@@ -8,7 +8,7 @@ export const messageNavCurrentID = (turns: { id: string; start: number }[], line
 export function messageNavPreview(input: {
   userMessageID: string
   assistantMessageIDs: string[]
-  getParts: (messageID: string) => Part[]
+  getParts: (messageId: string) => Part[]
 }) {
   return {
     user: previewText(input.getParts(input.userMessageID)),
