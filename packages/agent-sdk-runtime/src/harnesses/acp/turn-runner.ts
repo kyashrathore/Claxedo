@@ -605,7 +605,10 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
     } catch (err) {
       failure = err
       promptError = errorMessage(err)
-      if (uncertainAcpSession(err)) this.store.markSessionInterrupted(id, promptError, agentSessionId)
+      if (uncertainAcpSession(err)) {
+        this.store.markSessionInterrupted(id, promptError, agentSessionId)
+        this.options.reportHealthChanged?.()
+      }
       promptDone = true
       for (const r of resolvers.splice(0)) r()
     }
@@ -684,6 +687,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
           this.store.appendEvent({ ...fenced, sessionId: id, agentSessionId, payload: status,
             source: { dir: "in", method: "acp.cancellation.uncertain", frame: { message: error.message } } })
           push(status)
+          this.options.reportHealthChanged?.()
         }))
         if (rebuiltContext && isCompletedStopReason(result.stopReason)
           && this.store.getSessionConfig(id)?.handoff?.transcript === rebuiltContext) {
@@ -749,7 +753,10 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
         log.error("sendMessage: prompt rejected", { err, ms: Date.now() - t0 })
         failure = err
         promptError = errorMessage(err)
-        if (uncertainAcpSession(err)) this.store.markSessionInterrupted(id, promptError, agentSessionId)
+        if (uncertainAcpSession(err)) {
+          this.store.markSessionInterrupted(id, promptError, agentSessionId)
+          this.options.reportHealthChanged?.()
+        }
       })
       .finally(() => {
         // Session-owned pusher also serves native child requests after this prompt.

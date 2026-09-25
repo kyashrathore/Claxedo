@@ -28,6 +28,7 @@ import {
 import { providerProjectionRecord, type ProviderProjection } from "../../provider-projection"
 import { PiJsonLines, PiRpcProcess, type PiRpcMessage } from "./rpc-process"
 import { listPiCatalogModels } from "./catalog"
+import { createProcessLoss } from "../shared/process-loss"
 import { requirePiExecutable, verifyPiExecutable, piCommand } from "./executable"
 import { ensurePiTitleExtension, generatePiTitle, setPiSessionName } from "./title-extension"
 import type { SessionTitleRequest } from "../../title-generation"
@@ -79,7 +80,7 @@ export class PiRpcDriver implements SdkRuntimeDriver {
   private models: SdkModelEntry[] = []
   private thinking: string[] = []
   private selectedThinking = "off"
-  private processError?: string
+  private readonly processLoss = createProcessLoss(() => this.host.reportHealthChanged?.())
   /** Retirements that did not establish an exit; they defer the auth profile's release. */
   private readonly blockers = new Map<string, RetirementResult>()
   private disposing = false
@@ -324,7 +325,7 @@ export class PiRpcDriver implements SdkRuntimeDriver {
     // A leader exit is not the end of what this launch started. The entry is
     // dropped only once retirement establishes that its group went with it.
     process.onExit((error) => {
-      if (entry.busy) this.processError = error.message
+      if (entry.busy) this.processLoss.record(error.message)
       void this.retire(id, entry)
     })
     this.reap(id, entry)
@@ -347,7 +348,7 @@ export class PiRpcDriver implements SdkRuntimeDriver {
       // this one — and a release that `dispose` deferred is retried here. An
       // idle reap settles here too, on a live driver whose next launch still
       // reads the profile.
-      this.blockers.delete(id)
+      if (this.blockers.delete(id)) this.host.reportHealthChanged?.()
       if (this.disposing) await this.releaseWhenUnblocked()
       return result
     }
@@ -358,13 +359,14 @@ export class PiRpcDriver implements SdkRuntimeDriver {
 
   /**
    * Keyed by the launch it describes, so a later retirement of the same launch
-   * can drop it. Kept apart from `processError`, which is this driver's record
+   * can drop it. Kept apart from `processLoss`, which is this driver's record
    * of a process dying under a turn: an unresolved retirement is a different
    * state with a different remedy, and `readRuntimeHealth` reports it first.
    */
   private recordUnresolved(id: string, result: RetirementResult) {
     if (retirementSettled(result)) return
     this.blockers.set(id, result)
+    this.host.reportHealthChanged?.()
   }
   private reap(sessionId: string, entry: Entry) {
     const generation = ++entry.idleGeneration
@@ -420,7 +422,7 @@ export class PiRpcDriver implements SdkRuntimeDriver {
     if (entry.busy) throw new Error("Pi already has an active turn")
     entry.busy = true
     this.reap(agentSessionId, entry)
-    this.processError = undefined
+    this.processLoss.recovered()
     const process = entry.process
     const questionIds = new Set<string>()
     let modelError: Error | undefined
@@ -659,9 +661,7 @@ export class PiRpcDriver implements SdkRuntimeDriver {
       reason: "harness_retirement_unresolved" as const,
       message: unresolvedPiLaunch(blocker).message,
     }
-    return this.processError
-      ? { status: "degraded" as const, reason: "harness_process_lost" as const, message: this.processError }
-      : { status: "ok" as const }
+    return this.processLoss.health() ?? { status: "ok" as const }
   }
   async deleteAgentSession(_sessionId: string, agentSessionId: string) {
     const entry = this.entries.get(agentSessionId)

@@ -33,11 +33,12 @@ import {
 } from "@claxedo/agent-sdk-runtime/adapters"
 import type { AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
 import { OpenCodeSdkHarnessAdapter, WorkspaceScope, type OpenCodeRuntime } from "../opencode/index"
-import type { CompatEnvelope } from "@claxedo/agent-sdk-runtime/compat-events"
+import { harnessHealthChanged, type CompatEnvelope } from "@claxedo/agent-sdk-runtime/compat-events"
 import type { SubagentAdmissionStore } from "@claxedo/agent-sdk-runtime/subagent-admission"
 import type { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { workspaceCapabilities } from "../capabilities"
+import { createHarnessHealthFeed } from "./harness-health-feed"
 import { runGit } from "../git"
 import { createRuntimeEventHub, type RuntimeEventEnvelope, type RuntimeEventHub } from "../runtime-event-hub"
 import type { ProcessObserver } from "../managed-processes/process-observer"
@@ -487,6 +488,8 @@ export type WorkspaceHarnessAdapterInput = {
    * serving that session, whose recovery inspection is where it stays visible.
    */
   reportOwnerFailure: (sessionId: string, error: unknown) => void
+  /** Where an adapter says its health or connection state may have changed; the host reads them again. */
+  reportHealthChanged: () => void
 }
 
 /**
@@ -521,7 +524,7 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
   return [
     {
       match: (runner) => nativeSdk(runner),
-      create: ({ runner, options, store, launchOwner, reportOwnerFailure }) => {
+      create: ({ runner, options, store, launchOwner, reportOwnerFailure, reportHealthChanged }) => {
         // `match` narrowed this runner, but the registry hands `create` the
         // unnarrowed entry, so the guard is re-applied here rather than
         // asserting the key and letting an unknown id fail as "not a constructor".
@@ -538,6 +541,7 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
           // of the workspace it serves, not whichever one opened first.
           ownership: store.launchOwnership?.(launchOwner) ?? volatileLaunchOwnership(launchOwner),
           reportOwnerFailure,
+          reportHealthChanged,
           ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
           // Pi's profile holds `models.json`, and that file carries the broker
           // placeholder; without a store root to scope it, the workspace id is
@@ -623,6 +627,7 @@ function createAdapter(
   store: WorkspaceRuntimeStore,
   launchOwner: LaunchOwnershipOwner,
   reportOwnerFailure: (sessionId: string, error: unknown) => void,
+  reportHealthChanged: () => void,
 ): AgentHarnessAdapter {
   const entry = registry.find((item) => item.match(harness))
   if (!entry) {
@@ -631,7 +636,7 @@ function createAdapter(
     // runner must fail loudly here.
     throw new Error(`No workspace harness adapter registered for runner "${harness.id}:${harness.access}"`)
   }
-  return entry.create({ runner: harness, options, store, launchOwner, reportOwnerFailure })
+  return entry.create({ runner: harness, options, store, launchOwner, reportOwnerFailure, reportHealthChanged })
 }
 
 function scopedToolPrompt(
@@ -729,6 +734,14 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   const sessionParents: WorkspaceEventParents = {
     parentSessionIdFor: (sessionId) => (store().getSession(sessionId) as { parentID?: string | null } | null)?.parentID ?? undefined,
   }
+  const healthFeed = createHarnessHealthFeed({
+    read: async (sessionId, directory) => {
+      const connection = connectionState({ sessionId, directory })
+      return { harnessHealth: await sessionHarnessHealth({ sessionId, directory }), ...(connection ? { connectionState: connection } : {}) }
+    },
+    publish: (directory, properties) => eventHub.publishGlobal({ directory, payload: harnessHealthChanged(properties) }),
+    onReadFailure: (sessionId, error) => Log.create({ service: "workspace-runtime" }).warn("Harness health read failed", { sessionId, error }),
+  })
   const cleanupCompatObserver = options.onCompatEvent
     ? eventHub.subscribeGlobal(options.onCompatEvent)
     : () => undefined
@@ -947,6 +960,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         context: {
           store: store(),
           eventHub,
+          reportHealthChanged: healthFeed.changed,
           ...(options.processObserver ? { processObserver: agentProcessObserver(options.processObserver) } : {}),
         },
         ...(secretLease ? { secretLease } : {}),
@@ -985,7 +999,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       await configureAdapter(existing, nextRunner)
       return existing
     }
-    const next = createAdapter(nextRunner, hostOptions, harnessRegistry, store(), launchOwner, reportAdapterFailure)
+    const next = createAdapter(nextRunner, hostOptions, harnessRegistry, store(), launchOwner, reportAdapterFailure, healthFeed.changed)
     sessionAdapters.set(key, next)
     sessionAdapterRunners.set(key, nextRunner)
     adapterRuntimeKeys.set(next, key)
@@ -1345,11 +1359,13 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     activeTurns.set(input.adapter, turns)
     const owner = { adapter: input.adapter, runtime: turnRuntime, directory: input.directory }
     if (!activeSessionOwners.has(input.sessionId)) activeSessionOwners.set(input.sessionId, owner)
+    healthFeed.turnStarted(input.sessionId, input.directory)
     return {
       signal: turn.controller.signal,
       dispose() {
         turns.delete(turn)
         if (activeSessionOwners.get(input.sessionId) === owner) activeSessionOwners.delete(input.sessionId)
+        healthFeed.turnEnded(input.sessionId)
         turn.finish()
         if (turns.size === 0) {
           activeTurns.delete(input.adapter)
@@ -2375,6 +2391,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     dispose() {
       if (disposal) return disposal
       closing = true
+      healthFeed.dispose()
       const deliveriesDone = disposeDeliveries?.()
       checkpointState = "freezing"
       for (const turns of activeTurns.values()) for (const turn of turns) turn.controller.abort()

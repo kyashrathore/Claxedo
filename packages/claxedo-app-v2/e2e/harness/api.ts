@@ -83,6 +83,12 @@ export class ClaxedoApi {
     return this.call<ProviderCatalog>("GET", "/api/claxedo/agent-config/providers", { query: { nativeHarness } })
   }
 
+  harnessStatus(workspaceId: string, sessionId: string) {
+    return this.call<{ harnessHealth?: { status: string; reason?: string }; connectionState?: { connectionId: string; state: string } }>("GET", "/api/claxedo/agent-config/harness", {
+      query: { workspaceId, sessionId },
+    })
+  }
+
   resolveWorkspace(directory: string) {
     return this.call<{ workspaceId: string }>("POST", "/api/workspace/resolve", { directory })
   }

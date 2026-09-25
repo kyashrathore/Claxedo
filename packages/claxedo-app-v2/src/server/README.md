@@ -37,7 +37,7 @@ The only module that knows today's server: its routes, its OpenCode-shaped paylo
 
 ## Additive contract changes
 
-- `ServerEvent` gained `sessionsChanged`, `placementsChanged`, `documentsChanged`, `usageChanged`, `cloudWorkspaceChanged` and the terminal events.
+- `ServerEvent` gained `sessionsChanged`, `placementsChanged`, `documentsChanged`, `usageChanged`, `cloudWorkspaceChanged`, the terminal events and `harnessHealthChanged` (the runtime's `harness.health` frame: a session's harness health and connection state).
 - `AgentRequestReply`'s `dismiss` arm gained an optional `request` kind.
 - `Server` gained `queries` and `cloud`; `PlacementsApi` gained `list`; `SessionStatusRead` gained `failures`; `ServerQueries` gained `harnesses.options`; `HarnessInfo` gained `unavailableReason`; `PromptInput` gained `delivery`, and `prompt` answers the `PromptDelivery`; `Server` gained `request` and `livePlugins`; `SessionsApi` gained `subagents` and `ServerEvent` gained `subagentUpdated`; `Placement` gained `gitRemote`.
 

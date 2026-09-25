@@ -1,26 +1,39 @@
+import { sameHarnessSelection } from "@/lib/harness-selection"
+import type { HarnessConnectionState, HarnessHealth } from "@/server"
 import type { HarnessWiring } from "./harness-wiring"
-import { harnessSelectionId } from "./profile"
+import { harnessSelectionId, type HarnessType } from "./profile"
 import type { HarnessScopeInput } from "./store-policy"
 import { harnessHealthReadiness } from "./store-state"
 
-// Probe the bound runtime without changing persisted harness/model identity.
-// Hydration alone cannot detect a runtime that exits after the session loads.
-export async function probeHarnessHealth({ api, store }: HarnessWiring, scope: string, input?: HarnessScopeInput) {
+type ObservedHealth = { readonly harnessHealth?: HarnessHealth; readonly connectionState?: HarnessConnectionState }
+
+function applyHarnessHealth({ store }: HarnessWiring, scope: string, harness: HarnessType, observed: ObservedHealth) {
+  const held = store.read(scope)
+  if (!sameHarnessSelection(harness, held.harness)) return
+  if (held.harness?.kind === "connection" && observed.connectionState?.connectionId === held.harness.connectionId) {
+    store.applyPatch(scope, { connectionState: observed.connectionState })
+  }
+  const next = harnessHealthReadiness({ harness, current: store.read(scope).readiness, health: observed.harnessHealth?.status })
+  if (next) store.setReadiness(scope, next)
+}
+
+export async function probeHarnessHealth(wiring: HarnessWiring, scope: string, input?: HarnessScopeInput) {
+  const { api, store } = wiring
   if (!input?.placementId || store.heldHarness(scope)) return
-  const current = store.read(scope)
-  if (!current.harness) return
+  const harness = store.read(scope).harness
+  if (!harness) return
   const data = await api.folderHarness(input.placementId, input.sessionId).catch((error: unknown) => {
     console.warn(`The harness health probe for placement ${input.placementId} failed`, error)
     return undefined
   })
-  if (!data) return
-  const held = store.read(scope)
-  if (held.harness?.kind !== current.harness.kind || (held.harness.kind === "connection" && (current.harness.kind !== "connection" || held.harness.connectionId !== current.harness.connectionId))) return
-  if (held.harness.kind === "connection" && data.connectionState?.connectionId === held.harness.connectionId) {
-    store.applyPatch(scope, { connectionState: data.connectionState })
-  }
-  const next = harnessHealthReadiness({ harness: current.harness, current: store.read(scope).readiness, health: data.harnessHealth?.status })
-  if (next) store.setReadiness(scope, next)
+  if (data) applyHarnessHealth(wiring, scope, harness, data)
+}
+
+export function applyPushedHarnessHealth(wiring: HarnessWiring, scope: string, observed: ObservedHealth) {
+  const { store } = wiring
+  if (!store.state(scope) || store.heldHarness(scope)) return
+  const harness = store.read(scope).harness
+  if (harness) applyHarnessHealth(wiring, scope, harness, observed)
 }
 
 /** A harness held in the picker becomes the session's own before the prompt is sent; a failed switch leaves the draft unsent. */

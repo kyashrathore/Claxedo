@@ -55,6 +55,7 @@ import {
 import { createTurnStopRecord } from "../shared/cancellation-facts"
 import { retirementSettled, volatileLaunchOwnership, type LaunchOwnershipStore } from "../../launch"
 import { createLaunchRetention } from "./launch-retention"
+import { createProcessLoss } from "../shared/process-loss"
 
 export {
   codexGoalSnapshot,
@@ -100,9 +101,9 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   private processUnsubscribe: (() => void) | null = null
   private lifecycleRevision = 0
   private disposed = false
-  private processError: string | null = null
+  private readonly processLoss = createProcessLoss(() => this.host.reportHealthChanged?.())
   /** A launch whose retirement did not establish that it stopped. Blocks the next one. */
-  private readonly retained = createLaunchRetention()
+  private readonly retained = createLaunchRetention(() => this.host.reportHealthChanged?.())
   private currentMcp: Record<string, ResolvedMcpServer> = {}
   private firstPartyMcp: FirstPartyMcpProvider | undefined
   private currentPluginLaunch: CodexPluginLaunch | undefined
@@ -426,12 +427,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   readRuntimeHealth(): AgentHarnessAdapterHealth {
     const blocker = this.retained.error()
     if (blocker) return { status: "unavailable", reason: "harness_retirement_unresolved", message: blocker.message }
-    if (!this.processError) return { status: "ok" }
-    return {
-      status: "degraded",
-      reason: "harness_process_lost",
-      message: this.processError,
-    }
+    return this.processLoss.health() ?? { status: "ok" }
   }
 
   /**
@@ -498,7 +494,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   }
 
   failInteractiveState(err: Error) {
-    this.processError = err.message
+    this.processLoss.record(err.message)
     this.host.lifecycle().abortAll()
     for (const pending of this.host.pendingPermissions.values()) pending.resolve("deny")
     this.host.pendingPermissions.clear()
@@ -596,7 +592,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       this.threads.observe(message)
       this.goalController.handleProcessMessage(message)
     })
-    this.processError = null
+    this.processLoss.recovered()
     if (this.disposed || lifecycleRevision !== this.lifecycleRevision) {
       await started.dispose()
       if (this.process === started) this.process = null

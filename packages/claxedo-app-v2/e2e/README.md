@@ -144,7 +144,7 @@ Script steps (`AcpStep`):
 | `{ kind: "permission", tool, title, path?, input?, text? }` | a pending tool call plus `session/request_permission`; allowed → completed, rejected → failed, cancelled → the turn stops |
 | `{ kind: "question", message, options? }` | `elicitation/create` (a question); the answer is echoed as text |
 | `{ kind: "subagent", name, task, steps }` | `subagent_spawned`, the inner steps under the child session, then `subagent_state_update: completed` |
-| `{ kind: "hold", name }` | Waits until `stack.acp.release(name)` |
+| `{ kind: "hold", name, ignoresCancel? }` | Waits until `stack.acp.release(name)`; a Stop ends the wait unless `ignoresCancel`, which plays an agent that never acknowledges a cancel |
 | `{ kind: "error", message }` | Fails the prompt with a JSON-RPC error (a turn error) |
 | `{ kind: "stop", reason }` | Ends the turn with that `StopReason` |
 
@@ -266,8 +266,8 @@ e2e/
     app.ts               --app selection and the dist-e2e build
     scripted-model-*.ts  the scripted model endpoint (chat, messages, responses dialects)
     installed-cli.ts     Claude / Codex CLI detection
-    acp/                 the scripted ACP agent: script.ts (types), turn.ts (steps), agent.ts (the process)
+    acp/                 the scripted ACP agent: script.ts (types), turn.ts (steps), agent.ts (the process), agent-process.ts (its PIDs under a stack's daemon)
     ports.ts, process.ts, health.ts
   parity/                bun run e2e:parity: v1 and v2 side by side (origin, seed, screens, settle, compare, report)
-  probes/                one-off probes (P0.7 harness status), not collected as flows
+  probes/                one-off probes (P0.7 harness status, harness health after a killed agent), not collected as flows
 ```

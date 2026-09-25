@@ -25,6 +25,7 @@ export type ConnectionProviderAdapterContext = {
   store: AgentRuntimeStoreWithRecovery
   eventHub: RuntimeEventHub
   processObserver?: AgentProcessObserver
+  reportHealthChanged?: () => void
 }
 
 export type ConnectionProviderResolution<TResolvedConfig> = {
