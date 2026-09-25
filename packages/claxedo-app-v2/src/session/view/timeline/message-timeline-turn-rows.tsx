@@ -100,7 +100,6 @@ export function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[]; onUndo?: (
         <Show when={props.onUndo}>
           <button
             type="button"
-            data-slot="session-turn-diffs-undo"
             class="text-12-medium text-text-weak hover:text-text-strong active:scale-[0.96] transition-transform disabled:opacity-50 cursor-pointer bg-transparent border-none px-1"
             disabled={state.undoing}
             onClick={(event) => {
@@ -141,7 +140,7 @@ export function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[]; onUndo?: (
                             <span data-slot="session-turn-diff-filename">{getFilename(diff.file)}</span>
                           </span>
                           <div data-slot="session-turn-diff-meta">
-                            <span data-slot="session-turn-diff-changes">
+                            <span>
                               <DiffChanges changes={diff} />
                             </span>
                             <span data-slot="session-turn-diff-chevron">
