@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
 import { randomUUID } from "node:crypto"
+import fs from "node:fs"
+import path from "node:path"
 import { Readable, Writable } from "node:stream"
 import {
   AgentSideConnection,
@@ -140,6 +142,7 @@ export class ScriptedAgent implements Agent {
 if (import.meta.main) {
   const scriptDir = process.env[ACP_SCRIPT_DIR_ENV]
   if (!scriptDir) throw new Error(`${ACP_SCRIPT_DIR_ENV} is not set`)
+  fs.writeFileSync(path.join(scriptDir, "agent.pid"), String(process.pid))
   const stream = ndJsonStream(
     Writable.toWeb(process.stdout) as WritableStream<Uint8Array>,
     Readable.toWeb(process.stdin) as unknown as ReadableStream<Uint8Array>,

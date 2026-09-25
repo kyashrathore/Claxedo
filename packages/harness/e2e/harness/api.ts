@@ -20,6 +20,8 @@ export type SessionRow = {
   id: string
   title: string
   parentID?: string
+  status?: string
+  lastTurn?: { status?: string; completedAt?: number; error?: string }
   time: { created: number; updated: number; archived?: number }
   [key: string]: unknown
 }

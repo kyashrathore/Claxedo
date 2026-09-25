@@ -3,10 +3,13 @@ import os from "node:os"
 import path from "node:path"
 import { dropRecoveryContext, releaseAcpHold, writeAcpScript, type AcpScript } from "./acp/script"
 import { refuseGoalStart } from "./acp/goals"
+import { staleCodexInventory } from "./codex-inventory-fault"
 import { startDaemon, type Daemon } from "./daemon"
 import { startEgressGuard, type EgressGuard } from "./egress-guard"
 import { claimPort, fixedDaemonPort, portFreed, portIsLeased, releasePort, reservePort } from "./ports"
 import { startScriptedModelServer, type ScriptedModelServer } from "./scripted-model-server"
+import { withholdSteerReply } from "./steer-reply-fault"
+import { interruptClaudeSteer } from "./claude-steer-fault"
 import { openEventStream, type EventStream, type EventStreamOptions } from "./stream"
 
 export type Stack = {
@@ -26,7 +29,7 @@ export type Stack = {
   close(): Promise<void>
 }
 
-export type StackInput = { label: string; red?: boolean }
+export type StackInput = { label: string; red?: boolean; codexInventoryFault?: boolean; steerReplyFault?: "pi" | "codex"; claudeSteerFault?: boolean }
 
 export function safeLabel(label: string) {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "flow"
@@ -35,6 +38,9 @@ export function safeLabel(label: string) {
 export async function startStack(input: StackInput): Promise<Stack> {
   const red = input.red ?? process.env.CLAXEDO_E2E_RED === "1"
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-e2e-${safeLabel(input.label)}-`))
+  const pathPrefix = input.codexInventoryFault ? await staleCodexInventory(dataDir) : undefined
+  const steerFault = input.steerReplyFault ? await withholdSteerReply(dataDir, input.steerReplyFault) : undefined
+  const claudeFault = input.claudeSteerFault ? await interruptClaudeSteer(dataDir) : undefined
   const fixed = fixedDaemonPort()
   const daemonPort = fixed !== undefined && !portIsLeased(fixed) ? await claimPort(fixed) : await reservePort()
   const modelPort = await reservePort()
@@ -58,7 +64,11 @@ export async function startStack(input: StackInput): Promise<Stack> {
   }
   let daemon: Daemon
   try {
-    daemon = await startDaemon({ dataDir, scripted, guardUrl: egress.url, port: daemonPort, red })
+    daemon = await startDaemon({ dataDir, scripted, guardUrl: egress.url, port: daemonPort, red,
+      pathPrefix: steerFault?.bin ?? pathPrefix,
+      ...(input.steerReplyFault === "pi" ? { piExecutable: steerFault!.executable } : {}),
+      ...(claudeFault ? { claudeExecutable: claudeFault.executable } : {}),
+    })
   } catch (error) {
     await egress.close()
     await scripted.close()

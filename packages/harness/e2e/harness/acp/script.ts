@@ -67,6 +67,10 @@ export function holdReleaseFile(dir: string, name: string) {
   return path.join(dir, `${name}.release`)
 }
 
+export function holdEnteredFile(dir: string, name: string) {
+  return path.join(dir, `${name}.entered`)
+}
+
 export async function writeAcpScript(dir: string, name: string, script: AcpScript) {
   await fs.mkdir(dir, { recursive: true })
   await fs.writeFile(scriptFile(dir, name), JSON.stringify(script))
