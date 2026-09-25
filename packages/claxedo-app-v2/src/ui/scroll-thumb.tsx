@@ -10,7 +10,7 @@ export function ScrollThumbElement(props: { readonly thumb: ScrollThumbState; re
     <div
       class={props.class}
       hidden={!props.thumb.state.shown}
-      data-visible={props.thumb.visible()}
+      data-visible={props.thumb.state.shown && props.thumb.visible()}
       data-dragging={props.thumb.state.dragging}
       style={{ height: `${props.thumb.state.height}px`, transform: `translateY(${props.thumb.state.top}px)`, "z-index": 100 }}
       onPointerDown={(event) => props.thumb.drag(event.currentTarget, event)}
