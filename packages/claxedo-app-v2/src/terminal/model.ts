@@ -1,7 +1,7 @@
 import type { AppError, PlacementId, Terminal, TerminalAgentStatus, TerminalId, TerminalStreamClose } from "@/server"
 import { unreachable } from "@/lib/machine"
 
-export type TerminalRow = Terminal & { readonly agentStatus?: TerminalAgentStatus }
+export type TerminalRow = Terminal & { readonly agentStatus?: TerminalAgentStatus; readonly seen?: boolean }
 
 export type TerminalPaneState = {
   readonly placementId: PlacementId

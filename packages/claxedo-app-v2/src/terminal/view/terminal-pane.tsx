@@ -1,4 +1,3 @@
-import "./terminal-pane.css"
 import { terminalFontFamily, usePreferences } from "@/settings"
 import { Show, createEffect, createMemo, createSignal, onCleanup, onMount, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
@@ -15,9 +14,8 @@ import {
   type TerminalPaneState,
 } from "../model"
 import { AccessoryRow } from "./accessory-row"
-import { AgentBadge } from "./agent-badge"
 import { mountTerminal, type TerminalMount } from "./terminal-mount"
-import { TerminalStatus } from "./terminal-status"
+import { TerminalStatus, useConnectionToasts } from "./terminal-status"
 
 export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
   const server = useServer()
@@ -31,7 +29,12 @@ export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
   const connection = machine<TerminalConnection, TerminalConnectionEvent>({ kind: "connecting" }, transitionConnection)
   const [backend, setBackend] = createSignal<TerminalBackend>()
   const [focused, setFocused] = createSignal(false)
-  const overlay = () => connection.state().kind !== "attached"
+  const [attachedOnce, setAttachedOnce] = createSignal(false)
+  const overlay = () => {
+    const current = connection.state()
+    if (current.kind === "failed") return current.failure === "start"
+    return !attachedOnce() && current.kind === "connecting"
+  }
   let host!: HTMLDivElement
   let mount: TerminalMount | undefined
 
@@ -55,8 +58,17 @@ export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
   })
   onCleanup(() => mount?.dispose())
 
+  useConnectionToasts(connection.state)
   createEffect(() => {
-    if (connection.state().kind === "ended") store.drop(terminalId)
+    const kind = connection.state().kind
+    if (kind === "attached") setAttachedOnce(true)
+    if (kind === "ended") store.drop(terminalId)
+  })
+
+  createEffect(() => {
+    const current = row()
+    const busy = current?.agentStatus === "working" || current?.agentStatus === "waitingOnUser"
+    if (props.active && current?.seen && !busy) store.clearSeen(terminalId)
   })
 
   return (
@@ -79,9 +91,6 @@ export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
           classList={{ invisible: overlay() }}
           onPointerDown={() => backend()?.focus()}
         />
-        <div class="pointer-events-none absolute top-1.5 right-3">
-          <AgentBadge status={row()?.agentStatus} />
-        </div>
         <Show when={overlay()}>
           <div class="absolute inset-0 bg-background-base">
             <TerminalStatus
