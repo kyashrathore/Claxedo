@@ -1,5 +1,6 @@
 {
   "contract": 1200,
+  "rpc": 300,
   "translate": 550,
   "broker": 2300,
   "registry": 900,

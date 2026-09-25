@@ -1,14 +1,17 @@
 import type { SDKActiveGoalMessage, SessionStore, SessionStoreEntry } from "@anthropic-ai/claude-agent-sdk"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/agent-runtime-contract"
-import type { SessionBroker } from "../../contract"
+import { goalSnapshotFromRecord, type SessionBroker } from "../../contract"
+import { TransportError } from "../../contract/errors"
 import { claudeTranslator } from "./translate"
 
 export function activeGoal(sessionId: string, message: SDKActiveGoalMessage): RuntimeGoalSnapshot | null {
   if (!message.value) return null
   const createdAt = message.value.set_at < 1_000_000_000_000 ? message.value.set_at * 1_000 : message.value.set_at
-  return { sessionId, objective: message.value.condition, status: "active", createdAt, updatedAt: Date.now(),
-    iteration: message.value.iterations, ...(message.value.last_reason ? { lastReason: message.value.last_reason } : {}) }
+  return goalSnapshotFromRecord(sessionId, { objective: message.value.condition, status: "active", createdAt,
+    updatedAt: Date.now(), iteration: message.value.iterations,
+    ...(message.value.last_reason ? { lastReason: message.value.last_reason } : {}) },
+  { invalid: () => new TransportError("claude", "protocol", "Claude returned an invalid goal") })
 }
 
 export function transcriptGoal(sessionId: string, entry: SessionStoreEntry, previous: RuntimeGoalSnapshot | null): RuntimeGoalSnapshot | null | undefined {
@@ -20,11 +23,10 @@ export function transcriptGoal(sessionId: string, entry: SessionStoreEntry, prev
   if (row.met !== false || typeof row.condition !== "string" || !row.condition) return undefined
   const timestamp = typeof entry.timestamp === "string" ? Date.parse(entry.timestamp) : Number.NaN
   const updatedAt = Number.isFinite(timestamp) ? timestamp : Date.now()
-  return { sessionId, objective: row.condition, status: "active", updatedAt,
+  return goalSnapshotFromRecord(sessionId, { objective: row.condition, status: "active", updatedAt,
     createdAt: previous?.objective === row.condition ? previous.createdAt : updatedAt,
-    ...(typeof row.iterations === "number" ? { iteration: row.iterations } : {}),
-    ...(typeof row.reason === "string" && row.reason ? { lastReason: row.reason } : {}),
-  }
+    iteration: row.iterations, ...(typeof row.reason === "string" && row.reason ? { lastReason: row.reason } : {}) },
+  { invalid: () => new TransportError("claude", "protocol", "Claude returned an invalid goal") })
 }
 
 export function goalSessionStore(broker: SessionBroker, signal: AbortSignal, usage?: {

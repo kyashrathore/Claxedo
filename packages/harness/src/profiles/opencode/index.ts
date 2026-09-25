@@ -10,15 +10,11 @@ function mcp(server: McpServerSpec): Mcp.ServerConfig {
   return { type: "remote", url: server.url, ...(server.headers ? { headers: { ...server.headers } } : {}) }
 }
 
-export function openCodeLaunchDocument(projection: PluginProjection): {
+export function openCodeLaunchDocument(projection: PluginProjection, servers: readonly McpServerSpec[]): {
   skills: readonly string[]
   mcp: Readonly<Record<string, Mcp.ServerConfig>>
 } {
-  const servers = projection.mcpServers
-  const names = new Set<string>()
   const entries = servers.map((server): [string, Mcp.ServerConfig] => {
-    if (names.has(server.name)) throw new Error(`OpenCode MCP server ${server.name} has conflicting owners`)
-    names.add(server.name)
     return [server.name, mcp(server)]
   })
   return { skills: projection.pluginRoots.map((plugin) => path.join(plugin.root, "skills")), mcp: Object.fromEntries(entries) }

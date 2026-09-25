@@ -1,6 +1,7 @@
 import type * as OpenCodeSdk from "@opencode-ai/sdk"
 import { isAbsolute } from "node:path"
 import { canTransition, isTerminal, type OpenCodeEventHealth, type OpenCodeLifecycle, type OpenCodeStatus } from "./lifecycle.js"
+import { errorMessage } from "@claxedo/helpers"
 
 export type OpenCodeClient = Awaited<ReturnType<typeof OpenCodeSdk.OpenCode.create>>
 
@@ -72,7 +73,7 @@ class EmbeddedOpenCodeHost implements OpenCodeHost {
     } catch (cause) {
       this.booting = undefined
       this.lifecycle = "unavailable"
-      this.reason = cause instanceof Error ? cause.message : String(cause)
+      this.reason = errorMessage(cause)
       throw new OpenCodeUnavailableError(this.reason, { cause })
     }
   }

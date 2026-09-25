@@ -5,6 +5,7 @@ import { ClaudeProcess } from "./process"
 import { ClaudeQueryLauncher } from "./query-options"
 import { observeClaudeSessionMessage } from "./session-events"
 import { claudeTranslator, translateClaude } from "./translate"
+import { errorMessage } from "@claxedo/helpers"
 
 type Running = { turnId: string; abort: AbortController; settled: Promise<unknown> }
 
@@ -46,7 +47,7 @@ export class ClaudeGoals {
       await broker.goal.publish(paused)
       return { ok: true, goal: paused }
     } catch (error) {
-      const blocked = { ...goal, status: "blocked" as const, updatedAt: Date.now(), lastReason: error instanceof Error ? error.message : String(error) }
+      const blocked = { ...goal, status: "blocked" as const, updatedAt: Date.now(), lastReason: errorMessage(error) }
       await broker.goal.publish(blocked)
       return { ok: false, status: "failed", message: blocked.lastReason }
     } finally { clearTimeout(timeout) }

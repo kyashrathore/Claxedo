@@ -48,6 +48,12 @@ describe("errorMessage", () => {
     expect(errorMessage({ big: 1n }, "fallback")).toBe("fallback")
   })
 
+  test("unencodable objects still identify their fields without a fallback", () => {
+    const circular: Record<string, unknown> = { code: 500 }
+    circular.self = circular
+    expect(errorMessage(circular)).toBe("{code, self}")
+  })
+
   test("with no fallback the value is stringified", () => {
     expect(errorMessage(undefined)).toBe("undefined")
     expect(errorMessage(null)).toBe("null")

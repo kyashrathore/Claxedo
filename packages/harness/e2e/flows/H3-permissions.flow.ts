@@ -6,15 +6,14 @@ import { acpScriptToken } from "../harness/acp/script"
 import { startStack } from "../harness/stack"
 import { frameSessionId, frameType, type EventStream } from "../harness/stream"
 
-async function pending(api: ClaxedoApi, directory: string, sessionId: string, title: string): Promise<PermissionRow> {
-  const deadline = Date.now() + 30_000
-  do {
-    const row = (await api.permissions(directory)).find((item) =>
-      item.sessionID === sessionId && (item.metadata as { title?: string } | undefined)?.title === title)
-    if (row) return row
-    await Bun.sleep(50)
-  } while (Date.now() < deadline)
-  throw new Error(`Permission ${title} never became pending`)
+async function pending(api: ClaxedoApi, stream: EventStream, directory: string, sessionId: string, title: string): Promise<PermissionRow> {
+  await stream.waitFor((frame) => frameType(frame) === "permission.asked" && frameSessionId(frame) === sessionId
+    && (frame.data.payload as { properties?: { metadata?: { title?: string } } }).properties?.metadata?.title === title,
+    { label: `permission ${title}` })
+  const row = (await api.permissions(directory)).find((item) =>
+    item.sessionID === sessionId && (item.metadata as { title?: string } | undefined)?.title === title)
+  assert.ok(row, `Permission ${title} was not pending after permission.asked`)
+  return row
 }
 
 async function refused(call: () => Promise<unknown>, status: number) {
@@ -40,11 +39,11 @@ export async function run() {
     await stack.acp.write("h3-once", { steps: [{ kind: "permission", tool: "execute", title: "Run once", text: "once allowed" }] })
     const onceSince = stream.frames.length
     await api.promptAsync(directory, session.id, acpScriptToken("h3-once"))
-    const once = await pending(api, directory, session.id, "Run once")
+    const once = await pending(api, stream, directory, session.id, "Run once")
     const other = await api.createSession(directory, { harness: SCRIPTED_ACP_HARNESS, title: "H3 foreign owner" })
     await stack.acp.write("h3-foreign", { steps: [{ kind: "permission", tool: "read", title: "Other session request" }] })
     await api.promptAsync(directory, other.id, acpScriptToken("h3-foreign"))
-    const foreign = await pending(api, directory, other.id, "Other session request")
+    const foreign = await pending(api, stream, directory, other.id, "Other session request")
     const beforeForeign = await readPermissionReceipts(stack.acp.scriptDir)
     await refused(() => api.replyPermission(directory, session.id, foreign.id, "once"), 409)
     assert.deepEqual(await readPermissionReceipts(stack.acp.scriptDir), beforeForeign, "foreign reply reached the agent")
@@ -64,9 +63,9 @@ export async function run() {
     ] })
     const alwaysSince = stream.frames.length
     await api.promptAsync(directory, session.id, acpScriptToken("h3-always"))
-    const always = await pending(api, directory, session.id, "Same command")
+    const always = await pending(api, stream, directory, session.id, "Same command")
     await api.replyPermission(directory, session.id, always.id, "always")
-    const different = await pending(api, directory, session.id, "Different command")
+    const different = await pending(api, stream, directory, session.id, "Different command")
     assert.equal((await api.permissions(directory)).filter((row) => row.sessionID === session.id).length, 1,
       "identical second call prompted despite the session grant")
     const granted = await readPermissionReceipts(stack.acp.scriptDir)
@@ -81,7 +80,7 @@ export async function run() {
     await stack.acp.write("h3-deny", { steps: [{ kind: "permission", tool: "execute", title: "Denied command" }] })
     const denySince = stream.frames.length
     await api.promptAsync(directory, session.id, acpScriptToken("h3-deny"))
-    const deny = await pending(api, directory, session.id, "Denied command")
+    const deny = await pending(api, stream, directory, session.id, "Denied command")
     await api.replyPermission(directory, session.id, deny.id, "reject")
     await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id
       && stream.frames.indexOf(frame) >= denySince && permissionFrames(stream, session.id, "permission.replied").length >= 4,

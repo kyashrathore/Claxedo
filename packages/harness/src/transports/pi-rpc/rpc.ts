@@ -1,33 +1,39 @@
 import { randomUUID } from "node:crypto"
 import type { Clock, Deadline, OwnedProcess } from "../../contract"
+import { NdjsonOwnedProcess } from "../../rpc/channel"
+import { PendingRpcRequests } from "../../rpc/pending"
 import { unrecognizedEvent } from "../../translate/unrecognized"
-import { PiTransportError } from "./errors"
+import { TransportError } from "../../contract/errors"
 
 export type PiMessage = Record<string, unknown> & { type: string }
-type Pending = { command: string; resolve(value: unknown): void; reject(error: Error): void; timer: unknown }
 
 export class PiRpc {
-  private buffer = ""
-  private readonly pending = new Map<string, Pending>()
+  private readonly channel: NdjsonOwnedProcess
+  private readonly pending: PendingRpcRequests<string, string>
   private readonly listeners = new Set<(message: PiMessage) => void>()
-  private readonly failures = new Set<(error: Error) => void>()
-  private failed?: Error
   private exitReported = false
-  private retirement?: Promise<void>
 
-  constructor(readonly process: OwnedProcess, private readonly clock: Clock,
+  constructor(readonly process: OwnedProcess, clock: Clock,
     private readonly diagnostic: (event: ReturnType<typeof unrecognizedEvent>) => void) {
-    process.stdout.setEncoding("utf8")
-    process.stdout.on("data", (chunk: string) => this.read(chunk))
-    process.stdout.on("error", (error: Error) => this.fail(new PiTransportError("process", "Pi stdout failed", error)))
+    this.pending = new PendingRpcRequests(clock)
+    this.channel = new NdjsonOwnedProcess(process, clock, (value) => this.receive(value), (reason, cause) => {
+      if (reason === "exit") {
+        this.exitReported = true
+        if (cause && typeof cause === "object" && "code" in cause) {
+          const code = cause.code
+          const signal = "signal" in cause ? cause.signal : undefined
+          return new TransportError("pi", "process", `Pi process exited (${String(signal ?? code)})`)
+        }
+        return new TransportError("pi", "process", "Pi exit observation failed", { cause })
+      }
+      return new TransportError("pi", reason === "frame" ? "protocol" : "process",
+        reason === "frame" ? "Invalid Pi RPC record" : `Pi ${reason} failed`, { cause })
+    }, (error) => this.diagnostic(unrecognizedEvent("pi.rpc", "retirement", error)))
+    this.channel.onFailure((error) => this.pending.fail(error))
     process.stderr.resume()
-    void process.exited.then((exit) => {
-      this.exitReported = true
-      this.fail(new PiTransportError("process", `Pi process exited (${exit.signal ?? exit.code})`))
-    }, (error: unknown) => this.fail(new PiTransportError("process", "Pi exit observation failed", error)))
   }
 
-  get alive(): boolean { return !this.failed && !this.exitReported }
+  get alive(): boolean { return this.channel.alive && !this.exitReported }
   get exited(): boolean { return this.exitReported }
 
   onEvent(listener: (message: PiMessage) => void): () => void {
@@ -35,93 +41,37 @@ export class PiRpc {
     return () => this.listeners.delete(listener)
   }
 
-  onFailure(listener: (error: Error) => void): () => void {
-    if (this.failed) listener(this.failed)
-    else this.failures.add(listener)
-    return () => this.failures.delete(listener)
-  }
-
-  private read(chunk: string): void {
-    this.buffer += chunk
-    let index = this.buffer.indexOf("\n")
-    while (index >= 0) {
-      if (index > 16 * 1024 * 1024) return this.fail(new PiTransportError("protocol", "Pi RPC record exceeds 16 MiB"))
-      const line = this.buffer.slice(0, index).replace(/\r$/, "")
-      this.buffer = this.buffer.slice(index + 1)
-      if (line) {
-        try { this.receive(JSON.parse(line) as unknown) }
-        catch (error) { this.fail(new PiTransportError("protocol", "Invalid Pi RPC record", error)); return }
-      }
-      index = this.buffer.indexOf("\n")
-    }
-    if (this.buffer.length > 16 * 1024 * 1024) this.fail(new PiTransportError("protocol", "Pi RPC record exceeds 16 MiB"))
-  }
+  onFailure(listener: (error: Error) => void): () => void { return this.channel.onFailure(listener) }
 
   private receive(value: unknown): void {
     if (!value || typeof value !== "object" || !("type" in value) || typeof value.type !== "string") throw new Error("Pi RPC message has no type")
     const message: PiMessage = { ...value, type: value.type }
     if (message.type === "response") {
       if (typeof message.id !== "string") throw new Error("Pi RPC response has no id")
-      const pending = this.pending.get(message.id)
-      if (!pending || message.command !== pending.command) {
+      const command = this.pending.get(message.id)
+      if (!command || message.command !== command) {
         this.diagnostic(unrecognizedEvent("pi.rpc", `response.${String(message.command)}`, message))
         return
       }
-      this.pending.delete(message.id)
-      this.clock.clearTimeout(pending.timer)
-      if (message.success === true) pending.resolve(message.data)
-      else pending.reject(new PiTransportError("protocol", typeof message.error === "string" ? message.error : "Pi rejected the command"))
+      if (message.success === true) this.pending.resolve(message.id, message.data)
+      else this.pending.reject(message.id, new TransportError("pi", "protocol", typeof message.error === "string" ? message.error : "Pi rejected the command"))
       return
     }
     for (const listener of this.listeners) listener(message)
   }
 
-  send(message: PiMessage): void {
-    if (this.failed) throw this.failed
-    this.process.stdin.write(`${JSON.stringify(message)}\n`, (error?: Error | null) => {
-      if (error) this.fail(new PiTransportError("process", "Pi stdin write failed", error))
-    })
-  }
+  send(message: PiMessage): void { this.channel.send(message) }
 
   request(type: string, body: Record<string, unknown> = {}, timeoutMs = 30_000): Promise<unknown> {
-    if (this.failed) return Promise.reject(this.failed)
     const id = randomUUID()
-    return new Promise((resolve, reject) => {
-      const timer = this.clock.setTimeout(() => {
-        this.pending.delete(id)
-        reject(new PiTransportError("timeout", `Pi ${type} timed out`))
-      }, timeoutMs)
-      this.pending.set(id, { command: type, resolve, reject, timer })
-      try { this.send({ type, id, ...body }) }
-      catch (error) { this.pending.delete(id); this.clock.clearTimeout(timer); reject(error) }
-    })
-  }
-
-  private fail(error: Error): void {
-    if (this.failed) return
-    this.failed = error
-    for (const pending of this.pending.values()) {
-      this.clock.clearTimeout(pending.timer)
-      pending.reject(error)
-    }
-    this.pending.clear()
-    for (const listener of this.failures) listener(error)
+    return this.pending.request(id, type, timeoutMs, () => new TransportError("pi", "timeout", `Pi ${type} timed out`),
+      () => this.send({ type, id, ...body }))
   }
 
   retire(deadline: Deadline): Promise<void> {
-    if (!this.retirement) {
-      const attempt = this.retireOnce(deadline)
-      this.retirement = attempt
-      void attempt.then(undefined, () => {
-        if (this.retirement === attempt) this.retirement = undefined
-      })
-    }
-    return this.retirement
-  }
-
-  private async retireOnce(deadline: Deadline): Promise<void> {
-    this.fail(new PiTransportError("process", "Pi process retired"))
-    const outcome = await this.process.retire(deadline)
-    if (!outcome.stopped) throw new PiTransportError("retirement", outcome.error.message)
+    this.channel.fail(new TransportError("pi", "process", "Pi process retired"), false)
+    return this.process.retire(deadline).then((outcome) => {
+      if (!outcome.stopped) throw new TransportError("pi", "retirement", outcome.error.message)
+    })
   }
 }

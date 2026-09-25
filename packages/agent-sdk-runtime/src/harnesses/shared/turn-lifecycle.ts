@@ -1,4 +1,4 @@
-import type { RequestDeadline } from "@claxedo/process-ownership/launch"
+import type { RequestDeadline } from "@claxedo/helpers"
 import type { TurnStopRecord } from "./cancellation-facts"
 
 export type TrackedTurn = {

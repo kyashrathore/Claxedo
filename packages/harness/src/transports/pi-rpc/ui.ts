@@ -1,4 +1,4 @@
-import type { RoutedEvent, TurnBroker } from "../../contract"
+import { requestQuestionAnswers, questionRequest, type RoutedEvent, type TurnBroker } from "../../contract"
 import type { PiMessage, PiRpc } from "./rpc"
 
 const dialogs = ["select", "confirm", "input", "editor"]
@@ -34,19 +34,19 @@ export async function answerPiDialog(message: PiMessage, rpc: PiRpc, broker: Tur
   const options = message.method === "confirm" ? ["Yes", "No"] : choices
   const timeout = typeof message.timeout === "number" && message.timeout >= 0 ? now + message.timeout : undefined
   const questionText = [message.title, message.message].find((value): value is string => typeof value === "string") ?? "Pi extension"
-  const answer = await broker.ask({
-    kind: "question", requestId: message.id, expiresAt: timeout,
-    question: { id: message.id, sessionID: sessionId, questions: [{
+  const answers = requestQuestionAnswers(await broker.ask(questionRequest({
+    requestId: message.id, sessionId, expiresAt: timeout,
+    questions: [{
       header: "Pi", question: questionText,
       options: options?.map((label) => ({ label, description: "" })) ?? [],
       custom: message.method === "input" || message.method === "editor",
-    }] },
-  })
-  if (answer.kind !== "answers") {
+    }],
+  })))
+  if (!answers) {
     rpc.send({ type: "extension_ui_response", id: message.id, cancelled: true })
     return
   }
-  const value = answer.answers[0]?.[0]
+  const value = answers[0]?.[0]
   if (message.method === "confirm") rpc.send({ type: "extension_ui_response", id: message.id, confirmed: value === "Yes" })
   else if (typeof value === "string") rpc.send({ type: "extension_ui_response", id: message.id, value })
   else rpc.send({ type: "extension_ui_response", id: message.id, cancelled: true })

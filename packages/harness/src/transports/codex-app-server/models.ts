@@ -2,6 +2,7 @@ import type { AgentConfigOption } from "@claxedo/agent-runtime-contract"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import type { v2 } from "@claxedo/agent-event-runtime/harnesses/codex"
 import { CodexTransportError } from "./errors"
+import { modelAndEffortOptions } from "../../contract"
 import type { CodexRpc } from "./rpc"
 
 export type CodexModel = {
@@ -56,12 +57,11 @@ function selectedModel(models: readonly CodexModel[], id: string | undefined): C
 export function codexModelOptions(models: readonly CodexModel[], requested: string | undefined): AgentConfigOption[] {
   const selected = selectedModel(models, requested) ?? selectedModel(models, undefined)
   if (!selected) return []
-  const options: AgentConfigOption[] = [{ id: "model", name: "Model", category: "model", type: "select",
-    currentValue: selected.id, selectOptions: models.filter((model) => !model.hidden || model.id === selected.id)
-      .map((model) => ({ id: model.id, name: model.name, ...(model.description ? { description: model.description } : {}) })) }]
-  if (selected.efforts.length > 1) options.push({ id: "effort", name: "Effort", category: "thought_level", type: "select",
-    ...(selected.defaultEffort && selected.efforts.includes(selected.defaultEffort) ? { currentValue: selected.defaultEffort } : {}),
-    selectOptions: selected.efforts.map((id) => ({ id, name: id.charAt(0).toUpperCase() + id.slice(1) })) })
+  const options = modelAndEffortOptions({ selected: selected.id,
+    models: models.filter((model) => !model.hidden || model.id === selected.id)
+      .map((model) => ({ id: model.id, name: model.name, ...(model.description ? { description: model.description } : {}) })),
+    efforts: selected.efforts,
+    currentEffort: selected.defaultEffort && selected.efforts.includes(selected.defaultEffort) ? selected.defaultEffort : undefined })
   if (selected.tiers.length) options.push({ id: "service_tier", name: "Speed", category: "service_tier", type: "select",
     selectOptions: selected.tiers })
   return options

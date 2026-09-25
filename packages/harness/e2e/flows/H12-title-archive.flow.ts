@@ -22,6 +22,9 @@ export async function titleAndArchive(stack: Stack, api: ClaxedoApi, name: "acp"
   const firstMessages = await api.messages(directory, session.id)
   assert.match(assistantText(firstMessages), new RegExp(first))
   const firstAssistantId = firstMessages.filter((message) => message.info.role === "assistant").at(-1)?.info.id
+  if (name === "pi") await stream.waitFor((frame) => frameType(frame) === "session.updated" && frameSessionId(frame) === session.id
+    && (frame.data.payload as { properties?: { info?: { titleSource?: string } } }).properties?.info?.titleSource === "harness",
+  { label: `${name} first title` })
   const titled = await api.session(directory, session.id)
   assert.ok(titled.title, `${name} first turn produced no title`)
   assert.ok(stream.frames.some((frame) => frameType(frame) === "session.updated" && frameSessionId(frame) === session.id), `${name} title was not streamed`)

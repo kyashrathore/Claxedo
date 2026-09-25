@@ -25,13 +25,9 @@ export async function run() {
     const pid = Number(await fs.readFile(path.join(stack.acp.scriptDir, "agent.pid"), "utf8"))
     assert.ok(Number.isSafeInteger(pid) && pid > 0)
     process.kill(pid, "SIGKILL")
-    const deadline = Date.now() + 20_000
-    let outcome: string | undefined
-    while (Date.now() < deadline) {
-      outcome = (await api.session(workspace.directory, session.id)).lastTurn?.status
-      if (outcome === "failed") break
-      await new Promise((resolve) => setTimeout(resolve, 50))
-    }
+    await stream.waitFor((frame) => frameType(frame) === "session.error" && frameSessionId(frame) === session.id,
+      { label: "H9 failed turn after process death", timeoutMs: 20_000 })
+    const outcome = (await api.session(workspace.directory, session.id)).lastTurn?.status
     assert.equal(outcome, "failed", `harness death did not store a failed turn: ${stack.daemon.log()}`)
     const first = await api.messages(workspace.directory, session.id)
     assert.match(assistantText(first), /H9 live before process death/)

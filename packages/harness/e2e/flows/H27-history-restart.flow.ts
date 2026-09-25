@@ -45,6 +45,9 @@ async function createHistory(stack: Stack, api: ClaxedoApi, name: "acp" | "pi" |
     assert.ok(todos.some((todo) => todo.content.includes(expected)), `${name} todo was not stored: ${JSON.stringify(todos)}`)
     assert.ok(stream.frames.some((frame) => frameType(frame) === "todo.updated" && frameSessionId(frame) === session.id), `${name} todo was not streamed`)
   }
+  if (name === "pi") await stream.waitFor((frame) => frameType(frame) === "session.updated" && frameSessionId(frame) === session.id
+    && (frame.data.payload as { properties?: { info?: { titleSource?: string } } }).properties?.info?.titleSource === "harness",
+  { label: "Pi history title" })
   assert.equal((await api.session(directory, session.id)).id, session.id)
   stream.close()
   console.log(`H27 ${name}: live and stored history${todos ? " and todos" : ""} prepared`)

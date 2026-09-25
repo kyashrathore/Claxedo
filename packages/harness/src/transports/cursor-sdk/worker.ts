@@ -1,4 +1,5 @@
 import { MessagePort, workerData } from "node:worker_threads"
+import { errorMessage } from "@claxedo/helpers"
 import type { Run, SDKAgent } from "@cursor/sdk"
 import type { WorkerCommand, WorkerReply, WorkerSession } from "./protocol"
 
@@ -58,7 +59,7 @@ class CursorWorkerRuntime {
         this.post({ id: command.id, kind: "result" })
       }
     } catch (error) {
-      this.post({ id: command.id, kind: "error", message: error instanceof Error ? error.message : String(error) })
+      this.post({ id: command.id, kind: "error", message: errorMessage(error) })
     }
   }
 }

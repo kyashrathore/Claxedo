@@ -1,5 +1,6 @@
 import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
 import { asRecord, asRecordOrEmpty } from "@claxedo/helpers/guards"
+import { errorMessage } from "@claxedo/helpers"
 import type { ProjectedEvent } from "../event-pump.js"
 
 export function eventSessionID(event: ProjectedEvent): string | undefined {
@@ -19,7 +20,7 @@ export function terminal(event: ProjectedEvent, sessionID: string): AgentRuntime
   if (event.type === "session.execution.interrupted") return { type: "finish", sessionId: sessionID, harness: "opencode" }
   if (event.type === "session.execution.failed") {
     const error = data.error
-    const reason = error instanceof Error ? error.message : typeof error === "string" ? error : JSON.stringify(error)
+    const reason = errorMessage(error)
     return { type: "error", error: reason || "OpenCode execution failed", harness: "opencode" }
   }
   return undefined

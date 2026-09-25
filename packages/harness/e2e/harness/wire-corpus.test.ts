@@ -1,0 +1,124 @@
+import { expect, test } from "bun:test"
+import { comparisonShape, difference, frameEntity, latestStatusSubject, normalizeWireCorpus } from "./wire-corpus"
+
+test("wire normalization preserves cross-channel identity, state, phase and order", () => {
+  const result = normalizeWireCorpus({
+    frames: [
+      { id: "message.part.updated:ses_11111111:000001_call_aaaaaaaa", phase: "running", observedAt: 1790000000000 },
+      { id: "message.part.updated:ses_11111111:000001_call_aaaaaaaa", state: "needs_action" },
+    ],
+    stored: { sessionID: "ses_11111111", tool: "call_aaaaaaaa", connectionId: "scripted-acp", modelId: "claude-sonnet-4.5", state: "failed", phase: "settled" },
+  }) as { frames: Array<{ id: string; phase?: string; state?: string; observedAt?: string }>; stored: { sessionID: string; tool: string; connectionId: string; modelId: string; state: string; phase: string } }
+  expect(result.frames[0]?.id).toBe(result.frames[1]?.id)
+  expect(result.frames[0]?.id).toContain(result.stored.sessionID)
+  expect(result.frames[0]?.id).toContain(result.stored.tool)
+  expect(result.frames[0]?.phase).toBe("running")
+  expect(result.frames[1]?.state).toBe("needs_action")
+  expect(result.stored.state).toBe("failed")
+  expect(result.stored.phase).toBe("settled")
+  expect(result.stored.connectionId).toBe("scripted-acp")
+  expect(result.stored.modelId).toBe("claude-sonnet-4.5")
+  expect(result.frames[0]?.observedAt).toBe("<time>")
+})
+
+test("wire normalization keeps temporary runtime identities linked", () => {
+  const result = normalizeWireCorpus({
+    live: { pid: 12345, subagent: "subagent_aaaaaaaa", socket: "/tmp/cc-socks/12345.sock", id: "goal.updated:ses_11111111:1790000000000" },
+    stored: { processId: "12345", subagent: "subagent_aaaaaaaa", socket: "/tmp/cc-socks/12345.sock", id: "goal.updated:ses_11111111:1790000000000", error: "Could not read pid 12345: ps -p 12345" },
+  }) as { live: { pid: string; subagent: string; socket: string; id: string }; stored: { processId: string; subagent: string; socket: string; id: string; error: string } }
+  expect(result.live.pid).toBe(result.stored.processId)
+  expect(result.live.subagent).toBe(result.stored.subagent)
+  expect(result.live.socket).toBe(result.stored.socket)
+  expect(result.live.id).toBe(result.stored.id)
+  expect(result.stored.error).toContain(`pid ${result.live.pid}`)
+  expect(result.stored.error).toContain(`-p ${result.live.pid}`)
+})
+
+test("goal event IDs normalize their embedded second timestamps", () => {
+  const first = normalizeWireCorpus({ id: "goal.updated:ses_11111111:1790334985" })
+  const second = normalizeWireCorpus({ id: "goal.updated:ses_11111111:1790337074" })
+  expect(first).toEqual(second)
+})
+
+test("state and phase values remain literal even when numeric", () => {
+  expect(normalizeWireCorpus({ state: 1790000000000, phase: 1790000000000, observedAt: 1790000000000 }))
+    .toEqual({ state: 1790000000000, phase: 1790000000000, observedAt: "<time>" })
+})
+
+test("frame comparison keeps order inside an entity and accepts cross-entity interleaving", () => {
+  const session = (id: string, phase: string) => ({ data: { payload: { type: "session.lifecycle", sessionID: id, phase } } })
+  const frames = [session("ses_11111111", "creating"), session("ses_22222222", "creating"),
+    session("ses_11111111", "created"), session("ses_22222222", "created")]
+  const shaped = (value: unknown[]) => comparisonShape([{ kind: "stream", route: "/events", frames: value }])
+  expect(difference(shaped(frames), shaped([frames[1], frames[0], frames[3], frames[2]]))).toBeUndefined()
+  expect(difference(shaped(frames), shaped([frames[2], frames[1], frames[0], frames[3]]))).toContain("phase")
+  expect(difference(shaped(frames), shaped([frames[0], frames[1], frames[2]]))).toContain("frames")
+  const diagnostic = { data: { payload: { type: "runtime.diagnostic", properties: { sessionID: "ses_11111111", code: "unmapped_event" } } } }
+  expect(difference(shaped([frames[0], diagnostic]), shaped([diagnostic, frames[0]]))).toContain("type")
+  expect(difference(shaped(frames), shaped([{ data: { type: "heartbeat" } }, ...frames]))).toBeUndefined()
+  expect(frameEntity(frames[0])).toBe("session:ses_11111111")
+})
+
+test("frame comparison keys messages, parts, requests and children separately", () => {
+  const frame = (type: string, properties: Record<string, unknown>) => ({ data: { payload: { type, properties } } })
+  expect(frameEntity(frame("message.updated", { info: { id: "msg_1" }, sessionID: "ses_1" }))).toBe("message:msg_1")
+  expect(frameEntity(frame("message.part.updated", { part: { id: "prt_1" }, sessionID: "ses_1" }))).toBe("part:prt_1")
+  expect(frameEntity(frame("permission.asked", { id: "per_1", sessionID: "ses_1" }))).toBe("permission:per_1")
+  expect(frameEntity(frame("question.replied", { requestID: "que_1", sessionID: "ses_1" }))).toBe("question:que_1")
+  expect(frameEntity(frame("subagent.updated", { update: { sessionID: "ses_child" }, sessionID: "ses_parent" }))).toBe("child:ses_child")
+  expect(frameEntity(frame("runtime.diagnostic", { sessionID: "ses_1", code: "unmapped_event" }))).toBe("session:ses_1")
+})
+
+test("vendor status comparison keeps only the final value per subject", () => {
+  const status = (value: string, server = "claxedo") => ({ data: { payload: { type: "runtime.diagnostic", properties: {
+    sessionID: "ses_11111111", code: "runtime.mcp_server_status", mcp: { serverName: server, status: value },
+  } } } })
+  const shaped = (frames: unknown[]) => comparisonShape([{ kind: "stream", route: "/events", frames }])
+  const baseline = shaped([status("starting"), status("ready"), status("ready", "other")])
+  expect(difference(baseline, shaped([status("ready"), status("ready", "other")]))).toBeUndefined()
+  expect(difference(baseline, shaped([status("starting"), status("failed"), status("ready", "other")]))).toContain("failed")
+  expect(latestStatusSubject(status("ready"))).toBe("runtime.mcp_server_status:claxedo")
+})
+
+test("latest-status subjects separate server, native event kind, and rate limit", () => {
+  const diagnostic = (code: string, properties: Record<string, unknown>) => ({ data: { payload: {
+    type: "runtime.diagnostic", properties: { sessionID: "ses_11111111", code, ...properties },
+  } } })
+  expect(latestStatusSubject(diagnostic("claude_sdk.unmapped_event", {
+    diagnostic: { method: "claude/system", raw: { type: "system", subtype: "init" } },
+  }))).toBe("claude_sdk.unmapped_event:claude/system:init")
+  expect(latestStatusSubject(diagnostic("codex_app_server.unmapped_event", {
+    diagnostic: { method: "thread/settings/updated", raw: {} },
+  }))).toBe("codex_app_server.unmapped_event:thread/settings/updated:")
+  expect(latestStatusSubject(diagnostic("runtime.rate_limit", {
+    rateLimit: { limitId: "codex" },
+  }))).toBe("runtime.rate_limit:codex")
+  expect(latestStatusSubject(diagnostic("pi.retry", {}))).toBeUndefined()
+})
+
+test("an extra ID in one entity does not renumber another entity", () => {
+  const frame = (sessionID: string, value: Record<string, unknown>) => ({ data: { payload: { type: "session.updated", properties: { sessionID, ...value } } } })
+  const shaped = (first: Record<string, unknown>) => comparisonShape([{ kind: "stream", route: "/events", frames: [
+    frame("ses_11111111", first), frame("ses_22222222", { info: { id: "msg_22222222" } }),
+  ] }]) as Array<{ entities: Array<{ key: string; frames: unknown[] }> }>
+  expect(shaped({ info: { id: "msg_11111111" } })[0]?.entities[1]).toEqual(
+    shaped({ unrelatedId: "req_aaaaaaaa", info: { id: "msg_11111111" } })[0]?.entities[1],
+  )
+})
+
+test("generated workspace IDs match across relay routes, queries, and payloads while route shape stays literal", () => {
+  const workspace = "ws_muh7abhv_bq6dxzpr13qrxyp9"
+  const other = "ws_muh7as9k_hajsh1bg13qrxyp9"
+  const observations = (id: string, route = "/api/wr/events") => comparisonShape([
+    { kind: "stream", route: `/workspaces/${id}${route}?workspaceId=${id}`, frames: [] },
+    { kind: "http", method: "GET", route: `/api/workspace/resolve?workspaceId=${id}`, status: 200, body: { workspaceId: id } },
+  ]) as Array<{ route: string; body?: { workspaceId: string } }>
+  const expected = observations(workspace)
+  const actual = observations(other)
+  expect(difference(expected, actual)).toBeUndefined()
+  const placeholder = actual[1]?.body?.workspaceId
+  expect(placeholder).toBeDefined()
+  expect(actual[0]?.route).toContain(`/workspaces/${placeholder}/`)
+  expect(actual[0]?.route).toContain(`workspaceId=${placeholder}`)
+  expect(difference(expected, observations(other, "/api/wr/renamed-events"))).toContain("route")
+})

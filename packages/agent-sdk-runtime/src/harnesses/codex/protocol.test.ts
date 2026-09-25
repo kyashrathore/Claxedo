@@ -6,7 +6,7 @@ import { removeTestTempDir } from "../shared/test-temp-dir"
 import { codexUserInput, codexSteerTurn, createCodexTurnStop } from "./protocol"
 import { createTurnStopRecord } from "../shared/cancellation-facts"
 import type { CodexAppServerProcess } from "./app-server-process"
-import type { RequestDeadline } from "@claxedo/process-ownership/launch"
+import type { RequestDeadline } from "@claxedo/helpers"
 
 const imagePart = {
   type: "file",

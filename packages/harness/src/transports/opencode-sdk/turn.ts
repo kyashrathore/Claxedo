@@ -1,66 +1,49 @@
 import { asRecordOrEmpty } from "@claxedo/helpers/guards"
-import { errorMessage } from "@claxedo/helpers"
+import { AsyncPushQueue, errorMessage } from "@claxedo/helpers"
 import type { RoutedEvent, StartInput, TurnBroker, TurnInput } from "../../contract"
 import type { ProjectedEvent } from "./event-pump"
-import { OpenCodeTransportError } from "./errors.js"
+import { TransportError } from "../../contract/errors.js"
 import type { OpenCodeRuntime } from "./runtime"
 import type { WorkspaceScope } from "./scope"
 import { assertProviderAvailable } from "./credentials.js"
 import { eventAssistantMessageID, eventSessionID, projectTurnEvent, terminal } from "./translate/event.js"
 import { createTurnUsage, readSessionTotal } from "./translate/turn-usage.js"
 import { answerOpenCodeRequest } from "./requests.js"
+import { flattenTurnPrompt } from "../../translate/prompt"
 
 export type OpenCodeTurnState = { start: StartInput; scope: WorkspaceScope; upstream: string;
   active: boolean; assistantMessageID?: string }
 
-export class TurnEvents {
-  private readonly values: Array<ProjectedEvent | Error> = []
-  private readonly waiters: Array<(value: ProjectedEvent | Error) => void> = []
-
-  push(value: ProjectedEvent | Error): void {
-    const waiter = this.waiters.shift()
-    if (waiter) waiter(value)
-    else this.values.push(value)
-  }
-
-  async next(): Promise<ProjectedEvent> {
-    const value = this.values.shift() ?? await new Promise<ProjectedEvent | Error>((resolve) => this.waiters.push(resolve))
-    if (value instanceof Error) throw value
-    return value
-  }
-}
-
 export function promptRequest(turn: TurnInput) {
-  const texts: string[] = []
   const files: Array<{ ref: string; name?: string }> = []
   for (const part of turn.prompt.parts) {
     const row = asRecordOrEmpty(part)
-    if (row.type === "text" && typeof row.text === "string") texts.push(row.text)
-    else if (row.type === "file" && typeof row.url === "string") {
+    if (row.type === "text" && typeof row.text === "string") continue
+    if (row.type === "file" && typeof row.url === "string") {
       files.push({ ref: row.url, ...(typeof row.filename === "string" ? { name: row.filename } : {}) })
-    } else throw new OpenCodeTransportError("configuration", `OpenCode prompt part ${String(row.type)} has no mapping`)
+    } else throw new TransportError("opencode", "configuration", `OpenCode prompt part ${String(row.type)} has no mapping`)
   }
-  return { text: [turn.system, texts.join("\n")].filter(Boolean).join("\n\n"),
+  return { text: flattenTurnPrompt(turn, { system: "turn", separator: "\n" }),
     ...(files.length ? { files } : {}), delivery: "steer" as const }
 }
 
 export function route(event: RoutedEvent["event"]): RoutedEvent { return { event } }
 
-function listenOpenCodeEvents(runtime: OpenCodeRuntime, state: OpenCodeTurnState, broker: TurnBroker, queue: TurnEvents): () => void {
+function listenOpenCodeEvents(runtime: OpenCodeRuntime, state: OpenCodeTurnState, broker: TurnBroker, queue: AsyncPushQueue<ProjectedEvent>): () => void {
   return runtime.events.subscribe((event) => {
     const owner = event.type === "form.created"
       ? asRecordOrEmpty(asRecordOrEmpty(event.data).form).sessionID : eventSessionID(event)
     if (owner !== state.upstream || (event.directory && event.directory !== state.scope.directory)) return
     if (event.type === "permission.asked" || event.type === "form.created") {
       void answerOpenCodeRequest(event, runtime, state.scope, broker, state.start.sessionId).catch((error: unknown) =>
-        queue.push(error instanceof Error ? error : new OpenCodeTransportError("request", String(error))))
+        queue.fail(error instanceof Error ? error : new TransportError("opencode", "request", errorMessage(error))))
     } else queue.push(event)
   })
 }
 
 async function admitOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnState, turn: TurnInput): Promise<ReturnType<typeof createTurnUsage>> {
   const model = turn.model ?? state.start.config.model
-  if (!model) throw new OpenCodeTransportError("configuration", "OpenCode turn requires a resolved model")
+  if (!model) throw new TransportError("opencode", "configuration", "OpenCode turn requires a resolved model")
   assertProviderAvailable(state.start.credentials, model.providerID)
   await runtime.providersBound()
   await runtime.events.ready()
@@ -73,10 +56,10 @@ async function admitOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnSt
   return usage
 }
 
-async function* streamOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnState, queue: TurnEvents,
+async function* streamOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnState, queue: AsyncPushQueue<ProjectedEvent>,
   usage: ReturnType<typeof createTurnUsage>): AsyncIterable<RoutedEvent> {
   while (true) {
-    const event = await queue.next()
+    const event = await queue.take()
     state.assistantMessageID = eventAssistantMessageID(event) ?? state.assistantMessageID
     const ended = terminal(event, state.upstream)
     if (ended) {
@@ -93,9 +76,9 @@ async function* streamOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurn
 
 export async function* runOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnState, turn: TurnInput,
   broker: TurnBroker): AsyncIterable<RoutedEvent> {
-  if (state.active) throw new OpenCodeTransportError("session", "OpenCode session already has an active turn")
+  if (state.active) throw new TransportError("opencode", "session", "OpenCode session already has an active turn")
   state.active = true
-  const queue = new TurnEvents()
+  const queue = new AsyncPushQueue<ProjectedEvent>()
   const unsubscribe = listenOpenCodeEvents(runtime, state, broker, queue)
   try {
     const usage = await admitOpenCodeTurn(runtime, state, turn)

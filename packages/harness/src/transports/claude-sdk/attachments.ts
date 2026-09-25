@@ -3,7 +3,9 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { TurnInput } from "../../contract"
-import { ClaudeTransportError } from "./errors"
+import { TransportError } from "../../contract/errors"
+import { inside } from "@claxedo/helpers/path"
+import { inlineDataUrl, flattenTurnPrompt } from "../../translate/prompt"
 
 type Block = Exclude<SDKUserMessage["message"]["content"], string>[number]
 const images = ["image/gif", "image/jpeg", "image/png", "image/webp"] as const
@@ -16,9 +18,9 @@ async function writeAttachment(directory: string, file: { bytes: Buffer; filenam
     if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined
     throw error
   })
-  if (parentStat?.isSymbolicLink()) throw new ClaudeTransportError("configuration", "Claude attachment directory escapes workspace")
+  if (parentStat?.isSymbolicLink()) throw new TransportError("claude", "configuration", "Claude attachment directory escapes workspace")
   await fs.mkdir(folder, { recursive: true, mode: 0o700 })
-  if (!(await fs.realpath(folder)).startsWith(root + path.sep)) throw new ClaudeTransportError("configuration", "Claude attachment directory escapes workspace")
+  if (!inside(root, await fs.realpath(folder))) throw new TransportError("claude", "configuration", "Claude attachment directory escapes workspace")
   try { await fs.writeFile(path.join(folder, ".gitignore"), "*\n", { flag: "wx", mode: 0o600 }) }
   catch (error) { if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error }
   const digest = createHash("sha256").update(file.bytes).digest("hex").slice(0, 12)
@@ -28,23 +30,22 @@ async function writeAttachment(directory: string, file: { bytes: Buffer; filenam
   catch (error) {
     if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error
     const existing = await fs.lstat(target)
-    if (!existing.isFile() || !(await fs.readFile(target)).equals(file.bytes)) throw new ClaudeTransportError("configuration", "Claude attachment target changed")
+    if (!existing.isFile() || !(await fs.readFile(target)).equals(file.bytes)) throw new TransportError("claude", "configuration", "Claude attachment target changed")
   }
   return target
 }
 
 export async function claudePrompt(turn: TurnInput, directory: string): Promise<SDKUserMessage> {
-  const text = [turn.prompt.system, ...turn.prompt.parts.filter((part) => part.type === "text").map((part) => part.text)]
-    .filter(Boolean).join("\n\n")
+  const text = flattenTurnPrompt(turn, { system: "prompt", separator: "\n\n" })
   const blocks: Block[] = []
   const paths: string[] = []
   const files = turn.prompt.parts.filter((part) => part.type === "file").map((part) => {
-    const matched = /^data:([^;,]+);base64,([A-Za-z0-9+/=]+)$/.exec(part.url)
-    if (!matched) throw new ClaudeTransportError("configuration", "Claude cannot deliver this file URL")
-    const mime = part.mime || matched[1]!
-    const bytes = Buffer.from(matched[2]!, "base64")
-    if (bytes.length > 32 * 1024 * 1024) throw new ClaudeTransportError("configuration", "Claude attachment exceeds 32 MiB")
-    return { mime, bytes, base64: matched[2]!, filename: part.filename }
+    const data = inlineDataUrl(part.url, { imageOnly: false, strictBase64: true })
+    if (!data) throw new TransportError("claude", "configuration", "Claude cannot deliver this file URL")
+    const mime = part.mime || data.mimeType
+    const bytes = Buffer.from(data.data, "base64")
+    if (bytes.length > 32 * 1024 * 1024) throw new TransportError("claude", "configuration", "Claude attachment exceeds 32 MiB")
+    return { mime, bytes, base64: data.data, filename: part.filename }
   })
   for (const file of files) {
     const target = await writeAttachment(directory, file)

@@ -1,24 +1,20 @@
 import type { HarnessServices } from "../../contract"
 import { AcpTransportError } from "./errors"
+import { HoldableCountdown } from "@claxedo/helpers"
 
 export class AcpStartupDeadline {
-  private phase: "active" | "held" | "expired" | "settled" = "active"
-  private holds = 0
-  private handle?: unknown
+  private readonly countdown: HoldableCountdown
   private readonly timeout: Promise<never>
 
-  constructor(private readonly clock: HarnessServices["clock"], private readonly ms: number, operation: string) {
-    this.timeout = new Promise((_, reject) => {
-      this.expire = () => { this.phase = "expired"; reject(new AcpTransportError("timeout", `ACP ${operation} timed out`)) }
-    })
-    this.schedule()
+  constructor(clock: HarnessServices["clock"], ms: number, operation: string) {
+    let rejectTimeout!: (error: Error) => void
+    this.timeout = new Promise((_, reject) => { rejectTimeout = reject })
+    this.countdown = new HoldableCountdown(clock, ms, () => rejectTimeout(new AcpTransportError("timeout", `ACP ${operation} timed out`)))
   }
-
-  private expire: () => void = () => {}
 
   async run<T>(work: Promise<T>): Promise<T> {
     try { return await Promise.race([work, this.timeout]) }
-    finally { this.phase = "settled"; this.clear() }
+    finally { this.countdown.dispose() }
   }
 
   async request<T>(work: () => T | Promise<T>): Promise<T> {
@@ -27,24 +23,5 @@ export class AcpStartupDeadline {
     finally { release() }
   }
 
-  hold(): () => void {
-    if (this.phase !== "active" && this.phase !== "held") return () => {}
-    this.holds++
-    this.phase = "held"
-    this.clear()
-    let released = false
-    return () => {
-      if (released) return
-      released = true
-      this.holds--
-      if (this.holds === 0 && this.phase === "held") { this.phase = "active"; this.schedule() }
-    }
-  }
-
-  private schedule(): void { this.handle = this.clock.setTimeout(this.expire, this.ms) }
-
-  private clear(): void {
-    if (this.handle !== undefined) this.clock.clearTimeout(this.handle)
-    this.handle = undefined
-  }
+  hold(): () => void { return this.countdown.hold() }
 }
