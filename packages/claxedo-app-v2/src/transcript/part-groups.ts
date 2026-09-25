@@ -3,8 +3,8 @@ import { asRecord } from "@claxedo/helpers/guards"
 import { claxedoToolName } from "./claxedo-tool-view"
 
 export type PartRef = {
-  messageID: string
-  partID: string
+  messageId: string
+  partId: string
 }
 
 export type WorkGroupTool = "bash" | "edit" | "webfetch"
@@ -32,7 +32,7 @@ export type PartGroup =
       refs: PartRef[]
     }
 
-export type GroupablePart = { messageID: string; part: AgentContentPart }
+export type GroupablePart = { messageId: string; part: AgentContentPart }
 
 export const CONTEXT_GROUP_TOOLS = new Set(["read", "glob", "grep", "list"])
 
@@ -96,7 +96,7 @@ export function isSubagentHostPart(part: AgentContentPart): boolean {
 }
 
 function partRef(item: GroupablePart): PartRef {
-  return { messageID: item.messageID, partID: item.part.id }
+  return { messageId: item.messageId, partId: item.part.id }
 }
 
 function workGroupTool(slice: GroupablePart[]): WorkGroupTool {
@@ -143,7 +143,7 @@ export function groupParts(input: GroupablePart[]) {
         refs: slice.map(partRef),
       })
     } else {
-      result.push({ key: `part:${first.messageID}:${first.part.id}`, type: "part", ref: partRef(first) })
+      result.push({ key: `part:${first.messageId}:${first.part.id}`, type: "part", ref: partRef(first) })
     }
     workStart = -1
   }
@@ -189,7 +189,7 @@ export function groupParts(input: GroupablePart[]) {
     flushContext(index - 1)
     flushWork(index - 1)
     flushTask(index - 1)
-    result.push({ key: `part:${item.messageID}:${item.part.id}`, type: "part", ref: partRef(item) })
+    result.push({ key: `part:${item.messageId}:${item.part.id}`, type: "part", ref: partRef(item) })
   })
 
   flushContext(parts.length - 1)
@@ -199,7 +199,7 @@ export function groupParts(input: GroupablePart[]) {
 }
 
 function sameRef(a: PartRef, b: PartRef) {
-  return a.messageID === b.messageID && a.partID === b.partID
+  return a.messageId === b.messageId && a.partId === b.partId
 }
 
 function sameRefs(a: PartRef[], b: PartRef[]) {

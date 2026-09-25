@@ -73,6 +73,7 @@ const en = {
   "rail.terminal.working": "working",
   "rail.terminal.needsInput": "needs input",
   "rail.terminal.failed": "failed",
+  "rail.terminal.done": "done",
   "rail.closeTab": "Close {{title}}",
   "rail.global": "Global",
   "rail.untitled": "Untitled session",

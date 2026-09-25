@@ -1,4 +1,4 @@
-import type { Server } from "@/server"
+import type { HarnessOptions, ModelChoice, Server } from "@/server"
 import { createHarnessConnectionsCatalog } from "./connection-catalog"
 import { createHarnessOptionsLoader, type HarnessOptionsLoaderCache } from "./harness-options-loader"
 import { createHarnessHydrator, type HarnessHydratorCache } from "./harness-hydrator"
@@ -7,27 +7,13 @@ import { createHarnessModelWriter, type HarnessSessionModelSyncCache, type Sessi
 import { createHarnessStore } from "./harness-store"
 import { createHarnessStatusActions } from "./harness-status-actions"
 import type { HarnessScopeInput } from "./store-policy"
-import { decodeHarnessState, harnessHasConfigOptions, harnessSelectionId, isCatalogHarness } from "./profile"
+import { harnessHasConfigOptions, harnessSelectionId, isCatalogHarness } from "./profile"
 import { harnessHealthReadiness } from "./store-state"
-import type { HarnessType, OptionsResponse } from "./profile"
+import type { HarnessType } from "./profile"
 import type { DraftDefaultLabels, DraftDefaultStorage } from "./draft-defaults"
-import type { ModelKey } from "./model-key"
 import type { ResolveDraftDefaultInput } from "./draft-default-policy"
 
 type ScopeInput = HarnessScopeInput
-
-function record(value: unknown): Record<string, unknown> | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
-  return Object.fromEntries(Object.entries(value))
-}
-
-async function errorMessage(res: Response, fallback: string) {
-  const body = record(await res.json().catch(() => undefined))
-  if (typeof body?.error === "string") return body.error
-  const error = record(body?.error)
-  if (typeof error?.message === "string") return error.message
-  return fallback
-}
 
 function pendingSlots<Value>() {
   const slots = new Map<string, Value>()
@@ -107,7 +93,7 @@ export function createHarnessConfigStore(server: Server, storage: DraftDefaultSt
 
   const optionsLoader = createHarnessOptionsLoader<ScopeInput>({
     fetch: (type, params, model) => {
-      if (!params?.placementId) return Promise.resolve(Response.json({ options: [], source: "empty", stale: false } satisfies OptionsResponse))
+      if (!params?.placementId) return Promise.resolve({ source: "empty", stale: false, offersOptions: false, serviceTiers: [] })
       return api.options({
         placementId: params.placementId,
         harness: harnessSelectionId(type),
@@ -129,7 +115,6 @@ export function createHarnessConfigStore(server: Server, storage: DraftDefaultSt
       const state = harnessStore.state(scope)
       return state ? { readiness: state.readiness, configError: state.configError } : undefined
     },
-    errorMessage,
     cache: caches.options,
   })
 
@@ -140,7 +125,7 @@ export function createHarnessConfigStore(server: Server, storage: DraftDefaultSt
     scope: string,
     type: HarnessType,
     input?: ScopeInput,
-  ): Promise<OptionsResponse | undefined> {
+  ): Promise<HarnessOptions | undefined> {
     return optionsLoader.load(scope, type, harnessStore.heldHarness(scope) && input ? { ...input, sessionId: undefined } : input)
   }
 
@@ -182,7 +167,7 @@ export function createHarnessConfigStore(server: Server, storage: DraftDefaultSt
     currentModel: (scope) => {
       const state = harnessStore.state(scope)
       return state?.selectedModel && state.selectedModelProvider
-        ? { providerID: state.selectedModelProvider, modelID: state.selectedModel }
+        ? { providerId: state.selectedModelProvider, modelId: state.selectedModel }
         : undefined
     },
     setSelectedModel: harnessStore.setSelectedModel,
@@ -196,7 +181,7 @@ export function createHarnessConfigStore(server: Server, storage: DraftDefaultSt
       rememberDraftModel(scope, model, input, labels)
     },
     runtime: {
-      setSessionModel: (ref, model) => api.updateSessionConfig(ref, { model: { providerID: model.providerID, modelID: model.modelID } }),
+      setSessionModel: (ref, model) => api.updateSessionConfig(ref, { model: { providerId: model.providerId, modelId: model.modelId } }),
     },
     cache: caches.sessionModel,
   })
@@ -235,13 +220,13 @@ export function createHarnessConfigStore(server: Server, storage: DraftDefaultSt
   const rememberDraftHarness = (scope: string, type: HarnessType, input?: ScopeInput) => {
     const identity = draftDefaultIdentity(input)
     if (!identity) return false
-    return harnessStore.rememberDraftHarness(scope, identity, type)
+    return harnessStore.rememberDraftHarness(scope, identity, type, input?.saveDraftDefault !== false)
   }
 
-  const rememberDraftModel = (scope: string, model: ModelKey, input?: ScopeInput, labels?: DraftDefaultLabels) => {
+  const rememberDraftModel = (scope: string, model: ModelChoice, input?: ScopeInput, labels?: DraftDefaultLabels) => {
     const identity = draftDefaultIdentity(input)
     if (!identity) return false
-    return harnessStore.rememberDraftModel(scope, identity, model, labels)
+    return harnessStore.rememberDraftModel(scope, identity, model, labels, input?.saveDraftDefault !== false)
   }
 
   const resolveCurrentDraftDefault = (
@@ -261,9 +246,10 @@ export function createHarnessConfigStore(server: Server, storage: DraftDefaultSt
     if (!input?.placementId || harnessStore.heldHarness(scope)) return
     const current = harnessStore.read(scope)
     if (!current.harness) return
-    const res = await api.folderHarness(input.placementId, input.sessionId).catch(() => undefined)
-    if (!res?.ok) return
-    const data = decodeHarnessState(await res.json().catch(() => undefined))
+    const data = await api.folderHarness(input.placementId, input.sessionId).catch((error: unknown) => {
+      console.warn(`The harness health probe for placement ${input.placementId} failed`, error)
+      return undefined
+    })
     if (!data) return
     const held = harnessStore.read(scope)
     if (held.harness?.kind !== current.harness.kind || (held.harness.kind === "connection" && (current.harness.kind !== "connection" || held.harness.connectionId !== current.harness.connectionId))) return
@@ -284,12 +270,11 @@ export function createHarnessConfigStore(server: Server, storage: DraftDefaultSt
     const ref = input.sessionRef
     if (!held || !ref) return
     const model = harnessStore.harnessModelKeyForSubmit(scope)
-    const res = await api.updateSessionConfig(ref, {
+    await api.updateSessionConfig(ref, {
       harness: harnessSelectionId(held),
-      ...(model ? { model: { providerID: model.providerID, modelID: model.modelID } } : {}),
+      ...(model ? { model: { providerId: model.providerId, modelId: model.modelId } } : {}),
       ...(model?.variant ? { variant: model.variant } : {}),
     })
-    if (!res.ok) throw new Error((await res.text().catch(() => "")) || `session config save failed: ${res.status}`)
     harnessStore.releaseHeldHarness(scope)
   }
 

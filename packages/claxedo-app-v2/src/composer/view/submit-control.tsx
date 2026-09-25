@@ -115,7 +115,7 @@ export function PromptSubmitControl(props: {
             onClick={explain}
             icon={stopping() ? "stop" : props.mode() === "shell" ? "arrow-undo-down" : "send"}
             variant="primary"
-            class="size-8 rounded-full bg-v2-background-bg-inverse p-[7px] text-v2-icon-icon-inverse shadow-none transition-opacity duration-150 hover:opacity-90 disabled:opacity-35 [&[data-booting]>[data-component=icon]]:opacity-0 [&>[data-component=icon]]:transition-opacity [&>[data-component=icon]]:duration-150"
+            class="composer-submit size-8 rounded-full bg-v2-background-bg-inverse p-[7px] text-v2-icon-icon-inverse shadow-none transition-opacity duration-150 hover:opacity-90 disabled:opacity-35"
             classList={{ "opacity-50": actionable() }}
             aria-label={
               stopping()

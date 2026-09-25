@@ -66,7 +66,7 @@ function QueuedMessageBubble(props: { item: QueuedMessage; queued: QueuedMessage
       class="ui-user-message"
     >
       <div class="ui-user-message-body">
-        <div data-slot="queued-message-text" class="ui-user-message-text opacity-60" data-editing={editing() || heldElsewhere() ? "true" : undefined}>
+        <div class="ui-user-message-text opacity-60" data-editing={editing() || heldElsewhere() ? "true" : undefined}>
           {text()}
           <For each={attachments()}>
             {(part) => <span class="block text-12-regular text-text-weak">{part.filename ?? props.t("ui.message.attachment.alt")}</span>}
@@ -74,7 +74,6 @@ function QueuedMessageBubble(props: { item: QueuedMessage; queued: QueuedMessage
         </div>
       </div>
       <div
-        data-slot="queued-message-actions"
         class="ui-user-message-copy-wrapper"
         classList={{ "opacity-100! pointer-events-auto!": editing() || heldElsewhere() }}
       >

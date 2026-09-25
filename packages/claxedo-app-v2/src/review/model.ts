@@ -5,10 +5,6 @@ export const defaultScope: DiffScope = { kind: "uncommitted" }
 
 export type DiffStyle = "unified" | "split"
 
-export function readDiffStyle(value: unknown): DiffStyle | undefined {
-  return value === "unified" || value === "split" ? value : undefined
-}
-
 const GIT_ERROR_KEYS: Readonly<Record<string, ReviewKey>> = {
   git_empty_message: "review.error.git_empty_message",
   git_nothing_staged: "review.error.git_nothing_staged",

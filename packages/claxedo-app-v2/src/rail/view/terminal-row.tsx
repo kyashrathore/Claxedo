@@ -1,27 +1,25 @@
 import { createEffect, createMemo, on, onCleanup, Show, type Accessor, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { useServer, type PlacementId, type TerminalAgentStatus } from "@/server"
+import { useServer, type PlacementId } from "@/server"
 import { useTerminals, type TerminalItem } from "@/terminal"
 import { createHoverEngagement } from "../hover-engagement"
 import { railDictionary } from "../i18n"
-import type { NavigationStatus } from "../model"
+import { terminalNavigationStatus } from "../model"
 import { NavigationRow, NavigationRowGlyph, NavigationStatusMark } from "./navigation-row"
 import { ClaxedoIcon as Icon, ClaxedoIconV2, Tooltip } from "@/ui"
 
-const AGENT_STATUS: Readonly<Record<TerminalAgentStatus, NavigationStatus>> = {
-  working: "working",
-  waitingOnUser: "permission",
-  failed: "error",
-  idle: "idle",
-}
-
-const TITLE_SUFFIX = { working: "rail.terminal.working", permission: "rail.terminal.needsInput", error: "rail.terminal.failed" } as const
+const TITLE_SUFFIX = {
+  working: "rail.terminal.working",
+  permission: "rail.terminal.needsInput",
+  error: "rail.terminal.failed",
+  done: "rail.terminal.done",
+} as const
 
 export function RailTerminalRow(props: { readonly row: TerminalItem; readonly active: boolean; readonly prepareDrag?: () => string | undefined }): JSX.Element {
   const t = useTranslator(railDictionary)
   const terminals = useTerminals()
   const engagement = createHoverEngagement()
-  const status = () => (props.row.agentStatus ? AGENT_STATUS[props.row.agentStatus] : "idle")
+  const status = () => terminalNavigationStatus(props.row)
   const title = () => {
     const current = status()
     return current === "idle" ? props.row.title : `${props.row.title} · ${t(TITLE_SUFFIX[current])}`

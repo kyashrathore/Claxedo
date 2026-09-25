@@ -125,7 +125,7 @@ Script steps (`AcpStep`):
 | `{ kind: "reasoning", text }` | `agent_thought_chunk` |
 | `{ kind: "image", data, mimeType }` | an image content block |
 | `{ kind: "plan", entries }` | a `plan` update (todo list) |
-| `{ kind: "tool", tool, title, input?, text?, content?, locations?, status?, output? }` | `tool_call` then `tool_call_update`; `tool` is an ACP `ToolKind` (`read`, `edit`, `delete`, `move`, `search`, `execute`, `think`, `fetch`, `other`) |
+| `{ kind: "tool", tool, title, input?, text?, content?, locations?, status?, output? }` | `tool_call` then `tool_call_update`; `tool` is an ACP `ToolKind` (`read`, `edit`, `delete`, `move`, `search`, `execute`, `think`, `fetch`, `other`); `status: "in_progress"` sends only the `tool_call`, so the tool stays running (follow it with a `hold`) |
 | `{ kind: "diff", path, oldText, newText }` | an `edit` tool call whose content is a diff |
 | `{ kind: "permission", tool, title, path?, input?, text? }` | a pending tool call plus `session/request_permission`; allowed → completed, rejected → failed, cancelled → the turn stops |
 | `{ kind: "question", message, options? }` | `elicitation/create` (a question); the answer is echoed as text |
@@ -144,7 +144,7 @@ Opens the stream the app reads (`/api/wr/events`) and records every frame. `fram
 
 ### `api` (`ClaxedoApi`)
 
-`resolveWorkspace`, `setHarness`, `defaultModel(directory, nativeHarness)` (the harness's current model, for a session v1 will send in), `createSession` (optional `model`), `session`, `sessions`, `deleteSession`, `prompt` (waits for the turn; optional `model`), `promptAsync` (both send an ascending message id unless given one, because both apps order a transcript by id and the runtime gives an id-less prompt a random one), `abort`, `messages`, `status`, `permissions`, `replyPermission`, `questions`, `replyQuestion`, `rejectQuestion`, `providerCatalog(nativeHarness)`, `health`. Every call takes the workspace `directory` first, because that is how today's routes are scoped. A non-2xx answer throws `ApiError` with the status and body. `assistantText(messages)` joins the assistant text parts.
+`resolveWorkspace`, `setHarness`, `defaultModel(directory, nativeHarness)` (the harness's current model, for a session v1 will send in), `createSession` (optional `model`), `session`, `sessions`, `deleteSession`, `prompt` (waits for the turn; optional `model`), `promptAsync` (both send an ascending message id unless given one, because both apps order a transcript by id and the runtime gives an id-less prompt a random one), `messages`, `status`, `permissions`, `replyPermission`, `questions`, `replyQuestion`, `rejectQuestion`, `providerCatalog(nativeHarness)`, `health`. Every call takes the workspace `directory` first, because that is how today's routes are scoped. A non-2xx answer throws `ApiError` with the status and body. `assistantText(messages)` joins the assistant text parts.
 
 `createProject(name, directory)` records a project for another folder. A stack with no project opens the onboarding screen at `/`; `makeWorkspace` records one, so a flow that made a workspace starts on the shell.
 

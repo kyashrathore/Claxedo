@@ -7,8 +7,8 @@ export function outputOverflows(box: { scrollHeight: number; clientHeight: numbe
 
 export function ScrollableOutput(props: {
   children: JSX.Element
-  component?: string
-  slot?: string
+  component?: "tool-output"
+  slot?: "bash-scroll"
   class?: string
   label?: string
   revealed?: boolean
@@ -53,14 +53,13 @@ export function ScrollableOutput(props: {
         role="region"
         aria-label={props.label ?? i18n.t("transcript.scrollView.ariaLabel")}
       >
-        <div ref={content} data-slot="scrollable-output-content">
+        <div ref={content}>
           {props.children}
         </div>
       </div>
       <Show when={overflows() || revealed()}>
         <button
           type="button"
-          data-slot="scrollable-output-toggle"
           class="ui-scrollable-output-toggle"
           aria-expanded={revealed()}
           onMouseDown={(event) => event.preventDefault()}

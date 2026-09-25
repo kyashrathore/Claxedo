@@ -1,11 +1,11 @@
-import { providerErrorDetail, providerUsageLimitDetail } from "./provider-error-detail"
+import { providerErrorDetail, providerUsageLimitDetail, type DispatchContext } from "./provider-error-detail"
 import { asRecord } from "@/lib/record"
-import { credentialBrokerErrorCode, CREDENTIAL_BROKER_ERRORS } from "@claxedo/agent-runtime-contract"
+import { credentialBrokerErrorCode, CREDENTIAL_BROKER_ERRORS, type AgentAssistantMessage, type AgentUserMessage } from "@claxedo/agent-runtime-contract"
 
 export type SessionErrorClass = "credential" | "harness" | "model" | "usage_limit" | "workspace" | "session" | "unknown"
 export type FirstTurnMessage =
-  | { id: string; role: "user"; time: { created: number } }
-  | { id: string; role: "assistant"; parentID: string; time: { created: number; completed?: number }; finish?: string; error?: unknown }
+  | Pick<AgentUserMessage, "id" | "role" | "time">
+  | Pick<AgentAssistantMessage, "id" | "role" | "parentID" | "time" | "finish" | "error">
 
 const recoveries = {
   credential: { kind: "credential", title: "Reconnect your AI provider", description: "The provider rejected the credential for this workspace.", label: "Reconnect and resend" },
@@ -20,7 +20,7 @@ const recoveries = {
 export function sessionRecovery(
   kind: SessionErrorClass,
   error?: unknown,
-  context?: { providerID?: string; modelID?: string },
+  context?: DispatchContext,
 ) {
   if (kind === "usage_limit") {
     const detail = providerUsageLimitDetail(error, context)
@@ -32,7 +32,7 @@ export function sessionRecovery(
 export function sessionRecoveryDescription(
   kind: SessionErrorClass,
   error?: unknown,
-  context?: { providerID?: string; modelID?: string },
+  context?: DispatchContext,
 ) {
   const fallback = recoveries[kind].description
   const { summary, status } = providerErrorDetail(error, context)

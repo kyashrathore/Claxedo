@@ -74,7 +74,7 @@ export function createComposerPermissionMode(input: {
   sessionId: Accessor<string | undefined>
   deliver?: (input: {
     option: PermissionModeOption
-    sessionID: string
+    sessionId: string
   }) => Promise<PermissionModeApplied>
   onDeliveryError?: (input: { error: unknown; option: PermissionModeOption }) => void
 }) {
@@ -170,11 +170,11 @@ export function createComposerPermissionMode(input: {
     input.onSelectionChange(next)
 
     const deliver = input.deliver
-    const sessionID = input.sessionId()
+    const sessionId = input.sessionId()
     // A draft has no session to scope a mode to. The selection is still stored, so
     // the first real session picks it up; there is simply nothing to send yet.
-    if (!deliver || !sessionID) return
-    void deliver({ option, sessionID }).catch((error) => input.onDeliveryError?.({ error, option }))
+    if (!deliver || !sessionId) return
+    void deliver({ option, sessionId }).catch((error) => input.onDeliveryError?.({ error, option }))
   }
 
   return { groups, current, promptModeId, selection, select }

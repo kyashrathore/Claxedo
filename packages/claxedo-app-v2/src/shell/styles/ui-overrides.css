@@ -632,9 +632,7 @@ html[data-theme="codex"] {
   --shell-surface-header: var(--codex-surface);
   --settings-surface-content: var(--codex-surface);
   --shell-surface-composer: var(--codex-control);
-  --control-surface: var(--codex-control);
   --control-surface-active: var(--codex-control);
-  --tab-surface-selected: var(--codex-control);
   --overlay-surface: var(--codex-control);
   --overlay-surface-hover: var(--codex-hover);
   --overlay-surface-input: var(--codex-selected);
@@ -643,8 +641,6 @@ html[data-theme="codex"] {
   --surface-raised-stronger-non-alpha: var(--codex-control);
   --settings-surface-card: var(--codex-elevated-secondary);
   --shell-surface-context-card: var(--codex-elevated-secondary);
-  --surface-base-hover: var(--codex-hover);
-  --row-surface-hover: var(--codex-hover);
   --row-surface-selected: var(--codex-selected);
   --border-weak-base: var(--codex-border);
   --border-weaker-base: var(--codex-border-light);
@@ -673,4 +669,19 @@ html[data-theme="codex"] .workbench-tab[data-selected="true"] {
 html[data-theme="codex"] [data-component="todo-dock"],
 html[data-theme="codex"] [data-component="goal-dock"] {
   background: var(--codex-elevated-secondary);
+}
+
+.composer-model-list [data-slot="list-scroll"] {
+  flex: 1 1 0%;
+  min-height: 0;
+}
+
+.composer-submit > [data-component="icon"] {
+  transition-property: opacity;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+.composer-submit[data-booting] > [data-component="icon"] {
+  opacity: 0;
 }

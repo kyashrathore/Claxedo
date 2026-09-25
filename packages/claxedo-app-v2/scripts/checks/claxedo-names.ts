@@ -3,7 +3,7 @@ import { join } from "node:path"
 import { codeExtensions, isTranslationFile, listFiles, parseArgs, under } from "./lib/files"
 import { compilerOptions, createProgram, isImportSpecifierNode, startLine, ts } from "./lib/parse"
 import { finish, type Violation } from "./lib/report"
-import { slotReaders, type SlotHook, type SlotReaders } from "./lib/slot-readers"
+import { selectorsIn, slotHooks, type SlotHooks } from "./lib/slot-hooks"
 import { textOf, walk } from "./lib/tree"
 
 const retiredIdentifier = /[a-z0-9]IDs?$/
@@ -14,7 +14,6 @@ const retiredStrings = [
   { pattern: /prompt_async|\/experimental\/|\/session\/[^\s"'`]*\/message/, message: "names an OpenCode route" },
   { pattern: /\b(default\.dat|layout\.v6|claxedo\.global\.dat|legacy-directory)\b|\bPersist\./, message: "names the old app's storage" },
   { pattern: /(^|[\s"'`.#>~+(:,])oc-[a-z]/, message: "uses an oc- prefix" },
-  { pattern: /\bdata-component\b/, message: "uses the data-component hook" },
 ]
 const exemptPackages = [
   "/packages/agent-runtime-contract/",
@@ -22,7 +21,6 @@ const exemptPackages = [
   "/node_modules/@claxedo/agent-runtime-contract/",
   "/node_modules/@claxedo/agent-event-runtime/",
 ]
-const slotOutsideKit = "uses data-slot outside src/ui; only the kit's components carry slots"
 
 type Lookup = { readonly declarations: readonly ts.Declaration[]; readonly reference: boolean }
 
@@ -34,14 +32,18 @@ function main(): never {
   )
   const program = createProgram(files, compilerOptions())
   const checker = program.getTypeChecker()
-  const readers = slotReaders(root)
+  const hooks = slotHooks(root)
+  for (const file of files) {
+    const sf = program.getSourceFile(file)
+    if (sf) recordWrites(sf, checker, hooks)
+  }
   const violations: Violation[] = []
   for (const file of files) {
     const sf = program.getSourceFile(file)
     if (!sf) continue
     const inKit = under(root, file, "src/ui")
     walk(sf, (node) => {
-      const message = retiredName(root, node, checker) ?? retiredText(node, events, inKit, readers)
+      const message = retiredName(root, node, checker) ?? retiredText(node, events, inKit, hooks, checker)
       if (message) violations.push({ file, line: startLine(node, sf), message })
     })
   }
@@ -81,7 +83,9 @@ function lookup(node: ts.Identifier, checker: ts.TypeChecker): Lookup {
     return { declarations: propertyDeclarations(checker.getTypeAtLocation(parent.parent), node.text), reference: false }
   }
   if (ts.isJsxAttribute(parent) && parent.name === node) {
-    return { declarations: symbolDeclarations(checker.getSymbolAtLocation(node), checker), reference: false }
+    const props = checker.getContextualType(parent.parent)
+    const declared = props ? propertyDeclarations(props, node.text) : []
+    return { declarations: declared.length > 0 ? declared : symbolDeclarations(checker.getSymbolAtLocation(node), checker), reference: false }
   }
   if (isDeclarationName(node)) return { declarations: [], reference: false }
   return { declarations: symbolDeclarations(checker.getSymbolAtLocation(node), checker), reference: true }
@@ -129,33 +133,55 @@ function isDeclarationName(node: ts.Identifier): boolean {
   return declares && parent.name === node
 }
 
-function retiredText(node: ts.Node, events: ReadonlySet<string>, inKit: boolean, readers: SlotReaders): string | undefined {
-  if (ts.isJsxAttribute(node)) return retiredAttribute(node, inKit, readers)
+function retiredText(node: ts.Node, events: ReadonlySet<string>, inKit: boolean, hooks: SlotHooks, checker: ts.TypeChecker): string | undefined {
+  if (ts.isJsxAttribute(node)) return retiredAttribute(node, inKit, hooks, checker)
   const text = textOf(node)
   if (text === undefined || isImportSpecifierNode(node)) return undefined
   if (events.has(text)) return `"${text}" is a server event name; only src/server/wire speaks it`
   const hit = retiredStrings.find(({ pattern }) => pattern.test(text))
   if (hit) return `${hit.message}: "${text.length > 60 ? `${text.slice(0, 57)}...` : text}"`
-  return !inKit && /data-slot[=\]]/.test(text) ? slotOutsideKit : undefined
+  const dead = selectorsIn(text).filter((selector) => !hooks.written(selector))
+  if (dead.length === 0) return undefined
+  return `selects ${dead.map((selector) => `${selector.hook}${selector.operator}"${selector.value}"`).join(", ")}, which nothing writes; remove the dead selector`
 }
 
-function retiredAttribute(node: ts.JsxAttribute, inKit: boolean, readers: SlotReaders): string | undefined {
+function retiredAttribute(node: ts.JsxAttribute, inKit: boolean, hooks: SlotHooks, checker: ts.TypeChecker): string | undefined {
   const hook = ts.isIdentifier(node.name) ? node.name.text : undefined
   if (hook !== "data-slot" && hook !== "data-component") return undefined
   if (hook === "data-slot" && inKit) return undefined
-  const values = attributeValues(node)
-  if (values === undefined) return `${hook} has a computed value, so no stylesheet or hook can be shown to read it`
-  const unread = values.filter((value) => !readers.selects(hook satisfies SlotHook, value))
+  const values = attributeValues(node, checker)
+  if (values === undefined) return `${hook} has a computed value whose type is not a union of string literals, so no stylesheet or hook can be shown to read it`
+  const unread = values.filter((value) => !hooks.selects(hook, value))
   if (unread.length === 0) return undefined
   return `${hook}="${unread.join('" / "')}" is read by no stylesheet, e2e or perf-harness hook; remove it`
 }
 
-function attributeValues(node: ts.JsxAttribute): string[] | undefined {
+function recordWrites(sf: ts.SourceFile, checker: ts.TypeChecker, hooks: SlotHooks): void {
+  walk(sf, (node) => {
+    if (!ts.isJsxAttribute(node) || !ts.isIdentifier(node.name)) return
+    const hook = node.name.text
+    if (hook !== "data-slot" && hook !== "data-component") return
+    for (const value of attributeValues(node, checker) ?? []) hooks.write(hook, value)
+  })
+}
+
+function attributeValues(node: ts.JsxAttribute, checker: ts.TypeChecker): string[] | undefined {
   const value = node.initializer
   if (!value) return undefined
   if (ts.isStringLiteral(value)) return [value.text]
   const expression = ts.isJsxExpression(value) ? value.expression : undefined
-  return expression ? literalValues(expression) : undefined
+  if (!expression) return undefined
+  return literalValues(expression) ?? typeValues(checker.getTypeAtLocation(expression))
+}
+
+function typeValues(type: ts.Type): string[] | undefined {
+  const parts = type.isUnion() ? type.types : [type]
+  const values: string[] = []
+  for (const part of parts) {
+    if (part.isStringLiteral()) values.push(part.value)
+    else if (!(part.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null))) return undefined
+  }
+  return values
 }
 
 function literalValues(expression: ts.Expression): string[] | undefined {

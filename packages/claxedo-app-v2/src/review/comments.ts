@@ -26,33 +26,35 @@ export type ReviewComments = {
   readonly remove: (id: string) => void
 }
 
+export type CommentOrigin = "review" | "file"
+
 type FileContextItem = Extract<ContextItem, { type: "file" }>
 
-const contextKey = (id: string) => `review:${id}`
+const contextKey = (origin: CommentOrigin, id: string) => `${origin}:${id}`
 
-function reviewCommentOf(item: ContextItem): ReviewComment | undefined {
-  if (item.type !== "file" || item.commentOrigin !== "review") return undefined
+function commentOf(item: ContextItem, origin: CommentOrigin): ReviewComment | undefined {
+  if (item.type !== "file" || item.commentOrigin !== origin) return undefined
   if (!item.commentId || !item.comment || !item.selection) return undefined
   const selection = { start: item.selection.startLine, end: item.selection.endLine }
   return { id: item.commentId, file: item.path, selection, comment: item.comment }
 }
 
-function contextItemOf(id: string, input: ReviewCommentInput): FileContextItem {
+function contextItemOf(origin: CommentOrigin, id: string, input: ReviewCommentInput): FileContextItem {
   const startLine = Math.min(input.selection.start, input.selection.end)
   const endLine = Math.max(input.selection.start, input.selection.end)
   return {
     type: "file",
-    key: contextKey(id),
+    key: contextKey(origin, id),
     path: input.file,
     selection: { startLine, startChar: 0, endLine, endChar: 0 },
     comment: input.comment,
     commentId: id,
-    commentOrigin: "review",
+    commentOrigin: origin,
     ...(input.preview === undefined ? {} : { preview: input.preview }),
   }
 }
 
-export function useReviewComments(): ReviewComments {
+export function useLineComments(origin: CommentOrigin): ReviewComments {
   const composer = useComposerStore()
   const session = useActiveSession()
   const key = createMemo(() => {
@@ -63,7 +65,7 @@ export function useReviewComments(): ReviewComments {
     const current = key()
     if (!current) return []
     return composer.draft(current).context.flatMap((item) => {
-      const comment = reviewCommentOf(item)
+      const comment = commentOf(item, origin)
       return comment ? [comment] : []
     })
   })
@@ -74,12 +76,13 @@ export function useReviewComments(): ReviewComments {
   return {
     enabled: () => key() !== undefined,
     comments,
-    add: (input) => withKey((current) => composer.addContext(current, contextItemOf(uuid(), input))),
+    add: (input) => withKey((current) => composer.addContext(current, contextItemOf(origin, uuid(), input))),
     update: (id, input) =>
       withKey((current) => {
-        const next = contextItemOf(id, input)
-        composer.setContext(current, composer.draft(current).context.map((item) => (item.key === contextKey(id) ? next : item)))
+        const next = contextItemOf(origin, id, input)
+        const key = contextKey(origin, id)
+        composer.setContext(current, composer.draft(current).context.map((item) => (item.key === key ? next : item)))
       }),
-    remove: (id) => withKey((current) => composer.removeContext(current, contextKey(id))),
+    remove: (id) => withKey((current) => composer.removeContext(current, contextKey(origin, id))),
   }
 }
