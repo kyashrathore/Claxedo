@@ -79,11 +79,11 @@ The prompt editor and everything that turns a draft into one `PromptInput` for `
 - The notice travels through a context channel, since its producer sits deep in the toolbar and its row renders outside the composer card. The frame makes a channel only when none is inherited, because the new-session screen hosts the row above its context row. A composer clears its notice on unmount. A critical notice is an assertive alert; others are polite status.
 - The thought level reaches the harness only as the model's `variant` on the next prompt, so choosing it writes local state only. A service tier chosen under another model is dropped.
 
-### Frame (`view/frame.tsx`)
+### Frame (`view/frame.tsx` and its parts)
 
 - `data-component="composer-frame"` is the `prompt-composer` container root in `shell/styles/index.css`; without it the toolbar never collapses at narrow widths.
 - The card takes its elevation from `data-dock-border-underlay="v2"`, never a `shadow-*` utility: utilities sit in a later layer than `dock-surface.css` and would drop its 0.5 px ring.
-- With a popover open the editor is a `combobox` with `aria-expanded` and `aria-controls`, which axe requires together; closed, it is a multiline `textbox`, since a combobox cannot be `aria-multiline`. `PROMPT_POPOVER_LISTBOX_ID` ties the two halves.
+- With a popover open the editor (`view/editor-surface.tsx`) is a `combobox` with `aria-expanded` and `aria-controls`, which axe requires together; closed, it is a multiline `textbox`, since a combobox cannot be `aria-multiline`. `PROMPT_POPOVER_LISTBOX_ID` ties the two halves.
 - Kobalte re-fires the add menu's `RadioGroup.onChange` with the unchanged value when its options settle; the handler ignores it, or focus would jump into the composer.
 - The `+` menu fits the space above the composer rather than clipping its first entry off the top of the window.
 
@@ -95,7 +95,7 @@ The prompt editor and everything that turns a draft into one `PromptInput` for `
 
 ## View
 
-`view/frame.tsx` is today's `PromptInputFrame` with its toolbar (`+` menu, permission chip, harness → model chip), Send control, drag overlay, context chips, image tiles and `/`/`@` popover, all moved from today's app; `view/composer.tsx` feeds it from the controller, the draft store and the harness store. The Send control reads `submit-block-reason.ts`: an empty idle draft, a missing model, a harness that is not ready. With a blank draft during a turn it is Stop.
+`view/frame.tsx` is today's `PromptInputFrame`, moved from today's app: the card, the drag overlay and the `/`/`@` popover, composed from `view/context-strip.tsx` (context chips, mark chips and image tiles), `view/editor-surface.tsx` (the contenteditable and its placeholder) and `view/toolbar.tsx` (`+` menu, permission chip, harness → model chip, Send control). `view/composer.tsx` feeds it from the controller, the draft store and the harness store through `view/popover-bindings.ts`, `view/context-bindings.ts`, `view/image-mark-bindings.tsx` and `view/editor-placeholder.ts`. The harness → model chip is `view/agent-harness-selector.tsx` over `view/harness-model-picker.tsx`; the selector's scope, catalog, rows, pick, switch, trigger, notice and effort each have their own file beside it. The Send control reads `submit-block-reason.ts`: an empty idle draft, a missing model, a harness that is not ready. With a blank draft during a turn it is Stop.
 
 ## Invariants
 

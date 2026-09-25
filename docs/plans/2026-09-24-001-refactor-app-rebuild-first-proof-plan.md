@@ -419,7 +419,7 @@ The Tasks and documents server code stays on the server, unchanged.
 | Server adapter | 4.0k |
 | Session client, including the session list store | 9.5k |
 | Session screen incl. the kept timeline and docks, with its phone layout | 14.3k |
-| Composer | 10.1k (re-based: the 5.5k assumed the voided `PromptInputV2` frame swap; DECISIONS 2026-09-25) |
+| Composer | 11.0k (re-based: the 5.5k assumed the voided `PromptInputV2` frame swap; DECISIONS 2026-09-25) |
 | Rail and workbench | 8.3k |
 | Browser tabs | 1.1k |
 | Shell and platform | 6.5k |
@@ -434,7 +434,7 @@ The Tasks and documents server code stays on the server, unchanged.
 | Moved in from the session feature (rail rows, review clients) | 0.6k |
 | State-machine helper | 0.1k |
 | UI kit (`src/ui/`) and kept transcript renderers (`src/transcript/`) | ~20k |
-| **Total** | **≤ 94k** (the parts add up to 97.6k; the enforced total is the measured app, not the sum) |
+| **Total** | **≤ 94k** (the parts add up to 98.5k; the enforced total is the measured app, not the sum) |
 
 ## The server adapter
 

@@ -1,6 +1,8 @@
-import { type Accessor, type JSX, Show, createEffect, createSignal, onCleanup } from "solid-js"
+import { type Accessor, type JSX, Show } from "solid-js"
 import { ClaxedoIconButton as IconButton, Spinner, Tooltip } from "@/ui"
 import { SessionStatusStage, type SessionStatusStage as SessionStatusStageValue } from "./session-status-stage"
+import { createSubmitBlockFlash } from "./submit-block-flash"
+import { SubmitBlockTip } from "./submit-block-tip"
 import type { SubmitBlock } from "../submit-block-reason"
 
 export function PromptSubmitControl(props: {
@@ -23,31 +25,10 @@ export function PromptSubmitControl(props: {
   stopLabel: string
   readOnlyLabel: string
 }) {
-  const [flash, setFlash] = createSignal(false)
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const clearTimer = () => {
-    if (timer) clearTimeout(timer)
-    timer = undefined
-  }
-  const explain: JSX.EventHandler<HTMLButtonElement, MouseEvent> = (event) => {
-    const block = props.block()
-    if (!block?.actionable) return
-    event.preventDefault()
-    if (block.reason === "no-model") {
-      props.onChooseModel()
-      return
-    }
-    setFlash(true)
-    clearTimer()
-    timer = setTimeout(() => setFlash(false), 3200)
-  }
-  createEffect(() => {
-    if (!props.block()) {
-      clearTimer()
-      setFlash(false)
-    }
-  })
-  onCleanup(clearTimer)
+  const { flash, explain, dismiss } = createSubmitBlockFlash(
+    () => props.block(),
+    () => props.onChooseModel(),
+  )
 
   const actionable = () => !!props.block()?.actionable
 
@@ -55,28 +36,28 @@ export function PromptSubmitControl(props: {
     const block = props.block()
     if (!block) return props.tip()
     return (
-      <div class="flex items-center gap-2">
-        <span>{block.copy}</span>
-        <Show when={block.reason === "no-model"}>
-          <button
-            type="button"
-            data-action="prompt-block-model"
-            class="rounded border border-border-base px-1.5 py-0.5 text-11-medium text-text-base transition-colors duration-150 hover:bg-surface-raised-base"
-            onClick={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              setFlash(false)
-              props.onChooseModel()
-            }}
-          >
-            Choose model
-          </button>
-        </Show>
-      </div>
+      <SubmitBlockTip
+        block={block}
+        onChooseModel={() => {
+          dismiss()
+          props.onChooseModel()
+        }}
+      />
     )
   }
 
   const stopping = () => props.busy() && props.blank()
+
+  const label = () =>
+    stopping()
+      ? props.stopLabel
+      : props.booting()
+        ? props.bootText()
+        : props.readOnlyBlocked()
+          ? props.readOnlyLabel
+          : props.block()
+            ? props.block()!.copy
+            : props.sendLabel
 
   return (
     <>
@@ -104,17 +85,7 @@ export function PromptSubmitControl(props: {
             variant="primary"
             class="composer-submit size-8 rounded-full bg-v2-background-bg-inverse p-[7px] text-v2-icon-icon-inverse shadow-none transition-opacity duration-150 hover:opacity-90 disabled:opacity-35"
             classList={{ "opacity-50": actionable() }}
-            aria-label={
-              stopping()
-                ? props.stopLabel
-                : props.booting()
-                  ? props.bootText()
-                  : props.readOnlyBlocked()
-                    ? props.readOnlyLabel
-                    : props.block()
-                      ? props.block()!.copy
-                      : props.sendLabel
-            }
+            aria-label={label()}
           />
           <Show when={props.booting()}>
             <Spinner class="pointer-events-none absolute inset-0 m-auto size-3.5 text-v2-icon-icon-inverse" />
