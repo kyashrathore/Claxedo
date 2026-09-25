@@ -119,7 +119,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     livePlugins: createLivePluginsApi(transport),
     harnessConfig: createHarnessConfigApi(transport, workspaces, queryClient),
     request: transport.request,
-    operation: createOperations(transport).run,
+    operation: createOperations(transport, account).run,
   }
 }
 

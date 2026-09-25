@@ -100,8 +100,8 @@ export const test = base.extend<HarnessFixtures, HarnessWorkerFixtures>({
   desktop: async ({ desktopBuild }, use, testInfo) => {
     await useDesktop(testInfo, desktopBuild, undefined, use)
   },
-  signedDesktop: async ({ desktopBuild, signed }, use, testInfo) => {
-    await useDesktop(testInfo, desktopBuild, { coreOrigin: signed.url, trust: signed.trust }, use)
+  signedDesktop: async ({ desktopBuild, signedCloud }, use, testInfo) => {
+    await useDesktop(testInfo, desktopBuild, { coreOrigin: signedCloud.url, trust: signedCloud.trust }, use)
   },
 })
 
