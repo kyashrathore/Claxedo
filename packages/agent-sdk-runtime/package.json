@@ -55,13 +55,6 @@
       "import": "./dist/runtime-event-hub.mjs",
       "default": "./dist/runtime-event-hub.mjs"
     },
-    "./sse": {
-      "development": "./src/sse.ts",
-      "bun": "./src/sse.ts",
-      "types": "./dist/sse.d.ts",
-      "import": "./dist/sse.mjs",
-      "default": "./dist/sse.mjs"
-    },
     "./provider-projection": {
       "development": "./src/provider-projection.ts",
       "bun": "./src/provider-projection.ts",

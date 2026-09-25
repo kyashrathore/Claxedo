@@ -36,3 +36,9 @@ test("Pi defaults its command and keeps environment secret bindings local", () =
   expect(() => provider.validateConfig({ label: "Pi", env: { API_KEY: "literal" }, secretBindings: { env: { API_KEY: "key" } } })).toThrow("overwrite")
   expect(() => provider.createTransport({} as never)).toThrow(HarnessProviderError)
 })
+
+test("a Pi connection never claims permission requests: its extension UI asks questions", () => {
+  const provider = createPiRpcProvider()
+  const projected = provider.project(provider.validateConfig({ label: "Pi" }))
+  expect(projected.capabilities).toMatchObject({ permissions: false, questions: true })
+})

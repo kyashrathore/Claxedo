@@ -11,17 +11,20 @@ import {
   type ContentBlock,
   type InitializeResponse,
   type NewSessionResponse,
+  type NewSessionRequest,
+  type LoadSessionRequest,
+  type ResumeSessionRequest,
+  type ForkSessionRequest,
   type PromptRequest,
   type PromptResponse,
 } from "@agentclientprotocol/sdk"
 import { isTitlePrompt, lastMarker } from "../scripted-model-request"
 import { ACP_RED_ENV, ACP_SCRIPT_DIR_ENV, lastAcpScriptName, readAcpScript, type AcpScript } from "./script"
 import { playScript } from "./turn"
+import { recordAcpRequest } from "./requests"
 import { captureAcpPrompt } from "./capture"
 import { deliveredAcpPrompt } from "./delivery-fault"
 
-const scriptDir = process.env[ACP_SCRIPT_DIR_ENV]
-if (!scriptDir) throw new Error(`${ACP_SCRIPT_DIR_ENV} is not set`)
 const red = process.env[ACP_RED_ENV] === "1"
 
 function promptText(prompt: ContentBlock[]) {
@@ -47,25 +50,46 @@ async function scriptFor(text: string, dir: string): Promise<AcpScript> {
   return script
 }
 
-class ScriptedAgent implements Agent {
+export class ScriptedAgent implements Agent {
   private readonly turns = new Map<string, AbortController>()
 
-  constructor(private readonly connection: AgentSideConnection, private readonly dir: string) {}
+  constructor(private readonly connection: AgentSideConnection, private readonly dir: string, private readonly headers: Record<string, string> = {}, private readonly record = true, private readonly restoreMode: "load" | "resume" = "resume") {}
 
   initialize(): InitializeResponse {
     return {
       protocolVersion: PROTOCOL_VERSION,
-      agentCapabilities: { loadSession: false, promptCapabilities: { image: true, embeddedContext: true } },
+      agentCapabilities: { loadSession: true, sessionCapabilities: { fork: {}, ...(this.restoreMode === "resume" ? { resume: {} } : {}) }, promptCapabilities: { image: true, embeddedContext: true }, mcpCapabilities: { http: true, sse: true } },
       authMethods: [],
       _meta: { jetbrains: { air: { version: 1, capabilities: ["nativeSubagentSessions"] } } },
     }
   }
 
-  newSession(): NewSessionResponse {
+  async newSession(params: NewSessionRequest): Promise<NewSessionResponse> {
+    if (this.record) await recordAcpRequest(this.dir, "session/new", params, this.headers)
+    const sessionId = `scripted-${randomUUID()}`
+    queueMicrotask(() => {
+      void this.connection.sessionUpdate({ sessionId, update: { sessionUpdate: "available_commands_update", availableCommands: [{ name: "scripted", description: "Run a named scripted reply" }] } })
+    })
     return {
-      sessionId: `scripted-${randomUUID()}`,
+      sessionId,
       modes: { currentModeId: "default", availableModes: [{ id: "default", name: "Default", description: "Scripted replies" }] },
+      configOptions: [{ id: "mode", name: "Agent", category: "mode", type: "select", currentValue: "default", options: [{ value: "default", name: "Default" }, { value: "review", name: "Review" }] }],
     }
+  }
+
+  async loadSession(params: LoadSessionRequest) {
+    if (this.record) await recordAcpRequest(this.dir, "session/load", params, this.headers)
+    return {}
+  }
+
+  async resumeSession(params: ResumeSessionRequest) {
+    if (this.record) await recordAcpRequest(this.dir, "session/resume", params, this.headers)
+    return {}
+  }
+
+  async unstable_forkSession(params: ForkSessionRequest) {
+    if (this.record) await recordAcpRequest(this.dir, "session/fork", params, this.headers)
+    return { sessionId: `scripted-${randomUUID()}` }
   }
 
   authenticate() {
@@ -77,6 +101,7 @@ class ScriptedAgent implements Agent {
   }
 
   async prompt(params: PromptRequest): Promise<PromptResponse> {
+    if (this.record) await recordAcpRequest(this.dir, "session/prompt", params, this.headers)
     const delivered = deliveredAcpPrompt(params.prompt)
     const text = promptText(delivered)
     if (red && !isTitlePrompt(text)) throw RequestError.internalError(undefined, "Scripted ACP red run: every turn fails")
@@ -101,8 +126,12 @@ class ScriptedAgent implements Agent {
   }
 }
 
-const stream = ndJsonStream(
-  Writable.toWeb(process.stdout) as WritableStream<Uint8Array>,
-  Readable.toWeb(process.stdin) as unknown as ReadableStream<Uint8Array>,
-)
-new AgentSideConnection((connection) => new ScriptedAgent(connection, scriptDir), stream)
+if (import.meta.main) {
+  const scriptDir = process.env[ACP_SCRIPT_DIR_ENV]
+  if (!scriptDir) throw new Error(`${ACP_SCRIPT_DIR_ENV} is not set`)
+  const stream = ndJsonStream(
+    Writable.toWeb(process.stdout) as WritableStream<Uint8Array>,
+    Readable.toWeb(process.stdin) as unknown as ReadableStream<Uint8Array>,
+  )
+  new AgentSideConnection((connection) => new ScriptedAgent(connection, scriptDir), stream)
+}

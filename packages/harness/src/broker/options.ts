@@ -18,7 +18,7 @@ export function chooseBrokerPermissionOption(
 }
 
 export function optionMatchesDecision(decision: PermissionDecision, kind: PermissionOptionKind): boolean {
-  return optionOrder[decision].includes(kind)
+  return decision === "deny" ? kind === "reject_once" : decision === "reject_always" ? kind === "reject_always" : decision === kind
 }
 
 export function substitutePermissionOption(

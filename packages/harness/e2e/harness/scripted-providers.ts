@@ -1,14 +1,16 @@
 import type { ScriptedModelServer } from "./scripted-model-server"
 import { sendJson, type HttpTransport } from "./transport"
 
-export const SCRIPTED_PROVIDER_IDS = ["anthropic", "openai"] as const
+export const SCRIPTED_PROVIDER_IDS = ["anthropic", "openai", "claude-sdk", "codex-app-server"] as const
 
 export type ScriptedProviderId = (typeof SCRIPTED_PROVIDER_IDS)[number]
+
+const OPENAI_DIALECT: ReadonlySet<ScriptedProviderId> = new Set(["openai", "codex-app-server"])
 
 const SCRIPTED_SECRET = "test-key"
 
 function scriptedBaseUrl(providerId: ScriptedProviderId, scripted: ScriptedModelServer) {
-  return providerId === "openai" ? scripted.v1Url : scripted.url
+  return OPENAI_DIALECT.has(providerId) ? scripted.v1Url : scripted.url
 }
 
 function routeToScripted(transport: HttpTransport, daemonUrl: string, providerId: ScriptedProviderId, scripted: ScriptedModelServer) {

@@ -814,6 +814,7 @@
         "@claxedo/agent-event-runtime": "workspace:*",
         "@claxedo/agent-runtime-contract": "workspace:*",
         "@claxedo/agent-sdk-runtime": "workspace:*",
+        "@claxedo/harness": "workspace:*",
         "@claxedo/helpers": "workspace:*",
         "@claxedo/process-ownership": "workspace:*",
         "@claxedo/workspace-relay": "workspace:*",

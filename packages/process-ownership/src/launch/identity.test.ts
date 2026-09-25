@@ -1,8 +1,9 @@
 import { describe, expect, spyOn, test } from "bun:test"
+import { spawn } from "node:child_process"
 import { promises as fs } from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { identityFromSpawn, isCreationIdentity, readCreationIdentity, verifyCreationIdentity, windowsBootId, type CreationIdentity } from "./identity"
+import { darwinStartMs, identityFromSpawn, isCreationIdentity, readCreationIdentity, verifyCreationIdentity, windowsBootId, type CreationIdentity } from "./identity"
 
 describe("the Windows boot token", () => {
   test("is the BootId value as reg.exe prints it, in decimal", () => {
@@ -50,6 +51,10 @@ describe("a creation identity read back out of a record", () => {
     expect(isCreationIdentity(identity({ pid: 4321.5 }))).toBe(false)
   })
 
+  test("refuses init, which no launch owns", () => {
+    expect(isCreationIdentity(identity({ pid: 1, processGroupId: 1 }))).toBe(false)
+  })
+
   test("refuses a source no build of this probe produces", () => {
     expect(isCreationIdentity(identity({ source: "darwin-sysctl" }))).toBe(false)
     expect(isCreationIdentity(identity({ source: "" }))).toBe(false)
@@ -73,6 +78,13 @@ describe("identityFromSpawn", () => {
     parentPid: 1,
     startedAtMs,
     source,
+  })
+
+  test("the kernel and init are never a spawn, even when they read as newly started", () => {
+    const spawnedAt = 1_000_000
+    for (const pid of [0, 1]) {
+      expect(identityFromSpawn({ ...spawned(spawnedAt + 5), pid, processGroupId: pid }, spawnedAt)).toBeUndefined()
+    }
   })
 
   test("a process that began after the spawn is the one this launcher started", () => {
@@ -132,5 +144,32 @@ describe("verifying a recorded identity", () => {
     expect(verdict.state).toBe("unknown")
     expect(verdict.state === "unknown" && verdict.reason).toContain(String(process.pid))
     expect((await verifyCreationIdentity(recorded)).state).toBe("live")
+  })
+})
+
+describe("darwinStartMs", () => {
+  test("reads lstart as UTC", () => {
+    expect(darwinStartMs("Fri Sep 25 05:29:17 2026")).toBe(Date.UTC(2026, 8, 25, 5, 29, 17))
+    expect(darwinStartMs("Sat Sep  5 23:01:02 2026")).toBe(Date.UTC(2026, 8, 5, 23, 1, 2))
+  })
+
+  test("refuses a localized or zoned form rather than guessing", () => {
+    expect(darwinStartMs("Fr 25 Sep 05:29:17 2026")).toBeUndefined()
+    expect(darwinStartMs("Fri Sep 25 05:29:17 IST 2026")).toBeUndefined()
+    expect(darwinStartMs("")).toBeUndefined()
+  })
+})
+
+describe.skipIf(process.platform !== "darwin")("a darwin start time", () => {
+  test("is when the process started, whatever zone this runtime parses dates in", async () => {
+    const before = Date.now()
+    const child = spawn("/bin/sh", ["-c", "sleep 10"], { stdio: "ignore" })
+    try {
+      const read = await readCreationIdentity(child.pid!)
+      expect(read?.startedAtMs).toBeGreaterThanOrEqual(before - 2_000)
+      expect(read?.startedAtMs).toBeLessThanOrEqual(Date.now())
+    } finally {
+      child.kill("SIGKILL")
+    }
   })
 })
