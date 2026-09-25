@@ -1,5 +1,18 @@
 import type { Page } from "@playwright/test"
-import { apiRequests, expect, SCRIPTED_ACP_HARNESS, test, UI, type ClaxedoApi, type Stack } from "../harness"
+import {
+  apiRequests,
+  cloudTurn,
+  expect,
+  makeCloudWorkspace,
+  SCRIPTED_ACP_HARNESS,
+  sessionRoute,
+  startCloudWorkspace,
+  stopCloudWorkspace,
+  test,
+  UI,
+  type ClaxedoApi,
+  type Stack,
+} from "../harness"
 
 type ListItem = { readonly sessionId: string; readonly title: string; readonly archivedAt?: number | null }
 
@@ -113,4 +126,27 @@ test("38 terminals are read only for an expanded project's live placements", asy
   await app.locator(`[data-testid="project-group"][data-project-id="${closed.projectId}"]`).getByRole("button", { name: "Expand project" }).click()
   const expanded = await settled()
   expect(expanded.filter((path) => path === "/api/wr/pty"), "terminal lists after expanding").toHaveLength(1)
+})
+
+test("38 a stopped sandbox's session paints its stored surface, and its project reads no terminal list and wakes nothing", async ({ signedCloud, page }) => {
+  test.setTimeout(120_000)
+  const workspace = await makeCloudWorkspace(signedCloud, "Stored")
+  await startCloudWorkspace(signedCloud, workspace)
+  const sessionId = await cloudTurn(signedCloud, workspace, { title: "Stored turn", script: "stored", reply: "Kept by the control plane" })
+  await stopCloudWorkspace(signedCloud, workspace)
+  await signedCloud.signIn(page, signedCloud.owner)
+  const reads: string[] = []
+  page.on("request", (request) => {
+    const url = new URL(request.url())
+    reads.push(`${request.method()} ${url.pathname}${url.search}`)
+  })
+
+  await page.goto(`${signedCloud.url}${sessionRoute(workspace.id, sessionId)}`)
+  await expect(page.getByText("Kept by the control plane")).toBeVisible()
+  await expect(page.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "Stored turn" })).toBeVisible()
+
+  expect(reads.filter((read) => read.includes(`/api/control/sessions/${sessionId}/messages`) && read.includes("view=latest-surface"))).toHaveLength(1)
+  expect(reads.filter((read) => read.includes(`/workspaces/${workspace.id}/`)), "runtime reads of the stopped sandbox").toEqual([])
+  expect(reads.filter((read) => read.startsWith(`POST /api/workspace/${workspace.id}/connection`)), "wakes").toEqual([])
+  expect(reads.filter((read) => read.includes("/api/wr/pty")), "terminal lists").toEqual([])
 })
