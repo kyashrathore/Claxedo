@@ -404,6 +404,28 @@ At 19:08 the owner said: finish in-progress work; start no new work.
   - The markdown rules `.ui-markdown>[data-markdown-block]:first-child>*:first-child` and `…:last-child>*:last-child` make the `:first-child`/`:last-child` invalidation "whole subtree". So the whole mounted transcript restyles once per flip.
   - The fix: keep the thumb mounted with `hidden`. v2's own `ScrollThumb` got exactly that on feat e02a7e8cdd, and collapse-all's restyle fell from 1,324 to 673 elements.
 
+- **The kit's select listbox sibling rule (`packages/ui/src/components/select.css`, `.ui-select-select-content-list > *:not([role="presentation"]) + *:not([role="presentation"])`)** has a universal subject. Blink flags every parent it tests as affected by `+` rules, so a sibling change anywhere restyles following siblings with their subtrees.
+  - Measured on the file palette's close (files-perf, 2026-09-25): with the markdown edge rules removed, the close restyles 755 elements with this rule as it is, and 260 with it written `> [role="option"] + [role="option"]`, the only children it spaces (Kobalte renders options as `role="option"` and section headings as `role="presentation"`).
+  - v2 can't override it away, because the rule stays in the sheet and keeps flagging. Apply the rewrite when `select.css` moves into the app. The markdown edge rules belong to `lane-transcript-perf`.
+
+- **The kit's Tailwind entry (`packages/ui/src/styles/tailwind/index.css`) scans every consumer's source** (`claxedo-app/src`, `claxedo-desktop/src/renderer`, `session-ui/src`), so each app ships the others' utilities.
+  - v2 already excludes v1 and the desktop app with `@source not` in `shell/styles/index.css`, and scans only its own `src`, the kit, and `session-ui/src` without tests, stories and the lab fixture: 36,390 → 21,277 candidates. None of the 239 dropped classes appears in v2's bundle.
+  - Two of v1's utilities, `group-data-[expanded]:opacity-100` and `group-data-[expanded=true]/section:rotate-90`, compile to a universal descendant selector. When shipped, each open or close of a menu or dialog restyled about 560 elements.
+  - At the swap, the kit's entry should scan only the kit. Each app's entry then names its own sources.
+
+- **The kit's `List` (`packages/ui/src/components/list.tsx`) renders a new group object per filter result**, so its outer `For` rebuilds every group and row on each keystroke. It also compares `props.key(item) === active()` in every row.
+  - v2 renders its own twin (`src/ui/list/`) through `@/ui`: groups keyed by category, rows diffed by reference, `data-active` and `data-selected` through `createSelector`. File palette "markdown": 18,458 → 7,198 computations. Command palette "settings": 29,996 → 9,026. Model picker "gpt": 75,069 → 1,892.
+  - At the swap, the twin replaces the kit's `List`.
+
+- **The kit's sprite hosts (`packages/ui/src/components/inline-svg-sprite.ts`, `ensureSvgSpriteHost`) are `aria-hidden` children of `<body>`.** Kobalte's hide-outside pass skips an element that is already `aria-hidden` without recording it, and walks into it. So every menu, dialog or popover writes `aria-hidden` on each `<symbol>`: 494–500 writes to open the account menu and 168 to close it.
+  - v2 mounts its own shelf (`src/ui/sprite-shelf.ts`): one un-hidden `display: contents` element holding every known host. The kit finds its host by id, so opening the account menu writes 12 and closing it writes 3.
+  - At the swap, `ensureSvgSpriteHost` should create hosts inside the shelf. Then a sprite id missing from `SPRITE_HOST_IDS` can't land back in `<body>`.
+
+- **Chevron rules keyed on `[data-slot]` or `svg` under `[data-expanded]`** make every `data-expanded` change invalidate every element with a `data-slot` attribute, or every `svg`, below the element that changed. Examples: session-ui's `session-review.css` and `session-turn.css` diff chevrons, and the kit's `select-v2.css` chevron.
+  - v2's transcript copies select the chevron by class (`ui-session-review-diff-chevron`, `ui-session-turn-diff-chevron`) in v2's own markup, and v2 loads neither session-ui's sheets nor `select-v2.css`.
+  - Toggling `data-expanded` on the palette's dialog restyled 618 elements before and restyles 10 now.
+  - At the swap, apply the same class keys to session-ui and select-v2 if they survive.
+
 ## Streaming at 60 Hz (exp-stream, 2026-09-25)
 
 **Scenario:** a session with 22 earlier turns streams a 12k-character reply (headings, lists, 5 code fences, a table, Mermaid, 4 tool parts): 1,540 deltas, 8 characters every 25 ms, measured on production builds. At 1x every build holds 60 Hz; the differences show up in per-delta latency, CPU and memory, and at 4x throttle in missed frames.
