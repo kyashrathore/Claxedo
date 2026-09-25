@@ -763,6 +763,7 @@ Everything users see today on every harness:
 ### Goes
 
 - **The OpenCode server adapter,** which fails every turn that asks permission (H-7).
+- **`executeCommand` and the engine's `getMessagePage`.** No app calls `POST /session/:id/command`, which then answers 501 like `shell`; message pages already come from the runtime store (`workspace/runtime.ts`).
 - **`shell`, `summarize`, `revert` and `unrevert`,** which nothing implements. Their routes keep answering 501 (`unsupportedIfUnavailable`).
 
 ## What stays and what goes, in the code
@@ -910,7 +911,7 @@ The ACP transport runs Claude, Codex and Cursor through their wrappers. **A nati
   - the nine extension-UI methods in Pi's RPC docs: the four dialogs through the broker (with `timeout` → `expired`), and `notify`, `setStatus`, `setWidget`, `setTitle` and `set_editor_text` as typed events. Where the app has no surface for one, it's shown as a notice.
 - **OpenCode (embedded engine):**
   - permission and question requests through the broker, answered through the engine's interaction port;
-  - commands run through the engine (`executeCommand`), and harness-owned history pages through it (`getMessagePage`), as today.
+  - message history and its pages come from the runtime store, as they do today.
 - **Every transport:** events it doesn't recognize become a typed `unrecognized` event, visible and counted.
 
 ## The contract
@@ -996,7 +997,7 @@ Every member of today's surface has one owner. The list is taken from `adapter-c
 | `instructionChannel` | a capability field; the runtime composes per channel, as today, including the 501 gate |
 | `commitsStreamEvents` | removed. The moved projection commits for every transport exactly as today's adapters did; the wire corpus proves it |
 | `sessionConfigOwner` | capability `configOwner: harness \| runtime`; harness-owned config is read through `config.read` |
-| `getSession`, `getMessages` | the runtime store for local harnesses (as today); `history` for a harness that owns its history (OpenCode's embedded engine) |
+| `getSession`, `getMessages` | the runtime store for local harnesses (as today); `history` only for a transport whose harness owns its history |
 | `createSession` | `start` |
 | re-attach after restart (lazy today, from `upstreamSessionId`) | `attach` |
 | `createHandoffSession`, `releaseHandoffSource` | the moved runtime host, over `start` and `close` |
@@ -1023,7 +1024,7 @@ Every member of today's surface has one owner. The list is taken from `adapter-c
 | `probeConfigOptions`, `peekConfigOptions` | `config.options({ draft \| session, peek })` |
 | `applyConfig`, `waitForConfigReady` | `configure` and `ConfigApplied` |
 | `revert`, `unrevert`, `shell`, `summarize` | deleted; routes keep 501 |
-| `executeCommand`, `getMessagePage` | the OpenCode transport's `commands` and `history` groups, which gain `execute` and `page` (the contract pass) |
+| `executeCommand`, `getMessagePage` | deleted. No app calls the command route, which answers 501 like `shell`; message pages come from the runtime store |
 | **`SdkRuntimeDriverHost`** | |
 | `lifecycle` | the transport's own active-turn field; admission stays in the runtime |
 | `pendingPermissions`, `pendingQuestions`, `updatePermissionState` | the broker's requests and grants |
@@ -1174,7 +1175,7 @@ Runs are sharded by harness with separate `CLAXEDO_E2E_PORT_RANGE`s, on crabbox 
 | H14 | Configured MCP servers on every local harness | B |
 | H15 | Plugins through profiles: Claude SDK, Codex (including brokered, H-4), Cursor; Claude over `claude-agent-acp` through the `_meta` extension | B; N for brokered Codex and the ACP case |
 | H16 | Custom ACP by command and by websocket; fork, agent list, commands | B once the websocket agent exists |
-| H17 | OpenCode (embedded): permission and question prompts through the broker; a command run; owner credentials switched live without aborting a turn | N |
+| H17 | OpenCode (embedded): permission and question prompts through the broker; owner credentials switched live without aborting a turn | N |
 | H18 | Pi for the owner: an extension command via `get_commands`, `setStatus` and a widget; mismatched RPC; `auth.json` unchanged | N |
 | H19 | Cloud workspace: one turn per harness | B once the sandbox driver exists |
 | H20 | Pi credentials by session owner: the owner's turn, a member's turn through a `send` share (spends the owner's profile), a queued re-issue, expired and missing accounts | N |
@@ -1260,7 +1261,7 @@ Every slice deletes what it replaces.
   - `Progress:`
 - [ ] **OpenCode, one path: the embedded engine** (decision 2).
   - The engine moved from `workspace-runtime/src/opencode` behind `HarnessTransport` into `src/transports/opencode-sdk/`, split to the 300-line file limit.
-  - Provider credentials in every placement (C-3, C-11), applied without aborting a running turn; requests through the broker; commands and history paging kept.
+  - Provider credentials in every placement (C-3, C-11), applied without aborting a running turn; requests through the broker.
   - The conformance suite green; H17 at P3.
   - The server adapter and `OPENCODE_URL` go in P4's package deletions (H-7).
   - `Progress:`
