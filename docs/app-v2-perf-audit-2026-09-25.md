@@ -179,3 +179,48 @@ In session "Greeting": open the panel with "Open workspace panel" (Files shows f
 v2's panel does fewer requests on every step. Where v1 makes two `diff/vcs/file` reads on Expand all, v2 makes one; v1 also reads `git/status`, `diff/refs` and `file/status` that v2 does not. Panel state goes to `localStorage` only (`claxedo:panel:navigator`, `claxedo:shell:machine:this-machine`).
 
 Folder expand restyles 3.3× more elements in v2 (492 vs 147). The detailed trace shows the same 118-element recalc for the inserted tree rows in both apps. v2 adds one recalc of 343 elements, triggered when the expanded tree becomes taller than the pane and `ScrollView` inserts its thumb (`Node was inserted into tree: div.scroll-view__thumb`, plus an inline-style write to the thumb). Inserting a sibling after the viewport restyles the viewport's subtree, the same positional-selector class as in scenario 2. In v1 the tree root does not change scrollability on this expand. This costs 343 restyles once per expand, so it is wasted work, not lag.
+
+## Scenario 6: hover over rail rows and transcript rows
+
+On session "Local changes review": hover the 4 rail rows (4-step move, 400 ms dwell each), then sweep the transcript at x = 800 from y = 120 to 680 in 40 px steps (120 ms dwell). Medians of 3 runs.
+
+| Metric | v1 rail | v2 rail | v1 transcript | v2 transcript |
+|---|---|---|---|---|
+| API requests | 9 (polling) | 0 | 0 | 0 |
+| Mutations | 16 | 14 | 2 | 2 |
+| Elements restyled | 701 | 154 (one run 704) | 480 | 344 |
+| Paints / frames | 61 / 22 | 60 / 19 | 18 / 49 | 11 / 53 |
+| ScriptDuration (ms) | 13 | 6 | 5 | 4 |
+
+Hover triggers no request and no prefetch in v2. It is at or below v1 on every count. The per-row mutations (`childList div.size-6.shrink-0`, the row's action slot) and the transcript's `:hover` whole-subtree invalidation of `.ui-text-part` / `.ui-user-message` rows are shared with v1.
+
+## Scenario 7: Settings, Marketplace, Tasks, and Back from each
+
+From session "Local changes review": Settings through the account menu (account row → "Settings"), then browser Back. Marketplace and Tasks through their rail buttons, each followed by Back. Medians of 3 runs.
+
+| Step | v1 API | v2 API | v1 mutations | v2 mutations | v1 restyled | v2 restyled | v1 paints | v2 paints |
+|---|---|---|---|---|---|---|---|---|
+| Settings | 8 | 0 | 783 | 748 | 1,297 | 853 | 43 | 33 |
+| Back from Settings | 12 | 3 | 53 | 47 | 257 | 489 | 19 | 49 |
+| Marketplace | 4 | 3 | 47 | 58 | 1,220 | 1,257 | 31 | 34 |
+| Back from Marketplace | 0 | 3 | 12 | 65 | 87 | 397 | 24 | 49 |
+| Tasks | 6 | 2 | 15 | 44 | 161 | 189 | 31 | 29 |
+| Back from Tasks | 1 | 4 | 9 | 67 | 87 | 404 | 26 | 50 |
+
+- Every Back in v2 re-mounts the session screen and re-fetches `agent-config/connections`, `agent-config/harness` and `session/:id/permission-mode`. This is the scenario-3 catalog finding again. v1 keeps the session mounted, so Back from Marketplace and Tasks costs it 0–1 requests and 87 restyles; v2 pays 3–4 requests and about 400 restyles.
+- Proven, v2 only: leaving Tasks fires `GET /api/claxedo/tasks/tasks?includeArchived,parent,projectId` (initiator `useTaskList` → `src/tasks/data/queries.ts:109-118`, page `queryFn` at `:15`) while the page is being torn down. `TasksPage` derives its project from `store.state.projectId ?? activeProjectId() ?? projects()[0]` (`src/tasks/view/tasks-page.tsx:14`). The route change flips `activeProjectId()` before the Tasks view unmounts, so the list query key changes and fetches a list nobody will see. Suspected mechanism; the request and its initiator are proven.
+- Shared, both apps: opening the account menu and choosing Settings makes 668 `aria-hidden` attribute mutations on `<symbol>` elements: the 167 symbols of the inline icon sprite `svg#codex-icon-sprite`, a direct child of `body`, set and cleared twice. The menu's hide-outside pass walks into the sprite and marks every symbol instead of the one `<svg>` container. It is wasted work on every modal or menu open.
+- Settings opens with 0 API requests in v2 (v1: 8, including `connections` ×2).
+
+## Scenario 8: window resize 1280 → 900 → 1280
+
+On session "Local changes review", viewport width set to 900 px and back. Medians of 3 runs, identical in each direction.
+
+| Metric (each direction) | v1 | v2 |
+|---|---|---|
+| Mutations | 0 | 9 |
+| Elements restyled | 240 | 312 |
+| Layouts / paints | 2 / 2 | 5 / 4 |
+| API requests | 0 | 0 |
+
+v2 changes the DOM on a width change: `div.workbench-root` gets `data-collapsed` and a child re-render, and `aside.absolute.bottom-0`, the scroll thumb and the bottom spacer get inline styles. v1 absorbs the same resize with CSS alone (0 mutations). This is minor, but it is script work on every resize frame of a live drag. Design fix: express the collapse breakpoint as a container or media query rather than a JS-set attribute.
