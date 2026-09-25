@@ -177,13 +177,13 @@ export interface MessageProps {
   message: AgentPresentationMessage
   parts: AgentContentPart[]
   actions?: UserActions
-  showAssistantCopyPartID?: string | null
+  showAssistantCopyPartId?: string | null
   showReasoningSummaries?: boolean
   useV2Actions?: boolean
   comments?: UserMessageComment[]
 }
 
-export type SessionAction = (input: { sessionID: string; messageID: string }) => Promise<void> | void
+export type SessionAction = (input: { sessionId: string; messageId: string }) => Promise<void> | void
 
 export type UserActions = {
   fork?: SessionAction
@@ -212,7 +212,7 @@ export interface MessagePartProps {
   deferToolContent?: boolean
   virtualizeDiff?: boolean
   onContentRendered?: () => void
-  showAssistantCopyPartID?: string | null
+  showAssistantCopyPartId?: string | null
   turnDurationMs?: number
   turnInterrupted?: boolean
   useV2Actions?: boolean
@@ -579,7 +579,7 @@ export function partDefaultOpen(part: AgentContentPart, shell = false, edit = fa
 type GroupMember = { message: AgentAssistantMessage; part: AgentToolPart }
 
 type PartGroupSlots = {
-  showAssistantCopyPartID?: string | null
+  showAssistantCopyPartId?: string | null
   turnDurationMs?: number
   useV2Actions?: boolean
   shellToolDefaultOpen?: boolean
@@ -608,7 +608,7 @@ function PartGroups(
     if (group.type === "part") return emptyMembers
     return group.refs
       .map((ref) => {
-        const message = props.message(ref.messageID)
+        const message = props.message(ref.messageId)
         const part = props.part(ref)
         if (!message || part?.type !== "tool") return undefined
         return { message, part }
@@ -674,7 +674,7 @@ function PartGroups(
                 const message = createMemo(() => {
                   const entry = entryAccessor()
                   if (entry.type !== "part") return undefined
-                  return props.message(entry.ref.messageID)
+                  return props.message(entry.ref.messageId)
                 })
                 const item = createMemo(() => {
                   const entry = entryAccessor()
@@ -690,7 +690,7 @@ function PartGroups(
                           <Part
                             part={item()}
                             message={message()}
-                            showAssistantCopyPartID={props.showAssistantCopyPartID}
+                            showAssistantCopyPartId={props.showAssistantCopyPartId}
                             turnDurationMs={props.turnDurationMs}
                             useV2Actions={props.useV2Actions}
                             defaultOpen={partDefaultOpen(
@@ -740,7 +740,7 @@ export function AssistantParts(
           list(data.store.part?.[message.id], emptyParts)
             .filter((part) => renderable(part, props.showReasoningSummaries ?? true))
             .map((part) => ({
-              messageID: message.id,
+              messageId: message.id,
               part,
             })),
         ),
@@ -751,7 +751,7 @@ export function AssistantParts(
 
   const last = createMemo(() => grouped().at(-1)?.key)
 
-  const partOf = (ref: PartRef) => part().get(ref.messageID)?.get(ref.partID)
+  const partOf = (ref: PartRef) => part().get(ref.messageId)?.get(ref.partId)
   const [foldChoice, setFoldChoice] = createSignal<boolean | undefined>(undefined)
   const settled = createMemo(() => props.messages.some(assistantMessageSettled))
   const foldableCount = createMemo(() => countFoldableGroups(grouped(), partOf))
@@ -786,7 +786,7 @@ export function AssistantParts(
         message={(messageId) => msgs().get(messageId)}
         part={partOf}
         busyGroupKey={props.working ? last() : undefined}
-        showAssistantCopyPartID={props.showAssistantCopyPartID}
+        showAssistantCopyPartId={props.showAssistantCopyPartId}
         turnDurationMs={props.turnDurationMs}
         useV2Actions={props.useV2Actions}
         shellToolDefaultOpen={props.shellToolDefaultOpen}
@@ -865,7 +865,7 @@ export function Message(props: MessageProps) {
           <AssistantMessageDisplay
             message={message()}
             parts={props.parts}
-            showAssistantCopyPartID={props.showAssistantCopyPartID}
+            showAssistantCopyPartId={props.showAssistantCopyPartId}
             showReasoningSummaries={props.showReasoningSummaries}
             useV2Actions={props.useV2Actions}
           />
@@ -878,7 +878,7 @@ export function Message(props: MessageProps) {
 export function AssistantMessageDisplay(props: {
   message: AgentAssistantMessage
   parts: AgentContentPart[]
-  showAssistantCopyPartID?: string | null
+  showAssistantCopyPartId?: string | null
   showReasoningSummaries?: boolean
   useV2Actions?: boolean
 }) {
@@ -889,7 +889,7 @@ export function AssistantMessageDisplay(props: {
         props.parts
           .filter((part) => renderable(part, props.showReasoningSummaries ?? true))
           .map((part) => ({
-            messageID: props.message.id,
+            messageId: props.message.id,
             part,
           })),
       ),
@@ -901,8 +901,8 @@ export function AssistantMessageDisplay(props: {
     <PartGroups
       groups={grouped()}
       message={() => props.message}
-      part={(ref) => part().get(ref.partID)}
-      showAssistantCopyPartID={props.showAssistantCopyPartID}
+      part={(ref) => part().get(ref.partId)}
+      showAssistantCopyPartId={props.showAssistantCopyPartId}
       useV2Actions={props.useV2Actions}
     />
   )
@@ -1167,8 +1167,8 @@ export function UserMessageDisplay(props: {
     void Promise.resolve()
       .then(() =>
         act({
-          sessionID: props.message.sessionID,
-          messageID: props.message.id,
+          sessionId: props.message.sessionID,
+          messageId: props.message.id,
         }),
       )
       .finally(() => setState("busy", false))
@@ -1365,7 +1365,7 @@ export function Part(props: MessagePartProps) {
         deferToolContent={props.deferToolContent}
         virtualizeDiff={props.virtualizeDiff}
         onContentRendered={props.onContentRendered}
-        showAssistantCopyPartID={props.showAssistantCopyPartID}
+        showAssistantCopyPartId={props.showAssistantCopyPartId}
         turnDurationMs={props.turnDurationMs}
         turnInterrupted={props.turnInterrupted}
         useV2Actions={props.useV2Actions}
@@ -1714,8 +1714,8 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   })
   const showCopy = createMemo(() => {
     if (props.message.role !== "assistant") return isLastTextPart()
-    if (props.showAssistantCopyPartID === null) return false
-    if (typeof props.showAssistantCopyPartID === "string") return props.showAssistantCopyPartID === part().id
+    if (props.showAssistantCopyPartId === null) return false
+    if (typeof props.showAssistantCopyPartId === "string") return props.showAssistantCopyPartId === part().id
     return isLastTextPart()
   })
   const [copied, setCopied] = createSignal(false)

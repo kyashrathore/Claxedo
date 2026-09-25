@@ -89,7 +89,7 @@ import {
 } from "./timeline-file-paths"
 import { createTimelineLinkOpen } from "./timeline-link-open"
 import { createMessageNavRoom } from "./message-nav-layout"
-import { messageNavCurrentID, messageNavPreview, messageNavVisible } from "./message-nav-preview"
+import { messageNavCurrentId, messageNavPreview, messageNavVisible } from "./message-nav-preview"
 import { createMessageNavDeferredMount } from "./message-nav-deferred-mount"
 import { scheduleTimelineFirstFoldReveal } from "./timeline-first-fold-reveal"
 import type { MessageTimelineProps } from "./message-timeline-props"
@@ -126,10 +126,10 @@ function rowOfTag<Tag extends TimelineRow.TimelineRow["_tag"]>(
 
 const timelineFallbackItemSize = 60
 
-const taskDescription = (part: PartType, sessionID: string) => {
+const taskDescription = (part: PartType, sessionId: string) => {
   if (part.type !== "tool" || !isSubagentToolPart(part)) return undefined
   const metadata = "metadata" in part.state ? part.state.metadata : undefined
-  if (metadata?.sessionId !== sessionID) return undefined
+  if (metadata?.sessionId !== sessionId) return undefined
   const value = part.state.input?.description
   if (typeof value === "string" && value) return value
   return undefined
@@ -151,9 +151,9 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const [toolOpen, setToolOpen] = createStore<Record<string, boolean | undefined>>(cached?.toolOpen ?? {})
   const [groupOpen, setGroupOpen] = createStore<Record<string, boolean | undefined>>(cached?.groupOpen ?? {})
   const [toolRevealed, setToolRevealed] = createStore<Record<string, boolean | undefined>>(cached?.toolRevealed ?? {})
-  const revealToolOutput = (partID: string, revealed: boolean) => {
+  const revealToolOutput = (partId: string, revealed: boolean) => {
     props.onMarkScrollGesture()
-    setToolRevealed(partID, revealed)
+    setToolRevealed(partId, revealed)
   }
   installTimelineMermaid(host.platform.renderMermaid)
   installTimelineTables()
@@ -276,12 +276,12 @@ export function MessageTimeline(props: MessageTimelineProps) {
   }
 
   const [listRoot, setListRoot] = createSignal<HTMLDivElement>()
-  const sessionID = createMemo(() => host.sessionId())
+  const sessionId = createMemo(() => host.sessionId())
   const sessionConversation = host.conversation
   const sessionMessages = createMemo(() => sessionConversation()?.messages ?? emptyMessages)
-  const messageByID = createMemo(() => new Map(sessionMessages().map((message) => [message.id, message] as const)))
+  const messageById = createMemo(() => new Map(sessionMessages().map((message) => [message.id, message] as const)))
   const queuedNotYetInTranscript = createMemo(() =>
-    (props.queued?.items() ?? []).filter((item) => !item.messageId || !messageByID().has(item.messageId)),
+    (props.queued?.items() ?? []).filter((item) => !item.messageId || !messageById().has(item.messageId)),
   )
   const assistantMessagesByParent = createMemo(() => {
     const result = new Map<string, AssistantMessage[]>()
@@ -303,14 +303,14 @@ export function MessageTimeline(props: MessageTimelineProps) {
     ),
   )
   const sessionStatus = createActivePaneProjection({ active: props.active, read: () => host.status() ?? idle, initial: idle })
-  const turnSettleRefreshPending = (userMessageID: string) => host.turnSettlePending(userMessageID)
+  const turnSettleRefreshPending = (userMessageId: string) => host.turnSettlePending(userMessageId)
   const working = createMemo(() => turnActive(sessionStatus()))
   const directorySessionRows = createActivePaneProjection({ active: props.active, read: host.sessions, initial: [] as readonly TimelineSessionRow[] })
-  const directorySession = (sessionID: string | undefined) =>
-    sessionID ? directorySessionRows().find((session) => session.id === sessionID) : undefined
+  const directorySession = (sessionId: string | undefined) =>
+    sessionId ? directorySessionRows().find((session) => session.id === sessionId) : undefined
   const hostCallIds = createMemo(() => subagentHostCallIds(sessionConversation()?.parts ?? {}))
   const resolveAmbientSubagents = () => {
-    const id = sessionID()
+    const id = sessionId()
     if (!id) return []
     return (data.resolveSubagents?.(id, undefined, hostCallIds()) ?? []).filter((subagent) => subagent.ambient)
   }
@@ -320,16 +320,16 @@ export function MessageTimeline(props: MessageTimelineProps) {
     initial: [] as ReturnType<typeof resolveAmbientSubagents>,
   })
 
-  const activeMessageID = createMemo(() => {
+  const activeMessageId = createMemo(() => {
     const messages = sessionMessages()
     let lastUserIndex = -1
     for (let i = messages.length - 1; i >= 0; i--) {
       if (messages[i].role === "user") { lastUserIndex = i; break }
     }
-    const parentID = pending()?.parentID
-    if (parentID) {
-      const result = Binary.search(messages, parentID, (message) => message.id)
-      const index = result.found ? result.index : messages.findIndex((item) => item.id === parentID)
+    const parentId = pending()?.parentID
+    if (parentId) {
+      const result = Binary.search(messages, parentId, (message) => message.id)
+      const index = result.found ? result.index : messages.findIndex((item) => item.id === parentId)
       const message = index >= 0 ? messages[index] : undefined
       if (message && message.role === "user" && index >= lastUserIndex) return message.id
     }
@@ -340,28 +340,28 @@ export function MessageTimeline(props: MessageTimelineProps) {
     return undefined
   })
   const info = createMemo(() => {
-    const id = sessionID()
+    const id = sessionId()
     if (!id) return undefined
     return directorySession(id)
   })
   const titleSource = createActivePaneProjection<string | undefined>({ active: props.active, read: props.title, initial: undefined })
   const latchedTitle = createMemo<LatchedSessionTitle | undefined>((previous) => latchSessionTitle(previous, { sessionKey: host.sessionKey(), title: titleSource() }))
   const titleLabel = createMemo(() => sessionTitle(latchedTitle()?.title))
-  const parentID = createMemo(() => props.parentId)
+  const parentId = createMemo(() => props.parentId)
   const parentConversation = host.parentConversation
   const parentMessages = createMemo(() => parentConversation()?.messages ?? emptyMessages)
   const getMsgParts = (msgId: string) => sessionConversation()?.parts[msgId] ?? emptyParts
   const getParentMsgParts = (msgId: string) => parentConversation()?.parts[msgId] ?? emptyParts
   const turnPreview = (message: UserMessage) =>
     messageNavPreview({
-      userMessageID: message.id,
-      assistantMessageIDs: (assistantMessagesByParent().get(message.id) ?? emptyAssistantMessages).map(
+      userMessageId: message.id,
+      assistantMessageIds: (assistantMessagesByParent().get(message.id) ?? emptyAssistantMessages).map(
         (item) => item.id,
       ),
       getParts: getMsgParts,
     })
   const childTaskDescription = createMemo(() => {
-    const id = sessionID()
+    const id = sessionId()
     if (!id) return undefined
     return parentMessages()
       .flatMap((message) => getParentMsgParts(message.id))
@@ -369,7 +369,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
       .findLast((value): value is string => !!value)
   })
   const childTitle = createMemo(() => {
-    if (!parentID()) return titleLabel() ?? ""
+    if (!parentId()) return titleLabel() ?? ""
     if (childTaskDescription()) return childTaskDescription()
     const value = titleLabel()?.replace(/\s+\(@[^)]+ subagent\)$/, "")
     if (value) return value
@@ -401,34 +401,34 @@ export function MessageTimeline(props: MessageTimelineProps) {
           undefined,
           { equals: samePartsRecord },
         )
-        const visibleAssistantMessageIDs = createMemo(() => {
+        const visibleAssistantMessageIds = createMemo(() => {
           if (initialTurnExpanded() || indexAccessor() !== props.userMessages.length - 1) return undefined
           const parts = turnParts()
-          return Timeline.coldFinalVisibleAssistantMessageIDs(
+          return Timeline.coldFinalVisibleAssistantMessageIds(
             turnAssistants(),
-            (messageID) => parts[messageID] ?? emptyParts,
+            (messageId) => parts[messageId] ?? emptyParts,
           )
         })
-        const isActive = createMemo(() => activeMessageID() === userMessage.id)
+        const isActive = createMemo(() => activeMessageId() === userMessage.id)
         return createMemo((previous: TimelineRow.TimelineRow[] | undefined) => {
           const parts = turnParts()
           const shownFoldCount = previous?.find((row): row is TimelineRow.TurnFold => row._tag === "TurnFold")?.foldCount
           const rows = Timeline.constructMessageRows(
             userMessage,
-            (messageID) => parts[messageID] ?? emptyParts,
+            (messageId) => parts[messageId] ?? emptyParts,
             turnAssistants(),
             indexAccessor(),
             host.settings.showReasoningSummaries(),
             statusType(),
             isActive(),
             props.firstTurnRecovery !== false && indexAccessor() === 0,
-            (userMessageID) => turnFold.isFolded(userMessageID),
+            (userMessageId) => turnFold.isFolded(userMessageId),
             lastTurnOutcome(),
-            visibleAssistantMessageIDs(),
-            (userMessageID) => Math.max(cached?.turnFoldableCounts?.[userMessageID] ?? 0, shownFoldCount ?? 0) || undefined,
-            (partID) => toolOpen[partID] === true || toolRevealed[partID] === true,
+            visibleAssistantMessageIds(),
+            (userMessageId) => Math.max(cached?.turnFoldableCounts?.[userMessageId] ?? 0, shownFoldCount ?? 0) || undefined,
+            (partId) => toolOpen[partId] === true || toolRevealed[partId] === true,
             turnSettleRefreshPending(userMessage.id),
-            (messageID) => sessionConversation()?.fragmentParts.has(messageID) === true,
+            (messageId) => sessionConversation()?.fragmentParts.has(messageId) === true,
           )
 
           return TimelineRow.reuse(previous, rows)
@@ -448,7 +448,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
     const count = props.hiddenTurnCount?.() ?? 0
     const head = props.userMessages[0]
     if (count <= 0 || !head) return undefined
-    return TimelineRow.PreviousMessages({ userMessageID: head.id, count })
+    return TimelineRow.PreviousMessages({ userMessageId: head.id, count })
   }
 
   const timelineRows = createMemo((previous: TimelineRow.TimelineRow[] | undefined) => {
@@ -551,12 +551,12 @@ export function MessageTimeline(props: MessageTimelineProps) {
     paddingEnd: 64,
     get rangeExtractor() {
       const rows = timelineRows()
-      const activeID = activeMessageID()
+      const activeId = activeMessageId()
       const overscan = renderOverscan()
       const pinned = resizeAnchor.pinnedIndexes()
       return (range: { startIndex: number; endIndex: number; overscan: number; count: number }) => {
-        const active = activeID
-          ? rows.findLastIndex((row) => "userMessageID" in row && row.userMessageID === activeID)
+        const active = activeId
+          ? rows.findLastIndex((row) => "userMessageID" in row && row.userMessageId === activeId)
           : -1
         return filterVirtualIndexes(
           [...new Set([...pinned, ...defaultRangeExtractor({ ...range, overscan }), ...(active < 0 ? [] : [active])])]
@@ -595,7 +595,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
     const result = new Map<string, number>()
     timelineRows().forEach((row, index) => {
       if (!TimelineRow.anchorsMessage(row)) return
-      result.set(row.userMessageID, index)
+      result.set(row.userMessageId, index)
     })
     return result
   })
@@ -603,25 +603,25 @@ export function MessageTimeline(props: MessageTimelineProps) {
     const result = new Map<string, string>()
     timelineRows().forEach((row) => {
       if (row._tag !== "AssistantPart") return
-      result.set(row.userMessageID, row.group.key)
+      result.set(row.userMessageId, row.group.key)
     })
     return result
   })
-  const [viewportMessageID, setViewportMessageID] = createSignal<string>()
+  const [viewportMessageId, setViewportMessageId] = createSignal<string>()
   const currentNavMessage = createMemo(() => {
-    const id = viewportMessageID()
+    const id = viewportMessageId()
     const messages = props.navMessages ?? props.userMessages
     return messages.find((message) => message.id === id) ?? props.currentMessage ?? messages.at(-1)
   })
   const updateViewportMessage = (root: HTMLDivElement) => {
-    const id = messageNavCurrentID(
+    const id = messageNavCurrentId(
       virtualizer.getVirtualItems().flatMap((item) => {
         const row = timelineRows()[item.index]
-        return row && "userMessageID" in row ? [{ id: row.userMessageID, start: item.start }] : []
+        return row && "userMessageID" in row ? [{ id: row.userMessageId, start: item.start }] : []
       }),
       root.scrollTop + 100,
     )
-    if (id !== viewportMessageID()) setViewportMessageID(id)
+    if (id !== viewportMessageId()) setViewportMessageId(id)
   }
 
   createEffect(() => {
@@ -755,7 +755,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
 
   createEffect(
     on(
-      () => [parentID(), childTaskDescription()] as const,
+      () => [parentId(), childTaskDescription()] as const,
       ([id, description]) => {
         if (!id || description) return
         if (parentMessages().length > 0) return
@@ -767,33 +767,33 @@ export function MessageTimeline(props: MessageTimelineProps) {
     ),
   )
 
-  const turnAssistantMessages = (userMessageID: string) =>
-    assistantMessagesByParent().get(userMessageID) ?? emptyAssistantMessages
-  const turnSettled = (userMessageID: string) => {
-    const newest = turnAssistantMessages(userMessageID).at(-1)
+  const turnAssistantMessages = (userMessageId: string) =>
+    assistantMessagesByParent().get(userMessageId) ?? emptyAssistantMessages
+  const turnSettled = (userMessageId: string) => {
+    const newest = turnAssistantMessages(userMessageId).at(-1)
     return !!newest && assistantMessageSettled(newest)
   }
-  const workingTurn = (userMessageID: string) =>
-    (sessionStatus().kind !== "idle" || turnSettleRefreshPending(userMessageID)) &&
-    activeMessageID() === userMessageID &&
-    !turnSettled(userMessageID)
+  const workingTurn = (userMessageId: string) =>
+    (sessionStatus().kind !== "idle" || turnSettleRefreshPending(userMessageId)) &&
+    activeMessageId() === userMessageId &&
+    !turnSettled(userMessageId)
 
-  const turnDurationMs = (userMessageID: string) => {
-    const message = messageByID().get(userMessageID)
+  const turnDurationMs = (userMessageId: string) => {
+    const message = messageById().get(userMessageId)
     if (!message || message.role !== "user") return undefined
-    return Timeline.turnDurationMs(message, turnAssistantMessages(userMessageID))
+    return Timeline.turnDurationMs(message, turnAssistantMessages(userMessageId))
   }
 
-  const turnInterrupted = (userMessageID: string) =>
+  const turnInterrupted = (userMessageId: string) =>
     Timeline.turnInterrupted(
-      turnAssistantMessages(userMessageID),
+      turnAssistantMessages(userMessageId),
       info()?.lastTurn,
     )
 
-  const assistantCopyPartID = (userMessageID: string) => {
-    if (workingTurn(userMessageID)) return null
-    const all = assistantMessagesByParent().get(userMessageID) ?? emptyAssistantMessages
-    const finalTurn = props.userMessages.at(-1)?.id === userMessageID
+  const assistantCopyPartId = (userMessageId: string) => {
+    if (workingTurn(userMessageId)) return null
+    const all = assistantMessagesByParent().get(userMessageId) ?? emptyAssistantMessages
+    const finalTurn = props.userMessages.at(-1)?.id === userMessageId
     const messages = initialTurnExpanded() || !finalTurn ? all : all.slice(-1)
 
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -810,7 +810,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
     return undefined
   }
 
-  const getMsgPart = (messageID: string, partID: string) => getMsgParts(messageID).find((part) => part.id === partID)
+  const getMsgPart = (messageId: string, partId: string) => getMsgParts(messageId).find((part) => part.id === partId)
 
   const renderAssistantPartGroup = (row: Accessor<TimelineRowMap["AssistantPart"]>, onSizeChange?: () => void) => {
     if (row().group.type === "context") {
@@ -819,8 +819,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
         if (group.type !== "context") return []
         return group.refs
           .map((ref) => {
-            const message = messageByID().get(ref.messageID)
-            const part = getMsgPart(ref.messageID, ref.partID)
+            const message = messageById().get(ref.messageId)
+            const part = getMsgPart(ref.messageId, ref.partId)
             if (!message || !isRuntimeMessage(message)) return undefined
             if (!part || part.type !== "tool") return undefined
             return { message, part }
@@ -834,7 +834,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
           open={groupOpen[row().group.key] ?? false}
           onOpenChange={(open) => setGroupOpen(row().group.key, open)}
           busy={
-            !props.progressBlocked?.() && workingTurn(row().userMessageID) && lastAssistantGroupKey().get(row().userMessageID) === row().group.key
+            !props.progressBlocked?.() && workingTurn(row().userMessageId) && lastAssistantGroupKey().get(row().userMessageId) === row().group.key
           }
           onSizeChange={onSizeChange}
         >
@@ -843,8 +843,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
               <MessagePart
                 part={member.part}
                 message={member.message}
-                turnDurationMs={turnDurationMs(row().userMessageID)}
-                turnInterrupted={turnInterrupted(row().userMessageID)}
+                turnDurationMs={turnDurationMs(row().userMessageId)}
+                turnInterrupted={turnInterrupted(row().userMessageId)}
                 toolOpen={toolOpen[member.part.id] ?? false}
                 onToolOpenChange={(open) => setToolOpen(member.part.id, open)}
                 toolRevealed={toolRevealed[member.part.id] ?? false}
@@ -864,7 +864,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         const group = row().group
         if (group.type !== "agents") return []
         return group.refs
-          .map((ref) => getMsgPart(ref.messageID, ref.partID))
+          .map((ref) => getMsgPart(ref.messageId, ref.partId))
           .filter((part): part is ToolPart => part?.type === "tool")
       })
       return <SubagentChipRow parts={members()} />
@@ -876,8 +876,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
         if (group.type !== "work") return []
         return group.refs
           .map((ref) => {
-            const message = messageByID().get(ref.messageID)
-            const part = getMsgPart(ref.messageID, ref.partID)
+            const message = messageById().get(ref.messageId)
+            const part = getMsgPart(ref.messageId, ref.partId)
             if (!message || !isRuntimeMessage(message)) return undefined
             if (!part || part.type !== "tool") return undefined
             return { message, part }
@@ -899,7 +899,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
           open={groupOpen[row().group.key] ?? false}
           onOpenChange={(open) => setGroupOpen(row().group.key, open)}
           busy={
-            !props.progressBlocked?.() && workingTurn(row().userMessageID) && lastAssistantGroupKey().get(row().userMessageID) === row().group.key
+            !props.progressBlocked?.() && workingTurn(row().userMessageId) && lastAssistantGroupKey().get(row().userMessageId) === row().group.key
           }
           memberOpen={memberOpen()}
           onSizeChange={onSizeChange}
@@ -911,8 +911,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
                 <MessagePart
                   part={member.part}
                   message={member.message}
-                  turnDurationMs={turnDurationMs(row().userMessageID)}
-                  turnInterrupted={turnInterrupted(row().userMessageID)}
+                  turnDurationMs={turnDurationMs(row().userMessageId)}
+                  turnInterrupted={turnInterrupted(row().userMessageId)}
                   defaultOpen={defaultOpen()}
                   toolOpen={toolOpen[member.part.id] ?? defaultOpen()}
                   onToolOpenChange={(open) => setToolOpen(member.part.id, open)}
@@ -932,13 +932,13 @@ export function MessageTimeline(props: MessageTimelineProps) {
     const message = createMemo(() => {
       const group = row().group
       if (group.type !== "part") return undefined
-      const value = messageByID().get(group.ref.messageID)
+      const value = messageById().get(group.ref.messageId)
       return value && isRuntimeMessage(value) ? value : undefined
     })
     const part = createMemo(() => {
       const group = row().group
       if (group.type !== "part") return undefined
-      return getMsgPart(group.ref.messageID, group.ref.partID)
+      return getMsgPart(group.ref.messageId, group.ref.partId)
     })
     const defaultOpen = createMemo(() => {
       const item = part()
@@ -954,9 +954,9 @@ export function MessageTimeline(props: MessageTimelineProps) {
               <MessagePart
                 part={part()}
                 message={message()}
-                showAssistantCopyPartID={assistantCopyPartID(row().userMessageID)}
-                turnDurationMs={turnDurationMs(row().userMessageID)}
-                turnInterrupted={turnInterrupted(row().userMessageID)}
+                showAssistantCopyPartId={assistantCopyPartId(row().userMessageId)}
+                turnDurationMs={turnDurationMs(row().userMessageId)}
+                turnInterrupted={turnInterrupted(row().userMessageId)}
                 defaultOpen={defaultOpen()}
                 toolOpen={toolOpen[part().id] ?? defaultOpen()}
                 onToolOpenChange={(open) => setToolOpen(part().id, open)}
@@ -981,10 +981,10 @@ export function MessageTimeline(props: MessageTimelineProps) {
     }
     return (
       <div
-        id={anchor() ? props.anchor(input.row().userMessageID) : undefined}
-        data-message-id={input.row().userMessageID}
-        data-content-message-id={TimelineRow.contentMessageID(input.row())}
-        data-content-part-id={TimelineRow.contentPartID(input.row())}
+        id={anchor() ? props.anchor(input.row().userMessageId) : undefined}
+        data-message-id={input.row().userMessageId}
+        data-content-message-id={TimelineRow.contentMessageId(input.row())}
+        data-content-part-id={TimelineRow.contentPartId(input.row())}
         data-timeline-row={input.row()._tag}
         classList={{
           "min-w-0 w-full max-w-full": true,
@@ -1023,7 +1023,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
       case "CommentStrip": {
         const commentStripRow = rowOfTag(row, "CommentStrip", current)
         const comments = createMemo(() =>
-          getMsgParts(commentStripRow().userMessageID).flatMap((part) => MessageComment.fromPart(part) ?? []),
+          getMsgParts(commentStripRow().userMessageId).flatMap((part) => MessageComment.fromPart(part) ?? []),
         )
         return (
           <TimelineRowFrame row={commentStripRow}>
@@ -1036,7 +1036,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
                         <Switch>
                           <Match when={MessageComment.asImageMark(comment())}>
                             {(mark) => (
-                              <div class="flex items-start gap-1.5 min-w-0" data-slot="image-mark-comment">
+                              <div class="flex items-start gap-1.5 min-w-0">
                                 <ImageMarkBadge number={mark().number} />
                                 <span class="text-12-regular text-text-strong whitespace-pre-wrap break-words">
                                   {mark().comment}
@@ -1079,7 +1079,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
       case "UserMessage": {
         const userMessageRow = rowOfTag(row, "UserMessage", current)
         const message = createMemo(() => {
-          const m = messageByID().get(userMessageRow().userMessageID)
+          const m = messageById().get(userMessageRow().userMessageId)
           if (m && isRuntimeMessage(m) && m.role === "user") return m
           return undefined
         })
@@ -1089,7 +1089,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
               {(message) => (
                 <TimelineUserMessage
                   message={message()}
-                  parts={getMsgParts(userMessageRow().userMessageID)}
+                  parts={getMsgParts(userMessageRow().userMessageId)}
                   actions={props.actions}
                 />
               )}
@@ -1127,7 +1127,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
               <div
                 data-slot="session-turn-assistant-content"
-                aria-hidden={workingTurn(assistantPartRow().userMessageID)}
+                aria-hidden={workingTurn(assistantPartRow().userMessageId)}
               >
                 {renderAssistantPartGroup(assistantPartRow, onSizeChange)}
               </div>
@@ -1164,7 +1164,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         return (
           <TimelineRowFrame row={retryRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
-              <ClaxedoSessionRetry status={sessionStatus()} show={activeMessageID() === retryRow().userMessageID} />
+              <ClaxedoSessionRetry status={sessionStatus()} show={activeMessageId() === retryRow().userMessageId} />
             </div>
           </TimelineRowFrame>
         )
@@ -1181,7 +1181,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
                 cost={turnFoldRow().cost}
                 showTokens={host.settings.timelineShowTurnTokens()}
                 onToggle={() => {
-                  turnFold.setFolded(turnFoldRow().userMessageID, !turnFoldRow().folded)
+                  turnFold.setFolded(turnFoldRow().userMessageId, !turnFoldRow().folded)
                   onSizeChange?.()
                 }}
               />
@@ -1193,9 +1193,9 @@ export function MessageTimeline(props: MessageTimelineProps) {
         const diffSummaryRow = rowOfTag(row, "DiffSummary", current)
         const undoTurn = () => {
           const revert = props.actions?.revert
-          const id = sessionID()
+          const id = sessionId()
           if (!revert || !id) return undefined
-          return Promise.resolve(revert({ sessionID: id, messageID: diffSummaryRow().userMessageID }))
+          return Promise.resolve(revert({ sessionId: id, messageId: diffSummaryRow().userMessageId }))
             .then(() => showToast({ title: host.t("ui.message.revertMessage") }))
             .catch((error: unknown) => {
               console.warn("The turn could not be undone", { error })
@@ -1227,7 +1227,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
                 error={errorRow().error}
                 providerID={errorRow().providerID}
                 modelID={errorRow().modelID}
-                onAction={(value) => props.onFirstTurnRecovery?.(value, errorRow().userMessageID)}
+                onAction={(value) => props.onFirstTurnRecovery?.(value, errorRow().userMessageId)}
               />
             </div>
           </TimelineRowFrame>
@@ -1250,7 +1250,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
     const entry = createMemo<ReturnType<typeof liveEntry>>((previous) => liveEntry() ?? previous)
     const asyncFile = (value: TimelineRow.TimelineRow) => {
       if (value._tag !== "AssistantPart" || value.group.type !== "part") return false
-      const part = getMsgPart(value.group.ref.messageID, value.group.ref.partID)
+      const part = getMsgPart(value.group.ref.messageId, value.group.ref.partId)
       return part?.type === "tool" && ["edit", "write", "apply_patch"].includes(part.tool)
     }
     const [contentReady, setContentReady] = createSignal(false)
@@ -1312,7 +1312,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
       class="relative w-full h-full min-w-0"
       ref={registerTimelineRoot}
       data-session-timeline-root
-      data-session-timeline-session-id={sessionID() ?? ""}
+      data-session-timeline-session-id={sessionId() ?? ""}
       data-session-timeline-user-count={String(props.userMessages.length)}
       data-session-timeline-row-count={String(timelineRows().length)}
       data-session-timeline-key-count={String(virtualRowKeys().length)}
@@ -1335,7 +1335,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         )}
       </Show>
       <Show when={messageNavMountReady() && messageNavGutterVisible()}>
-        <div data-slot="message-nav-gutter" class="pointer-events-none absolute inset-0 z-[45]">
+        <div class="pointer-events-none absolute inset-0 z-[45]">
           <MessageNav
             class="pointer-events-auto absolute left-2 md:left-3 top-1/2 -translate-y-1/2"
             messages={props.navMessages ?? props.userMessages}
@@ -1386,7 +1386,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         class="relative min-w-0 w-full h-full"
         style={transcriptStyle()}
       >
-        <Show when={parentID()}>
+        <Show when={parentId()}>
           <h1 data-subagent-child-heading tabIndex={-1} class="sr-only">
             {childTitle()}
           </h1>

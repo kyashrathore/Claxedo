@@ -53,9 +53,9 @@ function isSummaryDiff(value: SnapshotFileDiff): value is SummaryDiff {
 }
 
 export namespace Timeline {
-  export function coldFinalVisibleAssistantMessageIDs(
+  export function coldFinalVisibleAssistantMessageIds(
     assistantMessages: AssistantMessage[],
-    getMessageParts: (messageID: string) => Part[],
+    getMessageParts: (messageId: string) => Part[],
   ) {
     const finalAssistant = assistantMessages.at(-1)
     if (!finalAssistant) return undefined
@@ -70,34 +70,34 @@ export namespace Timeline {
 
   export function turnFoldableGroupCount(input: {
     assistantMessages: AssistantMessage[]
-    getMessageParts: (messageID: string) => Part[]
+    getMessageParts: (messageId: string) => Part[]
     showReasoning?: boolean
   }) {
     const refs = input.assistantMessages.flatMap((message, messageIndex) =>
       input.getMessageParts(message.id)
         .filter((part) => renderablePart(part, input.showReasoning ?? false))
-        .map((part) => ({ messageID: message.id, messageIndex, part })),
+        .map((part) => ({ messageId: message.id, messageIndex, part })),
     )
-    const partByID = new Map(refs.map((ref) => [ref.part.id, ref.part] as const))
-    return countFoldableGroups(groupParts(refs), (ref) => partByID.get(ref.partID))
+    const partById = new Map(refs.map((ref) => [ref.part.id, ref.part] as const))
+    return countFoldableGroups(groupParts(refs), (ref) => partById.get(ref.partId))
   }
 
   export function constructMessageRows(
     userMessage: UserMessage,
-    getMessageParts: (messageID: string) => Part[],
+    getMessageParts: (messageId: string) => Part[],
     assistantMessages: AssistantMessage[],
     index: number,
     showReasoning: boolean,
     status: SessionStatus["kind"],
     isActive: boolean,
     firstTurnRecovery = index === 0,
-    isFoldedChoice: (userMessageID: string) => boolean | undefined = () => undefined,
+    isFoldedChoice: (userMessageId: string) => boolean | undefined = () => undefined,
     lastTurn?: TurnOutcome,
-    visibleAssistantMessageIDs?: ReadonlySet<string>,
-    priorFoldableCount: (userMessageID: string) => number | undefined = () => undefined,
-    isPartExpanded: (partID: string) => boolean = () => false,
+    visibleAssistantMessageIds?: ReadonlySet<string>,
+    priorFoldableCount: (userMessageId: string) => number | undefined = () => undefined,
+    isPartExpanded: (partId: string) => boolean = () => false,
     settlePending = false,
-    partsFragment: (messageID: string) => boolean = () => false,
+    partsFragment: (messageId: string) => boolean = () => false,
   ) {
     const rows: TimelineRow.TimelineRow[] = []
 
@@ -124,10 +124,10 @@ export namespace Timeline {
           renderablePart(part, showReasoning) &&
           !(interrupted && part.type === "tool" && (part.state.status === "pending" || part.state.status === "running"))
         )
-        .map((part) => ({ messageID: message.id, messageIndex, part })),
+        .map((part) => ({ messageId: message.id, messageIndex, part })),
     )
-    const visibleAssistantPartRefs = visibleAssistantMessageIDs
-      ? assistantPartRefs.filter((ref) => visibleAssistantMessageIDs.has(ref.messageID))
+    const visibleAssistantPartRefs = visibleAssistantMessageIds
+      ? assistantPartRefs.filter((ref) => visibleAssistantMessageIds.has(ref.messageId))
       : assistantPartRefs
     const groupSegments = (refs: typeof assistantPartRefs) =>
       interrupted && !compaction
@@ -140,18 +140,18 @@ export namespace Timeline {
       ...(index > 0 ? [{ type: "interrupted" as const }] : []),
       ...segment.map((group) => ({ type: "part" as const, group })),
     ])
-    if (previousUserMessage) rows.push(TimelineRow.TurnGap({ userMessageID: userMessage.id }))
+    if (previousUserMessage) rows.push(TimelineRow.TurnGap({ userMessageId: userMessage.id }))
 
     if (comments.length > 0)
       rows.push(
         TimelineRow.CommentStrip({
-          userMessageID: userMessage.id,
+          userMessageId: userMessage.id,
         }),
       )
 
     rows.push(
       TimelineRow.UserMessage({
-        userMessageID: userMessage.id,
+        userMessageId: userMessage.id,
         anchor: comments.length === 0,
       }),
     )
@@ -159,7 +159,7 @@ export namespace Timeline {
     if (compaction) {
       rows.push(
         TimelineRow.TurnDivider({
-          userMessageID: userMessage.id,
+          userMessageId: userMessage.id,
           label: "compaction",
         }),
       )
@@ -167,17 +167,17 @@ export namespace Timeline {
     if (handoff) {
       rows.push(
         TimelineRow.TurnDivider({
-          userMessageID: userMessage.id,
+          userMessageId: userMessage.id,
           label: "handoff",
           harness: handoffHarnessLabel(handoff.to?.id),
         }),
       )
     }
 
-    const partByID = new Map(assistantPartRefs.map((ref) => [ref.part.id, ref.part] as const))
+    const partById = new Map(assistantPartRefs.map((ref) => [ref.part.id, ref.part] as const))
     const partOfRef = (ref: PartRef) => {
-      const found = partByID.get(ref.partID)
-      return found ? { ...found, userOpen: isPartExpanded(ref.partID) } : found
+      const found = partById.get(ref.partId)
+      return found ? { ...found, userOpen: isPartExpanded(ref.partId) } : found
     }
     const liveFoldableCount = countFoldableGroups(groupSegments(assistantPartRefs).flat(), partOfRef)
     const foldableCount = Math.max(liveFoldableCount, priorFoldableCount(userMessage.id) ?? 0)
@@ -209,7 +209,7 @@ export namespace Timeline {
       userChoice: isFoldedChoice(userMessage.id),
     })
     if (partsPending && !fold.folded && !working) {
-      rows.push(TimelineRow.TurnLoading({ userMessageID: userMessage.id }))
+      rows.push(TimelineRow.TurnLoading({ userMessageId: userMessage.id }))
       return rows
     }
     const turnTokens = assistantMessages.reduce((sum, message) => {
@@ -231,7 +231,7 @@ export namespace Timeline {
     if (fold.canFold) {
       rows.push(
         TimelineRow.TurnFold({
-          userMessageID: userMessage.id,
+          userMessageId: userMessage.id,
           durationMs,
           foldCount: Math.max(foldableCount, FOLD_MINIMUM),
           folded: fold.folded,
@@ -246,7 +246,7 @@ export namespace Timeline {
       if (item.type === "interrupted") {
         rows.push(
           TimelineRow.TurnDivider({
-            userMessageID: userMessage.id,
+            userMessageId: userMessage.id,
             label: "interrupted",
             ...(typeof durationMs === "number" ? { durationMs } : {}),
           }),
@@ -258,7 +258,7 @@ export namespace Timeline {
 
       rows.push(
         TimelineRow.AssistantPart({
-          userMessageID: userMessage.id,
+          userMessageId: userMessage.id,
           group: item.group,
           previousAssistantPart: assistantGroupIndex > 0,
           lastAssistantPart: assistantGroupIndex === emittedCount - 1,
@@ -269,10 +269,10 @@ export namespace Timeline {
 
     const trailingGroup = assistantItems.findLast((item) => item.type === "part")?.group
     const trailingRef = trailingGroup?.type === "part" ? trailingGroup.ref : trailingGroup?.refs.at(-1)
-    const trailingPart = trailingRef ? partByID.get(trailingRef.partID) : undefined
+    const trailingPart = trailingRef ? partById.get(trailingRef.partId) : undefined
     const trailingGroupIsLive =
       !!trailingGroup &&
-      trailingRef?.messageID === lastAssistantMessage?.id &&
+      trailingRef?.messageId === lastAssistantMessage?.id &&
       (trailingGroup.type !== "part" || trailingPart?.type === "tool" || trailingPart?.type === "reasoning")
     const newestOpen = !lastAssistantMessage || !assistantMessageSettled(lastAssistantMessage)
     if (isActive && (status === "working" || settlePending) && newestOpen && !error && !trailingGroupIsLive) {
@@ -283,19 +283,19 @@ export namespace Timeline {
 
       rows.push(
         TimelineRow.Thinking({
-          userMessageID: userMessage.id,
+          userMessageId: userMessage.id,
           reasoningHeading: heading,
         }),
       )
     }
 
-    if (isActive && status === "retrying") rows.push(TimelineRow.Retry({ userMessageID: userMessage.id }))
+    if (isActive && status === "retrying") rows.push(TimelineRow.Retry({ userMessageId: userMessage.id }))
 
     const diffs = uniqueSummaryDiffs(userMessage.summary?.diffs)
     if (diffs.length > 0 && (status === "idle" || !isActive)) {
       rows.push(
         TimelineRow.DiffSummary({
-          userMessageID: userMessage.id,
+          userMessageId: userMessage.id,
           diffs,
         }),
       )
@@ -311,7 +311,7 @@ export namespace Timeline {
       const recoveryClass = sessionRecoveryClass(error)
       rows.push(
         TimelineRow.Error({
-          userMessageID: userMessage.id,
+          userMessageId: userMessage.id,
           text: body && body !== message ? `${message}\n${body}` : message,
           recoveryClass: turnAdmissionConflict ? undefined : recoveryClass,
           summary: turnAdmissionConflict

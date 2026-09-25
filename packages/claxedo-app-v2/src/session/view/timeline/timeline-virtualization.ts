@@ -32,15 +32,15 @@ type TimelineResizeAnchorInput = {
 
 export function estimateTimelineRowSize(input: {
   index: number
-  rows: readonly { _tag: string; group?: { type: string; ref?: { messageID: string; partID: string } } }[]
-  parts: (messageID: string) => readonly { id: string; type: string; text?: string }[]
+  rows: readonly { _tag: string; group?: { type: string; ref?: { messageId: string; partId: string } } }[]
+  parts: (messageId: string) => readonly { id: string; type: string; text?: string }[]
 }) {
   const row = input.rows[input.index]
   if (row?._tag !== "AssistantPart") return timelineInitialEstimatedItemSize
   if (input.index < input.rows.length - 50) return timelineInitialEstimatedItemSize
   const group = row.group
   if (!group || group.type !== "part" || !group.ref) return timelineInitialEstimatedItemSize
-  const part = input.parts(group.ref.messageID).find((item) => item.id === group.ref!.partID)
+  const part = input.parts(group.ref.messageId).find((item) => item.id === group.ref!.partId)
   if (part?.type !== "text") return timelineInitialEstimatedItemSize
   return estimateLongMarkdownHeight(part.text ?? "") ?? timelineInitialEstimatedItemSize
 }
