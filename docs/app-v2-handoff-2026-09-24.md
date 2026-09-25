@@ -7,11 +7,10 @@
 - project surfaces.
 
 It is **not** at the plan's "Ready for you" (P6):
-- some of the owner's bugs are still open (see [Owner-reported bugs](#owner-reported-bugs));
-- the owner deferred several v1 surfaces at 19:08: settings sections, onboarding, Marketplace and Tasks;
-- 10 of the app's 17 checks fail;
-- app plus kit is over the line budget;
-- the benchmark has never run against v2.
+- the publication benchmark (2026-09-25) gives 7 workspace-panel rows to v1 by 1–6 ms, and misses the start and idle-memory targets (see [the full suite](#benchmark-publication-run-2-full-suite-2026-09-25-07190741));
+- exp-stream's five transcript streaming fixes wait for the owner's sign-off on `v2/stream-slice`;
+- `bun run check` still fails on several checks; the lanes are taking them to zero, domain by domain;
+- the Composer is over its line budget: the budget assumed a frame swap that the parity ruling voided.
 
 Nothing is pushed, `packages/claxedo-app` is untouched, and there is no swap.
 
@@ -390,15 +389,51 @@ At 19:08 the owner said: finish in-progress work; start no new work.
   - The fix: cache the heights from ResizeObserver entries and read only `scrollTop` per frame.
   - It can't land before the swap, because `packages/ui` is shared with today's app. Apply it when the used kit components move into the app.
 
+## Streaming at 60 Hz (exp-stream, 2026-09-25)
+
+**Scenario:** a session with 22 earlier turns streams a 12k-character reply (headings, lists, 5 code fences, a table, Mermaid, 4 tool parts): 1,540 deltas, 8 characters every 25 ms, measured on production builds. At 1x every build holds 60 Hz; the differences show up in per-delta latency, CPU and memory, and at 4x throttle in missed frames.
+
+| | v1 | v2 on feat | v2 with every fix below |
+|---|---|---|---|
+| Delta to paint, p50 (1x) | 5.8 ms | 17.3 ms | 8.4 ms |
+| Delta to paint, p50 (4x) | 14.8 ms | 22.1 ms | 11.8 ms |
+| Frames over 16.7 ms (4x) | 53 | 48–98 | 15 |
+| Main thread busy (4x) | 71% | 54% | 36–40% |
+| Heap after GC | 42.8 MiB | 37.0 MiB | 16.2 MiB |
+| DOM nodes after GC | 48.7k | 48.6k | 3.7k |
+
+**The design causes, and their fixes:**
+- **A. Two animation-frame buffers in series.** Every delta waited one extra frame. It now commits in the event intake's frame, which halves latency (17.3 → 8.4 ms). Merged into feat as b6597411cd.
+- **B2. Every delta re-lexed the whole message**, which is quadratic: 32.5 ms per delta at 37k characters. The fix re-lexes only the open block and gets it to 0.68 ms.
+- **B1. The open block was parsed and sanitized twice per delta.** The fix renders it once while streaming.
+- **C. Table copy and view buttons were built on a throwaway tree on every delta and never disposed.** That leak exists in v1 too, at about 20 MiB and 45k nodes per long reply. The fix creates the controls once on the committed DOM.
+- **D. Every delta rebuilt all of the turn's timeline rows**, because the rows tracked the text rather than the part's shape. 756–920 → 23–27 ms.
+- **E. Follow-at-end had two owners**: anchorBottom and the virtualizer's anchor. The fix removes one. It's neutral for performance and simpler.
+- **F. DOMPurify re-read its config on every call** (about 27% of sanitize). The fix configures it once.
+
+**Status:** B–F change `src/transcript` and the timeline, which AGENTS.md reserves for an owner-signed, corpus-proven slice. They're on `v2/stream-slice`, one commit per fix, each with its corpus case, and `scratchpad/perf/exp-stream/SLICE.md` explains every commit. **Owner:** sign off, and it merges.
+
+**Remaining long frames:**
+- mounting a new tool card: 15–25 ms at 1x;
+- the first Mermaid render;
+- the settle read at turn end: 93 ms at 4x.
+
 ## Server gaps found by the parity work
 
-- **Harness health is pull-only.** v1's composer health peek ("The agent stopped responding / Check again") polls `/api/wr/health` every 20 s during a turn, because no event carries `degraded` or `harness_process_lost`. Publish a health change when a driver records a process error, for example a `harness.health` event, and the peek's timer can go.
+- **Harness health is pull-only.** The composer's health peek ("The agent stopped responding / Check again") polls every 20 s during a turn: v1 reads `/api/wr/health`, v2 reads `GET /api/claxedo/agent-config/harness?workspaceId=…&sessionId=…` (`harnessHealth.status`, `connectionState`). It is the one no-polling finding left, because no event carries `degraded` or `harness_process_lost`. Publish a health change when a driver records a process error, for example a `harness.health` event, and the peek's timer can go.
 - **The provider catalog route always answers with the whole catalog.** `GET /api/claxedo/agent-config/providers?nativeHarness=opencode` (`claxedo-local-server/src/agent-config/routes/provider-routes.ts`) returns models.dev's full list, 2,325,904 bytes and 1.6 s cold on the owner's machine, and ignores the `provider` parameter both apps send for one provider's detail, so a detail read costs the same as the index. v2 now reads the catalog once per harness through one cached query (`server.queries.providerCatalogs`), and skips the detail read whenever the index already holds a provider's models, as it always does here. The remaining 1.6 s first read needs the server: honor `provider` to return that provider alone, and add a summary form (connected providers with their models, the rest with ids and names) for the pickers.
 - **Session config carries no model display name.** An existing session's config names its model by id only, so v2's closed picker labels it from a per-browser display-name cache (`composer/harness/model-names.ts`) rather than read the whole provider catalog at mount. With the name in the session config the cache can go.
 - **A new draft's harness options cold-start a process.** `GET /api/claxedo/agent-config/harness/options?nativeHarness=pi` starts `pi --no-session` on every read: 2.4–9.9 s under load, while Send shows "Loading models…". v1 behaves identically. Fix it server-side: cache the options per harness, or keep one warm process.
 - **Fixed in the runtime today (take effect after a daemon restart or rebuild):**
   - a stopped turn publishes the questions and permissions it settles (2b7f71a178);
   - a harness without Goals reports them as not implemented, so its sessions open (09caeef9dd).
+- **No read across workspaces.** Boot makes 3 reads per reachable placement (`/session/status`, `/permission`, `/question`, which is v1's set since 8c551d4757) on top of the session-list page. v1 reads only for workspaces with rows on screen. A single cross-workspace status read on the server would make boot one request.
+- **Left open by the adapter lane:**
+  - `SessionRow.harness` from `config.harness.id`;
+  - the "Untitled session" fallback;
+  - creating a worktree doesn't invalidate the root git queries;
+  - the scripted ACP subagent step sends no tool call, so no live check exercises `toolCallEdges`;
+  - adapter probes need `bun run pi:install` in agent-sdk-runtime first (Playwright's global setup does it, the probe doesn't).
 
 ## Deletion candidates
 
@@ -416,18 +451,19 @@ At 19:08 the owner said: finish in-progress work; start no new work.
 
 ## Next steps, in order
 
-1. **Merge each lane's final commits and verify every owner bug on 4480**, on the owner's own session, against the same session on 4481.
-2. **The owner tests 4480 against 4481.** Each difference becomes an inventory row or a DECISIONS line.
-3. **One kit** (see [Easy code](#3-easy-code)). This is the largest single cut in both lines and concepts.
-4. **Checks to zero, domain by domain, composer first.**
-   - Split files by responsibility; never squeeze lines.
-   - Transcript comments get triaged into corpus cases before they're stripped.
-5. **Refresh the inventory status** with `bun run e2e:parity`, so the spec says what's actually left.
-6. **Port the deferred surfaces** from `src/legacy` with the same method.
-7. **Delete `src/legacy`.**
-8. **Benchmark.** Move the driver, then run the verdict three times on packaged builds.
+1. **Owner:** test 4480 against 4481. Each difference becomes an inventory row or a DECISIONS line.
+2. **Owner:** sign off `v2/stream-slice`, exp-stream's five transcript fixes (see [Streaming at 60 Hz](#streaming-at-60-hz-exp-stream-2026-09-25)). Then merge it and run the whole corpus.
+3. **The seven panel rows that go to v1:**
+   - lane-tools-3 ports v1's retained file-tab mount, which covers review→files and open-file;
+   - exp-scroll names the cause of collapse-all and files→Review heavy.
+   - Then rerun the workspace-panel lane.
+4. **Start (≤ 1.1 s) and idle memory (≤ 700 MiB):** exp-idle's findings, applied through the owning lanes.
+5. **Checks to zero:** transcript and timeline comments and names first, with comments triaged into corpus cases or README lines; then the remaining domains. Split files by responsibility; never squeeze.
+6. **Move the transcript's module caches and singletons into provider-owned stores**, as their own corpus-proven slice with a bench rerun. Until then they're named exceptions in one-home-per-datum.
+7. **Refresh the inventory status** with `bun run e2e:parity`.
+8. **Delete `src/legacy`** once nothing live imports it.
 9. **Make the flows robust:** 20 local runs per spec, 3 CI repeats, and the coverage map against v1's 58 specs.
-10. **P6 "Ready for you"**, then the owner's test, then the swap (plan § P6). Never swap without the owner's approval.
+10. **Rerun the publication benchmark** on the final tip. Then P6 "Ready for you", the owner's test, and the swap (plan § P6). Never swap without the owner's approval.
 
 ## Lanes at the stop
 

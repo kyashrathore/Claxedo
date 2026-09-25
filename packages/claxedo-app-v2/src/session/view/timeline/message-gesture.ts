@@ -22,9 +22,6 @@ export const shouldMarkBoundaryGesture = (input: {
   return input.delta > remaining
 }
 
-// Wheel/drag gestures inside a NESTED scroller (a capped tool output) must not
-// count: the reader scrolls that box, not the transcript — treating it as a
-// transcript gesture would leave follow-bottom mode on every output scroll.
 export function createScrollGestureWindow(input: {
   scroller: () => HTMLElement | undefined
   windowMs?: number

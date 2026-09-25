@@ -49,6 +49,7 @@ export type Placement = {
   readonly path?: string
   readonly branch?: string
   readonly machineId?: MachineId
+  readonly gitRemote?: string
   readonly reachable: boolean
 }
 

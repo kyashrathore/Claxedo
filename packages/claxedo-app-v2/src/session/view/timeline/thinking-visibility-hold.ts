@@ -1,16 +1,7 @@
-/**
- * Hide hysteresis for the timeline Thinking row.
- *
- * Status can blip idle→busy (or settled→unsettled) for a few frames while a
- * stream is still running. Dropping the row immediately collapses the
- * virtualizer and jumps the composer. Show Thinking as soon as it is wanted;
- * keep it painted for a short hold after whatever clears it.
- */
 export const THINKING_HIDE_HOLD_MS = 80
 
 export type ThinkingVisibilityHold = {
   visible: boolean
-  /** Epoch-ms deadline while a hide is being held; cleared once the row may drop. */
   heldUntilMs: number | undefined
 }
 

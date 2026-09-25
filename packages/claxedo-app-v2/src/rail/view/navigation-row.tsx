@@ -92,7 +92,15 @@ export function NavigationStatusMark(props: { readonly status: NavigationStatus;
         </span>
       </Match>
       <Match when={props.status !== "idle"}>
-        <span aria-hidden="true" {...data()} class="size-1.5 shrink-0 rounded-full bg-icon-interactive-base" />
+        <span
+          aria-hidden="true"
+          {...data()}
+          class="size-1.5 shrink-0 rounded-full"
+          classList={{
+            "bg-icon-interactive-base": props.status === "permission" || props.status === "error",
+            "bg-text-weak": props.status === "done",
+          }}
+        />
       </Match>
     </Switch>
   )

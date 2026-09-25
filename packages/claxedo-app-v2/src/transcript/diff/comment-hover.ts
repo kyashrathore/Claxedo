@@ -39,11 +39,6 @@ export function createHoverCommentUtility(props: {
     line = next
   }
 
-  // The hovered line changes when the pointer moves or when content scrolls under
-  // a stationary pointer, so track both with passive listeners instead of polling
-  // every animation frame. There is no teardown hook for this utility; like the
-  // rAF loop this replaced, the listeners self-detach on the first event after
-  // the button leaves the DOM.
   const onHoverInvalidated = () => {
     if (!button.isConnected) {
       document.removeEventListener("pointermove", onHoverInvalidated)

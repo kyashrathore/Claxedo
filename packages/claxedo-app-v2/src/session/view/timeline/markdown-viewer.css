@@ -1,4 +1,3 @@
-/* Full-screen presentation shared by Markdown tables and Mermaid diagrams. */
 [data-component="mermaid-viewer"] {
   position: fixed;
   inset: 0;

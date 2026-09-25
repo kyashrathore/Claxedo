@@ -5,7 +5,6 @@ import { useTranscriptI18n } from "./i18n"
 
 export type QuestionAnswerMark = {
   text: string
-  /** The reader typed this rather than picking a declared option. */
   custom: boolean
 }
 

@@ -1,11 +1,5 @@
 import { createMemo } from "solid-js"
 
-/**
- * AgentGlyph (T12) — a deterministic little two-tone mark that gives each subagent a
- * stable visual identity, seeded by its child sessionId (D§3.8). FNV-1a picks one of
- * ten geometric shapes; the caller supplies the accent color (from the agent palette).
- * While the child runs, a slow scan/pulse plays (reduced-motion gated in CSS).
- */
 function fnv1a(seed: string): number {
   let hash = 2166136261
   for (let i = 0; i < seed.length; i++) {
@@ -15,7 +9,6 @@ function fnv1a(seed: string): number {
   return hash >>> 0
 }
 
-// Ten tiny glyph paths on a 0 0 16 16 viewBox — gems, flowers, and stars.
 const GLYPHS: string[] = [
   "M8 2l6 6-6 6-6-6z",
   "M8 2l4 3v6l-4 3-4-3V5z",

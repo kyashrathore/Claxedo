@@ -6,12 +6,6 @@ import { clampLabel } from "./message-part-text"
 
 export const CLAXEDO_MCP_SERVER = "claxedo"
 
-/**
- * Every tool the first-party MCP registers, with the row title each one reads
- * as. The key set doubles as the roster: an engine-prefixed `claxedo_<name>`
- * is only claimed when `<name>` is here, because that spelling carries no
- * server on the input to prove it addressed this server.
- */
 export const CLAXEDO_TOOL_TITLE_KEYS = {
   task_list: "transcript.claxedoTool.task_list",
   task_get: "transcript.claxedoTool.task_get",
@@ -57,10 +51,8 @@ export function isClaxedoToolName(name: string): name is ClaxedoToolName {
   return Object.prototype.hasOwnProperty.call(CLAXEDO_TOOL_TITLE_KEYS, name)
 }
 
-/** Resolve the server identity carried by each harness without claiming another MCP server's tools. */
 export function claxedoToolName(tool: string, input?: Record<string, unknown>): string | undefined {
   const lowered = tool.toLowerCase()
-  // Both names are used by first-party MCP registrations and persisted calls.
   for (const server of ["claxedo-mcp", CLAXEDO_MCP_SERVER]) {
     const wrapped = `mcp__${server}__`
     if (lowered.startsWith(wrapped)) return lowered.slice(wrapped.length) || undefined
@@ -76,30 +68,17 @@ export function claxedoToolName(tool: string, input?: Record<string, unknown>): 
   return undefined
 }
 
-/**
- * The arguments the tool was called with. Codex reports an MCP call as
- * `{server, tool, arguments}`, so the fields a card reads sit one level down
- * there and at the top level everywhere else.
- */
 export function claxedoToolArguments(input: Record<string, unknown> | undefined): Record<string, unknown> {
   const nested = input?.arguments
   if (typeof nested === "string") return jsonRecord(nested) ?? {}
   return asRecord(nested) ?? input ?? {}
 }
 
-/**
- * The tool's JSON answer, or nothing when the output is prose or a refusal.
- * The projection only ever hands the card a string, so the structured result
- * has to be recovered from it — including from a tool that writes a human
- * summary above its payload, whose content blocks arrive here joined.
- */
 export function claxedoToolResult(output: string | undefined): Record<string, unknown> | undefined {
   const text = output?.trim()
   if (!text) return undefined
   const whole = jsonRecord(text)
   if (whole) return whole
-  // A tool that answers in prose and payload marks the payload's line, so this
-  // decodes what the producer named rather than guessing where the prose ends.
   const marked = readRecoveryPayloadLine(text)
   return marked === undefined ? undefined : jsonRecord(marked)
 }
@@ -113,19 +92,13 @@ export type ClaxedoTaskRow = { link: ClaxedoLink; status?: string }
 export type ClaxedoToolView = {
   name: string
   title: string
-  /** What the call was about, when it is not a link. */
   subject?: string
-  /** What the call was about, as a link to the task or session. */
   link?: ClaxedoLink
-  /** A task status, shown as a pill beside the subject. */
   status?: string
-  /** A trailing aside: the call was replayed, the session was already running. */
   note?: string
   facts: ClaxedoFact[]
   rows: ClaxedoTaskRow[]
-  /** What the row list leaves out: a count past the cap, or a further page. */
   more?: string
-  /** A prose answer, shown as it came. */
   text?: string
 }
 
@@ -134,7 +107,6 @@ export type ClaxedoToolViewInput = {
   input: Record<string, unknown> | undefined
   output: string | undefined
   i18n: TranscriptI18n
-  /** A session's title when the transcript already knows it, so a link can read as one. */
   sessionTitle?: (sessionId: string) => string | undefined
 }
 
@@ -151,7 +123,6 @@ export function taskStatusLabel(status: string, i18n: TranscriptI18n) {
   return key ? i18n.t(key) : status.replaceAll("_", " ")
 }
 
-/** Rows a task list shows before folding the rest behind a count. */
 export const TASK_LIST_ROW_CAP = 8
 
 export function claxedoToolTitle(name: string, i18n: TranscriptI18n) {
@@ -373,14 +344,6 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
   }
 }
 
-/**
- * The card reads the contract's own test rather than the operation's state:
- * `cancel_turn` only reaches `succeeded` under a cleanup no adapter can prove,
- * so a state read labels every healthy Stop as one that did not stop.
- *
- * An answer the contract cannot parse is not a cancellation this row may read,
- * so it says nothing about the turn instead of guessing from loose fields.
- */
 function noteOf(i18n: TranscriptI18n, key: TranscriptTextKey | undefined) {
   return key ? { note: i18n.t(key) } : {}
 }
@@ -417,7 +380,6 @@ function linkFact(label: string, link: ClaxedoLink | undefined): ClaxedoFact[] {
   return link ? [cardFact(label, link)] : []
 }
 
-/** Output that is prose, or JSON the card has no shape for: shown as it came. */
 function prose(output: string | undefined): { text?: string } {
   const trimmed = output?.trim()
   return trimmed ? { text: trimmed } : {}

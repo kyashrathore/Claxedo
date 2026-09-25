@@ -220,10 +220,11 @@ export function createHarnessStore(storage: DraftDefaultStorage) {
     scope: string,
     identity: Omit<DraftDefaultScope, "fallbackWorkspaceKey">,
     type: HarnessType,
+    save: boolean,
   ) => {
     seed(scope)
     const { choice, patch } = draftHarnessChoicePatch(scope, identity, type)
-    const persisted = draftDefaults.save(identity, { harness: type, ...choice })
+    const persisted = save && draftDefaults.save(identity, { harness: type, ...choice })
     // The switch flow already put the selection where it belongs; only the
     // remembered pair is this call's business.
     setStore(scope, patch)
@@ -253,12 +254,13 @@ export function createHarnessStore(storage: DraftDefaultStorage) {
     scope: string,
     identity: Omit<DraftDefaultScope, "fallbackWorkspaceKey">,
     model: ModelKey,
-    labels?: DraftDefaultLabels,
+    labels: DraftDefaultLabels | undefined,
+    save: boolean,
   ) => {
     seed(scope)
     const current = read(scope)
     if (!current.harness || !canSelectDraftModel(current, model)) return false
-    const persisted = draftDefaults.save(identity, { harness: current.harness, model, ...(labels ? { labels } : {}) })
+    const persisted = save && draftDefaults.save(identity, { harness: current.harness, model, ...(labels ? { labels } : {}) })
     setStore(scope, {
       draftDefaultAuthority: "explicit",
       draftDefaultRevision: (current.draftDefaultRevision ?? 0) + 1,

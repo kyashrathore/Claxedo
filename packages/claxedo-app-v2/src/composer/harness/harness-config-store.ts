@@ -235,13 +235,13 @@ export function createHarnessConfigStore(server: Server, storage: DraftDefaultSt
   const rememberDraftHarness = (scope: string, type: HarnessType, input?: ScopeInput) => {
     const identity = draftDefaultIdentity(input)
     if (!identity) return false
-    return harnessStore.rememberDraftHarness(scope, identity, type)
+    return harnessStore.rememberDraftHarness(scope, identity, type, input?.saveDraftDefault !== false)
   }
 
   const rememberDraftModel = (scope: string, model: ModelKey, input?: ScopeInput, labels?: DraftDefaultLabels) => {
     const identity = draftDefaultIdentity(input)
     if (!identity) return false
-    return harnessStore.rememberDraftModel(scope, identity, model, labels)
+    return harnessStore.rememberDraftModel(scope, identity, model, labels, input?.saveDraftDefault !== false)
   }
 
   const resolveCurrentDraftDefault = (
