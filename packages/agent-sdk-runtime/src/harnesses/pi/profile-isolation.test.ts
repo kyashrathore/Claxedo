@@ -1,4 +1,4 @@
-import { afterEach, expect, setDefaultTimeout, spyOn, test } from "bun:test"
+import { afterEach, expect, setDefaultTimeout, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -74,11 +74,12 @@ test("two workspaces with their own store roots never share a models.json", asyn
 
 test("two workspaces with no store root are separated by their workspace ids", async () => {
   delete process.env.PI_CODING_AGENT_DIR
-  // The fallback is rooted at the operator's own home directory, which the
-  // test points at scratch space rather than writing a placeholder into. Bun's
-  // `os.homedir()` does not read `HOME`, so the function itself is replaced.
+  // The fallback is rooted at the operator's home directory, which the test
+  // points at scratch space rather than writing a placeholder into.
   root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-profile-home-"))
-  const homedir = spyOn(os, "homedir").mockReturnValue(root)
+  const homeKey = process.platform === "win32" ? "USERPROFILE" : "HOME"
+  const previousHome = process.env[homeKey]
+  process.env[homeKey] = root
   try {
     const first = await applied({ workspaceId: "ws_a" }, "http://127.0.0.1:2595/bindings/aaa", "placeholder-a")
     const second = await applied({ workspaceId: "ws_b" }, "http://127.0.0.1:2595/bindings/bbb", "placeholder-b")
@@ -91,7 +92,8 @@ test("two workspaces with no store root are separated by their workspace ids", a
       await second.dispose()
     }
   } finally {
-    homedir.mockRestore()
+    if (previousHome === undefined) delete process.env[homeKey]
+    else process.env[homeKey] = previousHome
   }
 })
 
