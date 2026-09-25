@@ -62,6 +62,27 @@ The plan is `docs/plans/2026-09-24-001-refactor-app-rebuild-first-proof-plan.md`
   - The benchmark's proper run started 06:50 on b3cadffe69, with every other lane paused.
 - **Experiments (paused at the limit, results pending):** exp-stream (60 Hz while streaming), exp-scroll (scrolling and interaction), exp-idle (idle CPU, memory, start). Their worktrees are `~/test/opencode-app-v2-lanes/exp-*`, and their notes are in `scratchpad/perf/<exp>/`.
 
+### Benchmark, publication run 1 (fast pair, 2026-09-25 07:16)
+
+Both apps were packaged from 6d9c0a91a9 (b3cadffe69 plus driver fixes), on AC, on a quiet host with every lane paused. Every observation was valid. Raw data: `~/test/agent-app-benchmark/artifacts/comparisons/claxedo-v1-vs-v2-fast-macos-arm64-headed-20260925-0716-pub/`.
+
+| Row | v1 median (p95) | v2 median (p95) | Verdict |
+|---|---|---|---|
+| App start, fresh | 1.35 s (1.52) | 1.28 s (1.33) | tie |
+| App start, existing | 1.30 s (1.60) | 1.26 s (1.30) | tie |
+| Unvisited switch, same ws | 83.3 ms (691.7) | 24.9 ms (33.2) | v2 3.35× faster |
+| Unvisited switch, other ws | 41.5 ms (717.5) | 24.9 ms (42.6) | v2 1.67× faster |
+| Return visited | 16.5 ms | 16.7 ms | tie |
+| RSS idle after launch | 963 MiB | 764 MiB | v2 1.26× lower |
+| RSS after workload | 1,050 MiB | 779 MiB | v2 1.35× lower |
+| CPU idle | 70.0% | 0.4% | v2 lower |
+
+**Gate so far:**
+- No row goes to v1.
+- **Met:** idle CPU (0.4%, target ≤ 4.4%).
+- **Not met:** idle memory (764 MiB, target ≤ 700), and app start (1.28 s, target ≤ 1.1 s, a tie). exp-idle's start and memory findings are the next lever.
+- Long rows and the panel open return come from the full-suite run.
+
 ## The goal in four parts
 
 The owner's words: better, performant, easy code, less LOC. Each part gives the rule, where it stands (observed on `feat/app-v2`), and what is next.
