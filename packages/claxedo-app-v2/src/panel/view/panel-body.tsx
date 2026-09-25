@@ -1,4 +1,4 @@
-import { createEffect, createSignal, Match, Show, Switch, type JSX } from "solid-js"
+import { createMemo, Match, Show, Switch, type JSX } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { DelayedLoading, MarkedProvider } from "@/ui"
 import { BrowserTabView } from "@/browser"
@@ -23,12 +23,8 @@ function activeFilePath(panel: Panel): string | undefined {
 function NavigatorViews(props: { readonly placementId: PlacementId }): JSX.Element {
   const panel = usePanel()
   const view = () => panel.navigator()
-  const [filesVisited, setFilesVisited] = createSignal(view() === "files")
-  const [changesVisited, setChangesVisited] = createSignal(view() === "changes")
-  createEffect(() => {
-    if (view() === "files") setFilesVisited(true)
-    if (view() === "changes") setChangesVisited(true)
-  })
+  const filesVisited = createMemo<boolean>((was) => was || view() === "files", false)
+  const changesVisited = createMemo<boolean>((was) => was || view() === "changes", false)
   return (
     <>
       <Show when={filesVisited()}>
@@ -60,11 +56,7 @@ function NavigatorColumn(props: { readonly placementId: PlacementId }): JSX.Elem
   const preferences = usePreferences()
   const left = () => preferences.appearance.navigatorSide === "left"
   const selected = () => panel.navigator() !== null && !panel.phone()
-  const shown = () => panel.open() && selected()
-  const [visited, setVisited] = createSignal(shown())
-  createEffect(() => {
-    if (shown()) setVisited(true)
-  })
+  const visited = createMemo<boolean>((was) => was || (panel.open() && selected()), false)
   return (
     <Show when={visited()}>
       <div
