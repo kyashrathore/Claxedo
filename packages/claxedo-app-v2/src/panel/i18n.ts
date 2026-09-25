@@ -16,6 +16,8 @@ const en = {
   "panel.add.file": "File",
   "panel.add.browser": "Browser",
   "panel.noPlacement": "Select a workspace to use this panel.",
+  "panel.connecting": "Connecting to workspace...",
+  "panel.unavailable": "This workspace isn't available.",
   "panel.markdown.preview": "Preview markdown",
   "panel.markdown.source": "Show source",
 }
