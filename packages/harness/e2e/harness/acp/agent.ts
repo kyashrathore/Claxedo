@@ -16,6 +16,7 @@ import {
 } from "@agentclientprotocol/sdk"
 import { isTitlePrompt, lastMarker } from "../scripted-model-request"
 import { ACP_RED_ENV, ACP_SCRIPT_DIR_ENV, lastAcpScriptName, readAcpScript, type AcpScript } from "./script"
+import { scriptedGoalExtension, scriptedGoals } from "./goals"
 import { playScript } from "./turn"
 
 const scriptDir = process.env[ACP_SCRIPT_DIR_ENV]
@@ -47,15 +48,18 @@ async function scriptFor(text: string, dir: string): Promise<AcpScript> {
 
 class ScriptedAgent implements Agent {
   private readonly turns = new Map<string, AbortController>()
+  private readonly goalRequest: ReturnType<typeof scriptedGoals>
 
-  constructor(private readonly connection: AgentSideConnection, private readonly dir: string) {}
+  constructor(private readonly connection: AgentSideConnection, private readonly dir: string) {
+    this.goalRequest = scriptedGoals(dir)
+  }
 
   initialize(): InitializeResponse {
     return {
       protocolVersion: PROTOCOL_VERSION,
       agentCapabilities: { loadSession: false, promptCapabilities: { image: true, embeddedContext: true } },
       authMethods: [],
-      _meta: { jetbrains: { air: { version: 1, capabilities: ["nativeSubagentSessions"] } } },
+      _meta: { jetbrains: { air: { version: 1, capabilities: ["nativeSubagentSessions"] } }, goal: scriptedGoalExtension },
     }
   }
 
@@ -90,6 +94,10 @@ class ScriptedAgent implements Agent {
 
   cancel(params: CancelNotification) {
     this.turns.get(params.sessionId)?.abort()
+  }
+
+  extMethod(method: string, params: Record<string, unknown>) {
+    return this.goalRequest(method, params)
   }
 }
 

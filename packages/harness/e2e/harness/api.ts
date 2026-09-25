@@ -13,6 +13,8 @@ export type SessionHarness = { id: string; access: "native" | "connection" }
 export type HarnessSelection = { kind: "native"; harnessId: string } | { kind: "connection"; connectionId: string }
 export type ModelChoice = { providerId: string; modelId: string }
 export type ProviderCatalog = { connected: string[]; [key: string]: unknown }
+export type GoalSnapshot = { sessionId: string; objective: string; status: string; createdAt: number; updatedAt: number; [key: string]: unknown }
+export type GoalMutation = { ok: true; goal: GoalSnapshot | null }
 
 export type SessionRow = {
   id: string
@@ -131,6 +133,24 @@ export class ClaxedoApi {
 
   session(directory: string, id: string) {
     return this.call<SessionRow>("GET", `/session/${encodeURIComponent(id)}`, { directory })
+  }
+
+  goalState(directory: string, id: string) {
+    return this.call<{ capabilities: { implemented: boolean; available: boolean; actions: string[] }; goal: GoalSnapshot | null }>(
+      "GET", `/session/${encodeURIComponent(id)}/goal/state`, { directory },
+    )
+  }
+
+  goal(directory: string, id: string) {
+    return this.call<GoalSnapshot | null>("GET", `/session/${encodeURIComponent(id)}/goal`, { directory })
+  }
+
+  startGoal(directory: string, id: string, objective: string) {
+    return this.call<GoalMutation>("POST", `/session/${encodeURIComponent(id)}/goal`, { directory, body: { objective } })
+  }
+
+  goalAction(directory: string, id: string, action: "pause" | "resume" | "stop") {
+    return this.call<GoalMutation>("POST", `/session/${encodeURIComponent(id)}/goal/${action}`, { directory, body: {} })
   }
 
   sessions(directory: string) {
