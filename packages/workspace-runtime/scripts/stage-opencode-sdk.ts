@@ -70,7 +70,7 @@ function supports(values: string[] | undefined, target: string) {
 export function stageOpenCodeSdk(
   nodeModules: string,
   target: { platform: string; arch: string } = { platform: process.platform, arch: process.arch },
-  owner = path.resolve(import.meta.dirname, ".."),
+  owner = path.resolve(import.meta.dirname, "../../harness"),
 ) {
   const installed = new Map<string, string>()
   const inventory: Array<{ name: string; version: string; directory: string }> = []

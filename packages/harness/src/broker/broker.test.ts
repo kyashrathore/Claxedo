@@ -193,6 +193,22 @@ describe("request broker", () => {
     expect(ports.drained).toHaveLength(1)
   })
 
+  test("a provider turn the runtime cancels before its run ends settles cancelled", async () => {
+    const { ports, owner } = setup()
+    const session = createSessionBroker(owner, { sessionId: "s1", workspaceId: "w1", directory: "/work", origin })
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const result = await session.admitProviderTurn({ reason: "goal" }, async function* (turn) {
+      yield { event: { type: "text-delta", delta: "started" } }
+      await held
+      if (turn.signal.aborted) throw new Error("interrupted by the runtime")
+    })
+    expect(result.admitted).toBe(true)
+    ports.cancelProviderTurn()
+    release()
+    if (result.admitted) expect(await result.settled).toEqual({ state: "cancelled" })
+  })
+
   test("provider settlement captures failure without rejecting and session events keep their id", async () => {
     const { ports, owner } = setup()
     const session = createSessionBroker(owner, { sessionId: "s1", workspaceId: "w1", directory: "/work", origin })

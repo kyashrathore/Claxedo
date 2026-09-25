@@ -36,7 +36,7 @@ describe("Pi profile selection", () => {
   })
 
   test("selects a profile from session ownership and placement", () => {
-    const options: PiProfileOptions = { placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: true, stateRoot: "/tmp/pi-test" }
+    const options: PiProfileOptions = { placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: true, stateRoot: "/tmp/pi-test", ownerAgentDir: "/tmp/pi-agent" }
     expect(selectPiProfile({ kind: "person", userId: "owner" }, credentials, "/work", "owner-session", options).kind).toBe("owner-login")
     expect(selectPiProfile(member, credentials, "/work", "member-session", options).kind).toBe("brokered")
     expect(selectPiProfile(member, credentials, "/work", "member-session", options, "owner-login").kind).toBe("brokered")
@@ -48,7 +48,7 @@ describe("Pi profile selection", () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-concurrent-profiles-"))
     try {
       const options: PiProfileOptions = { placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: true,
-        stateRoot: path.join(root, "state") }
+        stateRoot: path.join(root, "state"), ownerAgentDir: path.join(root, "owner") }
       const first = selectPiProfile(member, { ...credentials, providers: { openai: {
         baseUrl: "http://127.0.0.1:1001", placeholder: "first-member", authMode: "api-key",
       } } }, root, "session-one", options)

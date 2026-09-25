@@ -5,7 +5,7 @@ import path from "node:path"
 import { Database } from "bun:sqlite"
 import { describe, expect, test } from "bun:test"
 import { createWorkspaceRuntimeApp, loopbackWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime"
-import { WorkspaceScope, type OpenCodeRuntime } from "@claxedo/workspace-runtime/opencode"
+import { WorkspaceScope, type OpenCodeRuntime } from "@claxedo/workspace-runtime/testing"
 import { buildWorkspaceFixtureManifest, generateWorkspaceFileBytes } from "agent-app-benchmark/workspace-fixture"
 import {
   materializeClaxedoPublicCorpus,

@@ -36,6 +36,10 @@ export type ProviderUnavailable = {
   reason: string
 }
 
+export function isProviderUnavailable(row: object): row is ProviderUnavailable {
+  return "unavailable" in row
+}
+
 export type ProviderProjection = ProviderBinding | ProviderUnavailable
 
 /**

@@ -1,3 +1,4 @@
+import type { SandboxDriverCatalogEntry } from "@claxedo/sandbox-manager/driver-catalog"
 import type { SandboxDriverID } from "@claxedo/sandbox-contract"
 import {
   workspaceRuntimeConfigTokenEnv,
@@ -11,8 +12,8 @@ export type WorkspaceSupervisorOptions = {
   default_sandbox_driver?: SandboxDriverID
 }
 
-export function sandboxControlPlaneUrl(driverId: SandboxDriverID, serverUrl: string) {
-  return sandboxReachableUrl(driverId, serverUrl)
+export function sandboxControlPlaneUrl(entry: SandboxDriverCatalogEntry<string>, serverUrl: string) {
+  return sandboxReachableUrl(entry, serverUrl)
 }
 
 export function runtimeConfigTokenEnv(token: string) {
@@ -27,15 +28,15 @@ export function sandboxLeaseEnv(input: {
 }
 
 export function relayHostVerificationEnv(
-  driverId: SandboxDriverID,
+  entry: SandboxDriverCatalogEntry<string>,
   input: {
     options: WorkspaceSupervisorOptions
   },
 ): Record<string, string> {
-  if (!input.options.relay_url?.trim() && localControlPlaneConfigured(input.options)) {
+  if (entry.runtimeNetwork.relay === "local" || (!input.options.relay_url?.trim() && localControlPlaneConfigured(input.options))) {
     return workspaceRuntimeRelayVerificationEnv({ kind: "dev-unsafe-private-network" })
   }
-  return workspaceRuntimeRelayVerificationEnv({ kind: "jwks", jwksUrl: relayJwksUrl(driverId, input.options) })
+  return workspaceRuntimeRelayVerificationEnv({ kind: "jwks", jwksUrl: relayJwksUrl(entry, input.options) })
 }
 
 export function controlPlaneVerificationEnv(
@@ -62,8 +63,8 @@ export function controlPlaneVerificationEnv(
   }
 }
 
-function sandboxReachableUrl(driverId: SandboxDriverID, input: string) {
-  if (driverId !== "docker") return input
+function sandboxReachableUrl(entry: SandboxDriverCatalogEntry<string>, input: string) {
+  if (entry.runtimeNetwork.controlPlane !== "docker-host") return input
   try {
     const url = new URL(input)
     if (url.hostname !== "127.0.0.1" && url.hostname !== "localhost") return input
@@ -74,12 +75,12 @@ function sandboxReachableUrl(driverId: SandboxDriverID, input: string) {
   }
 }
 
-function relayJwksUrl(driverId: SandboxDriverID, options: WorkspaceSupervisorOptions) {
+function relayJwksUrl(entry: SandboxDriverCatalogEntry<string>, options: WorkspaceSupervisorOptions) {
   const relayUrl = options.relay_url?.trim()
   if (!relayUrl) {
     throw new Error("managed cloud VM runtime requires relay_url to configure relay-host auth")
   }
-  return `${sandboxReachableUrl(driverId, relayUrl).replace(/\/+$/g, "")}/.well-known/jwks.json`
+  return `${sandboxReachableUrl(entry, relayUrl).replace(/\/+$/g, "")}/.well-known/jwks.json`
 }
 
 function localControlPlaneConfigured(options: WorkspaceSupervisorOptions) {

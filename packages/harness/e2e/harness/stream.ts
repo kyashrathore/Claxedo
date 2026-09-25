@@ -6,7 +6,7 @@ export type EventStream = {
   close(): void
 }
 
-export type EventStreamOptions = { sessionId?: string; lastEventId?: string }
+export type EventStreamOptions = { sessionId?: string; lastEventId?: string; workspaceId?: string; relayWorkspaceId?: string; authorization?: string }
 
 function parseBlock(block: string): StreamFrame | undefined {
   let id: string | undefined
@@ -57,22 +57,30 @@ export function frameSessionId(frame: StreamFrame): string | undefined {
 }
 
 export async function openEventStream(url: string, directory: string, options: EventStreamOptions = {}): Promise<EventStream> {
-  const target = new URL("/api/wr/events", url)
+  const target = new URL(options.relayWorkspaceId
+    ? `/workspaces/${encodeURIComponent(options.relayWorkspaceId)}/api/wr/events`
+    : "/api/wr/events", url)
   target.searchParams.set("directory", directory)
+  if (options.workspaceId) target.searchParams.set("workspaceId", options.workspaceId)
   if (options.sessionId) target.searchParams.set("sessionID", options.sessionId)
   const controller = new AbortController()
   const response = await fetch(target, {
-    headers: { accept: "text/event-stream", ...(options.lastEventId ? { "last-event-id": options.lastEventId } : {}) },
+    headers: { accept: "text/event-stream", ...(options.lastEventId ? { "last-event-id": options.lastEventId } : {}), ...(options.authorization ? { authorization: options.authorization } : {}) },
     signal: controller.signal,
   })
   if (!response.ok || !response.body) throw new Error(`event stream refused: ${response.status} ${await response.text()}`)
   const frames: StreamFrame[] = []
   const listeners = new Set<(frame: StreamFrame) => void>()
   const droppedFrameType = process.env.CLAXEDO_E2E_DROP_FRAME_TYPE
-  const pumping = pump(response.body, (frame) => {
+  const failures = new Set<(error: unknown) => void>()
+  let failure: { error: unknown } | undefined
+  void pump(response.body, (frame) => {
     if (droppedFrameType && frameType(frame) === droppedFrameType) return
     frames.push(frame)
     for (const listener of listeners) listener(frame)
+  }).catch((error: unknown) => {
+    failure = { error }
+    for (const fail of failures) fail(error)
   })
   return {
     frames,
@@ -80,21 +88,30 @@ export async function openEventStream(url: string, directory: string, options: E
       new Promise<StreamFrame>((resolve, reject) => {
         const existing = frames.find(match)
         if (existing) return resolve(existing)
-        const timer = setTimeout(() => {
+        if (failure) return reject(new Error(`event stream failed before ${waitOptions.label}: ${String(failure.error)}`, { cause: failure.error }))
+        const done = () => {
+          clearTimeout(timer)
           listeners.delete(listener)
+          failures.delete(fail)
+        }
+        const timer = setTimeout(() => {
+          done()
           reject(new Error(`event stream never delivered ${waitOptions.label} within ${waitOptions.timeoutMs ?? 30_000}ms`))
         }, waitOptions.timeoutMs ?? 30_000)
         const listener = (frame: StreamFrame) => {
           if (!match(frame)) return
-          clearTimeout(timer)
-          listeners.delete(listener)
+          done()
           resolve(frame)
         }
+        const fail = (error: unknown) => {
+          done()
+          reject(new Error(`event stream failed before ${waitOptions.label}: ${String(error)}`, { cause: error }))
+        }
         listeners.add(listener)
+        failures.add(fail)
       }),
     close: () => {
       controller.abort()
-      void pumping
     },
   }
 }
