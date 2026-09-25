@@ -11,6 +11,7 @@ import { claimPort, fixedDaemonPort, portFreed, portIsLeased, releasePort, reser
 import { startScriptedModelServer, type ScriptedModelServer } from "./scripted-model-server"
 import { withholdSteerReply } from "./steer-reply-fault"
 import { interruptClaudeSteer } from "./claude-steer-fault"
+import { startScriptedCursorBackend, type ScriptedCursorBackend } from "./cursor/backend"
 import { openEventStream, type EventStream, type EventStreamOptions } from "./stream"
 
 export type Stack = {
@@ -19,6 +20,7 @@ export type Stack = {
   daemon: Daemon
   scripted: ScriptedModelServer
   egress: EgressGuard
+  cursor: ScriptedCursorBackend[]
   acp: {
     scriptDir: string
     write(name: string, script: AcpScript): Promise<void>
@@ -31,7 +33,7 @@ export type Stack = {
   close(): Promise<void>
 }
 
-export type StackInput = { label: string; red?: boolean; codexInventoryFault?: boolean; steerReplyFault?: "pi" | "codex"; claudeSteerFault?: boolean }
+export type StackInput = { label: string; red?: boolean; codexInventoryFault?: boolean; steerReplyFault?: "pi" | "codex"; claudeSteerFault?: boolean; cursorBackends?: number }
 
 export function safeLabel(label: string) {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "flow"
@@ -47,20 +49,32 @@ export async function startStack(input: StackInput): Promise<Stack> {
   const daemonPort = fixed !== undefined && !portIsLeased(fixed) ? await claimPort(fixed) : await reservePort()
   const modelPort = await reservePort()
   const guardPort = await reservePort()
+  const cursorPorts = await Promise.all(Array.from({ length: input.cursorBackends ?? 0 }, () => reservePort()))
   const keepData = process.env.CLAXEDO_E2E_KEEP_DATA === "1"
   const cleanup = async () => {
     releasePort(guardPort)
     releasePort(modelPort)
+    cursorPorts.forEach(releasePort)
     if (!(await portFreed(daemonPort, 10_000))) throw new Error(`Daemon port ${daemonPort} stayed occupied`)
     releasePort(daemonPort)
     if (!keepData) await fs.rm(dataDir, { recursive: true, force: true })
   }
   const egress = await startEgressGuard(guardPort)
+  const cursor: ScriptedCursorBackend[] = []
+  try {
+    for (const port of cursorPorts) cursor.push(await startScriptedCursorBackend(port))
+  } catch (error) {
+    await Promise.all(cursor.map((backend) => backend.close()))
+    await egress.close()
+    await cleanup()
+    throw error
+  }
   let scripted: ScriptedModelServer
   try {
     scripted = await startScriptedModelServer({ port: modelPort, red })
   } catch (error) {
     await egress.close()
+    await Promise.all(cursor.map((backend) => backend.close()))
     await cleanup()
     throw error
   }
@@ -73,6 +87,7 @@ export async function startStack(input: StackInput): Promise<Stack> {
     })
   } catch (error) {
     await egress.close()
+    await Promise.all(cursor.map((backend) => backend.close()))
     await scripted.close()
     await cleanup()
     throw error
@@ -84,6 +99,7 @@ export async function startStack(input: StackInput): Promise<Stack> {
     daemon,
     scripted,
     egress,
+    cursor,
     acp: {
       scriptDir: daemon.acpScriptDir,
       write: (name, script) => writeAcpScript(daemon.acpScriptDir, name, script),
@@ -102,6 +118,7 @@ export async function startStack(input: StackInput): Promise<Stack> {
       await daemon.close()
       await scripted.close()
       await egress.close()
+      await Promise.all(cursor.map((backend) => backend.close()))
       await cleanup()
     },
   }
