@@ -204,3 +204,13 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - The owner signed off the transcript and timeline performance fixes from `docs/app-v2-perf-audit-2026-09-25.md`: the image-probe leak on session switch, scroll restyles from the virtualizer's notify, the hidden transcript computing behind the full-view composer, the per-part `hasText` roots, and scroll-thumb geometry written per delta.
 - "Architecturally, no patching": each fix names the owner that should hold the state or work, and moves it there. No guards, weak references, flags or special cases layered over the old shape.
 - Each fix lands with a corpus or flow assertion that measures it.
+
+## Owner, 2026-09-25 16:20: dead-sandbox session flow (signed web and cloud workspaces)
+- Only sending a message wakes a cloud workspace's sandbox. App open, rail status, hover and opening a session never do. The client learns whether the backing sandbox is gone from a read that doesn't wake it.
+- **Opening an existing session:**
+  1. The history always comes from the control plane.
+  2. The app checks whether the sandbox is alive, without waking it.
+  3. If it's gone: the transcript renders read-only, and a card above the composer says the next message will wake it. On send, the dock shows a waking-up state until the sandbox is up, then the message is sent.
+  4. If it's on: the app connects or reconnects, and attaches live streaming when a turn is running.
+- No dimming in the rail: rows and projects look the same whatever their sandbox's state.
+- v1's cloud startup view isn't ported; the dock's waking-up state replaces it.

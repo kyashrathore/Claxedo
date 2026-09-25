@@ -13,9 +13,22 @@ vi.mock("@claxedo/server-core/opencode/sdk-credential-bridge", async (original) 
   },
 }))
 
+vi.mock("@claxedo/server-core/opencode/sdk-runtime", () => ({
+  openCodeEngineModels: async () => [{ providerID: "anthropic", id: "claude-opus", cost: [{ input: 15, output: 75 }] }],
+}))
+
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-provider-route-"))
 const previous = process.env.CLAXEDO_DATA_DIR
+const previousCatalog = process.env.CLAXEDO_OPENCODE_CATALOG_CACHE
 process.env.CLAXEDO_DATA_DIR = root
+process.env.CLAXEDO_OPENCODE_CATALOG_CACHE = path.join(root, "opencode-model-catalog.json")
+await fs.writeFile(process.env.CLAXEDO_OPENCODE_CATALOG_CACHE, JSON.stringify({
+  at: Date.now(),
+  body: {
+    anthropic: { id: "anthropic", name: "Anthropic", env: ["ANTHROPIC_API_KEY"], models: { "claude-opus": { id: "claude-opus", name: "Claude Opus" }, "claude-haiku": { id: "claude-haiku", name: "Claude Haiku" } } },
+    openai: { id: "openai", name: "OpenAI", env: ["OPENAI_API_KEY"], models: { "gpt-5": { id: "gpt-5", name: "GPT-5" } } },
+  },
+}))
 const [
   { agentConfigProviderRoutes },
   { putCredential },
@@ -73,6 +86,8 @@ afterAll(async () => {
   setBackendOverride(undefined)
   if (previous === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = previous
+  if (previousCatalog === undefined) delete process.env.CLAXEDO_OPENCODE_CATALOG_CACHE
+  else process.env.CLAXEDO_OPENCODE_CATALOG_CACHE = previousCatalog
   await fs.rm(root, { recursive: true, force: true })
 })
 
@@ -130,6 +145,39 @@ describe("control-plane Pi catalog", () => {
       { type: "token", label: "Claude subscription token", command: "claude setup-token" },
       { type: "api", label: "API Key" },
     ])
+  })
+})
+
+describe("the OpenCode catalog's forms", () => {
+  const catalog = async (query: string) => {
+    const response = await app.request(`/providers?nativeHarness=opencode${query}`, { headers: { authorization: "Bearer org_a" } })
+    return { status: response.status, body: await response.json() }
+  }
+
+  test("the full catalog stays the default", async () => {
+    const { status, body } = await catalog("")
+    expect(status).toBe(200)
+    expect(body.connected).toEqual(["anthropic"])
+    expect(Object.keys(body.all.find((provider: { id: string }) => provider.id === "openai").models)).toEqual(["gpt-5"])
+  })
+
+  test("the summary keeps the connected provider's models and names the rest", async () => {
+    const { status, body } = await catalog("&view=summary")
+    expect(status).toBe(200)
+    expect(Object.keys(body.all[0].models).sort()).toEqual(["claude-haiku", "claude-opus"])
+    expect(body.all[1]).toEqual({ id: "openai", name: "OpenAI", source: "config", models: {} })
+    expect(body.default).toEqual({ anthropic: "claude-opus", openai: "gpt-5" })
+  })
+
+  test("provider answers that provider alone, and an unknown one is not found", async () => {
+    const { status, body } = await catalog("&provider=openai")
+    expect(status).toBe(200)
+    expect(body.all.map((provider: { id: string }) => provider.id)).toEqual(["openai"])
+    expect(body.connected).toEqual(["anthropic"])
+    const missing = await catalog("&provider=nobody")
+    expect(missing.status).toBe(404)
+    expect(missing.body.error.code).toBe("provider_catalog_provider_not_found")
+    expect((await catalog("&view=tiny")).status).toBe(400)
   })
 })
 
