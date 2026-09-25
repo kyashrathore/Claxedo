@@ -30,7 +30,6 @@ export type SessionConfig = {
   readonly variant?: string
 }
 
-export type HarnessLogin = { readonly harness: string; readonly signedIn: boolean; readonly providerIds: readonly string[] }
 
 export type HarnessOptions = {
   readonly source: HarnessOptionsSource

@@ -1,6 +1,6 @@
 import { createMemo, createSignal, Show, type Accessor, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { codeHostIntegrations, toAppError, useServer, type Project, type ProjectSource } from "@/server"
+import { codeHostConnections, codeHostIntegrations, toAppError, useServer, type Project, type ProjectSource } from "@/server"
 import { useProjectsText } from "../i18n"
 import { ConnectCodeHost } from "./project-create-connect"
 import { AccountSelect, createFormLook, RepositoryList, UrlField, type CreateFormLook } from "./project-create-repository"
@@ -59,14 +59,13 @@ function NameField(props: { look: CreateFormLook; name: string; onName: (name: s
 function createRepositoryChoice(active: Accessor<boolean>) {
   const server = useServer()
   const offered = useQuery(() => ({ ...server.queries.integrations.catalog(), enabled: active() }))
-  const connections = useQuery(() => ({ ...server.queries.codeHost.connections(), enabled: active() }))
   const integration = () => codeHostIntegrations(offered.data)[0]
-  const usable = createMemo(() => (connections.data ?? []).filter((connection) => connection.status !== "broken"))
+  const usable = createMemo(() => codeHostConnections(offered.data).filter((connection) => connection.status !== "broken"))
   const [chosenId, setChosenId] = createSignal<string>()
   const connection = createMemo(() => usable().find((item) => item.id === chosenId()) ?? usable()[0])
   const [entry, setEntry] = createSignal<"list" | "url">("list")
   const view = (): "checking" | "url" | "connect" | "list" => {
-    if (offered.isPending || connections.isPending) return "checking"
+    if (offered.isPending) return "checking"
     if (!integration() || entry() === "url") return "url"
     return connection() ? "list" : "connect"
   }

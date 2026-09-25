@@ -9,6 +9,7 @@ import type {
   AgentSubagentUpdate,
   AgentTodo,
   AgentTurnOutcome,
+  PromptDeliveryRequest,
   RuntimeGoalSnapshot,
 } from "@claxedo/agent-runtime-contract"
 import type { SolidQueryOptions } from "@tanstack/solid-query"
@@ -172,9 +173,7 @@ export type PromptAttachment =
   | { readonly kind: "image"; readonly dataUrl: string; readonly name?: string; readonly mime: string }
   | { readonly kind: "text"; readonly text: string; readonly label?: string }
 
-export type PromptDeliveryRequest = "queue" | "steer"
-
-export type PromptDelivery = "start" | PromptDeliveryRequest
+export type { PromptDelivery, PromptDeliveryRequest } from "@claxedo/agent-runtime-contract"
 
 export type PromptInput = {
   readonly clientRequestId: string
