@@ -52,6 +52,8 @@ function errorClassForStatus(status: number): ErrorClass {
 
 type ErrorBody = { readonly code?: string; readonly message?: string }
 
+const SETTLED_CODES: ReadonlySet<string> = new Set(["harness_config_options_unavailable"])
+
 function readErrorBody(text: string): ErrorBody {
   if (!text.trim()) return {}
   let parsed: unknown
@@ -81,6 +83,7 @@ export async function responseError(response: Response, label = "Request"): Prom
     message: body.message ?? `${label} failed with status ${response.status}`,
     status: response.status,
     ...(body.code !== undefined ? { code: body.code } : {}),
+    ...(body.code !== undefined && SETTLED_CODES.has(body.code) ? { retryable: false } : {}),
   })
 }
 

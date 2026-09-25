@@ -1,4 +1,5 @@
 export { expect, test, type HarnessFixtures } from "./fixtures"
+export { apiRequests } from "./api-requests"
 export {
   ApiError,
   ClaxedoApi,
