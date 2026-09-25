@@ -27,6 +27,12 @@ Every route belongs to the machine's owner: unsigned, the loopback gate is the o
 
 The path is `live-plugins`, not `plugins`: `/api/claxedo/plugins` is the Marketplace (Agent Plugins) family.
 
-## The authoring skill
+## Authoring from a session
 
-`skills/claxedo-plugin-authoring/SKILL.md` reaches every session through `withLivePluginSkills`, which appends `skills/` to `harnessLaunch.opencode.config.skills`, the same launch document Agent Plugins' skills use. A packaged daemon must ship the `skills/` folder next to its bundle.
+A session makes an app plugin through the Claxedo MCP tools `app_plugin_create`, `app_plugin_check` and `app_plugin_add` (`packages/claxedo-mcp/src/tools/app-plugins.ts`), which carry the authoring guide to every harness that connects to the MCP server. The tools call `appPluginAuthoring` (`authoring.ts`), the grant a composition builds for one session:
+
+- **Who gets it.** Only a session of the machine's owner. The desktop's local server grants every session it runs, because every workspace on a desktop is its owner's. The self-hosted node grants a session whose workspace an operator (`CLAXEDO_OPERATOR_SUBJECTS`) owns, or every session when it runs unsigned. A cloud runtime and the hosted worker have no daemon of their own and grant none, so the tools are not listed there.
+- **Where it may write.** The grant is bound to the session's workspace folder. Every path is resolved through symlinks and refused outside it; `create` refuses a folder with content and an id the daemon already serves. The default folder is `<workspace>/.claxedo/plugins/<id>`.
+- **What each step does.** `create` writes `package.json` (the manifest) and `src/app.tsx` (a page and a sidebar item) from `scaffold.ts`. `check` runs `checkPluginApp` from `@claxedo/plugin-build`: a typecheck against the daemon's own plugin API and Solid, then a build, answered as file, line, column and message. `add` is `LivePluginService.add`, the same call `POST /` makes, so the registry, the first build, the watcher and `plugins.changed` are the ones described above.
+
+**Prompt injection.** A model can be talked into making or adding a plugin by text it reads: a file, a web page, an issue, a tool result. The guide tells it to act only on the person's request, but the model is not the boundary. The app is: a newly registered plugin, or a build whose manifest asks for different access, runs only after the owner turns it on in a dialog that names what it may reach. Registering a folder never activates it, and the folder is limited to the session's own workspace, so a tricked session can at most put a plugin in front of that dialog.

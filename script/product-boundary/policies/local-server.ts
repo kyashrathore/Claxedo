@@ -198,8 +198,14 @@ export const localServer: Policy = {
   //  - `session/runtime-activity.ts` (owner: the in-process status read): a
   //    mounted runtime's statuses, permissions and questions, read by the list
   //    page and the machine publisher alike. It reaches `platform/json.ts`.
-  //    80/30, no headroom.
-  ceilings: { modules: 80, packages: 30 },
+  //  - `plugins/{authoring,scaffold}.ts` (owner: app plugin authoring, the
+  //    grant the self-hosted node hands a session of its operator behind the
+  //    Claxedo MCP `app_plugin_*` tools): scaffolds a plugin folder inside the
+  //    session's workspace, checks it with `@claxedo/plugin-build` and
+  //    registers it through the live-plugin service. It reaches the plugin
+  //    packages and the service, all already here.
+  //    82/30, no headroom.
+  ceilings: { modules: 82, packages: 30 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

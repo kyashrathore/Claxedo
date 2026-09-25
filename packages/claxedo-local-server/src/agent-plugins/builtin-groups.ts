@@ -9,10 +9,10 @@ import {
 import type { UnsignedAgentPluginActivationStore } from "@claxedo/server-core/agent-plugins/activation/store"
 
 /**
- * This machine serves its own documents, so that group reaches no further than
- * the process the session already runs in.
+ * This machine serves its own documents and its owner's app plugins, so those
+ * groups reach no further than the process the session already runs in.
  */
-export const LOCAL_BUILTIN_DEPLOYMENT: BuiltinDeployment = { inProcessServices: ["documents"] }
+export const LOCAL_BUILTIN_DEPLOYMENT: BuiltinDeployment = { inProcessServices: ["documents", "app-plugins"] }
 
 /**
  * The first-party tool groups this machine has turned on.

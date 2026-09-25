@@ -55,7 +55,7 @@ import { AgentConfigRoutes, sessionMetaProjectionTap } from "@claxedo/local-serv
 import { SessionMetaRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { LocalWorkspaceRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { requireSignedControlPlaneRoute, ShellRoutes } from "@claxedo/local-server/self-hosted-execution"
-import { LIVE_PLUGINS_ROUTE_PATH, LivePluginRoutes } from "@claxedo/local-server/self-hosted-execution"
+import { appPluginAuthoring, LIVE_PLUGINS_ROUTE_PATH, LivePluginRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { ProjectRoutes } from "@claxedo/server-core/projects/routes"
 import { localProjectStore, systemRepoAddresses } from "@claxedo/server-core/projects/local-store"
 import { WorkspaceRoutes } from "../../workspace/routes/index"
@@ -159,7 +159,7 @@ import {
 } from "@claxedo/server-core/workspace/store/index"
 import { defaultHomeRegion, relayEndpointsFromEnv } from "@claxedo/server-core/platform/runtime/region/index"
 import { createControlPlaneChannels, mountControlPlaneChannels } from "../../channels/control-plane"
-import { selfHostedOperatorAuthorizer, selfHostedOperatorGuard, selfHostedPrivateRepoHosts } from "./operator"
+import { selfHostedOperatorAuthorizer, selfHostedOperatorGuard, selfHostedOperatorSubjects, selfHostedPrivateRepoHosts } from "./operator"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "@claxedo/local-server/self-hosted-execution"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import {
@@ -1501,6 +1501,18 @@ export function createSelfHostedApp(
           app,
           ...(options.tasksGrants ? { grants: options.tasksGrants } : {}),
         }),
+        // Live plugins are the operator's, as their routes are. A session may
+        // make one only in a workspace an operator owns, and only in its folder.
+        appPlugins: async (credential) => {
+          if (credential.kind !== "runtime") return undefined
+          const workspace = await resolveWorkspace({ workspaceId: credential.workspaceId })
+          if (!workspace || workspace.kind !== "local") return undefined
+          if (services.auth.config.enabled) {
+            const owner = await services.authority?.resolveWorkspaceOwner?.(credential.workspaceId).catch(() => undefined)
+            if (!owner || !selfHostedOperatorSubjects().has(owner.userId)) return undefined
+          }
+          return appPluginAuthoring({ roots: [workspace.directory] })
+        },
         // This box runs its own workspaces behind the runtime proxy, which
         // picks the workspace from `x-workspace-id`: stamped for a runtime
         // credential, named per call by the client for an account.

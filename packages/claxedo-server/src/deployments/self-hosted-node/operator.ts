@@ -8,8 +8,12 @@ import {
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 
 /** Machine-wide authority is assigned by the deployment, never by signup or workspace membership. */
+export function selfHostedOperatorSubjects(env: NodeJS.ProcessEnv = process.env): ReadonlySet<string> {
+  return new Set((env.CLAXEDO_OPERATOR_SUBJECTS ?? "").split(",").map((s) => s.trim()).filter(Boolean))
+}
+
 export function selfHostedOperatorAuthorizer(env: NodeJS.ProcessEnv = process.env) {
-  const subjects = new Set((env.CLAXEDO_OPERATOR_SUBJECTS ?? "").split(",").map((s) => s.trim()).filter(Boolean))
+  const subjects = selfHostedOperatorSubjects(env)
   return (identity: SignedControlPlaneAuth) => {
     if (!subjects.has(identity.user.subject)) {
       throw new ControlPlaneAuthError(403, "operator_required", "Deployment operator access is required")

@@ -16,6 +16,7 @@ import { SUPPORTED_AGENT_PLUGIN_HARNESSES } from "@claxedo/server-core/agent-plu
 import { LocalAgentPluginArtifactStore } from "./artifacts/local-store"
 import { SqliteUnsignedAgentPluginActivationStore } from "./activation/sqlite-store"
 import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
+import { LOCAL_BUILTIN_DEPLOYMENT } from "./builtin-groups"
 import { createLocalAgentPluginsModule } from "./module"
 import { LocalAgentPluginSourceRoutes } from "./sources/routes"
 import { SqliteAgentPluginSourceStore } from "./sources/sqlite-store"
@@ -32,7 +33,6 @@ import {
   type MaterializedAgentPluginGeneration,
 } from "./runtime/materialize"
 import { runtimeArtifactStore, runtimeMcpServers } from "./runtime/runtime-contribution"
-import { withLivePluginSkills } from "../plugins/skills/harness-launch"
 
 /**
  * The signed user's own runtime world, as the control plane hands it to a
@@ -220,14 +220,12 @@ export function createLocalAgentPluginsComposition(
     activations,
     reconcile,
     signedRuntime,
-    // This machine runs the documents service itself, so that group reaches no
-    // further than the process the session already runs in.
-    builtIn: { groups: claxedoMcpToolGroupInventory(), deployment: { inProcessServices: ["documents"] } },
+    builtIn: { groups: claxedoMcpToolGroupInventory(), deployment: LOCAL_BUILTIN_DEPLOYMENT },
   })
   const harnessLaunch = async () => {
     await current
     await signedWork.catch(() => undefined)
-    return withLivePluginSkills(await agentPluginHarnessLaunch(signedGeneration ?? activeGeneration))
+    return await agentPluginHarnessLaunch(signedGeneration ?? activeGeneration)
   }
   return {
     routeContributions: [

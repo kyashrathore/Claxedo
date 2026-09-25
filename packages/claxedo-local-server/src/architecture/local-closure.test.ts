@@ -287,8 +287,14 @@ describe("@claxedo/local-server closure", () => {
     //  - `session/runtime-activity.ts` — a mounted runtime's statuses,
     //    permissions and questions read in process, for the list page and the
     //    machine publisher alike.
+    //  - `plugins/authoring.ts` and `plugins/scaffold.ts` — app plugin
+    //    authoring, the grant the first-party MCP's `app_plugin_*` tools call
+    //    for a session of this machine's owner: a new plugin folder in the
+    //    session's workspace, its check and its registration with the live
+    //    plugins above. The authoring skill the OpenCode launch document used
+    //    to carry is gone; the MCP tools serve the guide to every harness.
     const { modules, packages } = closure({ runtimeOnly: true })
-    expect(modules.size).toBeLessThanOrEqual(109)
+    expect(modules.size).toBeLessThanOrEqual(110)
     expect(packages.size).toBeLessThanOrEqual(31)
   })
 })

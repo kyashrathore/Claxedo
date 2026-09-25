@@ -82,6 +82,7 @@ import {
   type RecoveryRequest,
 } from "@claxedo/agent-runtime-contract"
 import { localDocumentsRoutes } from "./local-documents"
+import { appPluginAuthoring } from "../plugins/authoring"
 import { LivePluginRoutes } from "../plugins/routes"
 import { LIVE_PLUGINS_ROUTE_PATH } from "../plugins/service"
 
@@ -552,6 +553,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
           deployment: "loopback",
           credential,
           request,
+          appPlugins: appPluginAuthoring({ roots: [workspace.directory] }),
           documents: { fetch: localFetch },
           tasks: {
             fetch: grant ? inProcessFetch(inProcess, { authorization: `Bearer ${grant}` }) : localFetch,
