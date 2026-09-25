@@ -1,6 +1,8 @@
 @import "@opencode-ai/ui/styles/tailwind";
 @import "@opencode-ai/ui/v2/styles/tailwind.css";
 
+@source not "../../../../claxedo-app/src";
+@source not "../../../../claxedo-desktop/src/renderer";
 @source "../../";
 @source not "../../legacy";
 @source "../../../../session-ui/src";
