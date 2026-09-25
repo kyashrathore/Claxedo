@@ -224,3 +224,38 @@ On session "Local changes review", viewport width set to 900 px and back. Median
 | API requests | 0 | 0 |
 
 v2 changes the DOM on a width change: `div.workbench-root` gets `data-collapsed` and a child re-render, and `aside.absolute.bottom-0`, the scroll thumb and the bottom spacer get inline styles. v1 absorbs the same resize with CSS alone (0 mutations). This is minor, but it is script work on every resize frame of a live drag. Design fix: express the collapse breakpoint as a container or media query rather than a JS-set attribute.
+
+## Extra idle check: 30 s on an open session with the panel open
+
+Session "Local changes review" with the workspace panel open, pointer parked, 5 s settle, then 30 s. 3 runs each, identical.
+
+| Metric | v1 | v2 |
+|---|---|---|
+| API requests | 25 (`status`, `permission`, `question` ×6 each, `health` ×3, `message` ×3, `wr/events` ×1) | 0 |
+| Mutations / style recalcs / layouts / paints | 0 / 0 / 0 / 0 | 0 / 0 / 0 / 0 |
+| Frames / BeginMainThreadFrame | 0 / 3 | 60 / 60 |
+| Timer callbacks fired | 50 | 4 |
+| ScriptDuration (ms) | 20 | 1 |
+
+v2's 60 frames are the text caret blinking at 2 Hz, not an app animation. `document.getAnimations()` is empty and there are no SMIL or video elements. The frames occur exactly when an editable element has focus: in v2 opening the panel moves focus into the Files filter `<input>`; in v1's boot idle the composer holds focus, and that is where v1's 60 idle frames in scenario 1 come from. Neither app runs an idle animation. Whether opening the panel should move focus into the filter is a product choice; while it does, an idle window with the panel open redraws twice a second.
+
+## Stylesheets: duplication and coverage
+
+CSSOM census and `CSS.startRuleUsageTracking` over boot plus opening "Local changes review" (1 run each; the counts are static).
+
+| Metric | v1 | v2 |
+|---|---|---|
+| Stylesheets | 23 | 42 |
+| Stylesheet text (bytes) | 617,751 | 824,383 |
+| Style rules (CSSOM, nested included) | 3,655 | 5,579 |
+| Unique rule texts | 3,450 | 3,864 |
+| **Duplicate rules / bytes** | **205 / 15,666** | **1,715 / 238,508** |
+| Rules used during boot + session open | 1,153 (32%) | 1,672 (30%) |
+
+The duplicates come in two pairs, not one:
+
+- `shell/styles/index.css` + `src/ui/styles.css`: 878 identical rules.
+- `shell/styles/index.css` + `src/transcript/styles.css`: 658 identical rules. This is the known one: the shell imports session-ui's styles while `src/transcript/styles.css` imports v2's own copies.
+- Plus 25 rules present in all three.
+
+The two extra sheets are 107,563 and 80,707 bytes. Disabling either copy on the live page does not change the scroll restyle count (scenario 2), so the measured cost is parse, memory and rule-matching setup at boot, not per-frame style work. Design fix: one owner per stylesheet. The shell must not import session-ui's and ui's CSS when v2 imports its own copies, or v2 must not keep copies.
