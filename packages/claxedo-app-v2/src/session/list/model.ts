@@ -110,6 +110,7 @@ export type ListEvent =
   | { readonly type: "rereadFailed"; readonly error: AppError }
   | { readonly type: "rowRead"; readonly row: SessionRow }
   | { readonly type: "statusRead"; readonly ref: SessionRef; readonly status: SessionStatus; readonly sentAt: number }
+  | { readonly type: "statusesFetched"; readonly read: SessionStatusRead; readonly sentAt: number; readonly rows: readonly SessionRow[] }
   | { readonly type: "sessionOpened"; readonly sessionId: SessionId }
   | { readonly type: "sessionClosed"; readonly sessionId: SessionId }
   | { readonly type: "createStarted"; readonly clientRequestId: string; readonly row: SessionRow }
@@ -158,6 +159,9 @@ export const insidePlacementWindow = (data: ListData, row: SessionRow, key: Orde
   insideWindow(key, windowTail(data, row.ref.placementId))
 
 export const windowRows = (window: FetchedWindow): readonly SessionRow[] => window.pages.flatMap((page) => page.rows)
+
+export const listedRows = (data: ListData): readonly SessionRow[] =>
+  [...data.entries.values()].flatMap((entry) => (entry.kind === "confirmed" ? [entry.row] : []))
 
 export const hasMorePages = (data: ListData, placementIds: readonly PlacementId[]): boolean =>
   placementIds.some((id) => data.windows.get(id)?.nextCursor !== undefined)
