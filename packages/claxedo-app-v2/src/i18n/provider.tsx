@@ -1,9 +1,8 @@
-import { createContext, createEffect, createMemo, createSignal, useContext, type Accessor, type JSX } from "solid-js"
+import { createContext, createEffect, createMemo, useContext, type Accessor, type JSX } from "solid-js"
 import { persistedSignal, preferenceKey } from "@/lib/persisted"
-import { fillTemplate, lookup, mergeDictionaries, type TemplateParams, type Translations } from "./dictionary"
+import type { TemplateParams, Translations } from "./dictionary"
+import { createTranslationRegistry, type Translate } from "./translations"
 import { LOCALES, detectLocale, isLocale, localeEntry, type Locale, type LocaleEntry } from "./locales"
-
-export type Translate = (key: string, params?: TemplateParams) => string
 
 export type I18n = {
   readonly locale: Accessor<Locale>
@@ -16,8 +15,6 @@ export type I18n = {
 
 const I18nContext = createContext<I18n>()
 
-const localeCodes = LOCALES.map((entry) => entry.code)
-
 function browserLanguages(): readonly string[] {
   if (typeof navigator !== "object") return []
   return navigator.languages?.length ? navigator.languages : [navigator.language]
@@ -29,8 +26,7 @@ export function I18nProvider(props: { readonly locale?: Locale; readonly childre
     props.locale ?? detectLocale(browserLanguages()),
     (value) => (isLocale(value) ? value : undefined),
   )
-  const [domains, setDomains] = createSignal<readonly Translations[]>([])
-  const merged = createMemo(() => mergeDictionaries(domains(), localeCodes))
+  const translations = createTranslationRegistry(locale)
   const intlTag = createMemo(() => localeEntry(locale()).intlTag)
 
   createEffect(() => {
@@ -43,11 +39,8 @@ export function I18nProvider(props: { readonly locale?: Locale; readonly childre
     setLocale: (next) => setLocale(next),
     locales: LOCALES,
     intlTag,
-    t: (key, params) => fillTemplate(lookup(merged(), locale(), key), params),
-    add: (domain) => {
-      setDomains((current) => (current.includes(domain) ? current : [...current, domain]))
-      return () => setDomains((current) => current.filter((entry) => entry !== domain))
-    },
+    t: translations.t,
+    add: translations.add,
   }
   return <I18nContext.Provider value={value}>{props.children}</I18nContext.Provider>
 }
