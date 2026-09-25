@@ -19,7 +19,7 @@ export type CaseSeedSlice = {
   readonly turns?: { readonly from: number; readonly to: number }
 }
 
-export type CaseTurn = { readonly prompt: string; readonly steps: readonly AcpStep[] }
+export type CaseTurn = { readonly prompt: string; readonly steps: readonly AcpStep[]; readonly abort?: boolean }
 
 export type CaseReplay =
   | { readonly agent: "acp"; readonly turns: readonly CaseTurn[] }

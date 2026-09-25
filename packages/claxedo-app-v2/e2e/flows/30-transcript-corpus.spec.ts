@@ -2,7 +2,7 @@ import fs from "node:fs"
 import path from "node:path"
 import type { Locator, Page } from "@playwright/test"
 import type { CaseInteraction, CaseTurn, CorpusCase } from "../corpus/case"
-import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, type ClaxedoApi, type MessageRow, type Stack } from "../harness"
+import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, type AcpStep, type ClaxedoApi, type MessageRow, type Stack } from "../harness"
 
 const CASES_DIR = path.join(import.meta.dirname, "..", "corpus", "cases")
 const TURN_TIMEOUT = 30_000
@@ -33,14 +33,29 @@ function turnSettled(messages: readonly MessageRow[], users: number): boolean {
   return time?.completed !== undefined || last.error !== undefined
 }
 
+function playedUpToHold(messages: readonly MessageRow[], steps: readonly AcpStep[], users: number): boolean {
+  if (messages.filter((message) => message.info.role === "user").length < users) return false
+  const last = messages.at(-1)
+  if (last?.info.role !== "assistant") return false
+  const tools = last.parts.filter((part) => part.type === "tool" && (part.state as { status?: string } | undefined)?.status === "completed")
+  const texts = last.parts.filter((part) => part.type === "text")
+  return tools.length >= steps.filter((step) => step.kind === "tool").length && texts.length >= steps.filter((step) => step.kind === "text").length
+}
+
 async function playTurn(stack: Stack, api: ClaxedoApi, target: Target, turn: CaseTurn & { readonly name: string }, users: number) {
   await stack.acp.write(turn.name, { steps: [...turn.steps] })
   const text = `${turn.prompt} ${acpScriptToken(turn.name)}`
-  if (!turn.steps.some((step) => step.kind === "error")) {
+  if (!turn.abort && !turn.steps.some((step) => step.kind === "error")) {
     await api.prompt(target.directory, target.sessionId, text)
     return
   }
   await api.promptAsync(target.directory, target.sessionId, text)
+  if (turn.abort) {
+    await expect
+      .poll(async () => playedUpToHold(await api.messages(target.directory, target.sessionId), turn.steps, users), { timeout: TURN_TIMEOUT })
+      .toBe(true)
+    await api.stopTurn(target.directory, target.sessionId)
+  }
   await expect
     .poll(async () => turnSettled(await api.messages(target.directory, target.sessionId), users), { timeout: TURN_TIMEOUT })
     .toBe(true)
