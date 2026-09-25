@@ -3,7 +3,9 @@ import { PiJsonLines, PiRpcProcess } from "./rpc-process"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { volatileLaunchOwnership } from "../../launch"
+import { EventEmitter } from "node:events"
+import { PassThrough } from "node:stream"
+import { volatileLaunchOwnership, type RetirementResult } from "../../launch"
 
 /** This suite asserts protocol and retirement, not record durability. */
 const volatile = volatileLaunchOwnership()
@@ -200,3 +202,19 @@ test.skipIf(process.platform === "win32")("exit is published when the OS reports
     await rm(directory, { recursive: true, force: true })
   }
 }, 20_000)
+
+test("an unsettled retirement is retried by the next dispose, and a settled one is final", async () => {
+  const child = Object.assign(new EventEmitter(), { stdout: new PassThrough(), stderr: new PassThrough(), stdin: new PassThrough() })
+  const outcomes: RetirementResult[] = [
+    { leader: "unknown", descendants: "unknown", signals: [], error: { code: "ownership_unverified", message: "ps timed out" } },
+    { leader: "exited", descendants: "unknown", signals: [] },
+  ]
+  let retirements = 0
+  const launch = { launchId: "l1", child, identity: { pid: 4242 }, payloadPid: 4242, retire: async () => outcomes[retirements++] ?? outcomes[1] }
+  const construct = PiRpcProcess as unknown as new (launch: unknown, budgets: unknown, input: unknown) => PiRpcProcess
+  const rpc = new construct(launch, {}, { binary: "pi", directory: "/work" })
+  expect((await rpc.dispose()).leader).toBe("unknown")
+  expect((await rpc.dispose()).leader).toBe("exited")
+  await rpc.dispose()
+  expect(retirements).toBe(2)
+})

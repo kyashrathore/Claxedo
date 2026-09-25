@@ -15,7 +15,6 @@ export type HarnessSwitcherCache = {
   getPending(key: string): Promise<void> | undefined
   setPending(key: string, value: Promise<void>): void
   removePending(key: string, value: Promise<void>): void
-  clearOptionsTries(scope: string): void
 }
 
 type SwitcherInput<ScopeInput extends HarnessScopeInput> = {
@@ -65,7 +64,6 @@ async function setHarnessOnce<ScopeInput extends HarnessScopeInput>(
   } else {
     input.holdHarness(scope, harnessSwitchStartPatch({ type }))
   }
-  input.cache.clearOptionsTries(scope)
   const accepted = await loadPickedHarness(input, scope, type, params, active)
   if (draft && accepted && active()) input.rememberDraftHarness(scope, type, params)
 }

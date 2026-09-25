@@ -261,6 +261,7 @@ export type Server = {
   readonly livePlugins: LivePluginsApi
   readonly harnessConfig: HarnessConfigApi
   readonly queries: ServerQueries
+  readonly attachPlacement: (id: PlacementId) => () => void
   readonly request: (path: string, init?: RequestInit) => Promise<Response>
   readonly operation: (name: string, input: unknown) => Promise<unknown>
 }
