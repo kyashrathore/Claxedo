@@ -7,12 +7,13 @@ export type ACPConnectionObservationUpdate = {
 }
 
 /** One record per actual process owner; an old launch cannot update its replacement. */
-export function createACPConnectionObservations() {
+export function createACPConnectionObservations(onChange: () => void = () => {}) {
   const owners = new Map<string, { directories: Set<string>; observation: ConnectionRuntimeObservation }>()
   return {
     begin(key: string, directory: string, role: ConnectionRuntimeObservation["role"]) {
       const observation: ConnectionRuntimeObservation = { generation: randomUUID(), role, state: "connecting", observedAt: Date.now() }
       owners.set(key, { directories: new Set([directory]), observation })
+      onChange()
       return (update: ACPConnectionObservationUpdate) => {
         if (owners.get(key)?.observation !== observation) return
         if (observation.state === "failed" || observation.state === "disconnected") return
@@ -20,6 +21,7 @@ export function createACPConnectionObservations() {
         const state = update.state === "disconnected" && observation.state === "connecting" && update.reason !== "disposed"
           ? "failed" : update.state
         Object.assign(observation, { state, observedAt: Date.now(), reason: update.reason })
+        onChange()
       }
     },
     associate(key: string, directory: string) { owners.get(key)?.directories.add(directory) },

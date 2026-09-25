@@ -1,19 +1,17 @@
-import { decodeHarnessConnectionsCatalog, type HarnessConnectionsCatalog } from "@claxedo/agent-runtime-contract"
 import { responseError } from "./errors"
 import type { PlacementId } from "./ids"
-import { sessionEndpoint } from "./session-context"
-import { jsonInit, withQuery, type Transport } from "./transport"
+import type { QueryClient } from "@tanstack/solid-query"
+import { createPermissionModeWriter } from "./permission-modes"
+import { withQuery, type Transport } from "./transport"
 import type { SessionRef } from "./types"
 import type { Workspaces } from "./workspaces"
 import { readHarnessOptions, type HarnessOptionsRequest } from "./harness-options"
 import type { HarnessOptions, HarnessState, SessionConfig } from "./harness-types"
 import { readSessionConfig, writeSessionConfig, type SessionConfigPatch } from "./session-config"
 import { harnessStateFromWire } from "./wire/harness-state"
-import { harnessSelectionQuery } from "./wire/harness-selection"
-import { permissionModeStateFromWire, type PermissionModeState } from "./wire/permission-modes"
+import type { PermissionModeState } from "./wire/permission-modes"
 
 const HARNESS_PATH = "/api/claxedo/agent-config/harness"
-const CONNECTIONS_PATH = "/api/claxedo/agent-config/connections"
 
 export type HarnessConfigApi = {
   readonly serverUrl: string
@@ -23,13 +21,11 @@ export type HarnessConfigApi = {
   readonly options: (request: HarnessOptionsRequest) => Promise<HarnessOptions>
   readonly sessionConfig: (ref: SessionRef) => Promise<SessionConfig | undefined>
   readonly updateSessionConfig: (ref: SessionRef, patch: SessionConfigPatch) => Promise<void>
-  readonly connections: () => Promise<HarnessConnectionsCatalog>
-  /** A session's own modes, or for a draft the modes `harness` offers in the placement. */
-  readonly permissionModes: (input: { readonly placementId: PlacementId; readonly ref?: SessionRef; readonly harness?: string }) => Promise<PermissionModeState>
   readonly setPermissionMode: (ref: SessionRef, modeId: string) => Promise<PermissionModeState>
 }
 
-export function createHarnessConfigApi(transport: Transport, workspaces: Workspaces): HarnessConfigApi {
+export function createHarnessConfigApi(transport: Transport, workspaces: Workspaces, queryClient: QueryClient): HarnessConfigApi {
+  const modes = createPermissionModeWriter(transport, workspaces, queryClient)
   const workspaceId = async (placementId: PlacementId) => (await workspaces.route(placementId)).workspaceId
   return {
     serverUrl: transport.serverUrl,
@@ -45,24 +41,10 @@ export function createHarnessConfigApi(transport: Transport, workspaces: Workspa
     },
     options: (request) => readHarnessOptions(transport, workspaces, request),
     sessionConfig: (ref) => readSessionConfig(transport, workspaces, ref),
-    updateSessionConfig: (ref, patch) => writeSessionConfig(transport, workspaces, ref, patch),
-    connections: async () => {
-      const response = await transport.request(CONNECTIONS_PATH)
-      if (!response.ok) throw await responseError(response, "Agent connections")
-      return decodeHarnessConnectionsCatalog(await response.json())
+    updateSessionConfig: async (ref, patch) => {
+      await writeSessionConfig(transport, workspaces, ref, patch)
+      if (patch.harness !== undefined) await modes.sessionHarnessChanged(ref)
     },
-    permissionModes: async (input) => {
-      const path = input.ref
-        ? sessionEndpoint(input.ref, "/permission-mode")
-        : withQuery("/permission/modes", input.harness ? harnessSelectionQuery(input.harness) : {})
-      const response = await transport.runtime(await workspaces.route(input.ref ?? input.placementId), path)
-      if (!response.ok) throw await responseError(response, "Permission modes")
-      return permissionModeStateFromWire(await response.json())
-    },
-    setPermissionMode: async (ref, modeId) => {
-      const response = await transport.runtime(await workspaces.route(ref), sessionEndpoint(ref, "/permission-mode"), jsonInit("PUT", { modeId }))
-      if (!response.ok) throw await responseError(response, "Permission mode")
-      return permissionModeStateFromWire(await response.json())
-    },
+    setPermissionMode: modes.setPermissionMode,
   }
 }

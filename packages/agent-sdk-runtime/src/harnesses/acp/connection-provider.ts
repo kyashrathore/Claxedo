@@ -80,6 +80,7 @@ export function createAcpConnectionProvider(): ConnectionProvider<AcpConnectionP
         store: context.store,
         eventHub: context.eventHub,
         ...(context.processObserver ? { processObserver: context.processObserver } : {}),
+        ...(context.reportHealthChanged ? { reportHealthChanged: context.reportHealthChanged } : {}),
       })
     },
   }

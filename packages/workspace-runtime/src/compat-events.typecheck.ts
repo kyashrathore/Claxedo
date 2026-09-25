@@ -38,6 +38,7 @@ messagePartDelta({
 
 const kinds: Record<CompatEvent["type"], true> = {
   "session.deleted": true,
+  "harness.health": true,
   "message.updated": true,
   "message.part.updated": true,
   "message.part.delta": true,

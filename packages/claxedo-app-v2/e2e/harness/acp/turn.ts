@@ -135,9 +135,9 @@ async function playSubagent(context: TurnContext, step: Extract<AcpStep, { kind:
   return undefined
 }
 
-async function hold(context: TurnContext, name: string) {
+async function hold(context: TurnContext, name: string, ignoresCancel: boolean) {
   const file = holdReleaseFile(context.scriptDir, name)
-  while (!context.signal.aborted) {
+  while (ignoresCancel || !context.signal.aborted) {
     if (fs.existsSync(file)) return
     await new Promise((resolve) => setTimeout(resolve, 50))
   }
@@ -171,7 +171,7 @@ async function playStep(context: TurnContext, step: AcpStep): Promise<PromptResp
     case "subagent":
       return playSubagent(context, step)
     case "hold":
-      await hold(context, step.name)
+      await hold(context, step.name, step.ignoresCancel === true)
       return undefined
     case "error":
       throw RequestError.internalError(undefined, step.message)

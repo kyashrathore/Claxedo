@@ -31,6 +31,20 @@ test("observations fence old generations, isolate directories, and never promote
   expect(observations.read(WORK, "main").state).toBe("configured")
 })
 
+test("every applied observation reports a change, and a fenced one does not", () => {
+  let changes = 0
+  const observations = createACPConnectionObservations(() => { changes++ })
+  const old = observations.begin("main", WORK, "execution")
+  old({ state: "ready" })
+  expect(changes).toBe(2)
+  const current = observations.begin("main", WORK, "execution")
+  old({ state: "disconnected" })
+  expect(changes).toBe(3)
+  current({ state: "disconnected", reason: "transport_closed" })
+  current({ state: "ready" })
+  expect(changes).toBe(4)
+})
+
 class ObservedAdapter extends AcpHarnessAdapter {
   shared(key: string, directory: string) { return this.getOrSpawnProcessForKey(key, directory) }
 }

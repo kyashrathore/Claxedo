@@ -80,6 +80,13 @@ export type AgentHarnessAdapterProcessOptions = {
    * serves it from `recovery.inspect(sessionId).failures`.
    */
   reportOwnerFailure?: (sessionId: string, error: unknown) => void
+  /**
+   * Called when the adapter records a fact `readRuntimeHealth` or
+   * `readConnectionState` answers from: a process lost under a turn, its
+   * replacement, a retirement that did not settle, a connection's state. It
+   * carries nothing; the host reads the answers again.
+   */
+  reportHealthChanged?: () => void
 }
 
 export type AgentTurnWriteContext = {
