@@ -3,8 +3,8 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { piCredentialProviderIDs, type PromptModel } from "@claxedo/agent-runtime-contract"
-import type { PluginProjection, ResolvedCredentials, TurnOrigin } from "../../contract"
-import { selectTurnCredentials, type CredentialProfile, type RuntimePlacement } from "../../registry/credentials"
+import type { PluginProjection, ResolvedCredentials, TurnActor } from "../../contract"
+import { selectSessionCredentials, type CredentialProfile, type RuntimePlacement } from "../../registry/credentials"
 
 export type PiProfile = {
   kind: CredentialProfile
@@ -30,22 +30,20 @@ const providerPaths: Record<string, { path: string; env: readonly string[] }> = 
   xai: { path: "/v1", env: ["XAI_API_KEY"] },
 }
 
-function ownerOrigin(origin: TurnOrigin, options: PiProfileOptions): boolean {
-  const actor = origin.actor
-  return (actor.kind === "machine-owner" || actor.userId === options.machineOwnerUserId)
-    && (origin.via === "loopback" || origin.via === "owner-grant")
+function machineOwnerSession(owner: TurnActor, options: PiProfileOptions): boolean {
+  return (owner.kind === "machine-owner" || owner.userId === options.machineOwnerUserId)
     && options.canUseOwnLogin && (options.placement === "desktop" || options.placement === "loopback")
 }
 
 export function selectPiProfile(
-  origin: TurnOrigin, credentials: ResolvedCredentials, directory: string, sessionId: string, options: PiProfileOptions,
+  owner: TurnActor, credentials: ResolvedCredentials, directory: string, sessionId: string, options: PiProfileOptions,
   sessionProfile?: CredentialProfile,
 ): PiProfile {
-  const kind = sessionProfile ?? (ownerOrigin(origin, options) ? "owner-login" : "brokered")
-  const selected = selectTurnCredentials({
-    origin, placement: options.placement, machineOwnerUserId: options.machineOwnerUserId,
+  const kind = machineOwnerSession(owner, options) ? sessionProfile ?? "owner-login" : "brokered"
+  const selected = selectSessionCredentials({
+    owner, placement: options.placement, machineOwnerUserId: options.machineOwnerUserId,
     canUseOwnLogin: options.canUseOwnLogin,
-    profile: { kind: "pi-rpc", sessionProfile: kind, ownerLogin: credentials, brokeredCredentials: credentials },
+    profile: { kind: "pi-rpc", ownerLogin: credentials, brokeredCredentials: credentials },
   })
   const workspace = createHash("sha256").update(path.resolve(directory)).digest("hex").slice(0, 16)
   const stateDir = path.join(options.stateRoot, workspace)

@@ -36,7 +36,7 @@ export type StartInput = {
   instructions?: string
   projection: PluginProjection
   credentials: ResolvedCredentials
-  origin: TurnOrigin
+  owner: TurnActor
 }
 
 export type AttachInput = Omit<StartInput, "title" | "instructions"> & {

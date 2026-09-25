@@ -48,8 +48,8 @@ async function backend(): Promise<PiBackend> {
     openai: { baseUrl: server.v1Url, apiKey: "pi-conformance-placeholder" },
   } }))
   return {
-    root, agentDir, directory, authFile, server, uiCommand: "conformance-ui",
-    mismatchOrigin: { actor: { kind: "person", userId: "member" }, via: "relay", reissued: false },
+    root, agentDir, directory, authFile, server, uiCommand: "conformance-ui", owner: { kind: "machine-owner" },
+    sharedSender: { actor: { kind: "person", userId: "member" }, via: "relay", reissued: false },
     harness: { id: "pi", access: "native" }, expectedMcp: "none",
     model: { providerID: "pi", modelID: "openai/gpt-4.1" },
     credentials: { providers: {}, secrets: {}, leaseGeneration: "conformance" },
@@ -82,8 +82,8 @@ runConformance({
     const root = path.join(state.root, "plugin")
     await fs.mkdir(path.join(root, "extensions"), { recursive: true })
     await fs.writeFile(path.join(root, "extensions", "conformance.ts"), extension)
-    return { ...state, origin, credentials, authFile: undefined,
-      mismatchOrigin: { actor: { kind: "machine-owner" as const }, via: "loopback" as const, reissued: false },
+    return { ...state, owner: origin.actor, origin, credentials, authFile: undefined,
+      sharedSender: { actor: { kind: "machine-owner" as const }, via: "loopback" as const, reissued: false },
       projection: { generation: "g1", mcpServers: [], notApplied: [], pluginRoots: [{ pluginInstanceId: "conformance", root, dataRoot: root }] },
       rotate: async () => {
         const port = await reservePort()

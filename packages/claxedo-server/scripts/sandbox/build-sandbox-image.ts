@@ -315,6 +315,8 @@ export async function bundleClaxedoWorkspaceRuntimeHost(
   fs.writeFileSync(packageJsonPath, packageJson)
   const smokePath = path.join(outDir, IMAGE_SMOKE_FILENAME)
   fs.copyFileSync(new URL(`./${IMAGE_SMOKE_FILENAME}`, import.meta.url), smokePath)
+  const agentInstallerPath = path.join(outDir, "install-agent-artifacts.sh")
+  fs.copyFileSync(new URL("./install-agent-artifacts.sh", import.meta.url), agentInstallerPath)
   // The host spawns the launch gate child by path, and the bundle has no
   // node_modules entry for @claxedo/process-ownership to resolve it through;
   // resolveLaunchGateChild() finds it beside the bundle.
@@ -331,6 +333,7 @@ export async function bundleClaxedoWorkspaceRuntimeHost(
     .update(fs.readFileSync(versionFile))
     .update(packageJson)
     .update(fs.readFileSync(smokePath))
+    .update(fs.readFileSync(agentInstallerPath))
     .update(fs.readFileSync(gateChildPath))
     .update(stagedPatches.digest)
     .digest("hex")

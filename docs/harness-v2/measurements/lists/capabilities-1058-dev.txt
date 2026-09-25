@@ -1,0 +1,7 @@
+packages/agent-sdk-runtime/src/capabilities.ts
+packages/agent-sdk-runtime/src/mcp-resolver.ts
+packages/agent-sdk-runtime/src/sdk-model-options.ts
+packages/agent-sdk-runtime/src/session-model.ts
+packages/agent-sdk-runtime/src/first-party-mcp.ts
+packages/agent-sdk-runtime/src/harnesses/codex/model-options.ts
+packages/agent-sdk-runtime/src/harnesses/shared/permission-modes.ts

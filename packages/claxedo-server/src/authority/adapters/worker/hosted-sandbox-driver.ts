@@ -67,7 +67,7 @@ export function hostedSandboxDriver(env: HostedWorkerEnv): SandboxDriver | undef
       runtimePort: workspaceRuntimePort(env),
       ...(trimToUndefined(env.CLAXEDO_RUNTIME_COMMAND) ? { runtimeCommand: trimToUndefined(env.CLAXEDO_RUNTIME_COMMAND) } : {}),
       ...(trimToUndefined(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) ? { workspaceDir: trimToUndefined(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) } : {}),
-      ...(trimToUndefined(env.CLAXEDO_RUNTIME_RUNNER) ? { runner: trimToUndefined(env.CLAXEDO_RUNTIME_RUNNER) } : {}),
+      ...(trimToUndefined(env.CLAXEDO_RUNTIME_RUNNER) ? { nativeHarness: trimToUndefined(env.CLAXEDO_RUNTIME_RUNNER) } : {}),
       controlEnv: sandboxRuntimeControlEnv(env),
     })
   }
@@ -86,7 +86,7 @@ export function hostedSandboxDriver(env: HostedWorkerEnv): SandboxDriver | undef
       ...(trimToUndefined(env.DAYTONA_TARGET) ? { target: trimToUndefined(env.DAYTONA_TARGET) } : {}),
       runtimePort: workspaceRuntimePort(env),
       ...(trimToUndefined(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) ? { workspaceDir: trimToUndefined(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) } : {}),
-      ...(trimToUndefined(env.CLAXEDO_RUNTIME_RUNNER) ? { runner: trimToUndefined(env.CLAXEDO_RUNTIME_RUNNER) } : {}),
+      ...(trimToUndefined(env.CLAXEDO_RUNTIME_RUNNER) ? { nativeHarness: trimToUndefined(env.CLAXEDO_RUNTIME_RUNNER) } : {}),
       controlEnv: sandboxRuntimeControlEnv(env),
     })
   }
@@ -108,7 +108,7 @@ export function hostedSandboxDriver(env: HostedWorkerEnv): SandboxDriver | undef
       runtimePort: workspaceRuntimePort(env),
       ...(trimToUndefined(env.CLAXEDO_RUNTIME_COMMAND) ? { runtimeCommand: trimToUndefined(env.CLAXEDO_RUNTIME_COMMAND) } : {}),
       ...(trimToUndefined(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) ? { workspaceDir: trimToUndefined(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) } : {}),
-      ...(trimToUndefined(env.CLAXEDO_RUNTIME_RUNNER) ? { runner: trimToUndefined(env.CLAXEDO_RUNTIME_RUNNER) } : {}),
+      ...(trimToUndefined(env.CLAXEDO_RUNTIME_RUNNER) ? { nativeHarness: trimToUndefined(env.CLAXEDO_RUNTIME_RUNNER) } : {}),
       ...(Object.keys(runtimeEnv).length ? { env: () => runtimeEnv } : {}),
     })
   }

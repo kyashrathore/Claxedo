@@ -86,11 +86,6 @@ CLOUDFLARE_SANDBOX_WORKER_URL=https://sandbox.yourdomain.com
 
 The hosted control plane auto-selects the Cloudflare driver when these values
 are present. You can also set `CLAXEDO_SANDBOX_DRIVER=cloudflare` explicitly.
-To run the live product-path test against a running claxedo-server:
-
-```bash
-CLAXEDO_SERVER_URL=http://127.0.0.1:3001 node --import tsx scripts/sandbox/live/live-ui-test.ts
-```
 
 ## Native credential brokering
 

@@ -9,13 +9,13 @@ import type {
 } from "openai/resources/responses/responses"
 
 export type ScriptedReply =
-  | { kind: "text"; text: string }
+  | { kind: "text"; text: string; reasoning?: string }
   | { kind: "tool"; name: string; input: unknown; namespace?: string }
   | { kind: "error"; status: number; message: string }
 
 export type StreamPacing = { chunks: number; delayMs: number }
 type StreamedReply = Exclude<ScriptedReply, { kind: "error" }>
-type MessageBlock = Extract<ContentBlock, { type: "text" | "tool_use" }>
+type MessageBlock = Extract<ContentBlock, { type: "text" | "tool_use" | "thinking" }>
 
 const SSE_HEADERS = { "content-type": "text/event-stream", "cache-control": "no-cache" }
 
@@ -125,6 +125,10 @@ function anthropicBlockEvents(block: MessageBlock, index: number, pacing?: Strea
   if (block.type === "text") {
     events.push({ type: "content_block_start", index, content_block: { type: "text", text: "", citations: null } })
     for (const text of deltas(block.text, pacing)) events.push({ type: "content_block_delta", index, delta: { type: "text_delta", text } })
+  } else if (block.type === "thinking") {
+    events.push({ type: "content_block_start", index, content_block: { type: "thinking", thinking: "", signature: "" } })
+    events.push({ type: "content_block_delta", index, delta: { type: "thinking_delta", thinking: block.thinking } })
+    events.push({ type: "content_block_delta", index, delta: { type: "signature_delta", signature: block.signature } })
   } else {
     events.push({ type: "content_block_start", index, content_block: { ...block, input: {} } })
     events.push({ type: "content_block_delta", index, delta: { type: "input_json_delta", partial_json: JSON.stringify(block.input) } })
@@ -141,7 +145,7 @@ export async function respondMessages(
   pacing?: StreamPacing,
 ) {
   const content: MessageBlock[] = reply.kind === "text"
-    ? [{ type: "text", text: reply.text, citations: null }]
+    ? [...(reply.reasoning ? [{ type: "thinking" as const, thinking: reply.reasoning, signature: "scripted-signature" }] : []), { type: "text", text: reply.text, citations: null }]
     : [{ type: "tool_use", id: `toolu_scripted_${sequence}`, name: reply.name, input: reply.input, caller: { type: "direct" } }]
   const stop: Message["stop_reason"] = reply.kind === "text" ? "end_turn" : "tool_use"
   if (!body.stream) {
@@ -243,12 +247,20 @@ export async function respondResponses(
         status: "completed",
         content: [{ type: "output_text", text: reply.text, annotations: [], logprobs: [] }],
       }
+  const reasoning: ResponseOutputItem | undefined = reply.kind === "text" && reply.reasoning
+    ? { type: "reasoning", id: `rs_${sequence}`, summary: [{ type: "summary_text", text: reply.reasoning }], status: "completed" }
+    : undefined
   const streamed = item.type === "function_call" ? responsesToolEvents(item) : responsesTextEvents(sequence, reply.kind === "text" ? reply.text : "", pacing)
   const events: ResponseStreamEvent[] = [
     { type: "response.created", sequence_number: 0, response: responsesEnvelope(sequence, body, reply, "in_progress", []) },
     ...streamed,
     { type: "response.output_item.done", sequence_number: 0, output_index: 0, item },
-    { type: "response.completed", sequence_number: 0, response: responsesEnvelope(sequence, body, reply, "completed", [item]) },
+    ...(reasoning ? [
+      { type: "response.output_item.added" as const, sequence_number: 0, output_index: 1, item: { ...reasoning, summary: [], status: "in_progress" as const } },
+      { type: "response.reasoning_summary_text.delta" as const, sequence_number: 0, output_index: 1, item_id: reasoning.id, summary_index: 0, delta: reply.kind === "text" ? reply.reasoning! : "" },
+      { type: "response.output_item.done" as const, sequence_number: 0, output_index: 1, item: reasoning },
+    ] : []),
+    { type: "response.completed", sequence_number: 0, response: responsesEnvelope(sequence, body, reply, "completed", reasoning ? [item, reasoning] : [item]) },
   ]
   events.forEach((event, index) => {
     event.sequence_number = index

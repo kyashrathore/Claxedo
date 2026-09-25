@@ -1,0 +1,14 @@
+packages/agent-runtime-contract/src/claims.test.ts
+packages/agent-runtime-contract/src/connections.test.ts
+packages/agent-runtime-contract/src/content.test.ts
+packages/agent-runtime-contract/src/elicitation-validation.test.ts
+packages/agent-runtime-contract/src/elicitation.test.ts
+packages/agent-runtime-contract/src/files.test.ts
+packages/agent-runtime-contract/src/harness-effort.test.ts
+packages/agent-runtime-contract/src/harness-table.test.ts
+packages/agent-runtime-contract/src/harnesses.test.ts
+packages/agent-runtime-contract/src/index.test.ts
+packages/agent-runtime-contract/src/question-answers.test.ts
+packages/agent-runtime-contract/src/recovery.test.ts
+packages/agent-runtime-contract/src/session-group.test.ts
+packages/agent-runtime-contract/src/tool-names.test.ts
