@@ -3,7 +3,6 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { createAgentRuntime } from "../../runtime"
-import { harnessFactory } from "../../harness-factories/factory"
 import { PiRpcProcess } from "./rpc-process"
 import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 import { modelRequestDeadline } from "../shared/request-deadline"
@@ -15,7 +14,7 @@ import { PiHarnessAdapter } from "./index"
 import { piProviderOverrides, retainPiAuth } from "./auth"
 import { removeTestTempDir } from "../shared/test-temp-dir"
 
-const binary = pinnedPiExecutable()
+const binary = (process.env.CLAXEDO_LIVE_HARNESS ?? "").trim() ? pinnedPiExecutable() : ""
 /** A groq model Pi 0.85.1 defines with image input over chat completions. */
 const PROOF_MODEL = "qwen/qwen3.6-27b"
 
@@ -25,7 +24,7 @@ const PROOF_MODEL = "qwen/qwen3.6-27b"
  * adapter delivers one — a `models.json` overlay onto Pi's own `groq` — so
  * every request here carries the placeholder on the binding's own path.
  */
-test(
+test.skipIf(!binary)(
   "real Pi public runtime executes a native file tool, records usage, and resumes its own session",
   async () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), "pi-native-proof-"))
@@ -92,10 +91,10 @@ test(
       let adapter: PiHarnessAdapter | undefined
       const runtime = createAgentRuntime({
         store,
-        harnesses: [harnessFactory("pi", "native", (context) => {
+        harnesses: [{ id: "pi", access: "native", create: (context) => {
           adapter = new PiHarnessAdapter({ store: context.store, agentDir, eventHub: context.eventHub, binary })
           return adapter
-        })],
+        }}],
       })
       await adapter!.applyConfig({ auth: { groq: projection } })
       return runtime
@@ -214,7 +213,7 @@ test(
   30_000,
 )
 
-test(
+test.skipIf(!binary)(
   "real Pi loads a workspace extension and exposes its input request before the provider runs",
   async () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), "pi-extension-proof-"))
@@ -307,7 +306,7 @@ test(
  * placeholder goes out as the bearer token on the binding's own path and no
  * other credential goes out at all.
  */
-test(
+test.skipIf(!binary)(
   "a bound account reaches the provider as the placeholder on the binding's own path",
   async () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), "pi-binding-proof-"))

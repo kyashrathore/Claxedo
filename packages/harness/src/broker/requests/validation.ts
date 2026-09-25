@@ -9,14 +9,14 @@ import type { BrokerPorts } from "../ports"
 
 export async function validateRequest(ports: BrokerPorts, request: TurnRequest, signal?: AbortSignal): Promise<void> {
   if (request.kind !== "elicitation" || request.mode !== "form") return
-  let schema: ReturnType<typeof readElicitationSchema>
+  let checks: ReturnType<typeof elicitationPatternChecks>
   try {
-    schema = readElicitationSchema(request.schema)
-    await ports.services.patternEvaluator(elicitationPatternChecks(schema), signal)
+    checks = elicitationPatternChecks(readElicitationSchema(request.schema))
   } catch (error) {
     if (error instanceof ElicitationValidationError && error.code === "invalid_schema") throw error
     throw new ElicitationValidationError("invalid_schema", error instanceof Error ? error.message : "Invalid form schema")
   }
+  if (checks.length) await ports.services.patternEvaluator(checks, signal)
 }
 
 export async function validateAnswer(

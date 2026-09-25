@@ -185,43 +185,12 @@ export interface SupportsSteer {
   steerTurn(binding: AgentExecutionBinding, input: PromptInput): Promise<SteerResult>
 }
 
-export interface SupportsRevert {
-  revert(binding: AgentExecutionBinding): Promise<void>
-}
-
-export interface SupportsUnrevert {
-  unrevert(binding: AgentExecutionBinding): Promise<void>
-}
-
 export interface SupportsFork {
   forkSession(binding: AgentExecutionBinding, messageId: string, childSessionId?: string): Promise<{ id: string }>
 }
 
 export interface SupportsCommands {
   executeCommand(binding: AgentExecutionBinding, command: string): Promise<void>
-}
-
-export type ShellCommandInput = {
-  command: string
-  agent: string
-  model?: { providerID: string; modelID: string }
-  messageID?: string
-}
-
-export interface SupportsShell {
-  /** Run a shell command in the session context, same command-channel category as `executeCommand`. */
-  shell(id: string, input: ShellCommandInput, directory: RuntimeDirectory): Promise<void>
-}
-
-export type SummarizeSessionInput = {
-  providerID: string
-  modelID: string
-  auto?: boolean
-}
-
-export interface SupportsSummarize {
-  /** Compact the session transcript into an AI-generated summary (the `/compact` command). */
-  summarize(id: string, input: SummarizeSessionInput, directory: RuntimeDirectory): Promise<void>
 }
 
 /**
@@ -366,12 +335,8 @@ export type AgentHarnessAdapter =
   & AgentHarnessAdapterCore
   & Partial<SupportsCancel>
   & Partial<SupportsSteer>
-  & Partial<SupportsRevert>
-  & Partial<SupportsUnrevert>
   & Partial<SupportsFork>
   & Partial<SupportsCommands>
-  & Partial<SupportsShell>
-  & Partial<SupportsSummarize>
   & Partial<SupportsMessagePages>
   & Partial<SupportsPermissionModes>
   & Partial<SupportsAgents>

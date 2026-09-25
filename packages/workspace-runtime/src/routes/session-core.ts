@@ -70,7 +70,7 @@ import {
 import { MAX_ACTIVE_CHILDREN_PER_PARENT, type ChildSessionHost } from "./session-children"
 import type { SessionDeliveryOwner, QueuedPromptAction, QueuedPromptRequester } from "../session/delivery-owner"
 import { narrowerPermissionLevel, permissionCeilingAdmits, permissionModeLevel, widestPermissionModeUnder } from "@claxedo/agent-sdk-runtime"
-import { arr, bool, num, rec, str } from "../json-value"
+import { arr, num, rec, str } from "../json-value"
 import { disposeRuntimeSessionDocuments, flushRuntimeSessionDocuments } from "./document-hydration"
 import { errorBody } from "./error-body"
 import { boundedJsonBody, boundedJsonRecord, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
@@ -814,6 +814,18 @@ function unsupportedOperation(
       message: details?.message ?? `${caps.harness} does not support ${operation}`,
     },
   }, 409)
+}
+
+function notImplemented(c: Ctx, operation: "revert" | "unrevert" | "shell" | "summarize") {
+  return c.json({
+    ok: false,
+    error: {
+      code: "unsupported_operation",
+      operation,
+      reason: "not_implemented",
+      message: `${operation} is not implemented`,
+    },
+  }, 501)
 }
 
 /** How each fixed-at-create field answers a PATCH that names it. */
@@ -2483,23 +2495,13 @@ export function createSessionRoutes(opts: Opts) {
       const sessionId = c.req.param("id")
       const guarded = await sessionOperationGuard(opts, c, sessionId, "revert")
       if (guarded) return guarded
-      const directory = await opts.resolveDirectory(c, { sessionId })
-      const adapter = await opts.resolveAdapter(c, { sessionId, directory })
-      const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "revert", "revert")
-      if (unsupported) return unsupported
-      await adapter.revert!(await requireExecutionBinding(opts, c, directory, sessionId, adapter))
-      return c.json({ ok: true })
+      return notImplemented(c, "revert")
     })
     .post("/session/:id/unrevert", async (c) => {
       const sessionId = c.req.param("id")
       const guarded = await sessionOperationGuard(opts, c, sessionId, "unrevert")
       if (guarded) return guarded
-      const directory = await opts.resolveDirectory(c, { sessionId })
-      const adapter = await opts.resolveAdapter(c, { sessionId, directory })
-      const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "unrevert", "unrevert")
-      if (unsupported) return unsupported
-      await adapter.unrevert!(await requireExecutionBinding(opts, c, directory, sessionId, adapter))
-      return c.json({ ok: true })
+      return notImplemented(c, "unrevert")
     })
     .post("/session/:id/fork", async (c) => {
       const sessionId = c.req.param("id")
@@ -2576,39 +2578,13 @@ export function createSessionRoutes(opts: Opts) {
       const sessionId = c.req.param("id")
       const guarded = await sessionOperationGuard(opts, c, sessionId, "shell")
       if (guarded) return guarded
-      const directory = await opts.resolveDirectory(c, { sessionId })
-      const adapter = await opts.resolveAdapter(c, { sessionId, directory })
-      const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "commands", "shell", "shell")
-      if (unsupported) return unsupported
-      const body = await boundedJsonRecord(c)
-      const shellModel = rec(body.model)
-      const providerID = str(shellModel?.providerID)
-      const modelID = str(shellModel?.modelID)
-      const shellMessageID = str(body.messageID)
-      await adapter.shell!(sessionId, {
-        command: str(body.command) ?? "",
-        agent: str(body.agent) ?? "",
-        ...(providerID && modelID ? { model: { providerID, modelID } } : {}),
-        ...(shellMessageID ? { messageID: shellMessageID } : {}),
-      }, directory)
-      return c.json({ ok: true })
+      return notImplemented(c, "shell")
     })
     .post("/session/:id/summarize", async (c) => {
       const sessionId = c.req.param("id")
       const guarded = await sessionOperationGuard(opts, c, sessionId, "summarize")
       if (guarded) return guarded
-      const directory = await opts.resolveDirectory(c, { sessionId })
-      const adapter = await opts.resolveAdapter(c, { sessionId, directory })
-      const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "commands", "summarize", "summarize")
-      if (unsupported) return unsupported
-      const body = await boundedJsonRecord(c)
-      const auto = bool(body.auto)
-      await adapter.summarize!(sessionId, {
-        providerID: str(body.providerID) ?? "",
-        modelID: str(body.modelID) ?? "",
-        ...(auto !== undefined ? { auto } : {}),
-      }, directory)
-      return c.json({ ok: true })
+      return notImplemented(c, "summarize")
     })
     .get("/session/:id/queue", async (c) => {
       const id = c.req.param("id")
