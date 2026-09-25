@@ -391,6 +391,11 @@ At 19:08 the owner said: finish in-progress work; start no new work.
   - The fix: cache the heights from ResizeObserver entries and read only `scrollTop` per frame.
   - It can't land before the swap, because `packages/ui` is shared with today's app. Apply it when the used kit components move into the app.
 
+- **The kit's `ScrollView` unmounts its thumb (`packages/ui/src/components/scroll-view.tsx:451`, `<Show when={showThumb()}>`).**
+  - The thumb is the viewport's last sibling, so the viewport's `:last-child` flips whenever overflow starts or stops, for example on a short session's first long reply.
+  - The markdown rules `.ui-markdown>[data-markdown-block]:first-child>*:first-child` and `…:last-child>*:last-child` make the `:first-child`/`:last-child` invalidation "whole subtree". So the whole mounted transcript restyles once per flip.
+  - The fix: keep the thumb mounted with `hidden`. v2's own `ScrollThumb` got exactly that on feat e02a7e8cdd, and collapse-all's restyle fell from 1,324 to 673 elements.
+
 ## Streaming at 60 Hz (exp-stream, 2026-09-25)
 
 **Scenario:** a session with 22 earlier turns streams a 12k-character reply (headings, lists, 5 code fences, a table, Mermaid, 4 tool parts): 1,540 deltas, 8 characters every 25 ms, measured on production builds. At 1x every build holds 60 Hz; the differences show up in per-delta latency, CPU and memory, and at 4x throttle in missed frames.
