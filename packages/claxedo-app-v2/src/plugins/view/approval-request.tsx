@@ -1,4 +1,5 @@
 import { For, Show, type JSX } from "solid-js"
+import type { PluginPlatform } from "@claxedo/plugin-api"
 import { Button, Dialog, showToast, type useDialog } from "@/ui"
 import type { AccessChange, ApprovalCheck, PluginAccess } from "../approval"
 import type { PluginHost } from "../host"
@@ -11,6 +12,7 @@ export type ApprovalRequest = {
   readonly host: PluginHost
   readonly dialog: ReturnType<typeof useDialog>
   readonly t: PluginsText
+  readonly platform: PluginPlatform
 }
 
 function titleKey(check: ApprovalCheck): PluginsKey {
@@ -51,13 +53,13 @@ function AccessChanges(props: { readonly change: AccessChange }): JSX.Element {
   )
 }
 
-function ApprovalDialog(props: { readonly plugin: PluginSummary; readonly decide: (approved: boolean) => void }): JSX.Element {
+function ApprovalDialog(props: { readonly plugin: PluginSummary; readonly platform: PluginPlatform; readonly decide: (approved: boolean) => void }): JSX.Element {
   const t = usePluginsText()
   const change = () => (props.plugin.approval.kind === "accessChanged" ? props.plugin.approval.change : undefined)
   return (
     <Dialog title={t(titleKey(props.plugin.approval), { name: props.plugin.name })} fit>
       <div class="plugin-approval">
-        <PluginWarning />
+        <PluginWarning platform={props.platform} />
         <Show when={change()}>{(accessChange) => <AccessChanges change={accessChange()} />}</Show>
         <PluginManifestSummary plugin={props.plugin} />
         <div class="plugin-approval-actions">
@@ -82,5 +84,5 @@ export function requestApproval(input: ApprovalRequest, plugin: PluginSummary): 
     if (!input.host.approve(plugin.id, hash)) return void showToast({ variant: "error", description: input.t("plugins.approval.stale", { name: plugin.name }) })
     input.host.switchOn(plugin.id)
   }
-  void input.dialog.show(() => <ApprovalDialog plugin={plugin} decide={decide} />)
+  void input.dialog.show(() => <ApprovalDialog plugin={plugin} platform={input.platform} decide={decide} />)
 }

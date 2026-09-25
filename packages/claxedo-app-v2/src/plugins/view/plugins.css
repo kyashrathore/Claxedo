@@ -150,6 +150,12 @@
   overflow-wrap: anywhere;
 }
 
+.plugin-manifest-folder {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .plugin-approval {
   display: flex;
   min-width: 340px;

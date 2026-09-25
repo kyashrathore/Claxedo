@@ -2,12 +2,13 @@ import { createSignal, Show, type JSX } from "solid-js"
 import { useI18n } from "@/i18n"
 import { formatDateTimeMed } from "@/lib/relative-time"
 import { unreachable } from "@/lib/machine"
-import { Switch, Tag, Button } from "@/ui"
+import { Switch, Tag, Button, useDialog } from "@/ui"
 import { approvalLetsRun } from "../approval"
 import { failureReason } from "../failure"
 import { usePluginsText, type PluginsKey, type PluginsText } from "../i18n"
 import { failureOf, type PluginState, type PluginSummary } from "../model"
 import { usePluginHost } from "../provider"
+import { confirmThrough } from "./confirm-dialog"
 import { PluginManifestSummary } from "./plugin-manifest"
 
 function stateKey(state: PluginState): PluginsKey {
@@ -47,9 +48,17 @@ function detailOf(t: PluginsText, plugin: PluginSummary, locale: string): string
 function RowActions(props: { readonly plugin: PluginSummary; readonly expanded: boolean; readonly toggle: () => void }): JSX.Element {
   const t = usePluginsText()
   const host = usePluginHost()
+  const dialog = useDialog()
   const [removeFailure, setRemoveFailure] = createSignal<string>()
   const remove = async () => {
     setRemoveFailure(undefined)
+    const name = props.plugin.name
+    const confirmed = await confirmThrough(dialog, {
+      title: t("plugins.remove.title", { name }),
+      description: t("plugins.remove.description"),
+      confirmLabel: t("plugins.remove"),
+    })
+    if (!confirmed) return
     try {
       await host.remove(props.plugin.id)
     } catch (error) {

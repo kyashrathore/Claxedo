@@ -81,7 +81,7 @@ function useLiveApprovals(host: PluginHost, services: HostServices): (pluginId: 
   const asked = new Set<string>()
   const request = (pluginId: string) => {
     const plugin = host.plugins().find((candidate) => candidate.id === pluginId)
-    if (plugin) requestApproval({ host, dialog: services.dialog, t }, plugin)
+    if (plugin) requestApproval({ host, dialog: services.dialog, t, platform: services.platform }, plugin)
   }
   createEffect(() => {
     if (host.safeMode()) return

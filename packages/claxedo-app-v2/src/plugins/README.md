@@ -1,4 +1,6 @@
-# Plugins
+# App plugins
+
+An **app plugin** changes this app: it adds sidebar items, pages, panes, settings sections, overlays, commands, `@` mentions, themes and icon skins, and calls the app's own server as the user. It runs in the app, never on the server or in an agent. An **agent plugin** (the Marketplace, `src/marketplace/`) changes what an agent can do: it installs skills and MCP tools into agent sessions and runs where the agent runs. The two share nothing but the word; every user-visible string here says "App plugins".
 
 The plugin host. It runs the first-party plugins that `bundled.ts` lists from `plugins/` and the user's live plugins from the daemon, and it is the only code that knows a plugin exists. The contract is `@claxedo/plugin-api` (`packages/claxedo-plugin-api`); this folder implements it over the shell's registries.
 
@@ -11,7 +13,7 @@ The plugin host. It runs the first-party plugins that `bundled.ts` lists from `p
 - **Approval** (`approval.ts`): the user approves a live plugin's manifest, not its id. An approval records the access the manifest declared (server routes, operations, `requires`), the build hash and when. `approvalCheck` compares it with the running build: `unapproved`, `accessChanged` (the declared access differs, with what was added and removed), `codeChanged` (same access, new build, with its build time) or `approved`. Only `approved` and `codeChanged` run; `accessChanged` stops the plugin until the user approves again. `CODE_CHANGE_NEEDS_APPROVAL` is the one line that makes every new build ask. An approval names the build the user was shown, so a build that changed while the dialog was open is not approved by it.
 - **Requirements**: `requires` names plugin capabilities (`tasks`, `documents`). `documents` is the bootstrap declaration's; `tasks` is read from the server (`queries.tasks.availability()`) only while some plugin requires it. The host re-checks them whenever an answer changes and activates or disposes to match.
 - **Host** (`host.ts`, `lifecycle.ts`): one lifecycle per plugin, wanted when switched on, its requirements are met and, for a live plugin, it is confirmed and safe mode is off. A new build activates beside the running one and replaces it only once it activated.
-- **Settings → Plugins** (`view/`): the warning that a plugin runs with the user's access, then every plugin with its origin, version, state and why it is not running; on and off; its manifest in readable form (id, version, folder, routes, operations, requires, build hash, last build); and remove for a live plugin. The approval dialog shows the same warning and manifest, and what changed when the access did.
+- **Settings → App plugins** (`view/`, section `app-plugins`): the warning for this platform (below), then every plugin with its origin, version, state and why it is not running; on and off; its manifest in readable form (name, id, version, folder with a copy action, routes, operations, requires, build hash, last build); and remove for a live plugin, after a confirmation. The approval dialog shows the same warning and manifest, and what changed when the access did.
 
 ## State machine
 
@@ -46,6 +48,12 @@ A failed build is not retried until a new build arrives or the plugin is switche
 - Plugin functions stay in the frame: commands and mention searches are invoked over the port. Host calls (`server.fetch`, `sessions.create`, `ui.confirm`, …) are answered by the host. Synchronous accessors (projects, tabs, statuses, locale, current session) read a mirror the host pushes on change.
 - The frame runtime is `frame/runtime/index.ts`, bundled on its own through Vite's worker build so it has no imports, fetched same-origin by the host, and imported from a Blob URL by the frame's bootstrap. The frame gets the app's stylesheets and theme attributes, so the kit looks native. Panes and icon skins are not available in the frame; the kit's sprite icons cannot load there.
 - The Vite dev server serves the frame runtime unbundled, so web live plugins need a built app.
+
+## Trust and warnings
+
+- **Desktop:** an app plugin runs in the app's realm, unsandboxed, with the app's full access on this computer: what the user sees, the user's server, every desktop bridge, and links out through the user's browser or the Browser tab. The owner accepted that residual (DECISIONS, "desktop app plugins run in-app"). The warning (`plugins.warning.desktop`) says so and asks the user to turn on only app plugins they trust.
+- **Web:** an app plugin runs in a sandboxed frame and reaches the server only through the host's manifest-checked calls; the warning (`plugins.warning.web`) says so.
+- Settings and the approval dialog show the warning for `PluginsContext.platform`.
 
 ## Server access
 

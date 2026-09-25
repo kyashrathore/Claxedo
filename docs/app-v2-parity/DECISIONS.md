@@ -226,3 +226,10 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - History is routed by placement kind: control plane for cloud, relay for machines, local runtime for local.
 - Terminals only for live placements.
 - The plan is `docs/plans/2026-09-25-002-session-sources-plan.md`.
+
+## Owner, 2026-09-25: desktop app plugins run in-app; residual accepted, users warned
+- On the desktop an app plugin runs in the app's own JavaScript, unsandboxed. It has the app's full access on this computer: it sees what the user sees, acts as the user on their server, reaches every desktop bridge (`window.api`), and can open links in the user's browser or the Browser tab that carry data out.
+- The owner accepts that residual. The desktop warning says it plainly and asks the user to turn on only app plugins they trust.
+- On the web an app plugin runs in a sandboxed frame (`sandbox="allow-scripts"`, never same-origin), reaches the server only through the host's manifest-checked calls, and the warning says so.
+- Approval is per manifest: a changed routes, operations or requires set stops the plugin until the user approves again and shows what changed; "Code changed since you approved" shows the build time.
+- Every user-visible string says "App plugins". Agent Plugins and the Marketplace keep their names.

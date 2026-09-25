@@ -17,7 +17,7 @@ function PluginsSettings(): JSX.Element {
         {t("plugins.settings.title")}
       </h2>
       <p class="plugins-settings-description">{t("plugins.settings.description")}</p>
-      <PluginWarning />
+      <PluginWarning platform={host.platform} />
       <Show when={host.safeMode()}>
         <div role="status" class="plugins-settings-safe-mode">
           <span>{t("plugins.safeMode")}</span>
@@ -39,7 +39,7 @@ function PluginsSettings(): JSX.Element {
 }
 
 export const pluginsSettingsSection: SettingsSection = {
-  id: "plugins",
+  id: "app-plugins",
   title: () => useI18n().t("plugins.settings.title"),
   group: "app",
   order: 90,
