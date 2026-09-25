@@ -11,8 +11,8 @@ import { HTTPException } from "hono/http-exception"
 import { serve } from "@hono/node-server"
 import { serveStatic } from "@hono/node-server/serve-static"
 import { createNodeWebSocket } from "@hono/node-ws"
-import { importJWK, importSPKI } from "jose"
-import { verifyRelayHostToken, verifyRuntimeAccessToken } from "@claxedo/workspace-relay"
+import { importJWK, importPKCS8, importSPKI } from "jose"
+import { mintRelayHostToken, verifyRelayHostToken, verifyRuntimeAccessToken } from "@claxedo/workspace-relay"
 import {
   optionalGit,
   setupAgentHooks,
@@ -847,6 +847,7 @@ export function createSelfHostedApp(
      * caller as a route contribution.
      */
     tasksGrants?: TasksSessionGrants
+    localBrokeringRelay?: boolean
   } = {},
 ) {
   if (options.posture) assertSelfHostedPosture(options.posture)
@@ -891,6 +892,25 @@ export function createSelfHostedApp(
   const runtimeProxyOptions = {
     ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
     ...(services.relay.provider ? { relayProvider: services.relay.provider } : {}),
+    ...(options.localBrokeringRelay ? {
+      mintLocalRelayHostToken: async (input: import("@claxedo/server-core/adapters/relay-port").RelayTokenInput & { parentJti: string }) => {
+        const privatePem = process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM?.replaceAll("\\n", "\n")
+        if (!privatePem) throw new Error("Local cloud relay signing key is unavailable")
+        return await mintRelayHostToken({
+          workspaceId: input.workspaceId,
+          hostId: input.hostId,
+          orgId: input.orgId,
+          principalKind: input.principalKind,
+          actorId: input.actorId,
+          actorKind: input.actorKind,
+          ...(input.actorPublicId && input.actorName ? { actorPublicId: input.actorPublicId, actorName: input.actorName } : {}),
+          ...(input.actorAvatarUrl ? { actorAvatarUrl: input.actorAvatarUrl } : {}),
+          role: input.role,
+          backing: "cloud-vm",
+          parentJti: input.parentJti,
+        }, await importPKCS8(privatePem, "EdDSA"), "EdDSA")
+      },
+    } : {}),
     ...(services.defaultHomeRegion ? { defaultHomeRegion: services.defaultHomeRegion } : {}),
     subject: "control-plane",
     principalKind: "service" as const,
@@ -922,6 +942,7 @@ export function createSelfHostedApp(
                   ...actor,
                   orgId,
                   role: relayRole(workspace.role),
+                  auth,
                 }
               }
             } catch (error) {
@@ -1355,6 +1376,19 @@ export function createSelfHostedApp(
     "/api/claxedo/credentials",
     CredentialRoutes(services.credentials, {
       agentUsage: readMachineAgentUsage,
+      authConfig: services.auth.config,
+      ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+      ...(services.auth.config.enabled ? {
+        resolveOrg: async (request: Request) => {
+          const auth = await controlPlaneAuthContext(request, {
+            config: services.auth.config,
+            ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+          })
+          if (auth.mode !== "signed") throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
+          if (!services.authority) throw new Error("Signed credential organization authority is unavailable")
+          return await services.authority.resolveOrgId(auth)
+        },
+      } : {}),
       // Public/deployed boxes MUST set CLAXEDO_CREDENTIALS_TOKEN (see
       // CredentialRoutesOptions.token). Local loopback dev may leave it unset.
       ...(process.env.CLAXEDO_CREDENTIALS_TOKEN?.trim() ? { token: process.env.CLAXEDO_CREDENTIALS_TOKEN.trim() } : {}),
@@ -1895,6 +1929,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
 
   let localSessionProjectionReady: Promise<void> | undefined
   const built = createSelfHostedApp(services, {
+    ...(options.sandboxDriver?.id === "local-brokering-test" ? { localBrokeringRelay: true } : {}),
     egressBroker: options.egressBroker ?? credentialBroker?.handler,
     usageRevisionStore,
     usageSourceCoverage,

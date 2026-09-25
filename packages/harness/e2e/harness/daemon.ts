@@ -84,6 +84,7 @@ async function daemonEnv(input: DaemonInput): Promise<NodeJS.ProcessEnv> {
       CLAXEDO_SIGNED_CLOUD_AUTH: "1",
       BETTER_AUTH_URL: `http://127.0.0.1:${input.port}`,
       CLAXEDO_WORKSPACE_RELAY_URL: `http://127.0.0.1:${input.port}`,
+      ...(process.env.CLAXEDO_E2E_CLOUD_FAULT ? { CLAXEDO_E2E_CLOUD_FAULT: process.env.CLAXEDO_E2E_CLOUD_FAULT } : {}),
     } : {}),
     ...(runtimeKeys ? {
       CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: runtimeKeys.privateKey.export({ type: "pkcs8", format: "pem" }).toString(),

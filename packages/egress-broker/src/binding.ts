@@ -33,6 +33,8 @@ export type Binding = Readonly<RuntimeIdentity & {
     origin: string
     methods: readonly string[]
     pathPrefixes: readonly string[]
+    exactPaths?: readonly string[]
+    exchange?: Readonly<{ path: string; tokenField: string }>
     /**
      * The query names this vendor reads a credential from, absent when it
      * reads none. A vendor that honours one accepts an identity the operator
