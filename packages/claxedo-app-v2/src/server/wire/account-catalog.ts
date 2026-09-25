@@ -52,7 +52,7 @@ function placementOf(row: Row, workspace: string, project: string): PlacementRec
   return { placement, route: { directory: `workspace:${workspace}`, workspaceId: workspace, remote: true } }
 }
 
-function projectOf(id: string, rows: readonly Row[], placements: readonly PlacementRecord[]): Project {
+function projectFromRows(id: string, rows: readonly Row[], placements: readonly PlacementRecord[]): Project {
   const named = rows.map((row) => projectName(row, id)).find((name) => name !== id) ?? id
   const repository = placements.map((record) => record.placement.gitRemote).find((remote) => remote !== undefined)
   const created = Math.min(...rows.map((row) => time(row, "created_at", "createdAt") ?? 0))
@@ -82,7 +82,7 @@ export function accountCatalogFromWire(rows: readonly unknown[]): AccountCatalog
     groups.set(project, group)
   }
   return {
-    projects: [...groups.entries()].map(([id, group]) => projectOf(id, group.rows, group.placements)),
+    projects: [...groups.entries()].map(([id, group]) => projectFromRows(id, group.rows, group.placements)),
     placements: [...groups.values()].flatMap((group) => group.placements),
   }
 }
