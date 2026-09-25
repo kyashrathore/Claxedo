@@ -14,7 +14,8 @@ import type { PlacementId } from "@/server"
 import { useShellLayout, useShellRoute } from "@/shell"
 import { closeReviewWorkspaceTab } from "./close"
 import type { ReviewFocus } from "@/review"
-import type { FileReveal, PanelFocus } from "./focus"
+import { filePathFromTab, type FileReveal, type PanelFocus } from "./focus"
+import { rememberPanelPerSession, type SessionPanelSnapshot } from "./session-memory"
 import { createPanelTabs } from "./tabs-store"
 import { clampPanelWidth, PANEL_PHONE_MAX_WIDTH, restingPanelWidth, workbenchInset } from "./width"
 import type { ReviewWorkspaceTab, WorkspacePanelNavigator } from "./workspace-tabs"
@@ -102,12 +103,47 @@ function createOpenRules(input: {
   }
 }
 
+function restoreTab(tabs: ReturnType<typeof createPanelTabs>, tabId: string) {
+  if (tabs.activeTab().id === tabId) return
+  const path = filePathFromTab(tabId)
+  if (path !== undefined) tabs.focus({ kind: "file", path })
+  else if (tabs.tabs().some((tab) => tab.id === tabId)) tabs.activate(tabId)
+}
+
+function createSessionMemory(
+  layout: ReturnType<typeof useShellLayout>,
+  route: ReturnType<typeof useShellRoute>,
+  tabs: ReturnType<typeof createPanelTabs>,
+) {
+  rememberPanelPerSession({
+    sessionId: () => {
+      const current = route.route()
+      return current.kind === "session" ? current.sessionId : undefined
+    },
+    snapshot: (): SessionPanelSnapshot =>
+      layout.panelShown()
+        ? { open: true, navigator: tabs.navigator(), activeTabId: tabs.activeTab().id }
+        : { open: false },
+    restore: (snapshot) => {
+      if (!snapshot?.open) {
+        if (layout.panelShown()) layout.send({ type: "hidePanel" })
+        return
+      }
+      tabs.setNavigator(snapshot.navigator)
+      restoreTab(tabs, snapshot.activeTabId)
+      layout.send({ type: "showPanel" })
+    },
+  })
+}
+
 export function PanelProvider(props: ParentProps): JSX.Element {
   const layout = useShellLayout()
-  const placementId = useShellRoute().placementId
+  const route = useShellRoute()
+  const placementId = route.placementId
   const session = useActiveSession()
   const sessionId = () => session()?.sessionId ?? ""
   const tabs = createPanelTabs(placementId, sessionId)
+  createSessionMemory(layout, route, tabs)
   const { setFullWidth, ...size } = createPanelSize()
   const close = () => layout.send({ type: "hidePanel" })
   const panel: Panel = {
