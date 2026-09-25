@@ -1,14 +1,14 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { acp } from "../dist/harness-factories/acp.mjs"
+import { AcpHarnessAdapter } from "../dist/adapters.mjs"
 import { MemoryRuntimeStore } from "../dist/stores/memory.mjs"
 
 // node:test resolves the returned promise itself and reports failures through the runner.
-void test("built ACP factory validates patterns in an isolated worker without external assets", { timeout: 10000 }, async () => {
+void test("built ACP adapter validates patterns in an isolated worker without external assets", { timeout: 10000 }, async () => {
   const store = new MemoryRuntimeStore()
   let send
   let newId
-  const factory = acp("acp-pattern-package", { connection: { kind: "process", command: "fixture" }, createTransport() {
+  const adapter = new AcpHarnessAdapter({ harness: "acp-pattern-package", store, connection: { kind: "process", command: "fixture" }, createTransport() {
     let alive = true
     return { kind: "stdio", metadata: {}, get alive() { return alive }, dispose() { alive = false }, stream: {
       readable: new ReadableStream({ start(controller) { send = (message) => controller.enqueue(message) } }),
@@ -25,7 +25,6 @@ void test("built ACP factory validates patterns in an isolated worker without ex
       } }),
     } }
   } })
-  const adapter = factory.create({ store })
   const start = { sessionId: "local", workspaceId: "workspace", directory: "/work", operationId: "op", connectionId: "connection:acp-pattern-package" }
   store.sessionStarts.begin(start)
   const creation = adapter.createSession("/work", undefined, "local", { start })

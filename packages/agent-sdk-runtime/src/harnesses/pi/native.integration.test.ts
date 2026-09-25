@@ -3,7 +3,6 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { createAgentRuntime } from "../../runtime"
-import { harnessFactory } from "../../harness-factories/factory"
 import { PiRpcProcess } from "./rpc-process"
 import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 import { modelRequestDeadline } from "../shared/request-deadline"
@@ -92,10 +91,10 @@ test.skipIf(!binary)(
       let adapter: PiHarnessAdapter | undefined
       const runtime = createAgentRuntime({
         store,
-        harnesses: [harnessFactory("pi", "native", (context) => {
+        harnesses: [{ id: "pi", access: "native", create: (context) => {
           adapter = new PiHarnessAdapter({ store: context.store, agentDir, eventHub: context.eventHub, binary })
           return adapter
-        })],
+        }}],
       })
       await adapter!.applyConfig({ auth: { groq: projection } })
       return runtime

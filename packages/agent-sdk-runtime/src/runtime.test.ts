@@ -13,7 +13,8 @@ import { goalCapabilities, type HarnessCapabilities } from "./capabilities"
 import { agentRuntimeEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import { NO_HARNESS_EFFORT, type SessionHarnessId } from "@claxedo/agent-runtime-contract"
 import { createRuntimeEventHub, type RuntimeEventHub } from "./runtime-event-hub"
-import { claude, pi } from "./harnesses"
+import { ClaudeHarnessAdapter } from "./harnesses/claude"
+import { PiHarnessAdapter } from "./harnesses/pi"
 import { installFakePiRpc } from "./test-utils/fake-pi-rpc.mjs"
 import { RECOVERY_TEST_CALLER, cancelRuntimeTurn, cancelTurnRequest, submittedOperation } from "./test-utils/cancel-turn"
 let nativePi: Awaited<ReturnType<typeof installFakePiRpc>>
@@ -187,6 +188,25 @@ function testHarness(options: {
       return adapter
     },
   } as unknown as AgentHarnessFactory
+}
+
+function piHarness(options: { binary?: string; agentDir?: string } = {}): AgentHarnessFactory {
+  return {
+    id: "pi", access: "native",
+    create: (context) => new PiHarnessAdapter({
+      store: context.store, eventHub: context.eventHub, reportOwnerFailure: context.reportOwnerFailure,
+      ...options,
+    }),
+  }
+}
+
+function claudeHarness(): AgentHarnessFactory {
+  return {
+    id: "claude", access: "native",
+    create: (context) => new ClaudeHarnessAdapter({
+      store: context.store, eventHub: context.eventHub, reportOwnerFailure: context.reportOwnerFailure,
+    }),
+  }
 }
 
 function goalHarnessCapabilities(harness: SessionHarnessId = "pi"): HarnessCapabilities {
@@ -926,7 +946,7 @@ describe("createAgentRuntime", () => {
   test("keeps the runtime inventory current after adapter-backed update and delete", async () => {
     const runtime = createAgentRuntime({
       store: createMemoryRuntimeStore(),
-      harnesses: [pi({ binary: nativePi.binary, agentDir: nativePi.agentDir })],
+      harnesses: [piHarness({ binary: nativePi.binary, agentDir: nativePi.agentDir })],
     })
     const session = await runtime.sessions.create({ workspaceId: "workspace-test",
       id: "ses_inventory",
@@ -1458,7 +1478,7 @@ describe("createAgentRuntime", () => {
   test("creates a session, starts a turn, and publishes events", async () => {
     const runtime = createAgentRuntime({
       store: createMemoryRuntimeStore(),
-      harnesses: [pi({ binary: nativePi.binary, agentDir: nativePi.agentDir })],
+      harnesses: [piHarness({ binary: nativePi.binary, agentDir: nativePi.agentDir })],
     })
     const session = await runtime.sessions.create({ workspaceId: "workspace-test",
       directory: nativePi.directory,
@@ -1501,7 +1521,7 @@ describe("createAgentRuntime", () => {
     const store = createMemoryRuntimeStore()
     const runtime = createAgentRuntime({
       store,
-      harnesses: [pi({ binary: nativePi.binary, agentDir: nativePi.agentDir }), handoffHarness({ id: "claude" })],
+      harnesses: [piHarness({ binary: nativePi.binary, agentDir: nativePi.agentDir }), handoffHarness({ id: "claude" })],
     })
     const session = await runtime.sessions.create({ workspaceId: "workspace-test",
       directory: nativePi.directory,
@@ -1965,7 +1985,7 @@ describe("createAgentRuntime", () => {
   test("event subscriptions close immediately when returned while idle", async () => {
     const runtime = createAgentRuntime({
       store: createMemoryRuntimeStore(),
-      harnesses: [pi()],
+      harnesses: [piHarness()],
     })
     const iterator = runtime.events.subscribe({ sessionId: "idle" })[Symbol.asyncIterator]()
 
@@ -1977,7 +1997,7 @@ describe("createAgentRuntime", () => {
   test("rejects turn starts before returning when the session is unknown", async () => {
     const runtime = createAgentRuntime({
       store: createMemoryRuntimeStore(),
-      harnesses: [pi(), claude({ access: "native" })],
+      harnesses: [piHarness(), claudeHarness()],
     })
 
     await expect(runtime.turns.start({
@@ -2754,7 +2774,7 @@ describe("createAgentRuntime", () => {
     try {
       const first = createAgentRuntime({
         store: createSqliteRuntimeStore({ root }),
-        harnesses: [pi({ binary: nativePi.binary, agentDir: nativePi.agentDir })],
+        harnesses: [piHarness({ binary: nativePi.binary, agentDir: nativePi.agentDir })],
       })
       const session = await first.sessions.create({
         workspaceId: "workspace-test",
@@ -2770,7 +2790,7 @@ describe("createAgentRuntime", () => {
 
       const second = createAgentRuntime({
         store: createSqliteRuntimeStore({ root }),
-        harnesses: [pi({ binary: nativePi.binary, agentDir: nativePi.agentDir })],
+        harnesses: [piHarness({ binary: nativePi.binary, agentDir: nativePi.agentDir })],
       })
       await expect(second.sessions.get(session.id)).resolves.toMatchObject({ id: session.id, title: "Durable" })
       await expect(second.sessions.list(nativePi.directory)).resolves.toMatchObject([{

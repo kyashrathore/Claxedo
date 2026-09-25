@@ -76,48 +76,6 @@
       "import": "./dist/subagent-admission.mjs",
       "default": "./dist/subagent-admission.mjs"
     },
-    "./harnesses": {
-      "development": "./src/harnesses/index.ts",
-      "bun": "./src/harnesses/index.ts",
-      "types": "./dist/harnesses/index.d.ts",
-      "import": "./dist/harnesses/index.mjs",
-      "default": "./dist/harnesses/index.mjs"
-    },
-    "./harnesses/acp": {
-      "development": "./src/harness-factories/acp.ts",
-      "bun": "./src/harness-factories/acp.ts",
-      "types": "./dist/harness-factories/acp.d.ts",
-      "import": "./dist/harness-factories/acp.mjs",
-      "default": "./dist/harness-factories/acp.mjs"
-    },
-    "./harnesses/claude": {
-      "development": "./src/harness-factories/claude.ts",
-      "bun": "./src/harness-factories/claude.ts",
-      "types": "./dist/harness-factories/claude.d.ts",
-      "import": "./dist/harness-factories/claude.mjs",
-      "default": "./dist/harness-factories/claude.mjs"
-    },
-    "./harnesses/codex": {
-      "development": "./src/harness-factories/codex.ts",
-      "bun": "./src/harness-factories/codex.ts",
-      "types": "./dist/harness-factories/codex.d.ts",
-      "import": "./dist/harness-factories/codex.mjs",
-      "default": "./dist/harness-factories/codex.mjs"
-    },
-    "./harnesses/cursor": {
-      "development": "./src/harness-factories/cursor.ts",
-      "bun": "./src/harness-factories/cursor.ts",
-      "types": "./dist/harness-factories/cursor.d.ts",
-      "import": "./dist/harness-factories/cursor.mjs",
-      "default": "./dist/harness-factories/cursor.mjs"
-    },
-    "./harnesses/pi": {
-      "development": "./src/harness-factories/pi.ts",
-      "bun": "./src/harness-factories/pi.ts",
-      "types": "./dist/harness-factories/pi.d.ts",
-      "import": "./dist/harness-factories/pi.mjs",
-      "default": "./dist/harness-factories/pi.mjs"
-    },
     "./adapters": {
       "development": "./src/adapters.ts",
       "bun": "./src/adapters.ts",
