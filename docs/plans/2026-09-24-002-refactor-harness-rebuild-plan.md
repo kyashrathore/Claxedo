@@ -579,6 +579,7 @@ Every defect the reviews found, all fixed in this plan. Each regression test is 
 | T-6 | Unit suites and smoke scripts touch the developer's real harness state: the Claude CLI test writes `~/.claude/projects` transcripts the usage scanner counts, local-server tests and the server closure smoke rewrite `~/.codex/config.toml`, and SDK tests start the real `codex app-server` against `api.openai.com` with the developer's login | Test, security | `agent-sdk-runtime` and `workspace-runtime` preloads; `claxedo-local-server` vitest has none; `claxedo-server` closure smoke | A throwaway HOME for every suite and smoke, and no test reaching a vendor | P0 | The bun suites' preload landed in 7affdc4bec; local-server, the smoke and the vendor calls remain |
 | T-7 | The real-spawn terminal test drops output printed before its client attaches: its fake socket ignores the binary attach checkpoint | Test | `workspace-runtime/src/pty/real-spawn.test.ts` | The socket reads the checkpoint's screen | P0 | Fixed in b33b9de0e7 |
 | T-8 | Three desktop boot tests race the product on a loaded machine: one reads the discovery record after health (it's written only before the ready message), one kills the daemon before terminal history reaches disk, one uses an idle grace shorter than the identity read before ready | Test | `claxedo-desktop/scripts/claxedo-server-boot.test.ts` | Wait for what the product guarantees: the ready message, the history file, a grace longer than the identity read | P0 | Fixed in 86c897772a; each failed under 28 CPU burners before and passes after |
+| T-9 | The flows spawned whatever `node` the shell resolved. In the lanes' shells that was `/usr/local/bin/node` v22.13.1, which segfaults in `better-sqlite3` on this machine (even `:memory:`, even rebuilt), so the daemon died opening its database. The harness never checked the runtime against `claxedo-server`'s `engines.node` | Test | `packages/harness/e2e/harness/daemon.ts`, `health.ts` | The daemon runs on a Node inside `engines.node` (`CLAXEDO_E2E_NODE`, refused otherwise); a crashed daemon is reported at once | P0 | Fixed in d6f6a51438, whose message wrongly blames Node 26; Node 26 was never the crashing runtime |
 
 ## The goal
 
@@ -1185,6 +1186,9 @@ Runs are sharded by harness with separate `CLAXEDO_E2E_PORT_RANGE`s, on crabbox 
 | H32 | A custom ACP harness with a secret runs in a cloud sandbox; the secret is leased, and refused once revoked | N (C-4, C-10) |
 | H33 | A default-harness change, commands and a plugin reach a running self-hosted sandbox | N (C-7) |
 | H34 | Unsigned desktop onboarding offers no cloud sandbox; signed onboarding does, and the workspace is created | N (C-14, app v2) |
+| H35 | Harness switch mid-session: the transcript reaches the target harness, the handoff stays pending until a turn completes, switching back restores the source's own session, a failed target turn keeps the handoff, and rollback archives the prepared thread | B |
+| H36 | Connection descriptors: malformed, duplicate, disabled, stale or retargeted descriptors are refused with typed errors, and a malformed first-party MCP entry never reaches a harness | B |
+| H37 | Request refusals: an unknown session, an id bound to another workspace, a missing directory, an operation the harness doesn't implement, and a malformed provider binding are refused before any harness runs | B |
 
 ## Phases
 
@@ -1210,7 +1214,7 @@ Every slice deletes what it replaces.
   - B flows green on `dev` with targeted red runs.
   - Every defect's regression test recorded red on `dev`, H-4 included.
   - `Progress:`
-- [ ] **P0.5 Invariant map,** per test case, plus every fix commit. It must finish before P0.3 deletes anything. `Progress:`
+- [ ] **P0.5 Invariant map,** per test case, plus every fix commit. It must finish before P0.3 deletes anything. `Progress:` five of six parts: 1,477 cases, of which 516 (35%) guard invariants no flow can observe and stay as focused tests, 501 are covered by flows, 443 by the two corpora, 17 are obsolete. The map adds flows H35 to H37 and lists fix commits no test guards.
 - [ ] **P0.3 Deletions:** the generated Codex protocol (generated at build, fresh-clone run), the harness factories, and the four add-ons with no implementer. `Progress:` the protocol is generated at build from Codex 0.133.0, the version the sandbox runs, with a test that fails when the pins drift (b5ff388d93). The factories and add-ons wait for the invariant map.
 - [x] **P0.4 Checks and ratchet** at decision 12's numbers. `Progress:` `bun run check` in `packages/harness`, with a passing and a violating fixture per check and budgets in `budget.json` (1a1db3486d).
 - [ ] **P0.6 Profiles from docs:**
@@ -1225,7 +1229,7 @@ Every slice deletes what it replaces.
 ### P1: contract, broker, Pi
 
 - [ ] **P1.0 Contract frozen:** the operation map complete, every row callable. `Progress:`
-- [ ] **P1.1 The runtime host and projection moved** into `workspace-runtime` unchanged, and `spawn` implemented. Wire corpus unchanged. `Progress:`
+- [ ] **P1.1 The runtime host and projection moved** into `workspace-runtime` unchanged, and `spawn` implemented. Wire corpus unchanged. `Progress:` `sse.ts` moved and the `spawn` service built over `process-ownership` (3658717af4). The host, the rest of the projection, `compat-events.ts`, `turn-projection.ts` and `child-event-routing.ts` move in the P3 cutover slice: today's drivers import them, so moving them earlier would invert the dependency.
 - [ ] **P1.2 Broker:** requests with the full contract, grants and ceilings, start requests, subagents, goal plumbing and provider turns, usage, cancel. `Progress:`
 - [ ] **P1.4 Conformance suite** (`packages/harness/src/conformance/`): one set of cases every transport runs through the contract, with the real broker over in-memory runtime ports and the transport's real harness program behind the scripted model server or the scripted ACP agent. It carries the kept invariants the invariant map assigns to transports. `Progress:`
 - [ ] **P1.3 Pi transport and profile:**
@@ -1269,6 +1273,7 @@ Every slice deletes what it replaces.
 ### P3: the cutover
 
 - [ ] The runtime host calls the contract for every harness in one slice, and every old adapter is deleted in the same slice. Every eligible flow green; both corpora unchanged. `Progress:`
+- [ ] In the same slice: the runtime host and the rest of the projection move into `workspace-runtime`, and the subagent admission rules move into the broker, with the runtime store persisting only their state, so the broker's tests run the real rules instead of a fake. `Progress:`
 
 ### P4: cleanup
 
