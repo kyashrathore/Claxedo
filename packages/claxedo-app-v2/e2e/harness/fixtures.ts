@@ -14,6 +14,7 @@ export type HarnessFixtures = {
   app: Page
   desktop: Desktop
   signed: SignedStack
+  signedCloud: SignedStack
 }
 
 type SignedBuild = AppBuild & { frontPort: number }
@@ -74,6 +75,17 @@ export const test = base.extend<HarnessFixtures, HarnessWorkerFixtures>({
       await use(signed)
     } finally {
       await attachLogOnFailure(testInfo, signed.stack.egress.attempts, "daemon.log", signed.stack.daemon.log)
+      await signed.close()
+    }
+    refuseEgress(signed.stack.egress.attempts)
+  },
+  signedCloud: async ({ signedBuild }, use, testInfo) => {
+    const signed = await startSignedStack({ label: testInfo.titlePath.join(" "), frontPort: signedBuild.frontPort, distDir: signedBuild.distDir, cloud: true })
+    try {
+      await use(signed)
+    } finally {
+      await attachLogOnFailure(testInfo, signed.stack.egress.attempts, "daemon.log", signed.stack.daemon.log)
+      await attachLogOnFailure(testInfo, signed.stack.egress.attempts, "relay.log", signed.relayLog)
       await signed.close()
     }
     refuseEgress(signed.stack.egress.attempts)
