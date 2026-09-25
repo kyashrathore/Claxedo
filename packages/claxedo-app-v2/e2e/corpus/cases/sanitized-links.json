@@ -1,0 +1,29 @@
+{
+  "id": "sanitized-links",
+  "title": "Links, raw markup and math come through the sanitizer as today",
+  "source": {
+    "kind": "test",
+    "file": "src/transcript/markdown-cache.tsx",
+    "name": "one markdown purifier with its config set once"
+  },
+  "partKinds": [
+    "text"
+  ],
+  "replay": {
+    "agent": "acp",
+    "turns": [
+      {
+        "prompt": "Show the links.",
+        "steps": [
+          {
+            "kind": "text",
+            "text": "Links and markup go through the sanitizer:\n\n- a web link to [the docs](https://example.com/docs \"Docs\")\n- a mail link to [support](mailto:help@example.com)\n- a script link [stays text](javascript:alert(1))\n- raw markup <b>shows as text</b> and <img src=x onerror=alert(1)> too\n- an autolink https://example.org/page\n\nMath still renders: $$x^2 + y^2 = z^2$$\n\nSanitized links done."
+          }
+        ]
+      }
+    ]
+  },
+  "ready": "Sanitized links done.",
+  "interactions": [],
+  "invariant": "Web and mail links keep their targets, a script link and raw markup stay inert text, and math still renders."
+}
