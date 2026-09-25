@@ -22,7 +22,7 @@ const MAX_ENTRIES = 20
 export type ComposerKey = string
 
 export const sessionComposerKey = (ref: SessionRef): ComposerKey => `session:${ref.sessionId}`
-export const draftComposerKey = (placementId: PlacementId, draftId: string): ComposerKey => `draft:${placementId}:${draftId}`
+export const draftComposerKey = (placementId: PlacementId): ComposerKey => `draft:${placementId}`
 
 type Entry = {
   draft: Draft

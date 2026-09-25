@@ -1,8 +1,13 @@
 import type { Accessor } from "solid-js"
 import type { QueryClient } from "@tanstack/solid-query"
-import type { Account, AccountCheck, AccountKeyInput, EffectiveAccounts, MachineLogin } from "./account-types"
+import type { Account, AccountCheck, EffectiveAccounts, MachineLogin } from "./account-types"
 import type { CloudCreateInput, CloudWorkspace, CodeHostConnection, CodeHostRepository } from "./cloud-types"
 import type { ConnectionState, ServerEvent } from "./events"
+import type { AgentConnectionsApi, AgentConnectionsQueries } from "./agent-connections"
+import type { IntegrationQueries, IntegrationsApi } from "./integrations"
+import type { SandboxProviderQueries, SandboxProvidersApi } from "./sandbox-providers"
+import type { ProviderConnectApi, ProviderConnectQueries } from "./provider-connect"
+import type { ProviderCatalogQueries, ProviderCatalogsApi } from "./provider-catalogs"
 import type { FolderQueries, FoldersApi } from "./folders"
 import type { HarnessConfigApi } from "./harness-config"
 import type {
@@ -21,7 +26,18 @@ import type {
   WorktreeCreateInput,
 } from "./git-types"
 import type { PlacementId, ProjectId, RequestId, TerminalId } from "./ids"
-import type { MarketplaceCatalog, PluginActivationInput, PluginChange, PluginSourceInput, PluginSourceRecord } from "./marketplace-types"
+import type { TasksClient } from "@claxedo/tasks/client"
+import type {
+  MachineInstalled,
+  MarketplaceCatalog,
+  PluginActivationInput,
+  PluginChange,
+  PluginOrganizationDefaultInput,
+  PluginSkillDocument,
+  PluginSkillRequest,
+  PluginSourceInput,
+  PluginSourceRecord,
+} from "./marketplace-types"
 import type {
   Terminal,
   TerminalAgentStatus,
@@ -51,10 +67,11 @@ import type {
   QueuedPromptControl,
   SessionCreateInput,
   SessionGoal,
+  SessionListInput,
   SessionPage,
   SessionRef,
   SessionRow,
-  SessionSnapshot,
+  SessionReads,
   SessionStatusRead,
   Subagent,
   TranscriptPage,
@@ -62,9 +79,11 @@ import type {
 import type { UsageRequest, UsageSummary } from "./usage-types"
 
 export type SessionsApi = {
-  readonly list: (input: { readonly cursor?: string; readonly limit: number }) => Promise<SessionPage>
-  readonly snapshot: (ref: SessionRef) => Promise<SessionSnapshot>
+  readonly list: (input: SessionListInput) => Promise<SessionPage>
+  readonly read: (ref: SessionRef) => SessionReads
   readonly older: (ref: SessionRef, cursor: string) => Promise<TranscriptPage>
+  readonly latestTurn: (ref: SessionRef) => Promise<TranscriptPage>
+  readonly turn: (ref: SessionRef, turnId: string) => Promise<TranscriptPage>
   readonly create: (input: SessionCreateInput) => Promise<SessionRow>
   readonly prompt: (ref: SessionRef, input: PromptInput) => Promise<PromptDelivery>
   readonly stop: (ref: SessionRef) => Promise<void>
@@ -76,6 +95,7 @@ export type SessionsApi = {
   readonly newMessageId: () => string
   readonly queue: (ref: SessionRef) => Promise<readonly QueuedPrompt[]>
   readonly controlQueued: (ref: SessionRef, seq: number, action: QueuedPromptAction) => Promise<QueuedPromptControl>
+  readonly replaceQueued: (ref: SessionRef, seq: number, input: PromptInput, messageId: string) => Promise<boolean>
   readonly controlGoal: (ref: SessionRef, action: GoalAction) => Promise<SessionGoal | undefined>
   readonly subagents: (ref: SessionRef) => Promise<readonly Subagent[]>
 }
@@ -89,6 +109,7 @@ export type ProjectsApi = {
 export type PlacementsApi = {
   readonly byId: (id: PlacementId) => Placement | undefined
   readonly list: () => readonly Placement[]
+  readonly load: () => Promise<readonly Placement[]>
   readonly createWorktree: (projectId: ProjectId, input: WorktreeCreateInput) => Promise<Placement>
 }
 
@@ -123,14 +144,35 @@ export type AccountsApi = {
   readonly remove: (ids: readonly string[]) => Promise<void>
   readonly check: (id: string) => Promise<AccountCheck>
   readonly checkMachineLogin: (harness: string) => Promise<readonly MachineLogin[]>
-  readonly addKey: (input: AccountKeyInput) => Promise<string>
+  readonly rescan: () => Promise<void>
 }
 
 export type MarketplaceApi = {
+  readonly refresh: (projectId?: ProjectId) => Promise<MarketplaceCatalog>
   readonly setActivation: (input: PluginActivationInput) => Promise<PluginChange>
-  readonly update: (pluginInstanceId: string, revision: number) => Promise<PluginChange>
+  readonly setOrganizationDefault: (input: PluginOrganizationDefaultInput) => Promise<PluginChange>
+  readonly update: (pluginInstanceId: string, revision: number, authority?: "user") => Promise<PluginChange>
   readonly addSource: (input: PluginSourceInput) => Promise<PluginSourceRecord>
   readonly removeSource: (id: string) => Promise<void>
+}
+
+export type TaskListKey = {
+  readonly projectId: string
+  readonly status: string | null
+  readonly parent: "any" | "root"
+  readonly includeArchived: boolean
+}
+
+export type TasksApi = {
+  readonly client: TasksClient
+  readonly keys: {
+    readonly scope: readonly unknown[]
+    readonly capabilities: readonly unknown[]
+    readonly presets: (includeArchived: boolean) => readonly unknown[]
+    readonly list: (filter: TaskListKey) => readonly unknown[]
+    readonly detail: (taskId: string) => readonly unknown[]
+    readonly children: (taskId: string) => readonly unknown[]
+  }
 }
 
 export type LivePluginsApi = {
@@ -156,15 +198,21 @@ export type ServerQueries = {
   readonly marketplace: {
     readonly catalog: (projectId?: ProjectId) => FetchQuery<MarketplaceCatalog>
     readonly sources: () => FetchQuery<readonly PluginSourceRecord[]>
+    readonly skill: (request: PluginSkillRequest) => FetchQuery<PluginSkillDocument>
+    readonly machineInstalled: () => FetchQuery<MachineInstalled>
   }
   readonly tasks: { readonly availability: () => FetchQuery<FeatureAvailability> }
-  readonly documents: { readonly availability: () => FetchQuery<FeatureAvailability> }
   readonly codeHost: {
     readonly connections: () => FetchQuery<readonly CodeHostConnection[]>
     readonly repositories: (connectionId: string) => FetchQuery<readonly CodeHostRepository[]>
   }
   readonly cloud: { readonly list: () => FetchQuery<readonly CloudWorkspace[]> }
   readonly folders: FolderQueries
+  readonly integrations: IntegrationQueries
+  readonly agentConnections: AgentConnectionsQueries
+  readonly sandboxProviders: SandboxProviderQueries
+  readonly providerConnect: ProviderConnectQueries
+  readonly providerCatalogs: ProviderCatalogQueries
   readonly harnesses: {
     readonly options: (placementId: PlacementId, harness: string) => FetchQuery<HarnessOptions>
     readonly logins: () => FetchQuery<readonly HarnessLogin[]>
@@ -197,7 +245,13 @@ export type Server = {
   readonly cloud: CloudApi
   readonly accounts: AccountsApi
   readonly marketplace: MarketplaceApi
+  readonly tasks: TasksApi
   readonly folders: FoldersApi
+  readonly integrations: IntegrationsApi
+  readonly agentConnections: AgentConnectionsApi
+  readonly sandboxProviders: SandboxProvidersApi
+  readonly providerConnect: ProviderConnectApi
+  readonly providerCatalogs: ProviderCatalogsApi
   readonly livePlugins: LivePluginsApi
   readonly harnessConfig: HarnessConfigApi
   readonly queries: ServerQueries

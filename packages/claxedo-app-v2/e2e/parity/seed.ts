@@ -3,11 +3,17 @@ import path from "node:path"
 import { SCRIPTED_ACP_HARNESS } from "../harness/acp/connection"
 import { acpScriptToken, type AcpScript } from "../harness/acp/script"
 import { ClaxedoApi } from "../harness/api"
-import { git } from "../harness/git"
+import { git, gitFolder } from "../harness/git"
 import type { Stack } from "../harness/stack"
 import type { Workspace } from "../harness/workspaces"
 
 export type SeedData = { workspace: Workspace; sessionId: string; notesSessionId: string }
+
+export const ONBOARDING_FOLDER = "folders/onboarding"
+
+export async function prepareFreshStack(stack: Stack) {
+  await gitFolder(path.join(stack.dataDir, path.dirname(ONBOARDING_FOLDER)), path.basename(ONBOARDING_FOLDER))
+}
 
 const APP_SOURCE = "export function greet(name: string) {\n  return `Hello, ${name}`\n}\n"
 const APP_CHANGED = "export function greet(name: string) {\n  return `Hello, ${name}!`\n}\n"

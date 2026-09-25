@@ -1,10 +1,13 @@
 import { createEffect, createSignal, Match, Show, Switch, type JSX } from "solid-js"
-import { MarkedProvider } from "@opencode-ai/ui/context/marked"
+import { Dynamic } from "solid-js/web"
+import { DelayedLoading, MarkedProvider } from "@/ui"
 import { BrowserTabView } from "@/browser"
 import { FileTab, FilesNavigator } from "@/files"
 import { useTranslator } from "@/i18n"
-import { ReviewTab, SourceControlView } from "@/review"
-import type { PlacementId } from "@/server"
+import { ReviewTab, SourceControlView, useLineComments } from "@/review"
+import { useServer, type PlacementId } from "@/server"
+import { usePreferences } from "@/settings"
+import { useShellRegistries, type PanelView } from "@/shell"
 import { Markdown } from "@/transcript"
 import { filePathFromTab } from "../focus"
 import { dictionary } from "../i18n"
@@ -54,7 +57,9 @@ function NavigatorViews(props: { readonly placementId: PlacementId }): JSX.Eleme
 
 function NavigatorColumn(props: { readonly placementId: PlacementId }): JSX.Element {
   const panel = usePanel()
-  const selected = () => panel.navigator() !== null
+  const preferences = usePreferences()
+  const left = () => preferences.appearance.navigatorSide === "left"
+  const selected = () => panel.navigator() !== null && !panel.phone()
   const [visited, setVisited] = createSignal(selected())
   createEffect(() => {
     if (selected()) setVisited(true)
@@ -67,8 +72,14 @@ function NavigatorColumn(props: { readonly placementId: PlacementId }): JSX.Elem
         data-navigator-kind={panel.navigator() ?? "files"}
         data-open={selected() ? "true" : "false"}
         aria-hidden={selected() ? undefined : "true"}
-        class="claxedo-workspace-navigator-overlay order-last h-full shrink-0 overflow-hidden border-l border-border-weak-base bg-background-base motion-reduce:transition-none"
-        classList={{ "pointer-events-none": !selected(), "border-transparent": !selected() }}
+        data-navigator-side={left() ? "left" : "right"}
+        class="claxedo-workspace-navigator-overlay h-full shrink-0 overflow-hidden border-border-weak-base bg-background-base motion-reduce:transition-none"
+        classList={{
+          "order-first border-r": left(),
+          "order-last border-l": !left(),
+          "pointer-events-none": !selected(),
+          "border-transparent": !selected(),
+        }}
         style={{
           width: selected() ? "min(280px, 45%)" : "0px",
           transition: NAVIGATOR_TRANSITION,
@@ -83,9 +94,41 @@ function NavigatorColumn(props: { readonly placementId: PlacementId }): JSX.Elem
   )
 }
 
+function RegisteredView(props: {
+  readonly kind: PanelView["kind"]
+  readonly placementId: PlacementId
+  readonly sessionId: string
+  readonly parentSessionId?: string
+}): JSX.Element {
+  const registries = useShellRegistries()
+  const view = () => registries.panelViews.list().find((entry) => entry.kind === props.kind)?.view
+  return (
+    <Show when={view()}>
+      {(component) => (
+        <div class="absolute inset-0 h-full min-h-0 overflow-hidden">
+          <Dynamic
+            component={component()}
+            placementId={props.placementId}
+            sessionId={props.sessionId}
+            parentSessionId={props.parentSessionId}
+          />
+        </div>
+      )}
+    </Show>
+  )
+}
+
 function ActiveTab(props: { readonly placementId: PlacementId }): JSX.Element {
   const panel = usePanel()
   const tab = () => panel.activeTab()
+  const context = () => {
+    const current = tab()
+    return current.kind === "context" ? current : undefined
+  }
+  const subagent = () => {
+    const current = tab()
+    return current.kind === "subagent" ? current : undefined
+  }
   const browser = () => {
     const current = tab()
     return current.kind === "browser" ? current : undefined
@@ -94,6 +137,7 @@ function ActiveTab(props: { readonly placementId: PlacementId }): JSX.Element {
     const current = tab()
     return current.kind === "plan" ? current : undefined
   }
+  const fileComments = useLineComments("file")
   const reveal = (path: string) => {
     const current = panel.fileReveal()
     return current?.path === path ? current : undefined
@@ -101,7 +145,7 @@ function ActiveTab(props: { readonly placementId: PlacementId }): JSX.Element {
   return (
     <Switch>
       <Match when={tab().kind === "review"}>
-        <div data-testid="workspace-review-body" class="absolute inset-0 flex h-full flex-col overflow-hidden">
+        <div data-testid="review-pane-root" class="absolute inset-0 flex h-full flex-col overflow-hidden">
           <ReviewTab
             placementId={props.placementId}
             focus={panel.reviewFocus()}
@@ -118,6 +162,7 @@ function ActiveTab(props: { readonly placementId: PlacementId }): JSX.Element {
               headerActive
               focusLine={reveal(path)?.line}
               focusNonce={reveal(path)?.version}
+              comments={fileComments}
             />
           </div>
         )}
@@ -127,6 +172,19 @@ function ActiveTab(props: { readonly placementId: PlacementId }): JSX.Element {
           <div class="absolute inset-0 h-full min-h-0 overflow-hidden">
             <BrowserTabView url={current().url} navigationVersion={current().navigationVersion} />
           </div>
+        )}
+      </Match>
+      <Match when={context()}>
+        {(current) => <RegisteredView kind="context" placementId={props.placementId} sessionId={current().sessionId} />}
+      </Match>
+      <Match when={subagent()}>
+        {(current) => (
+          <RegisteredView
+            kind="subagent"
+            placementId={props.placementId}
+            sessionId={current().sessionId}
+            parentSessionId={current().parentSessionId}
+          />
         )}
       </Match>
       <Match when={plan()}>
@@ -141,6 +199,27 @@ function ActiveTab(props: { readonly placementId: PlacementId }): JSX.Element {
         )}
       </Match>
     </Switch>
+  )
+}
+
+function WorkspacePending(props: { readonly placementId: PlacementId }): JSX.Element {
+  const t = useTranslator(dictionary)
+  const server = useServer()
+  const offline = () => server.placements.byId(props.placementId)?.reachable === false
+  const connecting = () => server.connection().kind === "connecting"
+  return (
+    <Show when={offline() || connecting()}>
+      <div
+        data-testid="workspace-review-pending"
+        class="absolute inset-0 z-10 flex min-w-0 items-center justify-center bg-background-base px-6 text-center text-compact text-text-weak"
+      >
+        <Show when={!offline()} fallback={<span>{t("panel.unavailable")}</span>}>
+          <DelayedLoading>
+            <span>{t("panel.connecting")}</span>
+          </DelayedLoading>
+        </Show>
+      </div>
+    </Show>
   )
 }
 
@@ -166,6 +245,7 @@ export function PanelBody(): JSX.Element {
                 data-workspace-panel-session-id={panel.sessionId()}
               >
                 <NavigatorColumn placementId={placementId} />
+                <WorkspacePending placementId={placementId} />
                 <div class="h-full min-w-0 flex-1">
                   <div class="relative flex size-full min-h-0 overflow-hidden bg-background-base h-full">
                     <div id="review-panel" class="relative flex-1 min-w-0 flex flex-col h-full">

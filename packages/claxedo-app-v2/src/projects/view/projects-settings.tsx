@@ -1,12 +1,11 @@
 import { A, useSearchParams } from "@solidjs/router"
-import { ProjectAvatar } from "@opencode-ai/ui/v2/project-avatar-v2"
 import { createUniqueId, For, Match, Show, Switch, type JSX } from "solid-js"
 import { projectId, type Project } from "@/server"
 import { SettingsEmpty, SettingsIntro, SettingsList, SettingsNote } from "@/settings"
 import type { SettingsSection } from "@/shell"
-import { Icon } from "@/ui"
+import { ClaxedoIcon as Icon, ProjectAvatar } from "@/ui"
 import { useProjectsText } from "../i18n"
-import { sourceLabel } from "../model"
+import { sourceLabel } from "../project-source"
 import { projectSettingsPath } from "../routes"
 import { useProjects } from "../store"
 import { ProjectSettings } from "./project-settings"
@@ -44,7 +43,7 @@ function ProjectsList(): JSX.Element {
     return state.kind === "ready" ? state.data : undefined
   }
   return (
-    <div class="settings-body" data-component="settings-projects">
+    <div class="settings-body">
       <SettingsIntro description={t("projects.settings.description")} />
       <Switch>
         <Match when={projects().kind === "loading"}>

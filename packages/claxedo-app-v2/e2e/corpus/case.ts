@@ -1,10 +1,12 @@
 import type { AgentContentPart, AgentPresentationMessage } from "@claxedo/agent-runtime-contract"
+import type { AcpStep } from "../harness"
 
 export type CaseSource =
   | { readonly kind: "seed"; readonly fixture: string; readonly session: string }
   | { readonly kind: "commit"; readonly sha: string; readonly subject: string }
   | { readonly kind: "comment"; readonly file: string; readonly line: number }
   | { readonly kind: "test"; readonly file: string; readonly name: string }
+  | { readonly kind: "inventory"; readonly ids: readonly string[] }
 
 export type CaseTranscript = {
   readonly messages: readonly AgentPresentationMessage[]
@@ -17,8 +19,10 @@ export type CaseSeedSlice = {
   readonly turns?: { readonly from: number; readonly to: number }
 }
 
+export type CaseTurn = { readonly prompt: string; readonly steps: readonly AcpStep[] }
+
 export type CaseReplay =
-  | { readonly agent: "acp" }
+  | { readonly agent: "acp"; readonly turns: readonly CaseTurn[] }
   | { readonly agent: "claude" | "codex" }
   | { readonly agent: "unsupported"; readonly reason: string }
 
@@ -40,6 +44,7 @@ export type CorpusCase = {
   readonly seed?: CaseSeedSlice
   readonly status?: "idle" | "working" | "retrying" | "recovering"
   readonly replay: CaseReplay
+  readonly ready: string
   readonly interactions: readonly CaseInteraction[]
   readonly invariant: string
 }

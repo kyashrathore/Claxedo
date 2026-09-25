@@ -1,9 +1,8 @@
-import { createEffect, createMemo, createSignal, onCleanup, Show, type JSX } from "solid-js"
+import { createEffect, createMemo, createSignal, on, onCleanup, Show, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { Spinner } from "@opencode-ai/ui/spinner"
 import { useTranslator } from "@/i18n"
-import { useServer, type PlacementId } from "@/server"
-import { ClaxedoIcon as Icon, DelayedLoading } from "@/ui"
+import type { PlacementId } from "@/server"
+import { ClaxedoIcon as Icon, DelayedLoading, Spinner, ScrollView } from "@/ui"
 import { useFilesApi } from "../api"
 import { dictionary } from "../i18n"
 import { buildKinds } from "../model"
@@ -11,7 +10,6 @@ import { useFiles } from "../store"
 import { createTreeSource } from "../tree-source"
 import { FileTree } from "./file-tree"
 
-const PREFETCH_DELAY_MS = 120
 const VISIBLE_LIMIT = 24
 
 export type FilesNavigatorProps = {
@@ -21,55 +19,37 @@ export type FilesNavigatorProps = {
   readonly onOpenFile: (path: string) => void
 }
 
-function createHoverPrefetch(placementId: () => PlacementId, active: () => boolean) {
-  const api = useFilesApi()
-  const server = useServer()
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const cancel = () => clearTimeout(timer)
-  onCleanup(cancel)
-  return {
-    start: (path: string) => {
-      cancel()
-      if (!active()) return
-      timer = setTimeout(
-        () => void server.queryClient.prefetchQuery(api.content(placementId(), path)),
-        PREFETCH_DELAY_MS,
-      )
-    },
-    cancel,
-  }
-}
-
 function revealActivePath(input: {
   readonly path: () => string | undefined
   readonly active: () => boolean
   readonly expand: (dir: string) => void
   readonly scroller: () => HTMLDivElement | undefined
 }): void {
-  createEffect(() => {
-    const path = input.path()
-    if (!path || !input.active()) return
-    const segments = path.split("/").slice(0, -1)
-    for (const [index] of segments.entries()) input.expand(segments.slice(0, index + 1).join("/"))
-    const reveal = () => {
-      const row = input.scroller()?.querySelector(`[data-file-tree-path="${CSS.escape(path)}"]`)
-      row?.scrollIntoView({ block: "nearest" })
-      return !!row
-    }
-    let observer: MutationObserver | undefined
-    const frame = requestAnimationFrame(() => {
-      const scroller = input.scroller()
-      if (reveal() || !scroller) return
-      observer = new MutationObserver(() => {
-        if (reveal()) observer?.disconnect()
+  createEffect(
+    on([input.path, input.active], ([path, active]) => {
+      if (!path || !active) return
+      const segments = path.split("/").slice(0, -1)
+      for (const [index] of segments.entries()) input.expand(segments.slice(0, index + 1).join("/"))
+      const reveal = () => {
+        const row = input.scroller()?.querySelector(`[data-file-tree-path="${CSS.escape(path)}"]`)
+        row?.scrollIntoView({ block: "nearest" })
+        return !!row
+      }
+      let observer: MutationObserver | undefined
+      const frame = requestAnimationFrame(() => {
+        const scroller = input.scroller()
+        if (reveal() || !scroller) return
+        observer = new MutationObserver(() => {
+          if (reveal()) observer?.disconnect()
+        })
+        observer.observe(scroller, { childList: true, subtree: true })
       })
-      observer.observe(scroller, { childList: true, subtree: true })
-    })
-    onCleanup(() => {
-      cancelAnimationFrame(frame)
-      observer?.disconnect()
-    })
-  })
+      onCleanup(() => {
+        cancelAnimationFrame(frame)
+        observer?.disconnect()
+      })
+    }),
+  )
 }
 
 function SearchRow(): JSX.Element {
@@ -113,10 +93,6 @@ export function FilesNavigator(props: FilesNavigatorProps): JSX.Element {
     () => props.placementId,
     () => props.active,
   )
-  const prefetch = createHoverPrefetch(
-    () => props.placementId,
-    () => props.active,
-  )
   const query = createMemo(() => files.search().trim())
   const search = useQuery(() => ({ ...api.search(props.placementId, query()), enabled: query().length > 0 }))
   const status = useQuery(() => ({ ...api.changes(props.placementId), enabled: props.active }))
@@ -132,11 +108,18 @@ export function FilesNavigator(props: FilesNavigatorProps): JSX.Element {
   const emptySearch = () => !!query() && search.isSuccess && (allowed()?.length ?? 0) === 0
   const showTree = () => !searchPending() && !emptySearch()
   const [scroller, setScroller] = createSignal<HTMLDivElement>()
+  const dataReady = () => source.state("").loaded && source.children("").length > 0
   revealActivePath({ path: () => props.activePath, active: () => props.active, expand: source.expand, scroller })
   return (
-    <div data-testid="workspace-files-navigator" data-mode="files" class="flex size-full min-h-0 flex-col">
+    <div
+      data-testid="workspace-files-navigator"
+      data-mode="files"
+      data-file-tree-shell-ready={dataReady() || (!query() && source.state("").loading) ? "true" : undefined}
+      data-file-tree-data-ready={dataReady() ? "true" : undefined}
+      class="flex size-full min-h-0 flex-col"
+    >
       <SearchRow />
-      <div class="min-h-0 flex-1 overflow-auto" ref={setScroller}>
+      <ScrollView class="min-h-0 flex-1" viewportRef={setScroller}>
         <Show when={searchPending()}>
           <div class="flex h-24 items-center justify-center">
             <DelayedLoading>
@@ -157,12 +140,10 @@ export function FilesNavigator(props: FilesNavigatorProps): JSX.Element {
             kinds={kinds()}
             active={props.activePath}
             visibleLimit={VISIBLE_LIMIT}
-            onFilePointerEnter={(node) => prefetch.start(node.path)}
-            onFilePointerLeave={() => prefetch.cancel()}
             onFileClick={(node) => props.onOpenFile(node.path)}
           />
         </div>
-      </div>
+      </ScrollView>
     </div>
   )
 }

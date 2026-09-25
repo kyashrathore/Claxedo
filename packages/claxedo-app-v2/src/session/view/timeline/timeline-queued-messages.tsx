@@ -1,19 +1,10 @@
 import { For, Index, Show, type Accessor } from "solid-js"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { IconButton } from "@/ui"
-import { Icon } from "@/ui"
+import { ClaxedoIconButton as IconButton, Tooltip } from "@/ui"
+import { ClaxedoIcon as Icon } from "@/ui"
 import { queuedMessageText, type QueuedMessage, type QueuedMessages, type TimelineTranslate } from "./model"
 
-/**
- * Prompts the runtime is holding for the next turn, drawn where they will land:
- * after the last transcript row, in the user-message bubble, dimmed until the
- * runtime admits them. The `ui-user-message` classes are the transcript's own,
- * so the hover-revealed action row below the bubble behaves like a sent
- * message's copy row.
- */
 export function TimelineQueuedMessages(props: {
   queued: QueuedMessages
-  /** The controller's records minus those the transcript already shows. */
   items: Accessor<readonly QueuedMessage[]>
   centered: boolean
   t: TimelineTranslate
@@ -33,8 +24,6 @@ export function TimelineQueuedMessages(props: {
             <button type="button" class="underline" onClick={props.queued.reload}>{props.t("ui.message.queued.retry")}</button>
           </div>
         </Show>
-        {/* Indexed, not keyed: every poll returns fresh record objects, and a
-            keyed list would rebuild each bubble every second under the pointer. */}
         <Index each={props.items()}>
           {(item) => <QueuedMessageBubble item={item()} queued={props.queued} t={props.t} />}
         </Index>
@@ -48,7 +37,6 @@ export function TimelineQueuedMessages(props: {
 
 function QueuedMessageBubble(props: { item: QueuedMessage; queued: QueuedMessages; t: TimelineTranslate }) {
   const editing = () => props.queued.editing() === props.item.seq
-  // Held by another client's edit: shown as editing, releasable, not editable here.
   const heldElsewhere = () => props.item.held && !editing()
   const busy = () => props.queued.pending() !== undefined || !!props.item.steering && props.item.steering.state !== "rejected"
   const status = () => props.item.steering?.state === "accepted" ? props.t("ui.message.queued.accepted")
@@ -108,8 +96,6 @@ function QueuedMessageBubble(props: { item: QueuedMessage; queued: QueuedMessage
             </button>
           }
         >
-          {/* Opts out of the narrow-viewport 40px tap floor: three floored
-              ghost buttons read as a toolbar, not a message's hover row. */}
           <span class="inline-flex items-center" data-claxedo-compact-touch>
             {action({ icon: "pencil", label: props.t("ui.message.queued.edit"), onClick: () => props.queued.beginEdit(props.item) })}
             {action({ icon: "arrow-up", label: props.t("ui.message.queued.sendNow"), onClick: () => props.queued.sendNow(props.item.seq) })}

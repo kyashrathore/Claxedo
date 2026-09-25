@@ -2,18 +2,16 @@ import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Swi
 import { Portal } from "solid-js/web"
 import { useQuery } from "@tanstack/solid-query"
 import type { SelectedLineRange } from "@pierre/diffs"
-import { FileIcon } from "@opencode-ai/ui/file-icon"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { checksum } from "@opencode-ai/ui/utils/encode"
 import { useTranslator } from "@/i18n"
 import type { FileContent, PlacementId } from "@/server"
 import { File, Markdown, type FileRevealHandle } from "@/transcript"
-import { ClaxedoIconButton as IconButton, DelayedLoading, fileHeaderActionsSlot } from "@/ui"
+import { ClaxedoIconButton as IconButton, DelayedLoading, fileHeaderActionsSlot, FileIcon, Tooltip, checksum } from "@/ui"
 import { useFilesApi } from "../api"
 import { dictionary } from "../i18n"
 import { basename } from "../path"
 import { imagePreviewUrl, isMarkdownPath } from "../preview"
 import { useFiles } from "../store"
+import { createFileComments, type FileCommentProps, type FileLineComments } from "./file-comments"
 
 const FOCUS_FRESH_MS = 5000
 const COPIED_MS = 2000
@@ -24,6 +22,7 @@ export type FileTabProps = {
   readonly headerActive: boolean
   readonly focusLine?: number
   readonly focusNonce?: number
+  readonly comments?: FileLineComments
 }
 
 type TextFile = { readonly name: string; readonly contents: string; readonly cacheKey: string | undefined }
@@ -100,6 +99,7 @@ function FileText(props: {
   readonly file: TextFile
   readonly previewing: boolean
   readonly focus: ReturnType<typeof createFocusReveal>
+  readonly comments: FileCommentProps
   readonly onRendered: () => void
 }): JSX.Element {
   return (
@@ -118,6 +118,7 @@ function FileText(props: {
           enableLineSelection={true}
           selectedLines={props.focus.selected()}
           onLineSelected={props.focus.select}
+          {...props.comments}
         />
       </div>
       <Show when={props.previewing}>
@@ -167,6 +168,16 @@ export function FileTab(props: FileTabProps): JSX.Element {
     return current ? imagePreviewUrl(props.path, current) : undefined
   })
   const binary = () => data()?.type === "binary" && !imageSrc()
+  const store = props.comments
+  const commentProps = store
+    ? createFileComments({
+        path: () => props.path,
+        contents: content,
+        store,
+        selected: focus.selected,
+        setSelected: focus.select,
+      })
+    : {}
   const lines = () => {
     const value = content()
     return value ? value.split("\n").length - (value.endsWith("\n") ? 1 : 0) : 0
@@ -230,6 +241,7 @@ export function FileTab(props: FileTabProps): JSX.Element {
                 file={current()}
                 previewing={isMarkdownPath(props.path) && !files.markdownSource(props.path)}
                 focus={focus}
+                comments={commentProps}
                 onRendered={() => setRenderedKey(file()?.cacheKey)}
               />
             )}

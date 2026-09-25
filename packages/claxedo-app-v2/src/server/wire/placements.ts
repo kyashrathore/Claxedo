@@ -1,6 +1,7 @@
 import { machineId, placementId, projectId, type MachineId } from "../ids"
 import type { RuntimeRoute } from "../transport"
 import type { Placement } from "../types"
+import { isRecord } from "../../lib/record"
 
 export type PlacementRecord = {
   readonly placement: Placement
@@ -10,6 +11,7 @@ export type PlacementRecord = {
 export type BootstrapDeclaration = {
   readonly hostAggregate: boolean
   readonly issuesSessions: boolean
+  readonly documents: boolean
   readonly enrollmentId?: string
 }
 
@@ -19,10 +21,6 @@ export type BootstrapCatalog = {
 }
 
 export const UNENROLLED_MACHINE = "this-machine"
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value)
-}
 
 function text(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined
@@ -46,6 +44,11 @@ function label(row: Record<string, unknown>, directory: string) {
   return text(row.workspace_name) ?? text(row.workspaceName) ?? directory.split("/").filter(Boolean).pop() ?? directory
 }
 
+function gitRemoteOf(project: Record<string, unknown>, row: Record<string, unknown>): string | undefined {
+  const git = isRecord(project.git) ? project.git : {}
+  return text(row.repo_url) ?? text(row.repoUrl) ?? text(row.git_remote) ?? text(row.gitRemote) ?? text(git.remote)
+}
+
 function placementRecord(project: Record<string, unknown>, key: string, row: Record<string, unknown>, self: string | undefined): PlacementRecord | undefined {
   const id = text(row.workspaceId) ?? text(row.workspace_id) ?? text(row.id) ?? key
   const owner = text(project.id)
@@ -54,6 +57,7 @@ function placementRecord(project: Record<string, unknown>, key: string, row: Rec
   const location = text(row.remote_directory) ?? text(row.remoteDirectory) ?? directory
   const { remote, machine } = remoteOf(row, self)
   const root = directory === text(project.worktree)
+  const gitRemote = gitRemoteOf(project, row)
   return {
     placement: {
       id: placementId(id),
@@ -61,7 +65,9 @@ function placementRecord(project: Record<string, unknown>, key: string, row: Rec
       kind: kindOf(row, root),
       label: label(row, location),
       path: location,
+      reachable: row.reachable === true,
       ...(machine ? { machineId: machine } : {}),
+      ...(gitRemote ? { gitRemote } : {}),
     },
     route: { directory: remote ? `workspace:${id}` : directory, workspaceId: id, remote },
   }
@@ -92,6 +98,7 @@ export function bootstrapCatalog(body: unknown): BootstrapCatalog {
     declaration: {
       hostAggregate: events.hostAggregate === true,
       issuesSessions: deployment.issuesSessions === true,
+      documents: deployment.documents === true,
       ...(enrollmentId ? { enrollmentId } : {}),
     },
     placements: placementsFromProjects(root.project, enrollmentId),

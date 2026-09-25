@@ -1,8 +1,5 @@
 import { ComponentProps, For } from "solid-js"
 
-// Pixel-C tile grid (32px pitch). Base coords are the letter skeleton; a +32px
-// x-shift optically centres the C against its open right side. Tiles render at
-// 33px so neighbours merge into a solid, legible C at any size.
 const TILES: readonly [number, number][] = [
   [184, 56], [216, 56], [248, 56], [280, 56], [312, 56],
   [120, 88], [152, 88], [184, 88], [216, 88], [248, 88], [280, 88], [312, 88], [344, 88], [376, 88],
@@ -30,7 +27,6 @@ export const ClaxedoSplash = (props: Pick<ComponentProps<"svg">, "ref" | "class"
   return (
     <svg
       ref={props.ref}
-      data-component="claxedo-splash"
       classList={{ [props.class ?? ""]: !!props.class }}
       viewBox="44 44 432 432"
       fill="none"
@@ -44,7 +40,6 @@ export const ClaxedoSplash = (props: Pick<ComponentProps<"svg">, "ref" | "class"
 export const ClaxedoLogo = (props: { class?: string }) => {
   return (
     <svg
-      data-component="claxedo-logo"
       classList={{ [props.class ?? ""]: !!props.class }}
       viewBox="44 44 432 432"
       fill="none"

@@ -1,4 +1,5 @@
-import { Match, Show, Switch, type JSX } from "solid-js"
+import { Match, onCleanup, Show, Switch, type JSX } from "solid-js"
+import { useDragSource, useWorkbench } from "@/workbench"
 import type { HoverEngagement } from "../hover-engagement"
 import type { NavigationStatus } from "../model"
 
@@ -6,6 +7,7 @@ const ROW_SHELL_CLASS =
   "relative flex items-center gap-2 min-h-7 py-0.5 pr-2.5 mx-1 text-left outline-none rounded-md hover:bg-surface-base-hover/40"
 
 export type NavigationRowProps = {
+  readonly class?: string
   readonly data?: Readonly<Record<string, string | undefined>>
   readonly classList?: Readonly<Record<string, boolean | undefined>>
   readonly label: string
@@ -13,15 +15,29 @@ export type NavigationRowProps = {
   readonly onActivate: () => void
   readonly onContextMenu?: (event: MouseEvent) => void
   readonly engagement: HoverEngagement
+  readonly prepareDrag?: () => string | undefined
   readonly children: JSX.Element
 }
 
 export function NavigationRow(props: NavigationRowProps): JSX.Element {
+  const workbench = useWorkbench()
+  const drag = (element: HTMLElement) => {
+    const prepare = props.prepareDrag
+    if (!prepare) return
+    const dispose = useDragSource(workbench.drag, element, {
+      contentId: prepare,
+      sourceKind: "navigation-row",
+      label: () => props.label,
+      onDropMissed: () => props.onActivate(),
+    })
+    onCleanup(dispose)
+  }
   return (
     <div
+      ref={drag}
       {...props.data}
       data-active={props.active ? "true" : "false"}
-      class={ROW_SHELL_CLASS}
+      class={props.class ? `${ROW_SHELL_CLASS} ${props.class}` : ROW_SHELL_CLASS}
       classList={props.classList}
       onPointerEnter={props.engagement.handlers.onPointerEnter}
       onPointerLeave={props.engagement.handlers.onPointerLeave}
@@ -32,9 +48,9 @@ export function NavigationRow(props: NavigationRowProps): JSX.Element {
     >
       <button
         type="button"
-        data-slot="navigation-row-activate"
         aria-label={props.label}
         aria-current={props.active ? "page" : undefined}
+        data-slot="navigation-row-activate"
         class="ui-navigation-row-activate absolute inset-0 rounded-md outline-none touch-pan-y focus-visible:ring-2 focus-visible:ring-border-interactive-base"
         onClick={() => props.onActivate()}
       />
@@ -46,7 +62,6 @@ export function NavigationRow(props: NavigationRowProps): JSX.Element {
 export function NavigationRowGlyph(props: { readonly children: JSX.Element }): JSX.Element {
   return (
     <span
-      data-slot="navigation-row-glyph"
       class="absolute left-4 top-1/2 -translate-y-1/2 z-[1] pointer-events-none flex size-4 items-center justify-center"
     >
       {props.children}
@@ -64,16 +79,28 @@ export function NavigationRowStatusGutter(props: { readonly status: NavigationSt
   )
 }
 
-export function NavigationStatusMark(props: { readonly status: NavigationStatus }): JSX.Element {
+export function NavigationStatusMark(props: { readonly status: NavigationStatus; readonly surface?: "sidebar" | "switcher" }): JSX.Element {
+  const data = () => (props.surface === "switcher" ? { "data-switcher-status": props.status } : { "data-sidebar-status": props.status })
   return (
     <Switch>
       <Match when={props.status === "working"}>
-        <span aria-hidden="true" data-sidebar-status={props.status} class="flex size-4 shrink-0 translate-y-[0.5px] items-center justify-center">
-          <span class="size-[10px] rounded-full border-[1.5px] border-icon-weak-base border-t-transparent animate-spin motion-reduce:animate-none" />
+        <span aria-hidden="true" {...data()} class="flex size-4 shrink-0 translate-y-[0.5px] items-center justify-center">
+          <span
+            class="rounded-full border-[1.5px] border-icon-weak-base border-t-transparent animate-spin motion-reduce:animate-none"
+            classList={{ "size-[8.5px]": props.surface === "switcher", "size-[10px]": props.surface !== "switcher" }}
+          />
         </span>
       </Match>
       <Match when={props.status !== "idle"}>
-        <span aria-hidden="true" data-sidebar-status={props.status} class="size-1.5 shrink-0 rounded-full bg-icon-interactive-base" />
+        <span
+          aria-hidden="true"
+          {...data()}
+          class="size-1.5 shrink-0 rounded-full"
+          classList={{
+            "bg-icon-interactive-base": props.status === "permission" || props.status === "error",
+            "bg-text-weak": props.status === "done",
+          }}
+        />
       </Match>
     </Switch>
   )

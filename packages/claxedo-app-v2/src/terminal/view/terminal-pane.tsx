@@ -1,12 +1,11 @@
-import "./terminal-pane.css"
-import { Show, createMemo, createSignal, onCleanup, onMount, type JSX } from "solid-js"
+import { terminalFontFamily, usePreferences } from "@/settings"
+import { Show, createEffect, createMemo, createSignal, onCleanup, onMount, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { machine } from "@/lib/machine"
-import { toAppError, useServer } from "@/server"
+import { useServer } from "@/server"
 import type { PaneProps } from "@/shell"
-import { showToast } from "@/ui"
 import type { TerminalBackend } from "../backend/types"
-import { useTerminals } from "../context"
+import { useTerminalRuntime } from "../context"
 import { dictionary } from "../i18n"
 import {
   transitionConnection,
@@ -15,23 +14,27 @@ import {
   type TerminalPaneState,
 } from "../model"
 import { AccessoryRow } from "./accessory-row"
-import { AgentBadge } from "./agent-badge"
 import { mountTerminal, type TerminalMount } from "./terminal-mount"
-import { TerminalStatus } from "./terminal-status"
+import { TerminalStatus, useConnectionToasts } from "./terminal-status"
 
 export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
   const server = useServer()
-  const terminals = useTerminals()
+  const terminals = useTerminalRuntime()
   const t = useTranslator(dictionary)
   const { placementId, terminalId } = props.state
+  const preferences = usePreferences()
   const store = terminals.store(placementId)
   onCleanup(terminals.retain(placementId))
   const row = createMemo(() => store.row(terminalId))
   const connection = machine<TerminalConnection, TerminalConnectionEvent>({ kind: "connecting" }, transitionConnection)
   const [backend, setBackend] = createSignal<TerminalBackend>()
   const [focused, setFocused] = createSignal(false)
-  const missing = () => store.load().kind === "ready" && row() === undefined
-  const overlay = () => missing() || connection.state().kind !== "attached"
+  const [attachedOnce, setAttachedOnce] = createSignal(false)
+  const overlay = () => {
+    const current = connection.state()
+    if (current.kind === "failed") return current.failure === "start"
+    return !attachedOnce() && current.kind === "connecting"
+  }
   let host!: HTMLDivElement
   let mount: TerminalMount | undefined
 
@@ -49,22 +52,24 @@ export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
       renderers: terminals.renderers,
       openFile: terminals.openFile,
       onBackend: setBackend,
+      terminalFont: () => (preferences.appearance.terminalFont.trim() ? terminalFontFamily(preferences.appearance.terminalFont) : undefined),
+      screenReaderMode: () => preferences.appearance.terminalScreenReader,
     })
   })
   onCleanup(() => mount?.dispose())
 
-  const recreate = () => {
-    store.recreate(terminalId).then(
-      (terminal) => terminals.open({ placementId, terminalId: terminal.id }, props.paneId),
-      (error: unknown) => {
-        console.error("Terminal could not be recreated", {
-          terminalId,
-          error: toAppError(error),
-        })
-        showToast({ title: t("terminal.createFailed") })
-      },
-    )
-  }
+  useConnectionToasts(connection.state)
+  createEffect(() => {
+    const kind = connection.state().kind
+    if (kind === "attached") setAttachedOnce(true)
+    if (kind === "ended") store.drop(terminalId)
+  })
+
+  createEffect(() => {
+    const current = row()
+    const busy = current?.agentStatus === "working" || current?.agentStatus === "waitingOnUser"
+    if (props.active && current?.seen && !busy) store.clearSeen(terminalId)
+  })
 
   return (
     <section
@@ -72,6 +77,7 @@ export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
       data-testid="terminal-pane"
       data-terminal-id={terminalId}
       data-terminal-connection={connection.state().kind}
+      data-terminal-connected={connection.state().kind === "attached" ? "true" : "false"}
       class="flex h-full w-full min-h-0 flex-col bg-background-base"
       onFocusIn={() => setFocused(true)}
       onFocusOut={() => setFocused(false)}
@@ -85,16 +91,11 @@ export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
           classList={{ invisible: overlay() }}
           onPointerDown={() => backend()?.focus()}
         />
-        <div class="pointer-events-none absolute top-1.5 right-3">
-          <AgentBadge status={row()?.agentStatus} />
-        </div>
         <Show when={overlay()}>
           <div class="absolute inset-0 bg-background-base">
             <TerminalStatus
               connection={connection.state()}
-              missing={missing()}
               onRetry={() => mount?.retry()}
-              onRecreate={recreate}
             />
           </div>
         </Show>

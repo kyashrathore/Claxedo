@@ -20,24 +20,15 @@ import { reportInstall } from "./install-telemetry"
 // and a desktop app that hangs instead of failing fast.
 const telemetryClient = installDesktopTelemetry()
 
-const APP_NAMES: Record<string, string> = {
-  dev: "Claxedo Dev",
-  beta: "Claxedo Beta",
-  prod: "Claxedo",
-}
-const APP_IDS: Record<string, string> = {
-  dev: "ai.claxedo.desktop.dev",
-  beta: "ai.claxedo.desktop.beta",
-  prod: "ai.claxedo.desktop",
-}
+const packagedProduct = desktopProduct(CHANNEL, RENDERER)
 const devIdentity = resolveDevIdentity(IS_PACKAGED)
-app.setName(IS_PACKAGED ? APP_NAMES[CHANNEL] : devIdentity.name)
+app.setName(IS_PACKAGED ? packagedProduct.productName : devIdentity.name)
 // The userData suffix keeps each worktree's dev profile — and its
 // single-instance lock — separate, so labeled dev apps run side by side.
 app.setPath(
   "userData",
   process.env.CLAXEDO_DESKTOP_USER_DATA_DIR ??
-    join(app.getPath("appData"), IS_PACKAGED ? APP_IDS[CHANNEL] : `ai.claxedo.desktop.dev${devIdentity.userDataSuffix}`),
+    join(app.getPath("appData"), IS_PACKAGED ? packagedProduct.appId : `ai.claxedo.desktop.dev${devIdentity.userDataSuffix}`),
 )
 // Deliberately AFTER app.setPath("userData", …) above: the once-only marker
 // lives in userData, so reporting any earlier would write it to Electron's
@@ -59,7 +50,8 @@ import { resolveSystemClaude } from "./claude-executable"
 import { loadServerEnvForDevelopment, resolveDesktopServerDataDir } from "./server-env"
 import type { BrowserRegistry } from "./browser/registry"
 import { setupBrowserTab } from "./browser/setup"
-import { CHANNEL, IS_PACKAGED, UPDATE_CHANNEL, UPDATER_ENABLED } from "./constants"
+import { CHANNEL, IS_PACKAGED, RENDERER, UPDATE_CHANNEL, UPDATER_ENABLED } from "./constants"
+import { desktopProduct } from "../shared/desktop-product"
 import { resolveDevIdentity } from "./dev-identity"
 import { findFreePort, resolveBaseServerPort } from "./server-port"
 import { runRestart } from "../shared/restart-policy"

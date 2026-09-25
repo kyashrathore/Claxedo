@@ -1,12 +1,7 @@
-import { Dialog } from "@opencode-ai/ui/dialog"
-import { FileIcon } from "@opencode-ai/ui/file-icon"
-import { List, type ListRef } from "@opencode-ai/ui/list"
-import { getDirectory, getFilename } from "@opencode-ai/ui/utils/path"
 import { createMemo, createSignal } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useServer } from "@/server"
-import { useDialog } from "@/ui"
-import { ClaxedoIconV2 } from "@/ui/controls/claxedo-icon"
+import { ClaxedoIconV2, useDialog, Dialog, FileIcon, List, type ListRef, getDirectory, getFilename } from "@/ui"
 import { cleanInput, displayPath, toRow, uniqueRows } from "../folder-paths"
 import { createFolderSearch } from "../folder-search"
 import { useProjectsText } from "../i18n"
@@ -54,7 +49,6 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
       action={
         <button
           type="button"
-          data-slot="directory-dialog-close"
           aria-label={t("projects.close")}
           class="inline-flex size-7 items-center justify-center rounded-md border-0 bg-transparent p-0 leading-none text-icon-weak-base transition-[background-color,color] duration-100 hover:bg-surface-base-hover hover:text-icon-strong-base focus-visible:bg-surface-base-hover focus-visible:text-icon-strong-base focus-visible:outline-none"
           onClick={() => dialog.close()}

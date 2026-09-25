@@ -1,7 +1,6 @@
 import { Show, type Accessor, type Component, type JSX } from "solid-js"
 import type { ComposerTextKey } from "../i18n"
-import { DockShellForm } from "@opencode-ai/ui/dock-surface"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
+import { ClaxedoIcon as Icon, DockShellForm } from "@/ui"
 import type { ImagePart as ImageAttachmentPart } from "../model"
 import { PromptContextItems } from "./context-items"
 import { PromptDragOverlay } from "./drag-overlay"

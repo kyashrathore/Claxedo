@@ -1,13 +1,13 @@
 import { createMemo, Show, type JSX } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { useI18n, useTranslator } from "@/i18n"
-import { dictionary } from "../i18n"
+import { shellDictionary } from "../i18n"
 import { byOrder, useShellRegistries } from "../registries"
 import type { PageEntry, PageProps } from "../types"
 import { activeSectionId } from "./settings-sidebar"
 
 export function SettingsPage(props: PageProps): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(shellDictionary)
   const registries = useShellRegistries()
   const section = createMemo(() => {
     const sections = byOrder(registries.settingsSections.list())

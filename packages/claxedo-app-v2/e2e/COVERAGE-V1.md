@@ -2,7 +2,7 @@
 
 Today's app has 58 Playwright specs in `packages/claxedo-app/e2e/playwright/`, 39,556 lines. 38 of them import `mock-runtime.ts`, the hand-written fake of the server (measured on this tree; the plan's 32 predates six more). Every user-visible behavior those specs assert is listed here against the v2 flow that must assert it, or as dropped with the reason. v2 flows run on the real stack only, so a behavior a mocked spec reached by faking a server answer is asserted in v2 by producing that answer for real: a scripted model reply, a scripted ACP step, the local sandbox driver, or the Worker.
 
-Flow numbers are the plan's flow table. "On feat/app-v2" means the flow file exists there today; the owning lane still has to assert every behavior listed against it.
+Flow numbers are the plan's flow table. "On feat/app-v2" means the flow file exists there today; the owning lane still has to assert every behavior listed against it. Since the parity phase every baseline flow takes v1's path on both apps (v1's accessible names and routes, `harness/ui-names.ts`), so a behavior listed here is asserted the way v1 shows it.
 
 ## By v1 spec
 
@@ -85,8 +85,8 @@ Flow numbers are the plan's flow table. "On feat/app-v2" means the flow file exi
 | 12 Workbench and shell | yes | panes-split-tabs, session-rendering-navigation, boot-deep-links-home |
 | 13 Terminal | yes | terminal, desktop-live-terminal-tui, desktop-terminal-launch-once, server-mediated-core |
 | 14 Review | yes | source-control, first-prompt-local (base branch), workspace-lifecycle (worktrees), desktop-worktree-recovery |
-| 15 Settings | no | settings-auth, machines-named |
-| 16 Usage | no | usage-dashboard, desktop-unsigned-embedded, real-harness-local |
+| 15 Settings | yes | settings-auth, machines-named |
+| 16 Usage | yes | usage-dashboard, desktop-unsigned-embedded, real-harness-local |
 | 17 Marketplace | no | desktop-unsigned-embedded, settings-auth (connections) |
 | 18 Tasks | no | new in v2 as a plugin; v1 had no spec |
 | 19 Pages | no | documents-core, desktop-repository-document |

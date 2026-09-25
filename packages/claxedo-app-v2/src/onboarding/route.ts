@@ -1,6 +1,6 @@
 import type { RouteEntry } from "@/shell"
-import { OnboardingPage } from "./view/onboarding-page"
+import { FirstProjectCanvas } from "./view/first-project-canvas"
 
 export const onboardingPath = "/welcome"
 
-export const onboardingRoute: RouteEntry = { id: "onboarding", path: onboardingPath, view: OnboardingPage }
+export const onboardingRoute: RouteEntry = { id: "onboarding", path: onboardingPath, view: FirstProjectCanvas }

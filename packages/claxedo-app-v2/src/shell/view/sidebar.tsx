@@ -1,11 +1,11 @@
 import { Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { dictionary } from "../i18n"
+import { shellDictionary } from "../i18n"
 import { useShellLayout } from "../layout"
+import { trackRailPeek } from "./rail-peek"
 import { Region } from "./region"
 import { SidebarGrip } from "./sidebar-grip"
+import { ClaxedoIcon as Icon, ClaxedoIconButton as IconButton, Tooltip } from "@/ui"
 
 export type SidebarProps = {
   readonly mode: "main" | "settings"
@@ -14,7 +14,7 @@ export type SidebarProps = {
 }
 
 function SidebarHeader(): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(shellDictionary)
   const layout = useShellLayout()
   const label = () => (layout.sidebarPinned() ? t("shell.hideSidebar") : t("shell.pinSidebar"))
   return (
@@ -38,11 +38,18 @@ function SidebarHeader(): JSX.Element {
   )
 }
 
-export function SidebarContent(props: SidebarProps & { readonly width?: number; readonly open?: boolean; readonly onMouseLeave?: () => void }): JSX.Element {
-  const t = useTranslator(dictionary)
+export function SidebarContent(
+  props: SidebarProps & { readonly width?: number; readonly open?: boolean; readonly onMouseLeave?: () => void; readonly ref?: (element: HTMLElement) => void },
+): JSX.Element {
+  const t = useTranslator(shellDictionary)
+  const layout = useShellLayout()
   const open = () => props.open !== false
   return (
     <nav
+      ref={(element) => props.ref?.(element)}
+      data-sidebar
+      data-claxedo-compact-touch
+      data-pinned={layout.sidebarPinned() ? "" : undefined}
       data-testid="rail-sidebar"
       data-surface="sidebar"
       data-mode={props.mode}
@@ -63,26 +70,61 @@ export function SidebarContent(props: SidebarProps & { readonly width?: number; 
   )
 }
 
+function PhoneOpener(): JSX.Element {
+  const t = useTranslator(shellDictionary)
+  const layout = useShellLayout()
+  const open = () => layout.phone() && layout.sidebarShown()
+  return (
+    <button
+      type="button"
+      data-testid="mobile-sidebar-opener"
+      data-claxedo-compact-touch
+      aria-label={open() ? t("shell.closeNavigation") : t("shell.openNavigation")}
+      aria-expanded={open()}
+      aria-pressed={open()}
+      data-icon-interaction="binary"
+      class="md:hidden fixed left-1 top-[3px] z-[110] flex h-8 w-8 items-center justify-center rounded bg-transparent text-icon-weak-base transition-colors hover:bg-surface-base-hover hover:text-icon-base"
+      onClick={() => layout.send({ type: open() ? "hideSidebar" : "showSidebar" })}
+    >
+      <Icon name={open() ? "layout-left-full" : "layout-left-partial"} size="small" />
+    </button>
+  )
+}
+
 export function Sidebar(props: SidebarProps): JSX.Element {
   const layout = useShellLayout()
   const expanded = () => layout.sidebarShown()
+  const drawerOpen = () => layout.phone() && expanded()
+  let nav: HTMLElement | undefined
+  trackRailPeek(layout, () => nav?.getBoundingClientRect())
   return (
-    <div
-      class="relative flex flex-col w-[var(--claxedo-sidebar-width)] shrink-0 overflow-hidden transition-[width] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)]"
-      classList={{
-        "pointer-events-none": !expanded(),
-        "pointer-events-auto": expanded(),
-        "absolute left-0 top-0 bottom-0 z-[80]": !layout.sidebarPinned(),
-      }}
-      style={{ "--claxedo-sidebar-width": `${expanded() ? layout.sidebarWidth() : 0}px` }}
-      data-testid="sidebar"
-    >
-      <div class="flex-1 min-h-0 h-full">
-        <SidebarContent {...props} width={layout.sidebarWidth()} open={expanded()} onMouseLeave={() => layout.send({ type: "unpeekSidebar" })} />
+    <>
+      <PhoneOpener />
+      <div
+        class="relative flex flex-col w-[var(--claxedo-sidebar-width)] shrink-0 overflow-hidden transition-[width] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] max-md:fixed max-md:inset-0 max-md:z-[100] max-md:!w-auto max-md:pointer-events-auto max-md:transition-[translate,transform] max-md:duration-300 max-md:ease-in-out"
+        classList={{
+          "pointer-events-none": !expanded(),
+          "pointer-events-auto": expanded(),
+          "md:absolute md:left-0 md:top-0 md:bottom-0 md:z-[80]": !layout.sidebarPinned(),
+          "max-md:translate-x-0": drawerOpen(),
+          "max-md:-translate-x-full": !drawerOpen(),
+        }}
+        style={{ "--claxedo-sidebar-width": `${expanded() ? layout.sidebarWidth() : 0}px` }}
+        data-testid="sidebar"
+      >
+        <div class="flex-1 min-h-0 h-full">
+          <SidebarContent
+            {...props}
+            ref={(element) => (nav = element)}
+            width={layout.sidebarWidth()}
+            open={expanded()}
+            onMouseLeave={() => layout.send({ type: "unpeekSidebar" })}
+          />
+        </div>
+        <Show when={expanded() && !layout.phone()}>
+          <SidebarGrip />
+        </Show>
       </div>
-      <Show when={expanded()}>
-        <SidebarGrip />
-      </Show>
-    </div>
+    </>
   )
 }

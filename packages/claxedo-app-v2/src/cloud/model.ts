@@ -18,7 +18,7 @@ export function isBusy(state: CloudWorkspaceStatus): boolean {
   return state.kind === "provisioning" || state.kind === "starting" || state.kind === "stopping"
 }
 
-export function failureOf(state: CloudWorkspaceStatus): string | undefined {
+export function cloudFailureReason(state: CloudWorkspaceStatus): string | undefined {
   return state.kind === "failed" ? state.reason : undefined
 }
 

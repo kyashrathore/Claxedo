@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test"
-import { expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI } from "../harness"
+import { expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI, type Stack } from "../harness"
 
 type QuotaRead = { readonly harness: string; readonly label?: string; readonly windows: readonly unknown[]; readonly usageError?: string }
 
@@ -16,11 +16,15 @@ async function usage(url: string, view: "quota" | "claxedo"): Promise<UsageRead>
   return (await response.json()) as UsageRead
 }
 
-async function openUsage(app: Page, isMobile: boolean) {
+async function openUsage(stack: Stack, app: Page, isMobile: boolean) {
   if (isMobile) await app.getByRole("button", { name: UI.openRail }).click()
   await app.getByRole("button", { name: UI.signedOutAccount }).click()
   await app.getByRole("menuitem", { name: "Usage" }).click()
-  return app.getByRole("dialog", { name: "Usage" })
+  if (stack.app !== "v2") return app.getByRole("dialog", { name: "Usage" })
+  return await test.step("v2 approved: Usage opens Settings → Usage (DECISIONS Owner, 20:00)", async () => {
+    await expect(app).toHaveURL(/\/settings\/usage$/)
+    return app.getByRole("region", { name: "Usage" })
+  })
 }
 
 test("16 usage: quota windows and the turns Claxedo ran", async ({ stack, api, app, isMobile }) => {
@@ -32,8 +36,9 @@ test("16 usage: quota windows and the turns Claxedo ran", async ({ stack, api, a
   const accounts = (await usage(stack.url, "quota")).quota.snapshot?.accounts ?? []
 
   await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
-  const dialog = await openUsage(app, isMobile)
-  const views = dialog.getByRole("group", { name: "Usage views" })
+  const dialog = await openUsage(stack, app, isMobile)
+  const v2 = stack.app === "v2"
+  const views = dialog.getByRole("group", { name: v2 ? "Usage view" : "Usage views" })
   await expect(views.getByRole("button", { name: "Usage limits" })).toHaveAttribute("aria-pressed", "true")
   const limits = dialog.getByRole("region", { name: "Quota windows" })
   await expect(limits.getByRole("article")).toHaveCount(accounts.length)
@@ -45,7 +50,13 @@ test("16 usage: quota windows and the turns Claxedo ran", async ({ stack, api, a
 
   await views.getByRole("button", { name: "Usage through Claxedo" }).click()
   await expect(views.getByRole("button", { name: "Usage through Claxedo" })).toHaveAttribute("aria-pressed", "true")
-  await expect(dialog.getByRole("complementary", { name: "Processed tokens" })).toContainText("1 turn")
+  if (v2) {
+    await test.step("v2 approved: Usage through Claxedo shows its totals as a list (DECISIONS Owner, 00:50)", async () => {
+      await expect(dialog.getByRole("definition").first()).toHaveText("1")
+    })
+  } else {
+    await expect(dialog.getByRole("complementary", { name: "Processed tokens" })).toContainText("1 turn")
+  }
   const byProvider = dialog.getByRole("table", { name: "Usage grouped by provider" })
   await expect(byProvider.getByRole("row")).toHaveCount(2)
 
@@ -54,7 +65,14 @@ test("16 usage: quota windows and the turns Claxedo ran", async ({ stack, api, a
   await expect(byProvider).toHaveCount(0)
 
   await dialog.getByRole("button", { name: "Cost", exact: true }).click()
-  await expect(dialog.getByRole("complementary", { name: "Estimated raw token cost" })).toContainText("1 turn")
-  await expect(dialog.getByRole("table", { name: "Usage grouped by model" }).getByRole("columnheader", { name: "Est. cost" })).toBeVisible()
+  if (v2) {
+    await test.step("v2 approved: the cost measure names its column Estimated cost (DECISIONS Owner, 00:50)", async () => {
+      await expect(dialog.getByRole("table", { name: "Usage grouped by model" }).getByRole("columnheader", { name: "Estimated cost" })).toBeVisible()
+    })
+  } else {
+    await expect(dialog.getByRole("complementary", { name: "Estimated raw token cost" })).toContainText("1 turn")
+    await expect(dialog.getByRole("table", { name: "Usage grouped by model" }).getByRole("columnheader", { name: "Est. cost" })).toBeVisible()
+  }
+  await expect(dialog.getByRole("button", { name: "90 days", exact: true })).toBeVisible()
   expect(await app.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 })

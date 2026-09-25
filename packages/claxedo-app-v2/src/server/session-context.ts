@@ -9,6 +9,6 @@ export type SessionContext = {
   readonly status: StatusOwner
 }
 
-export function sessionPath(ref: Pick<SessionRef, "sessionId">, suffix = "") {
+export function sessionEndpoint(ref: Pick<SessionRef, "sessionId">, suffix = "") {
   return `/session/${encodeURIComponent(ref.sessionId)}${suffix}`
 }

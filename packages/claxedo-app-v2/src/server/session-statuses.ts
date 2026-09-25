@@ -23,7 +23,7 @@ export async function readRequests(transport: Transport, where: RuntimeRoute, on
 export function createStatusesRead(transport: Transport, workspaces: Workspaces, status: StatusOwner): () => Promise<SessionStatusRead> {
   const placementReports = async (placement: Placement): Promise<SessionStatusReport[]> => {
     const where = await workspaces.route(placement.id)
-    const [statuses, requests] = await Promise.all([status.readPlacement(where), readRequests(transport, where)])
+    const [statuses, requests] = await Promise.all([status.readPlacement(where, placement.id), readRequests(transport, where)])
     const reported = [...statuses].filter(([, status]) => status.kind !== "idle").map(([id]) => id)
     const ids = new Set([...reported, ...requests.map((item) => item.sessionId)])
     return [...ids].map((id) => ({
@@ -34,7 +34,7 @@ export function createStatusesRead(transport: Transport, workspaces: Workspaces,
   }
   return async () => {
     await workspaces.load()
-    const placements = workspaces.list()
+    const placements = workspaces.list().filter((placement) => placement.reachable)
     const settled = await Promise.allSettled(placements.map(placementReports))
     const reports: SessionStatusReport[] = []
     const failures: { placementId: Placement["id"]; error: ServerError }[] = []

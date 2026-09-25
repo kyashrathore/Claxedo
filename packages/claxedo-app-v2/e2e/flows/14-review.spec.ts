@@ -1,6 +1,6 @@
 import fs from "node:fs/promises"
 import path from "node:path"
-import type { Locator } from "@playwright/test"
+import type { Locator, Page } from "@playwright/test"
 import { acpScriptToken, expect, git, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI } from "../harness"
 
 async function commentOnLine(panel: Locator, line: string, comment: string) {
@@ -21,6 +21,17 @@ function lastSubject(directory: string, ref = "HEAD") {
   )
 }
 
+async function watchLongTasks(app: Page) {
+  await app.evaluate(() => {
+    const durations: number[] = []
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) durations.push(entry.duration)
+    }).observe({ type: "longtask" })
+    Reflect.set(window, "__claxedoLongTasks", durations)
+  })
+  return () => app.evaluate(() => Math.max(0, ...(Reflect.get(window, "__claxedoLongTasks") as number[])))
+}
+
 test.skip(({ isMobile }) => isMobile, "flow 14 runs at desktop width")
 
 test("14 review: diff, line comment, commit, push to a bare remote, the comment reaches the agent", async ({ stack, api, app }) => {
@@ -34,8 +45,16 @@ test("14 review: diff, line comment, commit, push to a bare remote, the comment 
 
   await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
   await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
-  await app.getByRole("button", { name: "Open changes" }).click()
   const panel = app.getByRole("complementary", { name: "Workspace panel" })
+  if (stack.app === "v2") {
+    await test.step("DECISIONS 22:05: no edge strip", async () => {
+      await app.getByRole("button", { name: UI.openPanel }).click()
+      await panel.getByRole("button", { name: "Review", exact: true }).click()
+      await panel.getByRole("button", { name: "Open Changes", exact: true }).click()
+    })
+  } else {
+    await app.getByRole("button", { name: "Open changes" }).click()
+  }
   await panel.getByRole("button", { name: "Toggle diff for README.md" }).click()
   await commentOnLine(panel, "a reviewed line", "Why was this line added?")
   await expect(panel.getByText("Why was this line added?")).toBeVisible()
@@ -54,4 +73,23 @@ test("14 review: diff, line comment, commit, push to a bare remote, the comment 
   await sendPrompt(app, `Answer my review comment. ${acpScriptToken("answer")}`)
   await expect(app.getByText("Read your line comment.")).toBeVisible()
   expect(JSON.stringify(await api.messages(workspace.directory, session.id))).toContain("Why was this line added?")
+})
+
+test("14 a file three folders deep opens from the files tree without blocking the page", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("deep")
+  await fs.mkdir(path.join(workspace.directory, "one/two/three"), { recursive: true })
+  await fs.writeFile(path.join(workspace.directory, "one/two/three/deep.ts"), "export const depth = \"three folders down\"\n")
+  await git(workspace.directory, "add", "-A")
+  await git(workspace.directory, "commit", "-qm", "a nested file")
+  const session = await api.createSession(workspace.directory, { title: "Deep", harness: SCRIPTED_ACP_HARNESS })
+
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
+  await app.getByRole("button", { name: UI.openPanel }).click()
+  const panel = app.getByRole("complementary", { name: "Workspace panel" })
+  for (const folder of ["one", "two", "three"]) await panel.getByRole("treeitem", { name: folder, exact: true }).click()
+  const longest = await watchLongTasks(app)
+  await panel.getByRole("treeitem", { name: /^deep\.ts/ }).click()
+  await expect(panel.getByText("three folders down").first()).toBeVisible()
+  expect(await longest(), "the longest task while the file opened, in ms").toBeLessThan(1_000)
 })

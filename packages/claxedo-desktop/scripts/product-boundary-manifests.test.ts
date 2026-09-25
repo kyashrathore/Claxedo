@@ -69,9 +69,9 @@ test("desktop plugins split static startup from separately fingerprinted optiona
         modules: [path.join(root, "src/renderer/hosted-contributions.ts")],
       }),
     }
-    desktopRendererBoundaryManifestPlugin(root).generateBundle({}, rendererBundle)
+    desktopRendererBoundaryManifestPlugin(root, "v1").generateBundle({}, rendererBundle)
 
-    expect(verifyDesktopBoundaryManifestSet(root)).toEqual([
+    expect(verifyDesktopBoundaryManifestSet(root, "v1")).toEqual([
       DESKTOP_ACCOUNT_BOUNDARY_MANIFEST,
       DESKTOP_HOSTED_CONTRIBUTION_BOUNDARY_MANIFEST,
       DESKTOP_MAIN_BOUNDARY_MANIFEST,
@@ -88,8 +88,8 @@ test("desktop plugins split static startup from separately fingerprinted optiona
     ])
 
     desktopMainBoundaryManifestPlugin(root).generateBundle({}, { "index.js": mainBundle["index.js"] })
-    desktopRendererBoundaryManifestPlugin(root).generateBundle({}, { "assets/local.js": rendererBundle["assets/local.js"] })
-    expect(verifyDesktopBoundaryManifestSet(root)).toEqual([
+    desktopRendererBoundaryManifestPlugin(root, "v1").generateBundle({}, { "assets/local.js": rendererBundle["assets/local.js"] })
+    expect(verifyDesktopBoundaryManifestSet(root, "v1")).toEqual([
       DESKTOP_MAIN_BOUNDARY_MANIFEST,
       DESKTOP_RENDERER_BOUNDARY_MANIFEST,
     ].sort())
@@ -121,7 +121,7 @@ test("desktop manifest verification rejects stale extras and cleanup removes the
     )
     writeBase("out/product-boundary/stale.json", "stale.ts", "stale.js")
 
-    expect(() => verifyDesktopBoundaryManifestSet(root)).toThrow("manifest set mismatch")
+    expect(() => verifyDesktopBoundaryManifestSet(root, "v1")).toThrow("manifest set mismatch")
     clearDesktopBoundaryManifests(root)
     expect(fs.existsSync(path.join(root, "out/product-boundary"))).toBe(false)
   } finally {
@@ -167,10 +167,10 @@ test("desktop manifest verification rejects a hosted chunk preloaded by the loca
         `<link rel="modulepreload" href="./${hostedChunk}">\n`,
     )
 
-    expect(() => verifyDesktopBoundaryManifestSet(root)).toThrow("eagerly preloads")
+    expect(() => verifyDesktopBoundaryManifestSet(root, "v1")).toThrow("eagerly preloads")
 
     fs.writeFileSync(html, `<script type="module" src="./assets/main.js"></script>\n`)
-    expect(verifyDesktopBoundaryManifestSet(root)).toContain(DESKTOP_HOSTED_CONTRIBUTION_BOUNDARY_MANIFEST)
+    expect(verifyDesktopBoundaryManifestSet(root, "v1")).toContain(DESKTOP_HOSTED_CONTRIBUTION_BOUNDARY_MANIFEST)
   } finally {
     fs.rmSync(workspace, { recursive: true, force: true })
   }

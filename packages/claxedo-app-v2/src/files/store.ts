@@ -1,12 +1,20 @@
-import { createComponent, createContext, useContext, type Accessor, type JSX, type ParentProps } from "solid-js"
+import {
+  createComponent,
+  createContext,
+  untrack,
+  useContext,
+  type Accessor,
+  type JSX,
+  type ParentProps,
+} from "solid-js"
 import { createStore } from "solid-js/store"
 import type { PlacementId } from "@/server"
 import { useShellRoute } from "@/shell"
 
 type PlacementFiles = {
-  readonly expanded: Readonly<Record<string, boolean>>
-  readonly search: string
-  readonly markdownSource: Readonly<Record<string, boolean>>
+  expanded: Record<string, boolean>
+  search: string
+  markdownSource: Record<string, boolean>
 }
 
 export type Files = {
@@ -31,24 +39,31 @@ export function FilesProvider(props: ParentProps): JSX.Element {
     const id = placementId()
     return id === undefined ? emptyFiles : (state[id] ?? emptyFiles)
   }
-  const write = (update: (previous: PlacementFiles) => PlacementFiles) => {
-    const id = placementId()
-    if (id !== undefined) setState(id, update(state[id] ?? emptyFiles))
-  }
+  const target = () =>
+    untrack(() => {
+      const id = placementId()
+      if (id !== undefined && state[id] === undefined) setState(id, { expanded: {}, search: "", markdownSource: {} })
+      return id
+    })
   const files: Files = {
     placementId,
     expanded: (dir) => current().expanded[dir] === true,
     expandedDirs: () => Object.keys(current().expanded).filter((dir) => current().expanded[dir] === true),
-    setExpanded: (dir, expanded) =>
-      write((previous) => ({ ...previous, expanded: { ...previous.expanded, [dir]: expanded } })),
+    setExpanded: (dir, expanded) => {
+      const id = target()
+      if (id === undefined || untrack(() => state[id]?.expanded[dir] === true) === expanded) return
+      setState(id, "expanded", dir, expanded)
+    },
     search: () => current().search,
-    setSearch: (search) => write((previous) => ({ ...previous, search })),
+    setSearch: (search) => {
+      const id = target()
+      if (id !== undefined) setState(id, "search", search)
+    },
     markdownSource: (path) => current().markdownSource[path] === true,
-    toggleMarkdownSource: (path) =>
-      write((previous) => ({
-        ...previous,
-        markdownSource: { ...previous.markdownSource, [path]: previous.markdownSource[path] !== true },
-      })),
+    toggleMarkdownSource: (path) => {
+      const id = target()
+      if (id !== undefined) setState(id, "markdownSource", path, (source) => source !== true)
+    },
   }
   return createComponent(FilesContext.Provider, {
     value: files,

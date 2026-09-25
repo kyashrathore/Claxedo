@@ -1,4 +1,4 @@
-import { getFilename } from "@opencode-ai/ui/utils/path"
+import { getFilename } from "@/ui"
 import type { Server } from "@/server"
 import { cleanInput, joinPath, normalizeDriveRoot, parentOf, rootOf, trimTrailing } from "./folder-paths"
 

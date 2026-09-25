@@ -17,6 +17,14 @@ export type { Workspace }
 const SERVER_ENTRY = path.join(SERVER_DIR, "src/deployments/self-hosted-node/index.ts")
 const TEXT_IMPORTS = pathToFileURL(path.join(REPO_ROOT, "packages/workspace-runtime/src/text-imports.mjs")).href
 
+export type SignedDaemon = {
+  publicOrigin: string
+  secret: string
+  distDir: string
+  operators: readonly string[]
+  runtimeKeys: { privatePem: string; publicPem: string }
+}
+
 export type Daemon = {
   url: string
   port: number
@@ -24,7 +32,7 @@ export type Daemon = {
   acpScriptDir: string
   log: () => string
   makeWorkspace: (name: string, projectName?: string) => Promise<Workspace>
-  restart: () => Promise<void>
+  restart: (options?: { signed?: SignedDaemon }) => Promise<void>
   close: () => Promise<void>
 }
 
@@ -59,6 +67,18 @@ async function daemonEnv(input: DaemonInput): Promise<NodeJS.ProcessEnv> {
   }
 }
 
+function signedEnv(signed: SignedDaemon): NodeJS.ProcessEnv {
+  return {
+    CLAXEDO_EMBEDDED_AUTH: "1",
+    BETTER_AUTH_URL: signed.publicOrigin,
+    CLAXEDO_EMBEDDED_AUTH_SECRET: signed.secret,
+    CLAXEDO_APP_DIST_DIR: signed.distDir,
+    CLAXEDO_OPERATOR_SUBJECTS: signed.operators.join(","),
+    CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: signed.runtimeKeys.privatePem,
+    CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: signed.runtimeKeys.publicPem,
+  }
+}
+
 function launchDaemon(env: NodeJS.ProcessEnv, cwd: string): OwnedProcess {
   const child = spawn("node", ["--conditions=development", "--import", TEXT_IMPORTS, "--import", TSX_LOADER, SERVER_ENTRY], {
     cwd,
@@ -70,7 +90,7 @@ function launchDaemon(env: NodeJS.ProcessEnv, cwd: string): OwnedProcess {
 
 export async function startDaemon(input: DaemonInput): Promise<Daemon> {
   const dirs = await daemonDirs(input.dataDir)
-  const env = await daemonEnv(input)
+  let env = await daemonEnv(input)
   const url = `http://127.0.0.1:${input.port}`
   let owned = launchDaemon(env, input.dataDir)
   const listening = `[claxedo-server] listening on ${url}`
@@ -90,10 +110,11 @@ export async function startDaemon(input: DaemonInput): Promise<Daemon> {
     acpScriptDir: dirs.acpScriptDir,
     log: () => owned.log(),
     makeWorkspace: (name, projectName) => makeWorkspace(directTransport, url, dirs.workspaces, name, projectName),
-    restart: async () => {
+    restart: async (options = {}) => {
       await stopProcess(owned.child)
+      if (options.signed) env = { ...env, ...signedEnv(options.signed) }
       owned = launchDaemon(env, input.dataDir)
-      await health("restarted daemon")
+      await health(options.signed ? "signed daemon" : "restarted daemon")
     },
     close: () => stopProcess(owned.child),
   }

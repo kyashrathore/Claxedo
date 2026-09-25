@@ -1,6 +1,4 @@
 import { For, Show, type Accessor, type JSX } from "solid-js"
-import { MenuV2 } from "@opencode-ai/ui/v2/menu-v2"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { COMPOSER_MENU_CLASS } from "./menu-metrics"
 import type { PermissionModeGroups, PermissionModeRow } from "../permission/permission-mode"
 import {
@@ -11,7 +9,7 @@ import {
 // check in). `ClaxedoIconV2` is still the one used there because it carries the
 // COMPACT size scale — a 14px check in the 16px indicator slot — rather than
 // the shared primitive's 16px.
-import { ClaxedoIcon as Icon, ClaxedoIconV2 as BareIcon } from "@/ui/controls/claxedo-icon"
+import { ClaxedoIcon as Icon, ClaxedoIconV2 as BareIcon, MenuV2, Tooltip } from "@/ui"
 
 /** Runtime-reported modes, their delivery caveats, and explicit unavailable states. */
 export function PromptPermissionControl(props: {

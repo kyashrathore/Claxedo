@@ -1,6 +1,5 @@
 import type { JSX } from "solid-js"
-import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
-import { ClaxedoIconButton as IconButton } from "@/ui"
+import { ClaxedoIconButton as IconButton, DropdownMenu } from "@/ui"
 
 export type CommentMenuLabels = { readonly more: string; readonly edit: string; readonly remove: string }
 

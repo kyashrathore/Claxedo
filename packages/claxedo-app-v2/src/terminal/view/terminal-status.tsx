@@ -1,107 +1,62 @@
-import { Match, Show, Switch, type JSX } from "solid-js"
+import { createEffect, on, Show, type Accessor, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { Button, Loader } from "@/ui"
+import { showToast } from "@/ui"
 import { dictionary, type TerminalKey } from "../i18n"
 import type { TerminalConnection, TerminalFailure } from "../model"
-import { MAX_RECONNECT_ATTEMPTS } from "../reconnect"
 
-const FAILURE_TEXT: Record<TerminalFailure, TerminalKey> = {
-  closed: "terminal.connectionLost.description",
-  overload: "terminal.overload",
-  restore: "terminal.restoreFailed",
-  start: "terminal.startFailed",
+type FailureToast = { readonly title: TerminalKey; readonly description?: TerminalKey }
+
+const FAILURE_TOAST: Readonly<Record<Exclude<TerminalFailure, "start">, FailureToast>> = {
+  closed: { title: "terminal.connectionLost.title" },
+  overload: { title: "terminal.overload.title", description: "terminal.overload" },
+  restore: { title: "terminal.restoreFailed" },
 }
 
-function Notice(props: {
-  readonly title: string
-  readonly description?: string
-  readonly action?: () => void
-  readonly actionLabel?: string
-  readonly testId: string
-}): JSX.Element {
-  return (
-    <div role="status" data-testid={props.testId} class="flex h-full items-center justify-center px-4 text-center">
-      <div class="flex max-w-sm flex-col items-center gap-3">
-        <div class="text-base font-medium text-text-base">{props.title}</div>
-        <Show when={props.description}>
-          <div class="text-sm break-words text-text-muted">{props.description}</div>
-        </Show>
-        <Show when={props.action}>
-          <Button variant="outline" size="large" onClick={() => props.action?.()}>
-            {props.actionLabel}
-          </Button>
-        </Show>
-      </div>
-    </div>
+export function useConnectionToasts(connection: Accessor<TerminalConnection>): void {
+  const t = useTranslator(dictionary)
+  createEffect(
+    on(connection, (current) => {
+      if (current.kind !== "failed" || current.failure === "start") return
+      const toast = FAILURE_TOAST[current.failure]
+      const fallback = current.failure === "closed" ? t("terminal.connectionLost.description") : undefined
+      showToast({
+        variant: "error",
+        title: t(toast.title),
+        description: toast.description ? t(toast.description) : current.error.message || fallback,
+      })
+    }),
   )
 }
 
 export function TerminalStatus(props: {
   readonly connection: TerminalConnection
-  readonly missing: boolean
   readonly onRetry: () => void
-  readonly onRecreate: () => void
 }): JSX.Element {
   const t = useTranslator(dictionary)
+  const startFailure = () =>
+    props.connection.kind === "failed" && props.connection.failure === "start" ? props.connection.error.message : undefined
   return (
-    <Switch>
-      <Match when={props.missing}>
-        <Notice title={t("terminal.missing")} testId="terminal-missing" />
-      </Match>
-      <Match when={props.connection.kind === "connecting"}>
-        <div
-          role="status"
-          aria-label={t("terminal.connecting")}
-          data-testid="terminal-connecting"
-          class="terminal-delayed flex h-full items-center justify-center text-icon-muted"
-        >
-          <Loader width={24} height={24} />
+    <Show
+      when={startFailure() !== undefined}
+      fallback={
+        <div data-testid="terminal-connecting" class="flex items-center justify-center h-full text-text-weak">
+          <div class="size-6 rounded-full border-2 border-text-weak border-t-transparent animate-spin" />
         </div>
-      </Match>
-      <Match when={props.connection.kind === "detached" && props.connection}>
-        {(detached) => (
-          <Notice
-            testId="terminal-detached"
-            title={t("terminal.connectionLost.title")}
-            description={t("terminal.reconnecting", { attempt: detached().attempt, max: MAX_RECONNECT_ATTEMPTS })}
-            action={props.onRetry}
-            actionLabel={t("terminal.retry")}
-          />
-        )}
-      </Match>
-      <Match when={props.connection.kind === "failed" && props.connection}>
-        {(failed) => (
-          <Notice
-            testId="terminal-failed"
-            title={failed().failure === "closed" ? t("terminal.connectionLost.title") : t("terminal.failed.title")}
-            description={t(FAILURE_TEXT[failed().failure])}
-            action={props.onRetry}
-            actionLabel={t("terminal.retry")}
-          />
-        )}
-      </Match>
-      <Match when={props.connection.kind === "gone"}>
-        <Notice
-          testId="terminal-gone"
-          title={t("terminal.gone.title")}
-          description={t("terminal.gone.description")}
-          action={props.onRecreate}
-          actionLabel={t("terminal.recreate")}
-        />
-      </Match>
-      <Match when={props.connection.kind === "exited" && props.connection}>
-        {(exited) => (
-          <Notice
-            testId="terminal-exited"
-            title={t("terminal.exited.title")}
-            description={
-              exited().code === undefined ? undefined : t("terminal.exited.code", { code: exited().code ?? 0 })
-            }
-            action={props.onRecreate}
-            actionLabel={t("terminal.recreate")}
-          />
-        )}
-      </Match>
-    </Switch>
+      }
+    >
+      <div data-testid="terminal-failed" class="flex h-full items-center justify-center px-4 text-center">
+        <div class="max-w-sm space-y-3">
+          <div class="text-sm font-medium text-text-strong">{t("terminal.startFailed.title")}</div>
+          <div class="text-xs text-text-weak break-words">{startFailure()}</div>
+          <button
+            type="button"
+            class="h-10 rounded-md border border-border-weak-base px-4 text-sm text-text-base hover:bg-surface-base-hover active:scale-[0.96]"
+            onClick={() => props.onRetry()}
+          >
+            {t("terminal.retry")}
+          </button>
+        </div>
+      </div>
+    </Show>
   )
 }

@@ -1,7 +1,6 @@
 import { For, Show, type JSX } from "solid-js"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useTranslator } from "@/i18n"
-import { ClaxedoIcon as Icon, ClaxedoIconButton as IconButton } from "@/ui"
+import { ClaxedoIcon as Icon, ClaxedoIconButton as IconButton, Tooltip } from "@/ui"
 import { dictionary } from "../i18n"
 import type { BrowserConsoleEntry } from "../model"
 import type { BrowserTab } from "../tab"

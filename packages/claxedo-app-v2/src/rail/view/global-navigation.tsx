@@ -1,11 +1,10 @@
 import { createMemo, For, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { byOrder, fillPattern, RegistryIcon, useShellRegistries, useShellRoute, type PageEntry, type SidebarItem } from "@/shell"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
-import { dictionary } from "../i18n"
+import { railDictionary } from "../i18n"
+import { MARKETPLACE_PATH, TASKS_PATH } from "./utility-pages"
+import { ClaxedoIcon as Icon } from "@/ui"
 
-export const TASKS_PATH = "/tasks"
-export const MARKETPLACE_PATH = "/marketplace"
 
 const ROW_CLASS =
   "w-full flex items-center gap-2 h-7 px-2.5 rounded-md text-compact leading-4 font-medium transition-[background-color,color] duration-100 active:scale-[0.98]"
@@ -77,11 +76,11 @@ function PluginRows(): JSX.Element {
 }
 
 export function GlobalNavigation(): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(railDictionary)
   const routing = useShellRoute()
   const at = (path: string) => routing.pathname().startsWith(path)
   return (
-    <div data-testid="global-navigation" data-slot="global-navigation" class="flex flex-col gap-0.5 px-2.5 py-1.5 border-b border-border-weak-base/15">
+    <div data-testid="global-navigation" class="flex flex-col gap-0.5 px-2.5 py-1.5 border-b border-border-weak-base/15">
       <NavigationRow
         icon="checklist"
         label={t("rail.tasks")}

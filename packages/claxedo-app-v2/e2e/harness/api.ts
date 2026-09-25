@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto"
+import { ascendingMessageIds } from "./message-ids"
 import { directTransport, type HttpTransport } from "./transport"
 
 export class ApiError extends Error {
@@ -25,7 +27,11 @@ export type MessageRow = { info: { id: string; role: string; [key: string]: unkn
 export type PermissionRow = { id: string; sessionID: string; [key: string]: unknown }
 export type QuestionRow = { id: string; sessionID: string; [key: string]: unknown }
 
-type CallOptions = { directory?: string; body?: unknown; query?: Record<string, string> }
+type CallOptions = { directory?: string; body?: unknown; query?: Record<string, string>; headers?: Record<string, string> }
+
+export type ApiOptions = { reserveSessions?: boolean }
+
+type Reservation = { operationId: string; sessionId: string }
 
 export function assistantText(messages: MessageRow[]) {
   return messages
@@ -37,9 +43,12 @@ export function assistantText(messages: MessageRow[]) {
 }
 
 export class ClaxedoApi {
+  private readonly nextMessageId = ascendingMessageIds()
+
   constructor(
     readonly url: string,
     private readonly transport: HttpTransport = directTransport,
+    private readonly options: ApiOptions = {},
   ) {}
 
   private async call<T>(method: string, route: string, options: CallOptions = {}): Promise<T> {
@@ -49,7 +58,7 @@ export class ClaxedoApi {
     const reply = await this.transport({
       method,
       url: target.toString(),
-      headers: options.body === undefined ? {} : { "content-type": "application/json" },
+      headers: { ...(options.body === undefined ? {} : { "content-type": "application/json" }), ...options.headers },
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
     })
     if (reply.status < 200 || reply.status >= 300) throw new ApiError(method, target.pathname, reply.status, reply.body)
@@ -58,6 +67,16 @@ export class ClaxedoApi {
 
   health() {
     return this.call<Record<string, unknown>>("GET", "/api/claxedo/health")
+  }
+
+  async defaultModel(directory: string, nativeHarness: string): Promise<ModelChoice> {
+    const body = await this.call<{ options: { id: string; currentValue?: string }[] }>("GET", "/api/claxedo/agent-config/harness/options", {
+      directory,
+      query: { nativeHarness },
+    })
+    const modelId = body.options.find((option) => option.id === "model")?.currentValue
+    if (!modelId) throw new Error(`${nativeHarness} offers no default model`)
+    return { providerId: nativeHarness, modelId }
   }
 
   providerCatalog(nativeHarness: string) {
@@ -78,17 +97,29 @@ export class ClaxedoApi {
     return this.call<unknown>("POST", "/api/claxedo/agent-config/harness", { directory, body: { harness: selection } })
   }
 
-  createSession(
+  private async reserveSession(directory: string, title?: string): Promise<Reservation> {
+    const { workspaceId } = await this.call<{ workspaceId: string }>("GET", "/api/workspace/resolve", { directory })
+    const reservation = { operationId: `session_registration_${randomUUID()}`, sessionId: `ses_${randomUUID()}` }
+    await this.call<unknown>("POST", "/api/control/session-registrations/reserve", {
+      body: { ...reservation, workspaceId, kind: "create", ...(title ? { title } : {}) },
+    })
+    return reservation
+  }
+
+  async createSession(
     directory: string,
     input: { harness: SessionHarness; title?: string; parentId?: string; permissionMode?: string; model?: ModelChoice },
   ) {
     const query: Record<string, string> = input.harness.access === "native"
       ? { nativeHarness: input.harness.id }
       : { connectionId: input.harness.id }
+    const reservation = this.options.reserveSessions ? await this.reserveSession(directory, input.title) : undefined
     return this.call<SessionRow>("POST", "/session", {
       directory,
       query,
+      headers: reservation ? { "x-claxedo-session-registration-operation": reservation.operationId } : {},
       body: {
+        ...(reservation ? { id: reservation.sessionId } : {}),
         ...(input.title ? { title: input.title } : {}),
         harness: input.harness,
         ...(input.parentId ? { parentID: input.parentId } : {}),
@@ -110,21 +141,27 @@ export class ClaxedoApi {
     return this.call<unknown>("DELETE", `/session/${encodeURIComponent(id)}`, { directory })
   }
 
+  private turnId(messageId?: string) {
+    return messageId ?? this.nextMessageId()
+  }
+
   prompt(directory: string, id: string, text: string, options: { messageId?: string; model?: ModelChoice } = {}) {
+    const messageId = this.turnId(options.messageId)
     return this.call<unknown>("POST", `/session/${encodeURIComponent(id)}/message`, {
       directory,
       body: {
         parts: [{ type: "text", text }],
-        ...(options.messageId ? { messageID: options.messageId } : {}),
+        ...(messageId ? { messageID: messageId } : {}),
         ...(options.model ? { model: { providerID: options.model.providerId, modelID: options.model.modelId } } : {}),
       },
     })
   }
 
   promptAsync(directory: string, id: string, text: string, options: { messageId?: string } = {}) {
+    const messageId = this.turnId(options.messageId)
     return this.call<unknown>("POST", `/session/${encodeURIComponent(id)}/prompt_async`, {
       directory,
-      body: { parts: [{ type: "text", text }], ...(options.messageId ? { messageID: options.messageId } : {}) },
+      body: { parts: [{ type: "text", text }], ...(messageId ? { messageID: messageId } : {}) },
     })
   }
 

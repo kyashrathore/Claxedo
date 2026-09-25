@@ -1,15 +1,8 @@
-// The message timeline's row model: the tagged TimelineRow union, its
-// constructors, keys, structural equality, and identity-preserving reuse.
-// Pure data — no rendering, no row construction policy (that lives in
-// message-timeline.data.ts's Timeline.constructMessageRows, alongside the
-// SummaryDiff type referenced here; that import is type-only, so no runtime
-// cycle exists).
 import type { PartGroup } from "@/transcript"
 import type { SessionErrorClass } from "./turn-recovery"
 import type { SummaryDiff } from "./message-timeline.data"
 
 export type TimelineRowMap = {
-  /** Sits above the first rendered turn (`userMessageID`) while `count` older turns stay off-screen. */
   PreviousMessages: { userMessageID: string; count: number }
   TurnGap: { userMessageID: string }
   CommentStrip: {
@@ -33,7 +26,6 @@ export type TimelineRowMap = {
   }
   Thinking: { userMessageID: string; reasoningHeading?: string }
   Retry: { userMessageID: string }
-  /** The turn's body is held back until its full read lands; drawn as a loader once the wait is noticeable. */
   TurnLoading: { userMessageID: string }
   TurnFold: {
     userMessageID: string
@@ -48,11 +40,6 @@ export type TimelineRowMap = {
     userMessageID: string
     text: string
     presentation?: "turn-conflict"
-    /**
-     * The human sentence for the row's PRIMARY line, composed here alongside
-     * the raw text so the first paint is already readable. `text` is the raw
-     * provider bytes and belongs only in the collapsed disclosure.
-     */
     summary?: string
     recoveryClass?: SessionErrorClass
     error?: unknown
@@ -63,14 +50,6 @@ export type TimelineRowMap = {
 
 type TaggedRow<Tag extends string, Fields extends object> = Readonly<Fields> & { readonly _tag: Tag }
 
-/**
- * A constructor for one tagged row.
- *
- * Rows are plain frozen-shape records rather than class instances: nothing ever
- * asks `instanceof`, and the class form could only be typed by asserting through
- * `unknown`, because `Object.assign(this, fields)` is opaque to TypeScript.
- * A factory states the same contract with no assertion.
- */
 function taggedRow<Tag extends string, Fields extends object>(tag: Tag) {
   return (fields: Fields): TaggedRow<Tag, Fields> => ({ ...fields, _tag: tag })
 }
@@ -95,12 +74,6 @@ function samePartGroup(a: PartGroup, b: PartGroup) {
   return "refs" in b && samePartRefs(a.refs, b.refs)
 }
 
-/**
- * `SummaryDiff` is `AgentSnapshotFileDiff & { file: string }`, a closed contract
- * shape — comparing its fields by name states that, where the previous
- * `Object.keys` walk had to assert the key type and silently agreed whenever two
- * diffs happened to carry the same NUMBER of keys.
- */
 function sameSummaryDiff(a: SummaryDiff, b: SummaryDiff) {
   return a.file === b.file && a.patch === b.patch && a.additions === b.additions &&
     a.deletions === b.deletions && a.status === b.status
@@ -246,23 +219,10 @@ export namespace TimelineRow {
     }
   }
 
-  /**
-   * The row's OWN message id, distinct from the turn key: a UserMessage row
-   * is its user message; an AssistantPart row belongs to the assistant
-   * message its parts came from (`data-message-id` carries the TURN key).
-   * External observers verifying "this exact message painted" read the
-   * `data-content-message-id` attribute stamped from this.
-   */
-  /**
-   * Rows a reading position can be restored against. The previous-messages row
-   * is keyed by the first rendered turn, so the reveal it anchors re-keys or
-   * removes it, leaving the restore nothing to find.
-   */
   export function anchorsReadingPosition(row: TimelineRow) {
     return row._tag !== "PreviousMessages"
   }
 
-  /** Rows that anchor a user-message position (scroll targets, row index). */
   export function anchorsMessage(row: TimelineRow) {
     return row._tag === "CommentStrip" || (row._tag === "UserMessage" && row.anchor)
   }
@@ -278,11 +238,6 @@ export namespace TimelineRow {
     }
   }
 
-  /**
-   * Part-level identity beside the message-level one: assistant messages
-   * render one row PER PART GROUP (all sharing the message id), so content
-   * verification needs to know WHICH part a row shows.
-   */
   export function contentPartID(row: TimelineRow) {
     if (row._tag !== "AssistantPart") return undefined
     return "ref" in row.group ? row.group.ref.partID : row.group.refs[0]?.partID

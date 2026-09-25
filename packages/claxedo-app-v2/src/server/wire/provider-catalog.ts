@@ -9,10 +9,19 @@ export type CatalogModel = {
   readonly variants?: Readonly<Record<string, unknown>>
 }
 
+export type ProviderSource = "env" | "api" | "config" | "custom"
+
 export type CatalogProvider = {
   readonly id: string
   readonly name: string
+  readonly source?: ProviderSource
   readonly models: Readonly<Record<string, CatalogModel>>
+}
+
+const PROVIDER_SOURCES: readonly string[] = ["env", "api", "config", "custom"] satisfies readonly ProviderSource[]
+
+function isProviderSource(value: unknown): value is ProviderSource {
+  return typeof value === "string" && PROVIDER_SOURCES.includes(value)
 }
 
 export type ProviderCatalog = {
@@ -40,7 +49,7 @@ function providerOf(value: unknown): CatalogProvider | undefined {
     const model = modelOf(key, entry)
     if (model) models[key] = model
   }
-  return { id: value.id, name: typeof value.name === "string" ? value.name : value.id, models }
+  return { id: value.id, name: typeof value.name === "string" ? value.name : value.id, ...(isProviderSource(value.source) ? { source: value.source } : {}), models }
 }
 
 export function providerCatalogFromWire(body: unknown, harness: string): ProviderCatalog {

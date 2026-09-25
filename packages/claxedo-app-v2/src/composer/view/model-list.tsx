@@ -1,6 +1,6 @@
 import { type Component, createMemo, Show } from "solid-js"
-import { Tag } from "@opencode-ai/ui/tag"
-import { List } from "@opencode-ai/ui/list"
+import { Tag, List, Tooltip } from "@/ui"
+import { ModelTooltip } from "./model-tooltip"
 import { useComposerText } from "../text"
 
 const popularProviders = [
@@ -69,6 +69,7 @@ export type PickerState = {
 export const ModelList: Component<{
   onSelect: () => void
   model: PickerState
+  tooltips?: boolean
 }> = (props) => {
   const t = useComposerText()
   const models = createMemo(() => props.model.list())
@@ -102,6 +103,21 @@ export const ModelList: Component<{
         )
       }}
       sortGroupsBy={comparePickerProviderGroups}
+      itemWrapper={(item, node) =>
+        props.tooltips === false ? (
+          node
+        ) : (
+          <Tooltip
+            class="w-full"
+            placement="right-start"
+            gutter={12}
+            openDelay={0}
+            value={<ModelTooltip model={item} latest={item.latest} free={item.free === true} />}
+          >
+            {node}
+          </Tooltip>
+        )
+      }
       onSelect={(x) => {
         props.model.set(x ? { modelID: x.id, providerID: x.provider.id } : undefined, {
           recent: true,

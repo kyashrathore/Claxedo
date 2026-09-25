@@ -1,5 +1,4 @@
 import { asRecord, readString } from "@/lib/record"
-import { requestErrorMessage } from "./request-error-message"
 import { sameArrayItems, samePartsRecord, sameTurnOutcome } from "./timeline-row-equality"
 import {
   batch,
@@ -21,7 +20,6 @@ import {
 import { createStore } from "solid-js/store"
 import { createVirtualizer, defaultRangeExtractor, elementScroll } from "@tanstack/solid-virtual"
 import { observeElementOffsetReconnectAware, observeElementRectDeduped } from "./message-timeline-observe-offset"
-import { Button } from "@opencode-ai/ui/button"
 import {
   assistantMessageSettled,
   ContextToolGroup,
@@ -34,17 +32,10 @@ import {
   TurnFoldRow,
   WorkGroup,
 } from "@/transcript"
-import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { isPhoneWidth } from "@/lib/viewport"
-import { Icon } from "@/ui"
-import { IconButton } from "@/ui"
-import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
-import { Dialog } from "@opencode-ai/ui/dialog"
-import { InlineInput } from "@opencode-ai/ui/inline-input"
+import { ClaxedoIcon as Icon, FileIcon, ScrollView, resolveTranscriptTypography, transcriptTypographyStyle, showToast, Binary, getFilename } from "@/ui"
 import { ClaxedoSessionRetry } from "./claxedo-session-retry"
 import { TimelineErrorPresentation } from "./first-turn-recovery-card"
-import { ScrollView } from "@opencode-ai/ui/scroll-view"
-import { resolveTranscriptTypography, transcriptTypographyStyle } from "@opencode-ai/ui/theme/transcript-typography"
 import { TimelineQueuedMessages } from "./timeline-queued-messages"
 import type {
   AgentAssistantMessage as AssistantMessage,
@@ -52,20 +43,11 @@ import type {
   AgentPresentationMessage as MessageType,
   AgentToolPart as ToolPart,
 } from "@claxedo/agent-runtime-contract"
-import { showToast } from "@opencode-ai/ui/toast"
-import { Binary } from "@opencode-ai/ui/utils/binary"
-import { getFilename } from "@opencode-ai/ui/utils/path"
 import { createTimelineListGestures } from "./message-timeline-list-gestures"
-import { openTitleEditorPatch, resolveTitleSave } from "./session-title-editor"
-import { nextSiblingAfterRemoval, sessionRemovalNavigation } from "./session-archive"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useData } from "@/transcript"
-import { createResizeObserver } from "@solid-primitives/resize-observer"
-import { messageAgentColor } from "./agent-color"
 import { sessionTitle } from "./session-title"
 import { latchSessionTitle, type LatchedSessionTitle } from "./session-title-latch"
 import { createActivePaneProjection } from "./active-pane-projection"
-import { createTimelineWorkingStatus } from "./timeline-working-status"
 import { MessageComment, Timeline } from "./message-timeline.data"
 import { ImageMarkBadge } from "@/lib/image-mark-badge"
 import { TimelineRow, type TimelineRowMap } from "./timeline-row-model"
@@ -116,7 +98,6 @@ import { turnActive, type TimelineSessionRow } from "./model"
 import "./message-nav-gutter.css"
 import "./markdown-surfaces.css"
 
-// Keep parity with the upstream session row model.
 const emptyMessages: ConversationMessage[] = []
 const emptyParts: PartType[] = []
 const emptyAssistantMessages: AssistantMessage[] = []
@@ -132,16 +113,6 @@ function hasTag<Tag extends TimelineRow.TimelineRow["_tag"]>(
   return row._tag === tag
 }
 
-/**
- * A tag-narrowed view of the row accessor, seeded with the row the switch
- * already narrowed.
- *
- * `switch (row()._tag)` narrows the row VALUE, not the accessor, so each branch
- * used to re-assert the accessor's type. A row slot can also be reused for a
- * different tag for the tick before Solid disposes the branch; latching the last
- * matching row keeps the disposing branch reading its own fields instead of
- * silently reading another tag's shape through the asserted type.
- */
 function rowOfTag<Tag extends TimelineRow.TimelineRow["_tag"]>(
   row: Accessor<TimelineRow.TimelineRow>,
   tag: Tag,
@@ -164,13 +135,10 @@ const taskDescription = (part: PartType, sessionID: string) => {
   return undefined
 }
 
-const pace = (width: number) => Math.round(Math.max(1200, Math.min(3200, (Math.max(width, 360) * 2000) / 900)))
-
 export function MessageTimeline(props: MessageTimelineProps) {
   const host = props.host
   const data = useData()
   const transcriptStyle = createMemo(() => transcriptTypographyStyle(resolveTranscriptTypography(host.transcriptTypography())))
-  const dialog = useDialog()
   const ownerSessionKey = host.sessionKey()
   const cached = readTimelineMountSnapshot(ownerSessionKey, host.seededTurnFoldableCounts)
   const savedScroll = cached?.scroll
@@ -184,16 +152,12 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const [groupOpen, setGroupOpen] = createStore<Record<string, boolean | undefined>>(cached?.groupOpen ?? {})
   const [toolRevealed, setToolRevealed] = createStore<Record<string, boolean | undefined>>(cached?.toolRevealed ?? {})
   const revealToolOutput = (partID: string, revealed: boolean) => {
-    // A reveal click resizes the row at the reader's position; the gesture mark
-    // keeps the resize anchor from bottom-pinning the growth.
     props.onMarkScrollGesture()
     setToolRevealed(partID, revealed)
   }
   installTimelineMermaid(host.platform.renderMermaid)
   installTimelineTables()
 
-  // A subagent's transcript is a workspace-panel tab, not a second pane: splitting took the turn the reader was on down to half width.
-  // Below the md boundary the panel covers that turn rather than sitting beside it, so there the child takes the pane instead.
   const openSubagent = (input: { childSessionId: string; label?: string; description?: string }) => {
     if (isPhoneWidth(window.innerWidth)) {
       host.openSessionInPane(input.childSessionId, input.label)
@@ -207,25 +171,14 @@ export function MessageTimeline(props: MessageTimelineProps) {
     })
   }
 
-  // Shared with the terminal's file links (timeline-file-paths.ts):
-  // normalizes/relativizes, parses `:line[:col]`, refuses `~`/traversal/
-  // out-of-workspace paths, which would open blank tabs.
   const fileFocus = (raw: string) => timelineFileFocus(raw, host.placementPath)
 
-  // Open a file in the workspace side panel (same path terminal file links take
-  // via terminal-content.tsx `onFileLinkOpen`), NOT `platform.openPath` (which
-  // is desktop-only and hands the file to the OS). No `navigator: "files"` — it
-  // would slide the tree drawer over the file tab this click just opened.
   const openFileInPanel = (raw: string) => {
     const target = fileFocus(raw)
     if (!target) return
     host.openFocus({ kind: "file", path: target.path, line: target.line, col: target.col })
   }
 
-  // Path-kind inline-code chips in assistant markdown. Anchors are handled in
-  // the capture phase below so preventDefault beats the native target="_blank"
-  // window; in Electron a bubble-phase handler opened the link in both a
-  // browser and the panel.
   let candidateFileController: AbortController | undefined
   onCleanup(() => candidateFileController?.abort())
   createEffect(() => {
@@ -235,8 +188,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
     if (event.defaultPrevented) return
     const target = event.target instanceof Element ? event.target : null
     const selection = typeof window !== "undefined" ? window.getSelection() : null
-    if (selection && !selection.isCollapsed) return // don't hijack a text-selection click
-    if (target?.closest("a[href]")) return // anchors → capture handler below
+    if (selection && !selection.isCollapsed) return
+    if (target?.closest("a[href]")) return
     const chip = target?.closest<HTMLElement>('[data-inline-code-kind="path"], [data-inline-code-kind="path-candidate"]')
     const raw = chip?.textContent?.trim()
     if (!raw || !fileFocus(raw)) return
@@ -257,12 +210,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
       openFileInPanel(raw)
     })
   }
-  // Capture phase runs before the link's default action (see above).
   const [timelineRoot, setTimelineRoot] = createSignal<HTMLDivElement>()
   const messageNavHasRoom = createMessageNavRoom(timelineRoot)
-  // One memo drives BOTH the rail's mount and `data-session-timeline-nav-gutter`
-  // on the root, so message-nav-gutter.css reserves the gutter without a `:has()`
-  // anchor over the timeline — see that file for why the anchor was expensive.
   const messageNavGutterVisible = createMemo(() =>
     messageNavVisible((props.navMessages ?? props.userMessages).length) && messageNavHasRoom() && !!props.onMessageSelect,
   )
@@ -273,8 +222,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
     setTimelineRoot(el)
     const stopLinkOpen = links.listen(el)
     const onOpenSubagent = (event: Event) => {
-      // The detail rides on a DOM CustomEvent, so it is read structurally rather
-      // than asserted into a typed CustomEvent the listener never guaranteed.
       const detail = event instanceof CustomEvent ? asRecord(event.detail) : undefined
       const childSessionId = readString(detail, "childSessionId")
       if (!childSessionId) return
@@ -333,17 +280,9 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const sessionConversation = host.conversation
   const sessionMessages = createMemo(() => sessionConversation()?.messages ?? emptyMessages)
   const messageByID = createMemo(() => new Map(sessionMessages().map((message) => [message.id, message] as const)))
-  // An admitted prompt reaches the transcript over events before the next
-  // queue poll drops its record; the record carries the id the turn's user
-  // message gets, so the bubble yields to the row the moment the row exists.
   const queuedNotYetInTranscript = createMemo(() =>
     (props.queued?.items() ?? []).filter((item) => !item.messageId || !messageByID().has(item.messageId)),
   )
-  // Both indexes are keyed by, and answer questions about, the parent/completion
-  // fields only a runtime-produced assistant message has. An optimistic row has
-  // no `parentID` to file it under and no `time.completed` to be pending on, so
-  // it is excluded here rather than filed under `undefined` and looked up by no
-  // one (every read below passes a real message id).
   const assistantMessagesByParent = createMemo(() => {
     const result = new Map<string, AssistantMessage[]>()
     for (const message of sessionMessages()) {
@@ -364,23 +303,11 @@ export function MessageTimeline(props: MessageTimelineProps) {
     ),
   )
   const sessionStatus = createActivePaneProjection({ active: props.active, read: () => host.status() ?? idle, initial: idle })
-  // A `session.idle` lands before the final transcript read does: the turn's
-  // assistant row is still unsettled and its reply not yet painted. While the
-  // post-acceptance reconciliation owns that read, the turn is still working —
-  // dropping the Thinking row on the event alone blanked the tail of the turn
-  // until the snapshot arrived. The request clears only after the reconciled
-  // conversation is in the store, so no frame shows neither indicator.
   const turnSettleRefreshPending = (userMessageID: string) => host.turnSettlePending(userMessageID)
   const working = createMemo(() => turnActive(sessionStatus()))
   const directorySessionRows = createActivePaneProjection({ active: props.active, read: host.sessions, initial: [] as readonly TimelineSessionRow[] })
   const directorySession = (sessionID: string | undefined) =>
     sessionID ? directorySessionRows().find((session) => session.id === sessionID) : undefined
-  const directoryAgents = createActivePaneProjection({
-    active: props.active,
-    read: () => data.store.agent ?? [],
-    initial: [] as NonNullable<typeof data.store.agent>,
-  })
-  const tint = createMemo(() => messageAgentColor(sessionMessages(), directoryAgents()))
   const hostCallIds = createMemo(() => subagentHostCallIds(sessionConversation()?.parts ?? {}))
   const resolveAmbientSubagents = () => {
     const id = sessionID()
@@ -393,9 +320,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
     initial: [] as ReturnType<typeof resolveAmbientSubagents>,
   })
 
-  const animatedWorkingStatus = createTimelineWorkingStatus({ active: props.active, working })
-  const workingStatus = () => props.progressBlocked?.() ? "hidden" : animatedWorkingStatus()
-
   const activeMessageID = createMemo(() => {
     const messages = sessionMessages()
     let lastUserIndex = -1
@@ -407,18 +331,11 @@ export function MessageTimeline(props: MessageTimelineProps) {
       const result = Binary.search(messages, parentID, (message) => message.id)
       const index = result.found ? result.index : messages.findIndex((item) => item.id === parentID)
       const message = index >= 0 ? messages[index] : undefined
-      // A stale un-completed assistant anchors on its parent only while that
-      // parent is still the newest prompt — once a follow-up send lands, the
-      // new user message owns the turn even if the old envelope's completion
-      // frame is still in flight.
       if (message && message.role === "user" && index >= lastUserIndex) return message.id
     }
 
     if (lastUserIndex < 0) return undefined
     const newest = messages[lastUserIndex].id
-    // An idle that lands before the turn's transcript read keeps the newest
-    // turn active: its reply is still owed, and letting go of it here drops
-    // the Thinking row with nothing to take its place.
     if (sessionStatus().kind !== "idle" || turnSettleRefreshPending(newest)) return newest
     return undefined
   })
@@ -431,14 +348,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const latchedTitle = createMemo<LatchedSessionTitle | undefined>((previous) => latchSessionTitle(previous, { sessionKey: host.sessionKey(), title: titleSource() }))
   const titleLabel = createMemo(() => sessionTitle(latchedTitle()?.title))
   const parentID = createMemo(() => props.parentId)
-  const parent = createMemo(() => {
-    const id = parentID()
-    if (!id) return undefined
-    return directorySession(id)
-  })
   const parentConversation = host.parentConversation
   const parentMessages = createMemo(() => parentConversation()?.messages ?? emptyMessages)
-  const parentTitle = createMemo(() => sessionTitle(parent()?.title) ?? host.t("command.session.new"))
   const getMsgParts = (msgId: string) => sessionConversation()?.parts[msgId] ?? emptyParts
   const getParentMsgParts = (msgId: string) => parentConversation()?.parts[msgId] ?? emptyParts
   const turnPreview = (message: UserMessage) =>
@@ -464,15 +375,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
     if (value) return value
     return host.t("command.session.new")
   })
-  const showHeader = createMemo(() => !props.hideTitle?.() && !!(latchedTitle() || parentID()))
 
-  // Per-message inputs are equality-gated so a streaming part event (which
-  // produces a new conversation snapshot + a new assistantMessagesByParent Map
-  // every tick) only re-runs constructMessageRows for the message whose parts
-  // actually changed. Message and Part[] identities are stable for unchanged
-  // messages (see agentConversationProjection's WeakMap cache), so the cheap
-  // identity comparisons below turn wholesale per-tick recomputation into
-  // O(changed turn) work.
   const statusType = createMemo(() => sessionStatus().kind)
   const lastTurnOutcome = createMemo(() => info()?.lastTurn, undefined, { equals: sameTurnOutcome })
   const messageRowMemos = createMemo(
@@ -534,8 +437,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
     ),
   )
 
-  // Status can blip off "busy" for a frame mid-stream; dropping Thinking then
-  // collapses the virtualizer. Hold the last Thinking row for a short hide delay.
   let thinkingHeldUntilMs: number | undefined
   let thinkingHoldTimer: ReturnType<typeof setTimeout> | undefined
   const [thinkingHoldRevision, setThinkingHoldRevision] = createSignal(0)
@@ -600,7 +501,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
   let cancelFirstFoldReveal: (() => void) | undefined
   const prepareScrollOverscan = () => {
     if (!initialTurnExpanded()) setInitialTurnExpanded(true)
-    if (renderOverscan() < 6) setRenderOverscan(6) // 6 rows: a flick leaves 0 blank px at 1400px/frame and 802 at 5600, where 12 rows still leaves 443 and takes the worst renderer task from 16ms to 31ms (perf-harness transcript-flick)
+    if (renderOverscan() < 6) setRenderOverscan(6)
   }
   const prepareInteractionScroll = () => {
     const plan = timelineInteractionPlan({
@@ -613,12 +514,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
   }
   let virtualContent: HTMLDivElement | undefined
   const resizeAnchor = createTimelineResizeAnchor()
-  // Opening at the end and staying at the end are different promises. The
-  // first is `shouldAnchorBottom`: a session opens on its latest turn. The
-  // second holds only while a turn streams: for a settled transcript, a size
-  // change is the reader opening a fold or a tool row, and re-pinning the
-  // viewport to the new end — by the row's estimated height, before it is
-  // measured — takes them from what they clicked to the bottom of the page.
   const followsEnd = () => props.shouldAnchorBottom() && working()
   const virtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
     get count() {
@@ -649,20 +544,11 @@ export function MessageTimeline(props: MessageTimelineProps) {
     get followOnAppend() {
       return props.active() && followsEnd() && !resizeAnchor.held()
     },
-    // In-view insert holds and gesture windows mean the reader owns the viewport.
     get scrollEndThreshold() {
       return resizeAnchor.held() || props.hasScrollGesture() ? -1 : 80
     },
     get overscan() { return renderOverscan() },
     paddingEnd: 64,
-    // A getter, not a stable closure: the virtualizer memoizes the extractor's
-    // output keyed on the extractor's IDENTITY plus the computed range/count
-    // (virtual-core getVirtualIndexes deps). Solid signals read while the
-    // extractor RUNS are invisible to that memo, so a stable closure serves
-    // stale indexes whenever only those signals change (a stale extractor
-    // once left the timeline mounting one row forever after a reload).
-    // Reading them here — at option-read time inside the adapter's tracked
-    // setOptions pass — subscribes the virtualizer and mints a new identity.
     get rangeExtractor() {
       const rows = timelineRows()
       const activeID = activeMessageID()
@@ -697,9 +583,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
     scrollToEnd: () => virtualizer.scrollToEnd(),
     restoreAnchor: prepend.apply,
   })
-  // The prepend-anchor loop parks itself while stashed (it reads
-  // `props.active`). Returning needs the nudge: a parked loop has no frame on
-  // which to notice that its surface came back.
   createEffect(() => {
     if (props.active()) prepend.resume()
   })
@@ -747,14 +630,11 @@ export function MessageTimeline(props: MessageTimelineProps) {
       const root = listRoot()
       const index = messageRowIndex().get(id)
       if (!root || index === undefined) return false
-      // getOffsetForIndex reads a lazily-refreshed cache; refresh it first.
       virtualizer.getTotalSize()
       const offset = virtualizer.getOffsetForIndex(index, "start")
       if (!offset) return false
       const box = root.getBoundingClientRect()
-      const sticky = root.querySelector("[data-session-title]")
-      const stickyBottom = sticky instanceof HTMLElement ? sticky.getBoundingClientRect().bottom : box.top
-      const inset = sessionMessageScrollInset({ rootTop: box.top, stickyBottom })
+      const inset = sessionMessageScrollInset({ rootTop: box.top, stickyBottom: box.top })
       virtualizer.scrollToOffset(Math.max(0, offset[0] - inset), { behavior })
       return true
     })
@@ -773,8 +653,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
       activationKey,
       currentActivationKey: host.sessionKey,
       prepare: () => {
-        // Force the capped fold's virtual measurements while the surface is
-        // still hidden, then perform the bottom-anchor write before paint.
         virtualizer.getTotalSize()
         const root = listRoot()
         const nativeAtEnd = root
@@ -857,33 +735,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
     props.setHistoryAnchor?.({ capture: () => {}, restore: () => {} })
   })
 
-  const [title, setTitle] = createStore({
-    draft: "",
-    editing: false,
-    menuOpen: false,
-    pendingRename: false,
-  })
-  let titleRef: HTMLInputElement | undefined
-
-  const [bar, setBar] = createStore({
-    ms: pace(640),
-  })
-
-  let head: HTMLDivElement | undefined
-
-  // Width comes from the observer's `contentRect`: re-reading `head.clientWidth`
-  // forced a layout from inside the callback. Took this stack from 123 layout
-  // invalidations to 0, but the flow's total held at ~522 -- insertion bound.
-  const updateTitleMetrics = (width?: number) => {
-    const measured = width ?? head?.clientWidth ?? 0
-    if (measured <= 0) return
-    const next = pace(measured)
-    if (next === bar.ms) return
-    setBar("ms", next)
-  }
-
-  createResizeObserver(() => head, ({ width }) => updateTitleMetrics(width))
-
   const bindListRoot = (root: HTMLDivElement) => {
     if (root === listRoot()) return
     setListRoot(root)
@@ -902,182 +753,22 @@ export function MessageTimeline(props: MessageTimelineProps) {
     props.setScrollRef(undefined)
   })
 
-  const errorMessage = (err: unknown) => requestErrorMessage(err, host.t("common.requestFailed"))
-
-  const [titlePending, setTitlePending] = createSignal(false)
-  const renameSession = async (id: string, value: string) => {
-    setTitlePending(true)
-    try {
-      await host.sessionActions.rename(id, value)
-      setTitle("editing", false)
-    } catch (err) {
-      showToast({
-        title: host.t("common.requestFailed"),
-        description: errorMessage(err),
-      })
-    } finally {
-      setTitlePending(false)
-    }
-  }
-
-  createEffect(
-    on(
-      host.sessionKey,
-      () =>
-        setTitle({
-          draft: "",
-          editing: false,
-          menuOpen: false,
-          pendingRename: false,
-        }),
-      { defer: true },
-    ),
-  )
-
   createEffect(
     on(
       () => [parentID(), childTaskDescription()] as const,
       ([id, description]) => {
         if (!id || description) return
         if (parentMessages().length > 0) return
-        void Promise.resolve(host.syncSession?.(id)).catch(() => undefined)
+        void Promise.resolve(host.syncSession?.(id)).catch((error: unknown) => {
+          console.warn("The parent session could not be read for a subagent's title", { sessionId: id, error })
+        })
       },
       { defer: true },
     ),
   )
 
-  const openTitleEditor = () => {
-    const patch = openTitleEditorPatch({
-      hasSession: !!sessionID(),
-      isChild: !!parentID(),
-      currentTitle: titleLabel(),
-    })
-    if (!patch) return
-    setTitle(patch)
-    requestAnimationFrame(() => {
-      titleRef?.focus()
-      titleRef?.select()
-    })
-  }
-
-  const closeTitleEditor = () => {
-    if (titlePending()) return
-    setTitle("editing", false)
-  }
-
-  const saveTitleEditor = () => {
-    const id = sessionID()
-    if (!id) return
-    if (titlePending()) return
-
-    const decision = resolveTitleSave({ draft: title.draft, currentTitle: titleLabel() })
-    if (!decision.commit) {
-      setTitle("editing", false)
-      return
-    }
-
-    void renameSession(id, decision.title)
-  }
-
-  const navigateAfterSessionRemoval = (sessionID: string, parentID?: string, nextSessionID?: string) => {
-    const nav = sessionRemovalNavigation({
-      currentSessionID: host.sessionId(),
-      targetSessionID: sessionID,
-      parentID,
-      nextSessionID,
-    })
-    if (nav.kind === "parent" || nav.kind === "next") {
-      host.navigation.toSession(nav.sessionID)
-      return
-    }
-    if (nav.kind === "root") host.navigation.toRoot()
-  }
-
-  const archiveSession = async (sessionID: string) => {
-    const session = directorySession(sessionID)
-    if (!session) return
-
-    const nextSession = nextSiblingAfterRemoval(directorySessionRows(), sessionID)
-
-    await host.sessionActions
-      .archive(sessionID)
-      .then(() => {
-        navigateAfterSessionRemoval(sessionID, session.parentId, nextSession?.id)
-      })
-      .catch((err) => {
-        showToast({
-          title: host.t("common.requestFailed"),
-          description: errorMessage(err),
-        })
-      })
-  }
-
-  const deleteSession = async (sessionID: string) => {
-    const session = directorySession(sessionID)
-    if (!session) return false
-
-    const nextSession = nextSiblingAfterRemoval(
-      directorySessionRows().filter((s) => !s.parentId && !s.archived),
-      sessionID,
-    )
-
-    const result = await host.sessionActions
-      .remove(sessionID)
-      .then(() => true)
-      .catch((err) => {
-        showToast({
-          title: host.t("session.delete.failed.title"),
-          description: errorMessage(err),
-        })
-        return false
-      })
-
-    if (!result) return false
-
-    navigateAfterSessionRemoval(sessionID, session.parentId, nextSession?.id)
-    props.onSessionDeleted?.(sessionID)
-    return true
-  }
-
-  const navigateParent = () => {
-    if (!parentID()) return
-    props.onNavigateParent()
-  }
-
-  function DialogDeleteSession(props: { sessionID: string; title?: string }) {
-    const name = createMemo(
-      () => sessionTitle(props.title) ?? host.t("command.session.new"),
-    )
-    const handleDelete = async () => {
-      await deleteSession(props.sessionID)
-      dialog.close()
-    }
-
-    return (
-      <Dialog title={host.t("session.delete.title")} fit>
-        <div class="flex flex-col gap-4">
-          <div class="flex flex-col gap-1">
-            <span class="text-14-regular text-text-strong">
-              {host.t("session.delete.confirm", { name: name() })}
-            </span>
-          </div>
-          <div class="flex justify-end gap-2">
-            <Button variant="ghost" size="large" onClick={() => dialog.close()}>
-              {host.t("common.cancel")}
-            </Button>
-            <Button variant="primary" size="large" onClick={handleDelete}>
-              {host.t("session.delete.button")}
-            </Button>
-          </div>
-        </div>
-      </Dialog>
-    )
-  }
-
   const turnAssistantMessages = (userMessageID: string) =>
     assistantMessagesByParent().get(userMessageID) ?? emptyAssistantMessages
-  // The newest message says whether the turn is open: a step-per-message
-  // harness completes each earlier step while the next one is still streaming.
   const turnSettled = (userMessageID: string) => {
     const newest = turnAssistantMessages(userMessageID).at(-1)
     return !!newest && assistantMessageSettled(newest)
@@ -1187,9 +878,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
           .map((ref) => {
             const message = messageByID().get(ref.messageID)
             const part = getMsgPart(ref.messageID, ref.partID)
-            // The predicate below used to claim `AssistantMessage` for whatever
-            // `messageByID` returned; the group's refs carry no such promise.
-            // It asserts only what the renderer needs — a runtime-produced row.
             if (!message || !isRuntimeMessage(message)) return undefined
             if (!part || part.type !== "tool") return undefined
             return { message, part }
@@ -1411,9 +1099,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
       }
       case "TurnDivider": {
         const turnDividerRow = rowOfTag(row, "TurnDivider", current)
-        // D§3.6 / C4: terminal states are a centred hairline divider, a peer of the
-        // "Worked for" fold row — never a card. "interrupted" durationMs (when derivable,
-        // T8) reuses the same formatDuration voice as "Worked for {duration}".
         const label = () => {
           if (turnDividerRow().label === "compaction") return host.t("ui.messagePart.compaction")
           if (turnDividerRow().label === "handoff") return `Session handed off to ${turnDividerRow().harness}`
@@ -1512,7 +1197,10 @@ export function MessageTimeline(props: MessageTimelineProps) {
           if (!revert || !id) return undefined
           return Promise.resolve(revert({ sessionID: id, messageID: diffSummaryRow().userMessageID }))
             .then(() => showToast({ title: host.t("ui.message.revertMessage") }))
-            .catch(() => showToast({ title: host.t("common.requestFailed"), variant: "error" }))
+            .catch((error: unknown) => {
+              console.warn("The turn could not be undone", { error })
+              showToast({ title: host.t("common.requestFailed"), variant: "error" })
+            })
         }
         return (
           <TimelineRowFrame row={diffSummaryRow}>
@@ -1559,9 +1247,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
       items: virtualItemByKey(),
       rows: timelineRowByKey(),
     }))
-    // Latch the last defined entry: the virtualizer can publish an item list that momentarily omits this key while
-    // the row is still mounted (<For> disposes it a tick later); a non-keyed <Show> accessor read in that window
-    // throws Solid's stale-value error and takes down the pane boundary. The latch renders the closing frame.
     const entry = createMemo<ReturnType<typeof liveEntry>>((previous) => liveEntry() ?? previous)
     const asyncFile = (value: TimelineRow.TimelineRow) => {
       if (value._tag !== "AssistantPart" || value.group.type !== "part") return false
@@ -1599,7 +1284,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
             <div
               ref={(value) => {
                 element = value
-                // JSX applies `data-index` after refs and measureElement drops (warns on) unindexed elements — stamp it first; this is also the mount measurement.
                 value.dataset.index = String(current().item.index)
                 virtualizer.measureElement(value)
               }}
@@ -1700,165 +1384,9 @@ export function MessageTimeline(props: MessageTimelineProps) {
         onPointerMove={listGestures.onPointerMove}
         onScroll={listGestures.onScroll}
         class="relative min-w-0 w-full h-full"
-        style={{
-          ...transcriptStyle(),
-          "--sticky-accordion-top": showHeader() ? "48px" : "0px",
-        }}
+        style={transcriptStyle()}
       >
-        <Show when={showHeader()}>
-          <div
-            ref={(el) => {
-              head = el
-              updateTitleMetrics()
-            }}
-            data-session-title
-            classList={{
-              "sticky top-0 z-30 bg-[linear-gradient(to_bottom,var(--background-stronger)_48px,transparent)]": true,
-              "w-full": true,
-              "pb-4": true,
-              "pl-2 pr-3 md:pl-4 md:pr-3": true,
-              "md:max-w-[var(--transcript-measure,48rem)] md:mx-auto 2xl:max-w-[var(--transcript-measure,880px)]": props.centered,
-            }}
-          >
-            <Show when={workingStatus() !== "hidden" && host.settings.showSessionProgressBar()}>
-              <div data-component="session-progress" class="ui-session-progress" data-state={workingStatus()} aria-hidden="true">
-                <div
-                  data-component="session-progress-bar"
-                  style={{
-                    background: tint() ?? "var(--icon-interactive-base)",
-                    animation: `session-progress-whip ${bar.ms}ms infinite`,
-                  }}
-                />
-              </div>
-            </Show>
-            <div class="h-12 w-full flex items-center justify-between gap-2">
-              <div class="flex items-center gap-1 min-w-0 flex-1 pr-3">
-                <div class="flex items-center min-w-0 grow-1">
-                  <Show when={parentID()}>
-                    <button
-                      type="button"
-                      data-slot="session-title-parent"
-                      class="min-w-0 max-w-[40%] truncate text-14-medium text-text-weak transition-colors hover:text-text-base"
-                      onClick={navigateParent}
-                    >
-                      {parentTitle()}
-                    </button>
-                    <span
-                      data-slot="session-title-separator"
-                      class="px-2 text-14-medium text-text-weak"
-                      aria-hidden="true"
-                    >
-                      /
-                    </span>
-                  </Show>
-                  <Show when={childTitle() || title.editing}>
-                    <Show
-                      when={title.editing}
-                      fallback={
-                        <h1
-                          data-slot="session-title-child"
-                          data-subagent-child-heading={parentID() ? "" : undefined}
-                          tabIndex={parentID() ? -1 : undefined}
-                          class="text-14-medium text-text-strong truncate grow-1 min-w-0"
-                          onDblClick={openTitleEditor}
-                        >
-                          {childTitle()}
-                        </h1>
-                      }
-                    >
-                      <InlineInput
-                        ref={(el) => {
-                          titleRef = el
-                        }}
-                        data-slot="session-title-child"
-                        value={title.draft}
-                        disabled={titlePending()}
-                        class="text-14-medium text-text-strong grow-1 min-w-0 rounded-md pl-1 -ml-1"
-                        style={{ "--inline-input-shadow": "var(--shadow-xs-border-select)" }}
-                        onInput={(event) => setTitle("draft", event.currentTarget.value)}
-                        onKeyDown={(event) => {
-                          event.stopPropagation()
-                          if (event.key === "Enter") {
-                            event.preventDefault()
-                             saveTitleEditor()
-                            return
-                          }
-                          if (event.key === "Escape") {
-                            event.preventDefault()
-                            closeTitleEditor()
-                          }
-                        }}
-                        onBlur={closeTitleEditor}
-                      />
-                    </Show>
-                  </Show>
-                </div>
-              </div>
-              <Show when={sessionID()} keyed>
-                {(id) => (
-                  <div class="shrink-0 flex items-center gap-3">
-                    <Show when={!parentID()}>
-                      <DropdownMenu
-                        gutter={4}
-                        placement="bottom-end"
-                        open={title.menuOpen}
-                        onOpenChange={(open) => {
-                          setTitle("menuOpen", open)
-                          if (open) return
-                        }}
-                      >
-                        <DropdownMenu.Trigger
-                          as={IconButton}
-                          icon="three-dots"
-                          variant="ghost"
-                          class="size-6 rounded-md data-[expanded]:bg-surface-base-active"
-                          aria-label={host.t("common.moreOptions")}
-                          aria-expanded={title.menuOpen}
-                        />
-                        <DropdownMenu.Portal>
-                          <DropdownMenu.Content
-                            style={{ "min-width": "160px" }}
-                            onCloseAutoFocus={(event) => {
-                              if (title.pendingRename) {
-                                event.preventDefault()
-                                setTitle("pendingRename", false)
-                                openTitleEditor()
-                              }
-                            }}
-                          >
-                            <DropdownMenu.Item
-                              onSelect={() => {
-                                setTitle("pendingRename", true)
-                                setTitle("menuOpen", false)
-                              }}
-                            >
-                              <Icon name="edit" size="small" />
-                              <DropdownMenu.ItemLabel>{host.t("common.rename")}</DropdownMenu.ItemLabel>
-                            </DropdownMenu.Item>
-                            <DropdownMenu.Item onSelect={() => void archiveSession(id)}>
-                              <Icon name="archive" size="small" />
-                              <DropdownMenu.ItemLabel>{host.t("common.archive")}</DropdownMenu.ItemLabel>
-                            </DropdownMenu.Item>
-                            <DropdownMenu.Separator />
-                            <DropdownMenu.Item
-                              onSelect={() => dialog.show(() => <DialogDeleteSession sessionID={id} title={titleLabel()} />)}
-                            >
-                              <Icon name="trash" size="small" />
-                              <DropdownMenu.ItemLabel>{host.t("common.delete")}</DropdownMenu.ItemLabel>
-                            </DropdownMenu.Item>
-                          </DropdownMenu.Content>
-                        </DropdownMenu.Portal>
-                      </DropdownMenu>
-                    </Show>
-                  </div>
-                )}
-              </Show>
-            </div>
-          </div>
-        </Show>
-        {/* A surface that hides the title row names the child itself; this heading
-            stays so opening a subagent tab still has somewhere to land focus. */}
-        <Show when={!showHeader() && parentID()}>
+        <Show when={parentID()}>
           <h1 data-subagent-child-heading tabIndex={-1} class="sr-only">
             {childTitle()}
           </h1>
@@ -1874,9 +1402,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
             <SubagentChipRow subagents={ambientSubagents()} />
           </section>
         </Show>
-        {/* The content ref wraps the queued bubbles too: the auto-scroll and
-            scroll-state observers watch this element, and a bubble mounting
-            below the virtual rows must count as the content growing. */}
         <div data-timeline-content ref={props.setContentRef} class="w-full">
           <div
             data-timeline-virtual-content

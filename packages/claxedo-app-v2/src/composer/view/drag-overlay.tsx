@@ -1,5 +1,5 @@
 import { Component, Show } from "solid-js"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
+import { ClaxedoIcon as Icon } from "@/ui"
 
 type PromptDragOverlayProps = {
   type: "image" | "@mention" | null

@@ -81,4 +81,11 @@ export const ja: Partial<Record<SessionScreenTextKey, string>> = {
   "sessionScreen.timeline.ui.sessionTurn.diffs.showAll": "すべて表示",
   "sessionScreen.timeline.ui.sessionTurn.diffs.showLess": "一部のみ表示",
   "sessionScreen.timeline.ui.sessionTurn.status.thinking": "思考中",
+  "command.message.previous": "前のメッセージ",
+  "command.message.previous.description": "前のユーザーメッセージに移動",
+  "command.message.next": "次のメッセージ",
+  "command.message.next.description": "次のユーザーメッセージに移動",
+  "sessionScreen.requests.loadFailed": "保留中の権限リクエストや質問を読み込めませんでした。再試行して続行してください。",
+  "command.session.new": "新しいセッション",
+  "command.category.session": "セッション",
 }

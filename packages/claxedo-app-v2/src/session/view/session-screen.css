@@ -34,23 +34,9 @@
   display: none;
 }
 
-[data-slot="session-screen-loading"],
-[data-slot="session-screen-missing"] {
-  margin: auto;
-  padding: 24px 16px;
-  color: var(--v2-text-text-weak, var(--v2-text-text-base));
-  font-size: var(--font-size-compact);
-}
-
-[data-slot="session-child-notice"] {
+[data-slot="session-screen-transcript"] {
   display: flex;
-  min-height: 44px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 0 12px;
-  border: 1px solid var(--v2-border-border-muted);
-  border-radius: var(--radius-xl);
-  color: var(--v2-text-text-base);
-  font-size: var(--font-size-compact);
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
 }

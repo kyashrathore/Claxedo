@@ -6,6 +6,7 @@ import type { TranscriptConversation } from "@/transcript"
 import { createTranscriptContext, type TranscriptContext, type TranscriptDeps } from "./context"
 import { NO_PARTS, lastUserMessageId } from "./conversation"
 import { applyServerEvent } from "./events"
+import { settleTurn } from "./settle"
 import { isPendingMessage, searchById } from "./merge"
 import { isReading, type SessionPhase } from "./model"
 import { loadOlder } from "./older"
@@ -17,7 +18,6 @@ export type { TranscriptDeps } from "./context"
 export type SessionTranscript = SessionView & {
   readonly apply: (event: ServerEvent) => void
   readonly gap: () => void
-  readonly dispose: () => void
 }
 
 const LOADING: SessionLoadState = { kind: "loading" }
@@ -29,6 +29,7 @@ function loadState(phase: SessionPhase): SessionLoadState {
     case "loading":
       return LOADING
     case "ready":
+    case "completing":
     case "rereading":
       return READY
     case "missing":
@@ -60,13 +61,16 @@ function sessionView(context: TranscriptContext): SessionView {
     conversation: (): TranscriptConversation | undefined => (phase.state().kind === "loading" ? undefined : data),
     turnSettlePending: (userMessageId) => isReading(phase.state()) && lastUserId() === userMessageId,
     queue,
+    replaceQueued: (seq, input) => context.queue.replace(seq, input),
     requests: () => deps.requests.openFor(ref.sessionId),
+    requestsError: () => deps.requests.readErrorFor(ref.sessionId),
     requestState: deps.requests.stateOf,
-    todos: () => data.todos,
+    todos: context.todos.list,
     diff: () => data.diff,
     subagents: context.subagents.list,
     goal: goal.goal,
     goalActions: goal.actions,
+    goalAvailable: goal.available,
     controlGoal: goal.control,
     hasOlder: () => context.olderCursor() !== undefined,
     olderState: older.state,
@@ -82,15 +86,16 @@ export function createSessionTranscript(server: Server, ref: SessionRef, deps: T
   const context = createTranscriptContext(server, ref, deps)
   void readSnapshot(context)
   void context.queue.reread()
-  void context.subagents.read()
   return {
     ...sessionView(context),
-    apply: (event) => applyServerEvent(context, event),
+    apply: (event) => {
+      applyServerEvent(context, event)
+      if (event.type === "statusChanged" && event.status.kind === "idle") void settleTurn(context)
+    },
     gap: () => {
       void readSnapshot(context)
       void context.queue.reread()
-      void context.subagents.read()
+      context.subagents.reread()
     },
-    dispose: context.deltas.drop,
   }
 }

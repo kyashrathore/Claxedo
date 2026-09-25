@@ -64,16 +64,10 @@ export function toRange(source: Range | StaticRange): Range {
   return range
 }
 
-/**
- * `ShadowRoot.getSelection()` is a Chromium extension that lib.dom does not declare.
- * Widening the handle to an optional method is enough to call it safely — a root
- * without it simply reads as `undefined`.
- */
 interface SelectionCapableRoot extends ShadowRoot {
   getSelection?: () => Selection | null
 }
 
-/** The selection scoped to `root` where the browser supports it, otherwise the document's. */
 export function shadowSelection(root: ShadowRoot): Selection | null {
   const scoped: SelectionCapableRoot = root
   return scoped.getSelection?.() ?? window.getSelection()
@@ -89,7 +83,9 @@ export function restoreShadowTextSelection(root: ShadowRoot | undefined, range: 
     try {
       selection.removeAllRanges()
       selection.addRange(range)
-    } catch {}
+    } catch (error) {
+      console.warn("The diff selection could not be restored", { error })
+    }
   })
 }
 

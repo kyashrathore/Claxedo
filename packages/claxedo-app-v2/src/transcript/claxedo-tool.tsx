@@ -1,7 +1,6 @@
 import { createMemo, For, Show } from "solid-js"
-import { Icon, type IconProps } from "@opencode-ai/ui/icon"
+import { Icon, type IconProps, TextShimmer } from "@/ui"
 import { useTranscriptI18n } from "./i18n"
-import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
 import { useData } from "./data"
 import { BasicTool } from "./basic-tool"
 import { claxedoToolName, claxedoToolView, taskStatusLabel, type ClaxedoLink } from "./claxedo-tool-view"
@@ -16,14 +15,6 @@ const STATUS_ICONS: Record<string, IconProps["name"]> = {
   done: "circle-check",
 }
 
-/**
- * A link in a tool row: a plain anchor to the surface's own route for the task
- * or session, so the app's router takes the click and its route sync opens the
- * page, while cmd/middle-click keep the browser's new-tab behaviour. The click
- * is stopped so the row it sits in does not toggle. The data context's
- * `navigateToSession` is deliberately not used: a pane that never wired it
- * still defines the function, and taking the click there went nowhere.
- */
 function CardLink(props: { link: ClaxedoLink; slot: string; class?: string }) {
   const data = useData()
   const href = () =>
@@ -62,11 +53,6 @@ function StatusPill(props: { status: string }) {
   )
 }
 
-/**
- * One first-party tool call as a transcript row: the Claxedo mark, the verb,
- * the task or session it was about as a link, and its status or outcome. The
- * body holds what the row cannot: a task list, the facts of a start, prose.
- */
 export function ClaxedoTool(props: ToolProps) {
   const i18n = useTranscriptI18n()
   const data = useData()

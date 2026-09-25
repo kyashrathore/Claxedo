@@ -1,9 +1,11 @@
 import { test as base, expect, type Page, type TestInfo } from "@playwright/test"
 import { ClaxedoApi } from "./api"
-import { appChoice } from "./app"
+import { appChoice, ensureAppBuilt, signedDistDir, type AppBuild } from "./app"
 import { launchDesktop, type Desktop } from "./desktop"
 import { ensureDesktopBuilt, type DesktopBuild } from "./desktop-build"
 import { unexpectedEgress, type EgressAttempt } from "./egress-guard"
+import { releasePort, reservePort } from "./ports"
+import { startSignedStack, type SignedStack } from "./signed-stack"
 import { redRun, startStack, type Stack } from "./stack"
 
 export type HarnessFixtures = {
@@ -11,9 +13,12 @@ export type HarnessFixtures = {
   api: ClaxedoApi
   app: Page
   desktop: Desktop
+  signed: SignedStack
 }
 
-type HarnessWorkerFixtures = { desktopBuild: DesktopBuild }
+type SignedBuild = AppBuild & { frontPort: number }
+
+type HarnessWorkerFixtures = { desktopBuild: DesktopBuild; signedBuild: SignedBuild }
 
 function refuseEgress(attempts: EgressAttempt[]) {
   const unexpected = unexpectedEgress(attempts)
@@ -51,6 +56,28 @@ export const test = base.extend<HarnessFixtures, HarnessWorkerFixtures>({
     },
     { scope: "worker", timeout: 300_000 },
   ],
+  signedBuild: [
+    async ({}, use) => {
+      const frontPort = await reservePort()
+      try {
+        const build = await ensureAppBuilt(appChoice(), { serverUrl: `https://127.0.0.1:${frontPort}`, outDir: signedDistDir(appChoice()) })
+        await use({ ...build, frontPort })
+      } finally {
+        releasePort(frontPort)
+      }
+    },
+    { scope: "worker", timeout: 300_000 },
+  ],
+  signed: async ({ signedBuild }, use, testInfo) => {
+    const signed = await startSignedStack({ label: testInfo.titlePath.join(" "), frontPort: signedBuild.frontPort, distDir: signedBuild.distDir })
+    try {
+      await use(signed)
+    } finally {
+      await attachLogOnFailure(testInfo, signed.stack.egress.attempts, "daemon.log", signed.stack.daemon.log)
+      await signed.close()
+    }
+    refuseEgress(signed.stack.egress.attempts)
+  },
   desktop: async ({ desktopBuild }, use, testInfo) => {
     const how = desktopBuild.built ? `built in ${desktopBuild.ms} ms` : "already current"
     testInfo.annotations.push({ type: "desktop build", description: how })

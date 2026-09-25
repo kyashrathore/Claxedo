@@ -1,6 +1,5 @@
 import { Match, Show, Switch } from "solid-js"
-import { Spinner } from "@opencode-ai/ui/spinner"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
+import { ClaxedoIcon as Icon, Spinner } from "@/ui"
 
 export type SessionStatusStage = "redispatch" | "pending" | "long" | "failed" | undefined
 

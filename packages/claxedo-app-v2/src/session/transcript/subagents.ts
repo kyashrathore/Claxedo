@@ -4,7 +4,7 @@ import { mergeSubagent, type SessionSubagent } from "./subagent-merge"
 
 export type SessionSubagentsStore = {
   readonly list: Accessor<readonly SessionSubagent[]>
-  readonly read: () => Promise<void>
+  readonly reread: () => void
   readonly apply: (update: Subagent) => void
 }
 
@@ -20,6 +20,19 @@ export function createSessionSubagents(server: Server, ref: SessionRef): Session
       console.warn("A session's subagents could not be read", { sessionId: ref.sessionId, error })
     }
   }
-  const list = createMemo(() => [...entries().values()].sort((a, b) => a.subagentKey.localeCompare(b.subagentKey)))
-  return { list, read, apply }
+  const sorted = createMemo(() => [...entries().values()].sort((a, b) => a.subagentKey.localeCompare(b.subagentKey)))
+  let wanted = false
+  return {
+    list: () => {
+      if (!wanted) {
+        wanted = true
+        void read()
+      }
+      return sorted()
+    },
+    reread: () => {
+      if (wanted) void read()
+    },
+    apply,
+  }
 }

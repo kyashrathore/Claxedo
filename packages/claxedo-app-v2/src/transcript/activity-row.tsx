@@ -1,36 +1,20 @@
 import { Show, type JSX } from "solid-js"
-import { Icon, type IconProps } from "@opencode-ai/ui/icon"
+import { Icon, type IconProps } from "@/ui"
 
 export interface ActivityRowProps {
-  /** Category icon (muted); hidden when nested inside a group. */
   icon?: IconProps["name"]
-  /** Leading verb — reads at --text-base, brightens to --text-strong on hover. */
   verb: JSX.Element
-  /** Trailing detail — single line, truncated, whispers at --text-weak. */
   tail?: JSX.Element
-  /** Right-aligned accessory (diffstat, elapsed, status dot). */
   accessory?: JSX.Element
-  /** Expanded state — rotates the chevron, mirrors aria-expanded. */
   expanded?: boolean
-  /** Toggle handler; when present the overlay button toggles and shows a chevron. */
   onToggle?: () => void
-  /** Whether the row has expandable content (controls chevron visibility). */
   hasContent?: boolean
-  /** Marks the row as active/running (data-active for callers to style). */
   active?: boolean
-  /** Nested inside a WorkGroup — dimmer, icon-less. */
   nested?: boolean
-  /** Extra class on the row shell. */
   class?: string
-  /** Accessible label for the overlay toggle button. */
   ariaLabel?: string
 }
 
-/**
- * ActivityRow — the muted activity-row primitive (T0.1). One anatomy for every tool row,
- * group header, file row, and turn-fold row: muted icon, verb + truncated tail, hover
- * brighten, and a chevron that fades in exactly at the pointer. See activity-row.css.
- */
 export function ActivityRow(props: ActivityRowProps) {
   const showChevron = () => props.hasContent !== false && !!props.onToggle
   return (

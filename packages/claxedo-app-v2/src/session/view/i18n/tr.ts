@@ -81,4 +81,11 @@ export const tr: Partial<Record<SessionScreenTextKey, string>> = {
   "sessionScreen.timeline.ui.sessionTurn.diffs.showAll": "Tümünü göster",
   "sessionScreen.timeline.ui.sessionTurn.diffs.showLess": "Daha az göster",
   "sessionScreen.timeline.ui.sessionTurn.status.thinking": "Düşünüyor",
+  "command.message.previous": "Önceki mesaj",
+  "command.message.previous.description": "Önceki kullanıcı mesajına git",
+  "command.message.next": "Sonraki mesaj",
+  "command.message.next.description": "Sonraki kullanıcı mesajına git",
+  "sessionScreen.requests.loadFailed": "Bekleyen izinler veya sorular yüklenemedi. Devam etmek için yeniden deneyin.",
+  "command.session.new": "Yeni oturum",
+  "command.category.session": "Oturum",
 }

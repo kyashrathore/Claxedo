@@ -14,7 +14,7 @@ import {
   onCleanup,
   splitProps,
 } from "solid-js"
-import { DiffChanges } from "@opencode-ai/ui/diff-changes"
+import { DiffChanges } from "@/ui"
 import { useTranscriptI18n } from "./i18n"
 
 export type MessageNavPreview = {
@@ -22,25 +22,11 @@ export type MessageNavPreview = {
   assistant?: string
 }
 
-/**
- * What this nav reads off a turn's user message: its id, and the summary it
- * renders a label and diff bars from.
- *
- * Structural rather than `AgentUserMessage` — that contract also requires
- * `agent` and `model`, which this component never touches and which a row the
- * runtime has not echoed back yet does not have. Naming only the fields read
- * keeps a caller free to pass an optimistic turn.
- */
 export type MessageNavMessage = {
   id: string
   summary?: { title?: string; diffs?: AgentSnapshotFileDiff[] }
 }
 
-/**
- * Generic over the row type so the callbacks hand back what the caller passed
- * in. Typing them as `MessageNavMessage` would make the nav claim it can invoke
- * a handler with a bare `{id}`, which no caller writes one for.
- */
 export function MessageNav<M extends MessageNavMessage>(
   props: ComponentProps<"ul"> & {
     messages: M[]
@@ -192,8 +178,6 @@ export function MessageNav<M extends MessageNavMessage>(
                     }}
                     onBlur={(event) => {
                       cancelPendingPreview(message)
-                      // `relatedTarget` is an `EventTarget`; kobalte compares it against its
-                      // content node, so anything that is not a Node can never be inside it.
                       const related = event.relatedTarget
                       if (related instanceof Node && hoverCard.isTargetOnHoverCard(related)) return
                       hoverCard.closeWithDelay()
@@ -210,8 +194,6 @@ export function MessageNav<M extends MessageNavMessage>(
         <HoverCard.Portal>
           <Show when={activePreviewMessage()} keyed>
             {(message) => {
-              // Preview text joins every part of the turn — compute it only for
-              // the one open card, never eagerly for every history tick.
               const preview = () => local.getPreview?.(message)
               return (
                 <HoverCard.Content

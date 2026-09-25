@@ -1,11 +1,11 @@
 import { A } from "@solidjs/router"
 import { createMemo, For, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { dictionary } from "../i18n"
+import { shellDictionary } from "../i18n"
 import { byOrder, useShellRegistries } from "../registries"
 import { useShellRoute } from "../router"
 import { homePath, settingsPath } from "../routes"
-import { Icon } from "@/ui"
+import { ClaxedoIcon as Icon } from "@/ui"
 import type { SettingsSection } from "../types"
 import "./settings.css"
 
@@ -16,7 +16,7 @@ export function activeSectionId(params: Readonly<Record<string, string>>): strin
 }
 
 export function SettingsSidebar(): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(shellDictionary)
   const registries = useShellRegistries()
   const routing = useShellRoute()
   const active = createMemo(() => {

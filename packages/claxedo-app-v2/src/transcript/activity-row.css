@@ -1,11 +1,3 @@
-/*
- * ActivityRow — the muted activity-row primitive (Codex timeline design T0.1).
- * The "muted ladder": verb reads at --text-base, brightens to --text-strong on hover;
- * tail whispers at --text-weak; deepest detail at --text-weaker. Chevron and hover
- * brighten are mouse-gated (@media hover:hover) so touch devices never reveal chrome.
- * All colors resolve through legacy tokens so the light theme stays correct.
- */
-
 .activity-row {
   position: relative;
   display: flex;
@@ -15,7 +7,6 @@
   max-width: 100%;
   min-width: 0;
   cursor: pointer;
-  /* One dim tone for the whole row; hover lifts the text only. */
   color: var(--transcript-tool-color, var(--text-weak));
 }
 
@@ -41,8 +32,6 @@
   box-shadow: inset 0 0 0 1px var(--border-focus, var(--border-weak-base));
 }
 
-/* Content sits above the overlay hit target but stays click-through except real links/buttons. */
-/* Icon inherits the row's dim tone (see .activity-row) so icon + text match exactly. */
 .activity-row__icon {
   position: relative;
   flex-shrink: 0;
@@ -120,7 +109,6 @@
   pointer-events: none;
 }
 
-/* Real interactive descendants opt back into pointer events. */
 .activity-row__summary a,
 .activity-row__summary button,
 .activity-row__accessory a,
@@ -128,7 +116,6 @@
   pointer-events: auto;
 }
 
-/* Hover gate — mouse-capable devices only. */
 @media (hover: hover) {
   .activity-row:hover .activity-row__verb,
   .activity-row:hover .activity-row__tail {
@@ -140,7 +127,6 @@
   }
 }
 
-/* Keyboard focus mirrors hover for the brighten + chevron reveal. */
 .activity-row:focus-within .activity-row__verb {
   color: var(--transcript-tool-hover-color, var(--text-strong));
 }
@@ -154,7 +140,6 @@
   transform: rotate(90deg);
 }
 
-/* Nested rows inside a WorkGroup: dimmer, icon-less, depth by dimming (D§8 rule 6). */
 .activity-row[data-nested="true"] {
   padding-left: 8px;
 }

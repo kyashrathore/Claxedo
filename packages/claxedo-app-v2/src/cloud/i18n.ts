@@ -32,7 +32,7 @@ const en = {
 
 export type CloudKey = keyof typeof en
 
-export const dictionary = {
+const cloudDictionary = {
   en,
   zh: {
     "cloud.new": "新建工作区",
@@ -166,4 +166,4 @@ export const dictionary = {
 
 export type CloudText = DomainTranslate<CloudKey>
 
-export const useCloudText = (): CloudText => useTranslator(dictionary)
+export const useCloudText = (): CloudText => useTranslator(cloudDictionary)

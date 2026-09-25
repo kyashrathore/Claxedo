@@ -106,7 +106,6 @@ export function SegmentedControl(props: SegmentedControlProps) {
         {...rest}
         ref={assignRef}
         role="group"
-        data-component="v2-segmented-control"
         data-slot="v2-segmented-control"
         classList={{
           "v2-segmented-control": true,

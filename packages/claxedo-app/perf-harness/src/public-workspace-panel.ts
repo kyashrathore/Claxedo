@@ -256,6 +256,7 @@ export async function executeWorkspacePanelAction(input: {
   benchmarkCase: WorkspacePanelCase
   fixture: FixtureEvidence
   preset: PublicPanelLoadPreset
+  hoverPrefetch: boolean
 }) {
   const { page, benchmarkCase, fixture, preset } = input
   await seedPanelLoad(page, fixture, preset)
@@ -288,7 +289,8 @@ export async function executeWorkspacePanelAction(input: {
     case "open-file": {
       await ensureFilesOpen(page, fixture)
       const file = actionFile(fixture, preset)
-      await prepareDataWarmFileOpen(page, fixture, preset, file)
+      if (input.hoverPrefetch) await prepareDataWarmFileOpen(page, fixture, preset, file)
+      else await prepareSurfaceColdFileOpen(page, fixture, preset, file)
       return measurePrearmedSettledAction(
         page,
         async () => waitForPaintedFile(page, file, true),
@@ -594,6 +596,21 @@ async function prepareDataWarmFileOpen(
     document.querySelector<HTMLElement>("[data-testid='workspace-files-navigator'][data-mode='files']")?.dataset.filePrefetchState
   )
   if (prefetchState !== "ready") throw new Error(`Claxedo file prefetch failed: ${file}`)
+  await assertFileSurfaceAbsent(page, file)
+}
+
+/**
+ * An app without hover prefetch gets the same surface-cold start and the same
+ * painted-file end, with the file's bytes loaded by the measured click itself.
+ */
+async function prepareSurfaceColdFileOpen(
+  page: Page,
+  fixture: FixtureEvidence,
+  preset: PublicPanelLoadPreset,
+  file: string,
+) {
+  await retainCanonicalFileTabs(page, fixture, preset.retainedFileTabCount)
+  await revealFileInNavigator(page, file)
   await assertFileSurfaceAbsent(page, file)
 }
 

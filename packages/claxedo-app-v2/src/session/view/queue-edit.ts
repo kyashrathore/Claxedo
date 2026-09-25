@@ -1,5 +1,6 @@
 import { createEffect, on } from "solid-js"
 import { sessionComposerKey, useComposerStore } from "@/composer"
+import type { PromptInput } from "@/server"
 import type { SessionView } from "@/session"
 import { queuedMessageText } from "./timeline"
 
@@ -22,6 +23,10 @@ export function createQueueEdit(view: SessionView) {
     },
     edit: {
       active: () => view.queue.editing() !== undefined,
+      replace: (input: PromptInput) => {
+        const seq = view.queue.editing()
+        return seq === undefined ? Promise.resolve(false) : view.replaceQueued(seq, input)
+      },
       cancel: () => {
         const seq = view.queue.editing()
         if (seq === undefined) return

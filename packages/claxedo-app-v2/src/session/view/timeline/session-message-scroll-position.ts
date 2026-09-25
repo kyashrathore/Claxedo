@@ -14,7 +14,6 @@ export function sessionMessageScrollTop(input: {
   return Math.max(0, input.currentScrollTop + input.targetTop - input.rootTop - inset)
 }
 
-/** Resume bottom anchoring before and after the virtualizer's next layout pass. */
 export function resumeSessionScroll(input: {
   clearMessageSelection: () => void
   clearMessageHash: () => void

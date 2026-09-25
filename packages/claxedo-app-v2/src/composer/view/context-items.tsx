@@ -1,9 +1,6 @@
 import { Component, For, Show } from "solid-js"
 import type { ComposerTextKey } from "../i18n"
-import { FileIcon } from "@opencode-ai/ui/file-icon"
-import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { getDirectory, getFilename, getFilenameTruncated } from "@opencode-ai/ui/utils/path"
+import { ClaxedoIconButton as IconButton, FileIcon, Tooltip, getDirectory, getFilename, getFilenameTruncated } from "@/ui"
 import { ImageMarkBadge } from "@/lib/image-mark-badge"
 import type { FileContextItem } from "../model"
 import type { NumberedImageMark } from "../marks/marks"
@@ -30,7 +27,7 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
             const directory = getDirectory(item.path)
             const filename = getFilename(item.path)
             const label = getFilenameTruncated(item.path, 14)
-            const selected = props.active(item)
+            const selected = () => props.active(item)
 
             return (
               <Tooltip
@@ -48,9 +45,9 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
                 <div
                   classList={{
                     "group shrink-0 flex flex-col rounded-md pl-2 pr-1 py-1 max-w-[200px] h-12 cursor-default transition-all transition-transform shadow-xs-border hover:shadow-xs-border-hover": true,
-                    "hover:bg-surface-interactive-weak": !!item.commentId && !selected,
-                    "bg-surface-interactive-hover hover:bg-surface-interactive-hover shadow-xs-border-hover": selected,
-                    "bg-background-stronger": !selected,
+                    "hover:bg-surface-interactive-weak": !!item.commentId && !selected(),
+                    "bg-surface-interactive-hover hover:bg-surface-interactive-hover shadow-xs-border-hover": selected(),
+                    "bg-background-stronger": !selected(),
                   }}
                   onClick={() => props.openComment(item)}
                 >

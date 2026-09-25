@@ -13,7 +13,6 @@ type Entry = {
   refs: number
 }
 
-/** A ref-counted lease on a shared virtualizer. `release` is idempotent. */
 export type VirtualizerLease = {
   virtualizer: Virtualizer
   release: () => void
@@ -27,15 +26,6 @@ export const virtualMetrics: Partial<VirtualFileMetrics> = {
   spacing: 0,
 }
 
-/**
- * Rows a panel-hosted virtual view keeps around the visible range.
- *
- * Pierre's 1000px default buffer is sized for a full-page viewport: its window
- * is `viewportHeight + 2 * overscrollSize`, so inside an ~860px panel scroller
- * the first render materializes roughly three times the rows the reader can
- * see. A panel-hosted view retains ten lines instead and lets the virtualizer
- * grow the window from there without rebuilding what it already drew.
- */
 export const PANEL_OVERSCROLL_SIZE = (virtualMetrics.lineHeight ?? 24) * 10
 
 function scrollable(value: string) {

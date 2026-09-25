@@ -14,7 +14,7 @@ export type UsageMetric = "tokens" | "cost"
 
 export type UsageGroup = "provider" | "model"
 
-export type UsageDays = 7 | 30
+export type UsageDays = 7 | 30 | 90
 
 export type UsageOptions = {
   readonly view: UsageView
@@ -22,6 +22,7 @@ export type UsageOptions = {
   readonly metric: UsageMetric
   readonly group: UsageGroup
   readonly after?: string
+  readonly refreshNonce?: number
 }
 
 export type UsageLoad =
@@ -42,11 +43,13 @@ export function inclusiveLocalRange(days: number, now: number): { readonly since
 
 export function usageRequest(options: UsageOptions, now: number, timeZone: string): UsageRequest {
   const range = inclusiveLocalRange(options.days, now)
-  if (options.view === "quota") return { ...range, timeZone, view: "quota" }
+  const refresh = options.refreshNonce ? { refreshNonce: options.refreshNonce } : {}
+  if (options.view === "quota") return { ...range, timeZone, view: "quota", ...refresh }
   return {
     ...range,
     timeZone,
-    view: "claxedo",
+    view: options.view,
+    ...refresh,
     group: options.group,
     metric: options.metric,
     limit: BREAKDOWN_PAGE_SIZE,

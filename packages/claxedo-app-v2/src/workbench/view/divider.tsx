@@ -1,6 +1,6 @@
 import type { JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { dictionary } from "../i18n"
+import { workbenchDictionary } from "../i18n"
 import { useWorkbench } from "../provider"
 import type { SplitNode } from "../types"
 
@@ -18,7 +18,7 @@ function keyboardDelta(horizontal: boolean, key: string): number {
 
 export function Divider(props: { split: Extract<SplitNode, { t: "split" }>; root: () => HTMLElement | undefined }): JSX.Element {
   const wb = useWorkbench()
-  const t = useTranslator(dictionary)
+  const t = useTranslator(workbenchDictionary)
   const horizontal = () => props.split.dir === "h"
 
   const onPointerDown = (event: PointerEvent) => {
@@ -54,13 +54,17 @@ export function Divider(props: { split: Extract<SplitNode, { t: "split" }>; root
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={Math.round(props.split.size * 100)}
-      class="workbench-divider"
+      class="workbench-divider group outline-none"
       data-direction={props.split.dir}
       style={horizontal() ? { left: `calc(${props.split.size * 100}% - 2px)` } : { top: `calc(${props.split.size * 100}% - 2px)` }}
       onPointerDown={onPointerDown}
       onKeyDown={onKeyDown}
     >
-      <div aria-hidden="true" class="workbench-divider-line" />
+      <div
+        aria-hidden="true"
+        class="pointer-events-none absolute bg-transparent transition-colors duration-100 group-hover:bg-border-base/80 group-focus-visible:bg-border-interactive-base/60 group-active:bg-border-weak-base/45"
+        classList={{ "inset-y-0 left-1/2 w-px -translate-x-1/2": horizontal(), "inset-x-0 top-1/2 h-px -translate-y-1/2": !horizontal() }}
+      />
     </div>
   )
 }

@@ -1,21 +1,21 @@
 import type { Accessor } from "solid-js"
 import { useI18n, useTranslator, type DomainTranslate, type Translations } from "@/i18n"
-import { dict as ar } from "./locales/ar"
-import { dict as br } from "./locales/br"
-import { dict as bs } from "./locales/bs"
-import { dict as da } from "./locales/da"
-import { dict as de } from "./locales/de"
-import { dict as es } from "./locales/es"
-import { dict as fr } from "./locales/fr"
-import { dict as ja } from "./locales/ja"
-import { dict as ko } from "./locales/ko"
-import { dict as no } from "./locales/no"
-import { dict as pl } from "./locales/pl"
-import { dict as ru } from "./locales/ru"
-import { dict as th } from "./locales/th"
-import { dict as tr } from "./locales/tr"
-import { dict as zh } from "./locales/zh"
-import { dict as zht } from "./locales/zht"
+import ar from "./locales/ar"
+import br from "./locales/br"
+import bs from "./locales/bs"
+import da from "./locales/da"
+import de from "./locales/de"
+import es from "./locales/es"
+import fr from "./locales/fr"
+import ja from "./locales/ja"
+import ko from "./locales/ko"
+import no from "./locales/no"
+import pl from "./locales/pl"
+import ru from "./locales/ru"
+import th from "./locales/th"
+import tr from "./locales/tr"
+import zh from "./locales/zh"
+import zht from "./locales/zht"
 
 const en = {
   "transcript.sessionReview.selection.line": "line {{line}}",
@@ -197,7 +197,7 @@ const en = {
 
 export type TranscriptTextKey = keyof typeof en
 
-export const dictionary = {
+export const transcriptDictionary = {
   en,
   ar,
   br,
@@ -225,6 +225,6 @@ export type TranscriptI18n = {
 }
 
 export function useTranscriptI18n(): TranscriptI18n {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(transcriptDictionary)
   return { intlTag: useI18n().intlTag, t }
 }

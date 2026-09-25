@@ -1,0 +1,71 @@
+[data-component="session-screen"][data-session-presentation="floating"] {
+  background: transparent;
+  pointer-events: none;
+}
+
+[data-session-presentation="floating"] .session-floating-overlay {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0.75rem;
+  z-index: 40;
+  flex: none;
+  width: 100%;
+  max-width: 48rem;
+  height: auto;
+  max-height: calc(100% - 0.75rem);
+  margin-inline: auto;
+  padding: 0;
+  background: transparent;
+  pointer-events: auto;
+}
+
+@media (min-width: 1536px) {
+  [data-session-presentation="floating"] .session-floating-overlay {
+    max-width: 880px;
+  }
+}
+
+[data-session-presentation="floating"] .session-floating-tab {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-inline: 1.75rem;
+  margin-bottom: -0.75rem;
+  padding-bottom: 0.75rem;
+  background: var(--overlay-surface);
+  border: var(--surface-card-border, 1px solid var(--border-weak-base));
+  border-bottom: none;
+  border-radius: var(--surface-card-radius, var(--radius-lg)) var(--surface-card-radius, var(--radius-lg)) 0 0;
+  box-shadow: var(--surface-card-shadow, var(--v2-elevation-raised));
+}
+
+[data-session-presentation="floating"] .session-floating-peek {
+  flex: none;
+  padding: 0.125rem 0.75rem;
+}
+
+[data-session-presentation="floating"] .session-floating-peek [data-component="previous-messages"] > div {
+  display: none;
+}
+
+[data-session-presentation="floating"] .session-floating-timeline {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: var(--session-floating-turn-height, min(40vh, 28rem));
+}
+
+[data-session-presentation="floating"] .session-floating-timeline-collapsed {
+  max-height: 0;
+  visibility: hidden;
+}
+
+[data-session-presentation="floating"] .session-floating-dock {
+  position: relative;
+  z-index: 1;
+  padding-bottom: 0;
+}
+
+[data-floating-host] .workbench-slot:not(:has([data-session-presentation="floating"])) {
+  visibility: hidden;
+}

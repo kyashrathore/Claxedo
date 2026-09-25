@@ -1,53 +1,18 @@
-import net from "node:net"
 import { acpScriptToken, SCRIPTED_ACP_HARNESS, startStack, type Stack } from "../harness"
 import { appChoice, ensureAppBuilt } from "../harness/app"
 import type { Workspace } from "../harness/daemon"
 import type { ServerEvent } from "../../src/server/events"
-import type { Placement } from "../../src/server/types"
+import type { Placement, SessionRef } from "../../src/server/types"
 import { createServer, type ServerHandle } from "../../src/server/server"
+import { startTcpProxy, type Proxy } from "./tcp-proxy"
 
 const STEP_TIMEOUT_MS = 30_000
 const RESTART_TIMEOUT_MS = 60_000
 
-type Proxy = { readonly url: string; readonly disconnect: () => void; readonly reconnect: () => void; readonly close: () => Promise<void> }
 type Probe = { readonly stack: Stack; readonly proxy: Proxy; readonly server: ServerHandle; readonly log: EventLog; readonly workspace: Workspace }
 type EventLog = ReturnType<typeof eventLog>
 
 const results: { readonly name: string; readonly ok: boolean }[] = []
-
-function startTcpProxy(target: URL): Promise<Proxy> {
-  const sockets = new Set<net.Socket>()
-  let accepting = true
-  const server = net.createServer((client) => {
-    if (!accepting) return client.destroy()
-    const upstream = net.connect(Number(target.port), target.hostname)
-    for (const socket of [client, upstream]) {
-      sockets.add(socket)
-      socket.on("close", () => sockets.delete(socket))
-      socket.on("error", () => [client, upstream].forEach((end) => end.destroy()))
-    }
-    client.pipe(upstream).pipe(client)
-  })
-  return new Promise((resolve) => {
-    server.listen(0, "127.0.0.1", () => {
-      const port = (server.address() as net.AddressInfo).port
-      resolve({
-        url: `http://127.0.0.1:${port}`,
-        disconnect: () => {
-          accepting = false
-          for (const socket of sockets) socket.destroy()
-        },
-        reconnect: () => {
-          accepting = true
-        },
-        close: () => new Promise<void>((done) => {
-          for (const socket of sockets) socket.destroy()
-          server.close(() => done())
-        }),
-      })
-    })
-  })
-}
 
 function describeEvent(event: ServerEvent) {
   if (event.type !== "statusChanged") return event.type
@@ -82,6 +47,12 @@ function eventLog(server: ServerHandle) {
       waiters.add(waiter)
     })
   return { seen, next, mark: () => seen.length }
+}
+
+async function surfaceOf(server: ServerHandle, ref: SessionRef) {
+  const reads = server.sessions.read(ref)
+  const [surface] = await Promise.all([reads.surface, reads.status, reads.requests, reads.todos, reads.goal])
+  return surface
 }
 
 async function waitFor<T>(name: string, read: () => T | undefined, timeoutMs = STEP_TIMEOUT_MS): Promise<T> {
@@ -134,14 +105,13 @@ async function connectAndPlace(probe: Probe): Promise<Placement> {
     if (!health.ok || removal !== "not_found") throw new Error(`health=${health.status} removal=${removal}`)
     return `request health=${health.status}, removing an unknown live plugin → ${removal}`
   })
-  await check("projects: create from a folder and read back by id", async () => {
-    const project = await server.projects.create({ source: { kind: "folder", path: workspace.directory } })
-    const read = await server.queryClient.fetchQuery(server.queries.projects.byId(project.id))
-    if (read.id !== project.id) throw new Error(`read back ${read.id}, created ${project.id}`)
-    return `project ${project.id} "${project.name}"`
-  })
   const placement = await waitFor("placement", () => server.placements.list().find((item) => item.path === workspace.directory))
   console.log(`PASS placements: ${placement.id} kind=${placement.kind} project=${placement.projectId}`)
+  await check("projects: the workspace's project reads back by id", async () => {
+    const read = await server.queryClient.fetchQuery(server.queries.projects.byId(placement.projectId))
+    if (read.id !== placement.projectId) throw new Error(`read back ${read.id}, placed under ${placement.projectId}`)
+    return `project ${read.id} "${read.name}"`
+  })
   await check("files and git queries", async () => {
     const found = await server.queryClient.fetchQuery(server.queries.files.search(placement.id, "README"))
     const git = await server.queryClient.fetchQuery(server.queries.git.status(placement.id))
@@ -168,9 +138,10 @@ async function turnChecks(probe: Probe, placement: Placement) {
   const row = await server.sessions.create({ placementId: placement.id, harness: SCRIPTED_ACP_HARNESS.id, title: "Adapter smoke" })
   const ref = row.ref
   console.log(`PASS create: session ${ref.sessionId} "${row.title}" on ${SCRIPTED_ACP_HARNESS.id}`)
-  await check("snapshot: fresh session", async () => {
-    const snapshot = await server.sessions.snapshot(ref)
-    return `status=${snapshot.status.kind} entries=${snapshot.transcript.entries.length} goal actions=[${snapshot.goal.actions.join(",")}]`
+  await check("session reads: fresh session", async () => {
+    const reads = server.sessions.read(ref)
+    const [surface, status, goal] = await Promise.all([reads.surface, reads.status, reads.goal, reads.requests, reads.todos])
+    return `status=${status.kind} entries=${surface.transcript.entries.length} goal actions=[${goal.actions.join(",")}]`
   })
   await check("prompt: the turn streams and settles", async () => {
     await stack.acp.write("reply", { steps: [{ kind: "text", text: "ADAPTER_OK streamed in four pieces", chunks: 4 }] })
@@ -181,10 +152,10 @@ async function turnChecks(probe: Probe, placement: Placement) {
     if (!text.includes("ADAPTER_OK")) throw new Error(`no part carried the reply; saw: ${describe(log.seen.slice(from))}`)
     return describe(log.seen.slice(from))
   })
-  await check("snapshot and list after the turn", async () => {
-    const snapshot = await server.sessions.snapshot(ref)
+  await check("session surface and list after the turn", async () => {
+    const snapshot = await surfaceOf(server, ref)
     if (!JSON.stringify(snapshot.transcript.entries).includes("ADAPTER_OK")) throw new Error("the latest-surface page lacks the reply")
-    const page = await server.sessions.list({ limit: 20 })
+    const page = await server.sessions.list({ placementId: ref.placementId, limit: 20 })
     const hit = page.rows.find((item) => item.ref.sessionId === ref.sessionId)
     if (!hit) throw new Error(`${page.rows.length} row(s), none is ${ref.sessionId}`)
     return `entries=${snapshot.transcript.entries.length} list row "${hit.title}" placement=${hit.ref.placementId}`
@@ -197,7 +168,7 @@ async function turnChecks(probe: Probe, placement: Placement) {
     await log.next("idle", from, isStatus(ref.sessionId, ["idle"]))
     const child = (await server.sessions.subagents(ref)).find((subagent) => subagent.childSessionId)
     if (!child?.childSessionId) throw new Error("no subagent names a child session")
-    const snapshot = await server.sessions.snapshot({ ...ref, sessionId: child.childSessionId as typeof ref.sessionId })
+    const snapshot = await surfaceOf(server, { ...ref, sessionId: child.childSessionId as typeof ref.sessionId })
     return `${child.subagentKey} status=${child.status} child entries=${snapshot.transcript.entries.length}`
   })
   await check("stop: a held turn is reported working, then cancelled", async () => {
@@ -221,6 +192,22 @@ async function turnChecks(probe: Probe, placement: Placement) {
     } finally {
       await stack.acp.release("held")
     }
+  })
+  await check("failed: a failed turn stays failed across a status read of three requests", async () => {
+    await stack.acp.write("failing", { steps: [{ kind: "error", message: "Scripted turn failure" }] })
+    const from = log.mark()
+    await server.sessions.prompt(ref, { clientRequestId: crypto.randomUUID(), text: `Fail. ${acpScriptToken("failing")}`, attachments: [] })
+    await log.next("failed", from, isStatus(ref.sessionId, ["failed"]))
+    const paths: string[] = []
+    const original = globalThis.fetch
+    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      paths.push(new URL(input instanceof Request ? input.url : String(input)).pathname)
+      return original(input, init)
+    }) as typeof fetch
+    const read = await server.sessions.statuses().finally(() => (globalThis.fetch = original))
+    const reported = read.reports.find((report) => report.ref.sessionId === ref.sessionId)?.status.kind
+    if (reported !== "failed" || paths.length !== 3) throw new Error(`reported=${reported}, reads=${paths.join(",")}`)
+    return `reported=${reported}, reads=${paths.sort().join(",")}`
   })
   return ref
 }
@@ -255,9 +242,9 @@ async function cleanupChecks(probe: Probe, ref: Parameters<ServerHandle["session
   const { server, log } = probe
   await check("archive and unarchive", async () => {
     await server.sessions.archive(ref, true)
-    const archived = (await server.sessions.snapshot(ref)).row.archivedAt
+    const archived = (await surfaceOf(server, ref)).row.archivedAt
     await server.sessions.archive(ref, false)
-    const restored = (await server.sessions.snapshot(ref)).row.archivedAt
+    const restored = (await surfaceOf(server, ref)).row.archivedAt
     if (!archived || restored) throw new Error(`archivedAt after archive=${archived} after unarchive=${restored}`)
     return `archivedAt=${archived}, then unset`
   })
@@ -265,7 +252,7 @@ async function cleanupChecks(probe: Probe, ref: Parameters<ServerHandle["session
     const from = log.mark()
     await server.sessions.remove(ref)
     await log.next("sessionRemoved", from, (event): event is ServerEvent => event.type === "sessionRemoved" && event.ref.sessionId === ref.sessionId)
-    const page = await server.sessions.list({ limit: 20 })
+    const page = await server.sessions.list({ placementId: ref.placementId, limit: 20 })
     if (page.rows.some((item) => item.ref.sessionId === ref.sessionId)) throw new Error("the list still holds the removed session")
     return "removed, and gone from the list"
   })
@@ -275,8 +262,9 @@ async function main() {
   await ensureAppBuilt(appChoice(), { serverUrl: "http://127.0.0.1:46800" })
   const stack = await startStack({ label: "adapter-smoke" })
   const proxy = await startTcpProxy(new URL(stack.url))
-  const server = createServer({ serverUrl: proxy.url, auth: { kind: "none" }, maxReconnectAttempts: 40 })
-  const probe: Probe = { stack, proxy, server, log: eventLog(server), workspace: await stack.daemon.makeWorkspace("adapter") }
+  const workspace = await stack.daemon.makeWorkspace("adapter")
+  const server = createServer({ serverUrl: proxy.url, auth: { kind: "none" } })
+  const probe: Probe = { stack, proxy, server, log: eventLog(server), workspace }
   try {
     const placement = await connectAndPlace(probe)
     const ref = await turnChecks(probe, placement)

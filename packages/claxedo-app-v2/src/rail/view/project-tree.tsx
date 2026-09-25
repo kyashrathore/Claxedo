@@ -1,33 +1,26 @@
-import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type JSX } from "solid-js"
+import { createMemo, For, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
+import { useClock } from "@/lib/clock"
 import { useProjectList } from "@/projects"
 import { useServer } from "@/server"
 import { useSessionStores, type SessionRowView } from "@/session"
-import { draftPath, sessionPath, useShellRoute } from "@/shell"
-import { dictionary } from "../i18n"
-import { rowsByProject, siblingAfterArchive } from "../model"
+import { draftPath, sessionLinkPath, useShellRoute } from "@/shell"
+import { terminalPaneKind, useTerminals } from "@/terminal"
+import { useWorkbench } from "@/workbench"
+import { railDictionary } from "../i18n"
+import { rowsByProject, sessionMarker, siblingAfterArchive, type RailRow } from "../model"
 import { projectSection, type ProjectSection } from "../project-sections"
 import { ProjectBlock } from "./project-block"
 import { createSessionActions } from "./session-actions"
 
-function createNow(changes: () => unknown) {
-  const [now, setNow] = createSignal(Date.now())
-  const refresh = () => setNow(Date.now())
-  createEffect(on(changes, refresh, { defer: true }))
-  onMount(() => {
-    window.addEventListener("focus", refresh)
-    onCleanup(() => window.removeEventListener("focus", refresh))
-  })
-  return now
-}
-
 export function ProjectTree(): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(railDictionary)
   const projects = useProjectList()
   const server = useServer()
   const stores = useSessionStores()
   const routing = useShellRoute()
   const actions = createSessionActions()
+  const terminals = useTerminals()
   const sections = createMemo(() => projects.list().map((entry) => projectSection(entry.project, server.placements.list())))
   const sectionByKey = createMemo(() => new Map(sections().map((section) => [section.key, section])))
   const grouped = createMemo(() => rowsByProject(stores.list.rows()))
@@ -40,14 +33,26 @@ export function ProjectTree(): JSX.Element {
     const route = routing.route()
     return route.kind === "session" ? route.sessionId : undefined
   }
-  const now = createNow(() => stores.list.rows())
+  const activeTerminalId = () => {
+    const route = routing.route()
+    return route.kind === "terminal" ? route.terminalId : undefined
+  }
+  const now = useClock()
+  const workbench = useWorkbench()
+  const prepareDrag = (row: RailRow) =>
+    row.kind === "session"
+      ? workbench.openRoute({ kind: "session", ...row.session.ref }, false)
+      : workbench.open(terminalPaneKind, { placementId: row.terminal.placementId, terminalId: row.terminal.terminalId }, false)
+  const markerOf = (row: SessionRowView) => sessionMarker(server.placements.byId(row.ref.placementId), server.capabilities()?.thisMachine?.id)
+  const openSession = (row: SessionRowView) =>
+    routing.navigate(sessionLinkPath(row.ref, server.placements.byId(row.ref.placementId), server.capabilities()?.thisMachine?.id))
   const select = (section: ProjectSection) => {
     if (section.placementId) routing.navigate(draftPath(section.placementId))
   }
   const archive = async (section: ProjectSection, row: SessionRowView) => {
     if (activeSessionId() === row.ref.sessionId) {
       const next = siblingAfterArchive(rowsOf(section), row)
-      if (next) routing.navigate(sessionPath(next.ref))
+      if (next) openSession(next)
       else select(section)
     }
     await actions.onArchive(row)
@@ -55,7 +60,7 @@ export function ProjectTree(): JSX.Element {
   return (
     <div class="flex-1 flex flex-col py-1.5 gap-0.5">
       <Show when={sections().length > 0} fallback={<div class="flex px-4 py-8 text-compact text-text-weak">{t("rail.noMatches")}</div>}>
-        <div data-slot="rail-section-label" class="px-4 pt-1 pb-1 text-xs font-medium uppercase tracking-normal text-text-weaker">
+        <div class="rail-section-label px-4 pt-1 pb-1 text-xs font-medium uppercase tracking-normal text-text-weaker">
           {t("rail.projects")}
         </div>
         <For each={sections().map((section) => section.key)}>
@@ -69,10 +74,14 @@ export function ProjectTree(): JSX.Element {
                     rows={rowsOf(current())}
                     active={!!current().projectId && current().projectId === activeProjectId()}
                     activeSessionId={activeSessionId()}
+                    activeTerminalId={activeTerminalId()}
                     now={now}
                     list={stores.list}
                     onSelect={select}
-                    onActivate={(row) => routing.navigate(sessionPath(row.ref))}
+                    onNewTerminal={(section) => section.placementId && terminals.startNew(section.placementId)}
+                    onActivate={openSession}
+                    markerOf={markerOf}
+                    prepareDrag={prepareDrag}
                     onRename={actions.onRename}
                     onArchive={(row) => archive(current(), row)}
                     onDelete={actions.onDelete}

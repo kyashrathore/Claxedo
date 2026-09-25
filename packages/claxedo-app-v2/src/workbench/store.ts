@@ -1,14 +1,17 @@
-import { batch, createMemo, type Accessor } from "solid-js"
+import { batch, type Accessor } from "solid-js"
 import { persistedSignal } from "@/lib/persisted"
 import { isRecord } from "@/lib/record"
 import type { AnyPaneKind, Json, PaneKind, PaneRoute } from "@/shell"
 import { constructWorkbenchState } from "./construct"
 import { createDragController, type DragController } from "./drag/pointer-drag"
+import { createLayoutApi, type WorkbenchApi } from "./layout-api"
 import { createPaneApi, type PaneApi } from "./pane-api"
 import { reducers } from "./reducers/index"
 import { selectors } from "./selectors"
-import type { Edge, MovePaneTarget, Pane, PaneRect, Snapshot, SplitPath, WorkbenchState } from "./types"
+import type { WorkbenchState } from "./types"
 import { validate } from "./validate"
+
+export type { WorkbenchApi } from "./layout-api"
 
 export type PaneContent = { readonly kind: string; readonly state: Json }
 
@@ -19,39 +22,12 @@ export type WorkbenchRecord = {
 
 export type OpenedPane = { readonly contentId: string; readonly kind: AnyPaneKind; readonly state: unknown }
 
-export type WorkbenchApi = {
-  contents: {
-    add: (contentId: string) => void
-    open: (contentId: string, focus?: boolean) => void
-    remove: (contentId: string) => void
-  }
-  assignContent: (paneId: string, contentId: string | null) => void
-  split: {
-    split: (targetPaneId: string, edge: Edge, contentId: string) => void
-    close: (paneId: string, opts?: { destroyContent: boolean }) => void
-    move: (contentId: string, fromPaneId: string, toPaneId: MovePaneTarget) => void
-    focus: (paneId: string) => void
-    resize: (path: SplitPath, ratio: number) => void
-  }
-  navigation: { show: (contentId: string) => void }
-  selectors: {
-    aliveContents: () => readonly string[]
-    recentContents: () => readonly string[]
-    contentPane: (contentId: string) => string | null
-    visiblePanes: () => readonly Pane[]
-    paneRect: (paneId: string) => PaneRect | undefined
-    focusedContent: () => string | null
-    mruHiddenContent: () => string | null
-    snapshotFor: (contentId: string) => Snapshot | undefined
-  }
-}
-
 export type WorkbenchStore = WorkbenchApi &
   PaneApi & {
   readonly layout: Accessor<WorkbenchState>
   readonly content: (contentId: string) => OpenedPane | undefined
   readonly open: <State>(kind: PaneKind<State>, state: State, focus?: boolean) => string
-  readonly openRoute: (route: PaneRoute) => string | undefined
+  readonly openRoute: (route: PaneRoute, focus?: boolean) => string | undefined
   readonly routeOf: (contentId: string) => PaneRoute | undefined
   readonly closeContent: (contentId: string) => void
   readonly move: (tabId: string, index: number) => void
@@ -66,8 +42,8 @@ function closeContentReducer(state: WorkbenchState, contentId: string): Workbenc
   return closed.panes.length === 0 && next ? reducers.navigation.show(closed, next) : closed
 }
 
-function contentKey(kind: string, state: Json): string {
-  return `${kind}:${JSON.stringify(state)}`
+function contentKey(kind: { readonly kind: string; readonly singleton?: boolean }, state: Json): string {
+  return kind.singleton ? kind.kind : `${kind.kind}:${JSON.stringify(state)}`
 }
 
 function readContents(value: unknown): Record<string, PaneContent> {
@@ -141,18 +117,8 @@ function createClosedListeners() {
   }
 }
 
-export function createWorkbenchStore(key: string, kinds: Accessor<readonly AnyPaneKind[]>): WorkbenchStore {
-  const [record, setRecord] = persistedSignal<WorkbenchRecord>(
-    key,
-    { layout: constructWorkbenchState.empty(), contents: {} },
-    readRecord,
-  )
-  const layout = () => record().layout
-  const closed = createClosedListeners()
-  const apply = createApply(record, setRecord, closed.notify)
-  const focusedContent = createMemo(() => selectors.focusedContent(layout()))
+function createContentReader(record: Accessor<WorkbenchRecord>, kinds: Accessor<readonly AnyPaneKind[]>) {
   const decoded = new Map<string, { json: Json; state: unknown }>()
-
   const content = (contentId: string): OpenedPane | undefined => {
     const entry = record().contents[contentId]
     if (!entry) return undefined
@@ -164,16 +130,54 @@ export function createWorkbenchStore(key: string, kinds: Accessor<readonly AnyPa
     decoded.set(contentId, { json: entry.state, state })
     return { contentId, kind, state }
   }
+  const keyOf = (contentId: string): string | undefined => {
+    const opened = content(contentId)
+    return opened?.state === undefined ? undefined : contentKey(opened.kind, opened.kind.encode(opened.state as never))
+  }
+  return { content, keyOf }
+}
 
-  const open = <State,>(kind: PaneKind<State>, state: State, focus = true): string => {
+type Open = <State>(kind: PaneKind<State>, state: State, focus?: boolean) => string
+
+function createOpen(input: {
+  readonly record: Accessor<WorkbenchRecord>
+  readonly setRecord: (update: (current: WorkbenchRecord) => WorkbenchRecord) => void
+  readonly apply: (mutation: (layout: WorkbenchState) => WorkbenchState) => void
+  readonly keyOf: (contentId: string) => string | undefined
+}): Open {
+  return <State,>(kind: PaneKind<State>, state: State, focus = true): string => {
     const encoded = kind.encode(state)
-    const id = contentKey(kind.kind, encoded)
+    const key = contentKey(kind, encoded)
+    const existing = input.record().contents[key] ? key : input.record().layout.contentIds.find((contentId) => input.keyOf(contentId) === key)
+    const id = existing ?? key
     batch(() => {
-      setRecord((r) => (r.contents[id] ? r : { ...r, contents: { ...r.contents, [id]: { kind: kind.kind, state: encoded } } }))
-      apply((s) => (focus ? reducers.navigation.show(reducers.contents.add(s, id), id) : reducers.contents.add(s, id)))
+      input.setRecord((r) => (r.contents[id] && !kind.singleton ? r : { ...r, contents: { ...r.contents, [id]: { kind: kind.kind, state: encoded } } }))
+      input.apply((s) => (focus ? reducers.navigation.show(reducers.contents.add(s, id), id) : reducers.contents.add(s, id)))
     })
     return id
   }
+}
+
+function openRoute(kinds: readonly AnyPaneKind[], open: Open, route: PaneRoute, focus: boolean): string | undefined {
+  for (const kind of kinds) {
+    const state = kind.fromRoute?.(route)
+    if (state !== undefined) return open(kind as PaneKind<unknown>, state, focus)
+  }
+  return undefined
+}
+
+export function createWorkbenchStore(key: string, kinds: Accessor<readonly AnyPaneKind[]>): WorkbenchStore {
+  const [record, setRecord] = persistedSignal<WorkbenchRecord>(
+    key,
+    { layout: constructWorkbenchState.empty(), contents: {} },
+    readRecord,
+  )
+  const layout = () => record().layout
+  const closed = createClosedListeners()
+  const apply = createApply(record, setRecord, closed.notify)
+  const { content, keyOf } = createContentReader(record, kinds)
+
+  const open = createOpen({ record, setRecord, apply, keyOf })
 
   const closeContent = (contentId: string) => apply((s) => closeContentReducer(s, contentId))
 
@@ -182,13 +186,7 @@ export function createWorkbenchStore(key: string, kinds: Accessor<readonly AnyPa
     layout,
     content,
     open,
-    openRoute: (route) => {
-      for (const kind of kinds()) {
-        const state = kind.fromRoute?.(route)
-        if (state !== undefined) return open(kind as PaneKind<unknown>, state)
-      }
-      return undefined
-    },
+    openRoute: (route, focus = true) => openRoute(kinds(), open, route, focus),
     routeOf: (contentId) => {
       const opened = content(contentId)
       return opened?.kind.toRoute?.(opened.state as never)
@@ -197,30 +195,6 @@ export function createWorkbenchStore(key: string, kinds: Accessor<readonly AnyPa
     move: (tabId, index) => apply((s) => reducers.contents.reorder(s, tabId, index)),
     onClosed: closed.add,
     drag: createDragController(),
-    contents: {
-      add: (id) => apply((s) => reducers.contents.add(s, id)),
-      open: (id, focus = true) =>
-        apply((s) => (focus ? reducers.navigation.show(reducers.contents.add(s, id), id) : reducers.contents.add(s, id))),
-      remove: (id) => apply((s) => reducers.contents.remove(s, id)),
-    },
-    assignContent: (paneId, contentId) => apply((s) => reducers.panes.assign(s, paneId, contentId)),
-    split: {
-      split: (targetPaneId, edge, contentId) => apply((s) => reducers.split.split(s, targetPaneId, edge, contentId)),
-      close: (paneId, opts) => apply((s) => reducers.split.close(s, paneId, opts ?? { destroyContent: false })),
-      move: (contentId, fromPaneId, toPaneId) => apply((s) => reducers.split.move(s, contentId, fromPaneId, toPaneId)),
-      focus: (paneId) => apply((s) => reducers.split.focus(s, paneId)),
-      resize: (path, ratio) => apply((s) => reducers.split.resize(s, path, ratio)),
-    },
-    navigation: { show: (contentId) => apply((s) => reducers.navigation.show(s, contentId)) },
-    selectors: {
-      aliveContents: () => selectors.aliveContents(layout()),
-      recentContents: () => selectors.recentContents(layout()),
-      contentPane: (id) => selectors.contentPane(layout(), id),
-      visiblePanes: () => selectors.visiblePanes(layout()),
-      paneRect: (id) => selectors.paneRect(layout(), id),
-      focusedContent,
-      mruHiddenContent: () => selectors.mruHiddenContent(layout()),
-      snapshotFor: (id) => selectors.snapshotFor(layout(), id),
-    },
+    ...createLayoutApi(layout, apply),
   }
 }

@@ -1,18 +1,26 @@
 import { createEffect, createSignal, onCleanup, onMount, Show, type JSX, type ParentProps } from "solid-js"
 import { useTranslator } from "@/i18n"
+import { useServer } from "@/server"
 import { dictionary } from "../i18n"
 import { usePanel } from "../store"
 import { PANEL_CLOSE_GRACE_MS, PANEL_MOTION } from "../width"
 import { PanelBody } from "./panel-body"
 import { PanelHeader } from "./panel-header"
 import { PanelResizeHandle } from "./resize-handle"
+import { createShellSettle } from "./shell-settle"
 
 function WorkspacePanel(): JSX.Element {
   const t = useTranslator(dictionary)
   const panel = usePanel()
+  const server = useServer()
+  const workspacePath = () => {
+    const placementId = panel.placementId()
+    return placementId ? (server.placements.byId(placementId)?.path ?? "") : ""
+  }
   const [dragging, setDragging] = createSignal(false)
   const [exposed, setExposed] = createSignal(panel.open())
   let aside: HTMLElement | undefined
+  const settled = createShellSettle(() => aside, panel.open)
   let hideTimer: ReturnType<typeof setTimeout> | undefined
   createEffect(() => {
     clearTimeout(hideTimer)
@@ -40,7 +48,11 @@ function WorkspacePanel(): JSX.Element {
       role={exposed() ? "complementary" : undefined}
       data-testid="workspace-panel-shell"
       data-open={panel.open() ? "true" : "false"}
+      data-shell-settled={settled() ? "true" : "false"}
+      data-state-open={panel.open() ? "true" : "false"}
+      data-state-mode="review"
       data-state-navigator={panel.navigator() ?? ""}
+      data-state-workspace-dir={workspacePath()}
       class="absolute bottom-0 right-0 top-0 z-30 flex flex-col overflow-hidden bg-background-base will-change-[transform,opacity]"
       classList={{ "pointer-events-none": !panel.open() }}
       style={{
@@ -78,6 +90,7 @@ export function WorkspaceArea(props: ParentProps): JSX.Element {
     <div class="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
       <div
         data-testid="workbench-column"
+        data-floating-host={panel.maximized() ? "" : undefined}
         class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden transition-[margin-right] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] will-change-[margin-right]"
         style={{ "margin-right": `${panel.inset()}px` }}
       >

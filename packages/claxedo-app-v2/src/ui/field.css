@@ -1,5 +1,5 @@
 @layer components {
-  [data-component="v2-field"] {
+  .v2-field {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
@@ -8,7 +8,7 @@
     min-width: 0;
   }
 
-  [data-component="v2-field"] [data-slot="v2-field-label"] {
+  .v2-field [data-slot="v2-field-label"] {
     display: flex;
     flex-direction: row;
     align-items: center;
@@ -29,19 +29,19 @@
     user-select: none;
   }
 
-  [data-component="v2-field"] [data-slot="v2-field-label-text"] {
+  .v2-field [data-slot="v2-field-label-text"] {
     display: inline-flex;
     align-items: center;
   }
 
-  [data-component="v2-field"] [data-slot="v2-field-label"] .v2-tooltip-trigger {
+  .v2-field [data-slot="v2-field-label"] .ui-tooltip-trigger {
     display: inline-flex;
     flex: none;
     width: 16px;
     height: 16px;
   }
 
-  [data-component="v2-field"] .v2-field-label-info {
+  .v2-field .v2-field-label-info {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -57,22 +57,22 @@
     outline: none;
   }
 
-  [data-component="v2-field"] .v2-field-label-info:is(:hover, [data-state="hover"]) {
+  .v2-field .v2-field-label-info:is(:hover, [data-state="hover"]) {
     color: var(--v2-text-text-base);
   }
 
-  [data-component="v2-field"] .v2-field-label-info:focus {
+  .v2-field .v2-field-label-info:focus {
     outline: none;
   }
 
-  [data-component="v2-field"] .v2-field-label-info:focus-visible {
+  .v2-field .v2-field-label-info:focus-visible {
     outline: 2px solid var(--v2-border-border-focus);
     outline-offset: 1px;
     border-radius: var(--radius-xs);
   }
 
-  [data-component="v2-field"] [data-slot="v2-field-prefix"],
-  [data-component="v2-field"] [data-slot="v2-field-suffix"] {
+  .v2-field [data-slot="v2-field-prefix"],
+  .v2-field [data-slot="v2-field-suffix"] {
     align-self: stretch;
     width: 100%;
     min-height: 11px;
@@ -86,7 +86,7 @@
     user-select: none;
   }
 
-  [data-component="v2-field"] [data-slot="v2-field-control"] {
+  .v2-field [data-slot="v2-field-control"] {
     display: flex;
     flex-direction: column;
     align-items: flex-start;

@@ -1,7 +1,6 @@
 import { For, Show, createMemo, createSignal, type Accessor, type JSX } from "solid-js"
 import { Popover as Kobalte } from "@kobalte/core/popover"
-import { Button } from "@opencode-ai/ui/button"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
+import { ClaxedoIcon as Icon, Button } from "@/ui"
 import { ModelList, type PickerState } from "./model-list"
 import { COMPOSER_MENU_CLASS } from "./menu-metrics"
 
@@ -322,6 +321,7 @@ export function HarnessModelPicker<H>(props: {
   modelError?: Accessor<{ message: string; detail?: string; action?: { label: string; run: () => void } } | undefined>
 
   /** Effort slider. An empty well when the harness offers no variants. */
+  onOpen?: () => void
   showEffort: Accessor<boolean>
   variants: Accessor<string[]>
   currentVariant: Accessor<string | undefined>
@@ -384,6 +384,7 @@ export function HarnessModelPicker<H>(props: {
       open={open()}
       onOpenChange={(next) => {
         setOpen(next)
+        if (next) props.onOpen?.()
         // Reopen on the model list rather than wherever the last visit ended —
         // a menu that remembers a disclosure the user has since forgotten about
         // opens "wrong" far more often than it opens helpfully.
@@ -510,7 +511,7 @@ export function HarnessModelPicker<H>(props: {
             <SectionPanel class="flex min-h-0 flex-1 flex-col">
               <Show
                 when={props.modelError?.()}
-                fallback={<ModelList model={props.model()} onSelect={() => setOpen(false)} />}
+                fallback={<ModelList model={props.model()} tooltips={false} onSelect={() => setOpen(false)} />}
               >
                 {(failure) => (
                   <div data-slot="harness-picker-model-error" class="flex min-h-0 flex-1 flex-col items-start gap-2 px-3 py-4">

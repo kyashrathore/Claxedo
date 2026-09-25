@@ -1,9 +1,8 @@
 import { createEffect, createMemo, createSignal, For, Match, Show, Switch, untrack, type JSX } from "solid-js"
-import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { useTranslator } from "@/i18n"
 import { FailureNotice } from "@/lib/failure"
 import type { FileNode } from "@/server"
-import { ClaxedoIconV2 as IconV2 } from "@/ui"
+import { ClaxedoIconV2 as IconV2, Collapsible } from "@/ui"
 import { dictionary } from "../i18n"
 import type { ChangeKind } from "../model"
 import type { TreeSource } from "../tree-source"
@@ -33,8 +32,6 @@ export type FileTreeProps = {
   readonly visibleLimit?: number
   readonly loadingEpisode?: string
   readonly onFileClick?: (file: FileNode) => void
-  readonly onFilePointerEnter?: (file: FileNode) => void
-  readonly onFilePointerLeave?: (file: FileNode) => void
   readonly _filter?: FileTreeFilter
   readonly _marks?: TreeMarks
   readonly _deeps?: ReadonlyMap<string, number>
@@ -143,8 +140,6 @@ function FileRow(props: {
       aria-level={props.level + 1}
       aria-selected={props.node.path === props.tree.active}
       data-file-tree-path={props.node.path}
-      onPointerEnter={() => props.tree.onFilePointerEnter?.(props.node)}
-      onPointerLeave={() => props.tree.onFilePointerLeave?.(props.node)}
       onClick={() => props.tree.onFileClick?.(props.node)}
     >
       <div class="w-4 shrink-0" />

@@ -1,12 +1,16 @@
 import type { JSX } from "solid-js"
-import { Icon, isIconName, type IconName, type IconSize } from "@/ui"
+import { ClaxedoIcon, type ClaxedoIconName, type ClaxedoIconProps, appIconNames } from "@/ui"
 
-export const fallbackIconName: IconName = "page"
+export const fallbackIconName: ClaxedoIconName = "page"
 
-export function iconNameOf(name: string): IconName {
+function isIconName(name: string): name is ClaxedoIconName {
+  return (appIconNames as readonly string[]).includes(name)
+}
+
+export function iconNameOf(name: string): ClaxedoIconName {
   return isIconName(name) ? name : fallbackIconName
 }
 
-export function RegistryIcon(props: { readonly name: string; readonly size?: IconSize }): JSX.Element {
-  return <Icon name={iconNameOf(props.name)} size={props.size} />
+export function RegistryIcon(props: { readonly name: string; readonly size?: ClaxedoIconProps["size"] }): JSX.Element {
+  return <ClaxedoIcon name={iconNameOf(props.name)} size={props.size} />
 }

@@ -1,30 +1,37 @@
 import { createEffect, createMemo, createSignal, on, Show, untrack, type Accessor, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import type { SessionList, SessionRowView } from "@/session"
-import { dictionary } from "../i18n"
-import { SESSION_GROUP_PAGE_SIZE } from "../model"
+import type { TerminalItem } from "@/terminal"
+import { railDictionary } from "../i18n"
+import { railRows, SESSION_GROUP_PAGE_SIZE, type RailRow, type SessionMarker } from "../model"
 import type { ProjectSection } from "../project-sections"
 import { ProjectHeader } from "./project-header"
+import { ProjectRows } from "./project-rows"
 import { SessionListNotice } from "./session-list-notice"
-import { SessionNavigation } from "./session-navigation"
 import type { SessionRowMenuActions } from "./session-row-menu"
+import { useProjectTerminals } from "./terminal-row"
 
 export type ProjectBlockProps = SessionRowMenuActions & {
   readonly section: ProjectSection
   readonly rows: readonly SessionRowView[]
   readonly active: boolean
   readonly activeSessionId: string | undefined
+  readonly activeTerminalId: string | undefined
   readonly now: Accessor<number>
   readonly list: SessionList
   readonly onSelect: (section: ProjectSection) => void
+  readonly onNewTerminal: (section: ProjectSection) => void
   readonly onActivate: (row: SessionRowView) => void
+  readonly markerOf: (row: SessionRowView) => SessionMarker | undefined
+  readonly prepareDrag: (row: RailRow) => string | undefined
 }
 
 function createProjectPaging(props: ProjectBlockProps) {
   const [visible, setVisible] = createSignal(SESSION_GROUP_PAGE_SIZE)
   const loaded = () => props.list.state().kind === "live" || props.list.state().kind === "rereading"
   const shown = createMemo(() => props.rows.slice(0, visible()))
-  const more = () => props.rows.length > visible() || (props.list.hasMore() && props.rows.length >= visible())
+  const hasMore = () => props.list.hasMore(props.section.placementIds)
+  const more = () => props.rows.length > visible() || hasMore()
   return {
     shown,
     more,
@@ -37,13 +44,13 @@ function createProjectPaging(props: ProjectBlockProps) {
     loadMore: () => {
       const next = visible() + SESSION_GROUP_PAGE_SIZE
       setVisible(next)
-      if (props.rows.length < next && props.list.hasMore()) void props.list.loadMore()
+      if (props.rows.length < next && hasMore()) void props.list.loadMore(props.section.placementIds)
     },
   }
 }
 
 function LoadMore(props: { readonly loading: boolean; readonly onLoad: () => void }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(railDictionary)
   return (
     <button
       data-testid="rail-sidebar-session-load-more"
@@ -61,13 +68,19 @@ function LoadMore(props: { readonly loading: boolean; readonly onLoad: () => voi
   )
 }
 
-function ProjectSessions(props: ProjectBlockProps & { readonly paging: ReturnType<typeof createProjectPaging> }): JSX.Element {
-  const t = useTranslator(dictionary)
+function ProjectSessions(
+  props: ProjectBlockProps & { readonly paging: ReturnType<typeof createProjectPaging>; readonly terminals: readonly TerminalItem[] },
+): JSX.Element {
+  const t = useTranslator(railDictionary)
   return (
     <div class="flex flex-col gap-0.5 pb-1">
-      <SessionNavigation
-        rows={props.paging.shown()}
+      <ProjectRows
+        rows={railRows(props.terminals, props.paging.shown())}
         activeSessionId={props.activeSessionId}
+        activeTerminalId={props.activeTerminalId}
+        markerOf={props.markerOf}
+        prepareDrag={props.prepareDrag}
+        projectLabel={props.section.label}
         now={props.now}
         onActivate={props.onActivate}
         onRename={props.onRename}
@@ -104,7 +117,9 @@ export function ProjectBlock(props: ProjectBlockProps): JSX.Element {
   const [open, setOpen] = createSignal(props.rows.length > 0 || props.active)
   const [toggled, setToggled] = createSignal(false)
   const paging = createProjectPaging(props)
+  const terminals = useProjectTerminals(() => props.section.placementIds)
   createEffect(on(() => props.active, (active) => active && setOpen(true)))
+  createEffect(on(() => terminals().length > 0, (has) => has && setOpen(true)))
   createEffect(on(() => props.rows.length > 0, (has) => has && !untrack(toggled) && setOpen(true)))
   return (
     <div data-testid="project-group" data-project-id={props.section.projectId} class="flex flex-col gap-0.5">
@@ -121,9 +136,10 @@ export function ProjectBlock(props: ProjectBlockProps): JSX.Element {
           props.onSelect(props.section)
         }}
         onNewSession={() => props.onSelect(props.section)}
+        onNewTerminal={() => props.onNewTerminal(props.section)}
       />
       <Show when={open()}>
-        <ProjectSessions {...props} paging={paging} />
+        <ProjectSessions {...props} paging={paging} terminals={terminals()} />
       </Show>
     </div>
   )

@@ -19,7 +19,7 @@ function PluginsSettings(): JSX.Element {
       <Show when={host.safeMode()}>
         <div role="status" class="plugins-settings-safe-mode">
           <span>{t("plugins.safeMode")}</span>
-          <Button type="button" variant="outline" size="small" onClick={() => host.leaveSafeMode()}>
+          <Button type="button" variant="secondary" size="small" onClick={() => host.leaveSafeMode()}>
             {t("plugins.safeMode.leave")}
           </Button>
         </div>

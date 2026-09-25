@@ -1,11 +1,10 @@
 import { createMemo, For, Show } from "solid-js"
 import type { AgentQuestionAnswer, AgentQuestionInfo } from "@claxedo/agent-runtime-contract"
-import { Icon } from "@opencode-ai/ui/icon"
+import { Icon } from "@/ui"
 import { useTranscriptI18n } from "./i18n"
 
 export type QuestionAnswerMark = {
   text: string
-  /** The reader typed this rather than picking a declared option. */
   custom: boolean
 }
 

@@ -1,5 +1,5 @@
 import { createMemo, type Accessor, type JSX } from "solid-js"
-import { useSpring } from "@opencode-ai/ui/motion-spring"
+import { useSpring } from "@/ui"
 
 /**
  * The composer toolbar's two animated style bags.

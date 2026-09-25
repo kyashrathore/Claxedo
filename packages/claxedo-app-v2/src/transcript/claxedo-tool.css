@@ -1,5 +1,3 @@
-/* A first-party tool row: the same muted voice as every other tool row, with the task
-   or session it was about as the one accented thing on the line. */
 [data-component="claxedo-tool"] {
   [data-slot="basic-tool-tool-info-main"] {
     gap: 8px;
@@ -13,8 +11,6 @@
     white-space: nowrap;
   }
 
-  /* The list row's only sign of its state at rest is this 16px mark; the label sits at
-     the same dim tone as the rest of the row so the pill never reads as a button. */
   [data-slot="claxedo-tool-status"] {
     display: inline-flex;
     align-items: center;
@@ -50,8 +46,6 @@
     }
   }
 
-  /* 22px = the 14px leading icon plus its 8px gap, so the body's left edge sits under
-     the verb rather than under the mark. */
   [data-slot="claxedo-tool-body"] {
     display: flex;
     flex-direction: column;

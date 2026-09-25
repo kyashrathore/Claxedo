@@ -1,15 +1,32 @@
-import { A } from "@solidjs/router"
 import type { JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { settingsPath } from "@/shell"
-import { Icon } from "@/ui"
-import { dictionary } from "../i18n"
-import "../rail.css"
+import { settingsPath, useShellRoute } from "@/shell"
+import { railDictionary } from "../i18n"
+import { AccountCard, USAGE_SECTION } from "./account-card"
 import { GlobalNavigation } from "./global-navigation"
 import { ProjectTree } from "./project-tree"
+import { ClaxedoIcon as Icon, Tooltip } from "@/ui"
+
+function UsageButton(): JSX.Element {
+  const t = useTranslator(railDictionary)
+  const routing = useShellRoute()
+  return (
+    <Tooltip value={t("rail.account.usage")}>
+      <button
+        type="button"
+        aria-label={t("rail.account.usage")}
+        data-testid="rail-usage"
+        class="flex size-9 shrink-0 items-center justify-center rounded-md text-icon-weak-base transition-colors hover:bg-surface-base-hover hover:text-icon-base"
+        onClick={() => routing.navigate(settingsPath(USAGE_SECTION))}
+      >
+        <Icon name="gauge" size="small" />
+      </button>
+    </Tooltip>
+  )
+}
 
 export function MainSidebar(): JSX.Element {
-  const t = useTranslator(dictionary)
+  let foot: HTMLDivElement | undefined
   return (
     <>
       <div
@@ -19,11 +36,13 @@ export function MainSidebar(): JSX.Element {
         <GlobalNavigation />
         <ProjectTree />
       </div>
-      <div class="rail-footer">
-        <A href={settingsPath()} class="rail-item" data-testid="rail-settings">
-          <Icon name="settings" />
-          <span>{t("rail.settings")}</span>
-        </A>
+      <div class="px-2.5 py-2">
+        <div ref={foot} class="flex items-center gap-1 border-t border-border-weak-base/15 pt-2">
+          <div class="min-w-0 flex-1">
+            <AccountCard anchor={() => foot} />
+          </div>
+          <UsageButton />
+        </div>
       </div>
     </>
   )

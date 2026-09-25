@@ -290,8 +290,9 @@ export function openMermaidViewer(
       content.removeAttribute("aria-live")
       content.dataset.state = "ready"
     })
-    .catch(() => {
+    .catch((error: unknown) => {
       if (closed) return
+      console.warn("The full-screen diagram could not be rendered", { error })
       content.textContent = "This diagram could not be rendered."
       content.dataset.state = "error"
     })

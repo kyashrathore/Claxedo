@@ -36,11 +36,6 @@
     }
   }
 
-  /*
-   * Category icon (T1). Sized down to 14px and made to INHERIT the row's text colour so
-   * the icon, verb and trailing detail read as one uniform dim tone at rest — a separate
-   * icon token made the row look like three different shades stitched together.
-   */
   [data-slot="basic-tool-tool-leading-icon"] {
     flex-shrink: 0;
     display: inline-flex;
@@ -137,12 +132,6 @@
     letter-spacing: var(--letter-spacing-normal);
     color: var(--v2-text-text-muted);
 
-    /*
-     * text-overflow cannot elide an atomic inline, so a subtitle whose text sits inside
-     * an inline-block wrapper (the shell row's animated command span) clips mid-word with
-     * no ellipsis. The wrapper's own display comes from a sheet imported after this one,
-     * so the attribute selector is what wins the cascade, not the source order.
-     */
     & > [data-slot] {
       display: inline;
     }
@@ -209,7 +198,6 @@
     color: var(--text-weak);
   }
 
-  /* Live elapsed while running (T6) — muted, tabular so ticks don't shift layout. */
   [data-slot="basic-tool-tool-elapsed"] {
     flex-shrink: 0;
     margin-left: auto;
@@ -223,13 +211,6 @@
 }
 
 body:not([data-new-layout]) {
-  /*
-   * Muted row (T1, D§3.3). One uniform dim tone at rest across icon + verb + trailing
-   * detail — a per-element ladder (icon/base/weak/weaker) made a single row read as three
-   * mismatched shades. The row sets the colour once and the icon inherits it; hover lifts
-   * the TEXT only (the icon carries category, not attention). Hover context is the whole
-   * row (the Kobalte collapsible-trigger button).
-   */
   [data-component="tool-trigger"] {
     color: var(--transcript-tool-color, var(--text-weak));
 
