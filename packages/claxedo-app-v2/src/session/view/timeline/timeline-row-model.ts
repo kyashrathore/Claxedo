@@ -1,4 +1,5 @@
 import type { PartGroup } from "@/transcript"
+import type { DispatchContext } from "./provider-error-detail"
 import type { SessionErrorClass } from "./turn-recovery"
 import type { SummaryDiff } from "./message-timeline.data"
 
@@ -43,9 +44,7 @@ export type TimelineRowMap = {
     summary?: string
     recoveryClass?: SessionErrorClass
     error?: unknown
-    providerID?: string
-    modelID?: string
-  }
+  } & DispatchContext
 }
 
 type TaggedRow<Tag extends string, Fields extends object> = Readonly<Fields> & { readonly _tag: Tag }

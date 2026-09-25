@@ -1,4 +1,6 @@
-# Streaming slice for sign-off: `v2/stream-slice` at dfbf6093da
+# Streaming slice for sign-off: `v2/stream-slice`
+
+**Tip:** `v2/stream-slice` moves as feat is merged in; merges only, the fix commits below are unchanged. At the time of writing it is 5747684575. e32ed28ee0 moves the slice's constraints into `src/transcript/README.md` ("Why markdown renders this way") and the timeline README ("Why the rows are built this way"); the corpus and flows 03, 04, 09 and 11 passed on web and phone after it (38 passed).
 
 **What it is.** Four transcript fixes that make a streaming reply cheaper to render, each with a transcript-corpus case that compares v2 against today's app while the reply is still streaming. The branch is cut from `v2/exp-stream` (feat/app-v2 plus the delta fix, which is already on feat), and feat is merged in last. It is not merged into feat.
 
