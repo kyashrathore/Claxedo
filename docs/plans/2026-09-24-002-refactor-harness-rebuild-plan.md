@@ -1341,9 +1341,13 @@ Each is corpus-proven, with your sign-off.
    - **Recommendation:** `packages/harness` is gated. `agent-runtime-contract` is the shared wire contract, gated separately.
    - The moved runtime code and `process-ownership` count against their own packages.
 2. **OpenCode: the v2 server.** Decided 2026-09-25, after measuring four options on the latest builds (`docs/harness-v2/opencode-options.md`).
-   - One transport, `opencode-v2`, over upstream's v2 server (`opencode2 serve`, `@opencode-ai/cli`, pinned). Claxedo starts it, one per runtime, or connects to one by URL as a remote harness.
+   - One transport, `opencode-v2`, over upstream's v2 server (`opencode2 serve`, `@opencode-ai/cli`, pinned). Claxedo starts one per runtime and owner, or connects to one by URL as a remote harness.
+     - On a desktop that is one process for the machine, the embedded engine's shape: started by the first OpenCode session, stopped when idle.
+     - Not one per folder or per session: one server measured 184 MB idle and 686 MB after its first session, against 572 MB idle and 792 MB after a turn for the embedded engine serving every folder.
+     - A crash stops that runtime's OpenCode sessions, not the daemon; the server restarted in 156 ms, and sessions resume from stored history.
    - A session runs on its owner's credentials: provider rows in the server's config at boot point at the broker, and the placeholder key goes through the server's credential store, which switches from the next turn without aborting.
-   - Claxedo's own tools reach it through Claxedo's MCP server; the provider allow-list, MCP servers and skills through config.
+   - Claxedo's own tools reach it through Claxedo's MCP server, and every call carries the calling session's signed identity. A bearer valid for every session in the runtime is refused: the bearer names one session, and `assertSessionReach` keeps a session off its siblings.
+   - The provider allow-list, MCP servers and skills go through config.
    - The embedded engine (`workspace-runtime/src/opencode`, the SDK and its five Node patches) and the v1 server adapter (`opencode-server-adapter`) are deleted at P3.
 3. **Harness switching mid-session.** It moves unchanged with the runtime host; nothing to decide here.
 4. **Protocol recovery inside transports.** **Recommendation:** keep it.
