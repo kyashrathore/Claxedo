@@ -383,6 +383,21 @@ describe.each(["viewer", "editor"] as const)("a workspace %s on this machine's t
     expect(foreign.status).toBe(403)
   })
 
+  test("reads no other workspace's session activity", async () => {
+    const granted = await registeredWorkspace("project-a")
+    const other = await registeredWorkspace("project-b")
+    await serveWorkspace(granted)
+    const token = mintRelayToken({ workspaceId: granted, role })
+
+    const replies = await Promise.all([
+      relay!.request({ workspaceId: granted, token, path: "/api/wr/session-activity" }),
+      relay!.request({ workspaceId: granted, token, path: "/../../api/wr/session-activity" }),
+    ])
+
+    expect(replies.map((reply) => reply.status)).toEqual([404, 404])
+    for (const reply of replies) expect(reply.body).not.toContain(other)
+  })
+
   test("still reads the workspace it was granted", async () => {
     const workspace = await registeredWorkspace("project-a")
     await serveWorkspace(workspace)

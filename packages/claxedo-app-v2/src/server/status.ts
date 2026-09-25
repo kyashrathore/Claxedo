@@ -13,7 +13,7 @@ export type StatusAdmission =
 
 export type StatusOwner = {
   readonly read: (route: RuntimeRoute, ref: SessionRef, row: AgentSession) => Promise<SessionStatus>
-  readonly readPlacement: (route: RuntimeRoute, placementId: PlacementId) => Promise<ReadonlyMap<string, SessionStatus>>
+  readonly placementStatuses: (placementId: PlacementId, body: unknown) => ReadonlyMap<string, SessionStatus>
   readonly settle: (route: RuntimeRoute, ref: SessionRef) => Promise<SessionStatus>
   readonly apply: (event: ServerEvent) => StatusAdmission
   readonly forget: (ref: SessionRef) => void
@@ -67,8 +67,8 @@ function createFailures() {
 export function createStatusOwner(transport: Transport): StatusOwner {
   const failures = createFailures()
   const live = async (route: RuntimeRoute) => statusesOf(await transport.runtimeJson<unknown>(route, STATUS_PATH))
-  const readPlacement = async (route: RuntimeRoute, placementId: PlacementId) => {
-    const statuses = await live(route)
+  const placementStatuses = (placementId: PlacementId, body: unknown) => {
+    const statuses = statusesOf(body)
     for (const [id, failed] of failures.ofPlacement(placementId)) if ((statuses.get(id)?.kind ?? "idle") === "idle") statuses.set(id, failed)
     return statuses
   }
@@ -82,7 +82,7 @@ export function createStatusOwner(transport: Transport): StatusOwner {
   }
   return {
     read,
-    readPlacement,
+    placementStatuses,
     settle: async (route, ref) => read(route, ref, await transport.runtimeJson<AgentSession>(route, sessionEndpoint(ref))),
     apply: (event) => {
       if (event.type !== "statusChanged") return { kind: "admitted", event }
