@@ -1,5 +1,6 @@
 import { createSignal, For, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
+import { failureMessage } from "@/lib/failure"
 import { useServer, type PluginCandidate, type PluginHarness } from "@/server"
 import { Button, Dialog, showToast, useDialog } from "@/ui"
 import { marketplaceDictionary } from "../i18n"
@@ -63,7 +64,7 @@ function createInstall(props: {
       }
       props.done()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(failureMessage(cause))
     } finally {
       setBusy(false)
     }

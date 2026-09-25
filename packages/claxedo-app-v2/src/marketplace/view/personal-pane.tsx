@@ -1,15 +1,9 @@
 import { Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
+import { harnessLabel } from "@/lib/harness-catalog"
 import { marketplaceDictionary } from "../i18n"
 import type { PersonalEntry } from "../sections"
 import { PluginIconTile } from "./plugin-icon"
-
-const HARNESS_LABEL: Record<Exclude<PersonalEntry["harnessId"], "agents">, string> = {
-  claude: "Claude Code",
-  cursor: "Cursor",
-  codex: "Codex",
-  opencode: "OpenCode",
-}
 
 function PersonalFacts(props: { readonly entry: PersonalEntry; readonly harness: string }): JSX.Element {
   const t = useTranslator(marketplaceDictionary)
@@ -39,7 +33,7 @@ function PersonalFacts(props: { readonly entry: PersonalEntry; readonly harness:
 export function PersonalPane(props: { readonly entry: PersonalEntry; readonly onClose: () => void }): JSX.Element {
   const t = useTranslator(marketplaceDictionary)
   const harness = () =>
-    props.entry.harnessId === "agents" ? t("marketplace.personal.agentsHarness") : HARNESS_LABEL[props.entry.harnessId]
+    props.entry.harnessId === "agents" ? t("marketplace.personal.agentsHarness") : (harnessLabel(props.entry.harnessId) ?? props.entry.harnessId)
   const version = () => (props.entry.kind === "plugin" ? props.entry.version : undefined)
   const installedBy = () =>
     version()

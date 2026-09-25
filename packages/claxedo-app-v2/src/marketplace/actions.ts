@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js"
 import { useTranslator, type DomainTranslate } from "@/i18n"
+import { failureMessage } from "@/lib/failure"
 import {
   useServer,
   type MarketplaceCatalog,
@@ -18,10 +19,6 @@ type ActionInput = {
 }
 
 type Translate = DomainTranslate<MarketplaceKey>
-
-export function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error)
-}
 
 function createActivator(input: ActionInput) {
   const server = useServer()
@@ -53,7 +50,7 @@ function createPending() {
     try {
       await work()
     } catch (error) {
-      showToast({ title: failure, description: errorMessage(error) })
+      showToast({ title: failure, description: failureMessage(error) })
     } finally {
       setPending(undefined)
     }

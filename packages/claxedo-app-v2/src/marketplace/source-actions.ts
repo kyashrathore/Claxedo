@@ -1,7 +1,7 @@
 import { useTranslator } from "@/i18n"
+import { failureMessage } from "@/lib/failure"
 import { useServer, type PluginSourceInput, type PluginSourceRecord } from "@/server"
 import { requestConfirm, showToast, useDialog } from "@/ui"
-import { errorMessage } from "./actions"
 import { marketplaceDictionary } from "./i18n"
 
 export function createSourceActions(input: {
@@ -25,7 +25,7 @@ export function createSourceActions(input: {
       input.onRemoved()
       await input.refresh()
     } catch (error) {
-      showToast({ title: t("marketplace.toast.removeSourceFailed"), description: errorMessage(error) })
+      showToast({ title: t("marketplace.toast.removeSourceFailed"), description: failureMessage(error) })
     }
   }
   const add = async (registration: PluginSourceInput) => {
