@@ -44,10 +44,6 @@
     "H-1",
     "H-2"
   ],
-<<<<<<< HEAD
-  "H25.twobindings": [
-    "H-25"
-=======
   "H37.scope": [
     "H-14"
   ],
@@ -59,6 +55,8 @@
   ],
   "H35.delete": [
     "H-17"
->>>>>>> feat/harness-v2
+  ],
+  "H25.twobindings": [
+    "H-25"
   ]
 }
