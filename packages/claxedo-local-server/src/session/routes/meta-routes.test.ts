@@ -70,11 +70,11 @@ function services(input: { workspaces?: unknown[] } = {}): ControlPlaneServicesC
       listWorkspaces: vi.fn(async () => input.workspaces ?? []),
       // Participant-scoped list in production; for these route tests the local
       // projection store is the seeded source of truth for which sessions exist.
+      // The rows carry what the authority's own rows carry, which names neither
+      // the workspace nor the project.
       listSessions: vi.fn(async (_auth, args: { workspaceId: string }) =>
         (await listSessionMetas({ workspaceID: args.workspaceId })).map((row) => ({
           session_id: row.sessionID,
-          workspace_id: row.workspaceID,
-          project_id: row.projectID,
           title: row.title,
           created_at: row.createdAt,
           updated_at: row.updatedAt,
@@ -343,6 +343,28 @@ describe("session metadata routes", () => {
     expect(res.status).toBe(401)
     expect(await res.json()).toMatchObject({
       error: { code: "missing_bearer_token" },
+    })
+  })
+
+  test("signed workspace-scoped session lists place the authority's rows in the workspace they were read from", async () => {
+    const directory = await worktree(path.join(root, `signed-workspace-${randomUUID()}`))
+    const workspaceId = `ws_signed_workspace_${randomUUID()}`
+    await ensureWorkspace({ workspaceId, project_id: "proj_signed_workspace", directory })
+    await putSessionMeta("signed_workspace_1", {
+      ws: { id: workspaceId, project_id: "proj_signed_workspace", directory, kind: "local", created_at: 1, updated_at: 1 },
+      title: "Signed workspace row",
+    })
+    const { app } = buildApp(services({ workspaces: [{ workspace_id: workspaceId, project_id: "proj_signed_workspace" }] }))
+
+    const res = await app.request(
+      `http://localhost/api/claxedo/session-list?scope=workspace&directory=${encodeURIComponent(directory)}&limit=5`,
+      { headers: { Authorization: "Bearer user_1" } },
+    )
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject({
+      items: [expect.objectContaining({ sessionId: "signed_workspace_1", workspaceId, title: "Signed workspace row" })],
+      totalKnown: 1,
     })
   })
 

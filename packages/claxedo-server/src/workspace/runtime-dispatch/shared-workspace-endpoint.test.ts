@@ -51,6 +51,43 @@ vi.mock("../supervisor", () => ({
 /** Captures what the runtime actually received. */
 let forwarded: Request | undefined
 
+const signedCaller = {
+  mode: "signed" as const,
+  user: { subject: "user_1", tokenIdentifier: "https://issuer.test|user_1", issuer: "https://issuer.test" },
+}
+
+function signedWorkspaceApp(mints: unknown[]) {
+  const app = new Hono()
+  app.all(
+    "/workspaces/:workspaceId/*",
+    createLocalWorkspaceRelayProxy({
+      sandboxManager: {
+        ensure: async () => ({ status: "ready", url: "https://runtime.test", hostId: "host_1", homeRegion: "us-east" }),
+        touch: vi.fn(async () => ({ touched: true, status: "ready" })),
+      } as never,
+      relayProvider: {
+        getRelayEndpoint: () => "https://relay.test",
+        mintRuntimeAccessToken: async (input: unknown) => {
+          mints.push(input)
+          return { token: "minted-user-token", expiresAt: Date.now() + 60_000, jti: "jti_2" }
+        },
+      } as never,
+      requireRelayActor: true,
+      resolveRelayActor: async () => ({
+        actorId: "actor_1",
+        actorKind: "human",
+        actorPublicId: "usr_1",
+        actorName: "Ada",
+        orgId: "org_1",
+        role: "owner",
+        auth: signedCaller,
+      }),
+      defaultHomeRegion: "us-east",
+    }),
+  )
+  return app
+}
+
 function sharedWorkspaceApp() {
   const app = new Hono()
   app.all(
@@ -148,5 +185,14 @@ describe("shared workspace endpoint — successful relay forward", () => {
 
     expect(res.status).toBe(404)
     expect(forwarded, "an unknown workspace must not reach any runtime").toBeUndefined()
+  })
+
+  test("mints a signed caller's user token for that caller, which is how the authority records it", async () => {
+    const mints: unknown[] = []
+    const res = await signedWorkspaceApp(mints).request("http://127.0.0.1/workspaces/ws_1/session", { method: "POST" })
+
+    expect(res.status).toBe(200)
+    expect(mints).toEqual([expect.objectContaining({ principalKind: "user", actorId: "actor_1", auth: signedCaller })])
+    expect(forwarded!.headers.get("authorization")).toBe("Bearer minted-user-token")
   })
 })

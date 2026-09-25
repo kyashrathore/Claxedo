@@ -1,4 +1,4 @@
-import { createEffect, createSignal, onCleanup, onMount, Show, type JSX, type ParentProps } from "solid-js"
+import { createEffect, createSignal, onCleanup, Show, type JSX, type ParentProps } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { useServer } from "@/server"
 import { dictionary } from "../i18n"
@@ -31,9 +31,9 @@ function WorkspacePanel(): JSX.Element {
     hideTimer = setTimeout(() => setExposed(false), PANEL_CLOSE_GRACE_MS)
   })
   onCleanup(() => clearTimeout(hideTimer))
-  onMount(() => {
+  createEffect(() => {
     const parent = aside?.parentElement
-    if (!parent) return
+    if (!exposed() || !parent) return
     const measure = () => panel.setAvailable(parent.clientWidth)
     measure()
     const observer = new ResizeObserver(measure)
@@ -64,7 +64,6 @@ function WorkspacePanel(): JSX.Element {
         transition: dragging() ? "none" : PANEL_MOTION,
         display: exposed() ? undefined : "none",
         visibility: exposed() ? "visible" : "hidden",
-        "--workspace-panel-width": `${panel.width()}px`,
       }}
     >
       <Show when={panel.open() && !panel.phone() && !panel.fullWidth()}>
@@ -74,11 +73,9 @@ function WorkspacePanel(): JSX.Element {
         <PanelHeader />
       </div>
       <div class="relative min-h-0 flex-1">
-        <Show when={exposed()}>
-          <div data-testid="workspace-panel-body" class="absolute inset-0 overflow-auto">
-            <PanelBody />
-          </div>
-        </Show>
+        <div data-testid="workspace-panel-body" class="absolute inset-0 overflow-auto">
+          <PanelBody tabsShown={exposed()} />
+        </div>
       </div>
     </aside>
   )

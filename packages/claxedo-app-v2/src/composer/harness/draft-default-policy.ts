@@ -65,7 +65,6 @@ export function resolveDraftDefault(input: ResolveDraftDefaultInput): DraftDefau
   return { harness: input.saved.harness, state: "choose-model", source: "harness-default" }
 }
 
-/** A catalog harness opens on a connected provider's default model only when exactly one is eligible. */
 function onlyProviderDefault(input: ResolveDraftDefaultInput): ModelChoice | undefined {
   const defaults = [...new Set(input.connectedProviderIds ?? [])]
     .map((providerId) => {

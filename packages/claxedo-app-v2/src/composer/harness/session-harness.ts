@@ -36,7 +36,6 @@ export function applyPushedHarnessHealth(wiring: HarnessWiring, scope: string, o
   if (harness) applyHarnessHealth(wiring, scope, harness, observed)
 }
 
-/** A harness held in the picker becomes the session's own before the prompt is sent; a failed switch leaves the draft unsent. */
 export async function commitHeldHarness({ api, store }: HarnessWiring, scope: string, input: HarnessScopeInput) {
   const held = store.heldHarness(scope)
   const ref = input.sessionRef

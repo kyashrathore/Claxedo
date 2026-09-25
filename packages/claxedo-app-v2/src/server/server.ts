@@ -29,6 +29,7 @@ import { createEventStreams, type EventStreams } from "./streams"
 import { createTerminalsApi } from "./terminals"
 import { createTransport, type Transport } from "./transport"
 import { createWorkspaces, type Workspaces } from "./workspaces"
+import { createWorkspaceWakes } from "./workspace-wakes"
 import { createWorktreeCreator } from "./worktrees"
 
 const QUERY_GC_TIME_MS = 10 * 60_000
@@ -87,8 +88,9 @@ function createStartup(input: {
 
 function serverApis(transport: Transport, workspaces: Workspaces, status: StatusOwner, queryClient: QueryClient, queries: ServerQueries) {
   const project = (id: ProjectId) => queryClient.fetchQuery(queries.projects.byId(id))
+  const wakes = createWorkspaceWakes(transport, workspaces)
   return {
-    sessions: createSessionsApi(transport, workspaces, status),
+    sessions: createSessionsApi(transport, workspaces, status, wakes),
     projects: createProjectsApi(transport, queryClient, workspaces.refresh),
     placements: {
       byId: workspaces.byId,
@@ -101,7 +103,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     },
     terminals: createTerminalsApi(transport, workspaces),
     git: createGitApi(transport, workspaces, queryClient),
-    cloud: createCloudApi(transport, workspaces, project),
+    cloud: createCloudApi(transport, workspaces, wakes, project),
     accounts: createAccountsApi(transport, queryClient),
     marketplace: createMarketplaceApi(transport, queryClient),
     tasks: createTasksApi(transport),

@@ -25,7 +25,8 @@ export type HostLink = { readonly dispose: () => void }
 
 export function frameMirror(api: PluginApi, services: HostServices): FrameMirror {
   const statuses: Record<string, SessionStatus> = {}
-  for (const row of services.sessions.list.rows()) statuses[row.ref.sessionId] = sessionStatusOf(row)
+  const list = services.sessions.list
+  for (const ref of list.order()) statuses[ref.sessionId] = sessionStatusOf(list.view(ref.sessionId))
   return {
     locale: api.context.locale,
     projects: api.projects.list(),

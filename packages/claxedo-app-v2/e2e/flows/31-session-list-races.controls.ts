@@ -15,6 +15,7 @@ import type { Checked } from "./31-session-list-races.oracle"
 type SetupOptions = { readonly open?: boolean; readonly workspaces?: number }
 
 const LIST_ROUTE = /\/api\/claxedo\/session-list/
+const STATUS_ROUTE = /\/session\/status(\?|$)/
 export const STREAM_PATH = "/api/wr/events"
 const CONTROL_STREAM_PATH = "/api/cp/events"
 
@@ -49,7 +50,15 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
-export async function holdListRead(app: Page, matches: (url: URL) => boolean = () => true) {
+export function holdListRead(app: Page, matches: (url: URL) => boolean = () => true) {
+  return holdRead(app, LIST_ROUTE, matches)
+}
+
+export function holdStatusRead(app: Page) {
+  return holdRead(app, STATUS_ROUTE, () => true)
+}
+
+async function holdRead(app: Page, pattern: RegExp, matches: (url: URL) => boolean) {
   const computed = deferred<void>()
   const released = deferred<void>()
   const delivered = deferred<PromiseSettledResult<void>>()
@@ -63,14 +72,14 @@ export async function holdListRead(app: Page, matches: (url: URL) => boolean = (
     const [outcome] = await Promise.allSettled([route.fulfill({ response })])
     delivered.resolve(outcome)
   }
-  await app.route(LIST_ROUTE, handler)
+  await app.route(pattern, handler)
   return {
     computed: computed.promise,
     release: async () => {
       released.resolve()
       const outcome = await delivered.promise
-      if (outcome.status === "rejected") test.info().annotations.push({ type: "abandoned list read", description: String(outcome.reason) })
-      expect(outcome.status, "the app received the held list read").toBe("fulfilled")
+      if (outcome.status === "rejected") test.info().annotations.push({ type: "abandoned held read", description: String(outcome.reason) })
+      expect(outcome.status, "the app received the held read").toBe("fulfilled")
     },
   }
 }

@@ -69,77 +69,102 @@ export type WriteQueue = {
   readonly dispose: () => void
 }
 
-export function createWriteQueue(input: {
+type WriteQueueInput = {
   write: (chunk: string, done: () => void) => void
   onOverload: (dropped: number) => void
-}): WriteQueue {
-  let live = emptyStream()
-  let pending = emptyStream()
-  let restored = false
-  let frame = 0
-  let writing = false
-  let overloaded = false
+}
 
-  const drain = () => {
-    frame = 0
-    if (overloaded || writing) return
-    const chunk = take(live, MAX_BATCH_BYTES, MAX_BATCH_ITEMS)
-    if (!chunk) return
-    writing = true
-    input.write(chunk, () => {
-      writing = false
-      if (live.items.length > 0) schedule()
-    })
+type WriteQueueState = {
+  readonly input: WriteQueueInput
+  live: Stream
+  pending: Stream
+  restored: boolean
+  frame: number
+  writing: boolean
+  overloaded: boolean
+}
+
+function drain(state: WriteQueueState): void {
+  state.frame = 0
+  if (state.overloaded || state.writing) return
+  const chunk = take(state.live, MAX_BATCH_BYTES, MAX_BATCH_ITEMS)
+  if (!chunk) return
+  state.writing = true
+  state.input.write(chunk, () => {
+    state.writing = false
+    if (state.live.items.length > 0) schedule(state)
+  })
+}
+
+function schedule(state: WriteQueueState): void {
+  if (state.overloaded || state.frame || state.writing) return
+  state.frame = requestAnimationFrame(() => drain(state))
+}
+
+function cancelFrame(state: WriteQueueState): void {
+  if (state.frame) cancelAnimationFrame(state.frame)
+  state.frame = 0
+}
+
+function overload(state: WriteQueueState, dropped: number): void {
+  state.overloaded = true
+  state.input.onOverload(dropped)
+}
+
+function enqueueLive(state: WriteQueueState, data: string): void {
+  if (state.overloaded) return
+  push(state.live, data, MAX_STREAM_BYTES)
+  if (state.live.dropped >= MAX_DROPPED_CHUNKS) {
+    overload(state, state.live.dropped)
+    return
   }
+  schedule(state)
+}
 
-  const schedule = () => {
-    if (overloaded || frame || writing) return
-    frame = requestAnimationFrame(drain)
+function enqueue(state: WriteQueueState, data: string): void {
+  if (state.restored) {
+    enqueueLive(state, data)
+    return
   }
+  push(state.pending, data, MAX_PENDING_BYTES)
+  if (state.pending.dropped >= MAX_DROPPED_CHUNKS) overload(state, state.pending.dropped)
+}
 
-  const overload = (dropped: number) => {
-    overloaded = true
-    input.onOverload(dropped)
+function beginRestore(state: WriteQueueState): void {
+  cancelFrame(state)
+  state.restored = false
+  state.live = emptyStream()
+  state.pending = emptyStream()
+}
+
+function flushPending(state: WriteQueueState): void {
+  if (state.restored) return
+  state.restored = true
+  for (const chunk of state.pending.items) enqueueLive(state, chunk)
+  state.pending = emptyStream()
+}
+
+function dispose(state: WriteQueueState): void {
+  cancelFrame(state)
+  state.overloaded = true
+  state.live = emptyStream()
+  state.pending = emptyStream()
+}
+
+export function createWriteQueue(input: WriteQueueInput): WriteQueue {
+  const state: WriteQueueState = {
+    input,
+    live: emptyStream(),
+    pending: emptyStream(),
+    restored: false,
+    frame: 0,
+    writing: false,
+    overloaded: false,
   }
-
-  const enqueueLive = (data: string) => {
-    if (overloaded) return
-    push(live, data, MAX_STREAM_BYTES)
-    if (live.dropped >= MAX_DROPPED_CHUNKS) {
-      overload(live.dropped)
-      return
-    }
-    schedule()
-  }
-
   return {
-    beginRestore: () => {
-      if (frame) cancelAnimationFrame(frame)
-      frame = 0
-      restored = false
-      live = emptyStream()
-      pending = emptyStream()
-    },
-    push: (data) => {
-      if (restored) {
-        enqueueLive(data)
-        return
-      }
-      push(pending, data, MAX_PENDING_BYTES)
-      if (pending.dropped >= MAX_DROPPED_CHUNKS) overload(pending.dropped)
-    },
-    flushPending: () => {
-      if (restored) return
-      restored = true
-      for (const chunk of pending.items) enqueueLive(chunk)
-      pending = emptyStream()
-    },
-    dispose: () => {
-      if (frame) cancelAnimationFrame(frame)
-      frame = 0
-      overloaded = true
-      live = emptyStream()
-      pending = emptyStream()
-    },
+    beginRestore: () => beginRestore(state),
+    push: (data) => enqueue(state, data),
+    flushPending: () => flushPending(state),
+    dispose: () => dispose(state),
   }
 }

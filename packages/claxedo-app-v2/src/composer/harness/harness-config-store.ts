@@ -13,9 +13,6 @@ export function createHarnessConfigStore(server: Server, storage: DraftDefaultSt
   const store = createHarnessStore(storage)
   const wiring: HarnessWiring = { server, api: server.harnessConfig, store, caches: createScopeCaches(), hasConfigOptions: createConfigOptionsProbe(server) }
   const optionsLoader = wireOptionsLoader(wiring)
-  // A held pick's options are the picked harness's, which only the
-  // placement-scoped read answers: the session read serves the harness the
-  // session still runs.
   const fetchConfigOptions: FetchConfigOptions = (scope, type, input) =>
     optionsLoader.load(scope, type, store.heldHarness(scope) && input ? { ...input, sessionId: undefined } : input)
   const hydrator = wireHydrator(wiring, fetchConfigOptions)
@@ -32,9 +29,6 @@ export function createHarnessConfigStore(server: Server, storage: DraftDefaultSt
     reprobe: hydrator.reprobe,
     commitHeldHarness: commitHeldHarness.bind(null, wiring),
     probeHealth: probeHarnessHealth.bind(null, wiring),
-    // Give up on a harness that never left "polling": surface the terminal
-    // "error" readiness so the selector shows the "Unavailable" affordance and
-    // submit stays blocked (harnessReadyForSubmit is false for "error").
     markUnavailable: (scope: string) => store.setReadiness(scope, "error"),
     promote: store.promote,
     rememberDraftModel: rememberDraftModel.bind(null, wiring),

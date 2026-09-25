@@ -33,14 +33,12 @@ export function createHarnessScopes() {
   }
 }
 
-/** Show `patch` in an existing session's scope as a choice, keeping what the session itself runs. */
 export function holdHarness(scopes: HarnessScopes, scope: string, patch: HarnessStorePatch) {
   scopes.seed(scope)
   const { heldFrom, ...bound } = structuredClone(unwrap(scopes.read(scope)))
   scopes.setStore(scope, { ...patch, heldFrom: heldFrom ?? bound })
 }
 
-/** Undo a held pick when `type` is the harness the session still runs. */
 export function restoreHeldHarness(scopes: HarnessScopes, scope: string, type: HarnessType) {
   const heldFrom = scopes.read(scope).heldFrom
   if (!heldFrom || !sameHarnessSelection(heldFrom.harness, type)) return false

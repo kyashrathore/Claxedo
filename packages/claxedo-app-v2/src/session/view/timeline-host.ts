@@ -1,7 +1,7 @@
 import { createMemo, type Accessor } from "solid-js"
 import type { Panel } from "@/panel"
-import { sessionId as toSessionId, type Server, type SessionRef, type SessionStatus } from "@/server"
-import type { SessionRowView, SessionStatusView, SessionStores, SessionView } from "@/session"
+import { sessionId as toSessionId, type Server, type SessionRef, type SessionRow, type SessionStatus } from "@/server"
+import type { SessionStatusView, SessionStores, SessionView } from "@/session"
 import { usePreferences, type Preferences } from "@/settings"
 import { sessionPath, type ShellRouting } from "@/shell"
 import type { WorkbenchStore } from "@/workbench"
@@ -29,7 +29,7 @@ function timelineSettings(preferences: Preferences): TimelineSettings {
   }
 }
 
-function timelineRows(rows: readonly SessionRowView[]): readonly TimelineSessionRow[] {
+function timelineRows(rows: readonly SessionRow[]): readonly TimelineSessionRow[] {
   return rows.map((row) => ({
     id: row.ref.sessionId,
     title: row.title,
@@ -63,7 +63,10 @@ async function findFiles(input: TimelineHostInput, query: string): Promise<reado
 
 export function createTimelineHost(input: TimelineHostInput): TimelineHost {
   const { view, server } = input
-  const sessions = createMemo(() => timelineRows(input.stores.list.rows()))
+  const sessions = createMemo(() => {
+    const list = input.stores.list
+    return timelineRows(list.order().flatMap((ref) => list.rowOf(ref.sessionId) ?? []))
+  })
   const transcriptTypography = useTranscriptTypography()
   const settings = timelineSettings(usePreferences())
   return {

@@ -4,14 +4,14 @@ v2's own components and tokens. Surfaces ported from today's app render with tod
 
 ## One door to today's kit
 
-Owner ruling: v1's look is the kit. `@opencode-ai/ui` and `@opencode-ai/session-ui` may be imported only inside `src/ui`; everything else imports them from `@/ui`, which re-exports what the app uses. v1's token names are allowed, since they are the look. The only kit stylesheet imports outside `src/ui` are the three `@import`s at the top of `shell/styles/index.css` and the three v2 sheets `src/styles.ts` loads, listed exactly in `scripts/checks/v2-only.ts`.
+Owner ruling: v1's look is the kit. `@opencode-ai/ui` and `@opencode-ai/session-ui` may be imported only inside `src/ui`; everything else imports them from `@/ui`, which re-exports what the app uses. v1's token names are allowed, since they are the look. The only kit stylesheet imports outside `src/ui` are the two `@import`s at the top of `shell/styles/index.css` and the three v2 sheets `src/styles.ts` loads, listed exactly in `scripts/checks/v2-only.ts`. Nothing imports `@opencode-ai/session-ui`, not even here: v2's copies of its renderers and sheets live in `src/transcript`.
 
 No `data-component` hooks outside what something reads: `scripts/checks/claxedo-names.ts` allows a value only when a stylesheet, a selector, an e2e flow or the perf harness selects it (the ClaxedoIcon and ClaxedoIconButton controls take the kit's icon and icon-button styles through `icon` and `icon-button`). v2's own components style themselves by class.
 
 ## Owned concepts
 
-- **Tokens.** `tokens/colors.css` holds the primitive ramps (`--v2-grey-*`, `--v2-blue-*`, `--v2-alpha-*`, …). `tokens/theme.css` holds the semantic tokens (`--v2-background-*`, `--v2-text-*`, `--v2-icon-*`, `--v2-border-*`, `--v2-overlay-*`, `--v2-state-*`, `--v2-elevation-*`) for the light set (`:root`, `[data-color-scheme="light"]`) and the dark set (`[data-color-scheme="dark"]`). `tokens/type.css` holds fonts, the type scale, radii and the few shadows components compose from.
-- **Global styles.** `styles.css` is the app's one stylesheet entry (imported once by `src/main.tsx`): layer order, Tailwind (`@theme` maps every utility to a token), the base reset (`base.css`) and the touch rules (`touch.css`).
+- **Tokens.** The kit's: `--v2-*` ramps and semantic tokens come from `@opencode-ai/ui/v2/styles`, the type scale, radii and shadows from the kit's theme, all loaded by `shell/styles/index.css`. The one token of v2's own is `--touch-target` (`touch.css`).
+- **Global styles.** `styles.css` declares the layer order (with `touch` between `components` and `utilities`) and loads the touch rules and the reduced-motion rule (`reduced-motion.css`, `!important` in `base`, so it beats every later layer). Tailwind runs once, in `shell/styles/index.css`.
 - **Icons.** Icons are today's app's `ClaxedoIcon` (below) and the kit's `Icon`, `IconV2` and `ProviderIcon`, all through `@/ui`.
 - **Dialogs.** `Dialog`, `DialogProvider` and `useDialog()` are the kit's (`@opencode-ai/ui/dialog`, `@opencode-ai/ui/context/dialog`), so dialogs look and stack as they do today.
 
@@ -40,7 +40,7 @@ Every component works at 390 px with a coarse pointer: `touch.css` gives compact
 
 ## Origin
 
-Upstream's v2 library (anomalyco/opencode `packages/ui/src/v2` at 1d6c3c0e29) is the source of `Field` and `SegmentedControl`, the tokens and the base styles. `ScrollThumb` is Claxedo's own, restyled onto the v2 tokens. Everything else a surface draws is today's kit (`@opencode-ai/ui`), re-exported through `@/ui`.
+Upstream's v2 library (anomalyco/opencode `packages/ui/src/v2` at 1d6c3c0e29) is the source of `Field` and `SegmentedControl`. `ScrollThumb` is Claxedo's own, restyled onto the v2 tokens. Everything else a surface draws is today's kit (`@opencode-ai/ui`), re-exported through `@/ui`.
 
 ## Components
 
@@ -49,7 +49,7 @@ Upstream's v2 library (anomalyco/opencode `packages/ui/src/v2` at 1d6c3c0e29) is
 | `Button` (the kit's, from `@opencode-ai/ui/button`, so buttons look as they do today) | Kobalte button props, `size?: small \| normal \| large`, `variant?: primary \| secondary \| ghost`, `icon?: kit icon name` |
 | `Dialog` (the kit's) | `title?`, `description?`, `action?`, `size?: normal \| large \| x-large \| viewport`, `fit?`, `flush?`, `scrim?: strong`, `class?`; the body is its children |
 | `DialogProvider`, `useDialog()` (the kit's) | `useDialog()` returns `{ active, show(element, onClose?), push(element, onClose?), close() }` |
-| `Field` (`.Label`, `.Prefix`, `.Suffix`, `.Control`) | `invalid?`; `Label` adds `tooltip?: string` |
+| `Field` (`.Label`) | div props; `Label` takes `for`, the id its control carries, so a click on the label focuses the control (the kit's `Select` takes it through `triggerProps`) |
 | `ScrollThumb` | `scroller`, `hoverTarget?`, `visibility?: hover \| scroll`; draws v2's thin overlay thumb over an element that scrolls itself (the kit's `ScrollView` draws its own). The thumb stays mounted and is `hidden` while nothing overflows: it sits after the scroller, so mounting it flips the scroller's `:last-child`, and the markdown `> *:last-child` rules then restyle the scroller's whole subtree (the Review: 651 elements on every Collapse all) |
 | `SegmentedControl`, `SegmentedControlItem` | `value?`, `defaultValue?`, `onChange?(value \| null)`, `allowDeselect?`, `disabled?`; item: `value`, `children`. Width is 232 px with equal segments; the class `segmented-control--full-width` fills the container, and `segmented-control--fit` sizes each segment to its label |
 | `Select` (the kit's, from `@opencode-ai/ui/select`) | `options`, `current?`, `value?(item)`, `label?(item)`, `groupBy?(item)`, `onSelect?(item \| undefined)`, `onHighlight?`, plus the kit button's `variant`/`size`, `triggerVariant?: settings`, `triggerStyle?` |

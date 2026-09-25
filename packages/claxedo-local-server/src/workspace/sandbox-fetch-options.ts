@@ -1,5 +1,6 @@
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import {
+  bearerToken,
   controlPlaneAuthContext,
   type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
@@ -16,9 +17,12 @@ type AuthorizedSandboxFetchOptions = {
 }
 
 /**
- * Bind every control-plane-to-runtime request to one explicit principal.
- * Local loopback composition acts as the control-plane service. Signed remote
- * requests use the authority's canonical actor and current workspace role.
+ * Bind every control-plane-to-runtime request to one explicit principal. A
+ * request that carries a verified signed identity acts as that caller, with
+ * its current workspace role, on loopback too: a private session reads only
+ * for its participants, and a user-principal token is recorded only under
+ * the caller's own auth. An unsigned loopback request acts as the
+ * control-plane service.
  */
 export async function sandboxFetchOptionsForRequest(
   request: Request,
@@ -26,17 +30,25 @@ export async function sandboxFetchOptionsForRequest(
   options: AuthorizedSandboxFetchOptions,
 ): Promise<SandboxFetchOptions> {
   const url = new URL(request.url)
+  const loopback = !!options.services?.localExecution.enabled && isLoopbackLocalRequest(request)
   const base: SandboxFetchOptions = {
     ...(options.services?.sandbox.sandboxManager
       ? { sandboxManager: options.services.sandbox.sandboxManager }
       : {}),
     ...(options.services?.relay.provider ? { relayProvider: options.services.relay.provider } : {}),
-    ...(options.services?.localExecution.enabled && isLoopbackLocalRequest(request)
+    ...(loopback
       ? { loopbackRelayUrl: `${url.protocol}//127.0.0.1${url.port ? `:${url.port}` : ""}` }
       : {}),
     ...(options.services?.defaultHomeRegion ? { defaultHomeRegion: options.services.defaultHomeRegion } : {}),
   }
-  if (options.services?.localExecution.enabled && isLoopbackLocalRequest(request)) {
+  const auth = options.authConfig?.enabled && (!loopback || bearerToken(request.headers.get("authorization")))
+    ? await controlPlaneAuthContext(request, {
+        config: options.authConfig,
+        ...(options.verifier ? { verifier: options.verifier } : {}),
+      })
+    : undefined
+  if (auth?.mode !== "signed") {
+    if (!loopback) return base
     return {
       ...base,
       runtimeActor: {
@@ -47,12 +59,6 @@ export async function sandboxFetchOptionsForRequest(
       role: "owner",
     }
   }
-  if (!options.authConfig?.enabled) return base
-  const auth = await controlPlaneAuthContext(request, {
-    config: options.authConfig,
-    ...(options.verifier ? { verifier: options.verifier } : {}),
-  })
-  if (auth.mode !== "signed") return base
   const authority = requireAuthority(options.services)
   const [actor, opened] = await Promise.all([
     resolveRuntimeActor(authority, auth),
@@ -72,6 +78,7 @@ export async function sandboxFetchOptionsForRequest(
       principalKind: actor.actorKind === "human" ? "user" : "service",
       ...actor,
     },
+    auth,
     orgId,
     role,
   }

@@ -11,8 +11,9 @@ export type ProjectCommands = { start?: string }
  * the environment its cloud sandboxes start with. `directory` is the checkout
  * a server with a filesystem keeps for it, and `repoUrl` the repository it was
  * created from; either is null where the deployment has no such thing.
- * `available` is false when none of its placements can be reached now: its
- * folder is gone, or its cloud workspace failed.
+ * `available` is false when none of its placements exists any more: its
+ * folder is gone, or its cloud workspace failed. A stopped sandbox leaves it
+ * available.
  */
 export type ProjectRecord = {
   id: string

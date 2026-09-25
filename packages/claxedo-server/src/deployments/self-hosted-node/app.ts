@@ -923,6 +923,7 @@ export function createSelfHostedApp(
                   ...actor,
                   orgId,
                   role: relayRole(workspace.role),
+                  auth,
                 }
               }
             } catch (error) {

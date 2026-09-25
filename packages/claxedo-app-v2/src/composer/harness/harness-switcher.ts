@@ -49,11 +49,6 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
   return { setHarness }
 }
 
-/**
- * A pick is local to the composer on both paths. A draft remembers it as the
- * workspace's next default; an existing session holds it until the next send
- * switches the session, so picking around never touches the session itself.
- */
 async function setHarnessOnce<ScopeInput extends HarnessScopeInput>(
   input: SwitcherInput<ScopeInput>,
   scope: string,

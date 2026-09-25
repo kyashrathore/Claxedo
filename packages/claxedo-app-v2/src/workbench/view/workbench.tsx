@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For, onCleanup, onMount, Show, type JSX } from "solid-js"
+import { createEffect, createMemo, createSignal, For, onCleanup, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { collapsePaneRects, isCollapsedWidth } from "../collapse-projection"
 import { createWorkbenchDropTarget } from "../drag/drop-target"
@@ -23,29 +23,29 @@ export type WorkbenchProps = {
   readonly onCloseFocusedPane?: (paneId: string, contentId: string | null) => void
 }
 
-function useContainerSize(root: () => HTMLElement | undefined) {
-  const [size, setSize] = createSignal({ w: 0, h: 0 })
-  onMount(() => {
+function useCollapsed(root: () => HTMLElement | undefined, split: () => boolean) {
+  const [collapsed, setCollapsed] = createSignal(false)
+  createEffect(() => {
     const el = root()
-    if (!el) return
-    const update = () => {
-      const rect = el.getBoundingClientRect()
-      setSize({ w: rect.width, h: rect.height })
+    if (!el || !split()) {
+      setCollapsed(false)
+      return
     }
-    update()
-    const observer = new ResizeObserver(update)
+    const measure = () => setCollapsed(isCollapsedWidth(el.getBoundingClientRect().width))
+    measure()
+    const observer = new ResizeObserver(measure)
     observer.observe(el)
     onCleanup(() => observer.disconnect())
   })
-  return size
+  return collapsed
 }
 
 export function Workbench(props: WorkbenchProps): JSX.Element {
   const wb = useWorkbench()
   const t = useTranslator(workbenchDictionary)
   let rootEl: HTMLDivElement | undefined
-  const containerSize = useContainerSize(() => rootEl)
-  const collapsed = createMemo(() => isCollapsedWidth(containerSize().w))
+  const split = createMemo(() => wb.layout().panes.length > 1)
+  const collapsed = useCollapsed(() => rootEl, split)
   const trueRects = createMemo(() => computePaneRects(wb.layout().split.root))
   const displayRects = createMemo(() => (collapsed() ? collapsePaneRects(wb.layout()) : trueRects()))
   const index = createContentIndex(wb.layout, displayRects)
@@ -67,7 +67,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
   const empty = () => <div data-testid="empty" class="workbench-empty">{props.renderEmpty?.() ?? t("workbench.empty")}</div>
 
   return (
-    <div ref={rootEl} data-testid="workbench-root" class="workbench-root" data-collapsed={collapsed() ? "true" : undefined} tabindex="-1">
+    <div ref={rootEl} data-testid="workbench-root" class="workbench-root" tabindex="-1">
       <Show when={wb.layout().panes.length > 0} fallback={empty()}>
         <For each={wb.layout().panes}>
           {(pane) => (
@@ -82,7 +82,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
             </div>
           )}
         </For>
-        <Show when={!collapsed() && rootSplit()}>{(split) => <Divider split={split()} root={() => rootEl} />}</Show>
+        <Show when={rootSplit()}>{(split) => <Divider split={split()} root={() => rootEl} />}</Show>
         <For each={mounted()}>
           {(contentId) => (
             <ContentSlot
@@ -94,11 +94,9 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
             />
           )}
         </For>
-        <Show when={!collapsed()}>
-          <For each={wb.layout().panes}>
-            {(pane) => <PaneChrome pane={pane} style={paneStyle(pane.id)} closable={wb.layout().panes.length > 1} />}
-          </For>
-        </Show>
+        <For each={wb.layout().panes}>
+          {(pane) => <PaneChrome pane={pane} style={paneStyle(pane.id)} closable={wb.layout().panes.length > 1} />}
+        </For>
         <Show when={dropTarget()}>
           {(target) => (
             <div data-testid={`drop-target-${target().paneId}`} class="workbench-drop-target" style={paneStyle(target().paneId)}>

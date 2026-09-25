@@ -44,7 +44,8 @@ export type LoadMoreState =
 
 export type SessionList = {
   readonly state: Accessor<SessionListState>
-  readonly rows: Accessor<readonly SessionRowView[]>
+  readonly order: Accessor<readonly SessionRef[]>
+  readonly view: (sessionId: SessionId) => SessionRowView | undefined
   readonly rowOf: (sessionId: SessionId) => SessionRow | undefined
   readonly hasMore: (placementIds: readonly PlacementId[]) => boolean
   readonly moreState: Accessor<LoadMoreState>
@@ -78,6 +79,8 @@ export type SessionView = {
   readonly status: Accessor<SessionStatusView>
   readonly messages: Accessor<readonly TranscriptMessage[]>
   readonly parts: (messageId: string) => readonly TranscriptPart[]
+  readonly pendingDeltas: Accessor<boolean>
+  readonly commitDeltas: () => void
   readonly isPendingMessage: (messageId: string) => boolean
   readonly conversation: Accessor<TranscriptConversation | undefined>
   readonly turnSettlePending: (userMessageId: string) => boolean

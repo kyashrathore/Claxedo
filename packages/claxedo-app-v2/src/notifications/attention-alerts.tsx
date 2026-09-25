@@ -29,7 +29,7 @@ export function AttentionAlerts(props: { readonly preferences: AlertPreferences 
     server.subscribe((event) => {
       const alert = detect(event)
       if (!alert) return
-      const row = stores.list.rows().find((candidate) => candidate.ref.sessionId === alert.ref.sessionId)
+      const row = stores.list.view(alert.ref.sessionId)
       if (!row || row.parentSessionId) return
       if (!shown(alert.ref)) sound.play(props.preferences.sound[alert.kind])
       if (!props.preferences.notify[alert.kind]) return
