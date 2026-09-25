@@ -3,7 +3,7 @@ import { ApiError, ClaxedoApi, assistantText, type MessageRow, type SessionHarne
 import { SCRIPTED_ACP_HARNESS } from "../harness/acp/connection"
 import { acpScriptToken } from "../harness/acp/script"
 import { unexpectedEgress } from "../harness/egress-guard"
-import { connectNativeScriptedProviders } from "../harness/native-scripted-providers"
+import { connectScriptedProviders } from "../harness/scripted-providers"
 import { startStack, type Stack } from "../harness/stack"
 import { frameSessionId, frameType } from "../harness/stream"
 import { directTransport } from "../harness/transport"
@@ -27,6 +27,11 @@ async function createHistory(stack: Stack, api: ClaxedoApi, name: "acp" | "pi" |
     input: { subject: "H27 persistent task", description: "Keep after daemon restart", activeForm: "Saving task" },
     whenPromptIncludes: marker,
   })
+  if (name === "codex") stack.scripted.scriptTool({
+    name: "update_plan",
+    input: { plan: [{ step: "H27 persistent Codex todo", status: "completed" }] },
+    whenPromptIncludes: marker,
+  })
   const session = await api.createSession(directory, { harness, ...(model ? { model } : {}) })
   const prompt = name === "acp" ? `Show history. ${acpScriptToken("h27-history")}` : `Reply with exactly this one token: ${marker}`
   await api.prompt(directory, session.id, prompt, model ? { model } : {})
@@ -34,9 +39,9 @@ async function createHistory(stack: Stack, api: ClaxedoApi, name: "acp" | "pi" |
   const messages = await api.messages(directory, session.id)
   assert.match(assistantText(messages), new RegExp(marker))
   assertStoredPartsMatchLive(messages, stream, session.id)
-  const todos = name === "claude" || name === "acp" ? await api.todos(directory, session.id) : undefined
+  const todos = name === "claude" || name === "codex" || name === "acp" ? await api.todos(directory, session.id) : undefined
   if (todos) {
-    const expected = name === "claude" ? "H27 persistent task" : "H27 persistent ACP todo"
+    const expected = name === "claude" ? "H27 persistent task" : name === "codex" ? "H27 persistent Codex todo" : "H27 persistent ACP todo"
     assert.ok(todos.some((todo) => todo.content.includes(expected)), `${name} todo was not stored: ${JSON.stringify(todos)}`)
     assert.ok(stream.frames.some((frame) => frameType(frame) === "todo.updated" && frameSessionId(frame) === session.id), `${name} todo was not streamed`)
   }
@@ -49,7 +54,7 @@ async function createHistory(stack: Stack, api: ClaxedoApi, name: "acp" | "pi" |
 export async function run() {
   const stack = await startStack({ label: "h27-history-restart" })
   try {
-    await connectNativeScriptedProviders(directTransport, stack.url, stack.scripted)
+    await connectScriptedProviders(directTransport, stack.url, stack.scripted)
     const api = new ClaxedoApi(stack.url)
     const histories: History[] = []
     for (const name of ["acp", "pi", "claude", "codex"] as const) histories.push(await createHistory(stack, api, name))

@@ -4,17 +4,18 @@ import { SCRIPTED_ACP_HARNESS } from "../harness/acp/connection"
 import { acpScriptToken } from "../harness/acp/script"
 import { unexpectedEgress } from "../harness/egress-guard"
 import { eventually } from "../harness/eventually"
-import { connectNativeScriptedProviders } from "../harness/native-scripted-providers"
+import { runtimeSources } from "../harness/journal-observations"
+import { connectScriptedProviders } from "../harness/scripted-providers"
 import { startStack, type Stack } from "../harness/stack"
 import { frameSessionId, frameType } from "../harness/stream"
 import { directTransport } from "../harness/transport"
 import { waitForIdle } from "../harness/turn-observations"
 
-async function usageTurn(stack: Stack, api: ClaxedoApi, name: "acp" | "pi" | "claude" | "codex") {
+export async function usageTurn(stack: Stack, api: ClaxedoApi, name: "acp" | "pi" | "claude" | "codex") {
   const directory = (await stack.daemon.makeWorkspace(`h13-${name}`)).directory
   const stream = await stack.events(directory)
   const harness: SessionHarness = name === "acp" ? SCRIPTED_ACP_HARNESS : { id: name, access: "native" }
-  const model = name === "pi" ? { providerId: "pi", modelId: "openai/gpt-4.1" } : undefined
+  const model = name === "pi" ? { providerId: "pi", modelId: "groq/qwen/qwen3.6-27b" } : undefined
   const session = await api.createSession(directory, { harness, ...(model ? { model } : {}) })
   const marker = `H13_${name.toUpperCase()}_USAGE`
   if (name === "acp") await stack.acp.write("h13-usage", {
@@ -24,6 +25,35 @@ async function usageTurn(stack: Stack, api: ClaxedoApi, name: "acp" | "pi" | "cl
   const prompt = name === "acp" ? `Report usage. ${acpScriptToken("h13-usage")}` : `Reply with exactly this one token: ${marker}`
   await api.prompt(directory, session.id, prompt, model ? { model } : {})
   await waitForIdle(stream, session.id)
+  const sources = await runtimeSources(stack.dataDir, session.id)
+  if (name !== "acp") {
+    const dialect = name === "claude" ? "messages" : name === "codex" ? "responses" : "chat"
+    assert.ok(stack.scripted.requests.some((request) => request.dialect === dialect && request.prompt.includes(marker)),
+      `${name} did not reach the scripted ${dialect} endpoint`)
+    const method = name === "claude" ? "claude.result" : name === "codex" ? "thread/tokenUsage/updated" : "message_end"
+    assert.ok(sources.some((entry) => entry.type === "session.usage" && entry.source.method === method),
+      `${name} CLI did not report usage through ${method}`)
+  }
+  assert.ok(sources.some((entry) => entry.type === "session.usage"), `${name} runtime did not project session usage`)
+  console.log(`H13 ${name} raw source summary: ${JSON.stringify(sources.flatMap((entry) => {
+    const source = entry.source
+    const frame = source.frame as Record<string, unknown> | undefined
+    const message = frame?.message as Record<string, unknown> | undefined
+    const params = frame?.params as Record<string, unknown> | undefined
+    const tokenUsage = params?.tokenUsage as Record<string, unknown> | undefined
+    return message?.usage || frame?.usage || tokenUsage
+      ? [{ event: entry.type, method: source.method, type: frame?.type, usage: message?.usage ?? frame?.usage ?? tokenUsage }]
+      : []
+  }))}`)
+  console.log(`H13 ${name} projected usage events: ${JSON.stringify(sources.filter((entry) => entry.type === "session.usage").map((entry) => entry.payload))}`)
+  if (name === "codex") console.log(`H13 Codex rate-limit reports: ${JSON.stringify(sources.filter((entry) => entry.source.method === "account/rateLimits/updated").map((entry) => {
+    const params = (entry.source.frame as { params?: { rateLimits?: unknown } }).params
+    return params?.rateLimits
+  }))}`)
+  const firstTotals = await api.usageForSession(session.id)
+  assert.ok(firstTotals.claxedo.totals.input > 0 && firstTotals.claxedo.totals.output > 0,
+    `${name} session totals did not receive usage`)
+  console.log(`H13 ${name} first totals/quota keys: ${JSON.stringify({ totals: firstTotals.claxedo.totals, quota: firstTotals.quota && typeof firstTotals.quota === "object" ? Object.keys(firstTotals.quota) : [] })}`)
   const assistant = await eventually(`${name} assistant model usage`, async () => {
     const messages = await api.messages(directory, session.id)
     assert.match(assistantText(messages), new RegExp(marker))
@@ -47,18 +77,10 @@ async function usageTurn(stack: Stack, api: ClaxedoApi, name: "acp" | "pi" | "cl
 export async function run() {
   const stack = await startStack({ label: "h13-usage" })
   try {
-    await connectNativeScriptedProviders(directTransport, stack.url, stack.scripted)
+    await connectScriptedProviders(directTransport, stack.url, stack.scripted)
     const api = new ClaxedoApi(stack.url)
-    const failures: Error[] = []
-    for (const name of ["acp", "pi", "claude", "codex"] as const) {
-      try {
-        await usageTurn(stack, api, name)
-      } catch (error) {
-        failures.push(new Error(`H13 ${name}: ${String(error)}`, { cause: error }))
-      }
-    }
+    await usageTurn(stack, api, "acp")
     assert.deepEqual(unexpectedEgress(stack.egress.attempts), [], "unexpected outbound egress attempted")
-    if (failures.length) throw new AggregateError(failures, "H13 usage variants failed")
   } finally {
     await stack.close()
   }

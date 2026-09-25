@@ -134,7 +134,10 @@ export class ClaxedoApi {
   }
 
   updateSession(directory: string, id: string, updates: { title?: string; time?: { archived?: number } }) {
-    return this.call<SessionRow>("PATCH", `/session/${encodeURIComponent(id)}`, { directory, body: updates })
+    const body = process.env.H12_DROP_ARCHIVE_WRITE === "1" && updates.time?.archived
+      ? { ...updates, time: {} }
+      : updates
+    return this.call<SessionRow>("PATCH", `/session/${encodeURIComponent(id)}`, { directory, body })
   }
 
   sessions(directory: string) {

@@ -1,13 +1,15 @@
 import assert from "node:assert/strict"
+import fs from "node:fs/promises"
+import path from "node:path"
 import { ClaxedoApi, assistantText, type MessagePart } from "../harness/api"
 import { readCapturedAcpPrompt } from "../harness/acp/capture"
 import { SCRIPTED_ACP_HARNESS } from "../harness/acp/connection"
 import { acpScriptToken } from "../harness/acp/script"
 import { unexpectedEgress } from "../harness/egress-guard"
-import { connectNativeScriptedProviders } from "../harness/native-scripted-providers"
+import { connectScriptedProviders } from "../harness/scripted-providers"
 import { startStack, type Stack } from "../harness/stack"
 import { directTransport } from "../harness/transport"
-import { waitForIdle } from "../harness/turn-observations"
+import { liveParts, waitForIdle } from "../harness/turn-observations"
 import { frameSessionId, frameType } from "../harness/stream"
 
 const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lp8AAAAASUVORK5CYII="
@@ -22,7 +24,7 @@ function parts(marker: string): MessagePart[] {
   ]
 }
 
-function assertStoredAttachments(messages: Awaited<ReturnType<ClaxedoApi["messages"]>>) {
+function assertStoredAttachments(messages: Awaited<ReturnType<ClaxedoApi["messages"]>>, stream: Awaited<ReturnType<Stack["events"]>>, sessionId: string) {
   const user = messages.find((message) => message.info.role === "user")
   assert.ok(user, "no stored user message")
   const files = user.parts.filter((part) => part.type === "file")
@@ -30,6 +32,17 @@ function assertStoredAttachments(messages: Awaited<ReturnType<ClaxedoApi["messag
   assert.deepEqual(files.map((file) => String(file.filename)).sort((a, b) => a.localeCompare(b)), ["h11.png", "h11.txt"])
   assert.ok(files.some((file) => file.mime === "image/png" && String(file.url).includes(PNG)), "stored image bytes differ")
   assert.ok(files.some((file) => file.mime === "text/plain" && String(file.url).includes(TEXT_BASE64)), "stored text bytes differ")
+  const live = liveParts(stream, sessionId)
+  for (const file of files) {
+    const filename = String(file.filename)
+    assert.ok(file.id, `stored ${filename} user part has no id`)
+    const frame = live.get(file.id)
+    assert.ok(frame, `H11 live user-part frame missing for ${filename}`)
+    assert.equal(frame.type, "file")
+    assert.equal(frame.filename, file.filename)
+    assert.equal(frame.mime, file.mime)
+    assert.equal(frame.url, file.url)
+  }
 }
 
 async function acpAttachments(stack: Stack, api: ClaxedoApi) {
@@ -46,7 +59,7 @@ async function acpAttachments(stack: Stack, api: ClaxedoApi) {
   const resource = prompt.find((block) => block.type === "resource") as { resource?: { mimeType?: string; blob?: string } } | undefined
   assert.ok(resource?.resource?.mimeType === "text/plain" && resource.resource.blob === TEXT_BASE64, `ACP agent did not receive text bytes: ${JSON.stringify(prompt)}`)
   const messages = await api.messages(directory, session.id)
-  assertStoredAttachments(messages)
+  assertStoredAttachments(messages, stream, session.id)
   assert.match(assistantText(messages), /H11_ACP_OK/)
   assert.equal((await api.session(directory, session.id)).id, session.id)
   console.log("H11 ACP: image and text bytes reached agent, user attachments persisted, reply streamed, session readback passed")
@@ -61,12 +74,20 @@ async function nativeAttachments(stack: Stack, api: ClaxedoApi, harness: "claude
   await api.promptParts(directory, session.id, parts(marker))
   await waitForIdle(stream, session.id)
   const messages = await api.messages(directory, session.id)
-  assertStoredAttachments(messages)
+  assertStoredAttachments(messages, stream, session.id)
   assert.match(assistantText(messages), new RegExp(marker))
   const requests = stack.scripted.requests.slice(before)
   assert.ok(requests.some((request) => request.prompt.includes(marker)), `${harness} did not reach scripted model`)
-  assert.ok(requests.some((request) => request.prompt.includes(PNG) || request.prompt.includes("h11.png")), `${harness} did not receive image`)
-  assert.ok(requests.some((request) => request.prompt.includes(TEXT) || request.prompt.includes("h11.txt")), `${harness} did not receive text file`)
+  const attachmentDir = path.join(directory, ".claxedo", "attachments")
+  const attached = await fs.readdir(attachmentDir)
+  for (const [filename, contents] of [["h11.png", Buffer.from(PNG, "base64")], ["h11.txt", Buffer.from(TEXT)]] as const) {
+    const storedName = attached.find((entry) => entry.endsWith(filename))
+    assert.ok(storedName, `${harness} ${filename} was not materialized for the CLI`)
+    const absolute = path.join(attachmentDir, storedName)
+    assert.deepEqual(await fs.readFile(absolute), contents, `${harness} ${filename} bytes changed before CLI delivery`)
+    assert.ok(requests.some((request) => request.prompt.includes(absolute)), `${harness} model input did not reference ${filename}`)
+  }
+  if (harness === "claude") assert.ok(requests.some((request) => request.prompt.includes(PNG)), "Claude image bytes did not reach the scripted model")
   assert.equal((await api.session(directory, session.id)).id, session.id)
   console.log(`H11 ${harness}: both attachments reached model input, persisted, reply streamed, session readback passed`)
 }
@@ -80,7 +101,7 @@ async function piAttachments(stack: Stack, api: ClaxedoApi) {
   await api.promptParts(directory, refused.id, parts("H11_PI_UNSUPPORTED"), { model })
   await stream.waitFor((frame) => frameType(frame) === "session.error" && frameSessionId(frame) === refused.id, { label: "Pi text-file refusal", timeoutMs: 15_000 })
   const refusal = await api.messages(directory, refused.id)
-  assertStoredAttachments(refusal)
+  assertStoredAttachments(refusal, stream, refused.id)
   assert.match(JSON.stringify(refusal.at(-1)?.info.error), /Pi attachments require an inline base64 image/)
   assert.equal((await api.session(directory, refused.id)).id, refused.id)
 
@@ -90,6 +111,10 @@ async function piAttachments(stack: Stack, api: ClaxedoApi) {
   await waitForIdle(stream, session.id)
   const messages = await api.messages(directory, session.id)
   assert.ok(messages[0]?.parts.some((part) => part.type === "file" && part.mime === "image/png" && String(part.url).includes(PNG)), "Pi image was not stored")
+  const image = messages[0]?.parts.find((part) => part.type === "file" && part.mime === "image/png")
+  assert.ok(image, "Pi image user part missing")
+  assert.ok(image.id, "Pi image user part has no id")
+  assert.deepEqual(liveParts(stream, session.id).get(image.id), image, "Pi live image user-part frame differs from stored part")
   assert.match(assistantText(messages), new RegExp(marker))
   const requests = stack.scripted.requests.slice(before)
   assert.ok(requests.some((request) => request.prompt.includes(PNG)), "Pi did not pass image to scripted model")
@@ -100,7 +125,7 @@ async function piAttachments(stack: Stack, api: ClaxedoApi) {
 export async function run() {
   const stack = await startStack({ label: "h11-attachments" })
   try {
-    await connectNativeScriptedProviders(directTransport, stack.url, stack.scripted)
+    await connectScriptedProviders(directTransport, stack.url, stack.scripted)
     const api = new ClaxedoApi(stack.url)
     await acpAttachments(stack, api)
     await piAttachments(stack, api)

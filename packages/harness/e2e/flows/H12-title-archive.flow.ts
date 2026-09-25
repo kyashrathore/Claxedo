@@ -4,13 +4,13 @@ import { SCRIPTED_ACP_HARNESS } from "../harness/acp/connection"
 import { acpScriptToken } from "../harness/acp/script"
 import { unexpectedEgress } from "../harness/egress-guard"
 import { eventually } from "../harness/eventually"
-import { connectNativeScriptedProviders } from "../harness/native-scripted-providers"
+import { connectScriptedProviders } from "../harness/scripted-providers"
 import { startStack, type Stack } from "../harness/stack"
 import { frameSessionId, frameType } from "../harness/stream"
 import { directTransport } from "../harness/transport"
 import { waitForIdle } from "../harness/turn-observations"
 
-async function titleAndArchive(stack: Stack, api: ClaxedoApi, name: "acp" | "pi" | "claude" | "codex") {
+export async function titleAndArchive(stack: Stack, api: ClaxedoApi, name: "acp" | "pi" | "claude" | "codex") {
   const directory = (await stack.daemon.makeWorkspace(`h12-${name}`)).directory
   const stream = await stack.events(directory)
   const harness: SessionHarness = name === "acp" ? SCRIPTED_ACP_HARNESS : { id: name, access: "native" }
@@ -77,10 +77,10 @@ async function titleAndArchive(stack: Stack, api: ClaxedoApi, name: "acp" | "pi"
 export async function run() {
   const stack = await startStack({ label: "h12-title-archive" })
   try {
-    await connectNativeScriptedProviders(directTransport, stack.url, stack.scripted)
+    await connectScriptedProviders(directTransport, stack.url, stack.scripted)
     const api = new ClaxedoApi(stack.url)
     const failures: Error[] = []
-    for (const name of ["acp", "pi", "claude", "codex"] as const) {
+    for (const name of ["pi", "claude", "codex"] as const) {
       try {
         await titleAndArchive(stack, api, name)
       } catch (error) {

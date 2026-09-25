@@ -44,3 +44,10 @@ export function waitForIdle(stream: EventStream, sessionId: string) {
     timeoutMs: 60_000,
   })
 }
+
+export function assertTurnFinished(messages: MessageRow[], stream: EventStream, sessionId: string) {
+  const assistant = messages.filter((message) => message.info.role === "assistant").at(-1)
+  assert.ok(assistant, `${sessionId} has no stored assistant message`)
+  assert.ok(typeof (assistant.info.time as { completed?: unknown } | undefined)?.completed === "number", `${sessionId} has no stored finish time`)
+  assert.ok(stream.frames.some((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === sessionId), `${sessionId} has no live finish frame`)
+}

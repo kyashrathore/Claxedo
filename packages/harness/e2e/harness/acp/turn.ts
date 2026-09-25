@@ -4,6 +4,7 @@ import { RequestError, type AgentSideConnection, type PromptResponse, type Sessi
 import { asString } from "@claxedo/helpers/guards"
 import { holdReleaseFile, type AcpScript, type AcpStep, type AcpToolStep } from "./script"
 import { deliveredToolOutput } from "./parts-fault"
+import { deliveredUsage } from "./usage-fault"
 
 export type TurnContext = {
   connection: AgentSideConnection
@@ -187,5 +188,6 @@ export async function playScript(context: TurnContext, script: AcpScript): Promi
     const result = await playStep(context, step)
     if (result) return result
   }
-  return { stopReason: script.stopReason ?? "end_turn", ...(script.usage ? { usage: script.usage } : {}) }
+  const usage = deliveredUsage(script.usage)
+  return { stopReason: script.stopReason ?? "end_turn", ...(usage ? { usage } : {}) }
 }

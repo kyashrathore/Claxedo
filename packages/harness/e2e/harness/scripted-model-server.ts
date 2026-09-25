@@ -42,7 +42,8 @@ export type ScriptedModelServer = {
   counts(): Record<ScriptedDialect, number>
   resetCounts(): void
   scriptTool(call: ScriptedToolCall): void
-  scriptText(input: { marker: string; text: string }): void
+  scriptToolSequence(marker: string, calls: ScriptedToolCall[]): void
+  scriptText(input: { marker: string; text: string; reasoning?: string }): void
   scriptError(input: ScriptedError): () => void
   holdTextReplies(marker: string): () => void
   setReplyDelayMs(ms: number): void
@@ -57,7 +58,8 @@ type ServerState = {
   sequence: number
   goalEvaluations: number
   pendingTool?: ScriptedToolCall
-  pendingText?: { marker: string; text: string }
+  pendingTools?: { marker: string; calls: ScriptedToolCall[] }
+  pendingText?: { marker: string; text: string; reasoning?: string }
   pendingError?: ScriptedError
   autoModeCommand?: string
   textGate?: TextGate
@@ -86,6 +88,12 @@ function goalReply(state: ServerState, prompt: string): ScriptedReply | undefine
 }
 
 function pendingReply(state: ServerState, request: ScriptedModelBody, prompt: string): ScriptedReply | undefined {
+  const sequence = state.pendingTools
+  if (sequence && prompt.includes(sequence.marker) && sequence.calls.length) {
+    const next = sequence.calls.shift()!
+    if (!sequence.calls.length) state.pendingTools = undefined
+    return { kind: "tool", name: next.name, input: next.input, ...(next.namespace ? { namespace: next.namespace } : {}) }
+  }
   const tool = state.pendingTool
   if (tool && (tool.whenPromptIncludes ? prompt.includes(tool.whenPromptIncludes) : !hasToolResult(request))) {
     state.pendingTool = undefined
@@ -94,7 +102,7 @@ function pendingReply(state: ServerState, request: ScriptedModelBody, prompt: st
   const text = state.pendingText
   if (text && prompt.includes(text.marker)) {
     state.pendingText = undefined
-    return { kind: "text", text: text.text }
+    return { kind: "text", text: text.text, ...(text.reasoning ? { reasoning: text.reasoning } : {}) }
   }
   return undefined
 }
@@ -178,6 +186,10 @@ export async function startScriptedModelServer(input: { port: number; red: boole
       state.pendingTool = call
       const command = asRecord(call.input)?.command
       state.autoModeCommand = call.name === "Bash" && call.autoModeSeverity === 0 && typeof command === "string" ? command : undefined
+    },
+    scriptToolSequence: (marker, calls) => {
+      if (state.pendingTools) throw new Error("A scripted tool sequence is already pending")
+      state.pendingTools = { marker, calls: [...calls] }
     },
     scriptText: (text) => {
       if (state.pendingText) throw new Error("A scripted text reply is already pending")
