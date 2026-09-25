@@ -404,7 +404,7 @@ At 19:08 the owner said: finish in-progress work; start no new work.
 | DOM nodes after GC | 48.7k | 48.6k | 3.7k |
 
 **The design causes, and their fixes:**
-- **A. Two animation-frame buffers in series.** Every delta waited one extra frame. It now commits in the event intake's frame, which halves latency (17.3 → 8.4 ms). Commit e70a17cd6a; merge into feat is pending one conflict.
+- **A. Two animation-frame buffers in series.** Every delta waited one extra frame. It now commits in the event intake's frame, which halves latency (17.3 → 8.4 ms). Merged into feat as b6597411cd.
 - **B2. Every delta re-lexed the whole message**, which is quadratic: 32.5 ms per delta at 37k characters. The fix re-lexes only the open block and gets it to 0.68 ms.
 - **B1. The open block was parsed and sanitized twice per delta.** The fix renders it once while streaming.
 - **C. Table copy and view buttons were built on a throwaway tree on every delta and never disposed.** That leak exists in v1 too, at about 20 MiB and 45k nodes per long reply. The fix creates the controls once on the committed DOM.
