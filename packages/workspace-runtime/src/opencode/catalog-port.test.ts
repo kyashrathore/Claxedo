@@ -11,6 +11,7 @@ describe("catalog port models", () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-catalog-port-"))
     const host = {
       client: async () => ({
+        plugin: { awaitActivation: async () => {} },
         model: {
           list: async () => ({
             data: [

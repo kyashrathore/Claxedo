@@ -63,6 +63,14 @@ export type OpenCodeHost = Readonly<{
   close(): Promise<void>
 }>
 
+export async function openCodeLocationClient(host: OpenCodeHost, directory: string): Promise<OpenCodeClient> {
+  const client = await host.client()
+  // SDK plugin registration settles asynchronously; catalog and plugin-backed
+  // workspace reads must wait for that location's activation.
+  await client.plugin.awaitActivation({ location: { directory } })
+  return client
+}
+
 export function createOpenCodeHost(options: OpenCodeHostOptions): OpenCodeHost {
   if (!isAbsolute(options.databasePath)) {
     throw new Error(`OpenCode databasePath must be absolute, received ${options.databasePath}`)
