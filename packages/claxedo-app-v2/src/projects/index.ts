@@ -13,6 +13,6 @@ export { useMachines, useProject, useProjectCommands, useProjectPlacements, useP
 export { placementKindLabel, PlacementList } from "./view/placement-list"
 export { DialogEditProject } from "./view/edit-project-dialog"
 export { resolveDraftPlacement, type DraftTarget } from "./draft-context"
-export { NewSessionContextRow } from "./view/new-session-context-row"
+export { NewSessionContextRow, type DraftCreation } from "./view/new-session-context-row"
 export { ProjectCreateForm, type ProjectCreateFormProps } from "./view/project-create-form"
 export { projectsSettingsSection } from "./view/projects-settings"
