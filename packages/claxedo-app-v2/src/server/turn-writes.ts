@@ -1,25 +1,29 @@
-import { canonicalToolName } from "@claxedo/agent-runtime-contract"
 import type { ServerEvent } from "./events"
 import type { TranscriptPart } from "./types"
 
-const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
+const NON_WRITING_INTENTS: ReadonlySet<string> = new Set([
   "read",
-  "glob",
-  "grep",
+  "search",
   "list",
-  "webfetch",
-  "websearch",
-  "codesearch",
-  "todoread",
-  "todowrite",
+  "fetch",
+  "lint",
+  "reasoning",
+  "todos",
   "question",
+  "image",
+  "switch_mode",
 ])
 
 export type TurnWrites = {
   readonly endsWritingTurn: (event: ServerEvent) => boolean
 }
 
-const mayWrite = (part: Extract<TranscriptPart, { type: "tool" }>) => !READ_ONLY_TOOLS.has(canonicalToolName(part.tool))
+type ToolPart = Extract<TranscriptPart, { type: "tool" }>
+
+const mayWrite = (part: ToolPart) => {
+  const intent = part.state.input.intent
+  return typeof intent !== "string" || !NON_WRITING_INTENTS.has(intent)
+}
 
 export function createTurnWrites(): TurnWrites {
   const toolsOfTurn = new Map<string, Map<string, boolean>>()
