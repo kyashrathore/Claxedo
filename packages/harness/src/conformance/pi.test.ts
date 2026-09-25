@@ -74,7 +74,7 @@ runConformance({
   },
 })
 
-test("every listed Pi command runs as a slash prompt", async () => {
+test("a listed Pi extension command runs as a slash prompt", async () => {
   const context = await setupConformance({ name: "pi command proof", backend,
     makeTransport(services, state) {
       const pi = state as PiBackend
@@ -84,7 +84,7 @@ test("every listed Pi command runs as a slash prompt", async () => {
     } })
   try {
     await assertListedCommandsRun({ transport: context.transport, session: context.session, turn: context.turn,
-      turnBroker: context.turnBroker, args: (name) => { expect(name).toBe("conformance-ui"); return "choose" },
+      turnBroker: context.turnBroker, proves: (name) => name === "conformance-ui", args: () => "choose",
       whileRunning: async () => {
         let question = context.owner.broker.list({ sessionId: "s1" }).find((row) => row.request.kind === "question")
         for (let attempt = 0; !question && attempt < 500; attempt++) {

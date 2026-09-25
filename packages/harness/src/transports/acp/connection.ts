@@ -1,4 +1,3 @@
-import { Readable, Writable } from "node:stream"
 import {
   ClientSideConnection, ndJsonStream, PROTOCOL_VERSION,
   type Client, type InitializeResponse, type RequestPermissionRequest, type CreateElicitationRequest,
@@ -9,6 +8,7 @@ import { createWebSocketStream } from "@agentclientprotocol/sdk/experimental/ws-
 import type { HarnessServices, OwnedProcess, StartInput } from "../../contract"
 import { AcpTransportError } from "./errors"
 import { AcpStartupDeadline } from "./deadline"
+import { webReadable, webWritable } from "./streams"
 
 export type AcpConnectionOptions = ({ startupTimeoutMs?: number; promptTimeoutMs?: number } & (
   | { kind: "process"; command: string; args?: readonly string[]; env?: Readonly<Record<string, string>>; supportsMcpServers?: boolean }
@@ -125,7 +125,7 @@ async function openStream(input: StartInput, options: AcpConnectionOptions, serv
     const process = await services.spawn({ file: options.command, args: options.args ?? [], cwd: input.directory,
       env: { ...processEnv(), ...options.env, ...input.credentials.secrets } },
       { role, label: "ACP", sessionId: input.sessionId })
-    const stream = ndJsonStream(Writable.toWeb(process.stdin) as WritableStream<Uint8Array>, Readable.toWeb(process.stdout) as ReadableStream<Uint8Array>)
+    const stream = ndJsonStream(webWritable(process.stdin), webReadable(process.stdout))
     return { process, stream }
   }
   if (options.kind === "websocket") return { stream: createWebSocketStream(options.url,

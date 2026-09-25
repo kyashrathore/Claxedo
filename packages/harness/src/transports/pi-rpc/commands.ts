@@ -6,11 +6,7 @@ export async function piCommands(rpc: PiRpc) {
   if (!result || typeof result !== "object" || !("commands" in result) || !Array.isArray(result.commands)) {
     throw new PiTransportError("protocol", "Pi returned an invalid command list")
   }
-  return result.commands.filter((value: unknown) => {
-    if (!value || typeof value !== "object" || !("sourceInfo" in value)) return true
-    const info = value.sourceInfo
-    return !info || typeof info !== "object" || !("source" in info) || info.source !== "inline"
-  }).map((value: unknown) => {
+  return result.commands.map((value: unknown) => {
     if (!value || typeof value !== "object" || !("name" in value) || typeof value.name !== "string") {
       throw new PiTransportError("protocol", "Pi command has no name")
     }

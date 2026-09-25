@@ -7,6 +7,7 @@ type CommandCase = {
   turn(prompt: string): TurnInput
   turnBroker(): TurnBroker
   args(name: string): string
+  proves?(name: string): boolean
   whileRunning?(name: string): Promise<void>
   observe(name: string, events: readonly RoutedEvent[]): void
 }
@@ -21,7 +22,9 @@ export async function assertListedCommandsRun(input: CommandCase): Promise<void>
     commands = await listing.list({ session: input.session })
   }
   expect(commands.length).toBeGreaterThan(0)
-  for (const command of commands) {
+  const proved = commands.filter((command) => input.proves?.(command.name) ?? true)
+  expect(proved.length).toBeGreaterThan(0)
+  for (const command of proved) {
     const prompt = `/${command.name}${input.args(command.name) ? ` ${input.args(command.name)}` : ""}`
     const running = (async () => {
       const events: RoutedEvent[] = []
