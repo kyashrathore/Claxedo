@@ -1,82 +1,42 @@
 import type { Terminal as XTerm } from "@xterm/xterm"
 import type { FitAddon } from "@xterm/addon-fit"
-import { objectProperty } from "./reflect"
 import { createResizeCoordinator, type ResizeCoordinator } from "./resize-coordinator"
 import { cancelParserIdleWork, runWhenParserIdle, type ParserGate } from "./parser-gate"
 import type { RendererHandle } from "./renderer-webgl"
-import { TERMINAL_FIT_EVENT } from "@/lib/terminal-fit"
+import { createFitter, type Fitter } from "./resize-fit"
+import { trackSuspension, type SuspensionTracker } from "./resize-suspension"
+import { listenResizeTriggers } from "./resize-triggers"
 
 export type ResizeHandlers = {
   readonly coordinator: ResizeCoordinator
   readonly cleanup: () => void
 }
 
-const SIGNIFICANT_WIDTH_CHANGE = 0.2
-
-function rendererReady(xterm: XTerm): boolean {
-  const renderer = objectProperty(objectProperty(objectProperty(xterm, "_core"), "_renderService"), "_renderer")
-  return !!objectProperty(renderer, "value")
-}
-
-function resizeSuspended(): boolean {
-  return document.documentElement.dataset.terminalResizeSuspended === "1"
-}
-
-export function setupResizeHandlers(input: {
+type ResizeHandlersInput = {
   container: HTMLDivElement
   xterm: XTerm
   fitAddon: FitAddon
   renderer: RendererHandle
   parserGate: ParserGate
   onResize: (cols: number, rows: number) => void
-}): ResizeHandlers {
-  const { container, xterm, fitAddon, renderer, parserGate } = input
-  let disposed = false
-  let fontMetricsDirty = false
+}
 
-  const refresh = () => {
-    if (disposed || !rendererReady(xterm)) return
-    xterm.refresh(0, xterm.rows - 1)
-    renderer.clearTextureAtlas()
-  }
+const SIGNIFICANT_WIDTH_CHANGE = 0.2
 
-  const remeasureFont = () => {
-    fontMetricsDirty = false
-    const size = xterm.options.fontSize ?? 14
-    xterm.options.fontSize = size + 0.001
-    xterm.options.fontSize = size
-  }
-
-  const runFit = () => {
-    if (disposed || resizeSuspended() || !rendererReady(xterm)) return
-    const remeasure = fontMetricsDirty
-    if (remeasure) remeasureFont()
-    if (fitAddon.proposeDimensions()) fitAddon.fit()
-    if (remeasure) refresh()
-  }
-
-  const coordinator = createResizeCoordinator({
-    fit: () => runWhenParserIdle(parserGate, runFit),
-    measure: () => ({ width: container.clientWidth, height: container.clientHeight }),
-    size: () => ({ cols: xterm.cols, rows: xterm.rows }),
-    refresh,
-    notify: input.onResize,
-  })
-
-  let wasSuspended = resizeSuspended()
-  if (wasSuspended) coordinator.suspend()
-  const checkSuspension = () => {
-    const suspended = resizeSuspended()
-    if (suspended && !wasSuspended) coordinator.suspend()
-    else if (!suspended && wasSuspended) coordinator.resume()
-    wasSuspended = suspended
-  }
-
+function observeHost(input: {
+  container: HTMLDivElement
+  fitter: Fitter
+  suspension: SuspensionTracker
+  coordinator: ResizeCoordinator
+  parserGate: ParserGate
+  disposed: () => boolean
+}): ResizeObserver {
+  const { container, fitter, suspension, coordinator, parserGate } = input
   let lastWidth = 0
   let lastHeight = 0
   const observer = new ResizeObserver((entries) => {
-    if (disposed || !container.isConnected) return
-    checkSuspension()
+    if (input.disposed() || !container.isConnected) return
+    suspension.check()
     const rect = entries[0]?.contentRect
     const width = rect?.width ?? container.clientWidth
     const height = rect?.height ?? container.clientHeight
@@ -84,41 +44,39 @@ export function setupResizeHandlers(input: {
     const widthChanged =
       lastWidth > 0 && width > 0 && Math.abs(width - lastWidth) / lastWidth > SIGNIFICANT_WIDTH_CHANGE
     if ((wasZero && width > 0 && height > 0) || widthChanged) {
-      fontMetricsDirty = true
-      if (!wasSuspended) runWhenParserIdle(parserGate, runFit)
+      fitter.markFontMetricsDirty()
+      if (!suspension.suspended()) runWhenParserIdle(parserGate, fitter.fit)
     }
     lastWidth = width
     lastHeight = height
     coordinator.request()
   })
   observer.observe(container)
+  return observer
+}
 
-  const handleWindowResize = () => {
-    checkSuspension()
-    coordinator.request()
-  }
-  const handleVisible = () => {
-    if (!document.hidden) coordinator.request()
-  }
-  window.addEventListener("resize", handleWindowResize)
-  window.addEventListener(TERMINAL_FIT_EVENT, handleWindowResize)
-  window.addEventListener("focus", handleVisible)
-  document.addEventListener("visibilitychange", handleVisible)
-  const mountFrame = requestAnimationFrame(() => coordinator.request())
-  void document.fonts.ready.then(() => {
-    if (!disposed) coordinator.request()
+export function setupResizeHandlers(input: ResizeHandlersInput): ResizeHandlers {
+  const { container, xterm, fitAddon, renderer, parserGate } = input
+  let disposed = false
+  const isDisposed = () => disposed
+  const fitter = createFitter({ xterm, fitAddon, renderer, disposed: isDisposed })
+  const coordinator = createResizeCoordinator({
+    fit: () => runWhenParserIdle(parserGate, fitter.fit),
+    measure: () => ({ width: container.clientWidth, height: container.clientHeight }),
+    size: () => ({ cols: xterm.cols, rows: xterm.rows }),
+    refresh: fitter.refresh,
+    notify: input.onResize,
   })
+  const suspension = trackSuspension(coordinator)
+  const observer = observeHost({ container, fitter, suspension, coordinator, parserGate, disposed: isDisposed })
+  const stopTriggers = listenResizeTriggers({ coordinator, checkSuspension: suspension.check, disposed: isDisposed })
 
   return {
     coordinator,
     cleanup: () => {
       disposed = true
       cancelParserIdleWork(parserGate)
-      cancelAnimationFrame(mountFrame)
-      window.removeEventListener("resize", handleWindowResize)
-      window.removeEventListener(TERMINAL_FIT_EVENT, handleWindowResize)
-      window.removeEventListener("focus", handleVisible)
-      document.removeEventListener("visibilitychange", handleVisible)
+      stopTriggers()
       observer.disconnect()
       coordinator.dispose()
     },
