@@ -13,7 +13,7 @@ export class ContentSecurityPolicyError extends Error {
   }
 }
 
-export function exactOrigin(value: string): string {
+export function policyOrigin(value: string): string {
   if (value.includes("*")) throw new ContentSecurityPolicyError(`${value} is a wildcard; the policy names exact origins`)
   if (!URL.canParse(value)) throw new ContentSecurityPolicyError(`${value} is not a URL`)
   const url = new URL(value)
@@ -30,7 +30,7 @@ function sources(...lists: readonly (readonly string[])[]): string {
 }
 
 export function contentSecurityPolicy(input: ContentSecurityPolicyInput): string {
-  const servers = [...new Set(input.servers.map(exactOrigin))]
+  const servers = [...new Set(input.servers.map(policyOrigin))]
   const sockets = servers.map(socketOrigin)
   return [
     "default-src 'self'",

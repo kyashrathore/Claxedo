@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { operationRequest } from "./operations"
+import { hostedOperationRequest } from "./operations"
 
 describe("hosted operations over the connected server's routes", () => {
   test("a list reads the documents route with its scope", () => {
-    expect(operationRequest("documents.list", { project_id: "p1", archived: "all" })).toEqual({
+    expect(hostedOperationRequest("documents.list", { project_id: "p1", archived: "all" })).toEqual({
       method: "GET",
       path: "/documents",
       query: { project_id: "p1", document_id: undefined, directory: undefined, archived: "all" },
@@ -11,7 +11,7 @@ describe("hosted operations over the connected server's routes", () => {
   })
 
   test("a content save sends the version it read as If-Match", () => {
-    expect(operationRequest("documents.content.put", { id: "doc 1", ifMatch: "v3", display_name: "Notes", markdown: "# Hi" })).toEqual({
+    expect(hostedOperationRequest("documents.content.put", { id: "doc 1", ifMatch: "v3", display_name: "Notes", markdown: "# Hi" })).toEqual({
       method: "PUT",
       path: "/documents/doc%201/content",
       body: { display_name: "Notes", markdown: "# Hi" },
@@ -20,7 +20,7 @@ describe("hosted operations over the connected server's routes", () => {
   })
 
   test("a restore names the snapshot in the path", () => {
-    expect(operationRequest("documents.snapshots.restore", { id: "d", snapshotId: "s", ifMatch: "v1" })).toMatchObject({
+    expect(hostedOperationRequest("documents.snapshots.restore", { id: "d", snapshotId: "s", ifMatch: "v1" })).toMatchObject({
       method: "POST",
       path: "/documents/d/snapshots/s/restore",
       ifMatch: "v1",
@@ -34,7 +34,7 @@ describe("hosted operations over the connected server's routes", () => {
       ["documents.content.put", { id: "d" }],
       ["documents.list", ["p1"]],
     ] as const) {
-      expect(() => operationRequest(name, input)).toThrow(expect.objectContaining({ class: "invalid" }))
+      expect(() => hostedOperationRequest(name, input)).toThrow(expect.objectContaining({ class: "invalid" }))
     }
   })
 })

@@ -34,7 +34,7 @@ function optionalText(input: Input, key: string): string | undefined {
   return typeof value === "string" ? value : undefined
 }
 
-function without(input: Input, ...keys: readonly string[]): Input {
+function omitFields(input: Input, ...keys: readonly string[]): Input {
   return Object.fromEntries(Object.entries(input).filter(([key]) => !keys.includes(key)))
 }
 
@@ -59,19 +59,19 @@ const OPERATIONS: Readonly<Record<string, Operation>> = {
   "documents.get": (name, input) => ({ method: "GET", path: documentPath(name, input) }),
   "documents.create": (_name, input) => ({ method: "POST", path: DOCUMENTS, body: input }),
   "documents.fromRepo": (_name, input) => ({ method: "POST", path: `${DOCUMENTS}/from-repo`, body: input }),
-  "documents.update": (name, input) => ({ method: "PATCH", path: documentPath(name, input), body: without(input, "id", "ifMatch"), ifMatch: optionalText(input, "ifMatch") }),
+  "documents.update": (name, input) => ({ method: "PATCH", path: documentPath(name, input), body: omitFields(input, "id", "ifMatch"), ifMatch: optionalText(input, "ifMatch") }),
   "documents.content.get": (name, input) => ({ method: "GET", path: documentPath(name, input, "content") }),
-  "documents.content.put": (name, input) => ({ method: "PUT", path: documentPath(name, input, "content"), body: without(input, "id", "ifMatch"), ifMatch: text(name, input, "ifMatch") }),
+  "documents.content.put": (name, input) => ({ method: "PUT", path: documentPath(name, input, "content"), body: omitFields(input, "id", "ifMatch"), ifMatch: text(name, input, "ifMatch") }),
   "documents.snapshots": (name, input) => ({ method: "GET", path: documentPath(name, input, "snapshots") }),
   "documents.snapshots.restore": (name, input) => ({ method: "POST", path: documentPath(name, input, "snapshots", text(name, input, "snapshotId"), "restore"), body: {}, ifMatch: text(name, input, "ifMatch") }),
-  "documents.agentOpen": (name, input) => ({ method: "POST", path: documentPath(name, input, "agent-open"), body: without(input, "id") }),
-  "documents.runtimeConflictResolve": (name, input) => ({ method: "POST", path: documentPath(name, input, "runtime-conflict", "resolve"), body: without(input, "id") }),
-  "documents.moveToRepository": (name, input) => ({ method: "POST", path: documentPath(name, input, "move-to-repository"), body: without(input, "id") }),
+  "documents.agentOpen": (name, input) => ({ method: "POST", path: documentPath(name, input, "agent-open"), body: omitFields(input, "id") }),
+  "documents.runtimeConflictResolve": (name, input) => ({ method: "POST", path: documentPath(name, input, "runtime-conflict", "resolve"), body: omitFields(input, "id") }),
+  "documents.moveToRepository": (name, input) => ({ method: "POST", path: documentPath(name, input, "move-to-repository"), body: omitFields(input, "id") }),
 }
 
 export type Operations = { readonly run: (name: string, input: unknown) => Promise<unknown> }
 
-export function operationRequest(name: string, input: unknown): OperationRequest {
+export function hostedOperationRequest(name: string, input: unknown): OperationRequest {
   const operation = OPERATIONS[name]
   if (!operation) throw invalid(name, "this server offers no such operation to the app")
   return operation(name, inputOf(name, input))
@@ -80,7 +80,7 @@ export function operationRequest(name: string, input: unknown): OperationRequest
 export function createOperations(transport: Transport): Operations {
   return {
     run: (name, input) => {
-      const request = operationRequest(name, input)
+      const request = hostedOperationRequest(name, input)
       return transport.json<unknown>(request.query ? withQuery(request.path, request.query) : request.path, {
         method: request.method,
         ...(request.ifMatch ? { headers: { "If-Match": request.ifMatch } } : {}),

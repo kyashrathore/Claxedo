@@ -34,7 +34,7 @@ function readFields(value: unknown): Readonly<Record<string, string>> | undefine
   return entries.every(([, field]) => typeof field === "string") ? Object.fromEntries(entries) : undefined
 }
 
-function readHandoff(text: string): CliCallback | undefined {
+function readCliHandoff(text: string): CliCallback | undefined {
   const parsed: unknown = JSON.parse(text)
   if (typeof parsed !== "object" || parsed === null) return undefined
   const callback = localCallback(typeof (parsed as { callback?: unknown }).callback === "string" ? (parsed as { callback: string }).callback : null)
@@ -50,7 +50,7 @@ export function handOffCliCallback(handoff: CliCallback, navigate: (path: string
 export function takeCliCallback(tab: Storage = storage()): CliCallback | undefined {
   const text = tab.getItem(HANDOFF_KEY)
   tab.removeItem(HANDOFF_KEY)
-  return text === null ? undefined : readHandoff(text)
+  return text === null ? undefined : readCliHandoff(text)
 }
 
 export function submitCliCallback(target: Document, handoff: CliCallback): void {

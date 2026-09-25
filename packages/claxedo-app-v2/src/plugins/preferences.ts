@@ -24,7 +24,7 @@ function isStringList(value: unknown): value is readonly string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string")
 }
 
-function isCapability(value: string): value is PluginCapability {
+function isPluginCapability(value: string): value is PluginCapability {
   return (PLUGIN_CAPABILITIES as readonly string[]).includes(value)
 }
 
@@ -36,7 +36,7 @@ function readApproval(value: unknown): Approval | undefined {
   if (!isRecord(value) || !isRecord(value.access) || typeof value.hash !== "string" || typeof value.approvedAt !== "string") return undefined
   const { routes, operations, requires } = value.access
   if (!isStringList(routes) || !isStringList(operations) || !isStringList(requires)) return undefined
-  if (!requires.every(isCapability)) return undefined
+  if (!requires.every(isPluginCapability)) return undefined
   return { access: { routes, operations, requires }, hash: value.hash, approvedAt: value.approvedAt }
 }
 
@@ -51,11 +51,11 @@ function readApprovals(value: unknown): PluginApprovals | undefined {
   return approvals
 }
 
-function without(list: readonly string[], id: string): readonly string[] {
+function withoutId(list: readonly string[], id: string): readonly string[] {
   return list.filter((entry) => entry !== id)
 }
 
-function withoutKey(approvals: PluginApprovals, id: string): PluginApprovals {
+function withoutApproval(approvals: PluginApprovals, id: string): PluginApprovals {
   return Object.fromEntries(Object.entries(approvals).filter(([pluginId]) => pluginId !== id))
 }
 
@@ -69,12 +69,12 @@ export function createPluginPreferences(scope: string, safeModeAtStart: boolean)
   const [safeMode, setSafeMode] = createSignal(safeModeAtStart)
   return {
     switchedOn: (pluginId) => !switches().off.includes(pluginId),
-    setSwitchedOn: (pluginId, on) => setSwitches((current) => ({ off: on ? without(current.off, pluginId) : [...without(current.off, pluginId), pluginId] })),
+    setSwitchedOn: (pluginId, on) => setSwitches((current) => ({ off: on ? withoutId(current.off, pluginId) : [...withoutId(current.off, pluginId), pluginId] })),
     approval: (pluginId) => approvals()[pluginId],
     approve: (pluginId, approval) => setApprovals((current) => ({ ...current, [pluginId]: approval })),
     forget: (pluginId) => {
-      setSwitches((current) => ({ off: without(current.off, pluginId) }))
-      setApprovals((current) => withoutKey(current, pluginId))
+      setSwitches((current) => ({ off: withoutId(current.off, pluginId) }))
+      setApprovals((current) => withoutApproval(current, pluginId))
     },
     safeMode,
     leaveSafeMode: () => setSafeMode(false),
