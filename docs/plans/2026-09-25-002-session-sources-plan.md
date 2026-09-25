@@ -21,7 +21,7 @@ The app asks one server for one page of a project's sessions, with one opaque cu
 | Connection | List owner | Sources it merges |
 |---|---|---|
 | Desktop, signed out | the daemon | the local projection |
-| Desktop, signed in | the app's one session-source owner in `src/server`, composing exactly two pages: the daemon's local page and the control plane's page, read through the AccountPort operation `session.list` | local projection + the control plane (cloud workspaces, shared machines) |
+| Desktop, signed in | the app's one session-source owner in `src/server`, composing exactly two pages: the daemon's local page and the control plane's page, read through the AccountPort operation `session.page` | local projection + the control plane (cloud workspaces, shared machines) |
 | Web (hosted or self-hosted) | the control plane (or the self-hosted node) | its own store (D1 or SQLite) |
 
 ### 2. Machines publish session rows to the control plane
@@ -73,12 +73,16 @@ The app asks one server for one page of a project's sessions, with one opaque cu
 - [x] **S2. Machine publisher:** the daemon publishes rows and status on change and on reconnect, bounded with backoff. Tests use a fake control plane; an offline control plane queues nothing unbounded.
   - Progress: 2fa2eaf949 (the URL rides the heartbeat to the daemon), af707f5fbb (publisher: coalesced, 250 ms debounce, 100-row chunks, 1 s→60 s jittered backoff, a 1000-session cap that collapses to one full resync, a 401 waits for the next credential), ca5d7c95c3 (change notices come from the projection's own writers; an unreadable row backs off). Tests against a fake control plane, including a real daemon booted in-process.
 - [ ] **S3. Signed desktop merged list through AccountPort:**
-  - add `session.list` to the closed `HostedOperationName` set and to Electron main's route table;
+  - add `session.page` to the closed `HostedOperationName` set and to Electron main's route table;
   - the guard tests hold the registry and main equal;
   - the app's session-source owner merges the daemon page and the account page with a composite cursor;
   - when the account source fails, the page is the local rows plus a `degraded` marker, never a failure;
   - no bearer is ever pushed to the daemon.
-  - Progress: blocked on `lane-desktop-account` (the v2 AccountPort owner, `session.page`, the signed desktop catalog and project link). The server contract it calls is ready (`scope=project`, `after`, `nextAfter`); the two-source merge in `src/server` follows its port.
+  - Progress: code done; the paired-project flows are open.
+    - The port, `session.page` and the account catalog (`Workspaces.accountProjectIds`) are lane-desktop-account's (e32ce4033c).
+    - 403e9ff7ae: `src/server/session-list.ts` composes the daemon page and one `session.page` per paired account project. `session-sources.ts` merges them with the shared `after` key (`wire/list-order.ts`), dedupes by `sessionRef` and slices to `limit`. A failed account source makes the page local rows plus `degraded`, and the rail shows a Retry notice. An account-only project's page is required, so a failure there is a page failure. Unit tests: `session-sources.test.ts` (one order under one key, sessions created between pages, dedupe, degraded, a failed daemon page fails, the key round trip) and `session-list.test.ts` (source selection per project kind, an account-only failure, a paired project degraded). The daemon request carries no account credential; only Electron main holds it.
+    - Flow 39 (@desktop, account-only project plus a local project, Show more) is written but not run: Chromium can't start inside the no-signal `sandbox-exec` profile.
+    - Open: "local and cloud rows in one true order in one project" and "a failing account page shows local rows plus degraded" need a desktop workspace paired with a control-plane workspace in e2e. No harness path creates one yet.
 - [ ] **S4. App switch:**
   - `src/session/list` reads one page per project from one endpoint;
   - status comes from events;
