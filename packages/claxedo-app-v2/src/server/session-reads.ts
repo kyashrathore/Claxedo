@@ -1,19 +1,24 @@
 import type { AgentPresentationSession } from "@claxedo/agent-runtime-contract"
+import { readCentralPage, readCentralRow } from "./central-session"
 import { responseError } from "./errors"
 import { sessionEndpoint, type SessionContext } from "./session-context"
-import { readGoalState } from "./session-goal"
-import { readRequests } from "./session-statuses"
+import { NO_GOAL, readGoalState } from "./session-goal"
+import { readRequests } from "./session-requests"
 import { withQuery, type RuntimeRoute } from "./transport"
-import type { SessionListInput, SessionPage, SessionReads, SessionRef, SessionRow, Todo, TranscriptPage } from "./types"
-import { sessionRowFromListItem, sessionRowFromSession } from "./wire/session-row"
+import type { ListedStatus, SessionListInput, SessionPage, SessionReads, SessionRef, SessionRow, SessionStatus, SessionSurface, Todo, TranscriptPage } from "./types"
+import type { SessionId } from "./ids"
+import type { SessionHome } from "./workspaces"
+import { isWorkspaceStopped } from "./wire/connection"
+import { listedStatusFromListItem, sessionRowFromListItem, sessionRowFromSession } from "./wire/session-row"
 import { OLDER_CURSOR_HEADER, transcriptPageFromWire } from "./wire/transcript"
 
 const OLDER_PAGE_SIZE = 50
-const WORKSPACE_SCOPE = "workspace"
+const STOPPED_STATUS: SessionStatus = { kind: "idle" }
 
-async function rowsOf(context: SessionContext, items: readonly unknown[]): Promise<SessionRow[]> {
+async function listedOf(context: SessionContext, items: readonly unknown[]) {
   const { address } = context.workspaces
   const rows: SessionRow[] = []
+  const statuses = new Map<SessionId, ListedStatus>()
   for (const item of items) {
     let row = sessionRowFromListItem(item, address)
     const directory = (item as { directory?: unknown }).directory
@@ -21,20 +26,39 @@ async function rowsOf(context: SessionContext, items: readonly unknown[]): Promi
       await context.workspaces.learn(directory)
       row = sessionRowFromListItem(item, address)
     }
-    if (row) rows.push(row)
+    if (!row) continue
+    rows.push(row)
+    const listed = listedStatusFromListItem(item)
+    if (listed) statuses.set(row.ref.sessionId, { ...listed, status: context.status.listed(row.ref, listed.status) })
   }
-  return rows
+  return { rows, statuses }
 }
 
 export async function listSessions(context: SessionContext, options: SessionListInput): Promise<SessionPage> {
   const { transport } = context
-  const where = await context.workspaces.route(options.placementId)
   const listPath = transport.loopback ? "/api/claxedo/session-list" : "/api/control/session-list"
-  const target = transport.loopback && !where.remote ? { directory: where.directory } : { workspaceId: where.workspaceId }
-  const query = { scope: WORKSPACE_SCOPE, ...target, sort: "human_turn_desc", limit: options.limit, cursor: options.cursor }
-  const body = await transport.json<{ items?: unknown; nextCursor?: unknown }>(withQuery(listPath, query))
-  const rows = await rowsOf(context, Array.isArray(body.items) ? body.items : [])
-  return { rows, ...(typeof body.nextCursor === "string" ? { nextCursor: body.nextCursor } : {}) }
+  const query = { scope: "project", projectId: options.projectId, sort: "human_turn_desc", limit: options.limit, after: options.after }
+  const body = await transport.json<{ items?: unknown; nextAfter?: unknown }>(withQuery(listPath, query))
+  const listed = await listedOf(context, Array.isArray(body.items) ? body.items : [])
+  return { ...listed, ...(typeof body.nextAfter === "string" ? { nextAfter: body.nextAfter } : {}) }
+}
+
+export async function onRuntime<T>(
+  context: SessionContext,
+  ref: SessionRef,
+  live: (route: RuntimeRoute) => Promise<T>,
+  stopped: (workspaceId: string) => Promise<T>,
+): Promise<T> {
+  const home = await context.workspaces.home(ref)
+  if (!home.live) return stopped(home.route.workspaceId)
+  try {
+    return await live(home.route)
+  } catch (error) {
+    if (!isWorkspaceStopped(error)) throw error
+    await context.workspaces.refresh()
+    if ((await context.workspaces.home(ref)).live) throw error
+    return stopped(home.route.workspaceId)
+  }
 }
 
 async function readPage(context: SessionContext, where: RuntimeRoute, path: string): Promise<TranscriptPage> {
@@ -43,24 +67,39 @@ async function readPage(context: SessionContext, where: RuntimeRoute, path: stri
   return transcriptPageFromWire(await response.json(), response.headers.get(OLDER_CURSOR_HEADER))
 }
 
+const NO_TRANSCRIPT: TranscriptPage = { entries: [] }
+
+function readHistory(context: SessionContext, ref: SessionRef, home: SessionHome, before?: string): Promise<TranscriptPage> {
+  if (home.central) return readCentralPage(context.transport, home.route.workspaceId, ref, before === undefined ? { view: "latest-surface" } : { before })
+  if (!home.live) return Promise.resolve(NO_TRANSCRIPT)
+  const page = before === undefined ? { view: "latest-surface" } : { limit: OLDER_PAGE_SIZE, before }
+  return readPage(context, home.route, withQuery(sessionEndpoint(ref, "/message"), page))
+}
+
+async function readSurface(context: SessionContext, ref: SessionRef, home: SessionHome, session: AgentPresentationSession | undefined): Promise<SessionSurface> {
+  const [transcript, row] = await Promise.all([
+    readHistory(context, ref, home),
+    session ? sessionRowFromSession(session, ref) : readCentralRow(context.transport, home.route.workspaceId, ref),
+  ])
+  return { row, transcript, diff: session?.summary?.diffs ?? [] }
+}
+
 export function readSession(context: SessionContext, ref: SessionRef): SessionReads {
   const { transport } = context
-  const where = context.workspaces.route(ref)
-  const transcript = where.then((route) => readPage(context, route, withQuery(sessionEndpoint(ref, "/message"), { view: "latest-surface" })))
-  const row = where.then((route) => transport.runtimeJson<AgentPresentationSession>(route, sessionEndpoint(ref)))
-  const requests = where.then(async (route) => (await readRequests(transport, route, ref.sessionId)).map((item) => item.request))
-  const todos = where.then((route) => transport.runtimeJson<readonly Todo[]>(route, sessionEndpoint(ref, "/todo")))
-  const goal = where.then((route) => readGoalState(transport, route, ref))
+  const live = <T>(read: (route: RuntimeRoute) => Promise<T>, stopped: T) => onRuntime(context, ref, read, async () => stopped)
+  const session = live<AgentPresentationSession | undefined>((route) => transport.runtimeJson<AgentPresentationSession>(route, sessionEndpoint(ref)), undefined)
   return {
-    surface: Promise.all([row, transcript]).then(([session, page]) => ({ row: sessionRowFromSession(session, ref), transcript: page, diff: session.summary?.diffs ?? [] })),
-    status: Promise.all([where, row]).then(([route, session]) => context.status.read(route, ref, session)),
-    requests,
-    todos,
-    goal,
+    surface: Promise.all([context.workspaces.home(ref), session]).then(([home, row]) => readSurface(context, ref, home, row)),
+    status: live(async (route) => {
+      const row = await session
+      return row ? context.status.read(route, ref, row) : STOPPED_STATUS
+    }, STOPPED_STATUS),
+    requests: live(async (route) => (await readRequests(transport, route, ref.sessionId)).map((item) => item.request), []),
+    todos: live((route) => transport.runtimeJson<readonly Todo[]>(route, sessionEndpoint(ref, "/todo")), []),
+    goal: live((route) => readGoalState(transport, route, ref), NO_GOAL),
   }
 }
 
 export async function readOlder(context: SessionContext, ref: SessionRef, cursor: string): Promise<TranscriptPage> {
-  const where = await context.workspaces.route(ref)
-  return readPage(context, where, withQuery(sessionEndpoint(ref, "/message"), { limit: OLDER_PAGE_SIZE, before: cursor }))
+  return readHistory(context, ref, await context.workspaces.home(ref), cursor)
 }

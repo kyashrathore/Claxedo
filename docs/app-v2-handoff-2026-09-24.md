@@ -485,6 +485,13 @@ At 19:08 the owner said: finish in-progress work; start no new work.
 
 - **A v1 edge case, kept for parity:** a Mermaid diagram that renders small, then grows past the large-diagram threshold while streaming, keeps its full-screen button over the "Render diagram" placeholder. The deferred path's `.remove()` selects a slot nothing writes, in v1's session-ui too. The fix after the swap is `clearRichControls(wrapper)` in that branch, as the failure path already does.
 
+- **Carry into the harness rebuild (`feat/harness-v2`):** feat/app-v2 changed the runtime in ways that rebuild must keep:
+  - the explicit cancelled terminal (476c6a5acd): Stop records `cancelled`, and "Interrupted" shows;
+  - `reportHealthChanged` and the `harness.health` frame on `wr/events` (0d73f11527), which the composer's health peek depends on;
+  - pi's `unsettled-launches` owner (308242675e): an unsettled probe never marks pi unavailable;
+  - the pi options cache (70794a7c9a);
+  - the kill(-1) fix ported from harness-v2 (652e6f6d97).
+
 ## Deletion candidates
 
 **The dead revert path.** No harness declares `revert`, v2 passes no `actions` to MessageTimeline, and v1 never renders these (DECISIONS 23:55). Delete the whole list together, or bring it back together with a harness that declares revert. Line numbers are as of 27781bb17e.

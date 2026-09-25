@@ -14,28 +14,15 @@ export type DraftDefaultLabels = {
   model?: string
 }
 
-/**
- * What one harness remembers in one workspace: the model last chosen for it.
- *
- * Per harness, because the harnesses do not share a model namespace — sharing
- * one slot would let picking Claude after Codex overwrite the Codex model
- * with a Claude one, landing back on "Choose a model" every time you switch
- * back.
- */
 export type DraftDefaultHarnessChoice = {
   model?: ModelChoice
   labels?: DraftDefaultLabels
 }
 
-/** The (harness, model) a new draft in this workspace opens with. */
 export type DraftDefault = DraftDefaultHarnessChoice & {
   harness: HarnessSelection
 }
 
-/**
- * The stored record for one (server, workspace): every harness's own slot plus
- * the harness the user last used here, which is the one a new draft opens with.
- */
 type DraftDefaultRecord = {
   version: typeof VERSION
   byHarness: Record<string, DraftDefaultHarnessChoice>
@@ -54,7 +41,6 @@ export type DraftDefaultStorage = {
   removeItem?: (key: string) => void
 }
 
-/** Today's app files the record under this key, so a draft default carries over between the two. */
 export function draftDefaultStorageKey(input: Omit<DraftDefaultScope, "fallbackWorkspaceKey">) {
   return `${serverWorkspaceStorage(input.serverUrl, input.workspaceKey)}:workspace:${KEY}`
 }
@@ -119,13 +105,11 @@ export function createDraftDefaultPreferences(storage: DraftDefaultStorage) {
   }
 
   return {
-    /** The harness this workspace was last used with, and its own model. */
     read(input: DraftDefaultScope): DraftDefault | undefined {
       const record = load(input)
       if (!record) return undefined
       return { harness: record.lastHarness, ...record.byHarness[harnessSelectionKey(record.lastHarness)] }
     },
-    /** What one harness remembers here, whichever harness was last used. */
     readHarness(input: DraftDefaultScope, harness: HarnessSelection): DraftDefaultHarnessChoice | undefined {
       return load(input)?.byHarness[harnessSelectionKey(harness)]
     },
@@ -140,7 +124,6 @@ export function createDraftDefaultPreferences(storage: DraftDefaultStorage) {
   }
 }
 
-// Today's app reads the same record, so a stored model keeps its `providerID`/`modelID` keys.
 function storedRecord(record: DraftDefaultRecord): Record<string, unknown> {
   const byHarness = Object.fromEntries(Object.entries(record.byHarness).map(([slot, choice]) => [slot, {
     ...choice,

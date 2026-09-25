@@ -6,6 +6,7 @@ import type { QueuedMessages, TimelineHost } from "./model"
 export type MessageTimelineProps = {
   host: TimelineHost
   active: () => boolean
+  onScreen: Accessor<boolean>
   actions?: UserActions
   scroll: { overflow: boolean; bottom: boolean; jump: boolean }
   onResumeScroll: () => void

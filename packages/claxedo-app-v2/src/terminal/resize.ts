@@ -41,90 +41,125 @@ export type ResizePublisher = {
   readonly dispose: () => void
 }
 
-export function createResizePublisher(input: {
+type ResizePublisherInput = {
   backend: TerminalBackend
   host: HTMLElement
   likelyTui: boolean
   publish: (size: TerminalSize) => Promise<void>
   onPublishFailed: (error: unknown) => void
-}): ResizePublisher {
-  const { backend } = input
-  let debounce: number | undefined
-  let settle: number | undefined
-  let pending: TerminalSize | undefined
-  let last: TerminalSize | undefined
-  let suspect = 0
-  let lastRecovery = 0
-  let holdUntil = 0
+}
 
-  const publish = (size: TerminalSize, force = false) => {
-    if (!force && last && last.cols === size.cols && last.rows === size.rows) return
-    last = size
-    input.publish(size).catch(input.onPublishFailed)
+type ResizePublisherState = {
+  readonly input: ResizePublisherInput
+  debounce: number | undefined
+  settle: number | undefined
+  pending: TerminalSize | undefined
+  last: TerminalSize | undefined
+  suspect: number
+  lastRecovery: number
+  holdUntil: number
+}
+
+function backendSize(backend: TerminalBackend): TerminalSize {
+  return { cols: backend.cols, rows: backend.rows }
+}
+
+function publishSize(state: ResizePublisherState, size: TerminalSize, force = false): void {
+  if (!force && state.last && state.last.cols === size.cols && state.last.rows === size.rows) return
+  state.last = size
+  state.input.publish(size).catch(state.input.onPublishFailed)
+}
+
+function recoverDesync(state: ResizePublisherState): void {
+  const now = Date.now()
+  if (state.suspect < DESYNC_THRESHOLD || now - state.lastRecovery < DESYNC_COOLDOWN_MS) return
+  state.lastRecovery = now
+  state.suspect = 0
+  const { backend } = state.input
+  backend.fit()
+  if (backend.rows > 0) backend.refresh(0, backend.rows - 1)
+  for (const size of sigwinchToggle(backendSize(backend))) publishSize(state, size, true)
+}
+
+function clearSettle(state: ResizePublisherState): void {
+  if (state.settle !== undefined) window.clearTimeout(state.settle)
+  state.settle = undefined
+}
+
+function clearDebounce(state: ResizePublisherState): void {
+  if (state.debounce !== undefined) window.clearTimeout(state.debounce)
+  state.debounce = undefined
+}
+
+function scheduleSettled(state: ResizePublisherState): void {
+  clearSettle(state)
+  state.settle = window.setTimeout(() => {
+    state.settle = undefined
+    state.holdUntil = 0
+    publishSize(state, state.pending ?? backendSize(state.input.backend))
+  }, OPEN_SETTLE_MS)
+}
+
+function publishResized(state: ResizePublisherState): void {
+  if (!state.pending) return
+  const rect = state.input.host.getBoundingClientRect()
+  if (!hostStable(rect) || !sizeSane(state.pending, rect)) {
+    state.suspect += 1
+    recoverDesync(state)
+    return
   }
-
-  const recoverDesync = () => {
-    const now = Date.now()
-    if (suspect < DESYNC_THRESHOLD || now - lastRecovery < DESYNC_COOLDOWN_MS) return
-    lastRecovery = now
-    suspect = 0
-    backend.fit()
-    if (backend.rows > 0) backend.refresh(0, backend.rows - 1)
-    for (const size of sigwinchToggle({ cols: backend.cols, rows: backend.rows })) publish(size, true)
+  state.suspect = 0
+  if (state.holdUntil > Date.now()) {
+    scheduleSettled(state)
+    return
   }
+  publishSize(state, state.pending)
+}
 
-  const scheduleSettled = () => {
-    if (settle !== undefined) window.clearTimeout(settle)
-    settle = window.setTimeout(() => {
-      settle = undefined
-      holdUntil = 0
-      publish(pending ?? { cols: backend.cols, rows: backend.rows })
-    }, OPEN_SETTLE_MS)
+function debounceResize(state: ResizePublisherState, size: TerminalSize): void {
+  state.pending = size
+  clearDebounce(state)
+  state.debounce = window.setTimeout(() => publishResized(state), RESIZE_DEBOUNCE_MS)
+}
+
+function openShell(state: ResizePublisherState): void {
+  state.holdUntil = Date.now() + OPEN_SETTLE_MS
+  scheduleSettled(state)
+}
+
+function openTui(state: ResizePublisherState): void {
+  state.holdUntil = 0
+  clearSettle(state)
+  const { input } = state
+  const [first, second] = sigwinchToggle(backendSize(input.backend))
+  input
+    .publish(first)
+    .then(() => input.publish(second))
+    .catch(input.onPublishFailed)
+}
+
+export function createResizePublisher(input: ResizePublisherInput): ResizePublisher {
+  const state: ResizePublisherState = {
+    input,
+    debounce: undefined,
+    settle: undefined,
+    pending: undefined,
+    last: undefined,
+    suspect: 0,
+    lastRecovery: 0,
+    holdUntil: 0,
   }
-
-  const onResized = () => {
-    if (!pending) return
-    const rect = input.host.getBoundingClientRect()
-    if (!hostStable(rect) || !sizeSane(pending, rect)) {
-      suspect += 1
-      recoverDesync()
-      return
-    }
-    suspect = 0
-    if (holdUntil > Date.now()) {
-      scheduleSettled()
-      return
-    }
-    publish(pending)
-  }
-
-  const disposeResize = backend.onResize((size) => {
-    pending = size
-    if (debounce !== undefined) window.clearTimeout(debounce)
-    debounce = window.setTimeout(onResized, RESIZE_DEBOUNCE_MS)
-  })
-
+  const disposeResize = input.backend.onResize((size) => debounceResize(state, size))
   return {
     onOpen: () => {
-      backend.fit()
-      if (!input.likelyTui) {
-        holdUntil = Date.now() + OPEN_SETTLE_MS
-        scheduleSettled()
-        return
-      }
-      holdUntil = 0
-      if (settle !== undefined) window.clearTimeout(settle)
-      settle = undefined
-      const [first, second] = sigwinchToggle({ cols: backend.cols, rows: backend.rows })
-      input
-        .publish(first)
-        .then(() => input.publish(second))
-        .catch(input.onPublishFailed)
+      input.backend.fit()
+      if (input.likelyTui) openTui(state)
+      else openShell(state)
     },
     dispose: () => {
       disposeResize()
-      if (debounce !== undefined) window.clearTimeout(debounce)
-      if (settle !== undefined) window.clearTimeout(settle)
+      clearDebounce(state)
+      clearSettle(state)
     },
   }
 }

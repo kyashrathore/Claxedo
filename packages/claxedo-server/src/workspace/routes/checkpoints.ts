@@ -246,6 +246,7 @@ function service(
         ...("actorName" in identity && identity.actorName ? { actorName: identity.actorName } : {}),
         ...("actorAvatarUrl" in identity && identity.actorAvatarUrl ? { actorAvatarUrl: identity.actorAvatarUrl } : {}),
       },
+      ...(auth ? { auth } : {}),
       orgId: identity.orgId,
       role: identity.role,
       resume,

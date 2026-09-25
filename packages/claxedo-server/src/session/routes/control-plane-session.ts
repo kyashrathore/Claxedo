@@ -19,6 +19,7 @@ import {
   buildSessionListResponse,
   parseSessionListQuery,
   sessionListStoreFilter,
+  sessionListIsKeysetPageable,
   sessionListStorePageFilter,
   sessionInventoryResponse,
   requiredWorkspaceId,
@@ -126,9 +127,7 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
         const query = parseSessionListQuery(new URL(c.req.url))
         if (isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw)) {
           await options.beforeLocalList?.()
-          const canUseBoundedProjection = query.groupBy === "none" &&
-            query.environment.length === 0 &&
-            query.git.length === 0 &&
+          const canUseBoundedProjection = sessionListIsKeysetPageable(query) &&
             !!services.projectionStore.list_session_navigation_metas
           if (canUseBoundedProjection && services.projectionStore.list_session_navigation_metas) {
             return c.json(buildSessionListResponse({

@@ -22,7 +22,7 @@ test("27 browser tab: a local link from the agent opens in the panel's sandboxed
 
   await app.getByRole("link", { name: "first page" }).click()
   const panel = app.getByRole("complementary", { name: "Workspace panel" })
-  const preview = panel.getByTitle("External source preview")
+  const preview = panel.getByTitle("Browser preview").contentFrame().getByTitle("External source preview")
   const address = panel.getByRole("textbox", { name: "Enter URL or search" })
   await expect(preview).toHaveAttribute("sandbox", "")
   await expect(preview.contentFrame().getByRole("heading", { name: "First preview page" })).toBeVisible()

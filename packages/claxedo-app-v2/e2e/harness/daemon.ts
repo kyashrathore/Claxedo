@@ -23,6 +23,7 @@ export type SignedDaemon = {
   distDir: string
   operators: readonly string[]
   runtimeKeys: { privatePem: string; publicPem: string }
+  cloud?: { relayUrl: string; resolverToken: string }
 }
 
 export type Daemon = {
@@ -76,6 +77,14 @@ function signedEnv(signed: SignedDaemon): NodeJS.ProcessEnv {
     CLAXEDO_OPERATOR_SUBJECTS: signed.operators.join(","),
     CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: signed.runtimeKeys.privatePem,
     CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: signed.runtimeKeys.publicPem,
+    ...(signed.cloud
+      ? {
+          CLAXEDO_ENABLE_DOCKER_SANDBOX: "1",
+          CLAXEDO_WORKSPACE_RELAY_URL: signed.cloud.relayUrl,
+          CLAXEDO_RELAY_JWKS_URL: `${signed.cloud.relayUrl}/.well-known/jwks.json`,
+          CLAXEDO_RELAY_RESOLVER_TOKEN: signed.cloud.resolverToken,
+        }
+      : {}),
   }
 }
 

@@ -1293,3 +1293,79 @@ describe("provider configuration", () => {
     expect(enrollmentRow(db, enrollmentId)).toEqual(before)
   })
 })
+
+describe("machine session rows", () => {
+  async function served() {
+    const { api, db } = setup()
+    const { enrollment, keys, hostId } = await enrollByAccount(api)
+    await api.assignWorkspaceHost(owner, { workspaceId: "ws_a", hostId, remoteDirectory: "/srv/a" })
+    await machineBeat(api, keys, { enrollmentId: enrollment.enrollment_id, hostId, generation: 0, acks: [{ workspaceId: "ws_a", revision: 1 }] })
+    const publisher = {
+      hostId,
+      ownerUserId: owner.user.tokenIdentifier,
+      workspaceIds: ["ws_a"],
+      enrollmentId: enrollment.enrollment_id,
+      generation: 0,
+    }
+    const publish = (publication: { rows?: unknown[]; removed?: unknown[] }, as = publisher) =>
+      api.publishHostSessionRows!(as, { rows: [], removed: [], ...publication } as never)
+    const page = (auth: SignedControlPlaneAuth) =>
+      api.listSessionPage(auth, { workspaceId: "ws_a", sort: "human_turn_desc", archived: "active", limit: 50 })
+    return { api, db, publisher, publish, page }
+  }
+
+  const row = (sessionId: string, overrides: Record<string, unknown> = {}) => ({
+    workspaceId: "ws_a",
+    sessionId,
+    title: sessionId,
+    createdAt: 100,
+    updatedAt: 200,
+    status: { kind: "idle", awaitingInput: false, at: 300 },
+    ...overrides,
+  })
+
+  test("adopts a machine's sessions for the enrollment owner and keeps them from everyone else", async () => {
+    const { publish, page, db } = await served()
+    const orgId = (db().prepare(`SELECT org_id FROM workspaces WHERE workspace_id = ?`).get("ws_a") as { org_id: string }).org_id
+    addOrgMember(db, orgId, other.user.tokenIdentifier, "admin")
+
+    await expect(publish({ rows: [row("ses_quiet"), row("ses_spoken", { lastHumanTurnAt: 400, status: { kind: "busy", awaitingInput: true, at: 410 } })] }))
+      .resolves.toEqual({ accepted: 2, refused: [] })
+
+    expect(await page(owner)).toEqual([
+      expect.objectContaining({ session_id: "ses_spoken", last_human_turn_at: 400, status: "busy", awaiting_input: true }),
+      expect.objectContaining({ session_id: "ses_quiet", status: "idle" }),
+    ])
+    expect(await page(other)).toEqual([])
+  })
+
+  test("republishing is idempotent and never moves a turn or a status backwards", async () => {
+    const { publish, page } = await served()
+    const publication = { rows: [row("ses_a", { lastHumanTurnAt: 400, status: { kind: "busy", awaitingInput: false, at: 500 } })] }
+    await publish(publication)
+    const first = await page(owner)
+    await publish(publication)
+    expect(await page(owner)).toEqual(first)
+
+    await publish({ rows: [row("ses_a", { title: "Renamed", lastHumanTurnAt: 300, status: { kind: "idle", awaitingInput: false, at: 450 } })] })
+    expect(await page(owner)).toEqual([
+      expect.objectContaining({ session_id: "ses_a", title: "Renamed", last_human_turn_at: 400, status: "busy", status_at: 500 }),
+    ])
+  })
+
+  test("refuses rows the enrollment does not serve now, and a removal ends republishing", async () => {
+    const { publish, page, publisher } = await served()
+
+    await expect(publish({ rows: [row("ses_x")] }, { ...publisher, generation: 1 }))
+      .resolves.toMatchObject({ refused: [{ reason: "workspace_not_served" }] })
+    await expect(publish({ rows: [row("ses_x")] }, { ...publisher, ownerUserId: other.user.tokenIdentifier }))
+      .resolves.toMatchObject({ refused: [{ reason: "workspace_not_served" }] })
+    expect(await page(owner)).toEqual([])
+
+    await publish({ rows: [row("ses_gone")] })
+    await expect(publish({ removed: [{ workspaceId: "ws_a", sessionId: "ses_gone" }] })).resolves.toEqual({ accepted: 1, refused: [] })
+    expect(await page(owner)).toEqual([])
+    await expect(publish({ rows: [row("ses_gone")] }))
+      .resolves.toMatchObject({ refused: [{ reason: "session_deleted" }] })
+  })
+})

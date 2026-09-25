@@ -348,11 +348,15 @@ describe("the endpoints a control-plane body delivers", () => {
     expect(
       decodeEndpoints({
         relay: { url: "wss://relay.example.test", jwks_url: "https://keys.example.test/.well-known/jwks.json" },
-        authority: { session_authority_url: "https://authority.example.test/api/runtime-authority/session-authorize" },
+        authority: {
+          session_authority_url: "https://authority.example.test/api/runtime-authority/session-authorize",
+          session_rows_url: "https://authority.example.test/api/claxedo/host/session-rows",
+        },
       }),
     ).toEqual({
       relay: { url: "wss://relay.example.test", jwksUrl: "https://keys.example.test/.well-known/jwks.json" },
       authority: { sessionAuthorityUrl: "https://authority.example.test/api/runtime-authority/session-authorize" },
+      sessionRows: { url: "https://authority.example.test/api/claxedo/host/session-rows" },
     })
   })
 
@@ -400,6 +404,14 @@ describe("the endpoints a control-plane body delivers", () => {
       expect(() => decodeEndpoints({ authority: { session_authority_url: url } })).toThrow(HostEndpointUrlError)
       expect(() => decodeEndpoints({ authority: { session_authority_url: url } })).toThrow(/authority\.session_authority_url/)
     }
+  })
+
+  test("a session-rows address is refused on the same terms, and absent when the body names none", () => {
+    for (const url of ["http://rows.internal/a", "file:///etc/a", "https://user@rows.test/a"]) {
+      expect(() => decodeEndpoints({ authority: { session_rows_url: url } })).toThrow(HostEndpointUrlError)
+      expect(() => decodeEndpoints({ authority: { session_rows_url: url } })).toThrow(/authority\.session_rows_url/)
+    }
+    expect(decodeEndpoints({ authority: { session_authority_url: "https://a.test/authorize" } })).not.toHaveProperty("sessionRows")
   })
 
   test("a beat that carries an undialable relay fails rather than storing it", async () => {

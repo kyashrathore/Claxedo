@@ -165,6 +165,7 @@ describe("start", () => {
       {
         relay: { url: cp.relayUrl, jwksUrl: `${cp.relayUrl}/.well-known/jwks.json` },
         authority: { sessionAuthorityUrl: `${cp.url}/api/runtime-authority/session-authorize` },
+        sessionRows: { url: `${cp.url}/api/claxedo/host/session-rows` },
       },
     ])
   })

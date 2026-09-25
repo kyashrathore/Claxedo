@@ -1,28 +1,14 @@
-// Collapses every harness failure state into at most one composer notice.
-//
-// Kept pure and separate from `AgentHarnessSelector` because the ordering is
-// the whole point: these conditions overlap constantly — a dead runtime also
-// fails option discovery, which also leaves the saved model unresolvable —
-// and rendering each independently would stack "Unavailable ● Retry" in the
-// same row.
 import type { ComposerNoticeTone } from "./composer-notice"
 import type { HarnessConnectionState } from "@/server"
 
 export type HarnessNoticeInput = {
-  /** Display name of the active harness, e.g. "Cursor". */
   harnessLabel: string
-  /** Readiness settled on the terminal error state — the runtime never came up. */
   runtimeUnavailable: boolean
   connectionState?: HarnessConnectionState
-  /** Model discovery failed and the list we hold is now stale. */
   optionsFailed: boolean
-  /** No model options resolved at all. */
   noModels: boolean
-  /** The runtime's own error text, unedited. */
   configError?: string
-  /** Name of a saved default model that no longer resolves. */
   savedModelUnavailable?: string
-  /** Credentials are missing and setup belongs in Settings → Providers. */
   setupRequired?: boolean
   openProviders?: () => void
 }
@@ -33,7 +19,6 @@ export type HarnessNotice = {
   message: string
   detail?: string
   title?: string
-  /** Whether the row should offer a re-probe action. */
   retry: boolean
   action?: { label: string; ariaLabel?: string; run: () => void }
 }
@@ -55,22 +40,15 @@ function openProviders(run: () => void) {
   return { label: "Open Providers", ariaLabel: "Open Settings Providers", run }
 }
 
-/**
- * `undefined` means "nothing worth a row" — including the merely-stale list,
- * which is a hint on the model control, not an error.
- */
 export function resolveHarnessNotice(input: HarnessNoticeInput): HarnessNotice | undefined {
   const connection = connectionNotice(input)
   if (connection) return connection
-  // A dead runtime outranks everything downstream of it: every other failure
-  // here is a symptom, and reporting the symptom sends the user to the wrong fix.
   if (input.runtimeUnavailable) {
     return {
       kind: "runtime-unavailable",
       tone: "critical",
       message: `${input.harnessLabel} runtime is unavailable`,
       detail: input.configError ?? "It never finished starting. Retry, or pick another agent.",
-      // The harness e2e specs locate this state by this title string; changing it breaks them.
       title: "Agent runtime unreachable after timeout",
       retry: true,
     }

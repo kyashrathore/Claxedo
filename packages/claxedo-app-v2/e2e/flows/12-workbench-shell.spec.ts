@@ -52,6 +52,48 @@ test("12 workbench and shell: a rail row dragged to the edge splits, compact tab
   await expect(app.getByRole("dialog", { name: UI.palette })).toHaveCount(0)
 })
 
+async function domWritesDuring(app: Page, act: () => Promise<void>): Promise<string[]> {
+  await app.evaluate(() => {
+    const writes: string[] = []
+    Object.assign(window, { resizeWrites: writes })
+    new MutationObserver((records) => {
+      for (const record of records) writes.push(`${record.type} ${(record.target as Element).tagName ?? record.target.nodeName} ${record.attributeName ?? ""}`)
+    }).observe(document, { subtree: true, childList: true, attributes: true, characterData: true })
+  })
+  await act()
+  await app.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  return app.evaluate(() => (window as unknown as { resizeWrites: string[] }).resizeWrites)
+}
+
+test("12 a narrow workbench shows one split pane without chrome, and a resize of an unsplit one writes nothing", async ({ stack, api, app }) => {
+  await app.setViewportSize({ width: 1280, height: 800 })
+  const workspace = await stack.daemon.makeWorkspace("narrow", "Narrow")
+  const first = await api.createSession(workspace.directory, { title: "First", harness: SCRIPTED_ACP_HARNESS })
+  await api.createSession(workspace.directory, { title: "Second", harness: SCRIPTED_ACP_HARNESS })
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, first.id)}`)
+  await app.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "Second", exact: true }).click()
+  await dragRowToRightEdge(app, "First")
+  await expect(divider(app)).toBeVisible()
+  await expect(app.getByRole("button", { name: "Close Pane" })).toHaveCount(2)
+
+  await app.setViewportSize({ width: 900, height: 800 })
+  await expect(divider(app)).toBeHidden()
+  await expect(app.getByRole("button", { name: "Close Pane" })).toHaveCount(0)
+  await app.setViewportSize({ width: 1280, height: 800 })
+  await expect(divider(app)).toBeVisible()
+  await expect(app.getByRole("button", { name: "Close Pane" })).toHaveCount(2)
+
+  await app.getByRole("button", { name: "Close Pane" }).first().click()
+  await expect(divider(app)).toHaveCount(0)
+  const writes = await domWritesDuring(app, async () => {
+    await app.setViewportSize({ width: 900, height: 800 })
+    await app.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    await app.setViewportSize({ width: 1280, height: 800 })
+  })
+  expect(writes).toEqual([])
+  expect((await api.session(workspace.directory, first.id)).title).toBe("First")
+})
+
 test("12 New Session again focuses the workspace's one draft tab", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("bench", "Bench")
   const first = await api.createSession(workspace.directory, { title: "First", harness: SCRIPTED_ACP_HARNESS })

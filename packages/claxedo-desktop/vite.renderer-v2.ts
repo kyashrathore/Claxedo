@@ -1,9 +1,11 @@
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import type { ConfigEnv, UserConfig } from "vite"
+import type { PluginOption } from "vite"
 import appV2Config from "../claxedo-app-v2/vite.cloud.config"
+import { WEB_CONTENT_SECURITY_POLICY_PLUGIN } from "../claxedo-app-v2/vite.content-security-policy"
 import { desktopRendererBoundaryManifestPlugin } from "./scripts/product-boundary-manifests"
-import { desktopDir, rendererDocumentCsp } from "./vite.renderer"
+import { desktopDir } from "./vite.renderer"
 
 const normalize = (value: string) => value.replaceAll("\\", "/")
 
@@ -27,6 +29,10 @@ function withoutManualChunks(output: RendererOutput): RendererOutput {
   return { ...output, manualChunks: undefined }
 }
 
+function isWebContentSecurityPolicy(plugin: PluginOption) {
+  return typeof plugin === "object" && plugin !== null && "name" in plugin && plugin.name === WEB_CONTENT_SECURITY_POLICY_PLUGIN
+}
+
 function localServerUrl() {
   return process.env.VITE_CLAXEDO_SERVER_URL?.trim() || "http://127.0.0.1:2593"
 }
@@ -39,8 +45,7 @@ export function createElectronRendererV2(env: ConfigEnv): UserConfig {
     base: "./",
     publicDir: normalize(path.join(appV2Dir, "public")),
     plugins: [
-      ...(app.plugins ?? []),
-      rendererDocumentCsp(env.mode),
+      ...(app.plugins ?? []).filter((plugin) => !isWebContentSecurityPolicy(plugin)),
       desktopRendererBoundaryManifestPlugin(desktopDir, "v2"),
     ],
     server: {

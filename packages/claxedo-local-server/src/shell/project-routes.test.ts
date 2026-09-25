@@ -152,7 +152,7 @@ describe("Claxedo project metadata public routes", () => {
       services: { authority: {
         authorizeProject: async (auth: { user: { subject: string } }, input: { projectId: string }) => ({ ok: auth.user.subject === "owner" && input.projectId === "project_a" }),
         listWorkspaces: async () => [{ workspace_id: "ws_main", project_id: "project_a", display_name: "Authority name" }],
-      } } as unknown as ControlPlaneServicesContract,
+      }, sandbox: {} } as unknown as ControlPlaneServicesContract,
     }
     const signed = ShellRoutes(options)
     expect((await signed.request("/project/project_a", patch({ name: "Shared name", icon: { color: "purple" }, commands: { start: "bun dev" } }, "owner"))).status).toBe(200)

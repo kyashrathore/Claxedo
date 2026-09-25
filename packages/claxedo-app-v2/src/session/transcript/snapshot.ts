@@ -36,7 +36,7 @@ function landSides(context: TranscriptContext, reads: SessionReads, sentAt: numb
   landSide(context, "status", reads.status, (status) => deps.list.readStatus(ref, status, sentAt))
   reads.requests.then(
     (requests) => deps.requests.read(ref, requests, sentAt),
-    (cause) => deps.requests.readFailed(ref, toAppError(cause)),
+    (cause) => deps.requests.readFailed(ref, toAppError(cause), sentAt),
   )
   landSide(context, "todos", reads.todos, (todos) => context.todos.read(todos, sentAt))
   landSide(context, "goal", reads.goal, context.goal.read)

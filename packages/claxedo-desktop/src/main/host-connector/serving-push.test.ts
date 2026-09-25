@@ -5,6 +5,7 @@ import { recordingDaemon } from "../test-support/daemon-fetch"
 
 const JWKS = "https://relay.test/.well-known/jwks.json"
 const AUTHORITY = "https://control-plane.test/api/runtime-authority/session-authorize"
+const SESSION_ROWS = "https://control-plane.test/api/claxedo/host/session-rows"
 const TUNNEL = {
   hostTunnelToken: "htt.1",
   hostId: "host_1",
@@ -31,10 +32,10 @@ function harness(options: { respond?: () => Response; origin?: string | Promise<
 }
 
 describe("the serving push", () => {
-  test("PUTs the credential and both addresses to the daemon", async () => {
+  test("PUTs the credential and every address to the daemon", async () => {
     const host = harness()
 
-    await host.push({ tunnel: TUNNEL, endpoints: { relayJwksUrl: JWKS, sessionAuthorityUrl: AUTHORITY } })
+    await host.push({ tunnel: TUNNEL, endpoints: { relayJwksUrl: JWKS, sessionAuthorityUrl: AUTHORITY, sessionRowsUrl: SESSION_ROWS } })
 
     expect(host.requests).toHaveLength(1)
     expect(host.requests[0]?.url).toBe("http://127.0.0.1:4000/api/claxedo/host-serving")
@@ -44,7 +45,7 @@ describe("the serving push", () => {
     expect(host.requests[0]?.capability).toBe("daemon-capability")
     expect(host.body()).toEqual({
       credential: TUNNEL,
-      endpoints: { relayJwksUrl: JWKS, sessionAuthorityUrl: AUTHORITY },
+      endpoints: { relayJwksUrl: JWKS, sessionAuthorityUrl: AUTHORITY, sessionRowsUrl: SESSION_ROWS },
     })
   })
 

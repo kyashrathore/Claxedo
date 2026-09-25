@@ -118,9 +118,9 @@ The daemon runs `packages/claxedo-server`'s self-hosted entry from the spec's da
 
 A bare repository with one commit (`README.md` holding `<name>-source`), served over dumb HTTP from the spec's data directory on a port from the run's range: `{ url, source, close }`. Clone it the way a user would paste a URL; it closes with the stack. `git(cwd, ...args)` and `gitFolder(root, name)` run git with a test identity and make a fresh one-commit repository.
 
-### `stack.localPages(pages)`
+### `stack.localPages(pages, held?)`
 
-A loopback web server on a port from the run's range that answers each path in `pages` (path to HTML) and 404 for anything else: `{ url, requested, close }`. `requested` lists every path asked for, in order, so a spec can prove what the app loaded. It closes with the stack. Flow 27 links its pages from an agent reply, because v1 opens loopback links in the workspace panel's browser tab.
+A loopback web server on a port from the run's range that answers each path in `pages` (path to HTML), never answers a path in `held` (an external host that hangs, such as an image that never loads), and answers 404 for anything else: `{ url, requested, close }`. `requested` lists every path asked for, in order, so a spec can prove what the app loaded. It closes with the stack. Flow 27 links its pages from an agent reply, because v1 opens loopback links in the workspace panel's browser tab.
 
 ### `stack.acp`
 
@@ -182,6 +182,17 @@ The stack starts unsigned, so the machine-wide setup (the scripted providers, Pi
 | `makeWorkspace(name, projectName?)` | As `stack.daemon.makeWorkspace`, recorded by the owner (project first, then the signed resolve) |
 
 An `Account` is `{ name, email, password, subject, api, transport }`. Its `api` sends the account's bearer token straight to the daemon, reserves each session before creating it and stamps every prompt with a message id, which a signed server requires.
+
+### `signedCloud` (the signed stack with cloud workspaces)
+
+The `signed` stack plus what a cloud workspace needs, all real apart from the sandbox provider:
+
+- **The relay.** A real `@claxedo/workspace-relay` (`harness/relay.ts`, `bun src/main.ts`) on a port from the run's range, resolving targets through the daemon's `/internal/relay` with a shared resolver token, verifying the daemon's Runtime Access Tokens with its public key, and minting relay host tokens with an ephemeral key. The daemon gets `CLAXEDO_WORKSPACE_RELAY_URL`, `CLAXEDO_RELAY_JWKS_URL` (the relay's JWKS, which the sandbox's session-authority calls are verified against) and the resolver token. The relay caches a target for 1 ms: a stopped sandbox comes back as a new container under the same host id on a new port, and the default 30 s cache would forward to the old one.
+- **The sandbox provider, faked at the Docker CLI.** `CLAXEDO_ENABLE_DOCKER_SANDBOX=1` selects the daemon's real Docker driver, and `harness/stand-ins/docker` answers the commands it runs: `create` records the container's env and port, `start` runs the repository's `workspace-runtime` on the host with that env on a free port, `port` reports it, `stop`/`rm` end it, and `host.docker.internal` in the env is rewritten to `127.0.0.1`, which is what a container's view of the host resolves to. The container's workspace is mounted at a host path: `makeCloudWorkspace` creates it with a `remoteDirectory` in the spec's data directory. The stack ends every sandbox it started when it closes (`harness/sandboxes.ts`).
+- **Arranging through the API** (`harness/cloud.ts`): `makeCloudWorkspace`, `startCloudWorkspace` (the explicit connect), `cloudTurn` (reserve, create and prompt through `/workspaces/:id/*` as the owner, then the checkpoint pull that stores the transcript in the control plane, as the app does on a turn's end), `stopCloudWorkspace` (the lifecycle stop) and `storedMessages` (the control plane's copy).
+- The scripted ACP agent advertises `loadSession`, so a session continues after its sandbox restarts, as a real agent's does.
+
+Flow 24 uses it.
 
 ### Signed stack: next steps
 

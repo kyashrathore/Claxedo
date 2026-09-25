@@ -15,7 +15,6 @@ import type { Checked } from "./31-session-list-races.oracle"
 type SetupOptions = { readonly open?: boolean; readonly workspaces?: number }
 
 const LIST_ROUTE = /\/api\/claxedo\/session-list/
-const STATUS_ROUTE = /\/session\/status(\?|$)/
 export const STREAM_PATH = "/api/wr/events"
 const CONTROL_STREAM_PATH = "/api/cp/events"
 
@@ -52,10 +51,6 @@ function deferred<T>() {
 
 export function holdListRead(app: Page, matches: (url: URL) => boolean = () => true) {
   return holdRead(app, LIST_ROUTE, matches)
-}
-
-export function holdStatusRead(app: Page) {
-  return holdRead(app, STATUS_ROUTE, () => true)
 }
 
 async function holdRead(app: Page, pattern: RegExp, matches: (url: URL) => boolean) {

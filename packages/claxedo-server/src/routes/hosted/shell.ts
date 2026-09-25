@@ -39,6 +39,9 @@ import {
 } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { requestHasAuthenticationCredential } from "@claxedo/server-core/platform/auth/authentication"
+import type { SandboxManagerPort } from "@claxedo/server-core/sandbox/manager-port"
+import { authorityRowBacking, readyCloudWorkspaces } from "@claxedo/server-core/workspace/cloud-runtime-readiness"
+import { authorityRowReachable } from "@claxedo/server-core/workspace/placement-reachability"
 import {
   EMPTY_SERVICE_CATALOG,
   projectServiceCatalogForBrowser,
@@ -64,6 +67,8 @@ export type HostedShellRouteOptions = {
   version?: string
   /** Signed project inventory source (the authority workspaces.list). */
   listWorkspaces?: (auth: SignedControlPlaneAuth) => Promise<unknown>
+  /** Whose lease says which cloud workspaces of that inventory are running. */
+  sandboxManager?: Pick<SandboxManagerPort, "target">
   /** Heartbeat cadence for the events stream (tests shrink this). */
   heartbeatMs?: number
   /**
@@ -210,7 +215,7 @@ function projectDisplayName(row: Record<string, unknown> | undefined, projectId:
 // and workspace store, which the Worker bundle cannot carry. The inventory
 // tells the app shell which directories a signed workspace occupies, and so
 // which runtime-owned reads (provider, files, PTY) take the relay.
-export function signedShellProjects(workspaces: unknown[], now: number) {
+export function signedShellProjects(workspaces: unknown[], now: number, readyCloud: ReadonlySet<string>) {
   const groups = new Map<string, {
     id: string
     name: string
@@ -245,16 +250,13 @@ export function signedShellProjects(workspaces: unknown[], now: number) {
     // group was opened by a bare row its name is still the raw project id, so
     // let a later row that DOES know the repo upgrade it.
     if (group.name === projectId) group.name = projectDisplayName(row, projectId)
+    const backing = authorityRowBacking(row)
     group.directories.push(workspaceId)
     group.workspaces[workspaceId] = {
       id: workspaceId,
-      // The row's own placement, passed through rather than restated: the app
-      // narrows this word once, in `placement-wire.ts`. A row naming no backing
-      // is the provisioner's, never the reader's own machine — defaulting the
-      // other way would put somebody else's workspace on this one.
-      backing: asString(row?.backing) === "local-worktree" ? "local-worktree" : "cloud-vm",
+      backing,
       workspace_name: workspaceName,
-      reachable: true,
+      reachable: authorityRowReachable(row, readyCloud),
       directory,
       ...(remoteDirectory ? { remote_directory: remoteDirectory } : {}),
       // Carried so the client can derive an owner/repo label of its own (the
@@ -530,18 +532,23 @@ async function harnessStatusResponse(c: Context, options: HostedShellRouteOption
   }
 }
 
+function hasCredential(c: Context, options: HostedShellRouteOptions) {
+  return options.authentication
+    ? requestHasAuthenticationCredential(c.req.raw, options.authentication.descriptor)
+    : !!bearerToken(c.req.header("authorization") ?? null)
+}
+
 async function signedProjects(c: Context, options: HostedShellRouteOptions, activateOwner = false) {
-  if (options.authentication) {
-    if (!requestHasAuthenticationCredential(c.req.raw, options.authentication.descriptor)) return []
-  } else if (!bearerToken(c.req.header("authorization") ?? null)) return []
+  if (!hasCredential(c, options)) return []
   const auth = await signedAuth(c, options)
   if (!auth) return []
   if (activateOwner && options.activateOwner) {
     guardedWaitUntil(c)?.(options.activateOwner(auth))
   }
   if (!options.listWorkspaces) return []
-  const workspaces = await options.listWorkspaces(auth)
-  return signedShellProjects(Array.isArray(workspaces) ? workspaces : [], Date.now())
+  const listed = await options.listWorkspaces(auth)
+  const workspaces = Array.isArray(listed) ? listed : []
+  return signedShellProjects(workspaces, Date.now(), await readyCloudWorkspaces(options.sandboxManager, workspaces))
 }
 
 /**
@@ -553,10 +560,7 @@ async function signedProjects(c: Context, options: HostedShellRouteOptions, acti
  * where the owner's runtime activation is scheduled.
  */
 async function signedServiceCatalogState(c: Context, options: HostedShellRouteOptions) {
-  const hasCredential = options.authentication
-    ? requestHasAuthenticationCredential(c.req.raw, options.authentication.descriptor)
-    : !!bearerToken(c.req.header("authorization") ?? null)
-  if (!hasCredential) return { authenticated: false, services: EMPTY_SERVICE_CATALOG }
+  if (!hasCredential(c, options)) return { authenticated: false, services: EMPTY_SERVICE_CATALOG }
   const auth = await signedAuth(c, options)
   if (!auth) return { authenticated: false, services: EMPTY_SERVICE_CATALOG }
   if (options.activateOwner) guardedWaitUntil(c)?.(options.activateOwner(auth))
@@ -709,18 +713,25 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
         version: version(options),
       }))
     // Public, and deliberately not the node's bootstrap body: a hosted central
-    // has no filesystem, no embedded runtime and no machine behind it, so the
-    // only fact it has to state here is the posture the browser must satisfy.
-    // The app reads it before its first render, while nobody is signed in yet,
-    // which is why it passes no auth gate.
-    .get("/api/claxedo/bootstrap", (c) => {
+    // has no filesystem, no embedded runtime and no machine behind it. The app
+    // reads it before its first render, while nobody is signed in yet, which is
+    // why it passes no auth gate and an anonymous caller learns only the
+    // posture. A caller holding a credential also gets the project catalog
+    // `/project` serves, which is what a signed node's bootstrap carries too.
+    .get("/api/claxedo/bootstrap", async (c) => {
       c.header("Cache-Control", "no-store")
-      return c.json({
+      const declaration = {
         healthy: true,
         version: version(options),
         events: { hostAggregate: false },
         deployment: { issuesSessions: issuesSessions(options.authConfig), documents: false },
-      })
+      }
+      if (!hasCredential(c, options)) return c.json(declaration)
+      try {
+        return c.json({ ...declaration, project: await signedProjects(c, options) })
+      } catch (err) {
+        return authErrorResponse(c, err)
+      }
     })
     .get("/project", async (c) => {
       try {

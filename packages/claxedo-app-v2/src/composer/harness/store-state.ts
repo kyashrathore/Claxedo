@@ -16,10 +16,8 @@ export type HarnessStoreState = {
   selectedModel: string
   selectedModelProvider?: string
   dynamicModels: readonly HarnessOptionChoice[] | null
-  /** Reasoning/thinking levels the harness offers; `[]` = none, `null` = unknown. */
   thoughtLevels: readonly HarnessOptionChoice[] | null
   selectedThoughtLevel: string | undefined
-  /** Faster tiers the selected model offers; `[]` = none, `null` = unknown. */
   serviceTiers: readonly HarnessOptionChoice[] | null
   selectedServiceTier: string | undefined
   readiness: HarnessReadiness
@@ -36,26 +34,11 @@ export type HarnessStoreState = {
   draftDefaultWorkspaceKey?: string
   draftDefault?: DraftDefault
   draftDefaultState?: DraftDefaultResult["state"]
-  /**
-   * What this existing session's scope showed before another harness was
-   * picked in it. The session keeps running its own harness until the next
-   * send switches it, so while this is set the scope's harness is only a
-   * choice: nothing server-side has changed, and picking the session's own
-   * harness back restores this.
-   */
   heldFrom?: Omit<HarnessStoreState, "heldFrom">
 }
 
 export type HarnessStorePatch = Partial<HarnessStoreState>
 
-/**
- * The TRANSIENT seed a scope starts from, before any authority answers.
- *
- * It carries no remembered choice: a draft's remembered (harness, model) comes
- * from the per-(server, workspace, harness) draft defaults, and an existing
- * session's comes from its session config. Both overwrite this within the same
- * hydration.
- */
 export function initialHarnessStoreState(input: {
   scope: string
 }): HarnessStoreState {
@@ -106,18 +89,6 @@ export function harnessStatusPatch(input: {
   }
 }
 
-// A harness that reports ready:false without a hard failure
-// (status "error" or an error message) is still CONNECTING during a startup or
-// in-flight probe — surface that as "polling" so the selector renders a
-// "Connecting" pill instead of a red "Unavailable". A hard failure is "error".
-// A live-but-degraded harness (`ready:true` while `harnessHealth.status` is
-// degraded/unavailable — the process was lost and is recovering) maps to
-// "degraded", which drives the composer health peek and the Send gate.
-// Precedence: a hard failure still wins; a still-connecting harness
-// (`ready === false`, i.e. startup) stays "polling" — a genuinely process-lost
-// harness reports `ready:true`, so the two never legitimately coincide, and
-// ordering polling first avoids a startup flicker of "The agent stopped
-// responding".
 function statusReadiness(data: HarnessState): HarnessStoreState["readiness"] {
   const health = data.harnessHealth?.status
   if (hardFailedHarness(data)) return "error"
@@ -185,12 +156,6 @@ export function harnessSwitchStartPatch(input: {
   }
 }
 
-/**
- * The readiness transition a standing harness-health probe should apply, or
- * `undefined` to leave readiness untouched. It only moves between "ready" and
- * "degraded"; a hard "error" or an in-flight "polling" belongs to hydration /
- * harness-switch and is left alone, so the health poll never fights them.
- */
 export function harnessHealthReadiness(input: {
   harness?: HarnessType
   current: HarnessReadiness
@@ -205,10 +170,6 @@ export function harnessHealthReadiness(input: {
 }
 
 function emptyOptionsPatch(type: HarnessType) {
-  // A catalog harness's model list is provider-backed, not harness-config-
-  // backed. A saved draft model may be resolved before this hydration patch
-  // lands, so it must not erase that canonical provider/model pair merely
-  // because it has no harness config-options endpoint.
   const model = type.kind === "native" && isCatalogHarnessId(type.harnessId)
     ? {}
     : {

@@ -18,16 +18,20 @@ import { createMarketplaceApi } from "./marketplace"
 import { createTasksApi } from "./tasks"
 import { createHarnessConfigApi } from "./harness-config"
 import { createLivePluginsApi } from "./live-plugins"
+import { createOperations } from "./operations"
 import type { ProjectId } from "./ids"
 import type { Server, ServerQueries } from "./api"
 import { createProjectsApi } from "./projects"
 import { createQueries } from "./queries"
+import { createPlacementStreams } from "./placement-streams"
+import { createSessionProjection, type SessionProjection } from "./session-projection"
 import { createSessionsApi } from "./sessions"
 import { createStatusOwner, type StatusOwner } from "./status"
 import { createEventStreams, type EventStreams } from "./streams"
 import { createTerminalsApi } from "./terminals"
 import { createTransport, type Transport } from "./transport"
 import { createWorkspaces, type Workspaces } from "./workspaces"
+import { createWorkspaceWakes } from "./workspace-wakes"
 import { createWorktreeCreator } from "./worktrees"
 
 const QUERY_GC_TIME_MS = 10 * 60_000
@@ -84,10 +88,11 @@ function createStartup(input: {
   return { ready: start(), retry }
 }
 
-function serverApis(transport: Transport, workspaces: Workspaces, status: StatusOwner, queryClient: QueryClient, queries: ServerQueries) {
+function serverApis(transport: Transport, workspaces: Workspaces, status: StatusOwner, queryClient: QueryClient, queries: ServerQueries, projection: SessionProjection) {
   const project = (id: ProjectId) => queryClient.fetchQuery(queries.projects.byId(id))
+  const wakes = createWorkspaceWakes(transport, workspaces)
   return {
-    sessions: createSessionsApi(transport, workspaces, status),
+    sessions: createSessionsApi(transport, workspaces, status, wakes, projection),
     projects: createProjectsApi(transport, queryClient, workspaces.refresh),
     placements: {
       byId: workspaces.byId,
@@ -100,7 +105,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     },
     terminals: createTerminalsApi(transport, workspaces),
     git: createGitApi(transport, workspaces, queryClient),
-    cloud: createCloudApi(transport, workspaces, project),
+    cloud: createCloudApi(transport, workspaces, wakes, project),
     accounts: createAccountsApi(transport, queryClient),
     marketplace: createMarketplaceApi(transport, queryClient),
     tasks: createTasksApi(transport),
@@ -113,6 +118,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     livePlugins: createLivePluginsApi(transport),
     harnessConfig: createHarnessConfigApi(transport, workspaces, queryClient),
     request: transport.request,
+    operation: createOperations(transport).run,
   }
 }
 
@@ -127,17 +133,23 @@ export function createServer(config: ServerConfig): ServerHandle {
   const capabilities = createCapabilities(transport, workspaces)
   const queries = createQueries(transport, workspaces)
   const startup = createStartup({ workspaces, streams, capabilities, setConnection })
+  const projection = createSessionProjection(transport, workspaces)
+  const stopProjecting = intake.subscribe(projection.observe)
+  const placementStreams = createPlacementStreams({ transport, workspaces, queryClient, onFrame: intake.frame, onGap: intake.gap })
   return {
     config,
     connection,
     capabilities: capabilities.value,
     queryClient,
     subscribe: intake.subscribe,
-    ...serverApis(transport, workspaces, status, queryClient, queries),
+    ...serverApis(transport, workspaces, status, queryClient, queries, projection),
+    attachPlacement: placementStreams.attach,
     queries,
     retryConnection: startup.retry,
     ready: startup.ready,
     dispose: () => {
+      stopProjecting()
+      placementStreams.close()
       streams.close()
       intake.dispose()
       workspaces.dispose()

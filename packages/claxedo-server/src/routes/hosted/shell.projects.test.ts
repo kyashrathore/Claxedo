@@ -28,6 +28,7 @@ describe("signedShellProjects", () => {
         },
       ],
       1_800_000_000_000,
+      new Set(),
     )
 
     expect(projects).toHaveLength(1)
@@ -39,8 +40,34 @@ describe("signedShellProjects", () => {
   })
 
   test("a row that states no placement is the provisioner's, never the reader's own machine", () => {
-    const projects = signedShellProjects([{ workspace_id: "ws_bare", project_id: "proj_bare" }], 1_800_000_000_000)
+    const projects = signedShellProjects([{ workspace_id: "ws_bare", project_id: "proj_bare" }], 1_800_000_000_000, new Set())
 
     expect(projects[0]?.workspaces).toMatchObject({ ws_bare: { backing: "cloud-vm" } })
+  })
+
+  test("a cloud workspace is reachable only while its sandbox runs", () => {
+    const projects = signedShellProjects(
+      [
+        { workspace_id: "ws_running", project_id: "proj_one", backing: "cloud-vm" },
+        { workspace_id: "ws_stopped", project_id: "proj_one", backing: "cloud-vm" },
+      ],
+      1_800_000_000_000,
+      new Set(["ws_running"]),
+    )
+
+    expect(projects[0]?.workspaces).toMatchObject({ ws_running: { reachable: true }, ws_stopped: { reachable: false } })
+  })
+
+  test("a machine-placed workspace is reachable only while its enrollment serves it", () => {
+    const projects = signedShellProjects(
+      [
+        { workspace_id: "ws_online", project_id: "proj_one", backing: "local-worktree", host_online: true },
+        { workspace_id: "ws_offline", project_id: "proj_one", backing: "local-worktree", host_online: false },
+      ],
+      1_800_000_000_000,
+      new Set(),
+    )
+
+    expect(projects[0]?.workspaces).toMatchObject({ ws_online: { reachable: true }, ws_offline: { reachable: false } })
   })
 })

@@ -17,6 +17,9 @@ import { D1WorkspaceAuthority } from "./workspace-authority"
 import { createD1HostTunnelTargetResolver } from "./host-tunnel-relay-target"
 import { D1HostAccessAuthority, hostEnrollmentPayload } from "./host-access-authority"
 import { D1ChannelRuntimeAuthority } from "./channel-runtime-authority"
+import { D1SessionAuthority } from "./session-authority"
+import { publishD1HostSessionRows } from "./host-session-rows"
+import type { HostSessionRow, HostSessionRowsPublication } from "@claxedo/server-core/platform/auth/host-session-rows"
 import { controlPlaneMigrationPath, controlPlaneMigrations } from "../../../test-support/control-plane-migrations"
 
 const MIGRATIONS = controlPlaneMigrations().map(controlPlaneMigrationPath)
@@ -1961,5 +1964,159 @@ describe("machine share admission", () => {
 
     await expect(input.hostAccess.authorizeWorkspaceHostAssignment(admin, { workspaceId: "ws_local" }))
       .rejects.toMatchObject({ status: 403 })
+  })
+})
+
+describe("machine session rows", () => {
+  async function served() {
+    const input = await setup()
+    const people = await fixture(input)
+    const { enrollmentId } = await enrollAccountMachine(input, people.alice, "machine-r")
+    await input.hostAccess.assignWorkspaceHost(people.alice, { workspaceId: "ws_local", hostId: "machine-r", remoteDirectory: "/srv/local" })
+    await machineBeat(input, enrollmentId, [{ workspaceId: "ws_local", revision: 1 }])
+    const sessions = new D1SessionAuthority(input.database, { deploymentId: "deployment-a", now: input.now })
+    const machine = await principal(input, enrollmentId)
+    const publisher = {
+      hostId: "machine-r",
+      ownerUserId: people.alice.principal!.userId,
+      workspaceIds: ["ws_local"],
+      enrollmentId,
+      generation: machine.generation,
+    }
+    const publish = (publication: Partial<HostSessionRowsPublication>, as = publisher) =>
+      publishD1HostSessionRows(input.database, input.now(), as, { rows: [], removed: [], ...publication })
+    const page = async (auth: SignedControlPlaneAuth, archived: "active" | "all" = "active") =>
+      await sessions.listSessionPage(auth, {
+        projectId: people.local.project_id,
+        sort: "human_turn_desc",
+        archived,
+        limit: 50,
+      })
+    return { input, ...people, sessions, publisher, publish, page }
+  }
+
+  function row(sessionId: string, overrides: Partial<HostSessionRow> = {}): HostSessionRow {
+    return {
+      workspaceId: "ws_local",
+      sessionId,
+      title: sessionId,
+      createdAt: 100,
+      updatedAt: 200,
+      status: { kind: "idle", awaitingInput: false, at: 300 },
+      ...overrides,
+    }
+  }
+
+  test("adopts a machine's sessions for the enrollment owner, visible to nobody else", async () => {
+    const { publish, page, alice, bob, outsider } = await served()
+
+    await expect(publish({
+      rows: [
+        row("ses_quiet", { createdAt: 50 }),
+        row("ses_spoken", { lastHumanTurnAt: 400, status: { kind: "busy", awaitingInput: true, at: 410 } }),
+      ],
+    })).resolves.toEqual({ accepted: 2, refused: [] })
+
+    expect(await page(alice)).toEqual([
+      expect.objectContaining({
+        session_id: "ses_spoken",
+        workspace_id: "ws_local",
+        last_human_turn_at: 400,
+        status: "busy",
+        status_at: 410,
+        awaiting_input: true,
+      }),
+      expect.objectContaining({ session_id: "ses_quiet", created_at: 50, status: "idle" }),
+    ])
+    expect(await page(bob)).toEqual([])
+    expect(await page(outsider)).toEqual([])
+  })
+
+  test("republishing is idempotent and never moves a turn or a status backwards", async () => {
+    const { publish, page, alice } = await served()
+    const publication = { rows: [row("ses_a", { lastHumanTurnAt: 400, status: { kind: "busy", awaitingInput: false, at: 500 } })] }
+    await publish(publication)
+    const first = await page(alice)
+    await publish(publication)
+    expect(await page(alice)).toEqual(first)
+
+    await publish({ rows: [row("ses_a", { title: "Renamed", lastHumanTurnAt: 300, status: { kind: "idle", awaitingInput: false, at: 450 } })] })
+    expect(await page(alice)).toEqual([
+      expect.objectContaining({ session_id: "ses_a", title: "Renamed", last_human_turn_at: 400, status: "busy", status_at: 500 }),
+    ])
+  })
+
+  test("refuses rows for a workspace the enrollment does not serve at this generation", async () => {
+    const { publish, page, alice, publisher } = await served()
+
+    await expect(publish({ rows: [row("ses_cloud", { workspaceId: "ws_cloud" })] }, { ...publisher, workspaceIds: ["ws_local", "ws_cloud"] }))
+      .resolves.toEqual({ accepted: 0, refused: [{ workspaceId: "ws_cloud", sessionId: "ses_cloud", reason: "workspace_not_served" }] })
+    await expect(publish({ rows: [row("ses_old")] }, { ...publisher, generation: publisher.generation + 1 }))
+      .resolves.toMatchObject({ refused: [{ reason: "workspace_not_served" }] })
+    await expect(publish({ rows: [row("ses_unclaimed")] }, { ...publisher, workspaceIds: [] }))
+      .resolves.toMatchObject({ refused: [{ reason: "workspace_not_served" }] })
+    await expect(publish({ rows: [row("ses_other_owner")] }, { ...publisher, ownerUserId: "user_someone_else" }))
+      .resolves.toMatchObject({ refused: [{ reason: "workspace_not_served" }] })
+    expect(await page(alice)).toEqual([])
+  })
+
+  test("a superseded serving generation's token publishes nothing", async () => {
+    const { input, publish, page, alice, publisher } = await served()
+    await expect(publish({ rows: [row("ses_before")] })).resolves.toEqual({ accepted: 1, refused: [] })
+
+    const next = await input.hostAccess.acquireHostServingGeneration(await principal(input, publisher.enrollmentId))
+    await machineBeat(input, publisher.enrollmentId, [{ workspaceId: "ws_local", revision: 1 }], { generation: next.generation })
+
+    await expect(publish({ rows: [row("ses_after")] }))
+      .resolves.toMatchObject({ refused: [{ sessionId: "ses_after", reason: "workspace_not_served" }] })
+    await expect(publish({ rows: [row("ses_after")] }, { ...publisher, generation: next.generation }))
+      .resolves.toEqual({ accepted: 1, refused: [] })
+    expect((await page(alice)).map((item) => item.session_id).sort()).toEqual(["ses_after", "ses_before"])
+  })
+
+  test("a workspace reassigned to another host takes no rows from the first host's token", async () => {
+    const { input, publish, alice } = await served()
+    const other = await enrollAccountMachine(input, alice, "machine-other")
+    await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_local", hostId: "machine-other", remoteDirectory: "/srv/other" })
+    const otherMachine = await principal(input, other.enrollmentId)
+    await machineBeat(input, other.enrollmentId, [{ workspaceId: "ws_local", revision: 2 }])
+
+    await expect(publish({ rows: [row("ses_stale_host")] }))
+      .resolves.toMatchObject({ refused: [{ sessionId: "ses_stale_host", reason: "workspace_not_served" }] })
+    await expect(publish({ rows: [row("ses_new_host")] }, {
+      hostId: "machine-other",
+      ownerUserId: alice.principal!.userId,
+      workspaceIds: ["ws_local"],
+      enrollmentId: other.enrollmentId,
+      generation: otherMachine.generation,
+    })).resolves.toEqual({ accepted: 1, refused: [] })
+  })
+
+  test("refuses a session id registered in another workspace", async () => {
+    const { publish, sessions, alice } = await served()
+    await sessions.reserveSession(alice, { operationId: "op_cloud", sessionId: "ses_taken", workspaceId: "ws_cloud", kind: "create" })
+    await sessions.registerRuntimeSession({
+      principalKind: "user",
+      actorId: alice.principal!.actorId,
+      actorKind: "human",
+      operationId: "op_cloud",
+      sessionId: "ses_taken",
+      workspaceId: "ws_cloud",
+    })
+
+    await expect(publish({ rows: [row("ses_taken")] }))
+      .resolves.toEqual({ accepted: 0, refused: [{ workspaceId: "ws_local", sessionId: "ses_taken", reason: "session_elsewhere" }] })
+  })
+
+  test("a removal deletes the row, an archive hides it, and a deleted session is not republished", async () => {
+    const { publish, page, alice } = await served()
+    await publish({ rows: [row("ses_gone"), row("ses_archived", { archivedAt: 900 })] })
+    expect((await page(alice)).map((item) => item.session_id)).toEqual(["ses_gone"])
+    expect((await page(alice, "all")).map((item) => item.session_id).sort()).toEqual(["ses_archived", "ses_gone"])
+
+    await expect(publish({ removed: [{ workspaceId: "ws_local", sessionId: "ses_gone" }] })).resolves.toEqual({ accepted: 1, refused: [] })
+    expect(await page(alice)).toEqual([])
+    await expect(publish({ rows: [row("ses_gone")] }))
+      .resolves.toMatchObject({ refused: [{ sessionId: "ses_gone", reason: "session_deleted" }] })
   })
 })

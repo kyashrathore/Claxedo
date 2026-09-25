@@ -7,6 +7,7 @@ import { routeOwnership, RouteHandler } from "@claxedo/server-core/platform/gove
 import { normalizeClaxedoRegion, type ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import type { RelayProvider } from "@claxedo/server-core/adapters/relay/index"
 import type { RuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { EMBEDDED_RELAY_HOST_AUTH_HEADER } from "./embedded-relay-host-auth"
 import { resolveIngressProvenance, type IngressProvenance } from "./ingress-provenance"
@@ -32,6 +33,7 @@ export type RuntimeProxyOptions = {
   resolveRelayActor?: (request: Request, workspaceId: string) => Promise<(RuntimeActor & {
     orgId: string
     role: "viewer" | "editor" | "admin" | "owner"
+    auth?: SignedControlPlaneAuth
   }) | undefined>
   /** Signed deployments must never fall back to the synthetic local owner. */
   requireRelayActor?: boolean
@@ -288,6 +290,7 @@ export async function proxy(c: Context, hit: Hit, options?: {
             : {}),
           orgId: actor.orgId,
           role: actor.role,
+          ...(actor.auth ? { auth: actor.auth } : {}),
         }
       : {
           principalKind: "service" as const,

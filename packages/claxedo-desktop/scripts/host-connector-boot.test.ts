@@ -365,11 +365,12 @@ describe("the private bootstrap protocol", () => {
   })
 
   test("the control plane's addresses ride every serving push to the parent", async () => {
-    // The parent forwards a push to the daemon verbatim, and the daemon admits
-    // a relayed caller against these two: the relay's key set verifies the
-    // caller's Relay Host Token, the authority decides what it may read. The
-    // control plane sends them only when they change, so a push without them
-    // would leave the daemon answering 503 for the life of the credential.
+    // The parent forwards a push to the daemon verbatim. The daemon admits a
+    // relayed caller against two of these — the relay's key set verifies the
+    // caller's Relay Host Token, the authority decides what it may read — and
+    // publishes its session rows to the third. The control plane sends them
+    // only when they change, so a push without them would leave the daemon
+    // answering 503 and publishing nothing for the life of the credential.
     const child = childHarness()
     child.send({ type: "bootstrap", requestId: "bootstrap", controlPlaneUrl: CONTROL_PLANE_URL, heartbeatIntervalMs: 20_000 })
     await until(
@@ -383,6 +384,7 @@ describe("the private bootstrap protocol", () => {
       endpoints: {
         relayJwksUrl: "https://relay.test/.well-known/jwks.json",
         sessionAuthorityUrl: `${CONTROL_PLANE_URL}/api/runtime-authority/session-authorize`,
+        sessionRowsUrl: `${CONTROL_PLANE_URL}/api/claxedo/host/session-rows`,
       },
     })
 
@@ -400,6 +402,7 @@ describe("the private bootstrap protocol", () => {
       endpoints: {
         relayJwksUrl: "https://relay.test/.well-known/jwks.json",
         sessionAuthorityUrl: `${CONTROL_PLANE_URL}/api/runtime-authority/session-authorize`,
+        sessionRowsUrl: `${CONTROL_PLANE_URL}/api/claxedo/host/session-rows`,
       },
     })
     child.runtime.close()

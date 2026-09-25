@@ -21,6 +21,7 @@ export function SessionTimeline(props: {
   readonly view: SessionView
   readonly host: TimelineHost
   readonly active: boolean
+  readonly onScreen: boolean
   readonly scroll: TimelineScroll
   readonly onRecover: (kind: SessionErrorClass, userMessageId: string) => unknown
 }) {
@@ -50,6 +51,7 @@ export function SessionTimeline(props: {
             {...props.scroll.props}
             host={props.host}
             active={() => props.active}
+            onScreen={() => props.onScreen}
             centered={!phone()}
             historyShift={false}
             userMessages={users()}

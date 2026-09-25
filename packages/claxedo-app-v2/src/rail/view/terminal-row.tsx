@@ -70,10 +70,11 @@ export function RailTerminalRow(props: { readonly row: TerminalItem; readonly ac
   )
 }
 
-export function useProjectTerminals(placementIds: () => readonly PlacementId[]): Accessor<readonly TerminalItem[]> {
+export function useProjectTerminals(placementIds: () => readonly PlacementId[], expanded: () => boolean): Accessor<readonly TerminalItem[]> {
   const terminals = useTerminals()
   const server = useServer()
-  const reachable = createMemo(() => placementIds().filter((placementId) => server.placements.byId(placementId)?.reachable === true))
+  const reachable = createMemo(() =>
+    expanded() ? placementIds().filter((placementId) => server.placements.byId(placementId)?.reachable === true) : [])
   createEffect(
     on(
       () => reachable().join("\n"),

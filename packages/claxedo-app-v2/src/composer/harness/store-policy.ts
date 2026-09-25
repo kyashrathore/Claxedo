@@ -1,13 +1,10 @@
 import type { HarnessState, PlacementId, PlacementKind, SessionConfig, SessionRef } from "@/server"
 import { harnessHasConfigOptions, type HarnessType } from "./profile"
 
-export const MODEL_OPTIONS_RETRY_LIMIT = 5
-
 export type HarnessScopeInput = {
   placementId?: PlacementId
   sessionId?: string
   sessionRef?: SessionRef
-  /** The harness the session's row names, shown while its config cannot be read. */
   sessionHarness?: HarnessType
   saveDraftDefault?: false
 }
@@ -19,14 +16,6 @@ export function shouldShowModelOptionsStaleWarning(input: {
   return input.stale && (input.models?.length ?? 0) === 0
 }
 
-export function shouldRetryModelOptions(input: {
-  stale: boolean
-  tries: number
-  limit?: number
-}) {
-  return input.stale && input.tries < (input.limit ?? MODEL_OPTIONS_RETRY_LIMIT)
-}
-
 export function modelOptionsUnavailableMessage(input: {
   stale: boolean
 }) {
@@ -34,18 +23,9 @@ export function modelOptionsUnavailableMessage(input: {
 }
 
 export function shouldFetchConfigOptionsForScope(type: HarnessType, failed: boolean, _input?: HarnessScopeInput) {
-  // Existing sessions load selectable models too: an active session's picker
-  // must not render empty just because the scope has already hydrated.
   return harnessHasConfigOptions(type) && !failed
 }
 
-/**
- * Whether a new-session draft takes its harness from the workspace's status
- * probe. A workspace on a machine — this one, or one reached through the relay
- * — carries that machine's harness configuration, and a draft starts from it
- * exactly as the desktop does. A provisioned sandbox keeps the draft-default
- * policy.
- */
 export function shouldHydrateDraftFromHarnessStatus(input: { placementKind?: PlacementKind }) {
   return input.placementKind !== undefined && input.placementKind !== "cloud"
 }

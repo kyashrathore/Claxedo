@@ -59,33 +59,48 @@ export async function expectRowsKept(app: Page) {
   expect(rows.kept, "every turn row marked before the deltas is the same element after them").toBe(rows.marked)
 }
 
-const detachedMarks = new WeakMap<Page, number>()
+type Retained = { readonly detached: number; readonly heapKb: number }
 
-async function detachedNodes(app: Page) {
+const detachedMarks = new WeakMap<Page, Retained>()
+
+async function retained(app: Page): Promise<Retained> {
   const cdp = await app.context().newCDPSession(app)
   try {
     await cdp.send("HeapProfiler.collectGarbage")
+    await cdp.send("HeapProfiler.collectGarbage")
     const { nodes } = (await cdp.send("Memory.getDOMCounters")) as { nodes: number }
+    const { usedSize } = (await cdp.send("Runtime.getHeapUsage")) as { usedSize: number }
     const connected = await app.evaluate(() => {
       const walker = document.createTreeWalker(document, NodeFilter.SHOW_ALL)
       let count = 1
       while (walker.nextNode()) count += 1
       return count
     })
-    return nodes - connected
+    return { detached: nodes - connected, heapKb: Math.round(usedSize / 1024) }
   } finally {
     await cdp.detach()
   }
 }
 
+function markOf(app: Page, interaction: string): Retained {
+  const mark = detachedMarks.get(app)
+  if (mark === undefined) throw new Error(`${interaction} needs a markDetached interaction before it`)
+  return mark
+}
+
 export async function markDetachedNodes(app: Page, appChoice: AppChoice) {
   if (appChoice === "v1") return
-  detachedMarks.set(app, await detachedNodes(app))
+  detachedMarks.set(app, await retained(app))
 }
 
 export async function expectDetachedGrowthAtMost(app: Page, appChoice: AppChoice, max: number) {
   if (appChoice === "v1") return
-  const mark = detachedMarks.get(app)
-  if (mark === undefined) throw new Error("detachedGrowth needs a markDetached interaction before it")
-  expect((await detachedNodes(app)) - mark, "DOM nodes that outlive the streamed deltas").toBeLessThanOrEqual(max)
+  const mark = markOf(app, "detachedGrowth")
+  expect((await retained(app)).detached - mark.detached, "DOM nodes that outlive what the page shows").toBeLessThanOrEqual(max)
+}
+
+export async function expectHeapGrowthAtMost(app: Page, appChoice: AppChoice, maxKb: number) {
+  if (appChoice === "v1") return
+  const mark = markOf(app, "heapGrowth")
+  expect((await retained(app)).heapKb - mark.heapKb, "JavaScript heap kept after a forced collection, in KB").toBeLessThanOrEqual(maxKb)
 }

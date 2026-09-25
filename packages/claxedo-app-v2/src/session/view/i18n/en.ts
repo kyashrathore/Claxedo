@@ -64,6 +64,13 @@ export type SessionScreenTextKey =
   | "sessionScreen.goal.metric.tokensUsed"
   | "sessionScreen.goal.metric.tokenBudget"
   | "sessionScreen.goal.metric.timeUsed"
+  | "sessionScreen.workspace.asleep"
+  | "sessionScreen.workspace.machineOffline"
+  | "sessionScreen.workspace.waking"
+  | "sessionScreen.workspace.restoring"
+  | "sessionScreen.workspace.resuming"
+  | "sessionScreen.workspace.wakeFailed"
+  | "sessionScreen.workspace.retryWake"
   | "sessionScreen.child.promptDisabled"
   | "sessionScreen.child.backToParent"
   | "command.message.previous"
@@ -136,6 +143,13 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.goal.metric.tokensUsed": "{{count}} tokens",
   "sessionScreen.goal.metric.tokenBudget": "{{count}} token budget",
   "sessionScreen.goal.metric.timeUsed": "{{seconds}}s",
+  "sessionScreen.workspace.asleep": "This workspace is asleep. Your next message wakes it.",
+  "sessionScreen.workspace.machineOffline": "This session's machine is offline. Its messages show again when the machine is back.",
+  "sessionScreen.workspace.waking": "Waking up the workspace…",
+  "sessionScreen.workspace.restoring": "Restoring it from a snapshot",
+  "sessionScreen.workspace.resuming": "Resuming its sandbox",
+  "sessionScreen.workspace.wakeFailed": "Couldn't wake the workspace.",
+  "sessionScreen.workspace.retryWake": "Try again",
   "sessionScreen.child.promptDisabled": "Subagent sessions cannot be prompted.",
   "sessionScreen.child.backToParent": "Back to main session.",
   "sessionScreen.timeline.command.session.new": "New session",

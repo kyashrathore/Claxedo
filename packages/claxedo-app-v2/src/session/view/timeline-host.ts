@@ -7,6 +7,7 @@ import { sessionPath, type ShellRouting } from "@/shell"
 import type { WorkbenchStore } from "@/workbench"
 import { useTranscriptTypography, type TimelineFocus, type TimelineHost, type TimelineSessionRow, type TimelineSettings } from "./timeline"
 import type { SessionScreenText } from "./text"
+import { openExternal } from "@/lib/external-link"
 
 export type TimelineHostInput = {
   readonly view: SessionView
@@ -40,10 +41,6 @@ function timelineRows(rows: readonly SessionRow[]): readonly TimelineSessionRow[
 
 function shownStatus(status: SessionStatusView): SessionStatus {
   return status.kind === "unknown" ? { kind: "idle" } : status
-}
-
-function openLink(url: string): void {
-  window.open(url, "_blank", "noopener,noreferrer")
 }
 
 function refFor(view: SessionView, id: string): SessionRef {
@@ -86,7 +83,7 @@ export function createTimelineHost(input: TimelineHostInput): TimelineHost {
     settings,
     transcriptTypography,
     t: (key, params) => input.t(`sessionScreen.timeline.${key}`, params),
-    platform: { openLink },
+    platform: { openLink: openExternal },
     openFocus: (focus) => openFocus(input, focus),
     openSessionInPane: (id) => void input.workbench.openRoute({ kind: "session", ...refFor(view, id) }),
     findFiles: (query) => findFiles(input, query),

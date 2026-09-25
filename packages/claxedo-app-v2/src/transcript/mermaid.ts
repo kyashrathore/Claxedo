@@ -1,3 +1,4 @@
+import { nextIdleSlice } from "@/lib/idle"
 import { sanitizeSvg } from "./markdown-cache"
 
 let mermaidModule: Promise<typeof import("mermaid")> | null = null
@@ -62,7 +63,11 @@ function getMermaid() {
 }
 
 export async function renderMermaidSvg(source: string): Promise<string> {
+  await nextIdleSlice()
   const m = await getMermaid()
+  await nextIdleSlice()
+  await m.default.parse(source)
+  await nextIdleSlice()
   return (await m.default.render(`mermaid-${++counter}`, source)).svg
 }
 

@@ -66,6 +66,12 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
     paths: ["/api/claxedo/plugins", "/api/claxedo/plugins/"],
   },
   {
+    id: "live-plugins",
+    owner: "local-server",
+    serves: "The machine owner's live plugin folders: register, build, serve bundles, show source; self-hosted signed access requires a deployment operator.",
+    paths: ["/api/claxedo/live-plugins", "/api/claxedo/live-plugins/"],
+  },
+  {
     id: "credentials",
     owner: "local-server",
     serves: "Local provider credential storage, discovery, verification, and provider OAuth.",
@@ -204,12 +210,13 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
   {
     id: "host-connect",
     owner: "server",
-    serves: "Enrolled machines: invitations, the machine's own beats and acquire, scope, and the enrollment list.",
+    serves: "Enrolled machines: invitations, the machine's own beats and acquire, scope, the enrollment list, and the session rows a machine publishes.",
     paths: [
       "/api/claxedo/host/enrollments",
       "/api/claxedo/host/enrollments/",
       "/api/claxedo/host/invitations",
       "/api/claxedo/host/invitations/",
+      "/api/claxedo/host/session-rows",
     ],
   },
   // ── Host publication: owned by @claxedo/host-connector ───────────────────
