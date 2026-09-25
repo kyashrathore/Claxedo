@@ -1,4 +1,4 @@
-import { createMemo, onCleanup, type JSX } from "solid-js"
+import { createEffect, createMemo, onCleanup, type JSX } from "solid-js"
 import { projectId, useServer, type Placement, type PlacementId, type Project, type ProjectId } from "@/server"
 import { ClaxedoIcon as Icon, useDialog } from "@/ui"
 import { useProjectsText } from "../i18n"
@@ -11,6 +11,8 @@ import { createDraftContext, registerDraftContext, type DraftTarget } from "../d
 import { useBranchChip, useEnvironmentChip, useWorkspaceChip } from "./context-chips"
 import { SessionContextRow, type ContextChip, type ContextChipAvatar } from "./context-row"
 import { ProjectCreateForm } from "./project-create-form"
+
+export type DraftCreation = "worktree" | "cloud"
 
 function projectDetail(project: Project, placements: readonly Placement[]): string {
   const hosted = placements.some((placement) => placement.projectId === project.id && placement.kind === "cloud")
@@ -53,7 +55,13 @@ function CreateProjectPanel(props: CreatePanelInput & { readonly pickFolder: () 
   )
 }
 
-export function NewSessionContextRow(props: DraftTarget & { readonly onOpen: (target: DraftTarget) => void }): JSX.Element {
+export function NewSessionContextRow(
+  props: DraftTarget & {
+    readonly onOpen: (target: DraftTarget) => void
+    readonly branch?: boolean
+    readonly onCreatingChange?: (creating: DraftCreation | undefined) => void
+  },
+): JSX.Element {
   const t = useProjectsText()
   const server = useServer()
   const dialog = useDialog()
@@ -87,12 +95,14 @@ export function NewSessionContextRow(props: DraftTarget & { readonly onOpen: (ta
   })
   const context = createDraftContext(() => ({ projectId: props.projectId, placementId: props.placementId }))
   registerDraftContext(() => props.placementId, context)
+  createEffect(() => props.onCreatingChange?.(context.creating() ? (context.hostKind() === "provisioner" ? "cloud" : "worktree") : undefined))
   const environmentChip = useEnvironmentChip(context)
   const workspaceChip = useWorkspaceChip(context)
   const branchChip = useBranchChip(context)
   const chips = createMemo((): ContextChip[] => {
     const environment = environmentChip()
-    return [projectChip(), ...(environment ? [environment] : []), workspaceChip(), branchChip()]
+    const branch = props.branch === false ? [] : [branchChip()]
+    return [projectChip(), ...(environment ? [environment] : []), workspaceChip(), ...branch]
   })
   return <SessionContextRow chips={chips()} />
 }

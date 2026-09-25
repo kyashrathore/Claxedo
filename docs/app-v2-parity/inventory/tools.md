@@ -245,7 +245,7 @@ Shots: `session-v1-390.png`, `panel-open-v1-390.png`, `changes-nav-v1-390.png`, 
 
 Every row was re-read against v1's source and today's v2, and the visible ones were compared with the parity screens (`bun run e2e:parity`, panel screens) and with probes that ran the same steps on both apps on the e2e stack. The "v2" columns above describe the build the inventory was taken on. The marks below replace them.
 
-**Tally (108 rows):** matches 75 · approved difference 10 · fixed in this sweep 16 · open 7.
+**Tally (108 rows):** matches 75 · approved difference 10 · fixed in this sweep 18 · open 5.
 
 Fixed in this sweep:
 
@@ -261,6 +261,8 @@ Fixed in this sweep:
 | d52d14aa58 | TOOL-130 |
 | 58df634b74 | TOOL-125 |
 | fed834ebab | TOOL-054, TOOL-053 |
+| e216ef6ec3 | TOOL-095 (Create PR, from the placement's git remote) |
+| 8f5b941e43 | TOOL-121 (the creator's Project / destination / Workspace chips, the create note, launching in a new worktree or sandbox; custom commands are gone with the Terminals section, Owner 00:50) |
 
 Approved differences: TOOL-003 (Owner 22:05); TOOL-004, TOOL-007's process tabs (the Processes pane, "Earlier removals"); TOOL-031 (approved #11); TOOL-124's scrollbar (Owner 22:28); TOOL-126's `window.open` and TOOL-185's hover preload (Owner 16:45: no global providers, no v1 performance patches); TOOL-131 (Orchestrator 18:25); TOOL-193, TOOL-160, TOOL-161 (Owner 23:05).
 
@@ -271,9 +273,7 @@ Open:
 | TOOL-008 | "+ > Context" is hidden because nothing registers a `context` panel view (v1's session Context tab). | the session screen's domain |
 | TOOL-009 | v2 keeps a dragged panel width in localStorage. v1 keeps it in the panel shell, which is disposed on close, so every reopen starts at 70%. Ruling needed. | main |
 | TOOL-051 | "Add to Documents" (Markdown files only) has no Documents surface to go to in v2. Ruling needed. | main |
-| TOOL-095 | "Create PR" needs the workspace's git remote URL, which `Placement` does not carry; asked of lane-adapter-3. | lane-adapter-3, then tools |
 | TOOL-120 | The creator has no rail row ("New Terminal") and no `/w/<id>/terminal/new` route. | shell-4 (DECISIONS 19:00 item 6) |
-| TOOL-121 | The creator lacks v1's Project / destination / Workspace chips with new-worktree and cloud-sandbox launches. Custom commands are gone with the Terminals section (Owner 00:50). | tools, with projects-app's chips |
 | TOOL-129 | v1 recreates a PTY the server no longer holds from its disk history (`previousPtyId`). v2 ends it, and flow 13 asserts that. Ruling needed. | main |
 | TOOL-145 | v1 adds a file chip (path = page URL, comment, selector preview) and sends it as a `file://` part. v2 adds a text chip whose text carries the page, element, snippet and comment. Ruling needed. | main |
 
