@@ -228,7 +228,7 @@ The harness layer holds the most valuable things Claxedo handles: people's provi
 2. **Nothing owner-acting leaves the machine.** Claxedo's own MCP server and its bearer go only to harnesses Claxedo starts. One remote filter covers `session/new`, load, resume and fork.
 3. **A person's decision is answered only three ways:** by an authorized person, by a written policy (a permission mode within its ceiling), or by cancel.
    - Replies are saved before the harness is released.
-   - Grants are scoped to the session and keyed exactly as today.
+   - Grants are scoped to the session and to the harness connection that asked; a grant never answers another harness.
    - "Once" never widens to "always".
    - Cancel never allows.
 4. **Identity follows the turn, not the session.** The owner's own credentials (their Pi login) are used only for turns the owner started, on the desktop or loopback runtime.
@@ -623,12 +623,14 @@ Every defect the reviews found, all fixed in this plan. Each regression test is 
 
 ## No backward compatibility
 
+Nothing is released and nobody depends on this codebase (owner ruling, 2026-09-25), so nothing is kept for compatibility.
+
+- **No migrations and no dual readers.** Stored config, stored runtime data and grants change shape whenever the new design is better. Old shapes are dropped, not converted.
+- **What stays, and why:** the server contracts both apps in this repo read (routes, events, the stored messages the routes return) stay, as a scope choice ("Why today's server contracts"), not as a compatibility promise. The recovery engine and its tables move with the runtime host because it uses them.
 - **npm.** 13 `@claxedo/*` packages are published; `npm view` on 2026-09-24 showed the harness libraries at 0.8.0. The CLI depends on them because it can't be bundled into one file: the embedded OpenCode host, `better-sqlite3` and `koffi` are native.
   - This plan publishes nothing.
   - Its deletion of the embedded engine removes the first blocker.
   - The rest is its own plan.
-- **Stored config.** `connections` entries and the `/connections` routes keep their shape.
-- **Stored runtime data.** Unchanged. The recovery engine and its tables move with the runtime host.
 - **Pi.** Owner sessions move to the user's own Pi session directory. Member sessions keep today's brokered profiles.
 - **No switches and no bridge.** The runtime cuts over to the new transports in one slice (decision 14).
 
@@ -670,7 +672,7 @@ This is a security boundary. The broker takes over what today's code enforces, a
 - **Stale, duplicate, foreign:** refused with a typed error and no change. Routes already refuse ordinary duplicates (`session-core.ts:2892`).
 - **Grants ("allow always"):**
   - scoped to the session and stored in `permissionState`;
-  - keyed per harness exactly as today (Claude's command grant, Codex's request with callback fields removed plus directory and mode, ACP's kind and title);
+  - keyed by the harness connection plus a key the transport computes from what the harness asks (Claude's command, Codex's request with callback fields removed plus directory and mode, ACP's kind and title); today's stored grants aren't carried over;
   - checked by the broker before asking, and an automatic answer is a recorded broker event;
   - saved before the allow is released.
 - **Option substitution as today:** never widen "once" to "always"; "deny" may become "reject always"; answer `cancelled` when nothing fits (`acp/permission-options.ts:21-34`).
