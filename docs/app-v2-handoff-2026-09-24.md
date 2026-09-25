@@ -445,18 +445,19 @@ At 19:08 the owner said: finish in-progress work; start no new work.
 
 ## Next steps, in order
 
-1. **Merge each lane's final commits and verify every owner bug on 4480**, on the owner's own session, against the same session on 4481.
-2. **The owner tests 4480 against 4481.** Each difference becomes an inventory row or a DECISIONS line.
-3. **One kit** (see [Easy code](#3-easy-code)). This is the largest single cut in both lines and concepts.
-4. **Checks to zero, domain by domain, composer first.**
-   - Split files by responsibility; never squeeze lines.
-   - Transcript comments get triaged into corpus cases before they're stripped.
-5. **Refresh the inventory status** with `bun run e2e:parity`, so the spec says what's actually left.
-6. **Port the deferred surfaces** from `src/legacy` with the same method.
-7. **Delete `src/legacy`.**
-8. **Benchmark.** Move the driver, then run the verdict three times on packaged builds.
+1. **Owner:** test 4480 against 4481. Each difference becomes an inventory row or a DECISIONS line.
+2. **Owner:** sign off `v2/stream-slice`, exp-stream's five transcript fixes (see [Streaming at 60 Hz](#streaming-at-60-hz-exp-stream-2026-09-25)). Then merge it and run the whole corpus.
+3. **The seven panel rows that go to v1:**
+   - lane-tools-3 ports v1's retained file-tab mount, which covers review→files and open-file;
+   - exp-scroll names the cause of collapse-all and files→Review heavy.
+   - Then rerun the workspace-panel lane.
+4. **Start (≤ 1.1 s) and idle memory (≤ 700 MiB):** exp-idle's findings, applied through the owning lanes.
+5. **Checks to zero:** transcript and timeline comments and names first, with comments triaged into corpus cases or README lines; then the remaining domains. Split files by responsibility; never squeeze.
+6. **Move the transcript's module caches and singletons into provider-owned stores**, as their own corpus-proven slice with a bench rerun. Until then they're named exceptions in one-home-per-datum.
+7. **Refresh the inventory status** with `bun run e2e:parity`.
+8. **Delete `src/legacy`** once nothing live imports it.
 9. **Make the flows robust:** 20 local runs per spec, 3 CI repeats, and the coverage map against v1's 58 specs.
-10. **P6 "Ready for you"**, then the owner's test, then the swap (plan § P6). Never swap without the owner's approval.
+10. **Rerun the publication benchmark** on the final tip. Then P6 "Ready for you", the owner's test, and the swap (plan § P6). Never swap without the owner's approval.
 
 ## Lanes at the stop
 
