@@ -8,11 +8,7 @@ import type { HarnessId } from "./mechanisms"
 import { createComposerPermissionMode } from "./permission-mode"
 import type { HarnessModeReport, PermissionSelection } from "./modes"
 
-/**
- * The I/O half of the composer's permission-mode picker: fetching what the
- * harness offers, writing a choice back, and reconciling the two.
- */
-export function createComposerPermissionModeWiring(input: {
+type WiringInput = {
   api: HarnessConfigApi
   placementId: () => PlacementId | undefined
   /** The open session whose own modes answer; absent for a draft or a held harness pick. */
@@ -37,17 +33,20 @@ export function createComposerPermissionModeWiring(input: {
    */
   harnessUnavailable?: () => string | undefined
   requestFailedTitle: () => string
-}) {
-  const resourceKey = () => JSON.stringify({
+}
+
+type ModesResource = ReturnType<typeof permissionModesResource>
+
+function answered(unsupported: string): HarnessModeReport {
+  return { modes: [], unsupported, appliesFrom: "next-turn" }
+}
+
+function permissionModesResource(input: WiringInput) {
+  const key = () => JSON.stringify({
     sessionId: input.sessionRef()?.sessionId ?? "",
     placementId: input.placementId() ?? "",
     harness: input.harness() ?? null,
     selection: input.harnessSelection?.() ?? null,
-  })
-  const answered = (unsupported: string): HarnessModeReport => ({
-    modes: [],
-    unsupported,
-    appliesFrom: "next-turn",
   })
   const [resource, { refetch, mutate }] = createResource(
     // A DRAFT still fetches, with an empty session id, so the
@@ -58,7 +57,7 @@ export function createComposerPermissionModeWiring(input: {
     // createResource compares sources with `===`, so a fresh object would
     // refetch on every upstream signal wobble even when the resolved values
     // are identical.
-    resourceKey,
+    key,
     async (sourceKey) => {
       const parsed = asRecord(JSON.parse(sourceKey))
       const selection = parsed ? parsed.selection : undefined
@@ -73,45 +72,71 @@ export function createComposerPermissionModeWiring(input: {
       })
     },
   )
+  // The active mode belongs to a session, not just a harness. Retain answers
+  // only for the same complete request scope while refreshing.
+  return { key, resource, refetch, mutate, answers: new Map<string, HarnessModeReport>() }
+}
 
-  /**
-   * Four states, not two, and the two extra ones are the whole point.
-   *
-   * `undefined` from here means "in flight", and the picker renders that as
-   * loading copy. So every state that is not in flight has to be turned into a
-   * real answer, or it renders as a spinner that never resolves.
-   *
-   * A failed fetch leaves `latest` undefined, so without this branch a dead
-   * backend is indistinguishable from a slow one.
-   *
-   * The active mode belongs to a session, not just a harness. Retain answers
-   * only for the same complete request scope while refreshing.
-   */
-  const cache = new Map<string, HarnessModeReport>()
-
-  const report = (): HarnessModeReport | undefined => {
-    // Checked before the fetch result, because the fetch succeeds either way.
-    // The placement-scoped read answers from the recorded table without ever
-    // asking the agent, so a broken harness still returns a full, plausible
-    // list — and a list is the one thing that must not be shown here.
-    const unavailable = input.harnessUnavailable?.()
-    if (unavailable) return answered(unavailable)
-    if (resource.error) {
-      const detail = resource.error instanceof Error ? resource.error.message : String(resource.error)
-      return answered(`Could not load permission modes: ${detail}`)
-    }
-    const live = resource.state === "ready" ? resource() : undefined
-    const key = resourceKey()
-    if (live) {
-      cache.set(key, live)
-      return live
-    }
-    // In flight: show this scope's cached answer if we have one, and undefined
-    // otherwise. Deliberately not `resource.latest` — that keeps the previous
-    // harness's list on screen across a switch.
-    return cache.get(key)
+/**
+ * Four states, not two, and the two extra ones are the whole point.
+ *
+ * `undefined` from here means "in flight", and the picker renders that as
+ * loading copy. So every state that is not in flight has to be turned into a
+ * real answer, or it renders as a spinner that never resolves.
+ *
+ * A failed fetch leaves `latest` undefined, so without this branch a dead
+ * backend is indistinguishable from a slow one.
+ */
+function modeReport(input: WiringInput, modes: ModesResource): HarnessModeReport | undefined {
+  // Checked before the fetch result, because the fetch succeeds either way.
+  // The placement-scoped read answers from the recorded table without ever
+  // asking the agent, so a broken harness still returns a full, plausible
+  // list — and a list is the one thing that must not be shown here.
+  const unavailable = input.harnessUnavailable?.()
+  if (unavailable) return answered(unavailable)
+  if (modes.resource.error) {
+    const detail = modes.resource.error instanceof Error ? modes.resource.error.message : String(modes.resource.error)
+    return answered(`Could not load permission modes: ${detail}`)
   }
+  const live = modes.resource.state === "ready" ? modes.resource() : undefined
+  const key = modes.key()
+  if (live) {
+    modes.answers.set(key, live)
+    return live
+  }
+  // In flight: show this scope's cached answer if we have one, and undefined
+  // otherwise. Deliberately not `resource.latest` — that keeps the previous
+  // harness's list on screen across a switch.
+  return modes.answers.get(key)
+}
 
+function modeWriter(input: WiringInput, modes: ModesResource, clearPending: () => void): SessionPermissionWriter {
+  return {
+    setPermissionMode: async (call) => {
+      const key = modes.key()
+      const ref = input.sessionRef()
+      if (!ref || ref.sessionId !== call.sessionId) throw new Error("The session is no longer open")
+      const result = await input.api.setPermissionMode(ref, call.modeId)
+      if (key === modes.key()) {
+        // The write returns the agent's complete read-back. Install that answer
+        // before clearing the optimistic choice, including when it was clamped.
+        modes.answers.set(key, result)
+        modes.mutate(result)
+        clearPending()
+        void modes.refetch()
+      }
+      // The harness's answer, which can name a different mode than the request.
+      return { currentModeId: result.currentModeId }
+    },
+  }
+}
+
+/**
+ * The I/O half of the composer's permission-mode picker: fetching what the
+ * harness offers, writing a choice back, and reconciling the two.
+ */
+export function createComposerPermissionModeWiring(input: WiringInput) {
+  const modes = permissionModesResource(input)
   /**
    * Optimistic value covering the gap between choosing a harness mode and the
    * refetch that confirms it.
@@ -123,46 +148,24 @@ export function createComposerPermissionModeWiring(input: {
    * refused.
    */
   const [pending, setPending] = createSignal<PermissionSelection | undefined>()
-
-  const writer = (): SessionPermissionWriter => ({
-    setPermissionMode: async (call) => {
-      const key = resourceKey()
-      const ref = input.sessionRef()
-      if (!ref || ref.sessionId !== call.sessionId) throw new Error("The session is no longer open")
-      const result = await input.api.setPermissionMode(ref, call.modeId)
-      if (key === resourceKey()) {
-        // The write returns the agent's complete read-back. Install that answer
-        // before clearing the optimistic choice, including when it was clamped.
-        cache.set(key, result)
-        mutate(result)
-        setPending(undefined)
-        void refetch()
-      }
-      // The harness's answer, which can name a different mode than the request.
-      return { currentModeId: result.currentModeId }
-    },
-  })
-
-  const reportError = (error: unknown) => {
-    setPending(undefined)
-    const detail = error instanceof Error ? error.message : String(error)
-    showToast({
-      title: input.requestFailedTitle(),
+  return {
+    report: () => modeReport(input, modes),
+    writer: () => modeWriter(input, modes, () => setPending(undefined)),
+    reportError: (error: unknown) => {
+      setPending(undefined)
+      const detail = error instanceof Error ? error.message : String(error)
       // Says the change did not happen. Silence here would leave the user
       // believing a policy is in force that the harness never accepted.
-      description: `The permission mode was not changed: ${detail}`,
-    })
-  }
-
-  // The harness owns the active mode. Pending only bridges an in-flight write.
-  const selection = (): PermissionSelection | undefined => input.harness() ? pending() : undefined
-  const onSelectionChange = (next: PermissionSelection) => {
-    if (next.kind === "harness") setPending(next)
-  }
-
-  return { report, pending, setPending, writer, reportError, selection, onSelectionChange,
+      showToast({ title: input.requestFailedTitle(), description: `The permission mode was not changed: ${detail}` })
+    },
+    // The harness owns the active mode. Pending only bridges an in-flight write.
+    selection: (): PermissionSelection | undefined => input.harness() ? pending() : undefined,
+    onSelectionChange: (next: PermissionSelection) => {
+      if (next.kind === "harness") setPending(next)
+    },
     /** Re-exported so the picker's groups can suppress every option, not just the list. */
-    harnessUnavailable: () => input.harnessUnavailable?.() }
+    harnessUnavailable: () => input.harnessUnavailable?.(),
+  }
 }
 
 /** The composer's permission picker composed over its wiring. */

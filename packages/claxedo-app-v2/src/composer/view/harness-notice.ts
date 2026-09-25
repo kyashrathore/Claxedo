@@ -38,24 +38,30 @@ export type HarnessNotice = {
   action?: { label: string; ariaLabel?: string; run: () => void }
 }
 
+const CONNECTION_NOTICES = {
+  "auth-required": { tone: "critical", message: "requires authentication", detail: "Sign in to the agent or update this connection's credentials before trying again." },
+  disconnected: { tone: "warning", message: "disconnected", detail: "The agent connection closed. Your transcript is saved; the next turn can reconnect." },
+  failed: { tone: "critical", message: "connection failed", detail: "The agent connection could not be established. Check the connection settings before trying again." },
+} as const satisfies Record<string, { tone: ComposerNoticeTone; message: string; detail: string }>
+
+function connectionNotice(input: HarnessNoticeInput): HarnessNotice | undefined {
+  const connection = input.connectionState?.state
+  if (connection !== "auth-required" && connection !== "disconnected" && connection !== "failed") return undefined
+  const notice = CONNECTION_NOTICES[connection]
+  return { kind: `connection-${connection}`, tone: notice.tone, message: `${input.harnessLabel} ${notice.message}`, detail: notice.detail, retry: false }
+}
+
+function openProviders(run: () => void) {
+  return { label: "Open Providers", ariaLabel: "Open Settings Providers", run }
+}
+
 /**
  * `undefined` means "nothing worth a row" — including the merely-stale list,
  * which is a hint on the model control, not an error.
  */
 export function resolveHarnessNotice(input: HarnessNoticeInput): HarnessNotice | undefined {
-  const connection = input.connectionState?.state
-  if (connection === "auth-required" || connection === "disconnected" || connection === "failed") {
-    return {
-      kind: `connection-${connection}`,
-      tone: connection === "disconnected" ? "warning" : "critical",
-      message: connection === "auth-required" ? `${input.harnessLabel} requires authentication`
-        : connection === "disconnected" ? `${input.harnessLabel} disconnected` : `${input.harnessLabel} connection failed`,
-      detail: connection === "auth-required" ? "Sign in to the agent or update this connection's credentials before trying again."
-        : connection === "disconnected" ? "The agent connection closed. Your transcript is saved; the next turn can reconnect."
-          : "The agent connection could not be established. Check the connection settings before trying again.",
-      retry: false,
-    }
-  }
+  const connection = connectionNotice(input)
+  if (connection) return connection
   // A dead runtime outranks everything downstream of it: every other failure
   // here is a symptom, and reporting the symptom sends the user to the wrong fix.
   if (input.runtimeUnavailable) {
@@ -70,46 +76,21 @@ export function resolveHarnessNotice(input: HarnessNoticeInput): HarnessNotice |
     }
   }
   if ((input.setupRequired || isProviderSetupError(input.configError)) && input.openProviders) {
-    return {
-      kind: "setup-required",
-      tone: "warning",
-      message: `${input.harnessLabel} is not set up`,
-      detail: "Add credentials in Settings → Providers.",
-      retry: false,
-      action: {
-        label: "Open Providers",
-        ariaLabel: "Open Settings Providers",
-        run: input.openProviders,
-      },
-    }
+    const detail = "Add credentials in Settings → Providers."
+    return { kind: "setup-required", tone: "warning", message: `${input.harnessLabel} is not set up`, detail, retry: false, action: openProviders(input.openProviders) }
   }
-  const failure = input.configError
-  if (input.optionsFailed || (failure && input.noModels)) {
-    return {
-      kind: "models-failed",
-      tone: "critical",
-      message: `Couldn't load ${input.harnessLabel} models`,
-      detail: failure,
-      retry: true,
-    }
+  if (input.optionsFailed || (input.configError && input.noModels)) {
+    return { kind: "models-failed", tone: "critical", message: `Couldn't load ${input.harnessLabel} models`, detail: input.configError, retry: true }
   }
-  if (input.savedModelUnavailable) {
-    return {
-      kind: "saved-model-unavailable",
-      tone: "warning",
-      message: `${input.savedModelUnavailable} is unavailable`,
-      detail: "Reconnect its provider in Settings → Providers, or choose another model.",
-      retry: false,
-      ...(input.openProviders ? {
-        action: {
-          label: "Open Providers",
-          ariaLabel: "Open Settings Providers",
-          run: input.openProviders,
-        },
-      } : {}),
-    }
+  if (!input.savedModelUnavailable) return undefined
+  return {
+    kind: "saved-model-unavailable",
+    tone: "warning",
+    message: `${input.savedModelUnavailable} is unavailable`,
+    detail: "Reconnect its provider in Settings → Providers, or choose another model.",
+    retry: false,
+    ...(input.openProviders ? { action: openProviders(input.openProviders) } : {}),
   }
-  return undefined
 }
 
 function isProviderSetupError(error?: string) {

@@ -15,7 +15,7 @@ export type PromptModeCommand = {
 export const promptShellModeKey = "mod+shift+x"
 export const promptNormalModeKey = "mod+shift+e"
 
-export function registerPromptModeCommands(input: {
+type ModeCommandsInput = {
   register: (scope: string, commands: () => PromptModeCommand[]) => void
   mode: Accessor<PromptComposerEditMode>
   pick: VoidFunction
@@ -31,8 +31,14 @@ export function registerPromptModeCommands(input: {
     sessionCategory: string
     goal: string
   }
-}) {
-  input.register("prompt-input", () => [
+}
+
+export function registerPromptModeCommands(input: ModeCommandsInput) {
+  input.register("prompt-input", () => promptModeCommands(input))
+}
+
+function promptModeCommands(input: ModeCommandsInput): PromptModeCommand[] {
+  return [
     {
       id: "file.attach",
       title: input.labels.attachFile,
@@ -66,5 +72,5 @@ export function registerPromptModeCommands(input: {
       disabled: input.mode() === "normal",
       onSelect: () => input.setMode("normal"),
     },
-  ])
+  ]
 }
