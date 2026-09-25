@@ -232,6 +232,16 @@ export const HOSTED_OPERATIONS = {
       "cursor",
     ],
   },
+  // The signed desktop's project-scoped keyset page. `scope` is fixed in the
+  // path; the caller names the project, the page size, the order and the key
+  // it continues after.
+  "session.page": {
+    method: "GET",
+    path: "/api/control/session-list?scope=project",
+    query: ["projectId", "limit"],
+    optionalQuery: ["sort", "after"],
+  },
+  "project.catalog": { method: "GET", path: "/project" },
   "session.projection.register": {
     method: "POST",
     path: "/api/control/workspaces/:workspaceId/sessions/:sessionId/register",
@@ -579,7 +589,7 @@ export function resolveHostedOperation(
       params.set(key, operationParameter(name, key, value))
     }
     const qs = params.toString()
-    if (qs) path = `${path}?${qs}`
+    if (qs) path = `${path}${path.includes("?") ? "&" : "?"}${qs}`
   }
 
   const headers: Record<string, string> = {}

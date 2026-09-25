@@ -166,6 +166,23 @@ describe("decodeHostedResult", () => {
   })
 })
 
+describe("the signed desktop's session sources", () => {
+  test("a session page is an items envelope", () => {
+    expect(decodeHostedResult("session.page", { items: [], nextCursor: "k" })).toEqual({ items: [], nextCursor: "k" })
+    expect(() => decodeHostedResult("session.page", { groups: [] })).toThrow(/session\.page.*items/)
+  })
+
+  test("the project catalog is a bare list of projects", () => {
+    expect(decodeHostedResult("project.catalog", [{ id: "prj_1", workspaces: {} }])).toEqual([{ id: "prj_1", workspaces: {} }])
+    expect(() => decodeHostedResult("project.catalog", { projects: [] })).toThrow(/project\.catalog.*array/)
+  })
+
+  test("both are reads a renderer may retry", () => {
+    expect(isSafeOperation("session.page")).toBe(true)
+    expect(isSafeOperation("project.catalog")).toBe(true)
+  })
+})
+
 describe("isSafeOperation", () => {
   test("marks the operations that provision or destroy as unsafe", () => {
     // `safe` is the renderer's licence to retry on its own. Anything that

@@ -93,6 +93,24 @@ describe("resolveHostedOperation", () => {
     })
   })
 
+  test("a project's session page keeps its fixed scope and appends only the declared keys", () => {
+    expect(resolveHostedOperation("session.page", {
+      projectId: "prj_1",
+      limit: 50,
+      sort: "human_turn_desc",
+      after: "key_1",
+      scope: "global",
+    })).toEqual({
+      method: "GET",
+      path: "/api/control/session-list?scope=project&projectId=prj_1&limit=50&sort=human_turn_desc&after=key_1",
+    })
+    expect(() => resolveHostedOperation("session.page", { limit: 50 })).toThrow(MissingOperationParameter)
+  })
+
+  test("the account's project catalog takes no parameters", () => {
+    expect(resolveHostedOperation("project.catalog", { projectId: "prj_1" })).toEqual({ method: "GET", path: "/project" })
+  })
+
   test("appends only declared query keys from input", () => {
     expect(resolveHostedOperation("session.shares.list", {
       sessionId: "ses_1",
