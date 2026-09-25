@@ -34,6 +34,7 @@ A failed build is not retried until a new build arrives or the plugin is switche
 
 ## Live plugins (`live/`)
 
+- **Only the machine's owner.** The daemon answers the list, the bundles, add and remove only to the machine's owner (unsigned, the loopback gate; signed, `authorizeMachineOwner`), and `plugins.changed` reaches no signed subscriber. Every request carries the viewer's own credentials through the adapter. A refused list (`auth` class) is `notOwner` (`live/list-state.ts`): nothing is listed, activated or asked, and Settings says the machine's app plugins belong to its owner. Approvals and switches are kept per principal scope.
 - The daemon's list (`server.queries.livePlugins.list()`, read only when the server reports `features.livePlugins`, re-read on `pluginsChanged`) is reconciled with the host: a new hash loads a new build, a removed row drops the plugin, and a failed daemon build keeps the served hash and shows `lastError`.
 - A live build's manifest is the one the daemon built it from (the row's `manifest`); a `manifest` the bundle declares in code is not consulted beyond its id. The hash covers the manifest, so a manifest change alone is a new build.
 - A load that fails becomes a build whose `activate` throws, so the machine keeps the running build and shows why. A plugin whose first build failed shows the daemon's error.

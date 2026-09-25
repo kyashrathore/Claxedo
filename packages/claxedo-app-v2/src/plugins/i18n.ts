@@ -54,6 +54,7 @@ const en = {
   "plugins.boundary.failed": "The app plugin {{name}} failed",
   "plugins.boundary.retry": "Try again",
   "plugins.off": "The app plugin {{name}} is off. Turn it on in Settings, App plugins.",
+  "plugins.list.notOwner": "App plugins on this machine belong to its owner, so none run for you here.",
   "plugins.list.failed": "The app plugins on this machine could not be read: {{reason}}",
 }
 

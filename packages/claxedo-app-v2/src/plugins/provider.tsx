@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/solid-query"
-import { createContext, createEffect, getOwner, on, onCleanup, useContext, type Accessor, type JSX } from "solid-js"
+import { createContext, createEffect, createMemo, getOwner, on, onCleanup, useContext, type Accessor, type JSX } from "solid-js"
 import type { PluginCapability, PluginPlatform } from "@claxedo/plugin-api"
 import { useI18n } from "@/i18n"
 import { useServer } from "@/server"
@@ -10,12 +10,12 @@ import { useWorkbench } from "@/workbench"
 import { activatePlugin, type Activation } from "./activation"
 import { pluginServerCalls } from "./api"
 import { createApiFactory, createClaims, createOverlayTracker, type HostServices } from "./bindings"
-import { failureReason } from "./failure"
 import { bundledPlugins } from "./bundled"
 import { createPluginHost, type PluginHost } from "./host"
 import { dictionary, usePluginsText } from "./i18n"
 import { createFrameRuntimeSource } from "./frame/runtime-source"
 import { createLiveReconciler } from "./live/controller"
+import { liveListState, type LiveListState } from "./live/list-state"
 import { loadFrameBuild, loadLiveBuild, type LiveRow } from "./live/load"
 import type { PluginBuild } from "./model"
 import { createPluginPreferences, safeModeRequested } from "./preferences"
@@ -24,7 +24,7 @@ import { requestApproval } from "./view/approval-request"
 
 export type PluginsContext = PluginHost & {
   readonly platform: PluginPlatform
-  readonly liveListError: Accessor<string | undefined>
+  readonly liveList: Accessor<LiveListState>
   readonly requestApproval: (pluginId: string) => void
 }
 
@@ -69,14 +69,15 @@ function createActivate(services: HostServices) {
   return (build: PluginBuild, onCrash: (reason: string) => void): Promise<Activation> => activatePlugin({ build, buildApi, onCrash })
 }
 
-function useLiveList(host: PluginHost, services: HostServices): Accessor<string | undefined> {
+function useLiveList(host: PluginHost, services: HostServices): Accessor<LiveListState> {
   const runtime = createFrameRuntimeSource()
   const loadBuild = (row: LiveRow) =>
     services.platform === "desktop" ? loadLiveBuild(row, services.calls) : loadFrameBuild(row, services.calls, { runtime, services })
   const reconciler = createLiveReconciler(host, loadBuild)
-  const list = useQuery(() => ({ ...services.calls.livePlugins(), enabled: services.server.capabilities()?.features.livePlugins === true }))
+  const offered = () => services.server.capabilities()?.features.livePlugins === true
+  const list = useQuery(() => ({ ...services.calls.livePlugins(), enabled: offered() }))
   createEffect(on(() => list.data, (rows) => rows && reconciler.reconcile(rows)))
-  return () => (list.error ? failureReason(list.error) : undefined)
+  return createMemo(() => liveListState({ offered: offered(), listed: list.data !== undefined, error: list.error }))
 }
 
 function useLiveApprovals(host: PluginHost, services: HostServices): (pluginId: string) => void {
@@ -123,7 +124,7 @@ export function PluginHostProvider(props: { readonly scope: string; readonly chi
   const value: PluginsContext = {
     ...host,
     platform: services.platform,
-    liveListError: useLiveList(host, services),
+    liveList: useLiveList(host, services),
     requestApproval: useLiveApprovals(host, services),
   }
   return <PluginHostContext.Provider value={value}>{props.children}</PluginHostContext.Provider>
