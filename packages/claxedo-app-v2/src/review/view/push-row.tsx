@@ -23,6 +23,7 @@ function ActionButton(props: {
 export function PushRow(props: {
   readonly status: GitStatus
   readonly pending: boolean
+  readonly compareUrl: string | undefined
   readonly onPush: (setUpstream: boolean) => void
 }): JSX.Element {
   const t = useTranslator(dictionary)
@@ -56,6 +57,23 @@ export function PushRow(props: {
         </Show>
       </Show>
       <span class="flex-1" />
+      <Show when={props.compareUrl}>
+        {(url) => (
+          <Button
+            as="a"
+            data-testid="source-control-create-pr"
+            href={url()}
+            target="_blank"
+            rel="noopener noreferrer"
+            variant="ghost"
+            size="small"
+            class="gap-1.5"
+          >
+            <SemanticIcon concept="pullRequest" size="small" />
+            <span>{t("review.sourceControl.createPr")}</span>
+          </Button>
+        )}
+      </Show>
     </div>
   )
 }

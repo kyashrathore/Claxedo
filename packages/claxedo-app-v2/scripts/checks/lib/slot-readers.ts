@@ -10,6 +10,7 @@ export type SlotReaders = { readonly selects: (hook: SlotHook, value: string) =>
 
 const bracketSelector = /\[\s*data-(slot|component)\s*([~|^$*]?=)\s*["']?([^"'\]\s]+)["']?\s*\]/g
 const tailwindVariant = /data-\[(slot|component)=([^\]]+)\]/g
+const attributeCompare = /(?:getAttribute\(\s*["']data-(slot|component)["']\s*\)|dataset\.(slot|component))\s*[!=]==?\s*["']([^"']+)["']/g
 const skippedFolders = new Set(["node_modules", "dist", ".git", "legacy", "report", "test-results", "results"])
 
 export function slotReaders(root: string): SlotReaders {
@@ -21,6 +22,9 @@ export function slotReaders(root: string): SlotReaders {
     }
     for (const match of text.matchAll(tailwindVariant)) {
       selectors[hookOf(match[1])].push({ operator: "=", value: match[2] ?? "" })
+    }
+    for (const match of text.matchAll(attributeCompare)) {
+      selectors[hookOf(match[1] ?? match[2])].push({ operator: "=", value: match[3] ?? "" })
     }
   }
   return { selects: (hook, value) => selectors[hook].some((selector) => matches(selector, value)) }

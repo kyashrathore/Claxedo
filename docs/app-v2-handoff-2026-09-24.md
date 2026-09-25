@@ -110,6 +110,8 @@ The build was the same (6d9c0a91a9), and the host was just as quiet. v2 had 0 in
 | open-file, light (no prefetch, disclosed) | 26.1 ms | 32.4 ms |
 | collapse-all, light / moderate / heavy | 24.1 / 24.4 / 24.8 ms | 26.7 / 26.9 / 27.8 ms |
 
+**Caveat found after the run:** the packaged v2 renderer was **unminified** (a 6.72 MB main chunk; minified it's 3.67 MB). `claxedo-desktop/vite.renderer-v2.ts` never set `minify`, while v1's renderer config sets `minify: "esbuild"`. Every v2 number above comes from the unminified build. exp-idle is committing the fix with a package-step check; the rerun uses minified builds.
+
 **Must-win targets:**
 - **Met:** idle CPU, panel open return, and long rows (988 ms, target ≤ 1 s, though it ties v1).
 - **Not met:** idle memory (775 MiB, target ≤ 700) and fresh start (1.41 s, target ≤ 1.1, a tie).
@@ -435,6 +437,15 @@ At 19:08 the owner said: finish in-progress work; start no new work.
   - the scripted ACP subagent step sends no tool call, so no live check exercises `toolCallEdges`;
   - adapter probes need `bun run pi:install` in agent-sdk-runtime first (Playwright's global setup does it, the probe doesn't).
 
+- **A cancelled turn is recorded as completed (runtime; both apps).** The harnesses signal a cancelled turn as `session-status idle` without `finish`:
+  - ACP `translateStopReason("cancelled")` (`agent-event-runtime/src/harnesses/acp/translate-session-update.ts`);
+  - Codex `cancelled`/`interrupted`;
+  - Cursor `cancelled`.
+
+  `outcomeFromPayload` (`agent-sdk-runtime/src/runtime/turn-outcome.ts`) maps that idle to `{status: "completed"}`, and the turn's own producer finalizes with it. `finalizeCancelled` (`runtime/recovery.ts`) then finds the turn already finished and doesn't write its `{status: "cancelled", reason: "abort"}`. So neither app ever shows "Interrupted" after a Stop. Proven on v1 with the scripted ACP agent answering `cancelled` (lane-transcript-3; the ready corpus case is in `scratchpad/comments/interrupted-*`).
+  - **Fix:** a terminal cancelled event in the runtime vocabulary. It belongs in the harness rebuild (`docs/plans/2026-09-24-002-refactor-harness-rebuild-plan.md`).
+  - Parity holds meanwhile, since v1 has the same defect.
+
 ## Deletion candidates
 
 **The dead revert path.** No harness declares `revert`, v2 passes no `actions` to MessageTimeline, and v1 never renders these (DECISIONS 23:55). Delete the whole list together, or bring it back together with a harness that declares revert. Line numbers are as of 27781bb17e.
@@ -454,9 +465,9 @@ At 19:08 the owner said: finish in-progress work; start no new work.
 1. **Owner:** test 4480 against 4481. Each difference becomes an inventory row or a DECISIONS line.
 2. **Owner:** sign off `v2/stream-slice`, exp-stream's five transcript fixes (see [Streaming at 60 Hz](#streaming-at-60-hz-exp-stream-2026-09-25)). Then merge it and run the whole corpus.
 3. **The seven panel rows that go to v1:**
-   - lane-tools-3 ports v1's retained file-tab mount, which covers review→files and open-file;
-   - exp-scroll names the cause of collapse-all and files→Review heavy.
-   - Then rerun the workspace-panel lane.
+   - exp-scroll found the cause: `src/review/diff-content.ts` `request()` writes a new file list on every CodeView emit and scroll frame, so the 24 diff queries and the Review list rebuild each time. Making it a no-op for an unchanged list takes collapse-all from 32.0 to 23.2 ms busy JS per click (v1 27.3), and idle CPU with Review open from 8.8% to 1.4% (v1 3.6%).
+   - v1 doesn't keep visited file tabs mounted either: retaining them blanks Pierre's viewer on reveal. The one tab gap is Review's scroll restoration, which lane-tools-3 is porting.
+   - Then lane-bench-3 reruns the workspace-panel lane.
 4. **Start (≤ 1.1 s) and idle memory (≤ 700 MiB):** exp-idle's findings, applied through the owning lanes.
 5. **Checks to zero:** transcript and timeline comments and names first, with comments triaged into corpus cases or README lines; then the remaining domains. Split files by responsibility; never squeeze.
 6. **Move the transcript's module caches and singletons into provider-owned stores**, as their own corpus-proven slice with a bench rerun. Until then they're named exceptions in one-home-per-datum.

@@ -41,7 +41,7 @@ function main(): never {
     if (!sf) continue
     const inKit = under(root, file, "src/ui")
     walk(sf, (node) => {
-      const message = retiredName(root, node, checker) ?? retiredText(node, events, inKit, readers)
+      const message = retiredName(root, node, checker) ?? retiredText(node, events, inKit, readers, checker)
       if (message) violations.push({ file, line: startLine(node, sf), message })
     })
   }
@@ -129,8 +129,8 @@ function isDeclarationName(node: ts.Identifier): boolean {
   return declares && parent.name === node
 }
 
-function retiredText(node: ts.Node, events: ReadonlySet<string>, inKit: boolean, readers: SlotReaders): string | undefined {
-  if (ts.isJsxAttribute(node)) return retiredAttribute(node, inKit, readers)
+function retiredText(node: ts.Node, events: ReadonlySet<string>, inKit: boolean, readers: SlotReaders, checker: ts.TypeChecker): string | undefined {
+  if (ts.isJsxAttribute(node)) return retiredAttribute(node, inKit, readers, checker)
   const text = textOf(node)
   if (text === undefined || isImportSpecifierNode(node)) return undefined
   if (events.has(text)) return `"${text}" is a server event name; only src/server/wire speaks it`
@@ -139,23 +139,34 @@ function retiredText(node: ts.Node, events: ReadonlySet<string>, inKit: boolean,
   return !inKit && /data-slot[=\]]/.test(text) ? slotOutsideKit : undefined
 }
 
-function retiredAttribute(node: ts.JsxAttribute, inKit: boolean, readers: SlotReaders): string | undefined {
+function retiredAttribute(node: ts.JsxAttribute, inKit: boolean, readers: SlotReaders, checker: ts.TypeChecker): string | undefined {
   const hook = ts.isIdentifier(node.name) ? node.name.text : undefined
   if (hook !== "data-slot" && hook !== "data-component") return undefined
   if (hook === "data-slot" && inKit) return undefined
-  const values = attributeValues(node)
-  if (values === undefined) return `${hook} has a computed value, so no stylesheet or hook can be shown to read it`
+  const values = attributeValues(node, checker)
+  if (values === undefined) return `${hook} has a computed value whose type is not a union of string literals, so no stylesheet or hook can be shown to read it`
   const unread = values.filter((value) => !readers.selects(hook satisfies SlotHook, value))
   if (unread.length === 0) return undefined
   return `${hook}="${unread.join('" / "')}" is read by no stylesheet, e2e or perf-harness hook; remove it`
 }
 
-function attributeValues(node: ts.JsxAttribute): string[] | undefined {
+function attributeValues(node: ts.JsxAttribute, checker: ts.TypeChecker): string[] | undefined {
   const value = node.initializer
   if (!value) return undefined
   if (ts.isStringLiteral(value)) return [value.text]
   const expression = ts.isJsxExpression(value) ? value.expression : undefined
-  return expression ? literalValues(expression) : undefined
+  if (!expression) return undefined
+  return literalValues(expression) ?? typeValues(checker.getTypeAtLocation(expression))
+}
+
+function typeValues(type: ts.Type): string[] | undefined {
+  const parts = type.isUnion() ? type.types : [type]
+  const values: string[] = []
+  for (const part of parts) {
+    if (part.isStringLiteral()) values.push(part.value)
+    else if (!(part.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null))) return undefined
+  }
+  return values
 }
 
 function literalValues(expression: ts.Expression): string[] | undefined {

@@ -20,7 +20,6 @@ export function ActivityRow(props: ActivityRowProps) {
   return (
     <div
       class={`activity-row${props.class ? ` ${props.class}` : ""}`}
-      data-component="activity-row"
       data-expanded={props.expanded ? "true" : undefined}
       data-active={props.active ? "true" : undefined}
       data-nested={props.nested ? "true" : undefined}

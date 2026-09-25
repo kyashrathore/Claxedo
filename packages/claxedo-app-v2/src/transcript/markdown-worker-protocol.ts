@@ -26,8 +26,8 @@ export type MarkdownWorkerState = {
   unstable: MarkdownToken[]
 }
 
-export function shouldReleaseMarkdownWorkerState(complete: boolean, latestID: number | undefined, responseID: number) {
-  return complete && latestID === responseID
+export function shouldReleaseMarkdownWorkerState(complete: boolean, latestId: number | undefined, responseId: number) {
+  return complete && latestId === responseId
 }
 
 export function markdownBlockKey(owner: string, cacheKey: string | undefined, index: number, mode: string) {
