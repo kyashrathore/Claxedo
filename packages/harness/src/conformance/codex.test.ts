@@ -77,7 +77,7 @@ test("Codex exec approval reaches the durable broker and a denied command never 
   const owner = createRequestBroker(ports)
   const origin = state.origin!
   const broker = createSessionBroker(owner, { sessionId: "s1", workspaceId: "w1", directory: state.directory, origin })
-  const input: StartInput = { sessionId: "s1", directory: state.directory, locality: "local", owner: state.owner,
+  const input: StartInput = { sessionId: "s1", workspaceId: "w1", directory: state.directory, locality: "local", owner: state.owner,
     config: { harness: state.harness, model: state.model }, model: state.model,
     projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] }, credentials: state.credentials }
   try {
@@ -117,7 +117,7 @@ test("Codex native goals use the running app-server", async () => {
   const owner = createRequestBroker(ports)
   const origin = state.origin!
   const broker = createSessionBroker(owner, { sessionId: "s1", workspaceId: "w1", directory: state.directory, origin })
-  const input: StartInput = { sessionId: "s1", directory: state.directory, locality: "local", owner: state.owner,
+  const input: StartInput = { sessionId: "s1", workspaceId: "w1", directory: state.directory, locality: "local", owner: state.owner,
     config: { harness: state.harness, model: state.model }, model: state.model,
     projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] }, credentials: state.credentials }
   try {
@@ -179,7 +179,7 @@ test("Codex starts a projected configured MCP server", async () => {
   const origin = state.origin!
   const owner = createRequestBroker(ports)
   const broker = createSessionBroker(owner, { sessionId: "s1", workspaceId: "w1", directory: state.directory, origin })
-  const input: StartInput = { sessionId: "s1", directory: state.directory, locality: "local", owner: state.owner,
+  const input: StartInput = { sessionId: "s1", workspaceId: "w1", directory: state.directory, locality: "local", owner: state.owner,
     config: { harness: state.harness, model: state.model }, model: state.model, credentials: state.credentials,
     projection: { generation: "g1", pluginRoots: [], notApplied: [], mcpServers: [
       { name: "projected", kind: "http", url: `http:${String.fromCharCode(47, 47)}127.0.0.1:${port}/mcp`, origin: "configured" },

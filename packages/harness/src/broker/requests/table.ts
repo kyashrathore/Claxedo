@@ -9,7 +9,7 @@ import type {
 import type { BrokerPorts, SessionBrokerContext, TurnBrokerContext } from "../ports"
 import { grantToSave } from "../grants"
 import { optionMatchesDecision, substitutePermissionOption } from "../options"
-import { pendingRequest, requestOwnerIsCurrent, requestTargetMatchesOwner, requestRefusal, type RequestAuthority } from "./authority"
+import { pendingRequest, requestOwnerIsCurrent, requestTargetMatchesOwner, requestRefusal, sameTurnAuthority, type RequestAuthority } from "./authority"
 import { OrphanRetirement } from "./orphan-retirement"
 import { preflight } from "./preflight"
 import { publishAsked } from "./publication"
@@ -54,16 +54,26 @@ export class RequestTable implements RequestBroker {
       .map((entry) => entry.pending)
   }
 
-  askTurn(context: TurnBrokerContext, request: TurnRequest): Promise<RequestAnswer> {
-    return this.ask({ kind: "turn", value: context.authority }, request, request.expiresAt ?? context.expiresAt, context.signal)
+  askTurn(context: TurnBrokerContext, request: TurnRequest, options?: { signal?: AbortSignal }): Promise<RequestAnswer> {
+    const current = this.ports.currentTurnAuthority(context.authority.sessionId)
+    const authority = current && sameTurnAuthority(current, context.authority) ? current : context.authority
+    const signal = options?.signal ? AbortSignal.any([context.signal, options.signal]) : context.signal
+    return this.ask({ kind: "turn", value: authority }, request, request.expiresAt ?? context.expiresAt, signal)
   }
 
-  askStart(context: SessionBrokerContext, request: TurnRequest): Promise<RequestAnswer> {
+  askStart(context: SessionBrokerContext, request: TurnRequest, options?: { signal?: AbortSignal }): Promise<RequestAnswer> {
     if (!context.start) throw new Error("Session ask requires a start binding")
     const prior = this.ports.readAnswer(context.sessionId, request.requestId)
     if (prior) return Promise.resolve(prior)
+    if (options?.signal?.aborted) return this.saveCancelled({ kind: "start", value: context.start }, request)
     if (!requestTargetMatchesOwner(this.ports, { kind: "start", value: context.start }, { start: context.start })) throw new Error("Session start is no longer running")
-    return this.ask({ kind: "start", value: context.start }, request, request.expiresAt ?? context.expiresAt)
+    return this.ask({ kind: "start", value: context.start }, request, request.expiresAt ?? context.expiresAt, options?.signal)
+  }
+
+  private async saveCancelled(authority: RequestAuthority, request: TurnRequest): Promise<RequestAnswer> {
+    const answer = { kind: "cancelled" } as const
+    await this.ports.persistAnswer(pendingRequest(this.ports, authority, request), answer, false)
+    return answer
   }
 
   private ask(authority: RequestAuthority, request: TurnRequest, expiresAt?: number, signal?: AbortSignal): Promise<RequestAnswer> {
@@ -76,7 +86,7 @@ export class RequestTable implements RequestBroker {
     expiresAt?: number,
     signal?: AbortSignal,
   ): Promise<RequestAnswer> {
-    if (signal?.aborted) return { kind: "cancelled" }
+    if (signal?.aborted) return this.saveCancelled(authority, request)
     const sessionId = authority.value.sessionId
     const key = requestKey(sessionId, request.requestId)
     if (this.entries.has(key) || this.asking.has(key)) throw new Error(`Request ${request.requestId} is already registered`)
@@ -85,7 +95,14 @@ export class RequestTable implements RequestBroker {
       await this.orphans.settled(key)
       const prior = this.ports.readAnswer(sessionId, request.requestId)
       if (prior) return prior
-      if (request.kind === "elicitation" && request.mode === "form") await validateRequest(this.ports, request, signal)
+      if (request.kind === "elicitation" && request.mode === "form") {
+        try { await validateRequest(this.ports, request, signal) }
+        catch (error) {
+          if (signal?.aborted) return this.saveCancelled(authority, request)
+          throw error
+        }
+      }
+      if (signal?.aborted) return this.saveCancelled(authority, request)
       const immediate = await preflight(this.ports, authority, request, expiresAt, signal)
       if (immediate) return immediate
       return await this.register(authority, request, key, expiresAt, signal)
@@ -191,10 +208,6 @@ export class RequestTable implements RequestBroker {
       const grant = entry.pending.request.kind === "permission" ?
         grantToSave(entry.authority.value.connectionId, entry.pending.request, answer) : undefined
       const events = await this.ports.persistAnswer(entry.pending, answer, false, grant)
-      if (entry.cancelRequested) {
-        await this.finishTermination(entry)
-        return requestRefusal("duplicate")
-      }
       this.finish(entry, answer)
       return { ok: true, events }
     } catch (error) {

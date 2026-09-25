@@ -25,10 +25,6 @@ export async function preflight(
     }
     await ports.persistAnswer(pending, automatic, true)
     await ports.publish({ type: "permission.auto-answered", sessionId, requestId: request.requestId, grantKey: request.grantKey! })
-    if (signal?.aborted) {
-      await ports.persistAnswer(pending, { kind: "cancelled" }, false)
-      return { kind: "cancelled" }
-    }
     return automatic
   }
   return undefined
