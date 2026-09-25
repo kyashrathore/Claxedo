@@ -103,6 +103,7 @@ The prompt editor and everything that turns a draft into one `PromptInput` for `
 - `!` at the start of an empty prompt enters shell mode; the command is sent as an ordinary prompt and the composer returns to normal mode, as today.
 - `/goal` arms goal mode; `/goal <objective>` and an armed send carry `goal: { objective }`. Only a harness whose `goalMode` is not `none` offers it.
 - Slash entries are the palette's commands that carry a slash alias (`useCommands().slashOptions()`), including the composer's own `/goal`; `@` entries come from the placement's file search (`server.queries.files.search`) and the shell's mention sources (`useShellRegistries()`). The `+` menu's Commands and Context open their popover without touching the draft.
+- A `hidden` composer (the session screen hides it behind a request dock rather than unmounting it) registers no palette or slash commands and listens for no dropped files, so it acts as if it were not there.
 - No second copy of server data: the composer reads session status and requests through `SessionView` only. The harness store keeps only what today's app keeps: per-scope picks in memory and the draft default in localStorage.
 
 ## Flows

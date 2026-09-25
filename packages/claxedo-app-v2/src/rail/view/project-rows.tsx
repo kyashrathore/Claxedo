@@ -1,12 +1,16 @@
-import { createMemo, For, Match, Show, Switch, type JSX } from "solid-js"
-import type { SessionRowView } from "@/session"
-import type { RailRow, SessionMarker } from "../model"
+import { createMemo, For, Show, type JSX } from "solid-js"
+import type { SessionId } from "@/server"
+import type { SessionList, SessionRowView } from "@/session"
+import type { TerminalItem } from "@/terminal"
+import { sessionRowKey, terminalRowKey, type RailRow, type SessionMarker } from "../model"
 import { RailSessionRow } from "./session-row"
 import type { SessionRowMenuActions } from "./session-row-menu"
 import { RailTerminalRow } from "./terminal-row"
 
 export type ProjectRowsProps = SessionRowMenuActions & {
-  readonly rows: readonly RailRow[]
+  readonly terminals: readonly TerminalItem[]
+  readonly sessionIds: readonly SessionId[]
+  readonly list: SessionList
   readonly activeSessionId: string | undefined
   readonly activeTerminalId: string | undefined
   readonly onActivate: (row: SessionRowView) => void
@@ -15,36 +19,54 @@ export type ProjectRowsProps = SessionRowMenuActions & {
   readonly prepareDrag: (row: RailRow) => string | undefined
 }
 
-function Row(props: ProjectRowsProps & { readonly row: RailRow }): JSX.Element {
+function TerminalRows(props: ProjectRowsProps): JSX.Element {
+  const byKey = createMemo(() => new Map(props.terminals.map((terminal) => [terminalRowKey(terminal), terminal])))
   return (
-    <Switch>
-      <Match when={props.row.kind === "terminal" ? props.row.terminal : undefined}>
-        {(terminal) => <RailTerminalRow row={terminal()} active={props.activeTerminalId === terminal().terminalId} prepareDrag={() => props.prepareDrag(props.row)} />}
-      </Match>
-      <Match when={props.row.kind === "session" ? props.row.session : undefined}>
-        {(session) => (
-          <RailSessionRow
-            row={session()}
-            marker={props.markerOf(session())}
-            projectLabel={props.projectLabel}
-            active={props.activeSessionId === session().ref.sessionId}
-            onActivate={props.onActivate}
-            onRename={props.onRename}
-            onArchive={props.onArchive}
-            onDelete={props.onDelete}
-            prepareDrag={() => props.prepareDrag(props.row)}
-          />
-        )}
-      </Match>
-    </Switch>
+    <For each={props.terminals.map(terminalRowKey)}>
+      {(key) => (
+        <Show when={byKey().get(key)}>
+          {(terminal) => (
+            <RailTerminalRow
+              row={terminal()}
+              active={props.activeTerminalId === terminal().terminalId}
+              prepareDrag={() => props.prepareDrag({ kind: "terminal", key, terminal: terminal() })}
+            />
+          )}
+        </Show>
+      )}
+    </For>
+  )
+}
+
+function SessionRows(props: ProjectRowsProps): JSX.Element {
+  return (
+    <For each={props.sessionIds}>
+      {(sessionId) => (
+        <Show when={props.list.view(sessionId)}>
+          {(session) => (
+            <RailSessionRow
+              row={session()}
+              marker={props.markerOf(session())}
+              projectLabel={props.projectLabel}
+              active={props.activeSessionId === sessionId}
+              onActivate={props.onActivate}
+              onRename={props.onRename}
+              onArchive={props.onArchive}
+              onDelete={props.onDelete}
+              prepareDrag={() => props.prepareDrag({ kind: "session", key: sessionRowKey(sessionId), session: session() })}
+            />
+          )}
+        </Show>
+      )}
+    </For>
   )
 }
 
 export function ProjectRows(props: ProjectRowsProps): JSX.Element {
-  const byKey = createMemo(() => new Map(props.rows.map((row) => [row.key, row])))
   return (
-    <For each={props.rows.map((row) => row.key)}>
-      {(key) => <Show when={byKey().get(key)}>{(row) => <Row {...props} row={row()} />}</Show>}
-    </For>
+    <>
+      <TerminalRows {...props} />
+      <SessionRows {...props} />
+    </>
   )
 }

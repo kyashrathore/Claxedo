@@ -7,7 +7,7 @@ import { draftPath, sessionLinkPath, useShellRoute } from "@/shell"
 import { terminalPaneKind, useTerminals } from "@/terminal"
 import { useWorkbench } from "@/workbench"
 import { railDictionary } from "../i18n"
-import { rowsByProject, sessionMarker, siblingAfterArchive, type RailRow } from "../model"
+import { sessionIdsByProject, sessionMarker, siblingAfterArchive, type RailRow } from "../model"
 import { projectSection, type ProjectSection } from "../project-sections"
 import { ProjectBlock } from "./project-block"
 import { createSessionActions } from "./session-actions"
@@ -22,8 +22,8 @@ export function ProjectTree(): JSX.Element {
   const terminals = useTerminals()
   const sections = createMemo(() => projects.list().map((entry) => projectSection(entry.project, server.placements.list())))
   const sectionByKey = createMemo(() => new Map(sections().map((section) => [section.key, section])))
-  const grouped = createMemo(() => rowsByProject(stores.list.rows()))
-  const rowsOf = (section: ProjectSection) => (section.projectId ? grouped().get(section.projectId) : undefined) ?? []
+  const grouped = createMemo(() => sessionIdsByProject(stores.list.order()))
+  const sessionIdsOf = (section: ProjectSection) => (section.projectId ? grouped().get(section.projectId) : undefined) ?? []
   const activeProjectId = createMemo(() => {
     const placement = routing.placementId()
     return placement ? server.placements.byId(placement)?.projectId : undefined
@@ -49,7 +49,8 @@ export function ProjectTree(): JSX.Element {
   }
   const archive = async (section: ProjectSection, row: SessionRowView) => {
     if (activeSessionId() === row.ref.sessionId) {
-      const next = siblingAfterArchive(rowsOf(section), row)
+      const nextId = siblingAfterArchive(sessionIdsOf(section), row.ref.sessionId)
+      const next = nextId ? stores.list.view(nextId) : undefined
       if (next) openSession(next)
       else select(section)
     }
@@ -69,7 +70,7 @@ export function ProjectTree(): JSX.Element {
                 {(current) => (
                   <ProjectBlock
                     section={current()}
-                    rows={rowsOf(current())}
+                    sessionIds={sessionIdsOf(current())}
                     active={!!current().projectId && current().projectId === activeProjectId()}
                     activeSessionId={activeSessionId()}
                     activeTerminalId={activeTerminalId()}

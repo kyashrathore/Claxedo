@@ -1,3 +1,4 @@
+import { batch } from "solid-js"
 import { createParser, type EventSourceMessage } from "eventsource-parser"
 import { machine, unreachable, type Machine } from "../lib/machine"
 import { responseError, ServerError, toAppError } from "./errors"
@@ -90,7 +91,7 @@ async function readBody(run: StreamRun, body: ReadableStream<Uint8Array>) {
   while (!run.closed) {
     const next = await reader.read()
     if (next.done) return
-    parser.feed(decoder.decode(next.value, { stream: true }))
+    batch(() => parser.feed(decoder.decode(next.value, { stream: true })))
   }
 }
 

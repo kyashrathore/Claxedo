@@ -57,6 +57,8 @@ function sessionView(context: TranscriptContext): SessionView {
     status: () => deps.list.statusOf(ref.sessionId),
     messages: () => data.messages,
     parts: (messageId) => data.parts[messageId] ?? NO_PARTS,
+    pendingDeltas: context.deltas.pending,
+    commitDeltas: context.deltas.commit,
     isPendingMessage: (messageId) => isPending(context, messageId),
     conversation: (): TranscriptConversation | undefined => (phase.state().kind === "loading" ? undefined : data),
     turnSettlePending: (userMessageId) => isReading(phase.state()) && lastUserId() === userMessageId,

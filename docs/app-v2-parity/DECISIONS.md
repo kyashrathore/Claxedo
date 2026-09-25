@@ -227,8 +227,14 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - Terminals only for live placements.
 - The plan is `docs/plans/2026-09-25-002-session-sources-plan.md`.
 
+## Owner, 2026-09-25 18:40: the account credential stays behind AccountPort
+- The signed desktop's merged session list reads the control plane through AccountPort: Electron main owns the credential and runs only named operations (`session.list` added to the closed set).
+- The daemon never receives the user's bearer.
+- Machine row publishing (S2) uses the machine's Host Tunnel Token, scoped to the workspaces still assigned to that host. That's a machine credential, not the user's.
+
 ## Orchestrator, 2026-09-25: Composer budget re-based after parity voided the frame swap
 - The plan's 5.5k Composer budget assumed swapping today's `PromptInputFrame` for upstream's `PromptInputV2` frame. The parity ruling (port v1's UI, don't restyle) voided that swap, so the composer is today's frame, moved.
 - The owner approved re-basing at 10:05 ("all good"), after the composer's no-comments triage.
 - After the triage (593 comment blocks: real constraints moved into `src/composer/README.md` under Constraints, the rest deleted), `src/composer` measured 10,147 lines. Splitting its 14 size violations by responsibility then added 835 lines of module seams (imports and prop types), to 10,982.
-- The budget row is set to the measured 10,982, with no headroom, inside the owner's 11.1k; v1's composer is 12.3k.
+- Merging feat/app-v2's hidden-pane command registration (`composer-commands.ts`) added 5 more, to 10,987.
+- The budget row is set to the measured 10,987, with no headroom, inside the owner's 11.1k; v1's composer is 12.3k.
