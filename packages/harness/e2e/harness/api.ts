@@ -133,8 +133,20 @@ export class ClaxedoApi {
     return this.call<SessionRow>("GET", `/session/${encodeURIComponent(id)}`, { directory })
   }
 
+  updateSession(directory: string, id: string, updates: { title?: string; time?: { archived?: number } }) {
+    return this.call<SessionRow>("PATCH", `/session/${encodeURIComponent(id)}`, { directory, body: updates })
+  }
+
   sessions(directory: string) {
     return this.call<SessionRow[]>("GET", "/session", { directory })
+  }
+
+  archivedSessions(directory: string) {
+    return this.call<SessionRow[]>("GET", "/experimental/session", { directory, query: { archived: "true" } })
+  }
+
+  visibleSessions(directory: string) {
+    return this.call<SessionRow[]>("GET", "/experimental/session", { directory })
   }
 
   deleteSession(directory: string, id: string) {
@@ -157,6 +169,17 @@ export class ClaxedoApi {
     })
   }
 
+  promptParts(directory: string, id: string, parts: MessagePart[], options: { model?: ModelChoice } = {}) {
+    return this.call<unknown>("POST", `/session/${encodeURIComponent(id)}/message`, {
+      directory,
+      body: {
+        parts,
+        messageID: this.turnId(),
+        ...(options.model ? { model: { providerID: options.model.providerId, modelID: options.model.modelId } } : {}),
+      },
+    })
+  }
+
   promptAsync(directory: string, id: string, text: string, options: { messageId?: string } = {}) {
     const messageId = this.turnId(options.messageId)
     return this.call<unknown>("POST", `/session/${encodeURIComponent(id)}/prompt_async`, {
@@ -174,8 +197,26 @@ export class ClaxedoApi {
     return Array.isArray(body) ? body : body.messages
   }
 
+  todos(directory: string, id: string) {
+    return this.call<Array<{ content: string; status: string; priority: string }>>("GET", `/session/${encodeURIComponent(id)}/todo`, { directory })
+  }
+
   status(directory: string) {
     return this.call<Record<string, { type: string; [key: string]: unknown }>>("GET", "/session/status", { directory })
+  }
+
+  async usageForSession(sessionId: string) {
+    const now = Date.now()
+    type Usage = {
+      claxedo: { totals: { turnCount: number; input: number; output: number } }
+      quota: unknown
+      filterOptions: { claxedo: { session: string[] } }
+    }
+    const query = { view: "claxedo", since: String(now - 86_400_000), until: String(now + 86_400_000) }
+    const all = await this.call<Usage>("GET", "/api/claxedo/usage", { query })
+    const session = all.filterOptions.claxedo.session.find((value) => value.endsWith(`:session:${sessionId}`))
+    if (!session) return all
+    return this.call<Usage>("GET", "/api/claxedo/usage", { query: { ...query, filter_session: session } })
   }
 
   permissions(directory: string) {

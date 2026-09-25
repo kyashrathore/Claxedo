@@ -11,6 +11,7 @@ import { captureOutput, stopProcess, type OwnedProcess } from "./process"
 import type { ScriptedModelServer } from "./scripted-model-server"
 import { prepareScriptedServer } from "./scripted-world"
 import { directTransport } from "./transport"
+import { restartedDataDir } from "./daemon-restart-fault"
 import { makeWorkspace, type Workspace } from "./workspaces"
 
 export type { Workspace }
@@ -128,6 +129,7 @@ export async function startDaemon(input: DaemonInput): Promise<Daemon> {
     makeWorkspace: (name, projectName) => makeWorkspace(directTransport, url, dirs.workspaces, name, projectName),
     restart: async (options = {}) => {
       await stopProcess(owned.child)
+      env = { ...env, CLAXEDO_DATA_DIR: await restartedDataDir(input.dataDir) }
       if (options.signed) env = { ...env, ...signedEnv(options.signed) }
       owned = launchDaemon(runtime, env, input.dataDir)
       await health(options.signed ? "signed daemon" : "restarted daemon")

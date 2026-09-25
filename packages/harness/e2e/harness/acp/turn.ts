@@ -3,6 +3,7 @@ import fs from "node:fs"
 import { RequestError, type AgentSideConnection, type PromptResponse, type SessionNotification } from "@agentclientprotocol/sdk"
 import { asString } from "@claxedo/helpers/guards"
 import { holdReleaseFile, type AcpScript, type AcpStep, type AcpToolStep } from "./script"
+import { deliveredToolOutput } from "./parts-fault"
 
 export type TurnContext = {
   connection: AgentSideConnection
@@ -60,7 +61,7 @@ async function playTool(context: TurnContext, step: AcpToolStep) {
   const status = step.status ?? "completed"
   const content = step.content ?? (step.text !== undefined ? [textContent(step.text)] : [])
   const rawOutput = step.output ?? (status === "failed" ? { error: step.text ?? "The scripted tool failed" } : step.text ?? null)
-  await update(context, { sessionUpdate: "tool_call_update", toolCallId, status, content, rawOutput })
+  await update(context, { sessionUpdate: "tool_call_update", toolCallId, status, content, rawOutput: deliveredToolOutput(rawOutput) })
 }
 
 function diffTool(step: Extract<AcpStep, { kind: "diff" }>): AcpToolStep {
@@ -186,5 +187,5 @@ export async function playScript(context: TurnContext, script: AcpScript): Promi
     const result = await playStep(context, step)
     if (result) return result
   }
-  return { stopReason: script.stopReason ?? "end_turn" }
+  return { stopReason: script.stopReason ?? "end_turn", ...(script.usage ? { usage: script.usage } : {}) }
 }

@@ -34,7 +34,19 @@ export type AcpStep =
   | { kind: "error"; message: string }
   | { kind: "stop"; reason: StopReason }
 
-export type AcpScript = { steps: AcpStep[]; stopReason?: StopReason }
+export type AcpScript = {
+  steps: AcpStep[]
+  stopReason?: StopReason
+  capturePrompt?: boolean
+  usage?: {
+    inputTokens: number
+    outputTokens: number
+    totalTokens: number
+    thoughtTokens?: number
+    cachedReadTokens?: number
+    cachedWriteTokens?: number
+  }
+}
 
 export function acpScriptToken(name: string) {
   return `acp-script:${name}`

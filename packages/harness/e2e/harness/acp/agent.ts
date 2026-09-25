@@ -17,6 +17,8 @@ import {
 import { isTitlePrompt, lastMarker } from "../scripted-model-request"
 import { ACP_RED_ENV, ACP_SCRIPT_DIR_ENV, lastAcpScriptName, readAcpScript, type AcpScript } from "./script"
 import { playScript } from "./turn"
+import { captureAcpPrompt } from "./capture"
+import { deliveredAcpPrompt } from "./delivery-fault"
 
 const scriptDir = process.env[ACP_SCRIPT_DIR_ENV]
 if (!scriptDir) throw new Error(`${ACP_SCRIPT_DIR_ENV} is not set`)
@@ -75,9 +77,15 @@ class ScriptedAgent implements Agent {
   }
 
   async prompt(params: PromptRequest): Promise<PromptResponse> {
-    const text = promptText(params.prompt)
+    const delivered = deliveredAcpPrompt(params.prompt)
+    const text = promptText(delivered)
     if (red && !isTitlePrompt(text)) throw RequestError.internalError(undefined, "Scripted ACP red run: every turn fails")
     const script = await scriptFor(text, this.dir)
+    if (script.capturePrompt) {
+      const name = lastAcpScriptName(text)
+      if (!name) throw RequestError.internalError(undefined, "Prompt capture needs a named ACP script")
+      await captureAcpPrompt(this.dir, name, delivered)
+    }
     const controller = new AbortController()
     this.turns.get(params.sessionId)?.abort()
     this.turns.set(params.sessionId, controller)
