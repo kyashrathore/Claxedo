@@ -7,7 +7,7 @@ import { userHomeDir } from "@claxedo/helpers/path"
 import { createAgentRuntime } from "../../runtime"
 import { createMemoryRuntimeStore } from "../../stores/memory"
 import type { AgentMessage } from "../../index"
-import { claude } from "../index"
+import { ClaudeHarnessAdapter } from "./index"
 import { removeTestTempDir } from "../shared/test-temp-dir"
 import { resolveClaudeExecutable } from "./executable"
 
@@ -131,7 +131,15 @@ describe("the Claude turn input the driver holds open", () => {
       const directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "claude-turn-input-")))
       const runtime = createAgentRuntime({
         store: createMemoryRuntimeStore(),
-        harnesses: [claude()],
+        harnesses: [{
+          id: "claude",
+          access: "native",
+          create: (context) => new ClaudeHarnessAdapter({
+            store: context.store,
+            eventHub: context.eventHub,
+            reportOwnerFailure: context.reportOwnerFailure,
+          }),
+        }],
       })
       try {
         const session = await runtime.sessions.create({
