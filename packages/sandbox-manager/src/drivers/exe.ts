@@ -31,7 +31,7 @@ export type ExeSandboxDriverOptions = {
   runtimeCommand?: string
   workspaceDir?: string
   runtimePort?: number
-  runner?: string
+  nativeHarness?: string
   operationTimeoutMs?: number
   healthTimeoutMs?: number
   healthIntervalMs?: number
@@ -219,7 +219,7 @@ export function createExeSandboxDriver(options: ExeSandboxDriverOptions): Sandbo
       ...input.env,
       ...(await options.env?.(input, vm)),
     }
-    if (options.runner) env.WORKSPACE_RUNTIME_RUNNER = options.runner
+    if (options.nativeHarness) env.WORKSPACE_RUNTIME_NATIVE_HARNESS = options.nativeHarness
     const blob = envFile(env)
     const digest = await sha256Hex(blob)
     // The /exec transport is command text with no stdin or file channel, so a

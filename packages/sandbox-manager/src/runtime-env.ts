@@ -39,7 +39,7 @@ export function assertWorkspaceRuntimeIdentityEnv(env: Record<string, string> | 
 export function workspaceRuntimeBootEnv(input: Parameters<typeof workspaceRuntimeTargetEnv>[0] &
   Parameters<typeof workspaceRuntimeSourceEnv>[0] & {
     env?: Record<string, string>
-    runner?: string
+    nativeHarness?: string
     controlEnv?: WorkspaceRuntimeControlEnv
   }): Record<string, string> {
   assertWorkspaceRuntimeIdentityEnv(input.env)
@@ -48,7 +48,7 @@ export function workspaceRuntimeBootEnv(input: Parameters<typeof workspaceRuntim
     ...workspaceRuntimeSourceEnv(input),
     ...input.env,
   }
-  if (input.runner) env.WORKSPACE_RUNTIME_RUNNER = input.runner
+  if (input.nativeHarness) env.WORKSPACE_RUNTIME_NATIVE_HARNESS = input.nativeHarness
   if (input.controlEnv?.relayJwksUrl) env.WORKSPACE_RUNTIME_RELAY_JWKS_URL = input.controlEnv.relayJwksUrl
   if (input.controlEnv?.relayVerifyPem) env.WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM = input.controlEnv.relayVerifyPem
   if (input.controlEnv?.managementJwksUrl) env.WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL = input.controlEnv.managementJwksUrl

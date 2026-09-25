@@ -57,7 +57,7 @@ async function gitWorkspace(name: string) {
 }
 
 async function sessionIds(directory: string) {
-  const response = await fetch(`${serverUrl}/session?directory=${encodeURIComponent(directory)}&harness=pi`)
+  const response = await fetch(`${serverUrl}/session?directory=${encodeURIComponent(directory)}`)
   expect(response.status, await response.clone().text()).toBe(200)
   return (await response.json() as Array<{ id: string }>).map((session) => session.id)
 }
@@ -93,13 +93,13 @@ test.describe("session directory isolation @core @tier-real @surface-web", () =>
         WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_tier_real_directory_isolation",
         WORKSPACE_RUNTIME_STORE_DIR: path.join(dataDir, "store"),
         WORKSPACE_RUNTIME_WORKSPACES_DIR: path.join(dataDir, "workspaces"),
-        WORKSPACE_RUNTIME_RUNNER: "pi",
+        WORKSPACE_RUNTIME_NATIVE_HARNESS: process.env.CLAXEDO_E2E_NATIVE_HARNESS ?? "pi",
       },
       stdio: ["ignore", "pipe", "pipe"],
     })
     server.stdout?.on("data", (chunk) => (serverLog += chunk.toString()))
     server.stderr?.on("data", (chunk) => (serverLog += chunk.toString()))
-    await waitForHealth(`${serverUrl}/api/wr/health`, { label: "session-isolation server", log: () => serverLog, requestTimeoutMs: 3_000 })
+    await waitForHealth(`${serverUrl}/api/wr/health`, { label: "session-isolation server", log: () => serverLog, child: server, requestTimeoutMs: 3_000 })
     workspaceB = await runtimeWorktree(workspaceA)
   })
 
@@ -115,9 +115,15 @@ test.describe("session directory isolation @core @tier-real @surface-web", () =>
     if (root) await fs.rm(root, { recursive: true, force: true })
   })
 
+  test("boots the default Pi harness from the runtime environment", async () => {
+    const health = await fetch(`${serverUrl}/api/wr/health`)
+    expect(health.status).toBe(200)
+    expect(await health.json()).toMatchObject({ harness: { kind: "native", harnessId: "pi" } })
+  })
+
   test("refuses a cross-directory id claim and preserves ownership and routing", async () => {
     const sessionId = "ses_tier_real_directory_owner"
-    const create = await fetch(`${serverUrl}/session?directory=${encodeURIComponent(workspaceA)}&harness=pi`, {
+    const create = await fetch(`${serverUrl}/session?directory=${encodeURIComponent(workspaceA)}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ id: sessionId, title: "Owned by A" }),
@@ -126,7 +132,7 @@ test.describe("session directory isolation @core @tier-real @surface-web", () =>
     expect(await sessionIds(workspaceA)).toContain(sessionId)
     expect(await sessionIds(workspaceB)).not.toContain(sessionId)
 
-    const claim = await fetch(`${serverUrl}/session?directory=${encodeURIComponent(workspaceB)}&harness=pi`, {
+    const claim = await fetch(`${serverUrl}/session?directory=${encodeURIComponent(workspaceB)}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ id: sessionId, title: "Claimed by B" }),
@@ -135,11 +141,13 @@ test.describe("session directory isolation @core @tier-real @surface-web", () =>
     expect(await sessionIds(workspaceA)).toContain(sessionId)
     expect(await sessionIds(workspaceB)).not.toContain(sessionId)
 
-    // Session-aware routing must still resolve the authoritative owner even
-    // when the caller repeats the rejected directory in its query.
-    const routed = await fetch(
-      `${serverUrl}/session/${encodeURIComponent(sessionId)}?directory=${encodeURIComponent(workspaceB)}&harness=pi`,
+    // An explicit directory scopes the lookup; only a request without one
+    // resolves the session's own directory.
+    const scoped = await fetch(
+      `${serverUrl}/session/${encodeURIComponent(sessionId)}?directory=${encodeURIComponent(workspaceB)}`,
     )
+    expect(scoped.status, await scoped.clone().text()).toBe(404)
+    const routed = await fetch(`${serverUrl}/session/${encodeURIComponent(sessionId)}`)
     expect(routed.status, await routed.clone().text()).toBe(200)
     expect(await routed.json()).toMatchObject({ id: sessionId, directory: workspaceA })
   })

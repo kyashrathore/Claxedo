@@ -70,8 +70,8 @@ export type CloudflareSandboxDriverOptions = {
  *   managementJwksUrl → WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL (config apply)
    */
   controlEnv?: WorkspaceRuntimeControlEnv
-  /** Default runner injected as WORKSPACE_RUNTIME_RUNNER, for example "opencode". */
-  runner?: string
+  /** Default native harness injected as WORKSPACE_RUNTIME_NATIVE_HARNESS, for example "opencode". */
+  nativeHarness?: string
   /** Dynamic runtime env that needs the sandbox id or current lease. */
   env?: (input: SandboxDriverEnsureInput, sandbox: { id: string }) => Record<string, string> | Promise<Record<string, string>>
   /** Injected for tests. */
@@ -211,7 +211,7 @@ export function createCloudflareSandboxDriver(
         // for a placeholder the outbound handler matches on.
         ...brokeredPlaceholderEnv(input.secrets),
       },
-      runner: options.runner,
+      nativeHarness: options.nativeHarness,
       controlEnv: options.controlEnv,
     })
   }
