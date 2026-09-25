@@ -3,6 +3,7 @@ import { createStore } from "solid-js/store"
 import { useShellRoute } from "@/shell"
 import type { DiffScope, PlacementId } from "@/server"
 import { defaultScope, type DiffStyle } from "./model"
+import type { ReviewScrollPosition } from "./scroll-restoration"
 
 type PlacementReview = {
   readonly scope: DiffScope
@@ -10,6 +11,7 @@ type PlacementReview = {
   readonly forced: readonly string[]
   readonly message: string
   readonly style: DiffStyle
+  readonly scroll: ReviewScrollPosition
 }
 
 export type Review = {
@@ -22,6 +24,8 @@ export type Review = {
   readonly toggleOpen: (file: string) => void
   readonly style: Accessor<DiffStyle>
   readonly setStyle: (style: DiffStyle) => void
+  readonly scroll: () => ReviewScrollPosition
+  readonly setScroll: (position: ReviewScrollPosition) => void
   readonly forced: (file: string) => boolean
   readonly force: (file: string) => void
   readonly message: () => string
@@ -30,7 +34,7 @@ export type Review = {
 
 const ReviewContext = createContext<Review>()
 
-const emptyReview: PlacementReview = { scope: defaultScope, open: [], forced: [], message: "", style: "unified" }
+const emptyReview: PlacementReview = { scope: defaultScope, open: [], forced: [], message: "", style: "unified", scroll: { top: 0 } }
 
 function toggled(list: readonly string[], item: string): readonly string[] {
   return list.includes(item) ? list.filter((entry) => entry !== item) : [...list, item]
@@ -58,6 +62,8 @@ export function ReviewProvider(props: ParentProps): JSX.Element {
     toggleOpen: (file) => write((previous) => ({ ...previous, open: toggled(previous.open, file) })),
     style: () => current().style,
     setStyle: (style) => write((previous) => ({ ...previous, style })),
+    scroll: () => current().scroll,
+    setScroll: (scroll) => write((previous) => ({ ...previous, scroll })),
     forced: (file) => current().forced.includes(file),
     force: (file) => write((previous) => ({ ...previous, forced: [...previous.forced, file] })),
     message: () => current().message,
