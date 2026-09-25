@@ -3,7 +3,6 @@ import { captureTimelinePrependAnchor, type TimelinePrependAnchor } from "./time
 
 export type TimelineScrollPosition = { offset: number; following: boolean; anchor?: TimelinePrependAnchor }
 
-/** The last displayed reading position, shared by retained returns and remounts. */
 export function createTimelineScrollMemory(input: {
   initial?: TimelineScrollPosition
   active: () => boolean
@@ -31,8 +30,6 @@ export function createTimelineScrollMemory(input: {
     snapshot: () => saved,
     capture() {
       const root = input.root()
-      // Hidden surfaces may report a clamped offset or zero geometry. Neither
-      // is a new reading position. Nor is an intermediate restoration frame.
       if (!input.active() || !root || root.clientHeight === 0 || input.restoring()) return
       saved = {
         offset: root.scrollTop,
