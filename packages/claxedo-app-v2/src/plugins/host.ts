@@ -1,19 +1,19 @@
 import { createMemo, createSignal, type Accessor } from "solid-js"
 import type { PluginCapability } from "@claxedo/plugin-api"
-import type { Capabilities } from "@/server"
 import { createPluginLifecycle, type Activate, type PluginLifecycle } from "./lifecycle"
 import type { PluginBuild, PluginSummary } from "./model"
 import type { PluginPreferences } from "./preferences"
 
 export type PluginHostDeps = {
   readonly preferences: PluginPreferences
-  readonly features: Accessor<Capabilities["features"] | undefined>
+  readonly offered: (capability: PluginCapability) => boolean
   readonly activate: Activate
   readonly removeLive: (pluginId: string) => Promise<void>
 }
 
 export type PluginHost = {
   readonly plugins: Accessor<readonly PluginSummary[]>
+  readonly required: Accessor<ReadonlySet<PluginCapability>>
   readonly put: (build: PluginBuild) => void
   readonly drop: (pluginId: string) => void
   readonly switchOn: (pluginId: string) => void
@@ -30,7 +30,7 @@ export function createPluginHost(deps: PluginHostDeps): PluginHost {
   const [lifecycles, setLifecycles] = createSignal<readonly PluginLifecycle[]>([])
 
   const missing = (build: PluginBuild): readonly PluginCapability[] =>
-    build.manifest.requires.filter((capability) => deps.features()?.[capability] !== true)
+    build.manifest.requires.filter((capability) => !deps.offered(capability))
 
   const confirmed = (build: PluginBuild) => build.origin.kind === "bundled" || preferences.confirmed(build.manifest.id)
 
@@ -56,6 +56,8 @@ export function createPluginHost(deps: PluginHostDeps): PluginHost {
     }),
   )
 
+  const required = createMemo<ReadonlySet<PluginCapability>>(() => new Set(lifecycles().flatMap((lifecycle) => lifecycle.build().manifest.requires)))
+
   const find = (pluginId: string) => lifecycles().find((lifecycle) => lifecycle.id === pluginId)
 
   const drop = (pluginId: string) => {
@@ -67,6 +69,7 @@ export function createPluginHost(deps: PluginHostDeps): PluginHost {
 
   return {
     plugins: summaries,
+    required,
     put: (build) => {
       const existing = find(build.manifest.id)
       if (existing) return existing.setBuild(build)

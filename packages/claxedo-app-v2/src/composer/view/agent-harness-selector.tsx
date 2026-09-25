@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/solid-query"
 import { resolveDraftDefault as resolveDraftDefaultPolicy } from "../harness/draft-default-policy"
 import { Show, createEffect, createMemo, createResource, createSignal, untrack, type JSX } from "solid-js"
 import { useNavigate } from "@solidjs/router"
@@ -26,7 +27,6 @@ import {
   nativeHarness,
   sameHarnessSelection,
 } from "@/lib/harness-selection"
-import { createHarnessConnectionsCatalog } from "../harness/connection-catalog"
 const BUILTIN_HARNESS_OPTIONS: HarnessType[] = NATIVE_HARNESS_IDS.map(nativeHarness)
 
 function harnessOptionGroup(input: HarnessType) {
@@ -83,14 +83,10 @@ interface AgentHarnessSelectorProps {
 export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const navigate = useNavigate()
   const server = useServer()
-  const connections = createHarnessConnectionsCatalog({ api: server.harnessConfig })
+  const connections = useQuery(() => server.queries.agentConnections.list())
   const connectionRows = createMemo(() => {
-    const catalog = connections.data()
+    const catalog = connections.data
     return catalog?.status === "supported" ? catalog.connections : []
-  })
-  createEffect(() => {
-    if (props.active === false) return
-    void connections.refresh()
   })
   const harnessOptions = createMemo<HarnessType[]>(() => [
     ...BUILTIN_HARNESS_OPTIONS,
@@ -560,7 +556,10 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         harnessDisabled={harnessDisabled}
         harnessHint={() => (sessionLocked() ? "Continue this conversation with another harness" : undefined)}
         harnessIcon={(option) => <HarnessOptionIcon harness={option} />}
-        onOpen={() => catalogProviders.request()}
+        onOpen={() => {
+          catalogProviders.request()
+          void connections.refetch()
+        }}
         onHarnessSelect={applyHarness}
         modelError={() => {
           // The same resolved notice the composer row shows, rendered inside

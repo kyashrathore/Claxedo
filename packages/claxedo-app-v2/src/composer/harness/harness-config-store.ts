@@ -11,7 +11,7 @@ import { applyPushedHarnessHealth, commitHeldHarness, probeHarnessHealth } from 
 
 export function createHarnessConfigStore(server: Server, storage: DraftDefaultStorage) {
   const store = createHarnessStore(storage)
-  const wiring: HarnessWiring = { server, api: server.harnessConfig, store, caches: createScopeCaches(), hasConfigOptions: createConfigOptionsProbe(server.harnessConfig) }
+  const wiring: HarnessWiring = { server, api: server.harnessConfig, store, caches: createScopeCaches(), hasConfigOptions: createConfigOptionsProbe(server) }
   const optionsLoader = wireOptionsLoader(wiring)
   // A held pick's options are the picked harness's, which only the
   // placement-scoped read answers: the session read serves the harness the

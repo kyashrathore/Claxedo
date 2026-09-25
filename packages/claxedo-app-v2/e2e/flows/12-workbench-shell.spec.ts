@@ -107,3 +107,46 @@ test("12 Tasks and Marketplace share one page tab that shows the last one opened
   await pageTabs().click()
   await expect(app).toHaveURL(/\/tasks$/)
 })
+
+const STATIC_ASSET = /\.(js|css|woff2?|svg|png|ico|map)(\?|$)|\/@vite\/|\/src\/|\/node_modules\//
+
+function apiRequests(app: Page, origin: string) {
+  let seen: string[] = []
+  app.on("request", (request) => {
+    const url = request.url()
+    if (!url.startsWith(origin) || STATIC_ASSET.test(url) || request.resourceType() === "document") return
+    const parsed = new URL(url)
+    seen.push(parsed.pathname.replace(/ses_[\w-]+/g, ":session"))
+  })
+  return async () => {
+    await app.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => requestIdleCallback(() => resolve())))))
+    const taken = seen
+    seen = []
+    return taken
+  }
+}
+
+test("12 a boot reads neither Tasks nor pi's provider catalog, an open reads each thing once, and a revisit reads nothing", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("reads", "Reads")
+  await api.createSession(workspace.directory, { title: "Alpha", harness: SCRIPTED_ACP_HARNESS })
+  await api.createSession(workspace.directory, { title: "Beta", harness: SCRIPTED_ACP_HARNESS })
+  const settled = apiRequests(app, stack.url)
+  const rail = app.getByRole("navigation", { name: UI.rail })
+  await app.goto(`${stack.url}/`)
+  await expect(rail.getByRole("button", { name: "Beta", exact: true })).toBeVisible()
+  const boot = await settled()
+  expect(boot.filter((path) => path.startsWith("/api/claxedo/tasks/") || path === "/api/claxedo/agent-config/providers")).toEqual([])
+  const open = async (title: string) => {
+    await rail.getByRole("button", { name: title, exact: true }).click()
+    await expect(app.getByRole("heading", { name: title, level: 1 })).toBeVisible()
+    await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
+    return settled()
+  }
+  for (const title of ["Alpha", "Beta"]) {
+    const reads = await open(title)
+    expect(reads.filter((path, index) => reads.indexOf(path) !== index), `${title} read twice`).toEqual([])
+  }
+  expect(await open("Alpha"), "revisiting Alpha").toEqual([])
+  expect(await open("Beta"), "revisiting Beta").toEqual([])
+  expect((await api.sessions(workspace.directory)).map((session) => session.title).sort()).toEqual(["Alpha", "Beta"])
+})
