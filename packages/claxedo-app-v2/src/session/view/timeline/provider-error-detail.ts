@@ -1,5 +1,8 @@
 import { harnessDisplayLabel, harnessLabelForProviderId } from "@/lib/harness-catalog"
 import { asRecord } from "@claxedo/helpers/guards"
+import type { AgentAssistantMessage } from "@claxedo/agent-runtime-contract"
+
+export type DispatchContext = Pick<AgentAssistantMessage, "providerID" | "modelID">
 
 export type ProviderErrorDetail = {
   summary?: string
@@ -62,7 +65,7 @@ function repair(status: number) {
   return "Try again."
 }
 
-export function providerLabel(input: { providerID?: string; modelID?: string; relayLabel?: string }) {
+export function providerLabel(input: DispatchContext & { relayLabel?: string }) {
   const id = input.providerID?.trim()
   if (id) {
     const named = PROVIDER_NAMES[id] ?? harnessLabelForProviderId(id)
@@ -76,7 +79,7 @@ export function providerLabel(input: { providerID?: string; modelID?: string; re
 
 export function providerUsageLimitDetail(
   error: unknown,
-  context?: { providerID?: string; modelID?: string },
+  context?: DispatchContext,
 ) {
   const data = asRecord(asRecord(error)?.data)
   const raw = text(data?.message)
@@ -128,7 +131,7 @@ function serialized(value: unknown) {
 
 export function providerErrorDetail(
   error: unknown,
-  context?: { providerID?: string; modelID?: string },
+  context?: DispatchContext,
 ): ProviderErrorDetail {
   const data = asRecord(asRecord(error)?.data)
   if (!data) return {}
