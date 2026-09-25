@@ -19,6 +19,7 @@ export async function run() {
     assert.match(assistantText(await api.messages(workspace.directory, session.id)), /Keep the orange theme/)
     firstStream.close()
 
+    stack.acp.forgetSessionsOnRestart()
     await stack.daemon.restart()
     if (process.env.CLAXEDO_E2E_DROP_ACP_RECOVERY_CONTEXT === "1") stack.acp.dropRecoveryContext()
     const stream = await stack.events(workspace.directory)

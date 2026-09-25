@@ -16,6 +16,12 @@ export type ConformanceBackend = {
   sharedSender?: TurnOrigin
   projection?: PluginProjection
   expectedMcp?: "session" | "config" | "none"
+  locality?: "local" | "remote"
+  permissionCommand?: string
+  textCommand?: string
+  configureServices?(services: TestServices): void
+  verifyRemoteMcp?(): Promise<void>
+  onSetup?(context: { owner: ReturnType<typeof createRequestBroker>; ports: MemoryPorts }): void
   authFile?: string
   hold?(marker: string): () => void
   scriptTool?(name: string, input: unknown): void
@@ -34,21 +40,29 @@ async function setup(input: ConformanceInput) {
   const backend = await input.backend()
   const turnOrigin = backend.origin ?? origin
   const services = createTestServices()
+  backend.configureServices?.(services)
   const ports = new MemoryPorts()
   Object.assign(ports, { clock: services.clock })
   ports.current.set("s1", { ...authority, directory: backend.directory })
   const owner = createRequestBroker(ports)
+  ports.startBinding = { sessionId: "s1", directory: backend.directory, workspaceId: "w1",
+    connectionId: "c1", operationId: "start-1" }
+  backend.onSetup?.({ owner, ports })
   const sessionBroker = createSessionBroker(owner, {
     sessionId: "s1", directory: backend.directory, workspaceId: "w1", origin: turnOrigin,
+    start: ports.startBinding, connectionId: "c1", operationId: "start-1",
   })
   const transport = input.makeTransport(services, backend)
   const start: StartInput = {
-    sessionId: "s1", directory: backend.directory, locality: "local", owner: backend.owner,
+    sessionId: "s1", directory: backend.directory, locality: backend.locality ?? "local", owner: backend.owner,
     config: { harness: backend.harness, model: backend.model }, model: backend.model,
     projection: backend.projection ?? { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] },
     credentials: backend.credentials,
   }
-  const session = await transport.start(start, sessionBroker)
+  let session: HarnessSession
+  try { session = await transport.start(start, sessionBroker) }
+  catch (error) { await transport.dispose(); await backend.close(); throw error }
+  ports.startStatus = "created"
   ports.current.set("s1", { ...authority, directory: backend.directory, upstreamSessionId: session.binding.upstreamSessionId })
   const turnBroker = (signal = new AbortController().signal) => createTurnBroker(owner, {
     authority: { ...authority, directory: backend.directory, upstreamSessionId: session.binding.upstreamSessionId }, origin: turnOrigin, signal,
@@ -57,6 +71,8 @@ async function setup(input: ConformanceInput) {
   return { backend, services, ports, owner, transport, start, session, sessionBroker, turnBroker,
     turn: (message: string) => turn(backend.model, message, turnOrigin), close }
 }
+
+export { setup as setupConformance }
 
 async function pendingQuestion(context: Awaited<ReturnType<typeof setup>>) {
   const deadline = Date.now() + 5_000
@@ -67,6 +83,17 @@ async function pendingQuestion(context: Awaited<ReturnType<typeof setup>>) {
     await new Promise((resolve) => setTimeout(resolve, 10))
   }
   throw new Error("Pi question did not reach the broker")
+}
+
+async function pendingPermission(context: Awaited<ReturnType<typeof setup>>) {
+  const deadline = Date.now() + 5_000
+  while (Date.now() < deadline) {
+    const pending = context.owner.broker.list({ sessionId: context.session.binding.sessionId })
+      .find((row) => row.request.kind === "permission")
+    if (pending) return pending
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  throw new Error("ACP permission did not reach the broker")
 }
 
 function turn(model: PromptModel, message: string, turnOrigin: TurnOrigin): TurnInput {
@@ -87,7 +114,7 @@ export function runConformance(input: ConformanceInput): void {
     test("starts a real process, streams text and usage, and closes it", async () => {
       const context = await setup(input)
       try {
-        const events = await collect(context.transport, context.session, context.turn("Reply with exactly this one token: PICONFORM"), context.turnBroker())
+        const events = await collect(context.transport, context.session, context.turn(context.backend.textCommand ?? "Reply with exactly this one token: PICONFORM"), context.turnBroker())
         expect(events.some((item) => item.event.type === "text-delta" && item.event.delta.includes("PICONFORM"))).toBe(true)
         expect(events.some((item) => item.event.type === "usage")).toBe(true)
         expect(events.some((item) => item.event.type === "finish")).toBe(true)
@@ -196,7 +223,18 @@ export function runConformance(input: ConformanceInput): void {
         expect(events.flatMap((item) => item.event.type === "text-delta" ? [item.event.delta] : []).join("").length).toBeGreaterThan(0)
         expect(events.some((item) => item.event.type === "finish")).toBe(true)
         await context.transport.close(attached)
-        expect(context.services.processes).toHaveLength(2)
+        expect(context.services.processes).toHaveLength(context.backend.locality === "remote" ? 0 : 2)
+      } finally { await context.close() }
+    }, 60_000)
+
+    test("filters remote MCP servers on new, fork, and resume", async () => {
+      const context = await setup(input)
+      try {
+        if (!context.backend.verifyRemoteMcp) return
+        await context.transport.fork?.fork(context.session, "m1")
+        await context.transport.close(context.session)
+        await context.transport.attach({ ...context.start, binding: context.session.binding }, context.sessionBroker)
+        await context.backend.verifyRemoteMcp()
       } finally { await context.close() }
     }, 60_000)
 
@@ -268,6 +306,55 @@ export function runConformance(input: ConformanceInput): void {
         expect(["events", "error"]).toContain((await settled).kind)
         expect(context.ports.saved.some((row) => row.answer.kind === "cancelled")).toBe(true)
         expect(context.ports.saved.some((row) => row.answer.kind === "answers" && row.answer.answers[0]?.[0] === "Allow")).toBe(false)
+      } finally { await context.close() }
+    }, 60_000)
+
+    test.each(["allow_once", "deny"])("persists a %s permission answer before releasing the agent", async (decision) => {
+      const context = await setup(input)
+      try {
+        if (!context.backend.permissionCommand) return
+        const running = collect(context.transport, context.session, context.turn(context.backend.permissionCommand), context.turnBroker())
+        const pending = await pendingPermission(context)
+        const reply = await context.owner.broker.answer(pending.request.requestId, { kind: "permission", decision },
+          { sessionId: context.session.binding.sessionId })
+        expect(reply.ok).toBe(true)
+        const events = await running
+        expect(events.some((item) => item.event.type === "finish")).toBe(true)
+        expect(context.ports.saved.some((row) => row.answer.kind === "permission" && row.answer.decision === decision)).toBe(true)
+      } finally { await context.close() }
+    }, 60_000)
+
+    test("cancels a pending permission without allowing it", async () => {
+      const context = await setup(input)
+      try {
+        if (!context.backend.permissionCommand) return
+        const controller = new AbortController()
+        const running = collect(context.transport, context.session, context.turn(context.backend.permissionCommand), context.turnBroker(controller.signal))
+        await pendingPermission(context)
+        controller.abort()
+        await running
+        expect(context.ports.saved.some((row) => row.answer.kind === "cancelled")).toBe(true)
+        expect(context.ports.saved.some((row) => row.answer.kind === "permission" && row.answer.decision.startsWith("allow"))).toBe(false)
+      } finally { await context.close() }
+    }, 60_000)
+
+    test("holds an ACP permission when the durable reply fails, then releases on retry", async () => {
+      const context = await setup(input)
+      try {
+        if (!context.backend.permissionCommand) return
+        const running = collect(context.transport, context.session, context.turn(context.backend.permissionCommand), context.turnBroker())
+        const pending = await pendingPermission(context)
+        context.ports.failPersist = true
+        const refused = await context.owner.broker.answer(pending.request.requestId,
+          { kind: "permission", decision: "allow_once" }, { sessionId: context.session.binding.sessionId })
+        expect(refused).toMatchObject({ ok: false, refusal: "persistence" })
+        expect(context.owner.broker.list({ sessionId: context.session.binding.sessionId })).toContainEqual(pending)
+        expect(context.ports.saved).toHaveLength(0)
+        context.ports.failPersist = false
+        const accepted = await context.owner.broker.answer(pending.request.requestId,
+          { kind: "permission", decision: "allow_once" }, { sessionId: context.session.binding.sessionId })
+        expect(accepted.ok).toBe(true)
+        expect((await running).some((item) => item.event.type === "finish")).toBe(true)
       } finally { await context.close() }
     }, 60_000)
   })
