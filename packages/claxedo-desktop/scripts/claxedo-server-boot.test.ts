@@ -187,6 +187,7 @@ test("bundled claxedo-server boots and serves Claxedo-owned routes", async () =>
   try {
     const base = `http://127.0.0.1:${port}`
     await waitForHealth(base, child, () => stderr)
+    await waitForMessage(messages, isServerReady)
     expect(child.connected).toBe(true)
     expect(JSON.parse(fs.readFileSync(daemonDiscoveryPath, "utf8"))).toMatchObject({
       service: "claxedo-local-daemon",
@@ -348,7 +349,9 @@ test("a quiescent daemon exits after its bounded idle grace", async () => {
       CLAXEDO_DAEMON_TOKEN: "idle-daemon-token",
       CLAXEDO_DAEMON_GENERATION: "idle-daemon-generation",
       CLAXEDO_DAEMON_DISCOVERY_PATH: discoveryPath,
-      CLAXEDO_DAEMON_IDLE_GRACE_MS: "75",
+      // Longer than the creation-identity read the daemon does before it
+      // announces ready, which takes hundreds of milliseconds on a loaded machine.
+      CLAXEDO_DAEMON_IDLE_GRACE_MS: "1000",
       CLAXEDO_DAEMON_POLL_INTERVAL_MS: "5",
       CLAXEDO_DATA_DIR: path.join(root, "data"),
     }, serverLog),
@@ -363,8 +366,7 @@ test("a quiescent daemon exits after its bounded idle grace", async () => {
   child.stderr?.on("data", (chunk) => { stderr += String(chunk) })
   const exited = new Promise<number | null>((resolve) => child.once("exit", resolve))
   try {
-    await waitForMessage(messages, (message) =>
-      !!message && typeof message === "object" && "type" in message && message.type === "claxedo-server-ready")
+    await waitForMessage(messages, isServerReady)
     expect(fs.existsSync(discoveryPath)).toBe(true)
     expect(await Promise.race([exited.then(() => true), Bun.sleep(5_000).then(() => false)])).toBe(true)
     expect(child.exitCode).toBe(0)
@@ -448,6 +450,7 @@ test("a terminal whose daemon was killed is reported gone and restored from hist
     const before = first.attach(lostId)
     await before.opened
     await before.waitForText("written-before-the-daemon-died")
+    await waitForDurableHistory(root, lostId, "written-before-the-daemon-died")
     before.ws.close()
     first.child.kill("SIGKILL")
     await new Promise((resolve) => first.child.once("exit", resolve))
@@ -508,6 +511,22 @@ async function waitForHealth(base: string, child: ChildProcess, stderr: () => st
     if (res?.ok) return
   }
   throw new Error("claxedo-server did not become healthy in time")
+}
+
+function isServerReady(message: unknown) {
+  return !!message && typeof message === "object" && "type" in message && message.type === "claxedo-server-ready"
+}
+
+// The terminal stages output and appends it to its history file shortly after
+// broadcasting it, so what a client has seen is not yet what a SIGKILL leaves.
+async function waitForDurableHistory(root: string, ptyId: string, text: string) {
+  const deadline = Date.now() + 10_000
+  while (Date.now() < deadline) {
+    const file = fs.readdirSync(root, { recursive: true, encoding: "utf8" }).find((entry) => path.basename(entry) === `${ptyId}.log`)
+    if (file && fs.readFileSync(path.join(root, file), "utf8").includes(text)) return
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  throw new Error(`terminal ${ptyId} never wrote ${JSON.stringify(text)} to its history`)
 }
 
 async function waitForMessage(messages: unknown[], match: (message: unknown) => boolean) {
