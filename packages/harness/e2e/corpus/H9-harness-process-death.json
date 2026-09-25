@@ -1,0 +1,991 @@
+{
+  "flow": "H9-harness-process-death",
+  "observations": [
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/api/workspace/resolve?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "workspaceId": "<id:2>",
+        "projectId": "<id:2>",
+        "directory": "<workspace:1>",
+        "workspaceName": null,
+        "backing": {
+          "kind": "local-worktree",
+          "directory": "<workspace:1>",
+          "repoName": "<repo:3>",
+          "branch": "main"
+        },
+        "kind": "local",
+        "driver": null,
+        "status": null,
+        "git": {
+          "repo": "<repo:3>",
+          "branch": "main",
+          "remote": null
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/api/claxedo/projects",
+      "status": 201,
+      "body": {
+        "project": {
+          "id": "<id:2>",
+          "name": "<repo:3>",
+          "env": {},
+          "directory": "<workspace:1>",
+          "repoUrl": null,
+          "created_at": "<time>",
+          "updated_at": "<time>"
+        }
+      }
+    },
+    {
+      "kind": "stream",
+      "route": "/api/wr/events?directory=<workspace:1>",
+      "frames": [
+        {
+          "id": "<time-id:1>",
+          "data": {
+            "type": "heartbeat"
+          }
+        },
+        {
+          "id": "<time-id:2>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "creating",
+              "directory": "<workspace:1>",
+              "start": {
+                "sessionId": "<id:4>",
+                "directory": "<workspace:1>",
+                "workspaceId": "<id:2>",
+                "operationId": "<id:5>",
+                "connectionId": "connection:scripted-acp"
+              },
+              "workspaceId": "<id:2>",
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:3>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.commands",
+              "properties": {
+                "sessionID": "<id:4>",
+                "commands": [
+                  {
+                    "name": "scripted",
+                    "description": "Run a named scripted reply"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:4>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "created",
+              "directory": "<workspace:1>",
+              "sessionID": "<id:4>",
+              "workspaceId": "<id:2>",
+              "info": {
+                "id": "<id:4>",
+                "slug": "<id:4>",
+                "projectID": "<id:2>",
+                "workspaceID": "<id:2>",
+                "directory": "<workspace:1>",
+                "title": "H9 process death",
+                "version": "local",
+                "time": {
+                  "created": "<time>",
+                  "updated": "<time>"
+                }
+              },
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:5>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:4>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:4>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:6>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.updated:<id:6>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "info": {
+                  "id": "<id:6>",
+                  "sessionID": "<id:4>",
+                  "role": "user",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "agent": "build"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:7>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:6>:<id:7>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "part": {
+                  "type": "text",
+                  "text": "H9 first acp-script:h9-held",
+                  "id": "<id:7>",
+                  "sessionID": "<id:4>",
+                  "messageID": "<id:6>"
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:8>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.updated:<id:8>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "info": {
+                  "id": "<id:8>",
+                  "sessionID": "<id:4>",
+                  "role": "assistant",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "parentID": "<id:6>",
+                  "mode": "auto",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "<workspace:1>",
+                    "root": "<workspace:1>"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "input": 0,
+                    "output": 0,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:9>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.commands",
+              "properties": {
+                "sessionID": "<id:4>",
+                "commands": [
+                  {
+                    "name": "scripted",
+                    "description": "Run a named scripted reply"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:10>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:8>:000000_<id:9>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "part": {
+                  "id": "000000_<id:9>",
+                  "sessionID": "<id:4>",
+                  "messageID": "<id:8>",
+                  "type": "text",
+                  "text": ""
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:11>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.delta:<id:8>:000000_<id:9>",
+              "type": "message.part.delta",
+              "properties": {
+                "sessionID": "<id:4>",
+                "messageID": "<id:8>",
+                "partID": "000000_<id:9>",
+                "field": "text",
+                "delta": "H9 live before process death"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:12>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.updated:<id:8>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "info": {
+                  "id": "<id:8>",
+                  "sessionID": "<id:4>",
+                  "role": "assistant",
+                  "time": {
+                    "created": "<time>",
+                    "completed": "<time>"
+                  },
+                  "parentID": "<id:6>",
+                  "mode": "auto",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "<workspace:1>",
+                    "root": "<workspace:1>"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "input": 0,
+                    "output": 0,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": 0
+                    }
+                  },
+                  "error": {
+                    "name": "UnknownError",
+                    "data": {
+                      "message": "ACP connection closed. Execution outcome is uncertain; no prompt was retried. Resume the existing session to inspect its state.",
+                      "firstTurnErrorClass": "harness",
+                      "acpOutcome": "uncertain",
+                      "recovery": "Resume the existing session to inspect its state. The failed prompt was not retried."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:13>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.updated:<id:8>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "info": {
+                  "id": "<id:8>",
+                  "sessionID": "<id:4>",
+                  "role": "assistant",
+                  "time": {
+                    "created": "<time>",
+                    "completed": "<time>"
+                  },
+                  "parentID": "<id:6>",
+                  "mode": "auto",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "<workspace:1>",
+                    "root": "<workspace:1>"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "input": 0,
+                    "output": 0,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": 0
+                    }
+                  },
+                  "error": {
+                    "name": "UnknownError",
+                    "data": {
+                      "message": "ACP connection closed. Execution outcome is uncertain; no prompt was retried. Resume the existing session to inspect its state.",
+                      "firstTurnErrorClass": "harness"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:14>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.error:<id:4>",
+              "type": "session.error",
+              "properties": {
+                "sessionID": "<id:4>",
+                "error": {
+                  "name": "UnknownError",
+                  "data": {
+                    "message": "ACP connection closed. Execution outcome is uncertain; no prompt was retried. Resume the existing session to inspect its state.",
+                    "firstTurnErrorClass": "harness"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:15>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:4>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:4>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:16>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.updated:<id:10>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "info": {
+                  "id": "<id:10>",
+                  "sessionID": "<id:4>",
+                  "role": "user",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "agent": "build"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:17>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:10>:<id:11>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "part": {
+                  "type": "text",
+                  "text": "H9 next acp-script:h9-next",
+                  "id": "<id:11>",
+                  "sessionID": "<id:4>",
+                  "messageID": "<id:10>"
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:18>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.updated:<id:12>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "info": {
+                  "id": "<id:12>",
+                  "sessionID": "<id:4>",
+                  "role": "assistant",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "parentID": "<id:10>",
+                  "mode": "auto",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "<workspace:1>",
+                    "root": "<workspace:1>"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "input": 0,
+                    "output": 0,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:19>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.commands",
+              "properties": {
+                "sessionID": "<id:4>",
+                "commands": [
+                  {
+                    "name": "scripted",
+                    "description": "Run a named scripted reply"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:20>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:4>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:4>",
+                "status": {
+                  "type": "recovering",
+                  "kind": "process_restart",
+                  "message": "ACP process restarted; pending interactive state must be rerun"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:21>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:12>:acp-context-recovery-scripted-<id:13>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "part": {
+                  "id": "acp-context-recovery-scripted-<id:13>",
+                  "sessionID": "<id:4>",
+                  "messageID": "<id:12>",
+                  "type": "text",
+                  "text": "---\nCache busted — agent context rebuilt from saved conversation\n---",
+                  "metadata": {
+                    "source": "acp-context-recovery",
+                    "agentSessionId": "scripted-<id:13>"
+                  }
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:22>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:12>:000000_<id:14>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "part": {
+                  "id": "000000_<id:14>",
+                  "sessionID": "<id:4>",
+                  "messageID": "<id:12>",
+                  "type": "text",
+                  "text": ""
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:23>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.delta:<id:12>:000000_<id:14>",
+              "type": "message.part.delta",
+              "properties": {
+                "sessionID": "<id:4>",
+                "messageID": "<id:12>",
+                "partID": "000000_<id:14>",
+                "field": "text",
+                "delta": "H9 fresh process completed"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:24>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:4>:acp_prompt_usage_missing",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:4>",
+                "code": "acp_prompt_usage_missing",
+                "message": "ACP agent returned no token usage for a completed turn (stopReason: end_turn); the turn meters as unavailable",
+                "severity": "warn",
+                "diagnostic": {
+                  "code": "acp_prompt_usage_missing",
+                  "message": "ACP agent returned no token usage for a completed turn (stopReason: end_turn); the turn meters as unavailable",
+                  "severity": "warn",
+                  "source": "acp-adapter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:25>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:4>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:4>",
+                "status": {
+                  "type": "idle"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:26>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "message.completed",
+              "properties": {
+                "sessionID": "<id:4>",
+                "messageID": "<id:12>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:27>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.idle:<id:4>",
+              "type": "session.idle",
+              "properties": {
+                "sessionID": "<id:4>"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session?directory=<workspace:15>",
+      "status": 201,
+      "body": {
+        "id": "<id:4>",
+        "workspaceId": "<id:2>",
+        "title": "H9 process death",
+        "titleSource": "user",
+        "commands": [
+          {
+            "name": "scripted",
+            "description": "Run a named scripted reply"
+          }
+        ],
+        "directory": "<workspace:1>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "scripted-acp",
+            "access": "connection"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "agent_session_id": "scripted-<id:16>",
+        "process_key": "<process:17>"
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:4>/prompt_async?directory=<workspace:1>",
+      "status": 204,
+      "body": null
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:4>?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "id": "<id:4>",
+        "workspaceId": "<id:2>",
+        "title": "H9 process death",
+        "titleSource": "user",
+        "commands": [
+          {
+            "name": "scripted",
+            "description": "Run a named scripted reply"
+          }
+        ],
+        "directory": "<workspace:1>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "scripted-acp",
+            "access": "connection"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "status": "error",
+        "recovery_error": "ACP process restarted; pending interactive state must be rerun",
+        "agent_session_id": "scripted-<id:16>",
+        "process_key": "<process:17>",
+        "lastTurn": {
+          "status": "failed",
+          "completedAt": "<time>",
+          "error": "ACP connection closed. Execution outcome is uncertain; no prompt was retried. Resume the existing session to inspect its state.",
+          "assistantMessageId": "<id:8>"
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:4>/message?directory=<workspace:1>",
+      "status": 200,
+      "body": [
+        {
+          "info": {
+            "id": "<id:6>",
+            "sessionID": "<id:4>",
+            "role": "user",
+            "time": {
+              "created": "<time>"
+            },
+            "agent": "build"
+          },
+          "parts": [
+            {
+              "type": "text",
+              "text": "H9 first acp-script:h9-held",
+              "id": "<id:7>",
+              "sessionID": "<id:4>",
+              "messageID": "<id:6>"
+            }
+          ]
+        },
+        {
+          "info": {
+            "id": "<id:8>",
+            "sessionID": "<id:4>",
+            "role": "assistant",
+            "time": {
+              "created": "<time>",
+              "completed": "<time>"
+            },
+            "parentID": "<id:6>",
+            "mode": "auto",
+            "agent": "build",
+            "path": {
+              "cwd": "<workspace:1>",
+              "root": "<workspace:1>"
+            },
+            "cost": 0,
+            "tokens": {
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            },
+            "error": {
+              "name": "UnknownError",
+              "data": {
+                "message": "ACP connection closed. Execution outcome is uncertain; no prompt was retried. Resume the existing session to inspect its state.",
+                "firstTurnErrorClass": "harness"
+              }
+            }
+          },
+          "parts": [
+            {
+              "id": "000000_<id:9>",
+              "sessionID": "<id:4>",
+              "messageID": "<id:8>",
+              "type": "text",
+              "text": "H9 live before process death"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:4>/prompt_async?directory=<workspace:1>",
+      "status": 204,
+      "body": null
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:4>/message?directory=<workspace:1>",
+      "status": 200,
+      "body": [
+        {
+          "info": {
+            "id": "<id:6>",
+            "sessionID": "<id:4>",
+            "role": "user",
+            "time": {
+              "created": "<time>"
+            },
+            "agent": "build"
+          },
+          "parts": [
+            {
+              "type": "text",
+              "text": "H9 first acp-script:h9-held",
+              "id": "<id:7>",
+              "sessionID": "<id:4>",
+              "messageID": "<id:6>"
+            }
+          ]
+        },
+        {
+          "info": {
+            "id": "<id:8>",
+            "sessionID": "<id:4>",
+            "role": "assistant",
+            "time": {
+              "created": "<time>",
+              "completed": "<time>"
+            },
+            "parentID": "<id:6>",
+            "mode": "auto",
+            "agent": "build",
+            "path": {
+              "cwd": "<workspace:1>",
+              "root": "<workspace:1>"
+            },
+            "cost": 0,
+            "tokens": {
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            },
+            "error": {
+              "name": "UnknownError",
+              "data": {
+                "message": "ACP connection closed. Execution outcome is uncertain; no prompt was retried. Resume the existing session to inspect its state.",
+                "firstTurnErrorClass": "harness"
+              }
+            }
+          },
+          "parts": [
+            {
+              "id": "000000_<id:9>",
+              "sessionID": "<id:4>",
+              "messageID": "<id:8>",
+              "type": "text",
+              "text": "H9 live before process death"
+            }
+          ]
+        },
+        {
+          "info": {
+            "id": "<id:10>",
+            "sessionID": "<id:4>",
+            "role": "user",
+            "time": {
+              "created": "<time>"
+            },
+            "agent": "build"
+          },
+          "parts": [
+            {
+              "type": "text",
+              "text": "H9 next acp-script:h9-next",
+              "id": "<id:11>",
+              "sessionID": "<id:4>",
+              "messageID": "<id:10>"
+            }
+          ]
+        },
+        {
+          "info": {
+            "id": "<id:12>",
+            "sessionID": "<id:4>",
+            "role": "assistant",
+            "time": {
+              "created": "<time>",
+              "completed": "<time>"
+            },
+            "parentID": "<id:10>",
+            "mode": "auto",
+            "agent": "build",
+            "path": {
+              "cwd": "<workspace:1>",
+              "root": "<workspace:1>"
+            },
+            "cost": 0,
+            "tokens": {
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          },
+          "parts": [
+            {
+              "id": "acp-context-recovery-scripted-<id:13>",
+              "sessionID": "<id:4>",
+              "messageID": "<id:12>",
+              "type": "text",
+              "text": "---\nCache busted — agent context rebuilt from saved conversation\n---",
+              "metadata": {
+                "source": "acp-context-recovery",
+                "agentSessionId": "scripted-<id:13>"
+              }
+            },
+            {
+              "id": "000000_<id:14>",
+              "sessionID": "<id:4>",
+              "messageID": "<id:12>",
+              "type": "text",
+              "text": "H9 fresh process completed"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:4>?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "id": "<id:4>",
+        "workspaceId": "<id:2>",
+        "title": "H9 process death",
+        "titleSource": "user",
+        "commands": [
+          {
+            "name": "scripted",
+            "description": "Run a named scripted reply"
+          }
+        ],
+        "directory": "<workspace:1>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "scripted-acp",
+            "access": "connection"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "status": "idle",
+        "agent_session_id": "scripted-<id:13>",
+        "process_key": "<process:17>",
+        "lastTurn": {
+          "status": "completed",
+          "completedAt": "<time>",
+          "assistantMessageId": "<id:12>"
+        }
+      }
+    }
+  ]
+}

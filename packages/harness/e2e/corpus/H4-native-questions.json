@@ -1,0 +1,2767 @@
+{
+  "flow": "H4-native-questions",
+  "observations": [
+    {
+      "kind": "stream",
+      "route": "/api/wr/events?directory=<workspace:1>",
+      "frames": [
+        {
+          "id": "<time-id:1>",
+          "data": {
+            "type": "heartbeat"
+          }
+        },
+        {
+          "id": "<time-id:2>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "creating",
+              "directory": "<workspace:1>",
+              "start": {
+                "sessionId": "<id:2>",
+                "directory": "<workspace:1>",
+                "workspaceId": "<id:3>",
+                "operationId": "<id:4>",
+                "connectionId": "native:claude"
+              },
+              "workspaceId": "<id:3>",
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:3>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "created",
+              "directory": "<workspace:1>",
+              "sessionID": "<id:2>",
+              "workspaceId": "<id:3>",
+              "info": {
+                "id": "<id:2>",
+                "slug": "<id:2>",
+                "projectID": "<id:3>",
+                "workspaceID": "<id:3>",
+                "directory": "<workspace:1>",
+                "title": "",
+                "version": "local",
+                "time": {
+                  "created": "<time>",
+                  "updated": "<time>"
+                }
+              },
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:4>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:2>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:2>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:5>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.updated:<id:5>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:2>",
+                "info": {
+                  "id": "<id:5>",
+                  "sessionID": "<id:2>",
+                  "role": "user",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "agent": "build",
+                  "model": {
+                    "providerID": "anthropic",
+                    "modelID": "claude-sonnet-4-5"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:6>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:5>:<id:6>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:2>",
+                "part": {
+                  "type": "text",
+                  "text": "Ask the questions, then reply with exactly this one token: H4_CLAUDE_QUESTION",
+                  "id": "<id:6>",
+                  "sessionID": "<id:2>",
+                  "messageID": "<id:5>"
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:7>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.updated:<id:7>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:2>",
+                "info": {
+                  "id": "<id:7>",
+                  "sessionID": "<id:2>",
+                  "role": "assistant",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "parentID": "<id:5>",
+                  "modelID": "claude-sonnet-4-5",
+                  "providerID": "anthropic",
+                  "mode": "auto",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "<workspace:1>",
+                    "root": "<workspace:1>"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "input": 0,
+                    "output": 0,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:8>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.updated:<id:2>",
+              "type": "session.updated",
+              "properties": {
+                "sessionID": "<id:2>",
+                "info": {
+                  "id": "<id:2>",
+                  "slug": "<id:2>",
+                  "projectID": "<workspace:1>",
+                  "directory": "<workspace:1>",
+                  "title": "Ask the questions, then reply with exactly this one token: H4_CLAUDE_QUE...",
+                  "titleSource": "prompt",
+                  "version": "local",
+                  "time": {
+                    "created": "<time>",
+                    "updated": "<time>"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:9>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.commands",
+              "properties": {
+                "sessionID": "<id:2>",
+                "commands": [
+                  {
+                    "name": "deep-research",
+                    "description": "deep-research"
+                  },
+                  {
+                    "name": "dataviz",
+                    "description": "dataviz"
+                  },
+                  {
+                    "name": "<repo:8>",
+                    "description": "update-config"
+                  },
+                  {
+                    "name": "verify",
+                    "description": "verify"
+                  },
+                  {
+                    "name": "debug",
+                    "description": "debug"
+                  },
+                  {
+                    "name": "<repo:9>",
+                    "description": "code-review"
+                  },
+                  {
+                    "name": "simplify",
+                    "description": "simplify"
+                  },
+                  {
+                    "name": "batch",
+                    "description": "batch"
+                  },
+                  {
+                    "name": "fewer-permission-prompts",
+                    "description": "fewer-permission-prompts"
+                  },
+                  {
+                    "name": "doctor",
+                    "description": "doctor"
+                  },
+                  {
+                    "name": "loop",
+                    "description": "loop"
+                  },
+                  {
+                    "name": "claude-api",
+                    "description": "claude-api"
+                  },
+                  {
+                    "name": "workflow-authoring",
+                    "description": "workflow-authoring"
+                  },
+                  {
+                    "name": "run",
+                    "description": "run"
+                  },
+                  {
+                    "name": "run-skill-generator",
+                    "description": "run-skill-generator"
+                  },
+                  {
+                    "name": "agents",
+                    "description": "agents"
+                  },
+                  {
+                    "name": "auto-mode-setup",
+                    "description": "auto-mode-setup"
+                  },
+                  {
+                    "name": "autocompact",
+                    "description": "autocompact"
+                  },
+                  {
+                    "name": "clear",
+                    "description": "clear"
+                  },
+                  {
+                    "name": "color",
+                    "description": "color"
+                  },
+                  {
+                    "name": "compact",
+                    "description": "compact"
+                  },
+                  {
+                    "name": "config",
+                    "description": "config"
+                  },
+                  {
+                    "name": "output-style",
+                    "description": "output-style"
+                  },
+                  {
+                    "name": "context",
+                    "description": "context"
+                  },
+                  {
+                    "name": "effort",
+                    "description": "effort"
+                  },
+                  {
+                    "name": "fast",
+                    "description": "fast"
+                  },
+                  {
+                    "name": "focus",
+                    "description": "focus"
+                  },
+                  {
+                    "name": "heapdump",
+                    "description": "heapdump"
+                  },
+                  {
+                    "name": "init",
+                    "description": "init"
+                  },
+                  {
+                    "name": "mcp",
+                    "description": "mcp"
+                  },
+                  {
+                    "name": "model",
+                    "description": "model"
+                  },
+                  {
+                    "name": "__remote-workflow",
+                    "description": "__remote-workflow"
+                  },
+                  {
+                    "name": "workflow-launch-exec",
+                    "description": "workflow-launch-exec"
+                  },
+                  {
+                    "name": "reload-plugins",
+                    "description": "reload-plugins"
+                  },
+                  {
+                    "name": "<repo:10>",
+                    "description": "reload-skills"
+                  },
+                  {
+                    "name": "rename",
+                    "description": "rename"
+                  },
+                  {
+                    "name": "<repo:11>",
+                    "description": "security-review"
+                  },
+                  {
+                    "name": "usage",
+                    "description": "usage"
+                  },
+                  {
+                    "name": "insights",
+                    "description": "insights"
+                  },
+                  {
+                    "name": "recap",
+                    "description": "recap"
+                  },
+                  {
+                    "name": "goal",
+                    "description": "goal"
+                  },
+                  {
+                    "name": "<repo:12>",
+                    "description": "list-agents"
+                  },
+                  {
+                    "name": "team-onboarding",
+                    "description": "team-onboarding"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:10>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:2>:claude_sdk.unmapped_event",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:2>",
+                "harness": "claude",
+                "threadId": "claude-sdk:<id:13>",
+                "code": "claude_sdk.unmapped_event",
+                "message": "SDKSystemMessage(init): model, tools, MCP server status, permission mode, and output style have no complete AgentRuntimeEvent mapping",
+                "severity": "info",
+                "diagnostic": {
+                  "code": "claude_sdk.unmapped_event",
+                  "message": "SDKSystemMessage(init): model, tools, MCP server status, permission mode, and output style have no complete AgentRuntimeEvent mapping",
+                  "severity": "info",
+                  "source": "claude.sdk",
+                  "method": "claude/system",
+                  "raw": {
+                    "type": "system",
+                    "subtype": "init",
+                    "cwd": "<workspace:1>",
+                    "session_id": "<id:14>",
+                    "tools": [
+                      "Task",
+                      "AskUserQuestion",
+                      "Bash",
+                      "CronCreate",
+                      "CronDelete",
+                      "CronList",
+                      "Edit",
+                      "EnterPlanMode",
+                      "EnterWorktree",
+                      "ExitPlanMode",
+                      "ExitWorktree",
+                      "ListAgents",
+                      "NotebookEdit",
+                      "Read",
+                      "ReportFindings",
+                      "ScheduleWakeup",
+                      "SendMessage",
+                      "Skill",
+                      "TaskCreate",
+                      "TaskGet",
+                      "TaskList",
+                      "TaskStop",
+                      "TaskUpdate",
+                      "WebFetch",
+                      "WebSearch",
+                      "Workflow",
+                      "Write",
+                      "mcp__claxedo__create_subagent",
+                      "mcp__claxedo__documents_list",
+                      "mcp__claxedo__documents_open",
+                      "mcp__claxedo__process_logs",
+                      "mcp__claxedo__process_start",
+                      "mcp__claxedo__process_stop",
+                      "mcp__claxedo__processes",
+                      "mcp__claxedo__question_reply",
+                      "mcp__claxedo__session_cancel_turn",
+                      "mcp__claxedo__session_create",
+                      "mcp__claxedo__session_get",
+                      "mcp__claxedo__session_send",
+                      "mcp__claxedo__session_transcript",
+                      "mcp__claxedo__sessions_list",
+                      "mcp__claxedo__<subagent:1>",
+                      "mcp__claxedo__<subagent:2>",
+                      "mcp__claxedo__<subagent:3>",
+                      "mcp__claxedo__<subagent:4>"
+                    ],
+                    "mcp_servers": [
+                      {
+                        "name": "claxedo",
+                        "status": "connected",
+                        "source": "dynamic"
+                      }
+                    ],
+                    "model": "claude-sonnet-4-5",
+                    "permissionMode": "default",
+                    "slash_commands": [
+                      "deep-research",
+                      "dataviz",
+                      "update-config",
+                      "verify",
+                      "debug",
+                      "code-review",
+                      "simplify",
+                      "batch",
+                      "fewer-permission-prompts",
+                      "doctor",
+                      "loop",
+                      "claude-api",
+                      "workflow-authoring",
+                      "run",
+                      "run-skill-generator",
+                      "agents",
+                      "auto-mode-setup",
+                      "autocompact",
+                      "clear",
+                      "color",
+                      "compact",
+                      "config",
+                      "output-style",
+                      "context",
+                      "effort",
+                      "fast",
+                      "focus",
+                      "heapdump",
+                      "init",
+                      "mcp",
+                      "model",
+                      "__remote-workflow",
+                      "workflow-launch-exec",
+                      "reload-plugins",
+                      "reload-skills",
+                      "rename",
+                      "security-review",
+                      "usage",
+                      "insights",
+                      "recap",
+                      "goal",
+                      "list-agents",
+                      "team-onboarding"
+                    ],
+                    "terminal_slash_commands": [
+                      "doctor",
+                      "color",
+                      "focus",
+                      "reload-plugins"
+                    ],
+                    "apiKeySource": "none",
+                    "claude_code_version": "2.1.282",
+                    "output_style": "default",
+                    "agents": [
+                      "claude",
+                      "Explore",
+                      "general-purpose",
+                      "Plan",
+                      "statusline-setup"
+                    ],
+                    "skills": [
+                      "deep-research",
+                      "dataviz",
+                      "update-config",
+                      "verify",
+                      "debug",
+                      "code-review",
+                      "simplify",
+                      "batch",
+                      "fewer-permission-prompts",
+                      "doctor",
+                      "loop",
+                      "claude-api",
+                      "workflow-authoring",
+                      "run",
+                      "run-skill-generator"
+                    ],
+                    "plugins": [
+                      {
+                        "name": "agents-md",
+                        "path": "builtin",
+                        "source": "agents-md@builtin"
+                      }
+                    ],
+                    "capabilities": [
+                      "interrupt_receipt_v1",
+                      "interrupt_cancel_queued_v1",
+                      "<id:15>",
+                      "mcp_read_resource_v1",
+                      "mcp_<id:16>"
+                    ],
+                    "analytics_disabled": true,
+                    "product_feedback_disabled": true,
+                    "uuid": "<id:17>",
+                    "memory_paths": {
+                      "auto": "<data-dir>/.claxedo/claude/config/projects/<encoded-workspace:1>/memory/"
+                    },
+                    "messaging_socket_path": "<socket:1>",
+                    "fast_mode_state": "off",
+                    "fast_mode_disabled_reason": "sdk_opt_in_required",
+                    "per_turn_effort_active": false,
+                    "view_mode": "default"
+                  },
+                  "details": {
+                    "sdkEvent": "SDKSystemMessage(init)",
+                    "reason": "model, tools, MCP server status, permission mode, and output style have no complete AgentRuntimeEvent mapping"
+                  }
+                },
+                "raw": {
+                  "source": "claude.sdk",
+                  "method": "claude/system",
+                  "payload": {
+                    "type": "system",
+                    "subtype": "init",
+                    "cwd": "<workspace:1>",
+                    "session_id": "<id:14>",
+                    "tools": [
+                      "Task",
+                      "AskUserQuestion",
+                      "Bash",
+                      "CronCreate",
+                      "CronDelete",
+                      "CronList",
+                      "Edit",
+                      "EnterPlanMode",
+                      "EnterWorktree",
+                      "ExitPlanMode",
+                      "ExitWorktree",
+                      "ListAgents",
+                      "NotebookEdit",
+                      "Read",
+                      "ReportFindings",
+                      "ScheduleWakeup",
+                      "SendMessage",
+                      "Skill",
+                      "TaskCreate",
+                      "TaskGet",
+                      "TaskList",
+                      "TaskStop",
+                      "TaskUpdate",
+                      "WebFetch",
+                      "WebSearch",
+                      "Workflow",
+                      "Write",
+                      "mcp__claxedo__create_subagent",
+                      "mcp__claxedo__documents_list",
+                      "mcp__claxedo__documents_open",
+                      "mcp__claxedo__process_logs",
+                      "mcp__claxedo__process_start",
+                      "mcp__claxedo__process_stop",
+                      "mcp__claxedo__processes",
+                      "mcp__claxedo__question_reply",
+                      "mcp__claxedo__session_cancel_turn",
+                      "mcp__claxedo__session_create",
+                      "mcp__claxedo__session_get",
+                      "mcp__claxedo__session_send",
+                      "mcp__claxedo__session_transcript",
+                      "mcp__claxedo__sessions_list",
+                      "mcp__claxedo__<subagent:1>",
+                      "mcp__claxedo__<subagent:2>",
+                      "mcp__claxedo__<subagent:3>",
+                      "mcp__claxedo__<subagent:4>"
+                    ],
+                    "mcp_servers": [
+                      {
+                        "name": "claxedo",
+                        "status": "connected",
+                        "source": "dynamic"
+                      }
+                    ],
+                    "model": "claude-sonnet-4-5",
+                    "permissionMode": "default",
+                    "slash_commands": [
+                      "deep-research",
+                      "dataviz",
+                      "update-config",
+                      "verify",
+                      "debug",
+                      "code-review",
+                      "simplify",
+                      "batch",
+                      "fewer-permission-prompts",
+                      "doctor",
+                      "loop",
+                      "claude-api",
+                      "workflow-authoring",
+                      "run",
+                      "run-skill-generator",
+                      "agents",
+                      "auto-mode-setup",
+                      "autocompact",
+                      "clear",
+                      "color",
+                      "compact",
+                      "config",
+                      "output-style",
+                      "context",
+                      "effort",
+                      "fast",
+                      "focus",
+                      "heapdump",
+                      "init",
+                      "mcp",
+                      "model",
+                      "__remote-workflow",
+                      "workflow-launch-exec",
+                      "reload-plugins",
+                      "reload-skills",
+                      "rename",
+                      "security-review",
+                      "usage",
+                      "insights",
+                      "recap",
+                      "goal",
+                      "list-agents",
+                      "team-onboarding"
+                    ],
+                    "terminal_slash_commands": [
+                      "doctor",
+                      "color",
+                      "focus",
+                      "reload-plugins"
+                    ],
+                    "apiKeySource": "none",
+                    "claude_code_version": "2.1.282",
+                    "output_style": "default",
+                    "agents": [
+                      "claude",
+                      "Explore",
+                      "general-purpose",
+                      "Plan",
+                      "statusline-setup"
+                    ],
+                    "skills": [
+                      "deep-research",
+                      "dataviz",
+                      "update-config",
+                      "verify",
+                      "debug",
+                      "code-review",
+                      "simplify",
+                      "batch",
+                      "fewer-permission-prompts",
+                      "doctor",
+                      "loop",
+                      "claude-api",
+                      "workflow-authoring",
+                      "run",
+                      "run-skill-generator"
+                    ],
+                    "plugins": [
+                      {
+                        "name": "agents-md",
+                        "path": "builtin",
+                        "source": "agents-md@builtin"
+                      }
+                    ],
+                    "capabilities": [
+                      "interrupt_receipt_v1",
+                      "interrupt_cancel_queued_v1",
+                      "<id:15>",
+                      "mcp_read_resource_v1",
+                      "mcp_<id:16>"
+                    ],
+                    "analytics_disabled": true,
+                    "product_feedback_disabled": true,
+                    "uuid": "<id:17>",
+                    "memory_paths": {
+                      "auto": "<data-dir>/.claxedo/claude/config/projects/<encoded-workspace:1>/memory/"
+                    },
+                    "messaging_socket_path": "<socket:1>",
+                    "fast_mode_state": "off",
+                    "fast_mode_disabled_reason": "sdk_opt_in_required",
+                    "per_turn_effort_active": false,
+                    "view_mode": "default"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:11>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.usage",
+              "properties": {
+                "sessionID": "<id:2>",
+                "messageID": "<id:7>",
+                "contextSize": 2,
+                "contextUsed": 2,
+                "observation": {
+                  "kind": "cumulative",
+                  "nativeSessionId": "<id:14>",
+                  "model": "claude-sonnet-4-5",
+                  "tokens": {
+                    "input": 1,
+                    "output": 1,
+                    "reasoning": null,
+                    "cache": {
+                      "read": null,
+                      "write": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:12>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:7>:000000_toolu_scripted_1",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:2>",
+                "part": {
+                  "id": "000000_toolu_scripted_1",
+                  "sessionID": "<id:2>",
+                  "messageID": "<id:7>",
+                  "type": "tool",
+                  "callID": "toolu_scripted_1",
+                  "tool": "question",
+                  "state": {
+                    "status": "running",
+                    "input": {
+                      "intent": "generic",
+                      "kind": "dynamic_<id:18>"
+                    },
+                    "metadata": {
+                      "claude": {
+                        "itemType": "dynamic_<id:18>"
+                      }
+                    },
+                    "time": {
+                      "start": "<time>"
+                    }
+                  },
+                  "metadata": {
+                    "claude": {
+                      "itemType": "dynamic_<id:18>"
+                    }
+                  }
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:13>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:7>:000000_toolu_scripted_1",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:2>",
+                "part": {
+                  "id": "000000_toolu_scripted_1",
+                  "sessionID": "<id:2>",
+                  "messageID": "<id:7>",
+                  "type": "tool",
+                  "callID": "toolu_scripted_1",
+                  "tool": "question",
+                  "state": {
+                    "status": "running",
+                    "input": {
+                      "intent": "generic",
+                      "kind": "dynamic_<id:18>",
+                      "questions": [
+                        {
+                          "id": "environment",
+                          "header": "Environment",
+                          "question": "Which environment?",
+                          "options": [
+                            {
+                              "label": "Staging",
+                              "description": "Use the isolated workspace"
+                            },
+                            {
+                              "label": "Production",
+                              "description": "Use production"
+                            }
+                          ],
+                          "multiSelect": false
+                        },
+                        {
+                          "id": "reason",
+                          "header": "Reason",
+                          "question": "Why this environment?",
+                          "options": [
+                            {
+                              "label": "Safety",
+                              "description": "Avoid production changes"
+                            },
+                            {
+                              "label": "Speed",
+                              "description": "Run the test quickly"
+                            }
+                          ],
+                          "multiSelect": false
+                        }
+                      ]
+                    },
+                    "metadata": {
+                      "claude": {
+                        "itemType": "dynamic_<id:18>"
+                      }
+                    },
+                    "time": {
+                      "start": "<time>"
+                    }
+                  },
+                  "metadata": {
+                    "claude": {
+                      "itemType": "dynamic_<id:18>"
+                    }
+                  }
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:14>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:7>:000000_toolu_scripted_1",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:2>",
+                "part": {
+                  "id": "000000_toolu_scripted_1",
+                  "sessionID": "<id:2>",
+                  "messageID": "<id:7>",
+                  "type": "tool",
+                  "callID": "toolu_scripted_1",
+                  "tool": "question",
+                  "state": {
+                    "status": "running",
+                    "input": {
+                      "intent": "generic",
+                      "kind": "dynamic_<id:18>",
+                      "questions": [
+                        {
+                          "id": "environment",
+                          "header": "Environment",
+                          "question": "Which environment?",
+                          "options": [
+                            {
+                              "label": "Staging",
+                              "description": "Use the isolated workspace"
+                            },
+                            {
+                              "label": "Production",
+                              "description": "Use production"
+                            }
+                          ],
+                          "multiSelect": false
+                        },
+                        {
+                          "id": "reason",
+                          "header": "Reason",
+                          "question": "Why this environment?",
+                          "options": [
+                            {
+                              "label": "Safety",
+                              "description": "Avoid production changes"
+                            },
+                            {
+                              "label": "Speed",
+                              "description": "Run the test quickly"
+                            }
+                          ],
+                          "multiSelect": false
+                        }
+                      ]
+                    },
+                    "metadata": {
+                      "claude": {
+                        "itemType": "dynamic_<id:18>"
+                      }
+                    },
+                    "time": {
+                      "start": "<time>"
+                    }
+                  },
+                  "metadata": {
+                    "claude": {
+                      "itemType": "dynamic_<id:18>"
+                    }
+                  }
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:15>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "question.asked:<id:19>",
+              "type": "question.asked",
+              "properties": {
+                "id": "<id:19>",
+                "sessionID": "<id:2>",
+                "questions": [
+                  {
+                    "question": "Which environment?",
+                    "header": "Environment",
+                    "options": [
+                      {
+                        "label": "Staging",
+                        "description": "Use the isolated workspace"
+                      },
+                      {
+                        "label": "Production",
+                        "description": "Use production"
+                      }
+                    ],
+                    "multiple": false,
+                    "custom": true
+                  },
+                  {
+                    "question": "Why this environment?",
+                    "header": "Reason",
+                    "options": [
+                      {
+                        "label": "Safety",
+                        "description": "Avoid production changes"
+                      },
+                      {
+                        "label": "Speed",
+                        "description": "Run the test quickly"
+                      }
+                    ],
+                    "multiple": false,
+                    "custom": true
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:16>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "question.replied:<id:19>",
+              "type": "question.replied",
+              "properties": {
+                "sessionID": "<id:2>",
+                "requestID": "<id:19>",
+                "answers": [
+                  [
+                    "Staging"
+                  ],
+                  [
+                    "Keep the test isolated"
+                  ]
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:17>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:7>:000000_toolu_scripted_1",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:2>",
+                "part": {
+                  "id": "000000_toolu_scripted_1",
+                  "sessionID": "<id:2>",
+                  "messageID": "<id:7>",
+                  "type": "tool",
+                  "callID": "toolu_scripted_1",
+                  "tool": "question",
+                  "state": {
+                    "status": "completed",
+                    "input": {
+                      "intent": "generic",
+                      "kind": "dynamic_<id:18>",
+                      "questions": [
+                        {
+                          "id": "environment",
+                          "header": "Environment",
+                          "question": "Which environment?",
+                          "options": [
+                            {
+                              "label": "Staging",
+                              "description": "Use the isolated workspace"
+                            },
+                            {
+                              "label": "Production",
+                              "description": "Use production"
+                            }
+                          ],
+                          "multiSelect": false
+                        },
+                        {
+                          "id": "reason",
+                          "header": "Reason",
+                          "question": "Why this environment?",
+                          "options": [
+                            {
+                              "label": "Safety",
+                              "description": "Avoid production changes"
+                            },
+                            {
+                              "label": "Speed",
+                              "description": "Run the test quickly"
+                            }
+                          ],
+                          "multiSelect": false
+                        }
+                      ]
+                    },
+                    "output": "The user answered: \"Which environment?\"=\"Staging\", \"Why this environment?\"=\"Keep the test isolated\". Read the answers carefully — they may request clarification, changes, or that you not proceed — and follow what they actually say.",
+                    "title": "question",
+                    "metadata": {
+                      "claude": {
+                        "itemType": "dynamic_<id:18>"
+                      },
+                      "answers": [
+                        [
+                          "Staging"
+                        ],
+                        [
+                          "Keep the test isolated"
+                        ]
+                      ]
+                    },
+                    "time": {
+                      "start": "<time>",
+                      "end": "<time>"
+                    }
+                  },
+                  "metadata": {
+                    "claude": {
+                      "itemType": "dynamic_<id:18>"
+                    },
+                    "answers": [
+                      [
+                        "Staging"
+                      ],
+                      [
+                        "Keep the test isolated"
+                      ]
+                    ]
+                  }
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:18>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.usage",
+              "properties": {
+                "sessionID": "<id:2>",
+                "messageID": "<id:7>",
+                "contextSize": 2,
+                "contextUsed": 2,
+                "observation": {
+                  "kind": "cumulative",
+                  "nativeSessionId": "<id:14>",
+                  "model": "claude-sonnet-4-5",
+                  "tokens": {
+                    "input": 2,
+                    "output": 2,
+                    "reasoning": null,
+                    "cache": {
+                      "read": null,
+                      "write": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:19>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:7>:000001_<id:20>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:2>",
+                "part": {
+                  "id": "000001_<id:20>",
+                  "sessionID": "<id:2>",
+                  "messageID": "<id:7>",
+                  "type": "text",
+                  "text": ""
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:20>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.delta:<id:7>:000001_<id:20>",
+              "type": "message.part.delta",
+              "properties": {
+                "sessionID": "<id:2>",
+                "messageID": "<id:7>",
+                "partID": "000001_<id:20>",
+                "field": "text",
+                "delta": "H4_CLAUDE_QUESTION"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:21>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.usage",
+              "properties": {
+                "sessionID": "<id:2>",
+                "messageID": "<id:7>",
+                "contextSize": 200000,
+                "contextUsed": 2,
+                "observation": {
+                  "kind": "cumulative",
+                  "nativeSessionId": "<id:14>",
+                  "model": "claude-sonnet-4-5",
+                  "tokens": {
+                    "input": 2,
+                    "output": 2,
+                    "reasoning": null,
+                    "cache": {
+                      "read": null,
+                      "write": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:22>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:2>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:2>",
+                "status": {
+                  "type": "idle"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:23>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "message.completed",
+              "properties": {
+                "sessionID": "<id:2>",
+                "messageID": "<id:7>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:24>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.idle:<id:2>",
+              "type": "session.idle",
+              "properties": {
+                "sessionID": "<id:2>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:25>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "creating",
+              "directory": "<workspace:1>",
+              "start": {
+                "sessionId": "<id:21>",
+                "directory": "<workspace:1>",
+                "workspaceId": "<id:3>",
+                "operationId": "<id:22>",
+                "connectionId": "native:codex"
+              },
+              "workspaceId": "<id:3>",
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:26>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "created",
+              "directory": "<workspace:1>",
+              "sessionID": "<id:21>",
+              "workspaceId": "<id:3>",
+              "info": {
+                "id": "<id:21>",
+                "slug": "<id:21>",
+                "projectID": "<id:3>",
+                "workspaceID": "<id:3>",
+                "directory": "<workspace:1>",
+                "title": "",
+                "version": "local",
+                "time": {
+                  "created": "<time>",
+                  "updated": "<time>"
+                }
+              },
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:27>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:21>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:21>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:28>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.updated:<id:23>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:21>",
+                "info": {
+                  "id": "<id:23>",
+                  "sessionID": "<id:21>",
+                  "role": "user",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "agent": "build",
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-4.1"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:29>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:23>:<id:24>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:21>",
+                "part": {
+                  "type": "text",
+                  "text": "Ask the questions, then reply with exactly this one token: H4_CODEX_QUESTION",
+                  "id": "<id:24>",
+                  "sessionID": "<id:21>",
+                  "messageID": "<id:23>"
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:30>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.updated:<id:25>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:21>",
+                "info": {
+                  "id": "<id:25>",
+                  "sessionID": "<id:21>",
+                  "role": "assistant",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "parentID": "<id:23>",
+                  "modelID": "gpt-4.1",
+                  "providerID": "openai",
+                  "mode": "auto",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "<workspace:1>",
+                    "root": "<workspace:1>"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "input": 0,
+                    "output": 0,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:31>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.updated:<id:21>",
+              "type": "session.updated",
+              "properties": {
+                "sessionID": "<id:21>",
+                "info": {
+                  "id": "<id:21>",
+                  "slug": "<id:21>",
+                  "projectID": "<workspace:1>",
+                  "directory": "<workspace:1>",
+                  "title": "Ask the questions, then reply with exactly this one token: H4_CODEX_QUES...",
+                  "titleSource": "prompt",
+                  "version": "local",
+                  "time": {
+                    "created": "<time>",
+                    "updated": "<time>"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:32>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:21>:runtime.mcp_server_status",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:21>",
+                "harness": "codex",
+                "threadId": "<id:26>",
+                "code": "runtime.mcp_server_status",
+                "message": "MCP server claxedo is ready",
+                "severity": "info",
+                "mcp": {
+                  "serverName": "claxedo",
+                  "status": "ready",
+                  "error": null
+                },
+                "raw": {
+                  "source": "codex.app-server",
+                  "method": "mcpServer/startupStatus/updated",
+                  "payload": {
+                    "threadId": "<id:26>",
+                    "name": "claxedo",
+                    "status": "ready",
+                    "error": null,
+                    "failureReason": null
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:33>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:21>:codex_app_server.unmapped_event",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:21>",
+                "harness": "codex",
+                "threadId": "<id:26>",
+                "code": "codex_app_server.unmapped_event",
+                "message": "thread/settings/updated: Codex app-server method has no AgentRuntimeEvent mapping",
+                "severity": "info",
+                "diagnostic": {
+                  "code": "codex_app_server.unmapped_event",
+                  "message": "thread/settings/updated: Codex app-server method has no AgentRuntimeEvent mapping",
+                  "severity": "info",
+                  "source": "codex.app-server",
+                  "method": "thread/settings/updated",
+                  "raw": {
+                    "threadId": "<id:26>",
+                    "threadSettings": {
+                      "disabledPluginIds": [],
+                      "cwd": "<workspace:1>",
+                      "approvalPolicy": "on-request",
+                      "approvalsReviewer": "user",
+                      "sandboxPolicy": {
+                        "type": "workspaceWrite",
+                        "writableRoots": [],
+                        "networkAccess": true,
+                        "excludeTmpdirEnvVar": false,
+                        "excludeSlashTmp": false
+                      },
+                      "activePermissionProfile": null,
+                      "model": "gpt-4.1",
+                      "modelProvider": "broker",
+                      "serviceTier": "default",
+                      "effort": null,
+                      "summary": null,
+                      "collaborationMode": {
+                        "mode": "default",
+                        "settings": {
+                          "model": "gpt-4.1",
+                          "reasoning_effort": null,
+                          "developer_instructions": null
+                        }
+                      },
+                      "multiAgentMode": "explicitRequestOnly",
+                      "personality": null
+                    }
+                  }
+                },
+                "raw": {
+                  "source": "codex.app-server",
+                  "method": "thread/settings/updated",
+                  "payload": {
+                    "threadId": "<id:26>",
+                    "threadSettings": {
+                      "disabledPluginIds": [],
+                      "cwd": "<workspace:1>",
+                      "approvalPolicy": "on-request",
+                      "approvalsReviewer": "user",
+                      "sandboxPolicy": {
+                        "type": "workspaceWrite",
+                        "writableRoots": [],
+                        "networkAccess": true,
+                        "excludeTmpdirEnvVar": false,
+                        "excludeSlashTmp": false
+                      },
+                      "activePermissionProfile": null,
+                      "model": "gpt-4.1",
+                      "modelProvider": "broker",
+                      "serviceTier": "default",
+                      "effort": null,
+                      "summary": null,
+                      "collaborationMode": {
+                        "mode": "default",
+                        "settings": {
+                          "model": "gpt-4.1",
+                          "reasoning_effort": null,
+                          "developer_instructions": null
+                        }
+                      },
+                      "multiAgentMode": "explicitRequestOnly",
+                      "personality": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:34>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:21>:codex_app_server.warning",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:21>",
+                "harness": "codex",
+                "threadId": "<id:26>",
+                "code": "codex_app_server.warning",
+                "message": "Model metadata for `gpt-4.1` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.",
+                "severity": "warn",
+                "details": {
+                  "threadId": "<id:26>",
+                  "message": "Model metadata for `gpt-4.1` not found. Defaulting to fallback metadata; this can degrade performance and cause issues."
+                },
+                "raw": {
+                  "source": "codex.app-server",
+                  "method": "warning",
+                  "payload": {
+                    "threadId": "<id:26>",
+                    "message": "Model metadata for `gpt-4.1` not found. Defaulting to fallback metadata; this can degrade performance and cause issues."
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:35>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:21>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:21>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:36>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:21>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:21>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:37>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:21>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:21>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:38>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "question.asked:<id:27>",
+              "type": "question.asked",
+              "properties": {
+                "id": "<id:27>",
+                "sessionID": "<id:21>",
+                "questions": [
+                  {
+                    "question": "Which environment?",
+                    "header": "Environment",
+                    "options": [
+                      {
+                        "label": "Staging",
+                        "description": "Use the isolated workspace"
+                      },
+                      {
+                        "label": "Production",
+                        "description": "Use production"
+                      }
+                    ],
+                    "custom": false
+                  },
+                  {
+                    "question": "Why this environment?",
+                    "header": "Reason",
+                    "options": [
+                      {
+                        "label": "Safety",
+                        "description": "Avoid production changes"
+                      },
+                      {
+                        "label": "Speed",
+                        "description": "Run the test quickly"
+                      }
+                    ],
+                    "custom": false
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:39>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "question.replied:<id:27>",
+              "type": "question.replied",
+              "properties": {
+                "sessionID": "<id:21>",
+                "requestID": "<id:27>",
+                "answers": [
+                  [
+                    "Staging"
+                  ],
+                  [
+                    "Keep the test isolated"
+                  ]
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:40>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:21>:codex_app_server.unmapped_event",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:21>",
+                "harness": "codex",
+                "threadId": "<id:26>",
+                "code": "codex_app_server.unmapped_event",
+                "message": "serverRequest/resolved: Codex app-server method has no AgentRuntimeEvent mapping",
+                "severity": "info",
+                "diagnostic": {
+                  "code": "codex_app_server.unmapped_event",
+                  "message": "serverRequest/resolved: Codex app-server method has no AgentRuntimeEvent mapping",
+                  "severity": "info",
+                  "source": "codex.app-server",
+                  "method": "serverRequest/resolved",
+                  "raw": {
+                    "threadId": "<id:26>",
+                    "requestId": 0
+                  }
+                },
+                "raw": {
+                  "source": "codex.app-server",
+                  "method": "serverRequest/resolved",
+                  "payload": {
+                    "threadId": "<id:26>",
+                    "requestId": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:41>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:21>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:21>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:42>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.usage",
+              "properties": {
+                "sessionID": "<id:21>",
+                "messageID": "<id:25>",
+                "contextSize": 258400,
+                "contextUsed": 2,
+                "observation": {
+                  "kind": "cumulative",
+                  "scope": "<id:26>:<id:28>",
+                  "nativeSessionId": "<id:26>",
+                  "providerObservationId": "<id:28>",
+                  "model": "gpt-4.1",
+                  "tokens": {
+                    "input": 1,
+                    "output": 1,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:43>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:21>:runtime.rate_limit",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:21>",
+                "harness": "codex",
+                "threadId": "<id:26>",
+                "code": "runtime.rate_limit",
+                "message": "Rate limit updated",
+                "severity": "info",
+                "rateLimit": {
+                  "status": "ok",
+                  "resetsAt": null,
+                  "windowDurationMins": null,
+                  "limitId": "codex",
+                  "limitName": null,
+                  "reason": null,
+                  "metadata": {
+                    "codex": {
+                      "rateLimits": {
+                        "limitId": "codex",
+                        "limitName": null,
+                        "normalModelSlug": null,
+                        "primary": null,
+                        "secondary": null,
+                        "credits": null,
+                        "individualLimit": null,
+                        "spendControlReached": null,
+                        "planType": null,
+                        "rateLimitReachedType": null
+                      }
+                    }
+                  }
+                },
+                "raw": {
+                  "source": "codex.app-server",
+                  "method": "account/rateLimits/updated",
+                  "payload": {
+                    "rateLimits": {
+                      "limitId": "codex",
+                      "limitName": null,
+                      "normalModelSlug": null,
+                      "primary": null,
+                      "secondary": null,
+                      "credits": null,
+                      "individualLimit": null,
+                      "spendControlReached": null,
+                      "planType": null,
+                      "rateLimitReachedType": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:44>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:25>:000000_<id:29>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:21>",
+                "part": {
+                  "id": "000000_<id:29>",
+                  "sessionID": "<id:21>",
+                  "messageID": "<id:25>",
+                  "type": "text",
+                  "text": ""
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:45>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.delta:<id:25>:000000_<id:29>",
+              "type": "message.part.delta",
+              "properties": {
+                "sessionID": "<id:21>",
+                "messageID": "<id:25>",
+                "partID": "000000_<id:29>",
+                "field": "text",
+                "delta": "H4_CODEX_QUESTION"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:46>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.usage",
+              "properties": {
+                "sessionID": "<id:21>",
+                "messageID": "<id:25>",
+                "contextSize": 258400,
+                "contextUsed": 2,
+                "observation": {
+                  "kind": "cumulative",
+                  "scope": "<id:26>:<id:28>",
+                  "nativeSessionId": "<id:26>",
+                  "providerObservationId": "<id:28>",
+                  "model": "gpt-4.1",
+                  "tokens": {
+                    "input": 2,
+                    "output": 2,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:47>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:21>:runtime.rate_limit",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:21>",
+                "harness": "codex",
+                "threadId": "<id:26>",
+                "code": "runtime.rate_limit",
+                "message": "Rate limit updated",
+                "severity": "info",
+                "rateLimit": {
+                  "status": "ok",
+                  "resetsAt": null,
+                  "windowDurationMins": null,
+                  "limitId": "codex",
+                  "limitName": null,
+                  "reason": null,
+                  "metadata": {
+                    "codex": {
+                      "rateLimits": {
+                        "limitId": "codex",
+                        "limitName": null,
+                        "normalModelSlug": null,
+                        "primary": null,
+                        "secondary": null,
+                        "credits": null,
+                        "individualLimit": null,
+                        "spendControlReached": null,
+                        "planType": null,
+                        "rateLimitReachedType": null
+                      }
+                    }
+                  }
+                },
+                "raw": {
+                  "source": "codex.app-server",
+                  "method": "account/rateLimits/updated",
+                  "payload": {
+                    "rateLimits": {
+                      "limitId": "codex",
+                      "limitName": null,
+                      "normalModelSlug": null,
+                      "primary": null,
+                      "secondary": null,
+                      "credits": null,
+                      "individualLimit": null,
+                      "spendControlReached": null,
+                      "planType": null,
+                      "rateLimitReachedType": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:48>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:21>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:21>",
+                "status": {
+                  "type": "idle"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:49>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:21>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:21>",
+                "status": {
+                  "type": "idle"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:50>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "message.completed",
+              "properties": {
+                "sessionID": "<id:21>",
+                "messageID": "<id:25>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:51>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.idle:<id:21>",
+              "type": "session.idle",
+              "properties": {
+                "sessionID": "<id:21>"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session?directory=<workspace:30>",
+      "status": 201,
+      "body": {
+        "id": "<id:2>",
+        "workspaceId": "<id:3>",
+        "title": null,
+        "directory": "<workspace:1>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "claude",
+            "access": "native"
+          },
+          "model": {
+            "providerID": "claude",
+            "modelID": "claude-sonnet-4-5"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "agent_session_id": "claude-sdk:<id:13>"
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:2>/prompt_async?directory=<workspace:1>",
+      "status": 204,
+      "body": null
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/question?directory=<workspace:1>",
+      "status": 200,
+      "body": []
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/question?directory=<workspace:1>",
+      "status": 200,
+      "body": []
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/question?directory=<workspace:1>",
+      "status": 200,
+      "body": []
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/question?directory=<workspace:1>",
+      "status": 200,
+      "body": []
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/question?directory=<workspace:1>",
+      "status": 200,
+      "body": []
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/question?directory=<workspace:1>",
+      "status": 200,
+      "body": [
+        {
+          "id": "<id:19>",
+          "sessionID": "<id:2>",
+          "questions": [
+            {
+              "question": "Which environment?",
+              "header": "Environment",
+              "options": [
+                {
+                  "label": "Staging",
+                  "description": "Use the isolated workspace"
+                },
+                {
+                  "label": "Production",
+                  "description": "Use production"
+                }
+              ],
+              "multiple": false,
+              "custom": true
+            },
+            {
+              "question": "Why this environment?",
+              "header": "Reason",
+              "options": [
+                {
+                  "label": "Safety",
+                  "description": "Avoid production changes"
+                },
+                {
+                  "label": "Speed",
+                  "description": "Run the test quickly"
+                }
+              ],
+              "multiple": false,
+              "custom": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/question/<id:19>/reply?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "ok": true
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/question?directory=<workspace:1>",
+      "status": 200,
+      "body": []
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:2>/message?directory=<workspace:1>",
+      "status": 200,
+      "body": [
+        {
+          "info": {
+            "id": "<id:5>",
+            "sessionID": "<id:2>",
+            "role": "user",
+            "time": {
+              "created": "<time>"
+            },
+            "agent": "build",
+            "model": {
+              "providerID": "anthropic",
+              "modelID": "claude-sonnet-4-5"
+            }
+          },
+          "parts": [
+            {
+              "type": "text",
+              "text": "Ask the questions, then reply with exactly this one token: H4_CLAUDE_QUESTION",
+              "id": "<id:6>",
+              "sessionID": "<id:2>",
+              "messageID": "<id:5>"
+            }
+          ]
+        },
+        {
+          "info": {
+            "id": "<id:7>",
+            "sessionID": "<id:2>",
+            "role": "assistant",
+            "time": {
+              "created": "<time>",
+              "completed": "<time>"
+            },
+            "parentID": "<id:5>",
+            "modelID": "claude-sonnet-4-5",
+            "providerID": "anthropic",
+            "mode": "auto",
+            "agent": "build",
+            "path": {
+              "cwd": "<workspace:1>",
+              "root": "<workspace:1>"
+            },
+            "cost": 0,
+            "tokens": {
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          },
+          "parts": [
+            {
+              "id": "000000_toolu_scripted_1",
+              "sessionID": "<id:2>",
+              "messageID": "<id:7>",
+              "type": "tool",
+              "callID": "toolu_scripted_1",
+              "tool": "question",
+              "state": {
+                "status": "completed",
+                "input": {
+                  "intent": "generic",
+                  "kind": "dynamic_<id:18>",
+                  "questions": [
+                    {
+                      "id": "environment",
+                      "header": "Environment",
+                      "question": "Which environment?",
+                      "options": [
+                        {
+                          "label": "Staging",
+                          "description": "Use the isolated workspace"
+                        },
+                        {
+                          "label": "Production",
+                          "description": "Use production"
+                        }
+                      ],
+                      "multiSelect": false
+                    },
+                    {
+                      "id": "reason",
+                      "header": "Reason",
+                      "question": "Why this environment?",
+                      "options": [
+                        {
+                          "label": "Safety",
+                          "description": "Avoid production changes"
+                        },
+                        {
+                          "label": "Speed",
+                          "description": "Run the test quickly"
+                        }
+                      ],
+                      "multiSelect": false
+                    }
+                  ]
+                },
+                "output": "The user answered: \"Which environment?\"=\"Staging\", \"Why this environment?\"=\"Keep the test isolated\". Read the answers carefully — they may request clarification, changes, or that you not proceed — and follow what they actually say.",
+                "title": "question",
+                "metadata": {
+                  "claude": {
+                    "itemType": "dynamic_<id:18>"
+                  },
+                  "answers": [
+                    [
+                      "Staging"
+                    ],
+                    [
+                      "Keep the test isolated"
+                    ]
+                  ]
+                },
+                "time": {
+                  "start": "<time>",
+                  "end": "<time>"
+                }
+              },
+              "metadata": {
+                "claude": {
+                  "itemType": "dynamic_<id:18>"
+                },
+                "answers": [
+                  [
+                    "Staging"
+                  ],
+                  [
+                    "Keep the test isolated"
+                  ]
+                ]
+              }
+            },
+            {
+              "id": "000001_<id:20>",
+              "sessionID": "<id:2>",
+              "messageID": "<id:7>",
+              "type": "text",
+              "text": "H4_CLAUDE_QUESTION"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:2>?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "id": "<id:2>",
+        "workspaceId": "<id:3>",
+        "title": "Ask the questions, then reply with exactly this one token: H4_CLAUDE_QUE...",
+        "titleSource": "prompt",
+        "commands": [
+          {
+            "name": "deep-research",
+            "description": "deep-research"
+          },
+          {
+            "name": "dataviz",
+            "description": "dataviz"
+          },
+          {
+            "name": "<repo:8>",
+            "description": "update-config"
+          },
+          {
+            "name": "verify",
+            "description": "verify"
+          },
+          {
+            "name": "debug",
+            "description": "debug"
+          },
+          {
+            "name": "<repo:9>",
+            "description": "code-review"
+          },
+          {
+            "name": "simplify",
+            "description": "simplify"
+          },
+          {
+            "name": "batch",
+            "description": "batch"
+          },
+          {
+            "name": "fewer-permission-prompts",
+            "description": "fewer-permission-prompts"
+          },
+          {
+            "name": "doctor",
+            "description": "doctor"
+          },
+          {
+            "name": "loop",
+            "description": "loop"
+          },
+          {
+            "name": "claude-api",
+            "description": "claude-api"
+          },
+          {
+            "name": "workflow-authoring",
+            "description": "workflow-authoring"
+          },
+          {
+            "name": "run",
+            "description": "run"
+          },
+          {
+            "name": "run-skill-generator",
+            "description": "run-skill-generator"
+          },
+          {
+            "name": "agents",
+            "description": "agents"
+          },
+          {
+            "name": "auto-mode-setup",
+            "description": "auto-mode-setup"
+          },
+          {
+            "name": "autocompact",
+            "description": "autocompact"
+          },
+          {
+            "name": "clear",
+            "description": "clear"
+          },
+          {
+            "name": "color",
+            "description": "color"
+          },
+          {
+            "name": "compact",
+            "description": "compact"
+          },
+          {
+            "name": "config",
+            "description": "config"
+          },
+          {
+            "name": "output-style",
+            "description": "output-style"
+          },
+          {
+            "name": "context",
+            "description": "context"
+          },
+          {
+            "name": "effort",
+            "description": "effort"
+          },
+          {
+            "name": "fast",
+            "description": "fast"
+          },
+          {
+            "name": "focus",
+            "description": "focus"
+          },
+          {
+            "name": "heapdump",
+            "description": "heapdump"
+          },
+          {
+            "name": "init",
+            "description": "init"
+          },
+          {
+            "name": "mcp",
+            "description": "mcp"
+          },
+          {
+            "name": "model",
+            "description": "model"
+          },
+          {
+            "name": "__remote-workflow",
+            "description": "__remote-workflow"
+          },
+          {
+            "name": "workflow-launch-exec",
+            "description": "workflow-launch-exec"
+          },
+          {
+            "name": "reload-plugins",
+            "description": "reload-plugins"
+          },
+          {
+            "name": "<repo:10>",
+            "description": "reload-skills"
+          },
+          {
+            "name": "rename",
+            "description": "rename"
+          },
+          {
+            "name": "<repo:11>",
+            "description": "security-review"
+          },
+          {
+            "name": "usage",
+            "description": "usage"
+          },
+          {
+            "name": "insights",
+            "description": "insights"
+          },
+          {
+            "name": "recap",
+            "description": "recap"
+          },
+          {
+            "name": "goal",
+            "description": "goal"
+          },
+          {
+            "name": "<repo:12>",
+            "description": "list-agents"
+          },
+          {
+            "name": "team-onboarding",
+            "description": "team-onboarding"
+          }
+        ],
+        "directory": "<workspace:1>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "claude",
+            "access": "native"
+          },
+          "model": {
+            "providerID": "anthropic",
+            "modelID": "claude-sonnet-4-5"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "status": "idle",
+        "agent_session_id": "<id:14>",
+        "lastTurn": {
+          "status": "completed",
+          "completedAt": "<time>",
+          "assistantMessageId": "<id:7>"
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session?directory=<workspace:31>",
+      "status": 201,
+      "body": {
+        "id": "<id:21>",
+        "workspaceId": "<id:3>",
+        "title": null,
+        "directory": "<workspace:1>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "codex",
+            "access": "native"
+          },
+          "model": {
+            "providerID": "codex",
+            "modelID": "gpt-4.1"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "agent_session_id": "<id:26>"
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:21>/prompt_async?directory=<workspace:1>",
+      "status": 204,
+      "body": null
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/question?directory=<workspace:1>",
+      "status": 200,
+      "body": []
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/question?directory=<workspace:1>",
+      "status": 200,
+      "body": []
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/question?directory=<workspace:1>",
+      "status": 200,
+      "body": []
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/question?directory=<workspace:1>",
+      "status": 200,
+      "body": [
+        {
+          "id": "<id:27>",
+          "sessionID": "<id:21>",
+          "questions": [
+            {
+              "question": "Which environment?",
+              "header": "Environment",
+              "options": [
+                {
+                  "label": "Staging",
+                  "description": "Use the isolated workspace"
+                },
+                {
+                  "label": "Production",
+                  "description": "Use production"
+                }
+              ],
+              "custom": false
+            },
+            {
+              "question": "Why this environment?",
+              "header": "Reason",
+              "options": [
+                {
+                  "label": "Safety",
+                  "description": "Avoid production changes"
+                },
+                {
+                  "label": "Speed",
+                  "description": "Run the test quickly"
+                }
+              ],
+              "custom": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/question/<id:27>/reply?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "ok": true
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/question?directory=<workspace:1>",
+      "status": 200,
+      "body": []
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:21>/message?directory=<workspace:1>",
+      "status": 200,
+      "body": [
+        {
+          "info": {
+            "id": "<id:23>",
+            "sessionID": "<id:21>",
+            "role": "user",
+            "time": {
+              "created": "<time>"
+            },
+            "agent": "build",
+            "model": {
+              "providerID": "openai",
+              "modelID": "gpt-4.1"
+            }
+          },
+          "parts": [
+            {
+              "type": "text",
+              "text": "Ask the questions, then reply with exactly this one token: H4_CODEX_QUESTION",
+              "id": "<id:24>",
+              "sessionID": "<id:21>",
+              "messageID": "<id:23>"
+            }
+          ]
+        },
+        {
+          "info": {
+            "id": "<id:25>",
+            "sessionID": "<id:21>",
+            "role": "assistant",
+            "time": {
+              "created": "<time>",
+              "completed": "<time>"
+            },
+            "parentID": "<id:23>",
+            "modelID": "gpt-4.1",
+            "providerID": "openai",
+            "mode": "auto",
+            "agent": "build",
+            "path": {
+              "cwd": "<workspace:1>",
+              "root": "<workspace:1>"
+            },
+            "cost": 0,
+            "tokens": {
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          },
+          "parts": [
+            {
+              "id": "000000_<id:29>",
+              "sessionID": "<id:21>",
+              "messageID": "<id:25>",
+              "type": "text",
+              "text": "H4_CODEX_QUESTION"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:21>?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "id": "<id:21>",
+        "workspaceId": "<id:3>",
+        "title": "Ask the questions, then reply with exactly this one token: H4_CODEX_QUES...",
+        "titleSource": "prompt",
+        "directory": "<workspace:1>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "codex",
+            "access": "native"
+          },
+          "model": {
+            "providerID": "openai",
+            "modelID": "gpt-4.1"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "status": "idle",
+        "agent_session_id": "<id:26>",
+        "lastTurn": {
+          "status": "completed",
+          "completedAt": "<time>",
+          "assistantMessageId": "<id:25>"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,1126 @@
+{
+  "flow": "H5-subagents",
+  "observations": [
+    {
+      "kind": "stream",
+      "route": "/api/wr/events?directory=<workspace:1>",
+      "frames": [
+        {
+          "id": "<time-id:1>",
+          "data": {
+            "type": "heartbeat"
+          }
+        },
+        {
+          "id": "<time-id:2>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "creating",
+              "directory": "<workspace:1>",
+              "start": {
+                "sessionId": "<id:2>",
+                "directory": "<workspace:1>",
+                "workspaceId": "<id:3>",
+                "operationId": "<id:4>",
+                "connectionId": "connection:scripted-acp"
+              },
+              "workspaceId": "<id:3>",
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:3>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.commands",
+              "properties": {
+                "sessionID": "<id:2>",
+                "commands": [
+                  {
+                    "name": "scripted",
+                    "description": "Run a named scripted reply"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:4>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "created",
+              "directory": "<workspace:1>",
+              "sessionID": "<id:2>",
+              "workspaceId": "<id:3>",
+              "info": {
+                "id": "<id:2>",
+                "slug": "<id:2>",
+                "projectID": "<id:3>",
+                "workspaceID": "<id:3>",
+                "directory": "<workspace:1>",
+                "title": "H5 owner",
+                "version": "local",
+                "time": {
+                  "created": "<time>",
+                  "updated": "<time>"
+                }
+              },
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:5>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:2>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:2>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:6>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.updated:<id:5>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:2>",
+                "info": {
+                  "id": "<id:5>",
+                  "sessionID": "<id:2>",
+                  "role": "user",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "agent": "build"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:7>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:5>:<id:6>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:2>",
+                "part": {
+                  "type": "text",
+                  "text": "acp-script:h5-child",
+                  "id": "<id:6>",
+                  "sessionID": "<id:2>",
+                  "messageID": "<id:5>"
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:8>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.updated:<id:7>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:2>",
+                "info": {
+                  "id": "<id:7>",
+                  "sessionID": "<id:2>",
+                  "role": "assistant",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "parentID": "<id:5>",
+                  "mode": "auto",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "<workspace:1>",
+                    "root": "<workspace:1>"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "input": 0,
+                    "output": 0,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:9>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.commands",
+              "properties": {
+                "sessionID": "<id:2>",
+                "commands": [
+                  {
+                    "name": "scripted",
+                    "description": "Run a named scripted reply"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:10>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "subagent.updated:<id:2>:<subagent:1>:1",
+              "type": "subagent.updated",
+              "properties": {
+                "sessionID": "<id:2>",
+                "update": {
+                  "subagentKey": "<subagent:1>",
+                  "revision": 1,
+                  "status": "running",
+                  "label": "Reviewer",
+                  "description": "Inspect implementation",
+                  "providerId": "<subagent:2>",
+                  "providerKind": "acp",
+                  "childSessionId": "<id:8>",
+                  "transcript": {
+                    "kind": "messages"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:11>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:8>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:8>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:12>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.updated:<id:9>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:8>",
+                "info": {
+                  "id": "<id:9>",
+                  "sessionID": "<id:8>",
+                  "role": "user",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "agent": "build"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:13>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:9>:<id:9>-part-0",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:8>",
+                "part": {
+                  "type": "text",
+                  "text": "Inspect implementation",
+                  "id": "<id:9>-part-0",
+                  "sessionID": "<id:8>",
+                  "messageID": "<id:9>"
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:14>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.updated:<id:10>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:8>",
+                "info": {
+                  "id": "<id:10>",
+                  "sessionID": "<id:8>",
+                  "role": "assistant",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "parentID": "<id:9>",
+                  "mode": "auto",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "<workspace:1>",
+                    "root": "<workspace:1>"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "input": 0,
+                    "output": 0,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:15>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:8>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:8>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:16>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:10>:000000_<id:10>-text",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:8>",
+                "part": {
+                  "id": "000000_<id:10>-text",
+                  "sessionID": "<id:8>",
+                  "messageID": "<id:10>",
+                  "type": "text",
+                  "text": ""
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:17>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.delta:<id:10>:000000_<id:10>-text",
+              "type": "message.part.delta",
+              "properties": {
+                "sessionID": "<id:8>",
+                "messageID": "<id:10>",
+                "partID": "000000_<id:10>-text",
+                "field": "text",
+                "delta": "Child review complete"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:18>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "subagent.updated:<id:2>:<subagent:1>:2",
+              "type": "subagent.updated",
+              "properties": {
+                "sessionID": "<id:2>",
+                "update": {
+                  "subagentKey": "<subagent:1>",
+                  "revision": 2,
+                  "status": "completed",
+                  "providerId": "<subagent:2>",
+                  "providerKind": "acp",
+                  "childSessionId": "<id:8>",
+                  "transcript": {
+                    "kind": "messages"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:19>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "message.completed",
+              "properties": {
+                "sessionID": "<id:8>",
+                "messageID": "<id:10>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:20>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.idle:<id:8>",
+              "type": "session.idle",
+              "properties": {
+                "sessionID": "<id:8>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:21>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:7>:000000_<id:11>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:2>",
+                "part": {
+                  "id": "000000_<id:11>",
+                  "sessionID": "<id:2>",
+                  "messageID": "<id:7>",
+                  "type": "text",
+                  "text": ""
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:22>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.delta:<id:7>:000000_<id:11>",
+              "type": "message.part.delta",
+              "properties": {
+                "sessionID": "<id:2>",
+                "messageID": "<id:7>",
+                "partID": "000000_<id:11>",
+                "field": "text",
+                "delta": "Parent completed"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:23>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.usage",
+              "properties": {
+                "sessionID": "<id:2>",
+                "messageID": "<id:7>",
+                "contextSize": 18,
+                "contextUsed": 18,
+                "observation": {
+                  "kind": "cumulative",
+                  "nativeSessionId": "scripted-<id:12>",
+                  "tokens": {
+                    "input": 11,
+                    "output": 7,
+                    "reasoning": null,
+                    "cache": {
+                      "read": null,
+                      "write": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:24>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.updated:<id:7>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:2>",
+                "info": {
+                  "id": "<id:7>",
+                  "sessionID": "<id:2>",
+                  "role": "assistant",
+                  "time": {
+                    "created": "<time>",
+                    "completed": "<time>"
+                  },
+                  "parentID": "<id:5>",
+                  "mode": "auto",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "<workspace:1>",
+                    "root": "<workspace:1>"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "input": 11,
+                    "output": 7,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:25>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:2>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:2>",
+                "status": {
+                  "type": "idle"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:26>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "message.completed",
+              "properties": {
+                "sessionID": "<id:2>",
+                "messageID": "<id:7>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:27>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.idle:<id:2>",
+              "type": "session.idle",
+              "properties": {
+                "sessionID": "<id:2>"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session?directory=<workspace:13>",
+      "status": 201,
+      "body": {
+        "id": "<id:2>",
+        "workspaceId": "<id:3>",
+        "title": "H5 owner",
+        "titleSource": "user",
+        "commands": [
+          {
+            "name": "scripted",
+            "description": "Run a named scripted reply"
+          }
+        ],
+        "directory": "<workspace:1>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "scripted-acp",
+            "access": "connection"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "agent_session_id": "scripted-<id:12>",
+        "process_key": "<process:14>"
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:2>/prompt_async?directory=<workspace:1>",
+      "status": 204,
+      "body": null
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session?directory=<workspace:1>",
+      "status": 200,
+      "body": [
+        {
+          "id": "<id:8>",
+          "title": "Inspect implementation",
+          "titleSource": "user",
+          "directory": "<workspace:1>",
+          "time": {
+            "created": "<time>",
+            "updated": "<time>"
+          },
+          "config": {
+            "harness": {
+              "id": "scripted-acp",
+              "access": "connection"
+            },
+            "variant": null,
+            "agent": null
+          },
+          "status": "idle",
+          "agent_session_id": "<subagent:2>",
+          "parentID": "<id:2>",
+          "process_key": "<process:14>",
+          "lastTurn": {
+            "status": "completed",
+            "completedAt": "<time>",
+            "assistantMessageId": "<id:10>"
+          }
+        },
+        {
+          "id": "<id:2>",
+          "workspaceId": "<id:3>",
+          "title": "H5 owner",
+          "titleSource": "user",
+          "commands": [
+            {
+              "name": "scripted",
+              "description": "Run a named scripted reply"
+            }
+          ],
+          "directory": "<workspace:1>",
+          "time": {
+            "created": "<time>",
+            "updated": "<time>"
+          },
+          "config": {
+            "harness": {
+              "id": "scripted-acp",
+              "access": "connection"
+            },
+            "variant": null,
+            "agent": null
+          },
+          "status": "idle",
+          "agent_session_id": "scripted-<id:12>",
+          "process_key": "<process:14>",
+          "lastTurn": {
+            "status": "completed",
+            "completedAt": "<time>",
+            "assistantMessageId": "<id:7>"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:8>?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "id": "<id:8>",
+        "title": "Inspect implementation",
+        "titleSource": "user",
+        "directory": "<workspace:1>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "scripted-acp",
+            "access": "connection"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "status": "idle",
+        "agent_session_id": "<subagent:2>",
+        "parentID": "<id:2>",
+        "process_key": "<process:14>",
+        "lastTurn": {
+          "status": "completed",
+          "completedAt": "<time>",
+          "assistantMessageId": "<id:10>"
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:8>/message?directory=<workspace:1>",
+      "status": 200,
+      "body": [
+        {
+          "info": {
+            "id": "<id:9>",
+            "sessionID": "<id:8>",
+            "role": "user",
+            "time": {
+              "created": "<time>"
+            },
+            "agent": "build"
+          },
+          "parts": [
+            {
+              "type": "text",
+              "text": "Inspect implementation",
+              "id": "<id:9>-part-0",
+              "sessionID": "<id:8>",
+              "messageID": "<id:9>"
+            }
+          ]
+        },
+        {
+          "info": {
+            "id": "<id:10>",
+            "sessionID": "<id:8>",
+            "role": "assistant",
+            "time": {
+              "created": "<time>",
+              "completed": "<time>"
+            },
+            "parentID": "<id:9>",
+            "mode": "auto",
+            "agent": "build",
+            "path": {
+              "cwd": "<workspace:1>",
+              "root": "<workspace:1>"
+            },
+            "cost": 0,
+            "tokens": {
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          },
+          "parts": [
+            {
+              "id": "000000_<id:10>-text",
+              "sessionID": "<id:8>",
+              "messageID": "<id:10>",
+              "type": "text",
+              "text": "Child review complete"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:2>/message?directory=<workspace:1>",
+      "status": 200,
+      "body": [
+        {
+          "info": {
+            "id": "<id:5>",
+            "sessionID": "<id:2>",
+            "role": "user",
+            "time": {
+              "created": "<time>"
+            },
+            "agent": "build"
+          },
+          "parts": [
+            {
+              "type": "text",
+              "text": "acp-script:h5-child",
+              "id": "<id:6>",
+              "sessionID": "<id:2>",
+              "messageID": "<id:5>"
+            }
+          ]
+        },
+        {
+          "info": {
+            "id": "<id:7>",
+            "sessionID": "<id:2>",
+            "role": "assistant",
+            "time": {
+              "created": "<time>",
+              "completed": "<time>"
+            },
+            "parentID": "<id:5>",
+            "mode": "auto",
+            "agent": "build",
+            "path": {
+              "cwd": "<workspace:1>",
+              "root": "<workspace:1>"
+            },
+            "cost": 0,
+            "tokens": {
+              "input": 11,
+              "output": 7,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          },
+          "parts": [
+            {
+              "id": "000000_<id:11>",
+              "sessionID": "<id:2>",
+              "messageID": "<id:7>",
+              "type": "text",
+              "text": "Parent completed"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:2>/message?directory=<workspace:1>",
+      "status": 200,
+      "body": [
+        {
+          "info": {
+            "id": "<id:5>",
+            "sessionID": "<id:2>",
+            "role": "user",
+            "time": {
+              "created": "<time>"
+            },
+            "agent": "build"
+          },
+          "parts": [
+            {
+              "type": "text",
+              "text": "acp-script:h5-child",
+              "id": "<id:6>",
+              "sessionID": "<id:2>",
+              "messageID": "<id:5>"
+            }
+          ]
+        },
+        {
+          "info": {
+            "id": "<id:7>",
+            "sessionID": "<id:2>",
+            "role": "assistant",
+            "time": {
+              "created": "<time>",
+              "completed": "<time>"
+            },
+            "parentID": "<id:5>",
+            "mode": "auto",
+            "agent": "build",
+            "path": {
+              "cwd": "<workspace:1>",
+              "root": "<workspace:1>"
+            },
+            "cost": 0,
+            "tokens": {
+              "input": 11,
+              "output": 7,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          },
+          "parts": [
+            {
+              "id": "000000_<id:11>",
+              "sessionID": "<id:2>",
+              "messageID": "<id:7>",
+              "type": "text",
+              "text": "Parent completed"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/api/claxedo/usage?view=claxedo&group=session&since=<time>&until=<time>",
+      "status": 200,
+      "body": {
+        "version": 1,
+        "range": {
+          "since": "<time>",
+          "until": "<time>",
+          "timeZone": "UTC"
+        },
+        "quota": {
+          "status": "unavailable"
+        },
+        "claxedo": {
+          "totals": {
+            "turnCount": 1,
+            "input": 11,
+            "output": 7,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "unknownCategories": 3,
+            "partialTurnCount": 0,
+            "unavailableTurnCount": 0,
+            "errorTurnCount": 0
+          },
+          "daily": [
+            {
+              "date": "2026-09-25",
+              "turnCount": 1,
+              "input": 11,
+              "output": 7,
+              "reasoning": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "unknownCategories": 3,
+              "partialTurnCount": 0,
+              "unavailableTurnCount": 0,
+              "errorTurnCount": 0
+            }
+          ],
+          "cost": {
+            "estimatedUsd": 0,
+            "pricedTokens": 0,
+            "unpricedTokens": 18,
+            "catalog": {
+              "adapter": "tokentracker-cli",
+              "version": "0.91.0",
+              "source": "disk-cache"
+            },
+            "daily": [
+              {
+                "date": "2026-09-25",
+                "estimatedUsd": 0,
+                "pricedTokens": 0,
+                "unpricedTokens": 18
+              }
+            ]
+          },
+          "locationShare": {
+            "localTokens": 18,
+            "cloudTokens": 0
+          },
+          "status": "available",
+          "scope": "local"
+        },
+        "externalLocal": {
+          "totals": {
+            "turnCount": 0,
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "unknownCategories": 0,
+            "partialTurnCount": 0,
+            "unavailableTurnCount": 0,
+            "errorTurnCount": 0
+          },
+          "daily": [],
+          "cost": {
+            "estimatedUsd": 0,
+            "pricedTokens": 0,
+            "unpricedTokens": 0,
+            "catalog": {
+              "adapter": "tokentracker-cli",
+              "version": "0.91.0",
+              "source": "bundled-seed"
+            },
+            "daily": []
+          },
+          "status": "unavailable",
+          "coverage": [],
+          "unclassifiedRequests": 0
+        },
+        "total": {
+          "totals": {
+            "turnCount": 0,
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "unknownCategories": 0,
+            "partialTurnCount": 0,
+            "unavailableTurnCount": 0,
+            "errorTurnCount": 0
+          },
+          "daily": []
+        },
+        "totalCost": {
+          "estimatedUsd": 0,
+          "pricedTokens": 0,
+          "unpricedTokens": 0,
+          "catalog": {
+            "adapter": "tokentracker-cli",
+            "version": "0.91.0",
+            "source": "bundled-seed"
+          },
+          "daily": []
+        },
+        "filterOptions": {
+          "claxedo": {
+            "provider": [
+              "unknown"
+            ],
+            "harness": [
+              "connection:scripted-acp"
+            ],
+            "model": [
+              "unknown/unknown"
+            ],
+            "location": [
+              "local"
+            ],
+            "session": [
+              "local:<workspace:15>"
+            ],
+            "workspace": [
+              "<id:3>"
+            ]
+          },
+          "total": {
+            "app": [],
+            "provider": [],
+            "model": [],
+            "location": []
+          }
+        },
+        "breakdown": {
+          "dimension": "session",
+          "rows": [
+            {
+              "value": "local:<workspace:15>",
+              "turnCount": 1,
+              "input": 11,
+              "output": 7,
+              "reasoning": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "unknownCategories": 3,
+              "partialTurnCount": 0,
+              "unavailableTurnCount": 0,
+              "errorTurnCount": 0,
+              "label": "local:<workspace:15>",
+              "estimatedUsd": 0,
+              "pricedTokens": 0,
+              "unpricedTokens": 18,
+              "status": "unpriced",
+              "href": "/s/<id:2>"
+            }
+          ]
+        },
+        "modelBreakdown": {
+          "dimension": "model",
+          "rows": [
+            {
+              "value": "unknown/unknown",
+              "turnCount": 1,
+              "input": 11,
+              "output": 7,
+              "reasoning": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "unknownCategories": 3,
+              "partialTurnCount": 0,
+              "unavailableTurnCount": 0,
+              "errorTurnCount": 0,
+              "label": "unknown",
+              "estimatedUsd": 0,
+              "pricedTokens": 0,
+              "unpricedTokens": 18,
+              "status": "unpriced"
+            }
+          ]
+        },
+        "chart": {
+          "dimension": "session",
+          "series": [
+            {
+              "value": "local:<workspace:15>",
+              "label": "local:<workspace:15>",
+              "daily": [
+                {
+                  "date": "2026-09-25",
+                  "input": 11,
+                  "output": 7,
+                  "reasoning": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,3 +1,5 @@
+import { observeStream } from "./wire-corpus"
+
 export type StreamFrame = { id?: string; event?: string; data: Record<string, unknown> }
 
 export type EventStream = {
@@ -68,9 +70,11 @@ export async function openEventStream(url: string, directory: string, options: E
   if (!response.ok || !response.body) throw new Error(`event stream refused: ${response.status} ${await response.text()}`)
   const frames: StreamFrame[] = []
   const listeners = new Set<(frame: StreamFrame) => void>()
+  const recordFrame = observeStream(target)
   const droppedFrameType = process.env.CLAXEDO_E2E_DROP_FRAME_TYPE
   const pumping = pump(response.body, (frame) => {
     if (droppedFrameType && frameType(frame) === droppedFrameType) return
+    recordFrame?.(frame)
     frames.push(frame)
     for (const listener of listeners) listener(frame)
   })

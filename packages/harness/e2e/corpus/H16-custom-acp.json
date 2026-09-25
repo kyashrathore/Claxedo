@@ -1,0 +1,1245 @@
+{
+  "flow": "H16-custom-acp",
+  "observations": [
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/api/workspace/resolve?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "workspaceId": "<id:2>",
+        "projectId": "<id:2>",
+        "directory": "<workspace:1>",
+        "workspaceName": null,
+        "backing": {
+          "kind": "local-worktree",
+          "directory": "<workspace:1>",
+          "repoName": "<repo:3>",
+          "branch": "main"
+        },
+        "kind": "local",
+        "driver": null,
+        "status": null,
+        "git": {
+          "repo": "<repo:3>",
+          "branch": "main",
+          "remote": null
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/api/claxedo/projects",
+      "status": 201,
+      "body": {
+        "project": {
+          "id": "<id:2>",
+          "name": "<repo:3>",
+          "env": {},
+          "directory": "<workspace:1>",
+          "repoUrl": null,
+          "created_at": "<time>",
+          "updated_at": "<time>"
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/api/claxedo/agent-config/harness?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "ok": true,
+        "harness": {
+          "kind": "connection",
+          "connectionId": "scripted-acp"
+        },
+        "activeHarness": {
+          "kind": "connection",
+          "connectionId": "scripted-acp"
+        },
+        "status": "configured",
+        "ready": false
+      }
+    },
+    {
+      "kind": "stream",
+      "route": "/api/wr/events?directory=<workspace:1>",
+      "frames": [
+        {
+          "id": "<time-id:1>",
+          "data": {
+            "type": "heartbeat"
+          }
+        },
+        {
+          "id": "<time-id:2>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "creating",
+              "directory": "<workspace:1>",
+              "start": {
+                "sessionId": "<id:4>",
+                "directory": "<workspace:1>",
+                "workspaceId": "<id:2>",
+                "operationId": "<id:5>",
+                "connectionId": "connection:scripted-acp"
+              },
+              "workspaceId": "<id:2>",
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:3>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.commands",
+              "properties": {
+                "sessionID": "<id:4>",
+                "commands": [
+                  {
+                    "name": "scripted",
+                    "description": "Run a named scripted reply"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:4>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "created",
+              "directory": "<workspace:1>",
+              "sessionID": "<id:4>",
+              "workspaceId": "<id:2>",
+              "info": {
+                "id": "<id:4>",
+                "slug": "<id:4>",
+                "projectID": "<id:2>",
+                "workspaceID": "<id:2>",
+                "directory": "<workspace:1>",
+                "title": "H16 command",
+                "version": "local",
+                "time": {
+                  "created": "<time>",
+                  "updated": "<time>"
+                }
+              },
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:5>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:4>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:4>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:6>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.updated:<id:6>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "info": {
+                  "id": "<id:6>",
+                  "sessionID": "<id:4>",
+                  "role": "user",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "agent": "build"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:7>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:6>:<id:7>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "part": {
+                  "type": "text",
+                  "text": "acp-script:h16-turn",
+                  "id": "<id:7>",
+                  "sessionID": "<id:4>",
+                  "messageID": "<id:6>"
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:8>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.updated:<id:8>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "info": {
+                  "id": "<id:8>",
+                  "sessionID": "<id:4>",
+                  "role": "assistant",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "parentID": "<id:6>",
+                  "mode": "auto",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "<workspace:1>",
+                    "root": "<workspace:1>"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "input": 0,
+                    "output": 0,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:9>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.commands",
+              "properties": {
+                "sessionID": "<id:4>",
+                "commands": [
+                  {
+                    "name": "scripted",
+                    "description": "Run a named scripted reply"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:10>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:8>:000000_<id:9>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "part": {
+                  "id": "000000_<id:9>",
+                  "sessionID": "<id:4>",
+                  "messageID": "<id:8>",
+                  "type": "text",
+                  "text": ""
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:11>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.delta:<id:8>:000000_<id:9>",
+              "type": "message.part.delta",
+              "properties": {
+                "sessionID": "<id:4>",
+                "messageID": "<id:8>",
+                "partID": "000000_<id:9>",
+                "field": "text",
+                "delta": "H16 scripted reply"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:12>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:4>:acp_prompt_usage_missing",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:4>",
+                "code": "acp_prompt_usage_missing",
+                "message": "ACP agent returned no token usage for a completed turn (stopReason: end_turn); the turn meters as unavailable",
+                "severity": "warn",
+                "diagnostic": {
+                  "code": "acp_prompt_usage_missing",
+                  "message": "ACP agent returned no token usage for a completed turn (stopReason: end_turn); the turn meters as unavailable",
+                  "severity": "warn",
+                  "source": "acp-adapter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:13>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:4>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:4>",
+                "status": {
+                  "type": "idle"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:14>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "message.completed",
+              "properties": {
+                "sessionID": "<id:4>",
+                "messageID": "<id:8>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:15>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.idle:<id:4>",
+              "type": "session.idle",
+              "properties": {
+                "sessionID": "<id:4>"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session?directory=<workspace:10>",
+      "status": 201,
+      "body": {
+        "id": "<id:4>",
+        "workspaceId": "<id:2>",
+        "title": "H16 command",
+        "titleSource": "user",
+        "commands": [
+          {
+            "name": "scripted",
+            "description": "Run a named scripted reply"
+          }
+        ],
+        "directory": "<workspace:1>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "scripted-acp",
+            "access": "connection"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "agent_session_id": "scripted-<id:11>",
+        "process_key": "<process:12>"
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:4>/message?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "info": {
+          "id": "<id:8>",
+          "sessionID": "<id:4>",
+          "role": "assistant",
+          "time": {
+            "created": "<time>",
+            "completed": "<time>"
+          },
+          "parentID": "<id:6>",
+          "mode": "auto",
+          "agent": "build",
+          "path": {
+            "cwd": "<workspace:1>",
+            "root": "<workspace:1>"
+          },
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          }
+        },
+        "parts": [
+          {
+            "id": "000000_<id:9>",
+            "sessionID": "<id:4>",
+            "messageID": "<id:8>",
+            "type": "text",
+            "text": "H16 scripted reply"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:4>/message?directory=<workspace:1>",
+      "status": 200,
+      "body": [
+        {
+          "info": {
+            "id": "<id:6>",
+            "sessionID": "<id:4>",
+            "role": "user",
+            "time": {
+              "created": "<time>"
+            },
+            "agent": "build"
+          },
+          "parts": [
+            {
+              "type": "text",
+              "text": "acp-script:h16-turn",
+              "id": "<id:7>",
+              "sessionID": "<id:4>",
+              "messageID": "<id:6>"
+            }
+          ]
+        },
+        {
+          "info": {
+            "id": "<id:8>",
+            "sessionID": "<id:4>",
+            "role": "assistant",
+            "time": {
+              "created": "<time>",
+              "completed": "<time>"
+            },
+            "parentID": "<id:6>",
+            "mode": "auto",
+            "agent": "build",
+            "path": {
+              "cwd": "<workspace:1>",
+              "root": "<workspace:1>"
+            },
+            "cost": 0,
+            "tokens": {
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          },
+          "parts": [
+            {
+              "id": "000000_<id:9>",
+              "sessionID": "<id:4>",
+              "messageID": "<id:8>",
+              "type": "text",
+              "text": "H16 scripted reply"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:4>?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "id": "<id:4>",
+        "workspaceId": "<id:2>",
+        "title": "H16 command",
+        "titleSource": "user",
+        "commands": [
+          {
+            "name": "scripted",
+            "description": "Run a named scripted reply"
+          }
+        ],
+        "directory": "<workspace:1>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "scripted-acp",
+            "access": "connection"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "status": "idle",
+        "agent_session_id": "scripted-<id:11>",
+        "process_key": "<process:12>",
+        "lastTurn": {
+          "status": "completed",
+          "completedAt": "<time>",
+          "assistantMessageId": "<id:8>"
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:4>/fork?directory=<workspace:1>",
+      "status": 201,
+      "body": {
+        "id": "<id:13>"
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:13>?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "id": "<id:13>",
+        "title": "H16 command",
+        "titleSource": "user",
+        "directory": "<workspace:1>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "agent_session_id": "scripted-<id:14>",
+        "process_key": "<process:12>"
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/agent?directory=<workspace:1>",
+      "status": 200,
+      "body": [
+        {
+          "name": "default",
+          "description": "Default",
+          "mode": "primary"
+        },
+        {
+          "name": "review",
+          "description": "Review",
+          "mode": "primary"
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:4>?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "id": "<id:4>",
+        "workspaceId": "<id:2>",
+        "title": "H16 command",
+        "titleSource": "user",
+        "commands": [
+          {
+            "name": "scripted",
+            "description": "Run a named scripted reply"
+          }
+        ],
+        "directory": "<workspace:1>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "scripted-acp",
+            "access": "connection"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "status": "idle",
+        "agent_session_id": "scripted-<id:11>",
+        "process_key": "<process:12>",
+        "lastTurn": {
+          "status": "completed",
+          "completedAt": "<time>",
+          "assistantMessageId": "<id:8>"
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/api/workspace/resolve?directory=<workspace:15>",
+      "status": 200,
+      "body": {
+        "workspaceId": "<id:16>",
+        "projectId": "<id:16>",
+        "directory": "<workspace:15>",
+        "workspaceName": null,
+        "backing": {
+          "kind": "local-worktree",
+          "directory": "<workspace:15>",
+          "repoName": "<repo:17>",
+          "branch": "main"
+        },
+        "kind": "local",
+        "driver": null,
+        "status": null,
+        "git": {
+          "repo": "<repo:17>",
+          "branch": "main",
+          "remote": null
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/api/claxedo/projects",
+      "status": 201,
+      "body": {
+        "project": {
+          "id": "<id:16>",
+          "name": "<repo:17>",
+          "env": {},
+          "directory": "<workspace:15>",
+          "repoUrl": null,
+          "created_at": "<time>",
+          "updated_at": "<time>"
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/api/claxedo/agent-config/harness?directory=<workspace:15>",
+      "status": 200,
+      "body": {
+        "ok": true,
+        "harness": {
+          "kind": "connection",
+          "connectionId": "scripted-acp-websocket"
+        },
+        "activeHarness": {
+          "kind": "connection",
+          "connectionId": "scripted-acp-websocket"
+        },
+        "status": "configured",
+        "ready": false
+      }
+    },
+    {
+      "kind": "stream",
+      "route": "/api/wr/events?directory=<workspace:15>",
+      "frames": [
+        {
+          "id": "<time-id:16>",
+          "data": {
+            "type": "heartbeat"
+          }
+        },
+        {
+          "id": "<time-id:17>",
+          "data": {
+            "directory": "<workspace:15>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "creating",
+              "directory": "<workspace:15>",
+              "start": {
+                "sessionId": "<id:18>",
+                "directory": "<workspace:15>",
+                "workspaceId": "<id:16>",
+                "operationId": "<id:19>",
+                "connectionId": "connection:scripted-acp-websocket"
+              },
+              "workspaceId": "<id:16>",
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:18>",
+          "data": {
+            "directory": "<workspace:15>",
+            "payload": {
+              "type": "session.commands",
+              "properties": {
+                "sessionID": "<id:18>",
+                "commands": [
+                  {
+                    "name": "scripted",
+                    "description": "Run a named scripted reply"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:19>",
+          "data": {
+            "directory": "<workspace:15>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "created",
+              "directory": "<workspace:15>",
+              "sessionID": "<id:18>",
+              "workspaceId": "<id:16>",
+              "info": {
+                "id": "<id:18>",
+                "slug": "<id:18>",
+                "projectID": "<id:16>",
+                "workspaceID": "<id:16>",
+                "directory": "<workspace:15>",
+                "title": "H16 websocket",
+                "version": "local",
+                "time": {
+                  "created": "<time>",
+                  "updated": "<time>"
+                }
+              },
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:20>",
+          "data": {
+            "directory": "<workspace:15>",
+            "payload": {
+              "id": "session.status:<id:18>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:18>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:21>",
+          "data": {
+            "directory": "<workspace:15>",
+            "payload": {
+              "id": "message.updated:<id:20>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:18>",
+                "info": {
+                  "id": "<id:20>",
+                  "sessionID": "<id:18>",
+                  "role": "user",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "agent": "build"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:22>",
+          "data": {
+            "directory": "<workspace:15>",
+            "payload": {
+              "id": "message.part.updated:<id:20>:<id:21>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:18>",
+                "part": {
+                  "type": "text",
+                  "text": "acp-script:h16-turn",
+                  "id": "<id:21>",
+                  "sessionID": "<id:18>",
+                  "messageID": "<id:20>"
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:23>",
+          "data": {
+            "directory": "<workspace:15>",
+            "payload": {
+              "id": "message.updated:<id:22>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:18>",
+                "info": {
+                  "id": "<id:22>",
+                  "sessionID": "<id:18>",
+                  "role": "assistant",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "parentID": "<id:20>",
+                  "mode": "auto",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "<workspace:15>",
+                    "root": "<workspace:15>"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "input": 0,
+                    "output": 0,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:24>",
+          "data": {
+            "directory": "<workspace:15>",
+            "payload": {
+              "type": "session.commands",
+              "properties": {
+                "sessionID": "<id:18>",
+                "commands": [
+                  {
+                    "name": "scripted",
+                    "description": "Run a named scripted reply"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:25>",
+          "data": {
+            "directory": "<workspace:15>",
+            "payload": {
+              "id": "message.part.updated:<id:22>:000000_<id:23>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:18>",
+                "part": {
+                  "id": "000000_<id:23>",
+                  "sessionID": "<id:18>",
+                  "messageID": "<id:22>",
+                  "type": "text",
+                  "text": ""
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:26>",
+          "data": {
+            "directory": "<workspace:15>",
+            "payload": {
+              "id": "message.part.delta:<id:22>:000000_<id:23>",
+              "type": "message.part.delta",
+              "properties": {
+                "sessionID": "<id:18>",
+                "messageID": "<id:22>",
+                "partID": "000000_<id:23>",
+                "field": "text",
+                "delta": "H16 scripted reply"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:27>",
+          "data": {
+            "directory": "<workspace:15>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:18>:acp_prompt_usage_missing",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:18>",
+                "code": "acp_prompt_usage_missing",
+                "message": "ACP agent returned no token usage for a completed turn (stopReason: end_turn); the turn meters as unavailable",
+                "severity": "warn",
+                "diagnostic": {
+                  "code": "acp_prompt_usage_missing",
+                  "message": "ACP agent returned no token usage for a completed turn (stopReason: end_turn); the turn meters as unavailable",
+                  "severity": "warn",
+                  "source": "acp-adapter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:28>",
+          "data": {
+            "directory": "<workspace:15>",
+            "payload": {
+              "id": "session.status:<id:18>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:18>",
+                "status": {
+                  "type": "idle"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:29>",
+          "data": {
+            "directory": "<workspace:15>",
+            "payload": {
+              "type": "message.completed",
+              "properties": {
+                "sessionID": "<id:18>",
+                "messageID": "<id:22>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:30>",
+          "data": {
+            "directory": "<workspace:15>",
+            "payload": {
+              "id": "session.idle:<id:18>",
+              "type": "session.idle",
+              "properties": {
+                "sessionID": "<id:18>"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session?directory=<workspace:24>",
+      "status": 201,
+      "body": {
+        "id": "<id:18>",
+        "workspaceId": "<id:16>",
+        "title": "H16 websocket",
+        "titleSource": "user",
+        "commands": [
+          {
+            "name": "scripted",
+            "description": "Run a named scripted reply"
+          }
+        ],
+        "directory": "<workspace:15>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "scripted-acp-websocket",
+            "access": "connection"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "agent_session_id": "scripted-<id:25>",
+        "process_key": "<process:26>"
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:18>/message?directory=<workspace:15>",
+      "status": 200,
+      "body": {
+        "info": {
+          "id": "<id:22>",
+          "sessionID": "<id:18>",
+          "role": "assistant",
+          "time": {
+            "created": "<time>",
+            "completed": "<time>"
+          },
+          "parentID": "<id:20>",
+          "mode": "auto",
+          "agent": "build",
+          "path": {
+            "cwd": "<workspace:15>",
+            "root": "<workspace:15>"
+          },
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          }
+        },
+        "parts": [
+          {
+            "id": "000000_<id:23>",
+            "sessionID": "<id:18>",
+            "messageID": "<id:22>",
+            "type": "text",
+            "text": "H16 scripted reply"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:18>/message?directory=<workspace:15>",
+      "status": 200,
+      "body": [
+        {
+          "info": {
+            "id": "<id:20>",
+            "sessionID": "<id:18>",
+            "role": "user",
+            "time": {
+              "created": "<time>"
+            },
+            "agent": "build"
+          },
+          "parts": [
+            {
+              "type": "text",
+              "text": "acp-script:h16-turn",
+              "id": "<id:21>",
+              "sessionID": "<id:18>",
+              "messageID": "<id:20>"
+            }
+          ]
+        },
+        {
+          "info": {
+            "id": "<id:22>",
+            "sessionID": "<id:18>",
+            "role": "assistant",
+            "time": {
+              "created": "<time>",
+              "completed": "<time>"
+            },
+            "parentID": "<id:20>",
+            "mode": "auto",
+            "agent": "build",
+            "path": {
+              "cwd": "<workspace:15>",
+              "root": "<workspace:15>"
+            },
+            "cost": 0,
+            "tokens": {
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          },
+          "parts": [
+            {
+              "id": "000000_<id:23>",
+              "sessionID": "<id:18>",
+              "messageID": "<id:22>",
+              "type": "text",
+              "text": "H16 scripted reply"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:18>?directory=<workspace:15>",
+      "status": 200,
+      "body": {
+        "id": "<id:18>",
+        "workspaceId": "<id:16>",
+        "title": "H16 websocket",
+        "titleSource": "user",
+        "commands": [
+          {
+            "name": "scripted",
+            "description": "Run a named scripted reply"
+          }
+        ],
+        "directory": "<workspace:15>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "scripted-acp-websocket",
+            "access": "connection"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "status": "idle",
+        "agent_session_id": "scripted-<id:25>",
+        "process_key": "<process:26>",
+        "lastTurn": {
+          "status": "completed",
+          "completedAt": "<time>",
+          "assistantMessageId": "<id:22>"
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:18>/fork?directory=<workspace:15>",
+      "status": 201,
+      "body": {
+        "id": "<id:27>"
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:27>?directory=<workspace:15>",
+      "status": 200,
+      "body": {
+        "id": "<id:27>",
+        "title": "H16 websocket",
+        "titleSource": "user",
+        "directory": "<workspace:15>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "agent_session_id": "scripted-<id:28>",
+        "process_key": "<process:26>"
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/agent?directory=<workspace:15>",
+      "status": 200,
+      "body": [
+        {
+          "name": "default",
+          "description": "Default",
+          "mode": "primary"
+        },
+        {
+          "name": "review",
+          "description": "Review",
+          "mode": "primary"
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:18>?directory=<workspace:15>",
+      "status": 200,
+      "body": {
+        "id": "<id:18>",
+        "workspaceId": "<id:16>",
+        "title": "H16 websocket",
+        "titleSource": "user",
+        "commands": [
+          {
+            "name": "scripted",
+            "description": "Run a named scripted reply"
+          }
+        ],
+        "directory": "<workspace:15>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "scripted-acp-websocket",
+            "access": "connection"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "status": "idle",
+        "agent_session_id": "scripted-<id:25>",
+        "process_key": "<process:26>",
+        "lastTurn": {
+          "status": "completed",
+          "completedAt": "<time>",
+          "assistantMessageId": "<id:22>"
+        }
+      }
+    }
+  ]
+}

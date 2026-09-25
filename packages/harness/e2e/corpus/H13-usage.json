@@ -1,0 +1,1204 @@
+{
+  "flow": "H13-usage",
+  "observations": [
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/api/workspace/resolve?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "workspaceId": "<id:2>",
+        "projectId": "<id:2>",
+        "directory": "<workspace:1>",
+        "workspaceName": null,
+        "backing": {
+          "kind": "local-worktree",
+          "directory": "<workspace:1>",
+          "repoName": "<repo:3>",
+          "branch": "main"
+        },
+        "kind": "local",
+        "driver": null,
+        "status": null,
+        "git": {
+          "repo": "<repo:3>",
+          "branch": "main",
+          "remote": null
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/api/claxedo/projects",
+      "status": 201,
+      "body": {
+        "project": {
+          "id": "<id:2>",
+          "name": "<repo:3>",
+          "env": {},
+          "directory": "<workspace:1>",
+          "repoUrl": null,
+          "created_at": "<time>",
+          "updated_at": "<time>"
+        }
+      }
+    },
+    {
+      "kind": "stream",
+      "route": "/api/wr/events?directory=<workspace:1>",
+      "frames": [
+        {
+          "id": "<time-id:1>",
+          "data": {
+            "type": "heartbeat"
+          }
+        },
+        {
+          "id": "<time-id:2>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "creating",
+              "directory": "<workspace:1>",
+              "start": {
+                "sessionId": "<id:4>",
+                "directory": "<workspace:1>",
+                "workspaceId": "<id:2>",
+                "operationId": "<id:5>",
+                "connectionId": "connection:scripted-acp"
+              },
+              "workspaceId": "<id:2>",
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:3>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.commands",
+              "properties": {
+                "sessionID": "<id:4>",
+                "commands": [
+                  {
+                    "name": "scripted",
+                    "description": "Run a named scripted reply"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:4>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "created",
+              "directory": "<workspace:1>",
+              "sessionID": "<id:4>",
+              "workspaceId": "<id:2>",
+              "info": {
+                "id": "<id:4>",
+                "slug": "<id:4>",
+                "projectID": "<id:2>",
+                "workspaceID": "<id:2>",
+                "directory": "<workspace:1>",
+                "title": "",
+                "version": "local",
+                "time": {
+                  "created": "<time>",
+                  "updated": "<time>"
+                }
+              },
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:5>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:4>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:4>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:6>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.updated:<id:6>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "info": {
+                  "id": "<id:6>",
+                  "sessionID": "<id:4>",
+                  "role": "user",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "agent": "build"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:7>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:6>:<id:7>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "part": {
+                  "type": "text",
+                  "text": "Report usage. acp-script:h13-usage",
+                  "id": "<id:7>",
+                  "sessionID": "<id:4>",
+                  "messageID": "<id:6>"
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:8>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.updated:<id:8>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "info": {
+                  "id": "<id:8>",
+                  "sessionID": "<id:4>",
+                  "role": "assistant",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "parentID": "<id:6>",
+                  "mode": "auto",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "<workspace:1>",
+                    "root": "<workspace:1>"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "input": 0,
+                    "output": 0,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:9>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.updated:<id:4>",
+              "type": "session.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "info": {
+                  "id": "<id:4>",
+                  "slug": "<id:4>",
+                  "projectID": "<workspace:1>",
+                  "directory": "<workspace:1>",
+                  "title": "Report usage. acp-script:h13-usage",
+                  "titleSource": "prompt",
+                  "version": "local",
+                  "time": {
+                    "created": "<time>",
+                    "updated": "<time>"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:10>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.commands",
+              "properties": {
+                "sessionID": "<id:4>",
+                "commands": [
+                  {
+                    "name": "scripted",
+                    "description": "Run a named scripted reply"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:11>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:8>:000000_<id:9>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "part": {
+                  "id": "000000_<id:9>",
+                  "sessionID": "<id:4>",
+                  "messageID": "<id:8>",
+                  "type": "text",
+                  "text": ""
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:12>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.delta:<id:8>:000000_<id:9>",
+              "type": "message.part.delta",
+              "properties": {
+                "sessionID": "<id:4>",
+                "messageID": "<id:8>",
+                "partID": "000000_<id:9>",
+                "field": "text",
+                "delta": "H13_ACP_USAGE"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:13>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.usage",
+              "properties": {
+                "sessionID": "<id:4>",
+                "messageID": "<id:8>",
+                "contextSize": 16,
+                "contextUsed": 16,
+                "observation": {
+                  "kind": "cumulative",
+                  "nativeSessionId": "scripted-<id:10>",
+                  "tokens": {
+                    "input": 11,
+                    "output": 5,
+                    "reasoning": 2,
+                    "cache": {
+                      "read": 1,
+                      "write": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:14>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.updated:<id:8>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "info": {
+                  "id": "<id:8>",
+                  "sessionID": "<id:4>",
+                  "role": "assistant",
+                  "time": {
+                    "created": "<time>",
+                    "completed": "<time>"
+                  },
+                  "parentID": "<id:6>",
+                  "mode": "auto",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "<workspace:1>",
+                    "root": "<workspace:1>"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "input": 11,
+                    "output": 5,
+                    "reasoning": 2,
+                    "cache": {
+                      "read": 1,
+                      "write": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:15>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:4>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:4>",
+                "status": {
+                  "type": "idle"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:16>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "message.completed",
+              "properties": {
+                "sessionID": "<id:4>",
+                "messageID": "<id:8>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:17>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.idle:<id:4>",
+              "type": "session.idle",
+              "properties": {
+                "sessionID": "<id:4>"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session?directory=<workspace:11>",
+      "status": 201,
+      "body": {
+        "id": "<id:4>",
+        "workspaceId": "<id:2>",
+        "title": null,
+        "commands": [
+          {
+            "name": "scripted",
+            "description": "Run a named scripted reply"
+          }
+        ],
+        "directory": "<workspace:1>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "scripted-acp",
+            "access": "connection"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "agent_session_id": "scripted-<id:10>",
+        "process_key": "<process:12>"
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:4>/message?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "info": {
+          "id": "<id:8>",
+          "sessionID": "<id:4>",
+          "role": "assistant",
+          "time": {
+            "created": "<time>",
+            "completed": "<time>"
+          },
+          "parentID": "<id:6>",
+          "mode": "auto",
+          "agent": "build",
+          "path": {
+            "cwd": "<workspace:1>",
+            "root": "<workspace:1>"
+          },
+          "cost": 0,
+          "tokens": {
+            "input": 11,
+            "output": 5,
+            "reasoning": 2,
+            "cache": {
+              "read": 1,
+              "write": 0
+            }
+          }
+        },
+        "parts": [
+          {
+            "id": "000000_<id:9>",
+            "sessionID": "<id:4>",
+            "messageID": "<id:8>",
+            "type": "text",
+            "text": "H13_ACP_USAGE"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/api/claxedo/usage?view=claxedo&since=<time>&until=<time>",
+      "status": 200,
+      "body": {
+        "version": 1,
+        "range": {
+          "since": "<time>",
+          "until": "<time>",
+          "timeZone": "UTC"
+        },
+        "quota": {
+          "status": "unavailable"
+        },
+        "claxedo": {
+          "totals": {
+            "turnCount": 1,
+            "input": 11,
+            "output": 5,
+            "reasoning": 2,
+            "cacheRead": 1,
+            "cacheWrite": 0,
+            "unknownCategories": 0,
+            "partialTurnCount": 0,
+            "unavailableTurnCount": 0,
+            "errorTurnCount": 0
+          },
+          "daily": [
+            {
+              "date": "2026-09-25",
+              "turnCount": 1,
+              "input": 11,
+              "output": 5,
+              "reasoning": 2,
+              "cacheRead": 1,
+              "cacheWrite": 0,
+              "unknownCategories": 0,
+              "partialTurnCount": 0,
+              "unavailableTurnCount": 0,
+              "errorTurnCount": 0
+            }
+          ],
+          "cost": {
+            "estimatedUsd": 0,
+            "pricedTokens": 0,
+            "unpricedTokens": 19,
+            "catalog": {
+              "adapter": "tokentracker-cli",
+              "version": "0.91.0",
+              "source": "disk-cache"
+            },
+            "daily": [
+              {
+                "date": "2026-09-25",
+                "estimatedUsd": 0,
+                "pricedTokens": 0,
+                "unpricedTokens": 19
+              }
+            ]
+          },
+          "locationShare": {
+            "localTokens": 19,
+            "cloudTokens": 0
+          },
+          "status": "available",
+          "scope": "local"
+        },
+        "externalLocal": {
+          "totals": {
+            "turnCount": 0,
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "unknownCategories": 0,
+            "partialTurnCount": 0,
+            "unavailableTurnCount": 0,
+            "errorTurnCount": 0
+          },
+          "daily": [],
+          "cost": {
+            "estimatedUsd": 0,
+            "pricedTokens": 0,
+            "unpricedTokens": 0,
+            "catalog": {
+              "adapter": "tokentracker-cli",
+              "version": "0.91.0",
+              "source": "bundled-seed"
+            },
+            "daily": []
+          },
+          "status": "unavailable",
+          "coverage": [],
+          "unclassifiedRequests": 0
+        },
+        "total": {
+          "totals": {
+            "turnCount": 0,
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "unknownCategories": 0,
+            "partialTurnCount": 0,
+            "unavailableTurnCount": 0,
+            "errorTurnCount": 0
+          },
+          "daily": []
+        },
+        "totalCost": {
+          "estimatedUsd": 0,
+          "pricedTokens": 0,
+          "unpricedTokens": 0,
+          "catalog": {
+            "adapter": "tokentracker-cli",
+            "version": "0.91.0",
+            "source": "bundled-seed"
+          },
+          "daily": []
+        },
+        "filterOptions": {
+          "claxedo": {
+            "provider": [
+              "unknown"
+            ],
+            "harness": [
+              "connection:scripted-acp"
+            ],
+            "model": [
+              "unknown/unknown"
+            ],
+            "location": [
+              "local"
+            ],
+            "session": [
+              "local:<workspace:13>"
+            ],
+            "workspace": [
+              "<id:2>"
+            ]
+          },
+          "total": {
+            "app": [],
+            "provider": [],
+            "model": [],
+            "location": []
+          }
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/api/claxedo/usage?view=claxedo&since=<time>&until=<time>&filter_session=local:<workspace:13>",
+      "status": 200,
+      "body": {
+        "version": 1,
+        "range": {
+          "since": "<time>",
+          "until": "<time>",
+          "timeZone": "UTC"
+        },
+        "quota": {
+          "status": "unavailable"
+        },
+        "claxedo": {
+          "totals": {
+            "turnCount": 1,
+            "input": 11,
+            "output": 5,
+            "reasoning": 2,
+            "cacheRead": 1,
+            "cacheWrite": 0,
+            "unknownCategories": 0,
+            "partialTurnCount": 0,
+            "unavailableTurnCount": 0,
+            "errorTurnCount": 0
+          },
+          "daily": [
+            {
+              "date": "2026-09-25",
+              "turnCount": 1,
+              "input": 11,
+              "output": 5,
+              "reasoning": 2,
+              "cacheRead": 1,
+              "cacheWrite": 0,
+              "unknownCategories": 0,
+              "partialTurnCount": 0,
+              "unavailableTurnCount": 0,
+              "errorTurnCount": 0
+            }
+          ],
+          "cost": {
+            "estimatedUsd": 0,
+            "pricedTokens": 0,
+            "unpricedTokens": 19,
+            "catalog": {
+              "adapter": "tokentracker-cli",
+              "version": "0.91.0",
+              "source": "disk-cache"
+            },
+            "daily": [
+              {
+                "date": "2026-09-25",
+                "estimatedUsd": 0,
+                "pricedTokens": 0,
+                "unpricedTokens": 19
+              }
+            ]
+          },
+          "locationShare": {
+            "localTokens": 19,
+            "cloudTokens": 0
+          },
+          "status": "available",
+          "scope": "local"
+        },
+        "externalLocal": {
+          "totals": {
+            "turnCount": 0,
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "unknownCategories": 0,
+            "partialTurnCount": 0,
+            "unavailableTurnCount": 0,
+            "errorTurnCount": 0
+          },
+          "daily": [],
+          "cost": {
+            "estimatedUsd": 0,
+            "pricedTokens": 0,
+            "unpricedTokens": 0,
+            "catalog": {
+              "adapter": "tokentracker-cli",
+              "version": "0.91.0",
+              "source": "bundled-seed"
+            },
+            "daily": []
+          },
+          "status": "unavailable",
+          "coverage": [],
+          "unclassifiedRequests": 0
+        },
+        "total": {
+          "totals": {
+            "turnCount": 0,
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "unknownCategories": 0,
+            "partialTurnCount": 0,
+            "unavailableTurnCount": 0,
+            "errorTurnCount": 0
+          },
+          "daily": []
+        },
+        "totalCost": {
+          "estimatedUsd": 0,
+          "pricedTokens": 0,
+          "unpricedTokens": 0,
+          "catalog": {
+            "adapter": "tokentracker-cli",
+            "version": "0.91.0",
+            "source": "bundled-seed"
+          },
+          "daily": []
+        },
+        "filterOptions": {
+          "claxedo": {
+            "provider": [
+              "unknown"
+            ],
+            "harness": [
+              "connection:scripted-acp"
+            ],
+            "model": [
+              "unknown/unknown"
+            ],
+            "location": [
+              "local"
+            ],
+            "session": [
+              "local:<workspace:13>"
+            ],
+            "workspace": [
+              "<id:2>"
+            ]
+          },
+          "total": {
+            "app": [],
+            "provider": [],
+            "model": [],
+            "location": []
+          }
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:4>/message?directory=<workspace:1>",
+      "status": 200,
+      "body": [
+        {
+          "info": {
+            "id": "<id:6>",
+            "sessionID": "<id:4>",
+            "role": "user",
+            "time": {
+              "created": "<time>"
+            },
+            "agent": "build"
+          },
+          "parts": [
+            {
+              "type": "text",
+              "text": "Report usage. acp-script:h13-usage",
+              "id": "<id:7>",
+              "sessionID": "<id:4>",
+              "messageID": "<id:6>"
+            }
+          ]
+        },
+        {
+          "info": {
+            "id": "<id:8>",
+            "sessionID": "<id:4>",
+            "role": "assistant",
+            "time": {
+              "created": "<time>",
+              "completed": "<time>"
+            },
+            "parentID": "<id:6>",
+            "mode": "auto",
+            "agent": "build",
+            "path": {
+              "cwd": "<workspace:1>",
+              "root": "<workspace:1>"
+            },
+            "cost": 0,
+            "tokens": {
+              "input": 11,
+              "output": 5,
+              "reasoning": 2,
+              "cache": {
+                "read": 1,
+                "write": 0
+              }
+            }
+          },
+          "parts": [
+            {
+              "id": "000000_<id:9>",
+              "sessionID": "<id:4>",
+              "messageID": "<id:8>",
+              "type": "text",
+              "text": "H13_ACP_USAGE"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/api/claxedo/usage?view=claxedo&since=<time>&until=<time>",
+      "status": 200,
+      "body": {
+        "version": 1,
+        "range": {
+          "since": "<time>",
+          "until": "<time>",
+          "timeZone": "UTC"
+        },
+        "quota": {
+          "status": "unavailable"
+        },
+        "claxedo": {
+          "totals": {
+            "turnCount": 1,
+            "input": 11,
+            "output": 5,
+            "reasoning": 2,
+            "cacheRead": 1,
+            "cacheWrite": 0,
+            "unknownCategories": 0,
+            "partialTurnCount": 0,
+            "unavailableTurnCount": 0,
+            "errorTurnCount": 0
+          },
+          "daily": [
+            {
+              "date": "2026-09-25",
+              "turnCount": 1,
+              "input": 11,
+              "output": 5,
+              "reasoning": 2,
+              "cacheRead": 1,
+              "cacheWrite": 0,
+              "unknownCategories": 0,
+              "partialTurnCount": 0,
+              "unavailableTurnCount": 0,
+              "errorTurnCount": 0
+            }
+          ],
+          "cost": {
+            "estimatedUsd": 0,
+            "pricedTokens": 0,
+            "unpricedTokens": 19,
+            "catalog": {
+              "adapter": "tokentracker-cli",
+              "version": "0.91.0",
+              "source": "disk-cache"
+            },
+            "daily": [
+              {
+                "date": "2026-09-25",
+                "estimatedUsd": 0,
+                "pricedTokens": 0,
+                "unpricedTokens": 19
+              }
+            ]
+          },
+          "locationShare": {
+            "localTokens": 19,
+            "cloudTokens": 0
+          },
+          "status": "available",
+          "scope": "local"
+        },
+        "externalLocal": {
+          "totals": {
+            "turnCount": 0,
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "unknownCategories": 0,
+            "partialTurnCount": 0,
+            "unavailableTurnCount": 0,
+            "errorTurnCount": 0
+          },
+          "daily": [],
+          "cost": {
+            "estimatedUsd": 0,
+            "pricedTokens": 0,
+            "unpricedTokens": 0,
+            "catalog": {
+              "adapter": "tokentracker-cli",
+              "version": "0.91.0",
+              "source": "bundled-seed"
+            },
+            "daily": []
+          },
+          "status": "unavailable",
+          "coverage": [],
+          "unclassifiedRequests": 0
+        },
+        "total": {
+          "totals": {
+            "turnCount": 0,
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "unknownCategories": 0,
+            "partialTurnCount": 0,
+            "unavailableTurnCount": 0,
+            "errorTurnCount": 0
+          },
+          "daily": []
+        },
+        "totalCost": {
+          "estimatedUsd": 0,
+          "pricedTokens": 0,
+          "unpricedTokens": 0,
+          "catalog": {
+            "adapter": "tokentracker-cli",
+            "version": "0.91.0",
+            "source": "bundled-seed"
+          },
+          "daily": []
+        },
+        "filterOptions": {
+          "claxedo": {
+            "provider": [
+              "unknown"
+            ],
+            "harness": [
+              "connection:scripted-acp"
+            ],
+            "model": [
+              "unknown/unknown"
+            ],
+            "location": [
+              "local"
+            ],
+            "session": [
+              "local:<workspace:13>"
+            ],
+            "workspace": [
+              "<id:2>"
+            ]
+          },
+          "total": {
+            "app": [],
+            "provider": [],
+            "model": [],
+            "location": []
+          }
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/api/claxedo/usage?view=claxedo&since=<time>&until=<time>&filter_session=local:<workspace:13>",
+      "status": 200,
+      "body": {
+        "version": 1,
+        "range": {
+          "since": "<time>",
+          "until": "<time>",
+          "timeZone": "UTC"
+        },
+        "quota": {
+          "status": "unavailable"
+        },
+        "claxedo": {
+          "totals": {
+            "turnCount": 1,
+            "input": 11,
+            "output": 5,
+            "reasoning": 2,
+            "cacheRead": 1,
+            "cacheWrite": 0,
+            "unknownCategories": 0,
+            "partialTurnCount": 0,
+            "unavailableTurnCount": 0,
+            "errorTurnCount": 0
+          },
+          "daily": [
+            {
+              "date": "2026-09-25",
+              "turnCount": 1,
+              "input": 11,
+              "output": 5,
+              "reasoning": 2,
+              "cacheRead": 1,
+              "cacheWrite": 0,
+              "unknownCategories": 0,
+              "partialTurnCount": 0,
+              "unavailableTurnCount": 0,
+              "errorTurnCount": 0
+            }
+          ],
+          "cost": {
+            "estimatedUsd": 0,
+            "pricedTokens": 0,
+            "unpricedTokens": 19,
+            "catalog": {
+              "adapter": "tokentracker-cli",
+              "version": "0.91.0",
+              "source": "disk-cache"
+            },
+            "daily": [
+              {
+                "date": "2026-09-25",
+                "estimatedUsd": 0,
+                "pricedTokens": 0,
+                "unpricedTokens": 19
+              }
+            ]
+          },
+          "locationShare": {
+            "localTokens": 19,
+            "cloudTokens": 0
+          },
+          "status": "available",
+          "scope": "local"
+        },
+        "externalLocal": {
+          "totals": {
+            "turnCount": 0,
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "unknownCategories": 0,
+            "partialTurnCount": 0,
+            "unavailableTurnCount": 0,
+            "errorTurnCount": 0
+          },
+          "daily": [],
+          "cost": {
+            "estimatedUsd": 0,
+            "pricedTokens": 0,
+            "unpricedTokens": 0,
+            "catalog": {
+              "adapter": "tokentracker-cli",
+              "version": "0.91.0",
+              "source": "bundled-seed"
+            },
+            "daily": []
+          },
+          "status": "unavailable",
+          "coverage": [],
+          "unclassifiedRequests": 0
+        },
+        "total": {
+          "totals": {
+            "turnCount": 0,
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "unknownCategories": 0,
+            "partialTurnCount": 0,
+            "unavailableTurnCount": 0,
+            "errorTurnCount": 0
+          },
+          "daily": []
+        },
+        "totalCost": {
+          "estimatedUsd": 0,
+          "pricedTokens": 0,
+          "unpricedTokens": 0,
+          "catalog": {
+            "adapter": "tokentracker-cli",
+            "version": "0.91.0",
+            "source": "bundled-seed"
+          },
+          "daily": []
+        },
+        "filterOptions": {
+          "claxedo": {
+            "provider": [
+              "unknown"
+            ],
+            "harness": [
+              "connection:scripted-acp"
+            ],
+            "model": [
+              "unknown/unknown"
+            ],
+            "location": [
+              "local"
+            ],
+            "session": [
+              "local:<workspace:13>"
+            ],
+            "workspace": [
+              "<id:2>"
+            ]
+          },
+          "total": {
+            "app": [],
+            "provider": [],
+            "model": [],
+            "location": []
+          }
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:4>?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "id": "<id:4>",
+        "workspaceId": "<id:2>",
+        "title": "Report usage. acp-script:h13-usage",
+        "titleSource": "prompt",
+        "commands": [
+          {
+            "name": "scripted",
+            "description": "Run a named scripted reply"
+          }
+        ],
+        "directory": "<workspace:1>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "scripted-acp",
+            "access": "connection"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "status": "idle",
+        "agent_session_id": "scripted-<id:10>",
+        "process_key": "<process:12>",
+        "lastTurn": {
+          "status": "completed",
+          "completedAt": "<time>",
+          "assistantMessageId": "<id:8>"
+        }
+      }
+    }
+  ]
+}

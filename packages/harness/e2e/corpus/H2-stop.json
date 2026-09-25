@@ -1,0 +1,3341 @@
+{
+  "flow": "H2-stop",
+  "observations": [
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/api/workspace/resolve?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "workspaceId": "<id:2>",
+        "projectId": "<id:2>",
+        "directory": "<workspace:1>",
+        "workspaceName": null,
+        "backing": {
+          "kind": "local-worktree",
+          "directory": "<workspace:1>",
+          "repoName": "<repo:3>",
+          "branch": "main"
+        },
+        "kind": "local",
+        "driver": null,
+        "status": null,
+        "git": {
+          "repo": "<repo:3>",
+          "branch": "main",
+          "remote": null
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/api/claxedo/projects",
+      "status": 201,
+      "body": {
+        "project": {
+          "id": "<id:2>",
+          "name": "<repo:3>",
+          "env": {},
+          "directory": "<workspace:1>",
+          "repoUrl": null,
+          "created_at": "<time>",
+          "updated_at": "<time>"
+        }
+      }
+    },
+    {
+      "kind": "stream",
+      "route": "/api/wr/events?directory=<workspace:1>",
+      "frames": [
+        {
+          "id": "<time-id:1>",
+          "data": {
+            "type": "heartbeat"
+          }
+        },
+        {
+          "id": "<time-id:2>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "creating",
+              "directory": "<workspace:1>",
+              "start": {
+                "sessionId": "<id:4>",
+                "directory": "<workspace:1>",
+                "workspaceId": "<id:2>",
+                "operationId": "<id:5>",
+                "connectionId": "connection:scripted-acp"
+              },
+              "workspaceId": "<id:2>",
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:3>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.commands",
+              "properties": {
+                "sessionID": "<id:4>",
+                "commands": [
+                  {
+                    "name": "scripted",
+                    "description": "Run a named scripted reply"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:4>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "created",
+              "directory": "<workspace:1>",
+              "sessionID": "<id:4>",
+              "workspaceId": "<id:2>",
+              "info": {
+                "id": "<id:4>",
+                "slug": "<id:4>",
+                "projectID": "<id:2>",
+                "workspaceID": "<id:2>",
+                "directory": "<workspace:1>",
+                "title": "H2 acp",
+                "version": "local",
+                "time": {
+                  "created": "<time>",
+                  "updated": "<time>"
+                }
+              },
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:5>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:4>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:4>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:6>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.updated:<id:6>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "info": {
+                  "id": "<id:6>",
+                  "sessionID": "<id:4>",
+                  "role": "user",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "agent": "build"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:7>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:6>:<id:7>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "part": {
+                  "type": "text",
+                  "text": "H2STOPACP acp-script:h2-acp",
+                  "id": "<id:7>",
+                  "sessionID": "<id:4>",
+                  "messageID": "<id:6>"
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:8>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.updated:<id:8>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "info": {
+                  "id": "<id:8>",
+                  "sessionID": "<id:4>",
+                  "role": "assistant",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "parentID": "<id:6>",
+                  "mode": "auto",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "<workspace:1>",
+                    "root": "<workspace:1>"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "input": 0,
+                    "output": 0,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:9>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.commands",
+              "properties": {
+                "sessionID": "<id:4>",
+                "commands": [
+                  {
+                    "name": "scripted",
+                    "description": "Run a named scripted reply"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:10>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:8>:000000_<id:9>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "part": {
+                  "id": "000000_<id:9>",
+                  "sessionID": "<id:4>",
+                  "messageID": "<id:8>",
+                  "type": "text",
+                  "text": ""
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:11>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.delta:<id:8>:000000_<id:9>",
+              "type": "message.part.delta",
+              "properties": {
+                "sessionID": "<id:4>",
+                "messageID": "<id:8>",
+                "partID": "000000_<id:9>",
+                "field": "text",
+                "delta": "Holding H2STOPACP"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:12>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:4>:acp_prompt_usage_missing",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:4>",
+                "code": "acp_prompt_usage_missing",
+                "message": "ACP agent returned no token usage for a completed turn (stopReason: end_turn); the turn meters as unavailable",
+                "severity": "warn",
+                "diagnostic": {
+                  "code": "acp_prompt_usage_missing",
+                  "message": "ACP agent returned no token usage for a completed turn (stopReason: end_turn); the turn meters as unavailable",
+                  "severity": "warn",
+                  "source": "acp-adapter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:13>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:4>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:4>",
+                "status": {
+                  "type": "idle"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:14>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "message.completed",
+              "properties": {
+                "sessionID": "<id:4>",
+                "messageID": "<id:8>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:15>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.idle:<id:4>",
+              "type": "session.idle",
+              "properties": {
+                "sessionID": "<id:4>"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session?directory=<workspace:10>",
+      "status": 201,
+      "body": {
+        "id": "<id:4>",
+        "workspaceId": "<id:2>",
+        "title": "H2 acp",
+        "titleSource": "user",
+        "commands": [
+          {
+            "name": "scripted",
+            "description": "Run a named scripted reply"
+          }
+        ],
+        "directory": "<workspace:1>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "scripted-acp",
+            "access": "connection"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "agent_session_id": "scripted-<id:11>",
+        "process_key": "<process:12>"
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:4>/prompt_async?directory=<workspace:1>",
+      "status": 204,
+      "body": null
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:4>/recovery?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "sessionId": "<id:4>",
+        "target": {
+          "scope": "turn",
+          "workspaceId": "<id:2>",
+          "sessionId": "<id:4>",
+          "turnId": "<id:6>",
+          "ownerGeneration": "<id:4>:<id:13>"
+        },
+        "facts": {
+          "execution": {
+            "value": "running",
+            "source": "runtime.admission",
+            "observedAt": "<time>",
+            "generation": "<id:4>:<id:13>"
+          },
+          "cleanup": {
+            "value": "owned",
+            "source": "runtime.admission",
+            "observedAt": "<time>",
+            "generation": "<id:4>:<id:13>"
+          },
+          "persistence": {
+            "value": "pending",
+            "source": "runtime.store",
+            "observedAt": "<time>",
+            "generation": "<id:4>:<id:13>"
+          }
+        },
+        "health": {
+          "status": "ok"
+        },
+        "failures": [],
+        "operations": [],
+        "queued": 0
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:4>/recovery?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "kind": "operation",
+        "operation": {
+          "operationId": "r<id:14>",
+          "requestId": "e2e-stop-<id:15>",
+          "target": {
+            "scope": "turn",
+            "workspaceId": "<id:2>",
+            "sessionId": "<id:4>",
+            "turnId": "<id:6>",
+            "ownerGeneration": "<id:4>:<id:13>"
+          },
+          "action": "cancel_turn",
+          "scopeRevision": "<id:4>:<id:13>",
+          "attempt": 1,
+          "state": "needs_action",
+          "phase": "graceful_cancel",
+          "phaseDeadlineAt": "<time>",
+          "facts": {
+            "execution": {
+              "value": "terminal",
+              "source": "harness.cancelTurn",
+              "observedAt": "<time>",
+              "generation": "<id:4>:<id:13>"
+            },
+            "cleanup": {
+              "value": "unknown",
+              "source": "harness.cancelTurn",
+              "observedAt": "<time>",
+              "generation": "<id:4>:<id:13>"
+            },
+            "persistence": {
+              "value": "committed",
+              "source": "runtime.store",
+              "observedAt": "<time>",
+              "generation": "<id:4>:<id:13>"
+            }
+          },
+          "cleanupErrors": [],
+          "nextActions": [
+            {
+              "action": "inspect",
+              "scopePreviewRequired": false,
+              "reason": "the turn is finalized; cleanup this harness performed is not established"
+            }
+          ],
+          "receipt": "durable",
+          "createdAt": "<time>",
+          "updatedAt": "<time>"
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:4>/recovery/operations/r<id:14>?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "kind": "operation",
+        "operation": {
+          "operationId": "r<id:14>",
+          "requestId": "e2e-stop-<id:15>",
+          "target": {
+            "scope": "turn",
+            "workspaceId": "<id:2>",
+            "sessionId": "<id:4>",
+            "turnId": "<id:6>",
+            "ownerGeneration": "<id:4>:<id:13>"
+          },
+          "action": "cancel_turn",
+          "scopeRevision": "<id:4>:<id:13>",
+          "attempt": 1,
+          "state": "needs_action",
+          "phase": "graceful_cancel",
+          "phaseDeadlineAt": "<time>",
+          "facts": {
+            "execution": {
+              "value": "terminal",
+              "source": "harness.cancelTurn",
+              "observedAt": "<time>",
+              "generation": "<id:4>:<id:13>"
+            },
+            "cleanup": {
+              "value": "unknown",
+              "source": "harness.cancelTurn",
+              "observedAt": "<time>",
+              "generation": "<id:4>:<id:13>"
+            },
+            "persistence": {
+              "value": "committed",
+              "source": "runtime.store",
+              "observedAt": "<time>",
+              "generation": "<id:4>:<id:13>"
+            }
+          },
+          "cleanupErrors": [],
+          "nextActions": [
+            {
+              "action": "inspect",
+              "scopePreviewRequired": false,
+              "reason": "the turn is finalized; cleanup this harness performed is not established"
+            }
+          ],
+          "receipt": "durable",
+          "createdAt": "<time>",
+          "updatedAt": "<time>"
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:4>/message?directory=<workspace:1>",
+      "status": 200,
+      "body": [
+        {
+          "info": {
+            "id": "<id:6>",
+            "sessionID": "<id:4>",
+            "role": "user",
+            "time": {
+              "created": "<time>"
+            },
+            "agent": "build"
+          },
+          "parts": [
+            {
+              "type": "text",
+              "text": "H2STOPACP acp-script:h2-acp",
+              "id": "<id:7>",
+              "sessionID": "<id:4>",
+              "messageID": "<id:6>"
+            }
+          ]
+        },
+        {
+          "info": {
+            "id": "<id:8>",
+            "sessionID": "<id:4>",
+            "role": "assistant",
+            "time": {
+              "created": "<time>",
+              "completed": "<time>"
+            },
+            "parentID": "<id:6>",
+            "mode": "auto",
+            "agent": "build",
+            "path": {
+              "cwd": "<workspace:1>",
+              "root": "<workspace:1>"
+            },
+            "cost": 0,
+            "tokens": {
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          },
+          "parts": [
+            {
+              "id": "000000_<id:9>",
+              "sessionID": "<id:4>",
+              "messageID": "<id:8>",
+              "type": "text",
+              "text": "Holding H2STOPACP"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:4>?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "id": "<id:4>",
+        "workspaceId": "<id:2>",
+        "title": "H2 acp",
+        "titleSource": "user",
+        "commands": [
+          {
+            "name": "scripted",
+            "description": "Run a named scripted reply"
+          }
+        ],
+        "directory": "<workspace:1>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "scripted-acp",
+            "access": "connection"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "status": "idle",
+        "agent_session_id": "scripted-<id:11>",
+        "process_key": "<process:12>",
+        "lastTurn": {
+          "status": "completed",
+          "completedAt": "<time>",
+          "assistantMessageId": "<id:8>"
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:4>/recovery?directory=<workspace:1>",
+      "status": 409,
+      "body": {
+        "kind": "refused",
+        "refusal": {
+          "kind": "generation_conflict",
+          "message": "Session <id:4> has no admitted turn no-such-running-turn"
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/api/workspace/resolve?directory=<workspace:16>",
+      "status": 200,
+      "body": {
+        "workspaceId": "<id:17>",
+        "projectId": "<id:17>",
+        "directory": "<workspace:16>",
+        "workspaceName": null,
+        "backing": {
+          "kind": "local-worktree",
+          "directory": "<workspace:16>",
+          "repoName": "<repo:18>",
+          "branch": "main"
+        },
+        "kind": "local",
+        "driver": null,
+        "status": null,
+        "git": {
+          "repo": "<repo:18>",
+          "branch": "main",
+          "remote": null
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/api/claxedo/projects",
+      "status": 201,
+      "body": {
+        "project": {
+          "id": "<id:17>",
+          "name": "<repo:18>",
+          "env": {},
+          "directory": "<workspace:16>",
+          "repoUrl": null,
+          "created_at": "<time>",
+          "updated_at": "<time>"
+        }
+      }
+    },
+    {
+      "kind": "stream",
+      "route": "/api/wr/events?directory=<workspace:16>",
+      "frames": [
+        {
+          "id": "<time-id:16>",
+          "data": {
+            "type": "heartbeat"
+          }
+        },
+        {
+          "id": "<time-id:17>",
+          "data": {
+            "directory": "<workspace:16>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "creating",
+              "directory": "<workspace:16>",
+              "start": {
+                "sessionId": "<id:19>",
+                "directory": "<workspace:16>",
+                "workspaceId": "<id:17>",
+                "operationId": "<id:20>",
+                "connectionId": "native:pi"
+              },
+              "workspaceId": "<id:17>",
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:18>",
+          "data": {
+            "directory": "<workspace:16>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "created",
+              "directory": "<workspace:16>",
+              "sessionID": "<id:19>",
+              "workspaceId": "<id:17>",
+              "info": {
+                "id": "<id:19>",
+                "slug": "<id:19>",
+                "projectID": "<id:17>",
+                "workspaceID": "<id:17>",
+                "directory": "<workspace:16>",
+                "title": "H2 pi",
+                "version": "local",
+                "time": {
+                  "created": "<time>",
+                  "updated": "<time>"
+                }
+              },
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:19>",
+          "data": {
+            "directory": "<workspace:16>",
+            "payload": {
+              "id": "session.status:<id:19>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:19>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:20>",
+          "data": {
+            "directory": "<workspace:16>",
+            "payload": {
+              "id": "message.updated:<id:21>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:19>",
+                "info": {
+                  "id": "<id:21>",
+                  "sessionID": "<id:19>",
+                  "role": "user",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "agent": "build",
+                  "model": {
+                    "providerID": "pi",
+                    "modelID": "openai/gpt-4.1"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:21>",
+          "data": {
+            "directory": "<workspace:16>",
+            "payload": {
+              "id": "message.part.updated:<id:21>:<id:22>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:19>",
+                "part": {
+                  "type": "text",
+                  "text": "H2STOPPI",
+                  "id": "<id:22>",
+                  "sessionID": "<id:19>",
+                  "messageID": "<id:21>"
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:22>",
+          "data": {
+            "directory": "<workspace:16>",
+            "payload": {
+              "id": "message.updated:<id:23>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:19>",
+                "info": {
+                  "id": "<id:23>",
+                  "sessionID": "<id:19>",
+                  "role": "assistant",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "parentID": "<id:21>",
+                  "modelID": "openai/gpt-4.1",
+                  "providerID": "pi",
+                  "mode": "auto",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "<workspace:16>",
+                    "root": "<workspace:16>"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "input": 0,
+                    "output": 0,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:23>",
+          "data": {
+            "directory": "<workspace:16>",
+            "payload": {
+              "type": "session.usage",
+              "properties": {
+                "sessionID": "<id:19>",
+                "messageID": "<id:23>",
+                "contextSize": 0,
+                "contextUsed": 0,
+                "observation": {
+                  "kind": "delta",
+                  "providerObservationId": "<time-id:24>",
+                  "tokens": {
+                    "input": 0,
+                    "output": 0,
+                    "reasoning": null,
+                    "cache": {
+                      "read": 0,
+                      "write": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:25>",
+          "data": {
+            "directory": "<workspace:16>",
+            "payload": {
+              "id": "message.updated:<id:23>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:19>",
+                "info": {
+                  "id": "<id:23>",
+                  "sessionID": "<id:19>",
+                  "role": "assistant",
+                  "time": {
+                    "created": "<time>",
+                    "completed": "<time>"
+                  },
+                  "parentID": "<id:21>",
+                  "modelID": "openai/gpt-4.1",
+                  "providerID": "pi",
+                  "mode": "auto",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "<workspace:16>",
+                    "root": "<workspace:16>"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "input": 0,
+                    "output": 0,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": 0
+                    }
+                  },
+                  "error": {
+                    "name": "MessageAbortedError",
+                    "data": {
+                      "message": "Aborted by user"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:26>",
+          "data": {
+            "directory": "<workspace:16>",
+            "payload": {
+              "id": "session.status:<id:19>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:19>",
+                "status": {
+                  "type": "idle"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:27>",
+          "data": {
+            "directory": "<workspace:16>",
+            "payload": {
+              "id": "session.idle:<id:19>",
+              "type": "session.idle",
+              "properties": {
+                "sessionID": "<id:19>"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session?directory=<workspace:24>",
+      "status": 201,
+      "body": {
+        "id": "<id:19>",
+        "workspaceId": "<id:17>",
+        "title": "H2 pi",
+        "titleSource": "user",
+        "directory": "<workspace:16>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "pi",
+            "access": "native"
+          },
+          "model": {
+            "providerID": "pi",
+            "modelID": "openai/gpt-4.1"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "agent_session_id": "<id:25>"
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:19>/prompt_async?directory=<workspace:16>",
+      "status": 204,
+      "body": null
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:19>/recovery?directory=<workspace:16>",
+      "status": 200,
+      "body": {
+        "sessionId": "<id:19>",
+        "target": {
+          "scope": "turn",
+          "workspaceId": "<id:17>",
+          "sessionId": "<id:19>",
+          "turnId": "<id:21>",
+          "ownerGeneration": "<id:19>:<id:26>"
+        },
+        "facts": {
+          "execution": {
+            "value": "running",
+            "source": "runtime.admission",
+            "observedAt": "<time>",
+            "generation": "<id:19>:<id:26>"
+          },
+          "cleanup": {
+            "value": "owned",
+            "source": "runtime.admission",
+            "observedAt": "<time>",
+            "generation": "<id:19>:<id:26>"
+          },
+          "persistence": {
+            "value": "pending",
+            "source": "runtime.store",
+            "observedAt": "<time>",
+            "generation": "<id:19>:<id:26>"
+          }
+        },
+        "health": {
+          "status": "ok"
+        },
+        "failures": [],
+        "operations": [],
+        "queued": 0
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:19>/recovery?directory=<workspace:16>",
+      "status": 200,
+      "body": {
+        "kind": "operation",
+        "operation": {
+          "operationId": "r<id:27>",
+          "requestId": "e2e-stop-<id:28>",
+          "target": {
+            "scope": "turn",
+            "workspaceId": "<id:17>",
+            "sessionId": "<id:19>",
+            "turnId": "<id:21>",
+            "ownerGeneration": "<id:19>:<id:26>"
+          },
+          "action": "cancel_turn",
+          "scopeRevision": "<id:19>:<id:26>",
+          "attempt": 1,
+          "state": "needs_action",
+          "phase": "graceful_cancel",
+          "phaseDeadlineAt": "<time>",
+          "facts": {
+            "execution": {
+              "value": "terminal",
+              "source": "harness.cancelTurn",
+              "observedAt": "<time>",
+              "generation": "<id:19>:<id:26>"
+            },
+            "cleanup": {
+              "value": "unknown",
+              "source": "harness.cancelTurn",
+              "observedAt": "<time>",
+              "generation": "<id:19>:<id:26>"
+            },
+            "persistence": {
+              "value": "committed",
+              "source": "runtime.store",
+              "observedAt": "<time>",
+              "generation": "<id:19>:<id:26>"
+            }
+          },
+          "cleanupErrors": [],
+          "nextActions": [
+            {
+              "action": "inspect",
+              "scopePreviewRequired": false,
+              "reason": "the turn is finalized; cleanup this harness performed is not established"
+            }
+          ],
+          "receipt": "durable",
+          "createdAt": "<time>",
+          "updatedAt": "<time>"
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:19>/recovery/operations/r<id:27>?directory=<workspace:16>",
+      "status": 200,
+      "body": {
+        "kind": "operation",
+        "operation": {
+          "operationId": "r<id:27>",
+          "requestId": "e2e-stop-<id:28>",
+          "target": {
+            "scope": "turn",
+            "workspaceId": "<id:17>",
+            "sessionId": "<id:19>",
+            "turnId": "<id:21>",
+            "ownerGeneration": "<id:19>:<id:26>"
+          },
+          "action": "cancel_turn",
+          "scopeRevision": "<id:19>:<id:26>",
+          "attempt": 1,
+          "state": "needs_action",
+          "phase": "graceful_cancel",
+          "phaseDeadlineAt": "<time>",
+          "facts": {
+            "execution": {
+              "value": "terminal",
+              "source": "harness.cancelTurn",
+              "observedAt": "<time>",
+              "generation": "<id:19>:<id:26>"
+            },
+            "cleanup": {
+              "value": "unknown",
+              "source": "harness.cancelTurn",
+              "observedAt": "<time>",
+              "generation": "<id:19>:<id:26>"
+            },
+            "persistence": {
+              "value": "committed",
+              "source": "runtime.store",
+              "observedAt": "<time>",
+              "generation": "<id:19>:<id:26>"
+            }
+          },
+          "cleanupErrors": [],
+          "nextActions": [
+            {
+              "action": "inspect",
+              "scopePreviewRequired": false,
+              "reason": "the turn is finalized; cleanup this harness performed is not established"
+            }
+          ],
+          "receipt": "durable",
+          "createdAt": "<time>",
+          "updatedAt": "<time>"
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:19>/message?directory=<workspace:16>",
+      "status": 200,
+      "body": [
+        {
+          "info": {
+            "id": "<id:21>",
+            "sessionID": "<id:19>",
+            "role": "user",
+            "time": {
+              "created": "<time>"
+            },
+            "agent": "build",
+            "model": {
+              "providerID": "pi",
+              "modelID": "openai/gpt-4.1"
+            }
+          },
+          "parts": [
+            {
+              "type": "text",
+              "text": "H2STOPPI",
+              "id": "<id:22>",
+              "sessionID": "<id:19>",
+              "messageID": "<id:21>"
+            }
+          ]
+        },
+        {
+          "info": {
+            "id": "<id:23>",
+            "sessionID": "<id:19>",
+            "role": "assistant",
+            "time": {
+              "created": "<time>",
+              "completed": "<time>"
+            },
+            "parentID": "<id:21>",
+            "modelID": "openai/gpt-4.1",
+            "providerID": "pi",
+            "mode": "auto",
+            "agent": "build",
+            "path": {
+              "cwd": "<workspace:16>",
+              "root": "<workspace:16>"
+            },
+            "cost": 0,
+            "tokens": {
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            },
+            "error": {
+              "name": "MessageAbortedError",
+              "data": {
+                "message": "Aborted by user"
+              }
+            }
+          },
+          "parts": []
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:19>?directory=<workspace:16>",
+      "status": 200,
+      "body": {
+        "id": "<id:19>",
+        "workspaceId": "<id:17>",
+        "title": "H2 pi",
+        "titleSource": "user",
+        "directory": "<workspace:16>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "pi",
+            "access": "native"
+          },
+          "model": {
+            "providerID": "pi",
+            "modelID": "openai/gpt-4.1"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "status": "idle",
+        "agent_session_id": "<id:25>",
+        "lastTurn": {
+          "status": "completed",
+          "completedAt": "<time>",
+          "assistantMessageId": "<id:23>"
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:19>/recovery?directory=<workspace:16>",
+      "status": 409,
+      "body": {
+        "kind": "refused",
+        "refusal": {
+          "kind": "generation_conflict",
+          "message": "Session <id:19> has no admitted turn no-such-running-turn"
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/api/workspace/resolve?directory=<workspace:29>",
+      "status": 200,
+      "body": {
+        "workspaceId": "<id:30>",
+        "projectId": "<id:30>",
+        "directory": "<workspace:29>",
+        "workspaceName": null,
+        "backing": {
+          "kind": "local-worktree",
+          "directory": "<workspace:29>",
+          "repoName": "<repo:31>",
+          "branch": "main"
+        },
+        "kind": "local",
+        "driver": null,
+        "status": null,
+        "git": {
+          "repo": "<repo:31>",
+          "branch": "main",
+          "remote": null
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/api/claxedo/projects",
+      "status": 201,
+      "body": {
+        "project": {
+          "id": "<id:30>",
+          "name": "<repo:31>",
+          "env": {},
+          "directory": "<workspace:29>",
+          "repoUrl": null,
+          "created_at": "<time>",
+          "updated_at": "<time>"
+        }
+      }
+    },
+    {
+      "kind": "stream",
+      "route": "/api/wr/events?directory=<workspace:29>",
+      "frames": [
+        {
+          "id": "<time-id:28>",
+          "data": {
+            "type": "heartbeat"
+          }
+        },
+        {
+          "id": "<time-id:29>",
+          "data": {
+            "directory": "<workspace:29>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "creating",
+              "directory": "<workspace:29>",
+              "start": {
+                "sessionId": "<id:32>",
+                "directory": "<workspace:29>",
+                "workspaceId": "<id:30>",
+                "operationId": "<id:33>",
+                "connectionId": "native:claude"
+              },
+              "workspaceId": "<id:30>",
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:30>",
+          "data": {
+            "directory": "<workspace:29>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "created",
+              "directory": "<workspace:29>",
+              "sessionID": "<id:32>",
+              "workspaceId": "<id:30>",
+              "info": {
+                "id": "<id:32>",
+                "slug": "<id:32>",
+                "projectID": "<id:30>",
+                "workspaceID": "<id:30>",
+                "directory": "<workspace:29>",
+                "title": "H2 claude",
+                "version": "local",
+                "time": {
+                  "created": "<time>",
+                  "updated": "<time>"
+                }
+              },
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:31>",
+          "data": {
+            "directory": "<workspace:29>",
+            "payload": {
+              "id": "session.status:<id:32>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:32>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:32>",
+          "data": {
+            "directory": "<workspace:29>",
+            "payload": {
+              "id": "message.updated:<id:34>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:32>",
+                "info": {
+                  "id": "<id:34>",
+                  "sessionID": "<id:32>",
+                  "role": "user",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "agent": "build",
+                  "model": {
+                    "providerID": "claude",
+                    "modelID": "sonnet"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:33>",
+          "data": {
+            "directory": "<workspace:29>",
+            "payload": {
+              "id": "message.part.updated:<id:34>:<id:35>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:32>",
+                "part": {
+                  "type": "text",
+                  "text": "H2STOPCLAUDE",
+                  "id": "<id:35>",
+                  "sessionID": "<id:32>",
+                  "messageID": "<id:34>"
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:34>",
+          "data": {
+            "directory": "<workspace:29>",
+            "payload": {
+              "id": "message.updated:<id:36>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:32>",
+                "info": {
+                  "id": "<id:36>",
+                  "sessionID": "<id:32>",
+                  "role": "assistant",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "parentID": "<id:34>",
+                  "modelID": "sonnet",
+                  "providerID": "claude",
+                  "mode": "auto",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "<workspace:29>",
+                    "root": "<workspace:29>"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "input": 0,
+                    "output": 0,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:35>",
+          "data": {
+            "directory": "<workspace:29>",
+            "payload": {
+              "type": "session.commands",
+              "properties": {
+                "sessionID": "<id:32>",
+                "commands": [
+                  {
+                    "name": "deep-research",
+                    "description": "deep-research"
+                  },
+                  {
+                    "name": "dataviz",
+                    "description": "dataviz"
+                  },
+                  {
+                    "name": "<repo:37>",
+                    "description": "update-config"
+                  },
+                  {
+                    "name": "verify",
+                    "description": "verify"
+                  },
+                  {
+                    "name": "debug",
+                    "description": "debug"
+                  },
+                  {
+                    "name": "<repo:38>",
+                    "description": "code-review"
+                  },
+                  {
+                    "name": "simplify",
+                    "description": "simplify"
+                  },
+                  {
+                    "name": "batch",
+                    "description": "batch"
+                  },
+                  {
+                    "name": "fewer-permission-prompts",
+                    "description": "fewer-permission-prompts"
+                  },
+                  {
+                    "name": "doctor",
+                    "description": "doctor"
+                  },
+                  {
+                    "name": "loop",
+                    "description": "loop"
+                  },
+                  {
+                    "name": "claude-api",
+                    "description": "claude-api"
+                  },
+                  {
+                    "name": "workflow-authoring",
+                    "description": "workflow-authoring"
+                  },
+                  {
+                    "name": "run",
+                    "description": "run"
+                  },
+                  {
+                    "name": "run-skill-generator",
+                    "description": "run-skill-generator"
+                  },
+                  {
+                    "name": "agents",
+                    "description": "agents"
+                  },
+                  {
+                    "name": "auto-mode-setup",
+                    "description": "auto-mode-setup"
+                  },
+                  {
+                    "name": "autocompact",
+                    "description": "autocompact"
+                  },
+                  {
+                    "name": "clear",
+                    "description": "clear"
+                  },
+                  {
+                    "name": "color",
+                    "description": "color"
+                  },
+                  {
+                    "name": "compact",
+                    "description": "compact"
+                  },
+                  {
+                    "name": "config",
+                    "description": "config"
+                  },
+                  {
+                    "name": "output-style",
+                    "description": "output-style"
+                  },
+                  {
+                    "name": "context",
+                    "description": "context"
+                  },
+                  {
+                    "name": "effort",
+                    "description": "effort"
+                  },
+                  {
+                    "name": "fast",
+                    "description": "fast"
+                  },
+                  {
+                    "name": "focus",
+                    "description": "focus"
+                  },
+                  {
+                    "name": "heapdump",
+                    "description": "heapdump"
+                  },
+                  {
+                    "name": "init",
+                    "description": "init"
+                  },
+                  {
+                    "name": "mcp",
+                    "description": "mcp"
+                  },
+                  {
+                    "name": "model",
+                    "description": "model"
+                  },
+                  {
+                    "name": "__remote-workflow",
+                    "description": "__remote-workflow"
+                  },
+                  {
+                    "name": "workflow-launch-exec",
+                    "description": "workflow-launch-exec"
+                  },
+                  {
+                    "name": "reload-plugins",
+                    "description": "reload-plugins"
+                  },
+                  {
+                    "name": "<repo:39>",
+                    "description": "reload-skills"
+                  },
+                  {
+                    "name": "rename",
+                    "description": "rename"
+                  },
+                  {
+                    "name": "<repo:40>",
+                    "description": "security-review"
+                  },
+                  {
+                    "name": "usage",
+                    "description": "usage"
+                  },
+                  {
+                    "name": "insights",
+                    "description": "insights"
+                  },
+                  {
+                    "name": "recap",
+                    "description": "recap"
+                  },
+                  {
+                    "name": "goal",
+                    "description": "goal"
+                  },
+                  {
+                    "name": "<repo:41>",
+                    "description": "list-agents"
+                  },
+                  {
+                    "name": "team-onboarding",
+                    "description": "team-onboarding"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:36>",
+          "data": {
+            "directory": "<workspace:29>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:32>:claude_sdk.unmapped_event",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:32>",
+                "harness": "claude",
+                "threadId": "claude-sdk:<id:42>",
+                "code": "claude_sdk.unmapped_event",
+                "message": "SDKSystemMessage(init): model, tools, MCP server status, permission mode, and output style have no complete AgentRuntimeEvent mapping",
+                "severity": "info",
+                "diagnostic": {
+                  "code": "claude_sdk.unmapped_event",
+                  "message": "SDKSystemMessage(init): model, tools, MCP server status, permission mode, and output style have no complete AgentRuntimeEvent mapping",
+                  "severity": "info",
+                  "source": "claude.sdk",
+                  "method": "claude/system",
+                  "raw": {
+                    "type": "system",
+                    "subtype": "init",
+                    "cwd": "<workspace:29>",
+                    "session_id": "<id:43>",
+                    "tools": [
+                      "Task",
+                      "AskUserQuestion",
+                      "Bash",
+                      "CronCreate",
+                      "CronDelete",
+                      "CronList",
+                      "Edit",
+                      "EnterPlanMode",
+                      "EnterWorktree",
+                      "ExitPlanMode",
+                      "ExitWorktree",
+                      "ListAgents",
+                      "NotebookEdit",
+                      "Read",
+                      "ReportFindings",
+                      "ScheduleWakeup",
+                      "SendMessage",
+                      "Skill",
+                      "TaskCreate",
+                      "TaskGet",
+                      "TaskList",
+                      "TaskStop",
+                      "TaskUpdate",
+                      "WebFetch",
+                      "WebSearch",
+                      "Workflow",
+                      "Write",
+                      "mcp__claxedo__create_subagent",
+                      "mcp__claxedo__documents_list",
+                      "mcp__claxedo__documents_open",
+                      "mcp__claxedo__process_logs",
+                      "mcp__claxedo__process_start",
+                      "mcp__claxedo__process_stop",
+                      "mcp__claxedo__processes",
+                      "mcp__claxedo__question_reply",
+                      "mcp__claxedo__session_cancel_turn",
+                      "mcp__claxedo__session_create",
+                      "mcp__claxedo__session_get",
+                      "mcp__claxedo__session_send",
+                      "mcp__claxedo__session_transcript",
+                      "mcp__claxedo__sessions_list",
+                      "mcp__claxedo__<subagent:1>",
+                      "mcp__claxedo__<subagent:2>",
+                      "mcp__claxedo__<subagent:3>",
+                      "mcp__claxedo__<subagent:4>"
+                    ],
+                    "mcp_servers": [
+                      {
+                        "name": "claxedo",
+                        "status": "connected",
+                        "source": "dynamic"
+                      }
+                    ],
+                    "model": "claude-sonnet-5",
+                    "permissionMode": "auto",
+                    "slash_commands": [
+                      "deep-research",
+                      "dataviz",
+                      "update-config",
+                      "verify",
+                      "debug",
+                      "code-review",
+                      "simplify",
+                      "batch",
+                      "fewer-permission-prompts",
+                      "doctor",
+                      "loop",
+                      "claude-api",
+                      "workflow-authoring",
+                      "run",
+                      "run-skill-generator",
+                      "agents",
+                      "auto-mode-setup",
+                      "autocompact",
+                      "clear",
+                      "color",
+                      "compact",
+                      "config",
+                      "output-style",
+                      "context",
+                      "effort",
+                      "fast",
+                      "focus",
+                      "heapdump",
+                      "init",
+                      "mcp",
+                      "model",
+                      "__remote-workflow",
+                      "workflow-launch-exec",
+                      "reload-plugins",
+                      "reload-skills",
+                      "rename",
+                      "security-review",
+                      "usage",
+                      "insights",
+                      "recap",
+                      "goal",
+                      "list-agents",
+                      "team-onboarding"
+                    ],
+                    "terminal_slash_commands": [
+                      "doctor",
+                      "color",
+                      "focus",
+                      "reload-plugins"
+                    ],
+                    "apiKeySource": "none",
+                    "claude_code_version": "2.1.282",
+                    "output_style": "default",
+                    "agents": [
+                      "claude",
+                      "Explore",
+                      "general-purpose",
+                      "Plan",
+                      "statusline-setup"
+                    ],
+                    "skills": [
+                      "deep-research",
+                      "dataviz",
+                      "update-config",
+                      "verify",
+                      "debug",
+                      "code-review",
+                      "simplify",
+                      "batch",
+                      "fewer-permission-prompts",
+                      "doctor",
+                      "loop",
+                      "claude-api",
+                      "workflow-authoring",
+                      "run",
+                      "run-skill-generator"
+                    ],
+                    "plugins": [
+                      {
+                        "name": "agents-md",
+                        "path": "builtin",
+                        "source": "agents-md@builtin"
+                      }
+                    ],
+                    "capabilities": [
+                      "interrupt_receipt_v1",
+                      "interrupt_cancel_queued_v1",
+                      "<id:44>",
+                      "mcp_read_resource_v1",
+                      "mcp_<id:45>"
+                    ],
+                    "analytics_disabled": true,
+                    "product_feedback_disabled": true,
+                    "uuid": "<id:46>",
+                    "memory_paths": {
+                      "auto": "<data-dir>/.claxedo/claude/config/projects/<encoded-workspace:1>/memory/"
+                    },
+                    "messaging_socket_path": "<socket:1>",
+                    "fast_mode_state": "off",
+                    "fast_mode_disabled_reason": "sdk_opt_in_required",
+                    "per_turn_effort_active": false,
+                    "view_mode": "default"
+                  },
+                  "details": {
+                    "sdkEvent": "SDKSystemMessage(init)",
+                    "reason": "model, tools, MCP server status, permission mode, and output style have no complete AgentRuntimeEvent mapping"
+                  }
+                },
+                "raw": {
+                  "source": "claude.sdk",
+                  "method": "claude/system",
+                  "payload": {
+                    "type": "system",
+                    "subtype": "init",
+                    "cwd": "<workspace:29>",
+                    "session_id": "<id:43>",
+                    "tools": [
+                      "Task",
+                      "AskUserQuestion",
+                      "Bash",
+                      "CronCreate",
+                      "CronDelete",
+                      "CronList",
+                      "Edit",
+                      "EnterPlanMode",
+                      "EnterWorktree",
+                      "ExitPlanMode",
+                      "ExitWorktree",
+                      "ListAgents",
+                      "NotebookEdit",
+                      "Read",
+                      "ReportFindings",
+                      "ScheduleWakeup",
+                      "SendMessage",
+                      "Skill",
+                      "TaskCreate",
+                      "TaskGet",
+                      "TaskList",
+                      "TaskStop",
+                      "TaskUpdate",
+                      "WebFetch",
+                      "WebSearch",
+                      "Workflow",
+                      "Write",
+                      "mcp__claxedo__create_subagent",
+                      "mcp__claxedo__documents_list",
+                      "mcp__claxedo__documents_open",
+                      "mcp__claxedo__process_logs",
+                      "mcp__claxedo__process_start",
+                      "mcp__claxedo__process_stop",
+                      "mcp__claxedo__processes",
+                      "mcp__claxedo__question_reply",
+                      "mcp__claxedo__session_cancel_turn",
+                      "mcp__claxedo__session_create",
+                      "mcp__claxedo__session_get",
+                      "mcp__claxedo__session_send",
+                      "mcp__claxedo__session_transcript",
+                      "mcp__claxedo__sessions_list",
+                      "mcp__claxedo__<subagent:1>",
+                      "mcp__claxedo__<subagent:2>",
+                      "mcp__claxedo__<subagent:3>",
+                      "mcp__claxedo__<subagent:4>"
+                    ],
+                    "mcp_servers": [
+                      {
+                        "name": "claxedo",
+                        "status": "connected",
+                        "source": "dynamic"
+                      }
+                    ],
+                    "model": "claude-sonnet-5",
+                    "permissionMode": "auto",
+                    "slash_commands": [
+                      "deep-research",
+                      "dataviz",
+                      "update-config",
+                      "verify",
+                      "debug",
+                      "code-review",
+                      "simplify",
+                      "batch",
+                      "fewer-permission-prompts",
+                      "doctor",
+                      "loop",
+                      "claude-api",
+                      "workflow-authoring",
+                      "run",
+                      "run-skill-generator",
+                      "agents",
+                      "auto-mode-setup",
+                      "autocompact",
+                      "clear",
+                      "color",
+                      "compact",
+                      "config",
+                      "output-style",
+                      "context",
+                      "effort",
+                      "fast",
+                      "focus",
+                      "heapdump",
+                      "init",
+                      "mcp",
+                      "model",
+                      "__remote-workflow",
+                      "workflow-launch-exec",
+                      "reload-plugins",
+                      "reload-skills",
+                      "rename",
+                      "security-review",
+                      "usage",
+                      "insights",
+                      "recap",
+                      "goal",
+                      "list-agents",
+                      "team-onboarding"
+                    ],
+                    "terminal_slash_commands": [
+                      "doctor",
+                      "color",
+                      "focus",
+                      "reload-plugins"
+                    ],
+                    "apiKeySource": "none",
+                    "claude_code_version": "2.1.282",
+                    "output_style": "default",
+                    "agents": [
+                      "claude",
+                      "Explore",
+                      "general-purpose",
+                      "Plan",
+                      "statusline-setup"
+                    ],
+                    "skills": [
+                      "deep-research",
+                      "dataviz",
+                      "update-config",
+                      "verify",
+                      "debug",
+                      "code-review",
+                      "simplify",
+                      "batch",
+                      "fewer-permission-prompts",
+                      "doctor",
+                      "loop",
+                      "claude-api",
+                      "workflow-authoring",
+                      "run",
+                      "run-skill-generator"
+                    ],
+                    "plugins": [
+                      {
+                        "name": "agents-md",
+                        "path": "builtin",
+                        "source": "agents-md@builtin"
+                      }
+                    ],
+                    "capabilities": [
+                      "interrupt_receipt_v1",
+                      "interrupt_cancel_queued_v1",
+                      "<id:44>",
+                      "mcp_read_resource_v1",
+                      "mcp_<id:45>"
+                    ],
+                    "analytics_disabled": true,
+                    "product_feedback_disabled": true,
+                    "uuid": "<id:46>",
+                    "memory_paths": {
+                      "auto": "<data-dir>/.claxedo/claude/config/projects/<encoded-workspace:1>/memory/"
+                    },
+                    "messaging_socket_path": "<socket:1>",
+                    "fast_mode_state": "off",
+                    "fast_mode_disabled_reason": "sdk_opt_in_required",
+                    "per_turn_effort_active": false,
+                    "view_mode": "default"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:37>",
+          "data": {
+            "directory": "<workspace:29>",
+            "payload": {
+              "id": "message.updated:<id:36>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:32>",
+                "info": {
+                  "id": "<id:36>",
+                  "sessionID": "<id:32>",
+                  "role": "assistant",
+                  "time": {
+                    "created": "<time>",
+                    "completed": "<time>"
+                  },
+                  "parentID": "<id:34>",
+                  "modelID": "sonnet",
+                  "providerID": "claude",
+                  "mode": "auto",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "<workspace:29>",
+                    "root": "<workspace:29>"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "input": 0,
+                    "output": 0,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": 0
+                    }
+                  },
+                  "error": {
+                    "name": "MessageAbortedError",
+                    "data": {
+                      "message": "Aborted by user"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:38>",
+          "data": {
+            "directory": "<workspace:29>",
+            "payload": {
+              "id": "session.status:<id:32>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:32>",
+                "status": {
+                  "type": "idle"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:39>",
+          "data": {
+            "directory": "<workspace:29>",
+            "payload": {
+              "id": "session.idle:<id:32>",
+              "type": "session.idle",
+              "properties": {
+                "sessionID": "<id:32>"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session?directory=<workspace:47>",
+      "status": 201,
+      "body": {
+        "id": "<id:32>",
+        "workspaceId": "<id:30>",
+        "title": "H2 claude",
+        "titleSource": "user",
+        "directory": "<workspace:29>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "claude",
+            "access": "native"
+          },
+          "model": {
+            "providerID": "claude",
+            "modelID": "sonnet"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "agent_session_id": "claude-sdk:<id:42>"
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:32>/prompt_async?directory=<workspace:29>",
+      "status": 204,
+      "body": null
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:32>/recovery?directory=<workspace:29>",
+      "status": 200,
+      "body": {
+        "sessionId": "<id:32>",
+        "target": {
+          "scope": "turn",
+          "workspaceId": "<id:30>",
+          "sessionId": "<id:32>",
+          "turnId": "<id:34>",
+          "ownerGeneration": "<id:32>:<id:48>"
+        },
+        "facts": {
+          "execution": {
+            "value": "running",
+            "source": "runtime.admission",
+            "observedAt": "<time>",
+            "generation": "<id:32>:<id:48>"
+          },
+          "cleanup": {
+            "value": "owned",
+            "source": "runtime.admission",
+            "observedAt": "<time>",
+            "generation": "<id:32>:<id:48>"
+          },
+          "persistence": {
+            "value": "pending",
+            "source": "runtime.store",
+            "observedAt": "<time>",
+            "generation": "<id:32>:<id:48>"
+          }
+        },
+        "health": {
+          "status": "ok"
+        },
+        "failures": [],
+        "operations": [],
+        "queued": 0
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:32>/recovery?directory=<workspace:29>",
+      "status": 200,
+      "body": {
+        "kind": "operation",
+        "operation": {
+          "operationId": "r<id:49>",
+          "requestId": "e2e-stop-<id:50>",
+          "target": {
+            "scope": "turn",
+            "workspaceId": "<id:30>",
+            "sessionId": "<id:32>",
+            "turnId": "<id:34>",
+            "ownerGeneration": "<id:32>:<id:48>"
+          },
+          "action": "cancel_turn",
+          "scopeRevision": "<id:32>:<id:48>",
+          "attempt": 1,
+          "state": "needs_action",
+          "phase": "graceful_cancel",
+          "phaseDeadlineAt": "<time>",
+          "facts": {
+            "execution": {
+              "value": "terminal",
+              "source": "harness.cancelTurn",
+              "observedAt": "<time>",
+              "generation": "<id:32>:<id:48>"
+            },
+            "cleanup": {
+              "value": "unknown",
+              "source": "harness.cancelTurn",
+              "observedAt": "<time>",
+              "generation": "<id:32>:<id:48>"
+            },
+            "persistence": {
+              "value": "committed",
+              "source": "runtime.store",
+              "observedAt": "<time>",
+              "generation": "<id:32>:<id:48>"
+            }
+          },
+          "cleanupErrors": [],
+          "nextActions": [
+            {
+              "action": "inspect",
+              "scopePreviewRequired": false,
+              "reason": "the turn is finalized; cleanup this harness performed is not established"
+            }
+          ],
+          "receipt": "durable",
+          "createdAt": "<time>",
+          "updatedAt": "<time>"
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:32>/recovery/operations/r<id:49>?directory=<workspace:29>",
+      "status": 200,
+      "body": {
+        "kind": "operation",
+        "operation": {
+          "operationId": "r<id:49>",
+          "requestId": "e2e-stop-<id:50>",
+          "target": {
+            "scope": "turn",
+            "workspaceId": "<id:30>",
+            "sessionId": "<id:32>",
+            "turnId": "<id:34>",
+            "ownerGeneration": "<id:32>:<id:48>"
+          },
+          "action": "cancel_turn",
+          "scopeRevision": "<id:32>:<id:48>",
+          "attempt": 1,
+          "state": "needs_action",
+          "phase": "graceful_cancel",
+          "phaseDeadlineAt": "<time>",
+          "facts": {
+            "execution": {
+              "value": "terminal",
+              "source": "harness.cancelTurn",
+              "observedAt": "<time>",
+              "generation": "<id:32>:<id:48>"
+            },
+            "cleanup": {
+              "value": "unknown",
+              "source": "harness.cancelTurn",
+              "observedAt": "<time>",
+              "generation": "<id:32>:<id:48>"
+            },
+            "persistence": {
+              "value": "committed",
+              "source": "runtime.store",
+              "observedAt": "<time>",
+              "generation": "<id:32>:<id:48>"
+            }
+          },
+          "cleanupErrors": [],
+          "nextActions": [
+            {
+              "action": "inspect",
+              "scopePreviewRequired": false,
+              "reason": "the turn is finalized; cleanup this harness performed is not established"
+            }
+          ],
+          "receipt": "durable",
+          "createdAt": "<time>",
+          "updatedAt": "<time>"
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:32>/message?directory=<workspace:29>",
+      "status": 200,
+      "body": [
+        {
+          "info": {
+            "id": "<id:34>",
+            "sessionID": "<id:32>",
+            "role": "user",
+            "time": {
+              "created": "<time>"
+            },
+            "agent": "build",
+            "model": {
+              "providerID": "claude",
+              "modelID": "sonnet"
+            }
+          },
+          "parts": [
+            {
+              "type": "text",
+              "text": "H2STOPCLAUDE",
+              "id": "<id:35>",
+              "sessionID": "<id:32>",
+              "messageID": "<id:34>"
+            }
+          ]
+        },
+        {
+          "info": {
+            "id": "<id:36>",
+            "sessionID": "<id:32>",
+            "role": "assistant",
+            "time": {
+              "created": "<time>",
+              "completed": "<time>"
+            },
+            "parentID": "<id:34>",
+            "modelID": "sonnet",
+            "providerID": "claude",
+            "mode": "auto",
+            "agent": "build",
+            "path": {
+              "cwd": "<workspace:29>",
+              "root": "<workspace:29>"
+            },
+            "cost": 0,
+            "tokens": {
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            },
+            "error": {
+              "name": "MessageAbortedError",
+              "data": {
+                "message": "Aborted by user"
+              }
+            }
+          },
+          "parts": []
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:32>?directory=<workspace:29>",
+      "status": 200,
+      "body": {
+        "id": "<id:32>",
+        "workspaceId": "<id:30>",
+        "title": "H2 claude",
+        "titleSource": "user",
+        "commands": [
+          {
+            "name": "deep-research",
+            "description": "deep-research"
+          },
+          {
+            "name": "dataviz",
+            "description": "dataviz"
+          },
+          {
+            "name": "<repo:37>",
+            "description": "update-config"
+          },
+          {
+            "name": "verify",
+            "description": "verify"
+          },
+          {
+            "name": "debug",
+            "description": "debug"
+          },
+          {
+            "name": "<repo:38>",
+            "description": "code-review"
+          },
+          {
+            "name": "simplify",
+            "description": "simplify"
+          },
+          {
+            "name": "batch",
+            "description": "batch"
+          },
+          {
+            "name": "fewer-permission-prompts",
+            "description": "fewer-permission-prompts"
+          },
+          {
+            "name": "doctor",
+            "description": "doctor"
+          },
+          {
+            "name": "loop",
+            "description": "loop"
+          },
+          {
+            "name": "claude-api",
+            "description": "claude-api"
+          },
+          {
+            "name": "workflow-authoring",
+            "description": "workflow-authoring"
+          },
+          {
+            "name": "run",
+            "description": "run"
+          },
+          {
+            "name": "run-skill-generator",
+            "description": "run-skill-generator"
+          },
+          {
+            "name": "agents",
+            "description": "agents"
+          },
+          {
+            "name": "auto-mode-setup",
+            "description": "auto-mode-setup"
+          },
+          {
+            "name": "autocompact",
+            "description": "autocompact"
+          },
+          {
+            "name": "clear",
+            "description": "clear"
+          },
+          {
+            "name": "color",
+            "description": "color"
+          },
+          {
+            "name": "compact",
+            "description": "compact"
+          },
+          {
+            "name": "config",
+            "description": "config"
+          },
+          {
+            "name": "output-style",
+            "description": "output-style"
+          },
+          {
+            "name": "context",
+            "description": "context"
+          },
+          {
+            "name": "effort",
+            "description": "effort"
+          },
+          {
+            "name": "fast",
+            "description": "fast"
+          },
+          {
+            "name": "focus",
+            "description": "focus"
+          },
+          {
+            "name": "heapdump",
+            "description": "heapdump"
+          },
+          {
+            "name": "init",
+            "description": "init"
+          },
+          {
+            "name": "mcp",
+            "description": "mcp"
+          },
+          {
+            "name": "model",
+            "description": "model"
+          },
+          {
+            "name": "__remote-workflow",
+            "description": "__remote-workflow"
+          },
+          {
+            "name": "workflow-launch-exec",
+            "description": "workflow-launch-exec"
+          },
+          {
+            "name": "reload-plugins",
+            "description": "reload-plugins"
+          },
+          {
+            "name": "<repo:39>",
+            "description": "reload-skills"
+          },
+          {
+            "name": "rename",
+            "description": "rename"
+          },
+          {
+            "name": "<repo:40>",
+            "description": "security-review"
+          },
+          {
+            "name": "usage",
+            "description": "usage"
+          },
+          {
+            "name": "insights",
+            "description": "insights"
+          },
+          {
+            "name": "recap",
+            "description": "recap"
+          },
+          {
+            "name": "goal",
+            "description": "goal"
+          },
+          {
+            "name": "<repo:41>",
+            "description": "list-agents"
+          },
+          {
+            "name": "team-onboarding",
+            "description": "team-onboarding"
+          }
+        ],
+        "directory": "<workspace:29>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "claude",
+            "access": "native"
+          },
+          "model": {
+            "providerID": "claude",
+            "modelID": "sonnet"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "status": "idle",
+        "agent_session_id": "<id:43>",
+        "lastTurn": {
+          "status": "completed",
+          "completedAt": "<time>",
+          "assistantMessageId": "<id:36>"
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:32>/recovery?directory=<workspace:29>",
+      "status": 409,
+      "body": {
+        "kind": "refused",
+        "refusal": {
+          "kind": "generation_conflict",
+          "message": "Session <id:32> has no admitted turn no-such-running-turn"
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/api/workspace/resolve?directory=<workspace:51>",
+      "status": 200,
+      "body": {
+        "workspaceId": "<id:52>",
+        "projectId": "<id:52>",
+        "directory": "<workspace:51>",
+        "workspaceName": null,
+        "backing": {
+          "kind": "local-worktree",
+          "directory": "<workspace:51>",
+          "repoName": "<repo:53>",
+          "branch": "main"
+        },
+        "kind": "local",
+        "driver": null,
+        "status": null,
+        "git": {
+          "repo": "<repo:53>",
+          "branch": "main",
+          "remote": null
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/api/claxedo/projects",
+      "status": 201,
+      "body": {
+        "project": {
+          "id": "<id:52>",
+          "name": "<repo:53>",
+          "env": {},
+          "directory": "<workspace:51>",
+          "repoUrl": null,
+          "created_at": "<time>",
+          "updated_at": "<time>"
+        }
+      }
+    },
+    {
+      "kind": "stream",
+      "route": "/api/wr/events?directory=<workspace:51>",
+      "frames": [
+        {
+          "id": "<time-id:40>",
+          "data": {
+            "type": "heartbeat"
+          }
+        },
+        {
+          "id": "<time-id:41>",
+          "data": {
+            "directory": "<workspace:51>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "creating",
+              "directory": "<workspace:51>",
+              "start": {
+                "sessionId": "<id:54>",
+                "directory": "<workspace:51>",
+                "workspaceId": "<id:52>",
+                "operationId": "<id:55>",
+                "connectionId": "native:codex"
+              },
+              "workspaceId": "<id:52>",
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:42>",
+          "data": {
+            "directory": "<workspace:51>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "created",
+              "directory": "<workspace:51>",
+              "sessionID": "<id:54>",
+              "workspaceId": "<id:52>",
+              "info": {
+                "id": "<id:54>",
+                "slug": "<id:54>",
+                "projectID": "<id:52>",
+                "workspaceID": "<id:52>",
+                "directory": "<workspace:51>",
+                "title": "H2 codex",
+                "version": "local",
+                "time": {
+                  "created": "<time>",
+                  "updated": "<time>"
+                }
+              },
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:43>",
+          "data": {
+            "directory": "<workspace:51>",
+            "payload": {
+              "id": "session.status:<id:54>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:54>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:44>",
+          "data": {
+            "directory": "<workspace:51>",
+            "payload": {
+              "id": "message.updated:<id:56>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:54>",
+                "info": {
+                  "id": "<id:56>",
+                  "sessionID": "<id:54>",
+                  "role": "user",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "agent": "build",
+                  "model": {
+                    "providerID": "codex",
+                    "modelID": "gpt-5.5"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:45>",
+          "data": {
+            "directory": "<workspace:51>",
+            "payload": {
+              "id": "message.part.updated:<id:56>:<id:57>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:54>",
+                "part": {
+                  "type": "text",
+                  "text": "H2STOPCODEX",
+                  "id": "<id:57>",
+                  "sessionID": "<id:54>",
+                  "messageID": "<id:56>"
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:46>",
+          "data": {
+            "directory": "<workspace:51>",
+            "payload": {
+              "id": "message.updated:<id:58>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:54>",
+                "info": {
+                  "id": "<id:58>",
+                  "sessionID": "<id:54>",
+                  "role": "assistant",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "parentID": "<id:56>",
+                  "modelID": "gpt-5.5",
+                  "providerID": "codex",
+                  "mode": "auto",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "<workspace:51>",
+                    "root": "<workspace:51>"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "input": 0,
+                    "output": 0,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:47>",
+          "data": {
+            "directory": "<workspace:51>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:54>:runtime.mcp_server_status",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:54>",
+                "harness": "codex",
+                "threadId": "<id:59>",
+                "code": "runtime.mcp_server_status",
+                "message": "MCP server claxedo is ready",
+                "severity": "info",
+                "mcp": {
+                  "serverName": "claxedo",
+                  "status": "ready",
+                  "error": null
+                },
+                "raw": {
+                  "source": "codex.app-server",
+                  "method": "mcpServer/startupStatus/updated",
+                  "payload": {
+                    "threadId": "<id:59>",
+                    "name": "claxedo",
+                    "status": "ready",
+                    "error": null,
+                    "failureReason": null
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:48>",
+          "data": {
+            "directory": "<workspace:51>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:54>:codex_app_server.unmapped_event",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:54>",
+                "harness": "codex",
+                "threadId": "<id:59>",
+                "code": "codex_app_server.unmapped_event",
+                "message": "thread/settings/updated: Codex app-server method has no AgentRuntimeEvent mapping",
+                "severity": "info",
+                "diagnostic": {
+                  "code": "codex_app_server.unmapped_event",
+                  "message": "thread/settings/updated: Codex app-server method has no AgentRuntimeEvent mapping",
+                  "severity": "info",
+                  "source": "codex.app-server",
+                  "method": "thread/settings/updated",
+                  "raw": {
+                    "threadId": "<id:59>",
+                    "threadSettings": {
+                      "disabledPluginIds": [],
+                      "cwd": "<workspace:51>",
+                      "approvalPolicy": "on-request",
+                      "approvalsReviewer": "user",
+                      "sandboxPolicy": {
+                        "type": "workspaceWrite",
+                        "writableRoots": [],
+                        "networkAccess": true,
+                        "excludeTmpdirEnvVar": false,
+                        "excludeSlashTmp": false
+                      },
+                      "activePermissionProfile": null,
+                      "model": "gpt-5.5",
+                      "modelProvider": "broker",
+                      "serviceTier": "default",
+                      "effort": "medium",
+                      "summary": null,
+                      "collaborationMode": {
+                        "mode": "default",
+                        "settings": {
+                          "model": "gpt-5.5",
+                          "reasoning_effort": "medium",
+                          "developer_instructions": null
+                        }
+                      },
+                      "multiAgentMode": "explicitRequestOnly",
+                      "personality": null
+                    }
+                  }
+                },
+                "raw": {
+                  "source": "codex.app-server",
+                  "method": "thread/settings/updated",
+                  "payload": {
+                    "threadId": "<id:59>",
+                    "threadSettings": {
+                      "disabledPluginIds": [],
+                      "cwd": "<workspace:51>",
+                      "approvalPolicy": "on-request",
+                      "approvalsReviewer": "user",
+                      "sandboxPolicy": {
+                        "type": "workspaceWrite",
+                        "writableRoots": [],
+                        "networkAccess": true,
+                        "excludeTmpdirEnvVar": false,
+                        "excludeSlashTmp": false
+                      },
+                      "activePermissionProfile": null,
+                      "model": "gpt-5.5",
+                      "modelProvider": "broker",
+                      "serviceTier": "default",
+                      "effort": "medium",
+                      "summary": null,
+                      "collaborationMode": {
+                        "mode": "default",
+                        "settings": {
+                          "model": "gpt-5.5",
+                          "reasoning_effort": "medium",
+                          "developer_instructions": null
+                        }
+                      },
+                      "multiAgentMode": "explicitRequestOnly",
+                      "personality": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:49>",
+          "data": {
+            "directory": "<workspace:51>",
+            "payload": {
+              "id": "session.status:<id:54>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:54>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:50>",
+          "data": {
+            "directory": "<workspace:51>",
+            "payload": {
+              "id": "session.status:<id:54>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:54>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:51>",
+          "data": {
+            "directory": "<workspace:51>",
+            "payload": {
+              "id": "message.updated:<id:58>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:54>",
+                "info": {
+                  "id": "<id:58>",
+                  "sessionID": "<id:54>",
+                  "role": "assistant",
+                  "time": {
+                    "created": "<time>",
+                    "completed": "<time>"
+                  },
+                  "parentID": "<id:56>",
+                  "modelID": "gpt-5.5",
+                  "providerID": "codex",
+                  "mode": "auto",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "<workspace:51>",
+                    "root": "<workspace:51>"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "input": 0,
+                    "output": 0,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": 0
+                    }
+                  },
+                  "error": {
+                    "name": "MessageAbortedError",
+                    "data": {
+                      "message": "Aborted by user"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:52>",
+          "data": {
+            "directory": "<workspace:51>",
+            "payload": {
+              "id": "session.status:<id:54>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:54>",
+                "status": {
+                  "type": "idle"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:53>",
+          "data": {
+            "directory": "<workspace:51>",
+            "payload": {
+              "id": "session.idle:<id:54>",
+              "type": "session.idle",
+              "properties": {
+                "sessionID": "<id:54>"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session?directory=<workspace:60>",
+      "status": 201,
+      "body": {
+        "id": "<id:54>",
+        "workspaceId": "<id:52>",
+        "title": "H2 codex",
+        "titleSource": "user",
+        "directory": "<workspace:51>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "codex",
+            "access": "native"
+          },
+          "model": {
+            "providerID": "codex",
+            "modelID": "gpt-5.5"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "agent_session_id": "<id:59>"
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:54>/prompt_async?directory=<workspace:51>",
+      "status": 204,
+      "body": null
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:54>/recovery?directory=<workspace:51>",
+      "status": 200,
+      "body": {
+        "sessionId": "<id:54>",
+        "target": {
+          "scope": "turn",
+          "workspaceId": "<id:52>",
+          "sessionId": "<id:54>",
+          "turnId": "<id:56>",
+          "ownerGeneration": "<id:54>:<id:61>"
+        },
+        "facts": {
+          "execution": {
+            "value": "running",
+            "source": "runtime.admission",
+            "observedAt": "<time>",
+            "generation": "<id:54>:<id:61>"
+          },
+          "cleanup": {
+            "value": "owned",
+            "source": "runtime.admission",
+            "observedAt": "<time>",
+            "generation": "<id:54>:<id:61>"
+          },
+          "persistence": {
+            "value": "pending",
+            "source": "runtime.store",
+            "observedAt": "<time>",
+            "generation": "<id:54>:<id:61>"
+          }
+        },
+        "health": {
+          "status": "ok"
+        },
+        "failures": [],
+        "operations": [],
+        "queued": 0
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:54>/recovery?directory=<workspace:51>",
+      "status": 200,
+      "body": {
+        "kind": "operation",
+        "operation": {
+          "operationId": "r<id:62>",
+          "requestId": "e2e-stop-<id:63>",
+          "target": {
+            "scope": "turn",
+            "workspaceId": "<id:52>",
+            "sessionId": "<id:54>",
+            "turnId": "<id:56>",
+            "ownerGeneration": "<id:54>:<id:61>"
+          },
+          "action": "cancel_turn",
+          "scopeRevision": "<id:54>:<id:61>",
+          "attempt": 1,
+          "state": "succeeded",
+          "phase": "graceful_cancel",
+          "phaseDeadlineAt": "<time>",
+          "facts": {
+            "execution": {
+              "value": "terminal",
+              "source": "harness.cancelTurn",
+              "observedAt": "<time>",
+              "generation": "<id:54>:<id:61>"
+            },
+            "cleanup": {
+              "value": "verified_clear",
+              "source": "harness.cancelTurn",
+              "observedAt": "<time>",
+              "generation": "<id:54>:<id:61>"
+            },
+            "persistence": {
+              "value": "committed",
+              "source": "runtime.store",
+              "observedAt": "<time>",
+              "generation": "<id:54>:<id:61>"
+            }
+          },
+          "cleanupErrors": [],
+          "nextActions": [
+            {
+              "action": "inspect",
+              "scopePreviewRequired": false,
+              "reason": "the turn is finalized; cleanup this harness performed is not established"
+            }
+          ],
+          "receipt": "durable",
+          "createdAt": "<time>",
+          "updatedAt": "<time>"
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:54>/recovery/operations/r<id:62>?directory=<workspace:51>",
+      "status": 200,
+      "body": {
+        "kind": "operation",
+        "operation": {
+          "operationId": "r<id:62>",
+          "requestId": "e2e-stop-<id:63>",
+          "target": {
+            "scope": "turn",
+            "workspaceId": "<id:52>",
+            "sessionId": "<id:54>",
+            "turnId": "<id:56>",
+            "ownerGeneration": "<id:54>:<id:61>"
+          },
+          "action": "cancel_turn",
+          "scopeRevision": "<id:54>:<id:61>",
+          "attempt": 1,
+          "state": "succeeded",
+          "phase": "graceful_cancel",
+          "phaseDeadlineAt": "<time>",
+          "facts": {
+            "execution": {
+              "value": "terminal",
+              "source": "harness.cancelTurn",
+              "observedAt": "<time>",
+              "generation": "<id:54>:<id:61>"
+            },
+            "cleanup": {
+              "value": "verified_clear",
+              "source": "harness.cancelTurn",
+              "observedAt": "<time>",
+              "generation": "<id:54>:<id:61>"
+            },
+            "persistence": {
+              "value": "committed",
+              "source": "runtime.store",
+              "observedAt": "<time>",
+              "generation": "<id:54>:<id:61>"
+            }
+          },
+          "cleanupErrors": [],
+          "nextActions": [
+            {
+              "action": "inspect",
+              "scopePreviewRequired": false,
+              "reason": "the turn is finalized; cleanup this harness performed is not established"
+            }
+          ],
+          "receipt": "durable",
+          "createdAt": "<time>",
+          "updatedAt": "<time>"
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:54>/message?directory=<workspace:51>",
+      "status": 200,
+      "body": [
+        {
+          "info": {
+            "id": "<id:56>",
+            "sessionID": "<id:54>",
+            "role": "user",
+            "time": {
+              "created": "<time>"
+            },
+            "agent": "build",
+            "model": {
+              "providerID": "codex",
+              "modelID": "gpt-5.5"
+            }
+          },
+          "parts": [
+            {
+              "type": "text",
+              "text": "H2STOPCODEX",
+              "id": "<id:57>",
+              "sessionID": "<id:54>",
+              "messageID": "<id:56>"
+            }
+          ]
+        },
+        {
+          "info": {
+            "id": "<id:58>",
+            "sessionID": "<id:54>",
+            "role": "assistant",
+            "time": {
+              "created": "<time>",
+              "completed": "<time>"
+            },
+            "parentID": "<id:56>",
+            "modelID": "gpt-5.5",
+            "providerID": "codex",
+            "mode": "auto",
+            "agent": "build",
+            "path": {
+              "cwd": "<workspace:51>",
+              "root": "<workspace:51>"
+            },
+            "cost": 0,
+            "tokens": {
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            },
+            "error": {
+              "name": "MessageAbortedError",
+              "data": {
+                "message": "Aborted by user"
+              }
+            }
+          },
+          "parts": []
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:54>?directory=<workspace:51>",
+      "status": 200,
+      "body": {
+        "id": "<id:54>",
+        "workspaceId": "<id:52>",
+        "title": "H2 codex",
+        "titleSource": "user",
+        "directory": "<workspace:51>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "codex",
+            "access": "native"
+          },
+          "model": {
+            "providerID": "codex",
+            "modelID": "gpt-5.5"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "status": "idle",
+        "agent_session_id": "<id:59>",
+        "lastTurn": {
+          "status": "completed",
+          "completedAt": "<time>",
+          "assistantMessageId": "<id:58>"
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:54>/recovery?directory=<workspace:51>",
+      "status": 409,
+      "body": {
+        "kind": "refused",
+        "refusal": {
+          "kind": "generation_conflict",
+          "message": "Session <id:54> has no admitted turn no-such-running-turn"
+        }
+      }
+    }
+  ]
+}

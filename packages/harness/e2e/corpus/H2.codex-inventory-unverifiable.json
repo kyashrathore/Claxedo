@@ -1,0 +1,1054 @@
+{
+  "flow": "H2.codex-inventory-unverifiable",
+  "observations": [
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/api/workspace/resolve?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "workspaceId": "<id:2>",
+        "projectId": "<id:2>",
+        "directory": "<workspace:1>",
+        "workspaceName": null,
+        "backing": {
+          "kind": "local-worktree",
+          "directory": "<workspace:1>",
+          "repoName": "<repo:3>",
+          "branch": "main"
+        },
+        "kind": "local",
+        "driver": null,
+        "status": null,
+        "git": {
+          "repo": "<repo:3>",
+          "branch": "main",
+          "remote": null
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/api/claxedo/projects",
+      "status": 201,
+      "body": {
+        "project": {
+          "id": "<id:2>",
+          "name": "<repo:3>",
+          "env": {},
+          "directory": "<workspace:1>",
+          "repoUrl": null,
+          "created_at": "<time>",
+          "updated_at": "<time>"
+        }
+      }
+    },
+    {
+      "kind": "stream",
+      "route": "/api/wr/events?directory=<workspace:1>",
+      "frames": [
+        {
+          "id": "<time-id:1>",
+          "data": {
+            "type": "heartbeat"
+          }
+        },
+        {
+          "id": "<time-id:2>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "creating",
+              "directory": "<workspace:1>",
+              "start": {
+                "sessionId": "<id:4>",
+                "directory": "<workspace:1>",
+                "workspaceId": "<id:2>",
+                "operationId": "<id:5>",
+                "connectionId": "native:codex"
+              },
+              "workspaceId": "<id:2>",
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:3>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "created",
+              "directory": "<workspace:1>",
+              "sessionID": "<id:4>",
+              "workspaceId": "<id:2>",
+              "info": {
+                "id": "<id:4>",
+                "slug": "<id:4>",
+                "projectID": "<id:2>",
+                "workspaceID": "<id:2>",
+                "directory": "<workspace:1>",
+                "title": "H2 codex",
+                "version": "local",
+                "time": {
+                  "created": "<time>",
+                  "updated": "<time>"
+                }
+              },
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:4>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:4>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:4>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:5>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.updated:<id:6>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "info": {
+                  "id": "<id:6>",
+                  "sessionID": "<id:4>",
+                  "role": "user",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "agent": "build",
+                  "model": {
+                    "providerID": "codex",
+                    "modelID": "gpt-5.5"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:6>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:6>:<id:7>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "part": {
+                  "type": "text",
+                  "text": "H2STOPCODEX",
+                  "id": "<id:7>",
+                  "sessionID": "<id:4>",
+                  "messageID": "<id:6>"
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:7>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.updated:<id:8>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "info": {
+                  "id": "<id:8>",
+                  "sessionID": "<id:4>",
+                  "role": "assistant",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "parentID": "<id:6>",
+                  "modelID": "gpt-5.5",
+                  "providerID": "codex",
+                  "mode": "auto",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "<workspace:1>",
+                    "root": "<workspace:1>"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "input": 0,
+                    "output": 0,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:8>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:4>:runtime.mcp_server_status",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:4>",
+                "harness": "codex",
+                "threadId": "<id:9>",
+                "code": "runtime.mcp_server_status",
+                "message": "MCP server claxedo is ready",
+                "severity": "info",
+                "mcp": {
+                  "serverName": "claxedo",
+                  "status": "ready",
+                  "error": null
+                },
+                "raw": {
+                  "source": "codex.app-server",
+                  "method": "mcpServer/startupStatus/updated",
+                  "payload": {
+                    "threadId": "<id:9>",
+                    "name": "claxedo",
+                    "status": "ready",
+                    "error": null,
+                    "failureReason": null
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:9>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:4>:codex_app_server.unmapped_event",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:4>",
+                "harness": "codex",
+                "threadId": "<id:9>",
+                "code": "codex_app_server.unmapped_event",
+                "message": "thread/settings/updated: Codex app-server method has no AgentRuntimeEvent mapping",
+                "severity": "info",
+                "diagnostic": {
+                  "code": "codex_app_server.unmapped_event",
+                  "message": "thread/settings/updated: Codex app-server method has no AgentRuntimeEvent mapping",
+                  "severity": "info",
+                  "source": "codex.app-server",
+                  "method": "thread/settings/updated",
+                  "raw": {
+                    "threadId": "<id:9>",
+                    "threadSettings": {
+                      "disabledPluginIds": [],
+                      "cwd": "<workspace:1>",
+                      "approvalPolicy": "on-request",
+                      "approvalsReviewer": "user",
+                      "sandboxPolicy": {
+                        "type": "workspaceWrite",
+                        "writableRoots": [],
+                        "networkAccess": true,
+                        "excludeTmpdirEnvVar": false,
+                        "excludeSlashTmp": false
+                      },
+                      "activePermissionProfile": null,
+                      "model": "gpt-5.5",
+                      "modelProvider": "broker",
+                      "serviceTier": "default",
+                      "effort": "medium",
+                      "summary": null,
+                      "collaborationMode": {
+                        "mode": "default",
+                        "settings": {
+                          "model": "gpt-5.5",
+                          "reasoning_effort": "medium",
+                          "developer_instructions": null
+                        }
+                      },
+                      "multiAgentMode": "explicitRequestOnly",
+                      "personality": null
+                    }
+                  }
+                },
+                "raw": {
+                  "source": "codex.app-server",
+                  "method": "thread/settings/updated",
+                  "payload": {
+                    "threadId": "<id:9>",
+                    "threadSettings": {
+                      "disabledPluginIds": [],
+                      "cwd": "<workspace:1>",
+                      "approvalPolicy": "on-request",
+                      "approvalsReviewer": "user",
+                      "sandboxPolicy": {
+                        "type": "workspaceWrite",
+                        "writableRoots": [],
+                        "networkAccess": true,
+                        "excludeTmpdirEnvVar": false,
+                        "excludeSlashTmp": false
+                      },
+                      "activePermissionProfile": null,
+                      "model": "gpt-5.5",
+                      "modelProvider": "broker",
+                      "serviceTier": "default",
+                      "effort": "medium",
+                      "summary": null,
+                      "collaborationMode": {
+                        "mode": "default",
+                        "settings": {
+                          "model": "gpt-5.5",
+                          "reasoning_effort": "medium",
+                          "developer_instructions": null
+                        }
+                      },
+                      "multiAgentMode": "explicitRequestOnly",
+                      "personality": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:10>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:4>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:4>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:11>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:4>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:4>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:12>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:8>:000000_<id:10>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "part": {
+                  "id": "000000_<id:10>",
+                  "sessionID": "<id:4>",
+                  "messageID": "<id:8>",
+                  "type": "tool",
+                  "callID": "<id:10>",
+                  "tool": "bash",
+                  "state": {
+                    "status": "running",
+                    "input": {
+                      "intent": "shell",
+                      "kind": "command_execution",
+                      "description": "/bin/zsh -lc 'sleep 120'",
+                      "command": "/bin/zsh -lc 'sleep 120'",
+                      "cwd": "<workspace:1>",
+                      "processId": "<pid:1>"
+                    },
+                    "metadata": {
+                      "codex": {
+                        "itemType": "command_execution"
+                      }
+                    },
+                    "time": {
+                      "start": "<time>"
+                    }
+                  },
+                  "metadata": {
+                    "codex": {
+                      "itemType": "command_execution"
+                    }
+                  }
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:13>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:8>:000000_<id:10>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "part": {
+                  "id": "000000_<id:10>",
+                  "sessionID": "<id:4>",
+                  "messageID": "<id:8>",
+                  "type": "tool",
+                  "callID": "<id:10>",
+                  "tool": "bash",
+                  "state": {
+                    "status": "running",
+                    "input": {
+                      "intent": "shell",
+                      "kind": "command_execution",
+                      "description": "/bin/zsh -lc 'sleep 120'",
+                      "command": "/bin/zsh -lc 'sleep 120'",
+                      "cwd": "<workspace:1>",
+                      "processId": "<pid:1>"
+                    },
+                    "metadata": {
+                      "codex": {
+                        "itemType": "command_execution"
+                      }
+                    },
+                    "time": {
+                      "start": "<time>"
+                    }
+                  },
+                  "metadata": {
+                    "codex": {
+                      "itemType": "command_execution"
+                    }
+                  }
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:14>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.usage",
+              "properties": {
+                "sessionID": "<id:4>",
+                "messageID": "<id:8>",
+                "contextSize": 258400,
+                "contextUsed": 2,
+                "observation": {
+                  "kind": "cumulative",
+                  "scope": "<id:9>:<id:11>",
+                  "nativeSessionId": "<id:9>",
+                  "providerObservationId": "<id:11>",
+                  "model": "gpt-5.5",
+                  "tokens": {
+                    "input": 1,
+                    "output": 1,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:15>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:4>:runtime.rate_limit",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:4>",
+                "harness": "codex",
+                "threadId": "<id:9>",
+                "code": "runtime.rate_limit",
+                "message": "Rate limit updated",
+                "severity": "info",
+                "rateLimit": {
+                  "status": "ok",
+                  "resetsAt": null,
+                  "windowDurationMins": null,
+                  "limitId": "codex",
+                  "limitName": null,
+                  "reason": null,
+                  "metadata": {
+                    "codex": {
+                      "rateLimits": {
+                        "limitId": "codex",
+                        "limitName": null,
+                        "normalModelSlug": null,
+                        "primary": null,
+                        "secondary": null,
+                        "credits": null,
+                        "individualLimit": null,
+                        "spendControlReached": null,
+                        "planType": null,
+                        "rateLimitReachedType": null
+                      }
+                    }
+                  }
+                },
+                "raw": {
+                  "source": "codex.app-server",
+                  "method": "account/rateLimits/updated",
+                  "payload": {
+                    "rateLimits": {
+                      "limitId": "codex",
+                      "limitName": null,
+                      "normalModelSlug": null,
+                      "primary": null,
+                      "secondary": null,
+                      "credits": null,
+                      "individualLimit": null,
+                      "spendControlReached": null,
+                      "planType": null,
+                      "rateLimitReachedType": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:16>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:4>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:4>",
+                "status": {
+                  "type": "idle"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:17>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:4>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:4>",
+                "status": {
+                  "type": "idle"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:18>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:8>:000000_<id:10>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "part": {
+                  "id": "000000_<id:10>",
+                  "sessionID": "<id:4>",
+                  "messageID": "<id:8>",
+                  "type": "tool",
+                  "callID": "<id:10>",
+                  "tool": "bash",
+                  "state": {
+                    "status": "error",
+                    "input": {
+                      "intent": "shell",
+                      "kind": "command_execution",
+                      "description": "/bin/zsh -lc 'sleep 120'",
+                      "command": "/bin/zsh -lc 'sleep 120'",
+                      "cwd": "<workspace:1>",
+                      "processId": "<pid:1>"
+                    },
+                    "error": "Aborted by user",
+                    "metadata": {
+                      "codex": {
+                        "itemType": "command_execution"
+                      }
+                    },
+                    "time": {
+                      "start": "<time>",
+                      "end": "<time>"
+                    }
+                  },
+                  "metadata": {
+                    "codex": {
+                      "itemType": "command_execution"
+                    }
+                  }
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:19>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.updated:<id:8>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "info": {
+                  "id": "<id:8>",
+                  "sessionID": "<id:4>",
+                  "role": "assistant",
+                  "time": {
+                    "created": "<time>",
+                    "completed": "<time>"
+                  },
+                  "parentID": "<id:6>",
+                  "modelID": "gpt-5.5",
+                  "providerID": "codex",
+                  "mode": "auto",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "<workspace:1>",
+                    "root": "<workspace:1>"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "input": 0,
+                    "output": 0,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": 0
+                    }
+                  },
+                  "error": {
+                    "name": "MessageAbortedError",
+                    "data": {
+                      "message": "Aborted by user"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:20>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:4>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:4>",
+                "status": {
+                  "type": "idle"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:21>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.idle:<id:4>",
+              "type": "session.idle",
+              "properties": {
+                "sessionID": "<id:4>"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session?directory=<workspace:12>",
+      "status": 201,
+      "body": {
+        "id": "<id:4>",
+        "workspaceId": "<id:2>",
+        "title": "H2 codex",
+        "titleSource": "user",
+        "directory": "<workspace:1>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "codex",
+            "access": "native"
+          },
+          "model": {
+            "providerID": "codex",
+            "modelID": "gpt-5.5"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "agent_session_id": "<id:9>"
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:4>/prompt_async?directory=<workspace:1>",
+      "status": 204,
+      "body": null
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:4>/recovery?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "sessionId": "<id:4>",
+        "target": {
+          "scope": "turn",
+          "workspaceId": "<id:2>",
+          "sessionId": "<id:4>",
+          "turnId": "<id:6>",
+          "ownerGeneration": "<id:4>:<id:13>"
+        },
+        "facts": {
+          "execution": {
+            "value": "running",
+            "source": "runtime.admission",
+            "observedAt": "<time>",
+            "generation": "<id:4>:<id:13>"
+          },
+          "cleanup": {
+            "value": "owned",
+            "source": "runtime.admission",
+            "observedAt": "<time>",
+            "generation": "<id:4>:<id:13>"
+          },
+          "persistence": {
+            "value": "pending",
+            "source": "runtime.store",
+            "observedAt": "<time>",
+            "generation": "<id:4>:<id:13>"
+          }
+        },
+        "health": {
+          "status": "ok"
+        },
+        "failures": [],
+        "operations": [],
+        "queued": 0
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:4>/recovery?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "kind": "operation",
+        "operation": {
+          "operationId": "r<id:14>",
+          "requestId": "e2e-stop-<id:15>",
+          "target": {
+            "scope": "turn",
+            "workspaceId": "<id:2>",
+            "sessionId": "<id:4>",
+            "turnId": "<id:6>",
+            "ownerGeneration": "<id:4>:<id:13>"
+          },
+          "action": "cancel_turn",
+          "scopeRevision": "<id:4>:<id:13>",
+          "attempt": 1,
+          "state": "needs_action",
+          "phase": "graceful_cancel",
+          "phaseDeadlineAt": "<time>",
+          "facts": {
+            "execution": {
+              "value": "terminal",
+              "source": "harness.cancelTurn",
+              "observedAt": "<time>",
+              "generation": "<id:4>:<id:13>"
+            },
+            "cleanup": {
+              "value": "owned",
+              "source": "harness.cancelTurn",
+              "observedAt": "<time>",
+              "generation": "<id:4>:<id:13>"
+            },
+            "persistence": {
+              "value": "committed",
+              "source": "runtime.store",
+              "observedAt": "<time>",
+              "generation": "<id:4>:<id:13>"
+            }
+          },
+          "cleanupErrors": [],
+          "nextActions": [
+            {
+              "action": "inspect",
+              "scopePreviewRequired": false,
+              "reason": "the turn is finalized; cleanup this harness performed is not established"
+            }
+          ],
+          "receipt": "durable",
+          "createdAt": "<time>",
+          "updatedAt": "<time>"
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:4>/recovery/operations/r<id:14>?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "kind": "operation",
+        "operation": {
+          "operationId": "r<id:14>",
+          "requestId": "e2e-stop-<id:15>",
+          "target": {
+            "scope": "turn",
+            "workspaceId": "<id:2>",
+            "sessionId": "<id:4>",
+            "turnId": "<id:6>",
+            "ownerGeneration": "<id:4>:<id:13>"
+          },
+          "action": "cancel_turn",
+          "scopeRevision": "<id:4>:<id:13>",
+          "attempt": 1,
+          "state": "needs_action",
+          "phase": "graceful_cancel",
+          "phaseDeadlineAt": "<time>",
+          "facts": {
+            "execution": {
+              "value": "terminal",
+              "source": "harness.cancelTurn",
+              "observedAt": "<time>",
+              "generation": "<id:4>:<id:13>"
+            },
+            "cleanup": {
+              "value": "owned",
+              "source": "harness.cancelTurn",
+              "observedAt": "<time>",
+              "generation": "<id:4>:<id:13>"
+            },
+            "persistence": {
+              "value": "committed",
+              "source": "runtime.store",
+              "observedAt": "<time>",
+              "generation": "<id:4>:<id:13>"
+            }
+          },
+          "cleanupErrors": [],
+          "nextActions": [
+            {
+              "action": "inspect",
+              "scopePreviewRequired": false,
+              "reason": "the turn is finalized; cleanup this harness performed is not established"
+            }
+          ],
+          "receipt": "durable",
+          "createdAt": "<time>",
+          "updatedAt": "<time>"
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:4>/message?directory=<workspace:1>",
+      "status": 200,
+      "body": [
+        {
+          "info": {
+            "id": "<id:6>",
+            "sessionID": "<id:4>",
+            "role": "user",
+            "time": {
+              "created": "<time>"
+            },
+            "agent": "build",
+            "model": {
+              "providerID": "codex",
+              "modelID": "gpt-5.5"
+            }
+          },
+          "parts": [
+            {
+              "type": "text",
+              "text": "H2STOPCODEX",
+              "id": "<id:7>",
+              "sessionID": "<id:4>",
+              "messageID": "<id:6>"
+            }
+          ]
+        },
+        {
+          "info": {
+            "id": "<id:8>",
+            "sessionID": "<id:4>",
+            "role": "assistant",
+            "time": {
+              "created": "<time>",
+              "completed": "<time>"
+            },
+            "parentID": "<id:6>",
+            "modelID": "gpt-5.5",
+            "providerID": "codex",
+            "mode": "auto",
+            "agent": "build",
+            "path": {
+              "cwd": "<workspace:1>",
+              "root": "<workspace:1>"
+            },
+            "cost": 0,
+            "tokens": {
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            },
+            "error": {
+              "name": "MessageAbortedError",
+              "data": {
+                "message": "Aborted by user"
+              }
+            }
+          },
+          "parts": [
+            {
+              "id": "000000_<id:10>",
+              "sessionID": "<id:4>",
+              "messageID": "<id:8>",
+              "type": "tool",
+              "callID": "<id:10>",
+              "tool": "bash",
+              "state": {
+                "status": "error",
+                "input": {
+                  "intent": "shell",
+                  "kind": "command_execution",
+                  "description": "/bin/zsh -lc 'sleep 120'",
+                  "command": "/bin/zsh -lc 'sleep 120'",
+                  "cwd": "<workspace:1>",
+                  "processId": "<pid:1>"
+                },
+                "error": "Aborted by user",
+                "metadata": {
+                  "codex": {
+                    "itemType": "command_execution"
+                  }
+                },
+                "time": {
+                  "start": "<time>",
+                  "end": "<time>"
+                }
+              },
+              "metadata": {
+                "codex": {
+                  "itemType": "command_execution"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:4>?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "id": "<id:4>",
+        "workspaceId": "<id:2>",
+        "title": "H2 codex",
+        "titleSource": "user",
+        "directory": "<workspace:1>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "codex",
+            "access": "native"
+          },
+          "model": {
+            "providerID": "codex",
+            "modelID": "gpt-5.5"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "status": "idle",
+        "agent_session_id": "<id:9>",
+        "lastTurn": {
+          "status": "completed",
+          "completedAt": "<time>",
+          "assistantMessageId": "<id:8>"
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:4>/recovery?directory=<workspace:1>",
+      "status": 409,
+      "body": {
+        "kind": "refused",
+        "refusal": {
+          "kind": "generation_conflict",
+          "message": "Session <id:4> has no admitted turn no-such-running-turn"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,6079 @@
+{
+  "flow": "H10-config-timing",
+  "observations": [
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/api/workspace/resolve?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "workspaceId": "<id:2>",
+        "projectId": "<id:2>",
+        "directory": "<workspace:1>",
+        "workspaceName": null,
+        "backing": {
+          "kind": "local-worktree",
+          "directory": "<workspace:1>",
+          "repoName": "<repo:3>",
+          "branch": "main"
+        },
+        "kind": "local",
+        "driver": null,
+        "status": null,
+        "git": {
+          "repo": "<repo:3>",
+          "branch": "main",
+          "remote": null
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/api/claxedo/projects",
+      "status": 201,
+      "body": {
+        "project": {
+          "id": "<id:2>",
+          "name": "<repo:3>",
+          "env": {},
+          "directory": "<workspace:1>",
+          "repoUrl": null,
+          "created_at": "<time>",
+          "updated_at": "<time>"
+        }
+      }
+    },
+    {
+      "kind": "stream",
+      "route": "/api/wr/events?directory=<workspace:1>",
+      "frames": [
+        {
+          "id": "<time-id:1>",
+          "data": {
+            "type": "heartbeat"
+          }
+        },
+        {
+          "id": "<time-id:2>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "creating",
+              "directory": "<workspace:1>",
+              "start": {
+                "sessionId": "<id:4>",
+                "directory": "<workspace:1>",
+                "workspaceId": "<id:2>",
+                "operationId": "<id:5>",
+                "connectionId": "native:codex"
+              },
+              "workspaceId": "<id:2>",
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:3>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "created",
+              "directory": "<workspace:1>",
+              "sessionID": "<id:4>",
+              "workspaceId": "<id:2>",
+              "info": {
+                "id": "<id:4>",
+                "slug": "<id:4>",
+                "projectID": "<id:2>",
+                "workspaceID": "<id:2>",
+                "directory": "<workspace:1>",
+                "title": "H10 Codex config",
+                "version": "local",
+                "time": {
+                  "created": "<time>",
+                  "updated": "<time>"
+                }
+              },
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:4>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:4>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:4>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:5>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.updated:<id:6>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "info": {
+                  "id": "<id:6>",
+                  "sessionID": "<id:4>",
+                  "role": "user",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "agent": "build",
+                  "model": {
+                    "providerID": "codex",
+                    "modelID": "gpt-5.5"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:6>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:6>:<id:7>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "part": {
+                  "type": "text",
+                  "text": "First Codex configuration turn H10FIRST",
+                  "id": "<id:7>",
+                  "sessionID": "<id:4>",
+                  "messageID": "<id:6>"
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:7>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.updated:<id:8>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "info": {
+                  "id": "<id:8>",
+                  "sessionID": "<id:4>",
+                  "role": "assistant",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "parentID": "<id:6>",
+                  "modelID": "gpt-5.5",
+                  "providerID": "codex",
+                  "mode": "auto",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "<workspace:1>",
+                    "root": "<workspace:1>"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "input": 0,
+                    "output": 0,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:8>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:4>:runtime.mcp_server_status",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:4>",
+                "harness": "codex",
+                "threadId": "<id:9>",
+                "code": "runtime.mcp_server_status",
+                "message": "MCP server claxedo is ready",
+                "severity": "info",
+                "mcp": {
+                  "serverName": "claxedo",
+                  "status": "ready",
+                  "error": null
+                },
+                "raw": {
+                  "source": "codex.app-server",
+                  "method": "mcpServer/startupStatus/updated",
+                  "payload": {
+                    "threadId": "<id:9>",
+                    "name": "claxedo",
+                    "status": "ready",
+                    "error": null,
+                    "failureReason": null
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:9>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:4>:codex_app_server.unmapped_event",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:4>",
+                "harness": "codex",
+                "threadId": "<id:9>",
+                "code": "codex_app_server.unmapped_event",
+                "message": "thread/settings/updated: Codex app-server method has no AgentRuntimeEvent mapping",
+                "severity": "info",
+                "diagnostic": {
+                  "code": "codex_app_server.unmapped_event",
+                  "message": "thread/settings/updated: Codex app-server method has no AgentRuntimeEvent mapping",
+                  "severity": "info",
+                  "source": "codex.app-server",
+                  "method": "thread/settings/updated",
+                  "raw": {
+                    "threadId": "<id:9>",
+                    "threadSettings": {
+                      "disabledPluginIds": [],
+                      "cwd": "<workspace:1>",
+                      "approvalPolicy": "on-request",
+                      "approvalsReviewer": "user",
+                      "sandboxPolicy": {
+                        "type": "workspaceWrite",
+                        "writableRoots": [],
+                        "networkAccess": true,
+                        "excludeTmpdirEnvVar": false,
+                        "excludeSlashTmp": false
+                      },
+                      "activePermissionProfile": null,
+                      "model": "gpt-5.5",
+                      "modelProvider": "broker",
+                      "serviceTier": "default",
+                      "effort": "medium",
+                      "summary": null,
+                      "collaborationMode": {
+                        "mode": "default",
+                        "settings": {
+                          "model": "gpt-5.5",
+                          "reasoning_effort": "medium",
+                          "developer_instructions": null
+                        }
+                      },
+                      "multiAgentMode": "explicitRequestOnly",
+                      "personality": null
+                    }
+                  }
+                },
+                "raw": {
+                  "source": "codex.app-server",
+                  "method": "thread/settings/updated",
+                  "payload": {
+                    "threadId": "<id:9>",
+                    "threadSettings": {
+                      "disabledPluginIds": [],
+                      "cwd": "<workspace:1>",
+                      "approvalPolicy": "on-request",
+                      "approvalsReviewer": "user",
+                      "sandboxPolicy": {
+                        "type": "workspaceWrite",
+                        "writableRoots": [],
+                        "networkAccess": true,
+                        "excludeTmpdirEnvVar": false,
+                        "excludeSlashTmp": false
+                      },
+                      "activePermissionProfile": null,
+                      "model": "gpt-5.5",
+                      "modelProvider": "broker",
+                      "serviceTier": "default",
+                      "effort": "medium",
+                      "summary": null,
+                      "collaborationMode": {
+                        "mode": "default",
+                        "settings": {
+                          "model": "gpt-5.5",
+                          "reasoning_effort": "medium",
+                          "developer_instructions": null
+                        }
+                      },
+                      "multiAgentMode": "explicitRequestOnly",
+                      "personality": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:10>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:4>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:4>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:11>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:4>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:4>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:12>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:8>:000000_<id:10>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "part": {
+                  "id": "000000_<id:10>",
+                  "sessionID": "<id:4>",
+                  "messageID": "<id:8>",
+                  "type": "text",
+                  "text": ""
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:13>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.delta:<id:8>:000000_<id:10>",
+              "type": "message.part.delta",
+              "properties": {
+                "sessionID": "<id:4>",
+                "messageID": "<id:8>",
+                "partID": "000000_<id:10>",
+                "field": "text",
+                "delta": "ok"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:14>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.usage",
+              "properties": {
+                "sessionID": "<id:4>",
+                "messageID": "<id:8>",
+                "contextSize": 258400,
+                "contextUsed": 2,
+                "observation": {
+                  "kind": "cumulative",
+                  "scope": "<id:9>:<id:11>",
+                  "nativeSessionId": "<id:9>",
+                  "providerObservationId": "<id:11>",
+                  "model": "gpt-5.5",
+                  "tokens": {
+                    "input": 1,
+                    "output": 1,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:15>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:4>:runtime.rate_limit",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:4>",
+                "harness": "codex",
+                "threadId": "<id:9>",
+                "code": "runtime.rate_limit",
+                "message": "Rate limit updated",
+                "severity": "info",
+                "rateLimit": {
+                  "status": "ok",
+                  "resetsAt": null,
+                  "windowDurationMins": null,
+                  "limitId": "codex",
+                  "limitName": null,
+                  "reason": null,
+                  "metadata": {
+                    "codex": {
+                      "rateLimits": {
+                        "limitId": "codex",
+                        "limitName": null,
+                        "normalModelSlug": null,
+                        "primary": null,
+                        "secondary": null,
+                        "credits": null,
+                        "individualLimit": null,
+                        "spendControlReached": null,
+                        "planType": null,
+                        "rateLimitReachedType": null
+                      }
+                    }
+                  }
+                },
+                "raw": {
+                  "source": "codex.app-server",
+                  "method": "account/rateLimits/updated",
+                  "payload": {
+                    "rateLimits": {
+                      "limitId": "codex",
+                      "limitName": null,
+                      "normalModelSlug": null,
+                      "primary": null,
+                      "secondary": null,
+                      "credits": null,
+                      "individualLimit": null,
+                      "spendControlReached": null,
+                      "planType": null,
+                      "rateLimitReachedType": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:16>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:4>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:4>",
+                "status": {
+                  "type": "idle"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:17>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:4>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:4>",
+                "status": {
+                  "type": "idle"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:18>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "message.completed",
+              "properties": {
+                "sessionID": "<id:4>",
+                "messageID": "<id:8>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:19>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.idle:<id:4>",
+              "type": "session.idle",
+              "properties": {
+                "sessionID": "<id:4>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:20>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:4>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:4>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:21>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.updated:<id:12>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "info": {
+                  "id": "<id:12>",
+                  "sessionID": "<id:4>",
+                  "role": "user",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "agent": "build",
+                  "model": {
+                    "providerID": "codex",
+                    "modelID": "gpt-6-astra"
+                  },
+                  "variant": "medium"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:22>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:12>:<id:13>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "part": {
+                  "type": "text",
+                  "text": "Second Codex configuration turn H10SECOND",
+                  "id": "<id:13>",
+                  "sessionID": "<id:4>",
+                  "messageID": "<id:12>"
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:23>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.updated:<id:14>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "info": {
+                  "id": "<id:14>",
+                  "sessionID": "<id:4>",
+                  "role": "assistant",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "parentID": "<id:12>",
+                  "modelID": "gpt-6-astra",
+                  "providerID": "codex",
+                  "mode": "auto",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "<workspace:1>",
+                    "root": "<workspace:1>"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "input": 0,
+                    "output": 0,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:24>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:4>:runtime.mcp_server_status",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:4>",
+                "harness": "codex",
+                "threadId": "<id:9>",
+                "code": "runtime.mcp_server_status",
+                "message": "MCP server claxedo is ready",
+                "severity": "info",
+                "mcp": {
+                  "serverName": "claxedo",
+                  "status": "ready",
+                  "error": null
+                },
+                "raw": {
+                  "source": "codex.app-server",
+                  "method": "mcpServer/startupStatus/updated",
+                  "payload": {
+                    "threadId": "<id:9>",
+                    "name": "claxedo",
+                    "status": "ready",
+                    "error": null,
+                    "failureReason": null
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:25>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:4>:codex_app_server.unmapped_event",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:4>",
+                "harness": "codex",
+                "threadId": "<id:9>",
+                "code": "codex_app_server.unmapped_event",
+                "message": "thread/settings/updated: Codex app-server method has no AgentRuntimeEvent mapping",
+                "severity": "info",
+                "diagnostic": {
+                  "code": "codex_app_server.unmapped_event",
+                  "message": "thread/settings/updated: Codex app-server method has no AgentRuntimeEvent mapping",
+                  "severity": "info",
+                  "source": "codex.app-server",
+                  "method": "thread/settings/updated",
+                  "raw": {
+                    "threadId": "<id:9>",
+                    "threadSettings": {
+                      "disabledPluginIds": [],
+                      "cwd": "<workspace:1>",
+                      "approvalPolicy": "never",
+                      "approvalsReviewer": "user",
+                      "sandboxPolicy": {
+                        "type": "dangerFullAccess"
+                      },
+                      "activePermissionProfile": null,
+                      "model": "gpt-6-astra",
+                      "modelProvider": "broker",
+                      "serviceTier": "default",
+                      "effort": "medium",
+                      "summary": null,
+                      "collaborationMode": {
+                        "mode": "default",
+                        "settings": {
+                          "model": "gpt-6-astra",
+                          "reasoning_effort": "medium",
+                          "developer_instructions": null
+                        }
+                      },
+                      "multiAgentMode": "explicitRequestOnly",
+                      "personality": null
+                    }
+                  }
+                },
+                "raw": {
+                  "source": "codex.app-server",
+                  "method": "thread/settings/updated",
+                  "payload": {
+                    "threadId": "<id:9>",
+                    "threadSettings": {
+                      "disabledPluginIds": [],
+                      "cwd": "<workspace:1>",
+                      "approvalPolicy": "never",
+                      "approvalsReviewer": "user",
+                      "sandboxPolicy": {
+                        "type": "dangerFullAccess"
+                      },
+                      "activePermissionProfile": null,
+                      "model": "gpt-6-astra",
+                      "modelProvider": "broker",
+                      "serviceTier": "default",
+                      "effort": "medium",
+                      "summary": null,
+                      "collaborationMode": {
+                        "mode": "default",
+                        "settings": {
+                          "model": "gpt-6-astra",
+                          "reasoning_effort": "medium",
+                          "developer_instructions": null
+                        }
+                      },
+                      "multiAgentMode": "explicitRequestOnly",
+                      "personality": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:26>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:4>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:4>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:27>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:4>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:4>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:28>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.usage",
+              "properties": {
+                "sessionID": "<id:4>",
+                "messageID": "<id:14>",
+                "contextSize": 258400,
+                "contextUsed": 2,
+                "observation": {
+                  "kind": "cumulative",
+                  "scope": "<id:9>:<id:15>",
+                  "nativeSessionId": "<id:9>",
+                  "providerObservationId": "<id:15>",
+                  "model": "gpt-6-astra",
+                  "tokens": {
+                    "input": 1,
+                    "output": 1,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:29>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:4>:runtime.rate_limit",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:4>",
+                "harness": "codex",
+                "threadId": "<id:9>",
+                "code": "runtime.rate_limit",
+                "message": "Rate limit updated",
+                "severity": "info",
+                "rateLimit": {
+                  "status": "ok",
+                  "resetsAt": null,
+                  "windowDurationMins": null,
+                  "limitId": "codex",
+                  "limitName": null,
+                  "reason": null,
+                  "metadata": {
+                    "codex": {
+                      "rateLimits": {
+                        "limitId": "codex",
+                        "limitName": null,
+                        "normalModelSlug": null,
+                        "primary": null,
+                        "secondary": null,
+                        "credits": null,
+                        "individualLimit": null,
+                        "spendControlReached": null,
+                        "planType": null,
+                        "rateLimitReachedType": null
+                      }
+                    }
+                  }
+                },
+                "raw": {
+                  "source": "codex.app-server",
+                  "method": "account/rateLimits/updated",
+                  "payload": {
+                    "rateLimits": {
+                      "limitId": "codex",
+                      "limitName": null,
+                      "normalModelSlug": null,
+                      "primary": null,
+                      "secondary": null,
+                      "credits": null,
+                      "individualLimit": null,
+                      "spendControlReached": null,
+                      "planType": null,
+                      "rateLimitReachedType": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:30>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.usage",
+              "properties": {
+                "sessionID": "<id:4>",
+                "messageID": "<id:14>",
+                "contextSize": 258400,
+                "contextUsed": 2,
+                "observation": {
+                  "kind": "cumulative",
+                  "scope": "<id:9>:<id:15>",
+                  "nativeSessionId": "<id:9>",
+                  "providerObservationId": "<id:15>",
+                  "model": "gpt-6-astra",
+                  "tokens": {
+                    "input": 2,
+                    "output": 2,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:31>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:4>:runtime.rate_limit",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:4>",
+                "harness": "codex",
+                "threadId": "<id:9>",
+                "code": "runtime.rate_limit",
+                "message": "Rate limit updated",
+                "severity": "info",
+                "rateLimit": {
+                  "status": "ok",
+                  "resetsAt": null,
+                  "windowDurationMins": null,
+                  "limitId": "codex",
+                  "limitName": null,
+                  "reason": null,
+                  "metadata": {
+                    "codex": {
+                      "rateLimits": {
+                        "limitId": "codex",
+                        "limitName": null,
+                        "normalModelSlug": null,
+                        "primary": null,
+                        "secondary": null,
+                        "credits": null,
+                        "individualLimit": null,
+                        "spendControlReached": null,
+                        "planType": null,
+                        "rateLimitReachedType": null
+                      }
+                    }
+                  }
+                },
+                "raw": {
+                  "source": "codex.app-server",
+                  "method": "account/rateLimits/updated",
+                  "payload": {
+                    "rateLimits": {
+                      "limitId": "codex",
+                      "limitName": null,
+                      "normalModelSlug": null,
+                      "primary": null,
+                      "secondary": null,
+                      "credits": null,
+                      "individualLimit": null,
+                      "spendControlReached": null,
+                      "planType": null,
+                      "rateLimitReachedType": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:32>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.usage",
+              "properties": {
+                "sessionID": "<id:4>",
+                "messageID": "<id:14>",
+                "contextSize": 258400,
+                "contextUsed": 5480
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:33>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:4>:runtime.rate_limit",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:4>",
+                "harness": "codex",
+                "threadId": "<id:9>",
+                "code": "runtime.rate_limit",
+                "message": "Rate limit updated",
+                "severity": "info",
+                "rateLimit": {
+                  "status": "ok",
+                  "resetsAt": null,
+                  "windowDurationMins": null,
+                  "limitId": "codex",
+                  "limitName": null,
+                  "reason": null,
+                  "metadata": {
+                    "codex": {
+                      "rateLimits": {
+                        "limitId": "codex",
+                        "limitName": null,
+                        "normalModelSlug": null,
+                        "primary": null,
+                        "secondary": null,
+                        "credits": null,
+                        "individualLimit": null,
+                        "spendControlReached": null,
+                        "planType": null,
+                        "rateLimitReachedType": null
+                      }
+                    }
+                  }
+                },
+                "raw": {
+                  "source": "codex.app-server",
+                  "method": "account/rateLimits/updated",
+                  "payload": {
+                    "rateLimits": {
+                      "limitId": "codex",
+                      "limitName": null,
+                      "normalModelSlug": null,
+                      "primary": null,
+                      "secondary": null,
+                      "credits": null,
+                      "individualLimit": null,
+                      "spendControlReached": null,
+                      "planType": null,
+                      "rateLimitReachedType": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:34>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.compacted:<id:4>",
+              "type": "session.compacted",
+              "properties": {
+                "sessionID": "<id:4>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:35>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:4>:codex_app_server.warning",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:4>",
+                "harness": "codex",
+                "threadId": "<id:9>",
+                "code": "codex_app_server.warning",
+                "message": "Heads up: Long threads and multiple compactions can cause the model to be less accurate. Start a new thread when possible to keep threads small and targeted.",
+                "severity": "warn",
+                "details": {
+                  "threadId": "<id:9>",
+                  "message": "Heads up: Long threads and multiple compactions can cause the model to be less accurate. Start a new thread when possible to keep threads small and targeted."
+                },
+                "raw": {
+                  "source": "codex.app-server",
+                  "method": "warning",
+                  "payload": {
+                    "threadId": "<id:9>",
+                    "message": "Heads up: Long threads and multiple compactions can cause the model to be less accurate. Start a new thread when possible to keep threads small and targeted."
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:36>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.updated:<id:14>:000000_<id:16>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:4>",
+                "part": {
+                  "id": "000000_<id:16>",
+                  "sessionID": "<id:4>",
+                  "messageID": "<id:14>",
+                  "type": "text",
+                  "text": ""
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:37>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "message.part.delta:<id:14>:000000_<id:16>",
+              "type": "message.part.delta",
+              "properties": {
+                "sessionID": "<id:4>",
+                "messageID": "<id:14>",
+                "partID": "000000_<id:16>",
+                "field": "text",
+                "delta": "H10SECOND"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:38>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "session.usage",
+              "properties": {
+                "sessionID": "<id:4>",
+                "messageID": "<id:14>",
+                "contextSize": 258400,
+                "contextUsed": 2,
+                "observation": {
+                  "kind": "cumulative",
+                  "scope": "<id:9>:<id:15>",
+                  "nativeSessionId": "<id:9>",
+                  "providerObservationId": "<id:15>",
+                  "model": "gpt-6-astra",
+                  "tokens": {
+                    "input": 3,
+                    "output": 3,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:39>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:4>:runtime.rate_limit",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:4>",
+                "harness": "codex",
+                "threadId": "<id:9>",
+                "code": "runtime.rate_limit",
+                "message": "Rate limit updated",
+                "severity": "info",
+                "rateLimit": {
+                  "status": "ok",
+                  "resetsAt": null,
+                  "windowDurationMins": null,
+                  "limitId": "codex",
+                  "limitName": null,
+                  "reason": null,
+                  "metadata": {
+                    "codex": {
+                      "rateLimits": {
+                        "limitId": "codex",
+                        "limitName": null,
+                        "normalModelSlug": null,
+                        "primary": null,
+                        "secondary": null,
+                        "credits": null,
+                        "individualLimit": null,
+                        "spendControlReached": null,
+                        "planType": null,
+                        "rateLimitReachedType": null
+                      }
+                    }
+                  }
+                },
+                "raw": {
+                  "source": "codex.app-server",
+                  "method": "account/rateLimits/updated",
+                  "payload": {
+                    "rateLimits": {
+                      "limitId": "codex",
+                      "limitName": null,
+                      "normalModelSlug": null,
+                      "primary": null,
+                      "secondary": null,
+                      "credits": null,
+                      "individualLimit": null,
+                      "spendControlReached": null,
+                      "planType": null,
+                      "rateLimitReachedType": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:40>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:4>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:4>",
+                "status": {
+                  "type": "idle"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:41>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.status:<id:4>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:4>",
+                "status": {
+                  "type": "idle"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:42>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "type": "message.completed",
+              "properties": {
+                "sessionID": "<id:4>",
+                "messageID": "<id:14>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:43>",
+          "data": {
+            "directory": "<workspace:1>",
+            "payload": {
+              "id": "session.idle:<id:4>",
+              "type": "session.idle",
+              "properties": {
+                "sessionID": "<id:4>"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session?directory=<workspace:17>",
+      "status": 201,
+      "body": {
+        "id": "<id:4>",
+        "workspaceId": "<id:2>",
+        "title": "H10 Codex config",
+        "titleSource": "user",
+        "directory": "<workspace:1>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "codex",
+            "access": "native"
+          },
+          "model": {
+            "providerID": "codex",
+            "modelID": "gpt-5.5"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "agent_session_id": "<id:9>"
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:4>/message?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "info": {
+          "id": "<id:8>",
+          "sessionID": "<id:4>",
+          "role": "assistant",
+          "time": {
+            "created": "<time>",
+            "completed": "<time>"
+          },
+          "parentID": "<id:6>",
+          "modelID": "gpt-5.5",
+          "providerID": "codex",
+          "mode": "auto",
+          "agent": "build",
+          "path": {
+            "cwd": "<workspace:1>",
+            "root": "<workspace:1>"
+          },
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          }
+        },
+        "parts": [
+          {
+            "id": "000000_<id:10>",
+            "sessionID": "<id:4>",
+            "messageID": "<id:8>",
+            "type": "text",
+            "text": "ok"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:4>/config-options?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "options": [
+          {
+            "id": "model",
+            "name": "Model",
+            "category": "model",
+            "type": "select",
+            "currentValue": "gpt-5.5",
+            "selectOptions": [
+              {
+                "id": "gpt-6-astra",
+                "name": "GPT-6-Astra",
+                "description": "Frontier intelligence for the most demanding work.",
+                "supportsEffort": true,
+                "supportedEffortLevels": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max",
+                  "ultra"
+                ],
+                "defaultEffort": "low",
+                "serviceTiers": [
+                  {
+                    "id": "priority",
+                    "name": "Fast",
+                    "description": "2x speed, increased usage"
+                  }
+                ]
+              },
+              {
+                "id": "gpt-6-sol",
+                "name": "GPT-6-Sol",
+                "description": "Workhorse model for coding and everyday work.",
+                "supportsEffort": true,
+                "supportedEffortLevels": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max",
+                  "ultra"
+                ],
+                "defaultEffort": "medium",
+                "serviceTiers": [
+                  {
+                    "id": "priority",
+                    "name": "Fast",
+                    "description": "1.5x speed"
+                  }
+                ]
+              },
+              {
+                "id": "gpt-6-luna",
+                "name": "GPT-6-Luna",
+                "description": "Fast and affordable model for easier tasks.",
+                "supportsEffort": true,
+                "supportedEffortLevels": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "defaultEffort": "medium",
+                "serviceTiers": [
+                  {
+                    "id": "priority",
+                    "name": "Fast",
+                    "description": "1.5x speed"
+                  }
+                ]
+              },
+              {
+                "id": "gpt-5.6-sol",
+                "name": "GPT-5.6-Sol",
+                "description": "Older coding model for complex work.",
+                "supportsEffort": true,
+                "supportedEffortLevels": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max",
+                  "ultra"
+                ],
+                "defaultEffort": "low",
+                "serviceTiers": [
+                  {
+                    "id": "priority",
+                    "name": "Fast",
+                    "description": "1.5x speed, increased usage"
+                  },
+                  {
+                    "id": "ultrafast",
+                    "name": "Ultrafast",
+                    "description": "The fastest available responses for latency-sensitive work."
+                  }
+                ]
+              },
+              {
+                "id": "gpt-5.6-terra",
+                "name": "GPT-5.6-Terra",
+                "description": "Older balanced model for straightforward work.",
+                "supportsEffort": true,
+                "supportedEffortLevels": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max",
+                  "ultra"
+                ],
+                "defaultEffort": "medium",
+                "serviceTiers": [
+                  {
+                    "id": "priority",
+                    "name": "Fast",
+                    "description": "1.5x speed, increased usage"
+                  }
+                ]
+              },
+              {
+                "id": "gpt-5.6-luna",
+                "name": "GPT-5.6-Luna",
+                "description": "Older fast and efficient model.",
+                "supportsEffort": true,
+                "supportedEffortLevels": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "defaultEffort": "medium",
+                "serviceTiers": [
+                  {
+                    "id": "priority",
+                    "name": "Fast",
+                    "description": "1.5x speed, increased usage"
+                  }
+                ]
+              },
+              {
+                "id": "gpt-5.5",
+                "name": "GPT-5.5",
+                "description": "Legacy coding model.",
+                "supportsEffort": true,
+                "supportedEffortLevels": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh"
+                ],
+                "defaultEffort": "medium",
+                "serviceTiers": [
+                  {
+                    "id": "priority",
+                    "name": "Fast",
+                    "description": "1.5x speed, increased usage"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "effort",
+            "name": "Effort",
+            "description": "How much reasoning effort the model should use",
+            "category": "thought_level",
+            "type": "select",
+            "currentValue": "medium",
+            "selectOptions": [
+              {
+                "id": "low",
+                "name": "Low"
+              },
+              {
+                "id": "medium",
+                "name": "Medium"
+              },
+              {
+                "id": "high",
+                "name": "High"
+              },
+              {
+                "id": "xhigh",
+                "name": "Xhigh"
+              }
+            ]
+          },
+          {
+            "id": "service_tier",
+            "name": "Speed",
+            "category": "service_tier",
+            "type": "select",
+            "selectOptions": [
+              {
+                "id": "priority",
+                "name": "Fast",
+                "description": "1.5x speed, increased usage"
+              }
+            ]
+          }
+        ],
+        "resolvedModel": {
+          "id": "gpt-5.5",
+          "name": "GPT-5.5"
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:4>/config-options?directory=<workspace:18>",
+      "status": 200,
+      "body": {
+        "options": [
+          {
+            "id": "model",
+            "name": "Model",
+            "category": "model",
+            "type": "select",
+            "currentValue": "gpt-6-astra",
+            "selectOptions": [
+              {
+                "id": "gpt-6-astra",
+                "name": "GPT-6-Astra",
+                "description": "Frontier intelligence for the most demanding work.",
+                "supportsEffort": true,
+                "supportedEffortLevels": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max",
+                  "ultra"
+                ],
+                "defaultEffort": "low",
+                "serviceTiers": [
+                  {
+                    "id": "priority",
+                    "name": "Fast",
+                    "description": "2x speed, increased usage"
+                  }
+                ]
+              },
+              {
+                "id": "gpt-6-sol",
+                "name": "GPT-6-Sol",
+                "description": "Workhorse model for coding and everyday work.",
+                "supportsEffort": true,
+                "supportedEffortLevels": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max",
+                  "ultra"
+                ],
+                "defaultEffort": "medium",
+                "serviceTiers": [
+                  {
+                    "id": "priority",
+                    "name": "Fast",
+                    "description": "1.5x speed"
+                  }
+                ]
+              },
+              {
+                "id": "gpt-6-luna",
+                "name": "GPT-6-Luna",
+                "description": "Fast and affordable model for easier tasks.",
+                "supportsEffort": true,
+                "supportedEffortLevels": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "defaultEffort": "medium",
+                "serviceTiers": [
+                  {
+                    "id": "priority",
+                    "name": "Fast",
+                    "description": "1.5x speed"
+                  }
+                ]
+              },
+              {
+                "id": "gpt-5.6-sol",
+                "name": "GPT-5.6-Sol",
+                "description": "Older coding model for complex work.",
+                "supportsEffort": true,
+                "supportedEffortLevels": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max",
+                  "ultra"
+                ],
+                "defaultEffort": "low",
+                "serviceTiers": [
+                  {
+                    "id": "priority",
+                    "name": "Fast",
+                    "description": "1.5x speed, increased usage"
+                  },
+                  {
+                    "id": "ultrafast",
+                    "name": "Ultrafast",
+                    "description": "The fastest available responses for latency-sensitive work."
+                  }
+                ]
+              },
+              {
+                "id": "gpt-5.6-terra",
+                "name": "GPT-5.6-Terra",
+                "description": "Older balanced model for straightforward work.",
+                "supportsEffort": true,
+                "supportedEffortLevels": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max",
+                  "ultra"
+                ],
+                "defaultEffort": "medium",
+                "serviceTiers": [
+                  {
+                    "id": "priority",
+                    "name": "Fast",
+                    "description": "1.5x speed, increased usage"
+                  }
+                ]
+              },
+              {
+                "id": "gpt-5.6-luna",
+                "name": "GPT-5.6-Luna",
+                "description": "Older fast and efficient model.",
+                "supportsEffort": true,
+                "supportedEffortLevels": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "defaultEffort": "medium",
+                "serviceTiers": [
+                  {
+                    "id": "priority",
+                    "name": "Fast",
+                    "description": "1.5x speed, increased usage"
+                  }
+                ]
+              },
+              {
+                "id": "gpt-5.5",
+                "name": "GPT-5.5",
+                "description": "Legacy coding model.",
+                "supportsEffort": true,
+                "supportedEffortLevels": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh"
+                ],
+                "defaultEffort": "medium",
+                "serviceTiers": [
+                  {
+                    "id": "priority",
+                    "name": "Fast",
+                    "description": "1.5x speed, increased usage"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "effort",
+            "name": "Effort",
+            "description": "How much reasoning effort the model should use",
+            "category": "thought_level",
+            "type": "select",
+            "currentValue": "low",
+            "selectOptions": [
+              {
+                "id": "low",
+                "name": "Low"
+              },
+              {
+                "id": "medium",
+                "name": "Medium"
+              },
+              {
+                "id": "high",
+                "name": "High"
+              },
+              {
+                "id": "xhigh",
+                "name": "Xhigh"
+              },
+              {
+                "id": "max",
+                "name": "Max"
+              },
+              {
+                "id": "ultra",
+                "name": "Ultra"
+              }
+            ]
+          },
+          {
+            "id": "service_tier",
+            "name": "Speed",
+            "category": "service_tier",
+            "type": "select",
+            "selectOptions": [
+              {
+                "id": "priority",
+                "name": "Fast",
+                "description": "2x speed, increased usage"
+              }
+            ]
+          }
+        ],
+        "resolvedModel": {
+          "id": "gpt-6-astra",
+          "name": "GPT-6-Astra"
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "PATCH",
+      "route": "/session/<id:4>/config?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "harness": {
+          "id": "codex",
+          "access": "native"
+        },
+        "model": {
+          "providerID": "codex",
+          "modelID": "gpt-6-astra"
+        },
+        "variant": "medium",
+        "agent": null
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:4>/permission-mode?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "modes": [
+          {
+            "id": "read-only",
+            "name": "Read only",
+            "description": "Never asks; the sandbox permits reads only, so writes fail",
+            "level": "ask"
+          },
+          {
+            "id": "workspace-write",
+            "name": "Workspace write",
+            "description": "Runs commands inside the workspace without asking; escalates outside it",
+            "level": "auto"
+          },
+          {
+            "id": "untrusted",
+            "name": "Untrusted",
+            "description": "Only trusted commands run without asking; anything else escalates"
+          },
+          {
+            "id": "full-access",
+            "name": "Full access",
+            "description": "Never asks; full filesystem and network access",
+            "level": "full"
+          }
+        ],
+        "currentModeId": "workspace-write",
+        "appliesFrom": "next-turn"
+      }
+    },
+    {
+      "kind": "http",
+      "method": "PUT",
+      "route": "/session/<id:4>/permission-mode?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "modes": [
+          {
+            "id": "read-only",
+            "name": "Read only",
+            "description": "Never asks; the sandbox permits reads only, so writes fail",
+            "level": "ask"
+          },
+          {
+            "id": "workspace-write",
+            "name": "Workspace write",
+            "description": "Runs commands inside the workspace without asking; escalates outside it",
+            "level": "auto"
+          },
+          {
+            "id": "untrusted",
+            "name": "Untrusted",
+            "description": "Only trusted commands run without asking; anything else escalates"
+          },
+          {
+            "id": "full-access",
+            "name": "Full access",
+            "description": "Never asks; full filesystem and network access",
+            "level": "full"
+          }
+        ],
+        "currentModeId": "full-access",
+        "appliesFrom": "next-turn"
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:4>/permission-mode?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "modes": [
+          {
+            "id": "read-only",
+            "name": "Read only",
+            "description": "Never asks; the sandbox permits reads only, so writes fail",
+            "level": "ask"
+          },
+          {
+            "id": "workspace-write",
+            "name": "Workspace write",
+            "description": "Runs commands inside the workspace without asking; escalates outside it",
+            "level": "auto"
+          },
+          {
+            "id": "untrusted",
+            "name": "Untrusted",
+            "description": "Only trusted commands run without asking; anything else escalates"
+          },
+          {
+            "id": "full-access",
+            "name": "Full access",
+            "description": "Never asks; full filesystem and network access",
+            "level": "full"
+          }
+        ],
+        "currentModeId": "full-access",
+        "appliesFrom": "next-turn"
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:4>/message?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "info": {
+          "id": "<id:14>",
+          "sessionID": "<id:4>",
+          "role": "assistant",
+          "time": {
+            "created": "<time>",
+            "completed": "<time>"
+          },
+          "parentID": "<id:12>",
+          "modelID": "gpt-6-astra",
+          "providerID": "codex",
+          "mode": "auto",
+          "agent": "build",
+          "path": {
+            "cwd": "<workspace:1>",
+            "root": "<workspace:1>"
+          },
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          }
+        },
+        "parts": [
+          {
+            "id": "000000_<id:16>",
+            "sessionID": "<id:4>",
+            "messageID": "<id:14>",
+            "type": "text",
+            "text": "H10SECOND"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:4>/message?directory=<workspace:1>",
+      "status": 200,
+      "body": [
+        {
+          "info": {
+            "id": "<id:6>",
+            "sessionID": "<id:4>",
+            "role": "user",
+            "time": {
+              "created": "<time>"
+            },
+            "agent": "build",
+            "model": {
+              "providerID": "codex",
+              "modelID": "gpt-5.5"
+            }
+          },
+          "parts": [
+            {
+              "type": "text",
+              "text": "First Codex configuration turn H10FIRST",
+              "id": "<id:7>",
+              "sessionID": "<id:4>",
+              "messageID": "<id:6>"
+            }
+          ]
+        },
+        {
+          "info": {
+            "id": "<id:8>",
+            "sessionID": "<id:4>",
+            "role": "assistant",
+            "time": {
+              "created": "<time>",
+              "completed": "<time>"
+            },
+            "parentID": "<id:6>",
+            "modelID": "gpt-5.5",
+            "providerID": "codex",
+            "mode": "auto",
+            "agent": "build",
+            "path": {
+              "cwd": "<workspace:1>",
+              "root": "<workspace:1>"
+            },
+            "cost": 0,
+            "tokens": {
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          },
+          "parts": [
+            {
+              "id": "000000_<id:10>",
+              "sessionID": "<id:4>",
+              "messageID": "<id:8>",
+              "type": "text",
+              "text": "ok"
+            }
+          ]
+        },
+        {
+          "info": {
+            "id": "<id:12>",
+            "sessionID": "<id:4>",
+            "role": "user",
+            "time": {
+              "created": "<time>"
+            },
+            "agent": "build",
+            "model": {
+              "providerID": "codex",
+              "modelID": "gpt-6-astra"
+            },
+            "variant": "medium"
+          },
+          "parts": [
+            {
+              "type": "text",
+              "text": "Second Codex configuration turn H10SECOND",
+              "id": "<id:13>",
+              "sessionID": "<id:4>",
+              "messageID": "<id:12>"
+            }
+          ]
+        },
+        {
+          "info": {
+            "id": "<id:14>",
+            "sessionID": "<id:4>",
+            "role": "assistant",
+            "time": {
+              "created": "<time>",
+              "completed": "<time>"
+            },
+            "parentID": "<id:12>",
+            "modelID": "gpt-6-astra",
+            "providerID": "codex",
+            "mode": "auto",
+            "agent": "build",
+            "path": {
+              "cwd": "<workspace:1>",
+              "root": "<workspace:1>"
+            },
+            "cost": 0,
+            "tokens": {
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          },
+          "parts": [
+            {
+              "id": "000000_<id:16>",
+              "sessionID": "<id:4>",
+              "messageID": "<id:14>",
+              "type": "text",
+              "text": "H10SECOND"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:4>?directory=<workspace:1>",
+      "status": 200,
+      "body": {
+        "id": "<id:4>",
+        "workspaceId": "<id:2>",
+        "title": "H10 Codex config",
+        "titleSource": "user",
+        "directory": "<workspace:1>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "codex",
+            "access": "native"
+          },
+          "model": {
+            "providerID": "codex",
+            "modelID": "gpt-6-astra"
+          },
+          "variant": "medium",
+          "agent": null
+        },
+        "status": "idle",
+        "agent_session_id": "<id:9>",
+        "lastTurn": {
+          "status": "completed",
+          "completedAt": "<time>",
+          "assistantMessageId": "<id:14>"
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/api/claxedo/health",
+      "status": 200,
+      "body": {
+        "ok": true,
+        "harnessMode": "workspace",
+        "workspaceProfile": "workspace",
+        "localExecution": true
+      }
+    },
+    {
+      "kind": "http",
+      "method": "PUT",
+      "route": "/api/claxedo/agent-config/providers/custom?nativeHarness=opencode",
+      "status": 200,
+      "body": {
+        "providerID": "anthropic",
+        "name": "Scripted anthropic",
+        "baseURL": "http://localhost:<port>",
+        "env": [],
+        "headers": {},
+        "models": {
+          "scripted": {
+            "name": "Scripted"
+          }
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "PUT",
+      "route": "/api/claxedo/agent-config/providers/custom?nativeHarness=opencode",
+      "status": 200,
+      "body": {
+        "providerID": "openai",
+        "name": "Scripted openai",
+        "baseURL": "http://localhost:<port>/v1",
+        "env": [],
+        "headers": {},
+        "models": {
+          "scripted": {
+            "name": "Scripted"
+          }
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "PUT",
+      "route": "/api/claxedo/agent-config/providers/custom?nativeHarness=opencode",
+      "status": 200,
+      "body": {
+        "providerID": "groq",
+        "name": "Scripted groq",
+        "baseURL": "http://localhost:<port>",
+        "env": [],
+        "headers": {},
+        "models": {
+          "scripted": {
+            "name": "Scripted"
+          }
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "PUT",
+      "route": "/api/claxedo/agent-config/providers/custom?nativeHarness=opencode",
+      "status": 200,
+      "body": {
+        "providerID": "claude-sdk",
+        "name": "Scripted claude-sdk",
+        "baseURL": "http://localhost:<port>",
+        "env": [],
+        "headers": {},
+        "models": {
+          "scripted": {
+            "name": "Scripted"
+          }
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "PUT",
+      "route": "/api/claxedo/agent-config/providers/custom?nativeHarness=opencode",
+      "status": 200,
+      "body": {
+        "providerID": "codex-app-server",
+        "name": "<repo:19>",
+        "baseURL": "http://localhost:<port>/v1",
+        "env": [],
+        "headers": {},
+        "models": {
+          "scripted": {
+            "name": "Scripted"
+          }
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "PUT",
+      "route": "/api/claxedo/credentials",
+      "status": 200,
+      "body": {
+        "credential": {
+          "id": "<id:20>",
+          "provider_id": "anthropic",
+          "kind": "api_key",
+          "source": "local_only",
+          "label": null,
+          "account_id": "fp_62af8704…-key",
+          "owner": null,
+          "is_active": true,
+          "status": "available",
+          "health": null,
+          "has_secret": true,
+          "expires_at": null,
+          "last_validated_at": null,
+          "scope": "local",
+          "consent": null,
+          "last_used_at": null,
+          "last_error": null,
+          "created_at": "<time>",
+          "updated_at": "<time>",
+          "usage_windows": null,
+          "usage_at": null,
+          "deliverable": {
+            "local": true,
+            "cloud": true
+          }
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "PUT",
+      "route": "/api/claxedo/credentials",
+      "status": 200,
+      "body": {
+        "credential": {
+          "id": "<id:21>",
+          "provider_id": "openai",
+          "kind": "api_key",
+          "source": "local_only",
+          "label": null,
+          "account_id": "fp_62af8704…-key",
+          "owner": null,
+          "is_active": true,
+          "status": "available",
+          "health": null,
+          "has_secret": true,
+          "expires_at": null,
+          "last_validated_at": null,
+          "scope": "local",
+          "consent": null,
+          "last_used_at": null,
+          "last_error": null,
+          "created_at": "<time>",
+          "updated_at": "<time>",
+          "usage_windows": null,
+          "usage_at": null,
+          "deliverable": {
+            "local": true,
+            "cloud": true
+          }
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "PUT",
+      "route": "/api/claxedo/credentials",
+      "status": 200,
+      "body": {
+        "credential": {
+          "id": "<id:22>",
+          "provider_id": "groq",
+          "kind": "api_key",
+          "source": "local_only",
+          "label": null,
+          "account_id": "fp_62af8704…-key",
+          "owner": null,
+          "is_active": true,
+          "status": "available",
+          "health": null,
+          "has_secret": true,
+          "expires_at": null,
+          "last_validated_at": null,
+          "scope": "local",
+          "consent": null,
+          "last_used_at": null,
+          "last_error": null,
+          "created_at": "<time>",
+          "updated_at": "<time>",
+          "usage_windows": null,
+          "usage_at": null,
+          "deliverable": {
+            "local": true,
+            "cloud": true
+          }
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "PUT",
+      "route": "/api/claxedo/credentials",
+      "status": 200,
+      "body": {
+        "credential": {
+          "id": "<id:23>",
+          "provider_id": "claude-sdk",
+          "kind": "api_key",
+          "source": "local_only",
+          "label": null,
+          "account_id": "fp_62af8704…-key",
+          "owner": null,
+          "is_active": true,
+          "status": "available",
+          "health": null,
+          "has_secret": true,
+          "expires_at": null,
+          "last_validated_at": null,
+          "scope": "local",
+          "consent": null,
+          "last_used_at": null,
+          "last_error": null,
+          "created_at": "<time>",
+          "updated_at": "<time>",
+          "usage_windows": null,
+          "usage_at": null,
+          "deliverable": {
+            "local": true,
+            "cloud": true
+          }
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "PUT",
+      "route": "/api/claxedo/credentials",
+      "status": 200,
+      "body": {
+        "credential": {
+          "id": "<id:24>",
+          "provider_id": "codex-app-server",
+          "kind": "api_key",
+          "source": "local_only",
+          "label": null,
+          "account_id": "fp_62af8704…-key",
+          "owner": null,
+          "is_active": true,
+          "status": "available",
+          "health": null,
+          "has_secret": true,
+          "expires_at": null,
+          "last_validated_at": null,
+          "scope": "local",
+          "consent": null,
+          "last_used_at": null,
+          "last_error": null,
+          "created_at": "<time>",
+          "updated_at": "<time>",
+          "usage_windows": null,
+          "usage_at": null,
+          "deliverable": {
+            "local": true,
+            "cloud": true
+          }
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/api/claxedo/agent-config/harness",
+      "status": 200,
+      "body": {
+        "ok": true,
+        "harness": {
+          "kind": "native",
+          "harnessId": "pi"
+        },
+        "activeHarness": {
+          "kind": "native",
+          "harnessId": "pi"
+        },
+        "status": "configured",
+        "ready": false
+      }
+    },
+    {
+      "kind": "http",
+      "method": "PUT",
+      "route": "/api/claxedo/agent-config/connections/scripted-acp",
+      "status": 200,
+      "body": {
+        "ok": true,
+        "connections": [
+          {
+            "connectionId": "scripted-acp",
+            "label": "Scripted ACP",
+            "enabled": true,
+            "readiness": "configured",
+            "capabilities": {
+              "abort": true,
+              "reconnect": false,
+              "replay": true,
+              "permissions": true,
+              "questions": true,
+              "todos": false,
+              "commands": false,
+              "fork": false,
+              "revert": false,
+              "unrevert": false,
+              "configOptions": true,
+              "subagents": false
+            },
+            "modelSelection": {
+              "status": "optional"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/api/workspace/resolve?directory=<workspace:25>",
+      "status": 200,
+      "body": {
+        "workspaceId": "<id:26>",
+        "projectId": "<id:26>",
+        "directory": "<workspace:25>",
+        "workspaceName": null,
+        "backing": {
+          "kind": "local-worktree",
+          "directory": "<workspace:25>",
+          "repoName": "<repo:27>",
+          "branch": "main"
+        },
+        "kind": "local",
+        "driver": null,
+        "status": null,
+        "git": {
+          "repo": "<repo:27>",
+          "branch": "main",
+          "remote": null
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/api/claxedo/projects",
+      "status": 201,
+      "body": {
+        "project": {
+          "id": "<id:26>",
+          "name": "<repo:27>",
+          "env": {},
+          "directory": "<workspace:25>",
+          "repoUrl": null,
+          "created_at": "<time>",
+          "updated_at": "<time>"
+        }
+      }
+    },
+    {
+      "kind": "stream",
+      "route": "/api/wr/events?directory=<workspace:25>",
+      "frames": [
+        {
+          "id": "<time-id:44>",
+          "data": {
+            "type": "heartbeat"
+          }
+        },
+        {
+          "id": "<time-id:45>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "creating",
+              "directory": "<workspace:25>",
+              "start": {
+                "sessionId": "<id:28>",
+                "directory": "<workspace:25>",
+                "workspaceId": "<id:26>",
+                "operationId": "<id:29>",
+                "connectionId": "native:claude"
+              },
+              "workspaceId": "<id:26>",
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:46>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "created",
+              "directory": "<workspace:25>",
+              "sessionID": "<id:28>",
+              "workspaceId": "<id:26>",
+              "info": {
+                "id": "<id:28>",
+                "slug": "<id:28>",
+                "projectID": "<id:26>",
+                "workspaceID": "<id:26>",
+                "directory": "<workspace:25>",
+                "title": "H10 long session",
+                "version": "local",
+                "time": {
+                  "created": "<time>",
+                  "updated": "<time>"
+                }
+              },
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:47>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "creating",
+              "directory": "<workspace:25>",
+              "start": {
+                "sessionId": "<id:30>",
+                "directory": "<workspace:25>",
+                "workspaceId": "<id:26>",
+                "operationId": "<id:31>",
+                "connectionId": "native:claude"
+              },
+              "workspaceId": "<id:26>",
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:48>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "subagent.updated:<id:28>:<subagent:1>:1",
+              "type": "subagent.updated",
+              "properties": {
+                "sessionID": "<id:28>",
+                "update": {
+                  "subagentKey": "<subagent:1>",
+                  "revision": 1,
+                  "mode": "background",
+                  "status": "pending",
+                  "label": "claude subagent",
+                  "subagentType": "claude",
+                  "providerId": "<id:30>",
+                  "providerKind": "claxedo",
+                  "childSessionId": "<id:30>",
+                  "transcript": {
+                    "kind": "live"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:49>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "session.updated:<id:30>",
+              "type": "session.updated",
+              "properties": {
+                "sessionID": "<id:30>",
+                "info": {
+                  "id": "<id:30>",
+                  "workspaceId": "<id:26>",
+                  "title": null,
+                  "directory": "<workspace:25>",
+                  "time": {
+                    "created": "<time>",
+                    "updated": "<time>"
+                  },
+                  "config": {
+                    "harness": {
+                      "id": "claude",
+                      "access": "native"
+                    },
+                    "model": {
+                      "providerID": "claude",
+                      "modelID": "claude-sonnet-4-6"
+                    },
+                    "variant": null,
+                    "agent": null
+                  },
+                  "agent_session_id": "claude-sdk:<id:32>",
+                  "parentID": "<id:28>"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:50>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "type": "session.lifecycle",
+              "phase": "created",
+              "directory": "<workspace:25>",
+              "sessionID": "<id:30>",
+              "workspaceId": "<id:26>",
+              "info": {
+                "id": "<id:30>",
+                "slug": "<id:30>",
+                "projectID": "<id:26>",
+                "workspaceID": "<id:26>",
+                "directory": "<workspace:25>",
+                "title": "",
+                "version": "local",
+                "parentID": "<id:28>",
+                "time": {
+                  "created": "<time>",
+                  "updated": "<time>"
+                }
+              },
+              "ts": "<time>"
+            }
+          }
+        },
+        {
+          "id": "<time-id:51>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "session.status:<id:28>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:28>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:52>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "message.updated:<id:33>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:28>",
+                "info": {
+                  "id": "<id:33>",
+                  "sessionID": "<id:28>",
+                  "role": "user",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "agent": "build",
+                  "model": {
+                    "providerID": "claude",
+                    "modelID": "claude-sonnet-4-6"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:53>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "message.part.updated:<id:33>:<id:34>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:28>",
+                "part": {
+                  "type": "text",
+                  "text": "Long credential session H10LONG",
+                  "id": "<id:34>",
+                  "sessionID": "<id:28>",
+                  "messageID": "<id:33>"
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:54>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "message.updated:<id:35>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:28>",
+                "info": {
+                  "id": "<id:35>",
+                  "sessionID": "<id:28>",
+                  "role": "assistant",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "parentID": "<id:33>",
+                  "modelID": "claude-sonnet-4-6",
+                  "providerID": "claude",
+                  "mode": "auto",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "<workspace:25>",
+                    "root": "<workspace:25>"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "input": 0,
+                    "output": 0,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:55>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "type": "session.commands",
+              "properties": {
+                "sessionID": "<id:28>",
+                "commands": [
+                  {
+                    "name": "deep-research",
+                    "description": "deep-research"
+                  },
+                  {
+                    "name": "dataviz",
+                    "description": "dataviz"
+                  },
+                  {
+                    "name": "<repo:36>",
+                    "description": "update-config"
+                  },
+                  {
+                    "name": "verify",
+                    "description": "verify"
+                  },
+                  {
+                    "name": "debug",
+                    "description": "debug"
+                  },
+                  {
+                    "name": "<repo:37>",
+                    "description": "code-review"
+                  },
+                  {
+                    "name": "simplify",
+                    "description": "simplify"
+                  },
+                  {
+                    "name": "batch",
+                    "description": "batch"
+                  },
+                  {
+                    "name": "fewer-permission-prompts",
+                    "description": "fewer-permission-prompts"
+                  },
+                  {
+                    "name": "doctor",
+                    "description": "doctor"
+                  },
+                  {
+                    "name": "loop",
+                    "description": "loop"
+                  },
+                  {
+                    "name": "claude-api",
+                    "description": "claude-api"
+                  },
+                  {
+                    "name": "workflow-authoring",
+                    "description": "workflow-authoring"
+                  },
+                  {
+                    "name": "run",
+                    "description": "run"
+                  },
+                  {
+                    "name": "run-skill-generator",
+                    "description": "run-skill-generator"
+                  },
+                  {
+                    "name": "agents",
+                    "description": "agents"
+                  },
+                  {
+                    "name": "auto-mode-setup",
+                    "description": "auto-mode-setup"
+                  },
+                  {
+                    "name": "autocompact",
+                    "description": "autocompact"
+                  },
+                  {
+                    "name": "clear",
+                    "description": "clear"
+                  },
+                  {
+                    "name": "color",
+                    "description": "color"
+                  },
+                  {
+                    "name": "compact",
+                    "description": "compact"
+                  },
+                  {
+                    "name": "config",
+                    "description": "config"
+                  },
+                  {
+                    "name": "output-style",
+                    "description": "output-style"
+                  },
+                  {
+                    "name": "context",
+                    "description": "context"
+                  },
+                  {
+                    "name": "effort",
+                    "description": "effort"
+                  },
+                  {
+                    "name": "fast",
+                    "description": "fast"
+                  },
+                  {
+                    "name": "focus",
+                    "description": "focus"
+                  },
+                  {
+                    "name": "heapdump",
+                    "description": "heapdump"
+                  },
+                  {
+                    "name": "init",
+                    "description": "init"
+                  },
+                  {
+                    "name": "mcp",
+                    "description": "mcp"
+                  },
+                  {
+                    "name": "model",
+                    "description": "model"
+                  },
+                  {
+                    "name": "__remote-workflow",
+                    "description": "__remote-workflow"
+                  },
+                  {
+                    "name": "workflow-launch-exec",
+                    "description": "workflow-launch-exec"
+                  },
+                  {
+                    "name": "reload-plugins",
+                    "description": "reload-plugins"
+                  },
+                  {
+                    "name": "<repo:38>",
+                    "description": "reload-skills"
+                  },
+                  {
+                    "name": "rename",
+                    "description": "rename"
+                  },
+                  {
+                    "name": "<repo:39>",
+                    "description": "security-review"
+                  },
+                  {
+                    "name": "usage",
+                    "description": "usage"
+                  },
+                  {
+                    "name": "insights",
+                    "description": "insights"
+                  },
+                  {
+                    "name": "recap",
+                    "description": "recap"
+                  },
+                  {
+                    "name": "goal",
+                    "description": "goal"
+                  },
+                  {
+                    "name": "<repo:40>",
+                    "description": "list-agents"
+                  },
+                  {
+                    "name": "team-onboarding",
+                    "description": "team-onboarding"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:56>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:28>:claude_sdk.unmapped_event",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:28>",
+                "harness": "claude",
+                "threadId": "claude-sdk:<id:41>",
+                "code": "claude_sdk.unmapped_event",
+                "message": "SDKSystemMessage(init): model, tools, MCP server status, permission mode, and output style have no complete AgentRuntimeEvent mapping",
+                "severity": "info",
+                "diagnostic": {
+                  "code": "claude_sdk.unmapped_event",
+                  "message": "SDKSystemMessage(init): model, tools, MCP server status, permission mode, and output style have no complete AgentRuntimeEvent mapping",
+                  "severity": "info",
+                  "source": "claude.sdk",
+                  "method": "claude/system",
+                  "raw": {
+                    "type": "system",
+                    "subtype": "init",
+                    "cwd": "<workspace:25>",
+                    "session_id": "<id:42>",
+                    "tools": [
+                      "Task",
+                      "AskUserQuestion",
+                      "Bash",
+                      "CronCreate",
+                      "CronDelete",
+                      "CronList",
+                      "Edit",
+                      "EnterPlanMode",
+                      "EnterWorktree",
+                      "ExitPlanMode",
+                      "ExitWorktree",
+                      "ListAgents",
+                      "NotebookEdit",
+                      "Read",
+                      "ReportFindings",
+                      "ScheduleWakeup",
+                      "SendMessage",
+                      "Skill",
+                      "TaskCreate",
+                      "TaskGet",
+                      "TaskList",
+                      "TaskStop",
+                      "TaskUpdate",
+                      "WebFetch",
+                      "WebSearch",
+                      "Workflow",
+                      "Write",
+                      "mcp__claxedo__create_subagent",
+                      "mcp__claxedo__documents_list",
+                      "mcp__claxedo__documents_open",
+                      "mcp__claxedo__process_logs",
+                      "mcp__claxedo__process_start",
+                      "mcp__claxedo__process_stop",
+                      "mcp__claxedo__processes",
+                      "mcp__claxedo__question_reply",
+                      "mcp__claxedo__session_cancel_turn",
+                      "mcp__claxedo__session_create",
+                      "mcp__claxedo__session_get",
+                      "mcp__claxedo__session_send",
+                      "mcp__claxedo__session_transcript",
+                      "mcp__claxedo__sessions_list",
+                      "mcp__claxedo__<subagent:2>",
+                      "mcp__claxedo__<subagent:3>",
+                      "mcp__claxedo__<subagent:4>",
+                      "mcp__claxedo__<subagent:5>"
+                    ],
+                    "mcp_servers": [
+                      {
+                        "name": "claxedo",
+                        "status": "connected",
+                        "source": "dynamic"
+                      }
+                    ],
+                    "model": "claude-sonnet-4-6",
+                    "permissionMode": "default",
+                    "slash_commands": [
+                      "deep-research",
+                      "dataviz",
+                      "update-config",
+                      "verify",
+                      "debug",
+                      "code-review",
+                      "simplify",
+                      "batch",
+                      "fewer-permission-prompts",
+                      "doctor",
+                      "loop",
+                      "claude-api",
+                      "workflow-authoring",
+                      "run",
+                      "run-skill-generator",
+                      "agents",
+                      "auto-mode-setup",
+                      "autocompact",
+                      "clear",
+                      "color",
+                      "compact",
+                      "config",
+                      "output-style",
+                      "context",
+                      "effort",
+                      "fast",
+                      "focus",
+                      "heapdump",
+                      "init",
+                      "mcp",
+                      "model",
+                      "__remote-workflow",
+                      "workflow-launch-exec",
+                      "reload-plugins",
+                      "reload-skills",
+                      "rename",
+                      "security-review",
+                      "usage",
+                      "insights",
+                      "recap",
+                      "goal",
+                      "list-agents",
+                      "team-onboarding"
+                    ],
+                    "terminal_slash_commands": [
+                      "doctor",
+                      "color",
+                      "focus",
+                      "reload-plugins"
+                    ],
+                    "apiKeySource": "none",
+                    "claude_code_version": "2.1.282",
+                    "output_style": "default",
+                    "agents": [
+                      "claude",
+                      "Explore",
+                      "general-purpose",
+                      "Plan",
+                      "statusline-setup"
+                    ],
+                    "skills": [
+                      "deep-research",
+                      "dataviz",
+                      "update-config",
+                      "verify",
+                      "debug",
+                      "code-review",
+                      "simplify",
+                      "batch",
+                      "fewer-permission-prompts",
+                      "doctor",
+                      "loop",
+                      "claude-api",
+                      "workflow-authoring",
+                      "run",
+                      "run-skill-generator"
+                    ],
+                    "plugins": [
+                      {
+                        "name": "agents-md",
+                        "path": "builtin",
+                        "source": "agents-md@builtin"
+                      }
+                    ],
+                    "capabilities": [
+                      "interrupt_receipt_v1",
+                      "interrupt_cancel_queued_v1",
+                      "<id:43>",
+                      "mcp_read_resource_v1",
+                      "mcp_<id:44>"
+                    ],
+                    "analytics_disabled": true,
+                    "product_feedback_disabled": true,
+                    "uuid": "<id:45>",
+                    "memory_paths": {
+                      "auto": "<data-dir>/.claxedo/claude/config/projects/<encoded-workspace:1>/memory/"
+                    },
+                    "messaging_socket_path": "<socket:1>",
+                    "fast_mode_state": "off",
+                    "fast_mode_disabled_reason": "sdk_opt_in_required",
+                    "per_turn_effort_active": false,
+                    "view_mode": "default"
+                  },
+                  "details": {
+                    "sdkEvent": "SDKSystemMessage(init)",
+                    "reason": "model, tools, MCP server status, permission mode, and output style have no complete AgentRuntimeEvent mapping"
+                  }
+                },
+                "raw": {
+                  "source": "claude.sdk",
+                  "method": "claude/system",
+                  "payload": {
+                    "type": "system",
+                    "subtype": "init",
+                    "cwd": "<workspace:25>",
+                    "session_id": "<id:42>",
+                    "tools": [
+                      "Task",
+                      "AskUserQuestion",
+                      "Bash",
+                      "CronCreate",
+                      "CronDelete",
+                      "CronList",
+                      "Edit",
+                      "EnterPlanMode",
+                      "EnterWorktree",
+                      "ExitPlanMode",
+                      "ExitWorktree",
+                      "ListAgents",
+                      "NotebookEdit",
+                      "Read",
+                      "ReportFindings",
+                      "ScheduleWakeup",
+                      "SendMessage",
+                      "Skill",
+                      "TaskCreate",
+                      "TaskGet",
+                      "TaskList",
+                      "TaskStop",
+                      "TaskUpdate",
+                      "WebFetch",
+                      "WebSearch",
+                      "Workflow",
+                      "Write",
+                      "mcp__claxedo__create_subagent",
+                      "mcp__claxedo__documents_list",
+                      "mcp__claxedo__documents_open",
+                      "mcp__claxedo__process_logs",
+                      "mcp__claxedo__process_start",
+                      "mcp__claxedo__process_stop",
+                      "mcp__claxedo__processes",
+                      "mcp__claxedo__question_reply",
+                      "mcp__claxedo__session_cancel_turn",
+                      "mcp__claxedo__session_create",
+                      "mcp__claxedo__session_get",
+                      "mcp__claxedo__session_send",
+                      "mcp__claxedo__session_transcript",
+                      "mcp__claxedo__sessions_list",
+                      "mcp__claxedo__<subagent:2>",
+                      "mcp__claxedo__<subagent:3>",
+                      "mcp__claxedo__<subagent:4>",
+                      "mcp__claxedo__<subagent:5>"
+                    ],
+                    "mcp_servers": [
+                      {
+                        "name": "claxedo",
+                        "status": "connected",
+                        "source": "dynamic"
+                      }
+                    ],
+                    "model": "claude-sonnet-4-6",
+                    "permissionMode": "default",
+                    "slash_commands": [
+                      "deep-research",
+                      "dataviz",
+                      "update-config",
+                      "verify",
+                      "debug",
+                      "code-review",
+                      "simplify",
+                      "batch",
+                      "fewer-permission-prompts",
+                      "doctor",
+                      "loop",
+                      "claude-api",
+                      "workflow-authoring",
+                      "run",
+                      "run-skill-generator",
+                      "agents",
+                      "auto-mode-setup",
+                      "autocompact",
+                      "clear",
+                      "color",
+                      "compact",
+                      "config",
+                      "output-style",
+                      "context",
+                      "effort",
+                      "fast",
+                      "focus",
+                      "heapdump",
+                      "init",
+                      "mcp",
+                      "model",
+                      "__remote-workflow",
+                      "workflow-launch-exec",
+                      "reload-plugins",
+                      "reload-skills",
+                      "rename",
+                      "security-review",
+                      "usage",
+                      "insights",
+                      "recap",
+                      "goal",
+                      "list-agents",
+                      "team-onboarding"
+                    ],
+                    "terminal_slash_commands": [
+                      "doctor",
+                      "color",
+                      "focus",
+                      "reload-plugins"
+                    ],
+                    "apiKeySource": "none",
+                    "claude_code_version": "2.1.282",
+                    "output_style": "default",
+                    "agents": [
+                      "claude",
+                      "Explore",
+                      "general-purpose",
+                      "Plan",
+                      "statusline-setup"
+                    ],
+                    "skills": [
+                      "deep-research",
+                      "dataviz",
+                      "update-config",
+                      "verify",
+                      "debug",
+                      "code-review",
+                      "simplify",
+                      "batch",
+                      "fewer-permission-prompts",
+                      "doctor",
+                      "loop",
+                      "claude-api",
+                      "workflow-authoring",
+                      "run",
+                      "run-skill-generator"
+                    ],
+                    "plugins": [
+                      {
+                        "name": "agents-md",
+                        "path": "builtin",
+                        "source": "agents-md@builtin"
+                      }
+                    ],
+                    "capabilities": [
+                      "interrupt_receipt_v1",
+                      "interrupt_cancel_queued_v1",
+                      "<id:43>",
+                      "mcp_read_resource_v1",
+                      "mcp_<id:44>"
+                    ],
+                    "analytics_disabled": true,
+                    "product_feedback_disabled": true,
+                    "uuid": "<id:45>",
+                    "memory_paths": {
+                      "auto": "<data-dir>/.claxedo/claude/config/projects/<encoded-workspace:1>/memory/"
+                    },
+                    "messaging_socket_path": "<socket:1>",
+                    "fast_mode_state": "off",
+                    "fast_mode_disabled_reason": "sdk_opt_in_required",
+                    "per_turn_effort_active": false,
+                    "view_mode": "default"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:57>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "type": "session.usage",
+              "properties": {
+                "sessionID": "<id:28>",
+                "messageID": "<id:35>",
+                "contextSize": 2,
+                "contextUsed": 2,
+                "observation": {
+                  "kind": "cumulative",
+                  "nativeSessionId": "<id:42>",
+                  "model": "claude-sonnet-4-6",
+                  "tokens": {
+                    "input": 1,
+                    "output": 1,
+                    "reasoning": null,
+                    "cache": {
+                      "read": null,
+                      "write": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:58>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "message.part.updated:<id:35>:000000_<id:46>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:28>",
+                "part": {
+                  "id": "000000_<id:46>",
+                  "sessionID": "<id:28>",
+                  "messageID": "<id:35>",
+                  "type": "text",
+                  "text": ""
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:59>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "message.part.delta:<id:35>:000000_<id:46>",
+              "type": "message.part.delta",
+              "properties": {
+                "sessionID": "<id:28>",
+                "messageID": "<id:35>",
+                "partID": "000000_<id:46>",
+                "field": "text",
+                "delta": "ok"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:60>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "type": "session.usage",
+              "properties": {
+                "sessionID": "<id:28>",
+                "messageID": "<id:35>",
+                "contextSize": 200000,
+                "contextUsed": 2,
+                "observation": {
+                  "kind": "cumulative",
+                  "nativeSessionId": "<id:42>",
+                  "model": "claude-sonnet-4-6",
+                  "tokens": {
+                    "input": 1,
+                    "output": 1,
+                    "reasoning": null,
+                    "cache": {
+                      "read": null,
+                      "write": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:61>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "session.status:<id:28>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:28>",
+                "status": {
+                  "type": "idle"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:62>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "type": "message.completed",
+              "properties": {
+                "sessionID": "<id:28>",
+                "messageID": "<id:35>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:63>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "session.idle:<id:28>",
+              "type": "session.idle",
+              "properties": {
+                "sessionID": "<id:28>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:64>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "session.status:<id:28>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:28>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:65>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "message.updated:<id:47>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:28>",
+                "info": {
+                  "id": "<id:47>",
+                  "sessionID": "<id:28>",
+                  "role": "user",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "agent": "build",
+                  "model": {
+                    "providerID": "claude",
+                    "modelID": "claude-sonnet-4-6"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:66>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "message.part.updated:<id:47>:<id:48>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:28>",
+                "part": {
+                  "type": "text",
+                  "text": "Renewed credential next turn H10RENEWED",
+                  "id": "<id:48>",
+                  "sessionID": "<id:28>",
+                  "messageID": "<id:47>"
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:67>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "message.updated:<id:49>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:28>",
+                "info": {
+                  "id": "<id:49>",
+                  "sessionID": "<id:28>",
+                  "role": "assistant",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "parentID": "<id:47>",
+                  "modelID": "claude-sonnet-4-6",
+                  "providerID": "claude",
+                  "mode": "auto",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "<workspace:25>",
+                    "root": "<workspace:25>"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "input": 0,
+                    "output": 0,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:68>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "type": "session.commands",
+              "properties": {
+                "sessionID": "<id:28>",
+                "commands": [
+                  {
+                    "name": "deep-research",
+                    "description": "deep-research"
+                  },
+                  {
+                    "name": "dataviz",
+                    "description": "dataviz"
+                  },
+                  {
+                    "name": "<repo:36>",
+                    "description": "update-config"
+                  },
+                  {
+                    "name": "verify",
+                    "description": "verify"
+                  },
+                  {
+                    "name": "debug",
+                    "description": "debug"
+                  },
+                  {
+                    "name": "<repo:37>",
+                    "description": "code-review"
+                  },
+                  {
+                    "name": "simplify",
+                    "description": "simplify"
+                  },
+                  {
+                    "name": "batch",
+                    "description": "batch"
+                  },
+                  {
+                    "name": "fewer-permission-prompts",
+                    "description": "fewer-permission-prompts"
+                  },
+                  {
+                    "name": "doctor",
+                    "description": "doctor"
+                  },
+                  {
+                    "name": "loop",
+                    "description": "loop"
+                  },
+                  {
+                    "name": "claude-api",
+                    "description": "claude-api"
+                  },
+                  {
+                    "name": "workflow-authoring",
+                    "description": "workflow-authoring"
+                  },
+                  {
+                    "name": "run",
+                    "description": "run"
+                  },
+                  {
+                    "name": "run-skill-generator",
+                    "description": "run-skill-generator"
+                  },
+                  {
+                    "name": "agents",
+                    "description": "agents"
+                  },
+                  {
+                    "name": "auto-mode-setup",
+                    "description": "auto-mode-setup"
+                  },
+                  {
+                    "name": "autocompact",
+                    "description": "autocompact"
+                  },
+                  {
+                    "name": "clear",
+                    "description": "clear"
+                  },
+                  {
+                    "name": "color",
+                    "description": "color"
+                  },
+                  {
+                    "name": "compact",
+                    "description": "compact"
+                  },
+                  {
+                    "name": "config",
+                    "description": "config"
+                  },
+                  {
+                    "name": "output-style",
+                    "description": "output-style"
+                  },
+                  {
+                    "name": "context",
+                    "description": "context"
+                  },
+                  {
+                    "name": "effort",
+                    "description": "effort"
+                  },
+                  {
+                    "name": "fast",
+                    "description": "fast"
+                  },
+                  {
+                    "name": "focus",
+                    "description": "focus"
+                  },
+                  {
+                    "name": "heapdump",
+                    "description": "heapdump"
+                  },
+                  {
+                    "name": "init",
+                    "description": "init"
+                  },
+                  {
+                    "name": "mcp",
+                    "description": "mcp"
+                  },
+                  {
+                    "name": "model",
+                    "description": "model"
+                  },
+                  {
+                    "name": "__remote-workflow",
+                    "description": "__remote-workflow"
+                  },
+                  {
+                    "name": "workflow-launch-exec",
+                    "description": "workflow-launch-exec"
+                  },
+                  {
+                    "name": "reload-plugins",
+                    "description": "reload-plugins"
+                  },
+                  {
+                    "name": "<repo:38>",
+                    "description": "reload-skills"
+                  },
+                  {
+                    "name": "rename",
+                    "description": "rename"
+                  },
+                  {
+                    "name": "<repo:39>",
+                    "description": "security-review"
+                  },
+                  {
+                    "name": "usage",
+                    "description": "usage"
+                  },
+                  {
+                    "name": "insights",
+                    "description": "insights"
+                  },
+                  {
+                    "name": "recap",
+                    "description": "recap"
+                  },
+                  {
+                    "name": "goal",
+                    "description": "goal"
+                  },
+                  {
+                    "name": "<repo:40>",
+                    "description": "list-agents"
+                  },
+                  {
+                    "name": "team-onboarding",
+                    "description": "team-onboarding"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:69>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:28>:claude_sdk.unmapped_event",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:28>",
+                "harness": "claude",
+                "threadId": "<id:42>",
+                "code": "claude_sdk.unmapped_event",
+                "message": "SDKSystemMessage(init): model, tools, MCP server status, permission mode, and output style have no complete AgentRuntimeEvent mapping",
+                "severity": "info",
+                "diagnostic": {
+                  "code": "claude_sdk.unmapped_event",
+                  "message": "SDKSystemMessage(init): model, tools, MCP server status, permission mode, and output style have no complete AgentRuntimeEvent mapping",
+                  "severity": "info",
+                  "source": "claude.sdk",
+                  "method": "claude/system",
+                  "raw": {
+                    "type": "system",
+                    "subtype": "init",
+                    "cwd": "<workspace:25>",
+                    "session_id": "<id:42>",
+                    "tools": [
+                      "Task",
+                      "AskUserQuestion",
+                      "Bash",
+                      "CronCreate",
+                      "CronDelete",
+                      "CronList",
+                      "Edit",
+                      "EnterPlanMode",
+                      "EnterWorktree",
+                      "ExitPlanMode",
+                      "ExitWorktree",
+                      "ListAgents",
+                      "NotebookEdit",
+                      "Read",
+                      "ReportFindings",
+                      "ScheduleWakeup",
+                      "SendMessage",
+                      "Skill",
+                      "TaskCreate",
+                      "TaskGet",
+                      "TaskList",
+                      "TaskStop",
+                      "TaskUpdate",
+                      "WebFetch",
+                      "WebSearch",
+                      "Workflow",
+                      "Write",
+                      "mcp__claxedo__create_subagent",
+                      "mcp__claxedo__documents_list",
+                      "mcp__claxedo__documents_open",
+                      "mcp__claxedo__process_logs",
+                      "mcp__claxedo__process_start",
+                      "mcp__claxedo__process_stop",
+                      "mcp__claxedo__processes",
+                      "mcp__claxedo__question_reply",
+                      "mcp__claxedo__session_cancel_turn",
+                      "mcp__claxedo__session_create",
+                      "mcp__claxedo__session_get",
+                      "mcp__claxedo__session_send",
+                      "mcp__claxedo__session_transcript",
+                      "mcp__claxedo__sessions_list",
+                      "mcp__claxedo__<subagent:2>",
+                      "mcp__claxedo__<subagent:3>",
+                      "mcp__claxedo__<subagent:4>",
+                      "mcp__claxedo__<subagent:5>"
+                    ],
+                    "mcp_servers": [
+                      {
+                        "name": "claxedo",
+                        "status": "connected",
+                        "source": "dynamic"
+                      }
+                    ],
+                    "model": "claude-sonnet-4-6",
+                    "permissionMode": "default",
+                    "slash_commands": [
+                      "deep-research",
+                      "dataviz",
+                      "update-config",
+                      "verify",
+                      "debug",
+                      "code-review",
+                      "simplify",
+                      "batch",
+                      "fewer-permission-prompts",
+                      "doctor",
+                      "loop",
+                      "claude-api",
+                      "workflow-authoring",
+                      "run",
+                      "run-skill-generator",
+                      "agents",
+                      "auto-mode-setup",
+                      "autocompact",
+                      "clear",
+                      "color",
+                      "compact",
+                      "config",
+                      "output-style",
+                      "context",
+                      "effort",
+                      "fast",
+                      "focus",
+                      "heapdump",
+                      "init",
+                      "mcp",
+                      "model",
+                      "__remote-workflow",
+                      "workflow-launch-exec",
+                      "reload-plugins",
+                      "reload-skills",
+                      "rename",
+                      "security-review",
+                      "usage",
+                      "insights",
+                      "recap",
+                      "goal",
+                      "list-agents",
+                      "team-onboarding"
+                    ],
+                    "terminal_slash_commands": [
+                      "doctor",
+                      "color",
+                      "focus",
+                      "reload-plugins"
+                    ],
+                    "apiKeySource": "none",
+                    "claude_code_version": "2.1.282",
+                    "output_style": "default",
+                    "agents": [
+                      "claude",
+                      "Explore",
+                      "general-purpose",
+                      "Plan",
+                      "statusline-setup"
+                    ],
+                    "skills": [
+                      "deep-research",
+                      "dataviz",
+                      "update-config",
+                      "verify",
+                      "debug",
+                      "code-review",
+                      "simplify",
+                      "batch",
+                      "fewer-permission-prompts",
+                      "doctor",
+                      "loop",
+                      "claude-api",
+                      "workflow-authoring",
+                      "run",
+                      "run-skill-generator"
+                    ],
+                    "plugins": [
+                      {
+                        "name": "agents-md",
+                        "path": "builtin",
+                        "source": "agents-md@builtin"
+                      }
+                    ],
+                    "capabilities": [
+                      "interrupt_receipt_v1",
+                      "interrupt_cancel_queued_v1",
+                      "<id:43>",
+                      "mcp_read_resource_v1",
+                      "mcp_<id:44>"
+                    ],
+                    "analytics_disabled": true,
+                    "product_feedback_disabled": true,
+                    "uuid": "<id:50>",
+                    "memory_paths": {
+                      "auto": "<data-dir>/.claxedo/claude/config/projects/<encoded-workspace:1>/memory/"
+                    },
+                    "messaging_socket_path": "<socket:2>",
+                    "fast_mode_state": "off",
+                    "fast_mode_disabled_reason": "sdk_opt_in_required",
+                    "per_turn_effort_active": false,
+                    "view_mode": "default"
+                  },
+                  "details": {
+                    "sdkEvent": "SDKSystemMessage(init)",
+                    "reason": "model, tools, MCP server status, permission mode, and output style have no complete AgentRuntimeEvent mapping"
+                  }
+                },
+                "raw": {
+                  "source": "claude.sdk",
+                  "method": "claude/system",
+                  "payload": {
+                    "type": "system",
+                    "subtype": "init",
+                    "cwd": "<workspace:25>",
+                    "session_id": "<id:42>",
+                    "tools": [
+                      "Task",
+                      "AskUserQuestion",
+                      "Bash",
+                      "CronCreate",
+                      "CronDelete",
+                      "CronList",
+                      "Edit",
+                      "EnterPlanMode",
+                      "EnterWorktree",
+                      "ExitPlanMode",
+                      "ExitWorktree",
+                      "ListAgents",
+                      "NotebookEdit",
+                      "Read",
+                      "ReportFindings",
+                      "ScheduleWakeup",
+                      "SendMessage",
+                      "Skill",
+                      "TaskCreate",
+                      "TaskGet",
+                      "TaskList",
+                      "TaskStop",
+                      "TaskUpdate",
+                      "WebFetch",
+                      "WebSearch",
+                      "Workflow",
+                      "Write",
+                      "mcp__claxedo__create_subagent",
+                      "mcp__claxedo__documents_list",
+                      "mcp__claxedo__documents_open",
+                      "mcp__claxedo__process_logs",
+                      "mcp__claxedo__process_start",
+                      "mcp__claxedo__process_stop",
+                      "mcp__claxedo__processes",
+                      "mcp__claxedo__question_reply",
+                      "mcp__claxedo__session_cancel_turn",
+                      "mcp__claxedo__session_create",
+                      "mcp__claxedo__session_get",
+                      "mcp__claxedo__session_send",
+                      "mcp__claxedo__session_transcript",
+                      "mcp__claxedo__sessions_list",
+                      "mcp__claxedo__<subagent:2>",
+                      "mcp__claxedo__<subagent:3>",
+                      "mcp__claxedo__<subagent:4>",
+                      "mcp__claxedo__<subagent:5>"
+                    ],
+                    "mcp_servers": [
+                      {
+                        "name": "claxedo",
+                        "status": "connected",
+                        "source": "dynamic"
+                      }
+                    ],
+                    "model": "claude-sonnet-4-6",
+                    "permissionMode": "default",
+                    "slash_commands": [
+                      "deep-research",
+                      "dataviz",
+                      "update-config",
+                      "verify",
+                      "debug",
+                      "code-review",
+                      "simplify",
+                      "batch",
+                      "fewer-permission-prompts",
+                      "doctor",
+                      "loop",
+                      "claude-api",
+                      "workflow-authoring",
+                      "run",
+                      "run-skill-generator",
+                      "agents",
+                      "auto-mode-setup",
+                      "autocompact",
+                      "clear",
+                      "color",
+                      "compact",
+                      "config",
+                      "output-style",
+                      "context",
+                      "effort",
+                      "fast",
+                      "focus",
+                      "heapdump",
+                      "init",
+                      "mcp",
+                      "model",
+                      "__remote-workflow",
+                      "workflow-launch-exec",
+                      "reload-plugins",
+                      "reload-skills",
+                      "rename",
+                      "security-review",
+                      "usage",
+                      "insights",
+                      "recap",
+                      "goal",
+                      "list-agents",
+                      "team-onboarding"
+                    ],
+                    "terminal_slash_commands": [
+                      "doctor",
+                      "color",
+                      "focus",
+                      "reload-plugins"
+                    ],
+                    "apiKeySource": "none",
+                    "claude_code_version": "2.1.282",
+                    "output_style": "default",
+                    "agents": [
+                      "claude",
+                      "Explore",
+                      "general-purpose",
+                      "Plan",
+                      "statusline-setup"
+                    ],
+                    "skills": [
+                      "deep-research",
+                      "dataviz",
+                      "update-config",
+                      "verify",
+                      "debug",
+                      "code-review",
+                      "simplify",
+                      "batch",
+                      "fewer-permission-prompts",
+                      "doctor",
+                      "loop",
+                      "claude-api",
+                      "workflow-authoring",
+                      "run",
+                      "run-skill-generator"
+                    ],
+                    "plugins": [
+                      {
+                        "name": "agents-md",
+                        "path": "builtin",
+                        "source": "agents-md@builtin"
+                      }
+                    ],
+                    "capabilities": [
+                      "interrupt_receipt_v1",
+                      "interrupt_cancel_queued_v1",
+                      "<id:43>",
+                      "mcp_read_resource_v1",
+                      "mcp_<id:44>"
+                    ],
+                    "analytics_disabled": true,
+                    "product_feedback_disabled": true,
+                    "uuid": "<id:50>",
+                    "memory_paths": {
+                      "auto": "<data-dir>/.claxedo/claude/config/projects/<encoded-workspace:1>/memory/"
+                    },
+                    "messaging_socket_path": "<socket:2>",
+                    "fast_mode_state": "off",
+                    "fast_mode_disabled_reason": "sdk_opt_in_required",
+                    "per_turn_effort_active": false,
+                    "view_mode": "default"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:70>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "type": "session.usage",
+              "properties": {
+                "sessionID": "<id:28>",
+                "messageID": "<id:49>",
+                "contextSize": 2,
+                "contextUsed": 2,
+                "observation": {
+                  "kind": "cumulative",
+                  "nativeSessionId": "<id:42>",
+                  "model": "claude-sonnet-4-6",
+                  "tokens": {
+                    "input": 1,
+                    "output": 1,
+                    "reasoning": null,
+                    "cache": {
+                      "read": null,
+                      "write": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:71>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "message.part.updated:<id:49>:000000_<id:51>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:28>",
+                "part": {
+                  "id": "000000_<id:51>",
+                  "sessionID": "<id:28>",
+                  "messageID": "<id:49>",
+                  "type": "text",
+                  "text": ""
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:72>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "message.part.delta:<id:49>:000000_<id:51>",
+              "type": "message.part.delta",
+              "properties": {
+                "sessionID": "<id:28>",
+                "messageID": "<id:49>",
+                "partID": "000000_<id:51>",
+                "field": "text",
+                "delta": "H10RENEWED"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:73>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "type": "session.usage",
+              "properties": {
+                "sessionID": "<id:28>",
+                "messageID": "<id:49>",
+                "contextSize": 200000,
+                "contextUsed": 2,
+                "observation": {
+                  "kind": "cumulative",
+                  "nativeSessionId": "<id:42>",
+                  "model": "claude-sonnet-4-6",
+                  "tokens": {
+                    "input": 1,
+                    "output": 1,
+                    "reasoning": null,
+                    "cache": {
+                      "read": null,
+                      "write": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:74>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "session.status:<id:28>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:28>",
+                "status": {
+                  "type": "idle"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:75>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "type": "message.completed",
+              "properties": {
+                "sessionID": "<id:28>",
+                "messageID": "<id:49>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:76>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "session.idle:<id:28>",
+              "type": "session.idle",
+              "properties": {
+                "sessionID": "<id:28>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:77>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "session.status:<id:28>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:28>",
+                "status": {
+                  "type": "busy"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:78>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "message.updated:<id:52>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:28>",
+                "info": {
+                  "id": "<id:52>",
+                  "sessionID": "<id:28>",
+                  "role": "user",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "agent": "build",
+                  "model": {
+                    "providerID": "claude",
+                    "modelID": "claude-sonnet-4-6"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:79>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "message.part.updated:<id:52>:<id:53>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:28>",
+                "part": {
+                  "type": "text",
+                  "text": "Run Bash pwd under the selected permission mode H10PERMISSION",
+                  "id": "<id:53>",
+                  "sessionID": "<id:28>",
+                  "messageID": "<id:52>"
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:80>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "message.updated:<id:54>",
+              "type": "message.updated",
+              "properties": {
+                "sessionID": "<id:28>",
+                "info": {
+                  "id": "<id:54>",
+                  "sessionID": "<id:28>",
+                  "role": "assistant",
+                  "time": {
+                    "created": "<time>"
+                  },
+                  "parentID": "<id:52>",
+                  "modelID": "claude-sonnet-4-6",
+                  "providerID": "claude",
+                  "mode": "auto",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "<workspace:25>",
+                    "root": "<workspace:25>"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "input": 0,
+                    "output": 0,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:81>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "type": "session.commands",
+              "properties": {
+                "sessionID": "<id:28>",
+                "commands": [
+                  {
+                    "name": "deep-research",
+                    "description": "deep-research"
+                  },
+                  {
+                    "name": "dataviz",
+                    "description": "dataviz"
+                  },
+                  {
+                    "name": "<repo:36>",
+                    "description": "update-config"
+                  },
+                  {
+                    "name": "verify",
+                    "description": "verify"
+                  },
+                  {
+                    "name": "debug",
+                    "description": "debug"
+                  },
+                  {
+                    "name": "<repo:37>",
+                    "description": "code-review"
+                  },
+                  {
+                    "name": "simplify",
+                    "description": "simplify"
+                  },
+                  {
+                    "name": "batch",
+                    "description": "batch"
+                  },
+                  {
+                    "name": "fewer-permission-prompts",
+                    "description": "fewer-permission-prompts"
+                  },
+                  {
+                    "name": "doctor",
+                    "description": "doctor"
+                  },
+                  {
+                    "name": "loop",
+                    "description": "loop"
+                  },
+                  {
+                    "name": "claude-api",
+                    "description": "claude-api"
+                  },
+                  {
+                    "name": "workflow-authoring",
+                    "description": "workflow-authoring"
+                  },
+                  {
+                    "name": "run",
+                    "description": "run"
+                  },
+                  {
+                    "name": "run-skill-generator",
+                    "description": "run-skill-generator"
+                  },
+                  {
+                    "name": "agents",
+                    "description": "agents"
+                  },
+                  {
+                    "name": "auto-mode-setup",
+                    "description": "auto-mode-setup"
+                  },
+                  {
+                    "name": "autocompact",
+                    "description": "autocompact"
+                  },
+                  {
+                    "name": "clear",
+                    "description": "clear"
+                  },
+                  {
+                    "name": "color",
+                    "description": "color"
+                  },
+                  {
+                    "name": "compact",
+                    "description": "compact"
+                  },
+                  {
+                    "name": "config",
+                    "description": "config"
+                  },
+                  {
+                    "name": "output-style",
+                    "description": "output-style"
+                  },
+                  {
+                    "name": "context",
+                    "description": "context"
+                  },
+                  {
+                    "name": "effort",
+                    "description": "effort"
+                  },
+                  {
+                    "name": "fast",
+                    "description": "fast"
+                  },
+                  {
+                    "name": "focus",
+                    "description": "focus"
+                  },
+                  {
+                    "name": "heapdump",
+                    "description": "heapdump"
+                  },
+                  {
+                    "name": "init",
+                    "description": "init"
+                  },
+                  {
+                    "name": "mcp",
+                    "description": "mcp"
+                  },
+                  {
+                    "name": "model",
+                    "description": "model"
+                  },
+                  {
+                    "name": "__remote-workflow",
+                    "description": "__remote-workflow"
+                  },
+                  {
+                    "name": "workflow-launch-exec",
+                    "description": "workflow-launch-exec"
+                  },
+                  {
+                    "name": "reload-plugins",
+                    "description": "reload-plugins"
+                  },
+                  {
+                    "name": "<repo:38>",
+                    "description": "reload-skills"
+                  },
+                  {
+                    "name": "rename",
+                    "description": "rename"
+                  },
+                  {
+                    "name": "<repo:39>",
+                    "description": "security-review"
+                  },
+                  {
+                    "name": "usage",
+                    "description": "usage"
+                  },
+                  {
+                    "name": "insights",
+                    "description": "insights"
+                  },
+                  {
+                    "name": "recap",
+                    "description": "recap"
+                  },
+                  {
+                    "name": "goal",
+                    "description": "goal"
+                  },
+                  {
+                    "name": "<repo:40>",
+                    "description": "list-agents"
+                  },
+                  {
+                    "name": "team-onboarding",
+                    "description": "team-onboarding"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:82>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "runtime.diagnostic:<id:28>:claude_sdk.unmapped_event",
+              "type": "runtime.diagnostic",
+              "properties": {
+                "sessionID": "<id:28>",
+                "harness": "claude",
+                "threadId": "<id:42>",
+                "code": "claude_sdk.unmapped_event",
+                "message": "SDKSystemMessage(init): model, tools, MCP server status, permission mode, and output style have no complete AgentRuntimeEvent mapping",
+                "severity": "info",
+                "diagnostic": {
+                  "code": "claude_sdk.unmapped_event",
+                  "message": "SDKSystemMessage(init): model, tools, MCP server status, permission mode, and output style have no complete AgentRuntimeEvent mapping",
+                  "severity": "info",
+                  "source": "claude.sdk",
+                  "method": "claude/system",
+                  "raw": {
+                    "type": "system",
+                    "subtype": "init",
+                    "cwd": "<workspace:25>",
+                    "session_id": "<id:42>",
+                    "tools": [
+                      "Task",
+                      "AskUserQuestion",
+                      "Bash",
+                      "CronCreate",
+                      "CronDelete",
+                      "CronList",
+                      "Edit",
+                      "EnterPlanMode",
+                      "EnterWorktree",
+                      "ExitPlanMode",
+                      "ExitWorktree",
+                      "ListAgents",
+                      "NotebookEdit",
+                      "Read",
+                      "ReportFindings",
+                      "ScheduleWakeup",
+                      "SendMessage",
+                      "Skill",
+                      "TaskCreate",
+                      "TaskGet",
+                      "TaskList",
+                      "TaskStop",
+                      "TaskUpdate",
+                      "WebFetch",
+                      "WebSearch",
+                      "Workflow",
+                      "Write",
+                      "mcp__claxedo__create_subagent",
+                      "mcp__claxedo__documents_list",
+                      "mcp__claxedo__documents_open",
+                      "mcp__claxedo__process_logs",
+                      "mcp__claxedo__process_start",
+                      "mcp__claxedo__process_stop",
+                      "mcp__claxedo__processes",
+                      "mcp__claxedo__question_reply",
+                      "mcp__claxedo__session_cancel_turn",
+                      "mcp__claxedo__session_create",
+                      "mcp__claxedo__session_get",
+                      "mcp__claxedo__session_send",
+                      "mcp__claxedo__session_transcript",
+                      "mcp__claxedo__sessions_list",
+                      "mcp__claxedo__<subagent:2>",
+                      "mcp__claxedo__<subagent:3>",
+                      "mcp__claxedo__<subagent:4>",
+                      "mcp__claxedo__<subagent:5>"
+                    ],
+                    "mcp_servers": [
+                      {
+                        "name": "claxedo",
+                        "status": "connected",
+                        "source": "dynamic"
+                      }
+                    ],
+                    "model": "claude-sonnet-4-6",
+                    "permissionMode": "bypassPermissions",
+                    "slash_commands": [
+                      "deep-research",
+                      "dataviz",
+                      "update-config",
+                      "verify",
+                      "debug",
+                      "code-review",
+                      "simplify",
+                      "batch",
+                      "fewer-permission-prompts",
+                      "doctor",
+                      "loop",
+                      "claude-api",
+                      "workflow-authoring",
+                      "run",
+                      "run-skill-generator",
+                      "agents",
+                      "auto-mode-setup",
+                      "autocompact",
+                      "clear",
+                      "color",
+                      "compact",
+                      "config",
+                      "output-style",
+                      "context",
+                      "effort",
+                      "fast",
+                      "focus",
+                      "heapdump",
+                      "init",
+                      "mcp",
+                      "model",
+                      "__remote-workflow",
+                      "workflow-launch-exec",
+                      "reload-plugins",
+                      "reload-skills",
+                      "rename",
+                      "security-review",
+                      "usage",
+                      "insights",
+                      "recap",
+                      "goal",
+                      "list-agents",
+                      "team-onboarding"
+                    ],
+                    "terminal_slash_commands": [
+                      "doctor",
+                      "color",
+                      "focus",
+                      "reload-plugins"
+                    ],
+                    "apiKeySource": "none",
+                    "claude_code_version": "2.1.282",
+                    "output_style": "default",
+                    "agents": [
+                      "claude",
+                      "Explore",
+                      "general-purpose",
+                      "Plan",
+                      "statusline-setup"
+                    ],
+                    "skills": [
+                      "deep-research",
+                      "dataviz",
+                      "update-config",
+                      "verify",
+                      "debug",
+                      "code-review",
+                      "simplify",
+                      "batch",
+                      "fewer-permission-prompts",
+                      "doctor",
+                      "loop",
+                      "claude-api",
+                      "workflow-authoring",
+                      "run",
+                      "run-skill-generator"
+                    ],
+                    "plugins": [
+                      {
+                        "name": "agents-md",
+                        "path": "builtin",
+                        "source": "agents-md@builtin"
+                      }
+                    ],
+                    "capabilities": [
+                      "interrupt_receipt_v1",
+                      "interrupt_cancel_queued_v1",
+                      "<id:43>",
+                      "mcp_read_resource_v1",
+                      "mcp_<id:44>"
+                    ],
+                    "analytics_disabled": true,
+                    "product_feedback_disabled": true,
+                    "uuid": "<id:55>",
+                    "memory_paths": {
+                      "auto": "<data-dir>/.claxedo/claude/config/projects/<encoded-workspace:1>/memory/"
+                    },
+                    "messaging_socket_path": "<socket:3>",
+                    "fast_mode_state": "off",
+                    "fast_mode_disabled_reason": "sdk_opt_in_required",
+                    "per_turn_effort_active": false,
+                    "view_mode": "default"
+                  },
+                  "details": {
+                    "sdkEvent": "SDKSystemMessage(init)",
+                    "reason": "model, tools, MCP server status, permission mode, and output style have no complete AgentRuntimeEvent mapping"
+                  }
+                },
+                "raw": {
+                  "source": "claude.sdk",
+                  "method": "claude/system",
+                  "payload": {
+                    "type": "system",
+                    "subtype": "init",
+                    "cwd": "<workspace:25>",
+                    "session_id": "<id:42>",
+                    "tools": [
+                      "Task",
+                      "AskUserQuestion",
+                      "Bash",
+                      "CronCreate",
+                      "CronDelete",
+                      "CronList",
+                      "Edit",
+                      "EnterPlanMode",
+                      "EnterWorktree",
+                      "ExitPlanMode",
+                      "ExitWorktree",
+                      "ListAgents",
+                      "NotebookEdit",
+                      "Read",
+                      "ReportFindings",
+                      "ScheduleWakeup",
+                      "SendMessage",
+                      "Skill",
+                      "TaskCreate",
+                      "TaskGet",
+                      "TaskList",
+                      "TaskStop",
+                      "TaskUpdate",
+                      "WebFetch",
+                      "WebSearch",
+                      "Workflow",
+                      "Write",
+                      "mcp__claxedo__create_subagent",
+                      "mcp__claxedo__documents_list",
+                      "mcp__claxedo__documents_open",
+                      "mcp__claxedo__process_logs",
+                      "mcp__claxedo__process_start",
+                      "mcp__claxedo__process_stop",
+                      "mcp__claxedo__processes",
+                      "mcp__claxedo__question_reply",
+                      "mcp__claxedo__session_cancel_turn",
+                      "mcp__claxedo__session_create",
+                      "mcp__claxedo__session_get",
+                      "mcp__claxedo__session_send",
+                      "mcp__claxedo__session_transcript",
+                      "mcp__claxedo__sessions_list",
+                      "mcp__claxedo__<subagent:2>",
+                      "mcp__claxedo__<subagent:3>",
+                      "mcp__claxedo__<subagent:4>",
+                      "mcp__claxedo__<subagent:5>"
+                    ],
+                    "mcp_servers": [
+                      {
+                        "name": "claxedo",
+                        "status": "connected",
+                        "source": "dynamic"
+                      }
+                    ],
+                    "model": "claude-sonnet-4-6",
+                    "permissionMode": "bypassPermissions",
+                    "slash_commands": [
+                      "deep-research",
+                      "dataviz",
+                      "update-config",
+                      "verify",
+                      "debug",
+                      "code-review",
+                      "simplify",
+                      "batch",
+                      "fewer-permission-prompts",
+                      "doctor",
+                      "loop",
+                      "claude-api",
+                      "workflow-authoring",
+                      "run",
+                      "run-skill-generator",
+                      "agents",
+                      "auto-mode-setup",
+                      "autocompact",
+                      "clear",
+                      "color",
+                      "compact",
+                      "config",
+                      "output-style",
+                      "context",
+                      "effort",
+                      "fast",
+                      "focus",
+                      "heapdump",
+                      "init",
+                      "mcp",
+                      "model",
+                      "__remote-workflow",
+                      "workflow-launch-exec",
+                      "reload-plugins",
+                      "reload-skills",
+                      "rename",
+                      "security-review",
+                      "usage",
+                      "insights",
+                      "recap",
+                      "goal",
+                      "list-agents",
+                      "team-onboarding"
+                    ],
+                    "terminal_slash_commands": [
+                      "doctor",
+                      "color",
+                      "focus",
+                      "reload-plugins"
+                    ],
+                    "apiKeySource": "none",
+                    "claude_code_version": "2.1.282",
+                    "output_style": "default",
+                    "agents": [
+                      "claude",
+                      "Explore",
+                      "general-purpose",
+                      "Plan",
+                      "statusline-setup"
+                    ],
+                    "skills": [
+                      "deep-research",
+                      "dataviz",
+                      "update-config",
+                      "verify",
+                      "debug",
+                      "code-review",
+                      "simplify",
+                      "batch",
+                      "fewer-permission-prompts",
+                      "doctor",
+                      "loop",
+                      "claude-api",
+                      "workflow-authoring",
+                      "run",
+                      "run-skill-generator"
+                    ],
+                    "plugins": [
+                      {
+                        "name": "agents-md",
+                        "path": "builtin",
+                        "source": "agents-md@builtin"
+                      }
+                    ],
+                    "capabilities": [
+                      "interrupt_receipt_v1",
+                      "interrupt_cancel_queued_v1",
+                      "<id:43>",
+                      "mcp_read_resource_v1",
+                      "mcp_<id:44>"
+                    ],
+                    "analytics_disabled": true,
+                    "product_feedback_disabled": true,
+                    "uuid": "<id:55>",
+                    "memory_paths": {
+                      "auto": "<data-dir>/.claxedo/claude/config/projects/<encoded-workspace:1>/memory/"
+                    },
+                    "messaging_socket_path": "<socket:3>",
+                    "fast_mode_state": "off",
+                    "fast_mode_disabled_reason": "sdk_opt_in_required",
+                    "per_turn_effort_active": false,
+                    "view_mode": "default"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:83>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "type": "session.usage",
+              "properties": {
+                "sessionID": "<id:28>",
+                "messageID": "<id:54>",
+                "contextSize": 2,
+                "contextUsed": 2,
+                "observation": {
+                  "kind": "cumulative",
+                  "nativeSessionId": "<id:42>",
+                  "model": "claude-sonnet-4-6",
+                  "tokens": {
+                    "input": 1,
+                    "output": 1,
+                    "reasoning": null,
+                    "cache": {
+                      "read": null,
+                      "write": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:84>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "message.part.updated:<id:54>:000000_toolu_scripted_3",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:28>",
+                "part": {
+                  "id": "000000_toolu_scripted_3",
+                  "sessionID": "<id:28>",
+                  "messageID": "<id:54>",
+                  "type": "tool",
+                  "callID": "toolu_scripted_3",
+                  "tool": "bash",
+                  "state": {
+                    "status": "running",
+                    "input": {
+                      "intent": "shell",
+                      "kind": "command_execution"
+                    },
+                    "metadata": {
+                      "claude": {
+                        "itemType": "command_execution"
+                      }
+                    },
+                    "time": {
+                      "start": "<time>"
+                    }
+                  },
+                  "metadata": {
+                    "claude": {
+                      "itemType": "command_execution"
+                    }
+                  }
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:85>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "message.part.updated:<id:54>:000000_toolu_scripted_3",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:28>",
+                "part": {
+                  "id": "000000_toolu_scripted_3",
+                  "sessionID": "<id:28>",
+                  "messageID": "<id:54>",
+                  "type": "tool",
+                  "callID": "toolu_scripted_3",
+                  "tool": "bash",
+                  "state": {
+                    "status": "running",
+                    "input": {
+                      "intent": "shell",
+                      "kind": "command_execution",
+                      "description": "pwd",
+                      "command": "pwd"
+                    },
+                    "metadata": {
+                      "claude": {
+                        "itemType": "command_execution"
+                      }
+                    },
+                    "time": {
+                      "start": "<time>"
+                    }
+                  },
+                  "metadata": {
+                    "claude": {
+                      "itemType": "command_execution"
+                    }
+                  }
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:86>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "message.part.updated:<id:54>:000000_toolu_scripted_3",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:28>",
+                "part": {
+                  "id": "000000_toolu_scripted_3",
+                  "sessionID": "<id:28>",
+                  "messageID": "<id:54>",
+                  "type": "tool",
+                  "callID": "toolu_scripted_3",
+                  "tool": "bash",
+                  "state": {
+                    "status": "running",
+                    "input": {
+                      "intent": "shell",
+                      "kind": "command_execution",
+                      "description": "pwd",
+                      "command": "pwd"
+                    },
+                    "metadata": {
+                      "claude": {
+                        "itemType": "command_execution"
+                      }
+                    },
+                    "time": {
+                      "start": "<time>"
+                    }
+                  },
+                  "metadata": {
+                    "claude": {
+                      "itemType": "command_execution"
+                    }
+                  }
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:87>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "message.part.updated:<id:54>:000000_toolu_scripted_3",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:28>",
+                "part": {
+                  "id": "000000_toolu_scripted_3",
+                  "sessionID": "<id:28>",
+                  "messageID": "<id:54>",
+                  "type": "tool",
+                  "callID": "toolu_scripted_3",
+                  "tool": "bash",
+                  "state": {
+                    "status": "completed",
+                    "input": {
+                      "intent": "shell",
+                      "kind": "command_execution",
+                      "description": "pwd",
+                      "command": "pwd"
+                    },
+                    "output": "<workspace:25>",
+                    "title": "bash",
+                    "metadata": {
+                      "claude": {
+                        "itemType": "command_execution"
+                      }
+                    },
+                    "time": {
+                      "start": "<time>",
+                      "end": "<time>"
+                    }
+                  },
+                  "metadata": {
+                    "claude": {
+                      "itemType": "command_execution"
+                    }
+                  }
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:88>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "type": "session.usage",
+              "properties": {
+                "sessionID": "<id:28>",
+                "messageID": "<id:54>",
+                "contextSize": 2,
+                "contextUsed": 2,
+                "observation": {
+                  "kind": "cumulative",
+                  "nativeSessionId": "<id:42>",
+                  "model": "claude-sonnet-4-6",
+                  "tokens": {
+                    "input": 2,
+                    "output": 2,
+                    "reasoning": null,
+                    "cache": {
+                      "read": null,
+                      "write": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:89>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "message.part.updated:<id:54>:000001_<id:56>",
+              "type": "message.part.updated",
+              "properties": {
+                "sessionID": "<id:28>",
+                "part": {
+                  "id": "000001_<id:56>",
+                  "sessionID": "<id:28>",
+                  "messageID": "<id:54>",
+                  "type": "text",
+                  "text": ""
+                },
+                "time": "<time>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:90>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "message.part.delta:<id:54>:000001_<id:56>",
+              "type": "message.part.delta",
+              "properties": {
+                "sessionID": "<id:28>",
+                "messageID": "<id:54>",
+                "partID": "000001_<id:56>",
+                "field": "text",
+                "delta": "ok"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:91>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "type": "session.usage",
+              "properties": {
+                "sessionID": "<id:28>",
+                "messageID": "<id:54>",
+                "contextSize": 200000,
+                "contextUsed": 2,
+                "observation": {
+                  "kind": "cumulative",
+                  "nativeSessionId": "<id:42>",
+                  "model": "claude-sonnet-4-6",
+                  "tokens": {
+                    "input": 2,
+                    "output": 2,
+                    "reasoning": null,
+                    "cache": {
+                      "read": null,
+                      "write": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:92>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "session.status:<id:28>",
+              "type": "session.status",
+              "properties": {
+                "sessionID": "<id:28>",
+                "status": {
+                  "type": "idle"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:93>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "type": "message.completed",
+              "properties": {
+                "sessionID": "<id:28>",
+                "messageID": "<id:54>"
+              }
+            }
+          }
+        },
+        {
+          "id": "<time-id:94>",
+          "data": {
+            "directory": "<workspace:25>",
+            "payload": {
+              "id": "session.idle:<id:28>",
+              "type": "session.idle",
+              "properties": {
+                "sessionID": "<id:28>"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session?directory=<workspace:57>",
+      "status": 201,
+      "body": {
+        "id": "<id:28>",
+        "workspaceId": "<id:26>",
+        "title": "H10 long session",
+        "titleSource": "user",
+        "directory": "<workspace:25>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "claude",
+            "access": "native"
+          },
+          "model": {
+            "providerID": "claude",
+            "modelID": "claude-sonnet-4-6"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "agent_session_id": "claude-sdk:<id:41>",
+        "permissionMode": "default"
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:28>/permission-mode?directory=<workspace:25>",
+      "status": 200,
+      "body": {
+        "modes": [
+          {
+            "id": "default",
+            "name": "Default",
+            "description": "Standard behavior, prompts for dangerous operations",
+            "level": "ask"
+          },
+          {
+            "id": "acceptEdits",
+            "name": "Accept edits",
+            "description": "Auto-accept file edit operations"
+          },
+          {
+            "id": "auto",
+            "name": "Auto",
+            "description": "Use a model classifier to approve/deny permission prompts",
+            "level": "auto"
+          },
+          {
+            "id": "plan",
+            "name": "Plan",
+            "description": "Planning mode, no actual tool execution"
+          },
+          {
+            "id": "dontAsk",
+            "name": "Don't ask",
+            "description": "Don't prompt for permissions, deny if not pre-approved"
+          },
+          {
+            "id": "bypassPermissions",
+            "name": "Bypass permissions",
+            "description": "Bypass all permission checks",
+            "level": "full"
+          }
+        ],
+        "currentModeId": "default",
+        "appliesFrom": "next-turn"
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session?directory=<workspace:57>",
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "permission_ceiling_exceeded",
+          "message": "Permission mode \"bypassPermissions\" (full) widens the ask ceiling",
+          "ceiling": "ask",
+          "requested": {
+            "modeId": "bypassPermissions",
+            "level": "full"
+          }
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session?directory=<workspace:57>",
+      "status": 201,
+      "body": {
+        "id": "<id:30>",
+        "workspaceId": "<id:26>",
+        "title": null,
+        "directory": "<workspace:25>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "claude",
+            "access": "native"
+          },
+          "model": {
+            "providerID": "claude",
+            "modelID": "claude-sonnet-4-6"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "agent_session_id": "claude-sdk:<id:32>",
+        "parentID": "<id:28>",
+        "subagentKey": "<subagent:1>",
+        "permissionMode": "default"
+      }
+    },
+    {
+      "kind": "http",
+      "method": "PUT",
+      "route": "/session/<id:30>/permission-mode?directory=<workspace:25>",
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "permission_ceiling_exceeded",
+          "message": "Permission mode \"bypassPermissions\" (full) widens the ask ceiling",
+          "ceiling": "ask",
+          "requested": {
+            "modeId": "bypassPermissions",
+            "level": "full"
+          }
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:30>?directory=<workspace:25>",
+      "status": 200,
+      "body": {
+        "id": "<id:30>",
+        "workspaceId": "<id:26>",
+        "title": null,
+        "directory": "<workspace:25>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "claude",
+            "access": "native"
+          },
+          "model": {
+            "providerID": "claude",
+            "modelID": "claude-sonnet-4-6"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "agent_session_id": "claude-sdk:<id:32>",
+        "parentID": "<id:28>"
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:28>/prompt_async?directory=<workspace:25>",
+      "status": 204,
+      "body": null
+    },
+    {
+      "kind": "http",
+      "method": "PUT",
+      "route": "/api/claxedo/credentials",
+      "status": 200,
+      "body": {
+        "credential": {
+          "id": "<id:58>",
+          "provider_id": "claude-sdk",
+          "kind": "api_key",
+          "source": "local_only",
+          "label": null,
+          "account_id": "fp_ef7fc521…-key",
+          "owner": null,
+          "is_active": false,
+          "status": "available",
+          "health": null,
+          "has_secret": true,
+          "expires_at": null,
+          "last_validated_at": null,
+          "scope": "local",
+          "consent": null,
+          "last_used_at": null,
+          "last_error": null,
+          "created_at": "<time>",
+          "updated_at": "<time>",
+          "usage_windows": null,
+          "usage_at": null,
+          "deliverable": {
+            "local": true,
+            "cloud": true
+          }
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/api/claxedo/credentials/activate",
+      "status": 200,
+      "body": {
+        "credentials": [
+          {
+            "id": "<id:58>",
+            "provider_id": "claude-sdk",
+            "kind": "api_key",
+            "source": "local_only",
+            "label": null,
+            "account_id": "fp_ef7fc521…-key",
+            "owner": null,
+            "is_active": true,
+            "status": "available",
+            "health": null,
+            "has_secret": true,
+            "expires_at": null,
+            "last_validated_at": null,
+            "scope": "local",
+            "consent": null,
+            "last_used_at": null,
+            "last_error": null,
+            "created_at": "<time>",
+            "updated_at": "<time>",
+            "usage_windows": null,
+            "usage_at": null,
+            "deliverable": {
+              "local": true,
+              "cloud": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/api/claxedo/credentials/claude-sdk",
+      "status": 200,
+      "body": {
+        "credential": {
+          "id": "<id:58>",
+          "provider_id": "claude-sdk",
+          "kind": "api_key",
+          "source": "local_only",
+          "label": null,
+          "account_id": "fp_ef7fc521…-key",
+          "owner": null,
+          "is_active": true,
+          "status": "available",
+          "health": null,
+          "has_secret": true,
+          "expires_at": null,
+          "last_validated_at": null,
+          "scope": "local",
+          "consent": null,
+          "last_used_at": null,
+          "last_error": null,
+          "created_at": "<time>",
+          "updated_at": "<time>",
+          "usage_windows": null,
+          "usage_at": null,
+          "deliverable": {
+            "local": true,
+            "cloud": true
+          }
+        }
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:28>/message?directory=<workspace:25>",
+      "status": 200,
+      "body": {
+        "info": {
+          "id": "<id:49>",
+          "sessionID": "<id:28>",
+          "role": "assistant",
+          "time": {
+            "created": "<time>",
+            "completed": "<time>"
+          },
+          "parentID": "<id:47>",
+          "modelID": "claude-sonnet-4-6",
+          "providerID": "claude",
+          "mode": "auto",
+          "agent": "build",
+          "path": {
+            "cwd": "<workspace:25>",
+            "root": "<workspace:25>"
+          },
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          }
+        },
+        "parts": [
+          {
+            "id": "000000_<id:51>",
+            "sessionID": "<id:28>",
+            "messageID": "<id:49>",
+            "type": "text",
+            "text": "H10RENEWED"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:28>/message?directory=<workspace:25>",
+      "status": 200,
+      "body": [
+        {
+          "info": {
+            "id": "<id:33>",
+            "sessionID": "<id:28>",
+            "role": "user",
+            "time": {
+              "created": "<time>"
+            },
+            "agent": "build",
+            "model": {
+              "providerID": "claude",
+              "modelID": "claude-sonnet-4-6"
+            }
+          },
+          "parts": [
+            {
+              "type": "text",
+              "text": "Long credential session H10LONG",
+              "id": "<id:34>",
+              "sessionID": "<id:28>",
+              "messageID": "<id:33>"
+            }
+          ]
+        },
+        {
+          "info": {
+            "id": "<id:35>",
+            "sessionID": "<id:28>",
+            "role": "assistant",
+            "time": {
+              "created": "<time>",
+              "completed": "<time>"
+            },
+            "parentID": "<id:33>",
+            "modelID": "claude-sonnet-4-6",
+            "providerID": "claude",
+            "mode": "auto",
+            "agent": "build",
+            "path": {
+              "cwd": "<workspace:25>",
+              "root": "<workspace:25>"
+            },
+            "cost": 0,
+            "tokens": {
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          },
+          "parts": [
+            {
+              "id": "000000_<id:46>",
+              "sessionID": "<id:28>",
+              "messageID": "<id:35>",
+              "type": "text",
+              "text": "ok"
+            }
+          ]
+        },
+        {
+          "info": {
+            "id": "<id:47>",
+            "sessionID": "<id:28>",
+            "role": "user",
+            "time": {
+              "created": "<time>"
+            },
+            "agent": "build",
+            "model": {
+              "providerID": "claude",
+              "modelID": "claude-sonnet-4-6"
+            }
+          },
+          "parts": [
+            {
+              "type": "text",
+              "text": "Renewed credential next turn H10RENEWED",
+              "id": "<id:48>",
+              "sessionID": "<id:28>",
+              "messageID": "<id:47>"
+            }
+          ]
+        },
+        {
+          "info": {
+            "id": "<id:49>",
+            "sessionID": "<id:28>",
+            "role": "assistant",
+            "time": {
+              "created": "<time>",
+              "completed": "<time>"
+            },
+            "parentID": "<id:47>",
+            "modelID": "claude-sonnet-4-6",
+            "providerID": "claude",
+            "mode": "auto",
+            "agent": "build",
+            "path": {
+              "cwd": "<workspace:25>",
+              "root": "<workspace:25>"
+            },
+            "cost": 0,
+            "tokens": {
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          },
+          "parts": [
+            {
+              "id": "000000_<id:51>",
+              "sessionID": "<id:28>",
+              "messageID": "<id:49>",
+              "type": "text",
+              "text": "H10RENEWED"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "method": "PUT",
+      "route": "/session/<id:28>/permission-mode?directory=<workspace:25>",
+      "status": 200,
+      "body": {
+        "modes": [
+          {
+            "id": "default",
+            "name": "Default",
+            "description": "Standard behavior, prompts for dangerous operations",
+            "level": "ask"
+          },
+          {
+            "id": "acceptEdits",
+            "name": "Accept edits",
+            "description": "Auto-accept file edit operations"
+          },
+          {
+            "id": "auto",
+            "name": "Auto",
+            "description": "Use a model classifier to approve/deny permission prompts",
+            "level": "auto"
+          },
+          {
+            "id": "plan",
+            "name": "Plan",
+            "description": "Planning mode, no actual tool execution"
+          },
+          {
+            "id": "dontAsk",
+            "name": "Don't ask",
+            "description": "Don't prompt for permissions, deny if not pre-approved"
+          },
+          {
+            "id": "bypassPermissions",
+            "name": "Bypass permissions",
+            "description": "Bypass all permission checks",
+            "level": "full"
+          }
+        ],
+        "currentModeId": "bypassPermissions",
+        "appliesFrom": "next-turn"
+      }
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "route": "/session/<id:28>/message?directory=<workspace:25>",
+      "status": 200,
+      "body": {
+        "info": {
+          "id": "<id:54>",
+          "sessionID": "<id:28>",
+          "role": "assistant",
+          "time": {
+            "created": "<time>",
+            "completed": "<time>"
+          },
+          "parentID": "<id:52>",
+          "modelID": "claude-sonnet-4-6",
+          "providerID": "claude",
+          "mode": "auto",
+          "agent": "build",
+          "path": {
+            "cwd": "<workspace:25>",
+            "root": "<workspace:25>"
+          },
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          }
+        },
+        "parts": [
+          {
+            "id": "000000_toolu_scripted_3",
+            "sessionID": "<id:28>",
+            "messageID": "<id:54>",
+            "type": "tool",
+            "callID": "toolu_scripted_3",
+            "tool": "bash",
+            "state": {
+              "status": "completed",
+              "input": {
+                "intent": "shell",
+                "kind": "command_execution",
+                "description": "pwd",
+                "command": "pwd"
+              },
+              "output": "<workspace:25>",
+              "title": "bash",
+              "metadata": {
+                "claude": {
+                  "itemType": "command_execution"
+                }
+              },
+              "time": {
+                "start": "<time>",
+                "end": "<time>"
+              }
+            },
+            "metadata": {
+              "claude": {
+                "itemType": "command_execution"
+              }
+            }
+          },
+          {
+            "id": "000001_<id:56>",
+            "sessionID": "<id:28>",
+            "messageID": "<id:54>",
+            "type": "text",
+            "text": "ok"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/permission?directory=<workspace:25>",
+      "status": 200,
+      "body": []
+    },
+    {
+      "kind": "http",
+      "method": "GET",
+      "route": "/session/<id:28>?directory=<workspace:25>",
+      "status": 200,
+      "body": {
+        "id": "<id:28>",
+        "workspaceId": "<id:26>",
+        "title": "H10 long session",
+        "titleSource": "user",
+        "commands": [
+          {
+            "name": "deep-research",
+            "description": "deep-research"
+          },
+          {
+            "name": "dataviz",
+            "description": "dataviz"
+          },
+          {
+            "name": "<repo:36>",
+            "description": "update-config"
+          },
+          {
+            "name": "verify",
+            "description": "verify"
+          },
+          {
+            "name": "debug",
+            "description": "debug"
+          },
+          {
+            "name": "<repo:37>",
+            "description": "code-review"
+          },
+          {
+            "name": "simplify",
+            "description": "simplify"
+          },
+          {
+            "name": "batch",
+            "description": "batch"
+          },
+          {
+            "name": "fewer-permission-prompts",
+            "description": "fewer-permission-prompts"
+          },
+          {
+            "name": "doctor",
+            "description": "doctor"
+          },
+          {
+            "name": "loop",
+            "description": "loop"
+          },
+          {
+            "name": "claude-api",
+            "description": "claude-api"
+          },
+          {
+            "name": "workflow-authoring",
+            "description": "workflow-authoring"
+          },
+          {
+            "name": "run",
+            "description": "run"
+          },
+          {
+            "name": "run-skill-generator",
+            "description": "run-skill-generator"
+          },
+          {
+            "name": "agents",
+            "description": "agents"
+          },
+          {
+            "name": "auto-mode-setup",
+            "description": "auto-mode-setup"
+          },
+          {
+            "name": "autocompact",
+            "description": "autocompact"
+          },
+          {
+            "name": "clear",
+            "description": "clear"
+          },
+          {
+            "name": "color",
+            "description": "color"
+          },
+          {
+            "name": "compact",
+            "description": "compact"
+          },
+          {
+            "name": "config",
+            "description": "config"
+          },
+          {
+            "name": "output-style",
+            "description": "output-style"
+          },
+          {
+            "name": "context",
+            "description": "context"
+          },
+          {
+            "name": "effort",
+            "description": "effort"
+          },
+          {
+            "name": "fast",
+            "description": "fast"
+          },
+          {
+            "name": "focus",
+            "description": "focus"
+          },
+          {
+            "name": "heapdump",
+            "description": "heapdump"
+          },
+          {
+            "name": "init",
+            "description": "init"
+          },
+          {
+            "name": "mcp",
+            "description": "mcp"
+          },
+          {
+            "name": "model",
+            "description": "model"
+          },
+          {
+            "name": "__remote-workflow",
+            "description": "__remote-workflow"
+          },
+          {
+            "name": "workflow-launch-exec",
+            "description": "workflow-launch-exec"
+          },
+          {
+            "name": "reload-plugins",
+            "description": "reload-plugins"
+          },
+          {
+            "name": "<repo:38>",
+            "description": "reload-skills"
+          },
+          {
+            "name": "rename",
+            "description": "rename"
+          },
+          {
+            "name": "<repo:39>",
+            "description": "security-review"
+          },
+          {
+            "name": "usage",
+            "description": "usage"
+          },
+          {
+            "name": "insights",
+            "description": "insights"
+          },
+          {
+            "name": "recap",
+            "description": "recap"
+          },
+          {
+            "name": "goal",
+            "description": "goal"
+          },
+          {
+            "name": "<repo:40>",
+            "description": "list-agents"
+          },
+          {
+            "name": "team-onboarding",
+            "description": "team-onboarding"
+          }
+        ],
+        "directory": "<workspace:25>",
+        "time": {
+          "created": "<time>",
+          "updated": "<time>"
+        },
+        "config": {
+          "harness": {
+            "id": "claude",
+            "access": "native"
+          },
+          "model": {
+            "providerID": "claude",
+            "modelID": "claude-sonnet-4-6"
+          },
+          "variant": null,
+          "agent": null
+        },
+        "status": "idle",
+        "agent_session_id": "<id:42>",
+        "lastTurn": {
+          "status": "completed",
+          "completedAt": "<time>",
+          "assistantMessageId": "<id:54>"
+        }
+      }
+    }
+  ]
+}
