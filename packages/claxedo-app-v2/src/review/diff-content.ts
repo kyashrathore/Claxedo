@@ -1,4 +1,4 @@
-import { createMemo, createSignal, type Accessor } from "solid-js"
+import { createMemo, type Accessor } from "solid-js"
 import { useQueries } from "@tanstack/solid-query"
 import { isMediaPath } from "@/files"
 import {
@@ -12,9 +12,9 @@ import {
 } from "@/server"
 import type { ReviewCodeViewDiff } from "@/transcript"
 import { useReviewApi } from "./api"
+import { createRequestedFiles } from "./requested-files"
 
 export const MAX_DIFF_CHANGED_LINES = 500
-const MAX_REQUESTED_FILES = 64
 
 export type RowBody = {
   readonly media: boolean
@@ -59,19 +59,6 @@ function withContent(summary: DiffSummary, content: DiffFile | undefined): Revie
     ...(content?.before === undefined ? {} : { before: content.before }),
     ...(content?.after === undefined ? {} : { after: content.after }),
   }
-}
-
-function createRequestedFiles(scopeKey: Accessor<string>) {
-  const [requested, setRequested] = createSignal<{ readonly key: string; readonly files: readonly string[] }>({
-    key: "",
-    files: [],
-  })
-  const files = () => (requested().key === scopeKey() ? requested().files : [])
-  const request = (next: readonly string[]) => {
-    const merged = [...new Set([...next, ...files()])].slice(0, MAX_REQUESTED_FILES)
-    setRequested({ key: scopeKey(), files: merged })
-  }
-  return { files, request }
 }
 
 function indexedResult<T>(files: Accessor<readonly string[]>, results: readonly QueryResult<T>[]) {
