@@ -822,6 +822,7 @@ html[data-theme="codex"][data-color-scheme="light"] {
   --codex-border-light: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.04 + var(--codex-c) * 0.02, 1) * 100%), transparent);
   --codex-border-heavy: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.09 + var(--codex-c) * 0.06, 1) * 100%), transparent);
   --codex-hover: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.08 + var(--codex-c) * 0.04, 1) * 100%), transparent);
+  --codex-track: color-mix(in srgb, var(--codex-surface), var(--codex-ink) calc(clamp(0, 0.04 + (var(--codex-contrast) - 45) * 0.0012, 1) * 100%));
   --codex-selected: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.04 + var(--codex-c) * 0.02, 1) * 100%), transparent);
   --codex-pressed: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.16 + var(--codex-c) * 0.08, 1) * 100%), transparent);
 }
@@ -837,6 +838,7 @@ html[data-theme="codex"][data-color-scheme="dark"] {
   --codex-border-light: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.03 + var(--codex-c) * 0.02, 1) * 100%), transparent);
   --codex-border-heavy: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.12 + var(--codex-c) * 0.06, 1) * 100%), transparent);
   --codex-hover: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.05 + var(--codex-c) * 0.03, 1) * 100%), transparent);
+  --codex-track: var(--codex-hover);
   --codex-selected: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.04 + var(--codex-c) * 0.02, 1) * 100%), transparent);
   --codex-pressed: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.07 + var(--codex-c) * 0.05, 1) * 100%), transparent);
 }
@@ -850,9 +852,9 @@ html[data-theme="codex"] {
   --shell-surface-header: var(--codex-surface);
   --settings-surface-content: var(--codex-surface);
   --shell-surface-composer: var(--codex-control);
-  --control-surface: var(--codex-control);
+  --control-surface: var(--codex-track);
   --control-surface-active: var(--codex-control);
-  --tab-surface-selected: var(--codex-control);
+  --tab-surface-selected: var(--codex-hover);
   --overlay-surface: var(--codex-control);
   --overlay-surface-hover: var(--codex-hover);
   --overlay-surface-input: var(--codex-selected);
