@@ -1,5 +1,5 @@
 import { readBoolean, readString } from "@/lib/record"
-import { betterAuthApiError } from "./better-auth-error"
+import { authResponseBody, betterAuthApiError } from "./better-auth-error"
 import { apiOrigin } from "./origins"
 
 export type OAuthConsentSubmission = {
@@ -29,7 +29,7 @@ export async function readOAuthConsentClient(clientId: string): Promise<OAuthCon
   const url = new URL("/api/auth/oauth2/public-client", apiOrigin())
   url.searchParams.set("client_id", clientId)
   const response = await fetch(url.toString(), { credentials: "include", headers: { accept: "application/json" } })
-  const body: unknown = await response.json().catch(() => undefined)
+  const body = await authResponseBody(response)
   if (!response.ok) {
     throw betterAuthApiError(body, response.status, "Could not identify the requesting application")
   }
@@ -49,7 +49,7 @@ export async function submitOAuthConsent(input: OAuthConsentSubmission): Promise
       ...(input.scope === undefined ? {} : { scope: input.scope }),
     }),
   })
-  const body: unknown = await response.json().catch(() => undefined)
+  const body = await authResponseBody(response)
   if (!response.ok) throw betterAuthApiError(body, response.status, "Consent failed")
   const url = readString(body, "url")
   if (readBoolean(body, "redirect") !== true || url === undefined) {

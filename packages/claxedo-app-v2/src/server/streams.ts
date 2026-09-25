@@ -74,7 +74,7 @@ type StreamsInput = {
 }
 
 function openEventsAt(input: StreamsInput, path: string, socket: boolean, report: () => void): Stream {
-  const { config, transport } = input
+  const { transport } = input
   return openStream({
     open: ({ headers, signal }) => {
       if (socket) return eventSocketResponse(new URL(path, `${transport.serverUrl}/`), headers, signal)
@@ -83,7 +83,6 @@ function openEventsAt(input: StreamsInput, path: string, socket: boolean, report
     onFrame: input.onFrame,
     onGap: input.onGap,
     onState: report,
-    ...(config.maxReconnectAttempts !== undefined ? { maxAttempts: config.maxReconnectAttempts } : {}),
   })
 }
 

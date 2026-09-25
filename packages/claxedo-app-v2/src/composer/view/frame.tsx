@@ -311,7 +311,7 @@ export const PromptInputFrame: Component<{
             }}
           />
           <div
-            data-component={props.newSession() ? "session-new-design-text" : "session-composer-text"}
+            data-component={props.newSession() ? undefined : "session-composer-text"}
             class="absolute top-0 inset-x-0 px-4 pt-4 pointer-events-none whitespace-nowrap truncate leading-5 text-compact font-body text-v2-text-text-faint [font-family:var(--font-family-sans)]"
             classList={{ "font-mono!": props.mode() === "shell", hidden: props.dirty() }}
           >

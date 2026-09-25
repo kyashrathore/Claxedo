@@ -68,4 +68,3 @@ export function createSuggestions(input: SuggestionInput) {
   return { atItems: at.items, slashItems: createSlashItems(input, queryOf("slash")), loading: at.loading, failed: at.failed }
 }
 
-export type Suggestions = ReturnType<typeof createSuggestions>

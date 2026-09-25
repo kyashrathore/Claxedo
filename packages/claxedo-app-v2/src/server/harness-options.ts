@@ -11,6 +11,26 @@ import { harnessLoginsFromWire, MACHINE_LOGINS_PATH, MACHINE_LOGINS_UNSUPPORTED 
 
 const HARNESS_OPTIONS_PATH = "/api/claxedo/agent-config/harness/options"
 
+/** `model` asks for that model's effort levels; `sessionId` for the harness the session runs. */
+export type HarnessOptionsRequest = {
+  readonly placementId: PlacementId
+  readonly harness: string
+  readonly sessionId?: string
+  readonly model?: string
+}
+
+export async function readHarnessOptions(transport: Transport, workspaces: Workspaces, request: HarnessOptionsRequest): Promise<HarnessOptions> {
+  const { workspaceId } = await workspaces.route(request.placementId)
+  const response = await transport.request(withQuery(HARNESS_OPTIONS_PATH, {
+    workspaceId,
+    ...harnessSelectionQuery(request.harness),
+    sessionId: request.sessionId,
+    model: request.model,
+  }))
+  if (!response.ok) throw await responseError(response, "Model options")
+  return harnessOptionsFromWire(await response.json())
+}
+
 async function readLogins(transport: Transport): Promise<readonly HarnessLogin[]> {
   const response = await transport.request(MACHINE_LOGINS_PATH)
   if (response.status === MACHINE_LOGINS_UNSUPPORTED) return []
@@ -22,10 +42,6 @@ export function harnessQueries(transport: Transport, workspaces: Workspaces) {
   return {
     logins: (): FetchQuery<readonly HarnessLogin[]> => fetchQuery(queryKeys.harnessLogins(transport.serverUrl), () => readLogins(transport)),
     options: (placementId: PlacementId, harness: string): FetchQuery<HarnessOptions> =>
-      fetchQuery(queryKeys.harnessOptions(transport.serverUrl, placementId, harness), async () => {
-        const { workspaceId } = await workspaces.route(placementId)
-        const path = withQuery(HARNESS_OPTIONS_PATH, { workspaceId, ...harnessSelectionQuery(harness) })
-        return harnessOptionsFromWire(await transport.json<unknown>(path), harness)
-      }),
+      fetchQuery(queryKeys.harnessOptions(transport.serverUrl, placementId, harness), () => readHarnessOptions(transport, workspaces, { placementId, harness })),
   }
 }

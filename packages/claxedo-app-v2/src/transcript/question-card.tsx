@@ -5,7 +5,6 @@ import { useTranscriptI18n } from "./i18n"
 
 export type QuestionAnswerMark = {
   text: string
-  /** The reader typed this rather than picking a declared option. */
   custom: boolean
 }
 
@@ -35,7 +34,7 @@ export function QuestionCard(props: { questions: AgentQuestionInfo[]; answers: A
   const answered = createMemo(() => rows().filter((row) => row.answers.length > 0).length)
 
   return (
-    <div data-component="question-card" class="ui-question-card">
+    <div class="ui-question-card">
       <div data-slot="question-card-header">
         <Icon name="bubble-5" size="small" />
         <span data-slot="question-card-title">{i18n.t("transcript.tool.questions")}</span>
@@ -45,15 +44,15 @@ export function QuestionCard(props: { questions: AgentQuestionInfo[]; answers: A
           </span>
         </Show>
       </div>
-      <div data-component="question-answers" class="ui-question-answers">
+      <div class="ui-question-answers">
         <For each={rows()}>
           {(row) => (
             <div data-slot="question-answer-item">
-              <div data-slot="question-text" class="ui-question-text">{row.question}</div>
+              <div class="ui-question-text">{row.question}</div>
               <Show
                 when={row.answers.length > 0}
                 fallback={
-                  <span data-slot="answer-text" class="ui-answer-text" data-kind="none">
+                  <span class="ui-answer-text" data-kind="none">
                     {i18n.t("transcript.question.answer.none")}
                   </span>
                 }
@@ -62,7 +61,7 @@ export function QuestionCard(props: { questions: AgentQuestionInfo[]; answers: A
                   <For each={row.answers}>
                     {(mark) => (
                       <span
-                        data-slot="answer-text" class="ui-answer-text"
+ class="ui-answer-text"
                         data-kind={mark.custom ? "custom" : "option"}
                       >
                         {mark.text}

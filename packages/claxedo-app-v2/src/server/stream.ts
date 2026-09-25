@@ -8,7 +8,6 @@ export type StreamOptions = {
   readonly onFrame: (frame: unknown) => void
   readonly onGap: () => void
   readonly onState?: (state: ConnectionState) => void
-  readonly maxAttempts?: number
   readonly heartbeatTimeoutMs?: number
 }
 
@@ -19,14 +18,10 @@ export type Stream = {
   readonly close: () => void
 }
 
-type ConnectionEvent =
-  | { readonly type: "opened" }
-  | { readonly type: "dropped"; readonly reason: string; readonly maxAttempts: number }
-  | { readonly type: "retry" }
+type ConnectionEvent = { readonly type: "opened" } | { readonly type: "dropped" }
 
 type StreamRun = {
   readonly options: StreamOptions
-  readonly maxAttempts: number
   readonly heartbeatTimeoutMs: number
   readonly connection: Machine<ConnectionState, ConnectionEvent>
   cursor: string | undefined
@@ -38,7 +33,6 @@ type StreamRun = {
 
 const RECONNECT_BASE_MS = 250
 const RECONNECT_CEILING_MS = 15_000
-const DEFAULT_MAX_ATTEMPTS = 10
 const DEFAULT_HEARTBEAT_TIMEOUT_MS = 30_000
 
 function reconnectDelayMs(attempt: number, random: () => number = Math.random) {
@@ -50,11 +44,8 @@ function connectionTransition(state: ConnectionState, event: ConnectionEvent): C
   switch (event.type) {
     case "opened":
       return { kind: "connected" }
-    case "retry":
-      return state.kind === "offline" ? { kind: "connecting" } : state
     case "dropped": {
       const attempt = state.kind === "reconnecting" ? state.attempt + 1 : 1
-      if (attempt > event.maxAttempts) return { kind: "offline", reason: event.reason }
       const afterLive = state.kind === "connected" || (state.kind === "reconnecting" && state.afterLive)
       return { kind: "reconnecting", attempt, afterLive }
     }
@@ -103,9 +94,9 @@ async function readBody(run: StreamRun, body: ReadableStream<Uint8Array>) {
   }
 }
 
-function scheduleReconnect(run: StreamRun, reason: string) {
+function scheduleReconnect(run: StreamRun) {
   if (run.closed) return
-  send(run, { type: "dropped", reason, maxAttempts: run.maxAttempts })
+  send(run, { type: "dropped" })
   const state = run.connection.state()
   if (state.kind !== "reconnecting") return
   run.reconnectTimer = setTimeout(() => {
@@ -132,9 +123,12 @@ async function connect(run: StreamRun) {
     send(run, { type: "opened" })
     armWatchdog(run)
     await readBody(run, body)
-    scheduleReconnect(run, "The event stream ended")
+    scheduleReconnect(run)
   } catch (error) {
-    if (!run.closed && run.attempt === controller) scheduleReconnect(run, toAppError(error).message)
+    if (!run.closed && run.attempt === controller) {
+      console.error("The event stream dropped", toAppError(error))
+      scheduleReconnect(run)
+    }
   } finally {
     if (run.watchdog) clearTimeout(run.watchdog)
     run.watchdog = undefined
@@ -147,7 +141,6 @@ function retry(run: StreamRun) {
   if (state.kind === "reconnecting" && !run.reconnectTimer) return
   if (run.reconnectTimer) clearTimeout(run.reconnectTimer)
   run.reconnectTimer = undefined
-  if (state.kind === "offline") send(run, { type: "retry" })
   void connect(run)
 }
 
@@ -161,7 +154,6 @@ function close(run: StreamRun) {
 export function openStream(options: StreamOptions): Stream {
   const run: StreamRun = {
     options,
-    maxAttempts: options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS,
     heartbeatTimeoutMs: options.heartbeatTimeoutMs ?? DEFAULT_HEARTBEAT_TIMEOUT_MS,
     connection: machine<ConnectionState, ConnectionEvent>({ kind: "connecting" }, connectionTransition),
     cursor: undefined,

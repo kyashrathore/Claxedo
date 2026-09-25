@@ -17,7 +17,7 @@ export type AcpToolStep = {
   text?: string
   locations?: ToolCallLocation[]
   content?: ToolCallContent[]
-  status?: "completed" | "failed"
+  status?: "completed" | "failed" | "in_progress"
 }
 
 export type AcpStep =

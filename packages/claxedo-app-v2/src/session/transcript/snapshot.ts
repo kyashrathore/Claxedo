@@ -15,7 +15,6 @@ function hasOlderLoaded(context: TranscriptContext, transcript: TranscriptPage):
 function landSurface(context: TranscriptContext, surface: SessionSurface): void {
   const current = context.phase.state()
   const held = isReading(current) ? current.held : []
-  context.deltas.drop()
   context.deps.list.readRow(surface.row)
   replaceLatest(context.setData, surface.transcript)
   context.setData("fragmentParts", surfaceFragments(surface.transcript))

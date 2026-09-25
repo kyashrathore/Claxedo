@@ -34,12 +34,15 @@ Rules in those sheets that code cannot explain:
   - The palette gets an 8 px gutter and a 14 px radius, concentric with its rows. The palette and the page-scale dialogs dim their backdrop because the shared 0.2 alpha is invisible on dark chrome. The overlay is a sibling of the dialog layer, so the backdrop is selected from `<body>`, and it moves at the dialog's own 150 ms in and 100 ms out.
   - The main column is a positioned layer above the panel. The floating session stack's `z-index` is otherwise trapped in its pane's `contain: strict` context.
 - `styles/index.css`:
-  - The terminal font is `font-display: swap`. It is 1 MB, and text never waits on it.
-  - The composer's dropdown normalisation is unlayered and uses a doubled class. The menu, select and list sheets ship unlayered rules, which beat any `@layer components` rule, and Vite's injection order is not guaranteed.
-  - One surface, elevation and row spec covers the composer's `+` menu, selects and popover lists, so neighbouring menus keep one rhythm. Their width clamp is viewport-relative because they float above the pane.
-  - The slider's thumb offset is a literal. The slider reads it back through `getComputedStyle`, which returns a custom property's text unresolved.
-  - The dock collapses by container query on the space it owns. The harness/model chip keeps its label, because it is the only control naming what will answer.
-  - The collapsed composer is driven by an attribute, not `:focus-within`. Its menus are portaled, and focus entering one would fold the card under it.
+  - **The terminal font** is `font-display: swap`. It is 1 MB, and text never waits for it.
+  - **The new-session content** (`session-new-design`) and the getting-started card are size containers, so what they hold lays out by the space they get rather than by the viewport.
+  - **The composer's menus share one surface, elevation and row spec.** That covers the `+` menu, the harness/model picker and the popover lists, so neighbouring menus keep one rhythm.
+    - The rules are unlayered and use a doubled class, because the menu, select and list sheets ship unlayered rules that beat any `@layer components` rule, and Vite's injection order is not guaranteed.
+    - Their width clamps to the viewport, not the pane, because they float above it.
+  - **The harness/model picker** enters with a 150 ms slide from its header, and animates its surface's height with `interpolate-size: allow-keywords`. Both are off under reduced motion.
+  - **The effort slider's geometry is literal custom properties.** The slider reads them back through `getComputedStyle`, which returns a custom property's text unresolved, so a `calc()` there would read as 0.
+  - **The dock collapses by container query** (`prompt-composer`, 560 px) on the space it owns. The harness/model chip keeps its label, because it is the only control naming what will answer.
+  - **The collapsed composer** is driven by the `data-composer-collapsed` attribute, not `:focus-within`, because its menus are portaled and focus entering one would fold the card under it.
 
 - `styles/ui-overrides.css`, today's app's override sheet:
   - **Semantic surfaces are theme-agnostic.** A role a theme does not override inherits the generic token (`SEMANTIC_THEME_ROLE_FALLBACKS` in `packages/ui/src/theme/resolve.ts`), so one selector serves every theme and Codex only supplies values.

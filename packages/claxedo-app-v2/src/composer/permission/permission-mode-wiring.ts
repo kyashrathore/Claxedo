@@ -39,7 +39,7 @@ export function createComposerPermissionModeWiring(input: {
   requestFailedTitle: () => string
 }) {
   const resourceKey = () => JSON.stringify({
-    sessionID: input.sessionRef()?.sessionId ?? "",
+    sessionId: input.sessionRef()?.sessionId ?? "",
     placementId: input.placementId() ?? "",
     harness: input.harness() ?? null,
     selection: input.harnessSelection?.() ?? null,
@@ -62,13 +62,13 @@ export function createComposerPermissionModeWiring(input: {
     async (sourceKey) => {
       const parsed = asRecord(JSON.parse(sourceKey))
       const selection = parsed ? parsed.selection : undefined
-      const sessionID = readString(parsed, "sessionID") ?? ""
+      const sessionId = readString(parsed, "sessionId") ?? ""
       const placementId = input.placementId()
       const ref = input.sessionRef()
-      if (!placementId || (!sessionID && !isHarnessSelection(selection))) return undefined
+      if (!placementId || (!sessionId && !isHarnessSelection(selection))) return undefined
       return await input.api.permissionModes({
         placementId,
-        ...(sessionID && ref ? { ref } : {}),
+        ...(sessionId && ref ? { ref } : {}),
         ...(isHarnessSelection(selection) ? { harness: harnessSelectionValue(selection) } : {}),
       })
     },
@@ -128,7 +128,7 @@ export function createComposerPermissionModeWiring(input: {
     setPermissionMode: async (call) => {
       const key = resourceKey()
       const ref = input.sessionRef()
-      if (!ref || ref.sessionId !== call.sessionID) throw new Error("The session is no longer open")
+      if (!ref || ref.sessionId !== call.sessionId) throw new Error("The session is no longer open")
       const result = await input.api.setPermissionMode(ref, call.modeId)
       if (key === resourceKey()) {
         // The write returns the agent's complete read-back. Install that answer
@@ -191,8 +191,8 @@ export function createComposerPermissionSurface(input: {
     unavailable: permissionModeWiring.harnessUnavailable,
     selection: permissionModeWiring.selection,
     onSelectionChange: permissionModeWiring.onSelectionChange,
-    deliver: async ({ option, sessionID }) =>
-      applyPermissionMode({ delivery: option.delivery, sessionID, client: permissionModeWiring.writer() }),
+    deliver: async ({ option, sessionId }) =>
+      applyPermissionMode({ delivery: option.delivery, sessionId, client: permissionModeWiring.writer() }),
     // Drops the optimistic value as well as toasting — see `reportError`.
     onDeliveryError: ({ error }) => permissionModeWiring.reportError(error),
     sessionId: () => input.sessionRef()?.sessionId,

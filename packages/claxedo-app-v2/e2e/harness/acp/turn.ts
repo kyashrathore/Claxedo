@@ -57,6 +57,7 @@ async function playTool(context: TurnContext, step: AcpToolStep) {
     ...(step.locations ? { locations: step.locations } : {}),
   })
   const status = step.status ?? "completed"
+  if (status === "in_progress") return
   const content = step.content ?? (step.text !== undefined ? [textContent(step.text)] : [])
   const rawOutput = step.output ?? (status === "failed" ? { error: step.text ?? "The scripted tool failed" } : step.text ?? null)
   await update(context, { sessionUpdate: "tool_call_update", toolCallId, status, content, rawOutput })
@@ -183,5 +184,6 @@ export async function playScript(context: TurnContext, script: AcpScript): Promi
     const result = await playStep(context, step)
     if (result) return result
   }
+  if (context.signal.aborted) return { stopReason: "cancelled" }
   return { stopReason: script.stopReason ?? "end_turn" }
 }

@@ -1,14 +1,9 @@
+import type { HarnessConnectionState, HarnessHealth, HarnessOptionChoice, HarnessOptionsSource, HarnessState } from "@/server"
 import type { HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
 import {
-  desiredHarness,
   hardFailedHarness,
   harnessHasConfigOptions,
-  type HarnessHealthStatus,
-  type HarnessConnectionState,
-  type HarnessModelOption,
-  type HarnessState,
   type HarnessType,
-  type OptionsSource,
 } from "./profile"
 import { harnessMode, type HarnessReadiness } from "./selection"
 import type { DraftDefault } from "./draft-defaults"
@@ -20,17 +15,17 @@ export type HarnessStoreState = {
   harness?: HarnessType
   selectedModel: string
   selectedModelProvider?: string
-  dynamicModels: HarnessModelOption[] | null
+  dynamicModels: readonly HarnessOptionChoice[] | null
   /** Reasoning/thinking levels the harness offers; `[]` = none, `null` = unknown. */
-  thoughtLevels: HarnessModelOption[] | null
+  thoughtLevels: readonly HarnessOptionChoice[] | null
   selectedThoughtLevel: string | undefined
   /** Faster tiers the selected model offers; `[]` = none, `null` = unknown. */
-  serviceTiers: HarnessModelOption[] | null
+  serviceTiers: readonly HarnessOptionChoice[] | null
   selectedServiceTier: string | undefined
   readiness: HarnessReadiness
   connectionDeclaration?: HarnessConnectionRef
   connectionState?: HarnessConnectionState
-  optionsSource: OptionsSource
+  optionsSource: HarnessOptionsSource
   optionsStale: boolean
   optionsLoading: boolean
   configError?: string
@@ -92,7 +87,7 @@ export function harnessStatusPatch(input: {
   data: HarnessState
   current?: HarnessStoreState
 }): HarnessStorePatch {
-  const want = desiredHarness(input.data) ?? input.current?.harness
+  const want = input.data.type ?? input.current?.harness
   if (!want) return {
     harnessMode: "unknown",
     readiness: input.data.ready === false || hardFailedHarness(input.data) ? "error" : "unresolved",
@@ -122,7 +117,7 @@ export function harnessStatusPatch(input: {
     harnessMode: harnessMode(want),
     harness: want,
     selectedModel: input.data.model ?? input.current?.selectedModel ?? "",
-    selectedModelProvider: input.data.modelProviderID ?? input.current?.selectedModelProvider,
+    selectedModelProvider: input.data.modelProviderId ?? input.current?.selectedModelProvider,
     readiness,
     connectionState: want.kind === "connection" && input.data.connectionState?.connectionId === want.connectionId
       ? input.data.connectionState
@@ -196,7 +191,7 @@ export function harnessSwitchStartPatch(input: {
 export function harnessHealthReadiness(input: {
   harness?: HarnessType
   current: HarnessReadiness
-  health?: HarnessHealthStatus
+  health?: HarnessHealth["status"]
 }): HarnessReadiness | undefined {
   if (!input.harness) return undefined
   if (input.health === "degraded" || input.health === "unavailable") {

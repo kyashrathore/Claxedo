@@ -35,10 +35,6 @@ export type LineCommentAnchorProps = {
   variant?: LineCommentVariant
   icon?: "comment" | "plus"
   buttonLabel?: string
-  // These are attached through Solid's `on:` namespace (a direct addEventListener,
-  // not the delegated `onClick`), so they take the handler union that slot accepts.
-  // The anchor hangs click/hover on its button in the default layout and on the popover
-  // div when `inline` hides that button, so neither may assume a specific element.
   onClick?: JSX.EventHandlerWithOptionsUnion<HTMLElement, MouseEvent>
   onMouseEnter?: JSX.EventHandlerWithOptionsUnion<HTMLElement, MouseEvent>
   onPopoverFocusOut?: JSX.EventHandlerWithOptionsUnion<HTMLDivElement, FocusEvent>

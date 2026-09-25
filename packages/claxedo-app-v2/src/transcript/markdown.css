@@ -5,7 +5,6 @@
   --markdown-shell-code-color: var(--v2-text-text-base);
   --markdown-shell-code-token-color: currentColor;
 
-  /* Reset & Base Typography */
   min-width: 0;
   max-width: 100%;
   overflow-wrap: break-word;
@@ -19,7 +18,6 @@
     white-space: pre-wrap;
   }
 
-  /* Spacing for flow */
   > *:first-child {
     margin-top: 0;
   }
@@ -33,7 +31,6 @@
     margin-bottom: 0;
   }
 
-  /* Headings: Sized by level, distinguished by color and spacing */
   h1,
   h2,
   h3,
@@ -85,19 +82,16 @@
     letter-spacing: var(--transcript-h4-tracking, normal);
   }
 
-  /* Emphasis & Strong: Neutral strong color */
   strong,
   b {
     color: var(--v2-text-text-base);
     font-weight: var(--transcript-bold-weight, var(--font-weight-semibold));
   }
 
-  /* Paragraphs */
   p {
     margin-bottom: var(--transcript-paragraph-gap, 6px);
   }
 
-  /* Links */
   a {
     color: var(--transcript-link-color, var(--text-interactive-base));
     text-decoration: var(--transcript-link-decoration, none);
@@ -109,7 +103,6 @@
     text-underline-offset: 2px;
   }
 
-  /* Lists */
   ul,
   ol {
     margin-top: var(--transcript-block-gap, 8px);
@@ -171,7 +164,6 @@
     padding-left: calc(var(--transcript-nested-list-indent, 1rem) + 0.75rem);
   }
 
-  /* Blockquotes */
   blockquote {
     border-left: var(--transcript-quote-border, 0.5px) solid var(--v2-border-border-base);
     margin: var(--transcript-block-gap, 1rem) 0;
@@ -314,7 +306,6 @@
     }
   }
 
-  /* Mermaid (T14): once rendered, hide the source <pre> and show the themed diagram. */
   [data-component="markdown-code"][data-mermaid-state="rendered"] > pre {
     display: none;
   }
@@ -339,8 +330,6 @@
     font-weight: var(--transcript-inline-code-weight, var(--font-weight-medium));
     padding: var(--transcript-inline-code-padding, 1px 0.3rem);
     border-radius: var(--radius-sm);
-    /* Pill (D§3.12): hairline inset ring on a legacy token so it reads as an object in
-       both themes even when the v2 palette is absent. */
     box-shadow: inset 0 0 0 0.5px var(--border-weak-base);
     background: color-mix(
       in oklch,
@@ -349,11 +338,6 @@
     );
   }
 
-  /*
-   * Path/url inline code keeps the neutral pill — no accent tint. Tinting every detected
-   * path turned prose into a wall of green (D§1: prose is the product; decoration should
-   * not compete with it). The affordance is the pointer + hover underline, not colour.
-   */
   :not(pre) > code[data-inline-code-kind="path"] {
     cursor: pointer;
     text-underline-offset: 2px;
@@ -374,7 +358,6 @@
     text-underline-offset: 2px;
   }
 
-  /* Tables */
   [data-component="markdown-table"] {
     position: relative;
     width: 100%;
@@ -436,9 +419,6 @@
     border-bottom: 0.5px solid var(--v2-border-border-base);
   }
 
-  /* Images render as fixed compact tiles: loading, loaded, and failed states
-     occupy the same box, so a late decode or stream re-render cannot shift the
-     transcript. A loaded tile opens the full image. */
   [data-component="markdown-image-tile"],
   [data-component="markdown-image-fallback"] {
     box-sizing: border-box;
@@ -566,12 +546,6 @@ body:not([data-new-layout]) .ui-markdown {
     border-color: var(--border-weak-base);
   }
 
-  /*
-   * Inline code reads as an object, not as syntax (T15/D§3.12). This used to paint every
-   * inline span with --syntax-string (teal #00ceb9 in dark), which turned prose into a
-   * wall of colour, and its padding/background resets silently overrode the pill defined
-   * in the base block above. Neutral pill, prose-coloured text.
-   */
   :not(pre) > code {
     color: var(--transcript-prose-color, var(--text-strong));
     padding: var(--transcript-inline-code-padding, 1px 0.3rem);

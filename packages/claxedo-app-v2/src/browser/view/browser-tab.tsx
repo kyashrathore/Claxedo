@@ -36,7 +36,6 @@ export function BrowserTabView(props: BrowserTabViewProps): JSX.Element {
       {(current) => (
         <div
           class="flex h-full min-h-0 w-full flex-col overflow-hidden bg-background-base"
-          data-component="workspace-browser-panel"
           data-testid="workspace-browser-panel"
         >
           <div class="flex h-full w-full flex-col bg-background-base text-text-base">

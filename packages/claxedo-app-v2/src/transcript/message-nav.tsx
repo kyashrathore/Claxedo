@@ -22,25 +22,11 @@ export type MessageNavPreview = {
   assistant?: string
 }
 
-/**
- * What this nav reads off a turn's user message: its id, and the summary it
- * renders a label and diff bars from.
- *
- * Structural rather than `AgentUserMessage` — that contract also requires
- * `agent` and `model`, which this component never touches and which a row the
- * runtime has not echoed back yet does not have. Naming only the fields read
- * keeps a caller free to pass an optimistic turn.
- */
 export type MessageNavMessage = {
   id: string
   summary?: { title?: string; diffs?: AgentSnapshotFileDiff[] }
 }
 
-/**
- * Generic over the row type so the callbacks hand back what the caller passed
- * in. Typing them as `MessageNavMessage` would make the nav claim it can invoke
- * a handler with a bare `{id}`, which no caller writes one for.
- */
 export function MessageNav<M extends MessageNavMessage>(
   props: ComponentProps<"ul"> & {
     messages: M[]
@@ -192,15 +178,13 @@ export function MessageNav<M extends MessageNavMessage>(
                     }}
                     onBlur={(event) => {
                       cancelPendingPreview(message)
-                      // `relatedTarget` is an `EventTarget`; kobalte compares it against its
-                      // content node, so anything that is not a Node can never be inside it.
                       const related = event.relatedTarget
                       if (related instanceof Node && hoverCard.isTargetOnHoverCard(related)) return
                       hoverCard.closeWithDelay()
                     }}
                     onClick={() => selectCompactMessage(message)}
                   >
-                    <span data-slot="message-nav-tick-line" class="ui-message-nav-tick-line" />
+                    <span class="ui-message-nav-tick-line" />
                   </button>
                 </li>
               )
@@ -210,18 +194,16 @@ export function MessageNav<M extends MessageNavMessage>(
         <HoverCard.Portal>
           <Show when={activePreviewMessage()} keyed>
             {(message) => {
-              // Preview text joins every part of the turn — compute it only for
-              // the one open card, never eagerly for every history tick.
               const preview = () => local.getPreview?.(message)
               return (
                 <HoverCard.Content
-                  data-slot="message-nav-turn-preview" class="ui-message-nav-turn-preview"
+ class="ui-message-nav-turn-preview"
                   onClick={() => selectCompactMessage(message)}
                 >
                   <div data-slot="message-nav-preview-copy">
-                    <p data-slot="message-nav-preview-user" class="ui-message-nav-preview-user">{preview()?.user ?? fallbackLabel(message)}</p>
+                    <p class="ui-message-nav-preview-user">{preview()?.user ?? fallbackLabel(message)}</p>
                     <Show when={preview()?.assistant}>
-                      {(assistant) => <p data-slot="message-nav-preview-assistant" class="ui-message-nav-preview-assistant">{assistant()}</p>}
+                      {(assistant) => <p class="ui-message-nav-preview-assistant">{assistant()}</p>}
                     </Show>
                   </div>
                 </HoverCard.Content>
@@ -248,7 +230,7 @@ export function MessageNav<M extends MessageNavMessage>(
           return (
             <li data-slot="message-nav-item">
               <button
-                data-slot="message-nav-message-button" class="ui-message-nav-message-button"
+ class="ui-message-nav-message-button"
                 data-message-id={message.id}
                 onClick={handleClick}
                 onKeyDown={handleKeyPress}
@@ -277,7 +259,7 @@ export function MessageNav<M extends MessageNavMessage>(
     <Show when={local.size === "normal" || local.messages.length > 10}>
       <Switch>
         <Match when={local.size === "compact"}>
-          <div data-component="message-nav-hovercard" class={local.class}>
+          <div class={local.class}>
             <HoverCard
               open={activePreview() !== undefined}
               onOpenChange={(next) => {

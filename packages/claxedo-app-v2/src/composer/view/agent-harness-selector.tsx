@@ -176,7 +176,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
       rows,
       eligibleModels: rows
         .filter((item) => item.connected)
-        .map((item) => ({ providerID: item.provider.id, modelID: item.id })),
+        .map((item) => ({ providerId: item.provider.id, modelId: item.id })),
     }
   })
   // A catalog restored from storage keeps only each connected provider's
@@ -208,7 +208,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
       props.harnessController.resolveDraftDefault(scope(), {
         supportedHarnesses: harnessOptions(),
         eligibleModels: catalog.eligibleModels,
-        connectedProviderIDs: [...catalog.connected],
+        connectedProviderIds: [...catalog.connected],
         providerDefaults: catalogProviders.default(),
       })
       return
@@ -232,7 +232,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     if (!placementId()) return
     void props.harnessController.setModel(
       scope(),
-      { providerID: only.provider.id, modelID: only.id },
+      { providerId: only.provider.id, modelId: only.id },
       scopeInput(),
       { provider: only.provider.name, model: only.name },
     )
@@ -294,7 +294,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   })
   const picked = createMemo(() => {
     const selected = selection().selectedModelKey
-    const next = rows().find((item) => item.id === selected?.modelID && item.provider.id === selected.providerID)
+    const next = rows().find((item) => item.id === selected?.modelId && item.provider.id === selected.providerId)
       ?? (harness() && isCatalogHarness(harness()) ? undefined : rows().find((item) => item.id === selection().selectedModel))
     return next
   })
@@ -303,7 +303,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
       write: (command) => {
         if (!command.model) return undefined
         const hit = rows().find(
-          (item) => item.id === command.model?.modelID && item.provider.id === command.model.providerID,
+          (item) => item.id === command.model?.modelId && item.provider.id === command.model.providerId,
         )
         // A catalog model's levels are its own: one the new model lacks must
         // not ride the next prompt behind a control that no longer offers it.
@@ -329,7 +329,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     set: (item, options) => {
       const modelKey = modelKeyFromPickerSelection(item)
       if (!modelKey) return
-      const hit = rows().find((row) => row.id === modelKey.modelID && row.provider.id === modelKey.providerID)
+      const hit = rows().find((row) => row.id === modelKey.modelId && row.provider.id === modelKey.providerId)
       if (!hit) return
       if (hit.connected === false) {
         openProviders()
@@ -342,7 +342,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
             return selection().selectedModelKey
           },
         },
-        model: { providerID: hit.provider.id, modelID: hit.id },
+        model: { providerId: hit.provider.id, modelId: hit.id },
         source: "ui",
       })
     },
@@ -489,12 +489,12 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
               saved: { harness: r },
               supportedHarnesses: harnessOptions(),
               eligibleModels: catalog.eligibleModels,
-              connectedProviderIDs: [...catalog.connected],
+              connectedProviderIds: [...catalog.connected],
               providerDefaults: catalogProviders.default(),
             })
             if (!result.model) return undefined
             return props.harnessController.setModel(switchScope, result.model, switchInput, (() => {
-              const hit = catalog.rows.find((item) => item.provider.id === result.model?.providerID && item.id === result.model.modelID)
+              const hit = catalog.rows.find((item) => item.provider.id === result.model?.providerId && item.id === result.model.modelId)
               return hit ? { provider: hit.provider.name, model: hit.name } : undefined
             })())
           }).finally(() => {
@@ -508,14 +508,14 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const catalogSelected = createMemo(() => !!harness() && isCatalogHarness(harness()))
   // A catalog harness's levels are the engine variants its catalog carries for
   // the selected model; "default" (no variant) leads them.
-  const catalogVariants = (model: { providerID?: string; modelID?: string }) => {
-    const provider = model.providerID ? catalogProviders.all().get(model.providerID) : undefined
-    const row = Object.values(provider?.models ?? {}).find((item) => item.id === model.modelID)
+  const catalogVariants = (model: { providerId?: string; modelId?: string }) => {
+    const provider = model.providerId ? catalogProviders.all().get(model.providerId) : undefined
+    const row = Object.values(provider?.models ?? {}).find((item) => item.id === model.modelId)
     return Object.keys(row?.variants ?? {})
   }
   const activeVariants = createMemo(() => {
     if (!catalogSelected()) return harnessThoughtLevels().map((item) => item.id)
-    const variants = catalogVariants({ providerID: selection().selectedModelProvider, modelID: selection().selectedModel })
+    const variants = catalogVariants({ providerId: selection().selectedModelProvider, modelId: selection().selectedModel })
     return variants.length ? ["default", ...variants] : []
   })
   const activeShowEffort = createMemo(() => activeVariants().length > 1 || (catalogUnread() && !!selection().selectedThoughtLevel))

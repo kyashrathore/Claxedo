@@ -1,8 +1,3 @@
-/*
- * WorkGroup (T4) — collapsed run of bash/edit/write/apply_patch/web tools folded to
- * one muted line. Header follows the activity-row voice; expanded body scrolls at 224px
- * with edge fades when it overflows and dims its member rows (depth by dimming, D§8 #6).
- */
 [data-component="work-group-trigger"] {
   width: 100%;
   min-height: var(--transcript-tool-row-height, 32px);
@@ -12,8 +7,6 @@
   gap: var(--transcript-tool-gap, 8px);
   cursor: default;
 
-  /* Same uniform dim + 14px icon as the tool rows, so a group header and a tool row
-     read as the same voice rather than two different greys. */
   color: var(--transcript-tool-color, var(--text-weak));
 
   [data-slot="work-group-icon"] {
@@ -75,14 +68,11 @@
   overflow-y: auto;
 }
 
-/* An open member (a diff, a file, an output) is read in place: the cap and its
-   fades are for the one-line overview, not for a document. */
 .ui-work-group-list[data-member-open="true"] {
   max-height: none;
   overflow-y: visible;
 }
 
-/* Edge fades only when the body actually overflows (data-overflowing). */
 .ui-work-group-list[data-overflowing="true"] {
   mask-image: linear-gradient(
     to bottom,

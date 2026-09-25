@@ -5,7 +5,7 @@ import { useServer, type DiffSummary, type GitRefs, type PlacementId } from "@/s
 import { ReviewCodeView, type ReviewCodeViewRevealTarget } from "@/transcript"
 import { ClaxedoLogo as Mark, DelayedLoading, ScrollThumb, Spinner } from "@/ui"
 import { useReviewApi } from "../api"
-import { useReviewComments } from "../comments"
+import { useLineComments } from "../comments"
 import { createDiffContent } from "../diff-content"
 import { useErrorText } from "../errors"
 import { dictionary, type ReviewKey } from "../i18n"
@@ -122,6 +122,9 @@ function ReviewEmpty(props: { readonly placementId: PlacementId; readonly select
             {(path) => t("review.directory", { directory: path() })}
           </Show>
         </div>
+        <div class="text-11-regular font-mono text-text-weak/40 max-w-full break-all">
+          {t("review.via", { url: server.harnessConfig.serverUrl })}
+        </div>
       </div>
     </div>
   )
@@ -143,7 +146,7 @@ function ReviewDiffList(props: {
   readonly onOpenFile: (path: string) => void
 }): JSX.Element {
   const review = useReview()
-  const comments = useReviewComments()
+  const comments = useLineComments("review")
   const errorText = useErrorText()
   const content = createDiffContent({
     placementId: props.placementId,

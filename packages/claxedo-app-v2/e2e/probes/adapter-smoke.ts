@@ -130,10 +130,11 @@ async function turnChecks(probe: Probe, placement: Placement) {
   const { server, log, stack } = probe
   await check("harness options: pi", async () => {
     const options = await server.queryClient.fetchQuery(server.queries.harnesses.options(placement.id, "pi"))
-    const connected = options.models.filter((item) => item.connected).length
+    const models = options.models?.choices ?? []
+    const connected = models.filter((item) => item.connected !== false).length
     const logins = await server.queryClient.fetchQuery(server.queries.harnesses.logins())
     const signedIn = logins.map((login) => `${login.harness}:${login.signedIn ? "in" : "out"}`).join(",")
-    return `${options.models.length} model(s), ${connected} connected, current=${options.current?.modelId}, efforts=${options.efforts.join(",")}; logins ${signedIn}`
+    return `${models.length} model(s), ${connected} connected, current=${options.models?.current}, efforts=${(options.thoughtLevels?.choices ?? []).map((level) => level.id).join(",")}; logins ${signedIn}`
   })
   const row = await server.sessions.create({ placementId: placement.id, harness: SCRIPTED_ACP_HARNESS.id, title: "Adapter smoke" })
   const ref = row.ref
@@ -193,6 +194,22 @@ async function turnChecks(probe: Probe, placement: Placement) {
       await stack.acp.release("held")
     }
   })
+  await check("failed: a failed turn stays failed across a status read of three requests", async () => {
+    await stack.acp.write("failing", { steps: [{ kind: "error", message: "Scripted turn failure" }] })
+    const from = log.mark()
+    await server.sessions.prompt(ref, { clientRequestId: crypto.randomUUID(), text: `Fail. ${acpScriptToken("failing")}`, attachments: [] })
+    await log.next("failed", from, isStatus(ref.sessionId, ["failed"]))
+    const paths: string[] = []
+    const original = globalThis.fetch
+    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      paths.push(new URL(input instanceof Request ? input.url : String(input)).pathname)
+      return original(input, init)
+    }) as typeof fetch
+    const read = await server.sessions.statuses().finally(() => (globalThis.fetch = original))
+    const reported = read.reports.find((report) => report.ref.sessionId === ref.sessionId)?.status.kind
+    if (reported !== "failed" || paths.length !== 3) throw new Error(`reported=${reported}, reads=${paths.join(",")}`)
+    return `reported=${reported}, reads=${paths.sort().join(",")}`
+  })
   return ref
 }
 
@@ -247,7 +264,7 @@ async function main() {
   const stack = await startStack({ label: "adapter-smoke" })
   const proxy = await startTcpProxy(new URL(stack.url))
   const workspace = await stack.daemon.makeWorkspace("adapter")
-  const server = createServer({ serverUrl: proxy.url, auth: { kind: "none" }, maxReconnectAttempts: 40 })
+  const server = createServer({ serverUrl: proxy.url, auth: { kind: "none" } })
   const probe: Probe = { stack, proxy, server, log: eventLog(server), workspace }
   try {
     const placement = await connectAndPlace(probe)

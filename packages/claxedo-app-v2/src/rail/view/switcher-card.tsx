@@ -62,7 +62,7 @@ function MetadataRow(props: { readonly icon: ClaxedoIconProps["name"]; readonly 
 const STATUS_TEXT = { working: "rail.card.working", permission: "rail.card.waiting", error: "rail.card.failed" } as const
 
 function statusKey(status: NavigationStatus) {
-  return status === "idle" ? undefined : STATUS_TEXT[status]
+  return status === "idle" || status === "done" ? undefined : STATUS_TEXT[status]
 }
 
 export function SwitcherCard(props: { readonly item: SwitcherItem }): JSX.Element {

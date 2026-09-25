@@ -1,5 +1,3 @@
-// Pure overlay UI over injected callbacks: path resolution and panel opening
-// stay with the timeline that owns them.
 import { Show } from "solid-js"
 import { ClaxedoIcon as Icon } from "@/ui"
 

@@ -3,8 +3,9 @@ import { useProjectList } from "@/projects"
 import { useServer, type ProjectId } from "@/server"
 import { panePlacementOf } from "@/shell"
 import { useSessionStores } from "@/session"
+import { useTerminals } from "@/terminal"
 import { useWorkbench } from "@/workbench"
-import { navigationStatus, type NavigationStatus } from "./model"
+import { navigationStatus, terminalNavigationStatus, type NavigationStatus } from "./model"
 import { projectSection } from "./project-sections"
 
 export type SwitcherKind = "session" | "terminal" | "other"
@@ -27,6 +28,7 @@ export function useSwitcherItems(): Accessor<readonly SwitcherItem[]> {
   const workbench = useWorkbench()
   const server = useServer()
   const stores = useSessionStores()
+  const terminals = useTerminals()
   const projects = useProjectList()
   const labels = createMemo(() => {
     const placements = server.placements.list()
@@ -45,6 +47,10 @@ export function useSwitcherItems(): Accessor<readonly SwitcherItem[]> {
       const placementId = panePlacementOf(route)
       const placement = placementId ? server.placements.byId(placementId) : undefined
       const row = route?.kind === "session" ? stores.list.rows().find((candidate) => candidate.ref.sessionId === route.sessionId) : undefined
+      const terminal =
+        route?.kind === "terminal"
+          ? terminals.items(route.placementId).find((item) => item.terminalId === route.terminalId)
+          : undefined
       return [
         {
           contentId,
@@ -52,7 +58,7 @@ export function useSwitcherItems(): Accessor<readonly SwitcherItem[]> {
           title: opened.kind.title(opened.state as never),
           projectLabel: placement ? labels().get(placement.projectId) : undefined,
           workspaceLabel: placement?.label,
-          status: row ? navigationStatus(row) : "idle",
+          status: row ? navigationStatus(row) : terminal ? terminalNavigationStatus(terminal) : "idle",
         },
       ]
     }),

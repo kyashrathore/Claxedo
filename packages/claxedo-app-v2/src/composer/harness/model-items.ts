@@ -6,15 +6,15 @@ export function harnessModelItems(selection: Pick<HarnessSelectionSnapshot, "har
   const harness = selection.harness
   if (!harness) return []
   return selection.models.flatMap((model) => {
-    const providerID = harness.kind === "connection"
-      ? model.providerID ?? harnessSelectionValue(harness)
-      : isCatalogHarnessId(harness.harnessId) ? model.providerID : harnessSelectionValue(harness)
-    if (!providerID || model.connected === false) return []
-    return [{ id: model.id, name: model.name, description: model.description, provider: { id: providerID, name: providerID } }]
+    const providerId = harness.kind === "connection"
+      ? model.providerId ?? harnessSelectionValue(harness)
+      : isCatalogHarnessId(harness.harnessId) ? model.providerId : harnessSelectionValue(harness)
+    if (!providerId || model.connected === false) return []
+    return [{ id: model.id, name: model.name, description: model.description, provider: { id: providerId, name: providerId } }]
   })
 }
 
 export function harnessRecoveryModels(selection: Pick<HarnessSelectionSnapshot, "harness" | "models" | "selectedModelKey">): PickerItem[] {
   const selected = selection.selectedModelKey
-  return harnessModelItems(selection).filter((item) => item.id !== selected?.modelID || item.provider.id !== selected.providerID)
+  return harnessModelItems(selection).filter((item) => item.id !== selected?.modelId || item.provider.id !== selected.providerId)
 }

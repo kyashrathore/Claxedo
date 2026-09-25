@@ -89,7 +89,7 @@ import {
 } from "./timeline-file-paths"
 import { createTimelineLinkOpen } from "./timeline-link-open"
 import { createMessageNavRoom } from "./message-nav-layout"
-import { messageNavCurrentID, messageNavPreview, messageNavVisible } from "./message-nav-preview"
+import { messageNavCurrentId, messageNavPreview, messageNavVisible } from "./message-nav-preview"
 import { createMessageNavDeferredMount } from "./message-nav-deferred-mount"
 import { scheduleTimelineFirstFoldReveal } from "./timeline-first-fold-reveal"
 import type { MessageTimelineProps } from "./message-timeline-props"
@@ -98,7 +98,6 @@ import { turnActive, type TimelineSessionRow } from "./model"
 import "./message-nav-gutter.css"
 import "./markdown-surfaces.css"
 
-// Keep parity with the upstream session row model.
 const emptyMessages: ConversationMessage[] = []
 const emptyParts: PartType[] = []
 const emptyAssistantMessages: AssistantMessage[] = []
@@ -114,16 +113,6 @@ function hasTag<Tag extends TimelineRow.TimelineRow["_tag"]>(
   return row._tag === tag
 }
 
-/**
- * A tag-narrowed view of the row accessor, seeded with the row the switch
- * already narrowed.
- *
- * `switch (row()._tag)` narrows the row VALUE, not the accessor, so each branch
- * used to re-assert the accessor's type. A row slot can also be reused for a
- * different tag for the tick before Solid disposes the branch; latching the last
- * matching row keeps the disposing branch reading its own fields instead of
- * silently reading another tag's shape through the asserted type.
- */
 function rowOfTag<Tag extends TimelineRow.TimelineRow["_tag"]>(
   row: Accessor<TimelineRow.TimelineRow>,
   tag: Tag,
@@ -137,10 +126,10 @@ function rowOfTag<Tag extends TimelineRow.TimelineRow["_tag"]>(
 
 const timelineFallbackItemSize = 60
 
-const taskDescription = (part: PartType, sessionID: string) => {
+const taskDescription = (part: PartType, sessionId: string) => {
   if (part.type !== "tool" || !isSubagentToolPart(part)) return undefined
   const metadata = "metadata" in part.state ? part.state.metadata : undefined
-  if (metadata?.sessionId !== sessionID) return undefined
+  if (metadata?.sessionId !== sessionId) return undefined
   const value = part.state.input?.description
   if (typeof value === "string" && value) return value
   return undefined
@@ -162,17 +151,13 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const [toolOpen, setToolOpen] = createStore<Record<string, boolean | undefined>>(cached?.toolOpen ?? {})
   const [groupOpen, setGroupOpen] = createStore<Record<string, boolean | undefined>>(cached?.groupOpen ?? {})
   const [toolRevealed, setToolRevealed] = createStore<Record<string, boolean | undefined>>(cached?.toolRevealed ?? {})
-  const revealToolOutput = (partID: string, revealed: boolean) => {
-    // A reveal click resizes the row at the reader's position; the gesture mark
-    // keeps the resize anchor from bottom-pinning the growth.
+  const revealToolOutput = (partId: string, revealed: boolean) => {
     props.onMarkScrollGesture()
-    setToolRevealed(partID, revealed)
+    setToolRevealed(partId, revealed)
   }
   installTimelineMermaid(host.platform.renderMermaid)
   installTimelineTables()
 
-  // A subagent's transcript is a workspace-panel tab, not a second pane: splitting took the turn the reader was on down to half width.
-  // Below the md boundary the panel covers that turn rather than sitting beside it, so there the child takes the pane instead.
   const openSubagent = (input: { childSessionId: string; label?: string; description?: string }) => {
     if (isPhoneWidth(window.innerWidth)) {
       host.openSessionInPane(input.childSessionId, input.label)
@@ -186,25 +171,14 @@ export function MessageTimeline(props: MessageTimelineProps) {
     })
   }
 
-  // Shared with the terminal's file links (timeline-file-paths.ts):
-  // normalizes/relativizes, parses `:line[:col]`, refuses `~`/traversal/
-  // out-of-workspace paths, which would open blank tabs.
   const fileFocus = (raw: string) => timelineFileFocus(raw, host.placementPath)
 
-  // Open a file in the workspace side panel (same path terminal file links take
-  // via terminal-content.tsx `onFileLinkOpen`), NOT `platform.openPath` (which
-  // is desktop-only and hands the file to the OS). No `navigator: "files"` — it
-  // would slide the tree drawer over the file tab this click just opened.
   const openFileInPanel = (raw: string) => {
     const target = fileFocus(raw)
     if (!target) return
     host.openFocus({ kind: "file", path: target.path, line: target.line, col: target.col })
   }
 
-  // Path-kind inline-code chips in assistant markdown. Anchors are handled in
-  // the capture phase below so preventDefault beats the native target="_blank"
-  // window; in Electron a bubble-phase handler opened the link in both a
-  // browser and the panel.
   let candidateFileController: AbortController | undefined
   onCleanup(() => candidateFileController?.abort())
   createEffect(() => {
@@ -214,8 +188,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
     if (event.defaultPrevented) return
     const target = event.target instanceof Element ? event.target : null
     const selection = typeof window !== "undefined" ? window.getSelection() : null
-    if (selection && !selection.isCollapsed) return // don't hijack a text-selection click
-    if (target?.closest("a[href]")) return // anchors → capture handler below
+    if (selection && !selection.isCollapsed) return
+    if (target?.closest("a[href]")) return
     const chip = target?.closest<HTMLElement>('[data-inline-code-kind="path"], [data-inline-code-kind="path-candidate"]')
     const raw = chip?.textContent?.trim()
     if (!raw || !fileFocus(raw)) return
@@ -236,12 +210,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
       openFileInPanel(raw)
     })
   }
-  // Capture phase runs before the link's default action (see above).
   const [timelineRoot, setTimelineRoot] = createSignal<HTMLDivElement>()
   const messageNavHasRoom = createMessageNavRoom(timelineRoot)
-  // One memo drives BOTH the rail's mount and `data-session-timeline-nav-gutter`
-  // on the root, so message-nav-gutter.css reserves the gutter without a `:has()`
-  // anchor over the timeline — see that file for why the anchor was expensive.
   const messageNavGutterVisible = createMemo(() =>
     messageNavVisible((props.navMessages ?? props.userMessages).length) && messageNavHasRoom() && !!props.onMessageSelect,
   )
@@ -252,8 +222,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
     setTimelineRoot(el)
     const stopLinkOpen = links.listen(el)
     const onOpenSubagent = (event: Event) => {
-      // The detail rides on a DOM CustomEvent, so it is read structurally rather
-      // than asserted into a typed CustomEvent the listener never guaranteed.
       const detail = event instanceof CustomEvent ? asRecord(event.detail) : undefined
       const childSessionId = readString(detail, "childSessionId")
       if (!childSessionId) return
@@ -308,21 +276,13 @@ export function MessageTimeline(props: MessageTimelineProps) {
   }
 
   const [listRoot, setListRoot] = createSignal<HTMLDivElement>()
-  const sessionID = createMemo(() => host.sessionId())
+  const sessionId = createMemo(() => host.sessionId())
   const sessionConversation = host.conversation
   const sessionMessages = createMemo(() => sessionConversation()?.messages ?? emptyMessages)
-  const messageByID = createMemo(() => new Map(sessionMessages().map((message) => [message.id, message] as const)))
-  // An admitted prompt reaches the transcript over events before the next
-  // queue poll drops its record; the record carries the id the turn's user
-  // message gets, so the bubble yields to the row the moment the row exists.
+  const messageById = createMemo(() => new Map(sessionMessages().map((message) => [message.id, message] as const)))
   const queuedNotYetInTranscript = createMemo(() =>
-    (props.queued?.items() ?? []).filter((item) => !item.messageId || !messageByID().has(item.messageId)),
+    (props.queued?.items() ?? []).filter((item) => !item.messageId || !messageById().has(item.messageId)),
   )
-  // Both indexes are keyed by, and answer questions about, the parent/completion
-  // fields only a runtime-produced assistant message has. An optimistic row has
-  // no `parentID` to file it under and no `time.completed` to be pending on, so
-  // it is excluded here rather than filed under `undefined` and looked up by no
-  // one (every read below passes a real message id).
   const assistantMessagesByParent = createMemo(() => {
     const result = new Map<string, AssistantMessage[]>()
     for (const message of sessionMessages()) {
@@ -343,20 +303,14 @@ export function MessageTimeline(props: MessageTimelineProps) {
     ),
   )
   const sessionStatus = createActivePaneProjection({ active: props.active, read: () => host.status() ?? idle, initial: idle })
-  // A `session.idle` lands before the final transcript read does: the turn's
-  // assistant row is still unsettled and its reply not yet painted. While the
-  // post-acceptance reconciliation owns that read, the turn is still working —
-  // dropping the Thinking row on the event alone blanked the tail of the turn
-  // until the snapshot arrived. The request clears only after the reconciled
-  // conversation is in the store, so no frame shows neither indicator.
-  const turnSettleRefreshPending = (userMessageID: string) => host.turnSettlePending(userMessageID)
+  const turnSettleRefreshPending = (userMessageId: string) => host.turnSettlePending(userMessageId)
   const working = createMemo(() => turnActive(sessionStatus()))
   const directorySessionRows = createActivePaneProjection({ active: props.active, read: host.sessions, initial: [] as readonly TimelineSessionRow[] })
-  const directorySession = (sessionID: string | undefined) =>
-    sessionID ? directorySessionRows().find((session) => session.id === sessionID) : undefined
+  const directorySession = (sessionId: string | undefined) =>
+    sessionId ? directorySessionRows().find((session) => session.id === sessionId) : undefined
   const hostCallIds = createMemo(() => subagentHostCallIds(sessionConversation()?.parts ?? {}))
   const resolveAmbientSubagents = () => {
-    const id = sessionID()
+    const id = sessionId()
     if (!id) return []
     return (data.resolveSubagents?.(id, undefined, hostCallIds()) ?? []).filter((subagent) => subagent.ambient)
   }
@@ -366,55 +320,48 @@ export function MessageTimeline(props: MessageTimelineProps) {
     initial: [] as ReturnType<typeof resolveAmbientSubagents>,
   })
 
-  const activeMessageID = createMemo(() => {
+  const activeMessageId = createMemo(() => {
     const messages = sessionMessages()
     let lastUserIndex = -1
     for (let i = messages.length - 1; i >= 0; i--) {
       if (messages[i].role === "user") { lastUserIndex = i; break }
     }
-    const parentID = pending()?.parentID
-    if (parentID) {
-      const result = Binary.search(messages, parentID, (message) => message.id)
-      const index = result.found ? result.index : messages.findIndex((item) => item.id === parentID)
+    const parentId = pending()?.parentID
+    if (parentId) {
+      const result = Binary.search(messages, parentId, (message) => message.id)
+      const index = result.found ? result.index : messages.findIndex((item) => item.id === parentId)
       const message = index >= 0 ? messages[index] : undefined
-      // A stale un-completed assistant anchors on its parent only while that
-      // parent is still the newest prompt — once a follow-up send lands, the
-      // new user message owns the turn even if the old envelope's completion
-      // frame is still in flight.
       if (message && message.role === "user" && index >= lastUserIndex) return message.id
     }
 
     if (lastUserIndex < 0) return undefined
     const newest = messages[lastUserIndex].id
-    // An idle that lands before the turn's transcript read keeps the newest
-    // turn active: its reply is still owed, and letting go of it here drops
-    // the Thinking row with nothing to take its place.
     if (sessionStatus().kind !== "idle" || turnSettleRefreshPending(newest)) return newest
     return undefined
   })
   const info = createMemo(() => {
-    const id = sessionID()
+    const id = sessionId()
     if (!id) return undefined
     return directorySession(id)
   })
   const titleSource = createActivePaneProjection<string | undefined>({ active: props.active, read: props.title, initial: undefined })
   const latchedTitle = createMemo<LatchedSessionTitle | undefined>((previous) => latchSessionTitle(previous, { sessionKey: host.sessionKey(), title: titleSource() }))
   const titleLabel = createMemo(() => sessionTitle(latchedTitle()?.title))
-  const parentID = createMemo(() => props.parentId)
+  const parentId = createMemo(() => props.parentId)
   const parentConversation = host.parentConversation
   const parentMessages = createMemo(() => parentConversation()?.messages ?? emptyMessages)
   const getMsgParts = (msgId: string) => sessionConversation()?.parts[msgId] ?? emptyParts
   const getParentMsgParts = (msgId: string) => parentConversation()?.parts[msgId] ?? emptyParts
   const turnPreview = (message: UserMessage) =>
     messageNavPreview({
-      userMessageID: message.id,
-      assistantMessageIDs: (assistantMessagesByParent().get(message.id) ?? emptyAssistantMessages).map(
+      userMessageId: message.id,
+      assistantMessageIds: (assistantMessagesByParent().get(message.id) ?? emptyAssistantMessages).map(
         (item) => item.id,
       ),
       getParts: getMsgParts,
     })
   const childTaskDescription = createMemo(() => {
-    const id = sessionID()
+    const id = sessionId()
     if (!id) return undefined
     return parentMessages()
       .flatMap((message) => getParentMsgParts(message.id))
@@ -422,20 +369,13 @@ export function MessageTimeline(props: MessageTimelineProps) {
       .findLast((value): value is string => !!value)
   })
   const childTitle = createMemo(() => {
-    if (!parentID()) return titleLabel() ?? ""
+    if (!parentId()) return titleLabel() ?? ""
     if (childTaskDescription()) return childTaskDescription()
     const value = titleLabel()?.replace(/\s+\(@[^)]+ subagent\)$/, "")
     if (value) return value
     return host.t("command.session.new")
   })
 
-  // Per-message inputs are equality-gated so a streaming part event (which
-  // produces a new conversation snapshot + a new assistantMessagesByParent Map
-  // every tick) only re-runs constructMessageRows for the message whose parts
-  // actually changed. Message and Part[] identities are stable for unchanged
-  // messages (see agentConversationProjection's WeakMap cache), so the cheap
-  // identity comparisons below turn wholesale per-tick recomputation into
-  // O(changed turn) work.
   const statusType = createMemo(() => sessionStatus().kind)
   const lastTurnOutcome = createMemo(() => info()?.lastTurn, undefined, { equals: sameTurnOutcome })
   const messageRowMemos = createMemo(
@@ -461,34 +401,34 @@ export function MessageTimeline(props: MessageTimelineProps) {
           undefined,
           { equals: samePartsRecord },
         )
-        const visibleAssistantMessageIDs = createMemo(() => {
+        const visibleAssistantMessageIds = createMemo(() => {
           if (initialTurnExpanded() || indexAccessor() !== props.userMessages.length - 1) return undefined
           const parts = turnParts()
-          return Timeline.coldFinalVisibleAssistantMessageIDs(
+          return Timeline.coldFinalVisibleAssistantMessageIds(
             turnAssistants(),
-            (messageID) => parts[messageID] ?? emptyParts,
+            (messageId) => parts[messageId] ?? emptyParts,
           )
         })
-        const isActive = createMemo(() => activeMessageID() === userMessage.id)
+        const isActive = createMemo(() => activeMessageId() === userMessage.id)
         return createMemo((previous: TimelineRow.TimelineRow[] | undefined) => {
           const parts = turnParts()
           const shownFoldCount = previous?.find((row): row is TimelineRow.TurnFold => row._tag === "TurnFold")?.foldCount
           const rows = Timeline.constructMessageRows(
             userMessage,
-            (messageID) => parts[messageID] ?? emptyParts,
+            (messageId) => parts[messageId] ?? emptyParts,
             turnAssistants(),
             indexAccessor(),
             host.settings.showReasoningSummaries(),
             statusType(),
             isActive(),
             props.firstTurnRecovery !== false && indexAccessor() === 0,
-            (userMessageID) => turnFold.isFolded(userMessageID),
+            (userMessageId) => turnFold.isFolded(userMessageId),
             lastTurnOutcome(),
-            visibleAssistantMessageIDs(),
-            (userMessageID) => Math.max(cached?.turnFoldableCounts?.[userMessageID] ?? 0, shownFoldCount ?? 0) || undefined,
-            (partID) => toolOpen[partID] === true || toolRevealed[partID] === true,
+            visibleAssistantMessageIds(),
+            (userMessageId) => Math.max(cached?.turnFoldableCounts?.[userMessageId] ?? 0, shownFoldCount ?? 0) || undefined,
+            (partId) => toolOpen[partId] === true || toolRevealed[partId] === true,
             turnSettleRefreshPending(userMessage.id),
-            (messageID) => sessionConversation()?.fragmentParts.has(messageID) === true,
+            (messageId) => sessionConversation()?.fragmentParts.has(messageId) === true,
           )
 
           return TimelineRow.reuse(previous, rows)
@@ -497,8 +437,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
     ),
   )
 
-  // Status can blip off "busy" for a frame mid-stream; dropping Thinking then
-  // collapses the virtualizer. Hold the last Thinking row for a short hide delay.
   let thinkingHeldUntilMs: number | undefined
   let thinkingHoldTimer: ReturnType<typeof setTimeout> | undefined
   const [thinkingHoldRevision, setThinkingHoldRevision] = createSignal(0)
@@ -510,7 +448,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
     const count = props.hiddenTurnCount?.() ?? 0
     const head = props.userMessages[0]
     if (count <= 0 || !head) return undefined
-    return TimelineRow.PreviousMessages({ userMessageID: head.id, count })
+    return TimelineRow.PreviousMessages({ userMessageId: head.id, count })
   }
 
   const timelineRows = createMemo((previous: TimelineRow.TimelineRow[] | undefined) => {
@@ -563,7 +501,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
   let cancelFirstFoldReveal: (() => void) | undefined
   const prepareScrollOverscan = () => {
     if (!initialTurnExpanded()) setInitialTurnExpanded(true)
-    if (renderOverscan() < 6) setRenderOverscan(6) // 6 rows: a flick leaves 0 blank px at 1400px/frame and 802 at 5600, where 12 rows still leaves 443 and takes the worst renderer task from 16ms to 31ms (perf-harness transcript-flick)
+    if (renderOverscan() < 6) setRenderOverscan(6)
   }
   const prepareInteractionScroll = () => {
     const plan = timelineInteractionPlan({
@@ -576,12 +514,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
   }
   let virtualContent: HTMLDivElement | undefined
   const resizeAnchor = createTimelineResizeAnchor()
-  // Opening at the end and staying at the end are different promises. The
-  // first is `shouldAnchorBottom`: a session opens on its latest turn. The
-  // second holds only while a turn streams: for a settled transcript, a size
-  // change is the reader opening a fold or a tool row, and re-pinning the
-  // viewport to the new end — by the row's estimated height, before it is
-  // measured — takes them from what they clicked to the bottom of the page.
   const followsEnd = () => props.shouldAnchorBottom() && working()
   const virtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
     get count() {
@@ -612,28 +544,19 @@ export function MessageTimeline(props: MessageTimelineProps) {
     get followOnAppend() {
       return props.active() && followsEnd() && !resizeAnchor.held()
     },
-    // In-view insert holds and gesture windows mean the reader owns the viewport.
     get scrollEndThreshold() {
       return resizeAnchor.held() || props.hasScrollGesture() ? -1 : 80
     },
     get overscan() { return renderOverscan() },
     paddingEnd: 64,
-    // A getter, not a stable closure: the virtualizer memoizes the extractor's
-    // output keyed on the extractor's IDENTITY plus the computed range/count
-    // (virtual-core getVirtualIndexes deps). Solid signals read while the
-    // extractor RUNS are invisible to that memo, so a stable closure serves
-    // stale indexes whenever only those signals change (a stale extractor
-    // once left the timeline mounting one row forever after a reload).
-    // Reading them here — at option-read time inside the adapter's tracked
-    // setOptions pass — subscribes the virtualizer and mints a new identity.
     get rangeExtractor() {
       const rows = timelineRows()
-      const activeID = activeMessageID()
+      const activeId = activeMessageId()
       const overscan = renderOverscan()
       const pinned = resizeAnchor.pinnedIndexes()
       return (range: { startIndex: number; endIndex: number; overscan: number; count: number }) => {
-        const active = activeID
-          ? rows.findLastIndex((row) => "userMessageID" in row && row.userMessageID === activeID)
+        const active = activeId
+          ? rows.findLastIndex((row) => "userMessageID" in row && row.userMessageId === activeId)
           : -1
         return filterVirtualIndexes(
           [...new Set([...pinned, ...defaultRangeExtractor({ ...range, overscan }), ...(active < 0 ? [] : [active])])]
@@ -660,9 +583,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
     scrollToEnd: () => virtualizer.scrollToEnd(),
     restoreAnchor: prepend.apply,
   })
-  // The prepend-anchor loop parks itself while stashed (it reads
-  // `props.active`). Returning needs the nudge: a parked loop has no frame on
-  // which to notice that its surface came back.
   createEffect(() => {
     if (props.active()) prepend.resume()
   })
@@ -675,7 +595,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
     const result = new Map<string, number>()
     timelineRows().forEach((row, index) => {
       if (!TimelineRow.anchorsMessage(row)) return
-      result.set(row.userMessageID, index)
+      result.set(row.userMessageId, index)
     })
     return result
   })
@@ -683,25 +603,25 @@ export function MessageTimeline(props: MessageTimelineProps) {
     const result = new Map<string, string>()
     timelineRows().forEach((row) => {
       if (row._tag !== "AssistantPart") return
-      result.set(row.userMessageID, row.group.key)
+      result.set(row.userMessageId, row.group.key)
     })
     return result
   })
-  const [viewportMessageID, setViewportMessageID] = createSignal<string>()
+  const [viewportMessageId, setViewportMessageId] = createSignal<string>()
   const currentNavMessage = createMemo(() => {
-    const id = viewportMessageID()
+    const id = viewportMessageId()
     const messages = props.navMessages ?? props.userMessages
     return messages.find((message) => message.id === id) ?? props.currentMessage ?? messages.at(-1)
   })
   const updateViewportMessage = (root: HTMLDivElement) => {
-    const id = messageNavCurrentID(
+    const id = messageNavCurrentId(
       virtualizer.getVirtualItems().flatMap((item) => {
         const row = timelineRows()[item.index]
-        return row && "userMessageID" in row ? [{ id: row.userMessageID, start: item.start }] : []
+        return row && "userMessageID" in row ? [{ id: row.userMessageId, start: item.start }] : []
       }),
       root.scrollTop + 100,
     )
-    if (id !== viewportMessageID()) setViewportMessageID(id)
+    if (id !== viewportMessageId()) setViewportMessageId(id)
   }
 
   createEffect(() => {
@@ -710,7 +630,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
       const root = listRoot()
       const index = messageRowIndex().get(id)
       if (!root || index === undefined) return false
-      // getOffsetForIndex reads a lazily-refreshed cache; refresh it first.
       virtualizer.getTotalSize()
       const offset = virtualizer.getOffsetForIndex(index, "start")
       if (!offset) return false
@@ -734,8 +653,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
       activationKey,
       currentActivationKey: host.sessionKey,
       prepare: () => {
-        // Force the capped fold's virtual measurements while the surface is
-        // still hidden, then perform the bottom-anchor write before paint.
         virtualizer.getTotalSize()
         const root = listRoot()
         const nativeAtEnd = root
@@ -838,45 +755,45 @@ export function MessageTimeline(props: MessageTimelineProps) {
 
   createEffect(
     on(
-      () => [parentID(), childTaskDescription()] as const,
+      () => [parentId(), childTaskDescription()] as const,
       ([id, description]) => {
         if (!id || description) return
         if (parentMessages().length > 0) return
-        void Promise.resolve(host.syncSession?.(id)).catch(() => undefined)
+        void Promise.resolve(host.syncSession?.(id)).catch((error: unknown) => {
+          console.warn("The parent session could not be read for a subagent's title", { sessionId: id, error })
+        })
       },
       { defer: true },
     ),
   )
 
-  const turnAssistantMessages = (userMessageID: string) =>
-    assistantMessagesByParent().get(userMessageID) ?? emptyAssistantMessages
-  // The newest message says whether the turn is open: a step-per-message
-  // harness completes each earlier step while the next one is still streaming.
-  const turnSettled = (userMessageID: string) => {
-    const newest = turnAssistantMessages(userMessageID).at(-1)
+  const turnAssistantMessages = (userMessageId: string) =>
+    assistantMessagesByParent().get(userMessageId) ?? emptyAssistantMessages
+  const turnSettled = (userMessageId: string) => {
+    const newest = turnAssistantMessages(userMessageId).at(-1)
     return !!newest && assistantMessageSettled(newest)
   }
-  const workingTurn = (userMessageID: string) =>
-    (sessionStatus().kind !== "idle" || turnSettleRefreshPending(userMessageID)) &&
-    activeMessageID() === userMessageID &&
-    !turnSettled(userMessageID)
+  const workingTurn = (userMessageId: string) =>
+    (sessionStatus().kind !== "idle" || turnSettleRefreshPending(userMessageId)) &&
+    activeMessageId() === userMessageId &&
+    !turnSettled(userMessageId)
 
-  const turnDurationMs = (userMessageID: string) => {
-    const message = messageByID().get(userMessageID)
+  const turnDurationMs = (userMessageId: string) => {
+    const message = messageById().get(userMessageId)
     if (!message || message.role !== "user") return undefined
-    return Timeline.turnDurationMs(message, turnAssistantMessages(userMessageID))
+    return Timeline.turnDurationMs(message, turnAssistantMessages(userMessageId))
   }
 
-  const turnInterrupted = (userMessageID: string) =>
+  const turnInterrupted = (userMessageId: string) =>
     Timeline.turnInterrupted(
-      turnAssistantMessages(userMessageID),
+      turnAssistantMessages(userMessageId),
       info()?.lastTurn,
     )
 
-  const assistantCopyPartID = (userMessageID: string) => {
-    if (workingTurn(userMessageID)) return null
-    const all = assistantMessagesByParent().get(userMessageID) ?? emptyAssistantMessages
-    const finalTurn = props.userMessages.at(-1)?.id === userMessageID
+  const assistantCopyPartId = (userMessageId: string) => {
+    if (workingTurn(userMessageId)) return null
+    const all = assistantMessagesByParent().get(userMessageId) ?? emptyAssistantMessages
+    const finalTurn = props.userMessages.at(-1)?.id === userMessageId
     const messages = initialTurnExpanded() || !finalTurn ? all : all.slice(-1)
 
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -893,7 +810,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
     return undefined
   }
 
-  const getMsgPart = (messageID: string, partID: string) => getMsgParts(messageID).find((part) => part.id === partID)
+  const getMsgPart = (messageId: string, partId: string) => getMsgParts(messageId).find((part) => part.id === partId)
 
   const renderAssistantPartGroup = (row: Accessor<TimelineRowMap["AssistantPart"]>, onSizeChange?: () => void) => {
     if (row().group.type === "context") {
@@ -902,8 +819,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
         if (group.type !== "context") return []
         return group.refs
           .map((ref) => {
-            const message = messageByID().get(ref.messageID)
-            const part = getMsgPart(ref.messageID, ref.partID)
+            const message = messageById().get(ref.messageId)
+            const part = getMsgPart(ref.messageId, ref.partId)
             if (!message || !isRuntimeMessage(message)) return undefined
             if (!part || part.type !== "tool") return undefined
             return { message, part }
@@ -917,7 +834,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
           open={groupOpen[row().group.key] ?? false}
           onOpenChange={(open) => setGroupOpen(row().group.key, open)}
           busy={
-            !props.progressBlocked?.() && workingTurn(row().userMessageID) && lastAssistantGroupKey().get(row().userMessageID) === row().group.key
+            !props.progressBlocked?.() && workingTurn(row().userMessageId) && lastAssistantGroupKey().get(row().userMessageId) === row().group.key
           }
           onSizeChange={onSizeChange}
         >
@@ -926,8 +843,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
               <MessagePart
                 part={member.part}
                 message={member.message}
-                turnDurationMs={turnDurationMs(row().userMessageID)}
-                turnInterrupted={turnInterrupted(row().userMessageID)}
+                turnDurationMs={turnDurationMs(row().userMessageId)}
+                turnInterrupted={turnInterrupted(row().userMessageId)}
                 toolOpen={toolOpen[member.part.id] ?? false}
                 onToolOpenChange={(open) => setToolOpen(member.part.id, open)}
                 toolRevealed={toolRevealed[member.part.id] ?? false}
@@ -947,7 +864,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         const group = row().group
         if (group.type !== "agents") return []
         return group.refs
-          .map((ref) => getMsgPart(ref.messageID, ref.partID))
+          .map((ref) => getMsgPart(ref.messageId, ref.partId))
           .filter((part): part is ToolPart => part?.type === "tool")
       })
       return <SubagentChipRow parts={members()} />
@@ -959,11 +876,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
         if (group.type !== "work") return []
         return group.refs
           .map((ref) => {
-            const message = messageByID().get(ref.messageID)
-            const part = getMsgPart(ref.messageID, ref.partID)
-            // The predicate below used to claim `AssistantMessage` for whatever
-            // `messageByID` returned; the group's refs carry no such promise.
-            // It asserts only what the renderer needs — a runtime-produced row.
+            const message = messageById().get(ref.messageId)
+            const part = getMsgPart(ref.messageId, ref.partId)
             if (!message || !isRuntimeMessage(message)) return undefined
             if (!part || part.type !== "tool") return undefined
             return { message, part }
@@ -985,7 +899,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
           open={groupOpen[row().group.key] ?? false}
           onOpenChange={(open) => setGroupOpen(row().group.key, open)}
           busy={
-            !props.progressBlocked?.() && workingTurn(row().userMessageID) && lastAssistantGroupKey().get(row().userMessageID) === row().group.key
+            !props.progressBlocked?.() && workingTurn(row().userMessageId) && lastAssistantGroupKey().get(row().userMessageId) === row().group.key
           }
           memberOpen={memberOpen()}
           onSizeChange={onSizeChange}
@@ -997,8 +911,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
                 <MessagePart
                   part={member.part}
                   message={member.message}
-                  turnDurationMs={turnDurationMs(row().userMessageID)}
-                  turnInterrupted={turnInterrupted(row().userMessageID)}
+                  turnDurationMs={turnDurationMs(row().userMessageId)}
+                  turnInterrupted={turnInterrupted(row().userMessageId)}
                   defaultOpen={defaultOpen()}
                   toolOpen={toolOpen[member.part.id] ?? defaultOpen()}
                   onToolOpenChange={(open) => setToolOpen(member.part.id, open)}
@@ -1018,13 +932,13 @@ export function MessageTimeline(props: MessageTimelineProps) {
     const message = createMemo(() => {
       const group = row().group
       if (group.type !== "part") return undefined
-      const value = messageByID().get(group.ref.messageID)
+      const value = messageById().get(group.ref.messageId)
       return value && isRuntimeMessage(value) ? value : undefined
     })
     const part = createMemo(() => {
       const group = row().group
       if (group.type !== "part") return undefined
-      return getMsgPart(group.ref.messageID, group.ref.partID)
+      return getMsgPart(group.ref.messageId, group.ref.partId)
     })
     const defaultOpen = createMemo(() => {
       const item = part()
@@ -1040,9 +954,9 @@ export function MessageTimeline(props: MessageTimelineProps) {
               <MessagePart
                 part={part()}
                 message={message()}
-                showAssistantCopyPartID={assistantCopyPartID(row().userMessageID)}
-                turnDurationMs={turnDurationMs(row().userMessageID)}
-                turnInterrupted={turnInterrupted(row().userMessageID)}
+                showAssistantCopyPartId={assistantCopyPartId(row().userMessageId)}
+                turnDurationMs={turnDurationMs(row().userMessageId)}
+                turnInterrupted={turnInterrupted(row().userMessageId)}
                 defaultOpen={defaultOpen()}
                 toolOpen={toolOpen[part().id] ?? defaultOpen()}
                 onToolOpenChange={(open) => setToolOpen(part().id, open)}
@@ -1067,10 +981,10 @@ export function MessageTimeline(props: MessageTimelineProps) {
     }
     return (
       <div
-        id={anchor() ? props.anchor(input.row().userMessageID) : undefined}
-        data-message-id={input.row().userMessageID}
-        data-content-message-id={TimelineRow.contentMessageID(input.row())}
-        data-content-part-id={TimelineRow.contentPartID(input.row())}
+        id={anchor() ? props.anchor(input.row().userMessageId) : undefined}
+        data-message-id={input.row().userMessageId}
+        data-content-message-id={TimelineRow.contentMessageId(input.row())}
+        data-content-part-id={TimelineRow.contentPartId(input.row())}
         data-timeline-row={input.row()._tag}
         classList={{
           "min-w-0 w-full max-w-full": true,
@@ -1109,7 +1023,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
       case "CommentStrip": {
         const commentStripRow = rowOfTag(row, "CommentStrip", current)
         const comments = createMemo(() =>
-          getMsgParts(commentStripRow().userMessageID).flatMap((part) => MessageComment.fromPart(part) ?? []),
+          getMsgParts(commentStripRow().userMessageId).flatMap((part) => MessageComment.fromPart(part) ?? []),
         )
         return (
           <TimelineRowFrame row={commentStripRow}>
@@ -1122,7 +1036,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
                         <Switch>
                           <Match when={MessageComment.asImageMark(comment())}>
                             {(mark) => (
-                              <div class="flex items-start gap-1.5 min-w-0" data-slot="image-mark-comment">
+                              <div class="flex items-start gap-1.5 min-w-0">
                                 <ImageMarkBadge number={mark().number} />
                                 <span class="text-12-regular text-text-strong whitespace-pre-wrap break-words">
                                   {mark().comment}
@@ -1165,7 +1079,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
       case "UserMessage": {
         const userMessageRow = rowOfTag(row, "UserMessage", current)
         const message = createMemo(() => {
-          const m = messageByID().get(userMessageRow().userMessageID)
+          const m = messageById().get(userMessageRow().userMessageId)
           if (m && isRuntimeMessage(m) && m.role === "user") return m
           return undefined
         })
@@ -1175,7 +1089,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
               {(message) => (
                 <TimelineUserMessage
                   message={message()}
-                  parts={getMsgParts(userMessageRow().userMessageID)}
+                  parts={getMsgParts(userMessageRow().userMessageId)}
                   actions={props.actions}
                 />
               )}
@@ -1185,9 +1099,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
       }
       case "TurnDivider": {
         const turnDividerRow = rowOfTag(row, "TurnDivider", current)
-        // D§3.6 / C4: terminal states are a centred hairline divider, a peer of the
-        // "Worked for" fold row — never a card. "interrupted" durationMs (when derivable,
-        // T8) reuses the same formatDuration voice as "Worked for {duration}".
         const label = () => {
           if (turnDividerRow().label === "compaction") return host.t("ui.messagePart.compaction")
           if (turnDividerRow().label === "handoff") return `Session handed off to ${turnDividerRow().harness}`
@@ -1216,7 +1127,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
               <div
                 data-slot="session-turn-assistant-content"
-                aria-hidden={workingTurn(assistantPartRow().userMessageID)}
+                aria-hidden={workingTurn(assistantPartRow().userMessageId)}
               >
                 {renderAssistantPartGroup(assistantPartRow, onSizeChange)}
               </div>
@@ -1253,7 +1164,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         return (
           <TimelineRowFrame row={retryRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
-              <ClaxedoSessionRetry status={sessionStatus()} show={activeMessageID() === retryRow().userMessageID} />
+              <ClaxedoSessionRetry status={sessionStatus()} show={activeMessageId() === retryRow().userMessageId} />
             </div>
           </TimelineRowFrame>
         )
@@ -1270,7 +1181,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
                 cost={turnFoldRow().cost}
                 showTokens={host.settings.timelineShowTurnTokens()}
                 onToggle={() => {
-                  turnFold.setFolded(turnFoldRow().userMessageID, !turnFoldRow().folded)
+                  turnFold.setFolded(turnFoldRow().userMessageId, !turnFoldRow().folded)
                   onSizeChange?.()
                 }}
               />
@@ -1282,11 +1193,14 @@ export function MessageTimeline(props: MessageTimelineProps) {
         const diffSummaryRow = rowOfTag(row, "DiffSummary", current)
         const undoTurn = () => {
           const revert = props.actions?.revert
-          const id = sessionID()
+          const id = sessionId()
           if (!revert || !id) return undefined
-          return Promise.resolve(revert({ sessionID: id, messageID: diffSummaryRow().userMessageID }))
+          return Promise.resolve(revert({ sessionId: id, messageId: diffSummaryRow().userMessageId }))
             .then(() => showToast({ title: host.t("ui.message.revertMessage") }))
-            .catch(() => showToast({ title: host.t("common.requestFailed"), variant: "error" }))
+            .catch((error: unknown) => {
+              console.warn("The turn could not be undone", { error })
+              showToast({ title: host.t("common.requestFailed"), variant: "error" })
+            })
         }
         return (
           <TimelineRowFrame row={diffSummaryRow}>
@@ -1313,7 +1227,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
                 error={errorRow().error}
                 providerID={errorRow().providerID}
                 modelID={errorRow().modelID}
-                onAction={(value) => props.onFirstTurnRecovery?.(value, errorRow().userMessageID)}
+                onAction={(value) => props.onFirstTurnRecovery?.(value, errorRow().userMessageId)}
               />
             </div>
           </TimelineRowFrame>
@@ -1333,13 +1247,10 @@ export function MessageTimeline(props: MessageTimelineProps) {
       items: virtualItemByKey(),
       rows: timelineRowByKey(),
     }))
-    // Latch the last defined entry: the virtualizer can publish an item list that momentarily omits this key while
-    // the row is still mounted (<For> disposes it a tick later); a non-keyed <Show> accessor read in that window
-    // throws Solid's stale-value error and takes down the pane boundary. The latch renders the closing frame.
     const entry = createMemo<ReturnType<typeof liveEntry>>((previous) => liveEntry() ?? previous)
     const asyncFile = (value: TimelineRow.TimelineRow) => {
       if (value._tag !== "AssistantPart" || value.group.type !== "part") return false
-      const part = getMsgPart(value.group.ref.messageID, value.group.ref.partID)
+      const part = getMsgPart(value.group.ref.messageId, value.group.ref.partId)
       return part?.type === "tool" && ["edit", "write", "apply_patch"].includes(part.tool)
     }
     const [contentReady, setContentReady] = createSignal(false)
@@ -1373,7 +1284,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
             <div
               ref={(value) => {
                 element = value
-                // JSX applies `data-index` after refs and measureElement drops (warns on) unindexed elements — stamp it first; this is also the mount measurement.
                 value.dataset.index = String(current().item.index)
                 virtualizer.measureElement(value)
               }}
@@ -1402,7 +1312,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
       class="relative w-full h-full min-w-0"
       ref={registerTimelineRoot}
       data-session-timeline-root
-      data-session-timeline-session-id={sessionID() ?? ""}
+      data-session-timeline-session-id={sessionId() ?? ""}
       data-session-timeline-user-count={String(props.userMessages.length)}
       data-session-timeline-row-count={String(timelineRows().length)}
       data-session-timeline-key-count={String(virtualRowKeys().length)}
@@ -1425,7 +1335,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         )}
       </Show>
       <Show when={messageNavMountReady() && messageNavGutterVisible()}>
-        <div data-slot="message-nav-gutter" class="pointer-events-none absolute inset-0 z-[45]">
+        <div class="pointer-events-none absolute inset-0 z-[45]">
           <MessageNav
             class="pointer-events-auto absolute left-2 md:left-3 top-1/2 -translate-y-1/2"
             messages={props.navMessages ?? props.userMessages}
@@ -1476,7 +1386,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         class="relative min-w-0 w-full h-full"
         style={transcriptStyle()}
       >
-        <Show when={parentID()}>
+        <Show when={parentId()}>
           <h1 data-subagent-child-heading tabIndex={-1} class="sr-only">
             {childTitle()}
           </h1>
@@ -1492,9 +1402,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
             <SubagentChipRow subagents={ambientSubagents()} />
           </section>
         </Show>
-        {/* The content ref wraps the queued bubbles too: the auto-scroll and
-            scroll-state observers watch this element, and a bubble mounting
-            below the virtual rows must count as the content growing. */}
         <div data-timeline-content ref={props.setContentRef} class="w-full">
           <div
             data-timeline-virtual-content

@@ -1,8 +1,8 @@
 import { For, Show, type JSX } from "solid-js"
 import { useActiveSession } from "@/files"
 import { useTranslator } from "@/i18n"
-import { useShellRegistries } from "@/shell"
-import { ClaxedoIcon as Icon, DropdownMenu } from "@/ui"
+import { DialogSelectFile, useShellRegistries } from "@/shell"
+import { ClaxedoIcon as Icon, DropdownMenu, useDialog } from "@/ui"
 import { filePathFromTab } from "../focus"
 import { dictionary } from "../i18n"
 import { usePanel } from "../store"
@@ -14,6 +14,8 @@ function AddTabMenu(): JSX.Element {
   const panel = usePanel()
   const session = useActiveSession()
   const registries = useShellRegistries()
+  const dialog = useDialog()
+  const openFile = (path: string) => panel.show({ kind: "file", path }, { navigator: "files" })
   const hasContext = () => registries.panelViews.list().some((entry) => entry.kind === "context")
   return (
     <DropdownMenu gutter={4} placement="bottom-start">
@@ -26,6 +28,14 @@ function AddTabMenu(): JSX.Element {
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content class="z-[200]">
+          <DropdownMenu.Item
+            onSelect={() =>
+              dialog.show(() => <DialogSelectFile mode="files" placementId={panel.placementId()} onOpenFile={openFile} />)
+            }
+          >
+            <Icon name="document-text" size="small" />
+            {t("panel.add.file")}
+          </DropdownMenu.Item>
           <Show when={hasContext()}>
             <DropdownMenu.Item
               disabled={!session()}

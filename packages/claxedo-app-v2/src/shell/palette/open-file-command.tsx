@@ -17,7 +17,7 @@ export function OpenFileCommand(): JSX.Element {
   const active = useActivePlacement()
   const open = (source?: CommandSource) =>
     void dialog.show(() => (
-      <DialogSelectFile mode={source === "palette" ? "all" : "files"} placementId={active()} onOpenFile={(path) => panel.show({ kind: "file", path })} />
+      <DialogSelectFile mode={source === "palette" ? "all" : "files"} placementId={active()} onOpenFile={(path) => panel.show({ kind: "file", path }, { navigator: "files" })} />
     ))
   commands.register("palette", () => [
     {

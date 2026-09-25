@@ -53,7 +53,7 @@ export function readSession(context: SessionContext, ref: SessionRef): SessionRe
   const goal = where.then((route) => readGoalState(transport, route, ref))
   return {
     surface: Promise.all([row, transcript]).then(([session, page]) => ({ row: sessionRowFromSession(session, ref), transcript: page, diff: session.summary?.diffs ?? [] })),
-    status: Promise.all([where, row]).then(([route, session]) => context.status.read(route, ref.sessionId, session)),
+    status: Promise.all([where, row]).then(([route, session]) => context.status.read(route, ref, session)),
     requests,
     todos,
     goal,

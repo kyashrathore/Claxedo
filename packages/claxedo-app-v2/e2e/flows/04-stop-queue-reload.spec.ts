@@ -54,3 +54,22 @@ test("04 reload mid-turn: a turn the daemon lost shows its failure after the rel
   const last = messages.filter((message) => message.info.role === "assistant").at(-1)
   expect(JSON.stringify(last?.info.error ?? null)).toContain("ACP connection closed")
 })
+
+test("04 running tool: its elapsed time counts up in whole seconds while the turn holds it", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("elapsed")
+  await stack.acp.write("running", {
+    steps: [{ kind: "tool", tool: "other", title: "Wait for the build", status: "in_progress" }, { kind: "hold", name: "running" }],
+  })
+  const session = await api.createSession(workspace.directory, { title: "Running tool", harness: SCRIPTED_ACP_HARNESS })
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  await sendPrompt(app, `Build it. ${acpScriptToken("running")}`)
+  const elapsed = app.getByRole("main").getByText(/^\d+s$/)
+  await expect(elapsed).toBeVisible()
+  const seconds = async () => Number((await elapsed.innerText()).replace(/s$/, ""))
+  const first = await seconds()
+  await expect.poll(seconds, { timeout: 2_500 }).toBeGreaterThan(first)
+  const second = await seconds()
+  await expect.poll(seconds, { timeout: 2_500 }).toBeGreaterThan(second)
+  expect(Number.isInteger(await seconds())).toBe(true)
+  await stack.acp.release("running")
+})

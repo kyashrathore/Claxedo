@@ -148,7 +148,7 @@ export function openMermaidViewer(
   document.body.style.overflow = "hidden"
 
   let closed = false
-  let pointerID: number | undefined
+  let pointerId: number | undefined
   let lastX = 0
   let lastY = 0
 
@@ -195,7 +195,7 @@ export function openMermaidViewer(
   function onPointerDown(event: PointerEvent) {
     if (!state.drag || event.button !== 0) return
     event.preventDefault()
-    pointerID = event.pointerId
+    pointerId = event.pointerId
     lastX = event.clientX
     lastY = event.clientY
     viewport.setPointerCapture(event.pointerId)
@@ -203,7 +203,7 @@ export function openMermaidViewer(
   }
 
   function onPointerMove(event: PointerEvent) {
-    if (pointerID !== event.pointerId) return
+    if (pointerId !== event.pointerId) return
     state.panX += event.clientX - lastX
     state.panY += event.clientY - lastY
     lastX = event.clientX
@@ -212,8 +212,8 @@ export function openMermaidViewer(
   }
 
   function onPointerUp(event: PointerEvent) {
-    if (pointerID !== event.pointerId) return
-    pointerID = undefined
+    if (pointerId !== event.pointerId) return
+    pointerId = undefined
     if (viewport.hasPointerCapture(event.pointerId)) viewport.releasePointerCapture(event.pointerId)
     delete overlay.dataset.dragging
   }
@@ -290,8 +290,9 @@ export function openMermaidViewer(
       content.removeAttribute("aria-live")
       content.dataset.state = "ready"
     })
-    .catch(() => {
+    .catch((error: unknown) => {
       if (closed) return
+      console.warn("The full-screen diagram could not be rendered", { error })
       content.textContent = "This diagram could not be rendered."
       content.dataset.state = "error"
     })

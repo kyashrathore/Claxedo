@@ -29,10 +29,6 @@ export function cloneHistoryEntry(entry: HistoryEntry): HistoryEntry {
   return { prompt: clonePrompt(entry.prompt), comments: cloneHistoryComments(entry.comments) }
 }
 
-export function promptLength(prompt: Prompt) {
-  return prompt.reduce((len, part) => len + ("content" in part ? part.content.length : 0), 0)
-}
-
 export function prependHistoryEntry(
   entries: HistoryEntry[],
   prompt: Prompt,

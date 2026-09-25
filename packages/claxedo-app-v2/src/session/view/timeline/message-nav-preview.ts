@@ -2,17 +2,17 @@ import type { AgentContentPart as Part } from "@claxedo/agent-runtime-contract"
 
 export const messageNavVisible = (turnCount: number) => turnCount > 10
 
-export const messageNavCurrentID = (turns: { id: string; start: number }[], line: number) =>
+export const messageNavCurrentId = (turns: { id: string; start: number }[], line: number) =>
   turns.findLast((turn) => turn.start <= line)?.id ?? turns[0]?.id
 
 export function messageNavPreview(input: {
-  userMessageID: string
-  assistantMessageIDs: string[]
-  getParts: (messageID: string) => Part[]
+  userMessageId: string
+  assistantMessageIds: string[]
+  getParts: (messageId: string) => Part[]
 }) {
   return {
-    user: previewText(input.getParts(input.userMessageID)),
-    assistant: previewText(input.assistantMessageIDs.flatMap(input.getParts)),
+    user: previewText(input.getParts(input.userMessageId)),
+    assistant: previewText(input.assistantMessageIds.flatMap(input.getParts)),
   }
 }
 

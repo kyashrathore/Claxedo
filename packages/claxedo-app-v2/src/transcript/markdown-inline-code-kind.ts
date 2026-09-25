@@ -1,5 +1,3 @@
-// One-off copy from GitHub Linguist languages.yml (e9fe3c9f230cd9220afcd057f75702de4d7700c9), plus common lockfile suffixes.
-// Normalized to lower-case; numeric manpage-style extensions are excluded so versions like `1.2` stay plain code.
 const pathExtensions = new Set([
   "a51",
   "abap",
@@ -1893,22 +1891,11 @@ export function inlineCodeKind(text: string): "path" | "path-candidate" | "url" 
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(text)) return undefined
   if (/\s/.test(text)) return undefined
   if (/[()[\]{}*+=<>|&^"';]/.test(text)) return undefined
-  // `~/…` can't be expanded client-side, so the file panel refuses it
-  // (workspace-file-focus.ts). Marking it a path is a dead affordance.
   if (text.startsWith("~")) return undefined
   return filePathKind(text)
 }
 
-/**
- * Known filenames can be styled immediately. Ambiguous slash-shaped values
- * need workspace metadata: real extensionless files, directories, event names,
- * routes, MIME types, package specifiers, and prose are lexically identical.
- * `path-candidate` stays visually inert until a workspace-aware host promotes
- * an exact file match to `path`.
- */
 function filePathKind(text: string): "path" | "path-candidate" | undefined {
-  // Chips carry the timeline's `:line[:col]` suffix (`src/foo.ts:42`); it isn't
-  // part of the filename. Same suffix resolveWorkspaceFileFocus() parses off.
   const base = text.replace(/:\d+(?::\d+)?$/, "")
   if (!base || base === "/" || /^\/[a-z][a-z0-9-]*$/i.test(base) || /[/\\]$/.test(base)) return undefined
   if (base.split(/[/\\]/).some((segment) => segment === "..")) return undefined

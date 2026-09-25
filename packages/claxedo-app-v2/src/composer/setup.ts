@@ -99,7 +99,7 @@ function createHarnessSelection(props: ComposerProps, key: Accessor<ComposerKey>
     const mode = permissionMode.promptModeId()
     return {
       ...(type ? { harness: harnessSelectionId(type) } : {}),
-      ...(model ? { model: { providerId: model.providerID, modelId: model.modelID } } : {}),
+      ...(model ? { model: { providerId: model.providerId, modelId: model.modelId } } : {}),
       ...(model?.variant ? { effort: model.variant } : {}),
       ...(tier ? { serviceTier: tier } : {}),
       ...(mode ? { permissionMode: mode } : {}),

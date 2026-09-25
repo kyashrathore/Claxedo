@@ -2,7 +2,8 @@ import type { AgentSession } from "@claxedo/agent-runtime-contract"
 import { ServerError } from "./errors"
 import type { ServerEvent } from "./events"
 import { sessionEndpoint } from "./session-context"
-import { withQuery, type RuntimeRoute, type Transport } from "./transport"
+import type { PlacementId } from "./ids"
+import type { RuntimeRoute, Transport } from "./transport"
 import type { SessionRef, SessionStatus } from "./types"
 import { sessionStatusFromWire } from "./wire/status"
 
@@ -11,15 +12,16 @@ export type StatusAdmission =
   | { readonly kind: "held"; readonly ref: SessionRef }
 
 export type StatusOwner = {
-  readonly read: (route: RuntimeRoute, sessionId: string, row: AgentSession) => Promise<SessionStatus>
-  readonly readPlacement: (route: RuntimeRoute) => Promise<ReadonlyMap<string, SessionStatus>>
+  readonly read: (route: RuntimeRoute, ref: SessionRef, row: AgentSession) => Promise<SessionStatus>
+  readonly readPlacement: (route: RuntimeRoute, placementId: PlacementId) => Promise<ReadonlyMap<string, SessionStatus>>
   readonly settle: (route: RuntimeRoute, ref: SessionRef) => Promise<SessionStatus>
   readonly apply: (event: ServerEvent) => StatusAdmission
   readonly forget: (ref: SessionRef) => void
 }
 
 const STATUS_PATH = "/session/status"
-const ROOT_SESSIONS_PATH = withQuery("/session", { roots: true })
+
+type FailedStatus = Extract<SessionStatus, { kind: "failed" }>
 
 function statusFromLastTurn(row: AgentSession): SessionStatus {
   const outcome = row.lastTurn
@@ -41,39 +43,53 @@ function statusesOf(body: unknown): Map<string, SessionStatus> {
   return statuses
 }
 
-function isSessionRow(value: unknown): value is AgentSession {
-  return !!value && typeof value === "object" && typeof (value as { id?: unknown }).id === "string"
+function failureKey(placementId: PlacementId, sessionId: string): string {
+  return `${placementId}\u0000${sessionId}`
+}
+
+function createFailures() {
+  const failures = new Map<string, FailedStatus>()
+  return {
+    get: (ref: SessionRef) => failures.get(failureKey(ref.placementId, ref.sessionId)),
+    record: (ref: SessionRef, status: SessionStatus) => {
+      const key = failureKey(ref.placementId, ref.sessionId)
+      if (status.kind === "failed") failures.set(key, status)
+      else if (status.kind !== "idle") failures.delete(key)
+    },
+    forget: (ref: SessionRef) => failures.delete(failureKey(ref.placementId, ref.sessionId)),
+    ofPlacement: (placementId: PlacementId) => {
+      const prefix = failureKey(placementId, "")
+      return [...failures].flatMap(([key, status]) => (key.startsWith(prefix) ? [[key.slice(prefix.length), status] as const] : []))
+    },
+  }
 }
 
 export function createStatusOwner(transport: Transport): StatusOwner {
-  const latest = new Map<string, SessionStatus>()
+  const failures = createFailures()
   const live = async (route: RuntimeRoute) => statusesOf(await transport.runtimeJson<unknown>(route, STATUS_PATH))
-  const readPlacement = async (route: RuntimeRoute) => {
-    const [running, rows] = await Promise.all([live(route), transport.runtimeJson<unknown[]>(route, ROOT_SESSIONS_PATH)])
-    const statuses = new Map(running)
-    for (const row of rows.filter(isSessionRow)) statuses.set(row.id, settled(running.get(row.id), row))
-    for (const [id, status] of statuses) latest.set(id, status)
+  const readPlacement = async (route: RuntimeRoute, placementId: PlacementId) => {
+    const statuses = await live(route)
+    for (const [id, failed] of failures.ofPlacement(placementId)) if ((statuses.get(id)?.kind ?? "idle") === "idle") statuses.set(id, failed)
     return statuses
   }
-  const read = async (route: RuntimeRoute, sessionId: string, row: AgentSession) => {
-    const known = latest.get(sessionId)
-    const read = settled((await live(route)).get(sessionId), row)
-    const status = read.kind === "failed" && known?.kind === "failed" ? known : read
-    latest.set(sessionId, status)
-    return status
+  const read = async (route: RuntimeRoute, ref: SessionRef, row: AgentSession) => {
+    const read = settled((await live(route)).get(ref.sessionId), row)
+    const known = failures.get(ref)
+    if (!known) return read
+    if (read.kind === "failed") return known
+    failures.forget(ref)
+    return read
   }
   return {
     read,
     readPlacement,
-    settle: async (route, ref) => read(route, ref.sessionId, await transport.runtimeJson<AgentSession>(route, sessionEndpoint(ref))),
+    settle: async (route, ref) => read(route, ref, await transport.runtimeJson<AgentSession>(route, sessionEndpoint(ref))),
     apply: (event) => {
       if (event.type !== "statusChanged") return { kind: "admitted", event }
-      if (event.status.kind === "idle" && latest.get(event.ref.sessionId)?.kind === "failed") return { kind: "held", ref: event.ref }
-      latest.set(event.ref.sessionId, event.status)
+      if (event.status.kind === "idle" && failures.get(event.ref)) return { kind: "held", ref: event.ref }
+      failures.record(event.ref, event.status)
       return { kind: "admitted", event }
     },
-    forget: (ref) => {
-      latest.delete(ref.sessionId)
-    },
+    forget: failures.forget,
   }
 }

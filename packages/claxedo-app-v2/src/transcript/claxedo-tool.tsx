@@ -15,15 +15,7 @@ const STATUS_ICONS: Record<string, IconProps["name"]> = {
   done: "circle-check",
 }
 
-/**
- * A link in a tool row: a plain anchor to the surface's own route for the task
- * or session, so the app's router takes the click and its route sync opens the
- * page, while cmd/middle-click keep the browser's new-tab behaviour. The click
- * is stopped so the row it sits in does not toggle. The data context's
- * `navigateToSession` is deliberately not used: a pane that never wired it
- * still defines the function, and taking the click there went nowhere.
- */
-function CardLink(props: { link: ClaxedoLink; slot: string; class?: string }) {
+function CardLink(props: { link: ClaxedoLink; slot: "basic-tool-tool-subtitle" | "claxedo-tool-row-link" | "claxedo-tool-fact-link"; class?: string }) {
   const data = useData()
   const href = () =>
     safeLinkHref(props.link.kind === "task" ? data.taskHref?.(props.link.id) : data.sessionHref?.(props.link.id))
@@ -61,11 +53,6 @@ function StatusPill(props: { status: string }) {
   )
 }
 
-/**
- * One first-party tool call as a transcript row: the Claxedo mark, the verb,
- * the task or session it was about as a link, and its status or outcome. The
- * body holds what the row cannot: a task list, the facts of a start, prose.
- */
 export function ClaxedoTool(props: ToolProps) {
   const i18n = useTranscriptI18n()
   const data = useData()
@@ -91,14 +78,14 @@ export function ClaxedoTool(props: ToolProps) {
         </Show>
         <Show when={view().subject}>
           {(subject) => (
-            <span data-slot={view().link ? "basic-tool-tool-arg" : "basic-tool-tool-subtitle"} class={view().link ? "ui-basic-tool-tool-arg" : undefined} title={subject()}>
+            <span data-slot={view().link ? undefined : "basic-tool-tool-subtitle"} class={view().link ? "ui-basic-tool-tool-arg" : undefined} title={subject()}>
               {subject()}
             </span>
           )}
         </Show>
         <Show when={view().status}>{(status) => <StatusPill status={status()} />}</Show>
         <Show when={view().note}>
-          {(note) => <span data-slot="basic-tool-tool-arg" class="ui-basic-tool-tool-arg">{note()}</span>}
+          {(note) => <span class="ui-basic-tool-tool-arg">{note()}</span>}
         </Show>
       </div>
     </div>

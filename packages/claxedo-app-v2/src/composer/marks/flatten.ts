@@ -55,6 +55,3 @@ export async function flattenMarkedImages(images: ImagePart[]) {
   )
 }
 
-export function hasImageMarks(images: readonly ImagePart[]) {
-  return images.some((image) => (image.marks?.length ?? 0) > 0)
-}

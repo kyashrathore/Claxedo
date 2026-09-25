@@ -1,14 +1,12 @@
 import type { JSX } from "solid-js"
 import "./attachment-card-v2.css"
 
-/** Shared 160px two-line card used by v2 file and comment attachments in the composer and timeline. */
 export function AttachmentCardV2(props: {
   title: string
   active?: boolean
   clickable?: boolean
   wide?: boolean
   surface?: "base"
-  /** native title attribute */
   hover?: string
   titleRef?: (element: HTMLSpanElement) => void
   onClick?: () => void
@@ -24,10 +22,10 @@ export function AttachmentCardV2(props: {
       title={props.hover}
       onClick={() => props.onClick?.()}
     >
-      <span ref={(element) => props.titleRef?.(element)} data-slot="attachment-card-v2-title" class="ui-attachment-card-v2-title">
+      <span ref={(element) => props.titleRef?.(element)} class="ui-attachment-card-v2-title">
         {props.title}
       </span>
-      <span data-slot="attachment-card-v2-subtitle" class="ui-attachment-card-v2-subtitle">{props.children}</span>
+      <span class="ui-attachment-card-v2-subtitle">{props.children}</span>
     </div>
   )
 }
