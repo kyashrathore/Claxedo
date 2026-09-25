@@ -92,7 +92,6 @@ export function ComposerNoticeRow(props: { notice: ComposerNotice | undefined; c
     <Show when={props.notice}>
       {(notice) => (
         <div
-          data-component="composer-notice"
           data-notice={notice().kind}
           data-tone={notice().tone}
           // A settled failure interrupts; a soft warning does not.

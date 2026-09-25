@@ -159,7 +159,7 @@ export function ImageMarkEditor(props: ImageMarkEditorProps) {
 
   return (
     <Dialog title={t("prompt.imageMarks.title")} size="viewport" scrim="strong">
-      <div class="flex flex-1 min-h-0 flex-col gap-3" data-component="image-mark-editor">
+      <div class="flex flex-1 min-h-0 flex-col gap-3">
         <div ref={setStage} class="flex flex-1 min-h-0 min-w-0 items-center justify-center">
           <div class="relative select-none" style={shown()}>
             <img
@@ -175,7 +175,6 @@ export function ImageMarkEditor(props: ImageMarkEditorProps) {
               {(imageSize) => (
                 <svg
                   ref={(el) => (surface = el)}
-                  data-slot="image-mark-surface"
                   class="absolute inset-0 size-full cursor-crosshair touch-none"
                   viewBox={`0 0 ${imageSize().width} ${imageSize().height}`}
                   onPointerDown={onSurfaceDown}

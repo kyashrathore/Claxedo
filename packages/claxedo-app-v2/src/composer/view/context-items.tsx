@@ -88,7 +88,6 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
         <For each={props.imageMarks}>
           {(entry) => (
             <div
-              data-slot="image-mark-chip"
               data-mark-number={entry.number}
               class="group shrink-0 flex flex-col rounded-md pl-2 pr-1 py-1 max-w-[200px] h-12 cursor-default transition-all shadow-xs-border hover:shadow-xs-border-hover bg-background-stronger hover:bg-surface-interactive-weak"
               onClick={() => props.openImageMark(entry)}

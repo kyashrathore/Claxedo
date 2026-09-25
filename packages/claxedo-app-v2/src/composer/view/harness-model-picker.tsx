@@ -61,7 +61,6 @@ function SectionHeader(props: {
   return (
     <button
       type="button"
-      data-slot="harness-picker-section"
       data-expanded={props.expanded ? "true" : undefined}
       disabled={props.disabled || props.loading}
       aria-busy={props.loading}
@@ -180,7 +179,7 @@ function EffortRow(props: {
     <div class="harness-picker-effort-row" data-fast={props.fast ? "true" : undefined}>
       <Show
         when={props.levels.length > 1}
-        fallback={<div data-slot="harness-picker-effort" data-supported="false" class="harness-picker-effort" title="No effort control" />}
+        fallback={<div data-supported="false" class="harness-picker-effort" title="No effort control" />}
       >
         <EffortSlider levels={props.levels} current={props.current} label={props.label} onSelect={props.onSelect} />
       </Show>
@@ -238,7 +237,6 @@ function EffortSlider(props: {
       aria-valuenow={index()}
       aria-valuetext={props.label(props.current)}
       title={`Effort · ${props.label(props.current)}`}
-      data-slot="harness-picker-effort"
       data-supported="true"
       data-dragging={dragging() ? "true" : undefined}
       class="harness-picker-effort"

@@ -16,7 +16,6 @@ export function ImageMarkLayer(props: {
         const center = () => badgeCenter(mark, props.size)
         return (
           <g
-            data-slot="image-mark"
             data-mark-number={props.firstNumber + index()}
             class={props.onMarkDown ? "cursor-pointer" : undefined}
             onPointerDown={(event) => props.onMarkDown?.(index(), event)}
