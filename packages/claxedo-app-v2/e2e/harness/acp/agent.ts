@@ -10,6 +10,7 @@ import {
   type CancelNotification,
   type ContentBlock,
   type InitializeResponse,
+  type LoadSessionResponse,
   type NewSessionResponse,
   type PromptRequest,
   type PromptResponse,
@@ -45,6 +46,8 @@ async function scriptFor(text: string, dir: string): Promise<AcpScript> {
   return script
 }
 
+const SCRIPTED_MODES = { currentModeId: "default", availableModes: [{ id: "default", name: "Default", description: "Scripted replies" }] }
+
 class ScriptedAgent implements Agent {
   private readonly turns = new Map<string, AbortController>()
 
@@ -53,17 +56,18 @@ class ScriptedAgent implements Agent {
   initialize(): InitializeResponse {
     return {
       protocolVersion: PROTOCOL_VERSION,
-      agentCapabilities: { loadSession: false, promptCapabilities: { image: true, embeddedContext: true } },
+      agentCapabilities: { loadSession: true, promptCapabilities: { image: true, embeddedContext: true } },
       authMethods: [],
       _meta: { jetbrains: { air: { version: 1, capabilities: ["nativeSubagentSessions"] } } },
     }
   }
 
   newSession(): NewSessionResponse {
-    return {
-      sessionId: `scripted-${randomUUID()}`,
-      modes: { currentModeId: "default", availableModes: [{ id: "default", name: "Default", description: "Scripted replies" }] },
-    }
+    return { sessionId: `scripted-${randomUUID()}`, modes: SCRIPTED_MODES }
+  }
+
+  loadSession(): LoadSessionResponse {
+    return { modes: SCRIPTED_MODES }
   }
 
   authenticate() {

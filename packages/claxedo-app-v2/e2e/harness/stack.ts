@@ -10,6 +10,7 @@ import { serveGitRemote, type GitRemote } from "./git-remote"
 import { serveLocalPages, type LocalPages } from "./local-pages"
 import { serveConnectionSink, type ConnectionSink } from "./connection-sink"
 import { claimPort, fixedDaemonPort, portFreed, portIsLeased, releasePort, reservePort } from "./ports"
+import { stopSandboxes } from "./sandboxes"
 import { startScriptedModelServer, type ScriptedModelServer } from "./scripted-model-server"
 import { openEventStream, type EventStream, type EventStreamOptions } from "./stream"
 
@@ -119,6 +120,7 @@ export async function startStack(input: StackInput): Promise<Stack> {
         releasePort(port)
       }
       await daemon.close()
+      await stopSandboxes(dataDir)
       await scripted.close()
       await egress.close()
       await cleanup()
