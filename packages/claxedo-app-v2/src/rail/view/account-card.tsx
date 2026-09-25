@@ -13,6 +13,7 @@ export const USAGE_SECTION = "usage"
 type AccountView = {
   readonly signed: boolean
   readonly pending: boolean
+  readonly resolving: boolean
   readonly local: boolean
   readonly label: string
   readonly image: string | undefined
@@ -25,9 +26,9 @@ function useAccountView() {
   const server = useServer()
   return createMemo((): AccountView => {
     const state = auth.state()
-    const offered = server.capabilities()?.signedIn === true && auth.unavailable() === null
+    const offered = auth.offered(server.capabilities()?.signedIn === true)
     const pending = state.kind === "signingIn"
-    const base = { pending, local: !pending && state.kind !== "signedIn" && !offered }
+    const base = { pending, resolving: pending || (state.kind === "signedIn" && auth.identityResolving()), local: !pending && state.kind !== "signedIn" && !offered }
     if (state.kind === "signedIn") {
       const label = state.user.fullName ?? state.user.email ?? t("rail.account.signedIn")
       return { ...base, signed: true, label, image: state.user.imageUrl, action: "logout" }
@@ -42,7 +43,7 @@ function IdentityMark(props: { readonly view: AccountView; readonly size: "trigg
   const box = () => (props.size === "trigger" ? "size-7" : "size-5")
   return (
     <Show
-      when={!props.view.pending}
+      when={!props.view.resolving}
       fallback={
         <span class={`flex ${box()} shrink-0 items-center justify-center rounded-full bg-surface-inset-base text-icon-base`} aria-hidden="true">
           <Spinner class={props.size === "trigger" ? "size-3.5" : "size-3"} />

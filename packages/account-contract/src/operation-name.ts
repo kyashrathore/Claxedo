@@ -90,3 +90,5 @@ export type HostedOperationName =
   | "billing.checkout"
   | "billing.portal"
   | "usage.cloudFacts"
+
+export type RunHostedOperation = (operation: HostedOperationName, input?: Readonly<Record<string, unknown>>) => Promise<unknown>

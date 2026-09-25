@@ -1,4 +1,4 @@
-export type { HostedOperationName } from "./operation-name"
+export type { HostedOperationName, RunHostedOperation } from "./operation-name"
 export {
   HOSTED_OPERATIONS,
   decodeHostedResult,

@@ -9,7 +9,7 @@ const V2_ROOT = path.resolve(import.meta.dirname, "../..")
 const REPO_ROOT = path.resolve(V2_ROOT, "../..")
 const BUILD_STAMP = "claxedo-e2e-build.json"
 const DIST_DIR = "dist-e2e"
-const SOURCE_ENTRIES = ["src", "public", "index.html", "vite.cloud.config.ts", "vite.browser-auth.ts", "package.json", "../../plugins"]
+const SOURCE_ENTRIES = ["src", "public", "index.html", "vite.cloud.config.ts", "vite.account-binding.ts", "package.json", "../../plugins"]
 const SKIPPED_DIRS = new Set(["node_modules", "legacy"])
 
 export function appChoice(): AppChoice {

@@ -1,20 +1,17 @@
-import type { BrowserAuthAdapterId } from "./src/auth/browser-auth"
+export type AccountBindingId = "better-auth" | "desktop"
 
-export type BrowserAuthBuildSelection = {
-  adapter: BrowserAuthAdapterId
-  module: string
-  manualChunks: Record<string, string[]>
+export type AccountBindingBuildSelection = {
+  readonly binding: AccountBindingId
+  readonly module: string
+  readonly manualChunks: Record<string, string[]>
 }
 
-export function resolveBrowserAuthBuildSelection(value: string | undefined): BrowserAuthBuildSelection {
+export function resolveAccountBindingSelection(value: string | undefined): AccountBindingBuildSelection {
   if (value === "better-auth") {
-    return {
-      adapter: "better-auth",
-      module: "./src/auth/better-auth-adapter.ts",
-      manualChunks: { "vendor-better-auth": ["better-auth/client"] },
-    }
+    return { binding: "better-auth", module: "./src/auth/better-auth-binding.ts", manualChunks: { "vendor-better-auth": ["better-auth/client"] } }
   }
+  if (value === "desktop") return { binding: "desktop", module: "./src/auth/electron-binding.ts", manualChunks: {} }
   throw new Error(
-    "VITE_CLAXEDO_AUTH_ADAPTER must explicitly select better-auth; there is no browser auth fallback",
+    "VITE_CLAXEDO_AUTH_ADAPTER must select better-auth (the browser's own session) or desktop (Electron main's account); there is no fallback",
   )
 }

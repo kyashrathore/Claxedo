@@ -1,4 +1,4 @@
-declare module "#browser-auth-adapter" {
-  import type { BrowserAuthAdapter } from "./browser-auth"
-  export const browserAuthAdapter: BrowserAuthAdapter
+declare module "#account-binding" {
+  import type { AccountBinding } from "./binding"
+  export const accountBinding: AccountBinding
 }
