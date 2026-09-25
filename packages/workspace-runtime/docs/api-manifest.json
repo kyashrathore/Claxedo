@@ -8,6 +8,7 @@
     "./host",
     "./http",
     "./opencode",
+    "./projection",
     "./relay",
     "./route-contribution",
     "./routes",

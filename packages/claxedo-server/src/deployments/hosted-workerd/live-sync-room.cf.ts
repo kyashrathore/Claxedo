@@ -44,7 +44,7 @@
  * else, and a cursor-less connection served nothing from the ring.
  */
 
-import { createSseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
+import { createSseReplayBuffer } from "@claxedo/workspace-runtime/projection"
 import { eventVisibleTo, type EventScopePrincipal } from "@claxedo/server-core/platform/http/event-visibility"
 import { isRetainedControlPlaneEvent } from "@claxedo/server-core/platform/http/event-retention"
 import type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
