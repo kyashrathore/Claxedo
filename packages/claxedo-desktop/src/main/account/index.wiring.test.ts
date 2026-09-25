@@ -57,7 +57,7 @@ describe("setupAccount", () => {
       .replace(/(^|[^:])\/\/.*$/gm, "$1")
     const ready = entry.indexOf("app.whenReady().then")
     const restore = entry.indexOf("void account.ready.catch")
-    const initialize = entry.indexOf("await initialize()")
+    const initialize = entry.indexOf("await initialize(")
 
     expect(entry).toContain("adapterReady: app.whenReady()")
     expect(lazy).toMatch(/loading \?\?= Promise\.resolve\(input\.adapterReady\)/)
