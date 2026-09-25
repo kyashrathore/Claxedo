@@ -3,6 +3,7 @@ import type { Context, Hono as HonoType, Next } from "hono"
 import { isPtyStreamSocket, type AuthorizedPtyConnection } from "@claxedo/workspace-runtime"
 import { attachEmbeddedWorkspacePty } from "../../deployments/local/embedded-workspace-runtime"
 import {
+  ingressOptions,
   resolveWorkspaceRuntimeHit,
   resolveWorkspaceRuntimeHitForWorkspaceId,
   type RuntimeProxyOptions,
@@ -10,16 +11,6 @@ import {
 import { resolveIngressProvenance } from "../../workspace/runtime-dispatch/ingress-provenance"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { resolveWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
-
-type IngressOptions = Pick<RuntimeProxyOptions, "resolveRelayActor" | "requireRelayActor" | "verifyRelayIngress">
-
-function ingressOptions(options: RuntimeProxyOptions): IngressOptions {
-  return {
-    ...(options.resolveRelayActor ? { resolveRelayActor: options.resolveRelayActor } : {}),
-    ...(options.requireRelayActor ? { requireRelayActor: true } : {}),
-    ...(options.verifyRelayIngress ? { verifyRelayIngress: true } : {}),
-  }
-}
 
 type UpgradeWebSocket = ReturnType<typeof createNodeWebSocket>["upgradeWebSocket"]
 

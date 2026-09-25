@@ -75,16 +75,19 @@ function readErrorBody(text: string): ErrorBody {
   }
 }
 
-export async function responseError(response: Response, label = "Request"): Promise<ServerError> {
-  const text = await response.text()
+export function statusError(status: number, text: string, label = "Request"): ServerError {
   const body = readErrorBody(text)
   return new ServerError({
-    class: errorClassForStatus(response.status),
-    message: body.message ?? `${label} failed with status ${response.status}`,
-    status: response.status,
+    class: errorClassForStatus(status),
+    message: body.message ?? `${label} failed with status ${status}`,
+    status,
     ...(body.code !== undefined ? { code: body.code } : {}),
     ...(body.code !== undefined && SETTLED_CODES.has(body.code) ? { retryable: false } : {}),
   })
+}
+
+export async function responseError(response: Response, label = "Request"): Promise<ServerError> {
+  return statusError(response.status, await response.text(), label)
 }
 
 export async function responseErrorCode(response: Response): Promise<string | undefined> {

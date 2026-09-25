@@ -6,6 +6,11 @@ import {
   readCustomProvider,
 } from "@claxedo/server-core/credentials/custom-provider"
 import { opencodeProviderCatalog } from "@claxedo/server-core/credentials/opencode-provider-catalog"
+import {
+  ProviderCatalogViewError,
+  projectProviderCatalog,
+  readProviderCatalogView,
+} from "@claxedo/server-core/credentials/provider-catalog-view"
 import { openCodeEngineModels } from "@claxedo/server-core/opencode/sdk-runtime"
 import { SdkCredentialSyncError, syncCredentialsToSdk } from "@claxedo/server-core/opencode/sdk-credential-bridge"
 import { piProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-catalog"
@@ -44,16 +49,18 @@ export function agentConfigProviderRoutes(options: ControlPlaneRouteAuthOptions 
     .get("/providers", requireCatalogHarness, async (c) => {
       try {
         const org = await requestOrg(c.req.raw, authOptions)
+        const view = readProviderCatalogView({ provider: c.req.query("provider"), view: c.req.query("view") })
         if (c.req.query("nativeHarness") === "opencode") {
           // An unavailable catalog is a different fact from "no providers", so
           // it surfaces as a failure rather than an empty picker.
-          return c.json(await opencodeProviderCatalog({ org, engineModels: openCodeEngineModels }))
+          return c.json(projectProviderCatalog(await opencodeProviderCatalog({ org, engineModels: openCodeEngineModels }), view))
         }
         // Signed callers see only their credential partition, never the host's local OAuth or environment.
         const env = org === SINGLE_TENANT_ORG && !authOptions.authConfig.enabled ? process.env : {}
-        return c.json(piProviderCatalog(env, org))
+        return c.json(projectProviderCatalog(piProviderCatalog(env, org), view))
       } catch (error) {
         if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
+        if (error instanceof ProviderCatalogViewError) return c.json({ error: { code: error.code, message: error.message } }, error.status)
         throw error
       }
     })
