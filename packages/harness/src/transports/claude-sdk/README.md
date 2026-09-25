@@ -1,0 +1,11 @@
+# Claude Agent SDK transport
+
+The native transport carries local plugin folders through the SDK `plugins` option, live `supportedModels()`, `supportedCommands()` and `supportedAgents()` discovery, per query effort, replay confirmed streaming steering, native `/goal` start and stop, and the SDK's per turn usage events. These surfaces are absent from standard ACP. Claude over ACP can receive plugin folders only through its wrapper's version specific `_meta.claudeCode.options` extension.
+
+The SDK's `spawnClaudeCodeProcess` callback returns synchronously. `HarnessServices.spawn` returns a promise. `ClaudeProcess` gives the SDK streams immediately, forwards them to the process once `services.spawn` returns, and delegates retirement to that exact `OwnedProcess`. The callback never starts a process directly.
+
+Brokered credentials are selected in `StartInput` by the session owner. `TurnInput.origin` is not used for credential choice. The Claude Code home for a brokered session is a Claxedo owned directory containing scrubbed copies of supported settings files and read only copies of named user configuration entries. It never mirrors account files. A machine owner session without brokered credentials uses their own Claude login. Permission requests are answered by `TurnBroker`; the broker persists an answer before the callback releases the tool. The SDK's suggested permission updates are not applied to the person's settings.
+
+The SDK reports `session_id` after a query has begun. The transport immediately calls `SessionBroker.rebind`, which moves the live turn. The process's first reported identity is durable before that turn can finish or crash.
+
+Native goals use `SessionBroker.admitProviderTurn`, and Stop aborts and drains that turn before reopening the native session with `/goal clear`. The clear result must report a successful zero turn command. Goal progress is read from SDK `active_goal` messages and `goal_status` transcript entries; the mirror answers `load` with null so resume uses Claude's own transcript. The transport reports `actions: []` because Claude has no native pause or resume command. Per turn usage is yielded from the existing Claude translator; mirrored subagent usage is attributed to the session owner through `SessionBroker.meter`.

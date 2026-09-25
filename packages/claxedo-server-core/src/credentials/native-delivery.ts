@@ -91,6 +91,7 @@ export function credentialReach(row: { provider_id: string; kind: CredentialKind
   if (destination.injection.headers) {
     return { local: true, cloud: false, reason: "native_delivery_needs_companion_header" }
   }
+  if (destination.exchange) return { local: true, cloud: false, reason: "native_delivery_needs_token_exchange" }
   return { local: true, cloud: true }
 }
 
@@ -124,6 +125,7 @@ function delivery(credential: CredentialMetadata, destination: ProviderDestinati
   // provider edge attaches one header per secret, and a turn that arrives
   // without the companion is refused by the vendor, not by us.
   if (destination.injection.headers) return undeliverable(credential, "native_delivery_needs_companion_header")
+  if (destination.exchange) return undeliverable(credential, "native_delivery_needs_token_exchange")
   const name = providerPlaceholderEnv(providerId)
   return {
     providerId,

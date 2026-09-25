@@ -21,7 +21,9 @@ export type ScriptedCursorBackend = {
   url: string
   requests: CursorRequest[]
   script(name: string, script: CursorScript): void
+  defaultScript(name: string): void
   refuseRun(name: string, status: number): void
+  refusePath(path: string, status: number): void
   release(name: string): void
   close(): Promise<void>
 }
@@ -62,7 +64,9 @@ function sendScript(response: ServerResponse, descriptors: CursorDescriptors, sc
       .end(JSON.stringify({ message: script.error.message }))
     return
   }
-  const message = descriptors.service("agent/v1/agent_service").methods.runSSE.O
+  const runSSE = descriptors.service("agent/v1/agent_service").methods.runSSE
+  if (!runSSE) throw new Error("Cursor SDK lacks RunSSE descriptor")
+  const message = runSSE.O
   response.writeHead(200, { "content-type": "application/connect+proto", "connect-protocol-version": "1" })
   let call = 0
   for (const step of script.steps) {
@@ -91,7 +95,9 @@ export async function startScriptedCursorBackend(port: number): Promise<Scripted
   const descriptors = await loadCursorDescriptors()
   const requests: CursorRequest[] = []
   const scripts = new Map<string, CursorScript>()
+  let defaultScript: string | undefined
   const refused = new Map<string, number>()
+  const refusedPaths = new Map<string, number>()
   const streams = new Map<string, PendingStream>()
   const selected = new Map<string, { name: string; script: CursorScript }>()
   const held = new Map<string, Set<string>>()
@@ -114,7 +120,7 @@ export async function startScriptedCursorBackend(port: number): Promise<Scripted
       const path = incoming.url ?? ""
       const body = await readBody(incoming)
       const [serviceName, methodName] = path.slice(1).split("/")
-      const servicePath = SERVICE_PATHS[serviceName]
+      const servicePath = SERVICE_PATHS[serviceName ?? ""]
       const method = servicePath
         ? Object.values(descriptors.service(servicePath).methods).find((item) => item.name === methodName)
         : undefined
@@ -124,6 +130,18 @@ export async function startScriptedCursorBackend(port: number): Promise<Scripted
         ? method.I.fromBinary(payload).toJson()
         : body.length ? JSON.parse(body.toString("utf8")) as unknown : undefined
       requests.push({ path, method: incoming.method ?? "", contentType, headers: incoming.headers, decoded })
+
+      const refusedStatus = refusedPaths.get(path)
+      if (refusedStatus !== undefined) {
+        outgoing.writeHead(refusedStatus, { "content-type": "application/json" }).end(JSON.stringify({ message: `Scripted Cursor endpoint ${path} refused` }))
+        return
+      }
+
+      if ((path.startsWith("/aiserver.v1.") || path.startsWith("/agent.v1."))
+        && incoming.headers.authorization !== "Bearer scripted-access-token") {
+        outgoing.writeHead(401, { "content-type": "application/json" }).end(JSON.stringify({ message: "Cursor access token required" }))
+        return
+      }
 
       if (path === "/auth/exchange_user_api_key") {
         outgoing.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ accessToken: "scripted-access-token" }))
@@ -146,9 +164,11 @@ export async function startScriptedCursorBackend(port: number): Promise<Scripted
         const id = append.requestId?.requestId
         if (!id || !append.data) throw new Error("BidiAppend omitted requestId or data")
         if (!selected.has(id)) {
-          const client = descriptors.service("agent/v1/agent_service").methods.run.I
+          const run = descriptors.service("agent/v1/agent_service").methods.run
+          if (!run) throw new Error("Cursor SDK lacks Run descriptor")
+          const client = run.I
           const prompt = client.fromBinary(Buffer.from(append.data, "hex")).toJson()
-          const name = scriptName(prompt)
+          const name = scriptName(prompt) ?? defaultScript
           if (!name) throw new Error(`BidiAppend named no CURSOR_SCRIPT: ${JSON.stringify(prompt)}`)
           const script = scripts.get(name)
           if (!script) throw new Error(`Unknown Cursor script ${name}`)
@@ -185,10 +205,15 @@ export async function startScriptedCursorBackend(port: number): Promise<Scripted
       if (scripts.has(name)) throw new Error(`Cursor script ${name} already exists`)
       scripts.set(name, script)
     },
+    defaultScript(name) {
+      if (!scripts.has(name)) throw new Error(`Unknown Cursor script ${name}`)
+      defaultScript = name
+    },
     refuseRun(name, status) {
       if (!scripts.has(name)) throw new Error(`Unknown Cursor script ${name}`)
       refused.set(name, status)
     },
+    refusePath(path, status) { refusedPaths.set(path, status) },
     release(name) {
       const ids = held.get(name)
       if (!ids) throw new Error(`Cursor script ${name} is not held`)
