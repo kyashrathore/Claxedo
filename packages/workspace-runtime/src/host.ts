@@ -1,4 +1,5 @@
 export { workspaceRuntimeBus } from "./bus"
+export { createSpawnService } from "./spawn-service"
 export type { WorkspaceRuntimeEvent, PtyInfo } from "./bus"
 export {
   createIdentityAwareEventSource,

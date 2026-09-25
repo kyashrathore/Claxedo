@@ -29,10 +29,6 @@
       "status": "integration",
       "purpose": "In-process runtime event fanout."
     },
-    "@claxedo/agent-sdk-runtime/sse": {
-      "status": "integration",
-      "purpose": "Local SSE fanout and replay helpers."
-    },
     "@claxedo/agent-sdk-runtime/provider-projection": {
       "status": "integration",
       "purpose": "Provider credential projection contracts and the record validator applied to pushed provider rows."
@@ -99,25 +95,24 @@
     "recipes": "docs/recipes.md"
   },
   "declarationHashes": {
-    "@claxedo/agent-sdk-runtime": "5eefea44af58c8b6a851a1a11a9f0651af6bb0b202802c939e68d566e9bb99da",
+    "@claxedo/agent-sdk-runtime": "ea0fe25f92e9fb0dbcbab0ed642583143aafdc827dc50e96d21075b01138735e",
     "@claxedo/agent-sdk-runtime/compat-events": "65a84e13c8047078d51a4246884964de0feba488c4f69f991a31d812401f50f7",
     "@claxedo/agent-sdk-runtime/status": "1cdf36244f79cd16df67b7183738572553a75282907cad9aefe54d2e487574a3",
-    "@claxedo/agent-sdk-runtime/capabilities": "50b51b4bbe46ef5084927acd955ce5166d456ba2f4265dc87cd9e6441a0273f2",
+    "@claxedo/agent-sdk-runtime/capabilities": "4330325eca22966c3b63d6312cdac4f8b618daef0ba82c0326cca0a56e8b87da",
     "@claxedo/agent-sdk-runtime/runtime-event-hub": "f5d1bbec95d9c8dd7e98a2009c63f548a3361248a5198065c65c8138514f618a",
-    "@claxedo/agent-sdk-runtime/sse": "4fa1dc17b98bee5189e96b860160be0ed0206a02ab1c40587f56356870585870",
-    "@claxedo/agent-sdk-runtime/provider-projection": "33dbad94d6acff40035217f18ba011dc95ef78a4af1d9d9bb27e6776e1207bba",
+    "@claxedo/agent-sdk-runtime/provider-projection": "782d8969102fba96a662f3b7800572b884ac38179b49ab7c5d9a761c8053ec44",
     "@claxedo/agent-sdk-runtime/mcp-resolver": "9ee49e91a385d15d6b2b82b8b9fa9045676c2f51dba06f59b65ba5c1c06f7ecf",
-    "@claxedo/agent-sdk-runtime/subagent-admission": "377da920568eab258c741197b342ed681bde82012c9ac481f02ec7ea990daadd",
-    "@claxedo/agent-sdk-runtime/harnesses": "458f2f0fab6b1a6fdb28a3a9cf7762f069ac2a7de4c35171a6d89bac90c8a398",
-    "@claxedo/agent-sdk-runtime/harnesses/acp": "b2e4f796b0c1e0687df21424b67e0fd11eed29da130a8a35e7b0fa56fa3c027d",
-    "@claxedo/agent-sdk-runtime/harnesses/claude": "b954f3383ab4b61422a1b172fa70c20b16bb1d4252df59d2765cbdd2ec7b6bd4",
-    "@claxedo/agent-sdk-runtime/harnesses/codex": "cc0baa2018c05144f9e7e27c5fa63dc8799b05ffad3bf5048246eacf5b982ddb",
-    "@claxedo/agent-sdk-runtime/harnesses/cursor": "b1e7529fc081b4b3946d361a3b6895c61da032f4bfa03302f2e450f0024c64e7",
-    "@claxedo/agent-sdk-runtime/harnesses/pi": "61c8946175b25e3639181bba90436e385dfa190ad375aa437c364b1ddbd3983f",
-    "@claxedo/agent-sdk-runtime/adapters": "c70969820b8678c9a4d86d4814fad774d54b6b56aec01be1207d3cc1eaca5a1a",
-    "@claxedo/agent-sdk-runtime/message-page": "5eefea44af58c8b6a851a1a11a9f0651af6bb0b202802c939e68d566e9bb99da",
-    "@claxedo/agent-sdk-runtime/stores/memory": "e53d48006cd8673847bc209e2e13e828f339efe96cde93456ac89ae91d5677ab",
-    "@claxedo/agent-sdk-runtime/stores/sqlite": "cd48c0e2a104a5f0c3f3a8b9d7dc79dab33438f101e2759d505be11b5f613094",
+    "@claxedo/agent-sdk-runtime/subagent-admission": "43bf61b7656e51f3e5b4831dfd50381657f2d722dcbdbb440abafc40b22cf315",
+    "@claxedo/agent-sdk-runtime/harnesses": "e832de56801ed376ce56468ea6f096589026f4c9b2e1228de4dc76b504ecc160",
+    "@claxedo/agent-sdk-runtime/harnesses/acp": "80873f1efe8195191c267e0a3040809b4f85a16ce06412b86265b1f3cff7f74b",
+    "@claxedo/agent-sdk-runtime/harnesses/claude": "1a0404924a79441223f8dab2e94db76f72d258f9a9e6909a47b52df377c39c54",
+    "@claxedo/agent-sdk-runtime/harnesses/codex": "e7608c9c81cf17f261eb54f5451056ab6d4b17959e5de74de53714a1b773c631",
+    "@claxedo/agent-sdk-runtime/harnesses/cursor": "c5ddd32eab1cd0e2f540f72cb5335a2ed4301522994d1ddbd55a6184a1a6ca7d",
+    "@claxedo/agent-sdk-runtime/harnesses/pi": "4b08127ce827ba6709bb6e94b584b9f4d2d2c1f8c80bd9cc41949ccb3564f681",
+    "@claxedo/agent-sdk-runtime/adapters": "f798631bcecc874af340beca72f39abe26bb3edfdecd0bc428b5185fff1af9ca",
+    "@claxedo/agent-sdk-runtime/message-page": "ea0fe25f92e9fb0dbcbab0ed642583143aafdc827dc50e96d21075b01138735e",
+    "@claxedo/agent-sdk-runtime/stores/memory": "e29abb5abcd688e4132263fb5674e0afbc0b65e476f9e7cafcb2d71c863e2cfa",
+    "@claxedo/agent-sdk-runtime/stores/sqlite": "56ef13a64d995b3888a0ed9188f660a2c9ef9cb922b3f5d9fba504522c342074",
     "@claxedo/agent-sdk-runtime/stores/session-start": "5dde19cfbf0617660f969558643d9ca3182448722f5c2d6a47dd0103d2beb311"
   },
   "valueExports": {
