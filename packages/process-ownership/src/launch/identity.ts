@@ -144,7 +144,7 @@ const DARWIN_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "
 /** `lstart` as `ps` prints it under `TZ=UTC0 LC_ALL=C`, for example `Fri Sep 25 05:29:17 2026`. */
 export function darwinStartMs(lstart: string) {
   const match = /^[A-Z][a-z]{2} ([A-Z][a-z]{2}) +(\d{1,2}) (\d{2}):(\d{2}):(\d{2}) (\d{4})$/.exec(lstart)
-  const month = match ? DARWIN_MONTHS.indexOf(match[1]!) : -1
+  const month = match ? DARWIN_MONTHS.indexOf(match[1]) : -1
   if (!match || month < 0) return undefined
   return Date.UTC(Number(match[6]), month, Number(match[2]), Number(match[3]), Number(match[4]), Number(match[5]))
 }
