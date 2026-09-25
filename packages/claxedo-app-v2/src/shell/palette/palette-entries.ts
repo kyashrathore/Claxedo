@@ -30,6 +30,15 @@ export function uniqueEntries(items: readonly PaletteEntry[]): PaletteEntry[] {
   return out
 }
 
+const ENTRY_FIELDS = ["type", "title", "description", "keybind", "category", "option", "path", "row", "updated"] as const
+
+export function reuseEntries(next: readonly PaletteEntry[], previous: ReadonlyMap<string, PaletteEntry>): PaletteEntry[] {
+  return next.map((entry) => {
+    const known = previous.get(entry.id)
+    return known && ENTRY_FIELDS.every((field) => known[field] === entry[field]) ? known : entry
+  })
+}
+
 export function commandEntry(option: CommandOption, category: string, keybind: string | undefined): PaletteEntry {
   return { id: `command:${option.id}`, type: "command", title: option.title, description: option.description, keybind, category, option }
 }
