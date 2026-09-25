@@ -15,7 +15,7 @@
 - **Open, each on its branch:**
   - `v2/plugin-tools`: the app plugin MCP tools. Codex's review fixes are uncommitted in the worktree (59 files). Resume with `codex exec resume 01a0daa8-305c-79d1-a6d4-a69db923ff0b` after `codex login`.
   - `v2/perf-gate`: the runtime budget gate (flow 40, cache-hit), 73def1a4be. It is proven red on five planted regressions and red today on recorded debt. Its `e2e/budgets/README.md` lists the debt by owner: 60 frames per idle window with the panel open, streaming computations outside the transcript, and 32 caches with no measured hit.
-  - `v2/idle-frames`: the idle-frames fix. Not started; Codex auth failed.
+  - **Idle frames with the panel open: not a defect.** A trace over 10 idle seconds shows 20 DrawFrames and 48–59 BeginFrames, with 0 paints, style recalcs, rAF callbacks or timers. The panel's Files search input takes focus on open (`src/files/view/files-navigator.tsx`, `autofocus`, as v1's `files-navigator.tsx:251` does), and its caret blinks twice a second. After a blur, frames are 0. The perf gate's idle scenario must blur or budget the caret; `v2/idle-frames` has no commits and can be deleted.
   - The publication benchmark rerun on the final tip needs `v2/bench` (c77feed464) and a quiet host.
 - **Found in the owner's data:** seven fixture cloud projects (`channel_fixture`, `project_channel_*`, `project_failclosed_ok`) written into `~/.claxedo/workspaces.json` and `claxedo.db` on 2026-09-24 10:06 by `claxedo-server`'s `ingress.test.ts` run outside its vitest HOME isolation. Not deleted; the owner decides.
 
