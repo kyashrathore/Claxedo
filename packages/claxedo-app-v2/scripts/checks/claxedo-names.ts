@@ -83,7 +83,9 @@ function lookup(node: ts.Identifier, checker: ts.TypeChecker): Lookup {
     return { declarations: propertyDeclarations(checker.getTypeAtLocation(parent.parent), node.text), reference: false }
   }
   if (ts.isJsxAttribute(parent) && parent.name === node) {
-    return { declarations: symbolDeclarations(checker.getSymbolAtLocation(node), checker), reference: false }
+    const props = checker.getContextualType(parent.parent)
+    const declared = props ? propertyDeclarations(props, node.text) : []
+    return { declarations: declared.length > 0 ? declared : symbolDeclarations(checker.getSymbolAtLocation(node), checker), reference: false }
   }
   if (isDeclarationName(node)) return { declarations: [], reference: false }
   return { declarations: symbolDeclarations(checker.getSymbolAtLocation(node), checker), reference: true }
