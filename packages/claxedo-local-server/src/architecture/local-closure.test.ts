@@ -270,8 +270,21 @@ describe("@claxedo/local-server closure", () => {
     // machine's plugins, builds each into a hashed bundle, serves it and
     // announces changes. Clone destination admission (`node:dns`) moved with
     // the projects route into server-core's projects module.
+    //  - `workspace/runtime-dispatch/session-activity.ts` — the one status
+    //    read across workspaces, answered through each workspace's own
+    //    dispatch because only the daemon hosts every local runtime
+    //    in-process; `internals.ts` and the workspace store, both here.
+    //  - `session/publish/*` — the machine publisher: a signed-in machine
+    //    publishes each served session's list row and status to the control
+    //    plane, on change and in full whenever its serving credential or
+    //    workspace set changes. Only the process that holds the projection,
+    //    hosts the runtimes whose frames carry status, and receives the Host
+    //    Tunnel Token can. The six modules reach the projection port,
+    //    host-serving's credential listener, the runtime registry and
+    //    `platform/json.ts`, all here, and server-core's session-rows
+    //    contract, which costs no package.
     const { modules, packages } = closure({ runtimeOnly: true })
-    expect(modules.size).toBeLessThanOrEqual(102)
+    expect(modules.size).toBeLessThanOrEqual(109)
     expect(packages.size).toBeLessThanOrEqual(31)
   })
 })

@@ -54,6 +54,7 @@ import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
 import { localBuiltinToolGroupsReader } from "../agent-plugins/builtin-groups"
 import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import { projectLocalSessionMetaFromEvent, sessionMetaProjectionTap } from "../session/session-meta-tap"
+import { startSessionRowsPublisher } from "../session/publish/start-session-rows-publisher"
 import { migrateCredentials } from "../credentials/operations/migrate"
 import { dropCopiedHarnessLogins } from "../credentials/operations/drop-copied-harness-logins"
 import { createLocalCredentialBroker } from "../credentials/broker"
@@ -159,7 +160,11 @@ export function startLocalServer(options: StartLocalServerOptions): LocalServer 
 
 function startOwned(options: StartLocalServerOptions, release: () => void): LocalServer {
   const port = options.port ?? DEFAULT_CLAXEDO_SERVER_PORT
-  const services = options.services ?? createLocalControlPlaneServices()
+  const composed = options.services ?? createLocalControlPlaneServices()
+  // Every session-metadata writer below and in `createLocalApp` goes through
+  // this store, which is what lets a signed-in machine publish each change.
+  const sessionRows = startSessionRowsPublisher(composed.projectionStore)
+  const services = { ...composed, projectionStore: sessionRows.projectionStore }
   const connectionProviders = [
     createAcpConnectionProvider(),
     createOpenCodeServerConnectionProvider(),
@@ -437,6 +442,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
       try {
         stopConfigWatch()
         stopConfigRenewal()
+        sessionRows.stop()
         options.daemon?.lifecycle.stop()
         // An owner this process could not retire is reported and the rest of
         // shutdown still runs. Skipping the usage drain because one workspace

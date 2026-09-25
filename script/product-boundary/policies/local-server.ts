@@ -185,8 +185,18 @@ export const localServer: Policy = {
   //    status, permissions and questions through that workspace's own
   //    dispatch; it reaches `internals.ts` and the workspace store, both
   //    already here.
-  //    74/30, no headroom.
-  ceilings: { modules: 74, packages: 30 },
+  //  - `session/publish/*` (owner: the machine publisher, this daemon's half
+  //    of the control plane's session-rows endpoint): a signed-in machine
+  //    publishes each served session's list row and status, on change and in
+  //    full whenever its serving credential or workspace set changes, so the
+  //    control plane answers machine sessions from its own store. Only the
+  //    process that holds the projection, hosts the runtimes whose frames
+  //    carry status, and receives the Host Tunnel Token can do it. The six
+  //    modules reach the projection port, host-serving's credential listener,
+  //    the runtime registry and `platform/json.ts`, all already here, and
+  //    server-core's session-rows contract, which costs no package.
+  //    80/30, no headroom.
+  ceilings: { modules: 80, packages: 30 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",
