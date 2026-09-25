@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs"
 import path from "node:path"
-import { HOSTED_OPERATIONS } from "../platform/account/hosted-operations"
+import { HOSTED_OPERATIONS } from "@claxedo/account-contract"
 
 const srcRoot = path.resolve(import.meta.dir, "..")
 

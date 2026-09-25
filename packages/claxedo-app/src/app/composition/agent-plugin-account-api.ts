@@ -1,4 +1,5 @@
-import type { AccountPort, HostedOperationName } from "@/platform/account/account-port"
+import type { AccountPort } from "@/platform/account/account-port"
+import type { HostedOperationName } from "@claxedo/account-contract"
 import {
   agentPluginCatalogResult,
   agentPluginMutationResult,
@@ -6,7 +7,7 @@ import {
   type AgentPluginApi,
 } from "@/features/agent-plugins/api"
 import { recordOrEmpty } from "@/lib/record"
-import { decodeHostedResult, type DecodedHostedResult } from "@/platform/account/hosted-operations"
+import { decodeHostedResult, type DecodedHostedResult } from "@claxedo/account-contract"
 
 /**
  * Hosted inputs cross Electron's IPC, which structured-clones them. Catalog

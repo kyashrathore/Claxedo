@@ -6,9 +6,6 @@ import {
   isSafeOperation,
 } from "./hosted-operations"
 
-// Decoder behavior belongs here. Architecture/account-port.guard.test.ts holds
-// the port, main route table, decoder registry and reviewed matrix in agreement.
-
 describe("decodeHostedResult", () => {
   test("requires the complete session People capability envelope", () => {
     expect(decodeHostedResult("session.shares.list", {

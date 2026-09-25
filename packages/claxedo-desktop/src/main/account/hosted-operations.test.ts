@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { hostedOperationNames } from "@claxedo/account-contract"
 import {
   HOSTED_OPERATIONS,
   MissingOperationParameter,
@@ -16,6 +17,10 @@ import {
  */
 
 describe("HOSTED_OPERATIONS", () => {
+  test("routes exactly the contract's operations", () => {
+    expect(Object.keys(HOSTED_OPERATIONS).toSorted()).toEqual(hostedOperationNames().toSorted())
+  })
+
   test("reaches no machine-signed, invitation or relay-fence route", () => {
     // Those routes authenticate a machine or an invitation secret, never an
     // account. An entry here would spend the account credential on them.

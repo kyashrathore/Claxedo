@@ -9,7 +9,8 @@
 import { accountRunBridge } from "./hosted-control-call"
 import { readBoolean } from "@/lib/record"
 import { hasBridgeMembers, preloadAccountBridge } from "./preload-bridge"
-import type { AccountState, HostedOperationName } from "./account-port"
+import type { AccountState } from "./account-port"
+import type { HostedOperationName } from "@claxedo/account-contract"
 
 type StreamBridge = {
   streamOpen: (operation: string, input?: Record<string, unknown>) => Promise<{ streamId: string }>

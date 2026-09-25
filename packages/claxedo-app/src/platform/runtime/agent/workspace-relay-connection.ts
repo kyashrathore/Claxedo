@@ -1,6 +1,6 @@
 import { apiBearerToken, getClaxedoServerUrl, authFetch, normalizeUrl } from "@/platform/api/api"
 import { signedAccountRun } from "@/platform/account/hosted-control-call"
-import { decodeHostedResult } from "@/platform/account/hosted-operations"
+import { decodeHostedResult } from "@claxedo/account-contract"
 import { queryClient } from "@/platform/query/query-client"
 import { errorMessage } from "@/lib/server-errors"
 import { backingHostKind, type RelayHostKind } from "@/platform/runtime/placement-wire"
