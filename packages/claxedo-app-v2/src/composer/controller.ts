@@ -60,6 +60,11 @@ function createKeyDown(context: ControllerContext, blank: () => boolean, setMode
   })
 }
 
+function leaveHistory(context: ReturnType<typeof createControllerContext>) {
+  closePopover(context)
+  context.setState({ historyIndex: -1, savedPrompt: null })
+}
+
 export function createComposerController(input: ControllerInput) {
   const context = createControllerContext(input)
   const { state, setState } = context
@@ -69,14 +74,7 @@ export function createComposerController(input: ControllerInput) {
     closePopover(context)
   }
   keepActiveItem(context)
-  const sync = createEditorSync(
-    context,
-    (value, cursor) => updatePopover(context, value, cursor),
-    () => {
-      closePopover(context)
-      setState({ historyIndex: -1, savedPrompt: null })
-    },
-  )
+  const sync = createEditorSync(context, (value, cursor) => updatePopover(context, value, cursor), () => leaveHistory(context))
   return {
     state,
     text: context.text,
