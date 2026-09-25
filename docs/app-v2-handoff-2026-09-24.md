@@ -454,9 +454,9 @@ At 19:08 the owner said: finish in-progress work; start no new work.
 1. **Owner:** test 4480 against 4481. Each difference becomes an inventory row or a DECISIONS line.
 2. **Owner:** sign off `v2/stream-slice`, exp-stream's five transcript fixes (see [Streaming at 60 Hz](#streaming-at-60-hz-exp-stream-2026-09-25)). Then merge it and run the whole corpus.
 3. **The seven panel rows that go to v1:**
-   - lane-tools-3 ports v1's retained file-tab mount, which covers review→files and open-file;
-   - exp-scroll names the cause of collapse-all and files→Review heavy.
-   - Then rerun the workspace-panel lane.
+   - exp-scroll found the cause: `src/review/diff-content.ts` `request()` writes a new file list on every CodeView emit and scroll frame, so the 24 diff queries and the Review list rebuild each time. Making it a no-op for an unchanged list takes collapse-all from 32.0 to 23.2 ms busy JS per click (v1 27.3), and idle CPU with Review open from 8.8% to 1.4% (v1 3.6%).
+   - v1 doesn't keep visited file tabs mounted either: retaining them blanks Pierre's viewer on reveal. The one tab gap is Review's scroll restoration, which lane-tools-3 is porting.
+   - Then lane-bench-3 reruns the workspace-panel lane.
 4. **Start (≤ 1.1 s) and idle memory (≤ 700 MiB):** exp-idle's findings, applied through the owning lanes.
 5. **Checks to zero:** transcript and timeline comments and names first, with comments triaged into corpus cases or README lines; then the remaining domains. Split files by responsibility; never squeeze.
 6. **Move the transcript's module caches and singletons into provider-owned stores**, as their own corpus-proven slice with a bench rerun. Until then they're named exceptions in one-home-per-datum.
