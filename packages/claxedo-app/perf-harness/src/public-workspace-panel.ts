@@ -900,7 +900,9 @@ async function waitForPanelClosed(page: Page, requireActiveTrace = false) {
         }
         const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell']")
         const rect = shell?.getBoundingClientRect()
-        const closed = !shell || (shell.dataset.open === "false" && !!rect && rect.left >= window.innerWidth - 1)
+        // A closed shell is either translated past the right edge (today's app)
+        // or taken out of layout with display: none (v2); both leave nothing on screen.
+        const closed = !shell || (shell.dataset.open === "false" && !!rect && (rect.left >= window.innerWidth - 1 || (rect.width === 0 && rect.height === 0)))
         stable = closed ? stable + 1 : 0
         // `mustHaveTrace` has already rejected a missing or un-armed trace
         // above; naming that here is what lets the count be typed.
@@ -985,7 +987,7 @@ export async function waitForPanelOwner(
         if (profile === "closed") {
           const rect = shell?.getBoundingClientRect()
           const heavyRoots = shell?.querySelectorAll("[data-testid='workspace-files-navigator'], [data-testid='review-pane-root']").length ?? 0
-          ready = (!shell || (shell.dataset.open === "false" && shell.dataset.stateOpen === "false" && !!rect && rect.left >= innerWidth - 1)) && heavyRoots === 0
+          ready = (!shell || (shell.dataset.open === "false" && shell.dataset.stateOpen === "false" && !!rect && (rect.left >= innerWidth - 1 || (rect.width === 0 && rect.height === 0)))) && heavyRoots === 0
           signature = ready ? JSON.stringify([shell?.dataset.open ?? "disposed", heavyRoots]) : ""
         } else {
           const body = shell?.querySelector<HTMLElement>(`[data-workspace-panel-session-id="${CSS.escape(sessionId)}"]`)
