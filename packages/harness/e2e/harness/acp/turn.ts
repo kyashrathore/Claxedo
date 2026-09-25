@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 import fs from "node:fs"
 import { RequestError, type AgentSideConnection, type PromptResponse, type SessionNotification } from "@agentclientprotocol/sdk"
 import { asString } from "@claxedo/helpers/guards"
+import { recordPermissionReceipt } from "./receipts"
 import { holdReleaseFile, type AcpScript, type AcpStep, type AcpToolStep } from "./script"
 
 export type TurnContext = {
@@ -86,6 +87,12 @@ async function playPermission(context: TurnContext, step: Extract<AcpStep, { kin
   }
   await update(context, { sessionUpdate: "tool_call", ...toolCall })
   const response = await context.connection.requestPermission({ sessionId: context.sessionId, toolCall, options: PERMISSION_OPTIONS })
+  await recordPermissionReceipt(context.scriptDir, {
+    sessionId: context.sessionId,
+    title: step.title,
+    outcome: response.outcome.outcome,
+    ...(response.outcome.outcome === "selected" ? { optionId: response.outcome.optionId } : {}),
+  })
   if (response.outcome.outcome === "cancelled") return { stopReason: "cancelled" }
   const allowed = response.outcome.optionId.startsWith("allow")
   const text = step.text ?? "Done"
