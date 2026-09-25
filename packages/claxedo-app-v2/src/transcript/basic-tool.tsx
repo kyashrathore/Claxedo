@@ -2,7 +2,6 @@ import {
   children,
   createEffect,
   createMemo,
-  createSignal,
   For,
   Match,
   on,
@@ -19,6 +18,7 @@ import { canonicalToolName } from "@claxedo/agent-runtime-contract"
 import { useTranscriptI18n, type TranscriptI18n, type TranscriptTextKey } from "./i18n"
 import { createStore } from "solid-js/store"
 import { Collapsible, Icon, type IconProps, TextShimmer } from "@/ui"
+import { useSecondClock } from "@/lib/clock"
 import { formatDuration } from "./format-duration"
 import { safeLinkHref } from "./safe-link"
 import { ScrollableOutput } from "./scrollable-output"
@@ -131,15 +131,9 @@ export function BasicTool(props: BasicToolProps) {
   const content = children(() => (props.defer && !ready() ? undefined : props.children))
   const hasChildren = () => (props.defer && !ready() ? "children" in props : hasRenderedContent(content()))
 
-  const [nowMs, setNowMs] = createSignal(Date.now())
-  createEffect(() => {
-    if (!pending() || typeof props.startedAt !== "number") return
-    setNowMs(Date.now())
-    const id = setInterval(() => setNowMs(Date.now()), 1000)
-    onCleanup(() => clearInterval(id))
-  })
+  const now = useSecondClock(() => pending() && typeof props.startedAt === "number")
   const elapsed = () =>
-    typeof props.startedAt === "number" ? formatDuration(Math.max(0, nowMs() - props.startedAt)) : ""
+    typeof props.startedAt === "number" ? formatDuration(Math.max(0, now() - props.startedAt)) : ""
   const dynamicTrigger = typeof props.trigger === "function" ? props.trigger(open) : undefined
   const plainTrigger = (): JSX.Element => {
     const value = props.trigger

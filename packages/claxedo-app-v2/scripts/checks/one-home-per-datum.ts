@@ -116,7 +116,8 @@ function isConstantCollection(expression: ts.Expression): boolean {
   if (!ts.isNewExpression(expression) || !ts.isIdentifier(expression.expression)) return false
   if (expression.expression.text !== "Set" && expression.expression.text !== "Map") return false
   const args = expression.arguments ?? []
-  return args.length === 0 || (args.length === 1 && ts.isArrayLiteralExpression(unwrap(args[0]!)))
+  const [only] = args
+  return args.length === 0 || (args.length === 1 && only !== undefined && ts.isArrayLiteralExpression(unwrap(only)))
 }
 
 function mutatedIn(sf: ts.SourceFile, binding: string): boolean {
