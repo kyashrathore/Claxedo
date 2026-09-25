@@ -94,7 +94,6 @@ export function PromptPermissionControl(props: {
                     when={groups().harness.rows.length > 0}
                     fallback={
                       <p
-                        data-slot="permission-modes-unavailable"
                         class="text-balance px-2.5 py-2 text-sm leading-[var(--line-height-prose-compact)] text-v2-text-text-faint"
                       >
                         {groups().harness.unavailable}
@@ -189,7 +188,6 @@ function ModeRow(props: {
           </span>
           <Show when={detail()}>
             <span
-              data-slot="permission-mode-description"
               class="whitespace-normal text-xs leading-[var(--line-height-15)] text-v2-text-text-faint"
             >
               {detail()}
@@ -197,7 +195,6 @@ function ModeRow(props: {
           </Show>
           <Show when={caveat()}>
             <span
-              data-slot="permission-mode-caveat"
               class="whitespace-normal text-xs leading-[var(--line-height-15)]"
               // The composer is v2 UI, so this is the v2 warning foreground.
               // Not `--text-danger`: that token is not defined by the theme

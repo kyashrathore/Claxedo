@@ -6,87 +6,6 @@ import {
 
 /** Picker options come from the runtime report; local auto-answer is a separate preference. */
 
-/**
- * Tool tiers Claxedo's own Auto mode uses. Shared with permission-auto-respond.
- *
- * ACP harnesses send the protocol's `ToolKind` (`read`, `edit`, `delete`,
- *     `move`, `search`, `execute`, `think`, `fetch`, `switch_mode`, `other`).
- * Anything unlisted asks.
- */
-export const SAFE_READ_PERMISSIONS = ["read", "glob", "grep", "list", "lsp"] as const
-
-/** Additional ACP `ToolKind` values that are safe. */
-export const ACP_SAFE_TOOL_KINDS = ["search", "think"] as const
-
-/**
- * ACP `ToolKind` values that must always reach the user. `delete` and `move` are
- * deliberately not grouped with `edit`: a destructive file operation must not ride
- * along with an in-project edit. `other` asks because it is the protocol's
- * catch-all — see the module note on failing safe.
- */
-export const ACP_DANGER_TOOL_KINDS = ["delete", "move", "execute", "fetch", "switch_mode", "other"] as const
-export const IN_PROJECT_WRITE_PERMISSIONS = ["edit", "todowrite"] as const
-export const INTERACTIVE_PERMISSIONS = ["question"] as const
-export const DANGER_GATED_PERMISSIONS = [
-  "bash",
-  "webfetch",
-  "websearch",
-  "external_directory",
-  "task",
-  "skill",
-  "doom_loop",
-] as const
-
-/**
- * Generic bucket for `permission_decided` telemetry, never the raw permission
- * string itself: connection permission namespaces have an open tail — MCP tool
- * names, subagent ids, and shell tool ids are dynamic — so forwarding one
- * unchanged risks leaking a connection or tool name into an analytics event.
- * Anything this table does not recognize, including every dynamic id above,
- * buckets to "other" rather than being forwarded raw.
- */
-export type ToolKindCategory = "read" | "write" | "execute" | "network" | "interactive" | "other"
-
-const WRITE_TOOL_KINDS: readonly string[] = [...IN_PROJECT_WRITE_PERMISSIONS, "delete", "move"]
-const EXECUTE_TOOL_KINDS: readonly string[] = ["bash", "task", "skill", "doom_loop", "execute"]
-const NETWORK_TOOL_KINDS: readonly string[] = ["webfetch", "websearch", "fetch", "external_directory"]
-
-/** Classify a raw permission/tool-kind string for telemetry. Pure and total. */
-export function classifyToolKind(permission: string | undefined): ToolKindCategory {
-  if (!permission) return "other"
-  if ((SAFE_READ_PERMISSIONS as readonly string[]).includes(permission)) return "read"
-  if ((ACP_SAFE_TOOL_KINDS as readonly string[]).includes(permission)) return "read"
-  if (WRITE_TOOL_KINDS.includes(permission)) return "write"
-  if (EXECUTE_TOOL_KINDS.includes(permission)) return "execute"
-  if (NETWORK_TOOL_KINDS.includes(permission)) return "network"
-  if ((INTERACTIVE_PERMISSIONS as readonly string[]).includes(permission)) return "interactive"
-  return "other"
-}
-
-export type PermissionDecidedProperties = {
-  decision: "allow" | "deny"
-  mode: "auto" | "manual"
-  tool_kind: ToolKindCategory
-}
-
-/**
- * The `permission_decided` event body, shared by the manual dock decision
- * (`session-composer-state.ts`) and the auto-accept path (`providers/permission.tsx`)
- * so the two never drift on how a response maps to `decision`.
- */
-export function permissionDecidedProperties(input: {
-  response: "once" | "always" | "reject"
-  /** The raw `PermissionRequest.permission` field — bucketed here, never forwarded raw. */
-  toolKind: string | undefined
-  mode: "auto" | "manual"
-}): PermissionDecidedProperties {
-  return {
-    decision: input.response === "reject" ? "deny" : "allow",
-    mode: input.mode,
-    tool_kind: classifyToolKind(input.toolKind),
-  }
-}
-
 /** Runtime mode selection. Retired local selections are accepted only as stale input
  * and rejected by findPermissionModeOption, even when a harness reuses the id. */
 export type PermissionSelection =
@@ -110,14 +29,6 @@ export type PermissionModeOption = {
   /** How this option reaches the harness. Drives the per-item info. */
   delivery: PermissionModeDelivery
 }
-
-/** Permissions Claxedo answers itself when it has to do the work locally. */
-export const CLAXEDO_AUTO_ANSWERS = [
-  ...SAFE_READ_PERMISSIONS,
-  ...ACP_SAFE_TOOL_KINDS,
-  ...INTERACTIVE_PERMISSIONS,
-  ...IN_PROJECT_WRITE_PERMISSIONS,
-] as const
 
 /**
  * Native Pi has real machine access but no selectable approval policy.

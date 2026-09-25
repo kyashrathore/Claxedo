@@ -120,13 +120,12 @@ export function ComposerNoticeRow(props: { notice: ComposerNotice | undefined; c
               and squeezed it to "Could…" — the one part that must always be
               readable. Stacked, the title always gets the full row. */}
           <div class="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span data-slot="composer-notice-message" class="truncate text-12-medium text-v2-text-text-base">
+            <span class="truncate text-12-medium text-v2-text-text-base">
               {notice().message}
             </span>
             <Show when={notice().detail}>
               {(detail) => (
                 <span
-                  data-slot="composer-notice-detail"
                   // Two lines, then ellipsis: enough for a path plus the reason,
                   // without letting a stack trace grow the composer unbounded.
                   class="line-clamp-2 text-12-regular text-v2-text-text-faint"

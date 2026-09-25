@@ -1,4 +1,4 @@
-import { isRecord } from "@/lib/record"
+import { isRecord } from "./record"
 export const NATIVE_HARNESS_IDS = ["claude", "codex", "cursor", "pi", "opencode"] as const
 
 /**

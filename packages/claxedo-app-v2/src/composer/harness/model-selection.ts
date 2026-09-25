@@ -1,15 +1,15 @@
-import type { ModelKey } from "./model-key"
+import type { ModelChoice } from "@/server"
 
 export type ModelSelectionSource = "ui" | "agent"
 
 export type ModelSelectionScope = {
   readonly key: string
-  readonly current?: () => ModelKey | undefined
+  readonly current?: () => ModelChoice | undefined
 }
 
 export type ModelSelectionCommand = {
   readonly scope: ModelSelectionScope
-  readonly model: ModelKey | undefined
+  readonly model: ModelChoice | undefined
   readonly source: ModelSelectionSource
   readonly recent?: boolean
 }
@@ -19,39 +19,23 @@ export type ModelSelectionWriter = {
   readonly sync?: (command: ModelSelectionCommand) => void | Promise<void>
 }
 
-export type ModelPickerItem = {
-  readonly id: string
-  readonly provider: { readonly id: string }
-}
-
-export type ModelPickerController<T extends ModelPickerItem> = {
-  readonly list: () => T[]
-  readonly current: () => T | undefined
-  readonly visible: (item: { modelID: string; providerID: string }) => boolean
-  readonly set: (item: { modelID: string; providerID: string } | undefined, options?: { recent?: boolean }) => void
-}
-
 export type ModelSelectionResult =
-  | { readonly changed: true; readonly model: ModelKey | undefined; readonly source: ModelSelectionSource }
-  | { readonly changed: false; readonly model: ModelKey | undefined; readonly source: ModelSelectionSource; readonly reason: "unchanged" | "pending" }
+  | { readonly changed: true; readonly model: ModelChoice | undefined; readonly source: ModelSelectionSource }
+  | { readonly changed: false; readonly model: ModelChoice | undefined; readonly source: ModelSelectionSource; readonly reason: "unchanged" | "pending" }
 
-export function sameModelKey(left: ModelKey | undefined, right: ModelKey | undefined) {
+export function sameModelKey(left: ModelChoice | undefined, right: ModelChoice | undefined) {
   if (!left || !right) return left === right
-  return left.providerID === right.providerID && left.modelID === right.modelID && left.variant === right.variant
+  return left.providerId === right.providerId && left.modelId === right.modelId && left.variant === right.variant
 }
 
-export function modelKeySignature(model: ModelKey | undefined) {
+export function modelKeySignature(model: ModelChoice | undefined) {
   if (!model) return "none"
-  return `${model.providerID}\n${model.modelID}\n${model.variant ?? ""}`
+  return `${model.providerId}\n${model.modelId}\n${model.variant ?? ""}`
 }
 
-export function modelKeyFromPickerSelection(input: { providerID?: string; modelID?: string } | undefined): ModelKey | undefined {
-  if (!input?.providerID || !input.modelID) return undefined
-  return { providerID: input.providerID, modelID: input.modelID }
-}
-
-export function modelKeyFromPickerItem(input: ModelPickerItem | undefined): ModelKey | undefined {
-  return modelKeyFromPickerSelection(input ? { providerID: input.provider.id, modelID: input.id } : undefined)
+export function modelKeyFromPickerSelection(input: { providerId?: string; modelId?: string } | undefined): ModelChoice | undefined {
+  if (!input?.providerId || !input.modelId) return undefined
+  return { providerId: input.providerId, modelId: input.modelId }
 }
 
 export function createModelSelectionController(writer: ModelSelectionWriter) {
@@ -61,40 +45,6 @@ export function createModelSelectionController(writer: ModelSelectionWriter) {
       return setModelSelectionWithPending(writer, pending, command)
     },
   }
-}
-
-export function createModelSelectionPicker<T extends ModelPickerItem>(input: {
-  readonly list: () => T[]
-  readonly current: () => T | undefined
-  readonly visible: (item: { modelID: string; providerID: string }) => boolean
-  readonly scope: () => ModelSelectionScope
-  readonly write: (model: ModelKey | undefined, options?: { recent?: boolean }) => void | Promise<void>
-  readonly sync?: (command: ModelSelectionCommand) => void | Promise<void>
-}): ModelPickerController<T> {
-  const controller = createModelSelectionController({
-    write: (command) => input.write(command.model, { recent: command.recent }),
-    sync: input.sync,
-  })
-  return {
-    list: input.list,
-    current: input.current,
-    visible: input.visible,
-    set: (item, options) => {
-      void controller.set({
-        scope: input.scope(),
-        source: "ui",
-        model: modelKeyFromPickerSelection(item),
-        recent: options?.recent,
-      })
-    },
-  }
-}
-
-export async function setModelSelection(
-  writer: ModelSelectionWriter,
-  command: ModelSelectionCommand,
-): Promise<ModelSelectionResult> {
-  return await createModelSelectionController(writer).set(command)
 }
 
 async function setModelSelectionWithPending(

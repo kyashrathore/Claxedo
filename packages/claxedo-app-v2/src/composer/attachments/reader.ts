@@ -3,7 +3,7 @@ import { makeEventListener } from "@solid-primitives/event-listener"
 import { machine } from "@/lib/machine"
 import type { AttachmentEvent, AttachmentState, ImagePart } from "../model"
 import { attachmentTransition, randomId } from "../model"
-import { appError } from "../errors"
+import { ServerError } from "@/server"
 import { getCursorPosition } from "../editor/dom"
 import { normalizePaste, pasteMode } from "../editor/paste"
 import type { ComposerKey, ComposerStore } from "../store"
@@ -41,7 +41,7 @@ async function readAttachment(input: ReaderInput, file: File, id: string): Promi
   if (refusal) {
     return {
       type: "failed",
-      error: appError({ class: "invalid", code: "attachment.refused", message: `${refusal.harness} cannot take ${refusal.mime}` }),
+      error: new ServerError({ class: "invalid", code: "attachment.refused", message: `${refusal.harness} cannot take ${refusal.mime}` }),
       refusal,
     }
   }
@@ -52,7 +52,7 @@ async function readAttachment(input: ReaderInput, file: File, id: string): Promi
   } catch (cause) {
     return {
       type: "failed",
-      error: appError({ class: "invalid", code: "attachment.unreadable", message: cause instanceof Error ? cause.message : String(cause) }),
+      error: new ServerError({ class: "invalid", code: "attachment.unreadable", message: cause instanceof Error ? cause.message : String(cause) }),
     }
   }
 }

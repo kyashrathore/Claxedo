@@ -2,6 +2,8 @@ import { createMemo, createSignal, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import type { Server } from "@/server"
 
+export const POPULAR_PROVIDERS: readonly string[] = ["opencode", "opencode-go", "anthropic", "github-copilot", "openai", "google", "openrouter", "vercel"]
+
 export function hydrateConnectedProviderDetails(providers: {
   connected: () => Array<{ id: string }>
   load: (providerId: string) => Promise<void>

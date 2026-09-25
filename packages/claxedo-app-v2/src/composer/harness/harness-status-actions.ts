@@ -1,9 +1,8 @@
+import type { HarnessState } from "@/server"
 import {
-  desiredHarness,
   failedHarness,
   hardFailedHarness,
   harnessHasConfigOptions,
-  type HarnessState,
   type HarnessType,
 } from "./profile"
 import {
@@ -27,7 +26,7 @@ export function createHarnessStatusActions<ScopeInput extends HarnessScopeInput>
 }) {
   const applyStatus = async (scope: string, data: HarnessState, params?: ScopeInput) => {
     const current = input.state(scope)
-    const want = desiredHarness(data) ?? input.state(scope)?.harness
+    const want = data.type ?? input.state(scope)?.harness
     // A failed status for another confirmed selection must not overwrite the
     // current harness. With no confirmed selection, the runtime response is the
     // authority for this hydration.

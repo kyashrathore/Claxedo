@@ -1,9 +1,9 @@
 import { Dialog } from "@/ui"
 import type { useDialog } from "@/ui"
-import type { ModelKey } from "../harness/model-key"
+import type { ModelChoice } from "@/server"
 import { ModelList, type PickerItem } from "./model-list"
 
-export function chooseRecoveryModel(dialog: ReturnType<typeof useDialog>, title: string, candidates: readonly PickerItem[]): Promise<ModelKey | undefined> {
+export function chooseRecoveryModel(dialog: ReturnType<typeof useDialog>, title: string, candidates: readonly PickerItem[]): Promise<ModelChoice | undefined> {
   return new Promise((resolve) => {
     dialog.show(
       () => (

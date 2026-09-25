@@ -1,37 +1,61 @@
-import { ServerError } from "../errors"
-import type { HarnessModel, HarnessOptions, ModelChoice } from "../types"
+import type { HarnessOptionChoice, HarnessOptions, HarnessOptionSelect, HarnessOptionsSource } from "../types"
 import { isRecord } from "../../lib/record"
 
-type ConfigOption = { readonly category?: unknown; readonly type?: unknown; readonly currentValue?: unknown; readonly selectOptions?: unknown; readonly options?: unknown }
-type Choice = { readonly id: string; readonly name: string; readonly connected: boolean; readonly efforts: readonly string[] }
+type ConfigOption = { readonly category: unknown; readonly type: unknown; readonly currentValue: unknown; readonly options: unknown; readonly selectOptions: unknown }
 
-function strings(value: unknown): readonly string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []
+function selectOption(value: unknown): HarnessOptionChoice | undefined {
+  if (!isRecord(value) || typeof value.id !== "string" || typeof value.name !== "string") return undefined
+  return {
+    id: value.id,
+    name: value.name,
+    ...(typeof value.description === "string" ? { description: value.description } : {}),
+    ...(typeof value.connected === "boolean" ? { connected: value.connected } : {}),
+  }
 }
 
-function choiceOf(value: unknown): Choice | undefined {
-  if (!isRecord(value)) return undefined
-  const id = typeof value.id === "string" ? value.id : typeof value.value === "string" ? value.value : undefined
-  if (!id) return undefined
-  return { id, name: typeof value.name === "string" ? value.name : id, connected: value.connected !== false, efforts: strings(value.supportedEffortLevels) }
+function acpChoice(value: unknown): HarnessOptionChoice | undefined {
+  if (!isRecord(value) || typeof value.value !== "string" || typeof value.name !== "string") return undefined
+  return { id: value.value, name: value.name, ...(typeof value.description === "string" ? { description: value.description } : {}) }
 }
 
-function choices(option: ConfigOption | undefined): readonly Choice[] {
-  if (!option) return []
-  const listed = Array.isArray(option.selectOptions) && option.selectOptions.length > 0 ? option.selectOptions : option.options
-  return Array.isArray(listed) ? listed.flatMap((item) => {
-    const choice = choiceOf(item)
-    return choice ? [choice] : []
-  }) : []
+function decoded(values: unknown, decode: (value: unknown) => HarnessOptionChoice | undefined): readonly HarnessOptionChoice[] {
+  return Array.isArray(values) ? values.flatMap((value) => decode(value) ?? []) : []
 }
 
-export function harnessOptionsFromWire(body: unknown, harness: string): HarnessOptions {
-  const options = isRecord(body) ? body.options : undefined
-  if (!Array.isArray(options)) throw new ServerError({ class: "internal", message: `The ${harness} options answered without options` })
-  const select = (category: string) => options.find((item): item is ConfigOption => isRecord(item) && item.category === category && item.type === "select")
-  const modelOption = select("model")
-  const modelOf = (modelId: string): ModelChoice => ({ providerId: harness, modelId })
-  const models: HarnessModel[] = choices(modelOption).map((choice) => ({ model: modelOf(choice.id), name: choice.name, connected: choice.connected, efforts: choice.efforts }))
-  const current = typeof modelOption?.currentValue === "string" ? modelOf(modelOption.currentValue) : undefined
-  return { models, ...(current ? { current } : {}), efforts: choices(select("thought_level")).map((choice) => choice.id) }
+function configOptions(values: readonly unknown[]): readonly ConfigOption[] {
+  return values.filter((value): value is ConfigOption & Record<string, unknown> =>
+    isRecord(value) && typeof value.id === "string" && typeof value.name === "string" && (value.type === "select" || value.type === "boolean"))
+}
+
+// ACP sends `options` (`value`/`name`); the native SDK path sends `selectOptions` (`id`/`name`).
+function select(options: readonly ConfigOption[], category: string): HarnessOptionSelect | undefined {
+  const option = options.find((item) => item.category === category && item.type === "select")
+  if (!option) return undefined
+  const native = decoded(option.selectOptions, selectOption)
+  const choices = native.length > 0 ? native : decoded(option.options, acpChoice)
+  return { choices, ...(typeof option.currentValue === "string" ? { current: option.currentValue } : {}) }
+}
+
+function source(value: unknown): HarnessOptionsSource {
+  return value === "harness" || value === "catalog" ? value : "empty"
+}
+
+export function harnessOptionsFromWire(body: unknown): HarnessOptions {
+  if (!Array.isArray(body) && !isRecord(body)) return { source: "empty", stale: true, offersOptions: false, serviceTiers: [] }
+  const options = configOptions(Array.isArray(body) ? body : Array.isArray(body.options) ? body.options : [])
+  const resolvedModel = isRecord(body) ? selectOption(body.resolvedModel) : undefined
+  // The workspace runtime answers `{options, resolvedModel?}` straight from the harness; only the daemon
+  // route adds its own `source`/`stale`, so an answer declaring neither is live.
+  const live = Array.isArray(body) || (body.source === undefined && body.stale === undefined)
+  const models = select(options, "model")
+  const thoughtLevels = select(options, "thought_level")
+  return {
+    source: live ? "harness" : source(body.source),
+    stale: live ? false : body.stale === true,
+    offersOptions: options.length > 0,
+    ...(models && models.choices.length > 0 ? { models } : {}),
+    ...(thoughtLevels && thoughtLevels.choices.length > 1 ? { thoughtLevels } : {}),
+    serviceTiers: decoded(options.find((item) => item.category === "service_tier" && item.type === "select")?.selectOptions, selectOption),
+    ...(resolvedModel ? { resolvedModel } : {}),
+  }
 }

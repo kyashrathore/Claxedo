@@ -1,14 +1,8 @@
-import {
-  decodeHarnessState,
-  decodeSessionConfig,
-  harnessHasConfigOptions,
-  type HarnessState,
-  type HarnessType,
-} from "./profile"
+import { harnessHasConfigOptions, type HarnessType } from "./profile"
 import type { HarnessStoreState } from "./store-state"
 import type { DraftDefault } from "./draft-defaults"
 import type { DraftDefaultApplication } from "./draft-default-policy"
-import type { PlacementId, PlacementKind, SessionRef } from "@/server"
+import type { HarnessState, PlacementId, PlacementKind, SessionConfig, SessionRef } from "@/server"
 import {
   harnessStateFromSessionConfig,
   shouldHydrateDraftFromHarnessStatus,
@@ -22,7 +16,7 @@ export type HarnessHydratorCache<ScopeInput extends HarnessScopeInput> = {
   getPending(scope: string): Promise<void> | undefined
   setPending(scope: string, value: Promise<void>): void
   removePending(scope: string, value: Promise<void>): void
-  fetchSessionConfig(params: ScopeInput, run: () => Promise<unknown>): Promise<unknown>
+  fetchSessionConfig(params: ScopeInput, run: () => Promise<SessionConfig | undefined>): Promise<SessionConfig | undefined>
 }
 
 export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(input: {
@@ -41,8 +35,8 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
   hasConfigOptions?(type: HarnessType): Promise<boolean>
   runtime: {
     placementKind(placementId: PlacementId): PlacementKind | undefined
-    folderHarness(placementId: PlacementId): Promise<Response>
-    sessionConfig(ref: SessionRef): Promise<Response>
+    folderHarness(placementId: PlacementId): Promise<HarnessState | undefined>
+    sessionConfig(ref: SessionRef): Promise<SessionConfig | undefined>
   }
   cache: HarnessHydratorCache<ScopeInput>
 }) {
@@ -66,19 +60,18 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
     if (sessionId && sessionId !== "new") {
       const ref = params.sessionRef
       if (!ref) return undefined
-      const config = await input.cache.fetchSessionConfig(params, async () => {
-        const res = await input.runtime.sessionConfig(ref)
-        if (!res.ok) return null
-        return await res.json().catch(() => null)
+      const config = await input.cache.fetchSessionConfig(params, () => input.runtime.sessionConfig(ref)).catch((error: unknown) => {
+        console.warn(`The harness config of session ${ref.sessionId} could not be read`, error)
+        return null
       })
-      const hit = harnessStateFromSessionConfig(decodeSessionConfig(config))
+      const hit = config ? harnessStateFromSessionConfig(config) : undefined
       if (hit) return hit
       // A successful object response is not a transport retry. If it violates
       // the existing-session config contract by omitting harness identity, keep
       // the harness the session's row names visible and settle as unavailable
       // instead of polling forever or exposing the seeded OpenCode selection.
       const refType = params.sessionHarness
-      if (refType && config !== null && typeof config === "object" && !Array.isArray(config)) {
+      if (refType && config) {
         return {
           type: refType,
           activeType: refType,
@@ -93,9 +86,10 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
       // an unrelated OpenCode selection after a transient config failure.
       return undefined
     }
-    const res = await input.runtime.folderHarness(placementId)
-    if (!res.ok) return undefined
-    return decodeHarnessState(await res.json())
+    return await input.runtime.folderHarness(placementId).catch((error: unknown) => {
+      console.warn(`The harness status of placement ${placementId} could not be read`, error)
+      return undefined
+    })
   }
 
   const hydrate = async (scope: string, params?: ScopeInput) => {
@@ -133,7 +127,7 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
           return
         }
         if (shouldHydrateDraftFromHarnessStatus({ placementKind: input.runtime.placementKind(placementId) })) {
-          const data = await status(params).catch(() => undefined)
+          const data = await status(params)
           if (!active()) return
           if (data) {
             await applyAndMarkSeen(scope, data, params, key, active)
@@ -151,7 +145,7 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
         if (active()) input.cache.setSeen(scope, key)
         return
       }
-      const data = await status(params).catch(() => undefined)
+      const data = await status(params)
       if (!active()) return
       if (!data) {
         // A missing/failed config is not evidence that the existing session

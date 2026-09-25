@@ -66,34 +66,6 @@ export function getCursorPosition(parent: HTMLElement): number {
   return getTextLength(preCaretRange.cloneContents())
 }
 
-export function scrollPromptCursorIntoView(input: {
-  editor: HTMLElement
-  container: HTMLElement
-  length: number
-  bottomInset: number
-}) {
-  const selection = window.getSelection()
-  if (!selection || selection.rangeCount === 0) return
-  const range = selection.getRangeAt(0)
-  if (!input.editor.contains(range.startContainer)) return
-  if (getCursorPosition(input.editor) >= input.length) {
-    input.container.scrollTop = input.container.scrollHeight
-    return
-  }
-  const rect = range.getClientRects().item(0) ?? range.getBoundingClientRect()
-  if (!rect.height) return
-  const containerRect = input.container.getBoundingClientRect()
-  const top = rect.top - containerRect.top + input.container.scrollTop
-  const bottom = rect.bottom - containerRect.top + input.container.scrollTop
-  if (top < input.container.scrollTop + 12) {
-    input.container.scrollTop = Math.max(0, top - 12)
-    return
-  }
-  if (bottom > input.container.scrollTop + input.container.clientHeight - input.bottomInset) {
-    input.container.scrollTop = bottom - input.container.clientHeight + input.bottomInset
-  }
-}
-
 function placeCaret(range: Range) {
   range.collapse(true)
   const selection = window.getSelection()
@@ -146,30 +118,3 @@ export function setCursorPosition(parent: HTMLElement, position: number) {
   caretAtEnd(parent)
 }
 
-export function setRangeEdge(parent: HTMLElement, range: Range, edge: "start" | "end", offset: number) {
-  let remaining = offset
-  const nodes = Array.from(parent.childNodes)
-
-  for (const node of nodes) {
-    const length = getNodeLength(node)
-    const isText = node.nodeType === Node.TEXT_NODE
-    const isPill = isPillNode(node)
-    const isBreak = isBreakNode(node)
-
-    if (isText && remaining <= length) {
-      if (edge === "start") range.setStart(node, remaining)
-      if (edge === "end") range.setEnd(node, remaining)
-      return
-    }
-
-    if ((isPill || isBreak) && remaining <= length) {
-      if (edge === "start" && remaining === 0) range.setStartBefore(node)
-      if (edge === "start" && remaining > 0) range.setStartAfter(node)
-      if (edge === "end" && remaining === 0) range.setEndBefore(node)
-      if (edge === "end" && remaining > 0) range.setEndAfter(node)
-      return
-    }
-
-    remaining -= length
-  }
-}

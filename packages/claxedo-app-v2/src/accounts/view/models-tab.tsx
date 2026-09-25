@@ -1,5 +1,6 @@
 import { createMemo, createSignal, For, Show } from "solid-js"
-import { useModelVisibility, type ModelRef } from "@/composer"
+import { useModelVisibility } from "@/composer"
+import type { ModelChoice } from "@/server"
 import { SettingsEmpty, SettingsList } from "@/settings"
 import { Switch, Tag, ProviderIcon } from "@/ui"
 import { catalogNeedsSearch, catalogProviders, MODELS_PREVIEW_COUNT, usesInlineSearch, visibleModels } from "../catalog-rules"
@@ -7,7 +8,7 @@ import { useAccountsText } from "../i18n"
 import type { ModelItem, ModelSource, SourceGroup } from "../model-sources"
 import { SearchField } from "./search-field"
 
-export const modelKeyOf = (item: ModelItem): ModelRef => ({ providerId: item.provider.id, modelId: item.id })
+export const modelKeyOf = (item: ModelItem): ModelChoice => ({ providerId: item.provider.id, modelId: item.id })
 
 export function groupContext(group: SourceGroup, item: ModelItem) {
   return { defaults: group.defaults, group: group.groupKey, ...(item.connected === undefined ? {} : { connected: item.connected }) }

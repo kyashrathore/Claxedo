@@ -24,7 +24,7 @@ function harnessSelectionOf(reference: HarnessReference): HarnessSelection | und
 function choiceOf(configuration: ConfigurationDraft): DraftHarnessChoice {
   return {
     harness: configuration.harness ? harnessSelectionOf(configuration.harness) : undefined,
-    model: configuration.model ?? undefined,
+    model: configuration.model ? { providerId: configuration.model.providerID, modelId: configuration.model.modelID } : undefined,
     effort: configuration.effort ?? undefined,
   }
 }
@@ -32,7 +32,7 @@ function choiceOf(configuration: ConfigurationDraft): DraftHarnessChoice {
 function configurationOf(choice: DraftHarnessChoice): ConfigurationDraft {
   return {
     harness: choice.harness ? harnessReferenceOf(choice.harness) : null,
-    model: choice.model ? { providerID: choice.model.providerID, modelID: choice.model.modelID } : null,
+    model: choice.model ? { providerID: choice.model.providerId, modelID: choice.model.modelId } : null,
     effort: choice.effort ?? null,
   }
 }

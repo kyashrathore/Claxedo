@@ -140,52 +140,6 @@ export const PERMISSION_MECHANISMS: Record<BuiltinHarnessId, PermissionMechanism
  * surface nobody has looked for yet cannot be filed under "has nothing".
  */
 
-/**
- * The Claude Agent SDK's `PermissionMode`, mirrored structurally so this package
- * does not depend on the SDK.
- *
- * `packages/agent-sdk-runtime/src/harnesses/claude/permission-mode-parity.test.ts`
- * asserts at type level that this stays identical to the SDK's own union, so an
- * SDK upgrade that adds or renames a mode fails to compile rather than leaving
- * this list stale.
- */
-export type ClaudeSdkPermissionMode =
-  | "default"
-  | "acceptEdits"
-  | "bypassPermissions"
-  | "plan"
-  | "dontAsk"
-  /**
-   * "Use a model classifier to approve/deny permission prompts" — the SDK's own
-   * words (`sdk.d.ts:2063`). Distinct from `acceptEdits`, which covers edits only
-   * and still prompts for Bash and MCP. This is the rung Claxedo's Auto resolves
-   * to on `claude-sdk`.
-   */
-  | "auto"
-
-/** Codex `approval_policy` values (JSON-RPC, untyped upstream). */
-export type CodexApprovalPolicy = "untrusted" | "on-request" | "never"
-
-/** Codex `sandbox_mode` values (JSON-RPC, untyped upstream). */
-export type CodexSandboxMode = "read-only" | "workspace-write" | "danger-full-access"
-
-/**
- * The two `LocalAgentOptions` fields governing what a local Cursor agent may do
- * without asking. Both are plain booleans upstream; naming the pair keeps them
- * together, because they are independent and a UI that sets one without stating
- * the other describes half a policy.
- */
-export type CursorLocalPermissionOptions = {
-  /** `sandboxOptions.enabled` — run tool calls inside Cursor's sandbox. */
-  sandbox: boolean
-  /**
-   * `autoReview` — ask for the classifier-backed Auto-review mode. Honoured only
-   * if the connected backend has that feature enabled, and the SDK reports no way
-   * to find out whether it did.
-   */
-  autoReview: boolean
-}
-
 export const HARNESS_LABELS: Record<BuiltinHarnessId, string> = {
   claude: "Claude (SDK)",
   codex: "Codex (SDK)",

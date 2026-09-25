@@ -22,25 +22,6 @@ export function createPromptPill(part: FilePart | AgentPart) {
   return pill
 }
 
-export function isNormalizedPromptEditor(editor: HTMLElement) {
-  return Array.from(editor.childNodes).every((node) => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      const text = node.textContent ?? ""
-      if (!text.includes("​")) return true
-      if (text !== "​") return false
-
-      const prev = node.previousSibling
-      const next = node.nextSibling
-      return isBreakNode(prev) && !next
-    }
-    const el = asElement(node)
-    if (!el) return false
-    if (el.dataset.type === "file") return !!el.dataset.path && hasValidSelectionDataset(el)
-    if (el.dataset.type === "agent") return !!el.dataset.name
-    return el.tagName === "BR"
-  })
-}
-
 export function renderPromptEditor(editor: HTMLElement, parts: Prompt) {
   while (editor.firstChild) editor.removeChild(editor.firstChild)
   for (const part of parts) {
@@ -107,12 +88,6 @@ export function parsePromptEditor(editor: HTMLElement): Prompt {
   })
   flushText(parser)
   return parser.parts.length === 0 ? emptyPrompt() : parser.parts
-}
-
-function hasValidSelectionDataset(file: HTMLElement) {
-  const values = fileSelectionValues(file)
-  if (values.every((value) => value === undefined)) return true
-  return values.every((value) => value !== undefined && value !== "" && Number.isFinite(Number(value)))
 }
 
 function readFileSelection(file: HTMLElement): FileSelection | undefined {

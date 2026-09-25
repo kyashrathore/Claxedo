@@ -1,5 +1,5 @@
 import { machine } from "@/lib/machine"
-import { asAppError } from "@/composer"
+import { toAppError } from "@/server"
 import type { DockActionEvent, DockActionState } from "./model"
 import { dockActionTransition } from "./model"
 
@@ -13,7 +13,7 @@ export function createDockAction<Action extends string>() {
       state.send({ type: "finished" })
       return true
     } catch (error) {
-      state.send({ type: "failed", action, error: asAppError(error) })
+      state.send({ type: "failed", action, error: toAppError(error) })
       return false
     }
   }

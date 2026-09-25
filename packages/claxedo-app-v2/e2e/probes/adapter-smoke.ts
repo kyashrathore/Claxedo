@@ -130,10 +130,11 @@ async function turnChecks(probe: Probe, placement: Placement) {
   const { server, log, stack } = probe
   await check("harness options: pi", async () => {
     const options = await server.queryClient.fetchQuery(server.queries.harnesses.options(placement.id, "pi"))
-    const connected = options.models.filter((item) => item.connected).length
+    const models = options.models?.choices ?? []
+    const connected = models.filter((item) => item.connected !== false).length
     const logins = await server.queryClient.fetchQuery(server.queries.harnesses.logins())
     const signedIn = logins.map((login) => `${login.harness}:${login.signedIn ? "in" : "out"}`).join(",")
-    return `${options.models.length} model(s), ${connected} connected, current=${options.current?.modelId}, efforts=${options.efforts.join(",")}; logins ${signedIn}`
+    return `${models.length} model(s), ${connected} connected, current=${options.models?.current}, efforts=${(options.thoughtLevels?.choices ?? []).map((level) => level.id).join(",")}; logins ${signedIn}`
   })
   const row = await server.sessions.create({ placementId: placement.id, harness: SCRIPTED_ACP_HARNESS.id, title: "Adapter smoke" })
   const ref = row.ref
