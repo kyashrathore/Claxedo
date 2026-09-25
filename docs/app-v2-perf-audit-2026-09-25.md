@@ -15,6 +15,41 @@ v2 is cheaper than v1 on almost every count: idle network 0 vs 10–25 requests 
 
 The ranked list, the suspected items, the regression gates and the per-action baseline are at the end.
 
+## Isolation invariants (regression gate)
+
+Measured on real harness turns (Claude Code, "Default (recommended)") in new sessions named "perf-audit …", created on :4480 and :4481 and archived afterwards so the owner's rail stays as it was. Instruments:
+
+- A document `MutationObserver` that classifies each mutation by region: rail own row, other rail rows, rail chrome, composer (`[data-component=composer-frame]`), dock area (the rest of `[data-component=session-prompt-dock]`), streaming message (`[data-message-id]` inside the timeline), timeline chrome, other session-screen parts, workspace panel, overlays, and body-level nodes.
+- Style-invalidation tracking with each invalidated node resolved to its region.
+- A count of Solid computations re-run per owner component. The dev build's `runComputation` is patched in the browser only, through a Playwright route on the Vite deps chunk, and each run is tagged with its nearest three component owners.
+- A document-level observer that logs when the composer, todo dock, question dock or permission dock is added or removed.
+
+"Per delta" divides by the `message.part.delta` frames counted on the event stream.
+
+| # | Invariant | v2 | Evidence (v2) | v1 |
+|---|---|---|---|---|
+| 1 | A background session's status change touches only its own rail row | **DOM PASS, compute FAIL** | Background turn in a new session (405 deltas, 28.7 s) while "Greeting" is open: 1 mutation in total, on `rail:ownRow`. 159 computations ran elsewhere: other rail rows' owners (`NavigationRow` 35, `ProjectBlock<For>` 16, `Row` 16, `ProjectRows` 10), the open session's composer (`Composer` 6, `AgentHarnessSelector` 4) and shell providers (`SessionStoresProvider` 8, `RoutingProvider`, `PanelProvider`, `CenterHeader`, `SettingsSidebar`). The background deltas also woke **240 animation frames and 442 style recalcs** with nothing visible changing (see the coalescer finding). | DOM PASS (1 row mutation, plus 2 in its kept-mounted hidden transcript); compute FAIL (725: rail 300, composer 215); 2,206 style recalcs; 38 requests |
+| 2 | The session composer never re-renders while streaming | **PASS per delta; 7 mutations per turn** | 0 composer mutations per delta across 772 deltas. The 7 per turn are the submit button switching to Stop at the start and back at the end (`disabled`, `data-disabled`, `icon`, `aria-label`, `data-icon`, `use href`). 33 composer computations per turn (`Composer<Show>` 17, `AgentHarnessSelector` 8), driven by status events, not deltas. `SessionHealthPeek` inside the composer polls `agent-config/harness` every 20 s during a turn and on every working-state change (`src/composer/view/health-peek.tsx:19-36`): 4–6 requests per turn. | Same 8 button mutations; 3,196 `PromptInput` computations per turn |
+| 3 | A dock appearing or leaving re-renders only the dock | **FAIL** | Todo dock: added alone (PASS). **Question dock: the composer and the todo dock are removed from the DOM when it appears and re-mounted when it is answered** (dock log: `23940 composer removed, todoDock removed, questionDock added` … `27263 composer added, todoDock added`). Cause: `src/session/view/session-screen.tsx:151` wraps the todo dock and the whole `Composer` in `<Show when={props.view.requests().length === 0}>`. The re-mount re-fetches `agent-config/connections` and `permission-mode` and re-runs 316 composer computations. A permission request takes the same path. The todo dock also shifts the composer wrapper through `margin-top: -lift()` (`session-screen.tsx:80`), which is a style write outside the dock. | Same FAIL (composer removed and re-added at the question) |
+| 4 | Points 2 and 3 hold with the floating composer (panel maximized) | **PASS for the composer; FAIL for the hidden transcript** | Floating composer: the same 7 turn-edge mutations and 57 computations. The collapsed transcript behind it still runs the virtualizer per delta: 166 timeline-chrome style writes (row translate and bottom spacer, 83 each) and 887 `MessageTimeline` + 383 `hasText` computations for content nobody can see. | Composer PASS by DOM; 3,527 composer computations; hidden transcript 188 chrome writes |
+| 5 | While streaming, only the streaming parts re-render; all compute relates to them | **FAIL** | Per delta (run 3, 772 deltas, panel open on Files + Review, Greeting, Local changes review, Tasks and Marketplace visited first): see the breakdown below. | FAIL, and 13× the computations |
+
+Invariant 5 breakdown, v2 run 3 (v1 run 2 in brackets):
+
+| Region | Mutations per turn | Per delta | Computations per turn | Note |
+|---|---|---|---|---|
+| Streaming message | 7,076 [16,153] | 9.2 [22.6] | 7,567 transcript [≈120,000] | Expected work |
+| Timeline chrome | 1,387 [1,279] | **1.8** [1.8] | – | Row `style` 695, **scroll thumb `style` 448**, bottom spacer 234: geometry written on each delta. The thumb is invisible unless the reader scrolls or hovers. |
+| Body-level Mermaid scratch | 1,805 [1,383] | 2.3 | – | One Mermaid render once the fence completes (gated in `src/transcript/markdown.tsx:350`, correct), drawn in a scratch SVG in `body`. It is the turn's one long task: **62–87 ms** in `mermaid.core` (LoAF), in all 3 runs. |
+| Rail | 1 [3] | 0 | 142 [≈1,000] | The DOM change is the own row's title and status. Computations re-run for every row's owner on each status or update event. |
+| Composer | 7 [8] | 0 | 33 [3,196] | Turn edges only |
+| Workspace panel (Files + Review open) | 5 [9] | 0 | 126 | Turn end: `statusChanged → idle` invalidates the files and git queries (`src/server/queries.ts:67-68`), so the panel re-fetches `wr/file`, `git/status`, `diff/refs`, `diff/vcs` and `diff/targets` **twice** (10 requests) after a read-only turn, and the tree re-runs `KindMark` 48 and `FileTreeNode` 24. |
+| Session screen outside the timeline | 10 [11] | 0 | – | Row and key counters, the sr-only title |
+| Ownerless (`createRoot`) | – | – | 518 | `hasText` memo per part, `createRoot(() => createMemo(() => !!part.text?.trim()))`, never disposed (`src/session/view/timeline/message-timeline.data.ts:491`). It trims the whole growing text on every delta. |
+| Background session stores, Tasks, Marketplace, settings | 0 | 0 | 0 | PASS: nothing visited-and-left re-rendered or recomputed |
+
+Style: 6,285 style recalcs for 772 deltas (8 per delta). Invalidated nodes resolve to the streaming message (323), the timeline chrome (6), the panel (1) and nodes removed before resolution (269). Requests during the turn: 18 in v2, 129 in v1, whose `queue` is polled 48–55 times per turn.
+
 ## Method
 
 - One headless Chromium (Playwright 1.61.1, `chromium-headless-shell`) per run, viewport 1280×800, fresh context per run. Identical script for v1 and v2, alternating v2/v1, 3 runs each unless stated.
