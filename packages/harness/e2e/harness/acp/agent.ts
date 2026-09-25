@@ -27,11 +27,9 @@ import { playScript } from "./turn"
 import { recordAcpRequest } from "./requests"
 import { captureAcpPrompt } from "./capture"
 import { deliveredAcpPrompt } from "./delivery-fault"
+import { knowsSession, rememberSession } from "./sessions"
 
 const red = process.env[ACP_RED_ENV] === "1"
-
-/** A stdio agent forgets its sessions when its process restarts; the websocket server keeps them across connections, as a remote agent does. */
-const knownSessions = new Set<string>()
 
 function promptText(prompt: ContentBlock[]) {
   return prompt
@@ -79,7 +77,7 @@ export class ScriptedAgent implements Agent {
     if (this.record) await recordAcpRequest(this.dir, "session/new", params, this.headers)
     if (process.env.SCRIPTED_ACP_HANG_NEW === "1") await new Promise<never>(() => {})
     const sessionId = `scripted-${randomUUID()}`
-    knownSessions.add(sessionId)
+    rememberSession(this.dir, sessionId)
     const mcp = params.mcpServers.find((server) => server.name === "scripted")
     if (mcp && "url" in mcp && typeof mcp.url === "string") this.mcpUrls.set(sessionId, mcp.url)
     if (this.startupQuestion) await this.connection.unstable_createElicitation({ sessionId, mode: "form", message: "Startup question",
@@ -96,19 +94,21 @@ export class ScriptedAgent implements Agent {
 
   async loadSession(params: LoadSessionRequest) {
     if (this.record) await recordAcpRequest(this.dir, "session/load", params, this.headers)
-    if (!knownSessions.has(params.sessionId)) throw RequestError.resourceNotFound(params.sessionId)
+    if (!knowsSession(this.dir, params.sessionId)) throw RequestError.resourceNotFound(params.sessionId)
     return { modes: { currentModeId: "default", availableModes: [{ id: "default", name: "Default", description: "Scripted replies" }] } }
   }
 
   async resumeSession(params: ResumeSessionRequest) {
     if (this.record) await recordAcpRequest(this.dir, "session/resume", params, this.headers)
-    if (!knownSessions.has(params.sessionId)) throw RequestError.resourceNotFound(params.sessionId)
+    if (!knowsSession(this.dir, params.sessionId)) throw RequestError.resourceNotFound(params.sessionId)
     return {}
   }
 
   async unstable_forkSession(params: ForkSessionRequest) {
     if (this.record) await recordAcpRequest(this.dir, "session/fork", params, this.headers)
-    return { sessionId: `scripted-${randomUUID()}` }
+    const sessionId = `scripted-${randomUUID()}`
+    rememberSession(this.dir, sessionId)
+    return { sessionId }
   }
 
   authenticate() {
