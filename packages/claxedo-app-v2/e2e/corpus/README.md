@@ -48,7 +48,7 @@ The corpus is the proof that the transcript moved without changing: every case r
   - `scroll` to `top` or `bottom`, `toggleFold` of the n-th Worked header, `reload`;
   - `release` a live turn's `hold`, wait for its `ready` text and a DOM that has stopped changing, and, with `settles`, for the session to go idle;
   - `markRows` remembers the turn rows on screen, and `rowsKept` asserts they are still the same elements;
-  - `detachedNodes` asserts, after a forced collection, that at most `max` DOM nodes live outside the document. Today's app leaks the controls it builds for a streaming table, so it records no budget.
+  - `markDetached` counts, after a forced collection, the DOM nodes that live outside the document, and `detachedGrowth` asserts that count grew by at most `max` since. Today's app leaks the controls it builds for a streaming table, so it records no budget.
 - `invariant` is the sentence the case protects, so a failing comparison reads as a behavior, not a pixel.
 
 ## Running

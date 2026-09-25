@@ -59,8 +59,9 @@ export async function expectRowsKept(app: Page) {
   expect(rows.kept, "every turn row marked before the deltas is the same element after them").toBe(rows.marked)
 }
 
-export async function expectDetachedNodesAtMost(app: Page, appChoice: AppChoice, max: number) {
-  if (appChoice === "v1") return
+const detachedMarks = new WeakMap<Page, number>()
+
+async function detachedNodes(app: Page) {
   const cdp = await app.context().newCDPSession(app)
   try {
     await cdp.send("HeapProfiler.collectGarbage")
@@ -71,8 +72,20 @@ export async function expectDetachedNodesAtMost(app: Page, appChoice: AppChoice,
       while (walker.nextNode()) count += 1
       return count
     })
-    expect(nodes - connected, "DOM nodes that outlive the streamed deltas").toBeLessThanOrEqual(max)
+    return nodes - connected
   } finally {
     await cdp.detach()
   }
+}
+
+export async function markDetachedNodes(app: Page, appChoice: AppChoice) {
+  if (appChoice === "v1") return
+  detachedMarks.set(app, await detachedNodes(app))
+}
+
+export async function expectDetachedGrowthAtMost(app: Page, appChoice: AppChoice, max: number) {
+  if (appChoice === "v1") return
+  const mark = detachedMarks.get(app)
+  if (mark === undefined) throw new Error("detachedGrowth needs a markDetached interaction before it")
+  expect((await detachedNodes(app)) - mark, "DOM nodes that outlive the streamed deltas").toBeLessThanOrEqual(max)
 }

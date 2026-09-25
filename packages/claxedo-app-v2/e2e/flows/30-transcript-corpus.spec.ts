@@ -2,7 +2,7 @@ import fs from "node:fs"
 import path from "node:path"
 import type { Locator, Page } from "@playwright/test"
 import type { CaseInteraction, CaseTurn, CorpusCase } from "../corpus/case"
-import { expectDetachedNodesAtMost, expectRowsKept, markRows, quietDom, releaseHold, startLiveTurn } from "../corpus/live"
+import { expectDetachedGrowthAtMost, expectRowsKept, markDetachedNodes, markRows, quietDom, releaseHold, startLiveTurn } from "../corpus/live"
 import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, type ClaxedoApi, type MessageRow, type Stack } from "../harness"
 
 const CASES_DIR = path.join(import.meta.dirname, "..", "corpus", "cases")
@@ -144,8 +144,11 @@ async function interact(live: { stack: Stack; api: ClaxedoApi; target: Target; a
     case "rowsKept":
       await expectRowsKept(app)
       return
-    case "detachedNodes":
-      await expectDetachedNodesAtMost(app, stack.app, interaction.max)
+    case "markDetached":
+      await markDetachedNodes(app, stack.app)
+      return
+    case "detachedGrowth":
+      await expectDetachedGrowthAtMost(app, stack.app, interaction.max)
       return
     case "scroll":
       if (typeof interaction.to !== "string") throw new Error("scrolling to a turn is not replayed yet")
