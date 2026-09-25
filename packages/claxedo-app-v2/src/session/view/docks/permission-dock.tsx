@@ -62,24 +62,24 @@ function PermissionFacts(props: { facts: Facts; patterns: readonly string[] }) {
   return (
     <>
       <Show when={props.facts.command}>
-        {(value) => <pre data-slot="permission-command" class="whitespace-pre-wrap break-all text-12-regular text-text-base">{value()}</pre>}
+        {(value) => <pre class="whitespace-pre-wrap break-all text-12-regular text-text-base">{value()}</pre>}
       </Show>
       <Show when={props.facts.reason}>
-        {(value) => <div data-slot="permission-reason" class="text-12-regular text-text-base">{value()}</div>}
+        {(value) => <div class="text-12-regular text-text-base">{value()}</div>}
       </Show>
       <Show when={props.facts.directory}>
         {(value) => (
-          <div data-slot="permission-directory" class="text-12-regular text-text-base">
+          <div class="text-12-regular text-text-base">
             {t("sessionScreen.permission.workingDirectory")}: <code class="break-all">{value()}</code>
           </div>
         )}
       </Show>
       <For each={props.facts.agentText}>
-        {(value) => <pre data-slot="permission-agent-text" class="whitespace-pre-wrap break-all text-12-regular text-text-base">{value}</pre>}
+        {(value) => <pre class="whitespace-pre-wrap break-all text-12-regular text-text-base">{value}</pre>}
       </For>
       <Show when={props.facts.details}>
         {(value) => (
-          <details data-slot="permission-details">
+          <details>
             <summary>{t("sessionScreen.permission.details")}</summary>
             <pre class="whitespace-pre-wrap break-all text-12-regular text-text-base">{value()}</pre>
           </details>
@@ -87,7 +87,7 @@ function PermissionFacts(props: { facts: Facts; patterns: readonly string[] }) {
       </Show>
       <Show when={props.patterns.length > 0}>
         <div data-slot="permission-row">
-          <span data-slot="permission-spacer" aria-hidden="true" />
+          <span aria-hidden="true" />
           <div data-slot="permission-patterns">
             <For each={props.patterns}>{(pattern) => <code class="text-12-regular text-text-base break-all">{pattern}</code>}</For>
           </div>
@@ -173,7 +173,7 @@ export function PermissionDock(props: {
           <span data-slot="permission-icon">
             <Icon name="warning" size="normal" />
           </span>
-          <div data-slot="permission-header-title" class="ui-permission-header-title">{t("sessionScreen.permission.title")}</div>
+          <div class="ui-permission-header-title">{t("sessionScreen.permission.title")}</div>
         </div>
       }
       footer={
@@ -192,8 +192,8 @@ export function PermissionDock(props: {
       </Show>
       <Show when={hint()}>
         <div data-slot="permission-row">
-          <span data-slot="permission-spacer" aria-hidden="true" />
-          <div data-slot="permission-hint" class="ui-permission-hint">{hint()}</div>
+          <span aria-hidden="true" />
+          <div class="ui-permission-hint">{hint()}</div>
         </div>
       </Show>
       <PermissionFacts facts={facts()} patterns={props.request.patterns} />

@@ -5,12 +5,11 @@ export function QuestionMark(props: { multi: boolean; picked: boolean; onClick?:
   return (
     <span data-slot="question-option-check" aria-hidden="true" onClick={props.onClick}>
       <span
-        data-slot="question-option-box"
         class="ui-question-option-box"
         data-type={props.multi ? "checkbox" : "radio"}
         data-picked={props.picked}
       >
-        <Show when={props.multi} fallback={<span data-slot="question-option-radio-dot" class="ui-question-option-radio-dot" />}>
+        <Show when={props.multi} fallback={<span class="ui-question-option-radio-dot" />}>
           <Icon name="check-small" size="small" />
         </Show>
       </span>
