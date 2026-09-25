@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { randomUUID } from "node:crypto"
+import { spawn } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
 import { Readable, Writable } from "node:stream"
@@ -61,7 +62,8 @@ export class ScriptedAgent implements Agent {
   private readonly goalRequest: ReturnType<typeof scriptedGoals>
 
   constructor(private readonly connection: AgentSideConnection, private readonly dir: string, private readonly headers: Record<string, string> = {}, private readonly record = true,
-    private readonly restoreMode: "load" | "resume" = "resume", private readonly startupQuestion = process.env.SCRIPTED_ACP_START_QUESTION === "1") {
+    private readonly restoreMode: "load" | "resume" = "resume", private readonly startupQuestion = process.env.SCRIPTED_ACP_START_QUESTION === "1",
+    private readonly groups: readonly string[] = process.env.SCRIPTED_ACP_GROUPS?.split(",") ?? ["agents", "goals", "health"]) {
     this.goalRequest = scriptedGoals(dir)
   }
 
@@ -70,7 +72,12 @@ export class ScriptedAgent implements Agent {
       protocolVersion: PROTOCOL_VERSION,
       agentCapabilities: { loadSession: true, sessionCapabilities: { fork: {}, ...(this.restoreMode === "resume" ? { resume: {} } : {}) }, promptCapabilities: { image: true, embeddedContext: true }, mcpCapabilities: { http: true, sse: true } },
       authMethods: [],
-      _meta: { jetbrains: { air: { version: 1, capabilities: ["nativeSubagentSessions"] } }, goal: scriptedGoalExtension },
+      _meta: { jetbrains: { air: { version: 1, capabilities: ["nativeSubagentSessions"] } },
+        ...(this.groups.includes("goals") ? { goal: scriptedGoalExtension } : {}),
+        claxedo: { version: 1, health: this.groups.includes("health"), methods: [
+          ...(this.groups.includes("steer") ? ["session/steer"] : []),
+          ...(this.groups.includes("agents") ? ["session/agents/list"] : []),
+        ] } },
     }
   }
 
@@ -158,6 +165,12 @@ export class ScriptedAgent implements Agent {
   }
 
   extMethod(method: string, params: Record<string, unknown>) {
+    if (method === "session/steer" && this.groups.includes("steer")) return { ok: true }
+    if (method === "session/agents/list" && this.groups.includes("agents")) return { agents: [
+      { name: "default", description: "Default", mode: "primary" },
+      { name: "review", description: "Review", mode: "primary" },
+    ] }
+    if (!this.groups.includes("goals")) throw RequestError.methodNotFound(method)
     return this.goalRequest(method, params)
   }
 }
@@ -165,6 +178,12 @@ export class ScriptedAgent implements Agent {
 if (import.meta.main) {
   const scriptDir = process.env[ACP_SCRIPT_DIR_ENV]
   if (!scriptDir) throw new Error(`${ACP_SCRIPT_DIR_ENV} is not set`)
+  if (process.env.SCRIPTED_ACP_RESISTANT_CHILD === "1") {
+    const child = spawn(process.execPath, ["-e", "process.on('SIGTERM', () => {}); process.send('ready'); setInterval(() => {}, 1000)"],
+      { stdio: ["ignore", "ignore", "ignore", "ipc"] })
+    await new Promise<void>((resolve) => child.once("message", () => resolve()))
+    fs.writeFileSync(path.join(scriptDir, "writer.pid"), String(child.pid))
+  }
   fs.writeFileSync(path.join(scriptDir, "agent.pid"), String(process.pid))
   const stream = ndJsonStream(
     Writable.toWeb(process.stdout) as WritableStream<Uint8Array>,

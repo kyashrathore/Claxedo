@@ -18,6 +18,12 @@ import { acpObserveSubagent, acpReceiver, acpUnknown, acpUpdate } from "./events
 import { acpConfig } from "./config"
 import { supportsAcpSubagents } from "./extensions/subagents"
 import { AcpDraftProbes } from "./probe"
+import { acpGroups } from "./extensions/groups"
+import { acpGoalOperations } from "./extensions/goals"
+import { acpSteerOperations } from "./extensions/steer"
+import { acpAgentOperations } from "./extensions/agents"
+import { acpHealthOperations } from "./extensions/health"
+import { acpMcpServers } from "./projection"
 
 export type AcpMcpFilter = (input: {
   servers: readonly ProjectedMcpServer[]
@@ -52,20 +58,13 @@ export class AcpTransport implements HarnessTransport {
   private readonly startingAborts = new Set<AbortController>()
   private readonly probes: AcpDraftProbes
   private disposed = false
-  readonly health = {
-    connection: (_directory: string, sessionId?: string) => ({ state: sessionId && !this.entries.has(sessionId) ? "disconnected" as const : "ready" as const, processes: [] }),
-    runtime: (_directory: string, sessionId?: string) => ({ status: sessionId && !this.entries.has(sessionId) ? "unavailable" as const : "ok" as const }),
-  }
+  private readonly healthOperations = acpHealthOperations((sessionId) => this.entries.has(sessionId))
   private readonly commandOperations = { list: async (target: ConfigTarget) => "session" in target
     ? this.entry(target.session).commands : this.probes.commands(target.draft) }
-  private readonly agentOperations = { list: async (target: ConfigTarget) => {
-    const options = "session" in target ? this.entry(target.session).options : await this.probes.options(target.draft, "probe")
-    return options.filter((option) => option.category === "mode" && option.type === "select").flatMap((option) =>
-      option.type === "select" ? option.options.flatMap((item) => "value" in item
-        ? [{ name: item.value, description: item.name, mode: "primary" }]
-        : item.options.map((value) => ({ name: value.value, description: value.name, mode: "primary" }))) : [])
-  } }
+  private readonly agentOperations = acpAgentOperations((session) => this.entry(session), (draft) => this.probes.agents(draft))
   private readonly configOperations = acpConfig((session: HarnessSession) => this.entry(session), (draft, mode) => this.probes.options(draft, mode))
+  private readonly goalOperations = acpGoalOperations((session) => this.entry(session))
+  private readonly steerOperations = acpSteerOperations((session) => this.entry(session))
   private readonly forkOperations = { fork: async (session: HarnessSession, _messageId: string) => {
     const entry = this.entry(session)
     const result = await entry.peer.agent.unstable_forkSession({ sessionId: session.binding.upstreamSessionId,
@@ -73,8 +72,11 @@ export class AcpTransport implements HarnessTransport {
     return { upstreamSessionId: result.sessionId }
   } }
   get commands() { return this.commandOperations }
-  get agents() { return this.agentOperations }
+  get agents() { return [...this.entries.values()].some((entry) => acpGroups(entry.peer.handshake).agents) ? this.agentOperations : undefined }
   get config() { return this.configOperations }
+  get goals() { return [...this.entries.values()].some((entry) => acpGroups(entry.peer.handshake).goals.available) ? this.goalOperations : undefined }
+  get steer() { return [...this.entries.values()].some((entry) => acpGroups(entry.peer.handshake).steer) ? this.steerOperations : undefined }
+  get health() { return [...this.entries.values()].some((entry) => acpGroups(entry.peer.handshake).health) ? this.healthOperations : undefined }
   get fork() { return [...this.entries.values()].some((entry) => entry.peer.handshake.agentCapabilities?.sessionCapabilities?.fork) ? this.forkOperations : undefined }
 
   constructor(private readonly services: HarnessServices, private readonly connection: AcpConnectionOptions,
@@ -86,13 +88,14 @@ export class AcpTransport implements HarnessTransport {
     const entry = context.sessionId ? this.entries.get(context.sessionId) : [...this.entries.values()].find((item) => item.session.directory === context.directory)
     const declared = entry?.peer.handshake.agentCapabilities
     const mcp = declared?.mcpCapabilities
+    const groups = entry ? acpGroups(entry.peer.handshake) : undefined
     return {
       modelSelection: { status: "optional" }, effortLevels: { status: "unresolved", models: [] },
       instructionChannel: "prompt-prefix", configOwner: "harness",
       requests: { permissions: true, questions: false, elicitation: true },
-      steer: false, subagents: Boolean(entry && supportsAcpSubagents(entry.peer.handshake)),
-      goals: { implemented: false, available: false, actions: [], recovery: "blocked", optionalFields: [] },
-      fork: Boolean(declared?.sessionCapabilities?.fork), agents: Boolean(entry?.options.some((option) => option.category === "mode")), commands: Boolean(entry?.commands.length), todos: false,
+      steer: groups?.steer ?? false, subagents: Boolean(entry && supportsAcpSubagents(entry.peer.handshake)),
+      goals: groups?.goals ?? { implemented: false, available: false, actions: [], recovery: "blocked", optionalFields: [] },
+      fork: Boolean(declared?.sessionCapabilities?.fork), agents: groups?.agents ?? false, commands: Boolean(entry?.commands.length), todos: false,
       history: "store", titles: "none", pluginIntake: { mcp: this.connection.supportsMcpServers === false ? "none" : "session", skills: "none" },
       mcpTransports: { stdio: this.connection.kind === "process" && this.connection.supportsMcpServers !== false,
         http: this.connection.supportsMcpServers !== false && mcp?.http === true,
@@ -108,11 +111,7 @@ export class AcpTransport implements HarnessTransport {
   }
 
   private mcp(entry: Pick<AcpEntry, "start" | "peer">): McpServerSpec[] {
-    const first = this.services.firstPartyMcp(entry.start.sessionId, entry.start.locality)
-    const servers = [...entry.start.projection.mcpServers, ...(first ? [{ ...first, origin: "first-party" as const }] : [])]
-    return this.filterMcp({ servers, locality: entry.start.locality,
-      mcpCapabilities: entry.peer.handshake.agentCapabilities?.mcpCapabilities,
-      supportsMcpServers: this.connection.supportsMcpServers }).servers
+    return acpMcpServers(entry, this.services, this.connection, this.filterMcp)
   }
 
   private async open(input: StartInput, broker: SessionBroker): Promise<AcpEntry> {
@@ -128,7 +127,7 @@ export class AcpTransport implements HarnessTransport {
       update: (notification) => acpUpdate(entry, notification, (update) => acpObserveSubagent(entry, update)),
       extension: (_sessionId, update) => acpObserveSubagent(entry, update),
       unknown: (sessionId, method, payload) => acpUnknown(entry, sessionId, method, payload),
-    }) } catch (error) { this.startingAborts.delete(startupAbort); throw error }
+    }) } catch (error) { startupAbort.abort(); this.startingAborts.delete(startupAbort); throw error }
     if (this.disposed) { this.startingAborts.delete(startupAbort); await peer.retire(); throw new AcpTransportError("connection", "ACP transport disposed during startup") }
     entry = { start: input, broker, peer, phase: "ready", cancelled: false, pendingRestart: false, commands: [], options: [], startupAbort,
       session: { binding: { sessionId: input.sessionId, workspaceId: input.workspaceId, directory: input.directory,
@@ -153,13 +152,15 @@ export class AcpTransport implements HarnessTransport {
       this.startingAborts.delete(entry.startupAbort)
       this.entries.set(input.sessionId, entry)
       return entry.session
-    } catch (error) { this.starting.delete(entry); this.startingAborts.delete(entry.startupAbort); await entry.peer.retire(); throw error }
+    } catch (error) { entry.startupAbort.abort(); this.starting.delete(entry); this.startingAborts.delete(entry.startupAbort); await entry.peer.retire(); throw error }
   }
 
   async attach(input: AttachInput, broker: SessionBroker): Promise<HarnessSession> {
     const entry = await this.open(input, broker)
     try {
-      const upstreamSessionId = await restoreAcp(entry.peer, input, this.mcp(entry).map(acpMcp), broker, this.missingContext)
+      entry.startup = new AcpStartupDeadline(this.services.clock, this.connection.startupTimeoutMs ?? 10_000, "session restore")
+      const upstreamSessionId = await entry.startup.run(restoreAcp(entry.peer, input, this.mcp(entry).map(acpMcp), broker, this.missingContext))
+      entry.startup = undefined
       entry.session.binding = { ...input.binding, upstreamSessionId }
       await broker.rebind(upstreamSessionId)
       if (this.disposed) throw new AcpTransportError("connection", "ACP transport disposed during attach")
@@ -167,7 +168,7 @@ export class AcpTransport implements HarnessTransport {
       this.startingAborts.delete(entry.startupAbort)
       this.entries.set(input.sessionId, entry)
       return entry.session
-    } catch (error) { this.starting.delete(entry); this.startingAborts.delete(entry.startupAbort); await entry.peer.retire(); throw error }
+    } catch (error) { entry.startupAbort.abort(); this.starting.delete(entry); this.startingAborts.delete(entry.startupAbort); await entry.peer.retire(); throw error }
   }
 
   private async permission(entry: AcpEntry | undefined, broker: SessionBroker, request: RequestPermissionRequest,
@@ -261,10 +262,13 @@ export class AcpTransport implements HarnessTransport {
     entry.pendingRestart = false
     entry.startupAbort.abort()
     await entry.peer.retire()
+    this.entries.delete(entry.session.binding.sessionId)
     const next = await this.open(entry.start, entry.broker)
     try {
-      const upstreamSessionId = await restoreAcp(next.peer, { ...entry.start, binding: entry.session.binding },
-        this.mcp(next).map(acpMcp), entry.broker, this.missingContext)
+      next.startup = new AcpStartupDeadline(this.services.clock, this.connection.startupTimeoutMs ?? 10_000, "session restore")
+      const upstreamSessionId = await next.startup.run(restoreAcp(next.peer, { ...entry.start, binding: entry.session.binding },
+        this.mcp(next).map(acpMcp), entry.broker, this.missingContext))
+      next.startup = undefined
       entry.session.binding.upstreamSessionId = upstreamSessionId
       next.session = entry.session
       next.options = entry.options
@@ -274,7 +278,7 @@ export class AcpTransport implements HarnessTransport {
       this.starting.delete(next)
       this.startingAborts.delete(next.startupAbort)
       this.entries.set(entry.session.binding.sessionId, next)
-    } catch (error) { this.starting.delete(next); this.startingAborts.delete(next.startupAbort); await next.peer.retire(); throw error }
+    } catch (error) { next.startupAbort.abort(); this.starting.delete(next); this.startingAborts.delete(next.startupAbort); await next.peer.retire(); throw error }
   }
 
   async close(session: HarnessSession): Promise<void> {
