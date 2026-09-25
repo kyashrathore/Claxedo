@@ -3,6 +3,7 @@ import os from "node:os"
 import path from "node:path"
 import { dropRecoveryContext, releaseAcpHold, writeAcpScript, type AcpScript } from "./acp/script"
 import { refuseGoalStart } from "./acp/goals"
+import { forgetSessionsOnRestart } from "./acp/sessions"
 import { staleCodexInventory } from "./codex-inventory-fault"
 import { startDaemon, type Daemon } from "./daemon"
 import { startEgressGuard, type EgressGuard } from "./egress-guard"
@@ -24,6 +25,7 @@ export type Stack = {
     release(name: string): Promise<void>
     refuseGoalStart(): void
     dropRecoveryContext(): void
+    forgetSessionsOnRestart(): void
   }
   events(directory: string, options?: EventStreamOptions): Promise<EventStream>
   close(): Promise<void>
@@ -88,6 +90,7 @@ export async function startStack(input: StackInput): Promise<Stack> {
       release: (name) => releaseAcpHold(daemon.acpScriptDir, name),
       refuseGoalStart: () => refuseGoalStart(daemon.acpScriptDir),
       dropRecoveryContext: () => dropRecoveryContext(daemon.acpScriptDir),
+      forgetSessionsOnRestart: () => forgetSessionsOnRestart(daemon.acpScriptDir),
     },
     events: async (directory, options) => {
       const stream = await openEventStream(daemon.url, directory, options)

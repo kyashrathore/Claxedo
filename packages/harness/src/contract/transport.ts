@@ -21,7 +21,7 @@ import type { PluginProjection, ResolvedCredentials } from "./projection"
 import type { HarnessServices } from "./services"
 import type { AttachInput, Deadline, HarnessSession, RoutedEvent, StartInput, TurnInput, TurnRef } from "./session"
 
-export type TransportKind = "claude-sdk" | "codex-app-server" | "cursor-sdk" | "acp" | "pi-rpc" | "opencode-http"
+export type TransportKind = "claude-sdk" | "codex-app-server" | "cursor-sdk" | "acp" | "pi-rpc" | "opencode-sdk"
 
 export type TransportConfigUpdate = {
   credentials?: ResolvedCredentials
