@@ -74,11 +74,11 @@ export interface NamingOperations {
 }
 
 export interface CommandOperations {
-  list(directory: string): Promise<readonly AgentCommand[]>
+  list(target: ConfigTarget): Promise<readonly AgentCommand[]>
 }
 
 export interface AgentListOperations {
-  list(directory: string): Promise<readonly AgentAgent[]>
+  list(target: ConfigTarget): Promise<readonly AgentAgent[]>
 }
 
 export interface ForkOperations {

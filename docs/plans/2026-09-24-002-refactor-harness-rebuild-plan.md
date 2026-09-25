@@ -1049,14 +1049,14 @@ Every member of today's surface has one owner. The list is taken from `adapter-c
 | `deleteSession` | `close` |
 | `readHarnessCapabilities` | `capabilities` |
 | `executeTurn` | `send`, yielding routed events |
-| `listCommands` | the moved command discovery (the SDK and ACP read it today, `sdk-runtime-adapter.ts:699`, `acp/index.ts:492`), plus the optional `commands.list` (Pi's `get_commands`) |
+| `listCommands` | `commands.list(ConfigTarget)` reads the named session or probes a draft; Pi uses `get_commands`, ACP waits for `available_commands_update` |
 | `readConnectionState`, `readRuntimeHealth` | `health` |
 | `dispose` | `dispose`: end turns, answer pending requests with their cancel, close |
 | **Add-ons** | |
 | `cancelTurn` | `cancel` |
 | `steerTurn` | `steer.steer`, with the result states `accepted`, `unknown`, `unsupported`, `no_active_turn`, and the runtime's fallback to the queue |
 | `forkSession` (ACP) | `fork` |
-| `listAgents` (ACP) | `agents` |
+| `listAgents` (ACP) | `agents.list(ConfigTarget)` reads the named session or probes a draft |
 | `getTodos` | the runtime store for `/session/:id/todo`; the seed through `TurnInput`; the `todos` capability flag |
 | `goals`: `readCapabilities`, `read`, `start`, `pause`, `resume`, `stop`, `delete` | the `goals` group, with accepted and failed results and stop before interrupt |
 | `listPermissions`, `respondPermission` | `RequestBroker.list`, `.answer` |
@@ -1285,7 +1285,7 @@ Every slice deletes what it replaces.
   - the machine owner's sessions on their own Pi, whoever sends the turn; other owners' sessions brokered;
   - `get_commands`; all nine extension-UI methods (H-5, H-6);
   - the conformance suite green against the pinned Pi; H1, H4, H6, H12, H18 and H20 go green at the P3 cutover.
-  - `Progress:` the transport (518 lines) and profile (94) merged (dd82818f5a); H18 and H20 red at H-5 and H-6 on today's adapter. Open: a `.js` Pi binary runs whatever `node` is on PATH, `process.env` defaults belong in the composition, and `commands.list` needs a live session.
+  - `Progress:` the transport and profile merged (dd82818f5a); follow-ups route `.js` through the composed runtime, pass environment and owner path from composition, match Pi reply id and command, and list draft commands through a retired probe. H18 and H20 remain red on today's adapter until P3.
 
 ### P2: transports, profiles and cloud delivery, in parallel
 
