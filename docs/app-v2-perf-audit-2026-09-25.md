@@ -4,6 +4,17 @@ Discovery audit of `packages/claxedo-app-v2` (dev server :4480) against `package
 
 Owner rules checked: no element re-renders unless required; no network call unless freshness needs it; nothing cached without a measured advantage; good idle/battery behaviour.
 
+## Summary
+
+v2 is cheaper than v1 on almost every count: idle network 0 vs 10–25 requests per 30 s, boot 15 vs 44 requests, no polling, 5–10× less script time per action, CLS 0. Four problems remain, in this order:
+
+1. Every session switch leaks the whole previous transcript while an image probe is pending: +12,240 Nodes, +760 listeners and +9.9 MB per 80 switches, against v1's flat line.
+2. Transcript scroll restyles 2.4× as many elements as v1 (11,394 vs 4,696), flushed synchronously in rAF.
+3. A 10 s clock interval runs for the app's lifetime.
+4. Machine-level catalogs are re-fetched on every session mount: 3 requests per switch or Back.
+
+The ranked list, the suspected items, the regression gates and the per-action baseline are at the end.
+
 ## Method
 
 - One headless Chromium (Playwright 1.61.1, `chromium-headless-shell`) per run, viewport 1280×800, fresh context per run. Identical script for v1 and v2, alternating v2/v1, 3 runs each unless stated.
@@ -367,7 +378,7 @@ These counts did not vary across runs, so each can be an exact or ceiling assert
 
 | Action | API | Mutations | Restyled | Layouts | Paints | Frames | Script ms |
 |---|---|---|---|---|---|---|---|
-| Cold boot (to +6 s after rail) | 15 (+2 dev) | 76 | 486 | 8 | 36 | 53 | 45 |
+| Cold boot (to +6 s after rail) | 15 (plus the document and `@solid-refresh`) | 76 | 486 | 8 | 36 | 53 | 45 |
 | Idle 30 s, draft page | 0 | 0 | 0 | 0 | 0 | 0 | 2 |
 | Idle 30 s, session + panel | 0 | 0 | 0 | 0 | 0 | 60 (caret) | 1 |
 | Open long session | 16 | 111 | 945 | 15 | 77 | 22 | 5 |
