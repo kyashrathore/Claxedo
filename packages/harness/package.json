@@ -5,6 +5,30 @@
   "type": "module",
   "license": "MIT",
   "exports": {
+    "./broker": {
+      "development": "./src/broker/index.ts",
+      "bun": "./src/broker/index.ts",
+      "types": "./dist/broker/index.d.ts",
+      "import": "./dist/broker/index.js"
+    },
+    "./broker/test-support/port-cases": {
+      "development": "./src/broker/test-support/port-cases.ts",
+      "bun": "./src/broker/test-support/port-cases.ts",
+      "types": "./dist/broker/test-support/port-cases.d.ts",
+      "import": "./dist/broker/test-support/port-cases.js"
+    },
+    "./broker/test-support/behavior-cases": {
+      "development": "./src/broker/test-support/behavior-cases.ts",
+      "bun": "./src/broker/test-support/behavior-cases.ts",
+      "types": "./dist/broker/test-support/behavior-cases.d.ts",
+      "import": "./dist/broker/test-support/behavior-cases.js"
+    },
+    "./conformance/test-support/memory-ports": {
+      "development": "./src/conformance/test-support/memory-ports.ts",
+      "bun": "./src/conformance/test-support/memory-ports.ts",
+      "types": "./dist/conformance/test-support/memory-ports.d.ts",
+      "import": "./dist/conformance/test-support/memory-ports.js"
+    },
     "./contract": {
       "development": "./src/contract/index.ts",
       "bun": "./src/contract/index.ts",

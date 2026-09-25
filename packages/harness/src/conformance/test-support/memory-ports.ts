@@ -1,7 +1,8 @@
-import { UnknownHostSubagentKeyError, type AgentSessionStartBinding, type SubagentObservation } from "@claxedo/agent-runtime-contract"
+import type { AgentSessionStartBinding, RuntimeGoalSnapshot, SessionConfig, SubagentObservation } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent, SubagentUpdatedEvent } from "@claxedo/agent-event-runtime/contracts"
-import type { PendingRequest, RequestAnswer } from "../../contract/broker"
+import type { PendingRequest, ProviderTurnInput, ProviderTurnResult, RequestAnswer } from "../../contract/broker"
 import type { BrokerEvent, BrokerPorts, SubagentAdmissionStore, TurnAuthority } from "../../broker/ports"
+import { createMemorySubagentAdmissionStore } from "../../broker/subagents/admission"
 
 export const origin = { actor: { kind: "machine-owner" as const }, via: "loopback" as const, reissued: false }
 export const authority: TurnAuthority = {
@@ -34,42 +35,7 @@ export class MemoryPorts implements BrokerPorts {
   subagents: SubagentUpdatedEvent[] = []
   diagnostics: unknown[] = []
   children = new Map<string, { sessionId: string; assistantMessageId: string; created: number }>()
-  admissionRows = new Map<string, { observation: SubagentObservation; event: SubagentUpdatedEvent; published: boolean }>()
-  revisions = new Map<string, number>()
-  readonly subagentAdmissionStore: SubagentAdmissionStore = {
-    admit: ({ parentSessionId, observation, allocateKey, allocateChildSessionId }) => {
-      const id = `${parentSessionId}:${observation.observationId}`
-      const prior = this.admissionRows.get(id)
-      if (prior) {
-        if (JSON.stringify(prior.observation) !== JSON.stringify(observation)) throw new Error("conflicting content")
-        return { parentSessionId, observationId: observation.observationId, event: prior.event, published: prior.published }
-      }
-      const host = observation.subagentKey ? [...this.admissionRows.values()].find((row) =>
-        row.event.subagentKey === observation.subagentKey && row.event.childSessionId) : undefined
-      if (observation.providerKind === "claxedo" && observation.toolCallId && !host) {
-        throw new UnknownHostSubagentKeyError(parentSessionId, observation.observationId, observation.subagentKey)
-      }
-      const related = host ?? [...this.admissionRows.values()].find((row) =>
-        observation.providerId && row.observation.providerId === observation.providerId)
-      const key = observation.subagentKey ?? related?.event.subagentKey ?? allocateKey()
-      const revision = (this.revisions.get(key) ?? 0) + 1
-      this.revisions.set(key, revision)
-      const childSessionId = related?.event.childSessionId ?? observation.childSessionId ?? allocateChildSessionId?.()
-      const event: SubagentUpdatedEvent = { type: "subagent-updated", subagentKey: key, revision,
-        ...(observation.providerKind ? { providerKind: observation.providerKind } : {}),
-        ...(observation.providerId ? { providerId: observation.providerId } : {}),
-        ...(observation.toolCallId ? { toolCallId: observation.toolCallId, toolCallRole: observation.toolCallRole } : {}),
-        ...(observation.status ? { status: observation.status } : {}),
-        ...(childSessionId ? { childSessionId } : {}) }
-      this.admissionRows.set(id, { observation, event, published: false })
-      return { parentSessionId, observationId: observation.observationId, event, published: false }
-    },
-    markPublished: (parentSessionId, observationId) => {
-      const row = this.admissionRows.get(`${parentSessionId}:${observationId}`)
-      if (!row) throw new Error("unknown observation")
-      row.published = true
-    },
-  }
+  readonly subagentAdmissionStore: SubagentAdmissionStore = createMemorySubagentAdmissionStore()
   drained: unknown[] = []
   readonly clock = {
     now: () => this.nowValue,
@@ -105,11 +71,12 @@ export class MemoryPorts implements BrokerPorts {
     return []
   }
   readAnswer(sessionId: string, requestId: string) { return this.answers.get(JSON.stringify([sessionId, requestId])) }
-  async publish(event: BrokerEvent) {
+  async publish(event: BrokerEvent, pending?: PendingRequest) {
     await this.publishGate
     this.published.push(event)
+    if (pending) this.pendingRows.set(JSON.stringify([pending.sessionId, pending.request.requestId]), pending)
   }
-  readPending(scope: { sessionId: string } | { directory: string }) {
+  readPending(scope: { sessionId: string } | { directory: string }): readonly PendingRequest[] {
     return [...this.pendingRows.values()].filter((row) => "sessionId" in scope ? row.sessionId === scope.sessionId :
       this.directories.get(row.sessionId) === scope.directory)
   }
@@ -124,18 +91,22 @@ export class MemoryPorts implements BrokerPorts {
     this.onReadPermissionState?.()
     return this.states.get(sessionId)
   }
-  readGoal(_sessionId: string) { return null }
-  async publishGoal(_sessionId: string, _snapshot: null) {}
+  readGoal(_sessionId: string): RuntimeGoalSnapshot | null { return null }
+  async publishGoal(_sessionId: string, _snapshot: RuntimeGoalSnapshot | null) {}
   providerTurn?: AbortController
+  nextProviderTurn = 0
   cancelProviderTurn() { this.providerTurn?.abort() }
-  async admitProviderTurn(_sessionId: string, _input: unknown, run: (id: string, signal: AbortSignal) => Promise<void>) {
+  async admitProviderTurn(_sessionId: string, _input: ProviderTurnInput, run: (id: string, signal: AbortSignal) => Promise<void>): Promise<ProviderTurnResult> {
     const controller = new AbortController()
     this.providerTurn = controller
-    const settled = Promise.resolve().then(() => run("t1", controller.signal)).then(
+    const turnId = `provider-${++this.nextProviderTurn}`
+    const authority = this.current.get(_sessionId)
+    if (authority) this.current.set(_sessionId, { ...authority, turnId })
+    const settled = Promise.resolve().then(() => run(turnId, controller.signal)).then(
       () => controller.signal.aborted ? { state: "cancelled" as const } : { state: "completed" as const },
       (error: unknown) => controller.signal.aborted ? { state: "cancelled" as const } : { state: "failed" as const, error: String(error) },
     )
-    return { admitted: true as const, turnId: "t1", settled }
+    return { admitted: true as const, turnId, settled }
   }
   async drainProviderEvent(_sessionId: string, _turnId: string, event: unknown) { this.drained.push(event) }
   meterUsage(_usage: unknown) {}
@@ -144,6 +115,7 @@ export class MemoryPorts implements BrokerPorts {
   async admitChildSession(_sessionId: string, childSessionId: string, _observation: SubagentObservation) {
     return this.children.get(childSessionId) ?? { sessionId: childSessionId, assistantMessageId: "assistant", created: 10 }
   }
+  bindChildCorrelation(_sessionId: string, _correlationKey: string, _childSessionId: string) {}
   async publishSubagent(_sessionId: string, event: SubagentUpdatedEvent) { this.subagents.push(event) }
   async publishSubagentDiagnostic(_sessionId: string, diagnostic: unknown) {
     this.diagnostics.push(diagnostic)
@@ -153,6 +125,6 @@ export class MemoryPorts implements BrokerPorts {
     if (current) this.current.set(sessionId, { ...current, upstreamSessionId: upstream })
   }
   async persistHandoff(_sessionId: string, _context: unknown) {}
-  config(_sessionId: string): never { throw new Error("unused") }
+  config(_sessionId: string): SessionConfig { throw new Error("unused") }
   reportOwnerFailure(_sessionId: string, error: unknown) { this.failures.push(error) }
 }

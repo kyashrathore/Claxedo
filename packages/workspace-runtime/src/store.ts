@@ -21,14 +21,16 @@ import {
 import {
   acceptsSessionTitle,
   boundSessionTitleSource,
-  createMemorySubagentAdmissionStore,
   firstTurnErrorData,
   normalizeHarnessIdentity,
   parseStoredSessionModelGroup,
   sessionModelGroupJson,
 } from "@claxedo/agent-sdk-runtime"
+import { createMemorySubagentAdmissionStore } from "@claxedo/harness/broker"
 import { sqliteSessionStarts } from "@claxedo/agent-sdk-runtime/stores/session-start"
-import type { AdmittedSubagentObservation, AgentMessage, AgentMessageAuthor, AgentPermission, AgentQuestion, AgentTurnOutcome, PromptFormat, PromptInput, SessionHarness, SessionModelGroup } from "@claxedo/agent-sdk-runtime"
+import type { AgentMessage, AgentMessageAuthor, AgentPermission, AgentQuestion, AgentTurnOutcome, PromptFormat, PromptInput, SessionHarness, SessionModelGroup } from "@claxedo/agent-sdk-runtime"
+import type { AdmittedSubagentObservation } from "@claxedo/harness/broker"
+import type { ChildSessionRef } from "@claxedo/harness/contract"
 import type { AgentSessionTitleSource, AgentExecutionBinding, AgentSessionCommand, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
 import { RECOVERY_OPERATION_RETENTION_MS, parseRecoveryOperation, type RecoveryOperation } from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot, SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
@@ -202,7 +204,7 @@ type SqliteStatement<Row> = {
   finalize?: () => unknown
 }
 
-type SqliteDatabase = {
+export type SqliteDatabase = {
   exec(sql: string): unknown
   prepare<Row = unknown>(sql: string): SqliteStatement<Row>
   close?: (throwOnError?: boolean) => unknown
@@ -1111,6 +1113,7 @@ export class RuntimeStore {
         parent_session_id TEXT NOT NULL,
         subagent_key TEXT NOT NULL,
         child_session_id TEXT,
+        assistant_message_id TEXT,
         revision INTEGER NOT NULL DEFAULT 0,
         mode TEXT,
         status TEXT NOT NULL DEFAULT 'pending',
@@ -1259,16 +1262,22 @@ export class RuntimeStore {
     }
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS pending_permission (
-        id TEXT PRIMARY KEY,
+        id TEXT NOT NULL,
         session_id TEXT NOT NULL,
         tool TEXT NOT NULL,
         patterns_json TEXT NOT NULL,
         metadata_json TEXT NOT NULL,
         always_json TEXT NOT NULL,
         options_json TEXT,
+        broker_request_json TEXT,
+        broker_upstream_session_id TEXT,
+        broker_start_json TEXT,
+        broker_answer_json TEXT,
+        broker_automatic INTEGER,
         status TEXT NOT NULL,
         created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (session_id, id)
       )
     `)
     if (!hasColumn(this.db, "pending_permission", "options_json")) {
@@ -1276,12 +1285,18 @@ export class RuntimeStore {
     }
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS pending_question (
-        id TEXT PRIMARY KEY,
+        id TEXT NOT NULL,
         session_id TEXT NOT NULL,
         questions_json TEXT NOT NULL,
+        broker_request_json TEXT,
+        broker_upstream_session_id TEXT,
+        broker_start_json TEXT,
+        broker_answer_json TEXT,
+        broker_automatic INTEGER,
         status TEXT NOT NULL,
         created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (session_id, id)
       )
     `)
     this.db.exec(`
@@ -1505,10 +1520,32 @@ export class RuntimeStore {
     observation: SubagentObservation
     allocateKey: () => string
     allocateChildSessionId?: () => string
+    child?: ChildSessionRef
   }): AdmittedSubagentObservation {
     const admitted = this.admitObservation(input)
     this.linkChildSession(input.parentSessionId, admitted.event.childSessionId)
+    if (input.child) {
+      if (admitted.event.childSessionId !== input.child.sessionId) throw new Error("Host child binding does not match admission")
+      const existing = this.db.prepare<{ assistant_message_id: string | null }>(`
+        SELECT assistant_message_id FROM session_subagent
+        WHERE parent_session_id = ? AND subagent_key = ?
+      `).get(input.parentSessionId, admitted.event.subagentKey)
+      if (existing?.assistant_message_id && existing.assistant_message_id !== input.child.assistantMessageId) {
+        throw new Error("Host child assistant message differs from the stored binding")
+      }
+      this.db.prepare(`UPDATE session_subagent SET assistant_message_id = ?, created_at = ?
+        WHERE parent_session_id = ? AND subagent_key = ?`).run(
+        input.child.assistantMessageId, input.child.created, input.parentSessionId, admitted.event.subagentKey,
+      )
+    }
     return admitted
+  }
+
+  hasChild(parentSessionId: string, childSessionId: string): boolean {
+    return !!this.db.prepare<{ child_session_id: string }>(`
+      SELECT child_session_id FROM session_subagent
+      WHERE parent_session_id = ? AND child_session_id = ?
+    `).get(parentSessionId, childSessionId)
   }
 
   /**
@@ -2517,6 +2554,40 @@ export class RuntimeStore {
     }
   }
 
+  brokerDatabase(): SqliteDatabase {
+    return this.db
+  }
+
+  brokerTransaction<T>(run: () => T): T {
+    return this.transaction(run, "immediate")
+  }
+
+  brokerAppendInside(sessionId: string, payload: CompatEvent): void {
+    this.commitInside({
+      seq: this.next(sessionId), ts: Date.now(), sessionId, kind: "event", payload,
+    }, undefined)
+  }
+
+  brokerPersistGrantInside(sessionId: string, grantKey: string): void {
+    const row = this.db.prepare<{ permission_state_json: string | null }>(
+      "SELECT permission_state_json FROM session WHERE id = ?",
+    ).get(sessionId)
+    if (!row) throw new Error(`Unknown grant session ${sessionId}`)
+    const state = row.permission_state_json ? rec(JSON.parse(row.permission_state_json)) : {}
+    if (!state) throw new Error(`Invalid permission state for ${sessionId}`)
+    const storedGrants = state.brokerGrants
+    if (storedGrants !== undefined && (!Array.isArray(storedGrants) || !storedGrants.every((item: unknown) => typeof item === "string"))) {
+      throw new Error(`Invalid broker grants for ${sessionId}`)
+    }
+    const grants: string[] = Array.isArray(storedGrants) ? storedGrants.filter((item): item is string => typeof item === "string") : []
+    this.commitInside({
+      seq: this.next(sessionId), ts: Date.now(), sessionId, kind: "control",
+      control: { type: "config.update", patch: {
+        permissionState: { ...state, brokerGrants: [...new Set([...grants, grantKey])] },
+      } },
+    }, undefined)
+  }
+
   private insertRuntimeJournal(
     row: Row,
     seq = this.next(row.sessionId),
@@ -3269,7 +3340,8 @@ export class RuntimeStore {
         return
 
       case "permission.replied":
-        this.db.prepare("DELETE FROM pending_permission WHERE id = ?").run(event.properties.requestID)
+        this.db.prepare("UPDATE pending_permission SET status = 'answered', updated_at = ? WHERE session_id = ? AND id = ?")
+          .run(row.ts, event.properties.sessionID, event.properties.requestID)
         return
 
       case "question.asked":
@@ -3290,7 +3362,8 @@ export class RuntimeStore {
 
       case "question.replied":
       case "question.rejected":
-        this.db.prepare("DELETE FROM pending_question WHERE id = ?").run(event.properties.requestID)
+        this.db.prepare("UPDATE pending_question SET status = 'answered', updated_at = ? WHERE session_id = ? AND id = ?")
+          .run(row.ts, event.properties.sessionID, event.properties.requestID)
         return
 
       case "message.completed": {
