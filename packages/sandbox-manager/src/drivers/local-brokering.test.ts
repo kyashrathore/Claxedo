@@ -29,14 +29,24 @@ test("local broker keeps the key outside the runtime and withdraws it on ensure"
     received.push(request.headers.authorization ?? "")
     response.writeHead(200).end("ok")
   })
+  const controlPlane = http.createServer((_request, response) => response.writeHead(200).end("ok"))
+  const relay = http.createServer((_request, response) => response.writeHead(200).end("ok"))
   await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve))
+  await new Promise<void>((resolve) => controlPlane.listen(0, "127.0.0.1", resolve))
+  await new Promise<void>((resolve) => relay.listen(0, "127.0.0.1", resolve))
   try {
     const address = upstream.address()
-    if (!address || typeof address === "string") throw new Error("upstream has no port")
+    const controlAddress = controlPlane.address()
+    const relayAddress = relay.address()
+    if (!address || typeof address === "string" || !controlAddress || typeof controlAddress === "string" || !relayAddress || typeof relayAddress === "string") throw new Error("test upstream has no port")
     const origin = `http://127.0.0.1:${address.port}`
     const executable = process.execPath
-    const args = ["-e", `require('node:http').createServer((req,res)=>{if(req.url==='/global/health')res.end('ok');else if(req.url==='/direct'){const s=require('node:net').connect(Number(process.env.DIRECT_PORT),'127.0.0.1');s.on('connect',()=>{s.destroy();res.end('connected')});s.on('error',(e)=>res.end(e.code))}else res.end(JSON.stringify(process.env))}).listen(process.env.WORKSPACE_RUNTIME_PORT,'127.0.0.1')`]
-    const driver = createLocalBrokeringSandboxDriver({ root, executable, args, allowedOrigins: [origin], inheritedEnv: { DIRECT_PORT: String(address.port) } })
+    const args = ["-e", `require('node:http').createServer((req,res)=>{if(req.url==='/global/health')res.end('ok');else if(req.url.startsWith('/fetch/')){const origin=req.url==='/fetch/control'?process.env.CONTROL_PLANE_ORIGIN:process.env.RELAY_ORIGIN;fetch(origin).then(r=>res.end(String(r.status))).catch(e=>res.end(e.code||e.message))}else if(req.url==='/direct/vendor'){const s=require('node:net').connect(Number(process.env.VENDOR_PORT),'127.0.0.1');s.on('connect',()=>{s.destroy();res.end('connected')});s.on('error',(e)=>res.end(e.code))}else res.end(JSON.stringify(process.env))}).listen(process.env.WORKSPACE_RUNTIME_PORT,'127.0.0.1')`]
+    const driver = createLocalBrokeringSandboxDriver({
+      root, executable, args, allowedOrigins: [origin], controlPlaneOrigin: `http://127.0.0.1:${controlAddress.port}`,
+      relayOrigin: `http://127.0.0.1:${relayAddress.port}`,
+      inheritedEnv: { CONTROL_PLANE_ORIGIN: `http://127.0.0.1:${controlAddress.port}`, RELAY_ORIGIN: `http://127.0.0.1:${relayAddress.port}`, VENDOR_PORT: String(address.port) },
+    })
     const key = "actual-provider-secret-unique"
     const placeholder = "claxedo-broker:MODEL_KEY"
     const ensure = { workspaceId: "one", homeRegion: "local", epoch: 1, labels: {}, secrets: [{ name: "MODEL_KEY", value: key, hosts: [new URL(origin).host], header: "authorization", scheme: "Bearer", methods: ["POST"], pathPrefixes: ["/v1"] }] }
@@ -45,7 +55,9 @@ test("local broker keeps the key outside the runtime and withdraws it on ensure"
     const env = await (await fetch(target.url)).json() as Record<string, string>
     expect(JSON.stringify(env)).not.toContain(key)
     expect(env.MODEL_KEY).toBe(placeholder)
-    expect(await (await fetch(`${target.url}/direct`)).text()).not.toBe("connected")
+    expect(await (await fetch(`${target.url}/fetch/control`)).text()).toBe("200")
+    expect(await (await fetch(`${target.url}/fetch/relay`)).text()).toBe("200")
+    expect(await (await fetch(`${target.url}/direct/vendor`)).text()).not.toBe("connected")
     const files = await fs.readdir(root, { recursive: true })
     for (const file of files) {
       const full = path.join(root, file)
@@ -65,5 +77,9 @@ test("local broker keeps the key outside the runtime and withdraws it on ensure"
   } finally {
     upstream.closeAllConnections()
     await new Promise<void>((resolve) => upstream.close(() => resolve()))
+    controlPlane.closeAllConnections()
+    await new Promise<void>((resolve) => controlPlane.close(() => resolve()))
+    relay.closeAllConnections()
+    await new Promise<void>((resolve) => relay.close(() => resolve()))
   }
 })

@@ -1,6 +1,12 @@
 import type { SandboxDriver } from "@claxedo/sandbox-manager"
+import type { AcpScript } from "./acp/script"
 
-export type CloudFault = "config-push-refused" | "broker-secret-withheld"
+export type CloudFault = "config-push-refused" | "broker-secret-withheld" | "acp-answer-withheld"
+
+export function cloudAcpScript(script: AcpScript, fault: string | undefined): AcpScript {
+  if (fault !== "acp-answer-withheld") return script
+  return { ...script, steps: script.steps.filter((step) => step.kind !== "text") }
+}
 
 export function installCloudConfigFault(fault: string | undefined) {
   if (fault !== "config-push-refused") return

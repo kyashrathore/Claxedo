@@ -38,11 +38,11 @@ export async function run() {
       try {
         session = await api.createSession(workspace.directory, { harness: { id: connectionId, access: "connection" } })
       } catch (error) {
+        if (error instanceof ApiError && /not configured|connection.*not found|unknown connection/i.test(error.body)) {
+          throw new Error(`C-4: custom ACP connection was absent from the cloud sandbox: ${error.body}`, { cause: error })
+        }
         if (error instanceof ApiError && /unavailable|secret|credential/i.test(error.body)) {
           throw new Error(`C-10: sandbox runtime could not lease the custom ACP secret: ${error.body}`, { cause: error })
-        }
-        if (error instanceof ApiError && /connection|harness/i.test(error.body)) {
-          throw new Error(`C-4: custom ACP connection was absent from the cloud sandbox: ${error.body}`, { cause: error })
         }
         throw error
       }

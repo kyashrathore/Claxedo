@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { ClaxedoApi, assistantText } from "../harness/api"
 import { SCRIPTED_ACP_HARNESS } from "../harness/acp/connection"
 import { acpScriptToken } from "../harness/acp/script"
+import { cloudAcpScript } from "../harness/cloud-faults"
 import { cloudSessionTransport, createCloudWorkspace, waitCloudConnection } from "../harness/cloud-workspace"
 import { startStack } from "../harness/stack"
 import { frameType, openEventStream } from "../harness/stream"
@@ -9,7 +10,7 @@ import { frameType, openEventStream } from "../harness/stream"
 export async function run() {
   const stack = await startStack({ label: "h19-cloud-acp", cloud: true })
   try {
-    await stack.acp.write("h19-cloud", { steps: [{ kind: "text", text: "H19_CLOUD_ACP" }] })
+    await stack.acp.write("h19-cloud", cloudAcpScript({ steps: [{ kind: "text", text: "H19_CLOUD_ACP" }] }, process.env.CLAXEDO_E2E_CLOUD_FAULT))
     const workspace = await createCloudWorkspace(stack, "h19-acp")
     const connection = await waitCloudConnection(stack, workspace.id)
     assert.equal(connection.status, 200, `Cloud connection: ${connection.body}`)

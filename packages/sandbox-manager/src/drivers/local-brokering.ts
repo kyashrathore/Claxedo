@@ -13,6 +13,8 @@ export type LocalBrokeringDriverOptions = {
   executable: string
   args: string[]
   allowedOrigins: readonly string[]
+  controlPlaneOrigin: string
+  relayOrigin?: string
   inheritedEnv?: Record<string, string>
 }
 
@@ -77,6 +79,13 @@ export function createLocalBrokeringSandboxDriver(options: LocalBrokeringDriverO
   if (process.platform !== "darwin") throw new Error("local brokering test driver requires macOS sandbox-exec network policy")
   const hosts = new Map<string, Host>()
   const allowedOrigins = new Set(options.allowedOrigins.map((origin) => new URL(origin).origin))
+  const directOrigins = [options.controlPlaneOrigin, options.relayOrigin].filter((origin): origin is string => origin !== undefined).map((origin) => new URL(origin))
+  const directDestinations = directOrigins.map((url) => {
+    if (!(["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) && ["http:", "https:"].includes(url.protocol))) {
+      throw new Error("local brokering direct origins must use loopback HTTP")
+    }
+    return `localhost:${url.port || (url.protocol === "https:" ? "443" : "80")}`
+  })
 
   async function ensureHost(input: SandboxDriverEnsureInput): Promise<SandboxTarget> {
     const existing = hosts.get(input.workspaceId)
@@ -161,14 +170,14 @@ export function createLocalBrokeringSandboxDriver(options: LocalBrokeringDriverO
         http_proxy: proxyUrl,
         https_proxy: proxyUrl,
         all_proxy: proxyUrl,
-        NO_PROXY: "",
-        no_proxy: "",
+        NO_PROXY: directOrigins.map((url) => url.host).join(","),
+        no_proxy: directOrigins.map((url) => url.host).join(","),
         NODE_USE_ENV_PROXY: "1",
       }
       for (const secret of host.secrets) {
         if (Object.values(env).some((value) => value.includes(secret.value))) throw new Error("brokered secret entered sandbox environment")
       }
-      const networkPolicy = `(version 1) (allow default) (deny network-outbound) (allow network-outbound (remote tcp "localhost:${proxyPort}"))`
+      const networkPolicy = `(version 1) (allow default) (deny network-outbound) ${[ `localhost:${proxyPort}`, ...directDestinations ].map((destination) => `(allow network-outbound (remote tcp ${JSON.stringify(destination)}))`).join(" ")}`
       const child = spawn("/usr/bin/sandbox-exec", ["-p", networkPolicy, options.executable, ...options.args], {
         cwd: workspace,
         env,
