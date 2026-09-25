@@ -4352,6 +4352,31 @@ export class RuntimeStore {
     return this.hydrateMessages(sessionId, msgs)
   }
 
+  /**
+   * Whether a turn relayed from another caller reached this session or any
+   * session it descends from. Read off the journal's `turn.start` rows, which
+   * are never pruned and carry `actorId` only when the relay boundary named
+   * the caller: the machine's own user sends over loopback and is named by
+   * nothing, and a child's wake stamps an author but no actor.
+   */
+  relayedTurnInLineage(sessionId: string): boolean {
+    return !!this.db
+      .prepare<{ found: number }>(`
+        WITH RECURSIVE lineage(id) AS (
+          SELECT ?
+          UNION
+          SELECT session.parent_id FROM session JOIN lineage ON session.id = lineage.id WHERE session.parent_id IS NOT NULL
+        )
+        SELECT 1 AS found FROM runtime_journal
+        WHERE session_id IN (SELECT id FROM lineage)
+          AND kind = 'control'
+          AND type = 'turn.start'
+          AND json_extract(payload_json, '$.actorId') IS NOT NULL
+        LIMIT 1
+      `)
+      .get(sessionId)
+  }
+
   getLatestUserMessageId(sessionId: string) {
     this.settleDeltas(sessionId)
     return this.db.prepare<{ id: string }>(

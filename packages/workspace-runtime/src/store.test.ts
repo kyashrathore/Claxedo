@@ -288,6 +288,41 @@ void describe("RuntimeStore", () => {
     restarted.close()
   })
 
+  void it("finds a relayed turn in a session or any session above it, and none in one only its machine's user and its own children drove", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    type Origin = Pick<Parameters<RuntimeStore["startTurn"]>[0], "actorId" | "actorKind" | "author">
+    const relayed: Origin = { actorId: "actor_member", actorKind: "human", author: { id: "pub_member", name: "Member", kind: "human" } }
+    const childWake: Origin = { author: { id: "own-child", name: "Subagent", kind: "agent" } }
+    const turn = (sessionId: string, id: string, origin: Origin = {}) => store.startTurn({
+      sessionId,
+      agentSessionId: `agent-${sessionId}`,
+      userMessageId: id,
+      assistantMessageId: `${id}_r`,
+      agent: "build",
+      model: { providerID: "anthropic", modelID: "claude-sonnet-4-6" },
+      parts: [{ type: "text", text: "hello" }],
+      ...origin,
+    })
+    for (const [sessionId, parentSessionId] of [["own", undefined], ["shared", undefined], ["child", "shared"], ["grandchild", "child"], ["own-child", "own"]] as const) {
+      store.bindSession({ sessionId, directory: "/work", agentSessionId: `agent-${sessionId}`, createdAt: 1, ...(parentSessionId ? { parentSessionId } : {}) })
+    }
+    turn("own", "msg-own")
+    turn("own-child", "msg-own-child")
+    turn("own", "msg-own-woken", childWake)
+    turn("shared", "msg-shared-owner")
+    turn("shared", "msg-shared-member", relayed)
+    turn("child", "msg-child")
+    turn("grandchild", "msg-grandchild")
+
+    assert.equal(store.relayedTurnInLineage("own"), false)
+    assert.equal(store.relayedTurnInLineage("own-child"), false)
+    assert.equal(store.relayedTurnInLineage("shared"), true)
+    assert.equal(store.relayedTurnInLineage("child"), true)
+    assert.equal(store.relayedTurnInLineage("grandchild"), true)
+    assert.equal(new RuntimeStore(root).relayedTurnInLineage("grandchild"), true)
+  })
+
   void it("persists explicit child Session ownership across updates and reopen", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
