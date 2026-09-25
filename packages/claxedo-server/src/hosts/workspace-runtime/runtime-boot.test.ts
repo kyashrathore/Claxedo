@@ -6,6 +6,7 @@ import os from "node:os"
 import path from "node:path"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { loopbackWorkspaceRuntimeExposure, relayWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
+import { workspaceRuntimeBootEnv } from "@claxedo/sandbox-manager/runtime-env"
 import type { CompatEnvelope } from "@claxedo/agent-sdk-runtime"
 import { buildAssistantMessage, messageCompleted, messageUpdated, sessionUsage } from "@claxedo/agent-sdk-runtime/compat-events"
 import { mintOwnerGrant } from "../../session/owner-grant"
@@ -171,7 +172,18 @@ describe("claxedo workspace-runtime boot policy", () => {
     expect(() => claxedoRuntimeHarnessFromEnv({ WORKSPACE_RUNTIME_CONNECTION_ID: "openclaw", WORKSPACE_RUNTIME_NATIVE_HARNESS: "pi" })).toThrow("Choose either")
   })
 
-  test("rejects an unknown explicit runner", () => {
+  test("reads the default harness written into a sandbox driver's boot environment", async () => {
+    const env = workspaceRuntimeBootEnv({
+      workspaceId: "ws-env",
+      directory: process.cwd(),
+      port: 3002,
+      nativeHarness: "pi",
+    })
+    const boot = await claxedoWorkspaceRuntimeBootFromEnv(env)
+    expect(boot.options.harness).toEqual({ kind: "native", harnessId: "pi" })
+  })
+
+  test("rejects an unknown explicit native harness", () => {
     expect(() => claxedoRuntimeHarnessFromEnv({ WORKSPACE_RUNTIME_NATIVE_HARNESS: "mystery" })).toThrow(
       "Unsupported WORKSPACE_RUNTIME_NATIVE_HARNESS",
     )

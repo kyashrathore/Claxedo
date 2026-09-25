@@ -1,5 +1,5 @@
 import type { Plugin } from "@opencode-ai/plugin"
-import type { OpenCodeHost } from "./host"
+import { openCodeLocationClient, type OpenCodeHost } from "./host"
 import type { WorkspaceScope } from "./scope"
 import { arr } from "../json-value"
 
@@ -72,7 +72,7 @@ export function createProviderPolicy() {
   return {
     plugin,
     async store(host: OpenCodeHost, scope: WorkspaceScope): Promise<ProviderConfigStore> {
-      await (await host.client()).model.list({ location: { directory: scope.directory } })
+      await openCodeLocationClient(host, scope.directory)
       const store = stores.get(scope.directory)
       if (!store) throw new Error("OpenCode provider policy was not initialized for the workspace")
       return store

@@ -9,7 +9,7 @@ import { acpScriptToken, writeAcpScript } from "../../e2e/harness/acp/script"
 import { readAcpRequests } from "../../e2e/harness/acp/requests"
 import { expect, test } from "bun:test"
 import { createSessionBroker } from "../broker"
-import { authority } from "./test-support/memory-ports"
+import { authority, origin } from "./test-support/memory-ports"
 
 type AcpBackend = ConformanceBackend & {
   root: string
@@ -43,6 +43,7 @@ async function backend(kind: "process" | "websocket", restoreMode: "resume" | "l
     harness: { id: "scripted-acp", access: "connection" },
     model: { providerID: "scripted-acp", modelID: "scripted" },
     credentials: { providers: {}, secrets: {}, leaseGeneration: "conformance" },
+    owner: { kind: "machine-owner" as const },
     ...(server ? {
       projection: { generation: "g1", pluginRoots: [], notApplied: [], mcpServers: [
         { kind: "http" as const, name: "configured-http", url: "http://127.0.0.1:47355/mcp", origin: "configured" as const },
@@ -66,7 +67,6 @@ async function backend(kind: "process" | "websocket", restoreMode: "resume" | "l
       },
     } : {}),
     expectedMcp: supportsMcpServers ? "session" : "none", textCommand: acpScriptToken("text"), permissionCommand: acpScriptToken("permission"),
-    mismatchOrigin: { actor: { kind: "person", userId: "other" }, via: "relay", reissued: false },
     close: async () => { await server?.close(); await fs.rm(root, { recursive: true, force: true }) },
   }
 }
@@ -140,7 +140,7 @@ test("a busy workspace does not hold another workspace's ACP config restart", as
     const secondStart = { ...context.start, sessionId: "s2", directory: secondDirectory }
     context.ports.current.set("s2", { ...authority, sessionId: "s2", directory: secondDirectory, workspaceId: "w2" })
     const secondBroker = createSessionBroker(context.owner, { sessionId: "s2", directory: secondDirectory,
-      workspaceId: "w2", origin: context.start.origin })
+      workspaceId: "w2", origin })
     await context.transport.start(secondStart, secondBroker)
     const running = (async () => {
       const events = []

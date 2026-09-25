@@ -1,0 +1,8 @@
+packages/opencode-server-adapter/src/adapter.ts
+packages/opencode-server-adapter/src/config.ts
+packages/opencode-server-adapter/src/errors.ts
+packages/opencode-server-adapter/src/index.ts
+packages/opencode-server-adapter/src/provider.ts
+packages/opencode-server-adapter/src/sse.ts
+packages/opencode-server-adapter/src/translate.ts
+packages/opencode-server-adapter/src/turn.ts

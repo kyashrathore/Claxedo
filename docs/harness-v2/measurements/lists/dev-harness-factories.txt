@@ -1,0 +1,6 @@
+packages/agent-sdk-runtime/src/harness-factories/acp.ts
+packages/agent-sdk-runtime/src/harness-factories/claude.ts
+packages/agent-sdk-runtime/src/harness-factories/codex.ts
+packages/agent-sdk-runtime/src/harness-factories/cursor.ts
+packages/agent-sdk-runtime/src/harness-factories/factory.ts
+packages/agent-sdk-runtime/src/harness-factories/pi.ts

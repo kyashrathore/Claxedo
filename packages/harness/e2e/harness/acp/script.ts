@@ -1,9 +1,22 @@
 import fs from "node:fs/promises"
+import { existsSync, writeFileSync } from "node:fs"
 import path from "node:path"
-import type { PlanEntry, StopReason, ToolCallContent, ToolCallLocation, ToolKind } from "@agentclientprotocol/sdk"
+import type { PlanEntry, PromptResponse, StopReason, ToolCallContent, ToolCallLocation, ToolKind } from "@agentclientprotocol/sdk"
 
 export const ACP_SCRIPT_DIR_ENV = "SCRIPTED_ACP_DIR"
 export const ACP_RED_ENV = "SCRIPTED_ACP_RED"
+const RECOVERY_CONTEXT_FAULT = "drop-recovery-context"
+
+export function dropRecoveryContext(dir: string) {
+  writeFileSync(path.join(dir, RECOVERY_CONTEXT_FAULT), "drop")
+}
+
+export function recoveryContextDropped(dir: string) {
+  return existsSync(path.join(dir, RECOVERY_CONTEXT_FAULT))
+}
+
+export const ACP_WITHHOLD_ONCE_ENV = "SCRIPTED_ACP_WITHHOLD_ONCE_OPTION"
+export const ACP_FAULT_ENV = "SCRIPTED_ACP_FAULT"
 
 const SCRIPT_TOKEN = /acp-script:([A-Za-z0-9._-]+)/g
 
@@ -23,19 +36,21 @@ export type AcpToolStep = {
 export type AcpStep =
   | { kind: "text"; text: string; chunks?: number }
   | { kind: "usage"; used: number; size: number }
+  | { kind: "prompt" }
+  | { kind: "mcp"; marker: string }
   | { kind: "reasoning"; text: string }
   | { kind: "image"; data: string; mimeType: string }
   | { kind: "plan"; entries: PlanEntry[] }
   | AcpToolStep
   | { kind: "diff"; path: string; oldText: string | null; newText: string; title?: string }
   | { kind: "permission"; tool: ToolKind; title: string; path?: string; input?: Record<string, unknown>; text?: string }
-  | { kind: "question"; message: string; options?: string[] }
+  | { kind: "question"; message: string; options?: string[]; mode?: "form" | "url"; url?: string; schema?: Record<string, unknown> }
   | { kind: "subagent"; name: string; task: string; steps: AcpStep[] }
   | { kind: "hold"; name: string }
   | { kind: "error"; message: string }
   | { kind: "stop"; reason: StopReason }
 
-export type AcpScript = { steps: AcpStep[]; stopReason?: StopReason }
+export type AcpScript = { steps: AcpStep[]; stopReason?: StopReason; capturePrompt?: boolean; usage?: PromptResponse["usage"] }
 
 export function acpScriptToken(name: string) {
   return `acp-script:${name}`
@@ -51,6 +66,10 @@ function scriptFile(dir: string, name: string) {
 
 export function holdReleaseFile(dir: string, name: string) {
   return path.join(dir, `${name}.release`)
+}
+
+export function holdEnteredFile(dir: string, name: string) {
+  return path.join(dir, `${name}.entered`)
 }
 
 export async function writeAcpScript(dir: string, name: string, script: AcpScript) {

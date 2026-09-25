@@ -35,6 +35,11 @@ export async function isolatedEnv(home: string, guardUrl: string): Promise<NodeJ
     GIT_TERMINAL_PROMPT: "0",
     ...AGENTS_STAY_OFFLINE,
     PI_EXECUTABLE: PINNED_PI,
+    ...(process.env.H11_DROP_ACP_IMAGE === "1" ? { H11_DROP_ACP_IMAGE: "1" } : {}),
+    ...(process.env.H1_DROP_ACP_TOOL_OUTPUT === "1" ? { H1_DROP_ACP_TOOL_OUTPUT: "1" } : {}),
+    ...(process.env.H13_DROP_ACP_USAGE === "1" ? { H13_DROP_ACP_USAGE: "1" } : {}),
+    ...(process.env.CLAXEDO_E2E_ACP_WITHHOLD_ONCE_OPTION === "1" ? { CLAXEDO_E2E_ACP_WITHHOLD_ONCE_OPTION: "1" } : {}),
+    ...(process.env.CLAXEDO_E2E_ACP_FAULT ? { CLAXEDO_E2E_ACP_FAULT: process.env.CLAXEDO_E2E_ACP_FAULT } : {}),
     ...egressProxyEnv(guardUrl),
   }
 }

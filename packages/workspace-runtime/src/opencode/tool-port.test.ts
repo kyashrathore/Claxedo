@@ -11,12 +11,12 @@ test("tool catalogs stay location-scoped and a failed plugin install can retry",
   let attempts = 0
   const catalogs = new Map<string, string[]>()
   const setups = new Set<string>()
-  const client = {
-    async plugin(plugin: Plugin.Plugin) {
+  const plugin = Object.assign(
+    async (next: Plugin.Plugin) => {
       if (++attempts === 1) throw new Error("boot failed")
-      installed = plugin
+      installed = next
     },
-    model: { async list({ location }: { location: { directory: string } }) {
+    { async awaitActivation({ location }: { location: { directory: string } }) {
       const directory = location.directory
       if (!setups.has(directory)) {
         let transform: (draft: { add(tool: { name: string }): void }) => unknown
@@ -30,9 +30,9 @@ test("tool catalogs stay location-scoped and a failed plugin install can retry",
         } } as never)
         setups.add(directory)
       }
-      return { data: [] }
     } },
-  }
+  )
+  const client = { plugin }
   const port = createToolPort({ client: async () => client } as unknown as OpenCodeHost)
   const alpha = WorkspaceScope.authorize({ workspaceID: "alpha", directory: process.cwd() })
   const beta = WorkspaceScope.authorize({ workspaceID: "beta", directory: "/tmp" })
@@ -87,12 +87,11 @@ test("merged Session tool groups keep their authoritative callback", async () =>
       })
     },
   }
-  const client = {
-    model: { list: async () => ({ data: [] }) },
-    async plugin(plugin: Plugin.Plugin) {
-      await plugin.setup({ tool, location: { directory: process.cwd() } } as never)
-    },
-  }
+  const plugin = Object.assign(
+    async (next: Plugin.Plugin) => { await next.setup({ tool, location: { directory: process.cwd() } } as never) },
+    { async awaitActivation() {} },
+  )
+  const client = { plugin }
   const host = { client: async () => client } as unknown as OpenCodeHost
   const port = createToolPort(host)
 

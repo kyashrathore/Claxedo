@@ -200,7 +200,6 @@ export class AcpTransport implements HarnessTransport {
 
   async *send(session: HarnessSession, turn: TurnInput, broker: TurnBroker): AsyncIterable<RoutedEvent> {
     const entry = this.entry(session)
-    if (JSON.stringify(turn.origin) !== JSON.stringify(entry.start.origin)) throw new AcpTransportError("origin_mismatch", "ACP turn origin differs from session origin")
     if (entry.phase !== "ready") throw new AcpTransportError("session", entry.phase === "uncertain" ? "ACP session outcome is uncertain" : "ACP session already has an active turn")
     entry.phase = "busy"
     entry.cancelled = false
