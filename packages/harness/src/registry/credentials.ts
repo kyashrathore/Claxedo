@@ -21,7 +21,7 @@ export type CredentialSelectionInput = {
         kind: "providers"
         providerIds: readonly string[]
         selectedAccounts: Readonly<Record<string, Readonly<Record<string, SelectedAccount>>>>
-        machineCredentials: ResolvedCredentials
+        machineCredentials: Readonly<Record<string, SelectedAccount>>
         leaseGeneration: string
       }
 }
@@ -73,9 +73,9 @@ export function selectTurnCredentials(input: CredentialSelectionInput): Resolved
       addCredentialSecrets(secrets, selected.secrets)
       continue
     }
-    const machine = ownerLocal ? profile.machineCredentials.providers[providerId] : undefined
-    providers[providerId] = machine ?? { unavailable: true, reason: "No selected account for this provider" }
-    if (machine) addCredentialSecrets(secrets, profile.machineCredentials.secrets)
+    const machine = ownerLocal ? profile.machineCredentials[providerId] : undefined
+    providers[providerId] = machine?.projection ?? { unavailable: true, reason: "No selected account for this provider" }
+    if (machine && !("unavailable" in machine.projection)) addCredentialSecrets(secrets, machine.secrets)
   }
   return { providers, secrets, leaseGeneration: profile.leaseGeneration }
 }
