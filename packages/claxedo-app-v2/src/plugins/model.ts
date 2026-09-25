@@ -1,10 +1,11 @@
 import type { PluginCapability, PluginDefinition, PluginManifest } from "@claxedo/plugin-api"
 import type { Translations } from "@/i18n"
 import { machine, unreachable, type Machine } from "@/lib/machine"
+import type { ApprovalCheck } from "./approval"
 
 export type PluginOrigin =
   | { readonly kind: "bundled" }
-  | { readonly kind: "live"; readonly hash: string; readonly buildError?: string }
+  | { readonly kind: "live"; readonly hash: string; readonly directory: string; readonly builtAt?: string; readonly buildError?: string }
 
 export type PluginBuild = {
   readonly manifest: PluginManifest
@@ -34,10 +35,11 @@ export type PluginSummary = {
   readonly id: string
   readonly name: string
   readonly version: string
+  readonly manifest: PluginManifest
   readonly origin: PluginOrigin
   readonly switchedOn: boolean
   readonly missing: readonly PluginCapability[]
-  readonly confirmed: boolean
+  readonly approval: ApprovalCheck
   readonly state: PluginState
 }
 

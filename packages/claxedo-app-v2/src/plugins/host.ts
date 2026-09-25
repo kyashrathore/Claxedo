@@ -1,6 +1,7 @@
 import { createMemo, createSignal, type Accessor } from "solid-js"
 import type { PluginCapability } from "@claxedo/plugin-api"
 import type { Capabilities } from "@/server"
+import { approvalCheck, approvalFor, approvalLetsRun, type ApprovalCheck } from "./approval"
 import { createPluginLifecycle, type Activate, type PluginLifecycle } from "./lifecycle"
 import type { PluginBuild, PluginSummary } from "./model"
 import type { PluginPreferences } from "./preferences"
@@ -18,7 +19,7 @@ export type PluginHost = {
   readonly drop: (pluginId: string) => void
   readonly switchOn: (pluginId: string) => void
   readonly switchOff: (pluginId: string) => void
-  readonly confirm: (pluginId: string) => void
+  readonly approve: (pluginId: string, hash: string) => boolean
   readonly remove: (pluginId: string) => Promise<void>
   readonly safeMode: Accessor<boolean>
   readonly leaveSafeMode: () => void
@@ -32,12 +33,16 @@ export function createPluginHost(deps: PluginHostDeps): PluginHost {
   const missing = (build: PluginBuild): readonly PluginCapability[] =>
     build.manifest.requires.filter((capability) => deps.features()?.[capability] !== true)
 
-  const confirmed = (build: PluginBuild) => build.origin.kind === "bundled" || preferences.confirmed(build.manifest.id)
+  const approval = (build: PluginBuild): ApprovalCheck => {
+    if (build.origin.kind === "bundled") return { kind: "approved" }
+    if (build.origin.builtAt === undefined) return { kind: "unapproved" }
+    return approvalCheck(preferences.approval(build.manifest.id), { manifest: build.manifest, hash: build.origin.hash, builtAt: build.origin.builtAt })
+  }
 
   const wanted = (build: PluginBuild) => {
     const id = build.manifest.id
     if (!preferences.switchedOn(id) || missing(build).length > 0) return false
-    return build.origin.kind === "bundled" || (!preferences.safeMode() && confirmed(build))
+    return build.origin.kind === "bundled" || (!preferences.safeMode() && approvalLetsRun(approval(build)))
   }
 
   const summaries = createMemo<readonly PluginSummary[]>(() =>
@@ -47,10 +52,11 @@ export function createPluginHost(deps: PluginHostDeps): PluginHost {
         id: lifecycle.id,
         name: build.manifest.name,
         version: build.manifest.version,
+        manifest: build.manifest,
         origin: build.origin,
         switchedOn: preferences.switchedOn(lifecycle.id),
         missing: missing(build),
-        confirmed: confirmed(build),
+        approval: approval(build),
         state: lifecycle.state(),
       }
     }),
@@ -81,7 +87,12 @@ export function createPluginHost(deps: PluginHostDeps): PluginHost {
     },
     switchOn: (pluginId) => preferences.setSwitchedOn(pluginId, true),
     switchOff: (pluginId) => preferences.setSwitchedOn(pluginId, false),
-    confirm: preferences.confirm,
+    approve: (pluginId, hash) => {
+      const build = find(pluginId)?.build()
+      if (build?.origin.kind !== "live" || build.origin.hash !== hash || build.origin.builtAt === undefined) return false
+      preferences.approve(pluginId, approvalFor({ manifest: build.manifest, hash, builtAt: build.origin.builtAt }, new Date()))
+      return true
+    },
     safeMode: preferences.safeMode,
     leaveSafeMode: preferences.leaveSafeMode,
     dispose: () => {

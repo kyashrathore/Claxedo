@@ -1,32 +1,65 @@
 import { createSignal, type Accessor } from "solid-js"
+import { PLUGIN_CAPABILITIES, type PluginCapability } from "@claxedo/plugin-api"
 import { persistedSignal, preferenceKey } from "@/lib/persisted"
+import type { Approval } from "./approval"
 
-type PluginChoices = { readonly off: readonly string[]; readonly confirmed: readonly string[] }
+type PluginSwitches = { readonly off: readonly string[] }
+type PluginApprovals = Readonly<Record<string, Approval>>
 
 export type PluginPreferences = {
   readonly switchedOn: (pluginId: string) => boolean
   readonly setSwitchedOn: (pluginId: string, on: boolean) => void
-  readonly confirmed: (pluginId: string) => boolean
-  readonly confirm: (pluginId: string) => void
+  readonly approval: (pluginId: string) => Approval | undefined
+  readonly approve: (pluginId: string, approval: Approval) => void
   readonly forget: (pluginId: string) => void
   readonly safeMode: Accessor<boolean>
   readonly leaveSafeMode: () => void
 }
 
-const NO_CHOICES: PluginChoices = { off: [], confirmed: [] }
+const NO_SWITCHES: PluginSwitches = { off: [] }
+const NO_APPROVALS: PluginApprovals = {}
 
 function isStringList(value: unknown): value is readonly string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string")
 }
 
-function readChoices(value: unknown): PluginChoices | undefined {
-  if (typeof value !== "object" || value === null) return undefined
-  const { off, confirmed } = value as Record<string, unknown>
-  return isStringList(off) && isStringList(confirmed) ? { off, confirmed } : undefined
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function isCapability(value: string): value is PluginCapability {
+  return (PLUGIN_CAPABILITIES as readonly string[]).includes(value)
+}
+
+function readSwitches(value: unknown): PluginSwitches | undefined {
+  return isRecord(value) && isStringList(value.off) ? { off: value.off } : undefined
+}
+
+function readApproval(value: unknown): Approval | undefined {
+  if (!isRecord(value) || !isRecord(value.access) || typeof value.hash !== "string" || typeof value.approvedAt !== "string") return undefined
+  const { routes, operations, requires } = value.access
+  if (!isStringList(routes) || !isStringList(operations) || !isStringList(requires)) return undefined
+  if (!requires.every(isCapability)) return undefined
+  return { access: { routes, operations, requires }, hash: value.hash, approvedAt: value.approvedAt }
+}
+
+function readApprovals(value: unknown): PluginApprovals | undefined {
+  if (!isRecord(value)) return undefined
+  const approvals: Record<string, Approval> = {}
+  for (const [pluginId, entry] of Object.entries(value)) {
+    const approval = readApproval(entry)
+    if (!approval) return undefined
+    approvals[pluginId] = approval
+  }
+  return approvals
 }
 
 function without(list: readonly string[], id: string): readonly string[] {
   return list.filter((entry) => entry !== id)
+}
+
+function withoutKey(approvals: PluginApprovals, id: string): PluginApprovals {
+  return Object.fromEntries(Object.entries(approvals).filter(([pluginId]) => pluginId !== id))
 }
 
 export function safeModeRequested(search: string): boolean {
@@ -34,16 +67,18 @@ export function safeModeRequested(search: string): boolean {
 }
 
 export function createPluginPreferences(scope: string, safeModeAtStart: boolean): PluginPreferences {
-  const [choices, setChoices] = persistedSignal(preferenceKey("plugins", scope), NO_CHOICES, readChoices)
+  const [switches, setSwitches] = persistedSignal(preferenceKey("plugins", scope), NO_SWITCHES, readSwitches)
+  const [approvals, setApprovals] = persistedSignal(preferenceKey("plugin-approvals", scope), NO_APPROVALS, readApprovals)
   const [safeMode, setSafeMode] = createSignal(safeModeAtStart)
-  const update = (change: (current: PluginChoices) => PluginChoices) => setChoices((current) => change(current))
   return {
-    switchedOn: (pluginId) => !choices().off.includes(pluginId),
-    setSwitchedOn: (pluginId, on) =>
-      update((current) => ({ ...current, off: on ? without(current.off, pluginId) : [...without(current.off, pluginId), pluginId] })),
-    confirmed: (pluginId) => choices().confirmed.includes(pluginId),
-    confirm: (pluginId) => update((current) => ({ ...current, confirmed: [...without(current.confirmed, pluginId), pluginId] })),
-    forget: (pluginId) => update((current) => ({ off: without(current.off, pluginId), confirmed: without(current.confirmed, pluginId) })),
+    switchedOn: (pluginId) => !switches().off.includes(pluginId),
+    setSwitchedOn: (pluginId, on) => setSwitches((current) => ({ off: on ? without(current.off, pluginId) : [...without(current.off, pluginId), pluginId] })),
+    approval: (pluginId) => approvals()[pluginId],
+    approve: (pluginId, approval) => setApprovals((current) => ({ ...current, [pluginId]: approval })),
+    forget: (pluginId) => {
+      setSwitches((current) => ({ off: without(current.off, pluginId) }))
+      setApprovals((current) => withoutKey(current, pluginId))
+    },
     safeMode,
     leaveSafeMode: () => setSafeMode(false),
   }

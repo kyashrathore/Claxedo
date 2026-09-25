@@ -1,18 +1,9 @@
-import type { FetchQuery } from "@/server"
-
-export type LivePlugin = {
-  readonly id: string
-  readonly name: string | null
-  readonly version: string | null
-  readonly status: "building" | "ready" | "failed"
-  readonly hash: string | null
-  readonly lastError: string | null
-}
+import type { FetchQuery, LivePlugin, Server } from "@/server"
 
 export type PluginServerCalls = {
   readonly fetch: (path: string, init?: RequestInit) => Promise<Response>
   readonly operation: (name: string, input: unknown) => Promise<unknown>
-  readonly livePlugins: () => FetchQuery<readonly LivePlugin[]> | undefined
+  readonly livePlugins: () => FetchQuery<readonly LivePlugin[]>
   readonly liveBundle: (pluginId: string, hash: string) => Promise<string>
   readonly removeLive: (pluginId: string) => Promise<void>
 }
@@ -24,12 +15,12 @@ export class AdapterGapError extends Error {
   }
 }
 
-export function pluginServerCalls(): PluginServerCalls {
+export function pluginServerCalls(server: Server): PluginServerCalls {
   return {
-    fetch: () => Promise.reject(new AdapterGapError("plugins.fetch")),
+    fetch: (path, init) => server.request(path, init),
     operation: () => Promise.reject(new AdapterGapError("plugins.operation")),
-    livePlugins: () => undefined,
-    liveBundle: () => Promise.reject(new AdapterGapError("plugins.liveBundle")),
-    removeLive: () => Promise.reject(new AdapterGapError("plugins.removeLive")),
+    livePlugins: () => server.queries.livePlugins.list(),
+    liveBundle: (pluginId, hash) => server.livePlugins.bundle(pluginId, hash),
+    removeLive: (pluginId) => server.livePlugins.remove(pluginId),
   }
 }

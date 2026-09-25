@@ -19,12 +19,13 @@ import { createLiveReconciler } from "./live/controller"
 import { loadFrameBuild, loadLiveBuild, type LiveRow } from "./live/load"
 import type { PluginBuild } from "./model"
 import { createPluginPreferences, safeModeRequested } from "./preferences"
-import { confirmLivePlugin } from "./view/confirm-live"
+import { approvalLetsRun } from "./approval"
+import { requestApproval } from "./view/approval-request"
 
 export type PluginsContext = PluginHost & {
   readonly platform: PluginPlatform
   readonly liveListError: Accessor<string | undefined>
-  readonly requestConfirmation: (pluginId: string) => void
+  readonly requestApproval: (pluginId: string) => void
 }
 
 const PluginHostContext = createContext<PluginsContext>()
@@ -55,7 +56,7 @@ function useHostServices(): HostServices {
     platform: currentPlatform(),
     projects: () => projects.data ?? [],
     overlays: createOverlayTracker(commands),
-    calls: pluginServerCalls(),
+    calls: pluginServerCalls(server),
     claims: createClaims(),
   }
 }
@@ -66,29 +67,29 @@ function createActivate(services: HostServices) {
 }
 
 function useLiveList(host: PluginHost, services: HostServices): Accessor<string | undefined> {
-  const options = services.calls.livePlugins()
-  if (!options) return () => undefined
   const runtime = createFrameRuntimeSource()
   const loadBuild = (row: LiveRow) =>
     services.platform === "desktop" ? loadLiveBuild(row, services.calls) : loadFrameBuild(row, services.calls, { runtime, services })
   const reconciler = createLiveReconciler(host, loadBuild)
-  const list = useQuery(() => options)
+  const list = useQuery(() => ({ ...services.calls.livePlugins(), enabled: services.server.capabilities()?.features.livePlugins === true }))
   createEffect(on(() => list.data, (rows) => rows && reconciler.reconcile(rows)))
   return () => (list.error ? failureReason(list.error) : undefined)
 }
 
-function useLiveConfirmations(host: PluginHost, services: HostServices): (pluginId: string) => void {
+function useLiveApprovals(host: PluginHost, services: HostServices): (pluginId: string) => void {
   const t = usePluginsText()
   const asked = new Set<string>()
   const request = (pluginId: string) => {
     const plugin = host.plugins().find((candidate) => candidate.id === pluginId)
-    if (plugin) void confirmLivePlugin({ host, dialog: services.dialog, platform: services.platform, t }, plugin)
+    if (plugin) requestApproval({ host, dialog: services.dialog, t }, plugin)
   }
   createEffect(() => {
     if (host.safeMode()) return
     for (const plugin of host.plugins()) {
-      if (plugin.origin.kind !== "live" || plugin.confirmed || asked.has(plugin.id)) continue
-      asked.add(plugin.id)
+      if (plugin.origin.kind !== "live" || plugin.origin.builtAt === undefined || approvalLetsRun(plugin.approval)) continue
+      const build = `${plugin.id}:${plugin.origin.hash}`
+      if (asked.has(build)) continue
+      asked.add(build)
       request(plugin.id)
     }
   })
@@ -110,7 +111,7 @@ export function PluginHostProvider(props: { readonly scope: string; readonly chi
     ...host,
     platform: services.platform,
     liveListError: useLiveList(host, services),
-    requestConfirmation: useLiveConfirmations(host, services),
+    requestApproval: useLiveApprovals(host, services),
   }
   return <PluginHostContext.Provider value={value}>{props.children}</PluginHostContext.Provider>
 }

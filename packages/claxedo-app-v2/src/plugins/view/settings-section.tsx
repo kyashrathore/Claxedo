@@ -5,6 +5,7 @@ import { Button } from "@/ui"
 import { usePluginsText } from "../i18n"
 import { usePluginHost } from "../provider"
 import { PluginRow } from "./plugin-row"
+import { PluginWarning } from "./plugin-warning"
 import "./plugins.css"
 
 function PluginsSettings(): JSX.Element {
@@ -16,6 +17,7 @@ function PluginsSettings(): JSX.Element {
         {t("plugins.settings.title")}
       </h2>
       <p class="plugins-settings-description">{t("plugins.settings.description")}</p>
+      <PluginWarning />
       <Show when={host.safeMode()}>
         <div role="status" class="plugins-settings-safe-mode">
           <span>{t("plugins.safeMode")}</span>

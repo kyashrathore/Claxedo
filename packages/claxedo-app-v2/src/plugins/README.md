@@ -7,10 +7,11 @@ The plugin host. It runs the first-party plugins that `bundled.ts` lists from `p
 - **Plugin build** (`model.ts`): a manifest, its origin (`bundled`, or `live` with the daemon's bundle hash), the `definePlugin` definition and an optional dictionary. A build's identity is the hash for a live plugin and the manifest version for a bundled one, so every save of a live plugin is a new build.
 - **Activation** (`activation.ts`): `activate(api)` runs inside a Solid root that belongs to the plugin, under `catchError`. Every registration goes through the plugin's `RegistrationSink` (`registrations.ts`), and disposing the root disposes every entry, aborts `api.context.signal` and runs the cleanup `activate` returned. A sink refuses registrations after its plugin is disposed.
 - **Bindings** (`bindings/`): the `PluginApi` for one build. Entry ids are `<pluginId>/<id>`; theme and icon skin ids stay as given because the theme id is what `data-theme` names, and a taken id is refused. Every page, pane, settings section and overlay view renders inside the plugin's error boundary (`boundary.tsx`). `server.fetch` accepts only same-server paths under a route the manifest names, and `server.operation` only operations it names; both are mistake catchers, not a sandbox.
-- **Choices** (`preferences.ts`): per principal scope, through `persistedSignal`: which plugins are switched off (on by default) and which live plugins the user confirmed. Safe mode (`?safe-mode` on the app URL) keeps every live plugin off for that load.
+- **Choices** (`preferences.ts`): per principal scope, through `persistedSignal`: which plugins are switched off (on by default), and each live plugin's approval. Safe mode (`?safe-mode` on the app URL) keeps every live plugin off for that load.
+- **Approval** (`approval.ts`): the user approves a live plugin's manifest, not its id. An approval records the access the manifest declared (server routes, operations, `requires`), the build hash and when. `approvalCheck` compares it with the running build: `unapproved`, `accessChanged` (the declared access differs, with what was added and removed), `codeChanged` (same access, new build, with its build time) or `approved`. Only `approved` and `codeChanged` run; `accessChanged` stops the plugin until the user approves again. `CODE_CHANGE_NEEDS_APPROVAL` is the one line that makes every new build ask. An approval names the build the user was shown, so a build that changed while the dialog was open is not approved by it.
 - **Requirements**: `requires` names `Capabilities.features` keys (`tasks`, `documents`). The host re-checks them whenever capabilities change and activates or disposes to match.
 - **Host** (`host.ts`, `lifecycle.ts`): one lifecycle per plugin, wanted when switched on, its requirements are met and, for a live plugin, it is confirmed and safe mode is off. A new build activates beside the running one and replaces it only once it activated.
-- **Settings → Plugins** (`view/`): every plugin with its origin, version, state and why it is not running; on and off; remove for a live plugin.
+- **Settings → Plugins** (`view/`): the warning that a plugin runs with the user's access, then every plugin with its origin, version, state and why it is not running; on and off; its manifest in readable form (id, version, folder, routes, operations, requires, build hash, last build); and for a live plugin "View code" (a read-only view of its folder through the daemon's source routes) and remove. The approval dialog shows the same warning and manifest, and what changed when the access did.
 
 ## State machine
 
@@ -31,9 +32,10 @@ A failed build is not retried until a new build arrives or the plugin is switche
 
 ## Live plugins (`live/`)
 
-- The daemon's list (`/api/claxedo/live-plugins`, re-read on `pluginsChanged`) is reconciled with the host: a new hash loads a new build, a removed row drops the plugin, and a failed daemon build keeps the served hash and shows `lastError`.
+- The daemon's list (`server.queries.livePlugins.list()`, read only when the server reports `features.livePlugins`, re-read on `pluginsChanged`) is reconciled with the host: a new hash loads a new build, a removed row drops the plugin, and a failed daemon build keeps the served hash and shows `lastError`.
+- A live build's manifest is the one the daemon built it from (the row's `manifest`); a `manifest` the bundle declares in code is not consulted beyond its id. The hash covers the manifest, so a manifest change alone is a new build.
 - A load that fails becomes a build whose `activate` throws, so the machine keeps the running build and shows why. A plugin whose first build failed shows the daemon's error.
-- The first time a live plugin appears, the host asks once whether to turn it on; the answer is kept per principal. Settings asks again when an unconfirmed plugin is switched on.
+- When a live build needs approval, the host asks once per build; the answer is kept per principal. Settings asks again when the switch is turned on.
 - **Desktop:** the bundle text is fetched through the adapter (the bundle route needs auth), imported from a Blob URL, and runs in the app's realm against `globalThis.__claxedoPluginRuntime` (`live/runtime.ts`).
 - **Web:** the bundle never runs in the app's realm. `frame/` runs it in a sandboxed iframe (`sandbox="allow-scripts"`, never same-origin), so it has an opaque origin and cannot read the app's storage or DOM.
 
@@ -47,7 +49,7 @@ A failed build is not retried until a new build arrives or the plugin is switche
 
 ## Server access
 
-`api.ts` is the host's only way to the server. Until the adapter serves `server.plugins`, its calls reject with `AdapterGapError` and the live list is empty.
+`api.ts` is the host's only way to the server: `server.request` for a plugin's `server.fetch` (after the manifest check), the adapter's live plugin list, bundle and removal. `server.operation` still rejects with `AdapterGapError`: hosted operations need the account layer. A plugin's requests carry the viewing user's credentials and nothing else, and the server applies that user's access.
 
 ## Flows
 
