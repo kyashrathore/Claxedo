@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { ClaxedoApi, assistantText } from "../harness/api"
-import { activateCloudCredential, cloudSessionTransport, createCloudWorkspace, setCloudCredentialScope, waitCloudConnection } from "../harness/cloud-workspace"
+import { activateCloudCredential, cloudSessionTransport, createCloudWorkspace, setCloudCredentialScope, waitCloudConnection, reachCloudRuntime } from "../harness/cloud-workspace"
 import { startStack } from "../harness/stack"
 import { frameType, openEventStream } from "../harness/stream"
 
@@ -12,10 +12,10 @@ export async function run() {
     const connection = await waitCloudConnection(stack, workspace.id)
     assert.equal(connection.status, 200, `Cloud connection: ${connection.body}`)
     const api = new ClaxedoApi(stack.url, cloudSessionTransport(stack, workspace.id), { reserveSessions: true })
-    const stream = await openEventStream(stack.url, workspace.directory, {
+    const stream = await reachCloudRuntime(openEventStream(stack.url, workspace.directory, {
       relayWorkspaceId: workspace.id,
       authorization: `Bearer ${stack.daemon.cloudToken}`,
-    })
+    }))
     try {
       const model = { providerId: "pi", modelId: "openai/gpt-4.1" }
       const session = await api.createSession(workspace.directory, { harness: { id: "pi", access: "native" }, model })

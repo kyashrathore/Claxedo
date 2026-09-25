@@ -79,3 +79,13 @@ export async function setCloudCredentialScope(stack: Stack, providerId: string, 
 export async function activateCloudCredential(stack: Stack, id: string) {
   await sendJson(cloudTransport(stack), "POST", `${stack.url}/api/claxedo/credentials/activate`, { ids: [id] }, "Activating cloud credential")
 }
+
+const SIGNED_MINT_REFUSAL = /A user-principal runtime token must be minted for a signed caller/
+
+export async function reachCloudRuntime<T>(attempt: Promise<T>): Promise<T> {
+  try { return await attempt }
+  catch (error) {
+    if (SIGNED_MINT_REFUSAL.test(String(error))) throw new Error(`C-16: the proxy minted the signed caller no runtime token: ${String(error).slice(0, 300)}`)
+    throw error
+  }
+}
