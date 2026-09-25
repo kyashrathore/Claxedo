@@ -192,6 +192,25 @@ describe("native Pi through the shared adapter", () => {
       await f.cleanup()
     }
   })
+  test("a second options read for the same model answers without starting Pi", async () => {
+    const fake = await installFakePiRpc()
+    const launches: string[] = []
+    const adapter = new PiHarnessAdapter({
+      binary: fake.binary,
+      agentDir: fake.agentDir,
+      store: createMemoryRuntimeStore(),
+      processObserver: { register: (descriptor) => { launches.push(descriptor.label); return { update: () => {}, exit: () => {} } } },
+    })
+    try {
+      const first = await adapter.probeConfigOptions(fake.directory)
+      expect(launches).toHaveLength(1)
+      expect(await adapter.probeConfigOptions(fake.directory)).toEqual(first)
+      expect(launches).toHaveLength(1)
+    } finally {
+      await adapter.dispose()
+      await fake.dispose()
+    }
+  })
   test("returns the process model list and thinking levels", async () => {
     const f = await fixture()
     try {

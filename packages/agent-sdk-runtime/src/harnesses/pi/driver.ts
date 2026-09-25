@@ -28,6 +28,7 @@ import {
 import { providerProjectionRecord, type ProviderProjection } from "../../provider-projection"
 import { PiJsonLines, PiRpcProcess, type PiRpcMessage } from "./rpc-process"
 import { listPiCatalogModels } from "./catalog"
+import { createPiOptionsCache, type PiOptionsProbe } from "./options-cache"
 import { createProcessLoss } from "../shared/process-loss"
 import { requirePiExecutable, verifyPiExecutable, piCommand } from "./executable"
 import { ensurePiTitleExtension, generatePiTitle, setPiSessionName } from "./title-extension"
@@ -86,6 +87,7 @@ export class PiRpcDriver implements SdkRuntimeDriver {
   private disposing = false
   private readonly agentDir: string
   private readonly authProfile: ReturnType<typeof retainPiAuth>
+  private readonly optionsCache: ReturnType<typeof createPiOptionsCache>
 
   constructor(
     private readonly host: SdkRuntimeDriverHost,
@@ -227,6 +229,7 @@ export class PiRpcDriver implements SdkRuntimeDriver {
     this.goals = this.goalController.resource
     this.agentDir = options.agentDir
     this.authProfile = retainPiAuth(this.agentDir)
+    this.optionsCache = createPiOptionsCache(this.agentDir)
   }
   async applyConfig(config: Record<string, unknown>) {
     const auth = providerProjectionRecord(config.auth, {}, { onInvalid: "reject" })
@@ -245,6 +248,7 @@ export class PiRpcDriver implements SdkRuntimeDriver {
       await this.authProfile.write(providers)
       this.projectedProviders = providers
       this.models = []
+      this.optionsCache.clear()
     }
   }
 
@@ -596,6 +600,13 @@ export class PiRpcDriver implements SdkRuntimeDriver {
   }
   async configOptions(currentModel: string, directory?: string): Promise<AgentConfigOption[]> {
     if (!directory) throw new Error("Pi model discovery requires a machine workspace")
+    const probed = await this.optionsCache.read(directory, currentModel, () => this.probeOptions(currentModel, directory))
+    this.models = probed.models
+    this.thinking = probed.thinking
+    this.selectedThinking = probed.selectedThinking
+    return this.peekConfigOptions(currentModel)
+  }
+  private async probeOptions(currentModel: string, directory: string): Promise<PiOptionsProbe> {
     const probe = await this.start(directory, ["--no-session"])
     try {
       const result = record(await probe.request("get_available_models", {}, controlRequestDeadline()))
@@ -610,7 +621,7 @@ export class PiRpcDriver implements SdkRuntimeDriver {
       const binary = this.options.binary ?? requirePiExecutable()
       const catalog = await listPiCatalogModels(binary, this.agentDir)
       const availableIds = new Set(available.map((model) => model.id))
-      this.models = (catalog.length ? catalog : available).map((model) => ({
+      const models = (catalog.length ? catalog : available).map((model) => ({
         ...model,
         connected: availableIds.has(model.id),
       }))
@@ -622,16 +633,18 @@ export class PiRpcDriver implements SdkRuntimeDriver {
         }, controlRequestDeadline())
       }
       const levels = record(await probe.request("get_available_thinking_levels", {}, controlRequestDeadline()))
-      this.thinking = Array.isArray(levels?.levels)
+      const thinking = Array.isArray(levels?.levels)
         ? levels.levels.filter((value): value is string => typeof value === "string")
         : []
       const state = record(await probe.request("get_state", {}, controlRequestDeadline()))
-      this.selectedThinking = text(state?.thinkingLevel) ?? "off"
       const selectedProvider = text(record(state?.model)?.provider)
       const selectedModelId = text(record(state?.model)?.id)
       const selectedId = selectedProvider && selectedModelId ? `${selectedProvider}/${selectedModelId}` : undefined
-      this.models = this.models.map((model) => ({ ...model, isDefault: model.id === selectedId }))
-      return this.peekConfigOptions(currentModel)
+      return {
+        models: models.map((model) => ({ ...model, isDefault: model.id === selectedId })),
+        thinking,
+        selectedThinking: text(state?.thinkingLevel) ?? "off",
+      }
     } finally {
       this.recordUnresolved(`probe:${randomUUID()}`, await probe.dispose())
     }
