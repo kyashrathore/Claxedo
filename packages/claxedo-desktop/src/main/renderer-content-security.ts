@@ -32,6 +32,7 @@ export function rendererContentSecurityPolicy(serverOrigin: string | undefined, 
     servers: [...(serverOrigin ? [serverOrigin] : []), ...(dev ? [dev] : [])],
     // Vite's dev server injects inline modules and evaluates HMR updates.
     scripts: dev ? ["'unsafe-inline'", "'unsafe-eval'"] : [],
+    frames: "none",
   })
 }
 

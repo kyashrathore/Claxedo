@@ -9,7 +9,7 @@ const EXTERNAL_PROTOCOLS: ReadonlySet<string> = new Set(["http:", "https:", "mai
 
 function openExternalAnchors(api: ElectronAPI) {
   document.addEventListener("click", (event) => {
-    if (event.defaultPrevented || event.button !== 0) return
+    if (!event.isTrusted || event.defaultPrevented || event.button !== 0) return
     const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null
     if (!(anchor instanceof HTMLAnchorElement) || !EXTERNAL_PROTOCOLS.has(new URL(anchor.href).protocol)) return
     event.preventDefault()

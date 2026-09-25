@@ -43,6 +43,7 @@ function bootChunkModulepreloadPlugin(): Plugin {
         const bundle = ctx.bundle
         // `generateBundle` has not run (dev/serve): nothing to preload.
         if (!bundle) return []
+        if (!ctx.filename.endsWith("/index.html")) return []
         // Vite already emits modulepreload links for the entry's static
         // imports (vendor-solid, vendor-better-auth); skip those and the entry.
         const seen = new Set<string>()
@@ -204,7 +205,11 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
       // the publish directory.
       sourcemap: "hidden",
       rollupOptions: {
-        input: { main: fileURLToPath(new URL("./index.html", import.meta.url)) },
+        input: {
+          main: fileURLToPath(new URL("./index.html", import.meta.url)),
+          browserPreview: fileURLToPath(new URL("./browser-preview.html", import.meta.url)),
+          cliCallback: fileURLToPath(new URL("./cli-callback.html", import.meta.url)),
+        },
         output: {
           manualChunks: {
             "vendor-solid": ["solid-js", "solid-js/web", "solid-js/store"],

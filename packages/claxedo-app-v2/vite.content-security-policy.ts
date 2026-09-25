@@ -1,20 +1,13 @@
 import { createHash } from "node:crypto"
-import type { Plugin } from "vite"
-import { contentSecurityPolicy, exactOrigin } from "./content-security-policy"
+import path from "node:path"
+import type { HtmlTagDescriptor, Plugin } from "vite"
+import { browserPreviewPolicy, cliCallbackPolicy, contentSecurityPolicy } from "./content-security-policy"
 import { FRAME_BOOTSTRAP } from "./src/plugins/frame/document"
 
 export const WEB_CONTENT_SECURITY_POLICY_PLUGIN = "claxedo:web-content-security-policy"
 
-const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["127.0.0.1", "localhost", "[::1]"])
-const LOOPBACK_PAGES = ["127.0.0.1", "localhost", "[::1]"].flatMap((host) => [`http://${host}:*`, `https://${host}:*`])
-const LOOPBACK_CALLBACKS = ["127.0.0.1", "localhost", "[::1]"].map((host) => `http://${host}:*`)
-
 function relayOrigins(): string[] {
   return (process.env.CLAXEDO_RELAY_ORIGINS ?? "").split(",").map((origin) => origin.trim()).filter(Boolean)
-}
-
-function servesLoopback(server: string | undefined): boolean {
-  return server === undefined || LOOPBACK_HOSTS.has(new URL(exactOrigin(server)).hostname)
 }
 
 export function webContentSecurityPolicy(serverUrl: string | undefined): string {
@@ -22,19 +15,33 @@ export function webContentSecurityPolicy(serverUrl: string | undefined): string 
   return contentSecurityPolicy({
     servers: [...(server ? [server] : []), ...relayOrigins()],
     scripts: [`'sha256-${createHash("sha256").update(FRAME_BOOTSTRAP).digest("base64")}'`],
-    frames: servesLoopback(server) ? LOOPBACK_PAGES : [],
-    forms: LOOPBACK_CALLBACKS,
+    frames: "self",
   })
 }
 
+function documentTags(policy: string): HtmlTagDescriptor[] {
+  return [
+    { tag: "meta", attrs: { "http-equiv": "Content-Security-Policy", content: policy }, injectTo: "head-prepend" },
+    { tag: "meta", attrs: { "http-equiv": "x-dns-prefetch-control", content: "off" }, injectTo: "head-prepend" },
+  ]
+}
+
 export function webContentSecurityPolicyPlugin(serverUrl: string | undefined): Plugin {
-  const content = webContentSecurityPolicy(serverUrl)
+  const policies: Readonly<Record<string, string>> = {
+    "index.html": webContentSecurityPolicy(serverUrl),
+    "browser-preview.html": browserPreviewPolicy(),
+    "cli-callback.html": cliCallbackPolicy(),
+  }
   return {
     name: WEB_CONTENT_SECURITY_POLICY_PLUGIN,
     apply: "build",
     transformIndexHtml: {
       order: "pre",
-      handler: () => [{ tag: "meta", attrs: { "http-equiv": "Content-Security-Policy", content }, injectTo: "head-prepend" }],
+      handler: (_html, context) => {
+        const policy = policies[path.basename(context.filename)]
+        if (!policy) throw new Error(`${context.filename} has no Content-Security-Policy; name one in vite.content-security-policy.ts`)
+        return documentTags(policy)
+      },
     },
   }
 }

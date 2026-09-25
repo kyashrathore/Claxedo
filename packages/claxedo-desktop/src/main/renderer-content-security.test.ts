@@ -35,11 +35,11 @@ describe("the v2 renderer policy", () => {
   })
 
   test("refuses a wildcard, a path-only value or a non-web origin", () => {
-    expect(() => contentSecurityPolicy({ servers: ["http://127.0.0.1:*"] })).toThrow(ContentSecurityPolicyError)
-    expect(() => contentSecurityPolicy({ servers: ["https://*.claxedo.com"] })).toThrow(ContentSecurityPolicyError)
-    expect(() => contentSecurityPolicy({ servers: ["file:///tmp"] })).toThrow(ContentSecurityPolicyError)
-    expect(() => contentSecurityPolicy({ servers: ["/api"] })).toThrow(ContentSecurityPolicyError)
-    expect(directive(contentSecurityPolicy({ servers: ["https://cp.example.com/api/"] }), "connect-src")).toBe("connect-src 'self' https://cp.example.com wss://cp.example.com")
+    expect(() => contentSecurityPolicy({ servers: ["http://127.0.0.1:*"], frames: "none" })).toThrow(ContentSecurityPolicyError)
+    expect(() => contentSecurityPolicy({ servers: ["https://*.claxedo.com"], frames: "none" })).toThrow(ContentSecurityPolicyError)
+    expect(() => contentSecurityPolicy({ servers: ["file:///tmp"], frames: "none" })).toThrow(ContentSecurityPolicyError)
+    expect(() => contentSecurityPolicy({ servers: ["/api"], frames: "none" })).toThrow(ContentSecurityPolicyError)
+    expect(directive(contentSecurityPolicy({ servers: ["https://cp.example.com/api/"], frames: "none" }), "connect-src")).toBe("connect-src 'self' https://cp.example.com wss://cp.example.com")
   })
 })
 

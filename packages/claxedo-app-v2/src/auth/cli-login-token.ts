@@ -5,15 +5,6 @@ import type { AuthUser } from "./display-user"
 import { authResponseBody } from "./better-auth-error"
 import { apiOrigin } from "./origins"
 
-export function localCallback(input: string | null): string | undefined {
-  if (!input) return undefined
-  if (!URL.canParse(input)) return undefined
-  const url = new URL(input)
-  if (url.protocol !== "http:") return undefined
-  if (url.hostname !== "127.0.0.1" && url.hostname !== "localhost" && url.hostname !== "[::1]") return undefined
-  return url.toString()
-}
-
 export function userIdentity(user: AuthUser | null): string {
   return user?.email ?? user?.fullName ?? user?.id ?? "browser-session"
 }
@@ -65,28 +56,4 @@ export function cliCallbackFields(input: {
     ...(input.tokenType ? { token_type: input.tokenType } : {}),
     ...(input.expiresIn ? { expires_in: String(input.expiresIn) } : {}),
   }
-}
-
-export function postToken(input: {
-  callback: string
-  state: string
-  accessToken: string
-  identity: string
-  refreshToken?: string
-  tokenType?: string
-  expiresIn?: number
-}) {
-  const form = document.createElement("form")
-  form.method = "POST"
-  form.action = input.callback
-  form.style.display = "none"
-  for (const [name, value] of Object.entries(cliCallbackFields(input))) {
-    const field = document.createElement("input")
-    field.type = "hidden"
-    field.name = name
-    field.value = value
-    form.appendChild(field)
-  }
-  document.body.appendChild(form)
-  form.submit()
 }

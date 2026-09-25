@@ -35,5 +35,5 @@ function framePolicy(appOrigin: string): string {
 }
 
 export function frameDocument(appOrigin: string): string {
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${framePolicy(appOrigin)}"></head><body><script>${FRAME_BOOTSTRAP}</script></body></html>`
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${framePolicy(appOrigin)}"><meta http-equiv="x-dns-prefetch-control" content="off"></head><body><script>${FRAME_BOOTSTRAP}</script></body></html>`
 }

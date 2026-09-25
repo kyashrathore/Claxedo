@@ -1,8 +1,7 @@
 export type ContentSecurityPolicyInput = {
   readonly servers: readonly string[]
   readonly scripts?: readonly string[]
-  readonly frames?: readonly string[]
-  readonly forms?: readonly string[]
+  readonly frames: "self" | "none"
 }
 
 const WEB_SCHEMES: ReadonlySet<string> = new Set(["http:", "https:"])
@@ -33,8 +32,6 @@ function sources(...lists: readonly (readonly string[])[]): string {
 export function contentSecurityPolicy(input: ContentSecurityPolicyInput): string {
   const servers = [...new Set(input.servers.map(exactOrigin))]
   const sockets = servers.map(socketOrigin)
-  const frames = input.frames ?? []
-  const forms = input.forms ?? []
   return [
     "default-src 'self'",
     `script-src ${sources(["'self'", "'wasm-unsafe-eval'", "blob:"], input.scripts ?? [])}`,
@@ -44,10 +41,22 @@ export function contentSecurityPolicy(input: ContentSecurityPolicyInput): string
     `media-src ${sources(["'self'", "data:", "blob:"], servers)}`,
     `connect-src ${sources(["'self'"], servers, sockets)}`,
     "worker-src 'self' blob:",
-    `frame-src ${frames.length > 0 ? sources(frames) : "'none'"}`,
+    `frame-src '${input.frames}'`,
     "manifest-src 'self'",
     "object-src 'none'",
     "base-uri 'none'",
-    `form-action ${forms.length > 0 ? sources(forms) : "'none'"}`,
+    "form-action 'none'",
   ].join("; ")
+}
+
+const LOOPBACK_HOSTS = ["127.0.0.1", "localhost", "[::1]"]
+
+export function browserPreviewPolicy(): string {
+  const loopback = LOOPBACK_HOSTS.flatMap((host) => [`http://${host}:*`, `https://${host}:*`])
+  return ["default-src 'none'", "style-src 'unsafe-inline'", `frame-src ${sources(loopback, ["https:"])}`, "base-uri 'none'", "form-action 'none'"].join("; ")
+}
+
+export function cliCallbackPolicy(): string {
+  const loopback = LOOPBACK_HOSTS.map((host) => `http://${host}:*`)
+  return ["default-src 'none'", "script-src 'self'", `form-action ${sources(loopback)}`, "base-uri 'none'"].join("; ")
 }
