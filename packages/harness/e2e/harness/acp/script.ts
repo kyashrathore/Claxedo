@@ -49,7 +49,7 @@ export type AcpStep =
   | { kind: "error"; message: string }
   | { kind: "stop"; reason: StopReason }
 
-export type AcpScript = { steps: AcpStep[]; stopReason?: StopReason; usage?: PromptResponse["usage"] }
+export type AcpScript = { steps: AcpStep[]; stopReason?: StopReason; capturePrompt?: boolean; usage?: PromptResponse["usage"] }
 
 export function acpScriptToken(name: string) {
   return `acp-script:${name}`

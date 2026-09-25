@@ -25,6 +25,8 @@ import { ACP_RED_ENV, ACP_SCRIPT_DIR_ENV, lastAcpScriptName, readAcpScript, reco
 import { scriptedGoalExtension, scriptedGoals } from "./goals"
 import { playScript } from "./turn"
 import { recordAcpRequest } from "./requests"
+import { captureAcpPrompt } from "./capture"
+import { deliveredAcpPrompt } from "./delivery-fault"
 
 const red = process.env[ACP_RED_ENV] === "1"
 
@@ -115,11 +117,17 @@ export class ScriptedAgent implements Agent {
 
   async prompt(params: PromptRequest): Promise<PromptResponse> {
     if (this.record) await recordAcpRequest(this.dir, "session/prompt", params, this.headers)
-    const text = promptText(recoveryContextDropped(this.dir)
+    const delivered = deliveredAcpPrompt(recoveryContextDropped(this.dir)
       ? params.prompt.filter((block) => block.type !== "text" || !block.text.includes("<session-context-recovery>"))
       : params.prompt)
+    const text = promptText(delivered)
     if (red && !isTitlePrompt(text)) throw RequestError.internalError(undefined, "Scripted ACP red run: every turn fails")
     const script = await scriptFor(text, this.dir)
+    if (script.capturePrompt) {
+      const name = lastAcpScriptName(text)
+      if (!name) throw RequestError.internalError(undefined, "Prompt capture needs a named ACP script")
+      await captureAcpPrompt(this.dir, name, delivered)
+    }
     const controller = new AbortController()
     this.turns.get(params.sessionId)?.abort()
     this.turns.set(params.sessionId, controller)
