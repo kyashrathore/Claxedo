@@ -122,10 +122,10 @@ All three v2 runs gave the same growth to the node (15,531 each time).
 ### Proven: v2 keeps every re-opened transcript alive while an image probe is pending
 
 - Heap snapshot after 12 v2 switches: the detached `session-turn` DOM is retained through `EventListener → V8EventHandlerNonNull → closure → scope.settled (Set) → closure → <span data-component="markdown-image-fallback" data-state="loading"> → <p> → markdown block → … → [data-timeline-virtual-content]`, so the whole old transcript stays alive.
-- Code: `probeImage` in `src/transcript/markdown.tsx:583-605` keeps a module-level `imageProbes: Map<src, Set<waiter>>`. Each mount of a markdown image whose probe has not settled adds a waiter closure over its fallback chip (`waiters.add(onSettle)`); nothing removes it on unmount. The Set is released only when the probe `Image` fires `load` or `error`.
+- Code: `probeImage` in `src/transcript/markdown.tsx:584-603` keeps a module-level `imageProbes: Map<src, Set<waiter>>`. Each mount of a markdown image whose probe has not settled adds a waiter closure over its fallback chip (`waiters.add(onSettle)`); nothing removes it on unmount. The Set is released only when the probe `Image` fires `load` or `error`.
 - Trigger in the owner's data: "Markdown blocks sample" contains `https://via.placeholder.com/80`, whose request never completes in this environment, so its chip stays `data-state="loading"`. Every re-open of that session keeps one more transcript DOM alive (329-element `section[data-component=session-screen]` roots among the detached elements).
 - Control experiment, same script: when the harness aborts `via.placeholder.com` so the probe errors at once, 20 switches leave Nodes flat (1,969 → 1,962) and detached elements flat (177 → 177). Without the abort they grow 2,686 → 5,739 Nodes and 264 → 921 detached elements.
-- v1 has the same `probeImage` (`packages/session-ui/src/components/markdown.tsx:620-640`) but keeps visited session screens mounted, so it never re-mounts the chip, and its chip is still `loading` in the live DOM while other sessions are shown. v2 re-mounts the transcript on every switch, which turns the latent defect into a per-switch leak.
+- v1 has the same `probeImage` (`packages/session-ui/src/components/markdown.tsx:627-646`) but keeps visited session screens mounted, so it never re-mounts the chip, and its chip is still `loading` in the live DOM while other sessions are shown. v2 re-mounts the transcript on every switch, which turns the latent defect into a per-switch leak.
 - Design fix: the probe registry must drop a waiter when its owner is disposed (return an unsubscribe from `probeImage` and call it in `onCleanup`), or the chip should read a per-`src` signal instead of registering closures. Separately, a hung external image should not keep a probe alive forever. It also fetches a third-party host on every render (in both apps).
 
 ### Proven: v2 re-fetches the machine's connection catalog on every session switch
@@ -137,3 +137,27 @@ All three v2 runs gave the same growth to the node (15,531 each time).
 ### Observed trade-off: v2 re-renders a revisited session; v1 keeps it mounted
 
 On revisits v1 paints 10 times and restyles 332 elements for 4 switches because the screens stay mounted (v1 heap 56 MB, 2,336 document nodes). v2 re-renders (154 paints, 1,111 restyles) and holds 40 MB and 1,285 document nodes. The owner's no-cache-without-advantage rule points to v2's side of this trade. It is not listed as a finding.
+
+## Scenario 4: type 40 characters into the composer, then select-all + Delete
+
+In session "Greeting": click the visible composer, type `the quick brown fox jumps over a lazy do` at a 60 ms key delay, then press ControlOrMeta+A and Delete. Enter and send were never pressed. No non-GET request was made in any run. Medians of 3 runs.
+
+| Metric | v1 | v2 |
+|---|---|---|
+| Typing: API requests | 9 (polling: `status`, `permission`, `question` ×2 each, `health`, `wr/process`, `message`) | 0 |
+| Typing: mutations | 46 | 45 |
+| Typing: style recalcs / elements restyled | 14 / 14 | 11 / 12 |
+| Typing: layouts / paints / frames | 42 / 83 / 59 | 42 / 83 / 59 |
+| Typing: ScriptDuration / TaskDuration (ms) | 35 / 101 | 21 / 76 |
+| Typing: rAF callbacks | 41 (`queueScroll`, one per key) | 0 |
+| Typing: localStorage writes | 80 (9,192 bytes) | 40 (6,002 bytes) |
+| Clear: mutations / restyled / layouts / paints | 8 / 12 / 4 / 6 | 8 / 11 / 4 / 6 |
+| Draft left in storage after clear | empty-draft record (93 bytes) under `claxedo.workspace…:workspace:prompt` | none (key removed) |
+
+Where the draft persists: v2 keeps it only in `localStorage` under `claxedo:composer:<serverUrl>:session:<id>` (`src/composer/persistence.ts:132`); nothing goes to the server. v1 keeps it in `localStorage` too.
+
+v2 is at or below v1 on every count. Per keystroke v2 does one text mutation, one layout and two paints, with no restyle beyond the editor and the submit button. That is the floor for an uncontrolled contenteditable.
+
+Remaining v2 waste: one synchronous `JSON.stringify` + `localStorage.setItem` of the whole entry (draft plus history) per keystroke (`src/composer/store.ts:66-71` → `persistence.ts:145-155`). The cost grows with the stored prompt history. Design fix: write on idle, blur, `visibilitychange` or `pagehide` rather than per input.
+
+Shared (both apps, same numbers): each keystroke's Paint event carries a 1280×800 clip on the root layer (node 2) plus the 744×52 editor. That is 43.7 M px² for 40 keys. This may be a `chromium-headless-shell` software-raster artifact, so it is listed under Suspected.
