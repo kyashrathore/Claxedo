@@ -422,9 +422,47 @@ describe("local binding authority", () => {
     expect(projection).toMatchObject({ authMode: "bearer" })
     expect(projection.apiPath).toBeUndefined()
     expect((await local.authority.resolve(bindingIdOf(projection.baseUrl)))?.binding).toMatchObject({
-      destination: { origin: "https://api2.cursor.sh" },
+      destination: {
+        origin: "https://api2.cursor.sh",
+        exchange: { path: "/auth/exchange_user_api_key", tokenField: "accessToken" },
+      },
       injection: { header: "Authorization", scheme: "Bearer" },
     })
+  })
+
+  test("the standard Cursor row exchanges only the signed placeholder and guards declared methods", async () => {
+    await activeRow("key_cursor", "cursor-sdk")
+    const local = broker()
+    const projection = bound((await local.projectAuth({ workspaceId }))["cursor-sdk"])
+    const realFetch = globalThis.fetch
+    const upstream: Request[] = []
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const request = new Request(url, init)
+      upstream.push(request)
+      return request.url.endsWith("/auth/exchange_user_api_key")
+        ? Response.json({ accessToken: "real-access-token", refreshToken: "real-refresh-token" })
+        : new Response("connected")
+    }) as typeof fetch
+    const call = (path: string, token = projection.placeholder) => local.handler(new Request(
+      `${projection.baseUrl}${path}`,
+      { method: "POST", headers: { Authorization: `Bearer ${token}` } },
+    ))
+    try {
+      const declared = "/aiserver.v1.DashboardService/GetTeamReposOrEmptyIfNotInTeam"
+      expect((await call(declared)).status).toBe(401)
+      const exchange = await call("/auth/exchange_user_api_key")
+      expect(await exchange.json()).toEqual({ accessToken: projection.placeholder })
+      expect(upstream[0]?.headers.get("authorization")).toBe("Bearer key_cursor")
+      expect((await call(declared)).status).toBe(200)
+      expect(upstream[1]?.headers.get("authorization")).toBe("Bearer real-access-token")
+      expect((await call("/aiserver.v1.AnalyticsService/TrackEvents")).status).toBe(403)
+      expect((await call("/aiserver.v1.DashboardService/UndeclaredMethod")).status).toBe(403)
+      expect((await call(`${declared}/extra`)).status).toBe(403)
+      expect((await call(declared, "forged-placeholder")).status).toBe(401)
+      expect(upstream).toHaveLength(2)
+    } finally {
+      globalThis.fetch = realFetch
+    }
   })
 
   test("an active row the provider rejected projects unavailable rather than nothing", async () => {
@@ -725,10 +763,10 @@ describe("local binding authority", () => {
     const upstream: Request[] = []
     globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
       upstream.push(new Request(url, init))
-      return new Response("{}")
+      return Response.json({ accessToken: "scripted-access-token" })
     }) as typeof fetch
     const turn = (projection: { baseUrl: string; placeholder: string }) => local.handler(new Request(
-      `${projection.baseUrl}/agent.v1.AgentService/Run`,
+      `${projection.baseUrl}/auth/exchange_user_api_key`,
       { method: "POST", headers: { Authorization: `Bearer ${projection.placeholder}` } },
     ))
     try {

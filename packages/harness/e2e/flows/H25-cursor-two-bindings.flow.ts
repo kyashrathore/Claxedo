@@ -43,7 +43,8 @@ export async function run() {
       })
     } catch (error) {
       assert.match(String(error), /Cursor SDK froze|CursorBackendUrlFrozenError|credential binding cannot be used/)
-      assert.equal(stack.cursor[1].requests.length, 0, "the second backend was contacted despite the freeze refusal")
+      assert.equal(stack.cursor[1].requests.filter((request) => request.path === "/agent.v1.AgentService/RunSSE").length,
+        0, "the second agent run reached its backend despite the freeze refusal")
       assert.deepEqual(unexpectedEgress(stack.egress.attempts), [])
       console.log(`H25 outbound attempts: ${JSON.stringify(stack.egress.attempts)}`)
       throw new Error("H-19: the second Cursor session was refused because the SDK froze the first backend binding URL", { cause: error })

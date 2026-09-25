@@ -1,6 +1,7 @@
 import type { CredentialBrokerErrorCode } from "@claxedo/agent-runtime-contract"
 import { sameRuntime, secureOrLoopback, type BindingAuthority, type BindingFailure, type RuntimeIdentity } from "./binding.js"
 import { brokerErrorBody } from "./errors.js"
+import { ExchangedTokens } from "./exchanged-tokens.js"
 import type { RuntimeTokenClaims } from "./token.js"
 
 export type BrokerOptions = {
@@ -204,6 +205,7 @@ export function createEgressBroker(options: BrokerOptions) {
   const authorityTimeoutMs = options.authorityTimeoutMs ?? DEFAULT_AUTHORITY_TIMEOUT_MS
   const upstreamTimeoutMs = options.upstreamTimeoutMs ?? DEFAULT_UPSTREAM_TIMEOUT_MS
   const lane = concurrencyGate(options.maxConcurrentUpstream ?? DEFAULT_MAX_CONCURRENT_UPSTREAM)
+  const exchangedTokens = new ExchangedTokens()
   const authority: BindingAuthority = {
     resolve: (bindingId) => stopWaitingAfter(options.authority.resolve(bindingId), authorityTimeoutMs),
     currentRuntime: (identity: RuntimeIdentity) => stopWaitingAfter(options.authority.currentRuntime(identity), authorityTimeoutMs),
@@ -252,9 +254,17 @@ export function createEgressBroker(options: BrokerOptions) {
       const pathname = route[2] ?? "/"
       // Encoded separators and dot segments can be decoded differently by upstream routers.
       if (/%(?:2f|5c|2e|25)/i.test(pathname) || pathname.includes("\\")) return brokerErrorResponse(403, "request_outside_policy")
-      const allowedPath = binding.destination.pathPrefixes.some((prefix) => prefix.startsWith("/")
+      const allowedPath = (binding.destination.exactPaths ?? []).includes(pathname)
+        || binding.destination.pathPrefixes.some((prefix) => prefix.startsWith("/")
         && (pathname === prefix || pathname.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`)))
       if (!binding.destination.methods.includes(request.method) || !allowedPath) return brokerErrorResponse(403, "request_outside_policy")
+      const exchange = binding.destination.exchange
+      const exchanging = exchange?.path === pathname
+      const accessToken = exchange && !exchanging
+        ? exchangedTokens.get(bindingId, token, binding.revision) : undefined
+      if (exchange && !exchanging && !accessToken) {
+        return brokerErrorResponse(401, "runtime_token_invalid")
+      }
       // The binding's own account is injected at the header this vendor reads.
       // A caller that also fills a slot the vendor honours is presenting a
       // second identity, and deleting it quietly would leave the harness
@@ -278,7 +288,8 @@ export function createEgressBroker(options: BrokerOptions) {
       if (injected.some((name) => ["host", "connection", "content-length", "transfer-encoding", "cookie"].includes(name.toLowerCase()))) {
         return brokerErrorResponse(503, "binding_injection_invalid")
       }
-      headers.set(injection.header, injection.scheme ? `${injection.scheme} ${value}` : value)
+      const credential = accessToken ?? value
+      headers.set(injection.header, injection.scheme ? `${injection.scheme} ${credential}` : credential)
       for (const [name, companion] of Object.entries(injection.headers ?? {})) {
         if (name.toLowerCase() === injection.header.toLowerCase()) return brokerErrorResponse(503, "binding_injection_invalid")
         if (companion !== null) headers.set(name, companion)
@@ -311,6 +322,19 @@ export function createEgressBroker(options: BrokerOptions) {
           await upstream.body?.cancel()
           throw error
         }
+      }
+      if (exchanging && upstream.ok) {
+        let payload: unknown
+        try {
+          payload = await upstream.json()
+        } catch {
+          return brokerErrorResponse(502, "upstream_unavailable")
+        }
+        const exchanged: unknown = typeof payload === "object" && payload !== null
+          ? Object.entries(payload).find(([field]) => field === exchange.tokenField)?.[1] : undefined
+        if (typeof exchanged !== "string" || !exchanged) return brokerErrorResponse(502, "upstream_unavailable")
+        exchangedTokens.set({ bindingId, runtimeToken: token, accessToken: exchanged, revision: binding.revision, expiresAt: claims.exp * 1000 })
+        return Response.json({ [exchange.tokenField]: token })
       }
       const responseHeaders = forwardedResponseHeaders(upstream.headers)
       const body = upstream.body
