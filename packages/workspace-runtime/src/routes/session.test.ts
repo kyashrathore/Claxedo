@@ -120,8 +120,6 @@ function adapter(input: {
       getMessagePage: (binding, page) => input.getMessagePage!(binding.sessionId, page, binding.directory),
     } : {}),
     cancelTurn: async () => ({ execution: "terminal" as const, cleanup: "verified_clear" as const }),
-    revert: async () => {},
-    unrevert: async () => {},
     forkSession: async () => ({ id: "forked" }),
 
     executeCommand: async () => {},
@@ -1560,12 +1558,6 @@ describe("session prompt route", () => {
         instructionChannel: "turn-system-prompt",
         goals: false,
       }),
-      revert: async () => {
-        calls.push("revert")
-      },
-      unrevert: async () => {
-        calls.push("unrevert")
-      },
       forkSession: async () => {
         calls.push("fork")
         return { id: "forked" }
@@ -1585,8 +1577,6 @@ describe("session prompt route", () => {
     }))
 
     for (const item of [
-      { method: "POST", path: "/session/s1/revert", operation: "revert" },
-      { method: "POST", path: "/session/s1/unrevert", operation: "unrevert" },
       { method: "POST", path: "/session/s1/fork", operation: "fork", body: { messageId: "m1" } },
       { method: "POST", path: "/session/s1/command", operation: "command", body: { command: "review" } },
       { method: "POST", path: "/session/s1/permissions/p1", operation: "permission_response", body: { response: "once" } },
@@ -1623,25 +1613,6 @@ describe("session prompt route", () => {
       })
     }
     expect(calls).toEqual([])
-  })
-
-  it("keeps supported session operations on the existing success path", async () => {
-    const directory = process.cwd()
-    const calls: string[] = []
-    const app = SessionRoutes(() => ({
-      ...adapter({}),
-      revert: async () => {
-        calls.push("revert")
-      },
-    }))
-
-    const res = await app.request(`http://localhost/session/s1/revert?directory=${encodeURIComponent(directory)}`, {
-      method: "POST",
-    })
-
-    expect(res.status).toBe(200)
-    await expect(res.json()).resolves.toEqual({ ok: true })
-    expect(calls).toEqual(["revert"])
   })
 
   it("does not sync created sessions to the control plane from workspace runtime", async () => {

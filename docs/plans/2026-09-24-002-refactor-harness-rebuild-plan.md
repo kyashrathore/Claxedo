@@ -215,7 +215,7 @@ The harness layer holds the most valuable things Claxedo handles: people's provi
 | **A harness Claxedo starts on this machine** | What the owner's user account can do | The same trust as the owner. Claxedo layers over it and doesn't pretend to sandbox it |
 | **A harness in a cloud sandbox** | The sandbox, and placeholders for provider keys | The sandbox. The provider's network layer attaches real keys only on requests to provider hosts (H-1) |
 | **A remote harness** (someone else's machine) | Only what its API receives | **Untrusted:** never Claxedo's own MCP server or bearer, never stdio servers, never brokered credentials. Plugin tokens only with endpoint-bound consent (integration plan) |
-| **A member acting through a share** | Exactly what the share allows (a `send` share can prompt) | The route's access policy decides who. The turn's origin reaches the transport, so a member's turn never uses the owner's own logins |
+| **A member acting through a share** | Exactly what the share allows (a `send` share can prompt) | The route's access policy decides who. The turn spends the session owner's accounts, like every turn in that session |
 | **Harness output**: model text, tool results, events, elicitation forms | Nothing | Untrusted input. Translators check shapes (ACP `validation.ts`); unknown events become typed `unrecognized` events; form patterns are checked in a bounded worker pool; Claxedo never runs harness output as its own instructions |
 | **What an agent says about itself** (name, version) | Nothing | Descriptive only. It can pick a profile's format and never grants plugin authority |
 
@@ -231,10 +231,9 @@ The harness layer holds the most valuable things Claxedo handles: people's provi
    - Grants are scoped to the session and to the harness connection that asked; a grant never answers another harness.
    - "Once" never widens to "always".
    - Cancel never allows.
-4. **Identity follows the turn, not the session.** The owner's own credentials (their Pi login) are used only for turns the owner started, on the desktop or loopback runtime.
-   - Everything else is brokered.
-   - A mismatch is refused.
-   - A queued turn is checked again when it's re-issued.
+4. **Credentials follow the session's owner, not the turn's sender** (owner ruling, 2026-09-25). Every turn in a session spends the owner's accounts, including a turn a member sends through a `send` share.
+   - The owner's own machine logins (their Pi login, for example) serve the owner's sessions on the desktop or loopback runtime; everywhere else the owner's chosen accounts are brokered.
+   - The sender decides who may send and is recorded for audit; it never selects credentials.
 5. **A person's own setup is never modified.**
    - The owner's Pi folder is never written.
    - Claude and Codex homes are composed in folders Claxedo owns, never the person's own.
@@ -321,7 +320,7 @@ The harness layer holds the most valuable things Claxedo handles: people's provi
 6. **The negative cases are first-class,** each a flow with its red run:
    - stale, duplicate and foreign replies;
    - a leak through the remote filter;
-   - a member's turn trying the owner's Pi profile;
+   - a member's turn in an owner's Pi session, which spends the owner's profile;
    - an expired credential.
 7. **Every defect is a test first.** Each of the 24 defects gets a regression test that fails on `dev` today, at the boundary where the defect lives, before it's fixed. That proves the new tests catch exactly the kind of defect the old ones let through.
 
@@ -708,7 +707,7 @@ This is a security boundary. The broker takes over what today's code enforces, a
 **The machine owner uses their own Pi login, and nobody else does.** Enforcing that needs the identity of **the turn**, not the session:
 - The routes already know a request's provenance (`session-access-policy.ts:689-691`, owner grants) and record the origin of queued and background turns (`session/delivery-owner.ts:227-231`).
 - That origin goes into `TurnInput.origin`.
-- **The owner profile runs only when** the turn's origin is the machine owner acting directly or through their own grant, **and** the runtime is the desktop or loopback daemon.
+- **The owner profile runs when** the session's owner is the machine owner **and** the runtime is the desktop or loopback daemon, for every turn in that session, whoever sends it.
 - **Everything else runs brokered,** as today, in a separate Claxedo-owned profile. That includes a `send` share, a member's queued prompt re-issued later, and every cloud runtime.
 - **A turn whose origin doesn't match its session's profile is refused** with a typed error, checked again when a queued turn is re-issued.
 
@@ -979,7 +978,7 @@ export interface HarnessServices {
   - directory, `locality`, model and config;
   - the instruction block, only when the capabilities declare `instructionChannel: "thread-start"` (other channels compose it per turn, as today);
   - the profile's projection;
-  - resolved credentials selected by the turn's origin.
+  - resolved credentials selected by the session's owner.
 - **`TurnInput` carries:** the prompt, origin, model, effort, the prior todos (the Claude translator's seed) and the per-turn system block for per-turn channels.
 - **`ConfigUpdate`:** model, effort, permission mode, credential and placeholder renewals, MCP and projection changes. Each change carries its timing: `immediate`, `after-active-turns` (Pi refuses a mid-turn rotation) or `next-session` (Cursor's permission mode). `ConfigApplied` reports readiness, replacing `waitForConfigReady`.
 - **Turn admission and fencing stay in the moved runtime host.** A transport keeps only its protocol's own active-turn state, as an instance field.
@@ -1176,7 +1175,7 @@ Runs are sharded by harness with separate `CLAXEDO_E2E_PORT_RANGE`s, on crabbox 
 | H17 | OpenCode server prompts | N; only if kept |
 | H18 | Pi for the owner: an extension command via `get_commands`, `setStatus` and a widget; mismatched RPC; `auth.json` unchanged | N |
 | H19 | Cloud workspace: one turn per harness | B once the sandbox driver exists |
-| H20 | Pi credentials by turn origin: owner, `send` share, queued re-issue, expired, missing, concurrent | N |
+| H20 | Pi credentials by session owner: the owner's turn, a member's turn through a `send` share (spends the owner's profile), a queued re-issue, expired and missing accounts | N |
 | H21 | Two workspaces: an ACP config restart in one doesn't wait on the other | N |
 | H22 | Checkpoint drain with `needs_action` handled as today | B |
 | H23 | Windows: spawn, cancel, retirement | B once the Windows lane exists |
@@ -1187,7 +1186,7 @@ Runs are sharded by harness with separate `CLAXEDO_E2E_PORT_RANGE`s, on crabbox 
 | H28 | Hosted settings reach a sandbox: the person's HTTP MCP server with a brokered token arrives; a local-command MCP server arrives only if the image or an install spec provides it; a settings change reaches a running sandbox | N (C-2, C-8) |
 | H29 | Self-hosted cold start with no key-pair environment: keys are created, the snapshot arrives, the sandbox is ready | N (C-5) |
 | H30 | Cloud consent: allowing an account puts it in the sandbox as a placeholder; revoking it removes it; the real key never appears inside the sandbox | N (C-1, C-6) |
-| H31 | Per-person accounts: two people, two accounts; each person's turns spend their own; a member's turn never spends the owner's | N (C-12) |
+| H31 | Per-person accounts: two people, two accounts; each person's sessions spend their own; a member's turn in the owner's session spends the owner's | N (C-12) |
 | H32 | A custom ACP harness with a secret runs in a cloud sandbox; the secret is leased, and refused once revoked | N (C-4, C-10) |
 | H33 | A default-harness change, commands and a plugin reach a running self-hosted sandbox | N (C-7) |
 | H34 | Unsigned desktop onboarding offers no cloud sandbox; signed onboarding does, and the workspace is created | N (C-14, app v2) |
@@ -1238,7 +1237,7 @@ Every slice deletes what it replaces.
 - [ ] **P1.2 Broker:** requests with the full contract, grants and ceilings, start requests, subagents, goal plumbing and provider turns, usage, cancel. `Progress:`
 - [ ] **P1.4 Conformance suite** (`packages/harness/src/conformance/`): one set of cases every transport runs through the contract, with the real broker over in-memory runtime ports and the transport's real harness program behind the scripted model server or the scripted ACP agent. It carries the kept invariants the invariant map assigns to transports. `Progress:`
 - [ ] **P1.3 Pi transport and profile:**
-  - owner sessions on the user's own Pi, by turn origin; members brokered as today;
+  - the machine owner's sessions on their own Pi, whoever sends the turn; other owners' sessions brokered;
   - `get_commands`; all nine extension-UI methods (H-5, H-6);
   - the conformance suite green against the pinned Pi; H1, H4, H6, H12, H18 and H20 go green at the P3 cutover.
   - `Progress:`
@@ -1343,8 +1342,8 @@ Each is corpus-proven, with your sign-off.
    - **Recommendation:** ACP. That saves 0.85k.
 3. **Harness switching mid-session.** It moves unchanged with the runtime host; nothing to decide here.
 4. **Protocol recovery inside transports.** **Recommendation:** keep it.
-5. **Pi credentials.**
-   - **Recommendation:** owner profile only when the turn's origin is the machine owner and the runtime is the desktop or loopback daemon.
+5. **Pi credentials.** Decided 2026-09-25: credentials follow the session's owner, not the turn's sender.
+   - The machine owner's sessions use their own Pi on the desktop or loopback daemon, for every turn.
    - Everything else is brokered.
 6. **Pi MCP and owner titles.**
    - **Recommendation:** MCP follows Pi's docs (P0.6).
@@ -1378,7 +1377,7 @@ Each is corpus-proven, with your sign-off.
 
 1. **The contract misses an operation.** Mitigated by the operation map from the full member list, and P1.0 freezing only when every row is callable.
 2. **Moves change behavior.** Mitigated by the wire corpus across live, stored, replay, control and cross-channel identity, and by the translator corpus with multi-step turns.
-3. **Credentials.** Owner profiles are selected by turn origin, never write the user's folder, and are covered by H18 and H20.
+3. **Credentials.** A session's profile comes from its owner, never writes the user's folder, and is covered by H18 and H20.
 4. **Remote leakage.** No first-party server, no stdio, and no plugin tokens go to remote harnesses; H24 covers it.
 5. **Budgets.** Translators move at measured size; P6 needs corpus proof; a missed gate goes back to you.
 6. **Qualification time.** About 90–100 variants, sharded on crabbox, with run counts per gate stated.
@@ -1395,7 +1394,7 @@ Each is corpus-proven, with your sign-off.
 - [ ] Translators moved; the invariant map complete; the translator corpus identical.
 - [ ] Profiles with format and delivery per transport; H14 and H15 green.
 - [ ] Remote rules in one filter; H24 green.
-- [ ] Pi owner by turn origin, the user's folder untouched; H18 and H20 green.
+- [ ] Pi sessions on their owner's profile, the user's folder untouched; H18 and H20 green.
 - [ ] Cursor workers per binding; H25 green.
 - [ ] Old packages deleted; app import paths moved; `isolation.buildPackages` updated.
 - [ ] Zero comments, no swallowed errors, process-wide state only in named owners; checks and architecture ratchets green.
@@ -1489,7 +1488,7 @@ I verified every finding below against the code before changing the plan.
 | Writing each frame once changes ACP multi-step turns on the wire | runtime | Projection moves unchanged; the corpus records multi-step turns and cross-channel identity |
 | The contract lacked re-attach, config and credential refresh, request replies, todos, outside-turn usage, goal publishing, a provider-turn event sink, child routing, `instructionChannel`, `sessionConfigOwner`, `listCommands`, archive, draft config reads, the `ConnectionProvider` hooks | re-review 2, contract | A full operation map from every member, with `attach`, `configure`, `RequestBroker`, `RoutedEvent` and the `SessionBroker` additions |
 | Claxedo's own MCP server, with an owner-acting 24-hour bearer, goes to remote ACP agents; `mcpCapabilities` has no `stdio`; the URL is loopback and optional | security, re-review | One remote filter at every call; `firstPartyMcp` is optional and local-only; H24 |
-| No actor identity reaches the Pi transport; shares and queued turns | security | Profile selected by turn origin; refusal on mismatch; desktop or loopback only |
+| A session's credentials depend on who sends a turn | security | The profile comes from the session's owner and a sender never changes it; the owner's machine logins only on desktop or loopback |
 | Today's Pi code would wipe the user's `auth.json` | security | The owner's folder is never written; H18 and H20 check it byte-for-byte |
 | "Allow always" grants are answered inside transports; option substitution; permission-mode ceilings | security | Grants, substitution and ceilings in the broker, with `level` on every mode |
 | Startup requests, free text and forms, the wider authority key, and who may answer | re-review, security | `RequestBroker` with start requests and answer variants; actor authorization stays in the routes |

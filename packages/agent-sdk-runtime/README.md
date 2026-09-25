@@ -12,15 +12,14 @@ npm install @claxedo/agent-sdk-runtime
 
 ```ts
 import { createAgentRuntime } from "@claxedo/agent-sdk-runtime"
-import { claude } from "@claxedo/agent-sdk-runtime/harnesses/claude"
-import { pi } from "@claxedo/agent-sdk-runtime/harnesses/pi"
+import { ClaudeHarnessAdapter, PiHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import { createSqliteRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/sqlite"
 
 const runtime = createAgentRuntime({
   store: createSqliteRuntimeStore({ root: ".agent-runtime" }),
   harnesses: [
-    claude({ access: "native" }),
-    pi(),
+    { id: "claude", access: "native", create: (context) => new ClaudeHarnessAdapter(context) },
+    { id: "pi", access: "native", create: (context) => new PiHarnessAdapter(context) },
   ],
 })
 
@@ -58,7 +57,7 @@ public API surface.
 ```text
 host app
   -> AgentRuntime
-  -> harness factory
+  -> registered adapter
   -> adapter driver
   -> harness access (ACP / native)
   -> runtime events
@@ -162,35 +161,23 @@ First-party stores live on explicit subpaths:
 
 The root import does not load SQLite.
 
-### Harness Factories
+### Harness Registration
 
-Harness factories have individual entries and a convenience aggregate:
-
-- `@claxedo/agent-sdk-runtime/harnesses/acp`
-- `@claxedo/agent-sdk-runtime/harnesses/claude`
-- `@claxedo/agent-sdk-runtime/harnesses/codex`
-- `@claxedo/agent-sdk-runtime/harnesses/cursor`
-- `@claxedo/agent-sdk-runtime/harnesses/pi`
+`createAgentRuntime()` accepts `AgentHarnessFactory` records with an id, access
+mode, and a `create(context)` function. The host constructs concrete adapters
+from `@claxedo/agent-sdk-runtime/adapters`; the runtime provides the store,
+event hub, and owner failure sink through the factory context.
 
 The browser-safe Pi provider/model catalog is available separately at
-`@claxedo/agent-sdk-runtime/pi-catalog`; it does not load a harness runtime.
-
-```ts
-import { acp, claude, codex, cursor, pi } from "@claxedo/agent-sdk-runtime/harnesses"
-// Smaller single-harness graph:
-import { claude as nativeClaude } from "@claxedo/agent-sdk-runtime/harnesses/claude"
-```
-
-Factories hide adapter class construction and let the runtime inject store and
-event plumbing.
+`@claxedo/agent-sdk-runtime/pi-catalog`.
 
 ### Harness Metadata
 
 `src/harness-types.ts` is the source of truth for supported harness ids and
 access modes.
 
-- ACP connections: `acp(id, { binary, ... })` with `access: "acp"`.
-- Native harnesses: `claude`, `codex`, `cursor`, `opencode`, and `pi` with
+- ACP connections use an `AcpHarnessAdapter` with `access: "connection"`.
+- Native harnesses: Claude, Codex, Cursor, OpenCode, and Pi with
   `access: "native"`.
 - Configured providers, including ACP, use an opaque connection id with
   `access: "connection"`; they are not added to the native id catalog.
@@ -271,7 +258,7 @@ its native session file, tools, extensions, compaction and context. Each active
 session has a separate process. Idle processes resume from the same native file.
 A missing native file is an error, never a replacement conversation.
 
-Use `pi({ binary, agentDir })` to select the executable and isolated Pi profile.
+Pass `binary` and `agentDir` to `PiHarnessAdapter` to select the executable and isolated Pi profile.
 `PI_EXECUTABLE` also selects the executable. The host projects credentials into
 that profile and removes its auth file on disposal. It does not modify the
 user's own Pi profile. Model options come from `get_available_models` in Pi.
@@ -384,8 +371,7 @@ This package should stay focused on runtime contracts and transport execution.
 5. Implement live model discovery when the harness exposes configurable models.
 6. Add focused adapter tests around session lifecycle, submit, abort, config,
    and event projection.
-7. Add or update the public factory in `src/harnesses/index.ts` when the
-   harness should be user-selectable.
+7. Register the adapter through the host's `AgentHarnessFactory` record.
 
 ## Public Entry Points
 
@@ -403,8 +389,7 @@ Entry point status:
 
 - Stable: `@claxedo/agent-sdk-runtime`,
   `@claxedo/agent-sdk-runtime/capabilities`
-- Stable: `@claxedo/agent-sdk-runtime/harnesses`,
-  `@claxedo/agent-sdk-runtime/stores/memory`,
+- Stable: `@claxedo/agent-sdk-runtime/stores/memory`,
   `@claxedo/agent-sdk-runtime/stores/sqlite`
 - Advanced: `@claxedo/agent-sdk-runtime/adapters`,
   `@claxedo/agent-sdk-runtime/subagent-admission`,

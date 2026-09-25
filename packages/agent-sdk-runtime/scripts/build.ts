@@ -11,12 +11,11 @@ const packageJson = readPackageJson(ROOT)
 
 const ENTRIES = [
   "src/index.ts",
-  "src/harnesses/index.ts",
-  "src/harness-factories/acp.ts",
-  "src/harness-factories/claude.ts",
-  "src/harness-factories/codex.ts",
-  "src/harness-factories/cursor.ts",
-  "src/harness-factories/pi.ts",
+  "src/harnesses/acp/index.ts",
+  "src/harnesses/claude/index.ts",
+  "src/harnesses/codex/index.ts",
+  "src/harnesses/cursor/index.ts",
+  "src/harnesses/pi/index.ts",
   "src/adapters.ts",
   "src/message-page.ts",
   "src/compat-events.ts",

@@ -67,11 +67,11 @@ adapter resolution is single-flight per harness identity.
 ## Package boundaries
 
 Use the root entry for runtime contracts, explicit store entries for storage,
-and per-harness factory entries when only one harness is needed:
+and the adapter entry when a host registers a harness:
 
 ```ts
 import { createAgentRuntime } from "@claxedo/agent-sdk-runtime"
-import { claude } from "@claxedo/agent-sdk-runtime/harnesses/claude"
+import { ClaudeHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import { createSqliteRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/sqlite"
 ```
 

@@ -58,7 +58,7 @@ type ServerState = {
   counts: Record<ScriptedDialect, number>
   sequence: number
   goalEvaluations: number
-  pendingTool?: ScriptedToolCall
+  pendingTools: ScriptedToolCall[]
   pendingText?: { marker: string; text: string }
   pendingError?: ScriptedError
   autoModeCommand?: string
@@ -89,9 +89,9 @@ function goalReply(state: ServerState, prompt: string): ScriptedReply | undefine
 }
 
 function pendingReply(state: ServerState, request: ScriptedModelBody, prompt: string): ScriptedReply | undefined {
-  const tool = state.pendingTool
+  const tool = state.pendingTools[0]
   if (tool && (tool.whenPromptIncludes ? prompt.includes(tool.whenPromptIncludes) : !hasToolResult(request))) {
-    state.pendingTool = undefined
+    state.pendingTools.shift()
     return { kind: "tool", name: tool.name, input: tool.input, ...(tool.namespace ? { namespace: tool.namespace } : {}) }
   }
   const text = state.pendingText
@@ -133,7 +133,7 @@ function closeAll(server: Server) {
 
 export async function startScriptedModelServer(input: { port: number; red: boolean }): Promise<ScriptedModelServer> {
   const requests: ScriptedModelRequest[] = []
-  const state: ServerState = { counts: freshCounts(), sequence: 0, goalEvaluations: 0, replyDelayMs: 0 }
+  const state: ServerState = { counts: freshCounts(), sequence: 0, goalEvaluations: 0, replyDelayMs: 0, pendingTools: [] }
   const server = createServer(async (incoming, outgoing) => {
     if (incoming.method !== "POST") {
       outgoing.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true }))
@@ -181,7 +181,8 @@ export async function startScriptedModelServer(input: { port: number; red: boole
       }
     },
     scriptTool: (call) => {
-      state.pendingTool = call
+      if (process.env.CLAXEDO_E2E_MODEL_OMIT_TOOL === "1") return
+      state.pendingTools.push(call)
       const command = asRecord(call.input)?.command
       state.autoModeCommand = call.name === "Bash" && call.autoModeSeverity === 0 && typeof command === "string" ? command : undefined
     },

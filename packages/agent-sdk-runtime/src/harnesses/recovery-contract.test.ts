@@ -19,13 +19,7 @@ import type { PermissionReplyPort } from "./acp/permission-reply"
 import type { WithInternals } from "../test-utils/class-internals"
 import { SdkRuntimeInteractions } from "./shared/sdk-runtime-interactions"
 import { createMemoryRuntimeStore } from "../stores/memory"
-import { createAgentRuntime, type AgentHarnessFactory } from "../runtime"
-import { createRuntimeEventHub } from "../runtime-event-hub"
-import { acp } from "../harness-factories/acp"
-import { claude } from "../harness-factories/claude"
-import { codex } from "../harness-factories/codex"
-import { cursor } from "../harness-factories/cursor"
-import { pi } from "../harness-factories/pi"
+import { createAgentRuntime } from "../runtime"
 import { removeTestTempDir } from "./shared/test-temp-dir"
 import { installFakeCodexAppServer } from "../test-utils/fake-codex-app-server"
 import { cancelAdapterTurn } from "../test-utils/cancel-turn"
@@ -564,29 +558,6 @@ describe("per-harness recovery capability matrix", () => {
       expect(removed).toEqual(["abort"])
     } finally {
       globalThis.clearTimeout = realClear
-    }
-  })
-
-  test("every harness factory hands its adapter the runtime's failure sink", () => {
-    // The sink stays optional on the adapter options: 34 test doubles build
-    // adapters without one. That optionality is how it came to be supplied by
-    // nothing in production, so the compositions are checked here rather than
-    // by the type.
-    const factories: Record<string, AgentHarnessFactory> = {
-      acp: acp("acp-under-test", { connection: { kind: "process", command: "test-acp" } }),
-      claude: claude(),
-      codex: codex(),
-      cursor: cursor(),
-      pi: pi({ agentDir: "/tmp/pi-agent-under-test" }),
-    }
-    const sink = () => {}
-    for (const [name, factory] of Object.entries(factories)) {
-      const adapter = factory.create({
-        store: createMemoryRuntimeStore(),
-        eventHub: createRuntimeEventHub(),
-        reportOwnerFailure: sink,
-      }) as unknown as { options?: { reportOwnerFailure?: unknown } }
-      expect(adapter.options?.reportOwnerFailure, `${name} forwards the runtime's sink`).toBe(sink)
     }
   })
 

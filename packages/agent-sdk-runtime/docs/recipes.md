@@ -10,7 +10,7 @@ It gives you one host-facing runtime contract:
 client app
   -> your backend
   -> AgentRuntime
-  -> harness factory
+  -> registered adapter
   -> Codex / Claude / Cursor / OpenCode / Pi
   -> runtime events
   -> your realtime UI and database
@@ -23,13 +23,12 @@ workspaces, tenancy, storage, sharing, billing, route shape, and UI state.
 
 | If you want to... | Start here |
 | --- | --- |
-| see the package work with no external agent setup | [1. Start One Session And Run One Turn](#1-start-one-session-and-run-one-turn) |
+| run an installed, configured harness | [1. Start One Session And Run One Turn](#1-start-one-session-and-run-one-turn) |
 | wire a backend route and realtime subscription | [2. Turn It Into A Realtime App Loop](#2-turn-it-into-a-realtime-app-loop) |
 | let users choose native SDKs, configured connections, or Pi | [3. Switch Harnesses Without Changing Host Code](#3-switch-harnesses-without-changing-host-code) |
 | approve permissions or answer harness questions | [4. Handle Permissions And Questions](#4-handle-permissions-and-questions) |
 | change models, auth, MCP, or config options | [5. Configure Models And Runtime Settings](#5-configure-models-and-runtime-settings) |
 | persist sessions and replay output | [6. Add Durable Host Storage](#6-add-durable-host-storage) |
-| split reasoning from file/command execution | [7. Run Brain And Hands In Different Places](#7-run-brain-and-hands-in-different-places) |
 | choose a configured connection, native SDK, or Pi | [8. Choose An Integration Strategy](#8-choose-an-integration-strategy) |
 | build a sidebar/history view | [9. List And Project Sessions](#9-list-and-project-sessions) |
 
@@ -38,37 +37,22 @@ workspaces, tenancy, storage, sharing, billing, route shape, and UI state.
 Use this when you want the smallest working proof: create a session, send a
 prompt, and see events.
 
-Before you start:
-
-- No Claude/Codex/Cursor credentials are required.
-- This uses Pi with `createVirtualSessionEnv()` so the example is local and
-  deterministic.
-- For real model-backed runs, switch to a native SDK harness or configured
-  connection
-  later using the same host loop.
+Before you start, install and configure Pi for the provider/model you choose.
 
 ```ts
 import { createAgentRuntime } from "@claxedo/agent-sdk-runtime"
-import { pi } from "@claxedo/agent-sdk-runtime/harnesses"
+import { PiHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import { createMemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
-import { createVirtualSessionEnv } from "@claxedo/agent-sdk-runtime/virtual-session-env"
-
-function createEnv() {
-  return createVirtualSessionEnv({
-    cwd: "/workspace",
-    files: { "/workspace/README.md": "hello from the runtime\n" },
-  })
-}
 
 const runtime = createAgentRuntime({
   store: createMemoryRuntimeStore(),
-  harnesses: [pi({ createEnv })],
+  harnesses: [{ id: "pi", access: "native", create: (context) => new PiHarnessAdapter(context) }],
 })
 
 const session = await runtime.sessions.create({
   directory: "/workspace",
   harness: { id: "pi", access: "native" },
-  model: { providerID: "pi", modelID: "virtual" },
+  model: { providerID: "pi", modelID: "configured-model" },
   title: "First session",
 })
 
@@ -76,7 +60,7 @@ const events = runtime.events.subscribe({ sessionId: session.id })
 
 await runtime.turns.start({
   sessionId: session.id,
-  text: "exec: cat README.md",
+  text: "Review this workspace",
 })
 
 for await (const event of events) {
@@ -85,16 +69,7 @@ for await (const event of events) {
 }
 ```
 
-You should see:
-
-```text
-message.updated
-message.part.updated
-session-status
-text-delta
-session-status
-finish
-```
+A successful turn emits message and status events, ending with `finish`.
 
 Next: keep this host loop and swap the harness.
 
@@ -244,16 +219,16 @@ data.
 
 ```ts
 import { createAgentRuntime } from "@claxedo/agent-sdk-runtime"
-import { claude, codex, cursor, pi } from "@claxedo/agent-sdk-runtime/harnesses"
+import { ClaudeHarnessAdapter, CodexHarnessAdapter, CursorHarnessAdapter, PiHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import { createSqliteRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/sqlite"
 
 const runtime = createAgentRuntime({
   store: createSqliteRuntimeStore({ root: ".agent-runtime" }),
   harnesses: [
-    claude({ access: "native" }),
-    codex({ access: "native" }),
-    cursor({ access: "native" }),
-    pi(),
+    { id: "claude", access: "native", create: (context) => new ClaudeHarnessAdapter(context) },
+    { id: "codex", access: "native", create: (context) => new CodexHarnessAdapter(context) },
+    { id: "cursor", access: "native", create: (context) => new CursorHarnessAdapter(context) },
+    { id: "pi", access: "native", create: (context) => new PiHarnessAdapter(context) },
   ],
 })
 
@@ -382,58 +357,7 @@ runtime projection listed above.
 
 Custom stores are advanced integration work. Start with a first-party store.
 
-Next: run the agent brain in one place and its hands somewhere else.
-
-## 7. Run Brain And Hands In Different Places
-
-Use this when reasoning/control runs centrally, but file and command execution
-happens in a local workspace, remote workspace, sandbox, or virtual
-environment.
-
-This is what `SessionEnv` is for.
-
-```ts
-import type {
-  SessionEnv,
-  SessionEnvFactoryInput,
-} from "@claxedo/agent-sdk-runtime/session-env"
-import { pi } from "@claxedo/agent-sdk-runtime/harnesses"
-import { createVirtualSessionEnv } from "@claxedo/agent-sdk-runtime/virtual-session-env"
-
-type PlacementInput = {
-  sessionId: string
-  directory: string | undefined
-}
-
-function createHands(input: SessionEnvFactoryInput): SessionEnv {
-  const cwd = input.directory ?? "/workspace"
-
-  return createVirtualSessionEnv({
-    cwd,
-    files: {},
-  })
-}
-
-function placeSession(input: PlacementInput) {
-  return {
-    mode: "hybrid" as const,
-    host: "central" as const,
-    directory: input.directory,
-    toolSandbox: { kind: "virtual" as const, id: input.sessionId },
-  }
-}
-
-export const piHarness = pi({
-  createEnv: createHands,
-  defaultPlacement: placeSession,
-})
-```
-
-Native Claude, Codex, and Cursor adapters may own workspace access through
-their upstream SDK or app server. `SessionEnv` matters most when the harness
-delegates workspace operations back to your host.
-
-Next: choose the integration mechanism for each harness.
+Next: choose the integration mechanism for the harness.
 
 ## 8. Choose An Integration Strategy
 
@@ -462,12 +386,12 @@ const providers = [createOpenCodeServerConnectionProvider()]
 Native Codex app server:
 
 ```ts
-import { codex } from "@claxedo/agent-sdk-runtime/harnesses"
+import { CodexHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 
-const codexNative = codex({
-  access: "native",
-  binary: "codex",
-})
+const codexNative = {
+  id: "codex", access: "native",
+  create: (context) => new CodexHarnessAdapter({ ...context, binary: "codex" }),
+}
 ```
 
 Embedded OpenCode is composed by `@claxedo/workspace-runtime/opencode`.
@@ -476,9 +400,9 @@ It has no HTTP-engine factory in this package.
 Pi:
 
 ```ts
-import { pi } from "@claxedo/agent-sdk-runtime/harnesses"
+import { PiHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 
-const piHarness = pi()
+const piHarness = { id: "pi", access: "native", create: (context) => new PiHarnessAdapter(context) }
 ```
 
 Next: build sidebar/history and app-owned projections.
