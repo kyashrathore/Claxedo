@@ -1,9 +1,10 @@
 import { createEffect, createMemo, createSignal, on, Show, untrack, type Accessor, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
+import type { SessionId } from "@/server"
 import type { SessionList, SessionRowView } from "@/session"
 import type { TerminalItem } from "@/terminal"
 import { railDictionary } from "../i18n"
-import { railRows, SESSION_GROUP_PAGE_SIZE, type RailRow, type SessionMarker } from "../model"
+import { SESSION_GROUP_PAGE_SIZE, type RailRow, type SessionMarker } from "../model"
 import type { ProjectSection } from "../project-sections"
 import { ProjectHeader } from "./project-header"
 import { ProjectRows } from "./project-rows"
@@ -13,7 +14,7 @@ import { useProjectTerminals } from "./terminal-row"
 
 export type ProjectBlockProps = SessionRowMenuActions & {
   readonly section: ProjectSection
-  readonly rows: readonly SessionRowView[]
+  readonly sessionIds: readonly SessionId[]
   readonly active: boolean
   readonly activeSessionId: string | undefined
   readonly activeTerminalId: string | undefined
@@ -29,22 +30,22 @@ export type ProjectBlockProps = SessionRowMenuActions & {
 function createProjectPaging(props: ProjectBlockProps) {
   const [visible, setVisible] = createSignal(SESSION_GROUP_PAGE_SIZE)
   const loaded = () => props.list.state().kind === "live" || props.list.state().kind === "rereading"
-  const shown = createMemo(() => props.rows.slice(0, visible()))
+  const shown = createMemo(() => props.sessionIds.slice(0, visible()))
   const hasMore = () => props.list.hasMore(props.section.placementIds)
-  const more = () => props.rows.length > visible() || hasMore()
+  const more = () => props.sessionIds.length > visible() || hasMore()
   return {
     shown,
     more,
     loadingMore: () => props.list.moreState().kind === "loading",
     pageError: () => props.list.moreState().kind === "failed",
-    loadingInitial: () => !loaded() && props.list.state().kind !== "failed" && props.rows.length === 0,
+    loadingInitial: () => !loaded() && props.list.state().kind !== "failed" && props.sessionIds.length === 0,
     errorInitial: () => props.list.state().kind === "failed",
-    emptyLoaded: () => loaded() && props.rows.length === 0,
-    doneLoaded: () => loaded() && props.rows.length > SESSION_GROUP_PAGE_SIZE && !more(),
+    emptyLoaded: () => loaded() && props.sessionIds.length === 0,
+    doneLoaded: () => loaded() && props.sessionIds.length > SESSION_GROUP_PAGE_SIZE && !more(),
     loadMore: () => {
       const next = visible() + SESSION_GROUP_PAGE_SIZE
       setVisible(next)
-      if (props.rows.length < next && hasMore()) void props.list.loadMore(props.section.placementIds)
+      if (props.sessionIds.length < next && hasMore()) void props.list.loadMore(props.section.placementIds)
     },
   }
 }
@@ -75,7 +76,9 @@ function ProjectSessions(
   return (
     <div class="flex flex-col gap-0.5 pb-1">
       <ProjectRows
-        rows={railRows(props.terminals, props.paging.shown())}
+        terminals={props.terminals}
+        sessionIds={props.paging.shown()}
+        list={props.list}
         activeSessionId={props.activeSessionId}
         activeTerminalId={props.activeTerminalId}
         markerOf={props.markerOf}
@@ -114,13 +117,13 @@ function ProjectSessions(
 }
 
 export function ProjectBlock(props: ProjectBlockProps): JSX.Element {
-  const [open, setOpen] = createSignal(props.rows.length > 0 || props.active)
+  const [open, setOpen] = createSignal(props.sessionIds.length > 0 || props.active)
   const [toggled, setToggled] = createSignal(false)
   const paging = createProjectPaging(props)
   const terminals = useProjectTerminals(() => props.section.placementIds)
   createEffect(on(() => props.active, (active) => active && setOpen(true)))
   createEffect(on(() => terminals().length > 0, (has) => has && setOpen(true)))
-  createEffect(on(() => props.rows.length > 0, (has) => has && !untrack(toggled) && setOpen(true)))
+  createEffect(on(() => props.sessionIds.length > 0, (has) => has && !untrack(toggled) && setOpen(true)))
   return (
     <div data-testid="project-group" data-project-id={props.section.projectId} class="flex flex-col gap-0.5">
       <ProjectHeader

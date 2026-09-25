@@ -14,10 +14,7 @@ export function decodeSessionRef(value: Json): SessionRef | undefined {
 }
 
 function sessionTitle(ref: SessionRef): string {
-  const row = useSessionStores()
-    .list.rows()
-    .find((candidate) => candidate.ref.sessionId === ref.sessionId)
-  return row?.title || useSessionScreenText()("sessionScreen.untitled")
+  return useSessionStores().list.view(ref.sessionId)?.title || useSessionScreenText()("sessionScreen.untitled")
 }
 
 export const sessionPaneKind: PaneKind<SessionRef> = {

@@ -46,7 +46,7 @@ export function useSwitcherItems(): Accessor<readonly SwitcherItem[]> {
       const route = workbench.routeOf(contentId)
       const placementId = panePlacementOf(route)
       const placement = placementId ? server.placements.byId(placementId) : undefined
-      const row = route?.kind === "session" ? stores.list.rows().find((candidate) => candidate.ref.sessionId === route.sessionId) : undefined
+      const row = route?.kind === "session" ? stores.list.view(route.sessionId) : undefined
       const terminal =
         route?.kind === "terminal"
           ? terminals.items(route.placementId).find((item) => item.terminalId === route.terminalId)

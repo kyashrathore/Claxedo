@@ -22,12 +22,11 @@ function statusOf(row: SessionRowView | undefined): WorkbenchTabStatus {
 function openTabs(scope: BindingScope): readonly WorkbenchTab[] {
   const { workbench, sessions } = scope.services
   const focused = workbench.selectors.focusedContent()
-  const rows = sessions.list.rows()
   const tabs = workbench.selectors.aliveContents().flatMap((contentId) => {
     const opened = workbench.content(contentId)
     if (!opened) return []
     const route = workbench.routeOf(contentId)
-    const row = route?.kind === "session" ? rows.find((candidate) => candidate.ref.sessionId === route.sessionId) : undefined
+    const row = route?.kind === "session" ? sessions.list.view(route.sessionId) : undefined
     return [{ id: contentId, title: opened.kind.title(opened.state as never), kind: opened.kind.kind, status: statusOf(row), active: focused === contentId }]
   })
   return tabs.map((tab, index) => ({ ...tab, index }))
