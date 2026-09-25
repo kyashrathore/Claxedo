@@ -12,22 +12,15 @@ export function normalizeAddressBarInput(raw: string): string {
 }
 
 export function sameOrigin(a: string, b: string): boolean {
-  try {
-    const left = new URL(a)
-    const right = new URL(b)
-    if (left.origin === "null" || right.origin === "null") return left.href === right.href
-    return left.origin === right.origin
-  } catch {
-    return false
-  }
+  if (!URL.canParse(a) || !URL.canParse(b)) return false
+  const left = new URL(a)
+  const right = new URL(b)
+  if (left.origin === "null" || right.origin === "null") return left.href === right.href
+  return left.origin === right.origin
 }
 
 export function hostOf(url: string): string {
-  try {
-    return new URL(url).host || url
-  } catch {
-    return url
-  }
+  return URL.canParse(url) ? new URL(url).host || url : url
 }
 
 export function visibleUrl(url: string): string {

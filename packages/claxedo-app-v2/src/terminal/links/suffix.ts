@@ -69,7 +69,8 @@ export function decodeUrlEncodedPath(path: string): string {
   if (!path.includes("%")) return path
   try {
     return decodeURIComponent(path)
-  } catch {
+  } catch (error) {
+    console.warn("A link's path could not be decoded; it opens as written", { path, error })
     return path
   }
 }

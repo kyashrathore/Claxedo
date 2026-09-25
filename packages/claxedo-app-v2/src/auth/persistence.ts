@@ -13,7 +13,8 @@ export function recordAuthIdentity(userId: string | null | undefined) {
   let previous: string | null = null
   try {
     previous = localStorage.getItem(LAST_USER_ID_KEY)
-  } catch {
+  } catch (error) {
+    console.warn("The last signed-in user could not be read, so this sign-in keeps the stored preferences", { error })
     return
   }
   if (previous && previous !== userId) clearPersistedAuthState()
