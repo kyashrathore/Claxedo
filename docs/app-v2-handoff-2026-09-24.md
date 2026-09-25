@@ -17,6 +17,51 @@ Nothing is pushed, `packages/claxedo-app` is untouched, and there is no swap.
 
 The plan is `docs/plans/2026-09-24-001-refactor-app-rebuild-first-proof-plan.md`. Where it disagrees with the owner's parity rule, the rule wins (see [Better](#1-better-v2-looks-and-behaves-exactly-like-v1)).
 
+## State at 06:50 on 2026-09-25 (after the night)
+
+- **feat/app-v2 b3cadffe69.** Every lane's work is merged. Not pushed.
+- **Code:**
+  - live v2 is 99.3k lines (86.4k at the first handoff). The growth is ported v1 features: Tasks, Marketplace, the Settings sections, onboarding, the account cards, notifications and sounds;
+  - `src/ui` is 2.8k lines (10.3k at the first handoff): v2's own copies of Toast, Tooltip, Dialog, Button, Select, TextInput, Icon and 29 unused components are deleted;
+  - `src/legacy` is 143.8k lines;
+  - e2e is 6.9k lines.
+- **`bun run check`: 7 of 17 pass** (typecheck ×2, v2-only, adapter-boundary, no-directory-identity, access-boundary, protected-areas).
+  - no-comments 1,772 (2,104 at the first handoff)
+  - claxedo-names 978 (1,111)
+  - one-owner 108 (239)
+  - one-home-per-datum 76 (81)
+  - size 59 (73)
+  - no-swallowed-errors 54 (56)
+  - domain-boundaries 4 (36)
+  - no-polling 5
+  - e2e-hygiene 3
+  - budget 15 parts over
+  - The shell, rail, workbench, ui, projects, accounts, onboarding and cloud folders are at 0 on most checks. The biggest remaining piles are the transcript's comments and names, which triage into the corpus first.
+- **Owner bugs from the night, all fixed and merged:**
+  - subagents in their turn, and as a panel tab;
+  - question dock after Stop (a runtime event fix);
+  - todo dock;
+  - terminals in the rail and compact tabs;
+  - the file-click and toggle freezes (a store write loop);
+  - the Goal-less session failing to open (runtime);
+  - 36 → 0 404s on session load;
+  - close all tabs → New Session;
+  - duplicate New Session tabs;
+  - scrollbars;
+  - the rail foot (account card + Usage);
+  - phone rules;
+  - contrast sliders only for Codex;
+  - the settings regroup;
+  - the Tasks and Marketplace pages;
+  - Presets.
+- **Performance:**
+  - cold session switch 126–625 ms → 21–46 ms, from transcript-first paint;
+  - the provider catalog loads once, on demand: 31–33 → 0 reads at launch for existing sessions;
+  - hidden panes unmount: +9 ms per return, −15 MiB heap with 8 open;
+  - the rail no longer remounts on every route change.
+  - The benchmark's proper run started 06:50 on b3cadffe69, with every other lane paused.
+- **Experiments (paused at the limit, results pending):** exp-stream (60 Hz while streaming), exp-scroll (scrolling and interaction), exp-idle (idle CPU, memory, start). Their worktrees are `~/test/opencode-app-v2-lanes/exp-*`, and their notes are in `scratchpad/perf/<exp>/`.
+
 ## The goal in four parts
 
 The owner's words: better, performant, easy code, less LOC. Each part gives the rule, where it stands (observed on `feat/app-v2`), and what is next.
