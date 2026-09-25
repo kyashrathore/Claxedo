@@ -530,10 +530,14 @@ async function harnessStatusResponse(c: Context, options: HostedShellRouteOption
   }
 }
 
+function hasCredential(c: Context, options: HostedShellRouteOptions) {
+  return options.authentication
+    ? requestHasAuthenticationCredential(c.req.raw, options.authentication.descriptor)
+    : !!bearerToken(c.req.header("authorization") ?? null)
+}
+
 async function signedProjects(c: Context, options: HostedShellRouteOptions, activateOwner = false) {
-  if (options.authentication) {
-    if (!requestHasAuthenticationCredential(c.req.raw, options.authentication.descriptor)) return []
-  } else if (!bearerToken(c.req.header("authorization") ?? null)) return []
+  if (!hasCredential(c, options)) return []
   const auth = await signedAuth(c, options)
   if (!auth) return []
   if (activateOwner && options.activateOwner) {
@@ -553,10 +557,7 @@ async function signedProjects(c: Context, options: HostedShellRouteOptions, acti
  * where the owner's runtime activation is scheduled.
  */
 async function signedServiceCatalogState(c: Context, options: HostedShellRouteOptions) {
-  const hasCredential = options.authentication
-    ? requestHasAuthenticationCredential(c.req.raw, options.authentication.descriptor)
-    : !!bearerToken(c.req.header("authorization") ?? null)
-  if (!hasCredential) return { authenticated: false, services: EMPTY_SERVICE_CATALOG }
+  if (!hasCredential(c, options)) return { authenticated: false, services: EMPTY_SERVICE_CATALOG }
   const auth = await signedAuth(c, options)
   if (!auth) return { authenticated: false, services: EMPTY_SERVICE_CATALOG }
   if (options.activateOwner) guardedWaitUntil(c)?.(options.activateOwner(auth))
@@ -709,18 +710,25 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
         version: version(options),
       }))
     // Public, and deliberately not the node's bootstrap body: a hosted central
-    // has no filesystem, no embedded runtime and no machine behind it, so the
-    // only fact it has to state here is the posture the browser must satisfy.
-    // The app reads it before its first render, while nobody is signed in yet,
-    // which is why it passes no auth gate.
-    .get("/api/claxedo/bootstrap", (c) => {
+    // has no filesystem, no embedded runtime and no machine behind it. The app
+    // reads it before its first render, while nobody is signed in yet, which is
+    // why it passes no auth gate and an anonymous caller learns only the
+    // posture. A caller holding a credential also gets the project catalog
+    // `/project` serves, which is what a signed node's bootstrap carries too.
+    .get("/api/claxedo/bootstrap", async (c) => {
       c.header("Cache-Control", "no-store")
-      return c.json({
+      const declaration = {
         healthy: true,
         version: version(options),
         events: { hostAggregate: false },
         deployment: { issuesSessions: issuesSessions(options.authConfig), documents: false },
-      })
+      }
+      if (!hasCredential(c, options)) return c.json(declaration)
+      try {
+        return c.json({ ...declaration, project: await signedProjects(c, options) })
+      } catch (err) {
+        return authErrorResponse(c, err)
+      }
     })
     .get("/project", async (c) => {
       try {
