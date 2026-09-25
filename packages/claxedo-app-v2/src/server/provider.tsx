@@ -9,9 +9,11 @@ export function ServerProvider(props: ParentProps<{ readonly server: ServerHandl
     if (document.visibilityState === "visible") server.retryConnection()
   }
   window.addEventListener("online", server.retryConnection)
+  window.addEventListener("focus", server.retryConnection)
   document.addEventListener("visibilitychange", visible)
   onCleanup(() => {
     window.removeEventListener("online", server.retryConnection)
+    window.removeEventListener("focus", server.retryConnection)
     document.removeEventListener("visibilitychange", visible)
     server.dispose()
   })
