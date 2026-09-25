@@ -24,6 +24,7 @@ export type { ScriptedDialect, ScriptedReply }
 export type ScriptedModelRequest = {
   dialect: ScriptedDialect
   path: string
+  authorization?: string
   body: ScriptedModelBody["body"]
   model: string
   prompt: string
@@ -45,6 +46,7 @@ export type ScriptedModelServer = {
   scriptText(input: { marker: string; text: string }): void
   scriptError(input: ScriptedError): () => void
   holdTextReplies(marker: string): () => void
+  refuseAuthorization(fragment: string): void
   setReplyDelayMs(ms: number): void
   setTextStreamPacing(pacing: StreamPacing | undefined): void
   close(): Promise<void>
@@ -63,6 +65,7 @@ type ServerState = {
   textGate?: TextGate
   replyDelayMs: number
   pacing?: StreamPacing
+  refusedAuthorization?: string
 }
 
 const SCRIPTED_TITLE = "Scripted Session"
@@ -148,10 +151,13 @@ export async function startScriptedModelServer(input: { port: number; red: boole
     state.counts[request.dialect] += 1
     const sequence = ++state.sequence
     const prompt = promptText(request)
-    const reply = input.red
+    const authorization = incoming.headers.authorization ?? incoming.headers["x-api-key"]?.toString()
+    const reply = state.refusedAuthorization && authorization?.includes(state.refusedAuthorization)
+      ? { kind: "error" as const, status: 401, message: "Scripted model refused the renewed credential" }
+      : input.red
       ? { kind: "error" as const, status: 503, message: "Scripted model red run: every turn fails" }
       : decideReply(state, request, prompt)
-    requests.push({ dialect: request.dialect, path: requestPath, body: request.body, model: request.body.model ?? "scripted", prompt, reply, tools: modelTools(request.body) })
+    requests.push({ dialect: request.dialect, path: requestPath, authorization, body: request.body, model: request.body.model ?? "scripted", prompt, reply, tools: modelTools(request.body) })
     await writeReply(outgoing, state, sequence, request, prompt, reply)
   })
   await listenOnLoopback(server, input.port)
@@ -196,6 +202,9 @@ export async function startScriptedModelServer(input: { port: number; red: boole
         gate.release()
         if (state.textGate === gate) state.textGate = undefined
       }
+    },
+    refuseAuthorization: (fragment) => {
+      state.refusedAuthorization = fragment
     },
     setReplyDelayMs: (ms) => {
       state.replyDelayMs = ms
