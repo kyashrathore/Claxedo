@@ -49,7 +49,7 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
                   />
                 </div>
                 <div class="relative z-10 -mt-2">
-                  <RunningWorkspace placementId={props.state.placementId} startOnOpen>
+                  <RunningWorkspace placementId={props.state.placementId}>
                     <Composer
                       composerKey={key()}
                       placementId={props.state.placementId}
