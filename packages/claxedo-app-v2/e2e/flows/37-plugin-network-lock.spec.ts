@@ -1,7 +1,17 @@
 import path from "node:path"
 import type { FrameLocator, Locator, Page } from "@playwright/test"
 import { expect, listLivePlugins, pageTransport, registerLivePlugin, test, writeLivePlugin } from "../harness"
-import { expectEveryAttemptBlocked, expectEveryOriginViolated, KINDS, PROBE, probePlugin, targetsFor, type Target } from "./37-plugin-network-lock.probe"
+import {
+  expectEveryAttemptBlocked,
+  expectEveryOriginViolated,
+  expectOutsideImage,
+  KINDS,
+  PROBE,
+  probePlugin,
+  targetsFor,
+  type ImagePolicy,
+  type Target,
+} from "./37-plugin-network-lock.probe"
 
 const DESKTOP_WARNING = /runs? inside this app, unsandboxed, with its full access on this computer\. An app plugin sees what you see, acts as you on your server, and can open links in your browser that carry your data out\./
 const WEB_WARNING = /run sandboxed in frames\. An app plugin sees only what this app passes it and reaches only the server routes and operations its manifest names, as you, and nothing else on the network\./
@@ -29,13 +39,14 @@ async function approveInDialog(app: Page, name: string, warning: RegExp) {
   await expect(dialog).toHaveCount(0)
 }
 
-async function expectProbeBlocked(view: Page | FrameLocator, targets: readonly Target[]) {
+async function expectProbeBlocked(view: Page | FrameLocator, targets: readonly Target[], imagePolicy: ImagePolicy) {
   const outcomes = view.getByRole("list", { name: "Outcomes" })
   await expect(outcomes.getByRole("listitem").filter({ hasText: /^server / })).toHaveText("server 200")
   await expect.poll(async () => (await listed(outcomes)).filter((line) => !line.startsWith("server ")).length, { timeout: 30_000 }).toBe(targets.length * KINDS.length)
   expectEveryAttemptBlocked((await listed(outcomes)).filter((line) => !line.startsWith("server ")), targets)
   const violations = view.getByRole("list", { name: "Violations" })
-  await expect.poll(async () => expectEveryOriginViolated(await listed(violations), targets)).toBeUndefined()
+  await expect.poll(async () => expectEveryOriginViolated(await listed(violations), targets, imagePolicy)).toBeUndefined()
+  await expect.poll(async () => expectOutsideImage(await listed(violations), imagePolicy)).toBeUndefined()
 }
 
 async function watchViolations(app: Page) {
@@ -47,17 +58,17 @@ async function watchViolations(app: Page) {
   return () => app.evaluate(() => (window as unknown as { probeViolations: string[] }).probeViolations)
 }
 
-test("37 network lock: a script in the app page reaches its own server and nothing else", async ({ stack, app }) => {
+test("37 network lock: a script in the app page reaches its own server and nothing else, and loads https images as today's app does", async ({ stack, app }) => {
   const sink = await stack.connectionSink()
   const targets = targetsFor(stack.url, sink)
   const violations = await watchViolations(app)
   expectEveryAttemptBlocked(await app.evaluate(`(${PROBE})(${JSON.stringify(targets)})`), targets)
-  await expect.poll(async () => expectEveryOriginViolated(await violations(), targets)).toBeUndefined()
+  await expect.poll(async () => expectEveryOriginViolated(await violations(), targets, "https images load")).toBeUndefined()
   expect(await app.evaluate(async () => (await fetch("/api/claxedo/health")).status)).toBe(200)
   expect(sink.connections()).toBe(0)
 })
 
-test("37 network lock: a live plugin on the web reaches its own server through the host and nothing else", async ({ stack, app }) => {
+test("37 network lock: a live plugin on the web reaches its own server through the host and nothing else, not even an https image", async ({ stack, app }) => {
   const sink = await stack.connectionSink()
   const targets = targetsFor(stack.url, sink)
   const folder = await writeLivePlugin(path.join(stack.dataDir, "plugins", "probe"), {
@@ -73,7 +84,7 @@ test("37 network lock: a live plugin on the web reaches its own server through t
   await approveInDialog(app, "Network probe", WEB_WARNING)
   await app.goto(`${stack.url}/network-probe`)
   const probe = app.getByTitle("Network probe", { exact: true }).contentFrame()
-  await expectProbeBlocked(probe, targets)
+  await expectProbeBlocked(probe, targets, "no outside image")
 
   const consoleLines: string[] = []
   app.on("console", (message) => consoleLines.push(message.text()))
@@ -109,7 +120,7 @@ test("37 network lock: a live plugin on the desktop reaches its own server and n
 
   await approveInDialog(window, "Network probe", DESKTOP_WARNING)
   await window.getByRole("button", { name: "Network probe" }).click()
-  await expectProbeBlocked(window, targets)
+  await expectProbeBlocked(window, targets, "https images load")
 
   await window.getByRole("link", { name: "Plugin docs" }).click()
   await expect.poll(openedExternally).toEqual([`${sink.url}/clicked`])

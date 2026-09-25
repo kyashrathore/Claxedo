@@ -44,6 +44,7 @@ import { handleTranscriptLinkClick, transcriptLinkHref } from "./transcript-link
 import { parseMarkdownMeasured } from "./markdown-parse-timing"
 import { createImageWaits, stabilizeImages, type ImageFiles, type ImageWaits } from "./markdown-images"
 import { nextIdleSlice } from "@/lib/idle"
+import { createMarkdownEdges, keepMarkdownEdge } from "./markdown-edges"
 
 type RenderedBlock =
   | (MarkdownCacheEntry & { key: string; mode: Exclude<Block["mode"], "code"> })
@@ -723,6 +724,7 @@ export function Markdown(
   const openImage = (src: string, alt?: string) => void dialog.show(() => <ImagePreview src={src} alt={alt} />)
   const data = useOptionalData()
   const images = createImageWaits()
+  const edges = createMarkdownEdges()
   const [root, setRoot] = createSignal<HTMLDivElement>()
   const owner = createUniqueId()
   const activeCodeKeys = new Set<string>()
@@ -873,6 +875,7 @@ export function Markdown(
       child.remove()
     }
     images.commit(container)
+    edges.mark(container)
     container
       .querySelectorAll<HTMLElement>('[data-slot="markdown-copy-button"]')
       .forEach((button) => setCopyState(button, labels, button.dataset.copied === "true"))
@@ -971,7 +974,10 @@ function updateBlock(
   }
 
   morphdom(current, next, {
-    onBeforeElUpdated: (fromEl, toEl) => !fromEl.isEqualNode(toEl),
+    onBeforeElUpdated: (fromEl, toEl) => {
+      keepMarkdownEdge(fromEl, toEl)
+      return !fromEl.isEqualNode(toEl)
+    },
     onBeforeNodeDiscarded: (node) => {
       if (isControl(node)) return false
       if (node instanceof Element) disposeMarkdownControls(node)
