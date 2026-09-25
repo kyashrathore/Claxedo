@@ -135,6 +135,24 @@ async function authorizeWorkspaceRead(
   await authority.openWorkspace(auth, { workspaceId })
 }
 
+/**
+ * The authority's session rows for one workspace, stamped with the workspace
+ * and project they were listed under: the rows name neither, and the
+ * navigation list drops a row it cannot place.
+ */
+async function placedAuthoritySessions(
+  auth: SignedControlPlaneAuth,
+  options: Options,
+  place: { workspaceId: string; projectId?: string },
+) {
+  const rows = await requireAuthority(options.services).listSessions(auth, { workspaceId: place.workspaceId })
+  return (Array.isArray(rows) ? rows : []).map((row) => ({
+    ...(row && typeof row === "object" ? row : {}),
+    workspace_id: place.workspaceId,
+    ...(place.projectId ? { project_id: place.projectId } : {}),
+  }))
+}
+
 async function authorizedProjectWorkspaceIds(
   auth: SignedControlPlaneAuth,
   options: Options,
@@ -250,30 +268,20 @@ export function SessionMetaRoutes(options: Options = {}) {
           // to the sessions inside it, which the authority answers per row
           // from creator, participant or share.
           const authorized = await authorizedProjectWorkspaceIds(authResult.auth, options, query.projectId)
-          const authority = requireAuthority(options.services)
           const projectId = query.projectId
           const sessions = (await Promise.all(
-            [...authorized].map(async (workspaceId) => {
-              const rows = await authority.listSessions(authResult.auth!, { workspaceId })
-              return (Array.isArray(rows) ? rows : []).map((row) => ({
-                ...(row && typeof row === "object" ? row : {}),
-                workspace_id: workspaceId,
-                project_id: projectId,
-              }))
-            }),
+            [...authorized].map((workspaceId) => placedAuthoritySessions(authResult.auth!, options, { workspaceId, projectId })),
           )).flat()
           return c.json(buildSessionListResponse({ query, sessions }))
         }
         const resolved = await workspace(c)
         await authorizeWorkspaceRead(authResult.auth, options, resolved?.id)
         if (authResult.auth && resolved?.id) {
-          const sessions = await requireAuthority(options.services).listSessions(authResult.auth, {
+          const sessions = await placedAuthoritySessions(authResult.auth, options, {
             workspaceId: resolved.id,
+            ...(resolved.project_id ? { projectId: resolved.project_id } : {}),
           })
-          return c.json(buildSessionListResponse({
-            query,
-            sessions: Array.isArray(sessions) ? sessions : [],
-          }))
+          return c.json(buildSessionListResponse({ query: { ...query, workspaceId: resolved.id }, sessions }))
         }
         if (resolved) await options.refreshSessionProjection?.(resolved)
         const canUseBoundedProjection = query.groupBy === "none" &&
