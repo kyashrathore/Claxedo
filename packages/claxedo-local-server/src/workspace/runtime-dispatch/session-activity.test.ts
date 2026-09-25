@@ -11,7 +11,7 @@ vi.mock("../../deployments/local/embedded-workspace-runtime", () => ({
   ensureEmbeddedWorkspaceRuntime: async (ws: { id: string }) => ({
     app: new Hono()
       .get("/session/status", (c) =>
-        runtimes.failing.has(ws.id) ? c.json({ error: { code: "engine_down" } }, 500) : c.json({ [`ses_${ws.id}`]: { type: "busy" } }))
+        runtimes.failing.has(ws.id) ? c.json({ error: { code: "engine_down", workspaceId: ws.id } }, 500) : c.json({ [`ses_${ws.id}`]: { type: "busy" } }))
       .get("/permission", (c) => c.json([{ id: `per_${ws.id}`, sessionID: `ses_${ws.id}` }]))
       .get("/question", (c) => c.json([])),
   }),
@@ -22,6 +22,9 @@ const [{ createWorkspaceRuntimeProxy }, { ClaxedoDB }, { ensureWorkspace }] = aw
   import("@claxedo/server-core/platform/db/index"),
   import("@claxedo/server-core/workspace/store/index"),
 ])
+
+const member = { actorId: "usr_member", actorKind: "human", actorPublicId: "member", actorName: "Member", orgId: "org_member", role: "editor" } as const
+const relayed = { authorization: "Bearer rht", "x-forwarded-by": "workspace-relay" }
 
 type Activity = {
   workspaces: { workspaceId: string; status: Record<string, unknown>; permissions: { id: string }[]; questions: unknown[] }[]
@@ -74,13 +77,33 @@ describe("one session-activity read across workspaces", () => {
     expect(body.failures).toEqual([])
   })
 
-  test("a verified caller sees only the workspaces it may read, and the others are not named", async () => {
+  test("a relayed member with access to one workspace reads only that one, and the other is named nowhere", async () => {
+    runtimes.failing.add(ids.theirs)
+    try {
+      const resolveRelayActor = async (_request: Request, workspaceId: string) => (workspaceId === ids.mine ? member : undefined)
+      for (const options of [{ requireRelayActor: true, resolveRelayActor }, { verifyRelayIngress: true, resolveRelayActor }]) {
+        const { status, text } = await read(dispatcher(options), undefined, relayed)
+        expect(status).toBe(200)
+        expect(JSON.parse(text)).toEqual({
+          workspaces: [{ workspaceId: ids.mine, status: { [`ses_${ids.mine}`]: { type: "busy" } }, permissions: [{ id: `per_${ids.mine}`, sessionID: `ses_${ids.mine}` }], questions: [] }],
+          failures: [],
+        })
+        expect(text).not.toContain(ids.theirs)
+      }
+    } finally {
+      runtimes.failing.delete(ids.theirs)
+    }
+  })
+
+  test("a workspace whose access question cannot be answered is named nowhere", async () => {
     const app = dispatcher({
       requireRelayActor: true,
-      resolveRelayActor: async (_request, workspaceId) =>
-        workspaceId === ids.mine ? { actorId: "usr_mine", actorKind: "human", actorPublicId: "mine", actorName: "Mine", orgId: "org_mine", role: "editor" } : undefined,
+      resolveRelayActor: async (_request, workspaceId) => {
+        if (workspaceId === ids.mine) return member
+        throw new Error(`authority unavailable for ${workspaceId}`)
+      },
     })
-    const { status, text } = await read(app)
+    const { status, text } = await read(app, undefined, relayed)
     expect(status).toBe(200)
     expect((JSON.parse(text) as Activity).workspaces.map((item) => item.workspaceId)).toEqual([ids.mine])
     expect(text).not.toContain(ids.theirs)
@@ -102,7 +125,7 @@ describe("one session-activity read across workspaces", () => {
     try {
       const body = JSON.parse((await read(dispatcher())).text) as Activity
       expect(body.workspaces.map((item) => item.workspaceId)).toEqual([ids.mine])
-      expect(body.failures).toEqual([{ workspaceId: ids.theirs, status: 500, error: JSON.stringify({ error: { code: "engine_down" } }) }])
+      expect(body.failures).toEqual([{ workspaceId: ids.theirs, status: 500, error: JSON.stringify({ error: { code: "engine_down", workspaceId: ids.theirs } }) }])
     } finally {
       runtimes.failing.delete(ids.theirs)
     }

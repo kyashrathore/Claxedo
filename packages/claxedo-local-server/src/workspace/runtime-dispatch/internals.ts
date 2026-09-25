@@ -9,7 +9,7 @@ import type { RelayProvider } from "@claxedo/server-core/adapters/relay/index"
 import type { RuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { EMBEDDED_RELAY_HOST_AUTH_HEADER } from "./embedded-relay-host-auth"
-import { resolveIngressProvenance } from "./ingress-provenance"
+import { resolveIngressProvenance, type IngressProvenance } from "./ingress-provenance"
 
 const WR_INTERNAL = ["/api/wr/health", "/api/wr/config", "/api/wr/harness-config-options", "/api/wr/capabilities"]
 
@@ -454,15 +454,28 @@ export function ingressOptions(options: RuntimeProxyOptions): IngressOptions {
   }
 }
 
+type EmbeddedWorkspace = NonNullable<Awaited<ReturnType<typeof resolveWorkspace>>>
+
+export type AdmittedProvenance = Exclude<IngressProvenance, { kind: "rejected" }>
+
 export async function embedded(
   c: Context,
-  ws: NonNullable<Awaited<ReturnType<typeof resolveWorkspace>>>,
+  ws: EmbeddedWorkspace,
   pathname?: string,
   options?: IngressOptions,
 ) {
   // Ahead of the runtime: a refused request must not start a workspace.
   const provenance = await resolveIngressProvenance(c.req.raw, ws.id, options)
   if (provenance.kind === "rejected") return provenance.response
+  return await dispatchEmbedded(c, ws, provenance, pathname)
+}
+
+export async function dispatchEmbedded(
+  c: Context,
+  ws: EmbeddedWorkspace,
+  provenance: AdmittedProvenance,
+  pathname?: string,
+) {
   const url = new URL(c.req.url)
   const targetPath = pathname ?? url.pathname
   const runtime = await ensureEmbeddedWorkspaceRuntime(ws, { config: embeddedConfigModeForPath(targetPath, c.req.method) })
