@@ -27,7 +27,7 @@ function startInput(directory: string, id: string, access: "native" | "connectio
     credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" } }
 }
 
-test("harness package composition starts ACP, Pi and Codex through scripted peers", async () => {
+test("harness package composition starts ACP, Pi, Codex and Claude and constructs Cursor", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "harness-compose-"))
   const peer = path.join(root, "peer.cjs")
   await fs.writeFile(peer, peerSource, { mode: 0o755 })
@@ -41,7 +41,10 @@ test("harness package composition starts ACP, Pi and Codex through scripted peer
       placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: true,
       stateRoot: path.join(root, "pi-state"), ownerAgentDir: path.join(root, "pi-agent") },
     codex: { binary: peer, homeRoot: path.join(root, "codex-homes"), ownerHome: path.join(root, "codex-owner"),
-      env: { ...process.env, COMPOSE_PEER_KIND: "codex" } } })
+      env: { ...process.env, COMPOSE_PEER_KIND: "codex" } },
+    claude: { executable: "claude", configRoot: path.join(root, "claude-homes"),
+      userConfigRoot: path.join(root, "claude-owner"), env: process.env },
+    cursor: { env: process.env } })
   const broker = { rebind: async () => {} } as unknown as SessionBroker
   try {
     const acpDescriptor = { connectionId: "acp-1", providerKey: "acp", configRevision: 1, enabled: true,
@@ -57,6 +60,12 @@ test("harness package composition starts ACP, Pi and Codex through scripted peer
     expect(codex.commands).toBeUndefined()
     try { expect((await codex.start(startInput(root, "codex", "native"), broker)).binding.upstreamSessionId).toBe("codex-peer") }
     finally { await codex.dispose() }
+    const claude = composer.builtIn("claude")
+    try { expect((await claude.start(startInput(root, "claude", "native"), broker)).binding.connectionId).toBe("claude-sdk") }
+    finally { await claude.dispose() }
+    const cursor = composer.builtIn("cursor")
+    try { expect(cursor.kind).toBe("cursor-sdk") }
+    finally { await cursor.dispose() }
     expect(() => composer.connection({ descriptor: { ...acpDescriptor, enabled: false }, directory: root,
       expectedRevision: 1, secrets: { token: "resolved" } })).toThrow("disabled or stale")
     expect(() => composer.connection({ descriptor: acpDescriptor, directory: root,

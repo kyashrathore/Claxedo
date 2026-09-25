@@ -8,11 +8,16 @@ import { AcpTransport } from "./transports/acp"
 import type { MissingSessionContext } from "./transports/acp/restore"
 import { PiRpcTransport, type PiRpcOptions } from "./transports/pi-rpc"
 import { CodexAppServerTransport, type CodexTransportOptions } from "./transports/codex-app-server"
+import { ClaudeSdkTransport } from "./transports/claude-sdk"
+import type { ClaudeSdkOptions } from "./transports/claude-sdk/launch-context"
+import { CursorSdkTransport } from "./transports/cursor-sdk"
 
 export type HarnessCompositionOptions = {
   acp: { missingContext: MissingSessionContext }
   pi: PiRpcOptions
   codex: CodexTransportOptions
+  claude: ClaudeSdkOptions
+  cursor: { env: NodeJS.ProcessEnv }
 }
 
 export type ConnectionTransportInput = {
@@ -40,6 +45,8 @@ export function createHarnessComposer(services: HarnessServices, options: Harnes
       if (!record || record.access !== "native") throw new HarnessProviderError("connection_unavailable", `Unknown built-in harness: ${id}`)
       if (record.transport === "pi-rpc") return new PiRpcTransport(services, options.pi)
       if (record.transport === "codex-app-server") return new CodexAppServerTransport(services, options.codex)
+      if (record.transport === "claude-sdk") return new ClaudeSdkTransport(services, options.claude)
+      if (record.transport === "cursor-sdk") return new CursorSdkTransport(services, options.cursor.env)
       throw new HarnessProviderError("connection_unavailable", `Transport is not composed: ${record.transport}`)
     },
     connection(input: ConnectionTransportInput): HarnessTransport {

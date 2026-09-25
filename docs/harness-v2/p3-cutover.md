@@ -83,12 +83,12 @@ for root in roots:
             names = match.group(1).strip("{} \n").replace("type ", "")
             rows.append((str(file), source.count("\n", 0, match.start()) + 1, "re-export", match.group(2), names))
 print(f"{len(rows)} imports/re-exports in {len(set(row[0] for row in rows))} production files")
-for file, line, kind, module, names in sorted(rows): print(f"{file}:{line} | {kind} | {module} | {names}")
+for file, line, kind, module, names in sorted(rows): print(f"{file}:{line} | {kind} | {module} | {names.rstrip()}")
 PY
 ```
 
 ```text
-199 imports/re-exports in 126 production files
+209 imports/re-exports in 132 production files
 packages/agent-sdk-runtime/src/adapter-contract.ts:12 | import | @claxedo/agent-event-runtime | RuntimeGoalSnapshot
 packages/agent-sdk-runtime/src/compat-events.ts:16 | import | @claxedo/agent-event-runtime/client-presentation | withClaxedoMessageAuthor
 packages/agent-sdk-runtime/src/harnesses/acp/goal-response.ts:1 | import | @claxedo/agent-event-runtime | isRuntimeGoalStatus, RuntimeGoalSnapshot
@@ -100,21 +100,21 @@ packages/agent-sdk-runtime/src/harnesses/acp/subagent-runtime.ts:3 | import | @c
 packages/agent-sdk-runtime/src/harnesses/acp/turn-runner.ts:8 | import | @claxedo/agent-event-runtime | createAgentEventRuntime
 packages/agent-sdk-runtime/src/harnesses/acp/turn-runner.ts:9 | import | @claxedo/agent-event-runtime/client-presentation | projectSessionCommands
 packages/agent-sdk-runtime/src/harnesses/acp/turn-runner.ts:10 | import | @claxedo/agent-event-runtime/harnesses/acp | createAcpEventTranslator, translateStopReason
-packages/agent-sdk-runtime/src/harnesses/claude/driver.ts:2 | import | @claxedo/agent-event-runtime | createAgentEventRuntime, AgentEventRuntime, RuntimeGoalSnapshot, 
-packages/agent-sdk-runtime/src/harnesses/claude/driver.ts:7 | import | @claxedo/agent-event-runtime/harnesses/claude | CLAUDE_QUESTION_DISMISSED, CLAUDE_SUBAGENT_USAGE_METHOD, claudeChildCorrelationKey, claudeSdkAdapter, claudeSubagentObservations, createClaudeTaskLedger, foldNestedSubagentFrame, ClaudeTaskLedger, 
+packages/agent-sdk-runtime/src/harnesses/claude/driver.ts:2 | import | @claxedo/agent-event-runtime | createAgentEventRuntime, AgentEventRuntime, RuntimeGoalSnapshot,
+packages/agent-sdk-runtime/src/harnesses/claude/driver.ts:7 | import | @claxedo/agent-event-runtime/harnesses/claude | CLAUDE_QUESTION_DISMISSED, CLAUDE_SUBAGENT_USAGE_METHOD, claudeChildCorrelationKey, claudeSdkAdapter, claudeSubagentObservations, createClaudeTaskLedger, foldNestedSubagentFrame, ClaudeTaskLedger,
 packages/agent-sdk-runtime/src/harnesses/claude/subagent-usage.ts:1 | import | @claxedo/agent-event-runtime/harnesses/claude | claudeChildCorrelationKey, ClaudeSubagentUsage
-packages/agent-sdk-runtime/src/harnesses/codex/driver.ts:4 | import | @claxedo/agent-event-runtime | createAgentEventRuntime, AgentEventRuntime, 
-packages/agent-sdk-runtime/src/harnesses/codex/driver.ts:8 | import | @claxedo/agent-event-runtime/harnesses/codex | codexAppServerAdapter, 
+packages/agent-sdk-runtime/src/harnesses/codex/driver.ts:4 | import | @claxedo/agent-event-runtime | createAgentEventRuntime, AgentEventRuntime,
+packages/agent-sdk-runtime/src/harnesses/codex/driver.ts:8 | import | @claxedo/agent-event-runtime/harnesses/codex | codexAppServerAdapter,
 packages/agent-sdk-runtime/src/harnesses/codex/goal.ts:2 | import | @claxedo/agent-event-runtime | RawHarnessEvent, RuntimeGoalSnapshot
 packages/agent-sdk-runtime/src/harnesses/codex/host-subagent.ts:2 | import | @claxedo/agent-event-runtime | hostSubagentBinding, hostSubagentObservation, isHostSubagentTool
 packages/agent-sdk-runtime/src/harnesses/codex/protocol.ts:2 | import | @claxedo/agent-event-runtime | isRuntimeGoalStatus, RawHarnessEvent, RuntimeGoalSnapshot
 packages/agent-sdk-runtime/src/harnesses/codex/server-request.ts:3 | import | @claxedo/agent-event-runtime/harnesses/codex | codexMcpApproval
 packages/agent-sdk-runtime/src/harnesses/codex/thread-projection.ts:1 | import | @claxedo/agent-event-runtime/harnesses/codex | CODEX_DESCENDANT_ERROR_METHOD
-packages/agent-sdk-runtime/src/harnesses/codex/thread-projection.ts:2 | import | @claxedo/agent-event-runtime/harnesses/codex | codexCollabAgentCall, codexSubagentActivity, codexStartedSubagent, 
+packages/agent-sdk-runtime/src/harnesses/codex/thread-projection.ts:2 | import | @claxedo/agent-event-runtime/harnesses/codex | codexCollabAgentCall, codexSubagentActivity, codexStartedSubagent,
 packages/agent-sdk-runtime/src/harnesses/codex/thread-registry.ts:1 | import | @claxedo/agent-event-runtime | AgentRuntimeEventOf
-packages/agent-sdk-runtime/src/harnesses/codex/thread-registry.ts:2 | import | @claxedo/agent-event-runtime/harnesses/codex | codexCollabAgentCall, codexReportedModel, codexStartedSubagent, codexSubagentActivity, codexUsageGrowth, 
-packages/agent-sdk-runtime/src/harnesses/cursor/driver.ts:3 | import | @claxedo/agent-event-runtime | createAgentEventRuntime, AgentEventRuntime, RuntimeGoalSnapshot, 
-packages/agent-sdk-runtime/src/harnesses/cursor/driver.ts:8 | import | @claxedo/agent-event-runtime/harnesses/cursor | cursorRuntimeMessage, cursorSdkAdapter, cursorSubagentObservations, 
+packages/agent-sdk-runtime/src/harnesses/codex/thread-registry.ts:2 | import | @claxedo/agent-event-runtime/harnesses/codex | codexCollabAgentCall, codexReportedModel, codexStartedSubagent, codexSubagentActivity, codexUsageGrowth,
+packages/agent-sdk-runtime/src/harnesses/cursor/driver.ts:3 | import | @claxedo/agent-event-runtime | createAgentEventRuntime, AgentEventRuntime, RuntimeGoalSnapshot,
+packages/agent-sdk-runtime/src/harnesses/cursor/driver.ts:8 | import | @claxedo/agent-event-runtime/harnesses/cursor | cursorRuntimeMessage, cursorSdkAdapter, cursorSubagentObservations,
 packages/agent-sdk-runtime/src/harnesses/pi/driver.ts:17 | import | @claxedo/agent-event-runtime | createAgentEventRuntime
 packages/agent-sdk-runtime/src/harnesses/pi/driver.ts:18 | import | @claxedo/agent-event-runtime/harnesses/pi | piRpcAdapter
 packages/agent-sdk-runtime/src/harnesses/shared/child-event-routing.ts:1 | import | @claxedo/agent-event-runtime | AgentRuntimeEvent, AgentRuntimeEventOf, RuntimeUsageObservation
@@ -135,7 +135,7 @@ packages/agent-sdk-runtime/src/harnesses/shared/turn-projection.ts:2 | import | 
 packages/agent-sdk-runtime/src/index.ts:19 | import | @claxedo/agent-event-runtime | AgentRuntimeEvent
 packages/agent-sdk-runtime/src/index.ts:78 | re-export | @claxedo/agent-event-runtime | isRuntimeGoalStatus, RUNTIME_GOAL_STATUSES
 packages/agent-sdk-runtime/src/index.ts:79 | re-export | @claxedo/agent-event-runtime | RuntimeGoalSnapshot, RuntimeGoalStatus
-packages/agent-sdk-runtime/src/runtime-event-hub.ts:2 | import | @claxedo/agent-event-runtime | AGENT_RUNTIME_EVENT_CONTRACT_VERSION, AgentRuntimeEvent, 
+packages/agent-sdk-runtime/src/runtime-event-hub.ts:2 | import | @claxedo/agent-event-runtime | AGENT_RUNTIME_EVENT_CONTRACT_VERSION, AgentRuntimeEvent,
 packages/agent-sdk-runtime/src/runtime.ts:8 | import | @claxedo/agent-event-runtime | assistantMessageIdForTurn, AgentRuntimeEvent
 packages/agent-sdk-runtime/src/runtime/goal-controller.ts:2 | import | @claxedo/agent-event-runtime | agentRuntimeEvent, RuntimeGoalSnapshot
 packages/agent-sdk-runtime/src/runtime/handoff-transaction.ts:2 | import | @claxedo/agent-event-runtime | AgentRuntimeEvent
@@ -156,8 +156,8 @@ packages/claxedo-app/src/features/session/conversation/agent-conversation.ts:2 |
 packages/claxedo-app/src/features/session/data/session-types.ts:1 | import | @claxedo/agent-event-runtime/contracts | assistantMessageIdForTurn
 packages/claxedo-app/src/features/session/store/session-goal-cache.ts:1 | import | @claxedo/agent-event-runtime | RuntimeGoalSnapshot
 packages/claxedo-app/src/features/session/store/session-goal-query.ts:2 | import | @claxedo/agent-event-runtime | AgentRuntimeEvent
-packages/claxedo-app/src/features/session/subagents/subagent-presentation.ts:1 | import | @claxedo/agent-event-runtime | SubagentMode, SubagentStatus, SubagentToolCallRole, SubagentTranscript, SubagentUpdatedEvent, 
-packages/claxedo-app/src/features/session/subagents/subagent-registry.ts:1 | import | @claxedo/agent-event-runtime | SubagentMode, SubagentStatus, SubagentToolCallRole, SubagentTranscript, SubagentUpdatedEvent, 
+packages/claxedo-app/src/features/session/subagents/subagent-presentation.ts:1 | import | @claxedo/agent-event-runtime | SubagentMode, SubagentStatus, SubagentToolCallRole, SubagentTranscript, SubagentUpdatedEvent,
+packages/claxedo-app/src/features/session/subagents/subagent-registry.ts:1 | import | @claxedo/agent-event-runtime | SubagentMode, SubagentStatus, SubagentToolCallRole, SubagentTranscript, SubagentUpdatedEvent,
 packages/claxedo-app/src/features/session/ui/composer/session-composer-region.tsx:22 | import | @claxedo/agent-event-runtime | RuntimeGoalSnapshot
 packages/claxedo-app/src/features/session/ui/composer/session-goal-dock.tsx:2 | import | @claxedo/agent-event-runtime | RuntimeGoalSnapshot, RuntimeGoalStatus
 packages/claxedo-app/src/features/session/ui/message-author.tsx:2 | import | @claxedo/agent-event-runtime/client-presentation | ClaxedoMessageAuthor
@@ -166,13 +166,13 @@ packages/claxedo-local-server/src/app/daemon-operation-store.ts:25 | import | @c
 packages/claxedo-local-server/src/app/start-local-server.ts:33 | import | @claxedo/agent-sdk-runtime | createAcpConnectionProvider, CompatEnvelope
 packages/claxedo-local-server/src/app/start-local-server.ts:34 | import | @claxedo/opencode-server-adapter | createOpenCodeServerConnectionProvider
 packages/claxedo-local-server/src/credentials/broker.ts:32 | import | @claxedo/agent-sdk-runtime | projectionRenewalDue, projectionRenewalDueAt
-packages/claxedo-local-server/src/deployments/local/embedded-workspace-runtime.ts:37 | import | @claxedo/agent-sdk-runtime | createAcpConnectionProvider, projectionRenewalDue, projectionRenewalDueAt, AgentTurnOutcome, CompatEnvelope, ConnectionProvider, ConnectionSecretResolver, 
+packages/claxedo-local-server/src/deployments/local/embedded-workspace-runtime.ts:37 | import | @claxedo/agent-sdk-runtime | createAcpConnectionProvider, projectionRenewalDue, projectionRenewalDueAt, AgentTurnOutcome, CompatEnvelope, ConnectionProvider, ConnectionSecretResolver,
 packages/claxedo-local-server/src/deployments/local/embedded-workspace-runtime.ts:46 | import | @claxedo/opencode-server-adapter | createOpenCodeServerConnectionProvider
-packages/claxedo-server-core/src/agent-config/connection-secrets.ts:1 | import | @claxedo/agent-sdk-runtime | ConnectionSecretLease, ConnectionSecretResolver, HarnessConnectionDescriptor, 
-packages/claxedo-server-core/src/agent-config/connections.ts:2 | import | @claxedo/agent-sdk-runtime | AGENT_HARNESS_IDS, ConnectionProviderError, createAcpConnectionProvider, createConnectionProviderRegistry, HarnessConnectionDescriptor, HarnessConnectionRef, 
+packages/claxedo-server-core/src/agent-config/connection-secrets.ts:1 | import | @claxedo/agent-sdk-runtime | ConnectionSecretLease, ConnectionSecretResolver, HarnessConnectionDescriptor,
+packages/claxedo-server-core/src/agent-config/connections.ts:2 | import | @claxedo/agent-sdk-runtime | AGENT_HARNESS_IDS, ConnectionProviderError, createAcpConnectionProvider, createConnectionProviderRegistry, HarnessConnectionDescriptor, HarnessConnectionRef,
 packages/claxedo-server-core/src/agent-config/connections.ts:16 | re-export | @claxedo/agent-sdk-runtime | HarnessConnectionDescriptor,
   HarnessConnectionRef,
-packages/claxedo-server-core/src/agent-config/index.ts:33 | import | @claxedo/agent-sdk-runtime | ConnectionProvider, HarnessConnectionDescriptor, HarnessConnectionRef, 
+packages/claxedo-server-core/src/agent-config/index.ts:33 | import | @claxedo/agent-sdk-runtime | ConnectionProvider, HarnessConnectionDescriptor, HarnessConnectionRef,
 packages/claxedo-server-core/src/agent-config/index.ts:38 | import | @claxedo/agent-sdk-runtime | createAcpConnectionProvider, createConnectionProviderRegistry
 packages/claxedo-server-core/src/agent-config/index.ts:41 | re-export | @claxedo/agent-sdk-runtime | ConnectionReadiness,
   HarnessConnectionCapabilities,
@@ -183,12 +183,12 @@ packages/claxedo-server-core/src/agent-config/index.ts:68 | re-export | @claxedo
 packages/claxedo-server-core/src/authority/adapters/sqlite/private-session-authority.ts:5 | import | @claxedo/agent-sdk-runtime/message-page | AgentMessagePageError
 packages/claxedo-server-core/src/authority/session-projection.ts:1 | import | @claxedo/agent-sdk-runtime/message-page | AgentMessagePageInput
 packages/claxedo-server-core/src/credentials/host-provider-config.ts:19 | import | @claxedo/agent-sdk-runtime/provider-projection | providerProjectionRecord
-packages/claxedo-server-core/src/opencode/sdk-credential-bridge.ts:5 | import | @claxedo/agent-sdk-runtime | projectionRenewalDue, projectionRenewalDueAt, providerProjectionRecord, 
+packages/claxedo-server-core/src/opencode/sdk-credential-bridge.ts:5 | import | @claxedo/agent-sdk-runtime | projectionRenewalDue, projectionRenewalDueAt, providerProjectionRecord,
 packages/claxedo-server-core/src/session/harness/index.ts:4 | import | @claxedo/agent-sdk-runtime | SessionHarness, harnessKey, normalizeHarnessIdentity
 packages/claxedo-server-core/src/session/harness/index.ts:5 | import | @claxedo/agent-sdk-runtime | AGENT_HARNESS_ACCESSES
 packages/claxedo-server-core/src/session/message-replay.ts:11 | import | @claxedo/agent-sdk-runtime/compat-events | readRecordedPart
 packages/claxedo-server-core/src/session/message-replay.ts:12 | import | @claxedo/agent-sdk-runtime/message-page | AgentMessagePageError, projectLatestSurfaceMessages, AgentMessagePageInput
-packages/claxedo-server-core/src/tasks-host/session-bridge-core.ts:6 | import | @claxedo/agent-sdk-runtime | isAgentMessage, renderSessionHandoff, AgentMessage, SessionHarness, 
+packages/claxedo-server-core/src/tasks-host/session-bridge-core.ts:6 | import | @claxedo/agent-sdk-runtime | isAgentMessage, renderSessionHandoff, AgentMessage, SessionHarness,
 packages/claxedo-server-core/src/usage/contracts.ts:1 | import | @claxedo/agent-event-runtime | RuntimeTokenUsage
 packages/claxedo-server-core/src/usage/turn-meter-state.ts:1 | import | @claxedo/agent-event-runtime | RuntimeTokenUsage
 packages/claxedo-server-core/src/usage/turn-meter.ts:1 | import | @claxedo/agent-event-runtime | RuntimeTokenUsage, RuntimeUsageObservation
@@ -204,10 +204,11 @@ packages/claxedo-server/src/hosts/workspace-runtime/runtime-boot.ts:13 | import 
 packages/claxedo-server/src/routes/hosted/host-enrollment.ts:51 | import | @claxedo/agent-sdk-runtime/provider-projection | providerProjectionRecord
 packages/claxedo-server/src/session/machine-dispatch.ts:5 | import | @claxedo/agent-sdk-runtime/compat-events | eventSessionId
 packages/claxedo-server/src/session/machine-dispatch.ts:8 | import | @claxedo/agent-sdk-runtime | SessionHarness
-packages/claxedo-server/src/session/message-page.ts:1 | import | @claxedo/agent-sdk-runtime/message-page | AgentMessagePageError, AgentMessagePageInput, 
+packages/claxedo-server/src/session/message-page.ts:1 | import | @claxedo/agent-sdk-runtime/message-page | AgentMessagePageError, AgentMessagePageInput,
 packages/claxedo-server/src/session/routes/control-plane-session.ts:3 | import | @claxedo/agent-sdk-runtime | AGENT_HARNESS_IDS
 packages/claxedo-server/src/session/routes/control-plane-session.ts:5 | import | @claxedo/agent-sdk-runtime/message-page | AgentMessagePageError, AgentMessagePageInput
 packages/harness/src/broker/ports.ts:11 | import | @claxedo/agent-event-runtime/contracts | AgentRuntimeEvent, RuntimeDiagnostic, SubagentUpdatedEvent
+packages/harness/src/broker/subagents/admission.ts:3 | import | @claxedo/agent-event-runtime/contracts | SubagentUpdatedEvent
 packages/harness/src/conformance/test-support/memory-ports.ts:2 | import | @claxedo/agent-event-runtime/contracts | AgentRuntimeEvent, SubagentUpdatedEvent
 packages/harness/src/contract/broker.ts:12 | import | @claxedo/agent-event-runtime/contracts | AgentRuntimeEvent, AgentRuntimeEventOf
 packages/harness/src/contract/session.ts:8 | import | @claxedo/agent-event-runtime/contracts | AgentRuntimeEvent
@@ -215,6 +216,8 @@ packages/harness/src/translate/unrecognized.ts:1 | import | @claxedo/agent-event
 packages/harness/src/transports/acp/events.ts:1 | import | @claxedo/agent-event-runtime | createAgentEventRuntime
 packages/harness/src/transports/acp/events.ts:2 | import | @claxedo/agent-event-runtime/harnesses/acp | createAcpEventTranslator
 packages/harness/src/transports/acp/index.ts:1 | import | @claxedo/agent-event-runtime/harnesses/acp | translateStopReason
+packages/harness/src/transports/claude-sdk/translate.ts:2 | import | @claxedo/agent-event-runtime | createAgentEventRuntime, AgentEventRuntime
+packages/harness/src/transports/claude-sdk/translate.ts:3 | import | @claxedo/agent-event-runtime/harnesses/claude | claudeChildCorrelationKey, claudeSdkAdapter, claudeSubagentObservations, createClaudeTaskLedger, foldNestedSubagentFrame, ClaudeSdkAdapterState, ClaudeTaskLedger
 packages/harness/src/transports/codex-app-server/configuration.ts:1 | import | @claxedo/agent-event-runtime/harnesses/codex | JsonValue
 packages/harness/src/transports/codex-app-server/events.ts:1 | import | @claxedo/agent-event-runtime | createAgentEventRuntime
 packages/harness/src/transports/codex-app-server/events.ts:2 | import | @claxedo/agent-event-runtime/harnesses/codex | codexAppServerAdapter
@@ -223,6 +226,8 @@ packages/harness/src/transports/codex-app-server/input.ts:1 | import | @claxedo/
 packages/harness/src/transports/codex-app-server/models.ts:3 | import | @claxedo/agent-event-runtime/harnesses/codex | v2
 packages/harness/src/transports/codex-app-server/recovery.ts:1 | import | @claxedo/agent-event-runtime/harnesses/codex | v2
 packages/harness/src/transports/codex-app-server/requests.ts:2 | import | @claxedo/agent-event-runtime/harnesses/codex | codexMcpApproval
+packages/harness/src/transports/cursor-sdk/index.ts:1 | import | @claxedo/agent-event-runtime | createAgentEventRuntime
+packages/harness/src/transports/cursor-sdk/index.ts:2 | import | @claxedo/agent-event-runtime/harnesses/cursor | cursorRuntimeMessage, cursorSdkAdapter
 packages/harness/src/transports/opencode-sdk/translate/event.ts:1 | import | @claxedo/agent-event-runtime | AgentRuntimeEvent
 packages/harness/src/transports/opencode-sdk/translate/turn-usage.ts:1 | import | @claxedo/agent-event-runtime | RuntimeTokenUsage
 packages/harness/src/transports/opencode-sdk/translate/turn-usage.ts:2 | import | @claxedo/agent-event-runtime | AgentRuntimeEvent
@@ -237,13 +242,18 @@ packages/opencode-server-adapter/src/provider.ts:1 | import | @claxedo/agent-sdk
 packages/opencode-server-adapter/src/translate.ts:1 | import | @claxedo/agent-event-runtime | agentRuntimeEvent
 packages/opencode-server-adapter/src/translate.ts:2 | import | @claxedo/agent-event-runtime | AgentRuntimeEvent
 packages/opencode-server-adapter/src/turn.ts:1 | import | @claxedo/agent-event-runtime | AgentRuntimeEvent
+packages/workspace-runtime/src/broker-ports/delivery.ts:2 | import | @claxedo/agent-event-runtime/contracts | AgentRuntimeEvent
+packages/workspace-runtime/src/broker-ports/request-rows.ts:2 | import | @claxedo/agent-event-runtime/contracts | AgentRuntimeEvent
+packages/workspace-runtime/src/broker-ports/session-events.ts:1 | import | @claxedo/agent-event-runtime/client-presentation | createClientPresentationProjection
+packages/workspace-runtime/src/broker-ports/session-events.ts:2 | import | @claxedo/agent-event-runtime/client-presentation | projectSessionCommands
+packages/workspace-runtime/src/broker-ports/session-events.ts:3 | import | @claxedo/agent-event-runtime/contracts | RuntimeDiagnostic, SubagentUpdatedEvent
 packages/workspace-runtime/src/client/session.ts:17 | import | @claxedo/agent-sdk-runtime | AgentConfigOptions, AgentRuntimeRecoveryInspection, HarnessCapabilities, RuntimeGoalSnapshot
 packages/workspace-runtime/src/client/session.ts:18 | import | @claxedo/agent-sdk-runtime/message-page | AgentTurnCoveragePage
 packages/workspace-runtime/src/compat-events.ts:1 | re-export | @claxedo/agent-sdk-runtime/compat-events | *
 packages/workspace-runtime/src/host.ts:55 | re-export | @claxedo/agent-event-runtime | AgentRuntimeEvent
 packages/workspace-runtime/src/host.ts:56 | re-export | @claxedo/agent-sdk-runtime | AgentRuntimeStreamEvent, HarnessCapabilities
 packages/workspace-runtime/src/host.ts:57 | re-export | @claxedo/agent-sdk-runtime/adapters | AgentHarnessAdapter
-packages/workspace-runtime/src/mcp-resolver.ts:3 | import | @claxedo/agent-sdk-runtime/mcp-resolver | MANAGED_MCP_SERVERS, ManagedMcpOverrides, ManagedMcpServer, ManagedMcpState, McpCapableAgent, 
+packages/workspace-runtime/src/mcp-resolver.ts:3 | import | @claxedo/agent-sdk-runtime/mcp-resolver | MANAGED_MCP_SERVERS, ManagedMcpOverrides, ManagedMcpServer, ManagedMcpState, McpCapableAgent,
 packages/workspace-runtime/src/mcp-resolver.ts:13 | re-export | @claxedo/agent-sdk-runtime/mcp-resolver | *
 packages/workspace-runtime/src/opencode/harness-adapter.ts:5 | import | @claxedo/agent-sdk-runtime | AgentAgent, AgentCommand, AgentContentPart, AgentMessage, AgentPermission, AgentQuestion, AgentRuntimeStreamEvent, AgentSession, PromptInput
 packages/workspace-runtime/src/opencode/harness-adapter.ts:6 | import | @claxedo/agent-sdk-runtime/adapters | AgentHarnessAdapter, AgentMessagePage, AgentMessagePageInput
@@ -259,18 +269,18 @@ packages/workspace-runtime/src/routes/session-children.ts:4 | import | @claxedo/
 packages/workspace-runtime/src/routes/session-children.ts:5 | import | @claxedo/agent-event-runtime | SubagentStatus, SubagentWake
 packages/workspace-runtime/src/routes/session-children.ts:391 | re-export | @claxedo/agent-event-runtime | SubagentUpdatedEvent
 packages/workspace-runtime/src/routes/session-core.ts:7 | import | @claxedo/agent-sdk-runtime | AgentMessage, AgentPermission, AgentQuestion, AgentRuntime, AgentRuntimeRecovery, AgentSession, RuntimeDirectory, SessionConfigRequestUpdate, SessionModelGroup, HarnessCapabilities, RecoveryCaller
-packages/workspace-runtime/src/routes/session-core.ts:20 | import | @claxedo/agent-sdk-runtime/adapters | AgentHarnessAdapter, AgentInteractionResult, AgentMessagePage, AgentMessagePageInput, 
+packages/workspace-runtime/src/routes/session-core.ts:20 | import | @claxedo/agent-sdk-runtime/adapters | AgentHarnessAdapter, AgentInteractionResult, AgentMessagePage, AgentMessagePageInput,
 packages/workspace-runtime/src/routes/session-core.ts:26 | import | @claxedo/agent-sdk-runtime/message-page | AgentMessageReadInput, AgentTurnCoveragePage
 packages/workspace-runtime/src/routes/session-core.ts:27 | import | @claxedo/agent-sdk-runtime/adapters | AgentMessagePageError, hasAdapterCapability
-packages/workspace-runtime/src/routes/session-core.ts:29 | import | @claxedo/agent-sdk-runtime | admitSessionInstructions, IMMUTABLE_SESSION_CONFIG_FIELDS, ImmutableSessionConfigField, 
-packages/workspace-runtime/src/routes/session-core.ts:34 | import | @claxedo/agent-sdk-runtime | AGENT_RUNTIME_TURN_CONFLICT_CODE, isAgentRuntimeTurnConflictError, 
+packages/workspace-runtime/src/routes/session-core.ts:29 | import | @claxedo/agent-sdk-runtime | admitSessionInstructions, IMMUTABLE_SESSION_CONFIG_FIELDS, ImmutableSessionConfigField,
+packages/workspace-runtime/src/routes/session-core.ts:34 | import | @claxedo/agent-sdk-runtime | AGENT_RUNTIME_TURN_CONFLICT_CODE, isAgentRuntimeTurnConflictError,
 packages/workspace-runtime/src/routes/session-core.ts:50 | import | @claxedo/agent-sdk-runtime | isAgentRuntimeGoalError
 packages/workspace-runtime/src/routes/session-core.ts:73 | import | @claxedo/agent-sdk-runtime | narrowerPermissionLevel, permissionCeilingAdmits, permissionModeLevel, widestPermissionModeUnder
 packages/workspace-runtime/src/routes/session-status-snapshot.ts:1 | import | @claxedo/agent-sdk-runtime/status | live, StatusCompat
 packages/workspace-runtime/src/routes/session-status-snapshot.ts:2 | import | @claxedo/agent-sdk-runtime/adapters | ACP_RECOVER
 packages/workspace-runtime/src/routes/session.ts:8 | import | @claxedo/agent-sdk-runtime | isAgentRuntimeTurnConflictError, SubagentAdmissionStore
 packages/workspace-runtime/src/routes/session.ts:10 | import | @claxedo/agent-sdk-runtime | AgentRuntime, AgentRuntimeRecovery, AgentMessage, AgentMessageAuthor, AgentPermission, AgentQuestion, SessionHarness, AgentSession, PromptDelivery, SessionConfigRequestUpdate, SessionModelGroup
-packages/workspace-runtime/src/routes/session.ts:11 | import | @claxedo/agent-sdk-runtime/adapters | AgentMessagePage, AgentMessagePageInput, AgentHarnessAdapter, 
+packages/workspace-runtime/src/routes/session.ts:11 | import | @claxedo/agent-sdk-runtime/adapters | AgentMessagePage, AgentMessagePageInput, AgentHarnessAdapter,
 packages/workspace-runtime/src/routes/session.ts:16 | import | @claxedo/agent-sdk-runtime/message-page | AgentTurnCoveragePage
 packages/workspace-runtime/src/runtime-event-hub.ts:1 | re-export | @claxedo/agent-sdk-runtime/runtime-event-hub | createRuntimeEventHub,
   RuntimeEventEnvelope,
@@ -285,15 +295,15 @@ packages/workspace-runtime/src/session/service.ts:3 | import | @claxedo/agent-ev
 packages/workspace-runtime/src/session/service.ts:4 | import | @claxedo/agent-sdk-runtime | defaultSessionModel, firstTurnErrorData, isAgentRuntimeTurnConflictError, resolveTurnSystem
 packages/workspace-runtime/src/session/service.ts:12 | import | @claxedo/agent-sdk-runtime | AgentMessage, AgentRuntime, AgentRuntimeStreamEvent, AgentRuntimeTurnStartInput, PromptDelivery, PromptDeliveryRequest, PromptInput, RuntimeDirectory
 packages/workspace-runtime/src/session/service.ts:13 | import | @claxedo/agent-sdk-runtime/adapters | AgentHarnessAdapter
-packages/workspace-runtime/src/store.ts:7 | import | @claxedo/agent-sdk-runtime/adapters | ACP_RECOVER, AgentRuntimeStaleTurnError, recoveryScopeKey, recoveryTargetSessionId, AgentMessagePageError, AgentMessagePage, AgentMessagePageInput, 
-packages/workspace-runtime/src/store.ts:16 | import | @claxedo/agent-sdk-runtime/message-page | projectLatestSurfaceMessages, AgentTurnCoverage, AgentTurnCoveragePage, 
-packages/workspace-runtime/src/store.ts:21 | import | @claxedo/agent-sdk-runtime | acceptsSessionTitle, boundSessionTitleSource, createMemorySubagentAdmissionStore, firstTurnErrorData, normalizeHarnessIdentity, parseStoredSessionModelGroup, sessionModelGroupJson, 
+packages/workspace-runtime/src/store.ts:7 | import | @claxedo/agent-sdk-runtime/adapters | ACP_RECOVER, AgentRuntimeStaleTurnError, recoveryScopeKey, recoveryTargetSessionId, AgentMessagePageError, AgentMessagePage, AgentMessagePageInput,
+packages/workspace-runtime/src/store.ts:16 | import | @claxedo/agent-sdk-runtime/message-page | projectLatestSurfaceMessages, AgentTurnCoverage, AgentTurnCoveragePage,
+packages/workspace-runtime/src/store.ts:21 | import | @claxedo/agent-sdk-runtime | acceptsSessionTitle, boundSessionTitleSource, firstTurnErrorData, normalizeHarnessIdentity, parseStoredSessionModelGroup, sessionModelGroupJson,
 packages/workspace-runtime/src/store.ts:30 | import | @claxedo/agent-sdk-runtime/stores/session-start | sqliteSessionStarts
-packages/workspace-runtime/src/store.ts:31 | import | @claxedo/agent-sdk-runtime | AdmittedSubagentObservation, AgentMessage, AgentMessageAuthor, AgentPermission, AgentQuestion, AgentTurnOutcome, PromptFormat, PromptInput, SessionHarness, SessionModelGroup
-packages/workspace-runtime/src/store.ts:34 | import | @claxedo/agent-event-runtime | RuntimeGoalSnapshot, SubagentUpdatedEvent
+packages/workspace-runtime/src/store.ts:31 | import | @claxedo/agent-sdk-runtime | AgentMessage, AgentMessageAuthor, AgentPermission, AgentQuestion, AgentTurnOutcome, PromptFormat, PromptInput, SessionHarness, SessionModelGroup
+packages/workspace-runtime/src/store.ts:36 | import | @claxedo/agent-event-runtime | RuntimeGoalSnapshot, SubagentUpdatedEvent
 packages/workspace-runtime/src/workspace/host.ts:7 | import | @claxedo/agent-sdk-runtime/adapters | AgentHarnessAdapterHealth
-packages/workspace-runtime/src/workspace/runtime.ts:7 | import | @claxedo/agent-sdk-runtime | connectionIdForHarness, createAcpConnectionProvider, createAgentRuntime, createConnectionProviderRegistry, AgentRuntime, AgentSession, AgentMessage, SessionHarness, ConnectionProvider, ConnectionSecretResolver, HarnessConnectionDescriptor, AgentTurnOutcome, AgentRuntimeRecovery, 
-packages/workspace-runtime/src/workspace/runtime.ts:22 | import | @claxedo/agent-sdk-runtime/adapters | ClaudeHarnessAdapter, CodexHarnessAdapter, CursorHarnessAdapter, PiHarnessAdapter, hasAdapterCapability, AgentHarnessAdapter, AgentHarnessAdapterHealth, AgentMessagePage, AgentMessagePageInput, AgentRuntimeStoreWithRecovery, 
+packages/workspace-runtime/src/workspace/runtime.ts:7 | import | @claxedo/agent-sdk-runtime | connectionIdForHarness, createAcpConnectionProvider, createAgentRuntime, createConnectionProviderRegistry, AgentRuntime, AgentSession, AgentMessage, SessionHarness, ConnectionProvider, ConnectionSecretResolver, HarnessConnectionDescriptor, AgentTurnOutcome, AgentRuntimeRecovery,
+packages/workspace-runtime/src/workspace/runtime.ts:22 | import | @claxedo/agent-sdk-runtime/adapters | ClaudeHarnessAdapter, CodexHarnessAdapter, CursorHarnessAdapter, PiHarnessAdapter, hasAdapterCapability, AgentHarnessAdapter, AgentHarnessAdapterHealth, AgentMessagePage, AgentMessagePageInput, AgentRuntimeStoreWithRecovery,
 packages/workspace-runtime/src/workspace/runtime.ts:34 | import | @claxedo/agent-sdk-runtime/message-page | AgentTurnCoveragePage
 packages/workspace-runtime/src/workspace/runtime.ts:36 | import | @claxedo/agent-sdk-runtime/compat-events | CompatEnvelope
 packages/workspace-runtime/src/workspace/runtime.ts:37 | import | @claxedo/agent-sdk-runtime/subagent-admission | SubagentAdmissionStore
@@ -1293,3 +1303,21 @@ An atom this large can compile yet misorder a store append and SSE publication; 
 **Blocked on ownership:** The harness checker assigns the new `src/compose.ts` its own budget part, but `packages/harness/budget.json` is outside this lane's owned paths. `bun run --cwd packages/harness check` reports `src/compose.ts:1 budget: Add a reviewed budget for compose.ts to budget.json`. Importing `@claxedo/harness/compose` from the workspace test exposes an ACP `Readable.toWeb` cast error at `packages/harness/src/transports/acp/connection.ts:126` under workspace-runtime's DOM lib; that file is owned here only for command filtering. No production path selects the new composition, and G4 still awaits the Claude, Cursor and OpenCode lanes plus `p3-ports`.
 
 **Inventory rerun:** The three shell blocks in this document each exited zero on the current worktree. Their complete outputs match the saved lists byte for byte: `199 imports/re-exports in 126 production files`, `361 kept invariant cases from 62 P3-removed test files`, `P3 source paths: 294`, and `P4 residual package paths: 142`. The rerun precedes the orchestrator's next commit and concurrent lane merges.
+
+### Run 4 status on this branch
+
+**Observed:** `createHarnessComposer` now constructs `ClaudeSdkTransport` and `CursorSdkTransport` for native registry records (`packages/harness/src/compose.ts:47`–`:51`). Its reviewed budget is the measured 58 lines (`packages/harness/budget.json`). The workspace composition test starts ACP, Pi and Codex against its scripted peer, starts Claude through the export, and constructs Cursor. This is a partial factory proof: Claude's `start` records the binding without launching a model process (`packages/harness/src/transports/claude-sdk/index.ts:69`–`:81`), and Cursor requires a scripted SDK HTTP backend to complete `start` (`packages/harness/src/transports/cursor-sdk/index.ts:91`–`:115`). No production path selects this composition. OpenCode remains outside the composer until its lane merges. G4 therefore remains open.
+
+**G5 source audit:** `wireAgentCapabilities` and `wireConnectionCapabilities` are the existing projection owner (`packages/harness/src/capabilities/wire.ts:11`–`:33`). They copy `modelSelection`, requests, todos, commands, fork and subagents from `TransportCapabilities`. `harness` comes from the caller's selected session harness. The public `goals`, `effortLevels` and `instructionChannel` fields of `HarnessCapabilities` need direct copies from the contract when the host projection is completed. These fields still have no contract source and must fail closed until the P3 contract commit:
+
+| Public field | Proposed contract source | Values observed in today's old adapter for Claude, Codex, Cursor, Pi, ACP | Current projection problem |
+| --- | --- | --- | --- |
+| `abort` | Per-session cancellation support, with child-session restriction | `true` for each root; ACP child `false` | `context.abort ?? true` invents a value. |
+| `reconnect` | Lifecycle reconnect capability | `false` for each | Hard-coded `false`. |
+| `replay` | History replay capability | `true` for each | Hard-coded `true`. |
+| `revert`, `unrevert` | History mutation capabilities | `false`, `false` for each | Hard-coded `false`. |
+| `configOptions` | Per-target config preview capability | `true` for each root; ACP child `false` | `configOwner === "harness"` is ownership, not availability; it reports `false` for Claude, Codex, Cursor and Pi even though their old adapter reports `true`. |
+
+The values come from `packages/agent-sdk-runtime/src/harnesses/shared/sdk-runtime-capabilities.ts:15`–`:28` and `packages/agent-sdk-runtime/src/harnesses/acp/capabilities.ts:25`–`:39`; they are observed old-wire behavior, not a proposed default for the new transports. None of the six fields has a declared value in the ACP, Pi, Codex, Claude or Cursor `TransportCapabilities` today. Contract additions for these sources are explicitly deferred by the Run 4 ruling. The 195 transport and broker `KEEP` rows in the relocation appendix are not yet marked: porting them requires separate tests of the new implementation; an old test with the same title is not proof.
+
+**Inventory rerun:** The three command blocks above exited zero. The import inventory now reports `209 imports/re-exports in 132 production files`; its full output above was replaced with this branch's actual rows. The kept invariant and deletion manifests remain byte-identical at `361 kept cases from 62 P3-removed test files`, `294 P3 source paths`, and `142 P4 residual package paths`. The inventory changed after merging `p3-ports` and the Claude/Cursor lanes; this composition edit does not import any retiring package.
