@@ -10,6 +10,11 @@ export const APP_PLUGIN_FOLDER = path.join(".claxedo", "plugins")
 
 export type AppPluginAuthoringOptions = {
   roots: readonly string[]
+  /**
+   * Asked again on every call: an MCP connection outlives the turn it opened
+   * in, and a session may be handed to someone else between two of its calls.
+   */
+  ownerDriven?: () => boolean
   service?: () => LivePluginService
 }
 
@@ -27,6 +32,9 @@ export function appPluginAuthoring(options: AppPluginAuthoringOptions): AppPlugi
   if (options.roots.length === 0) throw new Error("App plugin authoring needs at least one folder the session may write")
 
   const resolveInside = (directory: string): string => {
+    if (options.ownerDriven && !options.ownerDriven()) {
+      throw new AppPluginAuthoringError("A turn relayed from outside this machine reached this session or one above it, so it may not make app plugins; only sessions driven from this machine's own app may")
+    }
     if (!path.isAbsolute(directory)) throw new AppPluginAuthoringError(`${directory} is not an absolute path`)
     const real = realPathAllowingMissing(directory)
     const roots = options.roots.map(realPathAllowingMissing)

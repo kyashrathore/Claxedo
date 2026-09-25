@@ -45,7 +45,7 @@ async function freePort() {
   })
 }
 
-export async function startLiveFirstPartyMcp() {
+export async function startLiveFirstPartyMcp(options: Pick<Parameters<typeof startLocalServer>[0], "runtimeProxyOptions"> = {}) {
   const dataDir = mkdtempSync(path.join(tmpdir(), "claxedo-first-party-mcp-data-"))
   const workspaceRoot = mkdtempSync(path.join(tmpdir(), "claxedo-first-party-mcp-ws-"))
   const previousDataDir = process.env.CLAXEDO_DATA_DIR
@@ -72,6 +72,7 @@ export async function startLiveFirstPartyMcp() {
     // Both halves the desktop entry composes together: the Tasks routes, and
     // the grants the MCP mount issues its sessions to reach them as themselves.
     tasksGrants: tasks.grants,
+    ...options,
   })
   await server.ready
 

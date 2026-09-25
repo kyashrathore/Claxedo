@@ -125,6 +125,19 @@ describe("appPluginAuthoring", () => {
     await expect(authoring.add(path.join(workspace, "missing"))).rejects.toThrow("does not exist")
   })
 
+  test("refuses every call once the session is no longer driven by the machine owner alone, and writes nothing", async () => {
+    fresh()
+    let ownerDriven = true
+    const guarded = appPluginAuthoring({ roots: [workspace], service: () => service, ownerDriven: () => ownerDriven })
+    const { directory } = await guarded.create({ name: "Notes" })
+    ownerDriven = false
+    for (const attempt of [guarded.create({ name: "Other" }), guarded.check(directory), guarded.add(directory)]) {
+      await expect(attempt).rejects.toThrow("A turn relayed from outside this machine reached this session")
+    }
+    expect(await fs.readdir(path.join(workspace, APP_PLUGIN_FOLDER))).toEqual(["notes"])
+    expect(service.list()).toEqual([])
+  })
+
   test("needs at least one folder to bind to", () => {
     expect(() => appPluginAuthoring({ roots: [] })).toThrow("at least one folder")
   })
