@@ -3,7 +3,7 @@ import type { SessionRowView, SessionStatusView } from "@/session"
 import {
   compareOrder,
   entryActivityAt,
-  insidePlacementWindow,
+  insideProjectWindow,
   orderKey,
   type ConfirmedEntry,
   type ListData,
@@ -34,7 +34,7 @@ export function visibleOrder(data: OrderData): readonly SessionRef[] {
     if (entry.kind === "tombstone") continue
     if (entry.row.archivedAt !== undefined || entry.row.parentSessionId !== undefined) continue
     const key = orderKey(entry.row, entryActivityAt(entry))
-    if (entry.kind === "confirmed" && !insidePlacementWindow(data, entry.row, key)) continue
+    if (entry.kind === "confirmed" && !insideProjectWindow(data, entry.row, key)) continue
     shown.push({ entry, key })
   }
   return shown.sort((a, b) => compareOrder(a.key, b.key)).map(({ entry }) => entry.row.ref)
@@ -64,7 +64,7 @@ export function rowViews(input: {
     const entry = input.data.entries.get(id)
     if (!entry || entry.kind === "tombstone") continue
     const status = input.data.statuses.get(id)?.status ?? UNKNOWN_STATUS
-    const waitingOnUser = (input.openRequests.get(id)?.length ?? 0) > 0
+    const waitingOnUser = (input.openRequests.get(id)?.length ?? 0) > 0 || input.data.statuses.get(id)?.waitingOnUser === true
     const cached = cachedView(input.cache.current.get(id), entry, status, waitingOnUser)
     next.set(id, cached)
     views.set(id, cached.view)

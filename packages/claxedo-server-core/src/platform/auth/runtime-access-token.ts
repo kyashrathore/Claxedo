@@ -8,6 +8,8 @@ type ExportableKey = Parameters<typeof exportJWK>[0]
 type VerifyKey = CryptoKey | import("jose").KeyObject | import("jose").JWK | Uint8Array
 import {
   hostTunnelTokenAudience,
+  verifyHostTunnelToken,
+  type HostTunnelTokenClaims,
   runtimeAccessTokenAudience,
   runtimeAccessTokenIssuer,
   toChannelIdentityClaim,
@@ -287,6 +289,20 @@ export function hostTunnelTokenSigner(env: NodeJS.ProcessEnv = process.env): Hos
       tokenExpiresAt: now + ttl * 1000,
       hostTunnelToken: token,
     }
+  }
+}
+
+export type HostTunnelTokenVerifier = (token: string, hostId: string) => Promise<HostTunnelTokenClaims>
+
+/**
+ * Verifies a Host Tunnel Token this control plane minted, for the host the
+ * caller names. The workspaces it covers are the claims' to answer; a caller
+ * narrows by them per request.
+ */
+export function hostTunnelTokenVerifier(env: NodeJS.ProcessEnv = process.env): HostTunnelTokenVerifier {
+  return async (token, hostId) => {
+    const alg = runtimeAccessTokenAlgorithm(env)
+    return await verifyHostTunnelToken(token, await tokenVerificationKey(env, alg), { hostId, workspaceIds: [] })
   }
 }
 
@@ -594,7 +610,7 @@ export async function verifyDocumentRelayJobToken(
   env: NodeJS.ProcessEnv = process.env,
 ) {
   const alg = runtimeAccessTokenAlgorithm(env)
-  const key = await documentVerificationKey(env, alg)
+  const key = await tokenVerificationKey(env, alg)
   const result = await jwtVerify(token, key, {
     algorithms: [RUNTIME_ACCESS_TOKEN_ALGORITHM],
     issuer: runtimeAccessTokenIssuer,
@@ -612,7 +628,7 @@ export async function verifyDocumentRelayJobToken(
   return { ...expected, operations, jobExpiresAt, jti }
 }
 
-async function documentVerificationKey(env: NodeJS.ProcessEnv, alg: typeof RUNTIME_ACCESS_TOKEN_ALGORITHM) {
+async function tokenVerificationKey(env: NodeJS.ProcessEnv, alg: typeof RUNTIME_ACCESS_TOKEN_ALGORITHM) {
   const publicPem = pem(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM)
   if (publicPem) return await importSPKI(publicPem, alg)
   const privateKey = await loadPrivateKey(env, alg, "runtime_access_token_signer_unavailable")

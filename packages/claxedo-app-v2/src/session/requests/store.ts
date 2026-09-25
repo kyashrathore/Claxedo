@@ -4,8 +4,6 @@ import type { RequestState } from "@/session"
 import { toAppError } from "./app-error"
 import { EXPIRED, applyRequestsEvent, initialRequestsData, isOpenRequest, readErrorOf, type RequestsData, type RequestsEvent } from "./model"
 
-export type RequestsRead = { readonly ref: SessionRef; readonly requests: readonly AgentRequest[] }
-
 export type RequestsInternal = {
   readonly openBySession: Accessor<ReadonlyMap<SessionId, readonly AgentRequest[]>>
   readonly openFor: (sessionId: SessionId) => readonly AgentRequest[]
@@ -14,7 +12,6 @@ export type RequestsInternal = {
   readonly read: (ref: SessionRef, requests: readonly AgentRequest[], sentAt: number) => void
   readonly readFailed: (ref: SessionRef, error: AppError, sentAt: number) => void
   readonly readErrorFor: (sessionId: SessionId) => AppError | undefined
-  readonly applyReads: (reads: readonly RequestsRead[], sentAt: number) => void
   readonly reply: (ref: SessionRef, requestId: RequestId, reply: AgentRequestReply) => Promise<void>
 }
 
@@ -69,9 +66,6 @@ export function createRequests(server: Server): RequestsInternal {
     read,
     readFailed: (ref, error, sentAt) => send({ type: "readFailed", ref, error, sentAt }),
     readErrorFor: (sessionId) => readErrorOf(data(), sessionId),
-    applyReads: (reads, sentAt) => {
-      for (const item of reads) read(item.ref, item.requests, sentAt)
-    },
     reply: (ref, requestId, answer) => sendReply(server, send, ref, requestId, answer),
   }
 }

@@ -16,20 +16,26 @@ const stored = [
   { info: { id: "msg_2", sessionID: "ses_1", role: "assistant", time: { created: 2, completed: 3 } }, parts: [{ id: "prt_2", type: "text", text: "because" }] },
 ]
 
-function bootstrap(reachable: () => boolean) {
+const MACHINE_ROW = { backing: "local-worktree", placement: { host_enrollment_id: "enr_laptop" } }
+
+function bootstrap(reachable: () => boolean, machine: boolean) {
   return {
     events: { hostAggregate: false },
     deployment: { issuesSessions: true },
-    project: [{ id: "proj_1", worktree: "ws_cloud", workspaces: { ws_cloud: { id: "ws_cloud", backing: "cloud-vm", reachable: reachable(), directory: "workspace:ws_cloud" } } }],
+    project: [{
+      id: "proj_1",
+      worktree: "ws_cloud",
+      workspaces: { ws_cloud: { id: "ws_cloud", ...(machine ? MACHINE_ROW : { backing: "cloud-vm" }), reachable: reachable(), directory: "workspace:ws_cloud" } },
+    }],
   }
 }
 
-function fakeServer(options: { reachable: () => boolean; runtime?: (path: string) => Response }) {
+function fakeServer(options: { reachable: () => boolean; machine?: boolean; runtime?: (path: string) => Response }) {
   const requests: string[] = []
   const runtimeCalls: string[] = []
   const request = async (path: string) => {
     requests.push(path)
-    if (path === "/api/claxedo/bootstrap") return Response.json(bootstrap(options.reachable))
+    if (path === "/api/claxedo/bootstrap") return Response.json(bootstrap(options.reachable, options.machine ?? false))
     if (path.startsWith("/api/control/sessions/ses_1/messages")) return Response.json({ messages: stored, maxEventOrdinal: 0 }, { headers: { "X-Next-Cursor": "cursor_older" } })
     if (path.startsWith("/api/control/sessions?")) return Response.json({ sessions: [{ session_id: "ses_1", title: "Ship it", created_at: 10, updated_at: 20, last_human_turn_at: 15 }] })
     return Response.json({ error: { code: "unexpected", message: path } }, { status: 500 })
@@ -71,7 +77,7 @@ test("session reads: a stopped cloud workspace's session renders from the contro
   expect(await reads.requests).toEqual([])
   expect(await reads.todos).toEqual([])
   expect(await reads.goal).toEqual(NO_GOAL)
-  expect(server.requests).toContain("/api/control/sessions/ses_1/messages?workspaceId=ws_cloud&limit=50")
+  expect(server.requests).toContain("/api/control/sessions/ses_1/messages?workspaceId=ws_cloud&view=latest-surface")
   expect(server.runtimeCalls).toEqual([])
 
   await readOlder(server.context, ref, "cursor_older")
@@ -112,6 +118,21 @@ test("session reads: a running cloud workspace's session still reads its history
   expect(surface.row).toMatchObject({ title: "Live title", updatedAt: 30 })
   expect(surface.transcript.entries.map((entry) => entry.info.id)).toEqual(["msg_1", "msg_2"])
   expect(await reads.status).toEqual({ kind: "idle" })
-  expect(server.requests).toContain("/api/control/sessions/ses_1/messages?workspaceId=ws_cloud&limit=50")
+  expect(server.requests).toContain("/api/control/sessions/ses_1/messages?workspaceId=ws_cloud&view=latest-surface")
   expect(server.runtimeCalls.some((path) => path.includes("/message"))).toBe(false)
+})
+
+test("session reads: an offline machine's session renders its published row, reads nothing from the machine, and pages nothing older", async () => {
+  const server = fakeServer({ reachable: () => false, machine: true })
+  const reads = readSession(server.context, ref)
+
+  const surface = await reads.surface
+  expect(surface.row).toMatchObject({ ref, title: "Ship it", lastHumanTurnAt: 15 })
+  expect(surface.transcript.entries).toEqual([])
+  expect(await reads.status).toEqual({ kind: "idle" })
+  expect(await reads.requests).toEqual([])
+  expect(server.requests.filter((path) => path.includes("/messages"))).toEqual([])
+  expect(server.runtimeCalls).toEqual([])
+  expect((await readOlder(server.context, ref, "cursor_older")).entries).toEqual([])
+  expect(server.runtimeCalls).toEqual([])
 })

@@ -179,14 +179,27 @@ export const localServer: Policy = {
   //    bundle, serves it and announces changes, so the app on this machine
   //    loads them without a release. Clone destination admission (`node:dns`)
   //    moved with the projects route into server-core's projects module.
-  //  - `workspace/runtime-dispatch/session-activity.ts` (owner: the runtime
-  //    dispatcher): the one status read across workspaces. Only the daemon
-  //    hosts every local runtime in-process, so it answers each workspace's
-  //    status, permissions and questions through that workspace's own
-  //    dispatch; it reaches `internals.ts` and the workspace store, both
-  //    already here.
-  //    74/30, no headroom.
-  ceilings: { modules: 74, packages: 30 },
+  //  - `session/publish/*` (owner: the machine publisher, this daemon's half
+  //    of the control plane's session-rows endpoint): a signed-in machine
+  //    publishes each served session's list row and status, on change and in
+  //    full whenever its serving credential or workspace set changes, so the
+  //    control plane answers machine sessions from its own store. Only the
+  //    process that holds the projection, hosts the runtimes whose frames
+  //    carry status, and receives the Host Tunnel Token can do it. The five
+  //    modules reach the projection port and its change notices,
+  //    host-serving's credential listener, the runtime registry and
+  //    `platform/json.ts`, all already here, and server-core's session-rows
+  //    contract, which costs no package.
+  //  - `session/list/session-list-page.ts` (owner: the daemon's session
+  //    list): one keyset page per project or workspace, from the projection
+  //    for this machine and from the authority for a signed caller, each row
+  //    carrying its runtime's status. It reaches the projection's keyset read
+  //    and server-core's navigation list, both already here.
+  //  - `session/runtime-activity.ts` (owner: the in-process status read): a
+  //    mounted runtime's statuses, permissions and questions, read by the list
+  //    page and the machine publisher alike. It reaches `platform/json.ts`.
+  //    80/30, no headroom.
+  ceilings: { modules: 80, packages: 30 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

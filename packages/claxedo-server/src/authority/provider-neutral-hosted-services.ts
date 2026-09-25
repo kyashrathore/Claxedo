@@ -20,6 +20,7 @@ import type { ControlPlaneAuthAdapter } from "@claxedo/server-core/platform/auth
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import {
   hostTunnelTokenSigner,
+  hostTunnelTokenVerifier,
   RuntimeAccessTokenConfigurationError,
   runtimeAccessTokenAlgorithm,
   runtimeAccessTokenSigner,
@@ -363,6 +364,7 @@ export function composeProviderNeutralHostedControlPlane(
       resolverToken,
       runtimeAccessTokenSigner: runtimeAccessSigner,
       hostTunnelTokenSigner: hostTunnelSigner,
+      hostTunnelTokenVerifier: hostTunnelTokenVerifier(env),
     },
     sandbox: (manager ? { sandboxManager: manager, ...(managerDriver ? { defaultDriver: managerDriver } : {}) } : {}),
     telemetry,

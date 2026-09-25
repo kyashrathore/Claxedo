@@ -37,6 +37,8 @@ import {
   type SqliteAuthorityDb,
   type WorkspaceAction,
 } from "./workspace-authority-store"
+import { readSqliteSessionPage, type SessionPageRow } from "./session-page"
+import { latestViewPage, type LatestView } from "@claxedo/server-core/session/latest-view-page"
 import { trimToUndefined } from "@claxedo/helpers/string"
 
 const MESSAGE_PAGE_CURSOR_PREFIX = "sawmp1:"
@@ -66,6 +68,10 @@ type SessionRow = {
   max_event_ordinal: number
   snapshot_hash: string | null
   deleted_at: number | null
+  archived_at: number | null
+  status: string | null
+  status_at: number | null
+  awaiting_input: number
 }
 const AUTHOR_KINDS = ["human", "agent"] as const
 
@@ -636,6 +642,18 @@ export function createSqlitePrivateSessionAuthority(input: {
         .filter((row) => hasPrivateAccess(db, actor.token_identifier, row, "read", workspace.org_id))
         .map((row) => publicSession(db, row, actor.token_identifier))
     },
+    async listSessionPage(auth, value) {
+      const db = input.database()
+      const actor = actorForAuth(auth)
+      return readSqliteSessionPage<SessionRow & SessionPageRow>(db, value, (row) =>
+        hasPrivateAccess(db, actor.token_identifier, row, "read", row.org_id))
+        .map((row) => ({
+          ...publicSession(db, row, actor.token_identifier),
+          workspace_id: row.workspace_id,
+          project_id: row.project_id,
+          ...listFields(row),
+        }))
+    },
     async resolveSession(auth, value) {
       const db = input.database()
       const actor = actorForAuth(auth)
@@ -660,6 +678,7 @@ export function createSqlitePrivateSessionAuthority(input: {
         if (error instanceof ControlPlaneAuthError) return { allowed: false, messages: [] }
         throw error
       }
+      if (value.view !== undefined) return { allowed: true, role, ...readLatestView(db, value.sessionId, value.workspaceId, value.view) }
       validatePage(value.limit, value.before)
       const before = value.before === undefined ? undefined : decodeCursor(value.sessionId, value.before)
       const query = value.limit === undefined
@@ -900,6 +919,15 @@ function publicSession(db: SqliteAuthorityDb, row: SessionRow, viewerActorId: st
   }
 }
 
+function listFields(row: SessionRow) {
+  return {
+    ...(row.archived_at === null ? {} : { archived_at: row.archived_at }),
+    ...(row.status === null || row.status_at === null
+      ? {}
+      : { status: row.status, status_at: row.status_at, awaiting_input: row.awaiting_input === 1 }),
+  }
+}
+
 /**
  * A wake, a subagent or a channel message admits a turn the same way the reader
  * does, so only the actor kind this store resolved for the admitted principal
@@ -1069,6 +1097,26 @@ function validatePage(limit: number | undefined, before: string | undefined) {
   if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_MESSAGE_PAGE_LIMIT)) {
     throw new AgentMessagePageError(400, `Message page limit must be between 1 and ${MAX_MESSAGE_PAGE_LIMIT}`)
   }
+}
+
+function readLatestView(db: SqliteAuthorityDb, sessionId: string, workspaceId: string, view: LatestView) {
+  const boundary = db.prepare<unknown[], { ordinal: number | null }>(`
+    SELECT MAX(ordinal) AS ordinal FROM session_messages WHERE session_id = ? AND workspace_id = ? AND role = 'user'
+  `).get(sessionId, workspaceId)?.ordinal
+  if (boundary === null || boundary === undefined) return { messages: [] }
+  const turn = db.prepare<unknown[], MessageRow>(`
+    SELECT m.ordinal, m.data, m.author_actor_id, u.kind AS author_kind
+    FROM session_messages m LEFT JOIN users u ON u.token_identifier = m.author_actor_id
+    WHERE m.session_id = ? AND m.workspace_id = ? AND m.ordinal >= ? ORDER BY m.ordinal ASC
+  `).all(sessionId, workspaceId, boundary)
+  const older = !!db.prepare(`SELECT 1 FROM session_messages WHERE session_id = ? AND workspace_id = ? AND ordinal < ? LIMIT 1`)
+    .get(sessionId, workspaceId, boundary)
+  return latestViewPage(
+    view,
+    turn.map((row) => ({ ordinal: row.ordinal, message: publicMessage(row) })),
+    older,
+    (ordinal) => encodeCursor(sessionId, ordinal),
+  )
 }
 
 function encodeCursor(sessionId: string, ordinal: number) {

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import { isLoopbackLocalRequest, loopbackReplayHeaders } from "@claxedo/server-core/platform/http/peer-address"
 
 import {
+  onHostServingCredential,
   setHostServing,
   stopHostServing,
   hostServingEnrollmentId,
@@ -226,6 +227,32 @@ describe("relay connection grain", () => {
     await setHostServing(null, composition)
     expect(started.every((entry) => entry.closed)).toBe(true)
     expect(state()).toEqual({ serving: false, sessionAuthority: "local" })
+  })
+
+  test("a credential listener hears what is served now, every change, and the lapse", async () => {
+    vi.useFakeTimers()
+    const heard: unknown[] = []
+    const unsubscribe = onHostServingCredential((credential) => heard.push(credential))
+    try {
+      expect(heard).toEqual([undefined])
+
+      await serve([WS_B, WS_A], { token: "t1", expiresAt: Date.now() + 60_000 })
+      expect(heard.at(-1)).toEqual({ hostId: "host_machine-1", token: "t1", workspaceIds: [WS_A, WS_B] })
+
+      await serve([WS_A], { token: "t2", expiresAt: Date.now() + 60_000 })
+      expect(heard.at(-1)).toEqual({ hostId: "host_machine-1", token: "t2", workspaceIds: [WS_A] })
+
+      vi.advanceTimersByTime(61_000)
+      expect(heard.at(-1)).toBeUndefined()
+      expect(heard).toHaveLength(4)
+
+      unsubscribe()
+      await serve([WS_A])
+      expect(heard).toHaveLength(4)
+    } finally {
+      unsubscribe()
+      vi.useRealTimers()
+    }
   })
 })
 

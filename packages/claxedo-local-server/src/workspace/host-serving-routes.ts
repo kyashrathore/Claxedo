@@ -29,17 +29,19 @@ import { embeddedWorkspaceRuntimeSessionAuthority } from "../deployments/local/e
 import { setLocalHostEndpoints } from "../deployments/local/host-session-authority"
 
 /**
- * The two addresses a relayed caller is admitted by, carried beside the
- * credential because they arrive on the same heartbeat ack and reach this
- * process by the same hop. Optional: an ack from a control plane that
- * configures neither leaves the daemon verifying relayed requests against the
- * relay's own published key set and refusing every private-session decision,
- * which is the closed answer.
+ * The two addresses a relayed caller is admitted by, and the one this machine
+ * publishes its session rows to, carried beside the credential because they
+ * arrive on the same heartbeat ack and reach this process by the same hop.
+ * Optional: an ack from a control plane that configures none leaves the daemon
+ * verifying relayed requests against the relay's own published key set,
+ * refusing every private-session decision and publishing nothing, which is
+ * the closed answer.
  */
 const endpointsBody = z
   .object({
     relayJwksUrl: z.string().url().max(2_000).optional(),
     sessionAuthorityUrl: z.string().url().max(2_000).optional(),
+    sessionRowsUrl: z.string().url().max(2_000).optional(),
   })
   .strict()
 
