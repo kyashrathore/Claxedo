@@ -432,6 +432,22 @@ Severity order: battery/idle, then lag, then wasted work. Each finding gives (a)
     - (d) The mechanism is shared (`packages/ui` `ScrollView`); v1's tree did not change scrollability here.
     - (e) Keep the thumb element mounted and toggle visibility.
 
+Added by the widened scope (scenarios 9–13). The Files-search finding ranks above all of the above for lag. The dock and coalescer findings rank with finding 3 for battery.
+
+13. **Files search re-renders the whole tree on every keystroke; clearing blocks for 98–106 ms.** See the exploratory finding 1 at the top: per key 2,000–2,900 restyled, 13,000–16,000 computations and 10–18 directory fetches (`src/files/view/files-navigator.tsx:68,103-106`, `src/files/view/file-tree.tsx:155,161-169,185-189`). Shared design; heavier in v2.
+14. **Background sessions wake frames**: 240 rAF callbacks and 442 style recalcs per background turn (`src/server/wire/coalesce.ts:53-66`). Battery. v2 only in this form; v1 runs 2,206 recalcs of its own.
+15. **A question or permission dock unmounts the composer and todo dock** (`src/session/view/session-screen.tsx:151`), and the re-mount re-fetches `connections` and `permission-mode`. Shared.
+16. **Status events re-run every rail row's computations**: 159 computations outside the own row per background turn. The session-list `state()` object is replaced on each status change, so `statusOf` and `rows` recompute for all rows (`src/session/list/statuses.ts:4-8`, `store.ts:111-120`). Wasted compute; there are no DOM writes.
+17. **The hidden transcript behind the floating composer keeps computing**: 887 `MessageTimeline` computations and 166 style writes per turn while collapsed. Wasted work.
+18. **The panel re-mounts on every switch back to a session that had it open**: 34–38 ms, 1,246 restyled (`src/panel/session-memory.ts`). Shared; lag.
+19. **Panel maximize, restore and close each restyle about 5,200 elements** in a 23–27 ms task. Shared; lag.
+20. **Every turn end re-fetches the files and git state twice**: 10 requests after a read-only turn (`src/server/queries.ts:67-68`). Wasted network.
+21. **Harness health is polled every 20 s during a turn and on each working-state change**: 4–6 requests per turn (`src/composer/view/health-peek.tsx:19-36`). Shared.
+22. **Invisible scroll-thumb geometry is written 0.6 times per streaming delta** (`packages/ui/src/components/scroll-view.tsx:225`). Wasted work, with a forced style and layout read each time.
+23. **Palettes and the model picker re-evaluate every row per keystroke**: 16,000–30,000 computations per word. Shared.
+24. **Mermaid renders in one 62–87 ms main-thread task.** Shared.
+25. **An ownerless `createRoot` memo per text part** is never disposed and trims the whole text on each delta (`src/session/view/timeline/message-timeline.data.ts:491`).
+
 Where v2 is already better than v1 and must stay that way: idle network (0 vs 10–25 requests per 30 s), boot requests (15 vs 44), session-open requests (16 vs 25), session-open script time (5 vs 40 ms), no polling during scroll, typing or hover, and CLS 0 on open and switch (v1 0.08).
 
 ## Suspected (not proven)
@@ -440,6 +456,9 @@ Where v2 is already better than v1 and must stay that way: idle network (0 vs 10
 - **Why Tasks refetches on leave.** The request and its initiator are proven; that `activeProjectId()` flips first is read from code, not traced.
 - **Full-viewport paint per keystroke** (shared, same in both): each key reports a 1280×800 Paint on the root layer. This may be `chromium-headless-shell` software raster reporting the layer bounds rather than the damage rect. Check in headed Chrome with paint flashing.
 - **Panel focus into "Search files..."** keeps a caret blinking (60 frames per 30 s idle). This is a product behaviour, not a defect; listed because it is the only source of idle frames in v2.
+
+- **Marketplace "All" tab hover** restyles 1,174 elements in v2 against 49 for the other tabs and 125 in v1. Not traced.
+- **Frames in headless:** `DrawFrame` and `BeginMainThreadFrame` counts run above 60 per second during streaming in `chromium-headless-shell`. Frame counts are therefore not used as findings for streaming; rAF callbacks are.
 
 ## Deterministic regression gates
 
@@ -457,6 +476,13 @@ These counts did not vary across runs, so each can be an exact or ceiling assert
 | Resize | 1280 → 900 → 1280 | mutations = 0 | 9 |
 | Menu open | account menu open + close | `aria-hidden` mutations ≤ 20 | 668 |
 | Stylesheet duplication | CSSOM census after boot | duplicate rules ≤ 205 | 1,715 |
+| Files search | panel open, type "session" | per key: `wr/file` requests = 0, restyled ≤ 300 when results are unchanged; clearing: longest task ≤ 16 ms | 10–18 / 2,041 / 98–106 ms |
+| Invariant 1 | background turn while another session is open | mutations outside the own rail row = 0; computations outside the own row's owner = 0; rAF callbacks = 0 | 0 / 159 / 240 |
+| Invariant 2 | foreground turn | composer mutations per delta = 0; composer computations per delta = 0 | 0 / 0 (7 and 33 per turn at the edges) |
+| Invariant 3 | question dock appears and is answered | composer-frame removals = 0; composer requests = 0 | 1 removal, 2 requests |
+| Invariant 4 | turn with the panel maximized | `MessageTimeline` computations while the transcript is collapsed = 0 | 887 |
+| Invariant 5 | turn with the panel open | timeline-chrome mutations per delta ≤ 1; thumb writes while hidden = 0; files/git requests after a read-only turn = 0 | 1.8 / 448 / 10 |
+| Panel re-mount | switch back to a session with the panel open | Files-tree computations = 0 | 5,833 |
 
 ## v2 per-action baseline (medians, dev build, this machine)
 
