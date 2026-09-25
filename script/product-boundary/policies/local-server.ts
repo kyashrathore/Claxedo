@@ -180,7 +180,11 @@ export const localServer: Policy = {
   //    loads them without a release. Clone destination admission (`node:dns`)
   //    moved with the projects route into server-core's projects module.
   //    73/30, no headroom.
-  ceilings: { modules: 73, packages: 30 },
+  //  - `plugins/source.ts` (owner: the daemon's live plugins): the machine
+  //    owner reads a plugin's files before approving it, without leaving the
+  //    registered folder. Node builtins only, so no package edge. 74/30, no
+  //    headroom.
+  ceilings: { modules: 74, packages: 30 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",
