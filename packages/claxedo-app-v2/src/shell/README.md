@@ -78,7 +78,7 @@ Rules in those sheets that code cannot explain:
 
 ## Registries (`registries.ts`; the first-party entries in `src/registry.ts`)
 
-One `Registry<Entry>` per region and concept: `pages`, `paneKinds`, `panelViews` (the workspace panel's "context" and "subagent" tab views, registered by the domains that own them so `src/panel` never imports them), `settingsSections`, `sidebarItems`, `overlays`, `commands`, `mentions`, `themes`, `iconSkins`, `routes`. `registry.ts` holds the static first-party arrays that import each domain's exports; plugins `add()` entries while they are on and dispose them when off.
+One `Registry<Entry>` per region and concept: `pages`, `paneKinds`, `panelViews` (the workspace panel's "context" and "subagent" tab views, registered by the domains that own them so `src/panel` never imports them), `settingsSections`, `sidebarItems`, `overlays`, `commands`, `mentions`, `themes`, `iconSkins`, `routes`. `registry.ts` holds the static first-party arrays that import each domain's exports; plugins `add()` entries while they are on and dispose them when off. `view/registered-appearance.tsx` is the reader for `themes` and `iconSkins`: each theme entry is registered with the kit's `ThemeProvider` as OC-2 with the entry's tokens as v2 overrides (so Appearance lists it) and unregistered when its entry goes, which falls back to the default theme if it was selected; the skin whose id is the selected theme's is provided to `ClaxedoIcon` through `IconSkinContext`.
 
 ## Command palette (`palette/`)
 

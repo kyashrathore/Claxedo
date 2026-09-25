@@ -7,6 +7,8 @@ export type LivePluginFolder = {
   name: string
   version?: string
   routes?: readonly string[]
+  operations?: readonly string[]
+  requires?: readonly string[]
   app: string
 }
 
@@ -28,7 +30,8 @@ export async function writeLivePlugin(directory: string, plugin: LivePluginFolde
     name: plugin.name,
     version: plugin.version ?? "0.1.0",
     app: "./src/app.tsx",
-    server: { routes: plugin.routes ?? [], operations: [] },
+    requires: plugin.requires ?? [],
+    server: { routes: plugin.routes ?? [], operations: plugin.operations ?? [] },
   }
   await fs.writeFile(path.join(directory, "package.json"), JSON.stringify({ name: `claxedo-plugin-${plugin.id}`, version: manifest.version, type: "module", claxedo: manifest }, null, 2))
   await fs.writeFile(path.join(directory, "src", "app.tsx"), plugin.app)

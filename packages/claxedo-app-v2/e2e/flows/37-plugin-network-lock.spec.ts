@@ -72,7 +72,7 @@ test("37 network lock: a live plugin on the web reaches its own server through t
   await app.goto(`${stack.url}/`)
   await approveInDialog(app, "Network probe", WEB_WARNING)
   await app.goto(`${stack.url}/network-probe`)
-  const probe = app.getByTitle("probe", { exact: true }).filter({ visible: true }).contentFrame()
+  const probe = app.getByTitle("Network probe", { exact: true }).contentFrame()
   await expectProbeBlocked(probe, targets)
 
   const consoleLines: string[] = []

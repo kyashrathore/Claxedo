@@ -18,6 +18,7 @@ import { useShellRoute } from "../router"
 import { sidebarModeOf, type ShellRoute } from "../routes"
 import "../shell.css"
 import { ShellFrame, type CenterContent } from "./frame"
+import { RegisteredAppearance } from "./registered-appearance"
 import { Overlays } from "./overlays"
 import { RouteSync } from "./route-sync"
 import { SettingsSidebar } from "./settings-sidebar"
@@ -60,12 +61,14 @@ function ScopedShell(props: AppShellProps & { readonly scope: string }): JSX.Ele
           <CommandsProvider>
             <PlacementProviders>
               <PluginHostProvider scope={props.scope}>
-                <HomeRedirect />
-                <RouteSync />
-                <ShellCommands />
-                <OpenFileCommand />
-                <ShellBody route={routing.route()} mainSidebar={props.mainSidebar} compactTabs={props.compactTabs} />
-                <Overlays />
+                <RegisteredAppearance>
+                  <HomeRedirect />
+                  <RouteSync />
+                  <ShellCommands />
+                  <OpenFileCommand />
+                  <ShellBody route={routing.route()} mainSidebar={props.mainSidebar} compactTabs={props.compactTabs} />
+                  <Overlays />
+                </RegisteredAppearance>
               </PluginHostProvider>
             </PlacementProviders>
           </CommandsProvider>

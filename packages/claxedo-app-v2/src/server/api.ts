@@ -263,4 +263,5 @@ export type Server = {
   readonly harnessConfig: HarnessConfigApi
   readonly queries: ServerQueries
   readonly request: (path: string, init?: RequestInit) => Promise<Response>
+  readonly operation: (name: string, input: unknown) => Promise<unknown>
 }

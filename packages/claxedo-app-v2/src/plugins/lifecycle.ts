@@ -18,10 +18,12 @@ export function createPluginLifecycle(initial: PluginBuild, wanted: (build: Plug
     const [build, setBuild] = createSignal(initial)
     const machine = pluginMachine()
     let running: Activation | undefined
+    let starting: string | undefined
     let attempt = 0
 
     const stop = () => {
       attempt++
+      starting = undefined
       running?.dispose()
       running = undefined
     }
@@ -35,15 +37,19 @@ export function createPluginLifecycle(initial: PluginBuild, wanted: (build: Plug
     const start = async (next: PluginBuild) => {
       const current = ++attempt
       const id = buildIdOf(next)
+      starting = id
       machine.send(running ? { type: "swapStarted", to: id } : { type: "switchedOn", build: id })
       try {
         const activation = await activate(next, (reason) => crash(current, reason))
         if (current !== attempt) return activation.dispose()
+        starting = undefined
         running?.dispose()
         running = activation
         machine.send({ type: "activated" })
       } catch (error) {
-        if (current === attempt) machine.send({ type: "activationFailed", reason: failureReason(error) })
+        if (current !== attempt) return
+        starting = undefined
+        machine.send({ type: "activationFailed", reason: failureReason(error) })
       }
     }
 
@@ -55,7 +61,7 @@ export function createPluginLifecycle(initial: PluginBuild, wanted: (build: Plug
           return
         }
         const id = buildIdOf(next)
-        if (running?.build === id || failedBuildId(machine.state()) === id) return
+        if (running?.build === id || starting === id || failedBuildId(machine.state()) === id) return
         void start(next)
       }),
     )

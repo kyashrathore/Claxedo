@@ -1,4 +1,4 @@
-import { createSignal, Show, type JSX } from "solid-js"
+import { createSignal, For, Show, type JSX } from "solid-js"
 import { useI18n } from "@/i18n"
 import { formatDateTimeMed } from "@/lib/relative-time"
 import { unreachable } from "@/lib/machine"
@@ -36,13 +36,17 @@ function approvalDetail(t: PluginsText, plugin: PluginSummary, locale: string): 
   return undefined
 }
 
-function detailOf(t: PluginsText, plugin: PluginSummary, locale: string): string | undefined {
+function failureDetail(t: PluginsText, plugin: PluginSummary): string | undefined {
   const failure = failureOf(plugin.state)
   if (failure && plugin.state.kind === "failed") return t("plugins.failure", { reason: failure.reason })
   if (failure) return t("plugins.lastFailure", { reason: failure.reason })
   if (plugin.origin.kind === "live" && plugin.origin.buildError) return t("plugins.lastFailure", { reason: plugin.origin.buildError })
   if (plugin.switchedOn && plugin.missing.length > 0) return t("plugins.missing", { capabilities: plugin.missing.join(", ") })
-  return approvalDetail(t, plugin, locale)
+  return undefined
+}
+
+function detailsOf(t: PluginsText, plugin: PluginSummary, locale: string): readonly string[] {
+  return [failureDetail(t, plugin), approvalDetail(t, plugin, locale)].filter((detail): detail is string => detail !== undefined)
 }
 
 function RowActions(props: { readonly plugin: PluginSummary; readonly expanded: boolean; readonly toggle: () => void }): JSX.Element {
@@ -85,7 +89,7 @@ export function PluginRow(props: { readonly plugin: PluginSummary }): JSX.Elemen
   const t = usePluginsText()
   const i18n = useI18n()
   const [expanded, setExpanded] = createSignal(false)
-  const detail = () => detailOf(t, props.plugin, i18n.intlTag())
+  const details = () => detailsOf(t, props.plugin, i18n.intlTag())
   const toggle = (on: boolean) => {
     if (!on) return host.switchOff(props.plugin.id)
     if (!approvalLetsRun(props.plugin.approval)) return host.requestApproval(props.plugin.id)
@@ -103,7 +107,7 @@ export function PluginRow(props: { readonly plugin: PluginSummary }): JSX.Elemen
               {t(stateKey(props.plugin.state))}
             </span>
           </div>
-          <Show when={detail()}>{(text) => <p class="plugin-row-detail">{text()}</p>}</Show>
+          <For each={details()}>{(text) => <p class="plugin-row-detail">{text}</p>}</For>
         </div>
         <Switch checked={props.plugin.switchedOn && approvalLetsRun(props.plugin.approval)} onChange={toggle} hideLabel>
           {t("plugins.switch", { name: props.plugin.name })}

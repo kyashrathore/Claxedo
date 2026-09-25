@@ -24,7 +24,7 @@ function controlFrame(pluginId: string): HTMLIFrameElement {
 
 function activateInFrame(api: PluginApi, source: FrameSource): Promise<Disposer> {
   const pluginId = api.context.pluginId
-  const slots: FrameSlots = (target) => <FrameSlot title={pluginId} open={(frame) => openFrame(frame, api, source, target)} />
+  const slots: FrameSlots = (target, title) => <FrameSlot title={title} open={(frame) => openFrame(frame, api, source, target)} />
   return new Promise((resolve, reject) => {
     const frame = controlFrame(pluginId)
     let link: HostLink | undefined

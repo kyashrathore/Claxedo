@@ -1,6 +1,7 @@
 import type { PluginDefinition, PluginManifest } from "@claxedo/plugin-api"
 import type { LivePlugin } from "@/server"
 import type { PluginServerCalls } from "../api"
+import { moduleDictionary } from "../dictionary"
 import { frameDefinition } from "../frame/definition"
 import type { FrameSource } from "../frame/open"
 import type { PluginBuild, PluginOrigin } from "../model"
@@ -75,8 +76,10 @@ export async function loadLiveBuild(row: LiveRow, calls: PluginServerCalls): Pro
   try {
     const { installPluginRuntime } = await import("./runtime")
     installPluginRuntime()
-    const definition = definitionOf(row, await importBundle(await calls.liveBundle(row.id, row.hash)))
-    return { manifest: manifestOf(row, definition), origin: originOf(row, row.hash), definition }
+    const module = await importBundle(await calls.liveBundle(row.id, row.hash))
+    const definition = definitionOf(row, module)
+    const dictionary = moduleDictionary(module)
+    return { manifest: manifestOf(row, definition), origin: originOf(row, row.hash), definition, ...(dictionary ? { dictionary } : {}) }
   } catch (error) {
     return failingBuild(row, row.hash, error)
   }

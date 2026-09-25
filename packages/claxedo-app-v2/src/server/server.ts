@@ -18,6 +18,7 @@ import { createMarketplaceApi } from "./marketplace"
 import { createTasksApi } from "./tasks"
 import { createHarnessConfigApi } from "./harness-config"
 import { createLivePluginsApi } from "./live-plugins"
+import { createOperations } from "./operations"
 import type { ProjectId } from "./ids"
 import type { Server, ServerQueries } from "./api"
 import { createProjectsApi } from "./projects"
@@ -113,6 +114,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     livePlugins: createLivePluginsApi(transport),
     harnessConfig: createHarnessConfigApi(transport, workspaces, queryClient),
     request: transport.request,
+    operation: createOperations(transport).run,
   }
 }
 
