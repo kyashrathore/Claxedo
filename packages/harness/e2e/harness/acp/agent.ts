@@ -51,7 +51,8 @@ async function scriptFor(text: string, dir: string): Promise<AcpScript> {
 export class ScriptedAgent implements Agent {
   private readonly turns = new Map<string, AbortController>()
 
-  constructor(private readonly connection: AgentSideConnection, private readonly dir: string, private readonly headers: Record<string, string> = {}, private readonly record = true, private readonly restoreMode: "load" | "resume" = "resume") {}
+  constructor(private readonly connection: AgentSideConnection, private readonly dir: string, private readonly headers: Record<string, string> = {}, private readonly record = true,
+    private readonly restoreMode: "load" | "resume" = "resume", private readonly startupQuestion = process.env.SCRIPTED_ACP_START_QUESTION === "1") {}
 
   initialize(): InitializeResponse {
     return {
@@ -64,7 +65,10 @@ export class ScriptedAgent implements Agent {
 
   async newSession(params: NewSessionRequest): Promise<NewSessionResponse> {
     if (this.record) await recordAcpRequest(this.dir, "session/new", params, this.headers)
+    if (process.env.SCRIPTED_ACP_HANG_NEW === "1") await new Promise<never>(() => {})
     const sessionId = `scripted-${randomUUID()}`
+    if (this.startupQuestion) await this.connection.unstable_createElicitation({ sessionId, mode: "form", message: "Startup question",
+      requestedSchema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"] } })
     queueMicrotask(() => {
       void this.connection.sessionUpdate({ sessionId, update: { sessionUpdate: "available_commands_update", availableCommands: [{ name: "scripted", description: "Run a named scripted reply" }] } })
     })
@@ -77,11 +81,13 @@ export class ScriptedAgent implements Agent {
 
   async loadSession(params: LoadSessionRequest) {
     if (this.record) await recordAcpRequest(this.dir, "session/load", params, this.headers)
+    if (params.sessionId.startsWith("missing-")) throw RequestError.resourceNotFound(params.sessionId)
     return {}
   }
 
   async resumeSession(params: ResumeSessionRequest) {
     if (this.record) await recordAcpRequest(this.dir, "session/resume", params, this.headers)
+    if (params.sessionId.startsWith("missing-")) throw RequestError.resourceNotFound(params.sessionId)
     return {}
   }
 

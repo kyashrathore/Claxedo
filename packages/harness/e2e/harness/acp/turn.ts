@@ -146,6 +146,9 @@ async function playStep(context: TurnContext, step: AcpStep): Promise<PromptResp
     case "text":
       await sendText(context, step.text, step.chunks)
       return undefined
+    case "usage":
+      await update(context, { sessionUpdate: "usage_update", used: step.used, size: step.size })
+      return undefined
     case "reasoning":
       await update(context, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: step.text } })
       return undefined

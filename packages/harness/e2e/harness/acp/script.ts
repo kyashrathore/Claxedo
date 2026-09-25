@@ -22,6 +22,7 @@ export type AcpToolStep = {
 
 export type AcpStep =
   | { kind: "text"; text: string; chunks?: number }
+  | { kind: "usage"; used: number; size: number }
   | { kind: "reasoning"; text: string }
   | { kind: "image"; data: string; mimeType: string }
   | { kind: "plan"; entries: PlanEntry[] }
