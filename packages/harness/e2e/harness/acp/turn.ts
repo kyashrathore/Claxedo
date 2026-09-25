@@ -9,6 +9,8 @@ export type TurnContext = {
   sessionId: string
   scriptDir: string
   signal: AbortSignal
+  prompt: string
+  mcpUrl?: string
 }
 
 type Update = SessionNotification["update"]
@@ -146,6 +148,21 @@ async function playStep(context: TurnContext, step: AcpStep): Promise<PromptResp
     case "text":
       await sendText(context, step.text, step.chunks)
       return undefined
+    case "prompt":
+      await sendText(context, context.prompt)
+      return undefined
+    case "mcp": {
+      if (!context.mcpUrl) throw new Error("Scripted ACP received no configured HTTP MCP server")
+      const response = await fetch(context.mcpUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "proof", arguments: { marker: step.marker } } }),
+      })
+      if (!response.ok) throw new Error(`Scripted MCP call failed with ${response.status}`)
+      const result = await response.json() as { result?: { isError?: boolean; content?: { text?: string }[] } }
+      await sendText(context, result.result?.content?.map((item) => item.text ?? "").join("") ?? "")
+      return undefined
+    }
     case "reasoning":
       await update(context, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: step.text } })
       return undefined

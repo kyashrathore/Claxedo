@@ -11,11 +11,12 @@ import {
   type ContentBlock,
   type InitializeResponse,
   type NewSessionResponse,
+  type NewSessionRequest,
   type PromptRequest,
   type PromptResponse,
 } from "@agentclientprotocol/sdk"
 import { isTitlePrompt, lastMarker } from "../scripted-model-request"
-import { ACP_RED_ENV, ACP_SCRIPT_DIR_ENV, lastAcpScriptName, readAcpScript, type AcpScript } from "./script"
+import { ACP_RED_ENV, ACP_SCRIPT_DIR_ENV, lastAcpScriptName, readAcpScript, recoveryContextDropped, type AcpScript } from "./script"
 import { scriptedGoalExtension, scriptedGoals } from "./goals"
 import { playScript } from "./turn"
 
@@ -48,6 +49,8 @@ async function scriptFor(text: string, dir: string): Promise<AcpScript> {
 
 class ScriptedAgent implements Agent {
   private readonly turns = new Map<string, AbortController>()
+  private readonly sessions = new Set<string>()
+  private readonly mcpUrls = new Map<string, string>()
   private readonly goalRequest: ReturnType<typeof scriptedGoals>
 
   constructor(private readonly connection: AgentSideConnection, private readonly dir: string) {
@@ -57,17 +60,26 @@ class ScriptedAgent implements Agent {
   initialize(): InitializeResponse {
     return {
       protocolVersion: PROTOCOL_VERSION,
-      agentCapabilities: { loadSession: false, promptCapabilities: { image: true, embeddedContext: true } },
+      agentCapabilities: { loadSession: true, promptCapabilities: { image: true, embeddedContext: true } },
       authMethods: [],
       _meta: { jetbrains: { air: { version: 1, capabilities: ["nativeSubagentSessions"] } }, goal: scriptedGoalExtension },
     }
   }
 
-  newSession(): NewSessionResponse {
+  newSession(params: NewSessionRequest): NewSessionResponse {
+    const sessionId = `scripted-${randomUUID()}`
+    this.sessions.add(sessionId)
+    const mcp = params.mcpServers.find((server) => server.name === "scripted")
+    if (mcp && "url" in mcp && typeof mcp.url === "string") this.mcpUrls.set(sessionId, mcp.url)
     return {
-      sessionId: `scripted-${randomUUID()}`,
+      sessionId,
       modes: { currentModeId: "default", availableModes: [{ id: "default", name: "Default", description: "Scripted replies" }] },
     }
+  }
+
+  loadSession(params: { sessionId: string }) {
+    if (!this.sessions.has(params.sessionId)) throw RequestError.resourceNotFound(params.sessionId)
+    return { modes: { currentModeId: "default", availableModes: [{ id: "default", name: "Default", description: "Scripted replies" }] } }
   }
 
   authenticate() {
@@ -79,14 +91,16 @@ class ScriptedAgent implements Agent {
   }
 
   async prompt(params: PromptRequest): Promise<PromptResponse> {
-    const text = promptText(params.prompt)
+    const text = promptText(recoveryContextDropped(this.dir)
+      ? params.prompt.filter((block) => block.type !== "text" || !block.text.includes("<session-context-recovery>"))
+      : params.prompt)
     if (red && !isTitlePrompt(text)) throw RequestError.internalError(undefined, "Scripted ACP red run: every turn fails")
     const script = await scriptFor(text, this.dir)
     const controller = new AbortController()
     this.turns.get(params.sessionId)?.abort()
     this.turns.set(params.sessionId, controller)
     try {
-      return await playScript({ connection: this.connection, sessionId: params.sessionId, scriptDir: this.dir, signal: controller.signal }, script)
+      return await playScript({ connection: this.connection, sessionId: params.sessionId, scriptDir: this.dir, signal: controller.signal, prompt: text, mcpUrl: this.mcpUrls.get(params.sessionId) }, script)
     } finally {
       if (this.turns.get(params.sessionId) === controller) this.turns.delete(params.sessionId)
     }

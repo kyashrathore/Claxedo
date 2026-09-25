@@ -1,7 +1,7 @@
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { releaseAcpHold, writeAcpScript, type AcpScript } from "./acp/script"
+import { dropRecoveryContext, releaseAcpHold, writeAcpScript, type AcpScript } from "./acp/script"
 import { refuseGoalStart } from "./acp/goals"
 import { startDaemon, type Daemon } from "./daemon"
 import { startEgressGuard, type EgressGuard } from "./egress-guard"
@@ -20,6 +20,7 @@ export type Stack = {
     write(name: string, script: AcpScript): Promise<void>
     release(name: string): Promise<void>
     refuseGoalStart(): void
+    dropRecoveryContext(): void
   }
   events(directory: string, options?: EventStreamOptions): Promise<EventStream>
   close(): Promise<void>
@@ -76,6 +77,7 @@ export async function startStack(input: StackInput): Promise<Stack> {
       write: (name, script) => writeAcpScript(daemon.acpScriptDir, name, script),
       release: (name) => releaseAcpHold(daemon.acpScriptDir, name),
       refuseGoalStart: () => refuseGoalStart(daemon.acpScriptDir),
+      dropRecoveryContext: () => dropRecoveryContext(daemon.acpScriptDir),
     },
     events: async (directory, options) => {
       const stream = await openEventStream(daemon.url, directory, options)

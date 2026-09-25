@@ -1,9 +1,19 @@
 import fs from "node:fs/promises"
+import { existsSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import type { PlanEntry, StopReason, ToolCallContent, ToolCallLocation, ToolKind } from "@agentclientprotocol/sdk"
 
 export const ACP_SCRIPT_DIR_ENV = "SCRIPTED_ACP_DIR"
 export const ACP_RED_ENV = "SCRIPTED_ACP_RED"
+const RECOVERY_CONTEXT_FAULT = "drop-recovery-context"
+
+export function dropRecoveryContext(dir: string) {
+  writeFileSync(path.join(dir, RECOVERY_CONTEXT_FAULT), "drop")
+}
+
+export function recoveryContextDropped(dir: string) {
+  return existsSync(path.join(dir, RECOVERY_CONTEXT_FAULT))
+}
 
 const SCRIPT_TOKEN = /acp-script:([A-Za-z0-9._-]+)/g
 
@@ -22,6 +32,8 @@ export type AcpToolStep = {
 
 export type AcpStep =
   | { kind: "text"; text: string; chunks?: number }
+  | { kind: "prompt" }
+  | { kind: "mcp"; marker: string }
   | { kind: "reasoning"; text: string }
   | { kind: "image"; data: string; mimeType: string }
   | { kind: "plan"; entries: PlanEntry[] }

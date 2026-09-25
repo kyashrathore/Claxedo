@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { ClaxedoApi, assistantText, type GoalSnapshot } from "../harness/api"
 import { SCRIPTED_ACP_HARNESS } from "../harness/acp/connection"
 import { acpScriptToken } from "../harness/acp/script"
+import { unexpectedEgress } from "../harness/egress-guard"
 import { startStack } from "../harness/stack"
 import { frameType, type EventStream } from "../harness/stream"
 
@@ -51,7 +52,7 @@ async function acpGoal() {
     await api.goalAction(workspace.directory, session.id, "resume")
     await assertGoal(api, stream, workspace.directory, session.id, "active")
     await api.goalAction(workspace.directory, session.id, "stop")
-    await assertGoal(api, stream, workspace.directory, session.id, "stopped")
+    await assertGoal(api, stream, workspace.directory, session.id, "complete")
     assert.deepEqual(stack.egress.attempts, [], "ACP goal flow made an outbound request")
     assert.equal((await api.session(workspace.directory, session.id)).id, session.id)
     console.log("H6 ACP: negotiated Goal extension, pause/resume/stop route snapshots, live frames, stored turn, and session readback passed")
@@ -95,7 +96,54 @@ async function piEvaluatedGoal() {
   }
 }
 
+async function nativeGoal(harnessId: "claude" | "codex") {
+  const stack = await startStack({ label: `h6-${harnessId}-goals` })
+  try {
+    const api = new ClaxedoApi(stack.url)
+    const workspace = await stack.daemon.makeWorkspace(`h6-${harnessId}-goals`)
+    const stream = await stack.events(workspace.directory)
+    const model = harnessId === "claude"
+      ? { providerId: "claude", modelId: "claude-sonnet-4-6" }
+      : { providerId: "codex", modelId: "gpt-5.5" }
+    const session = await api.createSession(workspace.directory, {
+      harness: { id: harnessId, access: "native" }, model, title: `H6 ${harnessId} Goal`,
+    })
+    await api.prompt(workspace.directory, session.id, `Initialize ${harnessId} Goal session H6INITIAL`, { model })
+    await stream.waitFor((frame) => frameType(frame) === "session.idle", { label: `${harnessId} initial turn idle`, timeoutMs: 60_000 })
+    assert.ok((await api.messages(workspace.directory, session.id)).some((message) => message.info.role === "assistant"))
+    const state = await api.goalState(workspace.directory, session.id)
+    assert.equal(state.capabilities.available, true)
+    const objective = `Complete scripted ${harnessId} H6 objective`
+    const priorMessages = await api.messages(workspace.directory, session.id)
+    const priorFrameCount = stream.frames.length
+    const started = await api.startGoal(workspace.directory, session.id, objective)
+    assert.equal(started.goal?.objective, objective)
+    await stream.waitFor((frame) => frameType(frame) === "goal.updated", { label: `${harnessId} Goal frame`, timeoutMs: 60_000 })
+    assert.ok(await api.goal(workspace.directory, session.id))
+    if (harnessId === "codex") {
+      await stream.waitFor((frame) => frameType(frame) === "session.idle" && stream.frames.indexOf(frame) >= priorFrameCount, { label: "Codex provider Goal turn idle", timeoutMs: 60_000 })
+      assert.ok((await api.messages(workspace.directory, session.id)).length > priorMessages.length, "Codex Goal must create a stored provider-started turn")
+      assert.ok(stack.scripted.requests.some((request) => request.prompt.includes(objective)), "Codex provider-started turn must call the scripted model")
+      await api.goalAction(workspace.directory, session.id, "pause")
+      await assertGoal(api, stream, workspace.directory, session.id, "paused")
+      await api.goalAction(workspace.directory, session.id, "resume")
+      await assertGoal(api, stream, workspace.directory, session.id, "active")
+    } else {
+      await api.goalAction(workspace.directory, session.id, "stop")
+      await assertGoal(api, stream, workspace.directory, session.id, "paused")
+    }
+    assert.equal((await api.session(workspace.directory, session.id)).id, session.id)
+    assert.ok(stack.scripted.requests.length > 0, `${harnessId} must reach the scripted model`)
+    assert.deepEqual(unexpectedEgress(stack.egress.attempts), [], `${harnessId} must not attempt unexpected outbound traffic`)
+    console.log(`H6 ${harnessId}: Goal started, live frame, stored turn, route readback, and local model request passed`)
+  } finally {
+    await stack.close()
+  }
+}
+
 export async function run() {
   await acpGoal()
   await piEvaluatedGoal()
+  await nativeGoal("claude")
+  await nativeGoal("codex")
 }

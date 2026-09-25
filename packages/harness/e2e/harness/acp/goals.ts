@@ -1,4 +1,4 @@
-type GoalStatus = "active" | "paused" | "stopped"
+type GoalStatus = "active" | "paused" | "complete"
 
 type Goal = {
   objective: string
@@ -50,7 +50,7 @@ export function scriptedGoals(dir: string) {
     if (!current) throw new Error("Goal does not exist")
     const status: GoalStatus = method === "session/goal/pause" ? "paused"
       : method === "session/goal/resume" ? "active"
-      : method === "session/goal/stop" ? "stopped"
+      : method === "session/goal/stop" ? "complete"
       : (() => { throw new Error(`Unknown Goal method ${method}`) })()
     const goal = { ...current, status, updatedAt: Math.max(now, current.updatedAt + 1) }
     goals.set(sessionId, goal)
