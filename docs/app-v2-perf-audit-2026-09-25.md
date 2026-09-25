@@ -513,8 +513,8 @@ These counts did not vary across runs, so each can be an exact or ceiling assert
 | Resize, each direction | 0 | 9 | 312 | 5 | 4 | 2 | 1 |
 | Streaming turn, per delta (panel open) | 0.02 | 14.3 (9.2 in the streaming message) | 45 | 1.6 | 17 | – | 0.85 |
 | Background turn, per delta | 0.01 | 0.002 | 1.1 | 0 | 0 | 0.6 rAF | 0.04 |
-| Files search, per key (cold) | 11–19 | 169–793 | 2,000–2,900 | 3–8 | 40–120 | – | 10–25 |
-| Files search clear | 0 | 378–644 | 4,785–9,329 | 4–22 | – | – | 72–184 |
+| Files search, per key | 1–19 | 28–793 | 2,036–2,892 | – | – | – | – (longest task 6–32 ms) |
+| Files search clear | 0 | 378–644 | 4,785–9,329 | 4–22 | – | – | 72–184 (longest task 98–106 ms) |
 | Panel maximize / restore / close | 0 | 31–59 | 5,136–5,416 | 19–28 | 46–126 | – | 6–17 |
 | Heap after boot, after GC | 32,764 KB, 1,460 Nodes, 153 listeners | | | | | | |
 
