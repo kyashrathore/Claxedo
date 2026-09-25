@@ -17,7 +17,7 @@ export { frameSessionId, frameType, openEventStream, type EventStream, type Stre
 export { redRun, startStack, type Stack, type StackInput } from "./stack"
 export { type Daemon } from "./daemon"
 export { type Desktop } from "./desktop"
-export { interceptSystemBrowser, type SystemBrowser } from "./system-browser"
+export { interceptSystemBrowser, signInDesktop, type SystemBrowser } from "./system-browser"
 export { type Workspace } from "./workspaces"
 export { git, gitFolder } from "./git"
 export { type GitRemote } from "./git-remote"

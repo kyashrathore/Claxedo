@@ -126,12 +126,14 @@ export function createSessionList(server: Server, requests: RequestsInternal): S
     return current.kind === "live" ? current.more : undefined
   })
   const failures = createMemo(() => state().failures)
+  const degraded = createMemo(() => state().degraded)
   return {
     ...createRowReads(state, requests, windows),
     state: createMemo(() => publicState(state())),
     hasMore: (projectId: ProjectId) => hasMorePages(windows(), projectId),
     moreState: (projectId: ProjectId) => moreState(more()?.get(projectId)),
     pageFailure: (projectId: ProjectId) => failures().get(projectId),
+    pageDegraded: (projectId: ProjectId) => degraded().has(projectId),
     loadMore: reads.loadMore,
     reload: () => reads.reread("replace"),
     create: (input) => createSession(server, list, input),

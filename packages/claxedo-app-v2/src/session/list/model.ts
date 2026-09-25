@@ -37,6 +37,7 @@ export type FetchedPage = {
   readonly rows: readonly SessionRow[]
   readonly statuses: ReadonlyMap<SessionId, ListedStatus>
   readonly nextAfter: string | undefined
+  readonly degraded: boolean
 }
 
 export type FailedPage = { readonly projectId: ProjectId; readonly error: AppError }
@@ -55,6 +56,7 @@ export type ListData = {
   readonly open: ReadonlySet<SessionId>
   readonly windows: ReadonlyMap<ProjectId, ProjectWindow>
   readonly failures: ReadonlyMap<ProjectId, AppError>
+  readonly degraded: ReadonlySet<ProjectId>
 }
 
 export type ServerListEvent =
@@ -127,6 +129,7 @@ export const initialListState: ListState = {
   open: new Set(),
   windows: new Map(),
   failures: new Map(),
+  degraded: new Set(),
 }
 
 const rowActivityAt = (row: SessionRow): number => row.lastHumanTurnAt ?? 0

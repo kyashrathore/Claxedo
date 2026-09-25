@@ -19,7 +19,7 @@ function row(project: ProjectId, id: string, createdAt: number, lastHumanTurnAt?
 }
 
 function page(project: ProjectId, rows: SessionRow[], nextAfter?: string, statuses: Array<[string, ListedStatus]> = []): FetchedPage {
-  return { projectId: project, rows, nextAfter, statuses: new Map(statuses.map(([id, status]) => [sessionId(id), status])) }
+  return { projectId: project, rows, nextAfter, degraded: false, statuses: new Map(statuses.map(([id, status]) => [sessionId(id), status])) }
 }
 
 function window(pages: FetchedPage[], failures: FetchedWindow["failures"] = [], sentAt = 1_000): FetchedWindow {

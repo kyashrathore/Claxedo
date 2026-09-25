@@ -1,4 +1,4 @@
-import { expect, interceptSystemBrowser, test, UI, type Account } from "../harness"
+import { expect, signInDesktop, test, UI, type Account } from "../harness"
 
 type Consent = { clientId?: string; client_id?: string }
 
@@ -17,20 +17,10 @@ test("21 desktop sign-in: main signs in through the system browser, the card nam
   await expect(rail.getByText("Local App")).toBeVisible()
   await expect(rail.getByText("Remote App")).toHaveCount(0)
 
-  const browser = await interceptSystemBrowser(signedDesktop.electron)
-  await window.getByRole("button", { name: "Sign in", exact: true }).click()
-  await window.getByRole("menuitem", { name: "Sign in" }).click()
-  await expect.poll(async () => (await browser.opened()).length).toBe(1)
-  const [authorize] = await browser.opened()
-  if (!authorize) throw new Error("main opened no authorization page")
+  const authorize = await signInDesktop(signed, signedDesktop, page)
   expect(new URL(authorize).origin).toBe(signed.url)
 
-  await signed.signIn(page, signed.owner)
-  await page.goto(authorize)
-  await page.getByRole("button", { name: "Allow" }).click()
-
   const card = window.getByRole("button", { name: signed.owner.name, exact: true })
-  await expect(card).toBeVisible()
   await expect(rail.getByText("Remote App")).toBeVisible()
   await expect(rail.getByText("Local App")).toBeVisible()
   expect(await consentedClients(signed.owner, signed.stack.url)).toContain("claxedo-desktop")

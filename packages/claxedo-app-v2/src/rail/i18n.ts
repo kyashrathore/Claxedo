@@ -36,6 +36,7 @@ const en = {
   "rail.loadingSessions": "Loading sessions...",
   "rail.loadFailed": "Could not load sessions.",
   "rail.loadMoreFailed": "Could not load more sessions.",
+  "rail.partialLoad": "Some of this project's sessions could not be loaded.",
   "rail.allLoaded": "All sessions loaded.",
   "rail.retry": "Retry",
   "rail.settings": "Settings",

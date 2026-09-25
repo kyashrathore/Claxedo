@@ -50,6 +50,7 @@ export type SessionList = {
   readonly hasMore: (projectId: ProjectId) => boolean
   readonly moreState: (projectId: ProjectId) => LoadMoreState
   readonly pageFailure: (projectId: ProjectId) => AppError | undefined
+  readonly pageDegraded: (projectId: ProjectId) => boolean
   readonly loadMore: (projectId: ProjectId) => Promise<void>
   readonly reload: () => Promise<void>
   readonly create: (input: SessionCreateInput) => Promise<SessionRef>

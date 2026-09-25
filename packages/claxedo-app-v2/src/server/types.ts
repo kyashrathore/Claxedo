@@ -136,6 +136,7 @@ export type SessionPage = {
   readonly rows: readonly SessionRow[]
   readonly statuses: ReadonlyMap<SessionId, ListedStatus>
   readonly nextAfter?: string
+  readonly degraded?: boolean
 }
 
 export type TranscriptPage = { readonly entries: readonly TranscriptEntry[]; readonly olderCursor?: string }
