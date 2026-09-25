@@ -60,32 +60,21 @@ Kind: Functions
 
 The root import does not load SQLite.
 
-### Harness Factories
+### Harness Registration
 
-Status: Stable  
-Import: `@claxedo/agent-sdk-runtime/harnesses`
-Kind: Functions
-
-- `claude`
-- `codex`
-- `cursor`
-- `pi`
-- `acp(id, options)` for an explicit operator-configured ACP connection
-
-Use factories with `createAgentRuntime()` instead of constructing adapter
-classes directly.
+`createAgentRuntime()` accepts `AgentHarnessFactory` records. Each record
+names an id and access mode and constructs an adapter with the runtime context.
+Concrete adapters are exported from `@claxedo/agent-sdk-runtime/adapters`.
 
 Claxedo's embedded OpenCode adapter is owned by
-`@claxedo/workspace-runtime/opencode`, not by this package's factory registry.
+`@claxedo/workspace-runtime/opencode`.
 
 ## Advanced Adapter API
 
 Status: Advanced
 Import: `@claxedo/agent-sdk-runtime/adapters`
 
-Most hosts should register harness factories from
-`@claxedo/agent-sdk-runtime/harnesses` and call the `AgentRuntime` resource
-namespaces. The adapter subpath is public for hosts that need lower-level driver
+Hosts register adapter constructors through `AgentHarnessFactory` records and call the `AgentRuntime` resource namespaces. The adapter subpath is public for hosts that need lower-level driver
 control, such as a workspace host, compatibility proxy, or custom harness
 integration.
 

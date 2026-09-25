@@ -24,6 +24,7 @@ export type { ScriptedDialect, ScriptedReply }
 export type ScriptedModelRequest = {
   dialect: ScriptedDialect
   path: string
+  authorization?: string
   body: ScriptedModelBody["body"]
   model: string
   prompt: string
@@ -45,6 +46,7 @@ export type ScriptedModelServer = {
   scriptText(input: { marker: string; text: string }): void
   scriptError(input: ScriptedError): () => void
   holdTextReplies(marker: string): () => void
+  refuseAuthorization(fragment: string): void
   setReplyDelayMs(ms: number): void
   setTextStreamPacing(pacing: StreamPacing | undefined): void
   close(): Promise<void>
@@ -56,13 +58,14 @@ type ServerState = {
   counts: Record<ScriptedDialect, number>
   sequence: number
   goalEvaluations: number
-  pendingTool?: ScriptedToolCall
+  pendingTools: ScriptedToolCall[]
   pendingText?: { marker: string; text: string }
   pendingError?: ScriptedError
   autoModeCommand?: string
   textGate?: TextGate
   replyDelayMs: number
   pacing?: StreamPacing
+  refusedAuthorization?: string
 }
 
 const SCRIPTED_TITLE = "Scripted Session"
@@ -86,9 +89,9 @@ function goalReply(state: ServerState, prompt: string): ScriptedReply | undefine
 }
 
 function pendingReply(state: ServerState, request: ScriptedModelBody, prompt: string): ScriptedReply | undefined {
-  const tool = state.pendingTool
+  const tool = state.pendingTools[0]
   if (tool && (tool.whenPromptIncludes ? prompt.includes(tool.whenPromptIncludes) : !hasToolResult(request))) {
-    state.pendingTool = undefined
+    state.pendingTools.shift()
     return { kind: "tool", name: tool.name, input: tool.input, ...(tool.namespace ? { namespace: tool.namespace } : {}) }
   }
   const text = state.pendingText
@@ -130,7 +133,7 @@ function closeAll(server: Server) {
 
 export async function startScriptedModelServer(input: { port: number; red: boolean }): Promise<ScriptedModelServer> {
   const requests: ScriptedModelRequest[] = []
-  const state: ServerState = { counts: freshCounts(), sequence: 0, goalEvaluations: 0, replyDelayMs: 0 }
+  const state: ServerState = { counts: freshCounts(), sequence: 0, goalEvaluations: 0, replyDelayMs: 0, pendingTools: [] }
   const server = createServer(async (incoming, outgoing) => {
     if (incoming.method !== "POST") {
       outgoing.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true }))
@@ -148,10 +151,13 @@ export async function startScriptedModelServer(input: { port: number; red: boole
     state.counts[request.dialect] += 1
     const sequence = ++state.sequence
     const prompt = promptText(request)
-    const reply = input.red
+    const authorization = incoming.headers.authorization ?? incoming.headers["x-api-key"]?.toString()
+    const reply = state.refusedAuthorization && authorization?.includes(state.refusedAuthorization)
+      ? { kind: "error" as const, status: 401, message: "Scripted model refused the renewed credential" }
+      : input.red
       ? { kind: "error" as const, status: 503, message: "Scripted model red run: every turn fails" }
       : decideReply(state, request, prompt)
-    requests.push({ dialect: request.dialect, path: requestPath, body: request.body, model: request.body.model ?? "scripted", prompt, reply, tools: modelTools(request.body) })
+    requests.push({ dialect: request.dialect, path: requestPath, authorization, body: request.body, model: request.body.model ?? "scripted", prompt, reply, tools: modelTools(request.body) })
     await writeReply(outgoing, state, sequence, request, prompt, reply)
   })
   await listenOnLoopback(server, input.port)
@@ -175,7 +181,8 @@ export async function startScriptedModelServer(input: { port: number; red: boole
       }
     },
     scriptTool: (call) => {
-      state.pendingTool = call
+      if (process.env.CLAXEDO_E2E_MODEL_OMIT_TOOL === "1") return
+      state.pendingTools.push(call)
       const command = asRecord(call.input)?.command
       state.autoModeCommand = call.name === "Bash" && call.autoModeSeverity === 0 && typeof command === "string" ? command : undefined
     },
@@ -195,6 +202,9 @@ export async function startScriptedModelServer(input: { port: number; red: boole
         gate.release()
         if (state.textGate === gate) state.textGate = undefined
       }
+    },
+    refuseAuthorization: (fragment) => {
+      state.refusedAuthorization = fragment
     },
     setReplyDelayMs: (ms) => {
       state.replyDelayMs = ms
