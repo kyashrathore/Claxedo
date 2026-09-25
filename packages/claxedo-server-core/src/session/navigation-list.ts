@@ -83,8 +83,6 @@ export type SessionListResponse = {
   }>
   nextCursor?: string
   totalKnown?: number
-  /** Sources a merged page could not read; its rows are the others' alone. */
-  sources?: { degraded: string[] }
 }
 
 type CursorShape = SessionOrderKey & { query: string }
@@ -129,7 +127,7 @@ export function buildSessionListResponse(input: {
 }): SessionListResponse {
   const rows = input.sessions
     .filter((session) => !parentSessionId(session))
-    .map(toSessionNavigationRow)
+    .map(sessionNavigationRow)
     .filter((row): row is SessionNavigationRow => !!row)
     .filter((row) => rowInScope(row, input.query))
     .filter((row) => rowMatchesArchive(row, input.query.archived))
@@ -239,18 +237,18 @@ function groupRows(rows: SessionNavigationRow[], groupBy: SessionListGroupBy) {
   return new Map([...groups.entries()].sort(([a], [b]) => a.localeCompare(b)))
 }
 
-export function toSessionNavigationRow(session: unknown): SessionNavigationRow | undefined {
+function sessionNavigationRow(session: unknown): SessionNavigationRow | undefined {
   const item = record(session)
-  const sessionId = stringValue(item.sessionID) ?? stringValue(item.sessionId) ?? stringValue(item.session_id) ?? stringValue(item.id)
+  const sessionId = stringValue(item.sessionID) ?? stringValue(item.session_id) ?? stringValue(item.id)
   if (!sessionId) return undefined
-  const workspaceId = stringValue(item.workspaceID) ?? stringValue(item.workspaceId) ?? stringValue(item.workspace_id)
-  const projectId = stringValue(item.projectID) ?? stringValue(item.projectId) ?? stringValue(item.project_id)
+  const workspaceId = stringValue(item.workspaceID) ?? stringValue(item.workspace_id)
+  const projectId = stringValue(item.projectID) ?? stringValue(item.project_id)
   if (item.host !== undefined && item.host !== "workspace") return undefined
   const directory = stringValue(item.directory) ?? workspaceId ?? "global"
   const createdAt = numberValue(item.createdAt) ?? numberValue(item.created_at) ?? 0
   const updatedAt = numberValue(item.updatedAt) ?? numberValue(item.updated_at) ?? createdAt
   const lastHumanTurnAt = numberValue(item.lastHumanTurnAt) ?? numberValue(item.last_human_turn_at)
-  const archivedAt = numberValue(item.archived) ?? numberValue(item.archivedAt) ?? numberValue(item.archived_at)
+  const archivedAt = numberValue(item.archived) ?? numberValue(item.archived_at)
   const environment = record(item.environment)
   const git = record(item.git)
   return {
@@ -465,20 +463,11 @@ function cursorOfQuery(query: SessionListQuery) {
   return cursor
 }
 
-function encodeCursor(query: SessionListQuery, row: SessionOrderKey) {
+function encodeCursor(query: SessionListQuery, row: SessionNavigationRow) {
   return Buffer.from(JSON.stringify({
     query: querySignature(query),
     ...sessionOrderKey(row),
   } satisfies CursorShape), "utf8").toString("base64url")
-}
-
-/**
- * The cursor that resumes `query` after `key`. Every server that pages the
- * session list shares this codec, so a server merging another's page asks it
- * to continue from the merge's own position rather than from that server's.
- */
-export function sessionListCursorAfter(query: SessionListQuery, key: SessionOrderKey) {
-  return encodeCursor(query, key)
 }
 
 function decodeCursor(value: string): CursorShape {

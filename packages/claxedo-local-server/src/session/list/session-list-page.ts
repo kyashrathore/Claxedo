@@ -12,7 +12,6 @@ import {
   type SessionListResponse,
 } from "@claxedo/server-core/session/navigation-list"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
-import { readMergedSessionListPage, type SessionListSource } from "./merged-session-page"
 
 export type SessionListPageInput = {
   query: SessionListQuery
@@ -65,13 +64,9 @@ export async function localSessionListPage(input: SessionListPageInput): Promise
   if (!sessionListIsKeysetPageable(query)) {
     return buildSessionListResponse({ query, sessions: await listSessionMetas(sessionListStoreFilter(query)) })
   }
-  return await readMergedSessionListPage(query, [localProjectionSource(query)])
-}
-
-function localProjectionSource(query: SessionListQuery): SessionListSource {
-  return {
-    name: "local",
-    required: true,
-    read: async () => await listSessionNavigationMetas(sessionListStorePageFilter(query)),
-  }
+  return buildSessionListResponse({
+    query,
+    sessions: await listSessionNavigationMetas(sessionListStorePageFilter(query)),
+    cursorApplied: true,
+  })
 }

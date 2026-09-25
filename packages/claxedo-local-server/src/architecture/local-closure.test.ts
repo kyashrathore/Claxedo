@@ -283,13 +283,12 @@ describe("@claxedo/local-server closure", () => {
     //    its change notices, host-serving's credential listener, the runtime
     //    registry and `platform/json.ts`, all here, and server-core's
     //    session-rows contract, which costs no package.
-    //  - `session/list/{session-list-page,merged-session-page}.ts` — the
-    //    daemon's session list: one keyset page per project or workspace, read
-    //    from every store holding its sessions and merged under one cursor.
-    //    They reach the projection's keyset read and server-core's navigation
-    //    list, both here.
+    //  - `session/list/session-list-page.ts` — the daemon's session list: one
+    //    keyset page per project or workspace, from the projection for this
+    //    machine and from the authority for a signed caller. It reaches the
+    //    projection's keyset read and server-core's navigation list, both here.
     const { modules, packages } = closure({ runtimeOnly: true })
-    expect(modules.size).toBeLessThanOrEqual(110)
+    expect(modules.size).toBeLessThanOrEqual(109)
     expect(packages.size).toBeLessThanOrEqual(31)
   })
 })
