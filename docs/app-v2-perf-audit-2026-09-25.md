@@ -59,7 +59,11 @@ Style: 6,285 style recalcs for 772 deltas (8 per delta). Invalidated nodes resol
   - CDP trace (`devtools.timeline`, `…timeline.frame`, and for idle/hot actions `…invalidationTracking` and `blink.debug`): UpdateLayoutTree count and `elementCount`, Layout count, Paint count, DrawFrame count, BeginMainThreadFrame count, style-invalidation reasons.
   - Init-script wrappers for `setTimeout`/`setInterval`/`requestAnimationFrame` recording call sites (first non-library stack frame), a document-wide `MutationObserver`, `PerformanceObserver` for `long-animation-frame` and `layout-shift`.
   - `page.on("request")` per action; API requests (not Vite module/asset loads) grouped by path template. Initiators from CDP `Network.requestWillBeSent` with async stacks.
-- v1's dev build has no `VITE_CLAXEDO_SERVER_URL`, so its client calls `http://127.0.0.1:2593` directly (`packages/claxedo-app/src/platform/api/api.ts:388`) and nothing listens there. The harness bridges v1 in the browser context: HTTP to :2593 is re-issued to :2598 with `route.fetch`, and WebSockets to :2593 are piped to :2598 with `routeWebSocket`. Request counts come from `page.on("request")` and are unaffected by the bridge.
+- v1's dev build has no `VITE_CLAXEDO_SERVER_URL`, so its client calls `http://127.0.0.1:2593` directly (`packages/claxedo-app/src/platform/api/api.ts:388`) and nothing listens there. The harness bridges v1 in the browser context.
+  - Scenarios 1–8 used Playwright routing: HTTP to :2593 re-issued to :2598 with `route.fetch`, WebSockets piped with `routeWebSocket`. `route.fetch` buffers whole responses, so v1's fetch-streamed `/api/wr/events` could not stream there. That broken stream accounts for exactly one v1 request per idle window (a `/api/wr/events` reconnect).
+  - From scenario 9 on, an init script rewrites `127.0.0.1:2593` to `127.0.0.1:2598` in `fetch`, XHR, `WebSocket` and `EventSource`. The daemon's CORS allows the v1 origin, and streams are live.
+  - Re-measured with the live bridge, v1's idle polling is unchanged: 9 requests per 30 s on the draft page (`health` ×3, `status`, `permission` and `question` ×2 each) and 24 on an open session. The v1 polling reported in scenarios 1–8 is real.
+  - Request counts come from `page.on("request")` in both modes.
 - The owner's data has 4 sessions with local data (project "Claxedo"); the other 7 projects are unavailable fixture records. "Switch among 5 sessions" therefore uses all 4.
 
 ## Scenario 1: cold boot to rail painted, then 30 s idle
@@ -86,7 +90,7 @@ Medians of 3 runs each. Boot window is navigation start to 6 s after the first `
 | Idle 30 s: ScriptDuration / TaskDuration (ms) | 15 / 95 | 2 / 36 |
 | Idle 30 s: JS heap growth (KB) | 258 | 9 |
 
-v2 is better than v1 on every idle count and on boot network. v1's idle window polls `/api/claxedo/health` ×3, `/session/status`, `/permission`, `/question` ×2 each, reconnects `/api/wr/events` once, draws 60 frames with no paint (2 Hz), and runs incremental GC continuously (1,005 `V8.GC_MC_INCREMENTAL` events in the trace).
+v2 is better than v1 on every idle count and on boot network. v1's idle window polls `/api/claxedo/health` ×3, `/session/status`, `/permission`, `/question` ×2 each (the one `/api/wr/events` reconnect in that window was caused by the harness bridge, see Method), draws 60 frames with no paint (2 Hz), and runs incremental GC continuously (1,005 `V8.GC_MC_INCREMENTAL` events in the trace).
 
 v2 idle wakeups that remain (all runs identical):
 
