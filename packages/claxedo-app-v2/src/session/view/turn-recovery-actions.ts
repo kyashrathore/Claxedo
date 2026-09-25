@@ -1,4 +1,6 @@
+import type { ComposerRecovery } from "@/composer"
 import type { SessionView } from "@/session"
+import { draftPath, settingsPath } from "@/shell"
 import type { SessionErrorClass } from "./timeline"
 
 export type TurnRecoveryActions = {
@@ -21,4 +23,23 @@ export function recoverTurn(view: SessionView, actions: TurnRecoveryActions, kin
   const text = promptText(view, userMessageId)
   if (kind === "model" || kind === "usage_limit") return actions.switchModelAndResend(text)
   if (text) actions.resend(text)
+}
+
+export type ScreenTurnRecovery = {
+  readonly recover: (kind: SessionErrorClass, userMessageId: string) => Promise<void> | void
+  readonly register: (recovery: ComposerRecovery) => void
+}
+
+export function createScreenTurnRecovery(view: () => SessionView, navigate: (path: string) => void): ScreenTurnRecovery {
+  let composer: ComposerRecovery | undefined
+  const actions: TurnRecoveryActions = {
+    startNewSession: () => navigate(draftPath(view().ref.placementId)),
+    openProviders: () => navigate(settingsPath("models")),
+    switchModelAndResend: async (text) => composer?.switchModelAndResend(text),
+    resend: (text) => composer?.resend(text),
+  }
+  return {
+    recover: (kind, userMessageId) => recoverTurn(view(), actions, kind, userMessageId),
+    register: (next) => (composer = next),
+  }
 }

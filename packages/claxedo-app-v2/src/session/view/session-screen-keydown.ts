@@ -1,14 +1,23 @@
+import { onCleanup } from "solid-js"
 import { setCursorPosition } from "@/composer"
 import { classifySessionKeydown, deepActiveElement, keydownBelongsElsewhere } from "./session-keydown"
 
-export function createSessionScreenKeydownHandler(input: {
+type KeydownInput = {
   active: () => boolean
   dialogActive: () => unknown
   inputEl: () => HTMLDivElement | undefined
   composerBlocked: () => boolean
   prompt: { readonly cursor: () => number | undefined; readonly length: () => number }
   markScrollGesture: () => void
-}) {
+}
+
+export function installSessionScreenKeydown(input: KeydownInput): void {
+  const handleKeyDown = sessionScreenKeydownHandler(input)
+  document.addEventListener("keydown", handleKeyDown)
+  onCleanup(() => document.removeEventListener("keydown", handleKeyDown))
+}
+
+function sessionScreenKeydownHandler(input: KeydownInput) {
   return (event: KeyboardEvent) => {
     if (!input.active()) return
     const activeElement = deepActiveElement()
