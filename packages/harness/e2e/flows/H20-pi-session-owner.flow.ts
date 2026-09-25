@@ -6,7 +6,7 @@ import { startStack } from "../harness/stack"
 import { frameSessionId, frameType } from "../harness/stream"
 
 export async function run() {
-  const stack = await startStack({ label: "h20-pi-turn-origin" })
+  const stack = await startStack({ label: "h20-pi-session-owner" })
   try {
     const workspace = await stack.daemon.makeWorkspace("h20")
     const ownerDir = path.join(stack.dataDir, ".pi", "agent")
@@ -23,8 +23,13 @@ export async function run() {
     const stream = await stack.events(workspace.directory)
     const model = { providerId: "pi", modelId: "openai/gpt-4.1" }
     const session = await api.createSession(workspace.directory, { harness: { id: "pi", access: "native" }, model })
+    await api.promptAsync(workspace.directory, session.id, "Reply with exactly this one token: H20OWNER")
+    await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id, { label: "H20 owner turn" })
+    assert.match(assistantText(await api.messages(workspace.directory, session.id)), /H20OWNER/, "H20 owner turn stored answer")
+    assert.ok(stack.scripted.requests.some((request) => request.prompt.includes("H20OWNER")), "H20 owner account reached model server")
+    const afterOwner = stream.frames.length
     await api.promptAsync(workspace.directory, session.id, "Reply with exactly this one token: H20QUEUED")
-    await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id, { label: "H20 queued Pi turn" })
+    await stream.waitFor((frame) => stream.frames.indexOf(frame) >= afterOwner && frameType(frame) === "session.idle" && frameSessionId(frame) === session.id, { label: "H20 queued Pi turn" })
     const messages = await api.messages(workspace.directory, session.id)
     assert.match(assistantText(messages), /H20QUEUED/, "H20 queued turn stored answer")
     assert.ok(stream.frames.some((frame) => frameType(frame) === "message.part.updated" && frameSessionId(frame) === session.id), "H20 live frame")

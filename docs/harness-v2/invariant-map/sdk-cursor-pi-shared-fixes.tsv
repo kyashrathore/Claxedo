@@ -39,7 +39,7 @@ d8dfd52cad	fix(harness): freeze on the real load path, refuse both ways, keep th
 62c930f960	fix(pi): bind the four providers Pi defines, and refuse one account at a time	pi/auth.test.ts > every provider the broker binds reaches Pi at Pi's own base path	—
 e17f76b9d4	fix(harness): keep one workspace's placeholder out of another's turns	pi/profile-isolation.test.ts > two workspaces with their own store roots never share a models.json	—
 52eee917ff	fix(harness): deliver a projection to a driver through applyConfig alone	shared/agent-session-index.test.ts > a provider session resolves back to its runtime session and scope	Config delivery path; exercised by the index/adapter tests
-183ccbc157	fix(credentials): renew a placeholder from its own expiry, and refuse an expired one	FLOW(H20)	Credential renewal/refusal at turn origin; no unit row covers expiry timing
+183ccbc157	fix(credentials): renew a placeholder from its own expiry, and refuse an expired one	FLOW(H20)	Credential renewal and refusal for the session owner's accounts; no unit row covers expiry timing
 88eaa17bba	fix(credentials): name the credential in the refusal a turn reports	cursor/driver.test.ts > a binding with no stored key reads as a missing Cursor API key, not a broker code	—
 2003ceb46b	fix(server): clear the five red claxedo-server tests	pi/driver.test.ts > native Pi through the shared adapter (8 cases)	Test repair touching pi driver/executable
 ac106c3a3c	fix: clear every test that was red on dev before this branch	pi/driver.test.ts > native Pi through the shared adapter (8 cases)	Test repair

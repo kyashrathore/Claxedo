@@ -29,7 +29,7 @@ Never assume its files are ours, and never report a remote stop as proven.
 
 - **Translators:** logic changes only in a corpus-proven slice with the owner's sign-off.
 - **Requests:** the broker's contract is a security boundary. Who may answer is decided by the route; which request, which answer, grants and "save, then release" by the broker.
-- **Credentials:** a transport reads credentials only from `StartInput`. The owner's own Pi profile runs only for a turn whose origin is the machine owner on a desktop or loopback runtime, and its folder is never written.
+- **Credentials:** a transport reads credentials only from `StartInput`, which names the session's owner. Every turn in a session spends its owner's accounts, whoever sends it; the owner's own Pi profile runs for sessions owned by the machine owner on a desktop or loopback runtime, and its folder is never written.
 
 ## Process-wide state
 

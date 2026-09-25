@@ -1,6 +1,6 @@
 import type { ProviderProjection } from "@claxedo/agent-runtime-contract"
 import type { ResolvedCredentials } from "../contract/projection"
-import type { TurnOrigin } from "../contract/session"
+import type { TurnActor } from "../contract/session"
 
 export type RuntimePlacement = "desktop" | "loopback" | "self-hosted" | "cloud"
 export type CredentialProfile = "owner-login" | "brokered"
@@ -11,12 +11,12 @@ export type SelectedAccount = {
 }
 
 export type CredentialSelectionInput = {
-  origin: TurnOrigin
+  owner: TurnActor
   placement: RuntimePlacement
   machineOwnerUserId: string
   canUseOwnLogin: boolean
   profile:
-    | { kind: "pi-rpc"; sessionProfile: CredentialProfile; ownerLogin: ResolvedCredentials; brokeredCredentials: ResolvedCredentials }
+    | { kind: "pi-rpc"; ownerLogin: ResolvedCredentials; brokeredCredentials: ResolvedCredentials }
     | {
         kind: "providers"
         providerIds: readonly string[]
@@ -28,7 +28,7 @@ export type CredentialSelectionInput = {
 
 export class CredentialSelectionError extends Error {
   readonly retryable = false
-  constructor(readonly code: "account_unavailable" | "origin_mismatch", message: string) {
+  constructor(readonly code: "account_unavailable", message: string) {
     super(message)
     this.name = "CredentialSelectionError"
   }
@@ -44,25 +44,20 @@ function addCredentialSecrets(target: Record<string, string>, source: Readonly<R
 }
 
 function ownerCanUseMachineLogin(input: CredentialSelectionInput): boolean {
-  const actor = input.origin.actor
-  const isOwner = actor.kind === "machine-owner" || actor.userId === input.machineOwnerUserId
-  return isOwner && (input.origin.via === "loopback" || input.origin.via === "owner-grant")
-    && input.canUseOwnLogin && (input.placement === "desktop" || input.placement === "loopback")
+  const owner = input.owner
+  const isMachineOwner = owner.kind === "machine-owner" || owner.userId === input.machineOwnerUserId
+  return isMachineOwner && input.canUseOwnLogin && (input.placement === "desktop" || input.placement === "loopback")
 }
 
-export function selectTurnCredentials(input: CredentialSelectionInput): ResolvedCredentials {
+export function selectSessionCredentials(input: CredentialSelectionInput): ResolvedCredentials {
   const profile = input.profile
   const ownerLocal = ownerCanUseMachineLogin(input)
   if (profile.kind === "pi-rpc") {
-    const requiredProfile: CredentialProfile = ownerLocal ? "owner-login" : "brokered"
-    if (requiredProfile !== profile.sessionProfile) {
-      throw new CredentialSelectionError("origin_mismatch", "Turn origin does not match the session credential profile")
-    }
-    return requiredProfile === "owner-login" ? profile.ownerLogin : profile.brokeredCredentials
+    return ownerLocal ? profile.ownerLogin : profile.brokeredCredentials
   }
 
-  const actor = input.origin.actor
-  const userId = actor.kind === "machine-owner" ? input.machineOwnerUserId : actor.userId
+  const owner = input.owner
+  const userId = owner.kind === "machine-owner" ? input.machineOwnerUserId : owner.userId
   const selections = profile.selectedAccounts[userId] ?? {}
   const providers: Record<string, ProviderProjection> = {}
   const secrets: Record<string, string> = {}
