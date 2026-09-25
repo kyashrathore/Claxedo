@@ -95,3 +95,23 @@ test("session reads: a runtime that answers it has stopped re-homes the session 
   expect(await reads.requests).toEqual([])
   expect(server.requests.filter((path) => path === "/api/claxedo/bootstrap").length).toBeGreaterThanOrEqual(2)
 })
+
+test("session reads: a running cloud workspace's session still reads its history from the control plane; its row and runtime facts from the sandbox", async () => {
+  const server = fakeServer({
+    reachable: () => true,
+    runtime: (path) => {
+      if (path === "/session/ses_1") return Response.json({ id: "ses_1", title: "Live title", time: { created: 10, updated: 30 } })
+      if (path === "/session/status") return Response.json({})
+      if (path.startsWith("/permission") || path.startsWith("/question") || path.endsWith("/todo")) return Response.json([])
+      return Response.json({ error: { message: `unexpected runtime read ${path}` } }, { status: 500 })
+    },
+  })
+  const reads = readSession(server.context, ref)
+
+  const surface = await reads.surface
+  expect(surface.row).toMatchObject({ title: "Live title", updatedAt: 30 })
+  expect(surface.transcript.entries.map((entry) => entry.info.id)).toEqual(["msg_1", "msg_2"])
+  expect(await reads.status).toEqual({ kind: "idle" })
+  expect(server.requests).toContain("/api/control/sessions/ses_1/messages?workspaceId=ws_cloud&limit=50")
+  expect(server.runtimeCalls.some((path) => path.includes("/message"))).toBe(false)
+})

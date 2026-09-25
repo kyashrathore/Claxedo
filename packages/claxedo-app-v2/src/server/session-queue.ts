@@ -1,6 +1,6 @@
 import { ServerError } from "./errors"
 import { sessionEndpoint, type SessionContext } from "./session-context"
-import { homed } from "./session-reads"
+import { onRuntime } from "./session-reads"
 import { jsonInit, type RuntimeRoute, type Transport } from "./transport"
 import type { PromptInput, QueuedPrompt, QueuedPromptAction, QueuedPromptControl, SessionRef } from "./types"
 import { promptBody } from "./wire/prompt"
@@ -21,7 +21,7 @@ async function readQueue(transport: Transport, where: RuntimeRoute, ref: Session
 export function createSessionQueue(context: SessionContext) {
   const { transport, workspaces } = context
   return {
-    queue: (ref: SessionRef): Promise<readonly QueuedPrompt[]> => homed(context, ref, (where) => readQueue(transport, where, ref), async () => []),
+    queue: (ref: SessionRef): Promise<readonly QueuedPrompt[]> => onRuntime(context, ref, (where) => readQueue(transport, where, ref), async () => []),
     controlQueued: async (ref: SessionRef, seq: number, action: QueuedPromptAction): Promise<QueuedPromptControl> => {
       const body = await transport.runtimeJson<unknown>(await workspaces.route(ref), queuePath(ref, `/${seq}/${action}`), jsonInit("POST", {}))
       return queuedPromptControlFromWire(body)

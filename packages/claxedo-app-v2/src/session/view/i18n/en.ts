@@ -64,22 +64,10 @@ export type SessionScreenTextKey =
   | "sessionScreen.goal.metric.tokensUsed"
   | "sessionScreen.goal.metric.tokenBudget"
   | "sessionScreen.goal.metric.timeUsed"
-  | "sessionScreen.workspace.eyebrow"
-  | "sessionScreen.workspace.stopped.title"
-  | "sessionScreen.workspace.stopped.detail"
-  | "sessionScreen.workspace.stopped.start"
-  | "sessionScreen.workspace.starting.title"
-  | "sessionScreen.workspace.starting.detail"
-  | "sessionScreen.workspace.step.acquiring"
-  | "sessionScreen.workspace.step.restoring"
-  | "sessionScreen.workspace.step.resuming"
-  | "sessionScreen.workspace.step.cloning"
-  | "sessionScreen.workspace.step.runtime"
-  | "sessionScreen.workspace.step.health"
-  | "sessionScreen.workspace.failed.title"
-  | "sessionScreen.workspace.failed.detail"
-  | "sessionScreen.workspace.stillStarting.title"
-  | "sessionScreen.workspace.stillStarting.detail"
+  | "sessionScreen.workspace.asleep"
+  | "sessionScreen.workspace.waking"
+  | "sessionScreen.workspace.restoring"
+  | "sessionScreen.workspace.resuming"
   | "sessionScreen.child.promptDisabled"
   | "sessionScreen.child.backToParent"
   | "command.message.previous"
@@ -152,22 +140,10 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.goal.metric.tokensUsed": "{{count}} tokens",
   "sessionScreen.goal.metric.tokenBudget": "{{count}} token budget",
   "sessionScreen.goal.metric.timeUsed": "{{seconds}}s",
-  "sessionScreen.workspace.eyebrow": "Workspace runtime",
-  "sessionScreen.workspace.stopped.title": "Workspace is stopped",
-  "sessionScreen.workspace.stopped.detail": "Its sessions are saved. Start it to send a message.",
-  "sessionScreen.workspace.stopped.start": "Start workspace",
-  "sessionScreen.workspace.starting.title": "Preparing workspace",
-  "sessionScreen.workspace.starting.detail": "The composer unlocks when the runtime is ready.",
-  "sessionScreen.workspace.step.acquiring": "Acquiring sandbox",
-  "sessionScreen.workspace.step.restoring": "Restoring workspace from snapshot",
-  "sessionScreen.workspace.step.resuming": "Resuming sandbox",
-  "sessionScreen.workspace.step.cloning": "Cloning repository",
-  "sessionScreen.workspace.step.runtime": "Starting runtime",
-  "sessionScreen.workspace.step.health": "Waiting for health check",
-  "sessionScreen.workspace.failed.title": "Workspace failed to start",
-  "sessionScreen.workspace.failed.detail": "Something went wrong preparing the workspace runtime. Review the details and retry.",
-  "sessionScreen.workspace.stillStarting.title": "Workspace is still starting",
-  "sessionScreen.workspace.stillStarting.detail": "The sandbox is taking longer than usual to prepare. Nothing failed — retry to keep waiting.",
+  "sessionScreen.workspace.asleep": "This workspace is asleep. Your next message wakes it.",
+  "sessionScreen.workspace.waking": "Waking up the workspace…",
+  "sessionScreen.workspace.restoring": "Restoring it from a snapshot",
+  "sessionScreen.workspace.resuming": "Resuming its sandbox",
   "sessionScreen.child.promptDisabled": "Subagent sessions cannot be prompted.",
   "sessionScreen.child.backToParent": "Back to main session.",
   "sessionScreen.timeline.command.session.new": "New session",

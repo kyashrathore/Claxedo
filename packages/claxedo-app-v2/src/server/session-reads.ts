@@ -6,6 +6,7 @@ import { NO_GOAL, readGoalState } from "./session-goal"
 import { readRequests } from "./session-statuses"
 import { withQuery, type RuntimeRoute } from "./transport"
 import type { SessionListInput, SessionPage, SessionReads, SessionRef, SessionRow, SessionStatus, SessionSurface, Todo, TranscriptPage } from "./types"
+import type { SessionHome } from "./workspaces"
 import { isWorkspaceStopped } from "./wire/connection"
 import { sessionRowFromListItem, sessionRowFromSession } from "./wire/session-row"
 import { OLDER_CURSOR_HEADER, transcriptPageFromWire } from "./wire/transcript"
@@ -40,22 +41,21 @@ export async function listSessions(context: SessionContext, options: SessionList
   return { rows, ...(typeof body.nextCursor === "string" ? { nextCursor: body.nextCursor } : {}) }
 }
 
-export async function homed<T>(
+export async function onRuntime<T>(
   context: SessionContext,
   ref: SessionRef,
-  runtime: (route: RuntimeRoute) => Promise<T>,
-  central: (workspaceId: string) => Promise<T>,
+  live: (route: RuntimeRoute) => Promise<T>,
+  stopped: (workspaceId: string) => Promise<T>,
 ): Promise<T> {
   const home = await context.workspaces.home(ref)
-  if (home.kind === "central") return central(home.workspaceId)
+  if (!home.live) return stopped(home.route.workspaceId)
   try {
-    return await runtime(home.route)
+    return await live(home.route)
   } catch (error) {
     if (!isWorkspaceStopped(error)) throw error
     await context.workspaces.refresh()
-    const learned = await context.workspaces.home(ref)
-    if (learned.kind === "runtime") throw error
-    return central(learned.workspaceId)
+    if ((await context.workspaces.home(ref)).live) throw error
+    return stopped(home.route.workspaceId)
   }
 }
 
@@ -65,30 +65,29 @@ async function readPage(context: SessionContext, where: RuntimeRoute, path: stri
   return transcriptPageFromWire(await response.json(), response.headers.get(OLDER_CURSOR_HEADER))
 }
 
-type Surfaced = { readonly surface: SessionSurface; readonly session?: AgentPresentationSession }
-
-async function runtimeSurface(context: SessionContext, ref: SessionRef, where: RuntimeRoute): Promise<Surfaced> {
-  const [session, transcript] = await Promise.all([
-    context.transport.runtimeJson<AgentPresentationSession>(where, sessionEndpoint(ref)),
-    readPage(context, where, withQuery(sessionEndpoint(ref, "/message"), { view: "latest-surface" })),
-  ])
-  return { session, surface: { row: sessionRowFromSession(session, ref), transcript, diff: session.summary?.diffs ?? [] } }
+function readHistory(context: SessionContext, ref: SessionRef, home: SessionHome, before?: string): Promise<TranscriptPage> {
+  if (home.central) return readCentralPage(context.transport, home.route.workspaceId, ref, before)
+  const page = before === undefined ? { view: "latest-surface" } : { limit: OLDER_PAGE_SIZE, before }
+  return readPage(context, home.route, withQuery(sessionEndpoint(ref, "/message"), page))
 }
 
-async function centralSurface(context: SessionContext, ref: SessionRef, workspaceId: string): Promise<Surfaced> {
-  const [row, transcript] = await Promise.all([readCentralRow(context.transport, workspaceId, ref), readCentralPage(context.transport, workspaceId, ref)])
-  return { surface: { row, transcript, diff: [] } }
+async function readSurface(context: SessionContext, ref: SessionRef, home: SessionHome, session: AgentPresentationSession | undefined): Promise<SessionSurface> {
+  const [transcript, row] = await Promise.all([
+    readHistory(context, ref, home),
+    session ? sessionRowFromSession(session, ref) : readCentralRow(context.transport, home.route.workspaceId, ref),
+  ])
+  return { row, transcript, diff: session?.summary?.diffs ?? [] }
 }
 
 export function readSession(context: SessionContext, ref: SessionRef): SessionReads {
   const { transport } = context
-  const live = <T>(read: (route: RuntimeRoute) => Promise<T>, stopped: T) => homed(context, ref, read, async () => stopped)
-  const surfaced = homed(context, ref, (route) => runtimeSurface(context, ref, route), (workspaceId) => centralSurface(context, ref, workspaceId))
+  const live = <T>(read: (route: RuntimeRoute) => Promise<T>, stopped: T) => onRuntime(context, ref, read, async () => stopped)
+  const session = live<AgentPresentationSession | undefined>((route) => transport.runtimeJson<AgentPresentationSession>(route, sessionEndpoint(ref)), undefined)
   return {
-    surface: surfaced.then(({ surface }) => surface),
+    surface: Promise.all([context.workspaces.home(ref), session]).then(([home, row]) => readSurface(context, ref, home, row)),
     status: live(async (route) => {
-      const { session } = await surfaced
-      return session ? context.status.read(route, ref, session) : STOPPED_STATUS
+      const row = await session
+      return row ? context.status.read(route, ref, row) : STOPPED_STATUS
     }, STOPPED_STATUS),
     requests: live(async (route) => (await readRequests(transport, route, ref.sessionId)).map((item) => item.request), []),
     todos: live((route) => transport.runtimeJson<readonly Todo[]>(route, sessionEndpoint(ref, "/todo")), []),
@@ -96,11 +95,6 @@ export function readSession(context: SessionContext, ref: SessionRef): SessionRe
   }
 }
 
-export function readOlder(context: SessionContext, ref: SessionRef, cursor: string): Promise<TranscriptPage> {
-  return homed(
-    context,
-    ref,
-    (route) => readPage(context, route, withQuery(sessionEndpoint(ref, "/message"), { limit: OLDER_PAGE_SIZE, before: cursor })),
-    (workspaceId) => readCentralPage(context.transport, workspaceId, ref, cursor),
-  )
+export async function readOlder(context: SessionContext, ref: SessionRef, cursor: string): Promise<TranscriptPage> {
+  return readHistory(context, ref, await context.workspaces.home(ref), cursor)
 }

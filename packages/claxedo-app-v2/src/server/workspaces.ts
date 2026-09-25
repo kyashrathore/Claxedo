@@ -11,9 +11,11 @@ import { workspaceStopped } from "./wire/connection"
 import { bootstrapCatalog, type BootstrapCatalog, type PlacementRecord } from "./wire/placements"
 import type { Address } from "./wire/session-row"
 
-export type SessionHome =
-  | { readonly kind: "runtime"; readonly route: RuntimeRoute }
-  | { readonly kind: "central"; readonly workspaceId: string }
+export type SessionHome = {
+  readonly route: RuntimeRoute
+  readonly central: boolean
+  readonly live: boolean
+}
 
 export type Workspaces = Pick<PlacementsApi, "byId" | "list"> & {
   readonly address: Address
@@ -89,7 +91,7 @@ function placementRoutes(find: (id: PlacementId) => Promise<PlacementRecord | un
     locate: async (id) => (await placed(id)).route,
     home: async (ref) => {
       const record = await placed(ref.placementId)
-      return isStoppedCloud(record.placement) ? { kind: "central", workspaceId: record.route.workspaceId } : { kind: "runtime", route: record.route }
+      return { route: record.route, central: record.placement.kind === "cloud", live: !isStoppedCloud(record.placement) }
     },
   }
 }
