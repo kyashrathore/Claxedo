@@ -372,7 +372,7 @@ describe("driver egress capability declarations", () => {
         relayJwksUrl: "https://relay.test/.well-known/jwks.json",
         managementJwksUrl: "https://control.test/.well-known/jwks.json",
       },
-      runner: "opencode",
+      nativeHarness: "opencode",
       fetch,
     })
     const { events, sink } = warnings()

@@ -24,6 +24,7 @@ export default defineConfig({
     testTimeout: 60_000,
     hookTimeout: 30_000,
     fileParallelism: false,
+    setupFiles: ["../agent-sdk-runtime/src/test-utils/isolated-home.mjs"],
     exclude: [...configDefaults.exclude],
   },
 })

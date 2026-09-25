@@ -41,30 +41,6 @@
       "status": "integration",
       "purpose": "Parent-scoped subagent observation admission."
     },
-    "@claxedo/agent-sdk-runtime/harnesses": {
-      "status": "stable",
-      "purpose": "Public harness factory functions."
-    },
-    "@claxedo/agent-sdk-runtime/harnesses/acp": {
-      "status": "stable",
-      "purpose": "ACP harness factory without loading native harness adapters."
-    },
-    "@claxedo/agent-sdk-runtime/harnesses/claude": {
-      "status": "stable",
-      "purpose": "Claude harness factory."
-    },
-    "@claxedo/agent-sdk-runtime/harnesses/codex": {
-      "status": "stable",
-      "purpose": "Codex harness factory."
-    },
-    "@claxedo/agent-sdk-runtime/harnesses/cursor": {
-      "status": "stable",
-      "purpose": "Cursor harness factory."
-    },
-    "@claxedo/agent-sdk-runtime/harnesses/pi": {
-      "status": "stable",
-      "purpose": "Pi harness factory."
-    },
     "@claxedo/agent-sdk-runtime/adapters": {
       "status": "advanced",
       "purpose": "Public advanced adapter contracts and adapter helper types."
@@ -95,7 +71,7 @@
     "recipes": "docs/recipes.md"
   },
   "declarationHashes": {
-    "@claxedo/agent-sdk-runtime": "d79de422cc725c8faea528b21c4fe1be13347a6b6ffd582c9b1211273e245b70",
+    "@claxedo/agent-sdk-runtime": "0414ddd55816f381d4ef82d909b3af573130c2d4762f1d80ab1a6eaeefef7901",
     "@claxedo/agent-sdk-runtime/compat-events": "65a84e13c8047078d51a4246884964de0feba488c4f69f991a31d812401f50f7",
     "@claxedo/agent-sdk-runtime/status": "1cdf36244f79cd16df67b7183738572553a75282907cad9aefe54d2e487574a3",
     "@claxedo/agent-sdk-runtime/capabilities": "4330325eca22966c3b63d6312cdac4f8b618daef0ba82c0326cca0a56e8b87da",
@@ -103,16 +79,10 @@
     "@claxedo/agent-sdk-runtime/provider-projection": "782d8969102fba96a662f3b7800572b884ac38179b49ab7c5d9a761c8053ec44",
     "@claxedo/agent-sdk-runtime/mcp-resolver": "9ee49e91a385d15d6b2b82b8b9fa9045676c2f51dba06f59b65ba5c1c06f7ecf",
     "@claxedo/agent-sdk-runtime/subagent-admission": "c33ecd9674431994aa419dd5459a0ce6d38893754a900d0dd1b5ec5a8b70cc24",
-    "@claxedo/agent-sdk-runtime/harnesses": "8c2c8b41cdc0a4d3306cae081845caed5dadac9302e05d5741950be34f3c6594",
-    "@claxedo/agent-sdk-runtime/harnesses/acp": "9bd1cc0d698639d7685d5a813864d09812d6e7e689d2e1ad5dfe1159ab0a4497",
-    "@claxedo/agent-sdk-runtime/harnesses/claude": "126a913b9527cd0bc7927259b34b80fd4adb861721b3b1005311c2b51b36a791",
-    "@claxedo/agent-sdk-runtime/harnesses/codex": "0ca44a9a2d09d9b1b98fc9513b93818746b25fba3fd497eec82327e14a9a0e86",
-    "@claxedo/agent-sdk-runtime/harnesses/cursor": "d480acf870af948a7d7d72cd1d8e63a2b317f1b8c899e059f9f062836252025f",
-    "@claxedo/agent-sdk-runtime/harnesses/pi": "29b0681b20c90edaa68b2a7c660ae7ff0f04628e41865d176e196182eaa8df21",
-    "@claxedo/agent-sdk-runtime/adapters": "0a5080cda8e00e4ab7df54c0041e5deb9178617738ed216183f601140feea603",
-    "@claxedo/agent-sdk-runtime/message-page": "d79de422cc725c8faea528b21c4fe1be13347a6b6ffd582c9b1211273e245b70",
-    "@claxedo/agent-sdk-runtime/stores/memory": "4e0ee92897fe9441389fbf630e3205b2908c4c1f1af663e5c17e87d378967a01",
-    "@claxedo/agent-sdk-runtime/stores/sqlite": "d7613913cfde657352c8fa6124c9360e90c57431ae16262fd6fa4849e339e4f9",
+    "@claxedo/agent-sdk-runtime/adapters": "3b9646469b48a0ffd2b6aa545057023aa7e25013f06ba819bdade9bcd4f515c5",
+    "@claxedo/agent-sdk-runtime/message-page": "0414ddd55816f381d4ef82d909b3af573130c2d4762f1d80ab1a6eaeefef7901",
+    "@claxedo/agent-sdk-runtime/stores/memory": "fba97aa6164d898369f734bb9b5fbeb54f30e7188d0b1b486bed801094ae94d4",
+    "@claxedo/agent-sdk-runtime/stores/sqlite": "fa6fb282cc79a539aa33d92151d4e4a2689e55349d03e583cd57e6ea28fbff61",
     "@claxedo/agent-sdk-runtime/stores/session-start": "5dde19cfbf0617660f969558643d9ca3182448722f5c2d6a47dd0103d2beb311"
   },
   "valueExports": {
@@ -200,13 +170,6 @@
       "sessionModelGroupJson",
       "widestPermissionModeUnder"
     ],
-    "@claxedo/agent-sdk-runtime/harnesses": [
-      "acp",
-      "claude",
-      "codex",
-      "cursor",
-      "pi"
-    ],
     "@claxedo/agent-sdk-runtime/stores/memory": [
       "MemoryRuntimeStore",
       "createMemoryRuntimeStore"
@@ -269,29 +232,6 @@
       "kind": "type",
       "purpose": "Partial session config update; undefined leaves fields unchanged, null clears nullable fields, values replace fields."
     },
-    "UnknownHostSubagentKeyError": {
-      "import": "@claxedo/agent-sdk-runtime",
-      "kind": "class",
-      "purpose": "A subagent observation names a Claxedo row its parent session never created; thrown because every admit result is persisted."
-    },
-    "acp": {
-      "status": "stable",
-      "import": "@claxedo/agent-sdk-runtime/harnesses",
-      "kind": "function",
-      "purpose": "Register an explicit operator-configured ACP connection."
-    },
-    "claude": {
-      "status": "stable",
-      "import": "@claxedo/agent-sdk-runtime/harnesses",
-      "kind": "function",
-      "purpose": "Register the native Claude SDK harness."
-    },
-    "codex": {
-      "status": "stable",
-      "import": "@claxedo/agent-sdk-runtime/harnesses",
-      "kind": "function",
-      "purpose": "Register the native Codex app-server harness."
-    },
     "createAgentRuntime": {
       "status": "stable",
       "import": "@claxedo/agent-sdk-runtime",
@@ -310,12 +250,6 @@
       "kind": "function",
       "purpose": "Create a local durable runtime store."
     },
-    "cursor": {
-      "status": "stable",
-      "import": "@claxedo/agent-sdk-runtime/harnesses",
-      "kind": "function",
-      "purpose": "Register the native Cursor SDK harness."
-    },
     "isProviderUnavailable": {
       "import": "@claxedo/agent-sdk-runtime",
       "kind": "function",
@@ -325,12 +259,6 @@
       "import": "@claxedo/agent-sdk-runtime",
       "kind": "function",
       "purpose": "The binding to launch on, refusing one whose lifetime has already run out."
-    },
-    "pi": {
-      "status": "stable",
-      "import": "@claxedo/agent-sdk-runtime/harnesses",
-      "kind": "function",
-      "purpose": "Register the built-in native Pi harness."
     },
     "projectionRenewalDue": {
       "import": "@claxedo/agent-sdk-runtime",

@@ -536,7 +536,7 @@ contract.
 | `WORKSPACE_RUNTIME_ALLOW_UNAUTHENTICATED_NON_LOOPBACK` | Set to `1` only for self-managed runtimes behind trusted private-network controls that intentionally expose unauthenticated host routes. Reports as `private-network-dev-unsafe`. |
 | `WORKSPACE_RUNTIME_CONFIG_TOKEN` | Supervisor bearer for `GET /api/wr/health` discovery only. Not config mutation auth and not whole-server auth. |
 | `WORKSPACE_RUNTIME_DIRECTORY`, `WORKSPACE_RUNTIME_WORKSPACE_ID`, `WORKSPACE_RUNTIME_HOST_ID` | Runtime target identity. |
-| `WORKSPACE_RUNTIME_RUNNER`, `WORKSPACE_RUNTIME_ACP_BINARY` | Optional CLI launcher defaults for the initial harness. Runtime config apply can replace this after startup. |
+| `WORKSPACE_RUNTIME_NATIVE_HARNESS`, `WORKSPACE_RUNTIME_CONNECTION_ID`, `WORKSPACE_RUNTIME_ACP_BINARY` | Optional CLI launcher defaults for the initial harness. Select a native harness or a connection, not both. Runtime config apply can replace this after startup. |
 | `WORKSPACE_RUNTIME_ENABLE_ACP_REMOTE_TRANSPORT` | Enables remote ACP transport URLs in runner config. Disabled by default. |
 | `WORKSPACE_RUNTIME_TERMINAL_SESSION_TTL_MS` | Retention window for terminal lifecycle session summaries. |
 | `WORKSPACE_RUNTIME_DISABLE_PORTLESS` | Disables optional Portless named-url discovery for managed processes. |

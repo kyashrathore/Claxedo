@@ -7,7 +7,7 @@ import { userHomeDir } from "@claxedo/helpers/path"
 import { createAgentRuntime } from "../../runtime"
 import { createMemoryRuntimeStore } from "../../stores/memory"
 import type { AgentMessage } from "../../index"
-import { claude } from "../index"
+import { ClaudeHarnessAdapter } from "./index"
 import { removeTestTempDir } from "../shared/test-temp-dir"
 import { resolveClaudeExecutable } from "./executable"
 
@@ -93,14 +93,21 @@ async function stubAnthropicApi() {
 
 /** The CLI reads these from its spawn environment, which the driver copies from this process. */
 function withAnthropicEnv(stub: StubApi) {
-  const previous = { base: process.env.ANTHROPIC_BASE_URL, key: process.env.ANTHROPIC_API_KEY }
+  const previous = {
+    base: process.env.ANTHROPIC_BASE_URL,
+    key: process.env.ANTHROPIC_API_KEY,
+    nonessential: process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC,
+  }
   process.env.ANTHROPIC_BASE_URL = stub.url
   process.env.ANTHROPIC_API_KEY = "sk-ant-stub-key"
+  process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1"
   return () => {
     if (previous.base === undefined) delete process.env.ANTHROPIC_BASE_URL
     else process.env.ANTHROPIC_BASE_URL = previous.base
     if (previous.key === undefined) delete process.env.ANTHROPIC_API_KEY
     else process.env.ANTHROPIC_API_KEY = previous.key
+    if (previous.nonessential === undefined) delete process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC
+    else process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = previous.nonessential
   }
 }
 
@@ -131,7 +138,15 @@ describe("the Claude turn input the driver holds open", () => {
       const directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "claude-turn-input-")))
       const runtime = createAgentRuntime({
         store: createMemoryRuntimeStore(),
-        harnesses: [claude()],
+        harnesses: [{
+          id: "claude",
+          access: "native",
+          create: (context) => new ClaudeHarnessAdapter({
+            store: context.store,
+            eventHub: context.eventHub,
+            reportOwnerFailure: context.reportOwnerFailure,
+          }),
+        }],
       })
       try {
         const session = await runtime.sessions.create({
