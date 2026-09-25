@@ -15,7 +15,6 @@ function hasOlderLoaded(context: TranscriptContext, snapshot: SessionSnapshot): 
 function landSnapshot(context: TranscriptContext, snapshot: SessionSnapshot, sentAt: number): void {
   const current = context.phase.state()
   const held = isReading(current) ? current.held : []
-  context.deltas.drop()
   context.deps.list.readRow(snapshot.row)
   context.deps.list.readStatus(context.ref, snapshot.status, sentAt)
   if (snapshot.requests.kind === "read") context.deps.requests.read(context.ref, snapshot.requests.requests, sentAt)

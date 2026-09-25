@@ -18,7 +18,6 @@ export type { TranscriptDeps } from "./context"
 export type SessionTranscript = SessionView & {
   readonly apply: (event: ServerEvent) => void
   readonly gap: () => void
-  readonly dispose: () => void
 }
 
 const LOADING: SessionLoadState = { kind: "loading" }
@@ -99,6 +98,5 @@ export function createSessionTranscript(server: Server, ref: SessionRef, deps: T
       void context.queue.reread()
       void context.subagents.read()
     },
-    dispose: context.deltas.drop,
   }
 }
