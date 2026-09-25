@@ -1,4 +1,4 @@
-import { createEffect, createRoot, on } from "solid-js"
+import { createEffect, createRoot, on, runWithOwner } from "solid-js"
 import type { WorkbenchApi, WorkbenchTab, WorkbenchTabStatus } from "@claxedo/plugin-api"
 import type { SessionRowView } from "@/session"
 import { PluginEntryError, type BindingScope } from "./services"
@@ -28,7 +28,8 @@ function openTabs(scope: BindingScope): readonly WorkbenchTab[] {
     if (!opened) return []
     const route = workbench.routeOf(contentId)
     const row = route?.kind === "session" ? rows.find((candidate) => candidate.ref.sessionId === route.sessionId) : undefined
-    return [{ id: contentId, title: opened.kind.title(opened.state as never), kind: opened.kind.kind, status: statusOf(row), active: focused === contentId }]
+    const title = runWithOwner(scope.services.owner, () => opened.kind.title(opened.state as never)) ?? ""
+    return [{ id: contentId, title, kind: opened.kind.kind, status: statusOf(row), active: focused === contentId }]
   })
   return tabs.map((tab, index) => ({ ...tab, index }))
 }
@@ -48,7 +49,7 @@ export function workbenchBinding(scope: BindingScope): WorkbenchApi {
         createRoot((dispose) => {
           createEffect(on(tabs, (current) => listener(current), { defer: true }))
           return dispose
-        }),
+        }, scope.services.owner),
       ),
   }
 }

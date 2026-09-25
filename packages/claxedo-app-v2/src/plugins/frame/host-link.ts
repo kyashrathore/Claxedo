@@ -76,7 +76,7 @@ export function createHostLink(input: HostLinkInput): HostLink {
   const disposeMirror = createRoot((dispose) => {
     createEffect(() => send({ type: "mirror", mirror: frameMirror(api, input.services) }))
     return dispose
-  })
+  }, input.services.owner)
   return {
     dispose: () => {
       disposeMirror()

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/solid-query"
-import { createContext, createEffect, on, onCleanup, useContext, type Accessor, type JSX } from "solid-js"
+import { createContext, createEffect, getOwner, on, onCleanup, useContext, type Accessor, type JSX } from "solid-js"
 import type { PluginCapability, PluginPlatform } from "@claxedo/plugin-api"
 import { useI18n } from "@/i18n"
 import { useServer } from "@/server"
@@ -41,10 +41,13 @@ function currentPlatform(): PluginPlatform {
 }
 
 function useHostServices(): HostServices {
+  const owner = getOwner()
+  if (!owner) throw new Error("The plugin host needs a reactive owner")
   const server = useServer()
   const commands = useCommands()
   const projects = useQuery(() => server.queries.projects.list())
   return {
+    owner,
     registries: useShellRegistries(),
     commands,
     workbench: useWorkbench(),
