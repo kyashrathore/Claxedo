@@ -152,7 +152,8 @@ import {
 } from "@claxedo/server-core/workspace/store/index"
 import { defaultHomeRegion, relayEndpointsFromEnv } from "@claxedo/server-core/platform/runtime/region/index"
 import { createControlPlaneChannels, mountControlPlaneChannels } from "../../channels/control-plane"
-import { selfHostedOperatorAuthorizer, selfHostedOperatorGuard, selfHostedPrivateRepoHosts } from "./operator"
+import { selfHostedOperatorAuthorizer, selfHostedOperatorGuard } from "./operator"
+import { privateRepoHosts } from "../private-repo-hosts"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "@claxedo/local-server/self-hosted-execution"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import {
@@ -1291,7 +1292,7 @@ export function createSelfHostedApp(
     "/api/claxedo/projects",
     LocalProjectRoutes(authRouteOptions(services), {
       authorizeLocalDirectoryImport: authorizeOperator,
-      privateRepoHosts: selfHostedPrivateRepoHosts(),
+      privateRepoHosts: privateRepoHosts(process.env),
       ...(projectAuthority ? { authority: projectAuthority } : {}),
       repositoryForAuth: async (auth, connectionId, fullName) => {
         const id = connectionId

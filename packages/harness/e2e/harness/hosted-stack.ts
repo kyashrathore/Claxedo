@@ -3,6 +3,8 @@ import os from "node:os"
 import path from "node:path"
 import { hostedCertificate, startHostedControlPlane } from "./hosted-control-plane"
 import { startHostedSandboxWorker } from "./hosted-sandbox-worker"
+import { startHostedGitServer } from "./hosted-git-server"
+import { startHostedRelay } from "./hosted-relay"
 import { reservePort, releasePort } from "./ports"
 import { startScriptedModelServer } from "./scripted-model-server"
 
@@ -11,12 +13,17 @@ export async function startHostedStack(label: string) {
   const workerPort = await reservePort()
   const sandboxPort = await reservePort()
   const modelPort = await reservePort()
+  const gitPort = await reservePort()
+  const relayPort = await reservePort()
   const workerUrl = `https://127.0.0.1:${workerPort}`
   const sandboxOrigin = `https://127.0.0.1:${sandboxPort}`
+  const relayUrl = `http://127.0.0.1:${relayPort}`
   const credentials = await hostedCertificate(root)
   const model = await startScriptedModelServer({ port: modelPort, red: false })
+  const git = await startHostedGitServer(root, gitPort)
   let sandbox: Awaited<ReturnType<typeof startHostedSandboxWorker>> | undefined
   let control: Awaited<ReturnType<typeof startHostedControlPlane>> | undefined
+  let relay: Awaited<ReturnType<typeof startHostedRelay>> | undefined
   try {
     sandbox = await startHostedSandboxWorker({
       root,
@@ -26,13 +33,18 @@ export async function startHostedStack(label: string) {
       key: credentials.key,
       controlPlaneUrl: workerUrl,
       modelUrl: model.url,
+      gitUrl: git.url,
+      relayUrl,
     })
-    control = await startHostedControlPlane({ root, port: workerPort, sandboxOrigin, credentials })
+    control = await startHostedControlPlane({ root, port: workerPort, sandboxOrigin, gitUrl: git.url, relayUrl, credentials })
+    relay = await startHostedRelay({ port: relayPort, controlPlaneUrl: workerUrl, certificate: credentials.certificate })
   } catch (error) {
+    if (relay) await relay.close()
     if (control) await control.close()
     if (sandbox) await sandbox.close()
     await model.close()
-    for (const port of [workerPort, sandboxPort, modelPort]) releasePort(port)
+    await git.close()
+    for (const port of [workerPort, sandboxPort, modelPort, gitPort, relayPort]) releasePort(port)
     await fs.rm(root, { recursive: true, force: true })
     throw error
   }
@@ -42,13 +54,17 @@ export async function startHostedStack(label: string) {
     sandboxOrigin,
     certificate: credentials.certificate,
     model,
+    gitUrl: git.url,
+    relayUrl,
     outboundAttempts: control.outboundAttempts,
     provisionOwnerClaim: control.provisionOwnerClaim,
     close: async () => {
+      await relay.close()
       await control.close()
       await sandbox.close()
       await model.close()
-      for (const port of [workerPort, sandboxPort, modelPort]) releasePort(port)
+      await git.close()
+      for (const port of [workerPort, sandboxPort, modelPort, gitPort, relayPort]) releasePort(port)
       if (process.env.CLAXEDO_E2E_KEEP_DATA !== "1") await fs.rm(root, { recursive: true, force: true })
     },
   }

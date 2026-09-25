@@ -3,11 +3,14 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { SERVER_DIR } from "./node-loader"
 import { writeHostedE2eWranglerConfig } from "./hosted-wrangler-config"
+import { HOSTED_SIGNING_PRIVATE_KEY, HOSTED_SIGNING_PUBLIC_KEY } from "./hosted-keys"
 
 type Input = {
   root: string
   port: number
   sandboxOrigin: string
+  gitUrl: string
+  relayUrl: string
   credentials: { key: string; certificate: string }
 }
 
@@ -49,7 +52,7 @@ export async function startHostedControlPlane(input: Input) {
   const config = await writeHostedE2eWranglerConfig()
   const attemptsFile = path.join(input.root, "hosted-outbound-attempts.jsonl")
   const child = spawn(process.env.CLAXEDO_E2E_NODE ?? "node", [
-    "--import", "tsx", "scripts/deploy/hosted-e2e-miniflare.ts",
+    "--import", "tsx", "scripts/e2e/hosted-miniflare.ts",
   ], {
     cwd: SERVER_DIR,
     stdio: ["ignore", "pipe", "pipe", "ipc"],
@@ -58,7 +61,9 @@ export async function startHostedControlPlane(input: Input) {
       NODE_EXTRA_CA_CERTS: credentials.certificate,
       CLAXEDO_E2E_HOSTED_MINIFLARE: JSON.stringify({
         config, root: input.root, port: input.port, certificate: credentials.certificate,
-        key: credentials.key, sandboxOrigin: input.sandboxOrigin, attemptsFile,
+        key: credentials.key, sandboxOrigin: input.sandboxOrigin, gitUrl: input.gitUrl,
+        relayUrl: input.relayUrl, signingPrivateKey: HOSTED_SIGNING_PRIVATE_KEY,
+        signingPublicKey: HOSTED_SIGNING_PUBLIC_KEY,
       }),
     },
   })
@@ -66,7 +71,10 @@ export async function startHostedControlPlane(input: Input) {
     await ready(child, "[hosted-miniflare] ready")
     child.stderr?.on("data", (data: Buffer) => process.stderr.write(data))
   } catch (error) {
-    child.kill("SIGTERM")
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill("SIGTERM")
+      await new Promise<void>((resolve) => child.once("exit", () => resolve()))
+    }
     await fs.rm(config, { force: true })
     throw error
   }
@@ -95,8 +103,10 @@ export async function startHostedControlPlane(input: Input) {
       child.send({ id, subject })
     }),
     close: async () => {
-      child.kill("SIGTERM")
-      await new Promise<void>((resolve) => child.once("exit", () => resolve()))
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill("SIGTERM")
+        await new Promise<void>((resolve) => child.once("exit", () => resolve()))
+      }
       await fs.rm(config, { force: true })
     },
   }

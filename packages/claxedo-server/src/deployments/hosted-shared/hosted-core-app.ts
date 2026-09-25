@@ -73,6 +73,7 @@ import { readIntrospectedAccessToken, resolveOAuthMcpCredential } from "../../mc
 import { asRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import { UsageRoutes } from "@claxedo/server-core/usage/routes"
 import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
+import { privateRepoHosts } from "../private-repo-hosts"
 import type { UsageProjectionLedger } from "@claxedo/server-core/usage/ledger"
 import type { UsageReportWriter } from "@claxedo/server-core/usage/usage-report"
 
@@ -257,7 +258,10 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
     }),
   )
 
+  const approvedPrivateRepoHosts = privateRepoHosts(plane.env)
   const workspaceOptions: HostedWorkspaceRouteOptions = {
+    privateRepoHosts: approvedPrivateRepoHosts,
+    sandboxEgressExtraHosts: approvedPrivateRepoHosts,
     authentication: options.authentication,
     requireCloudWorkspaceEntitlement: options.cloudWorkspaceAdmission,
     ...options.productWorkspace,

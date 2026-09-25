@@ -1,11 +1,11 @@
 import { spawnSync } from "node:child_process"
-import { appendFileSync, readFileSync } from "node:fs"
+import { readFileSync } from "node:fs"
 import path from "node:path"
 import { Miniflare } from "miniflare"
 import { unstable_getMiniflareWorkerOptions } from "wrangler"
 import { betterAuthDeploymentConfigurationId } from "../../src/platform/auth/better-auth-configuration"
-import { betterAuthD1PreparationCommands } from "./prepare-better-auth-d1"
-import { generateCanonicalOwnerClaim, ownerClaimMutationSql } from "./provision-user-deployed-owner-claim"
+import { betterAuthD1PreparationCommands } from "../deploy/prepare-better-auth-d1"
+import { generateCanonicalOwnerClaim, ownerClaimMutationSql } from "../deploy/provision-user-deployed-owner-claim"
 import { userDeployedOwnerBootstrapClaimHash, userDeployedOwnerIdentityHash } from "../../src/authority/adapters/d1/workspace-authority"
 
 type Input = {
@@ -15,7 +15,10 @@ type Input = {
   certificate: string
   key: string
   sandboxOrigin: string
-  attemptsFile: string
+  gitUrl: string
+  relayUrl: string
+  signingPrivateKey: string
+  signingPublicKey: string
 }
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")
@@ -27,31 +30,6 @@ function runWrangler(args: string[]) {
   const result = spawnSync(wrangler, args, { cwd: serverRoot, env, encoding: "utf8" })
   if (result.error) throw result.error
   if (result.status !== 0) throw new Error(`wrangler ${args.join(" ")} failed: ${result.stdout}\n${result.stderr}`)
-}
-
-function githubResponse(request: Request) {
-  const url = new URL(request.url)
-  if (url.origin === "https://github.com" && url.pathname === "/login/oauth/access_token") {
-    return request.text().then((body) => {
-      const code = new URLSearchParams(body).get("code")
-      if (code !== "hosted-person-a" && code !== "hosted-person-b") return Response.json({ error: "bad_verification_code" }, { status: 400 })
-      return Response.json({ access_token: `hosted-token-${code}`, token_type: "bearer", scope: "read:user user:email" })
-    })
-  }
-  if (url.origin !== "https://api.github.com" || (url.pathname !== "/user" && url.pathname !== "/user/emails")) return undefined
-  const person = request.headers.get("authorization")?.replace(/^Bearer /i, "")
-  if (person !== "hosted-token-hosted-person-a" && person !== "hosted-token-hosted-person-b") {
-    return Promise.resolve(Response.json({ message: "unauthorized" }, { status: 401 }))
-  }
-  const id = person.endsWith("-a") ? 101 : 202
-  const email = `hosted-person-${id}@example.test`
-  if (url.origin === "https://api.github.com" && url.pathname === "/user") {
-    return Promise.resolve(Response.json({ id, login: `hosted-person-${id}`, name: `Hosted Person ${id}`, email, avatar_url: `https://example.test/avatar/${id}` }))
-  }
-  if (url.origin === "https://api.github.com" && url.pathname === "/user/emails") {
-    return Promise.resolve(Response.json([{ email, primary: true, verified: true, visibility: "public" }]))
-  }
-  return undefined
 }
 
 async function main(input: Input) {
@@ -72,6 +50,7 @@ async function main(input: Input) {
     CLAXEDO_SANDBOX_DRIVER: "cloudflare",
     CLOUDFLARE_SANDBOX_WORKER_URL: input.sandboxOrigin,
     CLOUDFLARE_SANDBOX_API_TOKEN: "hosted-sandbox-test-token",
+    CLAXEDO_PRIVATE_REPO_HOSTS: new URL(input.gitUrl).hostname,
     CLAXEDO_DEPLOYMENT_MODE: "hosted",
     CLAXEDO_DEPLOYMENT_ID: "hosted-e2e-deployment",
     CLAXEDO_RELEASE_SEQUENCE: "1",
@@ -90,11 +69,11 @@ async function main(input: Input) {
     CLAXEDO_RELEASE_OPERATOR_SECRET: "hosted-e2e-operator-secret-at-least-32-characters",
     GITHUB_CLIENT_ID: "hosted-e2e-github-client",
     GITHUB_CLIENT_SECRET: "hosted-e2e-github-secret",
-    CLAXEDO_WORKSPACE_RELAY_URL: apiOrigin,
+    CLAXEDO_WORKSPACE_RELAY_URL: input.relayUrl,
     CLAXEDO_RELAY_RESOLVER_TOKEN: "hosted-e2e-relay-resolver-token",
-    CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIO9Cnka2wu8+h1a1Rd+bDejAsq2oUxO6BnDKjrHrpw54\n-----END PRIVATE KEY-----",
-    CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAvy35aYUPAjG/Zac6ER0AiB0BZteRmYnpMZ5b1U0SJGs=\n-----END PUBLIC KEY-----",
-    CLAXEDO_RELAY_HOST_VERIFY_PEM: "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAvy35aYUPAjG/Zac6ER0AiB0BZteRmYnpMZ5b1U0SJGs=\n-----END PUBLIC KEY-----",
+    CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: input.signingPrivateKey,
+    CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: input.signingPublicKey,
+    CLAXEDO_RELAY_HOST_VERIFY_PEM: input.signingPublicKey,
     CLAXEDO_CREDENTIALS_KEK: Buffer.alloc(32, 7).toString("base64"),
     CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1",
     CLAXEDO_PUBLIC_URL: apiOrigin,
@@ -128,12 +107,15 @@ async function main(input: Input) {
     httpsKey: readFileSync(input.key, "utf8"),
     httpsCert: readFileSync(input.certificate, "utf8"),
     outboundService: async (request: Request) => {
-      const url = new URL(request.url)
-      const github = githubResponse(request)
-      if (github) return github
-      if (url.origin === input.sandboxOrigin) return fetch(request)
-      appendFileSync(input.attemptsFile, JSON.stringify({ method: request.method, url: request.url }) + "\n")
-      return new Response("outbound refused by hosted e2e", { status: 599 })
+      const headers = new Headers(request.headers)
+      headers.delete("host")
+      headers.delete("content-length")
+      headers.set("x-claxedo-e2e-target-url", request.url)
+      return fetch(`${input.sandboxOrigin}/__outbound`, {
+        method: request.method,
+        headers,
+        body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer(),
+      })
     },
   })
   try {
@@ -181,7 +163,7 @@ async function main(input: Input) {
       })()
     })
     console.log("[hosted-miniflare] ready")
-    process.once("SIGTERM", () => { void mf.dispose().then(() => { process.exitCode = 0 }) })
+    process.once("SIGTERM", () => { void mf.dispose().then(() => process.exit(0)) })
   } catch (error) {
     await mf.dispose()
     throw error
@@ -208,6 +190,9 @@ if (import.meta.main) {
     certificate: required("certificate"),
     key: required("key"),
     sandboxOrigin: required("sandboxOrigin"),
-    attemptsFile: required("attemptsFile"),
+    gitUrl: required("gitUrl"),
+    relayUrl: required("relayUrl"),
+    signingPrivateKey: required("signingPrivateKey"),
+    signingPublicKey: required("signingPublicKey"),
   })
 }

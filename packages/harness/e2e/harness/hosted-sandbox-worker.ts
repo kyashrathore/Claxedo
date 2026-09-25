@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises"
+import { appendFile, readFile } from "node:fs/promises"
 import { createServer } from "node:https"
 import http, { type IncomingMessage, type ServerResponse } from "node:http"
 import path from "node:path"
@@ -7,6 +7,7 @@ import { createLocalBrokeringSandboxDriver } from "@claxedo/sandbox-manager/driv
 import type { SandboxBrokeredSecret, SandboxTarget } from "@claxedo/sandbox-manager"
 import { parseRegistrations, type EgressRegistration } from "../../../claxedo-server/scripts/sandbox/cloudflare-worker/src/outbound-credentials"
 import { REPO_ROOT, TSX_LOADER } from "./node-loader"
+import { scriptedGithub } from "./hosted-scripted-github"
 
 type HostedSandboxWorkerInput = {
   root: string
@@ -16,6 +17,8 @@ type HostedSandboxWorkerInput = {
   key: string
   controlPlaneUrl: string
   modelUrl: string
+  gitUrl: string
+  relayUrl: string
 }
 
 type RunningSandbox = {
@@ -37,6 +40,10 @@ function stringMap(value: unknown): Record<string, string> {
 
 function response(res: ServerResponse, status: number, body: Record<string, unknown>) {
   res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body))
+}
+
+async function sendResponse(res: ServerResponse, result: Response) {
+  res.writeHead(result.status, Object.fromEntries(result.headers)).end(Buffer.from(await result.arrayBuffer()))
 }
 
 async function body(request: IncomingMessage) {
@@ -115,7 +122,7 @@ export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) 
     root: input.root,
     executable: process.execPath,
     args: ["--conditions=development", "--import", textImports, "--import", TSX_LOADER, path.join(REPO_ROOT, "packages/workspace-runtime/src/cli.ts")],
-    allowedOrigins: [input.controlPlaneUrl, input.modelUrl],
+    allowedOrigins: [input.controlPlaneUrl, input.relayUrl, input.modelUrl, new URL(input.gitUrl).origin],
     inheritedEnv: {
       PATH: process.env.PATH ?? "",
       ...(process.env.PI_EXECUTABLE ? { PI_EXECUTABLE: process.env.PI_EXECUTABLE } : {}),
@@ -131,7 +138,19 @@ export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) 
   const sandboxes = new Map<string, RunningSandbox>()
   const server = createServer({ key: await readFile(input.key), cert: await readFile(input.certificate) }, async (request, res) => {
     try {
-      const url = new URL(request.url ?? "/", `https://127.0.0.1:${input.port}`)
+      const original = new URL(request.url ?? "/", `https://127.0.0.1:${input.port}`)
+      const outbound = original.pathname === "/__outbound"
+      const outboundTarget = outbound ? request.headers["x-claxedo-e2e-target-url"] : undefined
+      if (outbound && typeof outboundTarget !== "string") return response(res, 400, { error: "outbound target required" })
+      const url = typeof outboundTarget === "string" ? new URL(outboundTarget) : original
+      if (outbound) {
+        const github = await scriptedGithub(request, url)
+        if (github) return sendResponse(res, github)
+        if (url.origin !== `https://127.0.0.1:${input.port}`) {
+          await appendFile(path.join(input.root, "hosted-outbound-attempts.jsonl"), JSON.stringify({ method: request.method, url: url.href }) + "\n")
+          return response(res, 599, { error: "outbound refused by hosted e2e" })
+        }
+      }
       const parts = url.pathname.split("/").filter(Boolean)
       const id = parts[1]
       if (parts[0] === "sandbox" && id && parts[2] === "proxy") {
@@ -161,6 +180,9 @@ export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) 
       if (parts[2] !== "ensure-runtime") return response(res, 404, { error: "unknown action" })
       const payload = await body(request)
       const env = stringMap(payload.env)
+      if (env.WORKSPACE_RUNTIME_GIT_REPO_URL && env.WORKSPACE_RUNTIME_GIT_REPO_URL !== input.gitUrl) {
+        return response(res, 403, { error: "git source refused by hosted sandbox emulator" })
+      }
       const labels = stringMap(payload.labels)
       const workspaceId = env.WORKSPACE_RUNTIME_WORKSPACE_ID
       if (!workspaceId || id !== `claxedo-${workspaceId}` || env.WORKSPACE_RUNTIME_HOST_ID !== id) {
