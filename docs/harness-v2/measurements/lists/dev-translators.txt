@@ -1,0 +1,13 @@
+packages/agent-event-runtime/src/harnesses/acp/classify-tool.ts
+packages/agent-event-runtime/src/harnesses/acp/diagnostics.ts
+packages/agent-event-runtime/src/harnesses/acp/event-translator.ts
+packages/agent-event-runtime/src/harnesses/acp/index.ts
+packages/agent-event-runtime/src/harnesses/acp/state.ts
+packages/agent-event-runtime/src/harnesses/acp/translate-session-update.ts
+packages/agent-event-runtime/src/harnesses/acp/types.ts
+packages/agent-event-runtime/src/harnesses/acp/validation.ts
+packages/agent-event-runtime/src/harnesses/claude/adapter.ts
+packages/agent-event-runtime/src/harnesses/claude/partial-json.ts
+packages/agent-event-runtime/src/harnesses/codex/adapter.ts
+packages/agent-event-runtime/src/harnesses/cursor/adapter.ts
+packages/agent-event-runtime/src/harnesses/pi/adapter.ts

@@ -1,0 +1,8 @@
+packages/agent-sdk-runtime/src/harnesses/pi/agent-dir.ts
+packages/agent-sdk-runtime/src/harnesses/pi/auth.ts
+packages/agent-sdk-runtime/src/harnesses/pi/catalog.ts
+packages/agent-sdk-runtime/src/harnesses/pi/driver.ts
+packages/agent-sdk-runtime/src/harnesses/pi/executable.ts
+packages/agent-sdk-runtime/src/harnesses/pi/index.ts
+packages/agent-sdk-runtime/src/harnesses/pi/rpc-process.ts
+packages/agent-sdk-runtime/src/harnesses/pi/title-extension.ts
