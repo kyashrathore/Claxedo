@@ -159,7 +159,7 @@ import {
 } from "@claxedo/server-core/workspace/store/index"
 import { defaultHomeRegion, relayEndpointsFromEnv } from "@claxedo/server-core/platform/runtime/region/index"
 import { createControlPlaneChannels, mountControlPlaneChannels } from "../../channels/control-plane"
-import { selfHostedOperatorAuthorizer, selfHostedOperatorGuard, selfHostedOperatorSubjects, selfHostedPrivateRepoHosts } from "./operator"
+import { operatorOwnsWorkspace, selfHostedOperatorAuthorizer, selfHostedOperatorGuard, selfHostedPrivateRepoHosts } from "./operator"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "@claxedo/local-server/self-hosted-execution"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import {
@@ -1507,11 +1507,12 @@ export function createSelfHostedApp(
           if (credential.kind !== "runtime") return undefined
           const workspace = await resolveWorkspace({ workspaceId: credential.workspaceId })
           if (!workspace || workspace.kind !== "local") return undefined
-          if (services.auth.config.enabled) {
-            const owner = await services.authority?.resolveWorkspaceOwner?.(credential.workspaceId).catch(() => undefined)
-            if (!owner || !selfHostedOperatorSubjects().has(owner.userId)) return undefined
-          }
-          return appPluginAuthoring({ roots: [workspace.directory] })
+          const owned = await operatorOwnsWorkspace({
+            signed: services.auth.config.enabled,
+            workspaceId: credential.workspaceId,
+            ...(services.authority ? { authority: services.authority } : {}),
+          })
+          return owned ? appPluginAuthoring({ roots: [workspace.directory] }) : undefined
         },
         // This box runs its own workspaces behind the runtime proxy, which
         // picks the workspace from `x-workspace-id`: stamped for a runtime

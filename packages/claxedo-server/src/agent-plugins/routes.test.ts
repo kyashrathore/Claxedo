@@ -603,6 +603,7 @@ describe("hosted Agent Plugins routes", () => {
     expect(builtIn).toMatchObject({ builtIn: true, sourceId: null, sourceAvailable: false, retainedDigest: null })
     expect(Object.fromEntries(builtIn.groups.map((group: { id: string; enabled: boolean }) => [group.id, group.enabled])))
       .toEqual({
+        "app-plugins": false,
         attention: true,
         documents: false,
         processes: true,
