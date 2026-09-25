@@ -66,4 +66,3 @@ export function useModelVisibility() {
   }
 }
 
-export type ModelVisibility = ReturnType<typeof useModelVisibility>

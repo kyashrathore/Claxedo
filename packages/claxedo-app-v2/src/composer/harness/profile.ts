@@ -71,14 +71,6 @@ export function harnessProfile(id: HarnessType) {
   }
 }
 
-export function sessionHarnessIdentity(type: HarnessType) {
-  return type.kind === "native"
-    ? { id: type.harnessId, access: "native" as const }
-    : { id: type.connectionId, access: "connection" as const }
-}
-
-
-
 /** Native SDK harnesses that can be backstopped with a static catalog when live listing fails. */
 export function isNativeSdkHarness(type: HarnessType) {
   return type.kind === "native" && ["claude", "codex", "cursor"].includes(type.harnessId)
@@ -122,8 +114,6 @@ export function isClientDefaultPlaceholder(model?: string | null) {
 }
 
 export function desiredHarness(data: HarnessState): HarnessType | undefined { return pickHarness(data.type) }
-
-export function activeHarness(data: HarnessState): HarnessType | undefined { return pickHarness(data.activeType ?? data.type) }
 
 export function hardFailedHarness(data: HarnessState) { return data.status === "error" || !!data.error }
 

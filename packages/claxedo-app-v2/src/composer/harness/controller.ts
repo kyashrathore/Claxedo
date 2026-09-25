@@ -154,4 +154,3 @@ export function createHarnessSubmitController(store: HarnessSubmitControllerStor
   }
 }
 
-export type HarnessSubmitController = ReturnType<typeof createHarnessSubmitController>

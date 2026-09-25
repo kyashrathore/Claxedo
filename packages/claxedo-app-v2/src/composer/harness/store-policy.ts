@@ -16,10 +16,6 @@ export type HarnessScopeInput = {
   sessionHarness?: HarnessType
 }
 
-export function isDraftScope(scope: string) {
-  return scope.startsWith("draft:")
-}
-
 export function shouldShowModelOptionsStaleWarning(input: {
   stale: boolean
   models: { id: string; name: string }[] | null | undefined
