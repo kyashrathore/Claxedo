@@ -4,7 +4,7 @@ import { SCRIPTED_ACP_HARNESS } from "../harness/acp/connection"
 import { readPermissionReceipts } from "../harness/acp/receipts"
 import { acpScriptToken } from "../harness/acp/script"
 import { startStack } from "../harness/stack"
-import { frameType, type EventStream } from "../harness/stream"
+import { frameSessionId, frameType, type EventStream } from "../harness/stream"
 
 async function pending(api: ClaxedoApi, directory: string, sessionId: string, title: string): Promise<PermissionRow> {
   const deadline = Date.now() + 30_000
@@ -40,14 +40,18 @@ export async function run() {
     await stack.acp.write("h3-once", { steps: [{ kind: "permission", tool: "execute", title: "Run once", text: "once allowed" }] })
     await api.promptAsync(directory, session.id, acpScriptToken("h3-once"))
     const once = await pending(api, directory, session.id, "Run once")
+    const other = await api.createSession(directory, { harness: SCRIPTED_ACP_HARNESS, title: "H3 foreign owner" })
+    await stack.acp.write("h3-foreign", { steps: [{ kind: "permission", tool: "read", title: "Other session request" }] })
+    await api.promptAsync(directory, other.id, acpScriptToken("h3-foreign"))
+    const foreign = await pending(api, directory, other.id, "Other session request")
     const beforeForeign = await readPermissionReceipts(stack.acp.scriptDir)
-    await refused(() => api.replyPermission(directory, "ses_foreign", once.id, "once"), 409)
+    await refused(() => api.replyPermission(directory, session.id, foreign.id, "once"), 409)
     assert.deepEqual(await readPermissionReceipts(stack.acp.scriptDir), beforeForeign, "foreign reply reached the agent")
+    await api.replyPermission(directory, other.id, foreign.id, "reject")
     await api.replyPermission(directory, session.id, once.id, "once")
-    await stream.waitFor((frame) => frameType(frame) === "session.idle", { label: "once turn idle" })
+    await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id, { label: "once turn idle" })
     const afterOnce = await readPermissionReceipts(stack.acp.scriptDir)
-    assert.equal(afterOnce.length, 1)
-    assert.equal(afterOnce[0]?.optionId, "allow-once")
+    assert.equal(afterOnce.find((row) => row.title === "Run once")?.optionId, "allow-once")
     await refused(() => api.replyPermission(directory, session.id, once.id, "once"), 404)
     assert.deepEqual(await readPermissionReceipts(stack.acp.scriptDir), afterOnce, "duplicate reply reached the agent")
 
@@ -67,14 +71,14 @@ export async function run() {
       "the agent did not receive both identical calls")
     assert.equal(granted.find((row) => row.title === "Same command")?.optionId, "allow-always")
     await api.replyPermission(directory, session.id, different.id, "once")
-    await stream.waitFor((frame) => frameType(frame) === "session.idle" && permissionFrames(stream, session.id, "permission.replied").length >= 3,
+    await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id && permissionFrames(stream, session.id, "permission.replied").length >= 3,
       { label: "always turn idle" })
 
     await stack.acp.write("h3-deny", { steps: [{ kind: "permission", tool: "execute", title: "Denied command" }] })
     await api.promptAsync(directory, session.id, acpScriptToken("h3-deny"))
     const deny = await pending(api, directory, session.id, "Denied command")
     await api.replyPermission(directory, session.id, deny.id, "reject")
-    await stream.waitFor((frame) => frameType(frame) === "session.idle" && permissionFrames(stream, session.id, "permission.replied").length >= 4,
+    await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id && permissionFrames(stream, session.id, "permission.replied").length >= 4,
       { label: "deny turn idle" })
     const afterDeny = await readPermissionReceipts(stack.acp.scriptDir)
     assert.equal(afterDeny.find((row) => row.title === "Denied command")?.optionId, "reject-once")
@@ -86,9 +90,9 @@ export async function run() {
     const messages = await api.messages(directory, session.id)
     const tools = messages.flatMap((message) => message.parts).filter((part) => part.type === "tool")
     assert.ok(tools.some((part) => (part.state as { status?: string } | undefined)?.status === "completed"))
-    assert.ok(tools.some((part) => (part.state as { status?: string } | undefined)?.status === "failed"))
+    assert.ok(tools.some((part) => (part.state as { status?: string } | undefined)?.status === "error"))
     assert.equal(permissionFrames(stream, session.id, "permission.asked").length, 4)
-    assert.equal(permissionFrames(stream, session.id, "permission.replied").length, 4)
+    assert.equal(permissionFrames(stream, session.id, "permission.replied").length, 5)
     assert.deepEqual(stack.egress.attempts, [])
     console.log("H3 ACP: once, always, deny, refused 409/404 replies; live frames, stored tools, session and permission readbacks passed")
   } finally {

@@ -1,9 +1,11 @@
 import fs from "node:fs/promises"
 import path from "node:path"
-import type { PlanEntry, StopReason, ToolCallContent, ToolCallLocation, ToolKind } from "@agentclientprotocol/sdk"
+import type { PlanEntry, PromptResponse, StopReason, ToolCallContent, ToolCallLocation, ToolKind } from "@agentclientprotocol/sdk"
 
 export const ACP_SCRIPT_DIR_ENV = "SCRIPTED_ACP_DIR"
 export const ACP_RED_ENV = "SCRIPTED_ACP_RED"
+export const ACP_WITHHOLD_ONCE_ENV = "SCRIPTED_ACP_WITHHOLD_ONCE_OPTION"
+export const ACP_FAULT_ENV = "SCRIPTED_ACP_FAULT"
 
 const SCRIPT_TOKEN = /acp-script:([A-Za-z0-9._-]+)/g
 
@@ -28,13 +30,13 @@ export type AcpStep =
   | AcpToolStep
   | { kind: "diff"; path: string; oldText: string | null; newText: string; title?: string }
   | { kind: "permission"; tool: ToolKind; title: string; path?: string; input?: Record<string, unknown>; text?: string }
-  | { kind: "question"; message: string; options?: string[] }
+  | { kind: "question"; message: string; options?: string[]; mode?: "form" | "url"; url?: string; schema?: Record<string, unknown> }
   | { kind: "subagent"; name: string; task: string; steps: AcpStep[] }
   | { kind: "hold"; name: string }
   | { kind: "error"; message: string }
   | { kind: "stop"; reason: StopReason }
 
-export type AcpScript = { steps: AcpStep[]; stopReason?: StopReason }
+export type AcpScript = { steps: AcpStep[]; stopReason?: StopReason; usage?: PromptResponse["usage"] }
 
 export function acpScriptToken(name: string) {
   return `acp-script:${name}`
