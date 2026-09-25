@@ -1,10 +1,5 @@
-import type { PlacementId, PlacementKind, SessionRef } from "@/server"
-import {
-  harnessHasConfigOptions,
-  pickHarness,
-  type HarnessState,
-  type HarnessType,
-} from "./profile"
+import type { HarnessState, PlacementId, PlacementKind, SessionConfig, SessionRef } from "@/server"
+import { harnessHasConfigOptions, type HarnessType } from "./profile"
 
 export const MODEL_OPTIONS_RETRY_LIMIT = 5
 
@@ -55,13 +50,9 @@ export function shouldHydrateDraftFromHarnessStatus(input: { placementKind?: Pla
   return input.placementKind !== undefined && input.placementKind !== "cloud"
 }
 
-export function harnessStateFromSessionConfig(input: {
-  harness?: HarnessState
-  model?: { providerId?: string | null; modelId?: string | null } | null
-  variant?: string
-}): HarnessState | undefined {
+export function harnessStateFromSessionConfig(input: SessionConfig): HarnessState | undefined {
   const harness = input.harness
-  const type = pickHarness(harness?.type)
+  const type = harness?.type
   if (!harness || !type) return undefined
   return {
     ...harness,

@@ -7,7 +7,7 @@ import { createHarnessModelWriter, type HarnessSessionModelSyncCache, type Sessi
 import { createHarnessStore } from "./harness-store"
 import { createHarnessStatusActions } from "./harness-status-actions"
 import type { HarnessScopeInput } from "./store-policy"
-import { decodeHarnessState, harnessHasConfigOptions, harnessSelectionId, isCatalogHarness } from "./profile"
+import { harnessHasConfigOptions, harnessSelectionId, isCatalogHarness } from "./profile"
 import { harnessHealthReadiness } from "./store-state"
 import type { HarnessType } from "./profile"
 import type { DraftDefaultLabels, DraftDefaultStorage } from "./draft-defaults"
@@ -246,9 +246,10 @@ export function createHarnessConfigStore(server: Server, storage: DraftDefaultSt
     if (!input?.placementId || harnessStore.heldHarness(scope)) return
     const current = harnessStore.read(scope)
     if (!current.harness) return
-    const res = await api.folderHarness(input.placementId, input.sessionId).catch(() => undefined)
-    if (!res?.ok) return
-    const data = decodeHarnessState(await res.json().catch(() => undefined))
+    const data = await api.folderHarness(input.placementId, input.sessionId).catch((error: unknown) => {
+      console.warn(`The harness health probe for placement ${input.placementId} failed`, error)
+      return undefined
+    })
     if (!data) return
     const held = harnessStore.read(scope)
     if (held.harness?.kind !== current.harness.kind || (held.harness.kind === "connection" && (current.harness.kind !== "connection" || held.harness.connectionId !== current.harness.connectionId))) return
@@ -269,12 +270,11 @@ export function createHarnessConfigStore(server: Server, storage: DraftDefaultSt
     const ref = input.sessionRef
     if (!held || !ref) return
     const model = harnessStore.harnessModelKeyForSubmit(scope)
-    const res = await api.updateSessionConfig(ref, {
+    await api.updateSessionConfig(ref, {
       harness: harnessSelectionId(held),
       ...(model ? { model: { providerId: model.providerId, modelId: model.modelId } } : {}),
       ...(model?.variant ? { variant: model.variant } : {}),
     })
-    if (!res.ok) throw new Error((await res.text().catch(() => "")) || `session config save failed: ${res.status}`)
     harnessStore.releaseHeldHarness(scope)
   }
 

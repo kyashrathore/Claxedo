@@ -93,9 +93,9 @@ export function decodeDraftDefaultRecord(input: string | null) {
     const row = asRecord(JSON.parse(input))
     if (!row) return undefined
     if (row.version !== VERSION) return undefined
-    const record = decodeRecord(row)
-    return record
-  } catch {
+    return decodeRecord(row)
+  } catch (error) {
+    console.warn("A saved draft default is not JSON and is ignored", error)
     return undefined
   }
 }
@@ -214,7 +214,8 @@ function decodeLabels(input: unknown): DraftDefaultLabels | undefined {
 function safeRead(storage: DraftDefaultStorage, key: string) {
   try {
     return decodeDraftDefaultRecord(storage.getItem(key))
-  } catch {
+  } catch (error) {
+    console.warn(`The draft default ${key} could not be read`, error)
     return undefined
   }
 }
@@ -223,7 +224,8 @@ function safeWrite(storage: DraftDefaultStorage, key: string, record: DraftDefau
   try {
     storage.setItem(key, JSON.stringify(storedRecord(record)))
     return true
-  } catch {
+  } catch (error) {
+    console.warn(`The draft default ${key} could not be saved`, error)
     return false
   }
 }
@@ -231,7 +233,9 @@ function safeWrite(storage: DraftDefaultStorage, key: string, record: DraftDefau
 function safeRemove(storage: DraftDefaultStorage, key: string) {
   try {
     storage.removeItem?.(key)
-  } catch {}
+  } catch (error) {
+    console.warn(`The moved draft default ${key} could not be removed`, error)
+  }
 }
 
 function id(input: unknown) {

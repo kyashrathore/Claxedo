@@ -21,7 +21,7 @@ export type HarnessSessionModelSyncCache = {
 export function syncHarnessSessionModel(input: {
   key: string
   model: string
-  request: () => Promise<Response>
+  request: () => Promise<void>
   cache: HarnessSessionModelSyncCache
 }) {
   const current = input.cache.getState(input.key) ?? {}
@@ -35,8 +35,7 @@ export function syncHarnessSessionModel(input: {
   if (pending) return pending
 
   const run = input.request()
-    .then(async (res) => {
-      if (!res.ok) throw new Error((await res.text().catch(() => "")) || `Failed to update session model (${res.status})`)
+    .then(() => {
       const latest = input.cache.getState(input.key)
       if (latest?.desired !== input.model) return
       input.cache.setState(input.key, {
@@ -61,7 +60,7 @@ export function createHarnessModelWriter<ScopeInput extends HarnessScopeInput>(i
   reloadOptions(scope: string, params?: ScopeInput): Promise<void> | void
   rememberDraftModel(scope: string, model: ModelChoice, input?: ScopeInput, labels?: DraftDefaultLabels): void
   runtime: {
-    setSessionModel(ref: SessionRef, model: ModelChoice): Promise<Response>
+    setSessionModel(ref: SessionRef, model: ModelChoice): Promise<void>
   }
   cache: HarnessSessionModelSyncCache
 }) {
@@ -117,7 +116,7 @@ export function createHarnessModelWriter<ScopeInput extends HarnessScopeInput>(i
 
   /** Settles once the scope's in-flight model save has landed or been rolled back. */
   const settledModel = async (scope: string) => {
-    await saving.get(scope)?.catch(() => undefined)
+    await Promise.allSettled([saving.get(scope)])
   }
 
   return {

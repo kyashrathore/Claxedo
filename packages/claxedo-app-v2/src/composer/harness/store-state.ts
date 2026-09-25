@@ -1,12 +1,8 @@
-import type { HarnessOptionChoice, HarnessOptionsSource } from "@/server"
+import type { HarnessConnectionState, HarnessHealth, HarnessOptionChoice, HarnessOptionsSource, HarnessState } from "@/server"
 import type { HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
 import {
-  desiredHarness,
   hardFailedHarness,
   harnessHasConfigOptions,
-  type HarnessHealthStatus,
-  type HarnessConnectionState,
-  type HarnessState,
   type HarnessType,
 } from "./profile"
 import { harnessMode, type HarnessReadiness } from "./selection"
@@ -91,7 +87,7 @@ export function harnessStatusPatch(input: {
   data: HarnessState
   current?: HarnessStoreState
 }): HarnessStorePatch {
-  const want = desiredHarness(input.data) ?? input.current?.harness
+  const want = input.data.type ?? input.current?.harness
   if (!want) return {
     harnessMode: "unknown",
     readiness: input.data.ready === false || hardFailedHarness(input.data) ? "error" : "unresolved",
@@ -195,7 +191,7 @@ export function harnessSwitchStartPatch(input: {
 export function harnessHealthReadiness(input: {
   harness?: HarnessType
   current: HarnessReadiness
-  health?: HarnessHealthStatus
+  health?: HarnessHealth["status"]
 }): HarnessReadiness | undefined {
   if (!input.harness) return undefined
   if (input.health === "degraded" || input.health === "unavailable") {
