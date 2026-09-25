@@ -60,8 +60,11 @@ function later(run: () => void) {
   return () => clearTimeout(timer)
 }
 
-function frame(run: () => void) {
-  if (typeof requestAnimationFrame !== "function") return later(run)
+function nextFrame(run: () => void) {
+  if (typeof requestAnimationFrame !== "function") {
+    const timer = setTimeout(run, 16)
+    return () => clearTimeout(timer)
+  }
   const timer = setTimeout(run, NO_FRAME_FLUSH_MS)
   const handle = requestAnimationFrame(run)
   return () => {
@@ -70,7 +73,7 @@ function frame(run: () => void) {
   }
 }
 
-const browserWake: Wake = { frame, later }
+const browserWake: Wake = { frame: nextFrame, later }
 
 export function createCoalescer(
   emit: (events: readonly ServerEvent[]) => void,
