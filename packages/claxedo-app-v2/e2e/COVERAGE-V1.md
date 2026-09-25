@@ -2,7 +2,7 @@
 
 Today's app has 58 Playwright specs in `packages/claxedo-app/e2e/playwright/`, 39,556 lines. 38 of them import `mock-runtime.ts`, the hand-written fake of the server (measured on this tree; the plan's 32 predates six more). Every user-visible behavior those specs assert is listed here against the v2 flow that must assert it, or as dropped with the reason. v2 flows run on the real stack only, so a behavior a mocked spec reached by faking a server answer is asserted in v2 by producing that answer for real: a scripted model reply, a scripted ACP step, the local sandbox driver, or the Worker.
 
-Flow numbers are the plan's flow table. "On feat/app-v2" means the flow file exists there today; the owning lane still has to assert every behavior listed against it.
+Flow numbers are the plan's flow table. "On feat/app-v2" means the flow file exists there today; the owning lane still has to assert every behavior listed against it. Since the parity phase every baseline flow takes v1's path on both apps (v1's accessible names and routes, `harness/ui-names.ts`), so a behavior listed here is asserted the way v1 shows it.
 
 ## By v1 spec
 
@@ -17,7 +17,7 @@ Flow numbers are the plan's flow table. "On feat/app-v2" means the flow file exi
 | core-cloud-provisioning | 1012 | mocked | 24, 32 | the provisioning pipeline unlocks on ready and a send completes; reload resumes at the current step; a rejected create shows the failure, creates nothing and keeps the draft; the hosted wizard creates the first cloud workspace | |
 | core-codex-theme-contract | 213 | mocked | 29 | Codex surface and geometry tokens in both schemes; forced colors keep a visible edge | |
 | core-composer-hosted-chips | 242 | mocked | 32 | project, environment (cloud only on web), workspace and branch chips; a branch prepares a new cloud workspace | |
-| core-composer-modes | 717 | mocked | 6 | builtin slash commands fire, custom ones insert; Escape closes a popover, then stops a turn; Shift+Enter newline; `@` pills reach the payload; attachments, image marks with numbered regions, paste and drop; opaque files by harness; image-only prompts; drafts, pills and images survive reload and stay scoped to their surface | `!` shell mode: not in the plan's composer list, needs a ruling |
+| core-composer-modes | 717 | mocked | 6 | `!` enters shell mode and backspace on empty leaves it; builtin slash commands fire, custom ones insert; Escape closes a popover, then stops a turn; Shift+Enter newline; `@` pills reach the payload; attachments, image marks with numbered regions, paste and drop; opaque files by harness; image-only prompts; drafts, pills and images survive reload and stay scoped to their surface | |
 | core-dead-workspace-sessions | 440 | mocked | 10, 2 | a workspace whose runtime is gone still lists and opens its stored sessions; project-scoped lists by id; an empty inventory shows its notice, not a spinner | |
 | core-deployment-posture | 156 | mocked | 1, 21 | a daemon that issues no sessions renders the workbench unsigned; a signed node or central sends a visitor to sign-in; a refused declaration holds the gate | |
 | core-docks | 896 | mocked | 8, 3 | the permission dock blocks the composer; Allow once, Deny, Allow always with the danger gate; answered requests stay gone across session switches and replays; the question wizard: single, multi with Back/Next, multiple choice, custom answer, minimize, Dismiss/Escape, keyboard; the todo dock survives reload | |
@@ -32,10 +32,10 @@ Flow numbers are the plan's flow table. "On feat/app-v2" means the flow file exi
 | core-permission-mode-picker | 196 | mocked | 6, 8 | modes per harness; switching harness replaces them; a mode chosen before the first message rides on it; a live change is written to the runtime | |
 | core-processes | 1045 | mocked | — | | the Processes pane goes (decided A3) |
 | core-queued-messages | 179 | mocked | 4, 11 | queued bubbles with edit-in-place and Escape; they leave virtual rows and the reader's position alone | |
-| core-session-actions | 807 | mocked | 10, 9 | rename inline and from the menu, Escape cancels, a failed rename keeps the editor; archive navigates away; delete confirms by name; a child session has a read-only composer, a breadcrumb back, and its permissions bubble to the parent; tab titles follow | fork and revert/unrevert: not in the plan's Stays table, needs a ruling |
+| core-session-actions | 807 | mocked | 10, 9, 11 | fork a message into a new session with its draft restored; revert prefills the composer and shows the revert dock, restoring the row unreverts (flow 11 owns message actions); rename inline and from the menu, Escape cancels, a failed rename keeps the editor; archive navigates away; delete confirms by name; a child session has a read-only composer, a breadcrumb back, and its permissions bubble to the parent; tab titles follow | |
 | core-session-rendering-navigation | 325 | mocked | 12, 11, 1 | Back/Forward keep a visit; a new terminal keeps focus; one steady logo through boot; the permission control keeps composer geometry; a file selection returns per session; a human turn elsewhere reorders the list | |
 | core-session-share-levels | 276 | mocked | 23, 36 | follow grants need no disclosure; send grants do, and reach the server only after it; downgrade and revoke from the row; a send grantee composes as a workspace viewer; a follow grantee cannot send as an owner | |
-| core-settings-auth | 1672 | mocked | 15, 21, 17 | sections and mobile nav; account and sign-out; appearance preview and commit; notifications; shortcut search, rebind, conflict, reset; provider connect and disconnect, env-locked providers; the Models catalog; GitHub and MCP connections with OAuth and secret hygiene; sandbox providers and credentials; `/login` and `/cli-login`; the init error page | update checks on web (desktop only, flow 25); network-policy settings: open decision |
+| core-settings-auth | 1672 | mocked | 15, 21, 17 | sections and mobile nav; account and sign-out; appearance preview and commit; notifications; shortcut search, rebind, conflict, reset; provider connect and disconnect, env-locked providers; the Models catalog; GitHub and MCP connections with OAuth and secret hygiene; sandbox providers and credentials; `/login` and `/cli-login`; the init error page | update checks on web (desktop only, flow 25); network-policy settings: pending owner decision 4 |
 | core-sidebar-tree | 1047 | mocked | 10, 31, 33 | status dots working → done from events and after reload; activation; pagination without duplicates; archive from the row; archiving the only session; a harness session appears on its lifecycle event; collapse, peek and resize; the phone drawer | project/workspace tree, Group by and view filters: the flat list is decided |
 | core-source-control | 1257 | mocked | 14 | the Changes navigator; stage, unstage, commit (⌘⏎); review modes; compare and base pickers; graph commits; Create PR link; a rejected push; maximize and restore | |
 | core-terminal | 956 | mocked | 13 | the creator offers installed agents and custom commands; typing and output; refit on split; lifecycle status dots survive reload and clear on focus; auto-rename spares user titles; reload reattaches the PTY | |
@@ -85,8 +85,8 @@ Flow numbers are the plan's flow table. "On feat/app-v2" means the flow file exi
 | 12 Workbench and shell | yes | panes-split-tabs, session-rendering-navigation, boot-deep-links-home |
 | 13 Terminal | yes | terminal, desktop-live-terminal-tui, desktop-terminal-launch-once, server-mediated-core |
 | 14 Review | yes | source-control, first-prompt-local (base branch), workspace-lifecycle (worktrees), desktop-worktree-recovery |
-| 15 Settings | no | settings-auth, machines-named |
-| 16 Usage | no | usage-dashboard, desktop-unsigned-embedded, real-harness-local |
+| 15 Settings | yes | settings-auth, machines-named |
+| 16 Usage | yes | usage-dashboard, desktop-unsigned-embedded, real-harness-local |
 | 17 Marketplace | no | desktop-unsigned-embedded, settings-auth (connections) |
 | 18 Tasks | no | new in v2 as a plugin; v1 had no spec |
 | 19 Pages | no | documents-core, desktop-repository-document |
@@ -107,9 +107,10 @@ Flow numbers are the plan's flow table. "On feat/app-v2" means the flow file exi
 | 34, 35 Live plugins | no | new in v2 |
 | 36 Access | no | cloud-offline-roles (roles), session-share-levels, web-signed-org-team-multiplayer, session-directory-isolation |
 
-## Needs a ruling
+## Gaps v2 must close
 
-Behaviors today's specs assert that the plan neither keeps nor drops:
-- the composer's `!` shell mode (core-composer-modes);
-- fork, revert and unrevert of messages (core-session-actions);
-- network-policy settings (core-settings-auth), listed as open in the plan.
+Behaviors v1 asserts that stay (they are not on the plan's "Goes" list) and v2 does not have yet. Each belongs to session-screen:
+- the composer's `!` shell mode, entered by `!` and left by backspace on an empty draft (flow 6);
+- message fork into a new session, and revert/unrevert with the revert dock (flow 11).
+
+Pending owner decision 4: network-policy settings (core-settings-auth).

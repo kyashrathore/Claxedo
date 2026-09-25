@@ -1,2 +1,3 @@
 export { ReviewProvider } from "./store"
-export { changesPanelTab } from "./panel-tab"
+export { ReviewTab, type ReviewFocus, type ReviewTabProps } from "./view/review-tab"
+export { SourceControlView, type SourceControlViewProps } from "./view/source-control-view"

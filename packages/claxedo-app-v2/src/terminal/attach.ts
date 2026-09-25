@@ -102,7 +102,7 @@ async function decideAfterClose(state: AttachState, error: AppError): Promise<vo
   const presence = await state.input.server.terminals.presence(state.input.placementId, state.input.terminalId)
   if (state.disposed) return
   const decision = decideReconnect({ presence, attempt })
-  if (decision.kind === "gone") return emit(state, { type: "gone" })
+  if (decision.kind === "gone") return emit(state, { type: "ended" })
   if (decision.kind === "giveUp") return emit(state, { type: "failed", failure: "closed", error })
   state.timer.schedule(decision.delayMs, () => {
     emit(state, { type: "retry" })
@@ -121,8 +121,8 @@ function recover(state: AttachState, close: TerminalStreamClose): void {
 function handleClose(state: AttachState, close: TerminalStreamClose): void {
   if (state.disposed) return
   state.stream = undefined
-  if (close.code === NORMAL_CLOSE) return emit(state, { type: "exited" })
-  if (close.code === POLICY_CLOSE) return emit(state, { type: "gone" })
+  if (close.code === NORMAL_CLOSE) return emit(state, { type: "ended" })
+  if (close.code === POLICY_CLOSE) return emit(state, { type: "ended" })
   if (close.code === OVERLOAD_CLOSE) return
   if (!isRetriableClose(close.code)) return emit(state, { type: "failed", failure: "closed", error: closeError(close) })
   recover(state, close)

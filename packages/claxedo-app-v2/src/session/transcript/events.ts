@@ -1,9 +1,9 @@
 import { unreachable } from "@/lib/machine"
 import type { ServerEvent, TranscriptMessage } from "@/server"
 import type { TranscriptContext } from "./context"
-import { removeMessage, removePart, upsertMessage, upsertPart } from "./conversation"
+import { appendDelta, removeMessage, removePart, upsertMessage, upsertPart } from "./conversation"
 import { isPresentationMessage } from "./merge"
-import { isReading, isTranscriptEvent, type TranscriptEvent } from "./model"
+import { isHolding, isTranscriptEvent, type TranscriptEvent } from "./model"
 
 function upsertInfo(context: TranscriptContext, info: TranscriptMessage): void {
   if (!isPresentationMessage(info)) return
@@ -22,7 +22,7 @@ export function applyTranscriptEvent(context: TranscriptContext, event: Transcri
     case "partRemoved":
       return removePart(context.setData, event.messageId, event.partId)
     case "todosChanged":
-      return context.setData("todos", [...event.todos])
+      return context.todos.changed(event.todos)
     case "diffChanged":
       return context.setData("diff", [...event.diff])
     case "goalChanged":
@@ -33,9 +33,10 @@ export function applyTranscriptEvent(context: TranscriptContext, event: Transcri
 }
 
 export function applyServerEvent(context: TranscriptContext, event: ServerEvent): void {
-  if (event.type === "partDelta") return context.deltas.add(event.messageId, event.partId, event.field, event.delta)
+  if (event.type === "partDelta") return appendDelta(context.setData, context.data, event.messageId, event.partId, event.field, event.delta)
   if (event.type === "statusChanged") return void context.queue.reread()
+  if (event.type === "subagentUpdated") return context.subagents.apply(event.subagent)
   if (!isTranscriptEvent(event)) return
-  if (isReading(context.phase.state())) return context.phase.send({ type: "held", event })
+  if (isHolding(context.phase.state())) return context.phase.send({ type: "held", event })
   applyTranscriptEvent(context, event)
 }

@@ -58,7 +58,9 @@ function aggregate(states: readonly ConnectionState[]): ConnectionState {
   const offline = states.find((state) => state.kind === "offline")
   if (offline) return offline
   const reconnecting = states.filter((state): state is Extract<ConnectionState, { kind: "reconnecting" }> => state.kind === "reconnecting")
-  if (reconnecting.length > 0) return { kind: "reconnecting", attempt: Math.max(...reconnecting.map((state) => state.attempt)) }
+  if (reconnecting.length > 0) {
+    return { kind: "reconnecting", attempt: Math.max(...reconnecting.map((state) => state.attempt)), afterLive: reconnecting.some((state) => state.afterLive) }
+  }
   if (states.some((state) => state.kind === "connecting")) return { kind: "connecting" }
   return { kind: "connected" }
 }
@@ -72,7 +74,7 @@ type StreamsInput = {
 }
 
 function openEventsAt(input: StreamsInput, path: string, socket: boolean, report: () => void): Stream {
-  const { config, transport } = input
+  const { transport } = input
   return openStream({
     open: ({ headers, signal }) => {
       if (socket) return eventSocketResponse(new URL(path, `${transport.serverUrl}/`), headers, signal)
@@ -81,7 +83,6 @@ function openEventsAt(input: StreamsInput, path: string, socket: boolean, report
     onFrame: input.onFrame,
     onGap: input.onGap,
     onState: report,
-    ...(config.maxReconnectAttempts !== undefined ? { maxAttempts: config.maxReconnectAttempts } : {}),
   })
 }
 

@@ -11,6 +11,7 @@ export type UsageRequest = {
   readonly after?: string
   readonly modelAfter?: string
   readonly limit?: number
+  readonly refreshNonce?: number
 }
 
 export type UsageSummary = UnifiedUsageResponse

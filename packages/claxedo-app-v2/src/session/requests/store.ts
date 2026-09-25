@@ -1,5 +1,5 @@
 import { createMemo, createSignal, type Accessor } from "solid-js"
-import type { AgentRequest, AgentRequestReply, RequestId, Server, ServerEvent, SessionId, SessionRef } from "@/server"
+import type { AgentRequest, AgentRequestReply, AppError, RequestId, Server, ServerEvent, SessionId, SessionRef } from "@/server"
 import type { RequestState } from "@/session"
 import { toAppError } from "./app-error"
 import { EXPIRED, applyRequestsEvent, initialRequestsData, isOpenRequest, type RequestsData, type RequestsEvent } from "./model"
@@ -12,6 +12,8 @@ export type RequestsInternal = {
   readonly stateOf: (requestId: RequestId) => RequestState
   readonly apply: (event: ServerEvent) => void
   readonly read: (ref: SessionRef, requests: readonly AgentRequest[], sentAt: number) => void
+  readonly readFailed: (ref: SessionRef, error: AppError) => void
+  readonly readErrorFor: (sessionId: SessionId) => AppError | undefined
   readonly applyReads: (reads: readonly RequestsRead[], sentAt: number) => void
   readonly reply: (ref: SessionRef, requestId: RequestId, reply: AgentRequestReply) => Promise<void>
 }
@@ -55,7 +57,19 @@ export function createRequests(server: Server): RequestsInternal {
   const [data, setData] = createSignal(initialRequestsData)
   const send = (event: RequestsEvent) => setData((current) => applyRequestsEvent(current, event))
   const openBySession = createMemo(() => openRequestsBySession(data()))
-  const read = (ref: SessionRef, requests: readonly AgentRequest[], sentAt: number) => send({ type: "read", ref, requests, sentAt })
+  const [readErrors, setReadErrors] = createSignal<ReadonlyMap<SessionId, AppError>>(new Map())
+  const setReadError = (sessionId: SessionId, error: AppError | undefined) =>
+    setReadErrors((current) => {
+      if (!error && !current.has(sessionId)) return current
+      const next = new Map(current)
+      if (error) next.set(sessionId, error)
+      else next.delete(sessionId)
+      return next
+    })
+  const read = (ref: SessionRef, requests: readonly AgentRequest[], sentAt: number) => {
+    setReadError(ref.sessionId, undefined)
+    send({ type: "read", ref, requests, sentAt })
+  }
   return {
     openBySession,
     openFor: (sessionId) => openBySession().get(sessionId) ?? NO_REQUESTS,
@@ -65,6 +79,8 @@ export function createRequests(server: Server): RequestsInternal {
       if (next) send(next)
     },
     read,
+    readFailed: (ref, error) => setReadError(ref.sessionId, error),
+    readErrorFor: (sessionId) => readErrors().get(sessionId),
     applyReads: (reads, sentAt) => {
       for (const item of reads) read(item.ref, item.requests, sentAt)
     },

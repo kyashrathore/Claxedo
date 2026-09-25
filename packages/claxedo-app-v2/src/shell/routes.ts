@@ -1,12 +1,14 @@
 import { placementId, sessionId, terminalId } from "@/server"
-import type { PlacementId, SessionId, SessionRef, TerminalId } from "@/server"
-import type { PageEntry, RouteEntry } from "./types"
+import type { MachineId, Placement, PlacementId, SessionId, SessionRef, TerminalId } from "@/server"
+import type { PageEntry, PaneRoute, RouteEntry } from "./types"
 
 export type RouteParams = Readonly<Record<string, string>>
 
 export type ShellRoute =
   | { readonly kind: "home" }
+  | { readonly kind: "draft"; readonly placementId: PlacementId }
   | { readonly kind: "session"; readonly placementId: PlacementId; readonly sessionId: SessionId }
+  | { readonly kind: "localSession"; readonly sessionId: SessionId }
   | { readonly kind: "terminal"; readonly placementId: PlacementId; readonly terminalId: TerminalId }
   | { readonly kind: "page"; readonly page: PageEntry; readonly params: RouteParams }
   | { readonly kind: "screen"; readonly screen: RouteEntry; readonly params: RouteParams }
@@ -14,12 +16,29 @@ export type ShellRoute =
 
 export const homePath = "/"
 
+export function draftPath(placement: PlacementId): string {
+  return `/w/${encodeURIComponent(placement)}/session`
+}
+
 export function sessionPath(ref: Pick<SessionRef, "placementId" | "sessionId">): string {
-  return `/w/${encodeURIComponent(ref.placementId)}/s/${encodeURIComponent(ref.sessionId)}`
+  return `${draftPath(ref.placementId)}/${encodeURIComponent(ref.sessionId)}`
+}
+
+export function localSessionPath(session: SessionId): string {
+  return `/s/${encodeURIComponent(session)}`
+}
+
+export function sessionLinkPath(
+  ref: Pick<SessionRef, "placementId" | "sessionId">,
+  placement: Placement | undefined,
+  thisMachine: MachineId | undefined,
+): string {
+  const local = !!placement && !!thisMachine && placement.kind !== "cloud" && placement.machineId === thisMachine
+  return local ? localSessionPath(ref.sessionId) : sessionPath(ref)
 }
 
 export function terminalPath(placement: PlacementId, terminal: TerminalId): string {
-  return `/w/${encodeURIComponent(placement)}/t/${encodeURIComponent(terminal)}`
+  return `/w/${encodeURIComponent(placement)}/terminal/${encodeURIComponent(terminal)}`
 }
 
 export function settingsPath(section?: string): string {
@@ -76,9 +95,13 @@ export function parseRoute(
     if (params) return { kind: "screen", screen, params }
   }
   if (pathname === "/" || pathname === "") return { kind: "home" }
-  const session = matchPattern("/w/:placementId/s/:sessionId", pathname)
+  const local = matchPattern("/s/:sessionId", pathname)
+  if (local) return { kind: "localSession", sessionId: sessionId(local.sessionId) }
+  const draft = matchPattern("/w/:placementId/session", pathname)
+  if (draft) return { kind: "draft", placementId: placementId(draft.placementId) }
+  const session = matchPattern("/w/:placementId/session/:sessionId", pathname)
   if (session) return { kind: "session", placementId: placementId(session.placementId), sessionId: sessionId(session.sessionId) }
-  const terminal = matchPattern("/w/:placementId/t/:terminalId", pathname)
+  const terminal = matchPattern("/w/:placementId/terminal/:terminalId", pathname)
   if (terminal) {
     return { kind: "terminal", placementId: placementId(terminal.placementId), terminalId: terminalId(terminal.terminalId) }
   }
@@ -91,7 +114,11 @@ export function parseRoute(
 }
 
 export function placementOf(route: ShellRoute): PlacementId | undefined {
-  return route.kind === "session" || route.kind === "terminal" ? route.placementId : undefined
+  return route.kind === "draft" || route.kind === "session" || route.kind === "terminal" ? route.placementId : undefined
+}
+
+export function panePlacementOf(route: PaneRoute | undefined): PlacementId | undefined {
+  return route && route.kind !== "pageTab" ? route.placementId : undefined
 }
 
 export function sidebarModeOf(route: ShellRoute): "main" | "settings" {

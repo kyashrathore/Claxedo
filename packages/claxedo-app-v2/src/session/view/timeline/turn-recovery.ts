@@ -91,12 +91,6 @@ export function sessionRecoveryClass(error: unknown): SessionErrorClass {
   return "unknown"
 }
 
-export function isTurnAdmissionConflict(error: unknown) {
-  const data = asRecord(asRecord(error)?.data)
-  return data?.code === "turn_already_active" ||
-    data?.code === "session_turn_in_progress" ||
-    data?.message === "Session is already processing a message"
-}
 
 /** A completed tool step can precede the turn's actual answer under the same parent. */
 export function isSettledTurnAssistant(message: FirstTurnMessage): message is Extract<FirstTurnMessage, { role: "assistant" }> {

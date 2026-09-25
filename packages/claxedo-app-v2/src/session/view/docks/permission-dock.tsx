@@ -1,14 +1,14 @@
-import { useErrorCopy } from "@/composer"
 import { For, Show } from "solid-js"
 import type { AgentPermission, AgentPermissionReply } from "@claxedo/agent-runtime-contract"
 import type { AgentRequestReply } from "@/server"
+import type { RequestState } from "@/session"
 import { DockPrompt } from "@/transcript"
-import { Button, Icon } from "@/ui"
+import { ClaxedoIcon as Icon, Button } from "@/ui"
 import { isRecord } from "@/lib/record"
 import type { SessionScreenTextKey } from "../i18n"
 import { useSessionScreenText } from "../text"
 import { createDockAction } from "./dock-action"
-import { createRequestReply } from "./request-reply"
+import { replyError } from "./model"
 
 const TOOL_KEYS: Readonly<Record<string, SessionScreenTextKey>> = {
   read: "sessionScreen.permission.tool.read",
@@ -123,10 +123,10 @@ function PermissionFooter(props: {
               <Button variant="ghost" size="normal" disabled={props.busy} onClick={() => props.onDecide("reject")}>
                 {t("sessionScreen.permission.deny")}
               </Button>
-              <Button variant="neutral" size="normal" disabled={props.busy} onClick={() => props.onDecide("always")}>
+              <Button variant="secondary" size="normal" disabled={props.busy} onClick={() => props.onDecide("always")}>
                 {t("sessionScreen.permission.allowAlways")}
               </Button>
-              <Button variant="contrast" size="normal" disabled={props.busy} onClick={() => props.onDecide("once")}>
+              <Button variant="primary" size="normal" disabled={props.busy} onClick={() => props.onDecide("once")}>
                 {t("sessionScreen.permission.allowOnce")}
               </Button>
             </>
@@ -135,7 +135,7 @@ function PermissionFooter(props: {
           {(options) => (
             <For each={options()}>
               {(option) => (
-                <Button variant="neutral" size="normal" title={option.description} disabled={props.busy} onClick={() => props.onDecide({ optionId: option.id })}>
+                <Button variant="secondary" size="normal" title={option.description} disabled={props.busy} onClick={() => props.onDecide({ optionId: option.id })}>
                   {option.label}
                 </Button>
               )}
@@ -149,15 +149,14 @@ function PermissionFooter(props: {
 
 export function PermissionDock(props: {
   request: AgentPermission
-  onReply: (reply: AgentRequestReply) => Promise<void>
+  replyState: RequestState
+  onReply: (reply: AgentRequestReply) => void
   onStop?: () => Promise<void>
 }) {
   const t = useSessionScreenText()
-  const errorCopy = useErrorCopy()
-  const reply = createRequestReply(props.onReply)
   const stop = createDockAction<"stop">()
   const facts = () => permissionFacts(props.request)
-  const busy = () => reply.answering() || stop.running()
+  const busy = () => props.replyState.kind === "answering" || stop.running()
   const hint = () => {
     const key = TOOL_KEYS[props.request.permission]
     return key ? t(key) : ""
@@ -182,12 +181,14 @@ export function PermissionDock(props: {
           request={props.request}
           busy={busy()}
           onStop={props.onStop ? runStop : undefined}
-          onDecide={(value) => void reply.reply({ kind: "permission", reply: value })}
+          onDecide={(value) => {
+            if (!busy()) props.onReply({ kind: "permission", reply: value })
+          }}
         />
       }
     >
-      <Show when={reply.error() ?? stop.error()}>
-        {(error) => <div role="alert" data-slot="permission-error" data-error-class={error().class} title={error().message}>{errorCopy(error())}</div>}
+      <Show when={replyError(props.replyState) ?? stop.error()}>
+        {(error) => <div role="alert" data-slot="permission-error" data-error-class={error().class}>{error().message}</div>}
       </Show>
       <Show when={hint()}>
         <div data-slot="permission-row">

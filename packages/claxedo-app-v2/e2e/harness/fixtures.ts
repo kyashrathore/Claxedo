@@ -1,13 +1,24 @@
-import { test as base, expect, type Page } from "@playwright/test"
+import { test as base, expect, type Page, type TestInfo } from "@playwright/test"
 import { ClaxedoApi } from "./api"
+import { appChoice, ensureAppBuilt, signedDistDir, type AppBuild } from "./app"
+import { launchDesktop, type Desktop } from "./desktop"
+import { ensureDesktopBuilt, type DesktopBuild } from "./desktop-build"
 import { unexpectedEgress, type EgressAttempt } from "./egress-guard"
-import { startStack, type Stack } from "./stack"
+import { releasePort, reservePort } from "./ports"
+import { startSignedStack, type SignedStack } from "./signed-stack"
+import { redRun, startStack, type Stack } from "./stack"
 
 export type HarnessFixtures = {
   stack: Stack
   api: ClaxedoApi
   app: Page
+  desktop: Desktop
+  signed: SignedStack
 }
+
+type SignedBuild = AppBuild & { frontPort: number }
+
+type HarnessWorkerFixtures = { desktopBuild: DesktopBuild; signedBuild: SignedBuild }
 
 function refuseEgress(attempts: EgressAttempt[]) {
   const unexpected = unexpectedEgress(attempts)
@@ -16,15 +27,18 @@ function refuseEgress(attempts: EgressAttempt[]) {
   throw new Error(`${unexpected.length} request(s) tried to leave the machine and were refused: ${targets}`)
 }
 
-export const test = base.extend<HarnessFixtures>({
+async function attachLogOnFailure(testInfo: TestInfo, attempts: EgressAttempt[], name: string, log: () => string) {
+  if (testInfo.status === testInfo.expectedStatus && unexpectedEgress(attempts).length === 0) return
+  await testInfo.attach(name, { body: log(), contentType: "text/plain" })
+}
+
+export const test = base.extend<HarnessFixtures, HarnessWorkerFixtures>({
   stack: async ({}, use, testInfo) => {
     const stack = await startStack({ label: testInfo.titlePath.join(" ") })
     try {
       await use(stack)
     } finally {
-      if (testInfo.status !== testInfo.expectedStatus || unexpectedEgress(stack.egress.attempts).length > 0) {
-        await testInfo.attach("daemon.log", { body: stack.daemon.log(), contentType: "text/plain" })
-      }
+      await attachLogOnFailure(testInfo, stack.egress.attempts, "daemon.log", stack.daemon.log)
       await stack.close()
     }
     refuseEgress(stack.egress.attempts)
@@ -35,6 +49,46 @@ export const test = base.extend<HarnessFixtures>({
   app: async ({ stack, page }, use) => {
     await page.goto(`${stack.url}/`)
     await use(page)
+  },
+  desktopBuild: [
+    async ({}, use) => {
+      await use(await ensureDesktopBuilt(appChoice()))
+    },
+    { scope: "worker", timeout: 300_000 },
+  ],
+  signedBuild: [
+    async ({}, use) => {
+      const frontPort = await reservePort()
+      try {
+        const build = await ensureAppBuilt(appChoice(), { serverUrl: `https://127.0.0.1:${frontPort}`, outDir: signedDistDir(appChoice()) })
+        await use({ ...build, frontPort })
+      } finally {
+        releasePort(frontPort)
+      }
+    },
+    { scope: "worker", timeout: 300_000 },
+  ],
+  signed: async ({ signedBuild }, use, testInfo) => {
+    const signed = await startSignedStack({ label: testInfo.titlePath.join(" "), frontPort: signedBuild.frontPort, distDir: signedBuild.distDir })
+    try {
+      await use(signed)
+    } finally {
+      await attachLogOnFailure(testInfo, signed.stack.egress.attempts, "daemon.log", signed.stack.daemon.log)
+      await signed.close()
+    }
+    refuseEgress(signed.stack.egress.attempts)
+  },
+  desktop: async ({ desktopBuild }, use, testInfo) => {
+    const how = desktopBuild.built ? `built in ${desktopBuild.ms} ms` : "already current"
+    testInfo.annotations.push({ type: "desktop build", description: how })
+    const desktop = await launchDesktop({ label: testInfo.title, red: redRun() })
+    try {
+      await use(desktop)
+    } finally {
+      await attachLogOnFailure(testInfo, desktop.egress.attempts, "desktop.log", desktop.log)
+      await desktop.close()
+    }
+    refuseEgress(desktop.egress.attempts)
   },
 })
 

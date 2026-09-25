@@ -3,7 +3,7 @@ import { useTranslator } from "@/i18n"
 import { collapsePaneRects, isCollapsedWidth } from "../collapse-projection"
 import { createWorkbenchDropTarget } from "../drag/drop-target"
 import { DropTargetOverlay } from "../drag/drop-target-overlay"
-import { dictionary } from "../i18n"
+import { workbenchDictionary } from "../i18n"
 import { createSurfaceKeyRouter } from "../keyboard"
 import { useWorkbench } from "../provider"
 import { computePaneRects } from "../reducers/tree-helpers"
@@ -42,7 +42,7 @@ function useContainerSize(root: () => HTMLElement | undefined) {
 
 export function Workbench(props: WorkbenchProps): JSX.Element {
   const wb = useWorkbench()
-  const t = useTranslator(dictionary)
+  const t = useTranslator(workbenchDictionary)
   let rootEl: HTMLDivElement | undefined
   const containerSize = useContainerSize(() => rootEl)
   const collapsed = createMemo(() => isCollapsedWidth(containerSize().w))

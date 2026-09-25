@@ -2,7 +2,7 @@ import { For, Show, type JSX } from "solid-js"
 import { useI18n, useTranslator } from "@/i18n"
 import { formatRelativeTime } from "@/lib/relative-time"
 import { ProviderIcon } from "@/ui"
-import { dictionary, type UsageKey } from "../i18n"
+import { usageDictionary, type UsageKey } from "../i18n"
 import { usedPercent, type QuotaAccount, type QuotaWindow } from "../model"
 import "./usage.css"
 
@@ -15,7 +15,7 @@ const WINDOW_KEY: Readonly<Record<string, UsageKey>> = {
 const HARNESS_ICON: Readonly<Record<string, string>> = { claude: "anthropic", codex: "openai", cursor: "cursor" }
 
 export function useWindowName(): (window: QuotaWindow) => string {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(usageDictionary)
   return (window) => {
     const key = WINDOW_KEY[window.window]
     return key ? t(key) : window.window.replaceAll("_", " ")
@@ -23,7 +23,7 @@ export function useWindowName(): (window: QuotaWindow) => string {
 }
 
 export function QuotaWindowMeter(props: { readonly account: string; readonly window: QuotaWindow }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(usageDictionary)
   const i18n = useI18n()
   const windowName = useWindowName()
   const percent = () => usedPercent(props.window)
@@ -51,7 +51,7 @@ function accountLabel(account: QuotaAccount): string {
 }
 
 export function QuotaWindows(props: { readonly accounts: readonly QuotaAccount[] }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(usageDictionary)
   return (
     <section class="usage-quota" aria-label={t("usage.quota.title")}>
       <Show when={props.accounts.length > 0} fallback={<p class="usage-note">{t("usage.quota.empty")}</p>}>
@@ -59,7 +59,7 @@ export function QuotaWindows(props: { readonly accounts: readonly QuotaAccount[]
           {(account) => (
             <article class="usage-card" aria-label={accountLabel(account)}>
               <header class="usage-card-head">
-                <ProviderIcon id={HARNESS_ICON[account.harness] ?? account.harness} />
+                <ProviderIcon id={HARNESS_ICON[account.harness] ?? account.harness} class="size-4 shrink-0 icon-strong-base" />
                 <span class="usage-card-title">{accountLabel(account)}</span>
                 <Show when={account.plan}>{(plan) => <span class="usage-card-meta">{plan()}</span>}</Show>
                 <Show when={account.inUse}>

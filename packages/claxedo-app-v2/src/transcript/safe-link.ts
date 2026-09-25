@@ -31,12 +31,7 @@ export function parseSafeLink(value: string | undefined | null): SafeLink | unde
   const href = value?.trim()
   if (!href) return undefined
   if (isInternalReference(href)) return { kind: "internal", href }
-  try {
-    const url = new URL(href)
-    if (EXTERNAL_SCHEMES.has(url.protocol.slice(0, -1))) return { kind: "external", href }
-  } catch {
-    // Not an absolute URL: a bare relative path or prose has no card-link form.
-  }
+  if (URL.canParse(href) && EXTERNAL_SCHEMES.has(new URL(href).protocol.slice(0, -1))) return { kind: "external", href }
   return undefined
 }
 

@@ -1,6 +1,7 @@
 import { machineId, placementId, projectId, type MachineId } from "../ids"
 import type { RuntimeRoute } from "../transport"
 import type { Placement } from "../types"
+import { isRecord } from "../../lib/record"
 
 export type PlacementRecord = {
   readonly placement: Placement
@@ -10,6 +11,7 @@ export type PlacementRecord = {
 export type BootstrapDeclaration = {
   readonly hostAggregate: boolean
   readonly issuesSessions: boolean
+  readonly documents: boolean
   readonly enrollmentId?: string
 }
 
@@ -19,10 +21,6 @@ export type BootstrapCatalog = {
 }
 
 export const UNENROLLED_MACHINE = "this-machine"
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value)
-}
 
 function text(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined
@@ -61,6 +59,7 @@ function placementRecord(project: Record<string, unknown>, key: string, row: Rec
       kind: kindOf(row, root),
       label: label(row, location),
       path: location,
+      reachable: row.reachable === true,
       ...(machine ? { machineId: machine } : {}),
     },
     route: { directory: remote ? `workspace:${id}` : directory, workspaceId: id, remote },
@@ -92,6 +91,7 @@ export function bootstrapCatalog(body: unknown): BootstrapCatalog {
     declaration: {
       hostAggregate: events.hostAggregate === true,
       issuesSessions: deployment.issuesSessions === true,
+      documents: deployment.documents === true,
       ...(enrollmentId ? { enrollmentId } : {}),
     },
     placements: placementsFromProjects(root.project, enrollmentId),

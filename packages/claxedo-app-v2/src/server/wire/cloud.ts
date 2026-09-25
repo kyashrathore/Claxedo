@@ -1,9 +1,6 @@
 import { placementId, projectId } from "../ids"
 import type { CloudWorkspace, CloudWorkspaceStatus, CodeHostConnection, CodeHostRepository } from "../cloud-types"
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value)
-}
+import { isRecord } from "../../lib/record"
 
 function text(value: unknown) {
   return typeof value === "string" && value.length > 0 ? value : undefined

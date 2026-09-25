@@ -21,7 +21,11 @@ A create failure is shown by the create form; the workspace does not exist yet, 
 
 ## API
 
-`useCloudWorkspaces(projectId, enabled)` returns the list machine (`loading`, `ready(rows)`, `failed(error)`) and the commands. `useCloudPlacer()` is what the add-project flow calls to place a new project in the cloud. Rows come from `server.queries.cloud.list()` and commands go through `server.cloud`.
+`useCloudWorkspaces(projectId, enabled)` returns the list machine (`loading`, `ready(rows)`, `failed(error)`) and the commands. `useCloudPlacer()` is what the first run calls to place a new project in the cloud on a hosted plane. Rows come from `server.queries.cloud.list()` and commands go through `server.cloud`.
+
+## Sandbox provider marks
+
+`SandboxDriverLogo` draws each sandbox provider's brand mark for the provider pickers. The marks are inlined because the kit's provider-icon sprite is generated for model providers and has no mark for Daytona, Modal, Box or exe.dev. The Vercel, Cloudflare, Docker, Box and Modal marks come from simple-icons (CC0-1.0, https://github.com/simple-icons/simple-icons); the Daytona mark is the logomark from https://www.daytona.io/brand, cropped to its own bounding box. Every mark is monochrome and inherits `currentColor`. exe.dev publishes no mark, so it gets a monogram. The marks remain their owners' trademarks and only identify each service.
 
 ## Flows
 

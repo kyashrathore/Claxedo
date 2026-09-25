@@ -172,13 +172,15 @@ export const localServer: Policy = {
   //  - `app/daemon-admission.ts` now actually reachable: the composition mounts
   //    its capability admission and its machine-recovery fence, so the module
   //    this comment already claimed was in the closure is in it.
-  //  - `node:dns` via `workspace/routes/projects-route.ts` (owner: clone
-  //    destination admission): a signed caller's repoUrl is held to public
-  //    destinations through the system resolver, because getaddrinfo honours
-  //    /etc/hosts, mDNS and split-horizon DNS — the answers `git` will dial —
-  //    and only a Node runtime has it (the hosted Worker resolves over DoH).
-  //    69/29, no headroom.
-  ceilings: { modules: 69, packages: 29 },
+  //  - `plugins/{bundles,machine,registry,routes,service,store}.ts` with
+  //    `@claxedo/plugin-api` and `@claxedo/plugin-build` (owner: the daemon's
+  //    live plugins, an approved server addition in the app rebuild plan):
+  //    the daemon registers a machine's plugins, builds each into a hashed
+  //    bundle, serves it and announces changes, so the app on this machine
+  //    loads them without a release. Clone destination admission (`node:dns`)
+  //    moved with the projects route into server-core's projects module.
+  //    73/30, no headroom.
+  ceilings: { modules: 73, packages: 30 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

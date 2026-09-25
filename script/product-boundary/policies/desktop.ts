@@ -166,8 +166,13 @@ export const desktopMainComposition: Policy = {
   // would be a second answer to "is this pid still that launch", and a guessed
   // one is what R8 was. Both packages are dependency-free data and OS reads,
   // with no server, runtime or store closure behind them.
-  // 99/26, no headroom.
-  ceilings: { modules: 99, packages: 26 },
+  // +1 module (2026-09-25): `shared/desktop-product.ts`, the one owner of the
+  // packaged app id and product name. The builder config reads it to name the
+  // bundle and main reads it to name userData and the Keychain item, so the v2
+  // renderer build ("Claxedo V2 Dev") never opens today's profile. Reviewed
+  // owner: Electron main, which sets both at startup. No imports, no package edge.
+  // 100/26, no headroom.
+  ceilings: { modules: 100, packages: 26 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,

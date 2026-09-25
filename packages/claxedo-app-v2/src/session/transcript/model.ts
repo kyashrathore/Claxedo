@@ -1,6 +1,6 @@
 import type { AgentPresentationMessage } from "@claxedo/agent-runtime-contract"
 import { unreachable } from "@/lib/machine"
-import type { AppError, FileDiff, ServerEvent, Todo, TranscriptPart } from "@/server"
+import type { AppError, FileDiff, ServerEvent, TranscriptPart } from "@/server"
 import type { OlderState } from "@/session"
 import type { OptimisticUserMessage } from "@/transcript"
 
@@ -12,7 +12,6 @@ export type TranscriptData = {
   messages: SessionMessage[]
   parts: Record<string, TranscriptPart[]>
   fragmentParts: ReadonlySet<string>
-  todos: Todo[]
   diff: FileDiff[]
 }
 
@@ -24,6 +23,7 @@ export type TranscriptEvent = Extract<
 export type SessionPhase =
   | { readonly kind: "loading"; readonly held: readonly TranscriptEvent[] }
   | { readonly kind: "ready" }
+  | { readonly kind: "completing"; readonly held: readonly TranscriptEvent[] }
   | { readonly kind: "rereading"; readonly held: readonly TranscriptEvent[] }
   | { readonly kind: "missing" }
   | { readonly kind: "failed"; readonly error: AppError }
@@ -31,6 +31,8 @@ export type SessionPhase =
 export type SessionPhaseEvent =
   | { readonly type: "readStarted" }
   | { readonly type: "readLanded" }
+  | { readonly type: "latestStarted" }
+  | { readonly type: "latestLanded" }
   | { readonly type: "readMissing" }
   | { readonly type: "readFailed"; readonly error: AppError }
   | { readonly type: "held"; readonly event: TranscriptEvent }
@@ -40,30 +42,38 @@ export type OlderEvent =
   | { readonly type: "olderLanded" }
   | { readonly type: "olderFailed"; readonly error: AppError }
 
-const NO_FRAGMENTS: ReadonlySet<string> = new Set()
+export const NO_FRAGMENTS: ReadonlySet<string> = new Set()
 
-export const emptyTranscript = (): TranscriptData => ({ messages: [], parts: {}, fragmentParts: NO_FRAGMENTS, todos: [], diff: [] })
+export const emptyTranscript = (): TranscriptData => ({ messages: [], parts: {}, fragmentParts: NO_FRAGMENTS, diff: [] })
 
 export const initialPhase: SessionPhase = { kind: "loading", held: [] }
 
 export const OLDER_IDLE: OlderState = { kind: "idle" }
 
-export const isReading = (phase: SessionPhase): phase is Extract<SessionPhase, { held: readonly TranscriptEvent[] }> =>
+export const isReading = (phase: SessionPhase): phase is Extract<SessionPhase, { kind: "loading" | "rereading" }> =>
   phase.kind === "loading" || phase.kind === "rereading"
+
+export const isHolding = (phase: SessionPhase): phase is Extract<SessionPhase, { held: readonly TranscriptEvent[] }> =>
+  isReading(phase) || phase.kind === "completing"
 
 export function phaseTransition(state: SessionPhase, event: SessionPhaseEvent): SessionPhase {
   switch (event.type) {
     case "readStarted":
       if (isReading(state)) return state
+      if (state.kind === "completing") return { kind: "rereading", held: state.held }
       return state.kind === "ready" ? { kind: "rereading", held: [] } : { kind: "loading", held: [] }
     case "readLanded":
       return isReading(state) ? { kind: "ready" } : state
+    case "latestStarted":
+      return state.kind === "ready" ? { kind: "completing", held: [] } : state
+    case "latestLanded":
+      return state.kind === "completing" ? { kind: "ready" } : state
     case "readMissing":
       return isReading(state) ? { kind: "missing" } : state
     case "readFailed":
       return isReading(state) ? { kind: "failed", error: event.error } : state
     case "held":
-      return isReading(state) ? { ...state, held: [...state.held, event.event] } : state
+      return isHolding(state) ? { ...state, held: [...state.held, event.event] } : state
     default:
       return unreachable(event)
   }

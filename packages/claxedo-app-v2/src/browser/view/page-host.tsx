@@ -1,23 +1,19 @@
-import { Match, Show, Switch, onCleanup, type JSX } from "solid-js"
+import { Show, onCleanup, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import type { BrowserBridge, BrowserWebview } from "../bridge"
 import { dictionary } from "../i18n"
 import type { PickDelivery } from "../pick-to-composer"
 import type { BrowserTab } from "../tab"
 import { watchTheme } from "./guest-theme"
-import { PageState } from "./page-state"
 import { attachWebviewEvents } from "./webview-events"
 
 const AGENT_BROWSER_PARTITION = "persist:agent-browser"
 
 export function PageHost(props: { readonly tab: BrowserTab; readonly deliver: PickDelivery }): JSX.Element {
   return (
-    <>
-      <Show when={props.tab.bridge} fallback={<WebPreview tab={props.tab} />}>
-        {(bridge) => <DesktopPage tab={props.tab} bridge={bridge()} deliver={props.deliver} />}
-      </Show>
-      <PageState tab={props.tab} />
-    </>
+    <Show when={props.tab.bridge} fallback={<WebPreview tab={props.tab} />}>
+      {(bridge) => <DesktopPage tab={props.tab} bridge={bridge()} deliver={props.deliver} />}
+    </Show>
   )
 }
 
@@ -65,26 +61,27 @@ function WebPreview(props: { readonly tab: BrowserTab }): JSX.Element {
   const url = () => props.tab.state().url
   const blocked = () => typeof location !== "undefined" && location.protocol === "https:" && url().startsWith("http:")
   return (
-    <Switch>
-      <Match when={!url()}>
-        <div class="absolute inset-0 bg-background-base" />
-      </Match>
-      <Match when={blocked()}>
-        <div class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background-base p-6 text-center">
-          <div class="text-sm font-medium text-text-base">{t("browser.mixedContent.title")}</div>
-          <div class="text-sm text-text-muted">{t("browser.mixedContent.hint")}</div>
+    <Show
+      when={url() && !blocked() ? url() : undefined}
+      fallback={
+        <div class="flex h-full w-full flex-col items-center justify-center gap-2 p-6 text-center text-sm text-muted-foreground">
+          <div class="font-medium text-text-base">
+            {blocked() ? t("browser.mixedContent.title") : t("browser.web.title")}
+          </div>
+          <div>{blocked() ? t("browser.mixedContent.hint") : t("browser.web.hint")}</div>
         </div>
-      </Match>
-      <Match when={true}>
+      }
+    >
+      {(src) => (
         <iframe
-          src={url()}
+          src={src()}
           title={t("browser.preview.title")}
           sandbox=""
           referrerPolicy="no-referrer"
-          class="absolute inset-0 h-full w-full border-0 bg-background-base"
-          onLoad={() => props.tab.send({ type: "loaded", url: url() })}
+          class="size-full border-0 bg-background-base"
+          onLoad={() => props.tab.send({ type: "loaded", url: src() })}
         />
-      </Match>
-    </Switch>
+      )}
+    </Show>
   )
 }

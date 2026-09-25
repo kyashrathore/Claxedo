@@ -6,7 +6,7 @@ import type {
   MentionSource,
   OverlayEntry,
   PageEntry,
-  PanelTab,
+  PanelView,
   Registry,
   RouteEntry,
   SettingsSection,
@@ -29,7 +29,7 @@ export function createRegistry<Entry>(initial: readonly Entry[]): Registry<Entry
 export type FirstPartyEntries = {
   readonly pages: readonly PageEntry[]
   readonly paneKinds: readonly AnyPaneKind[]
-  readonly panelTabs: readonly PanelTab[]
+  readonly panelViews: readonly PanelView[]
   readonly settingsSections: readonly SettingsSection[]
   readonly sidebarItems: readonly SidebarItem[]
   readonly overlays: readonly OverlayEntry[]
@@ -44,7 +44,7 @@ export function createShellRegistries(firstParty: FirstPartyEntries): ShellRegis
   return {
     pages: createRegistry(firstParty.pages),
     paneKinds: createRegistry(firstParty.paneKinds),
-    panelTabs: createRegistry(firstParty.panelTabs),
+    panelViews: createRegistry(firstParty.panelViews),
     settingsSections: createRegistry(firstParty.settingsSections),
     sidebarItems: createRegistry(firstParty.sidebarItems),
     overlays: createRegistry(firstParty.overlays),

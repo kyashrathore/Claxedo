@@ -1,6 +1,6 @@
 import { Match, Show, Switch, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { Button, Loader } from "@/ui"
+import { Button, Spinner } from "@/ui"
 import { dictionary, type TerminalKey } from "../i18n"
 import type { TerminalConnection, TerminalFailure } from "../model"
 import { MAX_RECONNECT_ATTEMPTS } from "../reconnect"
@@ -27,7 +27,7 @@ function Notice(props: {
           <div class="text-sm break-words text-text-muted">{props.description}</div>
         </Show>
         <Show when={props.action}>
-          <Button variant="outline" size="large" onClick={() => props.action?.()}>
+          <Button variant="secondary" size="large" onClick={() => props.action?.()}>
             {props.actionLabel}
           </Button>
         </Show>
@@ -38,16 +38,11 @@ function Notice(props: {
 
 export function TerminalStatus(props: {
   readonly connection: TerminalConnection
-  readonly missing: boolean
   readonly onRetry: () => void
-  readonly onRecreate: () => void
 }): JSX.Element {
   const t = useTranslator(dictionary)
   return (
     <Switch>
-      <Match when={props.missing}>
-        <Notice title={t("terminal.missing")} testId="terminal-missing" />
-      </Match>
       <Match when={props.connection.kind === "connecting"}>
         <div
           role="status"
@@ -55,7 +50,7 @@ export function TerminalStatus(props: {
           data-testid="terminal-connecting"
           class="terminal-delayed flex h-full items-center justify-center text-icon-muted"
         >
-          <Loader width={24} height={24} />
+          <Spinner class="size-6" />
         </div>
       </Match>
       <Match when={props.connection.kind === "detached" && props.connection}>
@@ -77,28 +72,6 @@ export function TerminalStatus(props: {
             description={t(FAILURE_TEXT[failed().failure])}
             action={props.onRetry}
             actionLabel={t("terminal.retry")}
-          />
-        )}
-      </Match>
-      <Match when={props.connection.kind === "gone"}>
-        <Notice
-          testId="terminal-gone"
-          title={t("terminal.gone.title")}
-          description={t("terminal.gone.description")}
-          action={props.onRecreate}
-          actionLabel={t("terminal.recreate")}
-        />
-      </Match>
-      <Match when={props.connection.kind === "exited" && props.connection}>
-        {(exited) => (
-          <Notice
-            testId="terminal-exited"
-            title={t("terminal.exited.title")}
-            description={
-              exited().code === undefined ? undefined : t("terminal.exited.code", { code: exited().code ?? 0 })
-            }
-            action={props.onRecreate}
-            actionLabel={t("terminal.recreate")}
           />
         )}
       </Match>

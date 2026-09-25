@@ -1,4 +1,4 @@
-import { checksum } from "@opencode-ai/ui/utils/encode"
+import { checksum } from "@/ui"
 import DOMPurify from "dompurify"
 import { transcriptLinkUriPattern } from "./transcript-link"
 
@@ -178,7 +178,8 @@ export function sanitizeSvg(svg: string, purifier: SvgPurifier | undefined = svg
   if (!purifier?.isSupported) return ""
   try {
     return purifier.sanitize(svg, svgConfig)
-  } catch {
+  } catch (error) {
+    console.warn("An SVG could not be sanitized, so it is not shown", { error })
     return ""
   }
 }

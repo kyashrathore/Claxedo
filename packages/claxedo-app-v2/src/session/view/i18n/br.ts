@@ -81,4 +81,11 @@ export const br: Partial<Record<SessionScreenTextKey, string>> = {
   "sessionScreen.timeline.ui.sessionTurn.diffs.showAll": "Mostrar tudo",
   "sessionScreen.timeline.ui.sessionTurn.diffs.showLess": "Mostrar menos",
   "sessionScreen.timeline.ui.sessionTurn.status.thinking": "Pensando",
+  "command.message.previous": "Mensagem anterior",
+  "command.message.previous.description": "Ir para a mensagem de usuário anterior",
+  "command.message.next": "Próxima mensagem",
+  "command.message.next.description": "Ir para a próxima mensagem de usuário",
+  "sessionScreen.requests.loadFailed": "Não foi possível carregar as permissões ou perguntas pendentes. Tente novamente para continuar.",
+  "command.session.new": "Nova sessão",
+  "command.category.session": "Sessão",
 }

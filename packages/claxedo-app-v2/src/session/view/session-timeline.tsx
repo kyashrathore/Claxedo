@@ -1,16 +1,18 @@
 import { createMemo, Show } from "solid-js"
 import { usePhone } from "@/lib/viewport"
-import { sessionId } from "@/server"
+import { sessionId, useServer } from "@/server"
 import type { SessionView } from "@/session"
-import { sessionPath } from "@/shell"
-import { DataProvider, type TranscriptUserMessage } from "@/transcript"
-import { MessageTimeline, type TimelineHost } from "./timeline"
+import { sessionLinkPath } from "@/shell"
+import { DataProvider, TranscriptKitProviders, type TranscriptUserMessage } from "@/transcript"
+import { MessageTimeline, type SessionErrorClass, type TimelineHost } from "./timeline"
 import type { TimelineScroll } from "./timeline-scroll"
-import { TranscriptKitProviders } from "./transcript-kit"
+import { subagentViews } from "./subagent-views"
+import { useSessionScreenText } from "./text"
+import "./transcript-kit.css"
 
 const EMPTY_DATA = { session: [], session_status: {}, session_diff: {}, message: {}, part: {} }
 
-function userMessages(view: SessionView): TranscriptUserMessage[] {
+export function userMessages(view: SessionView): TranscriptUserMessage[] {
   const messages = view.conversation()?.messages ?? []
   return messages.filter((message): message is TranscriptUserMessage => message.role === "user")
 }
@@ -20,18 +22,28 @@ export function SessionTimeline(props: {
   readonly host: TimelineHost
   readonly active: boolean
   readonly scroll: TimelineScroll
-  readonly onNavigateParent: () => void
+  readonly onRecover: (kind: SessionErrorClass, userMessageId: string) => unknown
 }) {
   const phone = usePhone()
+  const server = useServer()
   const users = createMemo(() => userMessages(props.view))
   const current = () => users().find((message) => message.id === props.scroll.selected())
+  const t = useSessionScreenText()
+  const labels = { subagent: t("sessionScreen.subagent.label"), task: t("sessionScreen.subagent.task") }
+  const resolveSubagents = (parentSessionId: string, toolCallId?: string, hostableCallIds?: ReadonlySet<string>) =>
+    parentSessionId === props.view.ref.sessionId
+      ? subagentViews({ entries: props.view.subagents(), parentSessionId, labels, toolCallId, hostableCallIds })
+      : []
   return (
     <TranscriptKitProviders>
       <DataProvider
         data={EMPTY_DATA}
         directory={props.host.placementPath}
         onNavigateToSession={props.host.navigation.toSession}
-        onSessionHref={(id) => sessionPath({ placementId: props.view.ref.placementId, sessionId: sessionId(id) })}
+        onSessionHref={(id) =>
+          sessionLinkPath({ placementId: props.view.ref.placementId, sessionId: sessionId(id) }, server.placements.byId(props.view.ref.placementId), server.capabilities()?.thisMachine?.id)
+        }
+        resolveSubagents={resolveSubagents}
       >
         <Show when={props.view.conversation()}>
           <MessageTimeline
@@ -46,8 +58,9 @@ export function SessionTimeline(props: {
             anchor={(id) => `message-${id}`}
             title={() => props.view.row()?.title}
             parentId={props.view.row()?.parentSessionId}
-            onNavigateParent={props.onNavigateParent}
+            onFirstTurnRecovery={props.onRecover}
             queued={props.view.queue}
+            progressBlocked={() => !!props.view.requestsError()}
           />
         </Show>
       </DataProvider>

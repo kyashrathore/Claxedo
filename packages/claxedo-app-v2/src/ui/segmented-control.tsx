@@ -76,10 +76,10 @@ export function SegmentedControl(props: SegmentedControlProps) {
   }
 
   const focusNext = (from: HTMLButtonElement, direction: 1 | -1) => {
-    const root = from.closest(`[data-slot="segmented-control"]`)
+    const root = from.closest(`[data-slot="v2-segmented-control"]`)
     if (!root) return
     const buttons = Array.from(
-      root.querySelectorAll<HTMLButtonElement>(`button[data-slot="segmented-control-item"]`),
+      root.querySelectorAll<HTMLButtonElement>(`button[data-slot="v2-segmented-control-item"]`),
     ).filter((b) => !b.disabled)
     const i = buttons.indexOf(from)
     const next = buttons[i + direction]
@@ -106,10 +106,9 @@ export function SegmentedControl(props: SegmentedControlProps) {
         {...rest}
         ref={assignRef}
         role="group"
-        data-component="segmented-control"
-        data-slot="segmented-control"
+        data-slot="v2-segmented-control"
         classList={{
-          "ui-segmented-control": true,
+          "v2-segmented-control": true,
           ...local.classList,
           [local.class ?? ""]: !!local.class,
         }}
@@ -174,16 +173,16 @@ export function SegmentedControlItem(props: SegmentedControlItemProps) {
 
     else if (e.key === "Home") {
       e.preventDefault()
-      const root = t.closest(`[data-slot="segmented-control"]`)
+      const root = t.closest(`[data-slot="v2-segmented-control"]`)
       const first = root?.querySelector<HTMLButtonElement>(
-        `button[data-slot="segmented-control-item"]:not(:disabled)`,
+        `button[data-slot="v2-segmented-control-item"]:not(:disabled)`,
       )
       first?.focus()
     } else if (e.key === "End") {
       e.preventDefault()
-      const root = t.closest(`[data-slot="segmented-control"]`)
+      const root = t.closest(`[data-slot="v2-segmented-control"]`)
       const buttons = root?.querySelectorAll<HTMLButtonElement>(
-        `button[data-slot="segmented-control-item"]:not(:disabled)`,
+        `button[data-slot="v2-segmented-control-item"]:not(:disabled)`,
       )
       const last = buttons?.[buttons.length - 1]
       last?.focus()
@@ -194,19 +193,19 @@ export function SegmentedControlItem(props: SegmentedControlItemProps) {
     <button
       {...rest}
       type="button"
-      data-slot="segmented-control-item"
+      data-slot="v2-segmented-control-item"
       data-pressed={pressed() ? "" : undefined}
       aria-pressed={pressed()}
       disabled={disabled()}
       classList={{
-        "ui-segmented-control-item": true,
+        "v2-segmented-control-item": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}
       onClick={onClick}
       onKeyDown={onKeyDown}
     >
-      <span data-slot="segmented-control-item-label">{local.children}</span>
+      <span data-slot="v2-segmented-control-item-label">{local.children}</span>
     </button>
   )
 }

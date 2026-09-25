@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url"
-import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, test } from "../harness"
+import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI } from "../harness"
 
 const IMAGE = fileURLToPath(new URL("../../public/web-app-manifest-192x192.png", import.meta.url))
 const IMAGE_NAME = "web-app-manifest-192x192.png"
@@ -8,8 +8,9 @@ test("06 composer: a marked image, an @file pill and a slash command popover all
   const workspace = await stack.daemon.makeWorkspace("composer")
   await stack.acp.write("ack", { steps: [{ kind: "text", text: "Received the attachments" }] })
   const session = await api.createSession(workspace.directory, { title: "Composer", harness: SCRIPTED_ACP_HARNESS })
-  await app.goto(`${stack.url}/w/${workspace.id}/s/${session.id}`)
-  const prompt = app.getByRole("textbox", { name: "Prompt" })
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  const prompt = app.getByRole("textbox", { name: UI.composer })
+  await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
 
   await prompt.click()
   await app.keyboard.type("/")
@@ -48,4 +49,94 @@ test("06 composer: a marked image, an @file pill and a slash command popover all
   expect(sent).toContain("image/png")
   expect(sent).toContain("README.md")
   expect(sent).toContain("the logo corner")
+})
+
+test("06 a new session starts on the folder's harness, then on the harness last used for a draft in the workspace", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("defaults")
+  const existing = await api.createSession(workspace.directory, { title: "Existing", harness: SCRIPTED_ACP_HARNESS })
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, existing.id)}`)
+  await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
+  const picker = app.locator('[data-action="prompt-harness-model"]').filter({ visible: true })
+  const openDraft = async () => {
+    await app.getByRole("main").getByRole("button", { name: UI.newSession, exact: true }).click()
+    await expect(app).toHaveURL(new RegExp(`${sessionRoute(workspace.id)}$`))
+  }
+
+  await openDraft()
+  await expect(picker).toHaveAttribute("data-harness", "pi")
+  await picker.click()
+  await app.getByRole("button", { name: /^Harness/ }).click()
+  await app.getByRole("button", { name: "Scripted ACP" }).click()
+  await expect(picker).toHaveAttribute("data-harness", "scripted-acp")
+  await app.keyboard.press("Escape")
+  await sendPrompt(app, "Start on the scripted agent")
+  await expect.poll(async () => (await api.sessions(workspace.directory)).length).toBe(2)
+  const created = (await api.sessions(workspace.directory)).find((row) => row.id !== existing.id)
+  expect(JSON.stringify(created)).toContain('"harness":{"id":"scripted-acp","access":"connection"}')
+
+  await app.reload()
+  await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
+  await openDraft()
+  await expect(picker).toHaveAttribute("data-harness", "scripted-acp")
+})
+
+test("06 a draft and the prompt history survive a reload, and a shell command is sent as plain text", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("persist")
+  await stack.acp.write("persist", { steps: [{ kind: "text", text: "Noted" }] })
+  const session = await api.createSession(workspace.directory, { title: "Persist", harness: SCRIPTED_ACP_HARNESS })
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  const prompt = app.getByRole("textbox", { name: UI.composer })
+  await sendPrompt(app, `Remember this prompt ${acpScriptToken("persist")}`)
+  await expect(app.getByText("Noted")).toBeVisible()
+  await prompt.fill("A draft that outlives a reload")
+  await app.reload()
+  await expect(prompt).toHaveText("A draft that outlives a reload")
+  await prompt.press("ControlOrMeta+a")
+  await prompt.press("Backspace")
+  await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
+  await prompt.press("ArrowUp")
+  await expect(prompt).toContainText("Remember this prompt")
+
+  await prompt.fill("")
+  await prompt.press("!")
+  const shell = app.getByRole("textbox", { name: /^Enter shell command/ })
+  await expect(shell).toBeVisible()
+  await shell.pressSequentially("echo shell-text")
+  await expect(app.getByRole("button", { name: UI.send, exact: true })).toBeEnabled()
+  await shell.press("Enter")
+  await expect(prompt).toBeVisible()
+  await expect.poll(async () => JSON.stringify(await api.messages(workspace.directory, session.id))).toContain('"text":"echo shell-text"')
+})
+
+test("06 typing anywhere on the session starts a message in the composer", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("type-to-focus")
+  const session = await api.createSession(workspace.directory, { title: "Type to focus", harness: SCRIPTED_ACP_HARNESS })
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  const prompt = app.getByRole("textbox", { name: UI.composer })
+  await expect(prompt).toBeVisible()
+  await app.evaluate(() => {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+  })
+  await app.keyboard.press("x")
+  await expect(prompt).toBeFocused()
+  await expect(prompt).toHaveText("x")
+})
+
+test("06 a file dropped on the transcript is attached to the composer", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("drop")
+  await stack.acp.write("drop", { steps: [{ kind: "text", text: "A reply to drop files onto" }] })
+  const session = await api.createSession(workspace.directory, { title: "Drop", harness: SCRIPTED_ACP_HARNESS })
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  const prompt = app.getByRole("textbox", { name: UI.composer })
+  await sendPrompt(app, `Say something ${acpScriptToken("drop")}`)
+  const reply = app.getByText("A reply to drop files onto")
+  await expect(reply).toBeVisible()
+  const transfer = await app.evaluateHandle(() => {
+    const data = new DataTransfer()
+    data.items.add(new File([new Uint8Array([137, 80, 78, 71])], "dropped.png", { type: "image/png" }))
+    return data
+  })
+  await reply.dispatchEvent("dragover", { dataTransfer: transfer })
+  await reply.dispatchEvent("drop", { dataTransfer: transfer })
+  await expect(app.getByRole("button", { name: "Remove attachment" })).toBeVisible()
 })

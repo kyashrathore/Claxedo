@@ -32,8 +32,7 @@ import type {
   AgentUserMessage,
 } from "@claxedo/agent-runtime-contract"
 import { useData } from "./data"
-import { useFileComponent } from "@opencode-ai/ui/context/file"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { useFileComponent, useDialog, Accordion, StickyAccordionHeader, Collapsible, FileIcon, Icon, Checkbox, DiffChanges, ImagePreview, getDirectory as _getDirectory, getFilename, checksum, Tooltip, IconButton, IconV2, IconButtonV2, ButtonV2, TooltipV2, TextShimmer, type IconProps } from "@/ui"
 import { type TranscriptI18n, useTranscriptI18n } from "./i18n"
 import { BasicTool, GenericTool, shellExitCode, ToolExitCode } from "./basic-tool"
 import { ScrollableOutput } from "./scrollable-output"
@@ -43,31 +42,14 @@ import { TurnFoldRow } from "./turn-fold-row"
 import { workGroupActiveLabel, workGroupIcon, workGroupSummary, workGroupTitle } from "./work-group-summary"
 import { SubagentChipRow } from "./subagent-chip"
 import { dispatchPlanOpen, readPlanToolInput } from "./plan-tool"
-import { Accordion } from "@opencode-ai/ui/accordion"
-import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
-import { Collapsible } from "@opencode-ai/ui/collapsible"
-import { FileIcon } from "@opencode-ai/ui/file-icon"
-import { Icon } from "@opencode-ai/ui/icon"
 import { ToolErrorCard } from "./tool-error-card"
 import { ClaxedoTool } from "./claxedo-tool"
 import { claxedoToolName, claxedoToolTitle, claxedoToolView } from "./claxedo-tool-view"
 import { QuestionCard } from "./question-card"
 import { isQuestionDeclined } from "./question-result"
-import { Checkbox } from "@opencode-ai/ui/checkbox"
-import { DiffChanges } from "@opencode-ai/ui/diff-changes"
 import { Markdown } from "./markdown"
-import { ImagePreview } from "@opencode-ai/ui/image-preview"
-import { getDirectory as _getDirectory, getFilename } from "@opencode-ai/ui/utils/path"
 import { AttachmentCardV2 } from "./attachment-card-v2"
 import { CommentCardV2 } from "./comment-card-v2"
-import { checksum } from "@opencode-ai/ui/utils/encode"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { IconButton } from "@opencode-ai/ui/icon-button"
-import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
-import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
-import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
-import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
-import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
 import { formatDuration } from "./format-duration"
 import { localPreviewUrl } from "./local-preview"
 import { stripShellWrapper } from "./shell-wrapper"
@@ -417,8 +399,6 @@ function getDirectory(path: string | undefined) {
   const data = useData()
   return relativizeProjectPath(_getDirectory(path), data.directory)
 }
-
-import type { IconProps } from "@opencode-ai/ui/icon"
 import { resolveFileDiff } from "./session-diff"
 
 export type ToolInfo = {
@@ -1891,8 +1871,10 @@ function ToolImageStrip(props: { images: AgentFilePart[] }) {
             if (controller.signal.aborted) return
             objectUrl = URL.createObjectURL(blob)
             setLoaded(objectUrl)
-          }).catch(() => {
-            if (!controller.signal.aborted) setLoadFailed(true)
+          }).catch((error: unknown) => {
+            if (controller.signal.aborted) return
+            console.warn("A tool image could not be read", { error })
+            setLoadFailed(true)
           })
           onCleanup(() => {
             controller.abort()
@@ -2385,7 +2367,9 @@ ToolRegistry.register({
           const fileDiff = resolveFileDiff(source)
           if (fileDiff) return { fileDiff, hunkSeparators: fileDiff.isPartial ? "simple" : "line-info-basic" }
         }
-      } catch {}
+      } catch (error) {
+        console.warn("An edit's diff could not be resolved; its before and after show instead", { error })
+      }
 
       return {
         before: {

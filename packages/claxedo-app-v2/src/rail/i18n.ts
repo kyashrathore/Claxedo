@@ -1,34 +1,57 @@
 import type { Translations } from "@/i18n"
-import { dictionary as ar } from "./locales/ar"
-import { dictionary as br } from "./locales/br"
-import { dictionary as bs } from "./locales/bs"
-import { dictionary as da } from "./locales/da"
-import { dictionary as de } from "./locales/de"
-import { dictionary as es } from "./locales/es"
-import { dictionary as fr } from "./locales/fr"
-import { dictionary as ja } from "./locales/ja"
-import { dictionary as ko } from "./locales/ko"
-import { dictionary as no } from "./locales/no"
-import { dictionary as pl } from "./locales/pl"
-import { dictionary as ru } from "./locales/ru"
-import { dictionary as th } from "./locales/th"
-import { dictionary as tr } from "./locales/tr"
-import { dictionary as zh } from "./locales/zh"
-import { dictionary as zht } from "./locales/zht"
+import ar from "./locales/ar"
+import br from "./locales/br"
+import bs from "./locales/bs"
+import da from "./locales/da"
+import de from "./locales/de"
+import es from "./locales/es"
+import fr from "./locales/fr"
+import ja from "./locales/ja"
+import ko from "./locales/ko"
+import no from "./locales/no"
+import pl from "./locales/pl"
+import ru from "./locales/ru"
+import th from "./locales/th"
+import tr from "./locales/tr"
+import zh from "./locales/zh"
+import zht from "./locales/zht"
 
 const en = {
-  "rail.navigation": "Pages",
-  "rail.sessions": "Sessions",
-  "rail.newSession": "New session",
-  "rail.search": "Search sessions",
-  "rail.clearSearch": "Clear search",
-  "rail.empty": "No sessions yet",
-  "rail.noMatches": "No sessions match",
+  "rail.tasks": "Tasks",
+  "rail.openTasks": "Open Tasks",
+  "rail.marketplace": "Marketplace",
+  "rail.openMarketplace": "Open Marketplace",
+  "rail.projects": "Projects",
+  "rail.collapseProject": "Collapse project",
+  "rail.expandProject": "Expand project",
+  "rail.newSessionTooltip": "New session",
+  "rail.newSessionIn": "New session in {{project}}",
+  "rail.newTerminalTooltip": "New terminal…",
+  "rail.newTerminalIn": "New terminal in {{project}}…",
+  "rail.archiveSession": "Archive {{title}}",
+  "rail.sessionMenu": "Options for {{title}}",
+  "rail.noMatches": "No sessions match the current view.",
   "rail.loadMore": "Load more",
-  "rail.loading": "Loading sessions",
-  "rail.failed": "Sessions could not be loaded: {{message}}",
+  "rail.loadingMore": "Loading...",
+  "rail.loadingSessions": "Loading sessions...",
+  "rail.loadFailed": "Could not load sessions.",
+  "rail.loadMoreFailed": "Could not load more sessions.",
+  "rail.allLoaded": "All sessions loaded.",
+  "rail.retry": "Retry",
   "rail.settings": "Settings",
-  "rail.actions": "Actions for {{title}}",
+  "rail.account.signedIn": "Signed in",
+  "rail.account.signingIn": "Signing in…",
+  "rail.account.signIn": "Sign in",
+  "rail.account.notSignedIn": "Not signed in",
+  "rail.account.usage": "Usage",
+  "rail.account.help": "Help",
+  "rail.account.cancelSignIn": "Cancel sign in",
+  "rail.account.logout": "Log out",
+  "rail.account.signInFailed": "Sign-in failed",
+  "rail.account.signOutFailed": "Sign-out failed",
+  "rail.copySessionLink": "Copy session link",
+  "rail.copyDeepLink": "Copy deep link",
+  "rail.copyFailed": "The link could not be copied",
   "rail.rename": "Rename",
   "rail.renameLabel": "Session title",
   "rail.save": "Save",
@@ -41,17 +64,26 @@ const en = {
   "rail.renameFailed": "The session could not be renamed",
   "rail.archiveFailed": "The session could not be archived",
   "rail.deleteFailed": "The session could not be deleted",
-  "rail.createFailed": "The session could not be created",
-  "rail.status.pending": "Creating",
-  "rail.status.unknown": "Status unknown",
-  "rail.status.idle": "Idle",
-  "rail.status.working": "Working",
-  "rail.status.waiting": "Waiting on you",
-  "rail.status.retrying": "Retrying",
-  "rail.status.recovering": "Recovering",
-  "rail.status.failed": "Failed",
+  "rail.workbenchPanes": "Workbench panes",
+  "rail.marker.cloud": "Cloud environment",
+  "rail.marker.machine": "Another machine",
+  "rail.marker.worktree": "Worktree: {{project}} / {{name}}",
+  "rail.terminal.close": "Close terminal",
+  "rail.terminal.closeNamed": "Close terminal: {{title}}",
+  "rail.terminal.working": "working",
+  "rail.terminal.needsInput": "needs input",
+  "rail.terminal.failed": "failed",
+  "rail.closeTab": "Close {{title}}",
+  "rail.global": "Global",
+  "rail.untitled": "Untitled session",
+  "rail.card.status": "Status",
+  "rail.card.working": "Working",
+  "rail.card.waiting": "Waiting for you",
+  "rail.card.failed": "Last turn failed",
+  "rail.card.project": "Project",
+  "rail.card.workspace": "Workspace",
 } as const
 
 export type RailKey = keyof typeof en
 
-export const dictionary = { en, ar, br, bs, da, de, es, fr, ja, ko, no, pl, ru, th, tr, zh, zht } satisfies Translations<RailKey>
+export const railDictionary = { en, ar, br, bs, da, de, es, fr, ja, ko, no, pl, ru, th, tr, zh, zht } satisfies Translations<RailKey>

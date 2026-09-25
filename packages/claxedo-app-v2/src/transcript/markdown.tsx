@@ -1,12 +1,8 @@
-import { useMarked, transcriptMarkdownExtensions } from "@opencode-ai/ui/context/marked"
+import { useMarked, transcriptMarkdownExtensions, useDialog, ImagePreview, checksum, reportUiError, Icon, IconButtonV2, TooltipV2 } from "@/ui"
 import { codeTheme } from "./code-theme"
 import { useTranscriptI18n } from "./i18n"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { ImagePreview } from "@opencode-ai/ui/image-preview"
-import { useData } from "./data"
+import { useOptionalData } from "./data"
 import morphdom from "morphdom"
-import { checksum } from "@opencode-ai/ui/utils/encode"
-import { reportUiError } from "@opencode-ai/ui/utils/report-error"
 import {
   type Accessor,
   type ComponentProps,
@@ -20,9 +16,6 @@ import {
   splitProps,
 } from "solid-js"
 import { isServer, render } from "solid-js/web"
-import { Icon } from "@opencode-ai/ui/icon"
-import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
-import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { bundledLanguages } from "shiki"
 import { Marked } from "marked"
 import { canReusePendingBlock, project, type Block, type Projection } from "./markdown-stream"
@@ -435,7 +428,8 @@ function renderMermaidBlocks(root: HTMLElement) {
         commitMermaidDiagram(wrapper, source, safe)
         traceMermaid("commit", source, commitStarted)
       })
-      .catch(() => {
+      .catch((error: unknown) => {
+        console.warn("A mermaid diagram could not be rendered; its code block stays", { error })
         // Fallback: keep the code block, clear the marker so a later retry is possible.
         wrapper.querySelector('[data-slot="mermaid-diagram"]')?.remove()
         clearRichControls(wrapper)
@@ -677,7 +671,8 @@ function imageSource(src: string, data?: { directory: string; fileUrl?: (path: s
   if (src.startsWith("file://")) {
     try {
       path = decodeURIComponent(src.slice("file://".length))
-    } catch {
+    } catch (error) {
+      console.warn("A file:// image source could not be decoded", { src, error })
       return undefined
     }
   }
@@ -887,25 +882,11 @@ export function Markdown(
   const [local, others] = splitProps(props, ["text", "cacheKey", "streaming", "richAfterMs", "class", "classList"])
   const marked = useMarked()
   const i18n = useTranscriptI18n()
-  // A host without a dialog layer cannot offer the full-view preview; image
-  // tiles then render identically but clicks do nothing.
-  const dialog = (() => {
-    try {
-      return useDialog()
-    } catch {
-      return undefined
-    }
-  })()
-  const openImage = dialog ? (src: string, alt?: string) => void dialog.show(() => <ImagePreview src={src} alt={alt} />) : undefined
+  const dialog = useDialog()
+  const openImage = (src: string, alt?: string) => void dialog.show(() => <ImagePreview src={src} alt={alt} />)
   // Hosts without the session data provider cannot resolve workspace-relative
   // image sources; their images stay fallback chips rather than broken fetches.
-  const data = (() => {
-    try {
-      return useData()
-    } catch {
-      return undefined
-    }
-  })()
+  const data = useOptionalData()
   const [root, setRoot] = createSignal<HTMLDivElement>()
   const owner = createUniqueId()
   const activeCodeKeys = new Set<string>()
@@ -993,7 +974,8 @@ export function Markdown(
         }),
       )
         .then((blocks) => ({ text: src.text, blocks }) satisfies RenderResult)
-        .catch(() => {
+        .catch((error: unknown) => {
+          console.warn("Markdown blocks could not be rendered", { error })
           if (!src.streaming) return { text: src.text, blocks: [] } satisfies RenderResult
           return syncRenderResult(src.text, src.projection, owner, src.key)
         })

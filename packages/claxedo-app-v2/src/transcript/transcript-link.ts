@@ -1,10 +1,6 @@
-import {
-  transcriptLinkPrefixes,
-  transcriptLinkRunSource,
-  transcriptLinkUriAllowed,
-} from "@opencode-ai/ui/context/marked"
+import { transcriptLinkPrefixes, transcriptLinkRunSource, transcriptLinkUriAllowed } from "@/ui"
 
-export { transcriptLinkUriPattern } from "@opencode-ai/ui/context/marked"
+export { transcriptLinkUriPattern } from "@/ui"
 
 const prefixAlternation = transcriptLinkPrefixes.map((prefix) => prefix.replace(/[./]/g, "\\$&")).join("|")
 
@@ -24,11 +20,7 @@ export function transcriptLinkHref(text: string | undefined): string | undefined
   if (!text) return undefined
   const candidate = text.trim().replace(trailingPunctuation, "")
   if (!linkText.test(candidate)) return undefined
-  try {
-    return new URL(candidate).toString()
-  } catch {
-    return undefined
-  }
+  return URL.canParse(candidate) ? new URL(candidate).toString() : undefined
 }
 
 /** Distinct links embedded in prose or tool output, in the order they appear. */

@@ -8,6 +8,7 @@ const configRequire = createRequire(import.meta.url)
 import { createElectronRenderer, desktopDir } from "./vite.renderer"
 import { desktopNodeWorkerBundlePlugin } from "./scripts/node-worker-bundles"
 import { desktopMainBoundaryManifestPlugin } from "./scripts/product-boundary-manifests"
+import { parseDesktopRenderer } from "./src/shared/desktop-product"
 
 const channel = (() => {
   const raw = process.env.CLAXEDO_CHANNEL
@@ -43,7 +44,7 @@ const accountDefines = Object.fromEntries(
 // ── Config ──
 
 async function rendererConfig(mode: string, command: "build" | "serve") {
-  if (process.env.CLAXEDO_DESKTOP_RENDERER !== "v2") return createElectronRenderer(mode)
+  if (parseDesktopRenderer(process.env.CLAXEDO_DESKTOP_RENDERER) === "v1") return createElectronRenderer(mode)
   const { createElectronRendererV2 } = await import("./vite.renderer-v2")
   return createElectronRendererV2({ mode, command })
 }
@@ -55,6 +56,7 @@ export default defineConfig(async ({ mode, command }) => {
         ...telemetryDefines,
         ...accountDefines,
         "import.meta.env.CLAXEDO_CHANNEL": JSON.stringify(channel),
+        "import.meta.env.CLAXEDO_DESKTOP_RENDERER": JSON.stringify(parseDesktopRenderer(process.env.CLAXEDO_DESKTOP_RENDERER)),
         // The reviewed CIM script, CRLF-normalized + UTF-16LE + base64 — the
         // shape PowerShell's -EncodedCommand takes. A define rather than a
         // module import so nothing ever has to PARSE the .ps1: bun runs

@@ -665,6 +665,23 @@ describe("createAgentRuntime", () => {
     await runtime.dispose()
   })
 
+  test("a harness without a Goal resource reports Goals as not implemented instead of failing the read", async () => {
+    const runtime = createAgentRuntime({
+      store: createMemoryRuntimeStore(),
+      harnesses: [testHarness({ readHarnessCapabilities: () => goalHarnessCapabilities("cursor") })],
+    })
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test", directory: "/repo", harness: { id: "pi", access: "native" } })
+
+    await expect(runtime.goals.capabilities(session.id, "/repo")).resolves.toMatchObject({
+      implemented: false,
+      available: false,
+      unavailableReason: "This harness does not expose the Goal resource",
+      actions: [],
+    })
+    await expect(runtime.goals.start({ sessionId: session.id, objective: "Ship it" }, "/repo")).rejects.toMatchObject({ code: "goal_unavailable" })
+    await runtime.dispose()
+  })
+
   test("rejects invalid, duplicate, unsupported, and cross-directory Goal work before adapter mutation", async () => {
     const calls: string[] = []
     const existing = { sessionId: "ses_test", objective: "Existing", status: "active" as const, createdAt: 1, updatedAt: 1 }

@@ -81,4 +81,11 @@ export const ko: Partial<Record<SessionScreenTextKey, string>> = {
   "sessionScreen.timeline.ui.sessionTurn.diffs.showAll": "모두 표시",
   "sessionScreen.timeline.ui.sessionTurn.diffs.showLess": "간략히 표시",
   "sessionScreen.timeline.ui.sessionTurn.status.thinking": "생각 중",
+  "command.message.previous": "이전 메시지",
+  "command.message.previous.description": "이전 사용자 메시지로 이동",
+  "command.message.next": "다음 메시지",
+  "command.message.next.description": "다음 사용자 메시지로 이동",
+  "sessionScreen.requests.loadFailed": "대기 중인 권한 요청이나 질문을 불러오지 못했습니다. 다시 시도하여 계속하세요.",
+  "command.session.new": "새 세션",
+  "command.category.session": "세션",
 }

@@ -18,8 +18,9 @@ async function portIsFree(port: number) {
 }
 
 export async function reservePort(): Promise<number> {
+  const daemonPort = fixedDaemonPort()
   for (let port = PORT_RANGE.first; port <= PORT_RANGE.last; port += 1) {
-    if (leased.has(port)) continue
+    if (leased.has(port) || port === daemonPort) continue
     if (!(await portIsFree(port))) continue
     leased.add(port)
     return port
@@ -31,9 +32,18 @@ export function portIsLeased(port: number) {
   return leased.has(port)
 }
 
+export async function portFreed(port: number, withinMs: number) {
+  const deadline = Date.now() + withinMs
+  while (!(await portIsFree(port))) {
+    if (Date.now() > deadline) return false
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  return true
+}
+
 export async function claimPort(port: number) {
   if (port < PORT_RANGE.first || port > PORT_RANGE.last) throw new Error(`Port ${port} is outside ${PORT_RANGE.first}-${PORT_RANGE.last}`)
-  if (!(await portIsFree(port))) {
+  if (!(await portFreed(port, 10_000))) {
     throw new Error(`Port ${port} is held by another process; the app is built for it. Give this run its own CLAXEDO_E2E_PORT_RANGE.`)
   }
   leased.add(port)

@@ -1,38 +1,33 @@
-import type { JSX } from "solid-js"
-import { Dynamic } from "solid-js/web"
-import { useTranslator } from "@/i18n"
-import { IconButton } from "@/ui"
-import { dictionary } from "../i18n"
-import { useShellRoute } from "../router"
-import { homePath, type RouteParams } from "../routes"
-import type { PageEntry } from "../types"
-import { RegistryIcon } from "./icon"
-import { Region } from "./region"
+import { createMemo, Show, type JSX } from "solid-js"
+import { readString } from "@/lib/record"
+import { useShellRegistries } from "../registries"
+import { parseRoute } from "../routes"
+import type { PageEntry, PaneKind, PaneProps } from "../types"
+import { PageView } from "./page-view"
 
-export type PageTabProps = { readonly page: PageEntry; readonly params: RouteParams }
+export type PageTabState = { readonly path: string }
 
-export function PageHeader(props: { readonly page: PageEntry }): JSX.Element {
-  const t = useTranslator(dictionary)
-  const routing = useShellRoute()
-  return (
-    <div class="shell-page-header" data-testid="page-tab">
-      <div class="shell-page-tabs" role="tablist" aria-label={t("shell.page")}>
-        <div role="tab" aria-selected="true" class="shell-page-tab">
-          <RegistryIcon name={props.page.icon} />
-          <span class="shell-page-title">{props.page.title()}</span>
-        </div>
-      </div>
-      <IconButton icon="close" variant="ghost" size="small" aria-label={t("shell.closePage")} data-testid="page-close" onClick={() => routing.navigate(homePath)} />
-    </div>
-  )
+function tabPageAt(path: string, pages: readonly PageEntry[]) {
+  const route = parseRoute(path, pages, [])
+  return route.kind === "page" && route.page.tab ? route : undefined
 }
 
-export function PageTab(props: PageTabProps): JSX.Element {
-  return (
-    <div class="shell-page" role="tabpanel" data-page={props.page.id} data-testid={`page-${props.page.id}`}>
-      <Region name="page">
-        <Dynamic component={props.page.view} params={props.params} />
-      </Region>
-    </div>
-  )
+function PageTab(props: PaneProps<PageTabState>): JSX.Element {
+  const registries = useShellRegistries()
+  const route = createMemo(() => tabPageAt(props.state.path, registries.pages.list()))
+  return <Show when={route()}>{(page) => <PageView page={page().page} params={page().params} />}</Show>
+}
+
+export const pageTabPaneKind: PaneKind<PageTabState> = {
+  kind: "pageTab",
+  singleton: true,
+  title: (state) => tabPageAt(state.path, useShellRegistries().pages.list())?.page.title() ?? "",
+  view: PageTab,
+  encode: (state) => ({ path: state.path }),
+  decode: (value) => {
+    const path = readString(value, "path")
+    return path ? { path } : undefined
+  },
+  fromRoute: (route) => (route.kind === "pageTab" ? { path: route.path } : undefined),
+  toRoute: (state) => ({ kind: "pageTab", path: state.path }),
 }

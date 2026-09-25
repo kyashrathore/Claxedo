@@ -81,4 +81,11 @@ export const bs: Partial<Record<SessionScreenTextKey, string>> = {
   "sessionScreen.timeline.ui.sessionTurn.diffs.showAll": "Prikaži sve",
   "sessionScreen.timeline.ui.sessionTurn.diffs.showLess": "Prikaži manje",
   "sessionScreen.timeline.ui.sessionTurn.status.thinking": "Razmišljanje",
+  "command.message.previous": "Prethodna poruka",
+  "command.message.previous.description": "Idi na prethodnu korisničku poruku",
+  "command.message.next": "Sljedeća poruka",
+  "command.message.next.description": "Idi na sljedeću korisničku poruku",
+  "sessionScreen.requests.loadFailed": "Nije moguće učitati dozvole ili pitanja na čekanju. Pokušajte ponovo da nastavite.",
+  "command.session.new": "Nova sesija",
+  "command.category.session": "Sesija",
 }

@@ -10,13 +10,26 @@ import { sanitizeSvg } from "./markdown-cache"
 let mermaidModule: Promise<typeof import("mermaid")> | null = null
 let counter = 0
 
+const SRGB = /^color\(srgb ([\d.e-]+) ([\d.e-]+) ([\d.e-]+)(?: \/ ([\d.e-]+))?\)$/
+
+function resolveColor(name: string, fallback: string): string {
+  const probe = document.createElement("span")
+  probe.style.display = "none"
+  probe.style.color = `var(${name}, ${fallback})`
+  document.body.appendChild(probe)
+  const computed = getComputedStyle(probe).color
+  probe.remove()
+  const srgb = SRGB.exec(computed)
+  if (!srgb) return computed || fallback
+  const [r, g, b] = srgb.slice(1, 4).map((channel) => Math.round(Number(channel) * 255))
+  return `rgba(${r}, ${g}, ${b}, ${srgb[4] ?? 1})`
+}
+
 export function mermaidThemeVariables(): Record<string, string> {
-  if (typeof document === "undefined") return {}
-  const probe = getComputedStyle(document.documentElement)
-  const read = (name: string, fallback: string) => probe.getPropertyValue(name).trim() || fallback
-  const text = read("--text-strong", "#e6e6e6")
-  const line = read("--border-weak-base", "#444")
-  const surface = read("--background-stronger", "#181818")
+  if (typeof document === "undefined" || !document.body) return {}
+  const text = resolveColor("--text-strong", "#e6e6e6")
+  const line = resolveColor("--border-weak-base", "#444")
+  const surface = resolveColor("--background-stronger", "#181818")
   return {
     background: surface,
     primaryColor: surface,

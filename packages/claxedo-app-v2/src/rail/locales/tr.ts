@@ -1,5 +1,4 @@
-export const dictionary = {
-  "rail.newSession": "Yeni oturum",
+export default {
   "rail.cancel": "İptal",
   "rail.rename": "Yeniden adlandır",
   "rail.archive": "Arşivle",

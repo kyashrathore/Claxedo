@@ -161,7 +161,8 @@ function serialized(value: unknown) {
   if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") return String(value)
   try {
     return JSON.stringify(value) ?? undefined
-  } catch {
+  } catch (error) {
+    console.warn("A provider error detail could not be serialized", { error })
     return undefined
   }
 }

@@ -81,4 +81,10 @@ export const da: Partial<Record<SessionScreenTextKey, string>> = {
   "sessionScreen.timeline.ui.sessionTurn.diffs.showAll": "Vis alle",
   "sessionScreen.timeline.ui.sessionTurn.diffs.showLess": "Vis færre",
   "sessionScreen.timeline.ui.sessionTurn.status.thinking": "Tænker",
+  "command.message.previous": "Forrige besked",
+  "command.message.previous.description": "Gå til den forrige brugerbesked",
+  "command.message.next": "Næste besked",
+  "command.message.next.description": "Gå til den næste brugerbesked",
+  "sessionScreen.requests.loadFailed": "Kunne ikke indlæse ventende tilladelser eller spørgsmål. Prøv igen for at fortsætte.",
+  "command.session.new": "Ny session",
 }

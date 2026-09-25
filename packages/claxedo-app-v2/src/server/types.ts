@@ -36,6 +36,7 @@ export type Machine = {
   readonly ownerId?: UserId
   readonly online: boolean
   readonly isThisMachine: boolean
+  readonly enrolled: boolean
 }
 
 export type PlacementKind = "folder" | "worktree" | "cloud"
@@ -48,6 +49,7 @@ export type Placement = {
   readonly path?: string
   readonly branch?: string
   readonly machineId?: MachineId
+  readonly reachable: boolean
 }
 
 export type ProjectSource =
@@ -55,13 +57,28 @@ export type ProjectSource =
   | { readonly kind: "connectedRepository"; readonly connectionId: string; readonly fullName: string }
   | { readonly kind: "folder"; readonly path: string }
 
+export type ProjectIcon = { readonly override?: string; readonly color?: string }
+
+export type ProjectCommands = { readonly start?: string }
+
 export type Project = {
   readonly id: ProjectId
   readonly name: string
   readonly source?: ProjectSource
+  readonly directory?: string
+  readonly icon?: ProjectIcon
+  readonly commands?: ProjectCommands
+  readonly available: boolean
   readonly env: Readonly<Record<string, string>>
   readonly createdAt: number
   readonly updatedAt: number
+}
+
+export type ProjectUpdate = {
+  readonly name?: string
+  readonly env?: Readonly<Record<string, string>>
+  readonly icon?: ProjectIcon
+  readonly commands?: ProjectCommands
 }
 
 export type RetryAction = {
@@ -102,11 +119,13 @@ export type AgentRequest =
 export type AgentRequestReply =
   | { readonly kind: "permission"; readonly reply: AgentPermissionReply }
   | { readonly kind: "question"; readonly answers: readonly AgentQuestionAnswer[] }
-  | { readonly kind: "dismiss"; readonly request?: "permission" | "question" }
+  | { readonly kind: "dismiss" }
 
 export type Todo = AgentTodo
 export type FileDiff = AgentSnapshotFileDiff
 export type Subagent = AgentSubagentUpdate
+
+export type SessionListInput = { readonly placementId: PlacementId; readonly cursor?: string; readonly limit: number }
 
 export type SessionPage = { readonly rows: readonly SessionRow[]; readonly nextCursor?: string }
 
@@ -114,21 +133,26 @@ export type TranscriptPage = { readonly entries: readonly TranscriptEntry[]; rea
 
 export type SessionGoal = RuntimeGoalSnapshot
 
-export type GoalAction = "pause" | "resume" | "remove"
+export type GoalAction = "pause" | "resume" | "remove" | "stop"
 
 export type SessionGoalState = {
   readonly goal: SessionGoal | undefined
   readonly actions: readonly GoalAction[]
+  readonly available: boolean
 }
 
-export type SessionSnapshot = {
+export type SessionSurface = {
   readonly row: SessionRow
-  readonly status: SessionStatus
   readonly transcript: TranscriptPage
-  readonly requests: readonly AgentRequest[]
-  readonly todos: readonly Todo[]
   readonly diff: readonly FileDiff[]
-  readonly goal: SessionGoalState
+}
+
+export type SessionReads = {
+  readonly surface: Promise<SessionSurface>
+  readonly status: Promise<SessionStatus>
+  readonly requests: Promise<readonly AgentRequest[]>
+  readonly todos: Promise<readonly Todo[]>
+  readonly goal: Promise<SessionGoalState>
 }
 
 export type ModelChoice = { readonly providerId: string; readonly modelId: string; readonly variant?: string }
@@ -151,6 +175,7 @@ export type PromptInput = {
   readonly model?: ModelChoice
   readonly effort?: string
   readonly permissionMode?: string
+  readonly serviceTier?: string
   readonly goal?: { readonly objective: string }
   readonly delivery?: PromptDeliveryRequest
 }

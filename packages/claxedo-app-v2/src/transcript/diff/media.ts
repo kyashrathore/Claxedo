@@ -84,7 +84,8 @@ function decodeBase64Utf8(value: string): string | undefined {
     const bytes = Uint8Array.from(raw, (x) => x.charCodeAt(0))
     if (typeof TextDecoder === "function") return new TextDecoder().decode(bytes)
     return raw
-  } catch {
+  } catch (error) {
+    console.warn("A base64 diff body could not be decoded", { error })
     return undefined
   }
 }

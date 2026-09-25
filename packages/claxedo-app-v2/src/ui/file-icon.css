@@ -1,8 +1,0 @@
-@layer components {
-  .ui-file-icon {
-    display: block;
-    flex-shrink: 0;
-    width: 16px;
-    height: 16px;
-  }
-}

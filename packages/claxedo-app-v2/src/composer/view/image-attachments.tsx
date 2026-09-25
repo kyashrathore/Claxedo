@@ -1,80 +1,95 @@
-import { For, Show, createSignal } from "solid-js"
-import { Icon, IconButton, Tooltip } from "@/ui"
-import type { ImagePart } from "../model"
+import { Component, For, Show, createSignal } from "solid-js"
+import { ClaxedoIcon as Icon, Tooltip } from "@/ui"
+import type { ImagePart as ImageAttachmentPart } from "../model"
 import { ImageMarkLayer } from "../marks/layer"
 import type { Size } from "../marks/marks"
 
-function Thumbnail(props: { attachment: ImagePart; firstMarkNumber: number; markLabel: string; onOpen: () => void }) {
+type PromptImageAttachmentsProps = {
+  attachments: ImageAttachmentPart[]
+  firstMarkNumber: (id: string) => number
+  onOpen: (attachment: ImageAttachmentPart) => void
+  onRemove: (id: string) => void
+  removeLabel: string
+  markLabel: string
+}
+
+const fallbackClass = "size-16 rounded-md bg-surface-base flex items-center justify-center border border-border-base"
+const imageClass =
+  "size-16 rounded-md object-cover border border-border-base hover:border-border-strong-base transition-colors"
+const removeClass =
+  "absolute -top-1.5 -right-1.5 size-5 rounded-full bg-surface-raised-stronger-non-alpha border border-border-base flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-surface-raised-base-hover"
+const markClass =
+  "absolute -top-1.5 -left-1.5 size-5 rounded-full bg-surface-raised-stronger-non-alpha border border-border-base flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-surface-raised-base-hover"
+const nameClass = "absolute bottom-0 left-0 right-0 px-1 py-0.5 bg-black/50 rounded-b-md"
+
+const ImageThumbnail: Component<{
+  attachment: ImageAttachmentPart
+  firstMarkNumber: number
+  onOpen: () => void
+  markLabel: string
+}> = (props) => {
   const [size, setSize] = createSignal<Size>()
   return (
     <>
       <img
         src={props.attachment.dataUrl}
         alt={props.attachment.filename}
-        data-slot="composer-thumbnail"
+        class={imageClass}
         onLoad={(event) => setSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
-        onClick={props.onOpen}
+        onClick={() => props.onOpen()}
       />
       <Show when={props.attachment.marks?.length ? size() : undefined}>
         {(natural) => (
-          <svg data-slot="composer-thumbnail-marks" viewBox={`0 0 ${natural().width} ${natural().height}`} preserveAspectRatio="xMidYMid slice">
+          <svg
+            class="absolute inset-0 size-16 rounded-md pointer-events-none"
+            viewBox={`0 0 ${natural().width} ${natural().height}`}
+            preserveAspectRatio="xMidYMid slice"
+          >
             <ImageMarkLayer size={natural()} marks={props.attachment.marks ?? []} firstNumber={props.firstMarkNumber} />
           </svg>
         )}
       </Show>
-      <IconButton
-        type="button"
-        icon="pencil-line"
-        size="small"
-        variant="neutral"
-        data-slot="composer-thumbnail-mark"
-        aria-label={props.markLabel}
-        onClick={props.onOpen}
-      />
+      <button type="button" onClick={() => props.onOpen()} class={markClass} aria-label={props.markLabel}>
+        <Icon name="pencil-line" class="size-3 m-1 text-text-weak" />
+      </button>
     </>
   )
 }
 
-export function ImageAttachments(props: {
-  attachments: readonly ImagePart[]
-  firstMarkNumber: (id: string) => number
-  removeLabel: string
-  markLabel: string
-  onOpen: (attachment: ImagePart) => void
-  onRemove: (id: string) => void
-}) {
+export const PromptImageAttachments: Component<PromptImageAttachmentsProps> = (props) => {
   return (
     <Show when={props.attachments.length > 0}>
-      <div data-slot="composer-attachments">
+      <div class="flex flex-wrap gap-2 px-3 pt-3">
         <For each={props.attachments}>
           {(attachment) => (
-            <Tooltip value={attachment.filename} placement="top">
-              <div data-slot="composer-attachment" data-attachment={attachment.id}>
+            <Tooltip value={attachment.filename} placement="top" contentClass="break-all">
+              <div class="relative group">
                 <Show
                   when={attachment.mime.startsWith("image/")}
                   fallback={
-                    <div data-slot="composer-thumbnail" data-kind="file">
-                      <Icon name="file" size="large" />
+                    <div class={fallbackClass}>
+                      <Icon name="folder" class="size-6 -m-0.5 text-text-weak" />
                     </div>
                   }
                 >
-                  <Thumbnail
+                  <ImageThumbnail
                     attachment={attachment}
                     firstMarkNumber={props.firstMarkNumber(attachment.id)}
-                    markLabel={props.markLabel}
                     onOpen={() => props.onOpen(attachment)}
+                    markLabel={props.markLabel}
                   />
                 </Show>
-                <IconButton
+                <button
                   type="button"
-                  icon="close-small"
-                  size="small"
-                  variant="neutral"
-                  data-slot="composer-thumbnail-remove"
-                  aria-label={props.removeLabel}
                   onClick={() => props.onRemove(attachment.id)}
-                />
-                <div data-slot="composer-thumbnail-name">{attachment.filename}</div>
+                  class={removeClass}
+                  aria-label={props.removeLabel}
+                >
+                  <Icon name="close" class="size-3 m-1 text-text-weak" />
+                </button>
+                <div class={nameClass}>
+                  <span class="text-10-regular text-text-invert-strong truncate block">{attachment.filename}</span>
+                </div>
               </div>
             </Tooltip>
           )}

@@ -7,9 +7,8 @@ import { useSessionScreenText } from "./text"
 function decodeDraft(value: Json): DraftSessionState | undefined {
   const project = readString(value, "projectId")
   const placement = readString(value, "placementId")
-  const draft = readString(value, "draftId")
-  if (!project || !placement || !draft) return undefined
-  return { projectId: projectId(project), placementId: placementId(placement), draftId: draft }
+  if (!project || !placement) return undefined
+  return { projectId: projectId(project), placementId: placementId(placement) }
 }
 
 export const draftSessionPaneKind: PaneKind<DraftSessionState> = {
@@ -17,6 +16,8 @@ export const draftSessionPaneKind: PaneKind<DraftSessionState> = {
   title: () => useSessionScreenText()("sessionScreen.draft.title"),
   icon: "plus",
   view: DraftSessionScreen,
-  encode: (state) => ({ projectId: state.projectId, placementId: state.placementId, draftId: state.draftId }),
+  encode: (state) => ({ projectId: state.projectId, placementId: state.placementId }),
   decode: decodeDraft,
+  fromRoute: (route) => (route.kind === "draft" ? { projectId: route.projectId, placementId: route.placementId } : undefined),
+  toRoute: (state) => ({ kind: "draft", projectId: state.projectId, placementId: state.placementId }),
 }

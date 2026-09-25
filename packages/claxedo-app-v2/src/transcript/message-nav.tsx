@@ -14,7 +14,7 @@ import {
   onCleanup,
   splitProps,
 } from "solid-js"
-import { DiffChanges } from "@opencode-ai/ui/diff-changes"
+import { DiffChanges } from "@/ui"
 import { useTranscriptI18n } from "./i18n"
 
 export type MessageNavPreview = {

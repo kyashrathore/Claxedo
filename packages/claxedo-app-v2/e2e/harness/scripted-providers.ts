@@ -1,4 +1,5 @@
 import type { ScriptedModelServer } from "./scripted-model-server"
+import { sendJson, type HttpTransport } from "./transport"
 
 export const SCRIPTED_PROVIDER_IDS = ["anthropic", "openai"] as const
 
@@ -10,13 +11,10 @@ function scriptedBaseUrl(providerId: ScriptedProviderId, scripted: ScriptedModel
   return providerId === "openai" ? scripted.v1Url : scripted.url
 }
 
-async function put(url: string, body: unknown, label: string) {
-  const response = await fetch(url, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
-  if (!response.ok) throw new Error(`${label} failed: ${response.status} ${await response.text()}`)
-}
-
-function routeToScripted(daemonUrl: string, providerId: ScriptedProviderId, scripted: ScriptedModelServer) {
-  return put(
+function routeToScripted(transport: HttpTransport, daemonUrl: string, providerId: ScriptedProviderId, scripted: ScriptedModelServer) {
+  return sendJson(
+    transport,
+    "PUT",
     `${daemonUrl}/api/claxedo/agent-config/providers/custom?nativeHarness=opencode`,
     {
       providerID: providerId,
@@ -28,17 +26,26 @@ function routeToScripted(daemonUrl: string, providerId: ScriptedProviderId, scri
   )
 }
 
-function storeScriptedKey(daemonUrl: string, providerId: ScriptedProviderId) {
-  return put(
+function storeScriptedKey(transport: HttpTransport, daemonUrl: string, providerId: ScriptedProviderId) {
+  return sendJson(
+    transport,
+    "PUT",
     `${daemonUrl}/api/claxedo/credentials`,
     { provider_id: providerId, kind: "api_key", source: "local_only", secret: SCRIPTED_SECRET },
     `Storing the scripted ${providerId} key`,
   )
 }
 
-export async function connectScriptedProviders(daemonUrl: string, scripted: ScriptedModelServer, input: { red: boolean }) {
-  for (const providerId of SCRIPTED_PROVIDER_IDS) {
-    if (!input.red) await routeToScripted(daemonUrl, providerId, scripted)
-    await storeScriptedKey(daemonUrl, providerId)
-  }
+export async function storeScriptedKeys(transport: HttpTransport, daemonUrl: string) {
+  for (const providerId of SCRIPTED_PROVIDER_IDS) await storeScriptedKey(transport, daemonUrl, providerId)
+}
+
+export async function connectScriptedProviders(
+  transport: HttpTransport,
+  daemonUrl: string,
+  scripted: ScriptedModelServer,
+  input: { red: boolean },
+) {
+  if (!input.red) for (const providerId of SCRIPTED_PROVIDER_IDS) await routeToScripted(transport, daemonUrl, providerId, scripted)
+  await storeScriptedKeys(transport, daemonUrl)
 }

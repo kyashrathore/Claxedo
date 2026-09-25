@@ -4,11 +4,12 @@ export type SessionScreenTextKey =
   | `sessionScreen.timeline.${TimelineTextKey}`
   | "sessionScreen.loading"
   | "sessionScreen.untitled"
-  | "sessionScreen.plan.title"
+  | "sessionScreen.subagent.label"
+  | "sessionScreen.subagent.task"
   | "sessionScreen.draft.title"
   | "sessionScreen.action.retry"
-  | "sessionScreen.missing"
   | "sessionScreen.failed"
+  | "sessionScreen.requests.loadFailed"
   | "sessionScreen.action.dismiss"
   | "sessionScreen.action.back"
   | "sessionScreen.action.next"
@@ -47,6 +48,7 @@ export type SessionScreenTextKey =
   | "sessionScreen.todo.progress"
   | "sessionScreen.todo.collapse"
   | "sessionScreen.todo.expand"
+  | "sessionScreen.connection.reconnecting"
   | "sessionScreen.goal.title"
   | "sessionScreen.goal.status.active"
   | "sessionScreen.goal.status.paused"
@@ -64,15 +66,22 @@ export type SessionScreenTextKey =
   | "sessionScreen.goal.metric.timeUsed"
   | "sessionScreen.child.promptDisabled"
   | "sessionScreen.child.backToParent"
+  | "command.message.previous"
+  | "command.message.previous.description"
+  | "command.message.next"
+  | "command.message.next.description"
+  | "command.session.new"
+  | "command.category.session"
 
 export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.loading": "Loading messages...",
   "sessionScreen.untitled": "Session",
-  "sessionScreen.plan.title": "Plan",
-  "sessionScreen.draft.title": "New session",
+  "sessionScreen.subagent.label": "Subagent",
+  "sessionScreen.subagent.task": "Delegated task",
+  "sessionScreen.draft.title": "New Session",
   "sessionScreen.action.retry": "Retry",
-  "sessionScreen.missing": "This session no longer exists.",
   "sessionScreen.failed": "Could not load this session.",
+  "sessionScreen.requests.loadFailed": "Could not load pending permissions or questions. Retry to continue.",
   "sessionScreen.action.dismiss": "Dismiss",
   "sessionScreen.action.back": "Back",
   "sessionScreen.action.next": "Next",
@@ -111,6 +120,7 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.todo.progress": "{{done}} of {{total}} todos completed",
   "sessionScreen.todo.collapse": "Collapse",
   "sessionScreen.todo.expand": "Expand",
+  "sessionScreen.connection.reconnecting": "Reconnecting…",
   "sessionScreen.goal.title": "Goal",
   "sessionScreen.goal.status.active": "Active",
   "sessionScreen.goal.status.paused": "Paused",
@@ -166,4 +176,10 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.timeline.ui.sessionTurn.diffs.showLess": "Show less",
   "sessionScreen.timeline.ui.sessionTurn.diffs.changed": "changed",
   "sessionScreen.timeline.ui.sessionTurn.status.thinking": "Thinking",
+  "command.message.previous": "Previous message",
+  "command.message.previous.description": "Go to the previous user message",
+  "command.message.next": "Next message",
+  "command.message.next.description": "Go to the next user message",
+  "command.session.new": "New session",
+  "command.category.session": "Session",
 }

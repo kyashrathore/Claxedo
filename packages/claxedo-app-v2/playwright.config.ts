@@ -13,6 +13,7 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   reporter: [["list"], ["html", { outputFolder: "e2e/report", open: "never" }]],
   use: {
+    ignoreHTTPSErrors: true,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
@@ -20,10 +21,12 @@ export default defineConfig({
   projects: [
     {
       name: "web",
+      grepInvert: /@desktop/,
       use: { ...devices["Desktop Chrome"] },
     },
     {
       name: "phone",
+      grepInvert: /@desktop/,
       use: {
         ...devices["iPhone 13"],
         browserName: "chromium",
@@ -31,6 +34,10 @@ export default defineConfig({
         hasTouch: true,
         isMobile: true,
       },
+    },
+    {
+      name: "desktop",
+      grep: /@desktop/,
     },
   ],
 })

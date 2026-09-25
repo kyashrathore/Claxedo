@@ -1,16 +1,8 @@
+import { rmSync } from "node:fs"
 import type { Page } from "@playwright/test"
-import { expect, SCRIPTED_ACP_HARNESS, test } from "../harness"
+import { expect, sessionRoute, test, UI } from "../harness"
 
-const TERMINAL_URL = /\/w\/[^/]+\/t\/[^/?]+$/
-
-async function createServerProject(url: string, name: string, directory: string) {
-  const response = await fetch(new URL("/api/claxedo/projects", url), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name, source: { kind: "directory", directory } }),
-  })
-  expect(response.status).toBe(201)
-}
+const TERMINAL_URL = /\/w\/[^/]+\/terminal\/pty_[^/?]+$/
 
 async function serverTerminalIds(serverUrl: string, directory: string): Promise<readonly string[]> {
   const url = new URL("/api/wr/pty", serverUrl)
@@ -60,43 +52,118 @@ async function ptyReplay(app: Page, directory: string, terminalId: string, marke
   )
 }
 
+function terminalPane(app: Page, terminalId: string) {
+  return app.locator(`[data-testid="terminal-pane"][data-terminal-id="${terminalId}"]`)
+}
+
+function compactTabs(app: Page) {
+  return app.getByRole("navigation", { name: "Workbench panes" }).getByTestId("compact-switcher-tab")
+}
+
+async function newShell(app: Page): Promise<string> {
+  await app.getByRole("button", { name: "New Terminal", exact: true }).click()
+  await app.getByRole("button", { name: /^Shell\b/ }).click()
+  await expect(app).toHaveURL(TERMINAL_URL)
+  return decodeURIComponent(new URL(app.url()).pathname.split("/").at(-1) ?? "")
+}
+
 test.skip(({ isMobile }) => isMobile, "flow 13 runs at desktop width")
 
-test("13 terminal: run a command, its output replays from the server, reload reattaches, closing ends it", async ({
-  stack,
-  api,
-  app,
-}) => {
-  const workspace = await stack.daemon.makeWorkspace("terminal")
-  await createServerProject(stack.url, "Terminal", workspace.directory)
-  const session = await api.createSession(workspace.directory, { title: "Terminal", harness: SCRIPTED_ACP_HARNESS })
+test("13 terminal: run a command, its output replays from the server, reload reattaches, closing leaves the draft", async ({ stack, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("terminal", "Terminal")
 
-  await app.goto(`${stack.url}/w/${encodeURIComponent(workspace.id)}/s/${encodeURIComponent(session.id)}`)
-  await expect(app.getByRole("tablist", { name: "Open panes" })).toBeVisible()
-  await app.keyboard.press("ControlOrMeta+Shift+P")
-  const palette = app.getByRole("dialog", { name: "Command palette" })
-  await palette.getByRole("combobox", { name: "Command palette" }).fill("New terminal")
-  await palette.getByRole("option", { name: /^New terminal/ }).click()
+  await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
+  const terminalId = await newShell(app)
+  await expect(terminalPane(app, terminalId)).toHaveAttribute("data-terminal-connected", "true")
 
-  const pane = app.getByRole("region", { name: "Terminal pane" })
-  await expect(pane).toHaveAttribute("data-terminal-connection", "attached")
-  await expect(app).toHaveURL(TERMINAL_URL)
-  const terminalId = decodeURIComponent(new URL(app.url()).pathname.split("/").at(-1) ?? "")
-
-  await pane.click()
+  await app.getByRole("textbox", { name: "Terminal input" }).focus()
   await app.keyboard.type("echo tools-e2e-$((6*7))")
   await app.keyboard.press("Enter")
   expect(await ptyReplay(app, workspace.directory, terminalId, "tools-e2e-42")).toContain("tools-e2e-42")
 
   await app.reload()
   await expect(app).toHaveURL(TERMINAL_URL)
-  await expect(app.getByRole("region", { name: "Terminal pane" })).toHaveAttribute(
-    "data-terminal-connection",
-    "attached",
-  )
+  await expect(terminalPane(app, terminalId)).toHaveAttribute("data-terminal-connected", "true")
   expect(await serverTerminalIds(stack.url, workspace.directory)).toContain(terminalId)
 
-  await app.getByRole("tablist", { name: "Open panes" }).getByRole("tab", { name: "Terminal 1" }).press("Delete")
-  await expect(app.getByRole("region", { name: "Terminal pane" })).toHaveCount(0)
-  await expect.poll(() => serverTerminalIds(stack.url, workspace.directory)).not.toContain(terminalId)
+  await app.getByRole("button", { name: /^Close terminal: / }).click()
+  await expect(terminalPane(app, terminalId)).toHaveCount(0)
+  await expect(app.getByRole("button", { name: /^Close terminal: / })).toHaveCount(0)
+  await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
+  if (stack.app === "v2") {
+    await test.step("v2 approved: closing a terminal ends its PTY (DECISIONS 18:25)", async () => {
+      await expect(app).not.toHaveURL(TERMINAL_URL)
+      await expect.poll(() => serverTerminalIds(stack.url, workspace.directory)).not.toContain(terminalId)
+    })
+  }
+})
+
+async function expectNoTerminalTab(app: Page) {
+  await expect(app.getByRole("button", { name: /^Close terminal: / })).toHaveCount(0)
+  await app.getByRole("button", { name: "Hide Sidebar" }).click()
+  await expect(compactTabs(app).first()).toBeVisible()
+  await expect(compactTabs(app).filter({ hasText: /Terminal/ })).toHaveCount(0)
+}
+
+test("13 terminal: a terminal closed in the rail leaves the compact tabs too", async ({ stack, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("terminal", "Terminal")
+  await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
+  await newShell(app)
+  await app.getByRole("button", { name: /^Close terminal: / }).click()
+  await expectNoTerminalTab(app)
+})
+
+test("13 terminal: a terminal dead after a restart is gone from the rail and the compact tabs on the next load", async ({ stack, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("terminal", "Terminal")
+  await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
+  const deadId = await newShell(app)
+  await app.goto("about:blank")
+  const url = new URL(`/api/wr/pty/${encodeURIComponent(deadId)}`, stack.url)
+  url.searchParams.set("directory", workspace.directory)
+  expect((await fetch(url, { method: "DELETE" })).ok).toBe(true)
+  await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
+  await expect(app.getByRole("button", { name: "Hide Sidebar" })).toBeVisible()
+  await expectNoTerminalTab(app)
+})
+
+test("13 terminal: a shell that exits leaves the rail, its pane and the compact tabs", async ({ stack, app }) => {
+  test.skip(stack.app === "v1", "today's app keeps an exited shell's pane and row")
+  const workspace = await stack.daemon.makeWorkspace("terminal", "Terminal")
+  await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
+  const exitedId = await newShell(app)
+  await expect(terminalPane(app, exitedId)).toHaveAttribute("data-terminal-connected", "true")
+  await app.getByRole("textbox", { name: "Terminal input" }).focus()
+  await app.keyboard.type("echo exit-ready-$((6*7))")
+  await app.keyboard.press("Enter")
+  await ptyReplay(app, workspace.directory, exitedId, "exit-ready-42")
+  await app.keyboard.type("exit")
+  await app.keyboard.press("Enter")
+  await expect(terminalPane(app, exitedId)).toHaveCount(0)
+  await expectNoTerminalTab(app)
+})
+
+test("13 terminal: a daemon restart ends the open terminal in the rail, its pane and the compact tabs", async ({ stack, app }) => {
+  test.skip(stack.app === "v1", "today's app keeps the dead terminal's rail row after a restart")
+  const workspace = await stack.daemon.makeWorkspace("terminal", "Terminal")
+  await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
+  const restartedId = await newShell(app)
+  await expect(terminalPane(app, restartedId)).toHaveAttribute("data-terminal-connected", "true")
+  await stack.daemon.restart()
+  await expect(terminalPane(app, restartedId)).toHaveCount(0, { timeout: 30_000 })
+  await expectNoTerminalTab(app)
+})
+
+test("13 terminal: a workspace whose folder is gone reads no terminal list", async ({ stack, app }) => {
+  test.skip(stack.app === "v1", "the owner's 404 cleanup: v2 reads no terminal list for an unreachable placement")
+  const live = await stack.daemon.makeWorkspace("live", "Live")
+  const gone = await stack.daemon.makeWorkspace("gone", "Gone")
+  rmSync(gone.directory, { recursive: true, force: true })
+  const reads: string[] = []
+  app.on("request", (request) => {
+    if (request.url().includes("/api/wr/pty")) reads.push(decodeURIComponent(request.url()))
+  })
+  await app.goto(`${stack.url}${sessionRoute(live.id)}`)
+  await expect(app.getByRole("navigation", { name: UI.rail })).toBeVisible()
+  await expect.poll(() => reads.some((url) => url.includes(live.directory))).toBe(true)
+  expect(reads.filter((url) => url.includes(gone.directory))).toEqual([])
 })

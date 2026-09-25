@@ -1,15 +1,15 @@
-import { useErrorCopy } from "@/composer"
 import { For, Show, createUniqueId, onCleanup, onMount } from "solid-js"
 import type { AgentQuestion } from "@claxedo/agent-runtime-contract"
 import type { AgentRequestReply } from "@/server"
+import type { RequestState } from "@/session"
 import { DockPrompt } from "@/transcript"
-import { Button, IconButton } from "@/ui"
+import { ClaxedoIconButton as IconButton, Button } from "@/ui"
 import { useSessionScreenText } from "../text"
 import { createDockAction, type DockAction } from "./dock-action"
 import { createQuestionAnswers, type QuestionAnswers } from "./question-answers"
 import { classifyQuestionKey } from "./question-nav"
 import { QuestionCustomOption, QuestionOption } from "./question-option"
-import { createRequestReply } from "./request-reply"
+import { replyError } from "./model"
 
 function QuestionHeader(props: { answers: QuestionAnswers; busy: boolean }) {
   const t = useSessionScreenText()
@@ -80,12 +80,12 @@ function QuestionFooter(props: {
       </div>
       <div data-slot="question-footer-actions">
         <Show when={props.answers.draft.tab > 0}>
-          <Button variant="neutral" size="large" disabled={props.busy} onClick={() => props.answers.back()}>
+          <Button variant="secondary" size="large" disabled={props.busy} onClick={() => props.answers.back()}>
             {t("sessionScreen.action.back")}
           </Button>
         </Show>
         <Button
-          variant={props.answers.last() ? "contrast" : "neutral"}
+          variant={props.answers.last() ? "primary" : "secondary"}
           size="large"
           disabled={props.busy}
           onClick={props.onNext}
@@ -100,13 +100,12 @@ function QuestionFooter(props: {
 
 export function QuestionDock(props: {
   request: AgentQuestion
-  onReply: (reply: AgentRequestReply) => Promise<void>
+  replyState: RequestState
+  onReply: (reply: AgentRequestReply) => void
   onStop?: () => Promise<void>
 }) {
   const t = useSessionScreenText()
-  const errorCopy = useErrorCopy()
   const textId = createUniqueId()
-  const reply = createRequestReply(props.onReply)
   const stop = createDockAction<"stop">()
   let customRef: HTMLButtonElement | undefined
   const optionRefs: HTMLButtonElement[] = []
@@ -124,11 +123,13 @@ export function QuestionDock(props: {
   onCleanup(() => {
     if (frame !== undefined) cancelAnimationFrame(frame)
   })
-  const busy = () => reply.answering() || stop.running()
-  const dismiss = () => void reply.reply({ kind: "dismiss" })
+  const busy = () => props.replyState.kind === "answering" || stop.running()
+  const dismiss = () => {
+    if (!busy()) props.onReply({ kind: "dismiss" })
+  }
   const next = () => {
     if (busy()) return
-    if (answers.next() === "submit") void reply.reply({ kind: "question", answers: answers.answers() })
+    if (answers.next() === "submit") props.onReply({ kind: "question", answers: answers.answers() })
   }
   const keyDown = (event: KeyboardEvent) => {
     if (answers.draft.collapsed) return
@@ -149,7 +150,7 @@ export function QuestionDock(props: {
       header={<QuestionHeader answers={answers} busy={busy()} />}
       footer={<QuestionFooter answers={answers} busy={busy()} stop={stop} onStop={props.onStop} onDismiss={dismiss} onNext={next} />}
     >
-      <Show when={reply.error() ?? stop.error()}>{(error) => <div role="alert" data-slot="question-error" data-error-class={error().class} title={error().message}>{errorCopy(error())}</div>}</Show>
+      <Show when={replyError(props.replyState) ?? stop.error()}>{(error) => <div role="alert" data-slot="question-error" data-error-class={error().class}>{error().message}</div>}</Show>
       <div id={textId} data-slot="question-text" class="ui-question-text">{answers.question()?.question}</div>
       <div data-slot="question-hint">{t(answers.multi() ? "sessionScreen.question.multiHint" : "sessionScreen.question.singleHint")}</div>
       <div data-slot="question-options" role={answers.multi() ? "group" : "radiogroup"} aria-labelledby={textId}>

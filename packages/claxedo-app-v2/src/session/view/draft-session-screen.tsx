@@ -1,49 +1,67 @@
-import { Composer, draftComposerKey, useComposerStore } from "@/composer"
+import { Composer, ComposerNoticeProvider, ComposerNoticeRow, createComposerNoticeChannel, draftComposerKey, type Submission } from "@/composer"
+import { NewSessionContextRow, resolveDraftPlacement } from "@/projects"
 import type { PlacementId, ProjectId } from "@/server"
-import { useServer } from "@/server"
 import { useSessionStores, type SessionView } from "@/session"
-import type { PaneProps } from "@/shell"
+import { useCommands, useShellRoute, type PaneProps } from "@/shell"
+import { ClaxedoLogo } from "@/ui"
 import { useWorkbench } from "@/workbench"
+import { draftSessionPaneKind } from "./draft-pane"
 import { sessionPaneKind } from "./session-pane"
 import { useSessionScreenText } from "./text"
+import { registerSessionCommands } from "./session-commands"
 import "./session-screen.css"
 
 export type DraftSessionState = {
   readonly projectId: ProjectId
   readonly placementId: PlacementId
-  readonly draftId: string
 }
 
 export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
   const t = useSessionScreenText()
-  const server = useServer()
   const stores = useSessionStores()
-  const composers = useComposerStore()
   const workbench = useWorkbench()
-  const key = () => draftComposerKey(props.state.placementId, props.state.draftId)
-  const placement = () => server.placements.byId(props.state.placementId)
-  const createSession = async (): Promise<SessionView> => {
-    const selection = composers.selection(key())
-    const ref = await stores.list.create({ placementId: props.state.placementId, harness: selection.harness, model: selection.model })
+  const routing = useShellRoute()
+  registerSessionCommands({ commands: useCommands(), placementId: () => props.state.placementId, active: () => props.active, navigate: (path) => routing.navigate(path), t })
+  const key = () => draftComposerKey(props.state.placementId)
+  const notice = createComposerNoticeChannel()
+  let pane: HTMLDivElement | undefined
+  const createSession = async (submission: Submission): Promise<SessionView> => {
+    const ref = await stores.list.create({ placementId: await resolveDraftPlacement(props.state), harness: submission.harness, model: submission.model })
     return stores.open(ref)
   }
   return (
     <section data-component="session-screen" data-variant="draft" aria-label={t("sessionScreen.draft.title")}>
-      <div data-slot="session-screen-body">
-        <div data-slot="session-screen-draft">
-          <h2 data-slot="session-screen-draft-title">{t("sessionScreen.draft.title")}</h2>
-          <p data-slot="session-screen-draft-placement">{placement()?.label}</p>
+      <ComposerNoticeProvider channel={notice}>
+        <div ref={pane} data-component="session-new-design" class="relative size-full overflow-hidden bg-background-base">
+          <div class="absolute inset-x-0 top-[34%] flex justify-center px-6">
+            <div data-component="session-new-design-content" class="w-full max-w-[720px]">
+              <div class="mb-5 flex justify-center">
+                <ClaxedoLogo class="w-12 opacity-14" />
+              </div>
+              <div>
+                <ComposerNoticeRow notice={notice.current()} />
+                <div class="relative" classList={{ "z-10 -mt-2": !!notice.current() }}>
+                  <NewSessionContextRow
+                    projectId={props.state.projectId}
+                    placementId={props.state.placementId}
+                    onOpen={(target) => workbench.replacePane(props.paneId, draftSessionPaneKind, target)}
+                  />
+                </div>
+                <div class="relative z-10 -mt-2">
+                  <Composer
+                    composerKey={key()}
+                    placementId={props.state.placementId}
+                    attachmentWorkspace={true}
+                    createSession={createSession}
+                    afterAccepted={(view) => workbench.replacePane(props.paneId, sessionPaneKind, view.ref)}
+                    dropZone={() => pane}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-        <div data-slot="session-screen-dock">
-          <Composer
-            composerKey={key()}
-            placementId={props.state.placementId}
-            attachmentWorkspace={true}
-            createSession={createSession}
-            afterAccepted={(view) => workbench.replacePane(props.paneId, sessionPaneKind, view.ref)}
-          />
-        </div>
-      </div>
+      </ComposerNoticeProvider>
     </section>
   )
 }

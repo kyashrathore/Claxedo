@@ -53,7 +53,6 @@ export function useMachines(): Accessor<Loaded<readonly Machine[]>> {
 export function useProjectCommands() {
   const server = useServer()
   return {
-    rename: (id: ProjectId, name: string) => server.projects.update(id, { name }),
     remove: (id: ProjectId) => server.projects.remove(id),
   }
 }

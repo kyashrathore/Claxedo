@@ -1,37 +1,18 @@
-import type { PageEntry } from "@/shell"
-import { useProjectsText } from "./i18n"
-import { addProjectPath, projectPathPattern } from "./routes"
-import { AddProjectPage } from "./view/add-project-page"
-import { ProjectPage } from "./view/project-page"
-
-export type { AddProjectFlow, ProjectCreated } from "./add-project"
-export { createAddProjectFlow, useAddProjectFlow } from "./add-project"
 export type { ProjectsKey, ProjectsText } from "./i18n"
-export { dictionary as projectsDictionary, useProjectsText } from "./i18n"
-export type { AddProjectEvent, AddProjectState, AddProjectStep, PlacementChoice, ProjectDraft } from "./model"
-export { addProjectStep, addProjectSteps, addProjectTransition, draftProjectName, sourceLabel } from "./model"
-export { useCreatedProjectOpener, usePlacementOpener } from "./open"
-export { addProjectPath, projectPath, projectPathPattern } from "./routes"
+export { useProjectsText } from "./i18n"
+export { draftProjectName, sourceLabel } from "./project-source"
+export { primaryPlacement, usePlacementOpener } from "./open"
+export { inCatalogOrder } from "./project-order"
+export { pickProjectFolderWith } from "./pick-project-folder"
+export { projectSettingsPath } from "./routes"
+export { AVATAR_COLOR_KEYS } from "./project-colors"
+export type { ProjectList, RailProject } from "./project-list"
+export { createProjectList, ProjectListProvider, useProjectList } from "./project-list"
 export type { Loaded, ProjectView } from "./store"
 export { useMachines, useProject, useProjectCommands, useProjectPlacements, useProjects } from "./store"
-export { AddProjectSteps } from "./view/add-project-steps"
 export { placementKindLabel, PlacementList } from "./view/placement-list"
-export { ProjectsSidebarSection } from "./view/project-list"
-
-export const projectPage: PageEntry = {
-  id: "project",
-  path: projectPathPattern,
-  title: () => useProjectsText()("projects.title"),
-  icon: "folder",
-  sidebar: "main",
-  view: ProjectPage,
-}
-
-export const addProjectPage: PageEntry = {
-  id: "add-project",
-  path: addProjectPath,
-  title: () => useProjectsText()("projects.add.title"),
-  icon: "plus",
-  sidebar: "main",
-  view: AddProjectPage,
-}
+export { DialogEditProject } from "./view/edit-project-dialog"
+export { resolveDraftPlacement, type DraftTarget } from "./draft-context"
+export { NewSessionContextRow } from "./view/new-session-context-row"
+export { ProjectCreateForm, type ProjectCreateFormProps } from "./view/project-create-form"
+export { projectsSettingsSection } from "./view/projects-settings"

@@ -5,6 +5,7 @@ import type {
   AppError,
   FileDiff,
   GoalAction,
+  PlacementId,
   PromptInput,
   RequestId,
   SessionCreateInput,
@@ -17,6 +18,7 @@ import type {
   TranscriptPart,
 } from "@/server"
 import type { TranscriptConversation } from "@/transcript"
+import type { SessionSubagent } from "./transcript/subagent-merge"
 import type { QueuedMessages } from "./view/timeline/model"
 
 export type SessionStatusView = SessionStatus | { readonly kind: "unknown" }
@@ -42,9 +44,9 @@ export type LoadMoreState =
 export type SessionList = {
   readonly state: Accessor<SessionListState>
   readonly rows: Accessor<readonly SessionRowView[]>
-  readonly hasMore: Accessor<boolean>
+  readonly hasMore: (placementIds: readonly PlacementId[]) => boolean
   readonly moreState: Accessor<LoadMoreState>
-  readonly loadMore: () => Promise<void>
+  readonly loadMore: (placementIds: readonly PlacementId[]) => Promise<void>
   readonly reload: () => Promise<void>
   readonly create: (input: SessionCreateInput) => Promise<SessionRef>
 }
@@ -78,12 +80,16 @@ export type SessionView = {
   readonly conversation: Accessor<TranscriptConversation | undefined>
   readonly turnSettlePending: (userMessageId: string) => boolean
   readonly queue: QueuedMessages
+  readonly replaceQueued: (seq: number, input: PromptInput) => Promise<boolean>
   readonly requests: Accessor<readonly AgentRequest[]>
+  readonly requestsError: Accessor<AppError | undefined>
   readonly requestState: (requestId: RequestId) => RequestState
   readonly todos: Accessor<readonly Todo[]>
   readonly diff: Accessor<readonly FileDiff[]>
+  readonly subagents: Accessor<readonly SessionSubagent[]>
   readonly goal: Accessor<SessionGoal | undefined>
   readonly goalActions: Accessor<readonly GoalAction[]>
+  readonly goalAvailable: Accessor<boolean | undefined>
   readonly controlGoal: (action: GoalAction) => Promise<void>
   readonly hasOlder: Accessor<boolean>
   readonly olderState: Accessor<OlderState>
@@ -94,9 +100,12 @@ export type SessionView = {
   readonly reply: (requestId: RequestId, reply: AgentRequestReply) => Promise<void>
 }
 
+export type { SessionSubagent }
+
 export type SessionStores = {
   readonly list: SessionList
   readonly open: (ref: SessionRef) => SessionView
 }
 
 export { createSessionStores, SessionStoresProvider, useSessionStores } from "./store"
+export { draftSessionPaneKind, sessionPaneKind, subagentPanelView } from "./view"

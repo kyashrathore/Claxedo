@@ -12,28 +12,27 @@ import type {
   ImageMark,
   Prompt,
   PromptPart,
-  Selection,
 } from "./model"
 import { emptyDraft, emptyPrompt, promptText } from "./model"
 import { prependHistoryEntry } from "./editor/history"
+import type { ComposerPersistence } from "./persistence"
 
 const MAX_ENTRIES = 20
 
 export type ComposerKey = string
 
 export const sessionComposerKey = (ref: SessionRef): ComposerKey => `session:${ref.sessionId}`
-export const draftComposerKey = (placementId: PlacementId, draftId: string): ComposerKey => `draft:${placementId}:${draftId}`
+export const draftComposerKey = (placementId: PlacementId): ComposerKey => `draft:${placementId}`
 
 type Entry = {
   draft: Draft
   history: History
-  selection: Selection
   attachments: AttachmentState[]
 }
 
-const emptyEntry = (): Entry => ({ draft: emptyDraft(), history: { normal: [], shell: [] }, selection: {}, attachments: [] })
+const emptyEntry = (): Entry => ({ draft: emptyDraft(), history: { normal: [], shell: [] }, attachments: [] })
 
-function createEntryTable() {
+function createEntryTable(persistence: ComposerPersistence | undefined) {
   const [entries, setEntries] = createStore<Record<ComposerKey, Entry>>({})
   const recent: ComposerKey[] = []
   const retained = new Map<ComposerKey, number>()
@@ -46,7 +45,10 @@ function createEntryTable() {
     }
   }
   const ensure = (key: ComposerKey) => {
-    if (!entries[key]) setEntries(key, emptyEntry())
+    if (!entries[key]) {
+      const saved = persistence?.load(key)
+      setEntries(key, saved ? { ...emptyEntry(), draft: { ...saved.draft, goalArmed: false }, history: saved.history } : emptyEntry())
+    }
     const index = recent.indexOf(key)
     if (index >= 0) recent.splice(index, 1)
     recent.push(key)
@@ -61,7 +63,13 @@ function createEntryTable() {
       else retained.set(key, count)
     }
   }
-  return { setEntries, ensure, retain, entry: (key: ComposerKey): Entry => entries[key] ?? emptyEntry() }
+  const persist = (key: ComposerKey) => {
+    const entry = entries[key]
+    if (!entry || !persistence) return
+    const { goalArmed: _armed, ...draft } = entry.draft
+    persistence.save(key, { draft, history: entry.history })
+  }
+  return { setEntries, ensure, retain, persist, entry: (key: ComposerKey): Entry => entries[key] ?? emptyEntry() }
 }
 
 type EntryTable = ReturnType<typeof createEntryTable>
@@ -73,6 +81,7 @@ function promptActions(table: EntryTable) {
       table.setEntries(key, "draft", "prompt", prompt)
       table.setEntries(key, "draft", "cursor", cursor)
     })
+    table.persist(key)
   }
   return {
     setPrompt,
@@ -102,24 +111,33 @@ function withImageMarks(prompt: Prompt, id: string, marks: ImageMark[]): Prompt 
 }
 
 function draftActions(table: EntryTable) {
-  const { ensure, setEntries } = table
+  const { ensure, setEntries, persist } = table
   return {
     setCursor: (key: ComposerKey, cursor: number) => {
       ensure(key)
       setEntries(key, "draft", "cursor", cursor)
+      persist(key)
     },
     reset: (key: ComposerKey) => {
       ensure(key)
       setEntries(key, "draft", emptyDraft())
+      persist(key)
     },
     addContext: (key: ComposerKey, item: ContextItem) => {
       ensure(key)
       if (table.entry(key).draft.context.some((existing) => existing.key === item.key)) return
       setEntries(key, "draft", "context", (items) => [...items, item])
+      persist(key)
+    },
+    setContext: (key: ComposerKey, items: ContextItem[]) => {
+      ensure(key)
+      setEntries(key, "draft", "context", items)
+      persist(key)
     },
     removeContext: (key: ComposerKey, itemKey: string) => {
       ensure(key)
       setEntries(key, "draft", "context", (items) => items.filter((item) => item.key !== itemKey))
+      persist(key)
     },
     setGoalArmed: (key: ComposerKey, armed: boolean) => {
       ensure(key)
@@ -129,15 +147,12 @@ function draftActions(table: EntryTable) {
 }
 
 function entryActions(table: EntryTable) {
-  const { ensure, setEntries } = table
+  const { ensure, setEntries, persist } = table
   return {
-    setSelection: (key: ComposerKey, patch: Selection) => {
-      ensure(key)
-      setEntries(key, "selection", (current) => ({ ...current, ...patch }))
-    },
     addHistory: (key: ComposerKey, mode: EditorMode, prompt: Prompt, comments: HistoryComment[]) => {
       ensure(key)
       setEntries(key, "history", mode, (list) => prependHistoryEntry(list, prompt, comments))
+      persist(key)
     },
     setAttachment: (key: ComposerKey, state: AttachmentState) => {
       ensure(key)
@@ -150,12 +165,11 @@ function entryActions(table: EntryTable) {
   }
 }
 
-export function createComposerStore() {
-  const table = createEntryTable()
+export function createComposerStore(persistence?: ComposerPersistence) {
+  const table = createEntryTable(persistence)
   return {
     retain: table.retain,
     draft: (key: ComposerKey) => table.entry(key).draft,
-    selection: (key: ComposerKey) => table.entry(key).selection,
     attachments: (key: ComposerKey) => table.entry(key).attachments,
     history: (key: ComposerKey, mode: EditorMode): HistoryEntry[] => table.entry(key).history[mode],
     ...promptActions(table),

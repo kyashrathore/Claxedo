@@ -89,7 +89,9 @@ export function restoreShadowTextSelection(root: ShadowRoot | undefined, range: 
     try {
       selection.removeAllRanges()
       selection.addRange(range)
-    } catch {}
+    } catch (error) {
+      console.warn("The diff selection could not be restored", { error })
+    }
   })
 }
 

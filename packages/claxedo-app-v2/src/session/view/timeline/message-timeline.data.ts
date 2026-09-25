@@ -27,8 +27,8 @@ import {
   turnFoldDecision,
   type PartRef,
 } from "@/transcript"
+import { isCodexTurnAborted, isTurnAdmissionConflict } from "@/server"
 import {
-  isTurnAdmissionConflict,
   sessionRecoveryClass,
   sessionRecoveryDescription,
 } from "./turn-recovery"
@@ -443,9 +443,11 @@ export namespace Timeline {
     const text = message.replace(/^Error:\s*/, "").trim()
 
     const parse = (value: string) => {
+      if (!/^\s*[[{]/.test(value)) return undefined
       try {
         return JSON.parse(value) as unknown
-      } catch {
+      } catch (error) {
+        console.warn("An error message that looks like JSON could not be parsed", { error })
         return undefined
       }
     }
@@ -516,7 +518,7 @@ export namespace Timeline {
   function assistantMessageInterrupted(message: AssistantMessage) {
     if (message.error?.name === "MessageAbortedError") return true
     if (message.error?.name !== "UnknownError") return false
-    return (message.error.data as { message?: unknown } | undefined)?.message === "Codex turn aborted"
+    return isCodexTurnAborted(message.error.data)
   }
 }
 

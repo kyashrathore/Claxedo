@@ -1,6 +1,6 @@
-import type { AgentPermission, AgentQuestion } from "@claxedo/agent-runtime-contract"
+import type { AgentPermission, AgentPermissionReply, AgentQuestion } from "@claxedo/agent-runtime-contract"
 import { requestId } from "../ids"
-import type { AgentRequest, AgentRequestReply } from "../types"
+import type { AgentRequest } from "../types"
 
 export function permissionRequest(permission: AgentPermission): AgentRequest {
   return { kind: "permission", id: requestId(permission.id), permission }
@@ -20,9 +20,7 @@ export function isQuestionWire(value: unknown): value is AgentQuestion {
   return !!row && typeof row.id === "string" && typeof row.sessionID === "string" && Array.isArray(row.questions)
 }
 
-export function permissionReplyBody(reply: AgentRequestReply): Record<string, unknown> {
-  if (reply.kind === "dismiss") return { response: "reject" }
-  if (reply.kind !== "permission") return { response: "reject" }
-  if (typeof reply.reply === "string") return { response: reply.reply }
-  return { optionId: reply.reply.optionId }
+export function permissionReplyBody(reply: AgentPermissionReply): Record<string, unknown> {
+  if (typeof reply === "string") return { response: reply }
+  return { optionId: reply.optionId }
 }

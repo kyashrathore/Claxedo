@@ -10,8 +10,7 @@ const SNIPPET_MAX_CHARS = 600
 export type PickDelivery = (pick: PickedElement) => boolean
 
 function pickLabel(t: DomainTranslate<BrowserKey>, pick: PickedElement): string {
-  const host = hostOf(pick.pageUrl)
-  return pick.selector ? t("browser.pick.label", { tag: pick.tagName, host }) : t("browser.screenshot.label", { host })
+  return t("browser.pick.label", { tag: pick.tagName, host: hostOf(pick.pageUrl) })
 }
 
 function pickText(pick: PickedElement): string {

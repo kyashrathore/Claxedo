@@ -858,11 +858,14 @@ describe("SdkRuntimeAdapter", () => {
 
   test("native lifecycle cancellation settles pending permissions and questions without the abort API", async () => {
     const store = createMemoryRuntimeStore()
+    const eventHub = createRuntimeEventHub()
+    const published: string[] = []
+    eventHub.subscribeGlobal((event) => published.push(event.payload.type))
     let host!: SdkRuntimeDriverHost
     let ready!: () => void
     const pending = new Promise<void>((resolve) => { ready = resolve })
     const settlements: string[] = []
-    const adapter = new SdkRuntimeAdapter({ store, driver: (owner) => {
+    const adapter = new SdkRuntimeAdapter({ store, eventHub, driver: (owner) => {
       host = owner
       return { ...minimalSdkRuntimeDriver(), runTurn: async (input) => {
         await new Promise<void>((resolve) => {
@@ -880,6 +883,7 @@ describe("SdkRuntimeAdapter", () => {
     expect(host.lifecycle().abort(session.id)).toBe(true)
     await turn
     expect(settlements).toEqual(["deny", "question-rejected"])
+    expect(published).toEqual(expect.arrayContaining(["permission.replied", "question.rejected"]))
     expect(host.pendingPermissions.size).toBe(0)
     expect(host.pendingQuestions.size).toBe(0)
     await adapter.dispose()

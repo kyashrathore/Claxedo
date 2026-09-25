@@ -1,32 +1,24 @@
 # Review
 
-Owns: the Changes panel tab. It shows the diff of a placement for a scope, turns line comments into context for the agent, and runs commit, push and worktree creation.
+Owns: the workspace panel's Review tab and its Changes column, ported from v1. The Review tab shows the diff of a placement for a scope and turns line comments into context for the agent; the Changes column stages, unstages, commits, pushes and walks the commit graph.
 
 ## Owned concepts
 
-- **Scope** (`model.ts`): what the diff compares. `uncommitted`, `staged`, `unstaged`, `branch(base)`, `branchWorktree(base)` or `range(from, to)`. Choosing a scope collapses every file.
-- **Diff document** (`view/review-diffs.tsx`): the transcript's `ReviewCodeView`, the one diff renderer in the app, over `server.queries.git.diff`. A file's patch loads only when the view asks for it (`diff-content.ts`, at most 64 files per scope), through `server.queries.git.diffFile`. Media files and diffs over 500 changed lines show a notice instead of a diff; "Render anyway" lifts the guard for that file.
-- **Line comment** (`comments.ts`): a comment on a line range, written for the agent. Its only home is the focused session's composer draft, as a file context item with `commentOrigin: "review"`. The review derives its annotations from that draft; removing the chip in the composer removes the comment here, and sending the prompt sends it. With no session in the URL, the diff is read-only.
-- **Commit** (`view/commit-box.tsx`): every changed file is included unless the user excludes it. Commit stages the included files, unstages staged files the user excluded, then commits the message. Push publishes the branch when it has no upstream.
-- **Worktree** (`view/worktrees.tsx`): a new worktree placement of the same project, named or not. The server creates worktrees only from a local folder and takes no base ref, so the section asks only for a name and is hidden for cloud placements.
+- **Scope** (`intent.ts`, `model.ts`): what the diff compares. `uncommitted`, `staged`, `unstaged`, `branch(base)`, `branchWorktree(base)` or `range(from, to)`, shown in v1's terms (`ReviewMode` with `fromRef`/`toRef`). Choosing a scope collapses every file. Selecting a commit in the graph reviews it against its first parent (or the empty tree).
+- **Review tab** (`view/review-tab.tsx`): v1's toolbar portals into the panel's L2 row (`view/review-toolbar.tsx`): the compare trigger with its file count and tooltip, the compare menu (`view/compare-menu.tsx`, `view/compare-list.tsx`: search, modes, branches, remote branches, tags, commits, and a Base view), the totals, "Expand all" / "Collapse all" and the diff style toggle ("d" toggles it while the tab is visible). The diff is the transcript's `ReviewCodeView` over `server.queries.git.diff`; each row's header and body are v1's (`view/review-file-row.tsx`): the path, the change summary, and on the hovered row "Copy", the chevron and "Open file". An empty review shows the mark, "No changes for this review mode", the branch diff offer and the placement's folder.
+- **Row bodies** (`diff-content.ts`): a file's patch loads only when the view asks for it (at most 64 files per scope) through `server.queries.git.diffFile`; media files load their current bytes through `server.queries.files.content`. Diffs over 500 changed lines wait behind "Render anyway". A failed load shows its message and "Retry loading diff".
+- **Line comment** (`comments.ts`, `view/code-view-comments.tsx`): a comment on a line range, written for the agent. Its only home is the focused session's composer draft, as a file context item with `commentOrigin: "review"`. Removing the chip in the composer removes the comment here, and sending the prompt sends it. With no session in the URL, the gutter is off.
+- **Changes column** (`view/source-control-view.tsx`): the commit message and split commit button ("Commit", "Commit & Push", "Amend last commit"; commit needs a message and staged files), the push row ("Publish Branch", "Push N" or "Up to date"), the compared files while the scope compares refs, "Staged changes" and "Changes" with stage and unstage, and the collapsed "Graph" of the last 50 commits. A row opens its diff in the Review tab in that group's scope.
+- **Git actions** (`git-actions.ts`): one `@/lib/flow` for stage, unstage, commit and push, so the column knows which one runs and shows the last failure under the commit button.
 - **Diff style**: unified or split, one preference for the user.
-
-## State machines
-
-- **Diff load**: the summary query drawn as `loading`, `failed` (with retry) or `ready`; `ready` with no files offers the branch diff against the default base.
-- **File body** (`diff-content.ts`): `media`, `large`, `loading`, `failed` (with retry) or `ready`.
-- **Flows** (`@/lib/flow`): commit `idle → running(staging | committing) → done(hash) | failed(error)`, push `idle → running(pushing) → done(remote, branch) | failed(error)`, worktree `idle → running(creating) → done(placement) | failed(error)`. Git error codes (`git_empty_message`, `git_nothing_staged`, `git_conflict`, `git_push_rejected`, `git_timeout`) have their own copy (`gitErrorCopy`); any other failure shows the app's copy for its error class (`useErrorCopy()` from `src/i18n`).
 
 ## Invariants
 
-- Diffs, status, refs and bases are the adapter's query data, refreshed only by its `filesChanged` invalidation. Nothing here copies them.
-- `ReviewProvider` holds the per-placement view state (scope, open files, exclusions, forced files, the commit message). It mounts inside the scoped shell, so that state survives switching panel tabs.
+- Diffs, status, log, refs and bases are the adapter's query data, refreshed by its invalidation after every git action and by `filesChanged`. Nothing here copies them.
+- `ReviewProvider` holds the per-placement view state (scope, open files, forced files, the commit message). It mounts inside the scoped shell, so that state survives closing the panel and switching its tabs.
 - A comment's range is stored without its diff side until the composer's file context item carries one, so a comment on a deleted line is drawn on the additions side.
-
-## Commands
-
-`review.toggleDiffStyle`, while the Changes tab is open.
+- Git error codes (`git_empty_message`, `git_nothing_staged`, `git_conflict`, `git_push_rejected`, `git_timeout`) have their own copy (`gitErrorCopy`); any other failure shows the app's copy for its error class.
 
 ## Flows
 
-Flow 14 (diff, a line comment reaching the agent, commit, push to a local bare remote, worktree) and flow 33 (phone).
+Flow 14 (the diff, a line comment reaching the agent, stage, commit, push to a local bare remote) and flow 33 (phone).

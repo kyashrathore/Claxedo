@@ -1,10 +1,7 @@
 import type { AgentRuntimeStatus } from "@claxedo/agent-runtime-contract"
 import { turnError } from "../errors"
 import type { RetryAction, SessionStatus } from "../types"
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value)
-}
+import { isRecord } from "../../lib/record"
 
 function retryAction(value: unknown): RetryAction | undefined {
   if (!isRecord(value)) return undefined

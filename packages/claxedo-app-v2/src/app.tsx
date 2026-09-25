@@ -2,12 +2,16 @@ import { browserAuthAdapter } from "#browser-auth-adapter"
 import { createMemo, Show, type JSX, type ParentProps } from "solid-js"
 import { AuthProvider, useAuth, type Auth, type AuthState } from "@/auth"
 import { I18nProvider } from "@/i18n"
-import { MainSidebar } from "@/rail"
+import { ClockProvider } from "@/lib/clock"
+import { ProjectListProvider } from "@/projects"
+import { CompactSwitcher, MainSidebar } from "@/rail"
 import { createServer, ServerProvider, type AuthSource } from "@/server"
 import { SessionStoresProvider } from "@/session"
+import { AttentionAlerts } from "@/notifications"
+import { PreferencesProvider, usePreferences } from "@/settings"
 import { AppShell, createShellRegistries, ShellRegistriesContext, ShellRouter, type ShellRouterComponent } from "@/shell"
-import { firstParty } from "@/shell/registry"
-import { DialogProvider, ThemeProvider } from "@/ui"
+import { firstParty } from "./registry"
+import { DialogProvider, syncIconLibraryWithTheme, ThemeProvider } from "@/ui"
 
 export type AppProps = { readonly router?: ShellRouterComponent; readonly serverUrl?: string }
 
@@ -25,10 +29,17 @@ function ServerScope(props: ParentProps<{ readonly auth: AuthSource; readonly se
   return (
     <ServerProvider server={server}>
       <SessionStoresProvider>
-        <DialogProvider>{props.children}</DialogProvider>
+        <ProjectListProvider>
+          <DialogProvider>{props.children}</DialogProvider>
+        </ProjectListProvider>
       </SessionStoresProvider>
     </ServerProvider>
   )
+}
+
+function Alerts(): JSX.Element {
+  const preferences = usePreferences()
+  return <AttentionAlerts preferences={preferences.alerts} />
 }
 
 function SignedServer(props: ParentProps<{ readonly serverUrl?: string }>): JSX.Element {
@@ -51,12 +62,17 @@ export function App(props: AppProps): JSX.Element {
     <AuthProvider adapter={browserAuthAdapter}>
       <ShellRegistriesContext.Provider value={registries}>
         <I18nProvider>
-          <ThemeProvider>
-            <ShellRouter router={props.router}>
-              <SignedServer serverUrl={props.serverUrl}>
-                <AppShell mainSidebar={<MainSidebar />} />
-              </SignedServer>
-            </ShellRouter>
+          <ThemeProvider defaultTheme="codex" onThemeApplied={syncIconLibraryWithTheme}>
+            <PreferencesProvider>
+              <ClockProvider>
+                <ShellRouter router={props.router}>
+                  <SignedServer serverUrl={props.serverUrl}>
+                    <AppShell mainSidebar={<MainSidebar />} compactTabs={<CompactSwitcher />} />
+                    <Alerts />
+                  </SignedServer>
+                </ShellRouter>
+              </ClockProvider>
+            </PreferencesProvider>
           </ThemeProvider>
         </I18nProvider>
       </ShellRegistriesContext.Provider>

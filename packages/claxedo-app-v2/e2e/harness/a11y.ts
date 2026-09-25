@@ -22,13 +22,6 @@ export async function settled(page: Page): Promise<void> {
   await expect.poll(() => endingAnimations(page), { message: "entry animations finish" }).toBe(0)
 }
 
-export async function expectNoAxeViolations(page: Page, screen: string): Promise<void> {
-  await settled(page)
-  const results = await new AxeBuilder({ page }).analyze()
-  const found = results.violations.map((violation) => `${screen}: ${violation.id} ${violation.nodes.map((node) => node.target.join(" ")).join(", ")}`)
-  expect(found).toEqual([])
-}
-
 export async function expectWithinV1Baseline(page: Page, surface: V1Surface): Promise<void> {
   await settled(page)
   const allowed = (JSON.parse(readFileSync(V1_BASELINE, "utf8")) as Record<string, readonly string[] | undefined>)[surface]

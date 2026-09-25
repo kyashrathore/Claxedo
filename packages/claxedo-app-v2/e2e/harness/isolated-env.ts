@@ -1,8 +1,12 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { egressProxyEnv } from "./egress-guard"
+import { PINNED_PI } from "./pinned-pi"
+import { writePricingSnapshot } from "./usage-pricing"
 
-const INHERITED = ["PATH", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "USER", "LOGNAME", "SHELL", "TZ", "CI"] as const
+const STAND_INS = path.join(import.meta.dirname, "stand-ins")
+
+const INHERITED = ["TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "USER", "LOGNAME", "SHELL", "TZ", "CI"] as const
 
 const GIT_IDENTITY = "[user]\n\tname = Claxedo e2e\n\temail = e2e@claxedo.test\n"
 
@@ -21,13 +25,16 @@ export async function isolatedEnv(home: string, guardUrl: string): Promise<NodeJ
   }
   await Promise.all(Object.values(xdg).map((dir) => fs.mkdir(dir, { recursive: true })))
   await fs.writeFile(path.join(home, ".gitconfig"), GIT_IDENTITY)
+  await writePricingSnapshot(home)
   return {
     ...inherited(),
+    PATH: [STAND_INS, process.env.PATH].filter(Boolean).join(path.delimiter),
     HOME: home,
     ...xdg,
     GIT_CONFIG_NOSYSTEM: "1",
     GIT_TERMINAL_PROMPT: "0",
     ...AGENTS_STAY_OFFLINE,
+    PI_EXECUTABLE: PINNED_PI,
     ...egressProxyEnv(guardUrl),
   }
 }

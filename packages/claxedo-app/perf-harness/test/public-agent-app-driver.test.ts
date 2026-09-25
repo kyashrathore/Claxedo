@@ -6,6 +6,7 @@ import { buildWorkspaceFixtureManifest } from "agent-app-benchmark/workspace-fix
 import type { WorkspaceLoad } from "agent-app-benchmark/driver-sdk"
 import {
   createClaxedoPublicDriver,
+  parseApplicationArgument,
   PUBLIC_SCENARIO_IDS,
   readPreparedCache,
   writePreparedCache,
@@ -613,5 +614,19 @@ describe("Claxedo prepared-state cache", () => {
     } finally {
       await rm(root, { recursive: true, force: true })
     }
+  })
+})
+
+describe("the application argument", () => {
+  test("names today's app by default and the v2 rebuild only when asked", () => {
+    expect(parseApplicationArgument([])).toBe("claxedo")
+    expect(parseApplicationArgument(["--application", "claxedo-v2"])).toBe("claxedo-v2")
+  })
+
+  test("rejects anything else rather than falling back to today's app", () => {
+    expect(() => parseApplicationArgument(["--application", "claxedo-v3"])).toThrow(/--application/)
+    expect(() => parseApplicationArgument(["--application"])).toThrow(/--application/)
+    expect(() => parseApplicationArgument(["--app", "claxedo-v2"])).toThrow(/--application/)
+    expect(() => parseApplicationArgument(["--application", "claxedo-v2", "extra"])).toThrow(/--application/)
   })
 })
