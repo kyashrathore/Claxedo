@@ -9,6 +9,7 @@ import { draftSessionPaneKind } from "./draft-pane"
 import { sessionPaneKind } from "./session-pane"
 import { useSessionScreenText } from "./text"
 import { registerSessionCommands } from "./session-commands"
+import { WorkspaceSleepCard } from "./workspace-sleep"
 import "./session-screen.css"
 
 export type DraftSessionState = {
@@ -48,6 +49,7 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
                   />
                 </div>
                 <div class="relative z-10 -mt-2">
+                  <WorkspaceSleepCard placementId={props.state.placementId} />
                   <Composer
                     composerKey={key()}
                     placementId={props.state.placementId}

@@ -10,6 +10,7 @@ const timerOwners: Readonly<Record<string, string>> = {
 const pacingOwners: Readonly<Record<string, string>> = {
   "src/transcript/message-part.tsx": "paced reveal of streamed text more than 512 chars behind, in 24 ms steps, as today; exp-stream owns any change to it",
   "src/terminal/backend/clipboard.ts": "paced write of a paste over 16,384 chars to the PTY in 4,096-char chunks every 5 ms, as v1",
+  "src/server/workspace-start.ts": "an explicit cloud workspace start's provisioning poll: each wait is the server's retryAfterMs clamped to 0.5–30 s, at most 30 attempts, as v1",
 }
 const timers = new Set(["setInterval", "setTimeout"])
 const globals = new Set(["window", "globalThis", "self"])

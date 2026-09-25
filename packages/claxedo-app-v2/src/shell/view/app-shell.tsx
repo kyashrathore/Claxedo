@@ -1,4 +1,5 @@
-import { createMemo, Show, type JSX } from "solid-js"
+import { createEffect, createMemo, Show, type JSX } from "solid-js"
+import { useAuth } from "@/auth"
 import { Dynamic } from "solid-js/web"
 import { ComposerStoreProvider } from "@/composer"
 import { useTranslator } from "@/i18n"
@@ -8,6 +9,7 @@ import { useServer, type Capabilities } from "@/server"
 import { Toast, ClaxedoSplash } from "@/ui"
 import { createWorkbenchStore, WorkbenchProvider } from "@/workbench"
 import { HomeRedirect } from "../home-redirect"
+import { signInGate } from "../sign-in-gate"
 import { shellDictionary } from "../i18n"
 import { ShellLayoutProvider } from "../layout"
 import { CommandsProvider } from "../palette/commands"
@@ -22,6 +24,8 @@ import { Overlays } from "./overlays"
 import { RouteSync } from "./route-sync"
 import { SettingsSidebar } from "./settings-sidebar"
 import { ShellCommands } from "./shell-commands"
+
+const LOGIN_PATH = "/login"
 
 export type AppShellProps = { readonly mainSidebar: JSX.Element; readonly compactTabs: JSX.Element }
 
@@ -89,11 +93,16 @@ function ShellBody(props: AppShellProps & { readonly route: ShellRoute }): JSX.E
 
 export function AppShell(props: AppShellProps): JSX.Element {
   const server = useServer()
+  const auth = useAuth()
   const routing = useShellRoute()
-  const scope = createMemo(() => principalScope(server.capabilities()))
+  const gate = createMemo(() => signInGate(auth.state(), server.capabilities()))
+  const scope = createMemo(() => (gate() === "open" ? principalScope(server.capabilities()) : undefined))
   const screen = createMemo(() => {
     const route = routing.route()
     return route.kind === "screen" ? route : undefined
+  })
+  createEffect(() => {
+    if (gate() === "login" && !screen()) routing.navigate(LOGIN_PATH, { replace: true })
   })
   return (
     <>

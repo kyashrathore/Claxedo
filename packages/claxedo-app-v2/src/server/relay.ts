@@ -1,40 +1,14 @@
-import { ServerError, responseError, toAppError } from "./errors"
-
-export type RelayConnection = {
-  readonly workspaceId: string
-  readonly relayUrl: string
-  readonly runtimeAccessToken: string
-  readonly tokenExpiresAt: number
-}
+import { responseError, toAppError } from "./errors"
+import { connectionAnswerFromWire, workspaceStopped, type RelayConnection } from "./wire/connection"
 
 export type Relay = {
   readonly fetch: (workspaceId: string, path: string, init?: RequestInit) => Promise<Response>
   readonly webSocket: (workspaceId: string, path: string) => Promise<WebSocket>
+  readonly adopt: (link: RelayConnection) => void
 }
 
 const REFRESH_WINDOW_MS = 60_000
 const RUNTIME_ACCESS_TOKEN_PROTOCOL = "claxedo-rat."
-
-function tokenJti(token: string): string {
-  const encoded = token.split(".")[1]
-  if (!encoded) throw new ServerError({ class: "internal", message: "The runtime access token is not a JWT" })
-  const text = encoded.replaceAll("-", "+").replaceAll("_", "/")
-  const payload: unknown = JSON.parse(atob(text.padEnd(Math.ceil(text.length / 4) * 4, "=")))
-  const jti = payload && typeof payload === "object" ? (payload as { jti?: unknown }).jti : undefined
-  if (typeof jti !== "string") throw new ServerError({ class: "internal", message: "The runtime access token names no jti" })
-  return jti
-}
-
-function parseConnection(body: unknown, workspaceId: string): RelayConnection {
-  const row = body && typeof body === "object" ? (body as Record<string, unknown>) : undefined
-  const relayUrl = row?.relayUrl
-  const token = row?.runtimeAccessToken
-  const expiresAt = row?.tokenExpiresAt
-  if (typeof relayUrl !== "string" || typeof token !== "string" || typeof expiresAt !== "number") {
-    throw new ServerError({ class: "internal", message: `The workspace connection for ${workspaceId} is malformed` })
-  }
-  return { workspaceId, relayUrl: relayUrl.replace(/\/+$/, ""), runtimeAccessToken: token, tokenExpiresAt: expiresAt }
-}
 
 function workspaceUrl(link: RelayConnection, path: string) {
   return `${link.relayUrl}/workspaces/${encodeURIComponent(link.workspaceId)}${path}`
@@ -42,14 +16,12 @@ function workspaceUrl(link: RelayConnection, path: string) {
 
 type Request = (path: string, init?: RequestInit) => Promise<Response>
 
-async function mint(request: Request, workspaceId: string, previous?: RelayConnection): Promise<RelayConnection> {
-  const suffix = previous ? "/connection/refresh" : "/connection"
-  const response = await request(`/api/workspace/${encodeURIComponent(workspaceId)}${suffix}`, {
-    method: "POST",
-    body: JSON.stringify(previous ? { previousJti: tokenJti(previous.runtimeAccessToken) } : {}),
-  })
+async function read(request: Request, workspaceId: string): Promise<RelayConnection> {
+  const response = await request(`/api/workspace/${encodeURIComponent(workspaceId)}/connection`)
   if (!response.ok) throw await responseError(response, "Workspace connection")
-  return parseConnection(await response.json(), workspaceId)
+  const answer = connectionAnswerFromWire(await response.json(), workspaceId)
+  if (answer.kind !== "ready") throw workspaceStopped(workspaceId)
+  return answer.link
 }
 
 async function send(link: RelayConnection, path: string, init?: RequestInit) {
@@ -74,10 +46,10 @@ export function createRelay(request: Request): Relay {
       throw error
     }
   }
-  const connection = (workspaceId: string, force = false) => (!force && connections.get(workspaceId)) || hold(workspaceId, mint(request, workspaceId))
+  const connection = (workspaceId: string, force = false) => (!force && connections.get(workspaceId)) || hold(workspaceId, read(request, workspaceId))
   const fresh = async (workspaceId: string) => {
     const current = await connection(workspaceId)
-    return current.tokenExpiresAt - Date.now() > REFRESH_WINDOW_MS ? current : hold(workspaceId, mint(request, workspaceId, current))
+    return current.tokenExpiresAt - Date.now() > REFRESH_WINDOW_MS ? current : connection(workspaceId, true)
   }
   return {
     fetch: async (workspaceId, path, init) => {
@@ -87,6 +59,9 @@ export function createRelay(request: Request): Relay {
     webSocket: async (workspaceId, path) => {
       const link = await fresh(workspaceId)
       return new WebSocket(workspaceUrl(link, path).replace(/^http/, "ws"), [`${RUNTIME_ACCESS_TOKEN_PROTOCOL}${link.runtimeAccessToken}`])
+    },
+    adopt: (link) => {
+      connections.set(link.workspaceId, Promise.resolve(link))
     },
   }
 }

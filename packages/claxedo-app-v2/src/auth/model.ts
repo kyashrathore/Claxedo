@@ -28,4 +28,4 @@ export const authTransition: Transition<AuthState, AuthEvent> = (state, event) =
   }
 }
 
-export const authMachine = () => machine<AuthState, AuthEvent>({ kind: "signedOut" }, authTransition)
+export const authMachine = (initial: AuthState) => machine<AuthState, AuthEvent>(initial, authTransition)

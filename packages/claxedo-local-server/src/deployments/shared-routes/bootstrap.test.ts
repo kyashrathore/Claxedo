@@ -3,6 +3,7 @@ import os from "node:os"
 import path from "node:path"
 import { afterAll, describe, expect, test } from "vitest"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
+import type { SandboxTargetResult } from "@claxedo/server-core/sandbox/manager-port"
 import { BootstrapRoutes } from "./bootstrap"
 
 const root = path.join(os.tmpdir(), `claxedo-bootstrap-route-${Date.now()}-${Math.random().toString(16).slice(2)}`)
@@ -34,13 +35,16 @@ async function signedBootstrap(input: {
   workspaces?: unknown[]
   hostAggregateEvents?: boolean
   hostEnrollmentId?: () => string | undefined
+  leases?: Record<string, SandboxTargetResult["status"]>
 } = {}) {
+  const leases = input.leases
   return await BootstrapRoutes({
     ...signedAuth,
     hostAggregateEvents: input.hostAggregateEvents ?? false,
     ...(input.hostEnrollmentId ? { hostEnrollmentId: input.hostEnrollmentId } : {}),
     services: {
       authority: { listWorkspaces: async () => input.workspaces ?? [] },
+      sandbox: leases ? { sandboxManager: { target: async (id: string) => ({ status: leases[id] ?? "unavailable", reason: "test" }) } } : {},
     } as unknown as ControlPlaneServicesContract,
   }).request("http://control.example/api/claxedo/bootstrap", { headers: { authorization: "Bearer owner" } })
 }
@@ -261,8 +265,24 @@ describe("the signed bootstrap project inventory", () => {
       id: "ws_2",
       backing: "cloud-vm",
       workspace_name: "ws_2",
-      reachable: true,
+      reachable: false,
       directory: "workspace:ws_2",
     })
+  })
+
+  test("a cloud workspace is reachable only while its sandbox lease is ready", async () => {
+    const response = await signedBootstrap({
+      workspaces: [
+        { workspace_id: "ws_running", project_id: "proj_1", backing: "cloud-vm" },
+        { workspace_id: "ws_stopped", project_id: "proj_1", backing: "cloud-vm" },
+        { workspace_id: "ws_unplaced", project_id: "proj_1" },
+      ],
+      leases: { ws_running: "ready", ws_unplaced: "ready" },
+    })
+
+    const body = await response.json() as { project: Array<{ workspaces: Record<string, { reachable: boolean }> }> }
+    expect(body.project[0]?.workspaces.ws_running?.reachable).toBe(true)
+    expect(body.project[0]?.workspaces.ws_stopped?.reachable).toBe(false)
+    expect(body.project[0]?.workspaces.ws_unplaced?.reachable).toBe(true)
   })
 })

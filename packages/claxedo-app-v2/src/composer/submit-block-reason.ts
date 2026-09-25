@@ -55,6 +55,7 @@ export type SubmitBlockInput = {
   readonly booting: boolean
   readonly stoppable: boolean
   readonly blank: boolean
+  readonly workspaceAsleep?: boolean
 }
 
 const COPY = {
@@ -98,6 +99,7 @@ export function submitBlockReason(input: SubmitBlockInput): SubmitBlock | null {
   // An empty running composer means Stop. Cancelling the existing turn does
   // not depend on the harness/model readiness required to send another prompt.
   if (input.stoppable && input.blank) return null
+  if (input.workspaceAsleep) return input.blank ? block("empty") : null
   if (input.sessionStatusReady === false && !input.stoppable) return block("session-loading")
 
   if (input.harnessMode && !input.draftConnectionAllowsNoModel) {

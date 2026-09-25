@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, on, onCleanup, type Accessor } from "solid-js"
-import type { PlacementId, PromptInput } from "@/server"
+import { isStoppedCloud, useServer, type PlacementId, type PromptInput } from "@/server"
 import type { SessionView } from "@/session"
 import { showToast, useDialog } from "@/ui"
 import type { ImagePart, Submission } from "./model"
@@ -121,6 +121,7 @@ function createControllerFor(input: {
 }
 
 export function createComposer(props: ComposerProps) {
+  const server = useServer()
   const store = useComposerStore()
   const t = useComposerText()
   const key: Accessor<ComposerKey> = () => props.composerKey
@@ -148,7 +149,7 @@ export function createComposer(props: ComposerProps) {
   const shared = { t, key, store, refs, send, reader, suggestions, controller, dragging, draft, working, goalAvailable }
   return {
     ...shared,
-    ...submitState({ key, selection, send, controller, working }),
+    ...submitState({ key, selection, send, controller, working, asleep: () => isStoppedCloud(props.placementId ? server.placements.byId(props.placementId) : undefined) }),
     harness: selection.harness,
     harnessController: selection.controller,
     harnessScopeInput: selection.scopeInput,
@@ -165,6 +166,7 @@ function submitState(input: {
   send: ReturnType<typeof createComposerSend>
   controller: ComposerController
   working: Accessor<boolean>
+  asleep: Accessor<boolean>
 }) {
   const { selection, send } = input
   const booting = createMemo(() => send.boot() !== undefined)
@@ -186,6 +188,7 @@ function submitState(input: {
       booting: booting(),
       stoppable: input.working(),
       blank: input.controller.blank(),
+      workspaceAsleep: input.asleep(),
     })
   })
   const bootText = () => {

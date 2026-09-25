@@ -69,7 +69,7 @@ describe("workspace checkpoint routes", () => {
     }), { workspaceId: "ws_1" })
   })
 
-  test("mints checkpoint runtime authority from the workspace org and live role", async () => {
+  test("mints checkpoint runtime authority for the signed caller, from the workspace org and live role", async () => {
     const originalFetch = globalThis.fetch
     const mintRuntimeAccessToken = vi.fn(async () => ({ token: "rat_1", jti: "jti_1", expiresAt: Date.now() + 60_000 }))
     globalThis.fetch = vi.fn(async () => Response.json({ worktrees: [] })) as unknown as typeof globalThis.fetch
@@ -141,6 +141,7 @@ describe("workspace checkpoint routes", () => {
         principalKind: "user",
         actorId: "issuer|alice",
         actorKind: "human",
+        auth: expect.objectContaining({ mode: "signed", user: expect.objectContaining({ subject: "alice" }) }),
       }))
       expect(mintRuntimeAccessToken).toHaveBeenCalledWith(expect.not.objectContaining({ orgId: "org_personal" }))
     } finally {

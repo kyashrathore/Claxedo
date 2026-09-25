@@ -214,6 +214,11 @@ A **Settings → Projects** section lists the projects and holds their managemen
   4. If it's on: the app connects or reconnects, and attaches live streaming when a turn is running.
 - No dimming in the rail: rows and projects look the same whatever their sandbox's state.
 - v1's cloud startup view isn't ported; the dock's waking-up state replaces it.
+- (Owner, via the lead, 18:40) Runtime-only parts (status, permissions, questions, todos, goal) are read from the sandbox only while it runs; while it's gone they're absent, with no errors. The dock's state and the card are states of one machine. Waking handles `provisioning` by the server's `retryAfterMs`, and a refused start (409) is a clear failure with a retry.
+- **As built (lane signed-web):**
+  - Sandbox state: the catalog's `reachable` for a cloud placement is its sandbox lease, read without a wake (`readyCloudWorkspaces` in server-core, both signed catalogs). A runtime read uses `GET /api/workspace/:id/connection`, which never starts compute; only `POST` does, and only a send (or an explicit start) posts it.
+  - One machine per placement, owned by the adapter (`src/server/workspace-wakes.ts`, `wake-machine.ts`), read as `server.cloud.runtime(placementId)`: `live`, `asleep`, `waking(bootMode?)`, `wakeFailed(error)`.
+  - Copy: asleep "This workspace is asleep. Your next message wakes it."; waking "Waking up the workspace…", plus "Resuming its sandbox" or "Restoring it from a snapshot" when the server names the boot mode; failed "Couldn't wake the workspace." with the server's reason and Try again. The composer stays usable while asleep; the message is sent once the sandbox is up, and a failed wake keeps the draft.
 
 ## Owner, 2026-09-25 17:45: session sources, merged on the server
 - One list owner per connection:
