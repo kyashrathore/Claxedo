@@ -13,7 +13,6 @@ import { harnessLoginsFromWire, MACHINE_LOGINS_PATH, MACHINE_LOGINS_UNSUPPORTED 
 
 const HARNESS_OPTIONS_PATH = "/api/claxedo/agent-config/harness/options"
 
-/** `model` asks for that model's effort levels; `sessionId` for the harness the session runs. */
 export type HarnessOptionsRequest = {
   readonly placementId: PlacementId
   readonly harness: string

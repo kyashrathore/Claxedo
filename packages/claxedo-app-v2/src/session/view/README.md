@@ -26,6 +26,15 @@ The pane that shows one session: the moved timeline (`timeline/`, owned by the t
 - **Dock action** (`docks/model.ts`): `idle → running(action) → idle | failed(action, error)`, for stop and the goal's pause, resume and remove.
 - The screen's load state is the store's `SessionLoadState`; the send machine is the composer's.
 
+## Keys
+
+- The screen's document keydown (`session-screen-keydown.ts`, classified by `session-keydown.ts`) leaves alone any key aimed at an editable element or inside `[data-prevent-autofocus]`, including inside shadow roots, and any key while a dialog is open. Escape in the composer blurs it. PageUp, PageDown, Home and End count as a reader's scroll gesture. A printable key without Ctrl or Meta focuses the composer and puts the caret back where the prompt store says it was, because the blur may have destroyed the DOM selection when the editor re-rendered.
+
+## Placeholders
+
+- The transcript's loading placeholder (`session-timeline-skeleton.tsx`) borrows the timeline's geometry instead of inventing one: `TimelineRowFrame`'s centred column and breakpoints, the `px-4 md:px-5` row padding, the 24 px assistant offset, and the user bubble's chrome (the real bubble is `fit-content`, at most `min(82%, 64ch)`). It anchors to the bottom as a restored conversation does, so the real messages land where it sat instead of the view jumping when they arrive, and its top dissolves under a mask so it reads as the tail of a conversation rather than a card floating in empty space.
+- The todo dock hides its list with `visibility: hidden` and otherwise leaves `visibility` unset, never `visible`: an explicit value would override the hidden a docked pane inherits under the full-view panel.
+
 ## Following the end
 
 - The timeline follows the end only while a turn is active (`turnActive(status)`) or for 300 ms after it ends, so the finished turn's trailing layout still lands at the bottom.

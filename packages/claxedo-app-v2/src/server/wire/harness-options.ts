@@ -27,7 +27,6 @@ function configOptions(values: readonly unknown[]): readonly ConfigOption[] {
     isRecord(value) && typeof value.id === "string" && typeof value.name === "string" && (value.type === "select" || value.type === "boolean"))
 }
 
-// ACP sends `options` (`value`/`name`); the native SDK path sends `selectOptions` (`id`/`name`).
 function select(options: readonly ConfigOption[], category: string): HarnessOptionSelect | undefined {
   const option = options.find((item) => item.category === category && item.type === "select")
   if (!option) return undefined
@@ -44,8 +43,6 @@ export function harnessOptionsFromWire(body: unknown): HarnessOptions {
   if (!Array.isArray(body) && !isRecord(body)) return { source: "empty", stale: true, offersOptions: false, serviceTiers: [] }
   const options = configOptions(Array.isArray(body) ? body : Array.isArray(body.options) ? body.options : [])
   const resolvedModel = isRecord(body) ? selectOption(body.resolvedModel) : undefined
-  // The workspace runtime answers `{options, resolvedModel?}` straight from the harness; only the daemon
-  // route adds its own `source`/`stale`, so an answer declaring neither is live.
   const live = Array.isArray(body) || (body.source === undefined && body.stale === undefined)
   const models = select(options, "model")
   const thoughtLevels = select(options, "thought_level")

@@ -2,27 +2,12 @@ import { Index } from "solid-js"
 import { DelayedLoading } from "@/ui"
 import { useSessionScreenText } from "./text"
 
-/**
- * Loading placeholder for the message timeline.
- *
- * It borrows the timeline's own geometry rather than inventing a shape: the
- * same centred column and breakpoints as `TimelineRowFrame`, the same
- * `px-4 md:px-5` row padding, the same 24px assistant offset, and the same
- * bubble chrome the user message paints.
- * It also anchors to the bottom the way a restored conversation does, so the
- * real messages land where the placeholder sat instead of the whole view
- * jumping the moment they arrive.
- */
-
 type SkeletonBar = {
-  /** Share of the row this line covers. */
   width: number
-  /** Position in the wave that runs down the column. */
   delay: string
 }
 
 type SkeletonTurn = {
-  /** Bubble width — the real bubble is `width: fit-content; max-width: min(82%, 64ch)`. */
   bubble: string
   user: SkeletonBar[]
   assistant: SkeletonBar[]
@@ -58,8 +43,6 @@ export function SessionTimelineSkeleton(props: { centered?: boolean; sessionId?:
       data-session-timeline-loading
       class="flex h-full w-full flex-col justify-end overflow-hidden pb-2"
       style={{
-        // The top of the column dissolves, so the placeholder reads as the tail
-        // of a conversation rather than a card floating in empty space.
         "mask-image": "linear-gradient(to bottom, transparent 0%, #000 34%)",
         "-webkit-mask-image": "linear-gradient(to bottom, transparent 0%, #000 34%)",
       }}
