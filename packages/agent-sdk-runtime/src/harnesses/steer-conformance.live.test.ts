@@ -8,8 +8,9 @@ import { createMemoryRuntimeStore } from "../stores/memory"
 import type { AgentMessage, PromptDelivery } from "../index"
 import type { SessionHarnessId } from "@claxedo/agent-runtime-contract"
 import { userHomeDir } from "@claxedo/helpers/path"
-import { claude, codex, cursor } from "./index"
-import { harnessFactory } from "../harness-factories/factory"
+import { ClaudeHarnessAdapter } from "./claude"
+import { CodexHarnessAdapter } from "./codex"
+import { CursorHarnessAdapter } from "./cursor"
 import { PiHarnessAdapter } from "./pi"
 import { removeTestTempDir } from "./shared/test-temp-dir"
 import { CLAUDE_INSTALL_HINT, resolveClaudeExecutable } from "./claude/executable"
@@ -120,21 +121,21 @@ function cursorUnavailable(): string | undefined {
 
 /** Pi reads its key from the environment of the process the adapter spawns. */
 function piHarness(directory: string): AgentHarnessFactory {
-  return harnessFactory("pi", "native", (context) => {
-    const adapter = new PiHarnessAdapter({
+  return { id: "pi", access: "native", create: (context) => {
+    return new PiHarnessAdapter({
       store: context.store,
       eventHub: context.eventHub,
+      reportOwnerFailure: context.reportOwnerFailure,
       agentDir: path.join(directory, ".pi-agent"),
     })
-    return adapter
-  })
+  } }
 }
 
 const CASES: LiveCase[] = [
-  { id: "claude", factory: () => claude(), delivery: "steer", unavailable: optIn ?? (await claudeUnavailable()) },
-  { id: "codex", factory: () => codex(), delivery: "steer", unavailable: optIn ?? codexUnavailable() },
+  { id: "claude", factory: () => ({ id: "claude", access: "native", create: (context) => new ClaudeHarnessAdapter({ store: context.store, eventHub: context.eventHub, reportOwnerFailure: context.reportOwnerFailure }) }), delivery: "steer", unavailable: optIn ?? (await claudeUnavailable()) },
+  { id: "codex", factory: () => ({ id: "codex", access: "native", create: (context) => new CodexHarnessAdapter({ store: context.store, eventHub: context.eventHub, reportOwnerFailure: context.reportOwnerFailure }) }), delivery: "steer", unavailable: optIn ?? codexUnavailable() },
   { id: "pi", factory: piHarness, delivery: "steer", unavailable: optIn ?? (await piUnavailable()) },
-  { id: "cursor", factory: () => cursor(), delivery: "queue", unavailable: optIn ?? cursorUnavailable() },
+  { id: "cursor", factory: () => ({ id: "cursor", access: "native", create: (context) => new CursorHarnessAdapter({ store: context.store, eventHub: context.eventHub, reportOwnerFailure: context.reportOwnerFailure }) }), delivery: "queue", unavailable: optIn ?? cursorUnavailable() },
 ]
 
 for (const harness of CASES) {
