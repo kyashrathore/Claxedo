@@ -120,9 +120,8 @@ export function ProjectBlock(props: ProjectBlockProps): JSX.Element {
   const [open, setOpen] = createSignal(props.sessionIds.length > 0 || props.active)
   const [toggled, setToggled] = createSignal(false)
   const paging = createProjectPaging(props)
-  const terminals = useProjectTerminals(() => props.section.placementIds)
+  const terminals = useProjectTerminals(() => props.section.placementIds, open)
   createEffect(on(() => props.active, (active) => active && setOpen(true)))
-  createEffect(on(() => terminals().length > 0, (has) => has && setOpen(true)))
   createEffect(on(() => props.sessionIds.length > 0, (has) => has && !untrack(toggled) && setOpen(true)))
   return (
     <div data-testid="project-group" data-project-id={props.section.projectId} class="flex flex-col gap-0.5">

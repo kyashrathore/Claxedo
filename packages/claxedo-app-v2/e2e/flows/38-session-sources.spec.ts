@@ -97,3 +97,20 @@ test("38 a project whose page cannot be read leaves every other project's rows, 
   await expect(rail.getByRole("button", { name: "Broken one", exact: true })).toBeVisible()
   await expect(rail.getByRole("button", { name: "Healthy one", exact: true })).toBeVisible()
 })
+
+test("38 terminals are read only for an expanded project's live placements", async ({ stack, api, app }) => {
+  test.skip(stack.app !== "v2", "v1 lists every placement's terminals at boot")
+  const open = await stack.daemon.makeWorkspace("terminals-open", "Terminals Open")
+  const closed = await stack.daemon.makeWorkspace("terminals-closed", "Terminals Closed")
+  await createAll(api, open.directory, ["Keeps its project open"])
+  await app.goto("about:blank")
+  const settled = apiRequests(app, stack.url)
+  await app.goto(`${stack.url}/`)
+  await expect(projectRows(app, open.projectId)).toHaveCount(1)
+  const boot = await settled()
+  expect(boot.filter((path) => path === "/api/wr/pty"), "terminal lists at boot").toHaveLength(1)
+
+  await app.locator(`[data-testid="project-group"][data-project-id="${closed.projectId}"]`).getByRole("button", { name: "Expand project" }).click()
+  const expanded = await settled()
+  expect(expanded.filter((path) => path === "/api/wr/pty"), "terminal lists after expanding").toHaveLength(1)
+})
