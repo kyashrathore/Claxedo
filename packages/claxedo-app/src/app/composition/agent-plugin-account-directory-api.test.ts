@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import type { AccountPort, HostedOperationName } from "@/platform/account/account-port"
+import type { AccountPort } from "@/platform/account/account-port"
+import type { HostedOperationName } from "@claxedo/account-contract"
 import { DirectorySourceError } from "@/features/agent-plugins/directory/data"
 import { accountDirectoryApi } from "./agent-plugin-account-directory-api"
 

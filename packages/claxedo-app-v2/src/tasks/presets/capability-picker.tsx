@@ -2,7 +2,7 @@ import { For, Show, type JSX } from "solid-js"
 import type { PresetPlacement } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
 import { Checkbox, Icon } from "@/ui"
-import { dictionary } from "../i18n"
+import { tasksDictionary } from "../i18n"
 import type { CapabilityCatalog, CapabilityOption } from "./capabilities"
 import { isCapabilitySelected, toggleCapability, type CapabilitySelection, type PresetEditorDraft } from "./draft"
 
@@ -10,7 +10,7 @@ export function CapabilityNotice(props: {
   readonly placement: PresetPlacement
   readonly testId?: string
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   return (
     <p class="tsk-notice-inline" data-testid={props.testId}>
       <Icon name="circle-alert" size="small" class="tsk-notice-glyph" />
@@ -27,7 +27,7 @@ function CapabilityGroup(props: {
   readonly selected: readonly CapabilitySelection[]
   readonly onToggle: (capability: CapabilitySelection) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const chosen = (option: CapabilityOption) =>
     isCapabilitySelected(props.selected, { sourceId: option.sourceId, name: option.name })
   const reason = (option: CapabilityOption) =>
@@ -65,7 +65,7 @@ export function CapabilityPicker(props: {
   readonly catalog: () => CapabilityCatalog
   readonly onDraftChange: (draft: PresetEditorDraft) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const catalog = () => props.catalog()
   return (
     <div class="tsk-stack" data-testid="preset-editor-cloud-capabilities">

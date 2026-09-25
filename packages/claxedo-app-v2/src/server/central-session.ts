@@ -6,8 +6,11 @@ import { OLDER_CURSOR_HEADER, transcriptPageFromWire } from "./wire/transcript"
 
 export const CENTRAL_PAGE_SIZE = 50
 
-export async function readCentralPage(transport: Transport, workspaceId: string, ref: SessionRef, before?: string): Promise<TranscriptPage> {
-  const path = withQuery(`/api/control/sessions/${encodeURIComponent(ref.sessionId)}/messages`, { workspaceId, limit: CENTRAL_PAGE_SIZE, before })
+export type CentralPage = { readonly view: "latest-surface" | "latest-turn" } | { readonly before: string }
+
+export async function readCentralPage(transport: Transport, workspaceId: string, ref: SessionRef, page: CentralPage): Promise<TranscriptPage> {
+  const window = "view" in page ? { view: page.view } : { limit: CENTRAL_PAGE_SIZE, before: page.before }
+  const path = withQuery(`/api/control/sessions/${encodeURIComponent(ref.sessionId)}/messages`, { workspaceId, ...window })
   const response = await transport.request(path)
   if (!response.ok) throw await responseError(response, "Stored transcript")
   const body = (await response.json()) as { messages?: unknown }

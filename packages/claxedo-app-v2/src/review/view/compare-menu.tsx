@@ -2,7 +2,7 @@ import { Show, createMemo, createSignal, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import type { GitRefs } from "@/server"
 import { ClaxedoIcon as Icon, Popover } from "@/ui"
-import { dictionary, type ReviewKey } from "../i18n"
+import { reviewDictionary, type ReviewKey } from "../i18n"
 import { isBaseReviewMode, shortRef, type ReviewMode } from "../intent"
 import { CompareList, type CompareOption } from "./compare-list"
 
@@ -45,7 +45,7 @@ const headerButtonClass =
   "flex min-w-0 items-center gap-1 rounded-md px-1.5 h-6 text-11-regular text-text-weak hover:text-text-base hover:bg-surface-base-hover transition-colors"
 
 function createCompareOptions(props: CompareMenuProps, base: () => string | undefined) {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(reviewDictionary)
   const options = createMemo((): CompareOption[] => {
     const ref = base()
     return [
@@ -73,7 +73,7 @@ function createCompareOptions(props: CompareMenuProps, base: () => string | unde
 }
 
 function CompareTrigger(props: CompareMenuProps & { readonly comparing: boolean }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(reviewDictionary)
   const headLabel = () =>
     (props.toRef === "HEAD" || !props.toRef) && props.currentBranch && props.currentBranch !== "HEAD"
       ? props.currentBranch
@@ -103,7 +103,7 @@ function CompareTrigger(props: CompareMenuProps & { readonly comparing: boolean 
 }
 
 export function CompareMenu(props: CompareMenuProps): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(reviewDictionary)
   const comparing = () => props.mode === "to-from" || isBaseReviewMode(props.mode)
   const base = () => (isBaseReviewMode(props.mode) ? props.fromRef : props.defaultBaseRef)
   const { options, baseOptions } = createCompareOptions(props, base)

@@ -19,10 +19,11 @@
  * and then the set of calls main can make is no longer the set written down
  * here. `hosted-operations.test.ts` holds that property.
  *
- * Adding an operation means adding it to the renderer's `HostedOperationName`,
- * its decoder in the app's `HOSTED_OPERATIONS`, AND an entry here;
- * `claxedo-app`'s `account-port.guard.test.ts` holds the three equal.
+ * The set of names is `@claxedo/account-contract`'s `HostedOperationName`,
+ * which also owns each operation's result decoder; this table is typed against
+ * it, so an operation added there without a route here does not compile.
  */
+import type { HostedOperationName as ContractOperationName } from "@claxedo/account-contract"
 
 export type HostedOperation = {
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
@@ -230,6 +231,15 @@ export const HOSTED_OPERATIONS = {
       "sort",
       "cursor",
     ],
+  },
+  // The signed desktop's project-scoped keyset page. `scope` is fixed in the
+  // path; the caller names the project, the page size, the order and the key
+  // it continues after.
+  "session.page": {
+    method: "GET",
+    path: "/api/control/session-list?scope=project",
+    query: ["projectId", "limit"],
+    optionalQuery: ["sort", "after"],
   },
   "session.projection.register": {
     method: "POST",
@@ -481,7 +491,7 @@ export const HOSTED_OPERATIONS = {
     path: "/documents/from-repo",
     body: ["project_id", "directory", "workspace_id", "path", "display_name", "status", "session_id"],
   },
-} as const satisfies Record<string, HostedOperation>
+} as const satisfies Record<ContractOperationName, HostedOperation>
 
 export type HostedOperationName = keyof typeof HOSTED_OPERATIONS
 
@@ -578,7 +588,7 @@ export function resolveHostedOperation(
       params.set(key, operationParameter(name, key, value))
     }
     const qs = params.toString()
-    if (qs) path = `${path}?${qs}`
+    if (qs) path = `${path}${path.includes("?") ? "&" : "?"}${qs}`
   }
 
   const headers: Record<string, string> = {}

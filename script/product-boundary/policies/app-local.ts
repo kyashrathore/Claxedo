@@ -627,8 +627,15 @@ export const appLocal: Policy = {
   // shell-revealed modules this entry already carries. Owner:
   // `app/workbench/rail`. No new package edge.
   //
-  // Exact measured 1113 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1113, packages: 58 },
+  // -1 module / +1 package (2026-09-25): the hosted-operation names and their
+  // result decoders moved from `platform/account/hosted-operations.ts` into
+  // `@claxedo/account-contract`, the one owner Electron main's route table and
+  // both renderers (v1 and v2) import. A dependency-neutral contract package
+  // (it reaches only `@claxedo/helpers/guards`, already here); no capability
+  // and no transport.
+  //
+  // Exact measured 1112 modules / 59 packages, with no headroom.
+  ceilings: { modules: 1112, packages: 59 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

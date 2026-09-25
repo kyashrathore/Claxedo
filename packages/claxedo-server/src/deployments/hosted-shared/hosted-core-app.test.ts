@@ -753,65 +753,33 @@ describe("hosted-core session-list", () => {
   }
   const signed = { authorization: "Bearer user-1" }
 
-  test("lists a workspace's sessions through the authority", async () => {
-    const listSessions = vi.fn(async () => [])
-    const response = await core({ listSessions }).request(
+  test("pages a workspace's sessions through the authority", async () => {
+    const listSessionPage = vi.fn(async () => [])
+    const response = await core({ listSessionPage }).request(
       "/api/control/session-list?scope=workspace&limit=5&workspaceId=ws_1",
       { headers: signed },
     )
     expect(response.status).toBe(200)
     expect(response.headers.get("content-type")).toContain("application/json")
-    expect(listSessions).toHaveBeenCalledWith(expect.objectContaining({ mode: "signed" }), { workspaceId: "ws_1" })
+    expect(listSessionPage).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "signed" }),
+      expect.objectContaining({ workspaceId: "ws_1", limit: 6 }),
+    )
   })
 
-  /**
-   * The sidebar sends a PROJECT id and never a workspace id (rail-sidebar's
-   * ProjectBlock). The read must resolve the project's workspaces itself
-   * rather than 400 — the exact behaviour the canonical route had and the
-   * hosted roots lacked.
-   */
-  test("resolves a project-scoped list to the project's workspaces", async () => {
-    const listWorkspaces = vi.fn(async () => [{ workspace_id: "ws_9", project_id: "prj_1" }])
-    const listSessions = vi.fn(async () => [])
-    const response = await core({ listWorkspaces, listSessions }).request(
+  test("pages a project's sessions in one read, machine-placed workspaces included", async () => {
+    const listSessionPage = vi.fn(async () => [
+      { session_id: "ses_host", workspace_id: "ws_host", project_id: "prj_1", created_at: 1, updated_at: 1 },
+    ])
+    const response = await core({ listSessionPage }).request(
       "/api/control/session-list?scope=project&limit=5&projectId=prj_1",
       { headers: signed },
     )
     expect(response.status).toBe(200)
-    expect(listWorkspaces).toHaveBeenCalled()
-    expect(listSessions).toHaveBeenCalledWith(expect.anything(), { workspaceId: "ws_9" })
-  })
-
-  /**
-   * The sessions of a workspace placed on a machine live on that machine, and
-   * the registry receives only the ones created THROUGH the control plane. So
-   * this route names the runtime as their authority rather than answering a
-   * subset a client cannot tell apart from an empty machine; the client reads
-   * the list off the runtime over the relay in one hop.
-   *
-   * The route probes no host, so the refusal is the same whether or not a live
-   * enrollment is serving the workspace.
-   */
-  test("names the workspace runtime as the authority for a workspace placed on a machine", async () => {
-    const listSessions = vi.fn(async () => [])
-    const response = await core({
-      openWorkspace: vi.fn(async () => ({
-        role: "owner",
-        workspace: { backing: "local-worktree", org_id: "org_1", project_id: "prj_1" },
-      })),
-      activeWorkspaceHost: vi.fn(async () => ({
-        active: true, host_id: "host_laptop", workspace_id: "ws_1",
-        expires_at: Date.now() + 60_000, last_seen_at: Date.now(),
-      })),
-      listSessions,
-      usersMe: vi.fn(async () => ({ actor_id: "actor_user_1", actor_kind: "human" })),
-    }).request("/api/control/session-list?scope=workspace&limit=5&workspaceId=ws_1", { headers: signed })
-
-    expect(response.status).toBe(409)
-    expect(await response.json()).toEqual({
-      error: { code: "workspace_runtime_session_authority", message: expect.any(String) },
-    })
-    expect(listSessions, "the registry is not the source for a machine-placed workspace").not.toHaveBeenCalled()
+    expect(listSessionPage).toHaveBeenCalledTimes(1)
+    expect(listSessionPage).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ projectId: "prj_1" }))
+    expect(((await response.json()) as { items: Array<{ sessionRef: string }> }).items.map((item) => item.sessionRef))
+      .toEqual(["workspace:ws_host:session:ses_host"])
   })
 
   /**

@@ -9,6 +9,7 @@ import type {
   AgentSubagentUpdate,
   AgentTodo,
   AgentTurnOutcome,
+  PromptDeliveryRequest,
   RuntimeGoalSnapshot,
 } from "@claxedo/agent-runtime-contract"
 import type { SolidQueryOptions } from "@tanstack/solid-query"
@@ -128,9 +129,16 @@ export type Todo = AgentTodo
 export type FileDiff = AgentSnapshotFileDiff
 export type Subagent = AgentSubagentUpdate
 
-export type SessionListInput = { readonly placementId: PlacementId; readonly cursor?: string; readonly limit: number }
+export type SessionListInput = { readonly projectId: ProjectId; readonly after?: string; readonly limit: number }
 
-export type SessionPage = { readonly rows: readonly SessionRow[]; readonly nextCursor?: string }
+export type ListedStatus = { readonly status: SessionStatus; readonly waitingOnUser: boolean }
+
+export type SessionPage = {
+  readonly rows: readonly SessionRow[]
+  readonly statuses: ReadonlyMap<SessionId, ListedStatus>
+  readonly nextAfter?: string
+  readonly degraded?: boolean
+}
 
 export type TranscriptPage = { readonly entries: readonly TranscriptEntry[]; readonly olderCursor?: string }
 
@@ -144,14 +152,14 @@ export type SessionGoalState = {
   readonly available: boolean
 }
 
-export type SessionSurface = {
+export type SessionSurfaceRead = {
   readonly row: SessionRow
   readonly transcript: TranscriptPage
   readonly diff: readonly FileDiff[]
 }
 
 export type SessionReads = {
-  readonly surface: Promise<SessionSurface>
+  readonly surface: Promise<SessionSurfaceRead>
   readonly status: Promise<SessionStatus>
   readonly requests: Promise<readonly AgentRequest[]>
   readonly todos: Promise<readonly Todo[]>
@@ -165,9 +173,7 @@ export type PromptAttachment =
   | { readonly kind: "image"; readonly dataUrl: string; readonly name?: string; readonly mime: string }
   | { readonly kind: "text"; readonly text: string; readonly label?: string }
 
-export type PromptDeliveryRequest = "queue" | "steer"
-
-export type PromptDelivery = "start" | PromptDeliveryRequest
+export type { PromptDelivery, PromptDeliveryRequest } from "@claxedo/agent-runtime-contract"
 
 export type PromptInput = {
   readonly clientRequestId: string
@@ -188,20 +194,6 @@ export type SessionCreateInput = {
   readonly harness?: string
   readonly model?: ModelChoice
   readonly title?: string
-}
-
-export type SessionStatusReport = {
-  readonly ref: SessionRef
-  readonly status: SessionStatus
-  readonly requests: readonly AgentRequest[]
-}
-
-export type SessionStatusReadFailure = { readonly placementId: PlacementId; readonly error: AppError }
-
-export type SessionStatusRead = {
-  readonly reports: readonly SessionStatusReport[]
-  readonly unreported: SessionStatus
-  readonly failures: readonly SessionStatusReadFailure[]
 }
 
 export type QueuedPromptPart = { readonly type: string; readonly text?: string; readonly filename?: string }

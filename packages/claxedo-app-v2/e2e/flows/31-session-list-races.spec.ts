@@ -2,7 +2,6 @@ import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, sendPrompt
 import {
   holdEventStreams,
   holdListRead,
-  holdStatusRead,
   patchSession,
   reopenHoldingListRead,
   setup,
@@ -36,21 +35,25 @@ test("31 an event arrives before the list response", async ({ stack, api, app })
   await stack.acp.release("working-during-read")
 })
 
-test("31 the rows paint before their statuses land", async ({ stack, api, app }) => {
+test("31 a row and its status land together, from the list read alone", async ({ stack, api, app }) => {
   const { sessions, checked } = await setup(stack, api, app, ["Race painted", "Race busy"], { open: false })
   const [, busy] = sessions
   await startHeldTurn(checked, busy.id, "busy-before-open")
   await expectServerStatus(checked, busy.id, "Working")
   await app.goto("about:blank")
-  const statuses = await holdStatusRead(app)
+  const list = await holdListRead(app)
+  const statusReads: string[] = []
+  app.on("request", (request) => {
+    if (/\/session\/status(\?|$)|\/permission(\?|$)|\/question(\?|$)/.test(request.url())) statusReads.push(request.url())
+  })
   await app.goto(`${stack.url}/`)
-  await statuses.computed
+  await list.computed
+  await expect(railRow(app, "Race busy")).toHaveCount(0)
+  await list.release()
   await expect(railRow(app, "Race painted")).toBeVisible()
-  await expect(railRow(app, "Race busy")).toBeVisible()
-  await expect(railRow(app, "Race busy").locator("[data-sidebar-status]")).toHaveCount(0)
-  await statuses.release()
-  await expectRailEqualsServer(app, checked)
   await expect(railRow(app, "Race busy").locator("[data-sidebar-status]")).toHaveAttribute("data-sidebar-status", "working")
+  await expectRailEqualsServer(app, checked)
+  expect(statusReads, "status, permission or question reads").toEqual([])
   await stack.acp.release("busy-before-open")
 })
 
@@ -85,7 +88,7 @@ test("31 a delete lands during a fetch", async ({ stack, api, app }) => {
   await stream.received("Race fence first page")
   await first.release()
   await expectRailEqualsServer(app, checked)
-  const more = await holdListRead(app, (url) => url.searchParams.has("cursor"))
+  const more = await holdListRead(app, (url) => url.searchParams.has("after"))
   await app.getByTestId("rail-sidebar-session-load-more").first().click()
   await more.computed
   await api.deleteSession(checked.directory, order[3])

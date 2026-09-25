@@ -36,12 +36,18 @@ export type LocalHostEndpoints = {
   relayJwksUrl?: string
   /** The control plane's session authority, consulted for every private-session decision. */
   sessionAuthorityUrl?: string
+  /** Where this machine publishes its served sessions' list rows. */
+  sessionRowsUrl?: string
 }
 
 let endpoints: LocalHostEndpoints = {}
 
 export function setLocalHostEndpoints(next: LocalHostEndpoints | undefined) {
   endpoints = next ?? {}
+}
+
+export function localHostSessionRowsUrl() {
+  return endpoints.sessionRowsUrl
 }
 
 /**

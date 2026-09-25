@@ -1,7 +1,6 @@
 import { createStore, reconcile } from "solid-js/store"
-import { failureReason } from "../../failure"
 import type { FrameInvoke, FrameMirror, FrameToHost, HostCall, HostToFrame, Registration } from "../protocol"
-import { createRequests } from "../requests"
+import { answerCall, createPendingCalls } from "../pending-calls"
 
 export type InvokeHandler = (invoke: FrameInvoke) => unknown
 
@@ -15,24 +14,20 @@ export type FrameLink = {
 
 export function createFrameLink(port: MessagePort, initial: FrameMirror): FrameLink {
   const [mirror, setMirror] = createStore<FrameMirror>(initial)
-  const requests = createRequests()
+  const requests = createPendingCalls()
   const send = (message: FrameToHost) => port.postMessage(message)
   let invokeHandler: InvokeHandler | undefined
   let nextKey = 1
 
-  const answer = async (id: number, invoke: FrameInvoke) => {
-    try {
-      if (!invokeHandler) throw new Error("This frame renders a slot and runs no commands")
-      send({ type: "result", id, ok: true, value: await invokeHandler(invoke) })
-    } catch (error) {
-      send({ type: "result", id, ok: false, reason: failureReason(error) })
-    }
+  const runInvoke = (invoke: FrameInvoke) => {
+    if (!invokeHandler) throw new Error("This frame renders a slot and runs no commands")
+    return invokeHandler(invoke)
   }
 
   port.onmessage = (event: MessageEvent<HostToFrame>) => {
     const message = event.data
     if (message.type === "mirror") setMirror(reconcile(message.mirror))
-    else if (message.type === "invoke") void answer(message.id, message.invoke)
+    else if (message.type === "invoke") void answerCall(send, message.id, () => runInvoke(message.invoke))
     else requests.settle(message)
   }
 

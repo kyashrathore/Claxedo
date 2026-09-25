@@ -15,7 +15,8 @@ export function CliLoginPage() {
   const [submitted, setSubmitted] = createSignal(false)
 
   const approve = async (callback: string, state: string) => {
-    const token = await auth.token({ skipCache: true })
+    const access = auth.controlPlane
+    const token = access.kind === "bearer" ? await access.token({ skipCache: true }) : null
     if (!token) throw new Error("No signed Claxedo session is available.")
     const exchanged = await cliToken(token)
     const fields = cliCallbackFields({
@@ -57,7 +58,7 @@ export function CliLoginPage() {
   })
 
   return (
-    <main class="auth-page" data-component="cli-login-page">
+    <main class="auth-page">
       <section class="auth-card auth-card-center">
         <div class="auth-title">Claxedo CLI</div>
         <p class="auth-subtitle">{message()}</p>

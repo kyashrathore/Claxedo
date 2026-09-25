@@ -1,5 +1,6 @@
 import { unreachable } from "@/lib/machine"
-import { hasMorePages, windowRows, type FetchedWindow, type ListData, type ListEvent, type ListState, type MorePhase, type RereadMode, type ServerListEvent } from "./model"
+import type { ProjectId } from "@/server"
+import { hasMorePages, type FetchedWindow, type ListData, type ListEvent, type ListState, type MorePhase, type RereadMode, type ServerListEvent } from "./model"
 import {
   closeSession,
   confirmCreate,
@@ -14,17 +15,20 @@ import {
   tombstoneRow,
   upsertRow,
 } from "./rows"
-import { fillUnreported, statusChanged, statusRead, statusesRead } from "./statuses"
+import { pageStatusesRead, statusChanged, statusRead } from "./statuses"
 
-const MORE_IDLE: MorePhase = { kind: "idle" }
+type More = ReadonlyMap<ProjectId, MorePhase>
+
+const NO_MORE: More = new Map()
 
 function data(state: ListState): ListData {
   return {
     entries: state.entries,
     statuses: state.statuses,
-    unreported: state.unreported,
     open: state.open,
     windows: state.windows,
+    failures: state.failures,
+    degraded: state.degraded,
   }
 }
 
@@ -45,10 +49,19 @@ function applyServerEvent<S extends ListData>(state: S, event: ServerListEvent):
   }
 }
 
+function withPhase(more: More, projectId: ProjectId, phase: MorePhase | undefined): More {
+  const next = new Map(more)
+  if (phase) next.set(projectId, phase)
+  else next.delete(projectId)
+  return next
+}
+
 function serverEvent(state: ListState, event: ServerListEvent): ListState {
   if (state.kind === "fetching" || state.kind === "rereading") return { ...state, held: [...state.held, event] }
-  if (state.kind === "live" && state.more.kind === "loading") {
-    return { ...state, more: { kind: "loading", held: [...state.more.held, event] } }
+  if (state.kind === "live") {
+    const projectId = event.type === "sessionUpserted" ? event.row.ref.projectId : event.ref.projectId
+    const phase = state.more.get(projectId)
+    if (phase?.kind === "loading") return { ...state, more: withPhase(state.more, projectId, { kind: "loading", held: [...phase.held, event] }) }
   }
   return withData(state, applyServerEvent(state, event))
 }
@@ -59,12 +72,10 @@ const WINDOWING: Record<"extend" | RereadMode, (data: ListData, window: FetchedW
   refresh: refreshWindow,
 }
 
-function live(base: ListData, window: FetchedWindow, held: readonly ServerListEvent[], mode: "extend" | RereadMode): ListState {
-  const windowed = WINDOWING[mode](base, window)
-  const rows = windowRows(window)
-  const withStatuses = window.statuses ? statusesRead(windowed, window.statuses, window.sentAt, rows) : fillUnreported(windowed, rows)
-  const replayed = held.reduce(applyServerEvent, withStatuses)
-  return { ...replayed, kind: "live", more: MORE_IDLE }
+function live(base: ListData, window: FetchedWindow, held: readonly ServerListEvent[], mode: "extend" | RereadMode, more: More): ListState {
+  const windowed = pageStatusesRead(WINDOWING[mode](base, window), window)
+  const replayed = held.reduce(applyServerEvent, windowed)
+  return { ...replayed, kind: "live", more }
 }
 
 function fetchEvent(state: ListState, event: ListEvent): ListState | undefined {
@@ -72,21 +83,24 @@ function fetchEvent(state: ListState, event: ListEvent): ListState | undefined {
     case "fetchStarted":
       return state.kind === "subscribing" ? { ...data(state), kind: "fetching", held: [] } : state
     case "fetched":
-      return state.kind === "fetching" ? live(data(state), event.window, state.held, "extend") : state
+      return state.kind === "fetching" ? live(data(state), event.window, state.held, "extend", NO_MORE) : state
     case "fetchFailed":
       return state.kind === "fetching" ? { ...data(state), kind: "failed", error: event.error } : state
     case "moreStarted":
-      if (state.kind !== "live" || state.more.kind === "loading" || !hasMorePages(state.windows, event.placementIds)) return state
-      return { ...state, more: { kind: "loading", held: [] } }
-    case "moreFetched":
-      if (state.kind !== "live" || state.more.kind !== "loading") return state
-      return live(data(state), event.window, state.more.held, "extend")
+      if (state.kind !== "live" || state.more.get(event.projectId)?.kind === "loading" || !hasMorePages(state.windows, event.projectId)) return state
+      return { ...state, more: withPhase(state.more, event.projectId, { kind: "loading", held: [] }) }
+    case "moreFetched": {
+      const phase = state.kind === "live" ? state.more.get(event.projectId) : undefined
+      if (state.kind !== "live" || phase?.kind !== "loading") return state
+      return live(data(state), event.window, phase.held, "extend", withPhase(state.more, event.projectId, undefined))
+    }
     case "moreFailed":
-      return state.kind === "live" && state.more.kind === "loading" ? { ...state, more: { kind: "failed", error: event.error } } : state
+      if (state.kind !== "live" || state.more.get(event.projectId)?.kind !== "loading") return state
+      return { ...state, more: withPhase(state.more, event.projectId, { kind: "failed", error: event.error }) }
     case "rereadStarted":
       return state.kind === "live" || state.kind === "failed" ? { ...data(state), kind: "rereading", held: [] } : state
     case "rereadFetched":
-      return state.kind === "rereading" ? live(data(state), event.window, state.held, event.mode) : state
+      return state.kind === "rereading" ? live(data(state), event.window, state.held, event.mode, NO_MORE) : state
     case "rereadFailed":
       return state.kind === "rereading" ? { ...data(state), kind: "failed", error: event.error } : state
     default:
@@ -94,7 +108,7 @@ function fetchEvent(state: ListState, event: ListEvent): ListState | undefined {
   }
 }
 
-export function transition(state: ListState, event: ListEvent): ListState {
+export function listTransition(state: ListState, event: ListEvent): ListState {
   switch (event.type) {
     case "sessionUpserted":
     case "sessionRemoved":
@@ -114,8 +128,6 @@ export function transition(state: ListState, event: ListEvent): ListState {
       return withData(state, upsertRow(state, event.row))
     case "statusRead":
       return withData(state, statusRead(state, event.ref, event.status, event.sentAt))
-    case "statusesFetched":
-      return withData(state, statusesRead(state, event.read, event.sentAt, event.rows))
     case "sessionOpened":
       return withData(state, openSession(state, event.sessionId))
     case "sessionClosed":

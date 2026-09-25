@@ -4,7 +4,7 @@ import { useDialog } from "@/ui"
 import type { SessionScreenTextKey } from "../i18n"
 import { useSessionScreenText } from "../text"
 import { createDockAction, type DockAction } from "./dock-action"
-import { goalControls, type GoalAction, type GoalActions, type GoalSnapshot, type GoalStatus } from "./model"
+import { goalControls, type GoalControl, type GoalActions, type GoalSnapshot, type GoalStatus } from "./model"
 
 const STATUS_KEYS: Readonly<Record<GoalStatus, SessionScreenTextKey>> = {
   active: "sessionScreen.goal.status.active",
@@ -24,7 +24,7 @@ function goalMetrics(goal: GoalSnapshot, t: ReturnType<typeof useSessionScreenTe
   return rows.filter((row): row is string => row !== undefined)
 }
 
-function GoalDeleteDialog(props: { action: DockAction<GoalAction>; remove: () => Promise<void> }) {
+function GoalDeleteDialog(props: { action: DockAction<GoalControl>; remove: () => Promise<void> }) {
   const t = useSessionScreenText()
   const dialog = useDialog()
   const removing = () => props.action.runningAction() === "remove"
@@ -56,11 +56,11 @@ function GoalDeleteDialog(props: { action: DockAction<GoalAction>; remove: () =>
 export function GoalDock(props: { goal: GoalSnapshot; actions: GoalActions }) {
   const t = useSessionScreenText()
   const dialog = useDialog()
-  const action = createDockAction<GoalAction>()
+  const action = createDockAction<GoalControl>()
   const [expanded, setExpanded] = createSignal(false)
   const controls = () => goalControls(props.goal, props.actions)
   const busy = () => action.running()
-  const label = (current: GoalAction, key: SessionScreenTextKey) => t(action.runningAction() === current ? "sessionScreen.action.loading" : key)
+  const label = (current: GoalControl, key: SessionScreenTextKey) => t(action.runningAction() === current ? "sessionScreen.action.loading" : key)
   const run = (current: "pause" | "resume") => {
     const work = props.actions[current]
     if (work) void action.run(current, work)

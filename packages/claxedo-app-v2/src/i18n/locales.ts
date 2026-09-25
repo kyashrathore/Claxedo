@@ -57,16 +57,14 @@ export const LOCALES: readonly LocaleEntry[] = [
   { code: "tr", intlTag: "tr", label: "Türkçe", matches: startsWith("tr") },
 ]
 
-const byCode = new Map(LOCALES.map((entry) => [entry.code, entry]))
-
 export function localeEntry(code: Locale): LocaleEntry {
-  const entry = byCode.get(code)
+  const entry = LOCALES.find((candidate) => candidate.code === code)
   if (!entry) throw new Error(`Unknown locale ${code}`)
   return entry
 }
 
 export function isLocale(value: unknown): value is Locale {
-  return typeof value === "string" && byCode.has(value as Locale)
+  return typeof value === "string" && LOCALES.some((entry) => entry.code === value)
 }
 
 export function detectLocale(languages: readonly string[]): Locale {

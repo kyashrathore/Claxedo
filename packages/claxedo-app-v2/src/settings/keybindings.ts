@@ -46,3 +46,17 @@ export function filterRows(rows: readonly KeybindingRow[], query: string): reado
   if (!value) return rows
   return rows.filter((row) => row.title.toLowerCase().includes(value) || row.keybind.toLowerCase().includes(value))
 }
+
+export function firstRows(
+  groups: readonly (readonly [string, readonly KeybindingRow[]])[],
+  limit: number,
+): ReadonlyMap<string, readonly KeybindingRow[]> {
+  const out = new Map<string, readonly KeybindingRow[]>()
+  let left = limit
+  for (const [category, rows] of groups) {
+    if (left <= 0) break
+    out.set(category, rows.length <= left ? rows : rows.slice(0, left))
+    left -= rows.length
+  }
+  return out
+}

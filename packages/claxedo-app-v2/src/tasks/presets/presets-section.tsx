@@ -13,7 +13,7 @@ import {
   useTasksInvalidation,
 } from "../data/queries"
 import { refusalOf } from "../data/refusal"
-import { dictionary } from "../i18n"
+import { tasksDictionary } from "../i18n"
 import { PRESETS_SECTION_ID } from "../links"
 import "../view/tasks.css"
 import { useCapabilityCatalog } from "./capabilities"
@@ -57,7 +57,7 @@ function DraftEditor(props: {
   readonly store: PresetsStore
   readonly commands: ReturnType<typeof createPresetCommands>
 }) {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const capabilities = useTasksCapabilities()
   const catalog = useCapabilityCatalog()
   return (
@@ -83,7 +83,7 @@ function DraftEditor(props: {
 }
 
 export function PresetsSection(): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const store = createPresetsStore()
   const [includeArchived, setIncludeArchived] = createSignal(false)
   const presets = usePresetList(includeArchived)
@@ -148,7 +148,7 @@ export function PresetsSection(): JSX.Element {
 
 export const presetsSettingsSection: SettingsSection = {
   id: PRESETS_SECTION_ID,
-  title: () => useTranslator(dictionary)("tasks.preset.title"),
+  title: () => useTranslator(tasksDictionary)("tasks.preset.title"),
   group: "workspace",
   order: 30,
   view: PresetsSection,

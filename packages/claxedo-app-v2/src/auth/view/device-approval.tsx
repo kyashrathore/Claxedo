@@ -55,7 +55,7 @@ export function DeviceApprovalPage() {
   }
 
   return (
-    <main class="auth-page" data-component="device-approval-page">
+    <main class="auth-page">
       <section class="auth-card">
         <p class="auth-kicker">Device sign-in</p>
         <Show

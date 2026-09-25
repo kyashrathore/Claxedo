@@ -1,6 +1,6 @@
 import { createEffect, createSignal, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { dictionary } from "../i18n"
+import { browserDictionary } from "../i18n"
 import type { BrowserTab } from "../tab"
 
 const PREVIEW_DOCUMENT = "/browser-preview.html"
@@ -15,7 +15,7 @@ function sourceFrame(document: Document, title: string, loaded: () => void): HTM
 }
 
 function PreviewDocument(props: { readonly url: string; readonly title: string; readonly loaded: (url: string) => void }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(browserDictionary)
   const [previewDocument, setPreviewDocument] = createSignal<Document>()
   let source: HTMLIFrameElement | undefined
   let shown: string | undefined
@@ -48,7 +48,7 @@ function PreviewDocument(props: { readonly url: string; readonly title: string; 
 }
 
 export function WebPreview(props: { readonly tab: BrowserTab }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(browserDictionary)
   const url = () => props.tab.state().url
   const blocked = () => typeof location !== "undefined" && location.protocol === "https:" && url().startsWith("http:")
   return (

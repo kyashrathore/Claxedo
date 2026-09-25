@@ -1,7 +1,7 @@
 import { createEffect, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { ClaxedoIcon as Icon, showToast, DropdownMenu, Tooltip, type ToastVariant } from "@/ui"
-import { dictionary, type BrowserKey } from "../i18n"
+import { browserDictionary, type BrowserKey } from "../i18n"
 import type { BrowserNotice } from "../model"
 import type { BrowserTab } from "../tab"
 
@@ -50,7 +50,7 @@ async function takeScreenshot(tab: BrowserTab): Promise<void> {
 }
 
 export function useNoticeToasts(tab: () => BrowserTab | undefined): void {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(browserDictionary)
   createEffect(() => {
     const current = tab()
     const notice = current?.notice()
@@ -61,7 +61,7 @@ export function useNoticeToasts(tab: () => BrowserTab | undefined): void {
 }
 
 export function ToolbarActions(props: { readonly tab: BrowserTab }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(browserDictionary)
   const screenshot = () =>
     takeScreenshot(props.tab).catch((error: unknown) => {
       console.error("Browser screenshot failed", { error })

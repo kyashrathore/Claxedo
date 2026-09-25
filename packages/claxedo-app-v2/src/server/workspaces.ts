@@ -1,11 +1,14 @@
 import { hashKey, type QueryClient } from "@tanstack/solid-query"
 import { createSignal, type Accessor } from "solid-js"
+import type { HostedAccount } from "./account"
+import type { LinkedCatalog } from "./account-link"
+import { createAccountPlacements, withAccountPlacements, type AccountPlacements } from "./account-placements"
 import type { PlacementsApi } from "./api"
 import { ServerError } from "./errors"
-import type { PlacementId } from "./ids"
+import type { PlacementId, ProjectId } from "./ids"
 import { queryKeys } from "./query-keys"
 import type { RuntimeRoute, Transport } from "./transport"
-import type { SessionRef } from "./types"
+import type { Project, SessionRef } from "./types"
 import { isStoppedCloud } from "./placement-runtime"
 import { workspaceStopped } from "./wire/connection"
 import { bootstrapCatalog, type BootstrapCatalog, type PlacementRecord } from "./wire/placements"
@@ -26,6 +29,8 @@ export type Workspaces = Pick<PlacementsApi, "byId" | "list"> & {
   readonly catalog: () => BootstrapCatalog | undefined
   readonly load: () => Promise<BootstrapCatalog>
   readonly refresh: () => Promise<void>
+  readonly accountProjects: () => Promise<readonly Project[]>
+  readonly accountProjectIds: (projectId: ProjectId) => readonly ProjectId[]
   readonly dispose: () => void
 }
 
@@ -91,23 +96,59 @@ function placementRoutes(find: (id: PlacementId) => Promise<PlacementRecord | un
     locate: async (id) => (await placed(id)).route,
     home: async (ref) => {
       const record = await placed(ref.placementId)
-      return { route: record.route, central: record.placement.kind === "cloud", live: !isStoppedCloud(record.placement) }
+      const offlineMachine = record.route.remote && record.placement.kind !== "cloud" && !record.placement.reachable
+      return { route: record.route, central: record.placement.kind === "cloud", live: !isStoppedCloud(record.placement) && !offlineMachine }
     },
   }
 }
 
-export function createWorkspaces(transport: Transport, queryClient: QueryClient): Workspaces {
+function mergedCatalog(queryClient: QueryClient, key: readonly unknown[], accountPlacements: AccountPlacements | undefined) {
+  const watched = [watchQuery(queryClient, key), ...(accountPlacements ? [watchQuery(queryClient, accountPlacements.key)] : [])]
+  let last: { local: BootstrapCatalog; linked: LinkedCatalog | undefined; merged: BootstrapCatalog } | undefined
+  const merge = (local: BootstrapCatalog) => {
+    const linked = accountPlacements?.link(local.placements)
+    if (last?.local !== local || last.linked !== linked) last = { local, linked, merged: withAccountPlacements(local, linked) }
+    return last.merged
+  }
+  const local = () => queryClient.getQueryData<BootstrapCatalog>(key)
+  return {
+    merge,
+    catalog: () => {
+      for (const watch of watched) watch.revision()
+      const current = local()
+      return current && merge(current)
+    },
+    linked: () => {
+      const current = local()
+      return current && accountPlacements?.link(current.placements)
+    },
+    dispose: () => watched.forEach((watch) => watch.dispose()),
+  }
+}
+
+function accountReads(linked: () => LinkedCatalog | undefined, signed: boolean, load: () => Promise<unknown>): Pick<Workspaces, "accountProjects" | "accountProjectIds"> {
+  return {
+    accountProjects: async () => {
+      if (!signed) return []
+      await load()
+      return linked()?.projects ?? []
+    },
+    accountProjectIds: (projectId) => linked()?.accountProjectIds(projectId) ?? [],
+  }
+}
+
+export function createWorkspaces(transport: Transport, queryClient: QueryClient, account?: HostedAccount): Workspaces {
   const key = queryKeys.bootstrap(transport.serverUrl)
-  const watched = watchQuery(queryClient, key)
+  const accountPlacements = account ? createAccountPlacements(account, transport.serverUrl, queryClient) : undefined
+  const merged = mergedCatalog(queryClient, key, accountPlacements)
   const relearned = new Set<string>()
   const read = async () => bootstrapCatalog(await transport.json<unknown>(BOOTSTRAP_PATH))
   const reread = () => queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: 0 })
-  const load = () => queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: Number.POSITIVE_INFINITY })
-  const catalog = () => {
-    watched.revision()
-    return queryClient.getQueryData<BootstrapCatalog>(key)
+  const load = async () => {
+    const [local] = await Promise.all([queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: Number.POSITIVE_INFINITY }), accountPlacements?.load()])
+    return merged.merge(local)
   }
-  const { recordOf, byId, list, address } = placementReads(() => catalog()?.placements ?? [])
+  const { recordOf, byId, list, address } = placementReads(() => merged.catalog()?.placements ?? [])
   return {
     byId,
     list,
@@ -121,14 +162,15 @@ export function createWorkspaces(transport: Transport, queryClient: QueryClient)
       await reread()
       relearned.add(directory)
     },
-    catalog,
+    catalog: merged.catalog,
     load,
     refresh: async () => {
       relearned.clear()
-      await reread()
+      await Promise.all([reread(), accountPlacements?.reread()])
       await queryClient.invalidateQueries({ queryKey: queryKeys.placements(transport.serverUrl) })
       await queryClient.invalidateQueries({ queryKey: queryKeys.projects(transport.serverUrl) })
     },
-    dispose: watched.dispose,
+    ...accountReads(merged.linked, accountPlacements !== undefined, load),
+    dispose: merged.dispose,
   }
 }

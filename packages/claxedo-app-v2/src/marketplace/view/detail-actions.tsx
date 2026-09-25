@@ -2,7 +2,7 @@ import { Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import type { PluginCandidate, PluginHarness } from "@/server"
 import { Button } from "@/ui"
-import { dictionary } from "../i18n"
+import { marketplaceDictionary } from "../i18n"
 import { defaultOutcome, isBuiltIn, isInstalled, pluginLabel } from "../model"
 import { OverflowItem, OverflowMenu } from "./overflow-menu"
 
@@ -16,7 +16,7 @@ type ActionProps = {
 }
 
 function MainAction(props: ActionProps & { readonly acquired: boolean; readonly mutable: boolean }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   const disabled = () => props.pending || !props.mutable
   const busy = (label: string) => (props.pending ? t("marketplace.action.applying") : label)
   return (
@@ -45,7 +45,7 @@ function MainAction(props: ActionProps & { readonly acquired: boolean; readonly 
 }
 
 export function PluginActions(props: ActionProps): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   const builtIn = () => isBuiltIn(props.plugin)
   const acquired = () => builtIn() || Boolean(props.plugin.retainedDigest)
   const mutable = () => props.plugin.sourceAvailable || acquired()

@@ -1,8 +1,9 @@
 import type { PlacementId, ProjectId } from "./ids"
-import type { DiffScope } from "./git-types"
+import type { DiffScope, FileSearchEntries } from "./git-types"
 
 export const queryKeys = {
   bootstrap: (server: string) => ["server", server, "bootstrap"] as const,
+  accountCatalog: (server: string) => ["server", server, "account-catalog"] as const,
   projects: (server: string) => ["server", server, "projects"] as const,
   project: (server: string, id: ProjectId) => ["server", server, "projects", id] as const,
   placements: (server: string) => ["server", server, "placements"] as const,
@@ -26,7 +27,6 @@ export const queryKeys = {
   folderPaths: (server: string) => ["server", server, "folders", "paths"] as const,
   folderChildren: (server: string, directory: string) => ["server", server, "folders", "children", directory] as const,
   harnessOptions: (server: string, placementId: PlacementId, harness: string) => ["server", server, "harness", placementId, harness] as const,
-  harnessLogins: (server: string) => ["server", server, "harnessLogins"] as const,
   sessionPermissionModes: (server: string, sessionId: string) => ["server", server, "permission-modes", "session", sessionId] as const,
   draftPermissionModes: (server: string, placementId: PlacementId, harness: string) => ["server", server, "permission-modes", "draft", placementId, harness] as const,
   codeHostAll: (server: string) => ["server", server, "codeHost"] as const,
@@ -36,11 +36,10 @@ export const queryKeys = {
   providerAuth: (server: string, harness: string) => ["server", server, "providerAuth", harness] as const,
   providerCatalogs: (server: string) => ["server", server, "providerCatalog"] as const,
   providerCatalog: (server: string, harness: string) => ["server", server, "providerCatalog", harness] as const,
-  codeHostConnections: (server: string) => ["server", server, "codeHost", "connections"] as const,
   codeHostRepositories: (server: string, connectionId: string) => ["server", server, "codeHost", "repositories", connectionId] as const,
   fileTree: (server: string, placementId: PlacementId, path: string) => ["server", server, "files", placementId, "tree", path] as const,
   fileContent: (server: string, placementId: PlacementId, path: string) => ["server", server, "files", placementId, "content", path] as const,
-  fileSearch: (server: string, placementId: PlacementId, query: string) => ["server", server, "files", placementId, "search", query] as const,
+  fileSearch: (server: string, placementId: PlacementId, query: string, entries: FileSearchEntries) => ["server", server, "files", placementId, "search", entries, query] as const,
   filesAll: (server: string) => ["server", server, "files"] as const,
   filesOf: (server: string, placementId: PlacementId) => ["server", server, "files", placementId] as const,
   gitStatus: (server: string, placementId: PlacementId) => ["server", server, "git", placementId, "status"] as const,

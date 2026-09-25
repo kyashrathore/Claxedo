@@ -2,7 +2,7 @@ import { Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import type { PluginCandidate } from "@/server"
 import { Button, Tag } from "@/ui"
-import { dictionary } from "../i18n"
+import { marketplaceDictionary } from "../i18n"
 import { isBuiltIn, pluginLabel, type PluginStatus } from "../model"
 import type { PersonalEntry } from "../sections"
 import { PluginIconTile } from "./plugin-icon"
@@ -19,7 +19,7 @@ function CardTrailing(props: {
   readonly status?: PluginStatus
   readonly action?: CardAction
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   return (
     <div class={TRAILING}>
       <Show
@@ -50,7 +50,7 @@ export function DirectoryCard(props: {
   readonly action?: CardAction
   readonly onOpen: () => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   const name = () => pluginLabel(props.plugin)
   const builtIn = () => isBuiltIn(props.plugin)
   return (
@@ -98,7 +98,7 @@ export function PersonalCard(props: {
   readonly selected?: boolean
   readonly onOpen: () => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   return (
     <button
       type="button"

@@ -23,13 +23,13 @@ export function SectionHeader(props: {
       aria-busy={props.loading}
       aria-expanded={props.expanded}
       title={props.hint}
-      class={`group/section shrink-0 disabled:pointer-events-none disabled:opacity-45 ${HARNESS_PICKER_ROW_CLASS}`}
+      class={`shrink-0 disabled:pointer-events-none disabled:opacity-45 ${HARNESS_PICKER_ROW_CLASS}`}
       onClick={props.onToggle}
     >
       <Icon
         name="chevron-right"
         size="small"
-        class="shrink-0 text-icon-base transition-transform duration-200 ease-out group-data-[expanded=true]/section:rotate-90"
+        class={`shrink-0 text-icon-base transition-transform duration-200 ease-out${props.expanded ? " rotate-90" : ""}`}
       />
       <span class="shrink-0 text-compact font-medium text-text-base">{props.label}</span>
       <span class="flex min-w-0 flex-1 items-center justify-end gap-1.5">

@@ -20,7 +20,6 @@ export const acceptedFileTypes = [
   ".log,.md,.mdx,.mjs,.mts,.py,.rb,.rs,.sass,.scss,.sh,.sql,.toml,.ts,.tsx,.txt,.xml,.yaml,.yml,.zsh",
 ]
 
-const IMAGE_MIMES = new Set(acceptedImageTypes)
 const IMAGE_EXTS = new Map([
   ["gif", "image/gif"],
   ["jpeg", "image/jpeg"],
@@ -70,7 +69,7 @@ function textBytes(bytes: Uint8Array) {
 
 export async function attachmentMime(file: File) {
   const type = kind(file.type)
-  if (IMAGE_MIMES.has(type)) return type
+  if (acceptedImageTypes.includes(type)) return type
   if (type === "application/pdf") return type
 
   const suffix = ext(file.name)
@@ -92,7 +91,7 @@ export type AttachmentTarget = {
 
 import type { AttachmentRefusal } from "../model"
 
-const isImage = (mime: string) => IMAGE_MIMES.has(mime)
+const isImage = (mime: string) => acceptedImageTypes.includes(mime)
 
 type HarnessPromptInputs = {
   carries: (mime: string) => boolean

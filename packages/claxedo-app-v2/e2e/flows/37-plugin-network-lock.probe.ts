@@ -92,7 +92,11 @@ function violatedOrigins(violations: readonly string[], directive: string) {
   )
 }
 
-export function expectEveryOriginViolated(violations: readonly string[], targets: readonly Target[]) {
+export type ImagePolicy = "https images load" | "no outside image"
+
+export const OUTSIDE_IMAGE = "https://example.invalid/x.png"
+
+export function expectEveryOriginViolated(violations: readonly string[], targets: readonly Target[], imagePolicy: ImagePolicy) {
   const connected = violatedOrigins(violations, "connect-src")
   const images = violatedOrigins(violations, "img-src")
   const frames = violatedOrigins(violations, "frame-src")
@@ -100,9 +104,15 @@ export function expectEveryOriginViolated(violations: readonly string[], targets
     const origin = new URL(target.http).origin
     expect(connected, `${target.name} connect-src`).toContain(origin)
     expect(connected, `${target.name} socket`).toContain(new URL(target.socket).origin)
-    expect(images, `${target.name} img-src`).toContain(origin)
+    if (imagePolicy === "https images load" && origin.startsWith("https:")) expect(images, `${target.name} img-src`).not.toContain(origin)
+    else expect(images, `${target.name} img-src`).toContain(origin)
     expect(frames, `${target.name} frame-src`).toContain(origin)
   }
+}
+
+export function expectOutsideImage(violations: readonly string[], imagePolicy: ImagePolicy) {
+  const refused = violations.includes(`img-src ${OUTSIDE_IMAGE}`)
+  expect(refused, `${OUTSIDE_IMAGE} refused by img-src`).toBe(imagePolicy === "no outside image")
 }
 
 export function probePlugin(targets: readonly Target[], leave: string) {
@@ -110,6 +120,7 @@ export function probePlugin(targets: readonly Target[], leave: string) {
 import { definePlugin, type PluginApi } from "@claxedo/plugin-api"
 
 const TARGETS = ${JSON.stringify(targets)}
+const OUTSIDE_IMAGE = ${JSON.stringify(OUTSIDE_IMAGE)}
 const LEAVE = ${JSON.stringify(leave)}
 const probe: (targets: typeof TARGETS) => Promise<string[]> = ${PROBE}
 const [violations, setViolations] = createSignal<string[]>([])
@@ -122,6 +133,7 @@ function Probe(props: { readonly api: PluginApi }) {
   void probe(TARGETS).then((lines) => lines.forEach(add))
   return (
     <section>
+      <img src={OUTSIDE_IMAGE} alt="Outside image" />
       <ul aria-label="Outcomes"><For each={outcomes()}>{(line) => <li>{line}</li>}</For></ul>
       <ul aria-label="Violations"><For each={violations()}>{(line) => <li>{line}</li>}</For></ul>
       <a href={LEAVE + "/clicked"}>Plugin docs</a>

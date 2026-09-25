@@ -1,6 +1,5 @@
 import { createSignal, type Accessor } from "solid-js"
-import type { GoalAction, Server, SessionGoal, SessionGoalState, SessionRef } from "@/server"
-import { toAppError } from "../requests"
+import { toAppError, type GoalAction, type Server, type SessionGoal, type SessionGoalState, type SessionRef } from "@/server"
 
 export type GoalFacts = { readonly goal: SessionGoal | undefined; readonly removedCreatedAt: number }
 

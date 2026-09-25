@@ -1,4 +1,4 @@
-import { createMemo, createRoot, untrack, type Accessor } from "solid-js"
+import { untrack } from "solid-js"
 import { asRecord, isRecord, readField, readString } from "@/lib/record"
 import {
   parseCommentNote,
@@ -33,6 +33,7 @@ import {
 import { stripRelayPrefix } from "./provider-error-detail"
 import type { TurnOutcome } from "./model"
 import { TimelineRow } from "./timeline-row-model"
+import { partHasText } from "../../transcript/text-presence"
 
 export type SummaryDiff = SnapshotFileDiff & { file: string }
 
@@ -76,7 +77,7 @@ export namespace Timeline {
   }) {
     const refs = input.assistantMessages.flatMap((message, messageIndex) =>
       input.getMessageParts(message.id)
-        .filter((part) => renderablePart(part, input.showReasoning ?? false))
+        .filter((part) => renderablePart(part, partHasText, input.showReasoning ?? false))
         .map((part) => ({ messageId: message.id, messageIndex, part })),
     )
     const partById = new Map(refs.map((ref) => [ref.part.id, ref.part] as const))
@@ -86,6 +87,7 @@ export namespace Timeline {
   export function constructMessageRows(
     userMessage: UserMessage,
     getMessageParts: (messageId: string) => Part[],
+    hasText: (part: Part) => boolean,
     assistantMessages: AssistantMessage[],
     index: number,
     showReasoning: boolean,
@@ -122,7 +124,7 @@ export namespace Timeline {
     const assistantPartRefs = assistantMessages.flatMap((message, messageIndex) =>
       getMessageParts(message.id)
         .filter((part) =>
-          renderablePart(part, showReasoning) &&
+          renderablePart(part, hasText, showReasoning) &&
           !(interrupted && part.type === "tool" && (part.state.status === "pending" || part.state.status === "running"))
         )
         .map((part) => ({ messageId: message.id, messageIndex, part })),
@@ -483,18 +485,7 @@ function lastKnownPartActivity(parts: Part[]): number | undefined {
   return times.length ? Math.max(...times) : undefined
 }
 
-const textPresence = new WeakMap<object, Accessor<boolean>>()
-
-function hasText(part: Part & { text?: string }) {
-  let present = textPresence.get(part)
-  if (!present) {
-    present = createRoot(() => createMemo(() => !!part.text?.trim()))
-    textPresence.set(part, present)
-  }
-  return present()
-}
-
-function renderablePart(part: Part, showReasoning = true) {
+function renderablePart(part: Part, hasText: (part: Part) => boolean, showReasoning: boolean) {
   if (part.type === "tool") {
     if (isHiddenTool(part)) return false
     return !isPendingQuestion(part)

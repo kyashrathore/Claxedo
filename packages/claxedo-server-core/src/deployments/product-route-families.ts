@@ -210,12 +210,13 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
   {
     id: "host-connect",
     owner: "server",
-    serves: "Enrolled machines: invitations, the machine's own beats and acquire, scope, and the enrollment list.",
+    serves: "Enrolled machines: invitations, the machine's own beats and acquire, scope, the enrollment list, and the session rows a machine publishes.",
     paths: [
       "/api/claxedo/host/enrollments",
       "/api/claxedo/host/enrollments/",
       "/api/claxedo/host/invitations",
       "/api/claxedo/host/invitations/",
+      "/api/claxedo/host/session-rows",
     ],
   },
   // ── Host publication: owned by @claxedo/host-connector ───────────────────

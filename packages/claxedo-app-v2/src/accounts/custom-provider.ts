@@ -1,4 +1,5 @@
 import type { CustomProviderDraft } from "@/server"
+import { uuid } from "@/lib/uuid"
 import type { AccountsText } from "./i18n"
 
 const PROVIDER_ID = /^[a-z0-9][a-z0-9-_]*$/
@@ -80,10 +81,6 @@ export function validateCustomProvider(form: FormState, t: AccountsText, existin
   return { err, models, headers, ...(ok ? { result: draftOf(form) } : {}) }
 }
 
-let row = 0
+export const modelRow = (): ModelRow => ({ row: uuid(), id: "", name: "", err: {} })
 
-const nextRow = () => `row-${row++}`
-
-export const modelRow = (): ModelRow => ({ row: nextRow(), id: "", name: "", err: {} })
-
-export const headerRow = (): HeaderRow => ({ row: nextRow(), key: "", value: "", err: {} })
+export const headerRow = (): HeaderRow => ({ row: uuid(), key: "", value: "", err: {} })

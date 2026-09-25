@@ -5,12 +5,12 @@ import { showToast } from "@/ui"
 import { useWorkbench } from "@/workbench"
 import { terminalContents } from "./contents"
 import type { Terminals } from "./context"
-import { dictionary } from "./i18n"
+import { terminalDictionary } from "./i18n"
 import type { TerminalPaneState } from "./model"
 import { terminalPaneKind } from "./pane"
 
 export function useEndTerminal(terminals: Terminals): (state: TerminalPaneState) => Promise<void> {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(terminalDictionary)
   return (state) =>
     terminals
       .store(state.placementId)

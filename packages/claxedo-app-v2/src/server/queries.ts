@@ -42,7 +42,7 @@ export function createQueries(transport: Transport, workspaces: Workspaces): Ser
   const cloud = cloudQueries(transport)
   return {
     livePlugins: livePluginQueries(transport),
-    projects: projectQueries(transport),
+    projects: projectQueries(transport, workspaces),
     placements: placementQueries(transport, workspaces),
     machines: machineQueries(transport, workspaces),
     accounts: accountQueries(transport),
@@ -73,7 +73,7 @@ function invalidationKeys(server: string, event: ServerEvent, endsWritingTurn: b
       return [queryKeys.projects(server), queryKeys.project(server, event.projectId), queryKeys.bootstrap(server), queryKeys.placements(server), queryKeys.placementsOf(server, event.projectId)]
     case "placementsChanged":
     case "cloudWorkspaceChanged":
-      return [queryKeys.bootstrap(server), queryKeys.placements(server), queryKeys.projects(server), queryKeys.machines(server), queryKeys.cloud(server)]
+      return [queryKeys.bootstrap(server), queryKeys.accountCatalog(server), queryKeys.placements(server), queryKeys.projects(server), queryKeys.machines(server), queryKeys.cloud(server)]
     case "pluginsChanged":
       return [queryKeys.livePlugins(server)]
     case "usageChanged":
@@ -81,6 +81,7 @@ function invalidationKeys(server: string, event: ServerEvent, endsWritingTurn: b
     case "streamGap":
       return [
         queryKeys.bootstrap(server),
+        queryKeys.accountCatalog(server),
         queryKeys.placements(server),
         queryKeys.projects(server),
         queryKeys.machines(server),

@@ -2,10 +2,26 @@ import { produce, type SetStoreFunction } from "solid-js/store"
 import type { QueuedPrompt, TranscriptPage, TranscriptPart } from "@/server"
 import { isPendingMessage, isPresentationMessage, mergeSortedById, mergedMessage, mergedPart, searchById } from "./merge"
 import type { SessionMessage, TranscriptData } from "./model"
+import { partHasText, textIsPresent } from "./text-presence"
 
 export type SetTranscript = SetStoreFunction<TranscriptData>
 
 export const NO_PARTS: readonly TranscriptPart[] = Object.freeze([])
+
+function markTextParts(set: SetTranscript, parts: readonly TranscriptPart[]): void {
+  const present = parts.filter(partHasText)
+  if (present.length === 0) return
+  set(
+    "partsWithText",
+    produce((marked) => {
+      for (const part of present) marked[part.id] = true
+    }),
+  )
+}
+
+function pageParts(page: TranscriptPage): TranscriptPart[] {
+  return page.entries.flatMap((entry) => entry.parts)
+}
 
 function pageMessages(page: TranscriptPage): SessionMessage[] {
   return page.entries.map((entry) => entry.info).filter(isPresentationMessage)
@@ -37,13 +53,16 @@ export function removeMessage(set: SetTranscript, messageId: string): void {
 }
 
 export function upsertPart(set: SetTranscript, part: TranscriptPart): void {
+  let stored = part
   set("parts", part.messageID, (parts) => {
     const current = parts ?? []
     const index = current.findIndex((item) => item.id === part.id)
     const next = current.slice()
-    next.splice(index < 0 ? next.length : index, index < 0 ? 0 : 1, mergedPart(index < 0 ? undefined : current[index], part))
+    stored = mergedPart(index < 0 ? undefined : current[index], part)
+    next.splice(index < 0 ? next.length : index, index < 0 ? 0 : 1, stored)
     return next
   })
+  markTextParts(set, [stored])
 }
 
 export function removePart(set: SetTranscript, messageId: string, partId: string): void {
@@ -63,6 +82,7 @@ export function appendDelta(set: SetTranscript, data: TranscriptData, messageId:
       record[field] = typeof current === "string" ? current + text : text
     }),
   )
+  if (field === "text" && !data.partsWithText[partId] && textIsPresent(text)) set("partsWithText", partId, true)
 }
 
 export function prependPage(set: SetTranscript, page: TranscriptPage): void {
@@ -74,6 +94,7 @@ export function prependPage(set: SetTranscript, page: TranscriptPage): void {
       for (const entry of page.entries) parts[entry.info.id] = entry.parts.slice()
     }),
   )
+  markTextParts(set, pageParts(page))
 }
 
 export function replaceLatest(set: SetTranscript, page: TranscriptPage): void {
@@ -93,6 +114,7 @@ export function replaceLatest(set: SetTranscript, page: TranscriptPage): void {
       for (const entry of page.entries) parts[entry.info.id] = entry.parts.slice()
     }),
   )
+  markTextParts(set, pageParts(page))
 }
 
 function mergedParts(current: readonly TranscriptPart[] | undefined, canonical: readonly TranscriptPart[]): TranscriptPart[] {
@@ -115,6 +137,7 @@ function withLatestTurn(messages: readonly SessionMessage[], fresh: readonly Ses
 export function mergeLatestTurn(set: SetTranscript, page: TranscriptPage): void {
   set("messages", (messages) => withLatestTurn(messages, pageMessages(page)))
   for (const entry of page.entries) set("parts", entry.info.id, (parts) => mergedParts(parts, entry.parts))
+  markTextParts(set, pageParts(page))
 }
 
 export function dropQueuedStubs(set: SetTranscript, data: TranscriptData, queued: readonly QueuedPrompt[]): void {

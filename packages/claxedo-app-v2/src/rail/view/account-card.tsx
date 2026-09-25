@@ -1,4 +1,4 @@
-import { createMemo, Show, type JSX } from "solid-js"
+import { createMemo, createSignal, Show, type JSX } from "solid-js"
 import { useAuth } from "@/auth"
 import { useTranslator } from "@/i18n"
 import { failureMessage } from "@/lib/failure"
@@ -14,6 +14,7 @@ export const USAGE_SECTION = "usage"
 type AccountView = {
   readonly signed: boolean
   readonly pending: boolean
+  readonly resolving: boolean
   readonly local: boolean
   readonly label: string
   readonly image: string | undefined
@@ -26,9 +27,9 @@ function useAccountView() {
   const server = useServer()
   return createMemo((): AccountView => {
     const state = auth.state()
-    const offered = server.capabilities()?.signedIn === true && auth.unavailable() === null
+    const offered = auth.offered(server.capabilities()?.signedIn === true)
     const pending = state.kind === "signingIn"
-    const base = { pending, local: !pending && state.kind !== "signedIn" && !offered }
+    const base = { pending, resolving: pending || (state.kind === "signedIn" && auth.identityResolving()), local: !pending && state.kind !== "signedIn" && !offered }
     if (state.kind === "signedIn") {
       const label = state.user.fullName ?? state.user.email ?? t("rail.account.signedIn")
       return { ...base, signed: true, label, image: state.user.imageUrl, action: "logout" }
@@ -43,7 +44,7 @@ function IdentityMark(props: { readonly view: AccountView; readonly size: "trigg
   const box = () => (props.size === "trigger" ? "size-7" : "size-5")
   return (
     <Show
-      when={!props.view.pending}
+      when={!props.view.resolving}
       fallback={
         <span class={`flex ${box()} shrink-0 items-center justify-center rounded-full bg-surface-inset-base text-icon-base`} aria-hidden="true">
           <Spinner class={props.size === "trigger" ? "size-3.5" : "size-3"} />
@@ -70,6 +71,7 @@ export function AccountCard(props: { readonly anchor: () => HTMLElement | undefi
   const routing = useShellRoute()
   const view = useAccountView()
   let trigger: HTMLButtonElement | undefined
+  const [open, setOpen] = createSignal(false)
   const select = (action: () => void) => () => {
     trigger?.focus()
     action()
@@ -81,7 +83,7 @@ export function AccountCard(props: { readonly anchor: () => HTMLElement | undefi
   const signIn = () => settle(auth.signIn({ redirectUrl: window.location.href }), t("rail.account.signInFailed"))
   const signOut = () => settle(auth.signOut(), t("rail.account.signOutFailed"))
   return (
-    <DropdownMenu placement="top-start" gutter={6} sameWidth getAnchorRect={(trigger) => (props.anchor() ?? trigger)?.getBoundingClientRect()}>
+    <DropdownMenu placement="top-start" gutter={6} sameWidth onOpenChange={setOpen} getAnchorRect={(trigger) => (props.anchor() ?? trigger)?.getBoundingClientRect()}>
       <DropdownMenu.Trigger
         ref={(element: HTMLButtonElement) => (trigger = element)}
         aria-label={view().label}
@@ -93,7 +95,7 @@ export function AccountCard(props: { readonly anchor: () => HTMLElement | undefi
         <span class="min-w-0 flex-1 truncate text-13-medium">
           {view().label}
         </span>
-        <Icon name="chevron-down" size="small" class="shrink-0 rotate-180 text-icon-weak-base opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 group-data-[expanded]:opacity-100" />
+        <Icon name="chevron-down" size="small" class={`shrink-0 rotate-180 text-icon-weak-base opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100${open() ? " opacity-100" : ""}`} />
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content class="z-[220]" style={{ "max-width": "calc(100vw - 16px)" }}>

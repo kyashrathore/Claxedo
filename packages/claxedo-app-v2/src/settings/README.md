@@ -20,7 +20,7 @@ Owns: the settings sections the shell's settings page shows. The shell owns the 
 
 ## Keyboard shortcuts
 
-Rows are the palette's registered commands (`commands.options()` filtered by `commands.has`, which drops the palette's "suggested" copies) plus the palette itself (`command.palette`, as today), grouped by each command's category. Recording suspends the palette's own keybindings (`commands.keybinds(false)`) until a key is pressed or Escape cancels; the recorded binding is stored with `commands.setKeybind`, so the shell stays the one home of overrides.
+Rows are the palette's registered commands (`commands.options()` filtered by `commands.has`, which drops the palette's "suggested" copies) plus the palette itself (`command.palette`, as today), grouped by each command's category. Recording suspends the palette's own keybindings (`commands.keybinds(false)`) until a key is pressed or Escape cancels; the recorded binding is stored with `commands.setKeybind`, so the shell stays the one home of overrides. The section draws its first 40 rows at once and 60 more each animation frame (`view/reveal.ts`) until every row is drawn, so opening it with hundreds of commands stays under one frame; rows are keyed by command id, so a rebound shortcut updates its own row's text and nothing else is rebuilt.
 
 ## Strings
 

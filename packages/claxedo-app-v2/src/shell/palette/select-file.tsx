@@ -6,7 +6,7 @@ import { useDialog, ClaxedoIcon as Icon, Dialog, FileIcon, Keybind, List, getDir
 import { shellDictionary } from "../i18n"
 import { useShellRoute } from "../router"
 import { sessionPath } from "../routes"
-import { relativeAge, uniqueEntries, type PaletteEntry } from "./palette-entries"
+import { relativeAge, type PaletteEntry } from "./palette-entries"
 import { createPaletteSources } from "./palette-sources"
 
 export type DialogSelectFileProps = {
@@ -79,7 +79,7 @@ function createEntries(props: DialogSelectFileProps, setGrouped: (grouped: boole
   return async (text: string): Promise<PaletteEntry[]> => {
     const query = text.trim()
     setGrouped(query.length > 0)
-    if (!query && filesOnly()) return uniqueEntries([...sources.recentFiles(), ...(await sources.rootFiles())])
+    if (!query && filesOnly()) return sources.recentAndRootFiles()
     if (!query) return [...sources.commandPicks(), ...sources.recentFiles()]
     if (filesOnly()) return sources.searchFiles(query)
     return [...sources.commandList(), ...sources.sessions(), ...(await sources.searchFiles(query))]

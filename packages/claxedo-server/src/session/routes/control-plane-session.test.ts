@@ -621,12 +621,11 @@ describe("control plane session routes", () => {
   test("serves signed session-list through the same logical response shape", async () => {
     const svc = services()
     const authority = {
-      openWorkspace: cloudWorkspaceOpen(),
-
-      listSessions: vi.fn(async () => [
+      listSessionPage: vi.fn(async () => [
         {
           session_id: "session-1",
           workspace_id: "ws_1",
+          project_id: "proj_alpha",
           title: "Signed session",
           created_at: 1,
           updated_at: 2,
@@ -636,7 +635,7 @@ describe("control plane session routes", () => {
     svc.authority = authority as never
 
     const res = await ControlPlaneSessionRoutes(svc, signedOptions).request(
-      "https://control.example.test/session-list?workspaceId=ws_1&limit=5",
+      "https://control.example.test/session-list?scope=workspace&workspaceId=ws_1&limit=5",
       {
         headers: { Authorization: "Bearer signed-token" },
       },
@@ -655,186 +654,55 @@ describe("control plane session routes", () => {
         },
       ],
     })
-    expect(authority.listSessions).toHaveBeenCalledWith(expect.objectContaining({ token: "signed-token" }), {
+    expect(authority.listSessionPage).toHaveBeenCalledWith(expect.objectContaining({ token: "signed-token" }), {
       workspaceId: "ws_1",
+      sort: "updated_desc",
+      archived: "active",
+      limit: 6,
     })
   })
 
-  test("serves signed project-scoped workspace session-list through workspace authority", async () => {
+  test("serves a signed project's page from loopback through the same read", async () => {
     const svc = services()
     const authority = {
-      openWorkspace: cloudWorkspaceOpen(),
-
-      listSessions: vi.fn(async () => [
-        {
-          session_id: "session-1",
-          workspace_id: "ws_1",
-          title: "Signed session",
-          created_at: 1,
-          updated_at: 2,
-        },
+      listSessionPage: vi.fn(async () => [
+        { session_id: "ses_b", workspace_id: "ws_b", project_id: "proj_alpha", created_at: 1, updated_at: 3 },
+        { session_id: "ses_a", workspace_id: "ws_a", project_id: "proj_alpha", created_at: 1, updated_at: 2 },
       ]),
     }
     svc.authority = authority as never
 
     const res = await ControlPlaneSessionRoutes(svc, signedOptions).request(
-      "http://127.0.0.1/session-list?scope=project&projectId=ws_1&limit=5",
-      {
-        headers: {
-          Authorization: "Bearer signed-token",
-          Origin: "http://127.0.0.1:4444",
-          "x-claxedo-directory": "workspace:ws_1",
-        },
-      },
+      "http://127.0.0.1/session-list?scope=project&projectId=proj_alpha&limit=5",
+      { headers: { Authorization: "Bearer signed-token", Origin: "http://127.0.0.1:4444" } },
     )
 
     expect(res.status).toBe(200)
-    await expect(res.json()).resolves.toMatchObject({
-      view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 5 },
-      items: [{ sessionId: "session-1", workspaceId: "ws_1" }],
-    })
-    expect(authority.listSessions).toHaveBeenCalledWith(expect.objectContaining({ token: "signed-token" }), {
-      workspaceId: "ws_1",
-    })
-  })
-
-  test("resolves a non-ws_ project id to its workspaces instead of rejecting", async () => {
-    const svc = services()
-    const authority = {
-      listWorkspaces: vi.fn(async () => [
-        { workspace_id: "ws_a", project_id: "proj_alpha" },
-        { workspace_id: "ws_b", project_id: "proj_alpha" },
-        { workspace_id: "ws_other", project_id: "proj_beta" },
-      ]),
-      openWorkspace: cloudWorkspaceOpen(),
-
-      listSessions: vi.fn(async (_auth: unknown, args: { workspaceId: string }) =>
-        args.workspaceId === "ws_a"
-          ? [{ session_id: "ses_a", title: "From A", created_at: 1, updated_at: 2 }]
-          : args.workspaceId === "ws_b"
-            ? [{ session_id: "ses_b", title: "From B", created_at: 1, updated_at: 3 }]
-            : [{ session_id: "ses_other", title: "Other project", created_at: 1, updated_at: 9 }],
-      ),
-    }
-    svc.authority = authority as never
-
-    const res = await ControlPlaneSessionRoutes(svc, signedOptions).request(
-      "https://control.example.test/session-list?scope=project&projectId=proj_alpha&limit=5",
-      { headers: { Authorization: "Bearer signed-token" } },
-    )
-
-    expect(res.status).toBe(200)
-    const body = await res.json() as {
-      view: { scope: string }
-      items: Array<{ sessionId: string; workspaceId?: string; projectId?: string; sessionRef: string }>
-    }
+    const body = await res.json() as { view: { scope: string }; items: Array<{ sessionRef: string; projectId?: string }> }
     expect(body.view.scope).toBe("project")
-    // Sorted updated_desc: ws_b's session (3) before ws_a's (2). The
-    // ws_other workspace belongs to another project and must not leak in.
-    expect(body.items.map((item) => item.sessionId)).toEqual(["ses_b", "ses_a"])
-    expect(body.items.map((item) => item.workspaceId)).toEqual(["ws_b", "ws_a"])
-    expect(body.items.every((item) => item.projectId === "proj_alpha")).toBe(true)
     expect(body.items.map((item) => item.sessionRef)).toEqual([
       "workspace:ws_b:session:ses_b",
       "workspace:ws_a:session:ses_a",
     ])
-    expect(authority.listSessions).not.toHaveBeenCalledWith(expect.anything(), { workspaceId: "ws_other" })
+    expect(authority.listSessionPage).toHaveBeenCalledWith(
+      expect.objectContaining({ token: "signed-token" }),
+      expect.objectContaining({ projectId: "proj_alpha" }),
+    )
   })
 
-  test("returns an empty project session-list when the project has no workspaces", async () => {
+  test("refuses a signed session-list filtered by environment or git", async () => {
     const svc = services()
-    const authority = {
-      listWorkspaces: vi.fn(async () => [{ workspace_id: "ws_a", project_id: "proj_other" }]),
-      openWorkspace: cloudWorkspaceOpen(),
-
-      listSessions: vi.fn(async () => []),
-    }
+    const authority = { listSessionPage: vi.fn(async () => []) }
     svc.authority = authority as never
 
     const res = await ControlPlaneSessionRoutes(svc, signedOptions).request(
-      "https://control.example.test/session-list?scope=project&projectId=proj_missing&limit=5",
+      "https://control.example.test/session-list?scope=workspace&workspaceId=ws_1&environment=driver:daytona&limit=10",
       { headers: { Authorization: "Bearer signed-token" } },
     )
 
-    expect(res.status).toBe(200)
-    await expect(res.json()).resolves.toMatchObject({ view: { scope: "project" }, items: [], totalKnown: 0 })
-    expect(authority.listSessions).not.toHaveBeenCalled()
-  })
-
-  test("session-list matches prefixed environment and git filter values", async () => {
-    const svc = services()
-    const authority = {
-      openWorkspace: cloudWorkspaceOpen(),
-
-      listSessions: vi.fn(async () => [
-        {
-          session_id: "session-match",
-          workspace_id: "ws_1",
-          title: "Match",
-          created_at: 1,
-          updated_at: 3,
-          environment: { kind: "cloud", driver: "daytona" },
-          git: { repo: "claxedo", branch: "main" },
-        },
-        {
-          session_id: "session-skip",
-          workspace_id: "ws_1",
-          title: "Skip",
-          created_at: 1,
-          updated_at: 2,
-          environment: { kind: "cloud", driver: "other" },
-          git: { repo: "claxedo", branch: "dev" },
-        },
-      ]),
-    }
-    svc.authority = authority as never
-
-    const res = await ControlPlaneSessionRoutes(svc, signedOptions).request(
-      "https://control.example.test/session-list?workspaceId=ws_1&environment=driver:daytona&git=branch:main&limit=10",
-      {
-        headers: { Authorization: "Bearer signed-token" },
-      },
-    )
-
-    expect(res.status).toBe(200)
-    const body = await res.json()
-    expect(body).toMatchObject({
-      items: [{ sessionId: "session-match" }],
-      totalKnown: 1,
-    })
-    expect(body.items[0].environment).toEqual({ kind: "cloud", driver: "daytona" })
-  })
-
-  test("session-list does not accept legacy provider environment filters", async () => {
-    const svc = services()
-    const authority = {
-      openWorkspace: cloudWorkspaceOpen(),
-
-      listSessions: vi.fn(async () => [
-        {
-          session_id: "session-match",
-          workspace_id: "ws_1",
-          title: "Match",
-          created_at: 1,
-          updated_at: 3,
-          environment: { kind: "cloud", driver: "daytona" },
-        },
-      ]),
-    }
-    svc.authority = authority as never
-
-    const res = await ControlPlaneSessionRoutes(svc, signedOptions).request(
-      "https://control.example.test/session-list?workspaceId=ws_1&environment=provider:daytona&limit=10",
-      {
-        headers: { Authorization: "Bearer signed-token" },
-      },
-    )
-
-    expect(res.status).toBe(200)
-    await expect(res.json()).resolves.toMatchObject({
-      items: [],
-      totalKnown: 0,
-    })
+    expect(res.status).toBe(400)
+    await expect(res.json()).resolves.toMatchObject({ error: { code: "session_list_view_unsupported" } })
+    expect(authority.listSessionPage).not.toHaveBeenCalled()
   })
 
   test("serves loopback session messages from the local projection", async () => {

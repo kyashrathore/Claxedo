@@ -73,8 +73,7 @@
   font-weight: 500;
 }
 
-.plugin-slot-failure,
-.plugin-slot-off {
+.plugin-slot-failure {
   display: flex;
   flex-direction: column;
   align-items: flex-start;

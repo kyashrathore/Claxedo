@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "i18n.error.auth.title": "Zaloguj się ponownie",
   "i18n.error.auth.message": "Twoje logowanie wygasło lub zostało odrzucone. Zaloguj się ponownie, aby kontynuować.",
   "i18n.error.auth.retry": "Zaloguj się",

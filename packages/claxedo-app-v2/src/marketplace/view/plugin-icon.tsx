@@ -64,7 +64,6 @@ export function PluginIconTile(props: {
   return (
     <span
       aria-hidden="true"
-      data-component="agent-plugin-icon"
       data-brand={props.builtIn ? "claxedo" : brandKey(props.name)}
       style={{
         "--agent-plugin-hue": hue(),

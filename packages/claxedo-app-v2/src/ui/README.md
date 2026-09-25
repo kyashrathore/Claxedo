@@ -4,7 +4,7 @@ v2's own components and tokens. Surfaces ported from today's app render with tod
 
 ## One door to today's kit
 
-Owner ruling: v1's look is the kit. `@opencode-ai/ui` and `@opencode-ai/session-ui` may be imported only inside `src/ui`; everything else imports them from `@/ui`, which re-exports what the app uses. v1's token names are allowed, since they are the look. The only kit stylesheet imports outside `src/ui` are the two `@import`s at the top of `shell/styles/index.css` and the three v2 sheets `src/styles.ts` loads, listed exactly in `scripts/checks/v2-only.ts`. Nothing imports `@opencode-ai/session-ui`, not even here: v2's copies of its renderers and sheets live in `src/transcript`.
+Owner ruling: v1's look is the kit. `@opencode-ai/ui` and `@opencode-ai/session-ui` may be imported only inside `src/ui`; everything else imports them from `@/ui`, which re-exports what the app uses. v1's token names are allowed, since they are the look. The only kit stylesheet imports outside `src/ui` are the two `@import`s at the top of `shell/styles/index.css` and the two v2 sheets `src/styles.ts` loads (menu and tooltip), listed exactly in `scripts/checks/v2-only.ts`. Nothing imports `@opencode-ai/session-ui`, not even here: v2's copies of its renderers and sheets live in `src/transcript`. A sheet is loaded only for a component the app renders: the kit's `select-v2.css` (no v2 surface renders `SelectV2`) nests `> *:not([role=presentation]) + *:not([role=presentation])` under two attribute-only compounds, so under any `[data-component]` and `[data-slot]` ancestors Blink's ancestor filter cannot reject it, and every element matched below flags its parent as affected by `+` rules. The transcript's virtual list sits under both, so each row a scroll added or removed restyled the whole list: 11,664-14,192 elements restyled over a 3,000 px wheel scroll, against 5,063-5,073 without the sheet (today's app, whose timeline has no `[data-component]` ancestor: 7,052-7,105).
 
 No `data-component` hooks outside what something reads: `scripts/checks/claxedo-names.ts` allows a value only when a stylesheet, a selector, an e2e flow or the perf harness selects it (the ClaxedoIcon and ClaxedoIconButton controls take the kit's icon and icon-button styles through `icon` and `icon-button`). v2's own components style themselves by class.
 
@@ -13,6 +13,9 @@ No `data-component` hooks outside what something reads: `scripts/checks/claxedo-
 - **Tokens.** The kit's: `--v2-*` ramps and semantic tokens come from `@opencode-ai/ui/v2/styles`, the type scale, radii and shadows from the kit's theme, all loaded by `shell/styles/index.css`. The one token of v2's own is `--touch-target` (`touch.css`).
 - **Global styles.** `styles.css` declares the layer order (with `touch` between `components` and `utilities`) and loads the touch rules and the reduced-motion rule (`reduced-motion.css`, `!important` in `base`, so it beats every later layer). Tailwind runs once, in `shell/styles/index.css`.
 - **Icons.** Icons are today's app's `ClaxedoIcon` (below) and the kit's `Icon`, `IconV2` and `ProviderIcon`, all through `@/ui`.
+- **Scroll thumb.** `createScrollThumb` (`scroll-view-thumb.ts`) derives the thumb's geometry only while the thumb is visible (hovered, scrolled by input, or dragged): becoming visible measures the viewport once, a resize of the viewport or its first child re-reads the extent, and a scroll moves the thumb from that extent and `scrollTop`. While it is hidden it reads and writes nothing, so a transcript growing under a streaming reply costs it nothing; the kit's thumb wrote its geometry 608 times per streamed turn, each write after a forced layout read.
+- **List** (`list/`): v2's twin of the kit's `List`, re-exported from `@/ui` in its place, with the kit's markup, slots and classes (the kit's `list.css` styles it). Groups are keyed by category and each group's rows are diffed by item reference, so a filter change re-renders only the rows that enter or leave, and `data-active`/`data-selected` read `createSelector`. File palette, typing "markdown": 18,458 -> 7,198 computations; command palette "settings": 29,996 -> 9,026; model picker "gpt": 75,069 -> 1,892. The kit's `List` stays as it is until the swap (handoff).
+- **Sprite shelf** (`sprite-shelf.ts`): `App` mounts one `display: contents` element at the top of `<body>` and moves every icon sprite host into it: those already in `<body>`, and each one the kit or `ClaxedoIcon` adds later (a child-list observer on `<body>` only, disposed with `App`). A host is an `aria-hidden` `<svg>` whose id ends in `-sprite`. The shelf is not `aria-hidden`: Kobalte's hide-outside pass (every menu, dialog and popover) skips an element that is already `aria-hidden` without recording it and walks into it, writing `aria-hidden` on each `<symbol>` (about 500 writes to open the account menu, 168 to close it), while the shelf is hidden with one write and not entered. Hosts are moved, not created here, because the kit's `Icon` fills its sprite only when it creates the host.
 - **Dialogs.** `Dialog`, `DialogProvider` and `useDialog()` are the kit's (`@opencode-ai/ui/dialog`, `@opencode-ai/ui/context/dialog`), so dialogs look and stack as they do today.
 
 ## Controls from today's app (`controls/`, `icons/`)
@@ -25,7 +28,7 @@ These are today's app's own controls, moved here unchanged, and every surface po
   - Harness logos (LobeHub, MIT; OpenCode's own geometry) are scaled from 24 units to about 14 and centred: dense filled marks at full size read heavier than the thin glyphs beside them. They fill with `currentColor`. The copy mark's 11-unit box is scaled up around the grid centre to match its 14-unit neighbours.
   - The custom glyph table is a `Record`, not a `Partial`: a missing `codex-custom-*` entry would fall through to a sprite id that does not exist and render an invisible icon with no error.
   - `bare` selects the compact size scale (14/16/18/20 px as attributes) and drops the `data-component`/`data-size` grammar; the default scale (16/20/24/24 px) is sized by the kit's icon.css in `@layer components`. The `ui-icon` class twins the data attribute because the stylesheets match classes, which the browser buckets more cheaply than the shared `data-slot` attribute.
-  - The sprite lives in `document.body` and records its markup length, so a hot reload that changes the glyphs rebuilds it.
+  - The sprite lives in the sprite shelf (below) and records its markup length, so a hot reload that changes the glyphs rebuilds it.
   - An icon skin (`icons/skin.ts`, `IconSkinContext`) draws a name the skin covers instead of either library; the shell provides the skin of the selected theme.
 - **`ClaxedoIconButton`**: starts at full strength (an icon button that says nothing about its state is always on screen), which also lets a filled `primary` button keep its inverse foreground.
 - **`ClaxedoLogo`**: the pixel C on a 32 px grid, shifted +32 px to centre it optically against its open side; tiles are 33 px so neighbours merge into a solid letter at any size.
@@ -40,7 +43,7 @@ Every component works at 390 px with a coarse pointer: `touch.css` gives compact
 
 ## Origin
 
-Upstream's v2 library (anomalyco/opencode `packages/ui/src/v2` at 1d6c3c0e29) is the source of `Field` and `SegmentedControl`. `ScrollThumb` is Claxedo's own, restyled onto the v2 tokens. Everything else a surface draws is today's kit (`@opencode-ai/ui`), re-exported through `@/ui`.
+Upstream's v2 library (anomalyco/opencode `packages/ui/src/v2` at 1d6c3c0e29) is the source of `Field` and `SegmentedControl`. `ScrollThumb` and `ScrollView` are Claxedo's own; `ScrollView` keeps the kit's markup and look. Everything else a surface draws is today's kit (`@opencode-ai/ui`), re-exported through `@/ui`.
 
 ## Components
 
@@ -50,20 +53,11 @@ Upstream's v2 library (anomalyco/opencode `packages/ui/src/v2` at 1d6c3c0e29) is
 | `Dialog` (the kit's) | `title?`, `description?`, `action?`, `size?: normal \| large \| x-large \| viewport`, `fit?`, `flush?`, `scrim?: strong`, `class?`; the body is its children |
 | `DialogProvider`, `useDialog()` (the kit's) | `useDialog()` returns `{ active, show(element, onClose?), push(element, onClose?), close() }` |
 | `Field` (`.Label`) | div props; `Label` takes `for`, the id its control carries, so a click on the label focuses the control (the kit's `Select` takes it through `triggerProps`) |
-| `ScrollThumb` | `scroller`, `hoverTarget?`, `visibility?: hover \| scroll`; draws v2's thin overlay thumb over an element that scrolls itself (the kit's `ScrollView` draws its own). The thumb stays mounted and is `hidden` while nothing overflows: it sits after the scroller, so mounting it flips the scroller's `:last-child`, and the markdown `> *:last-child` rules then restyle the scroller's whole subtree (the Review: 651 elements on every Collapse all) |
+| `ScrollThumb` | `scroller`, `hoverTarget?`, `visibility?: hover \| scroll`; draws v2's thin overlay thumb over an element that scrolls itself. The thumb stays mounted and is `hidden` while nothing overflows: it sits after the scroller, so mounting it flips the scroller's `:last-child`, and the markdown `> *:last-child` rules then restyle the scroller's whole subtree (the Review: 651 elements on every Collapse all) |
+| `ScrollView` | div props, `viewportRef?`; a region that scrolls its children with the kit's markup (`.scroll-view`, the focusable `.scroll-view__viewport` region named "scrollable content", page and arrow keys) and the kit's thumb look (`.scroll-view__thumb`), drawn by `ScrollThumb`'s machinery |
 | `SegmentedControl`, `SegmentedControlItem` | `value?`, `defaultValue?`, `onChange?(value \| null)`, `allowDeselect?`, `disabled?`; item: `value`, `children`. Width is 232 px with equal segments; the class `segmented-control--full-width` fills the container, and `segmented-control--fit` sizes each segment to its label |
 | `Select` (the kit's, from `@opencode-ai/ui/select`) | `options`, `current?`, `value?(item)`, `label?(item)`, `groupBy?(item)`, `onSelect?(item \| undefined)`, `onHighlight?`, plus the kit button's `variant`/`size`, `triggerVariant?: settings`, `triggerStyle?` |
 | `Switch` (the kit's, from `@opencode-ai/ui/switch`) | Kobalte switch props, `children` as label, `hideLabel?`, `description?` |
 | `Tag` (the kit's, from `@opencode-ai/ui/tag`) | span props, `size?: normal \| large` |
 | `Toast`, `showToast`, `toaster` (the kit's, from `@opencode-ai/ui/toast`, so toasts look as they do today) | `showToast(options \| string)`: `title?`, `description?`, `icon?: kit icon name`, `variant?: default \| success \| error \| loading`, `duration?`, `persistent?`, `actions?: { label, onClick }[]`; mount one `Toast.Region` |
 | `Tooltip` (the kit's, from `@opencode-ai/ui/tooltip`, so tooltips look as they do today) | Kobalte tooltip props, `value: JSX.Element`, `class?`, `contentClass?`, `contentStyle?`, `inactive?`, `forceOpen?` |
-
-## At the swap
-
-Things to change once the kit components v2 uses move into the app. `packages/ui` stays untouched until then, because today's app renders it.
-
-- **ScrollView thumb:** the kit's `ScrollView` (`packages/ui/src/components/scroll-view.tsx`, `updateThumb`) already coalesces to one update per animation frame. Each frame it still reads `scrollTop`, `scrollHeight` and `clientHeight` on the viewport and `clientHeight` on the track. Those reads force the layout the timeline's virtualizer has just dirtied. The bench measured about 0.8 ms of forced layout per wheel event: 48.9 ms of 350 ms busy over 60 wheel events on an 8 MiB session. The fix:
-  - cache `scrollHeight`, `clientHeight` and the track height from the ResizeObserver entries the component already registers (the viewport, its content and the thumb mount);
-  - in the frame, read only `scrollTop`;
-  - measure with the bench's `scrollprof.ts`.
-

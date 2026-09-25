@@ -2,14 +2,14 @@ import { createSignal, For, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { PluginSourceError, type PluginSourceDiagnostic, type PluginSourceInput } from "@/server"
 import { Button } from "@/ui"
-import { dictionary } from "../i18n"
+import { marketplaceDictionary } from "../i18n"
 
 const FIELD =
   "h-7 w-full rounded-md border border-border-weak-base bg-surface-base px-2 py-0 text-13-regular text-text-base"
 const CODE = "text-12-mono"
 
 function SourceShape(): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   return (
     <p class="text-12-regular text-text-weak">
       {t("marketplace.source.shapeLead")} <code class={CODE}>plugin.json</code> {t("marketplace.source.shapeSchema")}{" "}
@@ -75,11 +75,10 @@ export function AddSourceForm(props: {
   readonly onAdd: (input: PluginSourceInput) => Promise<void>
   readonly onCancel: () => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   const form = createSourceForm(props.onAdd, () => t("marketplace.source.invalid"))
   return (
     <form
-      data-component="agent-plugin-add-source"
       aria-label={t("marketplace.source.add")}
       class="grid gap-2 rounded-lg border border-border-weak-base bg-surface-inset-base p-3"
       onSubmit={(event) => void form.submit(event)}

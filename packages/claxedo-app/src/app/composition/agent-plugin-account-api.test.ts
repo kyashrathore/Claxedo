@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import type { AccountPort, HostedOperationName } from "@/platform/account/account-port"
+import type { AccountPort } from "@/platform/account/account-port"
+import type { HostedOperationName } from "@claxedo/account-contract"
 import { accountAgentPluginApi, plainHostedInput } from "./agent-plugin-account-api"
 import { createStore } from "solid-js/store"
 import type { AgentPluginHarness } from "@/features/agent-plugins/api"

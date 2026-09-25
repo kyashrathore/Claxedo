@@ -1,4 +1,4 @@
-import { onCleanup } from "solid-js"
+import { createEffect, createMemo, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { scrollTopFromThumbPointer } from "@opencode-ai/ui/scroll-view"
 
@@ -10,12 +10,22 @@ const trackPadding = 8
 const minThumbHeight = 32
 const scrollIdleMs = 800
 
-type ThumbInput = { viewport: () => HTMLDivElement | undefined; track: () => HTMLElement | undefined }
+type ThumbInput = {
+  viewport: () => HTMLDivElement | undefined
+  track: () => HTMLElement | undefined
+  visibility: () => ScrollViewThumbVisibility
+}
 
-function thumbGeometry(viewport: HTMLDivElement, track: HTMLElement | undefined) {
-  const { scrollTop, scrollHeight, clientHeight } = viewport
+type Extent = { scrollHeight: number; clientHeight: number; trackHeight: number }
+
+function readExtent(viewport: HTMLDivElement, track: HTMLElement | undefined): Extent {
+  return { scrollHeight: viewport.scrollHeight, clientHeight: viewport.clientHeight, trackHeight: track?.clientHeight || viewport.clientHeight }
+}
+
+function thumbGeometry(extent: Extent, scrollTop: number) {
+  const { scrollHeight, clientHeight } = extent
   if (scrollHeight - clientHeight <= 1 || scrollHeight === 0) return undefined
-  const trackHeight = (track?.clientHeight || clientHeight) - trackPadding * 2
+  const trackHeight = extent.trackHeight - trackPadding * 2
   const height = Math.max((clientHeight / scrollHeight) * trackHeight, minThumbHeight)
   const maxScrollTop = scrollHeight - clientHeight
   const maxThumbTop = trackHeight - height
@@ -57,33 +67,39 @@ function dragThumb(input: ThumbInput, thumb: HTMLDivElement, event: PointerEvent
 
 export function createScrollThumb(input: ThumbInput) {
   const [state, setState] = createStore({ hovered: false, dragging: false, scrolling: false, height: 0, top: 0, shown: false })
-  const timers = { idle: undefined as ReturnType<typeof setTimeout> | undefined, frame: undefined as number | undefined }
-  onCleanup(() => {
-    if (timers.idle !== undefined) clearTimeout(timers.idle)
-    if (timers.frame !== undefined) cancelAnimationFrame(timers.frame)
-  })
+  const visible = createMemo(() => state.dragging || state.scrolling || (input.visibility() === "hover" && state.hovered))
+  let extent: Extent | undefined
+  let idle: ReturnType<typeof setTimeout> | undefined
+  onCleanup(() => idle !== undefined && clearTimeout(idle))
+  const place = (viewport: HTMLDivElement) => {
+    const geometry = extent && thumbGeometry(extent, viewport.scrollTop)
+    setState(geometry ? { shown: true, ...geometry } : { shown: false })
+  }
   const measure = () => {
     const viewport = input.viewport()
     if (!viewport) return
-    const geometry = thumbGeometry(viewport, input.track())
-    setState(geometry ? { shown: true, ...geometry } : { shown: false })
+    extent = readExtent(viewport, input.track())
+    place(viewport)
   }
+  createEffect(() => {
+    if (visible()) measure()
+    else extent = undefined
+  })
   return {
     state,
+    visible,
     setHovered: (hovered: boolean) => setState("hovered", hovered),
-    visible: (visibility: ScrollViewThumbVisibility) => state.dragging || state.scrolling || (visibility === "hover" && state.hovered),
     reveal: (_source: ThumbRevealSource) => {
       setState("scrolling", true)
-      if (timers.idle !== undefined) clearTimeout(timers.idle)
-      timers.idle = setTimeout(() => setState("scrolling", false), scrollIdleMs)
+      if (idle !== undefined) clearTimeout(idle)
+      idle = setTimeout(() => setState("scrolling", false), scrollIdleMs)
     },
-    measure,
-    schedule: () => {
-      if (timers.frame !== undefined) return
-      timers.frame = requestAnimationFrame(() => {
-        timers.frame = undefined
-        measure()
-      })
+    resized: () => {
+      if (visible()) measure()
+    },
+    scrolled: () => {
+      const viewport = input.viewport()
+      if (viewport && extent) place(viewport)
     },
     drag: (thumb: HTMLDivElement, event: PointerEvent) => dragThumb(input, thumb, event, () => state.height, (dragging) => setState("dragging", dragging)),
   }

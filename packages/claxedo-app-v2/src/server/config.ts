@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+import type { RunHostedOperation } from "@claxedo/account-contract"
 import { ServerError } from "./errors"
 
 export type AuthSource =
@@ -9,6 +10,7 @@ export type AuthSource =
 export type ServerConfig = {
   readonly serverUrl?: string
   readonly auth: AuthSource
+  readonly account?: RunHostedOperation
   readonly cookies?: boolean
   readonly eventSocket?: boolean
 }

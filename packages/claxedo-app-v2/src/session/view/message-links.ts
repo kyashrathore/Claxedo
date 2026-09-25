@@ -7,17 +7,18 @@ import type { TimelineScroll } from "./timeline-scroll"
 
 const MESSAGE_HASH = /^#message-(.+)$/
 
-export function createMessageLinks(input: {
+type MessageLinksInput = {
   readonly view: Accessor<SessionView>
   readonly users: Accessor<TranscriptUserMessage[]>
   readonly scroll: TimelineScroll
   readonly active: Accessor<boolean>
   readonly commands: Commands
   readonly t: SessionScreenText
-}) {
-  const seek = (message: TranscriptUserMessage | undefined) => {
-    if (message) input.scroll.props.onMessageSelect?.(message)
-  }
+}
+
+type Seek = (message: TranscriptUserMessage | undefined) => void
+
+function followMessageHash(input: MessageLinksInput, seek: Seek) {
   const seekHash = async () => {
     const raw = MESSAGE_HASH.exec(location.hash)?.[1]
     if (!raw) return
@@ -34,7 +35,9 @@ export function createMessageLinks(input: {
   createEffect(on(() => input.users().length > 0, (ready) => ready && followHash()))
   window.addEventListener("hashchange", followHash)
   onCleanup(() => window.removeEventListener("hashchange", followHash))
+}
 
+function registerMessageSteps(input: MessageLinksInput, seek: Seek) {
   const byOffset = (offset: -1 | 1) => {
     const list = input.users()
     if (list.length === 0) return
@@ -62,4 +65,12 @@ export function createMessageLinks(input: {
     ],
     { owner: { isVisible: input.active, isFocused: input.active } },
   )
+}
+
+export function createMessageLinks(input: MessageLinksInput) {
+  const seek: Seek = (message) => {
+    if (message) input.scroll.props.onMessageSelect?.(message)
+  }
+  followMessageHash(input, seek)
+  registerMessageSteps(input, seek)
 }

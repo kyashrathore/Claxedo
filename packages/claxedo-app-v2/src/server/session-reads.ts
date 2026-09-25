@@ -3,43 +3,16 @@ import { readCentralPage, readCentralRow } from "./central-session"
 import { responseError } from "./errors"
 import { sessionEndpoint, type SessionContext } from "./session-context"
 import { NO_GOAL, readGoalState } from "./session-goal"
-import { readRequests } from "./session-statuses"
+import { readRequests } from "./session-requests"
 import { withQuery, type RuntimeRoute } from "./transport"
-import type { SessionListInput, SessionPage, SessionReads, SessionRef, SessionRow, SessionStatus, SessionSurface, Todo, TranscriptPage } from "./types"
+import type { SessionReads, SessionRef, SessionStatus, SessionSurfaceRead, Todo, TranscriptPage } from "./types"
 import type { SessionHome } from "./workspaces"
 import { isWorkspaceStopped } from "./wire/connection"
-import { sessionRowFromListItem, sessionRowFromSession } from "./wire/session-row"
+import { sessionRowFromSession } from "./wire/session-row"
 import { OLDER_CURSOR_HEADER, transcriptPageFromWire } from "./wire/transcript"
 
 const OLDER_PAGE_SIZE = 50
-const WORKSPACE_SCOPE = "workspace"
 const STOPPED_STATUS: SessionStatus = { kind: "idle" }
-
-async function rowsOf(context: SessionContext, items: readonly unknown[]): Promise<SessionRow[]> {
-  const { address } = context.workspaces
-  const rows: SessionRow[] = []
-  for (const item of items) {
-    let row = sessionRowFromListItem(item, address)
-    const directory = (item as { directory?: unknown }).directory
-    if (!row && typeof directory === "string") {
-      await context.workspaces.learn(directory)
-      row = sessionRowFromListItem(item, address)
-    }
-    if (row) rows.push(row)
-  }
-  return rows
-}
-
-export async function listSessions(context: SessionContext, options: SessionListInput): Promise<SessionPage> {
-  const { transport } = context
-  const where = await context.workspaces.locate(options.placementId)
-  const listPath = transport.loopback ? "/api/claxedo/session-list" : "/api/control/session-list"
-  const target = transport.loopback && !where.remote ? { directory: where.directory } : { workspaceId: where.workspaceId }
-  const query = { scope: WORKSPACE_SCOPE, ...target, sort: "human_turn_desc", limit: options.limit, cursor: options.cursor }
-  const body = await transport.json<{ items?: unknown; nextCursor?: unknown }>(withQuery(listPath, query))
-  const rows = await rowsOf(context, Array.isArray(body.items) ? body.items : [])
-  return { rows, ...(typeof body.nextCursor === "string" ? { nextCursor: body.nextCursor } : {}) }
-}
 
 export async function onRuntime<T>(
   context: SessionContext,
@@ -65,13 +38,16 @@ async function readPage(context: SessionContext, where: RuntimeRoute, path: stri
   return transcriptPageFromWire(await response.json(), response.headers.get(OLDER_CURSOR_HEADER))
 }
 
+const NO_TRANSCRIPT: TranscriptPage = { entries: [] }
+
 function readHistory(context: SessionContext, ref: SessionRef, home: SessionHome, before?: string): Promise<TranscriptPage> {
-  if (home.central) return readCentralPage(context.transport, home.route.workspaceId, ref, before)
+  if (home.central) return readCentralPage(context.transport, home.route.workspaceId, ref, before === undefined ? { view: "latest-surface" } : { before })
+  if (!home.live) return Promise.resolve(NO_TRANSCRIPT)
   const page = before === undefined ? { view: "latest-surface" } : { limit: OLDER_PAGE_SIZE, before }
   return readPage(context, home.route, withQuery(sessionEndpoint(ref, "/message"), page))
 }
 
-async function readSurface(context: SessionContext, ref: SessionRef, home: SessionHome, session: AgentPresentationSession | undefined): Promise<SessionSurface> {
+async function readSurface(context: SessionContext, ref: SessionRef, home: SessionHome, session: AgentPresentationSession | undefined): Promise<SessionSurfaceRead> {
   const [transcript, row] = await Promise.all([
     readHistory(context, ref, home),
     session ? sessionRowFromSession(session, ref) : readCentralRow(context.transport, home.route.workspaceId, ref),

@@ -15,7 +15,7 @@ import {
   type ReviewCodeViewComments,
 } from "@/transcript"
 import type { ReviewComment, ReviewComments } from "../comments"
-import { dictionary } from "../i18n"
+import { reviewDictionary } from "../i18n"
 import {
   createReviewAnnotations,
   selectionSide,
@@ -120,7 +120,7 @@ function createOwnerRegistry(parent: Owner | null, build: (file: string) => Comm
 }
 
 export function createCodeViewComments(input: CodeViewCommentsInput): CodeViewComments {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(reviewDictionary)
   const [ui, setUi] = createStore<CommentUi>({ selection: null, commenting: null, opened: null })
   const byFile = createMemo(() => Map.groupBy(input.comments.comments(), (comment) => comment.file))
   const editors = new Map<string, LineCommentEditorState<string>>()

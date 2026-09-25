@@ -1,6 +1,6 @@
 import type { ComposerTextKey } from "./en"
 
-export const tr: Partial<Record<ComposerTextKey, string>> = {
+export default {
   "composer.action.cancel": "İptal",
   "composer.action.save": "Kaydet",
   "composer.attachment.refused.title": "{{harness}} bu eki kullanamıyor",
@@ -96,4 +96,4 @@ export const tr: Partial<Record<ComposerTextKey, string>> = {
   "dialog.model.select.title": "Model seç",
   "command.model.choose": "Model seç",
   "command.model.choose.description": "Farklı bir model seç",
-}
+} satisfies Partial<Record<ComposerTextKey, string>>

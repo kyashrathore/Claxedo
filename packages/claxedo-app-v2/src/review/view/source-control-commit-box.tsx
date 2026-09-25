@@ -1,7 +1,7 @@
 import { Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { ClaxedoIcon as Icon, SemanticIcon, Button, DropdownMenu, Spinner } from "@/ui"
-import { dictionary } from "../i18n"
+import { reviewDictionary } from "../i18n"
 
 export type CommitVariant = "commit" | "commit-push" | "amend"
 
@@ -17,7 +17,7 @@ function CommitMenu(props: {
   readonly canAmend: boolean
   readonly onCommit: (variant: CommitVariant) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(reviewDictionary)
   return (
     <DropdownMenu>
       <DropdownMenu.Trigger
@@ -60,7 +60,7 @@ export function CommitBox(props: {
   readonly error?: string
   readonly onCommit: (variant: CommitVariant) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(reviewDictionary)
   const canCommit = () => props.hasMessage && props.hasStaged
   return (
     <div class="flex shrink-0 flex-col gap-2 border-b border-border-weak-base p-2">

@@ -36,7 +36,6 @@ export type ContextChip = {
     label: string
     render: (input: { close: () => void; back: () => void; hold: (active: boolean) => void }) => JSX.Element
   }
-  openPanel?: { pending: () => boolean; answer: () => void }
   disabled?: boolean
 }
 

@@ -1,3 +1,4 @@
+import { failureMessage } from "@/lib/failure"
 import { uuid } from "@/lib/uuid"
 import type { BrowserBridge, BrowserWebview } from "../bridge"
 import {
@@ -20,10 +21,6 @@ export type WebviewHost = {
   readonly tab: BrowserTab
   readonly bridge: BrowserBridge
   readonly deliver: PickDelivery
-}
-
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error)
 }
 
 function readString(event: Event, key: string): string | undefined {
@@ -104,7 +101,6 @@ async function submitPick(host: WebviewHost, payload: GuestPickPayload, pageUrl:
     selector: payload.selector,
     tagName: payload.tagName ?? "element",
     outerHtml: payload.outerHtml,
-    boundingBox: payload.boundingBox,
     comment: guestCommentText(payload.content),
     screenshotDataUrl,
   })
@@ -135,7 +131,7 @@ export function attachWebviewEvents(host: WebviewHost): () => void {
   const domReady = () => {
     const initial = first
     first = false
-    onDomReady(host, initial).catch((error: unknown) => host.tab.send({ type: "failed", reason: errorMessage(error) }))
+    onDomReady(host, initial).catch((error: unknown) => host.tab.send({ type: "failed", reason: failureMessage(error) }))
   }
   const listeners: ReadonlyArray<readonly [string, (event: Event) => void]> = [
     ["dom-ready", domReady],

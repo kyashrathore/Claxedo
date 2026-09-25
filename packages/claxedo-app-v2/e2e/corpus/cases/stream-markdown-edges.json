@@ -1,0 +1,73 @@
+{
+  "id": "stream-markdown-edges",
+  "title": "The first and last element of a reply sit flush while the reply's last element changes kind",
+  "source": {
+    "kind": "test",
+    "file": "src/transcript/markdown-edges.ts",
+    "name": "the renderer marks the reply's first and last element; the CSS keys on the mark"
+  },
+  "partKinds": [
+    "text"
+  ],
+  "replay": {
+    "agent": "acp",
+    "turns": [
+      {
+        "prompt": "Say hello first.",
+        "steps": [
+          {
+            "kind": "text",
+            "text": "# Heading first\n\nHello, ready to stream."
+          }
+        ]
+      },
+      {
+        "prompt": "Stream a mixed reply.",
+        "live": true,
+        "steps": [
+          {
+            "kind": "text",
+            "text": "Intro paragraph for the edges.\n\n- item one\n- item two",
+            "chunks": 4,
+            "delayMs": 8
+          },
+          {
+            "kind": "hold",
+            "name": "stream-markdown-edges-0"
+          },
+          {
+            "kind": "text",
+            "text": "\n\n```ts\nconst edge = 1\n```",
+            "chunks": 3,
+            "delayMs": 8
+          },
+          {
+            "kind": "hold",
+            "name": "stream-markdown-edges-1"
+          },
+          {
+            "kind": "text",
+            "text": "\n\nClosing paragraph for the edges.",
+            "chunks": 3,
+            "delayMs": 8
+          }
+        ]
+      }
+    ]
+  },
+  "ready": "Stream a mixed reply.",
+  "interactions": [
+    {
+      "kind": "release",
+      "hold": "stream-markdown-edges-0",
+      "ready": "const edge"
+    },
+    {
+      "kind": "release",
+      "hold": "stream-markdown-edges-1",
+      "ready": "Closing paragraph for the edges.",
+      "settles": true
+    }
+  ],
+  "invariant": "A reply's first element has no top margin and its last element no bottom margin, whether the last element is a list, a code block or a paragraph, as in today's app."
+}

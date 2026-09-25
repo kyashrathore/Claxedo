@@ -42,6 +42,9 @@ import { inlineCodeKind } from "./markdown-inline-code-kind"
 import { markdownTableText } from "./markdown-table"
 import { handleTranscriptLinkClick, transcriptLinkHref } from "./transcript-link"
 import { parseMarkdownMeasured } from "./markdown-parse-timing"
+import { createImageWaits, stabilizeImages, type ImageFiles, type ImageWaits } from "./markdown-images"
+import { nextIdleSlice } from "@/lib/idle"
+import { createMarkdownEdges, keepMarkdownEdge } from "./markdown-edges"
 
 type RenderedBlock =
   | (MarkdownCacheEntry & { key: string; mode: Exclude<Block["mode"], "code"> })
@@ -391,7 +394,8 @@ function renderMermaidBlocks(root: HTMLElement) {
     traceMermaid("render", source)
     const renderStarted = rendererClock()
     void renderMermaidSource(source)
-      .then((svg) => {
+      .then(async (svg) => {
+        await nextIdleSlice()
         traceMermaid("generate", source, renderStarted)
         if (wrapper.getAttribute("data-mermaid-source") !== source) return
         const sanitizeStarted = rendererClock()
@@ -580,116 +584,12 @@ function markInlineCode(root: HTMLDivElement) {
   }
 }
 
-const imageOutcomes = new Map<string, "ok" | "error">()
-const imageProbes = new Map<string, Set<(ok: boolean) => void>>()
-
-function probeImage(src: string, onSettle: (ok: boolean) => void) {
-  const waiters = imageProbes.get(src)
-  if (waiters) {
-    waiters.add(onSettle)
-    return
-  }
-  const settled = new Set([onSettle])
-  imageProbes.set(src, settled)
-  const probe = new Image()
-  const settle = (ok: boolean) => {
-    imageOutcomes.set(src, ok ? "ok" : "error")
-    imageProbes.delete(src)
-    for (const waiter of settled) waiter(ok)
-  }
-  probe.onload = () => settle(true)
-  probe.onerror = () => settle(false)
-  probe.src = src
-}
-
-function imageFallbackChip(img: HTMLImageElement, loading = false): HTMLElement {
-  const chip = document.createElement("span")
-  chip.dataset.component = "markdown-image-fallback"
-  chip.dataset.state = loading ? "loading" : "error"
-  if (loading) {
-    chip.setAttribute("role", "img")
-    chip.setAttribute("aria-busy", "true")
-    chip.setAttribute("aria-label", img.getAttribute("alt") || "image")
-  } else {
-    chip.textContent = img.getAttribute("alt") || img.getAttribute("src") || "image"
-  }
-  return chip
-}
-
-function imageSource(src: string, data?: { directory: string; fileUrl?: (path: string) => string | undefined }): string | undefined {
-  if (/^(https?:)?\/\//i.test(src) || src.startsWith("data:") || src.startsWith("blob:")) return src
-  const fileUrl = data?.fileUrl
-  const directory = data?.directory
-  if (!fileUrl || !directory) return undefined
-  let path = src
-  if (src.startsWith("file://")) {
-    try {
-      path = decodeURIComponent(src.slice("file://".length))
-    } catch (error) {
-      console.warn("A file:// image source could not be decoded", { src, error })
-      return undefined
-    }
-  }
-  if (path.startsWith("/")) {
-    const prefix = directory.endsWith("/") ? directory : `${directory}/`
-    if (path !== directory && !path.startsWith(prefix)) return undefined
-    path = path === directory ? "" : path.slice(prefix.length)
-  }
-  if (!path) return undefined
-  return fileUrl(path)
-}
-
-function imageTile(img: HTMLImageElement, src: string): HTMLElement {
-  const tile = document.createElement("button")
-  tile.type = "button"
-  tile.dataset.component = "markdown-image-tile"
-  img.removeAttribute("width")
-  img.removeAttribute("height")
-  if (img.getAttribute("src") !== src) img.src = src
-  return tile
-}
-
-export function stabilizeImages(
-  root: HTMLDivElement,
-  data?: { directory: string; fileUrl?: (path: string) => string | undefined },
-) {
-  for (const img of Array.from(root.querySelectorAll("img"))) {
-    if (!(img instanceof HTMLImageElement)) continue
-    const raw = img.getAttribute("src") ?? ""
-    if (!raw) continue
-    const src = imageSource(raw, data)
-    if (!src) {
-      img.replaceWith(imageFallbackChip(img))
-      continue
-    }
-    if (src.startsWith("data:") || imageOutcomes.get(src) === "ok") {
-      const tile = imageTile(img, src)
-      img.replaceWith(tile)
-      tile.appendChild(img)
-      continue
-    }
-    const chip = imageFallbackChip(img, imageOutcomes.get(src) !== "error")
-    img.replaceWith(chip)
-    if (imageOutcomes.get(src) === "error") continue
-    probeImage(src, (ok) => {
-      if (!chip.isConnected) return
-      if (!ok) {
-        chip.replaceWith(imageFallbackChip(img))
-        return
-      }
-      const tile = imageTile(img, src)
-      chip.replaceWith(tile)
-      tile.appendChild(img)
-    })
-  }
-}
-
-function decorate(root: HTMLDivElement, data?: { directory: string; fileUrl?: (path: string) => string | undefined }) {
+function decorate(root: HTMLDivElement, images: ImageWaits, data?: ImageFiles) {
   for (const block of Array.from(root.querySelectorAll("pre"))) ensureCodeWrapper(block)
   markInlineCode(root)
   markCodeLinks(root)
   decorateTables(root)
-  stabilizeImages(root, data)
+  stabilizeImages(root, images, data)
   renderMermaidBlocks(root)
 }
 
@@ -823,6 +723,8 @@ export function Markdown(
   const dialog = useDialog()
   const openImage = (src: string, alt?: string) => void dialog.show(() => <ImagePreview src={src} alt={alt} />)
   const data = useOptionalData()
+  const images = createImageWaits()
+  const edges = createMarkdownEdges()
   const [root, setRoot] = createSignal<HTMLDivElement>()
   const owner = createUniqueId()
   const activeCodeKeys = new Set<string>()
@@ -965,13 +867,15 @@ export function Markdown(
     })
     activeCodeKeys.clear()
     nextCodeKeys.forEach((key) => activeCodeKeys.add(key))
-    content.forEach((block, index) => updateBlock(container, index, block, labels, data))
+    content.forEach((block, index) => updateBlock(container, index, block, labels, images, data))
     while (container.children.length > content.length) {
       const child = container.lastElementChild
       if (!child) break
       disposeMarkdownControls(child)
       child.remove()
     }
+    images.commit(container)
+    edges.mark(container)
     container
       .querySelectorAll<HTMLElement>('[data-slot="markdown-copy-button"]')
       .forEach((button) => setCopyState(button, labels, button.dataset.copied === "true"))
@@ -1034,7 +938,8 @@ function updateBlock(
   index: number,
   block: RenderedBlock,
   labels: CopyLabels,
-  data?: { directory: string; fileUrl?: (path: string) => string | undefined },
+  images: ImageWaits,
+  data?: ImageFiles,
 ) {
   const started = rendererClock()
   const current = container.children[index]
@@ -1058,7 +963,7 @@ function updateBlock(
   next.style.display = "contents"
   replaceSanitizedMarkup(next, block.html)
   const decorateStarted = rendererClock()
-  decorate(next, data)
+  decorate(next, images, data)
   traceRenderer(`markdown.decorate.${block.mode}.chars-${block.raw.length}`, decorateStarted)
 
   if (!(current instanceof HTMLDivElement)) {
@@ -1069,7 +974,10 @@ function updateBlock(
   }
 
   morphdom(current, next, {
-    onBeforeElUpdated: (fromEl, toEl) => !fromEl.isEqualNode(toEl),
+    onBeforeElUpdated: (fromEl, toEl) => {
+      keepMarkdownEdge(fromEl, toEl)
+      return !fromEl.isEqualNode(toEl)
+    },
     onBeforeNodeDiscarded: (node) => {
       if (isControl(node)) return false
       if (node instanceof Element) disposeMarkdownControls(node)

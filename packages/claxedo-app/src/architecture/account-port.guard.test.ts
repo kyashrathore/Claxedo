@@ -1,16 +1,16 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import path from "node:path"
-import { HOSTED_OPERATIONS as appOperations } from "../platform/account/hosted-operations"
+import { HOSTED_OPERATIONS as appOperations } from "@claxedo/account-contract"
 import { HOSTED_OPERATIONS as mainOperations } from "../../../claxedo-desktop/src/main/account/hosted-operations"
 
 /**
  * GUARD: the account boundary stays a closed, credential-free operation set.
  *
- * Three artefacts describe the same set of hosted operations — the renderer
- * port's `HostedOperationName` union, the app's decoder registry, and Electron
- * main's route table. Each can drift on its own, and the port can quietly
- * regain a request-shaped escape hatch (`run(url, method, body)`) that turns
+ * Three artefacts describe the same set of hosted operations — the
+ * `HostedOperationName` union and the decoder registry in
+ * `@claxedo/account-contract`, and Electron main's route table. Each can drift
+ * on its own, and the port can quietly regain a request-shaped escape hatch (`run(url, method, body)`) that turns
  * the closed set into decoration. This guard holds all three in agreement and
  * refuses the escape hatches.
  *
@@ -24,7 +24,11 @@ import { HOSTED_OPERATIONS as mainOperations } from "../../../claxedo-desktop/sr
  * is missing or shaped unexpectedly.
  */
 
-const source = readFileSync(path.join(import.meta.dir, "../platform/account/account-port.ts"), "utf8")
+const contractDir = path.join(import.meta.dir, "../../../account-contract/src")
+const source = [
+  readFileSync(path.join(import.meta.dir, "../platform/account/account-port.ts"), "utf8"),
+  readFileSync(path.join(contractDir, "operation-name.ts"), "utf8"),
+].join("\n")
 
 /** Strips comments and normalizes quotes so only syntax is left to read. */
 function normalize(text: string) {
@@ -135,7 +139,7 @@ describe("the reviewed account boundary", () => {
     // machine's own address would make it a direct client target and bypass
     // every relay authorization gate.
     const tables = [
-      readFileSync(path.join(import.meta.dir, "../platform/account/hosted-operations.ts"), "utf8"),
+      readFileSync(path.join(contractDir, "hosted-operations.ts"), "utf8"),
       readFileSync(path.join(import.meta.dir, "../../../claxedo-desktop/src/main/account/hosted-operations.ts"), "utf8"),
     ].map(normalize)
     const machineAddressSpellings = [

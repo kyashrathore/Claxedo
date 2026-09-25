@@ -1,7 +1,6 @@
 import { createSignal, type Accessor, type Setter } from "solid-js"
-import type { AppError, PromptInput, QueuedPrompt, QueuedPromptAction, Server, SessionRef } from "@/server"
+import { toAppError, type AppError, type PromptInput, type QueuedPrompt, type QueuedPromptAction, type Server, type SessionRef } from "@/server"
 import type { QueuedMessage, QueuedMessages } from "../view/timeline/model"
-import { toAppError } from "../requests"
 
 export type QueueInternal = QueuedMessages & {
   readonly reread: () => Promise<void>

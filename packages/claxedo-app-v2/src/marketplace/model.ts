@@ -5,7 +5,6 @@ import {
   type PluginHarness,
   type PluginToolGroup,
 } from "@/server"
-import { oauthServers } from "./connections"
 import type { MarketplaceKey } from "./i18n"
 
 export const BUILT_IN_TOOL_GROUP_ORDER: readonly string[] = [
@@ -78,7 +77,7 @@ export function pluginStatus(plugin: PluginCandidate): PluginStatus | undefined 
   if (!isInstalled(plugin)) return plugin.updateAvailable ? UPDATE_AVAILABLE : undefined
   if (artifactUnavailable(plugin))
     return { key: "marketplace.status.artifactUnavailable", tone: "critical", attention: true }
-  if (oauthServers(plugin).length > 0)
+  if (plugin.mcpServers.some((server) => server.authentication.state === "oauth"))
     return { key: "marketplace.status.needsAuthentication", tone: "warning", attention: true }
   if (plugin.updateAvailable) return UPDATE_AVAILABLE
   const count = installedHarnesses(plugin).length

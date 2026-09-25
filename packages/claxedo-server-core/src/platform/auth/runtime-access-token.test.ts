@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import { decodeJwt, decodeProtectedHeader, exportPKCS8, exportSPKI, generateKeyPair, SignJWT } from "jose"
 import {
   hostTunnelTokenSigner,
+  hostTunnelTokenVerifier,
   runtimeAccessTokenSigner,
   mintSupervisorBackplaneToken,
   verifySupervisorBackplaneToken,
@@ -553,6 +554,37 @@ describe("hostTunnelTokenSigner", () => {
     })
 
     expect(decodeJwt(result.hostTunnelToken)).toMatchObject({ enrollment_id: "enr_1", generation: 4 })
+  })
+
+  test("verifies its own token for the named host, and nothing minted for another audience", async () => {
+    const { privatePem, publicPem } = await ed25519PrivateKeyPem()
+    process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM = privatePem
+    process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = publicPem
+    const minted = await hostTunnelTokenSigner()({
+      subject: "user_owner",
+      hostId: "host_1",
+      workspaceIds: ["ws_1"],
+      enrollmentId: "enr_1",
+      generation: 2,
+    })
+    const verify = hostTunnelTokenVerifier()
+
+    await expect(verify(minted.hostTunnelToken, "host_1")).resolves.toMatchObject({
+      sub: "user_owner",
+      host_id: "host_1",
+      workspace_ids: ["ws_1"],
+      enrollment_id: "enr_1",
+      generation: 2,
+    })
+    await expect(verify(minted.hostTunnelToken, "host_2")).rejects.toThrow()
+    const runtimeToken = await runtimeAccessTokenSigner()({
+      orgId: "org_1",
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      ...HUMAN_ACTOR,
+      role: "owner",
+    })
+    await expect(verify(runtimeToken.runtimeAccessToken, "host_1")).rejects.toThrow()
   })
 
   test("refuses a fence with only one half or a non-integer generation", async () => {

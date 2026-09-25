@@ -4,19 +4,18 @@ import { isTaskCreateStatus, type TaskCreateStatus, type TaskStatus, type TaskSu
 import { useTranslator } from "@/i18n"
 import type { MorePages } from "../data/queries"
 import type { TaskStartOffer } from "../data/start"
-import { dictionary } from "../i18n"
+import { tasksDictionary } from "../i18n"
 import { TASK_STATUS_KEYS, taskKey, type TaskDateField } from "../model"
 import { LoadMore } from "./load-more"
 import { TaskStatusIcon } from "./status-control"
 import { AgeCell, ProgressCell, SessionMark, type SubtaskProgress } from "./task-cells"
-import { TaskRowActions, TaskStartControl } from "./task-row-controls"
+import { createRowToolsMenus, TaskRowActions, TaskStartControl } from "./task-row-controls"
 
 export type TaskBoardProps = {
   readonly tasks: readonly TaskSummary[]
   readonly statuses: readonly TaskStatus[]
   readonly projectName: string
   readonly dateField: TaskDateField
-  readonly selectedTaskId?: string
   readonly busyTaskId?: string
   readonly subtaskProgress?: (taskId: string) => SubtaskProgress | undefined
   readonly startOffer?: (task: TaskSummary) => TaskStartOffer
@@ -40,14 +39,14 @@ function BoardCard(props: {
   readonly board: TaskBoardProps
   readonly drag: Drag
 }): JSX.Element {
-  const t = useTranslator(dictionary)
-  const selected = () => props.board.selectedTaskId === props.task.id
+  const t = useTranslator(tasksDictionary)
+  const menus = createRowToolsMenus()
   return (
     <div
       class="tsk-card tsk-rise"
       style={{ "--tsk-i": String(props.order) }}
       data-testid={`tasks-board-card-${props.task.id}`}
-      data-selected={selected() ? "true" : undefined}
+      data-tools-open={menus.open() ? "true" : undefined}
       data-dragging={props.drag.dragging() === props.task.id ? "true" : undefined}
       draggable={props.task.archivedAt === null}
       onClick={() => props.board.onSelect(props.task.id)}
@@ -62,7 +61,6 @@ function BoardCard(props: {
         type="button"
         class="tsk-card-title"
         data-testid={`tasks-board-open-${props.task.id}`}
-        aria-current={selected() ? "true" : undefined}
       >
         {props.task.title}
       </button>
@@ -76,13 +74,14 @@ function BoardCard(props: {
       </div>
       <span class="tsk-row-tools" onClick={(event) => event.stopPropagation()}>
         <Show when={props.board.startOffer}>
-          {(offer) => <TaskStartControl task={props.task} offer={offer()(props.task)} testIdPrefix="tasks-board" />}
+          {(offer) => <TaskStartControl task={props.task} offer={offer()(props.task)} testIdPrefix="tasks-board" onMenuOpenChange={menus.track("start")} />}
         </Show>
         <TaskRowActions
           task={props.task}
           busy={props.board.busyTaskId === props.task.id}
           testIdPrefix="tasks-board"
           onStatusChange={(input) => props.board.onStatusChange(input)}
+          onMenuOpenChange={menus.track("actions")}
         />
       </span>
     </div>
@@ -90,7 +89,7 @@ function BoardCard(props: {
 }
 
 function ColumnHead(props: { readonly status: TaskStatus; readonly count: number; readonly board: TaskBoardProps }) {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const label = () => t(TASK_STATUS_KEYS[props.status])
   return (
     <header class="tsk-column-head">
@@ -124,7 +123,7 @@ function BoardColumn(props: {
   readonly drag: Drag
   readonly onDrop: (status: TaskStatus) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const tasks = () => props.board.tasks.filter((task) => task.status === props.status)
   return (
     <section

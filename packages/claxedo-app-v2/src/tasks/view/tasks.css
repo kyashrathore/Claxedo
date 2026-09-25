@@ -259,13 +259,14 @@
   .tsk-card:focus-within .tsk-row-tools,
   .tsk-column:hover .tsk-column-head .ui-icon-button,
   .tsk-column-head:focus-within .ui-icon-button,
-  .tsk-row-tools:has([data-expanded]) {
+  .tsk-tr[data-tools-open] .tsk-row-tools,
+  .tsk-card[data-tools-open] .tsk-row-tools {
     opacity: 1;
   }
 
   .tsk-tr:hover .tsk-props,
   .tsk-tr:focus-within .tsk-props,
-  .tsk-tr:has(.tsk-row-tools [data-expanded]) .tsk-props {
+  .tsk-tr[data-tools-open] .tsk-props {
     visibility: hidden;
   }
 }
@@ -387,18 +388,6 @@
 
 .tsk-tr:hover {
   background: var(--surface-base-hover);
-}
-
-.tsk-tr[data-selected="true"] {
-  background: var(--surface-base-active);
-}
-
-.tsk-tr[data-selected="true"]::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 2px;
-  background: var(--text-strong);
 }
 
 .tsk-open {
@@ -545,10 +534,6 @@
 .tsk-card:hover {
   border-color: var(--border-base);
   box-shadow: var(--shadow-md);
-}
-
-.tsk-card[data-selected="true"] {
-  border-color: var(--text-strong);
 }
 
 .tsk-card[data-dragging="true"] {

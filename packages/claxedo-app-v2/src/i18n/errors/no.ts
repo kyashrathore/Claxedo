@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "i18n.error.auth.title": "Logg inn på nytt",
   "i18n.error.auth.message": "Innloggingen har utløpt eller blitt avvist. Logg inn på nytt for å fortsette.",
   "i18n.error.auth.retry": "Logg inn",

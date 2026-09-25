@@ -2,6 +2,7 @@ import { acpScriptToken, SCRIPTED_ACP_HARNESS, startStack } from "../harness"
 import { appChoice, ensureAppBuilt } from "../harness/app"
 import type { ServerEvent } from "../../src/server/events"
 import type { Placement } from "../../src/server/types"
+import { codeHostConnections } from "../../src/server/integrations"
 import { createServer, type ServerHandle } from "../../src/server/server"
 import { check, describe, eventLog, isStatus, RESTART_TIMEOUT_MS, results, surfaceOf, waitFor, type Probe } from "./probe-support"
 import { startTcpProxy } from "./tcp-proxy"
@@ -20,12 +21,12 @@ async function connectAndPlace(probe: Probe): Promise<Placement> {
     const fetch = server.queryClient.fetchQuery.bind(server.queryClient)
     const [machines, hosts, accounts, catalog, cloud] = await Promise.all([
       fetch(server.queries.machines.list()),
-      fetch(server.queries.codeHost.connections()),
+      fetch(server.queries.integrations.catalog()),
       fetch(server.queries.accounts.list()),
       fetch(server.queries.marketplace.catalog()),
       fetch(server.queries.cloud.list()),
     ])
-    return `machines=${machines.map((machine) => machine.name).join(",")} codeHosts=${hosts.length} accounts=${accounts.map((account) => account.providerId).join(",")} plugins=${catalog.candidates.length} cloud=${cloud.length}`
+    return `machines=${machines.map((machine) => machine.name).join(",")} codeHosts=${codeHostConnections(hosts).length} accounts=${accounts.map((account) => account.providerId).join(",")} plugins=${catalog.candidates.length} cloud=${cloud.length}`
   })
   await check("plugin host calls", async () => {
     const health = await server.request("/api/claxedo/health")
@@ -41,7 +42,7 @@ async function connectAndPlace(probe: Probe): Promise<Placement> {
     return `project ${read.id} "${read.name}"`
   })
   await check("files and git queries", async () => {
-    const found = await server.queryClient.fetchQuery(server.queries.files.search(placement.id, "README"))
+    const found = await server.queryClient.fetchQuery(server.queries.files.search(placement.id, "README", "files"))
     const git = await server.queryClient.fetchQuery(server.queries.git.status(placement.id))
     return `search README → ${found.join(",")}; git branch=${git.branch ?? "?"} staged=${git.staged.length} unstaged=${git.unstaged.length}`
   })
@@ -60,8 +61,8 @@ async function turnChecks(probe: Probe, placement: Placement) {
     const options = await server.queryClient.fetchQuery(server.queries.harnesses.options(placement.id, "pi"))
     const models = options.models?.choices ?? []
     const connected = models.filter((item) => item.connected !== false).length
-    const logins = await server.queryClient.fetchQuery(server.queries.harnesses.logins())
-    const signedIn = logins.map((login) => `${login.harness}:${login.signedIn ? "in" : "out"}`).join(",")
+    const logins = await server.queryClient.fetchQuery(server.queries.accounts.machineLogins())
+    const signedIn = logins.map((login) => `${login.harness}:${login.state === "signed_in" ? "in" : "out"}`).join(",")
     return `${models.length} model(s), ${connected} connected, current=${options.models?.current}, efforts=${(options.thoughtLevels?.choices ?? []).map((level) => level.id).join(",")}; logins ${signedIn}`
   })
   await check("provider catalogs: the opencode summary, then one provider's detail", async () => {
@@ -96,7 +97,7 @@ async function turnChecks(probe: Probe, placement: Placement) {
   await check("session surface and list after the turn", async () => {
     const snapshot = await surfaceOf(server, ref)
     if (!JSON.stringify(snapshot.transcript.entries).includes("ADAPTER_OK")) throw new Error("the latest-surface page lacks the reply")
-    const page = await server.sessions.list({ placementId: ref.placementId, limit: 20 })
+    const page = await server.sessions.list({ projectId: ref.projectId, limit: 20 })
     const hit = page.rows.find((item) => item.ref.sessionId === ref.sessionId)
     if (!hit) throw new Error(`${page.rows.length} row(s), none is ${ref.sessionId}`)
     return `entries=${snapshot.transcript.entries.length} list row "${hit.title}" placement=${hit.ref.placementId}`
@@ -119,8 +120,8 @@ async function turnChecks(probe: Probe, placement: Placement) {
       await server.sessions.prompt(ref, { clientRequestId: crypto.randomUUID(), text: `Wait. ${acpScriptToken("held")}`, attachments: [] })
       await log.next("working", from, isStatus(ref.sessionId, ["working"]))
       const working = log.mark()
-      const read = await server.sessions.statuses()
-      const reported = read.reports.find((report) => report.ref.sessionId === ref.sessionId)?.status.kind
+      const listed = await server.sessions.list({ projectId: ref.projectId, limit: 20 })
+      const reported = listed.statuses.get(ref.sessionId)?.status.kind
       const delivery = await server.sessions.prompt(ref, { clientRequestId: crypto.randomUUID(), text: "Later.", attachments: [], delivery: "queue" })
       const queued = await server.sessions.queue(ref)
       const first = queued[0]
@@ -129,12 +130,12 @@ async function turnChecks(probe: Probe, placement: Placement) {
       const left = await server.sessions.queue(ref)
       await server.sessions.stop(ref)
       const settled = await log.next("settled", working, isStatus(ref.sessionId, ["idle", "failed"]))
-      return `statuses: ${reported} (failures=${read.failures.length}), delivery=${delivery}, queued=${queued.length}, cancel ok=${cancelled.ok}, left=${left.length}, after stop=${settled.status.kind}`
+      return `listed status: ${reported}, delivery=${delivery}, queued=${queued.length}, cancel ok=${cancelled.ok}, left=${left.length}, after stop=${settled.status.kind}`
     } finally {
       await stack.acp.release("held")
     }
   })
-  await check("failed: a failed turn stays failed across a status read of one request", async () => {
+  await check("failed: a failed turn stays failed across a list read of one request", async () => {
     await stack.acp.write("failing", { steps: [{ kind: "error", message: "Scripted turn failure" }] })
     const from = log.mark()
     await server.sessions.prompt(ref, { clientRequestId: crypto.randomUUID(), text: `Fail. ${acpScriptToken("failing")}`, attachments: [] })
@@ -145,9 +146,9 @@ async function turnChecks(probe: Probe, placement: Placement) {
       paths.push(new URL(input instanceof Request ? input.url : String(input)).pathname)
       return original(input, init)
     }) as typeof fetch
-    const read = await server.sessions.statuses().finally(() => (globalThis.fetch = original))
-    const reported = read.reports.find((report) => report.ref.sessionId === ref.sessionId)?.status.kind
-    if (reported !== "failed" || paths.join(",") !== "/api/wr/session-activity") throw new Error(`reported=${reported}, reads=${paths.join(",")}`)
+    const read = await server.sessions.list({ projectId: ref.projectId, limit: 20 }).finally(() => (globalThis.fetch = original))
+    const reported = read.statuses.get(ref.sessionId)?.status.kind
+    if (reported !== "failed" || paths.join(",") !== "/api/claxedo/session-list") throw new Error(`reported=${reported}, reads=${paths.join(",")}`)
     return `reported=${reported}, reads=${paths.sort().join(",")}`
   })
   return ref
@@ -193,7 +194,7 @@ async function cleanupChecks(probe: Probe, ref: Parameters<ServerHandle["session
     const from = log.mark()
     await server.sessions.remove(ref)
     await log.next("sessionRemoved", from, (event): event is ServerEvent => event.type === "sessionRemoved" && event.ref.sessionId === ref.sessionId)
-    const page = await server.sessions.list({ placementId: ref.placementId, limit: 20 })
+    const page = await server.sessions.list({ projectId: ref.projectId, limit: 20 })
     if (page.rows.some((item) => item.ref.sessionId === ref.sessionId)) throw new Error("the list still holds the removed session")
     return "removed, and gone from the list"
   })

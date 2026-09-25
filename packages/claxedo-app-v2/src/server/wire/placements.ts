@@ -22,6 +22,8 @@ export type BootstrapCatalog = {
 
 export const UNENROLLED_MACHINE = "this-machine"
 
+export const WORKTREE_ROUTE = "/experimental/worktree"
+
 function text(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined
 }
@@ -73,7 +75,7 @@ function placementRecord(project: Record<string, unknown>, key: string, row: Rec
   }
 }
 
-function placementsFromProjects(projects: unknown, self: string | undefined): PlacementRecord[] {
+export function placementsFromProjects(projects: unknown, self: string | undefined): PlacementRecord[] {
   if (!Array.isArray(projects)) return []
   const records: PlacementRecord[] = []
   for (const candidate of projects) {

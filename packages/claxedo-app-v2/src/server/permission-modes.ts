@@ -10,7 +10,6 @@ import type { Workspaces } from "./workspaces"
 import { harnessSelectionQuery } from "./wire/harness-selection"
 import { permissionModeStateFromWire, type PermissionModeState } from "./wire/permission-modes"
 
-/** A session's own modes, or for a draft the modes `harness` offers in the placement. */
 export type PermissionModesRequest = { readonly placementId: PlacementId; readonly ref?: SessionRef; readonly harness?: string }
 
 function modesKey(server: string, request: PermissionModesRequest) {

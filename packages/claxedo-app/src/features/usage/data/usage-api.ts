@@ -1,7 +1,7 @@
 import z from "zod"
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
 import { parseHostedHttpError, signedAccountRun } from "@/platform/account/hosted-control-call"
-import { decodeHostedResult } from "@/platform/account/hosted-operations"
+import { decodeHostedResult } from "@claxedo/account-contract"
 import { readArray, readField, readString } from "@/lib/record"
 import { errorMessage } from "@/lib/server-errors"
 import type { UnifiedUsageResponse, UsageFilters } from "@claxedo/usage-contract"

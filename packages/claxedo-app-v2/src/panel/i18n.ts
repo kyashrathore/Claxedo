@@ -24,7 +24,7 @@ const en = {
 
 export type PanelKey = keyof typeof en
 
-export const dictionary = {
+export const panelDictionary = {
   en,
   ar: {
     "panel.tab.review": "مراجعة",

@@ -1,8 +1,8 @@
 import type { Accessor } from "solid-js"
 import type { QueryClient } from "@tanstack/solid-query"
 import type { Account, AccountCheck, EffectiveAccounts, MachineLogin } from "./account-types"
-import type { CloudCreateInput, CloudWorkspace, CodeHostConnection, CodeHostRepository, WorkspaceRuntime } from "./cloud-types"
-import type { HarnessLogin, HarnessOptions } from "./harness-types"
+import type { CloudCreateInput, CloudWorkspace, CodeHostRepository, WorkspaceRuntime } from "./cloud-types"
+import type { HarnessOptions } from "./harness-types"
 import type { PermissionModesRequest } from "./permission-modes"
 import type { PermissionModeState } from "./wire/permission-modes"
 import type { ConnectionState, ServerEvent } from "./events"
@@ -19,6 +19,7 @@ import type {
   DiffSummary,
   FileContent,
   FileNode,
+  FileSearchEntries,
   GitBases,
   GitCommit,
   GitCommitInput,
@@ -73,7 +74,6 @@ import type {
   SessionRef,
   SessionRow,
   SessionReads,
-  SessionStatusRead,
   Subagent,
   TranscriptPage,
 } from "./types"
@@ -93,7 +93,6 @@ export type SessionsApi = {
   readonly rename: (ref: SessionRef, title: string) => Promise<void>
   readonly archive: (ref: SessionRef, archived: boolean) => Promise<void>
   readonly remove: (ref: SessionRef) => Promise<void>
-  readonly statuses: () => Promise<SessionStatusRead>
   readonly newMessageId: () => string
   readonly queue: (ref: SessionRef) => Promise<readonly QueuedPrompt[]>
   readonly controlQueued: (ref: SessionRef, seq: number, action: QueuedPromptAction) => Promise<QueuedPromptControl>
@@ -210,7 +209,6 @@ export type ServerQueries = {
   }
   readonly tasks: { readonly availability: () => FetchQuery<FeatureAvailability> }
   readonly codeHost: {
-    readonly connections: () => FetchQuery<readonly CodeHostConnection[]>
     readonly repositories: (connectionId: string) => FetchQuery<readonly CodeHostRepository[]>
   }
   readonly cloud: { readonly list: () => FetchQuery<readonly CloudWorkspace[]> }
@@ -223,12 +221,11 @@ export type ServerQueries = {
   readonly harnesses: {
     readonly options: (placementId: PlacementId, harness: string) => FetchQuery<HarnessOptions>
     readonly permissionModes: (request: PermissionModesRequest) => FetchQuery<PermissionModeState>
-    readonly logins: () => FetchQuery<readonly HarnessLogin[]>
   }
   readonly files: {
     readonly tree: (placementId: PlacementId, path: string) => FetchQuery<readonly FileNode[]>
     readonly content: (placementId: PlacementId, path: string) => FetchQuery<FileContent>
-    readonly search: (placementId: PlacementId, query: string) => FetchQuery<readonly string[]>
+    readonly search: (placementId: PlacementId, query: string, entries: FileSearchEntries) => FetchQuery<readonly string[]>
   }
   readonly git: {
     readonly status: (placementId: PlacementId) => FetchQuery<GitStatus>

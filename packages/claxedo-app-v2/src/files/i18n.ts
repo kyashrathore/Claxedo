@@ -84,7 +84,7 @@ const tr: Partial<Record<FilesKey, string>> = {
   "files.search": "Dosya ara",
 }
 
-export const dictionary = {
+export const filesDictionary = {
   en,
   ar,
   br,

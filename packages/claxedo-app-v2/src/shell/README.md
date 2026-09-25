@@ -34,6 +34,7 @@ Rules in those sheets that code cannot explain:
   - The palette gets an 8 px gutter and a 14 px radius, concentric with its rows. The palette and the page-scale dialogs dim their backdrop because the shared 0.2 alpha is invisible on dark chrome. The overlay is a sibling of the dialog layer, so the backdrop is selected from `<body>`, and it moves at the dialog's own 150 ms in and 100 ms out.
   - The main column is a positioned layer above the panel. The floating session stack's `z-index` is otherwise trapped in its pane's `contain: strict` context.
 - `styles/index.css`:
+  - **Tailwind scans what v2 renders**: the kit's own source (from the kit's entry), this package's `src` without `legacy`, and `session-ui/src` without its tests, stories and lab fixture. v1's and the desktop's sources are theirs to scan; scanning them here shipped v1-only utilities, such as `group-data-[expanded]:*`, whose universal descendant selectors restyled every open menu or dialog.
   - **The terminal font** is `font-display: swap`. It is 1 MB, and text never waits for it.
   - **The new-session content** (`session-new-design`) and the getting-started card are size containers, so what they hold lays out by the space they get rather than by the viewport.
   - **The composer's menus share one surface, elevation and row spec.** That covers the `+` menu, the harness/model picker and the popover lists, so neighbouring menus keep one rhythm.

@@ -41,6 +41,7 @@ import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform
 import { requestHasAuthenticationCredential } from "@claxedo/server-core/platform/auth/authentication"
 import type { SandboxManagerPort } from "@claxedo/server-core/sandbox/manager-port"
 import { authorityRowBacking, readyCloudWorkspaces } from "@claxedo/server-core/workspace/cloud-runtime-readiness"
+import { authorityRowReachable } from "@claxedo/server-core/workspace/placement-reachability"
 import {
   EMPTY_SERVICE_CATALOG,
   projectServiceCatalogForBrowser,
@@ -255,7 +256,7 @@ export function signedShellProjects(workspaces: unknown[], now: number, readyClo
       id: workspaceId,
       backing,
       workspace_name: workspaceName,
-      reachable: backing === "local-worktree" || readyCloud.has(workspaceId),
+      reachable: authorityRowReachable(row, readyCloud),
       directory,
       ...(remoteDirectory ? { remote_directory: remoteDirectory } : {}),
       // Carried so the client can derive an owner/repo label of its own (the

@@ -204,6 +204,9 @@ export function decodeEndpoints(value: Record<string, unknown>) {
     ...(authority && typeof authority.session_authority_url === "string"
       ? { authority: { sessionAuthorityUrl: canonicalFetchEndpointUrl(authority.session_authority_url, "authority.session_authority_url") } }
       : {}),
+    ...(authority && typeof authority.session_rows_url === "string"
+      ? { sessionRows: { url: canonicalFetchEndpointUrl(authority.session_rows_url, "authority.session_rows_url") } }
+      : {}),
   }
 }
 

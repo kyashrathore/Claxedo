@@ -1,5 +1,4 @@
-import { asFiniteNumber, isRecord } from "@claxedo/helpers/guards"
-import type { BrowserBox } from "./model"
+import { isRecord } from "@claxedo/helpers/guards"
 
 export const GUEST_PICK_CHANNEL = "claxedo-browser-pick"
 export const GUEST_SUBMIT_CHANNEL = "claxedo-browser-comment-submit"
@@ -12,7 +11,6 @@ export type GuestPickPayload = {
   readonly tagName?: string
   readonly outerHtml?: string
   readonly content?: string
-  readonly boundingBox?: BrowserBox
 }
 
 const OUTER_HTML_MAX_CHARS = 2049
@@ -28,14 +26,6 @@ function guestString(value: unknown, maxChars: number): GuestField<string> {
   return typeof value === "string" && value.length <= maxChars ? { ok: true, value } : { ok: false }
 }
 
-function guestBox(value: unknown): GuestField<BrowserBox> {
-  if (value === undefined) return { ok: true }
-  if (!isRecord(value)) return { ok: false }
-  const [x, y, width, height] = [value.x, value.y, value.width, value.height].map(asFiniteNumber)
-  if (x === undefined || y === undefined || width === undefined || height === undefined) return { ok: false }
-  return { ok: true, value: { x, y, width, height } }
-}
-
 export function readGuestPickPayload(value: unknown): GuestPickPayload | undefined {
   if (!isRecord(value)) return undefined
   const selector = guestString(value.selector, SELECTOR_MAX_CHARS)
@@ -43,8 +33,7 @@ export function readGuestPickPayload(value: unknown): GuestPickPayload | undefin
   const tagName = guestString(value.tagName, TAG_NAME_MAX_CHARS)
   const outerHtml = guestString(value.outerHTML, OUTER_HTML_MAX_CHARS)
   const content = guestString(value.content, CONTENT_MAX_CHARS)
-  const boundingBox = guestBox(value.boundingBox)
-  const fields = [selector, frameUrl, tagName, outerHtml, content, boundingBox]
+  const fields = [selector, frameUrl, tagName, outerHtml, content]
   if (selector.value === undefined || fields.some((field) => !field.ok)) return undefined
   return {
     selector: selector.value,
@@ -52,7 +41,6 @@ export function readGuestPickPayload(value: unknown): GuestPickPayload | undefin
     tagName: tagName.value,
     outerHtml: outerHtml.value,
     content: content.value,
-    boundingBox: boundingBox.value,
   }
 }
 

@@ -55,7 +55,7 @@ export function LoginPage() {
     auth.methods().filter((method): method is "google" | "github" => method === "google" || method === "github")
 
   return (
-    <main class="auth-page" data-component="login-page">
+    <main class="auth-page">
       <section class="auth-card">
         <h1 class="auth-title">Claxedo</h1>
         <p class="auth-subtitle">Cloud-first development environment</p>

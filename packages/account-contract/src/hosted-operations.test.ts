@@ -1,0 +1,222 @@
+import { describe, expect, test } from "bun:test"
+import {
+  HOSTED_OPERATIONS,
+  decodeHostedResult,
+  hostedOperationNames,
+  isSafeOperation,
+} from "./hosted-operations"
+
+describe("decodeHostedResult", () => {
+  test("requires the complete session People capability envelope", () => {
+    expect(decodeHostedResult("session.shares.list", {
+      can_manage_shares: true,
+      grants: [],
+      participants: [],
+      teams: [{ team_id: "team_1", name: "Everyone", is_shared: false }],
+    })).toEqual({
+      can_manage_shares: true,
+      grants: [],
+      participants: [],
+      teams: [{ team_id: "team_1", name: "Everyone", is_shared: false }],
+    })
+    expect(() => decodeHostedResult("session.shares.list", {
+      grants: [],
+      participants: [],
+      teams: [],
+    })).toThrow(/can_manage_shares/)
+    expect(() => decodeHostedResult("session.shares.list", {
+      can_manage_shares: false,
+      grants: [],
+      participants: [],
+    })).toThrow(/teams/)
+  })
+
+  test("accepts the SQL nulls a grant carries for the targets it does not name", () => {
+    const grant = { grant_id: "ssg_1", granted_to_user_id: null, granted_to_org_id: null, granted_to_team_id: "team_1" }
+    expect(decodeHostedResult("session.shares.list", {
+      can_manage_shares: true,
+      grants: [grant],
+      participants: [],
+      teams: [{ team_id: "team_1", name: "Everyone", is_shared: true }],
+    })).toMatchObject({ grants: [grant] })
+  })
+
+  test("rejects malformed nested session People rows through the named operation", () => {
+    const valid = {
+      can_manage_shares: true,
+      grants: [],
+      participants: [],
+      teams: [],
+    }
+
+    expect(() => decodeHostedResult("session.shares.list", {
+      ...valid,
+      teams: [{ team_id: "team_1", name: "Everyone", is_shared: "false" }],
+    })).toThrow(/session\.shares\.list.*teams\[0\]\.is_shared/)
+    expect(() => decodeHostedResult("session.shares.list", {
+      ...valid,
+      participants: [{ user_id: 1 }],
+    })).toThrow(/session\.shares\.list.*participants\[0\]\.user_id/)
+    expect(() => decodeHostedResult("session.shares.list", {
+      ...valid,
+      grants: [{ grant_id: "ssg_1", granted_to_team_id: 1 }],
+    })).toThrow(/session\.shares\.list.*grants\[0\]\.granted_to_team_id/)
+    expect(() => decodeHostedResult("session.shares.list", {
+      ...valid,
+      grants: [{ grant_id: 1 }],
+    })).toThrow(/session\.shares\.list.*grants\[0\]\.grant_id/)
+  })
+
+  test("names the operation when a shape is wrong", () => {
+    // "expected a non-empty relayUrl" from an unnamed decoder sends someone
+    // reading the wrong route.
+    expect(() => decodeHostedResult("workspace.connection.mint", {})).toThrow(
+      /workspace\.connection\.mint.*relayUrl/,
+    )
+  })
+
+  test("rejects an unknown operation rather than passing the value through", () => {
+    expect(() => decodeHostedResult("hostedFetch" as never, { anything: true })).toThrow(/no hosted operation/)
+  })
+
+  test("rejects a list where an object is required, and the reverse", () => {
+    expect(() => decodeHostedResult("account.mode", [])).toThrow(/expected an object/)
+    expect(() => decodeHostedResult("workspace.list.provisioner", [])).toThrow(/expected an object/)
+    expect(() => decodeHostedResult("workspace.list.provisioner", {})).toThrow(/expected an array "workspaces"/)
+    expect(() => decodeHostedResult("workspace.list.machine", {})).toThrow(/expected an array "workspaces"/)
+  })
+
+  test("rejects an empty string in a required field, not just a missing one", () => {
+    // The failure that reaches a component: a present-but-blank relay URL
+    // produces a WebSocket connection to nowhere rather than an error here.
+    expect(() => decodeHostedResult("workspace.connection.mint", { relayUrl: "" })).toThrow(/relayUrl/)
+    expect(() => decodeHostedResult("workspace.connection.mint", { relayUrl: 42 })).toThrow(/relayUrl/)
+  })
+
+  test("returns the decoded value on a good shape", () => {
+    expect(decodeHostedResult("workspace.connection.mint", { relayUrl: "wss://relay.test", token: "x" })).toEqual({
+      relayUrl: "wss://relay.test",
+      token: "x",
+    })
+    expect(decodeHostedResult("workspace.list.provisioner", { workspaces: [{ id: "ws_1" }] })).toEqual({
+      workspaces: [{ id: "ws_1" }],
+    })
+    expect(decodeHostedResult("workspace.list.machine", { workspaces: [{ id: "ws_2" }] })).toEqual({
+      workspaces: [{ id: "ws_2" }],
+    })
+  })
+
+  test("admits a connection that is still provisioning", () => {
+    // A cold start answers 200 with no relay URL and a retry hint. Requiring
+    // the URL unconditionally would fail every cold start — the moment the user
+    // is watching most closely.
+    expect(decodeHostedResult("workspace.connection.mint", { status: "provisioning", retryAfterMs: 2_000 })).toEqual({
+      status: "provisioning",
+      retryAfterMs: 2_000,
+    })
+    // Still not a rubber stamp: a SETTLED connection with nowhere to connect to
+    // is the case the requirement exists for.
+    expect(() => decodeHostedResult("workspace.connection.mint", { status: "ready" })).toThrow(/relayUrl/)
+  })
+
+  test("reads through the envelope an operation is wrapped in", () => {
+    // `{ enrollment }`, not a bare enrollment. Checking `host_id` on the
+    // envelope finds nothing and reports a server that changed shape, which is
+    // what this decoder did for as long as it existed.
+    expect(() => decodeHostedResult("host.enrollCurrentMachine", { host_id: "host_1" })).toThrow(/enrollment/)
+    expect(
+      decodeHostedResult("host.enrollCurrentMachine", { enrollment: { enrollment_id: "enr_1", host_id: "host_1" } }),
+    ).toEqual({ enrollment: { enrollment_id: "enr_1", host_id: "host_1" } })
+  })
+
+  test("rejects null, which is an object to typeof", () => {
+    // The classic. `typeof null === "object"`, so a decoder written the obvious
+    // way accepts it and the caller reads a field off nothing.
+    expect(() => decodeHostedResult("account.mode", null)).toThrow(/expected an object/)
+  })
+
+  test("decodes the Agent Plugins skill and Directory sources rows as status results", () => {
+    // Regression for the 2026-09-04 defect: these `response: "http"` operations
+    // must be read through `statusResult`, never through a bare `object`
+    // decoder that would accept a raw body and hide the HTTP status the caller
+    // needs to tell a 422 diagnostic from a decoded document.
+    for (const name of [
+      "agentPlugins.skill",
+      "agentPlugins.skill.project",
+      "agentPlugins.sources.list",
+      "agentPlugins.sources.add",
+      "agentPlugins.sources.remove",
+    ] as const) {
+      expect(() => decodeHostedResult(name, { name: "search" })).toThrow(/expected a response status/)
+      expect(decodeHostedResult(name, { status: 200, body: { ok: true } })).toEqual({
+        status: 200,
+        body: { ok: true },
+      })
+    }
+  })
+
+  test("accepts null only where a route answers it deliberately", () => {
+    // The hosted control plane's `/api/workspace/resolve` returns `null` as its
+    // "no central runtime snapshot" signal. Nullability is per-operation for
+    // that reason: loosening `object` instead would have made every operation
+    // null-tolerant to fix one that is.
+    expect(decodeHostedResult("workspace.resolve", null)).toBe(null as never)
+    expect(decodeHostedResult("workspace.resolve", { workspaceId: "ws_1" })).toEqual({ workspaceId: "ws_1" })
+    expect(() => decodeHostedResult("workspace.resolve", [])).toThrow(/expected an object/)
+  })
+})
+
+describe("the signed desktop's session sources", () => {
+  test("a session page is an items envelope", () => {
+    expect(decodeHostedResult("session.page", { items: [], nextCursor: "k" })).toEqual({ items: [], nextCursor: "k" })
+    expect(() => decodeHostedResult("session.page", { groups: [] })).toThrow(/session\.page.*items/)
+  })
+
+  test("a session page is a read a renderer may retry", () => {
+    expect(isSafeOperation("session.page")).toBe(true)
+  })
+})
+
+describe("isSafeOperation", () => {
+  test("marks the operations that provision or destroy as unsafe", () => {
+    // `safe` is the renderer's licence to retry on its own. Anything that
+    // creates a VM, restores a checkpoint or mints a token is main's call,
+    // because the idempotency key lives there.
+    for (const unsafe of [
+      "workspace.create",
+      "workspace.checkpoints.restore",
+      "account.cliExchange",
+      "host.enrollCurrentMachine",
+      // Creating a Directory source: a repeated add is main's call, same as
+      // every other creating mutation in this table.
+      "agentPlugins.sources.add",
+    ] as const) {
+      expect(isSafeOperation(unsafe), unsafe).toBe(false)
+    }
+  })
+
+  test("marks plain reads as safe", () => {
+    for (const safe of [
+      "account.mode",
+      "workspace.list.provisioner",
+      "workspace.list.machine",
+      "workspace.checkpoints.list",
+      "agentPlugins.skill",
+      "agentPlugins.skill.project",
+      "agentPlugins.sources.list",
+      // Idempotent delete: `remove` treats a 404 as already-removed, so a
+      // retried call after a dropped response is still correct.
+      "agentPlugins.sources.remove",
+    ] as const) {
+      expect(isSafeOperation(safe), safe).toBe(true)
+    }
+  })
+
+  test("every operation states one way or the other", () => {
+    // A missing `safe` reads as unsafe through `?? false`, which is the right
+    // default and the wrong way to arrive at it — silently.
+    for (const name of hostedOperationNames()) {
+      expect(typeof HOSTED_OPERATIONS[name].safe, name).toBe("boolean")
+    }
+  })
+})

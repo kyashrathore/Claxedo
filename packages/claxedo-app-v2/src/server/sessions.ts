@@ -7,9 +7,10 @@ import { controlGoal, startGoal } from "./session-goal"
 import { createSessionQueue } from "./session-queue"
 import { readLatestTurn } from "./latest-turn"
 import { readTurn } from "./turn"
-import { onRuntime, listSessions, readOlder, readSession } from "./session-reads"
-import { createStatusesRead } from "./session-statuses"
-import { stopTurn } from "./session-stop"
+import { listSessions } from "./session-list"
+import { onRuntime, readOlder, readSession } from "./session-reads"
+import type { HostedAccount } from "./account"
+import { cancelRunningTurn } from "./session-stop"
 import type { StatusOwner } from "./status"
 import { jsonInit, withQuery, type Transport } from "./transport"
 import type { AgentRequestReply, PromptDelivery, PromptInput, SessionCreateInput, SessionRef, SessionRow } from "./types"
@@ -19,7 +20,7 @@ import type { WorkspaceWakes } from "./workspace-wakes"
 import type { Workspaces } from "./workspaces"
 import { createMessageIds } from "./wire/ascending-id"
 import { harnessIdentity, harnessSelectionQuery } from "./wire/harness-selection"
-import { promptBody, promptDeliveryFromWire } from "./wire/prompt"
+import { PROMPT_ROUTE, promptBody, promptDeliveryFromWire } from "./wire/prompt"
 import { permissionReplyBody } from "./wire/requests"
 import { sessionRowFromSession } from "./wire/session-row"
 import { subagentsFromWire } from "./wire/subagents"
@@ -70,7 +71,7 @@ async function sendPrompt(context: SessionContext, wakes: WorkspaceWakes, ref: S
     await startGoal(context.transport, where, ref, input.goal.objective)
     return "start"
   }
-  const answer = await context.transport.runtimeJson<unknown>(where, sessionEndpoint(ref, "/prompt_async"), jsonInit("POST", promptBody(input, messageId)))
+  const answer = await context.transport.runtimeJson<unknown>(where, sessionEndpoint(ref, PROMPT_ROUTE), jsonInit("POST", promptBody(input, messageId)))
   return promptDeliveryFromWire(answer)
 }
 
@@ -78,8 +79,8 @@ async function patchSession(context: SessionContext, ref: SessionRef, patch: Rec
   await context.transport.runtimeJson<unknown>(await context.workspaces.route(ref), sessionEndpoint(ref), jsonInit("PATCH", patch))
 }
 
-export function createSessionsApi(transport: Transport, workspaces: Workspaces, status: StatusOwner, wakes: WorkspaceWakes, projection: SessionProjection): SessionsApi {
-  const context: SessionContext = { transport, workspaces, status }
+export function createSessionsApi(transport: Transport, workspaces: Workspaces, status: StatusOwner, wakes: WorkspaceWakes, projection: SessionProjection, account?: HostedAccount): SessionsApi {
+  const context: SessionContext = { transport, workspaces, status, ...(account ? { account } : {}) }
   const newMessageId = createMessageIds()
   return {
     list: (options) => listSessions(context, options),
@@ -93,7 +94,7 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
       return row
     },
     prompt: (ref, input) => sendPrompt(context, wakes, ref, input, input.messageId ?? newMessageId()),
-    stop: async (ref) => stopTurn(transport, await workspaces.route(ref), ref),
+    stop: async (ref) => cancelRunningTurn(transport, await workspaces.route(ref), ref),
     reply: (ref, id, answer) => replyToRequest(context, ref, id, answer),
     rename: (ref, title) => patchSession(context, ref, { title }),
     archive: (ref, archived) => patchSession(context, ref, { time: { archived: archived ? Date.now() : 0 } }),
@@ -101,7 +102,6 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
       await transport.runtimeJson<unknown>(await workspaces.route(ref), sessionEndpoint(ref), { method: "DELETE" })
       status.forget(ref)
     },
-    statuses: createStatusesRead(transport, workspaces, status),
     newMessageId,
     ...createSessionQueue(context),
     controlGoal: async (ref, action) => controlGoal(transport, await workspaces.route(ref), ref, action),

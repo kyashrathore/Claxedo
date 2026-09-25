@@ -1,7 +1,7 @@
 import { For, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import type { MarketplaceCatalogError, PluginCandidate } from "@/server"
-import { dictionary } from "../i18n"
+import { marketplaceDictionary } from "../i18n"
 import { pluginStatus } from "../model"
 import { personalEntryKey, type DirectorySection, type PersonalEntry } from "../sections"
 import { DirectoryCard, PersonalCard, type CardAction } from "./card"
@@ -24,7 +24,7 @@ function SectionHeading(props: {
 
 export function CatalogSkeleton(): JSX.Element {
   return (
-    <div data-component="agent-plugin-skeleton" aria-hidden="true" class={GRID}>
+    <div aria-hidden="true" class={GRID}>
       <For each={[0, 1, 2]}>
         {() => (
           <div class="flex h-16 items-start gap-3 rounded-lg border border-border-weak-base bg-surface-base p-3">
@@ -46,7 +46,7 @@ export function PluginSectionList(props: {
   readonly action: (plugin: PluginCandidate) => CardAction | undefined
   readonly onOpen: (plugin: PluginCandidate) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   const title = (section: DirectorySection) => ("key" in section.title ? t(section.title.key) : section.title.text)
   return (
     <For each={props.sections}>
@@ -82,7 +82,7 @@ export function PersonalSection(props: {
   readonly selectedKey?: string
   readonly onOpen: (entry: PersonalEntry) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   return (
     <Show when={props.entries.length > 0 || props.error}>
       <section aria-label={t("marketplace.personal")}>
@@ -117,7 +117,7 @@ export function DirectoryAlerts(props: {
   readonly sourcesError?: string
   readonly errors: readonly MarketplaceCatalogError[]
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   return (
     <>
       <Show when={props.catalogError}>

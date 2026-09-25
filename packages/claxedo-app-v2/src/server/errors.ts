@@ -52,6 +52,8 @@ function errorClassForStatus(status: number): ErrorClass {
 
 type ErrorBody = { readonly code?: string; readonly message?: string }
 
+const SETTLED_CODES: ReadonlySet<string> = new Set(["harness_config_options_unavailable"])
+
 function readErrorBody(text: string): ErrorBody {
   if (!text.trim()) return {}
   let parsed: unknown
@@ -80,6 +82,7 @@ export function statusError(status: number, text: string, label = "Request"): Se
     message: body.message ?? `${label} failed with status ${status}`,
     status,
     ...(body.code !== undefined ? { code: body.code } : {}),
+    ...(body.code !== undefined && SETTLED_CODES.has(body.code) ? { retryable: false } : {}),
   })
 }
 
@@ -122,6 +125,32 @@ export function toAppError(error: unknown): ServerError {
   if (error instanceof TypeError) return new ServerError({ class: "network", message: "The server could not be reached", cause: error })
   const message = error instanceof Error ? error.message : String(error)
   return new ServerError({ class: "internal", message, cause: error })
+}
+
+const HOSTED_HTTP_FAILURE = /HOSTED_HTTP (\d{3}) (\{[\s\S]*\})\s*$/
+const HOSTED_UNSIGNED = /\bnot signed in\b/
+
+function hostedHttpError(operation: string, status: number, envelope: string): ServerError {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(envelope)
+  } catch (error) {
+    return new ServerError({ class: "internal", message: `${operation} failed with status ${status}`, status, cause: error })
+  }
+  const body = asRecord(parsed)?.body
+  const detail = asRecord(parsed)?.detail
+  const failure = statusError(status, body === undefined || body === null ? "" : JSON.stringify(body), operation)
+  return typeof detail === "string" && failure.message === `${operation} failed with status ${status}`
+    ? new ServerError({ class: failure.class, message: detail, status, ...(failure.code ? { code: failure.code } : {}) })
+    : failure
+}
+
+export function hostedOperationError(operation: string, error: unknown): ServerError {
+  const message = error instanceof Error ? error.message : String(error)
+  const http = HOSTED_HTTP_FAILURE.exec(message)
+  if (http?.[1] && http[2]) return hostedHttpError(operation, Number(http[1]), http[2])
+  if (HOSTED_UNSIGNED.test(message)) return new ServerError({ class: "auth", message: `${operation} needs a signed account`, cause: error })
+  return new ServerError({ class: "network", message: `${operation} could not reach the account's control plane: ${message}`, cause: error })
 }
 
 export function isRetryable(error: unknown): boolean {

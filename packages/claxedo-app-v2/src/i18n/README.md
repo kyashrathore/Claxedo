@@ -1,6 +1,6 @@
 # i18n
 
-Owns: the locale (one persisted preference), the locale manifest, and the merged dictionary every `t()` reads from.
+Owns: the locale (one persisted preference), the locale manifest, and the dictionaries every `t()` reads from.
 
 ## API
 
@@ -28,7 +28,7 @@ const t = useTranslator(dictionary)
 
 `useTranslator` registers the dictionary with the provider the first time a component of that domain mounts, so nothing else lists dictionaries. Plugins register the same way through the plugin host.
 
-Lookup order: the current locale, then English, then the key itself. Templates use `{{name}}`: `t("rail.rows", { count: 3 })`.
+Lookup order: the current locale, then English, then the key itself. A locale's dictionary is built the first time it is read, and a domain registered later folds into the built ones. A translation re-runs when the locale changes or a domain is removed, and, only while its key falls back, when a domain is added, so mounting a new domain never re-runs the labels already on screen. Templates use `{{name}}`: `t("rail.rows", { count: 3 })`.
 
 `useI18n()` gives the locale itself: `locale()`, `setLocale(code)`, `locales` (code, `intlTag` for `Intl`, native label), `intlTag()`, and the untyped `t`.
 

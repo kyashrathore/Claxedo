@@ -285,13 +285,15 @@ describe("declared session composition", () => {
 
 const RELAY_JWKS_URL = "https://relay.test/.well-known/jwks.json"
 const SESSION_AUTHORITY_URL = "https://control-plane.test/api/runtime-authority/session-authorize"
+const SESSION_ROWS_URL = "https://control-plane.test/api/claxedo/host/session-rows"
 
 describe("what an ack tells the daemon", () => {
   test("the addresses reach the serving push beside the credential", async () => {
-    // Both, in one hand-off: the daemon verifies a relayed caller's Relay Host
-    // Token against the key set and asks the authority whether that caller may
-    // read the session, so a credential delivered without them opens a tunnel
-    // that answers 503 to every relayed read.
+    // All of them, in one hand-off: the daemon verifies a relayed caller's
+    // Relay Host Token against the key set, asks the authority whether that
+    // caller may read the session, and publishes its session rows to the
+    // third, so a credential delivered without them opens a tunnel that
+    // answers 503 to every relayed read and lists nothing at the control plane.
     const host = harness({
       describeWorkspace: async () => ({ displayName: "Claxedo", directory: "/Users/me/test/opencode" }),
     })
@@ -300,7 +302,7 @@ describe("what an ack tells the daemon", () => {
     await until(() => host.servings.length > 0, "the first serving push")
     expect(host.servings.at(-1)).toEqual({
       tunnel: null,
-      endpoints: { relayJwksUrl: RELAY_JWKS_URL, sessionAuthorityUrl: SESSION_AUTHORITY_URL },
+      endpoints: { relayJwksUrl: RELAY_JWKS_URL, sessionAuthorityUrl: SESSION_AUTHORITY_URL, sessionRowsUrl: SESSION_ROWS_URL },
     })
 
     await host.connector.shareWorkspace({ workspaceId: "ws_1" })
@@ -314,6 +316,7 @@ describe("what an ack tells the daemon", () => {
     expect(serving?.endpoints).toEqual({
       relayJwksUrl: RELAY_JWKS_URL,
       sessionAuthorityUrl: SESSION_AUTHORITY_URL,
+      sessionRowsUrl: SESSION_ROWS_URL,
     })
   })
 

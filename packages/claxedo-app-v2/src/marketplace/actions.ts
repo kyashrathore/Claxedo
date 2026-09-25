@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js"
 import { useTranslator, type DomainTranslate } from "@/i18n"
+import { failureMessage } from "@/lib/failure"
 import {
   useServer,
   type MarketplaceCatalog,
@@ -8,7 +9,7 @@ import {
   type PluginToolGroup,
 } from "@/server"
 import { requestConfirm, showToast, useDialog } from "@/ui"
-import { dictionary, type MarketplaceKey } from "./i18n"
+import { marketplaceDictionary, type MarketplaceKey } from "./i18n"
 import { isBuiltIn, pluginLabel, toolGroups } from "./model"
 import { withCurrentRevision } from "./revision"
 
@@ -18,10 +19,6 @@ type ActionInput = {
 }
 
 type Translate = DomainTranslate<MarketplaceKey>
-
-export function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error)
-}
 
 function createActivator(input: ActionInput) {
   const server = useServer()
@@ -53,7 +50,7 @@ function createPending() {
     try {
       await work()
     } catch (error) {
-      showToast({ title: failure, description: errorMessage(error) })
+      showToast({ title: failure, description: failureMessage(error) })
     } finally {
       setPending(undefined)
     }
@@ -85,7 +82,7 @@ function reportFailedSync(t: Translate, changes: readonly PluginChange[]) {
 export function createPluginActions(input: ActionInput) {
   const server = useServer()
   const dialog = useDialog()
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   const activateAll = createActivator(input)
   const { pending, run } = createPending()
   const activate = async (plugin: PluginCandidate, choice: boolean | null) => {

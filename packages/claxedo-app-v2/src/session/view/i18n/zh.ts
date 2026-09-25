@@ -1,6 +1,6 @@
 import type { SessionScreenTextKey } from "./en"
 
-export const zh: Partial<Record<SessionScreenTextKey, string>> = {
+export default {
   "sessionScreen.loading": "正在加载消息...",
   "sessionScreen.action.dismiss": "忽略",
   "sessionScreen.action.back": "返回",
@@ -88,4 +88,4 @@ export const zh: Partial<Record<SessionScreenTextKey, string>> = {
   "sessionScreen.requests.loadFailed": "无法加载待处理的权限请求或问题。请重试以继续。",
   "command.session.new": "新建会话",
   "command.category.session": "会话",
-}
+} satisfies Partial<Record<SessionScreenTextKey, string>>

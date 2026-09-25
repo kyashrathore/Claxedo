@@ -7,7 +7,7 @@ import type { FileContent, PlacementId } from "@/server"
 import { File, Markdown, type FileRevealHandle } from "@/transcript"
 import { ClaxedoIconButton as IconButton, DelayedLoading, fileHeaderActionsSlot, FileIcon, Tooltip, checksum } from "@/ui"
 import { useFilesApi } from "../api"
-import { dictionary } from "../i18n"
+import { filesDictionary } from "../i18n"
 import { basename } from "../path"
 import { imagePreviewUrl, isMarkdownPath } from "../preview"
 import { useFiles } from "../store"
@@ -28,7 +28,7 @@ export type FileTabProps = {
 type TextFile = { readonly name: string; readonly contents: string; readonly cacheKey: string | undefined }
 
 function CopyPathAction(props: { readonly path: string }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(filesDictionary)
   const [copied, setCopied] = createSignal(false)
   let timer: ReturnType<typeof setTimeout> | undefined
   onCleanup(() => clearTimeout(timer))
@@ -131,7 +131,7 @@ function FileText(props: {
 }
 
 function BinaryNotice(props: { readonly path: string }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(filesDictionary)
   return (
     <div class="flex min-h-full flex-col items-center justify-center gap-2 px-4 py-10 text-center text-text-weak">
       <FileIcon node={{ path: props.path, type: "file" }} class="size-8 opacity-70" />
@@ -147,7 +147,7 @@ function renderState(file: TextFile | undefined, renderedKey: string | undefined
 }
 
 export function FileTab(props: FileTabProps): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(filesDictionary)
   const api = useFilesApi()
   const files = useFiles()
   const query = useQuery(() => api.content(props.placementId, props.path))
