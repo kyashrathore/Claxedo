@@ -45,7 +45,7 @@ function harnessInfo(id: string, availability: Availability): HarnessInfo {
 }
 
 async function piConnected(transport: Transport): Promise<readonly string[]> {
-  return connectedProvidersFromWire(await transport.json<unknown>(withQuery(PROVIDERS_PATH, { nativeHarness: "pi" })))
+  return connectedProvidersFromWire(await transport.json<unknown>(withQuery(PROVIDERS_PATH, { nativeHarness: "pi", view: "summary" })))
 }
 
 function harnessesFrom(pi: Read<readonly string[]>, loopback: boolean): readonly HarnessInfo[] {

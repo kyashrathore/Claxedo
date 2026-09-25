@@ -1,82 +1,10 @@
-import { acpScriptToken, SCRIPTED_ACP_HARNESS, startStack, type Stack } from "../harness"
+import { acpScriptToken, SCRIPTED_ACP_HARNESS, startStack } from "../harness"
 import { appChoice, ensureAppBuilt } from "../harness/app"
-import type { Workspace } from "../harness/daemon"
 import type { ServerEvent } from "../../src/server/events"
-import type { Placement, SessionRef } from "../../src/server/types"
+import type { Placement } from "../../src/server/types"
 import { createServer, type ServerHandle } from "../../src/server/server"
-import { startTcpProxy, type Proxy } from "./tcp-proxy"
-
-const STEP_TIMEOUT_MS = 30_000
-const RESTART_TIMEOUT_MS = 60_000
-
-type Probe = { readonly stack: Stack; readonly proxy: Proxy; readonly server: ServerHandle; readonly log: EventLog; readonly workspace: Workspace }
-type EventLog = ReturnType<typeof eventLog>
-
-const results: { readonly name: string; readonly ok: boolean }[] = []
-
-function describeEvent(event: ServerEvent) {
-  if (event.type !== "statusChanged") return event.type
-  return event.status.kind === "failed" ? `statusChanged:failed(${event.status.error.message})` : `statusChanged:${event.status.kind}`
-}
-
-function describe(events: readonly ServerEvent[]) {
-  return events.map(describeEvent).join(" ")
-}
-
-function eventLog(server: ServerHandle) {
-  const seen: ServerEvent[] = []
-  const waiters = new Set<(event: ServerEvent) => void>()
-  server.subscribe((event) => {
-    seen.push(event)
-    for (const waiter of waiters) waiter(event)
-  })
-  const next = <T extends ServerEvent>(name: string, from: number, match: (event: ServerEvent) => event is T, timeoutMs = STEP_TIMEOUT_MS) =>
-    new Promise<T>((resolve, reject) => {
-      const earlier = seen.slice(from).find(match)
-      if (earlier) return resolve(earlier)
-      const waiter = (event: ServerEvent) => {
-        if (!match(event)) return
-        waiters.delete(waiter)
-        clearTimeout(timer)
-        resolve(event)
-      }
-      const timer = setTimeout(() => {
-        waiters.delete(waiter)
-        reject(new Error(`timed out waiting for ${name}; saw: ${describe(seen.slice(from))}`))
-      }, timeoutMs)
-      waiters.add(waiter)
-    })
-  return { seen, next, mark: () => seen.length }
-}
-
-async function surfaceOf(server: ServerHandle, ref: SessionRef) {
-  const reads = server.sessions.read(ref)
-  const [surface] = await Promise.all([reads.surface, reads.status, reads.requests, reads.todos, reads.goal])
-  return surface
-}
-
-async function waitFor<T>(name: string, read: () => T | undefined, timeoutMs = STEP_TIMEOUT_MS): Promise<T> {
-  const deadline = Date.now() + timeoutMs
-  for (let value = read(); ; value = read()) {
-    if (value !== undefined) return value
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${name}`)
-    await new Promise((resolve) => setTimeout(resolve, 50))
-  }
-}
-
-async function check(name: string, run: () => Promise<string>) {
-  try {
-    const detail = await run()
-    results.push({ name, ok: true })
-    console.log(`PASS ${name}: ${detail}`)
-  } catch (error) {
-    results.push({ name, ok: false })
-    console.log(`FAIL ${name}: ${error instanceof Error ? error.message : String(error)}`)
-  }
-}
-
-const isStatus = (sessionId: string, kinds: readonly string[]) => (event: ServerEvent): event is Extract<ServerEvent, { type: "statusChanged" }> =>
-  event.type === "statusChanged" && event.ref.sessionId === sessionId && kinds.includes(event.status.kind)
+import { check, describe, eventLog, isStatus, RESTART_TIMEOUT_MS, results, surfaceOf, waitFor, type Probe } from "./probe-support"
+import { startTcpProxy } from "./tcp-proxy"
 
 async function connectAndPlace(probe: Probe): Promise<Placement> {
   const { server, workspace } = probe
@@ -135,6 +63,18 @@ async function turnChecks(probe: Probe, placement: Placement) {
     const logins = await server.queryClient.fetchQuery(server.queries.harnesses.logins())
     const signedIn = logins.map((login) => `${login.harness}:${login.signedIn ? "in" : "out"}`).join(",")
     return `${models.length} model(s), ${connected} connected, current=${options.models?.current}, efforts=${(options.thoughtLevels?.choices ?? []).map((level) => level.id).join(",")}; logins ${signedIn}`
+  })
+  await check("provider catalogs: the opencode summary, then one provider's detail", async () => {
+    const summary = await server.queryClient.fetchQuery(server.queries.providerCatalogs.catalog("opencode"))
+    const connected = new Set(summary.connected)
+    const models = (id: string) => Object.keys(summary.all.find((item) => item.id === id)?.models ?? {}).length
+    if (summary.all.some((item) => !connected.has(item.id) && models(item.id) > 0)) throw new Error("the summary carried models for a provider that is not connected")
+    const empty = summary.all.find((item) => !connected.has(item.id))
+    if (empty) await server.providerCatalogs.loadDetail("opencode", empty.id)
+    const merged = server.queryClient.getQueryData<typeof summary>(server.queries.providerCatalogs.catalog("opencode").queryKey)
+    const detail = empty ? Object.keys(merged?.all.find((item) => item.id === empty.id)?.models ?? {}).length : 0
+    if (empty && detail === 0) throw new Error(`the detail read left ${empty.id} without models`)
+    return `${summary.all.length} provider(s), connected ${summary.connected.join(",")}; ${empty ? `${empty.id} detail → ${detail} model(s)` : "none left empty"}`
   })
   const row = await server.sessions.create({ placementId: placement.id, harness: SCRIPTED_ACP_HARNESS.id, title: "Adapter smoke" })
   const ref = row.ref

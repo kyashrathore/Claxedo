@@ -20,7 +20,7 @@ function needsDetail(catalog: ProviderCatalog | undefined, providerId: string): 
 export function providerCatalogQueries(transport: Transport): ProviderCatalogQueries {
   return {
     catalog: (harness) =>
-      fetchQuery(queryKeys.providerCatalog(transport.serverUrl, harness), async () => providerCatalogFromWire(await transport.json<unknown>(withQuery(PROVIDERS_PATH, { nativeHarness: harness })), harness)),
+      fetchQuery(queryKeys.providerCatalog(transport.serverUrl, harness), async () => providerCatalogFromWire(await transport.json<unknown>(withQuery(PROVIDERS_PATH, { nativeHarness: harness, view: "summary" })), harness)),
   }
 }
 
