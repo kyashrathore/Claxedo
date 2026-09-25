@@ -6,7 +6,7 @@ import { useDialog, ClaxedoIcon as Icon, Dialog, FileIcon, Keybind, List, getDir
 import { shellDictionary } from "../i18n"
 import { useShellRoute } from "../router"
 import { sessionPath } from "../routes"
-import { relativeAge, reuseEntries, uniqueEntries, type PaletteEntry } from "./palette-entries"
+import { relativeAge, type PaletteEntry } from "./palette-entries"
 import { createPaletteSources } from "./palette-sources"
 
 export type DialogSelectFileProps = {
@@ -76,19 +76,13 @@ function EntryRow(props: { readonly item: PaletteEntry }): JSX.Element {
 function createEntries(props: DialogSelectFileProps, setGrouped: (grouped: boolean) => void) {
   const filesOnly = () => props.mode === "files"
   const sources = createPaletteSources({ placementId: () => props.placementId, recentFiles: () => props.recentFiles?.() ?? [], filesOnly })
-  const list = async (query: string): Promise<PaletteEntry[]> => {
-    if (!query && filesOnly()) return uniqueEntries([...sources.recentFiles(), ...(await sources.rootFiles())])
-    if (!query) return [...sources.commandPicks(), ...sources.recentFiles()]
-    if (filesOnly()) return sources.searchFiles(query)
-    return [...sources.commandList(), ...sources.sessions(), ...(await sources.searchFiles(query))]
-  }
-  let shown = new Map<string, PaletteEntry>()
   return async (text: string): Promise<PaletteEntry[]> => {
     const query = text.trim()
     setGrouped(query.length > 0)
-    const entries = reuseEntries(await list(query), shown)
-    shown = new Map(entries.map((entry) => [entry.id, entry]))
-    return entries
+    if (!query && filesOnly()) return sources.recentAndRootFiles()
+    if (!query) return [...sources.commandPicks(), ...sources.recentFiles()]
+    if (filesOnly()) return sources.searchFiles(query)
+    return [...sources.commandList(), ...sources.sessions(), ...(await sources.searchFiles(query))]
   }
 }
 

@@ -14,7 +14,6 @@ import {
   workspaceKind,
   type PaletteEntry,
 } from "./palette-entries"
-import type { CommandOption } from "./registrations"
 
 export type PaletteSourcesInput = {
   readonly placementId: () => PlacementId | undefined
@@ -61,25 +60,47 @@ function useSessionSource(placementId: () => PlacementId | undefined) {
   }
 }
 
+function createFileEntries(category: () => string) {
+  let shown = new Map<string, PaletteEntry>()
+  return (paths: readonly string[]): PaletteEntry[] => {
+    const group = category()
+    const next = new Map<string, PaletteEntry>()
+    for (const path of paths) {
+      const known = shown.get(path)
+      next.set(path, known?.category === group ? known : fileEntry(path, group))
+    }
+    shown = next
+    return [...next.values()]
+  }
+}
+
 export function createPaletteSources(input: PaletteSourcesInput) {
   const t = useTranslator(shellDictionary)
   const commands = useCommands()
   const files = useFileReads(input.placementId)
   const allowed = createMemo(() => (input.filesOnly() ? [] : paletteCommands(commands.options())))
-  const toEntry = (option: CommandOption) => commandEntry(option, t("shell.palette.group.commands"), commands.keybind(option.id) || undefined)
-  const toFile = (path: string) => fileEntry(path, t("shell.palette.group.files"))
+  const commandEntries = createMemo(() =>
+    allowed().map((option) => commandEntry(option, t("shell.palette.group.commands"), commands.keybind(option.id) || undefined)),
+  )
+  const commandPicks = createMemo(() => {
+    const byId = new Map(commandEntries().map((entry) => [entry.option?.id, entry]))
+    return commonCommands(allowed()).flatMap((option) => byId.get(option.id) ?? [])
+  })
+  const sessions = createMemo(useSessionSource(input.placementId))
+  const fileEntries = createFileEntries(() => t("shell.palette.group.files"))
   return {
-    commandList: () => allowed().map(toEntry),
-    commandPicks: () => commonCommands(allowed()).map(toEntry),
-    recentFiles: () => input.recentFiles().slice(0, ENTRY_LIMIT).map(toFile),
-    rootFiles: async () =>
-      (await files.root())
+    commandList: commandEntries,
+    commandPicks,
+    sessions,
+    recentAndRootFiles: async () => {
+      const root = (await files.root())
         .filter((node) => node.kind === "file")
         .map((node) => node.path)
         .sort((a, b) => a.localeCompare(b))
         .slice(0, ENTRY_LIMIT)
-        .map(toFile),
-    searchFiles: async (text: string) => (await files.search(text)).map(toFile),
-    sessions: useSessionSource(input.placementId),
+      return fileEntries([...new Set([...input.recentFiles().slice(0, ENTRY_LIMIT), ...root])])
+    },
+    recentFiles: () => fileEntries(input.recentFiles().slice(0, ENTRY_LIMIT)),
+    searchFiles: async (text: string) => fileEntries(await files.search(text)),
   }
 }

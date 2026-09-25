@@ -4,7 +4,7 @@ import { PALETTE_ID, useCommands, type Commands } from "@/shell"
 import { showToast, Button, TextField } from "@/ui"
 import { useTranslator } from "@/i18n"
 import { settingsDictionary } from "../i18n"
-import { clearsKeybinding, filterRows, firstRows, groupRows, keybindingFromEvent, reuseRows, type KeybindingRow } from "../keybindings"
+import { clearsKeybinding, filterRows, firstRows, groupRows, keybindingFromEvent, type KeybindingRow } from "../keybindings"
 import { createRevealLimit } from "./reveal"
 import { SettingsGroup, SettingsList } from "./section"
 
@@ -24,7 +24,8 @@ export function KeybindingsSection() {
   const commands = useCommands()
   const [recording, setRecording] = createSignal<string>()
   const [query, setQuery] = createSignal("")
-  const rows = createMemo<KeybindingRow[]>((previous) => reuseRows(keybindingRows(commands, { palette: t("settings.keybindings.palette"), general: t("settings.keybindings.group.general") }), previous), [])
+  const rows = createMemo(() => keybindingRows(commands, { palette: t("settings.keybindings.palette"), general: t("settings.keybindings.group.general") }))
+  const rowById = createMemo(() => new Map(rows().map((row) => [row.id, row])))
   const groups = createMemo(() => groupRows(filterRows(rows(), query())))
   const limit = createRevealLimit(() => rows().length, FIRST_ROWS, ROWS_PER_FRAME)
   const shown = createMemo(() => firstRows(groups(), limit()))
@@ -68,13 +69,18 @@ export function KeybindingsSection() {
         <Button size="small" variant="secondary" onClick={resetAll} disabled={!commands.overridden()}>{t("settings.keybindings.reset")}</Button>
       </div>
       <For each={categories()}>
-        {(category) => (
-          <SettingsGroup title={category}>
-            <SettingsList>
-              <For each={shown().get(category) ?? []}>{(row) => <KeybindingRowView row={row} recording={isRecording(row.id)} onStart={() => start(row.id)} />}</For>
-            </SettingsList>
-          </SettingsGroup>
-        )}
+        {(category) => {
+          const ids = createMemo(() => (shown().get(category) ?? []).map((row) => row.id))
+          return (
+            <SettingsGroup title={category}>
+              <SettingsList>
+                <For each={ids()}>
+                  {(id) => <Show when={rowById().get(id)}>{(row) => <KeybindingRowView row={row()} recording={isRecording(id)} onStart={() => start(id)} />}</Show>}
+                </For>
+              </SettingsList>
+            </SettingsGroup>
+          )
+        }}
       </For>
       <Show when={query() && groups().length === 0}>
         <p class="settings-note">{t("settings.keybindings.empty")}</p>

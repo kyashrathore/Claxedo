@@ -47,14 +47,6 @@ export function filterRows(rows: readonly KeybindingRow[], query: string): reado
   return rows.filter((row) => row.title.toLowerCase().includes(value) || row.keybind.toLowerCase().includes(value))
 }
 
-export function reuseRows(next: readonly KeybindingRow[], previous: readonly KeybindingRow[]): KeybindingRow[] {
-  const known = new Map(previous.map((row) => [row.id, row]))
-  return next.map((row) => {
-    const same = known.get(row.id)
-    return same && same.title === row.title && same.category === row.category && same.keybind === row.keybind ? same : row
-  })
-}
-
 export function firstRows(
   groups: readonly (readonly [string, readonly KeybindingRow[]])[],
   limit: number,

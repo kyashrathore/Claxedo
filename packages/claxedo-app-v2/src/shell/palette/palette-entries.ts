@@ -19,26 +19,6 @@ export const ENTRY_LIMIT = 5
 export const OPEN_FILE_COMMAND = "file.open"
 const COMMON_COMMAND_IDS = ["session.new", "workspace.new", "session.previous", "session.next", "terminal.new", "review.toggle"] as const
 
-export function uniqueEntries(items: readonly PaletteEntry[]): PaletteEntry[] {
-  const seen = new Set<string>()
-  const out: PaletteEntry[] = []
-  for (const item of items) {
-    if (seen.has(item.id)) continue
-    seen.add(item.id)
-    out.push(item)
-  }
-  return out
-}
-
-const ENTRY_FIELDS = ["type", "title", "description", "keybind", "category", "option", "path", "row", "updated"] as const
-
-export function reuseEntries(next: readonly PaletteEntry[], previous: ReadonlyMap<string, PaletteEntry>): PaletteEntry[] {
-  return next.map((entry) => {
-    const known = previous.get(entry.id)
-    return known && ENTRY_FIELDS.every((field) => known[field] === entry[field]) ? known : entry
-  })
-}
-
 export function commandEntry(option: CommandOption, category: string, keybind: string | undefined): PaletteEntry {
   return { id: `command:${option.id}`, type: "command", title: option.title, description: option.description, keybind, category, option }
 }

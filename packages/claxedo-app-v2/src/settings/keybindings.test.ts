@@ -1,6 +1,6 @@
 /// <reference types="bun" />
 import { describe, expect, test } from "bun:test"
-import { firstRows, reuseRows, type KeybindingRow } from "./keybindings"
+import { firstRows, type KeybindingRow } from "./keybindings"
 
 const row = (id: string, category: string, keybind = ""): KeybindingRow => ({ id, title: id, category, keybind })
 
@@ -22,16 +22,5 @@ describe("firstRows", () => {
     const shown = firstRows(groups, 10)
     expect(shown.get("A")).toBe(groups[0][1])
     expect([...shown.keys()]).toEqual(["A", "B", "C"])
-  })
-})
-
-describe("reuseRows", () => {
-  test("keeps the previous object for an unchanged row and takes the new one for a changed row", () => {
-    const previous = [row("a", "A", "mod+a"), row("b", "A", "mod+b")]
-    const next = reuseRows([row("a", "A", "mod+a"), row("b", "A", "mod+shift+b"), row("c", "A")], previous)
-    expect(next[0]).toBe(previous[0])
-    expect(next[1]).not.toBe(previous[1])
-    expect(next[1]?.keybind).toBe("mod+shift+b")
-    expect(next[2]?.id).toBe("c")
   })
 })
