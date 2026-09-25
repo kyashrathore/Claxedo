@@ -285,10 +285,14 @@ describe("@claxedo/local-server closure", () => {
     //    session-rows contract, which costs no package.
     //  - `session/list/session-list-page.ts` — the daemon's session list: one
     //    keyset page per project or workspace, from the projection for this
-    //    machine and from the authority for a signed caller. It reaches the
-    //    projection's keyset read and server-core's navigation list, both here.
+    //    machine and from the authority for a signed caller, each row carrying
+    //    its runtime's status. It reaches the projection's keyset read and
+    //    server-core's navigation list, both here.
+    //  - `session/runtime-activity.ts` — a mounted runtime's statuses,
+    //    permissions and questions read in process, for the list page and the
+    //    machine publisher alike.
     const { modules, packages } = closure({ runtimeOnly: true })
-    expect(modules.size).toBeLessThanOrEqual(109)
+    expect(modules.size).toBeLessThanOrEqual(110)
     expect(packages.size).toBeLessThanOrEqual(31)
   })
 })

@@ -198,11 +198,14 @@ export const localServer: Policy = {
   //    contract, which costs no package.
   //  - `session/list/session-list-page.ts` (owner: the daemon's session
   //    list): one keyset page per project or workspace, from the projection
-  //    for this machine and from the authority for a signed caller. It
-  //    reaches the projection's keyset read and server-core's navigation
-  //    list, both already here.
-  //    80/30, no headroom.
-  ceilings: { modules: 80, packages: 30 },
+  //    for this machine and from the authority for a signed caller, each row
+  //    carrying its runtime's status. It reaches the projection's keyset read
+  //    and server-core's navigation list, both already here.
+  //  - `session/runtime-activity.ts` (owner: the in-process status read): a
+  //    mounted runtime's statuses, permissions and questions, read by the list
+  //    page and the machine publisher alike. It reaches `platform/json.ts`.
+  //    81/30, no headroom.
+  ceilings: { modules: 81, packages: 30 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

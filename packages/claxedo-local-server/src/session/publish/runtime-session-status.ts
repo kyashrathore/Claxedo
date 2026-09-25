@@ -1,7 +1,6 @@
 import type { SessionRowStatus, SessionRowStatusKind } from "@claxedo/server-core/session/navigation-list"
 import { record, raw } from "../../platform/json"
-
-export type RuntimeStatusPath = "/session/status" | "/permission" | "/question"
+import { readRuntimeSessionActivity, runtimeStatusKind, type RuntimeStatusRead } from "../runtime-activity"
 
 type ObservedRuntime = {
   workspace: { id: string }
@@ -11,8 +10,7 @@ type ObservedRuntime = {
 export type RuntimeSessionStatusOptions = {
   /** The embedded runtime registry: replays what is mounted, then reports every change. */
   observe: (listener: (runtime: ObservedRuntime, phase: "mounted" | "retired" | "disposed") => void) => () => void
-  /** A GET on the workspace's mounted runtime, or nothing when no runtime is up. */
-  read: (workspaceId: string, path: RuntimeStatusPath) => Promise<Response | undefined>
+  read: RuntimeStatusRead
   now?: () => number
   onChange: (workspaceId: string, sessionId: string) => void
 }
@@ -37,11 +35,6 @@ function tracked(kind: SessionRowStatusKind, at: number, pending = new Set<strin
 
 function rowStatus(entry: Tracked): SessionRowStatus {
   return { kind: entry.kind, awaitingInput: entry.pending.size > 0, at: entry.at }
-}
-
-function statusKindOf(status: unknown): SessionRowStatusKind {
-  const type = raw(record(status)?.type)
-  return type === "busy" || type === "retry" || type === "recovering" ? type : "idle"
 }
 
 /**
@@ -86,7 +79,7 @@ export function createRuntimeSessionStatus(options: RuntimeSessionStatusOptions)
     const before = rowStatus(entry)
     switch (event.type) {
       case "session.status":
-        entry.kind = statusKindOf(event.properties.status)
+        entry.kind = runtimeStatusKind(event.properties.status)
         break
       case "session.idle":
       case "session.error":
@@ -136,35 +129,14 @@ export function createRuntimeSessionStatus(options: RuntimeSessionStatusOptions)
     attached.set(runtime, runtime.frames.subscribe((frame) => applyFrame(runtime.workspace.id, frame)))
   })
 
-  const readJson = async (workspaceId: string, path: RuntimeStatusPath) => {
-    const response = await options.read(workspaceId, path)
-    if (!response) return undefined
-    if (!response.ok) throw new Error(`${path} answered ${response.status} for workspace ${workspaceId}`)
-    return (await response.json()) as unknown
-  }
-
   const snapshot = async (workspaceId: string) => {
-    const status = await readJson(workspaceId, "/session/status")
+    const activity = await readRuntimeSessionActivity(options.read, workspaceId)
     const at = now()
-    const sessions = new Map<string, Tracked>()
-    if (status === undefined) {
+    if (!activity) {
       workspaces.delete(workspaceId)
       return new Map<string, SessionRowStatus>()
     }
-    for (const [sessionId, value] of Object.entries(record(status) ?? {})) {
-      sessions.set(sessionId, tracked(statusKindOf(value), at))
-    }
-    for (const path of ["/permission", "/question"] as const) {
-      const rows = await readJson(workspaceId, path)
-      for (const row of Array.isArray(rows) ? rows : []) {
-        const sessionId = raw(record(row)?.sessionID)
-        const id = raw(record(row)?.id)
-        if (!sessionId || !id) continue
-        const entry = sessions.get(sessionId) ?? tracked("idle", at)
-        entry.pending.add(`${path.slice(1)}.asked:${id}`)
-        sessions.set(sessionId, entry)
-      }
-    }
+    const sessions = new Map([...activity].map(([sessionId, entry]) => [sessionId, tracked(entry.kind, at, entry.pending)]))
     workspaces.set(workspaceId, sessions)
     return new Map([...sessions].map(([sessionId, entry]) => [sessionId, rowStatus(entry)]))
   }

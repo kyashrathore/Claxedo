@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from "vitest"
-import { createRuntimeSessionStatus, type RuntimeStatusPath } from "./runtime-session-status"
+import type { RuntimeStatusPath } from "../runtime-activity"
+import { createRuntimeSessionStatus } from "./runtime-session-status"
 
 const WS = "ws_a"
 

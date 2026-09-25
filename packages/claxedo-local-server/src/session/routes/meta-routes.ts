@@ -25,6 +25,7 @@ import { getProjectWorkspace, listWorkspaces, resolveWorkspace } from "@claxedo/
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { asRecord } from "@claxedo/helpers/guards"
 import { localSessionListPage, signedSessionListPage } from "../list/session-list-page"
+import { readMountedEmbeddedWorkspaceRuntime } from "../../deployments/local/embedded-workspace-runtime"
 
 type Options = {
   services?: ControlPlaneServicesContract
@@ -234,6 +235,7 @@ export function SessionMetaRoutes(options: Options = {}) {
           projectWorkspaces: async () => (await listWorkspaces()).filter((item) =>
             item.project_id === query.projectId && item.kind !== "cloud"),
           ...(options.refreshSessionProjection ? { refreshSessionProjection: options.refreshSessionProjection } : {}),
+          readRuntimeStatus: readMountedEmbeddedWorkspaceRuntime,
         }))
       } catch (err) {
         if (err instanceof Error && err.message === "invalid_session_list_cursor") {
