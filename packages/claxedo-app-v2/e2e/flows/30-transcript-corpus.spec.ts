@@ -129,6 +129,7 @@ function isLive(corpusCase: CorpusCase): boolean {
 
 async function compareStage(app: Page, corpusCase: CorpusCase, stage: string) {
   await app.mouse.move(0, 0)
+  await quietDom(app)
   const box = await withBackground(app, await rowsBox(app))
   expect(box, `${corpusCase.id} renders its turn rows at ${stage}`).toBeDefined()
   if (!box) return
@@ -231,7 +232,6 @@ for (const corpusCase of loadCases()) {
     await fullRead.release()
     for (const turn of live) await startLiveTurn(stack, api, target, turn)
     await expect(app.getByText(corpusCase.ready).first()).toBeVisible()
-    if (live.length > 0) await quietDom(app)
     await compareStage(app, corpusCase, "open")
     for (const [index, interaction] of corpusCase.interactions.entries()) {
       await interact({ stack, api, target, app }, corpusCase, interaction)

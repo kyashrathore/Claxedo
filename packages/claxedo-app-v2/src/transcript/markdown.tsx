@@ -43,6 +43,7 @@ import { markdownTableText } from "./markdown-table"
 import { handleTranscriptLinkClick, transcriptLinkHref } from "./transcript-link"
 import { parseMarkdownMeasured } from "./markdown-parse-timing"
 import { createImageWaits, stabilizeImages, type ImageFiles, type ImageWaits } from "./markdown-images"
+import { nextIdleSlice } from "@/lib/idle"
 
 type RenderedBlock =
   | (MarkdownCacheEntry & { key: string; mode: Exclude<Block["mode"], "code"> })
@@ -392,7 +393,8 @@ function renderMermaidBlocks(root: HTMLElement) {
     traceMermaid("render", source)
     const renderStarted = rendererClock()
     void renderMermaidSource(source)
-      .then((svg) => {
+      .then(async (svg) => {
+        await nextIdleSlice()
         traceMermaid("generate", source, renderStarted)
         if (wrapper.getAttribute("data-mermaid-source") !== source) return
         const sanitizeStarted = rendererClock()
