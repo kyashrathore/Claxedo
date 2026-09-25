@@ -32,7 +32,7 @@ export type Stack = {
   close(): Promise<void>
 }
 
-export type StackInput = { label: string; red?: boolean; codexInventoryFault?: boolean; steerReplyFault?: "pi" | "codex"; claudeSteerFault?: boolean; piRpcFault?: boolean }
+export type StackInput = { label: string; red?: boolean; cloud?: boolean; coldStartWithoutKeys?: boolean; codexInventoryFault?: boolean; steerReplyFault?: "pi" | "codex"; claudeSteerFault?: boolean; piRpcFault?: boolean }
 
 export function safeLabel(label: string) {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "flow"
@@ -69,6 +69,8 @@ export async function startStack(input: StackInput): Promise<Stack> {
   let daemon: Daemon
   try {
     daemon = await startDaemon({ dataDir, scripted, guardUrl: egress.url, port: daemonPort, red,
+      cloud: input.cloud,
+      coldStartWithoutKeys: input.coldStartWithoutKeys,
       pathPrefix: steerFault?.bin ?? pathPrefix,
       ...(input.steerReplyFault === "pi" ? { piExecutable: steerFault!.executable } : {}),
       ...(rpcFault ? { piExecutable: rpcFault.executable } : {}),
