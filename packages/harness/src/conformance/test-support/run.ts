@@ -26,6 +26,7 @@ export type ConformanceBackend = {
   onSetup?(context: { owner: ReturnType<typeof createRequestBroker>; ports: MemoryPorts }): void
   authFile?: string
   hold?(marker: string): () => void
+  held?(marker: string): Promise<void>
   scriptTool?(name: string, input: unknown): void
   uiCommand?: string
   rotate?(): Promise<{ credentials: ResolvedCredentials; observed(): boolean }>
@@ -99,6 +100,11 @@ async function pendingPermission(context: Awaited<ReturnType<typeof setup>>) {
   throw new Error("ACP permission did not reach the broker")
 }
 
+async function heldRequest(backend: ConformanceBackend, marker: string): Promise<void> {
+  if (!backend.held) throw new Error("A backend that holds a reply must report when the held request arrives")
+  await backend.held(marker)
+}
+
 function turn(model: PromptModel, agent: string, message: string, turnOrigin: TurnOrigin): TurnInput {
   return {
     turnId: "t1", userMessageId: "u1", assistantMessageId: "a1", origin: turnOrigin, model,
@@ -160,9 +166,14 @@ export function runConformance(input: ConformanceInput): void {
         if (!capabilities.steer || !context.backend.hold) return
         const release = context.backend.hold("PISTEER")
         const running = collect(context.transport, context.session, context.turn("Reply with exactly this one token: PISTEER"), context.turnBroker())
-        await new Promise((resolve) => setTimeout(resolve, 100))
-        const result = await context.transport.steer?.steer(context.session, { turnId: "t1", assistantMessageId: "a1" },
+        await heldRequest(context.backend, "PISTEER")
+        const steer = () => context.transport.steer?.steer(context.session, { turnId: "t1", assistantMessageId: "a1" },
           context.turn("Reply with exactly this one token: PISTEERFOLLOW"))
+        let result = await steer()
+        for (let attempt = 0; result && !result.ok && result.status === "no_active_turn" && attempt < 500; attempt++) {
+          await new Promise((resolve) => setTimeout(resolve, 10))
+          result = await steer()
+        }
         expect(result?.ok).toBe(true)
         release()
         const events = await running
@@ -178,7 +189,7 @@ export function runConformance(input: ConformanceInput): void {
           const release = context.backend.hold("PICANCEL")
           const controller = new AbortController()
           const running = collect(context.transport, context.session, context.turn("Reply with exactly this one token: PICANCEL"), context.turnBroker(controller.signal))
-          await new Promise((resolve) => setTimeout(resolve, 300))
+          await heldRequest(context.backend, "PICANCEL")
           const update = await context.transport.configure(context.session, { credentials: context.backend.credentials })
           if (capabilities.timing.credentials === "after-active-turns") expect(update.state).toBe("refused")
           const outcome = await context.transport.cancel(context.session, { turnId: "t1", assistantMessageId: "a1" }, { at: Date.now() + 5_000, signal: controller.signal })
@@ -394,7 +405,7 @@ export function runConformance(input: ConformanceInput): void {
             await new Promise((resolve) => setTimeout(resolve, 10))
           }
           expect(pending).toBeDefined()
-        } else await new Promise((resolve) => setTimeout(resolve, 300))
+        } else await heldRequest(context.backend, "CONFORMANCESECOND")
         const secondProcess = context.services.processes.at(-1)
         const update = await context.transport.configure(context.session, { credentials: {
           ...context.backend.credentials, leaseGeneration: "session-one-only",

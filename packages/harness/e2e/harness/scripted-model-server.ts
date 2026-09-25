@@ -47,13 +47,14 @@ export type ScriptedModelServer = {
   scriptText(input: { marker: string; text: string; reasoning?: string }): void
   scriptError(input: ScriptedError): () => void
   holdTextReplies(marker: string): () => void
+  textGateReached(marker: string): Promise<void>
   refuseAuthorization(fragment: string): void
   setReplyDelayMs(ms: number): void
   setTextStreamPacing(pacing: StreamPacing | undefined): void
   close(): Promise<void>
 }
 
-type TextGate = { marker: string; promise: Promise<void>; release: () => void }
+type TextGate = { marker: string; promise: Promise<void>; release: () => void; reached: Promise<void>; arrive: () => void }
 
 type ServerState = {
   counts: Record<ScriptedDialect, number>
@@ -125,7 +126,10 @@ function decideReply(state: ServerState, request: ScriptedModelBody, prompt: str
 async function writeReply(outgoing: ServerResponse, state: ServerState, sequence: number, request: ScriptedModelBody, prompt: string, reply: ScriptedReply) {
   if (reply.kind === "error") return writeErrorReply(outgoing, reply)
   const gate = state.textGate
-  if (reply.kind === "text" && gate && prompt.includes(gate.marker) && !isTitlePrompt(JSON.stringify(request.body))) await gate.promise
+  if (reply.kind === "text" && gate && prompt.includes(gate.marker) && !isTitlePrompt(JSON.stringify(request.body))) {
+    gate.arrive()
+    await gate.promise
+  }
   if (state.replyDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, state.replyDelayMs))
   if (request.dialect === "chat") return respondChat(outgoing, sequence, reply, state.pacing)
   if (request.dialect === "responses") return respondResponses(outgoing, sequence, request.body, reply, state.pacing)
@@ -208,12 +212,21 @@ export async function startScriptedModelServer(input: { port: number; red: boole
       const promise = new Promise<void>((resolve) => {
         release = resolve
       })
-      const gate: TextGate = { marker, promise, release }
+      let arrive: () => void = () => {}
+      const reached = new Promise<void>((resolve) => {
+        arrive = resolve
+      })
+      const gate: TextGate = { marker, promise, release, reached, arrive }
       state.textGate = gate
       return () => {
         gate.release()
         if (state.textGate === gate) state.textGate = undefined
       }
+    },
+    textGateReached: (marker) => {
+      const gate = state.textGate
+      if (!gate || gate.marker !== marker) throw new Error(`No scripted text reply gate is held for ${marker}`)
+      return gate.reached
     },
     refuseAuthorization: (fragment) => {
       state.refusedAuthorization = fragment

@@ -56,6 +56,7 @@ async function backend(): Promise<PiBackend> {
     model: { providerID: "pi", modelID: "openai/gpt-4.1" },
     credentials: { providers: {}, secrets: {}, leaseGeneration: "conformance" },
     hold: (marker) => server.holdTextReplies(marker),
+    held: (marker) => server.textGateReached(marker),
     scriptTool: (name, input) => server.scriptTool({ name, input }),
     close: async () => { await server.close(); releasePort(port); await fs.rm(root, { recursive: true, force: true }) },
   }
