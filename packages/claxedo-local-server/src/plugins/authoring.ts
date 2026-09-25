@@ -1,5 +1,6 @@
 import fs from "node:fs/promises"
 import path from "node:path"
+import { realPathAllowingMissing } from "@claxedo/helpers/real-path"
 import type { AppPluginsGrant } from "@claxedo/mcp/client"
 import { checkPluginApp } from "@claxedo/plugin-build"
 import { AppPluginAuthoringError, appPluginScaffold } from "./scaffold"
@@ -16,22 +17,6 @@ async function exists(file: string) {
   return fs.lstat(file).then(() => true, () => false)
 }
 
-async function realPathAllowingMissing(target: string): Promise<string> {
-  const missing: string[] = []
-  let current = target
-  for (;;) {
-    try {
-      return path.join(await fs.realpath(current), ...missing.reverse())
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
-      const parent = path.dirname(current)
-      if (parent === current) throw error
-      missing.push(path.basename(current))
-      current = parent
-    }
-  }
-}
-
 function isInside(root: string, candidate: string) {
   const relative = path.relative(root, candidate)
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
@@ -41,10 +26,10 @@ export function appPluginAuthoring(options: AppPluginAuthoringOptions): AppPlugi
   const service = options.service ?? livePluginService
   if (options.roots.length === 0) throw new Error("App plugin authoring needs at least one folder the session may write")
 
-  const resolveInside = async (directory: string): Promise<string> => {
+  const resolveInside = (directory: string): string => {
     if (!path.isAbsolute(directory)) throw new AppPluginAuthoringError(`${directory} is not an absolute path`)
-    const real = await realPathAllowingMissing(path.resolve(directory))
-    const roots = await Promise.all(options.roots.map((root) => realPathAllowingMissing(root)))
+    const real = realPathAllowingMissing(directory)
+    const roots = options.roots.map(realPathAllowingMissing)
     if (!roots.some((root) => isInside(root, real))) {
       throw new AppPluginAuthoringError(`${directory} is outside this session's workspace (${options.roots.join(", ")})`)
     }
@@ -52,7 +37,7 @@ export function appPluginAuthoring(options: AppPluginAuthoringOptions): AppPlugi
   }
 
   const existingFolder = async (directory: string): Promise<string> => {
-    const real = await resolveInside(directory)
+    const real = resolveInside(directory)
     const stat = await fs.stat(real).catch(() => undefined)
     if (!stat) throw new AppPluginAuthoringError(`${directory} does not exist`)
     if (!stat.isDirectory()) throw new AppPluginAuthoringError(`${directory} is not a folder`)
@@ -63,7 +48,7 @@ export function appPluginAuthoring(options: AppPluginAuthoringOptions): AppPlugi
     async create(input) {
       const { manifest, files } = appPluginScaffold(input.name)
       const [root = ""] = options.roots
-      const target = await resolveInside(input.directory ?? path.join(root, APP_PLUGIN_FOLDER, manifest.id))
+      const target = resolveInside(input.directory ?? path.join(root, APP_PLUGIN_FOLDER, manifest.id))
       if ((await exists(target)) && (await fs.readdir(target)).length > 0) {
         throw new AppPluginAuthoringError(`${target} already exists and is not empty; choose another name or folder`)
       }
