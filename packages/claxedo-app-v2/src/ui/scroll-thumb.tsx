@@ -1,5 +1,5 @@
 import { createResizeObserver } from "@solid-primitives/resize-observer"
-import { createEffect, onCleanup, Show, type JSX } from "solid-js"
+import { createEffect, onCleanup, type JSX } from "solid-js"
 import { createScrollThumb, type ScrollViewThumbVisibility } from "./scroll-view-thumb"
 import "./scroll-thumb.css"
 
@@ -12,6 +12,7 @@ export function ScrollThumbElement(props: {
   return (
     <div
       class="v2-scroll-view-thumb"
+      hidden={!props.thumb.state.shown}
       data-visible={props.thumb.visible(props.visibility)}
       data-dragging={props.thumb.state.dragging}
       style={{ height: `${props.thumb.state.height}px`, transform: `translateY(${props.thumb.state.top}px)` }}
@@ -64,9 +65,5 @@ export function ScrollThumb(props: ScrollThumbProps): JSX.Element {
       thumb.setHovered(false)
     })
   })
-  return (
-    <Show when={thumb.state.shown}>
-      <ScrollThumbElement thumb={thumb} visibility={props.visibility ?? "hover"} />
-    </Show>
-  )
+  return <ScrollThumbElement thumb={thumb} visibility={props.visibility ?? "hover"} />
 }
