@@ -83,7 +83,7 @@ Medians of 3 runs each. Boot window is navigation start to 6 s after the first `
 | DOM elements after boot | 803 | 862 |
 | Composited layers after boot | 15 | 11 |
 | JS heap after GC (KB) / Nodes / listeners | 40,066 / 1,300 / 161 | 32,764 / 1,460 / 153 |
-| **Idle 30 s: API requests** | **10** | **0** |
+| **Idle 30 s: API requests** | **10 (9 with a live event stream)** | **0** |
 | **Idle 30 s: frames / BeginMainThreadFrame** | **60 / 60** | **0 / 0** |
 | Idle 30 s: style recalcs / layouts / paints / mutations | 0 / 0 / 0 / 0 | 0 / 0 / 0 / 0 |
 | Idle 30 s: timer callbacks fired (timeouts + intervals) | 27 | 4 |
