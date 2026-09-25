@@ -64,4 +64,4 @@ The baseline lands in `e2e/flows/30-transcript-corpus.spec.ts-snapshots/`, per p
 
 ## What must match
 
-After opening and after every interaction, for every rendered turn (`[data-component="session-turn"]`, the moved timeline's own row in both apps): its screenshot and its accessibility tree, plus the count of rendered turns and the scroll element's `scrollTop`. The turn rows exclude the session title, which the owner removed from v2. A difference needs the owner's sign-off, recorded next to the case.
+After opening and after every interaction, once the DOM has been quiet for 700 ms (a diagram or a highlight upgrade lands after the text it belongs to), for every rendered turn (`[data-component="session-turn"]`, the moved timeline's own row in both apps): its screenshot and its accessibility tree, plus the count of rendered turns and the scroll element's `scrollTop`. The turn rows exclude the session title, which the owner removed from v2. A difference needs the owner's sign-off, recorded next to the case.

@@ -26,6 +26,8 @@ Order is flat and is the server's `human_turn_desc`: `lastHumanTurnAt` descendin
 
 Fetched data never enters these stores and pushed data never enters the query cache. A session's deltas are held by its transcript store (`transcript/deltas.ts`), merged per part field, and appended in place on the part's field when the session's view commits them, once per animation frame (`view/delta-frames.ts`); a session with no view on screen schedules no frame, and its deltas wait. Every other write to the transcript commits the held deltas first, so they keep their place in the order: a part upsert that carries text replaces what they added, and a snapshot overwrites text it already includes. A message or part upsert replaces only that message's parts array or the messages array, so unchanged messages and part arrays keep their identity for the timeline's row memos.
 
+`partsWithText` records, per part id, that a part's text has had a non-blank character (`transcript/text-presence.ts`). The store sets it where parts land: an upsert, a page read, and a delta, which checks only its own characters, so a streaming reply is never scanned whole. It is set once and never cleared, because text only grows; a row that asks whether its part has text reads that one key and is not woken by the deltas after it.
+
 ## State machines
 
 | Machine | States | Where |

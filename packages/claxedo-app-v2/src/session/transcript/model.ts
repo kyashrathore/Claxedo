@@ -12,6 +12,7 @@ export type TranscriptData = {
   messages: SessionMessage[]
   parts: Record<string, TranscriptPart[]>
   fragmentParts: ReadonlySet<string>
+  partsWithText: Record<string, true>
   diff: FileDiff[]
 }
 
@@ -44,7 +45,7 @@ export type OlderEvent =
 
 export const NO_FRAGMENTS: ReadonlySet<string> = new Set()
 
-export const emptyTranscript = (): TranscriptData => ({ messages: [], parts: {}, fragmentParts: NO_FRAGMENTS, diff: [] })
+export const emptyTranscript = (): TranscriptData => ({ messages: [], parts: {}, fragmentParts: NO_FRAGMENTS, partsWithText: {}, diff: [] })
 
 export const initialPhase: SessionPhase = { kind: "loading", held: [] }
 
