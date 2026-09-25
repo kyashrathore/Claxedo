@@ -149,7 +149,6 @@ test("35 a machine owner's app plugins never list, serve, activate or ask for an
   const member = await signed.signUp("Mia Member")
   expect((await listLivePlugins(signed.stack.url, member.transport)).status).toBe(403)
   expect((await member.transport({ method: "GET", url: new URL(`/api/claxedo/live-plugins/fixture/${row.hash}/app.js`, signed.stack.url).href })).status).toBe(403)
-  test.fixme(true, "the signed login page offers no sign-in method on this branch (00-signed-smoke fails the same way), so the signed-in half cannot run yet")
 
   await signed.signIn(page, member)
   await page.goto(`${signed.url}/settings/app-plugins`)
