@@ -7,6 +7,7 @@ import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { controlPlaneRouteAuth, signedRouteAuth, type ControlPlaneRouteAuthOptions } from "../platform/http/control-plane-route-auth"
 import { BUNDLE_HASH_PATTERN } from "./bundles"
 import { LivePluginAddError, livePluginService, type LivePluginService } from "./service"
+import { listPluginSource, PluginSourceError, readPluginSource } from "./source"
 
 const addBody = z.object({ directory: z.string().trim().min(1) }).strict()
 
@@ -24,12 +25,23 @@ function requireMachineOwner(request: Request, deps: LivePluginRouteDeps) {
   deps.authorizeMachineOwner(auth)
 }
 
+async function registeredDirectory(service: LivePluginService, id: string) {
+  if (!PLUGIN_ID_PATTERN.test(id)) {
+    return { status: 400 as const, error: errorBody("live_plugin_id_invalid", "A plugin id is lowercase letters, digits and dashes") }
+  }
+  await service.ready
+  const directory = service.directory(id)
+  if (directory === undefined) return { status: 404 as const, error: errorBody("live_plugin_not_found", `No plugin ${id} is registered`) }
+  return { path: directory }
+}
+
 export function LivePluginRoutes(options: ControlPlaneRouteAuthOptions = {}, deps: LivePluginRouteDeps = {}) {
   const service = () => deps.service ?? livePluginService()
   return new Hono()
     .onError((error, c) => {
       if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
       if (error instanceof LivePluginAddError) return c.json(errorBody(error.code, error.message), error.status)
+      if (error instanceof PluginSourceError) return c.json(errorBody(error.code, error.message), error.status)
       throw error
     })
     .get("/", controlPlaneRouteAuth(options), async (c) => {
@@ -51,6 +63,18 @@ export function LivePluginRoutes(options: ControlPlaneRouteAuthOptions = {}, dep
       await service().ready
       if (!(await service().remove(id))) return c.json(errorBody("live_plugin_not_found", `No plugin ${id} is registered`), 404)
       return c.body(null, 204)
+    })
+    .get("/:id/source", controlPlaneRouteAuth(options), async (c) => {
+      requireMachineOwner(c.req.raw, deps)
+      const directory = await registeredDirectory(service(), routeParam(c, "id"))
+      if ("error" in directory) return c.json(directory.error, directory.status)
+      return c.json(await listPluginSource(directory.path))
+    })
+    .get("/:id/source/file", controlPlaneRouteAuth(options), async (c) => {
+      requireMachineOwner(c.req.raw, deps)
+      const directory = await registeredDirectory(service(), routeParam(c, "id"))
+      if ("error" in directory) return c.json(directory.error, directory.status)
+      return c.json(await readPluginSource(directory.path, c.req.query("path") ?? ""))
     })
     .get("/:id/:hash/app.js", controlPlaneRouteAuth(options), async (c) => {
       requireMachineOwner(c.req.raw, deps)

@@ -77,7 +77,15 @@ describe("live plugin routes", () => {
     const response = await app.request("/", json({ directory: folder }))
     expect(response.status).toBe(201)
     const row = (await response.json()) as LivePluginRow
-    expect(row).toMatchObject({ id: "notes", name: "Notes", version: "0.1.0", status: "ready", lastError: null })
+    expect(row).toMatchObject({
+      id: "notes",
+      name: "Notes",
+      version: "0.1.0",
+      status: "ready",
+      lastError: null,
+      manifest: { id: "notes", name: "Notes", version: "0.1.0", app: "./src/app.tsx", requires: [], server: { routes: [], operations: [] } },
+    })
+    expect(Date.parse(row.builtAt ?? "")).toBeGreaterThan(Date.now() - 60_000)
     expect(row.hash).toMatch(/^[0-9a-f]{16}$/)
     expect(row.url).toBe(`/api/claxedo/live-plugins/notes/${row.hash}/app.js`)
     expect(events.map((event) => event.status)).toEqual(["building", "ready"])
@@ -131,6 +139,15 @@ describe("live plugin routes", () => {
     expect(restarted.list()).toEqual([expect.objectContaining({ id: "notes", status: "building", hash: previous.hash, url: previous.url, name: "Notes" })])
     await restarted.settled()
     expect(restarted.list()[0]).toMatchObject({ status: "failed", hash: previous.hash })
+    restarted.dispose()
+  })
+
+  test("a restart keeps the served build's manifest and build time", async () => {
+    const [previous] = await listed()
+    const restarted = createLivePluginService({ root: path.join(root, "data") })
+    await restarted.ready
+    expect(restarted.list()[0]).toMatchObject({ hash: previous.hash, manifest: previous.manifest, builtAt: previous.builtAt })
+    await restarted.settled()
     restarted.dispose()
   })
 

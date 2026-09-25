@@ -1,5 +1,6 @@
 import fs from "node:fs/promises"
 import path from "node:path"
+import type { PluginManifest } from "@claxedo/plugin-api"
 import { buildPluginApp, PluginBuildError, readPluginPackage, watchPluginFolder, type PluginFolderWatch } from "@claxedo/plugin-build"
 import { controlBus, type PluginsChangedEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
@@ -20,6 +21,8 @@ export type LivePluginRow = {
   status: LivePluginState["kind"]
   hash: string | null
   url: string | null
+  manifest: PluginManifest | null
+  builtAt: string | null
   lastError: string | null
 }
 
@@ -41,6 +44,7 @@ export type LivePluginService = {
   add(directory: string): Promise<LivePluginRow>
   remove(id: string): Promise<boolean>
   bundle(id: string, hash: string): Promise<string | undefined>
+  directory(id: string): string | undefined
   settled(): Promise<void>
   dispose(): void
 }
@@ -73,6 +77,8 @@ function row(record: LivePluginRecord): LivePluginRow {
     status: record.state.kind,
     hash: bundle?.hash ?? null,
     url: bundle ? bundleUrl(record.entry.id, bundle.hash) : null,
+    manifest: bundle?.manifest ?? null,
+    builtAt: bundle?.builtAt ?? null,
     lastError: record.state.kind === "failed" ? record.state.error : null,
   }
 }
@@ -111,10 +117,10 @@ export function createLivePluginService(options: LivePluginServiceOptions): Live
           `${record.entry.directory}: the manifest id changed from ${record.entry.id} to ${built.manifest.id}; remove the folder and add it again`,
         ])
       }
-      const bundle = { hash: built.hash, name: built.manifest.name, version: built.manifest.version }
+      const bundle = { hash: built.hash, manifest: built.manifest, builtAt: new Date().toISOString() }
       await saveLivePluginBundle(root, record.entry.id, { ...bundle, code: built.code })
-      record.name = bundle.name
-      record.version = bundle.version
+      record.name = bundle.manifest.name
+      record.version = bundle.manifest.version
       apply(record, { type: "buildSucceeded", bundle })
     } catch (error) {
       if (!(error instanceof PluginBuildError)) log.error("live plugin build failed outside the bundler", { id: record.entry.id, error: String(error) })
@@ -139,7 +145,7 @@ export function createLivePluginService(options: LivePluginServiceOptions): Live
   const ready = (async () => {
     for (const entry of await readLivePluginRegistry(root)) {
       const last = await readCurrentLivePluginBundle(root, entry.id)
-      const record: LivePluginRecord = { entry, name: last?.name ?? null, version: last?.version ?? null, state: initialLivePluginState(last), queue: Promise.resolve() }
+      const record: LivePluginRecord = { entry, name: last?.manifest.name ?? null, version: last?.manifest.version ?? null, state: initialLivePluginState(last), queue: Promise.resolve() }
       plugins.set(entry.id, record)
       record.watch = startWatch(record)
       void enqueueBuild(record)
@@ -180,6 +186,7 @@ export function createLivePluginService(options: LivePluginServiceOptions): Live
       return true
     },
     bundle: (id, hash) => readLivePluginBundle(root, id, hash),
+    directory: (id) => plugins.get(id)?.entry.directory,
     settled: async () => {
       await ready
       await Promise.all([...plugins.values()].map((record) => record.queue))

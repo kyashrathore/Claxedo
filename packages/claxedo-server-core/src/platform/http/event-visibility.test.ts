@@ -14,4 +14,11 @@ describe("control-plane event visibility", () => {
     expect(eventVisibleTo({ mode: "signed", subject: "user_a", orgId: "org_a" }, event)).toBe(true)
     expect(eventVisibleTo({ mode: "signed", subject: "user_b", orgId: "org_b" }, event)).toBe(false)
   })
+
+  test("a live plugin notice reaches no signed subscriber, only the unsigned machine's single user", () => {
+    const event = { type: "plugins.changed", pluginId: "notes", status: "ready", hash: "a".repeat(16), ts: 1 } as const
+    expect(eventVisibleTo({ mode: "unsigned-local" }, event)).toBe(true)
+    expect(eventVisibleTo({ mode: "signed", subject: "user_owner", orgId: "org_a" }, event)).toBe(false)
+    expect(eventVisibleTo({ mode: "signed", subject: "user_member" }, event)).toBe(false)
+  })
 })
