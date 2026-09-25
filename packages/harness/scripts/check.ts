@@ -27,6 +27,7 @@ const transportVendors: Record<string, string[]> = {
   "pi-rpc": [],
   "opencode-sdk": ["@opencode-ai/sdk", "@opencode-ai/plugin", "@opencode-ai/schema"],
 }
+const transportSharedPackages = ["@claxedo/helpers", "@claxedo/agent-runtime-contract", "@claxedo/agent-event-runtime"]
 const coreParts = new Set(["contract", "broker", "registry", "capabilities", "translate", "rpc"])
 const harnessIds = new Set(["claude", "codex", "cursor", "pi", "opencode"])
 const decisions = new Set(["allow_once", "allow_always", "deny", "reject_always"])
@@ -202,9 +203,9 @@ export function check(sources: Source[], agentsText: string, budgets: Record<str
           const shared = ["src/contract", "src/translate", "src/rpc", "src/profiles"].some(folder => target === folder || target.startsWith(`${folder}/`))
           const builtin = nodeBuiltins.has(target.replace(/^node:/, ""))
           const testSupport = !production && (target === "bun:test" || target === "src/test-support" || target.startsWith("src/test-support/"))
-          const helper = target === "@claxedo/helpers" || target.startsWith("@claxedo/helpers/") || target === "@claxedo/agent-runtime-contract" || target.startsWith("@claxedo/agent-runtime-contract/") || target === "@claxedo/agent-event-runtime" || target.startsWith("@claxedo/agent-event-runtime/")
+          const sharedPackage = transportSharedPackages.some(name => target === name || target.startsWith(`${name}/`))
           const sdk = (transportVendors[transport] ?? []).some(prefix => target === prefix || target.startsWith(`${prefix}/`))
-          if (!(own || shared || builtin || helper || sdk || testSupport)) add(path, line, "transport-boundary", "Import only this transport, contract, translate, profiles, allowed shared packages, Node built-ins, or its listed SDK")
+          if (!(own || shared || builtin || sharedPackage || sdk || testSupport)) add(path, line, "transport-boundary", "Import only this transport, contract, translate, profiles, allowed shared packages, Node built-ins, or its listed SDK")
         }
       }
 

@@ -8,11 +8,17 @@ export type BrokerOwner = {
   ports: BrokerPorts
   requests: RequestTable
   subagents: SubagentBroker
+  endTurn(authority: TurnBrokerContext["authority"]): Promise<void>
+  endStart(context: SessionBrokerContext): Promise<void>
 }
 
 export function createRequestBroker(ports: BrokerPorts): BrokerOwner & { broker: RequestBroker } {
   const requests = new RequestTable(ports)
-  return { ports, requests, subagents: new SubagentBroker(ports), broker: requests }
+  return {
+    ports, requests, subagents: new SubagentBroker(ports), broker: requests,
+    endTurn: (authority) => requests.cancelTurn(authority),
+    endStart: (context) => requests.cancelStart(context),
+  }
 }
 
 export function createTurnBroker(owner: BrokerOwner, context: TurnBrokerContext): TurnBroker {

@@ -17,7 +17,6 @@ import type {
 import type { SessionBroker, TurnBroker } from "./broker"
 import type { CapabilityContext, TransportCapabilities } from "./capabilities"
 import type { PluginProjection, ResolvedCredentials } from "./projection"
-import type { HarnessServices } from "./services"
 import type { AttachInput, Deadline, HarnessSession, RoutedEvent, StartInput, TurnInput, TurnRef } from "./session"
 
 export type TransportKind = "claude-sdk" | "codex-app-server" | "cursor-sdk" | "acp" | "pi-rpc" | "opencode-sdk"
@@ -110,5 +109,3 @@ export interface HarnessTransport {
   readonly fork?: ForkOperations
   readonly health?: HealthOperations
 }
-
-export type TransportFactory<Config> = (input: { config: Config; services: HarnessServices }) => HarnessTransport
