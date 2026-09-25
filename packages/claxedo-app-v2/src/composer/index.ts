@@ -30,6 +30,5 @@ export { DraftHarnessPicker, type DraftHarnessChoice } from "./view/draft-harnes
 export { modelGroupKey, useModelVisibility, type ModelRef } from "./harness/model-visibility"
 export type { ComposerProps } from "./setup"
 export type { ComposerRecovery } from "./recovery"
-export { asAppError } from "./errors"
 export { composerEnglishDictionaries } from "./i18n"
 export type { ComposerTextKey } from "./i18n"
