@@ -435,6 +435,15 @@ At 19:08 the owner said: finish in-progress work; start no new work.
   - the scripted ACP subagent step sends no tool call, so no live check exercises `toolCallEdges`;
   - adapter probes need `bun run pi:install` in agent-sdk-runtime first (Playwright's global setup does it, the probe doesn't).
 
+- **A cancelled turn is recorded as completed (runtime; both apps).** The harnesses signal a cancelled turn as `session-status idle` without `finish`:
+  - ACP `translateStopReason("cancelled")` (`agent-event-runtime/src/harnesses/acp/translate-session-update.ts`);
+  - Codex `cancelled`/`interrupted`;
+  - Cursor `cancelled`.
+
+  `outcomeFromPayload` (`agent-sdk-runtime/src/runtime/turn-outcome.ts`) maps that idle to `{status: "completed"}`, and the turn's own producer finalizes with it. `finalizeCancelled` (`runtime/recovery.ts`) then finds the turn already finished and doesn't write its `{status: "cancelled", reason: "abort"}`. So neither app ever shows "Interrupted" after a Stop. Proven on v1 with the scripted ACP agent answering `cancelled` (lane-transcript-3; the ready corpus case is in `scratchpad/comments/interrupted-*`).
+  - **Fix:** a terminal cancelled event in the runtime vocabulary. It belongs in the harness rebuild (`docs/plans/2026-09-24-002-refactor-harness-rebuild-plan.md`).
+  - Parity holds meanwhile, since v1 has the same defect.
+
 ## Deletion candidates
 
 **The dead revert path.** No harness declares `revert`, v2 passes no `actions` to MessageTimeline, and v1 never renders these (DECISIONS 23:55). Delete the whole list together, or bring it back together with a harness that declares revert. Line numbers are as of 27781bb17e.
