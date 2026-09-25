@@ -110,6 +110,8 @@ The build was the same (6d9c0a91a9), and the host was just as quiet. v2 had 0 in
 | open-file, light (no prefetch, disclosed) | 26.1 ms | 32.4 ms |
 | collapse-all, light / moderate / heavy | 24.1 / 24.4 / 24.8 ms | 26.7 / 26.9 / 27.8 ms |
 
+**Caveat found after the run:** the packaged v2 renderer was **unminified** (a 6.72 MB main chunk; minified it's 3.67 MB). `claxedo-desktop/vite.renderer-v2.ts` never set `minify`, while v1's renderer config sets `minify: "esbuild"`. Every v2 number above comes from the unminified build. exp-idle is committing the fix with a package-step check; the rerun uses minified builds.
+
 **Must-win targets:**
 - **Met:** idle CPU, panel open return, and long rows (988 ms, target ≤ 1 s, though it ties v1).
 - **Not met:** idle memory (775 MiB, target ≤ 700) and fresh start (1.41 s, target ≤ 1.1, a tie).
