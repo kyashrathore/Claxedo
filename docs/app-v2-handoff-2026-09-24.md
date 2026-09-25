@@ -470,6 +470,8 @@ At 19:08 the owner said: finish in-progress work; start no new work.
   - **Fix:** a terminal cancelled event in the runtime vocabulary. It belongs in the harness rebuild (`docs/plans/2026-09-24-002-refactor-harness-rebuild-plan.md`).
   - Parity holds meanwhile, since v1 has the same defect.
 
+- **A v1 edge case, kept for parity:** a Mermaid diagram that renders small, then grows past the large-diagram threshold while streaming, keeps its full-screen button over the "Render diagram" placeholder. The deferred path's `.remove()` selects a slot nothing writes, in v1's session-ui too. The fix after the swap is `clearRichControls(wrapper)` in that branch, as the failure path already does.
+
 ## Deletion candidates
 
 **The dead revert path.** No harness declares `revert`, v2 passes no `actions` to MessageTimeline, and v1 never renders these (DECISIONS 23:55). Delete the whole list together, or bring it back together with a harness that declares revert. Line numbers are as of 27781bb17e.
