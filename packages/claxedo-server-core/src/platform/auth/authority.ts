@@ -5,8 +5,11 @@ import type {
   AuthorizeRuntimePrivateSessionInput,
   PrivateSessionRuntimePrincipal,
   RegisterRuntimePrivateSessionInput,
+  SessionPageQuery,
 } from "./private-session-authority"
 import type { SessionShareLevel } from "./session-share-level"
+import type { LatestView } from "../../session/latest-view-page"
+import type { HostSessionRowsAuthority } from "./host-session-rows"
 
 export {
   DEFAULT_SESSION_SHARE_LEVEL,
@@ -578,10 +581,12 @@ export type WorkspaceAuthority = {
     auth: SignedControlPlaneAuth,
     args: { workspaceId: string },
   ) => Promise<AuthoritySessionInventoryRow[]>
+  listSessionPage: (auth: SignedControlPlaneAuth, args: SessionPageQuery) => Promise<AuthoritySessionInventoryRow[]>
+  publishHostSessionRows?: HostSessionRowsAuthority["publishHostSessionRows"]
   resolveSession?: (auth: SignedControlPlaneAuth, args: { sessionId: string }) => Promise<unknown>
   readSessionMessages: (
     auth: SignedControlPlaneAuth,
-    args: { sessionId: string; workspaceId: string; limit?: number; before?: string },
+    args: { sessionId: string; workspaceId: string; limit?: number; before?: string; view?: LatestView },
   ) => Promise<unknown>
   syncSessionMessages: (
     auth: SignedControlPlaneAuth,

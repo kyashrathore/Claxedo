@@ -228,6 +228,7 @@ describe("desktop-local product contract", () => {
       "/api/claxedo/host/enrollments/requests",
       "/api/claxedo/host/invitations",
       "/api/claxedo/host/invitations/:id",
+      "/api/claxedo/host/session-rows",
       "/api/claxedo/integrations",
       "/api/claxedo/integrations/:id/connect",
       "/api/claxedo/integrations/attempts/:state",

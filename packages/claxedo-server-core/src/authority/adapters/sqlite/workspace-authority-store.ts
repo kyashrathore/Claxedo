@@ -557,6 +557,14 @@ function ensureSessionTurnSchema(db: SqliteAuthorityDb) {
   // Not backfilled: a session registered before this column reads as never
   // prompted, which is the only thing the store can honestly say about it.
   addColumn(db, "session_history", "last_human_turn_at", "INTEGER")
+  addColumn(db, "session_history", "archived_at", "INTEGER")
+  addColumn(db, "session_history", "status", "TEXT")
+  addColumn(db, "session_history", "status_at", "INTEGER")
+  addColumn(db, "session_history", "awaiting_input", "INTEGER NOT NULL DEFAULT 0")
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS session_history_by_workspace_human_turn
+      ON session_history (workspace_id, deleted_at, archived_at, last_human_turn_at, created_at);
+  `)
 }
 
 function migrateRuntimeAccessTokenSchema(db: SqliteAuthorityDb) {

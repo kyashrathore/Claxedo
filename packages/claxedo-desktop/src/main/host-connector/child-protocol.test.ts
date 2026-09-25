@@ -4,19 +4,20 @@ import { parseHostConnectorChildMessage, parseHostConnectorParentMessage } from 
 
 const JWKS = "https://relay.test/.well-known/jwks.json"
 const AUTHORITY = "https://control-plane.test/api/runtime-authority/session-authorize"
+const SESSION_ROWS = "https://control-plane.test/api/claxedo/host/session-rows"
 
 describe("the serving message", () => {
-  test("carries both addresses beside the credential", () => {
+  test("carries every address beside the credential", () => {
     expect(
       parseHostConnectorChildMessage({
         type: "serving",
         tunnel: { hostTunnelToken: "htt.1" },
-        endpoints: { relayJwksUrl: JWKS, sessionAuthorityUrl: AUTHORITY },
+        endpoints: { relayJwksUrl: JWKS, sessionAuthorityUrl: AUTHORITY, sessionRowsUrl: SESSION_ROWS },
       }),
     ).toEqual({
       type: "serving",
       tunnel: { hostTunnelToken: "htt.1" },
-      endpoints: { relayJwksUrl: JWKS, sessionAuthorityUrl: AUTHORITY },
+      endpoints: { relayJwksUrl: JWKS, sessionAuthorityUrl: AUTHORITY, sessionRowsUrl: SESSION_ROWS },
     })
   })
 
@@ -65,6 +66,8 @@ describe("the serving message", () => {
       { relayJwksUrl: "" },
       { sessionAuthorityUrl: null },
       { relayJwksUrl: JWKS, sessionAuthorityUrl: 7 },
+      { sessionRowsUrl: "" },
+      { relayJwksUrl: JWKS, sessionRowsUrl: 7 },
       {},
       "https://relay.test",
     ]) {

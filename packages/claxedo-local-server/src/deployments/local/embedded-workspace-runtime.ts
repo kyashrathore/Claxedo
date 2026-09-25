@@ -214,6 +214,22 @@ export function embeddedWorkspaceRuntimeHoldsSession(workspaceId: string, sessio
   return hosts.get(workspaceId)?.host.hasSession(sessionId) ?? false
 }
 
+/**
+ * A GET on a runtime mounted in THIS process, as the machine's own user, or
+ * nothing for a workspace with no runtime up. Mounts nothing and reconciles
+ * nothing: `ensureEmbeddedWorkspaceRuntime` re-syncs the session snapshot on
+ * every hit, and a reader that runs on projection writes would feed itself.
+ */
+export async function readMountedEmbeddedWorkspaceRuntime(workspaceId: string, path: string): Promise<Response | undefined> {
+  const runtime = hosts.get(workspaceId)
+  if (!runtime) return undefined
+  const url = new URL(path, "http://127.0.0.1")
+  url.searchParams.set("directory", runtime.workspace.directory)
+  return runtime.app.fetch(new Request(url, {
+    headers: { "x-workspace-id": workspaceId, "x-claxedo-directory": runtime.workspace.directory },
+  }))
+}
+
 /** Read the active workspace's committed session config without consulting operator defaults. */
 export function readEmbeddedWorkspaceSessionConfig(workspaceId: string, sessionId: string) {
   const config = hosts.get(workspaceId)?.host.getSessionConfig(sessionId)

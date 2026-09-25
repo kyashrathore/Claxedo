@@ -100,7 +100,7 @@ test("08 a failed read of pending requests leaves the transcript on screen", asy
   const session = await api.createSession(workspace.directory, { title: "Requests read", harness: SCRIPTED_ACP_HARNESS })
   await api.prompt(workspace.directory, session.id, "Reply with exactly this one token: RQX")
   let failing = true
-  await app.route(/\/(question|api\/wr\/session-activity)(\?|$)/, (route) => (failing ? route.abort("connectionrefused") : route.fallback()))
+  await app.route(/\/question(\?|$)/, (route) => (failing ? route.abort("connectionrefused") : route.fallback()))
   await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
   await expect(app.getByText("RQX", { exact: true })).toBeVisible()
   const card = app.getByRole("alert").filter({ hasText: "Could not load pending permissions or questions. Retry to continue." })

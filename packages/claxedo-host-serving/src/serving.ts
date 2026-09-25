@@ -113,6 +113,48 @@ type ActiveServing = {
 let active: ActiveServing | undefined
 
 /**
+ * What a publisher acting as this machine needs from the credential: the
+ * host the token names, the token itself, and the workspaces it may speak
+ * for. The relay address and the lease are the tunnel's concern.
+ */
+export type HostServingPublisherCredential = Pick<HostServingCredential, "hostId" | "token" | "workspaceIds">
+
+type HostServingCredentialListener = (credential: HostServingPublisherCredential | undefined) => void
+
+const credentialListeners = new Set<HostServingCredentialListener>()
+
+function publisherCredential(): HostServingPublisherCredential | undefined {
+  if (!active) return undefined
+  return { hostId: active.hostId, token: active.token.current, workspaceIds: [...active.tunnels.keys()].sort() }
+}
+
+function announceCredential() {
+  const credential = publisherCredential()
+  for (const listener of Array.from(credentialListeners)) {
+    try {
+      listener(credential)
+    } catch (error) {
+      log.warn("a host serving credential listener threw", { error: String(error) })
+    }
+  }
+}
+
+/**
+ * Called with the credential after every change to serving — a renewing ack,
+ * a changed workspace set, a stop, the lease lapsing — and once on subscribe
+ * with what is served now. Reported after the tunnels are reconciled, so a
+ * listener that publishes as this machine names only workspaces the relay
+ * is being dialled for.
+ */
+export function onHostServingCredential(listener: HostServingCredentialListener): () => void {
+  credentialListeners.add(listener)
+  listener(publisherCredential())
+  return () => {
+    credentialListeners.delete(listener)
+  }
+}
+
+/**
  * Serving is a LEASE, not a latch.
  *
  * Every heartbeat ack renews the credential, so a machine that is still
@@ -228,6 +270,7 @@ export function stopHostServing() {
   if (!current) return
   clearTimeout(current.lapse)
   for (const entry of current.tunnels.values()) entry.tunnel.close()
+  announceCredential()
 }
 
 export async function setHostServing(
@@ -297,6 +340,7 @@ export async function setHostServing(
       expiresAt: credential.expiresAt,
     })
   }
+  announceCredential()
   return hostServingState(input)
 }
 

@@ -28,6 +28,7 @@ import {
   D1_CHANNEL_RUNTIME_AUTHORITY_METHODS,
   type D1ChannelRuntimeAuthorityPort,
 } from "./channel-runtime-authority"
+import { publishD1HostSessionRows } from "./host-session-rows"
 
 /** The shared authority surface already backed by D1. */
 export type D1CoreAuthorityPort = D1WorkspaceAuthorityCore &
@@ -117,6 +118,8 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
     ...bindMethods(sessions, D1_SESSION_TURN_AUTHORITY_METHODS),
     ...bindMethods(hosts, HOST_LIFECYCLE_METHODS),
     machineAuth: hosts.machineAuth,
+    publishHostSessionRows: (publisher, publication) =>
+      publishD1HostSessionRows(database, (options.now ?? Date.now)(), publisher, publication),
   }
 }
 

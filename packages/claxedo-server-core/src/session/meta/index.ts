@@ -29,8 +29,11 @@ import {
 import { resolveWorkspace, type Workspace } from "../../workspace/store"
 import { controlBus } from "../../platform/runtime/lib/bus"
 import { asRecord } from "@claxedo/helpers/guards"
+import { sessionOrderSql, type SessionOrderColumns } from "../navigation-order"
+import { reportSessionMetaChanges, type SessionMetaChange } from "./changes"
 
 export { GLOBAL_TAG, GLOBAL_SHOW_TAG } from "./types"
+export { onSessionMetaChange, type SessionMetaChange } from "./changes"
 export type {
   SessionAttachment,
   SessionMeta,
@@ -52,7 +55,10 @@ export async function syncSessionMetas(ws: Workspace | undefined, input: unknown
   const rows = input.map((item) => sessionMetaSyncRow(item, ws))
   const inserted = await upsertRows(rows)
   await announceInventoryChange(inserted, ws)
-  if (!ws?.id) return
+  if (!ws?.id) {
+    reportSessionMetaChanges(rows.flatMap((row) => (row?.workspace_id ? [{ kind: "changed", workspaceId: row.workspace_id, sessionId: row.session_id }] : [])))
+    return
+  }
   const incoming = ids(rows.flatMap((item) => item?.session_ref ? [item.session_ref] : []))
   const owned = ClaxedoDB.use((db) => db
     .select({
@@ -78,11 +84,14 @@ export async function syncSessionMetas(ws: Workspace | undefined, input: unknown
   const stale = owned.filter((session_ref) => !incoming.includes(session_ref))
   deleteSessionMetaRefs(stale)
   if (stale.length) await announceInventoryChange([ws.id], ws)
+  reportSessionMetaChanges([{ kind: "workspace", workspaceId: ws.id }])
 }
 
 export async function syncSessionMeta(ws: Workspace | undefined, input: unknown) {
-  const inserted = await upsertRows([sessionMetaSyncRow(input, ws)])
+  const row = sessionMetaSyncRow(input, ws)
+  const inserted = await upsertRows([row])
   await announceInventoryChange(inserted, ws)
+  if (row?.workspace_id) reportSessionMetaChanges([{ kind: "changed", workspaceId: row.workspace_id, sessionId: row.session_id }])
 }
 
 export async function deleteSessionMeta(sessionID: string) {
@@ -96,9 +105,13 @@ export async function deleteSessionMeta(sessionID: string) {
     db.delete(ClaxedoSessionAttachmentTable).where(inArray(ClaxedoSessionAttachmentTable.session_id, sessionIDs)).run()
     db.delete(ClaxedoSessionTagTable).where(inArray(ClaxedoSessionTagTable.session_id, sessionIDs)).run()
     db.delete(ClaxedoSessionMetaTable).where(inArray(ClaxedoSessionMetaTable.session_id, sessionIDs)).run()
-    return rows.filter((row) => sessionIDs.includes(row.session_id)).flatMap((row) => row.workspace_id ? [row.workspace_id] : [])
+    return rows.flatMap((row): SessionMetaChange[] =>
+      sessionIDs.includes(row.session_id) && row.workspace_id
+        ? [{ kind: "removed", workspaceId: row.workspace_id, sessionId: row.session_id }]
+        : [])
   })
-  await announceInventoryChange(removed)
+  await announceInventoryChange(removed.map((change) => change.workspaceId))
+  reportSessionMetaChanges(removed)
 }
 
 /**
@@ -247,9 +260,10 @@ export async function putSessionMeta(
         }).run()
       }
     }
-    return prev ? [] : [workspaceID]
+    return { inserted: prev ? [] : [workspaceID], workspaceID }
   })
-  await announceInventoryChange(inserted, input.ws)
+  await announceInventoryChange(inserted.inserted, input.ws)
+  if (inserted.workspaceID) reportSessionMetaChanges([{ kind: "changed", workspaceId: inserted.workspaceID, sessionId: sessionID }])
 }
 
 export async function sessionMetas(input: string[]) {
@@ -338,6 +352,13 @@ export async function listSessionMetas(input?: {
  * a root's slot, shorten the page and — because the window would then be no
  * longer than the limit — retire the cursor with roots still unread.
  */
+const NAVIGATION_COLUMNS: SessionOrderColumns = {
+  lastHumanTurnAt: "m.last_human_turn_at",
+  createdAt: "m.created_at",
+  updatedAt: "m.updated_at",
+  sessionRef: "m.session_ref",
+}
+
 export async function listSessionNavigationMetas(input: SessionMetaNavigationListInput) {
   const where: string[] = ["m.parent_session_id IS NULL"]
   const params: Array<string | number | null> = []
@@ -376,7 +397,7 @@ export async function listSessionNavigationMetas(input: SessionMetaNavigationLis
       params.push(item, item, item, item)
     }
   }
-  const order = navigationOrder(input)
+  const order = sessionOrderSql(NAVIGATION_COLUMNS, input.sort ?? "updated_desc", input.cursor)
   if (order.keyset) {
     where.push(order.keyset.sql)
     params.push(...order.keyset.params)
@@ -399,63 +420,6 @@ export async function listSessionNavigationMetas(input: SessionMetaNavigationLis
   return hit
     .map((item) => meta.get(item))
     .filter((item): item is SessionMeta => !!item)
-}
-
-/**
- * The ORDER BY and the matching keyset predicate, built from one description of
- * the sort so a page boundary cannot disagree with the order it pages through —
- * a mismatched cursor drops rows or repeats them, and neither shows up until the
- * reader scrolls.
- *
- * `human_turn_desc` is the session list's order: when the reader last spoke to
- * the session, then when it was created. A session nobody has ever prompted has
- * no human turn and sorts below every session that has one, which SQLite's DESC
- * already does — it orders NULL below every value. The cursor has to say that
- * explicitly instead, because `NULL < ?` is NULL rather than true, so a plain
- * comparison would end the listing at the first never-prompted row.
- */
-function navigationOrder(input: SessionMetaNavigationListInput): {
-  orderBy: string
-  keyset?: { sql: string; params: Array<string | number | null> }
-} {
-  const cursor = input.cursor
-  if (input.sort === "human_turn_desc") {
-    const humanTurnAt = cursor?.lastHumanTurnAt ?? null
-    const createdAt = cursor?.createdAt ?? cursor?.updatedAt ?? 0
-    return {
-      orderBy: "m.last_human_turn_at DESC, m.created_at DESC, m.session_ref DESC",
-      ...(cursor ? {
-        keyset: {
-          sql: `(
-            (? IS NOT NULL AND m.last_human_turn_at IS NULL)
-            OR m.last_human_turn_at < ?
-            OR (m.last_human_turn_at IS ? AND (
-              m.created_at < ? OR (m.created_at = ? AND m.session_ref < ?)
-            ))
-          )`,
-          params: [
-            humanTurnAt,
-            humanTurnAt,
-            humanTurnAt,
-            createdAt,
-            createdAt,
-            cursor.sessionRef ?? cursor.sessionID,
-          ],
-        },
-      } : {}),
-    }
-  }
-  const column = input.sort === "created_desc" ? "created_at" : "updated_at"
-  const at = input.sort === "created_desc" ? (cursor?.createdAt ?? cursor?.updatedAt ?? 0) : cursor?.updatedAt ?? 0
-  return {
-    orderBy: `m.${column} DESC, m.session_ref DESC`,
-    ...(cursor ? {
-      keyset: {
-        sql: `(m.${column} < ? OR (m.${column} = ? AND m.session_ref < ?))`,
-        params: [at, at, cursor.sessionRef ?? cursor.sessionID],
-      },
-    } : {}),
-  }
 }
 
 export function applySessionMeta(input: Array<Record<string, unknown>>) {

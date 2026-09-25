@@ -1,3 +1,5 @@
+import type { SessionListSort, SessionOrderKey } from "../navigation-order"
+
 export const GLOBAL_TAG = "global"
 export const GLOBAL_SHOW_TAG = "global:default"
 
@@ -37,14 +39,7 @@ export type SessionMetaNavigationListInput = {
   archived?: "active" | "all" | "archived"
   status?: string[]
   search?: string
-  sort?: "updated_desc" | "created_desc" | "human_turn_desc"
+  sort?: SessionListSort
   limit: number
-  cursor?: {
-    updatedAt: number
-    createdAt?: number
-    /** Absent when the cursor row has no human turn, which sorts it below every row that has one. */
-    lastHumanTurnAt?: number
-    sessionID: string
-    sessionRef?: string
-  }
+  cursor?: SessionOrderKey
 }

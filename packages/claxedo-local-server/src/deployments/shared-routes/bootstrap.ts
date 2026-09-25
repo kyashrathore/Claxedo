@@ -1,7 +1,7 @@
 import { Hono } from "hono"
 import os from "os"
 import { providerAuthMethods } from "../../credentials/provider-auth/service"
-import { getProjectMetadata, listProjects } from "@claxedo/server-core/workspace/store/index"
+import { getProjectMetadata, listProjects, listWorkspaces } from "@claxedo/server-core/workspace/store/index"
 import { dataDir, stateDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import {
@@ -18,6 +18,7 @@ import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { asRecord, asString } from "@claxedo/helpers/guards"
 import { authorityRowBacking, readyCloudWorkspaces } from "@claxedo/server-core/workspace/cloud-runtime-readiness"
+import { authorityRowReachable } from "@claxedo/server-core/workspace/placement-reachability"
 
 type Options = {
   authConfig?: ControlPlaneAuthConfig
@@ -122,7 +123,7 @@ function localBootstrap(url: string, options: Options) {
  * — it reaches the fs-backed workspace store and agent config — so the two
  * are changed together or one client meets two shapes.
  */
-function signedBootstrapProjects(workspaces: unknown[], readyCloud: ReadonlySet<string>) {
+function signedBootstrapProjects(workspaces: unknown[], readyCloud: ReadonlySet<string>, servedHere: ReadonlySet<string>) {
   const groups = new Map<string, {
     id: string
     name: string
@@ -156,7 +157,7 @@ function signedBootstrapProjects(workspaces: unknown[], readyCloud: ReadonlySet<
       id: workspaceId,
       backing,
       workspace_name: workspaceName,
-      reachable: backing === "local-worktree" || readyCloud.has(workspaceId),
+      reachable: authorityRowReachable(row, readyCloud, servedHere),
       directory,
       ...(remoteDirectory ? { remote_directory: remoteDirectory } : {}),
     }
@@ -174,7 +175,8 @@ function signedBootstrapProjects(workspaces: unknown[], readyCloud: ReadonlySet<
 async function signedBootstrapBody(auth: SignedControlPlaneAuth, options: Options) {
   const listed = await requireAuthority(options.services).listWorkspaces(auth)
   const workspaces = Array.isArray(listed) ? listed : []
-  const projects = signedBootstrapProjects(workspaces, await readyCloudWorkspaces(options.services?.sandbox.sandboxManager, workspaces))
+  const servedHere = new Set((await listWorkspaces()).flatMap((workspace) => (workspace.kind === "cloud" ? [] : [workspace.id])))
+  const projects = signedBootstrapProjects(workspaces, await readyCloudWorkspaces(options.services?.sandbox.sandboxManager, workspaces), servedHere)
   return {
     healthy: true,
     version: version(options),

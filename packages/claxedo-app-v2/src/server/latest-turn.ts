@@ -15,6 +15,6 @@ export function readLatestTurn(context: SessionContext, ref: SessionRef): Promis
       if (!response.ok) throw await responseError(response, "Latest turn")
       return transcriptPageFromWire(await response.json(), response.headers.get(OLDER_CURSOR_HEADER))
     },
-    (workspaceId) => readCentralPage(context.transport, workspaceId, ref),
+    (workspaceId) => readCentralPage(context.transport, workspaceId, ref, { view: "latest-turn" }),
   )
 }

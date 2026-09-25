@@ -446,7 +446,7 @@ describe("session meta", () => {
       limit: 2,
       cursor: {
         updatedAt: 30,
-        sessionID: "ses_b",
+        createdAt: 30,
         sessionRef: "local:/tmp/repo:session:ses_b",
       },
     })
