@@ -215,7 +215,7 @@ describe(`${name} request broker`, () => {
       yield { event: { type: "text-delta", delta: "unreachable" } }
     })
     expect(result.admitted).toBe(true)
-    if (result.admitted) expect(await result.settled).toEqual({ state: "failed", error: "Error: goal failed" })
+    if (result.admitted) expect(await result.settled).toEqual({ state: "failed", error: "goal failed" })
     await session.publish({ type: "harness-notice", code: "session.ready", message: "Ready", severity: "info" })
     expect(ports.sessionEvents).toEqual([{ sessionId: "s1", event: {
       type: "harness-notice", code: "session.ready", message: "Ready", severity: "info",

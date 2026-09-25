@@ -6,9 +6,10 @@ import type {
   RoutedEvent, SessionBroker, StartInput, TransportCapabilities, TransportConfigUpdate,
   TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
+import { attachedSessionEntry, mergeStartInput } from "../../contract"
 import { claudePrompt } from "./attachments"
 import { claudeBinding } from "./credentials"
-import { ClaudeTransportError } from "./errors"
+import { TransportError } from "../../contract/errors"
 import { ClaudeGoals } from "./goals"
 import type { ClaudeSdkOptions } from "./launch-context"
 import { ClaudeModelCatalog, modelOptions, requiredClaudeEffort } from "./models"
@@ -29,7 +30,7 @@ type Entry = {
 
 function claudeEffort(value: string | null | undefined): EffortLevel | undefined {
   if (!value) return undefined
-  if (!isHarnessEffortLevel(value)) throw new ClaudeTransportError("configuration", `Unsupported Claude effort ${value}`)
+  if (!isHarnessEffortLevel(value)) throw new TransportError("claude", "configuration", `Unsupported Claude effort ${value}`)
   return value
 }
 
@@ -67,8 +68,8 @@ export class ClaudeSdkTransport implements HarnessTransport {
   }
 
   async start(input: StartInput, broker: SessionBroker): Promise<HarnessSession> {
-    if (this.disposed) throw new ClaudeTransportError("session", "Claude transport disposed")
-    if (this.entries.has(input.sessionId)) throw new ClaudeTransportError("session", "Claude session already attached")
+    if (this.disposed) throw new TransportError("claude", "session", "Claude transport disposed")
+    if (this.entries.has(input.sessionId)) throw new TransportError("claude", "session", "Claude session already attached")
     claudeBinding(input.credentials, input.owner)
     const session: HarnessSession = { directory: input.directory, locality: input.locality,
       binding: { sessionId: input.sessionId, workspaceId: input.workspaceId, directory: input.directory,
@@ -80,8 +81,8 @@ export class ClaudeSdkTransport implements HarnessTransport {
   }
 
   async attach(input: AttachInput, broker: SessionBroker): Promise<HarnessSession> {
-    if (this.disposed) throw new ClaudeTransportError("session", "Claude transport disposed")
-    if (this.entries.has(input.sessionId)) throw new ClaudeTransportError("session", "Claude session already attached")
+    if (this.disposed) throw new TransportError("claude", "session", "Claude transport disposed")
+    if (this.entries.has(input.sessionId)) throw new TransportError("claude", "session", "Claude session already attached")
     claudeBinding(input.credentials, input.owner)
     const session: HarnessSession = { directory: input.directory, locality: input.locality, binding: input.binding }
     this.entries.set(input.sessionId, { input, session, broker, processes: new Set() })
@@ -91,14 +92,9 @@ export class ClaudeSdkTransport implements HarnessTransport {
   }
 
   private entry(session: HarnessSession): Entry {
-    const entry = this.entries.get(session.binding.sessionId)
-    if (!entry || entry.session.binding.sessionId !== session.binding.sessionId ||
-      entry.session.binding.workspaceId !== session.binding.workspaceId ||
-      entry.session.binding.connectionId !== session.binding.connectionId ||
-      entry.session.binding.upstreamSessionId !== session.binding.upstreamSessionId) {
-      throw new ClaudeTransportError("session", "Claude session is not attached")
-    }
-    return entry
+    return attachedSessionEntry(this.entries, session, () => new TransportError("claude", "session", "Claude session is not attached"),
+      (entry, current) => entry.session.binding.workspaceId === current.binding.workspaceId &&
+        entry.session.binding.connectionId === current.binding.connectionId)
   }
 
   private async launch(entry: Entry, turn: TurnInput, broker: TurnBroker, input: ClaudeTurnInput,
@@ -113,7 +109,7 @@ export class ClaudeSdkTransport implements HarnessTransport {
 
   async *send(session: HarnessSession, turn: TurnInput, broker: TurnBroker): AsyncIterable<RoutedEvent> {
     const entry = this.entry(session)
-    if (entry.active) throw new ClaudeTransportError("session", "Claude turn already active")
+    if (entry.active) throw new TransportError("claude", "session", "Claude turn already active")
     const input = new ClaudeTurnInput(await claudePrompt(turn, entry.input.directory))
     const { runtime, tasks } = claudeTranslator(turn.assistantMessageId, turn.todos)
     const abort = new AbortController()
@@ -191,7 +187,7 @@ export class ClaudeSdkTransport implements HarnessTransport {
     },
     setPermissionMode: async (session: HarnessSession, modeId: string) => {
       const state = await this.config.permissionModes({ session })
-      if (!state.modes.some((mode) => mode.id === modeId)) throw new ClaudeTransportError("configuration", `Unknown Claude permission mode ${modeId}`)
+      if (!state.modes.some((mode) => mode.id === modeId)) throw new TransportError("claude", "configuration", `Unknown Claude permission mode ${modeId}`)
       const entry = this.entry(session)
       entry.input = { ...entry.input, config: { ...entry.input.config, permissionMode: modeId } }
       return { ...state, currentModeId: modeId }
@@ -226,8 +222,8 @@ export class ClaudeSdkTransport implements HarnessTransport {
 
   async configure(session: HarnessSession, update: TransportConfigUpdate): Promise<ConfigApplied> {
     const entry = this.entry(session)
-    if (update.credentials) { claudeBinding(update.credentials, entry.input.owner); entry.input = { ...entry.input, credentials: update.credentials } }
-    if (update.projection) entry.input = { ...entry.input, projection: update.projection }
+    if (update.credentials) claudeBinding(update.credentials, entry.input.owner)
+    entry.input = mergeStartInput(entry.input, update)
     return { state: "applied" }
   }
 

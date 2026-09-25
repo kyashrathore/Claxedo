@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
 import fs from "node:fs/promises"
 import path from "node:path"
+import { request as httpRequest } from "node:http"
 import { activateCloudCredential, cloudRuntimeUrl, cloudTransport, createCloudWorkspace, waitCloudConnection } from "../harness/cloud-workspace"
 import { startStack } from "../harness/stack"
 import { sendJson } from "../harness/transport"
@@ -17,6 +18,25 @@ async function sandboxFiles(directory: string) {
 
 function sandboxEnvironment(pid: number) {
   return execFileSync("ps", ["eww", "-p", String(pid)], { encoding: "utf8" })
+}
+
+async function refusedBrokerUse(pid: number, target: string) {
+  const proxy = /HTTP_PROXY=http:\/\/127\.0\.0\.1:(\d+)/.exec(sandboxEnvironment(pid))
+  assert.ok(proxy?.[1], "sandbox has no broker proxy")
+  return await new Promise<number>((resolve, reject) => {
+    const request = httpRequest({
+      hostname: "127.0.0.1",
+      port: Number(proxy[1]),
+      path: target,
+      method: "POST",
+      headers: { authorization: "Bearer claxedo-broker:CLAXEDO_PROVIDER_OPENAI", "content-type": "application/json" },
+    }, (response) => {
+      response.resume()
+      response.on("end", () => resolve(response.statusCode ?? 0))
+    })
+    request.on("error", reject)
+    request.end("{}")
+  })
 }
 
 export async function run() {
@@ -41,7 +61,7 @@ export async function run() {
     assert.ok(!(await sandboxFiles(first.home)).includes(key), "real cloud account key entered sandbox home files")
     assert.ok(!(await sandboxFiles(first.directory)).includes(key), "real cloud account key entered sandbox workspace files")
     if (!sandboxEnvironment(first.pid).includes(placeholder)) {
-      throw new Error(`C-15: credential stored under the local org did not reach its signed cloud workspace as a placeholder; delivered names: ${first.secretNames.join(",")}`)
+      throw new Error(`The signed shared credential did not reach its cloud sandbox as a placeholder; delivered names: ${first.secretNames.join(",")}`)
     }
 
     await sendJson(cloudTransport(stack), "PATCH", `${stack.url}/api/claxedo/credentials/${credential.id}/scope`, { scope: "local" }, "Revoking cloud consent")
@@ -55,6 +75,7 @@ export async function run() {
     assert.notEqual(next.pid, first.pid, "revocation did not replace the sandbox process")
     assert.ok(!sandboxEnvironment(next.pid).includes(placeholder), "revoked placeholder remained in sandbox process")
     assert.ok(!sandboxEnvironment(next.pid).includes(key), "real cloud account key entered renewed sandbox process")
+    assert.equal(await refusedBrokerUse(next.pid, `${stack.scripted.v1Url}/chat/completions`), 403, "revoked placeholder was accepted by the sandbox broker")
     const readback = await fetch(`${stack.url}/api/claxedo/credentials/openai`, { headers: { authorization: `Bearer ${stack.daemon.cloudToken}` } })
     assert.equal((await readback.json() as { credential: { scope: string } }).credential.scope, "local")
     assert.deepEqual(stack.egress.attempts, [])

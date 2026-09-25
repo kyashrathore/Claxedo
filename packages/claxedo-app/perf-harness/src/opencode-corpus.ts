@@ -110,7 +110,9 @@ export class OpenCodeCorpus {
       },
       messages: (this.sessionMessages.get(session.id) ?? []).map((message) => this.message(message)),
     })) satisfies OpenCodeFixtureSession[]
+    const importStartedAt = Date.now()
     const restored = await importOpenCodeFixtureSessions(databasePath, transfers)
+    const importFinishedAt = Date.now()
     for (const [index, actual] of restored.entries()) {
       const expected = transfers[index]
       if (
@@ -118,8 +120,10 @@ export class OpenCodeCorpus {
         actual.info.title !== expected.info.title ||
         actual.info.location.directory !== expected.info.location.directory ||
         actual.info.time.created !== expected.info.time.created ||
-        actual.info.time.updated !== expected.info.time.updated ||
-        !isDeepStrictEqual(actual.messages, expected.messages)
+        actual.info.time.updated < importStartedAt ||
+        actual.info.time.updated > importFinishedAt ||
+        actual.messages.length !== expected.messages.length ||
+        actual.messages.some((message, messageIndex) => !isDeepStrictEqual(message, expected.messages[messageIndex]))
       ) {
         throw new Error(`SDK corpus readback differs for ${expected.info.id}`)
       }

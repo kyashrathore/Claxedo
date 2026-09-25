@@ -1,8 +1,7 @@
-import { randomUUID } from "node:crypto"
 import type { CanUseTool } from "@anthropic-ai/claude-agent-sdk"
-import type { StartInput, TurnBroker } from "../../contract"
+import { permissionDecision, permissionRequest, requestQuestionAnswers, questionRequest, type StartInput, type TurnBroker } from "../../contract"
 import { claudeFloorDenies } from "../../profiles/claude-code"
-import { ClaudeTransportError } from "./errors"
+import { TransportError } from "../../contract/errors"
 
 const protocolPermissionMap = {
   allowOnce: "allow_once", allowAlways: "allow_always", rejectAlways: "reject_always", allow: "allow", deny: "deny",
@@ -18,37 +17,34 @@ export async function askClaudePermission(input: StartInput, broker: TurnBroker,
   toolInput: Record<string, unknown>, options: Parameters<CanUseTool>[2], turnId?: string) {
   if (options.signal.aborted || broker.signal.aborted) return { behavior: protocolPermissionMap.deny, message: "Turn cancelled" }
   if (claudeFloorDenies(toolName, toolInput)) return { behavior: protocolPermissionMap.deny, message: "Claude command denied by policy" }
-  const requestId = randomUUID()
   if (toolName === "AskUserQuestion") {
     const questions = toolInput.questions
     if (!Array.isArray(questions) || !questions.length || questions.some((question) =>
       !question || typeof question !== "object" || typeof question.question !== "string" || !question.question.trim())) {
-      throw new ClaudeTransportError("protocol", "Claude question requires non-empty question text")
+      throw new TransportError("claude", "protocol", "Claude question requires non-empty question text")
     }
-    const answer = await broker.ask({ kind: "question", requestId, question: {
-      id: requestId, sessionID: input.sessionId, questions, harnessPayload: { toolName, toolInput },
-    } }, { signal: options.signal })
-    if (answer.kind !== "answers") return { behavior: protocolPermissionMap.deny, message: "Question dismissed" }
-    if (answer.answers.length !== questions.length) throw new ClaudeTransportError("protocol", "Claude question reply must answer each question")
+    const answers = requestQuestionAnswers(await broker.ask(questionRequest({ sessionId: input.sessionId, questions,
+      harnessPayload: { toolName, toolInput } }), { signal: options.signal }))
+    if (!answers) return { behavior: protocolPermissionMap.deny, message: "Question dismissed" }
+    if (answers.length !== questions.length) throw new TransportError("claude", "protocol", "Claude question reply must answer each question")
     return { behavior: protocolPermissionMap.allow, updatedInput: { ...toolInput,
-      answers: Object.fromEntries(answer.answers.map((value, index) => [questions[index]?.question, value.join(", ")])) } }
+      answers: Object.fromEntries(answers.map((value, index) => [questions[index]?.question, value.join(", ")])) } }
   }
   const grantKey = toolName === "Bash" && typeof toolInput.command === "string" && toolInput.command && options.blockedPath &&
     !options.matchedAskRule && !options.decisionReason
     ? JSON.stringify({ toolName, toolInput: Object.fromEntries(Object.entries(toolInput).filter(([key]) => key !== "description")),
       directory: input.directory, mode: input.config.permissionMode ?? "default", blockedPath: options.blockedPath,
       agentID: options.agentID }) : undefined
-  const answer = await broker.ask({ kind: "permission", requestId,
-    ...(grantKey ? { grantKey } : {}),
-    permission: { id: requestId, sessionID: input.sessionId, permission: toolName, title: options.title ?? toolName,
-      patterns: [], always: [], metadata: { input: toolInput, description: options.description ?? "", turnId },
-      harnessPayload: { toolName, toolInput, suggestions: options.suggestions } },
+  const answer = await broker.ask(permissionRequest({ sessionId: input.sessionId, permission: toolName, title: options.title ?? toolName,
+    ...(grantKey ? { grantKey } : {}), metadata: { input: toolInput, description: options.description ?? "", turnId },
+    harnessPayload: { toolName, toolInput, suggestions: options.suggestions },
     options: protocolPermissionMap.options,
-  }, { signal: options.signal })
+  }), { signal: options.signal })
   if (options.signal.aborted || broker.signal.aborted) return { behavior: protocolPermissionMap.deny, message: "Turn cancelled" }
-  if (answer.kind !== "permission") return { behavior: protocolPermissionMap.deny, message: "Permission dismissed" }
-  if (answer.decision === protocolPermissionMap.allowOnce || answer.decision === protocolPermissionMap.allowAlways) {
+  const decision = permissionDecision(answer)
+  if (!decision) return { behavior: protocolPermissionMap.deny, message: "Permission dismissed" }
+  if (decision === protocolPermissionMap.allowOnce || decision === protocolPermissionMap.allowAlways) {
     return { behavior: protocolPermissionMap.allow, updatedInput: toolInput }
   }
-  return { behavior: protocolPermissionMap.deny, message: "Permission denied", interrupt: answer.decision === protocolPermissionMap.rejectAlways }
+  return { behavior: protocolPermissionMap.deny, message: "Permission denied", interrupt: decision === protocolPermissionMap.rejectAlways }
 }

@@ -6,7 +6,13 @@ import { createRequire } from "node:module"
 import { spawnSync } from "node:child_process"
 
 assert.equal(typeof globalThis.Bun, "undefined", "Run this probe with Node or Electron, not Bun")
-const sdkPath = import.meta.resolve("@opencode-ai/sdk")
+const harnessRequire = createRequire(import.meta.resolve("@claxedo/harness/opencode-sdk"))
+const sdkRoot = harnessRequire.resolve.paths("@opencode-ai/sdk")
+  .map(directory => path.join(directory, "@opencode-ai/sdk"))
+  .find(directory => fs.existsSync(path.join(directory, "package.json")))
+assert.ok(sdkRoot, "Harness SDK dependency must be installed")
+const sdkManifest = JSON.parse(fs.readFileSync(path.join(sdkRoot, "package.json"), "utf8"))
+const sdkPath = fs.realpathSync(path.join(sdkRoot, sdkManifest.exports["."].import))
 const sdkRequire = createRequire(sdkPath)
 const coreRoot = sdkRequire.resolve.paths("@opencode-ai/core")
   .map(directory => path.join(directory, "@opencode-ai/core"))

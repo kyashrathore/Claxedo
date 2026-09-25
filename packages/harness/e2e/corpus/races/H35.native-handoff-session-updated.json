@@ -1,0 +1,159 @@
+{
+  "flow": "H35.native-handoff",
+  "difference": "$.observations.2.entities.19.frames.5: recorded session.updated is absent in observed second turn",
+  "recorded": {
+    "key": "session:<id:http:3:1>",
+    "frames": [
+      {
+        "index": 0,
+        "type": "session.lifecycle",
+        "id": null,
+        "slug": null,
+        "status": null
+      },
+      {
+        "index": 1,
+        "type": "session.lifecycle",
+        "id": null,
+        "slug": null,
+        "status": null
+      },
+      {
+        "index": 2,
+        "type": "session.status",
+        "id": "session.status:<id:http:3:1>",
+        "slug": null,
+        "status": {
+          "type": "busy"
+        }
+      },
+      {
+        "index": 3,
+        "type": "session.updated",
+        "id": "session.updated:<id:http:3:1>",
+        "slug": "<id:http:3:1>",
+        "status": null
+      },
+      {
+        "index": 4,
+        "type": "session.idle",
+        "id": "session.idle:<id:http:3:1>",
+        "slug": null,
+        "status": null
+      },
+      {
+        "index": 5,
+        "type": "session.updated",
+        "id": "session.updated:<id:http:3:1>",
+        "slug": "<id:http:3:1>",
+        "status": null
+      },
+      {
+        "index": 6,
+        "type": "session.status",
+        "id": "session.status:<id:http:3:1>",
+        "slug": null,
+        "status": {
+          "type": "busy"
+        }
+      },
+      {
+        "index": 7,
+        "type": "session.commands",
+        "id": null,
+        "slug": null,
+        "status": null
+      },
+      {
+        "index": 8,
+        "type": "session.status",
+        "id": "session.status:<id:http:3:1>",
+        "slug": null,
+        "status": {
+          "type": "idle"
+        }
+      },
+      {
+        "index": 9,
+        "type": "session.idle",
+        "id": "session.idle:<id:http:3:1>",
+        "slug": null,
+        "status": null
+      }
+    ]
+  },
+  "observed": {
+    "key": "session:<id:http:3:1>",
+    "frames": [
+      {
+        "index": 0,
+        "type": "session.lifecycle",
+        "id": null,
+        "slug": null,
+        "status": null
+      },
+      {
+        "index": 1,
+        "type": "session.lifecycle",
+        "id": null,
+        "slug": null,
+        "status": null
+      },
+      {
+        "index": 2,
+        "type": "session.status",
+        "id": "session.status:<id:http:3:1>",
+        "slug": null,
+        "status": {
+          "type": "busy"
+        }
+      },
+      {
+        "index": 3,
+        "type": "session.updated",
+        "id": "session.updated:<id:http:3:1>",
+        "slug": "<id:http:3:1>",
+        "status": null
+      },
+      {
+        "index": 4,
+        "type": "session.idle",
+        "id": "session.idle:<id:http:3:1>",
+        "slug": null,
+        "status": null
+      },
+      {
+        "index": 5,
+        "type": "session.status",
+        "id": "session.status:<id:http:3:1>",
+        "slug": null,
+        "status": {
+          "type": "busy"
+        }
+      },
+      {
+        "index": 6,
+        "type": "session.commands",
+        "id": null,
+        "slug": null,
+        "status": null
+      },
+      {
+        "index": 7,
+        "type": "session.status",
+        "id": "session.status:<id:http:3:1>",
+        "slug": null,
+        "status": {
+          "type": "idle"
+        }
+      },
+      {
+        "index": 8,
+        "type": "session.idle",
+        "id": "session.idle:<id:http:3:1>",
+        "slug": null,
+        "status": null
+      }
+    ]
+  }
+}

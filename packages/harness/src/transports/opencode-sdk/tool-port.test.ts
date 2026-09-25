@@ -1,10 +1,8 @@
-import { afterEach, expect, test } from "bun:test"
+import { expect, test } from "bun:test"
 import type { Plugin } from "@opencode-ai/plugin"
 import type { OpenCodeHost } from "./host"
 import { createToolPort } from "./tool-port"
 import { WorkspaceScope } from "./scope"
-
-const servers: Array<ReturnType<typeof Bun.serve>> = []
 
 test("tool catalogs stay location-scoped and a failed plugin install can retry", async () => {
   let installed: Plugin.Plugin | undefined
@@ -37,7 +35,7 @@ test("tool catalogs stay location-scoped and a failed plugin install can retry",
   const alpha = WorkspaceScope.authorize({ workspaceID: "alpha", directory: process.cwd() })
   const beta = WorkspaceScope.authorize({ workspaceID: "beta", directory: "/tmp" })
   const registration = (sessionID: string, scope: typeof alpha, name: string) => ({
-    sessionID, scope, callbackUrl: "http://localhost/callback",
+    sessionID, scope, execute: async () => ({ ok: true }),
     tools: [{ name, description: name, inputSchema: { type: "object" } }],
   })
   await expect(port.registerSession(registration("a", alpha, "alpha_tool"))).rejects.toThrow("boot failed")
@@ -52,21 +50,8 @@ test("tool catalogs stay location-scoped and a failed plugin install can retry",
   expect(catalogs.get(beta.directory)).toEqual(["beta_tool"])
 })
 
-afterEach(async () => {
-
-  await Promise.all(servers.splice(0).map((server) => server.stop(true)))
-})
-
-test("merged Session tool groups keep their authoritative callback", async () => {
-  const calls: Array<{ path: string; body: unknown }> = []
-  const server = Bun.serve({
-    port: 0,
-    fetch: async (request) => {
-      calls.push({ path: new URL(request.url).pathname, body: await request.json() })
-      return Response.json({ ok: true })
-    },
-  })
-  servers.push(server)
+test("same-directory sessions dispatch by engine session and refuse forged identity", async () => {
+  const calls: Array<{ session: string; name: string; input: unknown }> = []
 
   let transform: ((draft: { add(definition: unknown): void }) => void | Promise<void>) | undefined
   const definitions = new Map<string, {
@@ -94,32 +79,19 @@ test("merged Session tool groups keep their authoritative callback", async () =>
   const host = { client: async () => client } as unknown as OpenCodeHost
   const port = createToolPort(host)
 
-  await port.registerSession({
-    scope: WorkspaceScope.authorize({ workspaceID: "test", directory: process.cwd() }),
-    sessionID: "session-1",
-    callbackUrl: new URL("default", server.url).href,
-    tools: [
-      {
-        name: "workgraph_run",
-        description: "Run operation",
-        inputSchema: { type: "object" },
-        callbackUrl: new URL("run", server.url).href,
-      },
-      {
-        name: "workgraph_connection",
-        description: "Connection operation",
-        inputSchema: { type: "object" },
-        callbackUrl: new URL("connection", server.url).href,
-      },
-    ],
-  })
-
-  await definitions.get("workgraph_run")?.execute({ command: "claim" }, { sessionID: "session-1", id: "call-1" })
-  await definitions.get("workgraph_connection")?.execute({ command: "read" }, { sessionID: "session-1", id: "call-2" })
-
-  expect(calls.map((call) => call.path)).toEqual(["/run", "/connection"])
-  expect(calls.map((call) => call.body)).toEqual([
-    { sessionID: "session-1", name: "workgraph_run", toolCallID: "call-1", input: { command: "claim" } },
-    { sessionID: "session-1", name: "workgraph_connection", toolCallID: "call-2", input: { command: "read" } },
+  const scope = WorkspaceScope.authorize({ workspaceID: "test", directory: process.cwd() })
+  for (const sessionID of ["session-1", "session-2"]) {
+    await port.registerSession({ scope, sessionID,
+      tools: [{ name: "workgraph_run", description: "Run operation", inputSchema: { type: "object" } }],
+      execute: async (call) => { calls.push({ session: sessionID, name: call.name, input: call.input }); return { ok: true } },
+    })
+  }
+  const definition = definitions.get("workgraph_run")!
+  await definition.execute({ command: "claim" }, { sessionID: "session-1", id: "call-1" })
+  await definition.execute({ command: "read" }, { sessionID: "session-2", id: "call-2" })
+  await expect(definition.execute({ command: "forge" }, { sessionID: "forged", id: "call-3" })).rejects.toThrow("not registered")
+  expect(calls).toEqual([
+    { session: "session-1", name: "workgraph_run", input: { command: "claim" } },
+    { session: "session-2", name: "workgraph_run", input: { command: "read" } },
   ])
 })

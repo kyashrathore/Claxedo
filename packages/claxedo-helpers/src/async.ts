@@ -91,3 +91,24 @@ export async function waitForHealth(
   }
   return false
 }
+
+export function singleFlightUntil<Args extends unknown[], Result>(
+  run: (...args: Args) => Promise<Result>,
+  settled: (result: Result) => boolean,
+): (...args: Args) => Promise<Result> {
+  let inFlight: Promise<Result> | undefined
+  let final: Promise<Result> | undefined
+  return (...args) => {
+    if (final) return final
+    if (inFlight) return inFlight
+    const attempt = run(...args)
+    inFlight = attempt
+    const release = () => { if (inFlight === attempt) inFlight = undefined }
+    void attempt.then((result) => {
+      if (settled(result)) final = attempt
+      release()
+    }, release)
+    return attempt
+  }
+}
+

@@ -11,6 +11,8 @@
 
 import fs from "node:fs"
 import path from "node:path"
+import { generateKeyPairSync } from "node:crypto"
+import { claxedoStateDir } from "@claxedo/helpers/path"
 import type { ControlPlaneRouteContribution } from "@claxedo/server-core/platform/http/route-contribution"
 import { deploymentMode } from "@claxedo/server-core/authority/deployment-mode"
 import { embeddedAuthEnabled } from "./embedded-auth"
@@ -23,6 +25,34 @@ import { BUILTIN_TASKS_TOOL_GROUP } from "@claxedo/server-core/agent-plugins/bui
 import { createTasksSessionGrants, type TasksSessionGrants } from "@claxedo/server-core/tasks-host/session-grants"
 import { createSelfHostedTasksComposition } from "../../tasks/self-hosted-composition"
 import type { InjectedSandboxDriver } from "../../workspace/supervisor/options"
+
+export function ensureSelfHostedRuntimeKeyPair(env: NodeJS.ProcessEnv) {
+  const privatePem = env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM?.trim()
+  const publicPem = env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM?.trim()
+  if (privatePem || publicPem) {
+    if (!privatePem || !publicPem) throw new Error("Self-hosted runtime signing requires both configured keys")
+    return
+  }
+
+  const state = claxedoStateDir(env)
+  if (env.CLAXEDO_DATA_DIR === ":memory:") throw new Error("Self-hosted runtime keys require a persistent state directory")
+  fs.mkdirSync(state, { recursive: true, mode: 0o700 })
+  const privatePath = path.join(state, "runtime-access-token-private.pem")
+  const publicPath = path.join(state, "runtime-access-token-public.pem")
+  const privateExists = fs.existsSync(privatePath)
+  const publicExists = fs.existsSync(publicPath)
+  if (privateExists !== publicExists) throw new Error("Self-hosted runtime key pair is incomplete")
+  if (!privateExists) {
+    const pair = generateKeyPairSync("ed25519")
+    fs.writeFileSync(privatePath, pair.privateKey.export({ type: "pkcs8", format: "pem" }), { flag: "wx", mode: 0o600 })
+    fs.writeFileSync(publicPath, pair.publicKey.export({ type: "spki", format: "pem" }), { flag: "wx", mode: 0o600 })
+  }
+  for (const file of [privatePath, publicPath]) {
+    if ((fs.statSync(file).mode & 0o077) !== 0) throw new Error(`Self-hosted runtime key permissions are too broad: ${file}`)
+  }
+  env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM = fs.readFileSync(privatePath, "utf8")
+  env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = fs.readFileSync(publicPath, "utf8")
+}
 
 export type SelfHostedStartOptions = {
   port: number
@@ -82,6 +112,15 @@ export async function startSelfHostedServer(options: SelfHostedStartOptions) {
   // where a refusal costs nothing. The one inside the composition catches a
   // caller that reaches it another way.
   assertSelfHostedPosture(selfHostedPosture(env))
+  ensureSelfHostedRuntimeKeyPair(env)
+  if (options.sandboxDriver?.id === "local-brokering-test") {
+    env.CLAXEDO_RELAY_HOST_VERIFY_PEM = env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM
+  }
+  if (env !== process.env) {
+    process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM = env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM
+    process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM
+    if (options.sandboxDriver?.id === "local-brokering-test") process.env.CLAXEDO_RELAY_HOST_VERIFY_PEM = env.CLAXEDO_RELAY_HOST_VERIFY_PEM
+  }
   const services = createDefaultLocalControlPlaneServices()
   const agentPlugins = await import("@claxedo/local-server/agent-plugins/local-composition")
     .then(({ createLocalAgentPluginsComposition }) => createLocalAgentPluginsComposition(env))

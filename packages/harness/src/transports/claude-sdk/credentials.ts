@@ -1,20 +1,22 @@
 import { HARNESS_TABLE, type ProviderBinding } from "@claxedo/agent-runtime-contract"
 import type { ResolvedCredentials, TurnActor } from "../../contract"
-import { ClaudeTransportError } from "./errors"
+import { TransportError } from "../../contract/errors"
+import { stringRecord } from "@claxedo/helpers"
+import { selectedProviderProjection } from "../../contract"
 
 export function claudeBinding(credentials: ResolvedCredentials, owner: TurnActor, now = Date.now()): ProviderBinding | undefined {
-  const projection = HARNESS_TABLE.claude.providerIds.map((id) => credentials.providers[id]).find((candidate) => candidate !== undefined)
+  const projection = selectedProviderProjection(credentials, HARNESS_TABLE.claude.providerIds)
   if (!projection) {
     if (owner.kind === "machine-owner") return undefined
-    throw new ClaudeTransportError("configuration", "This person's Claude session has no selected credentials")
+    throw new TransportError("claude", "configuration", "This person's Claude session has no selected credentials")
   }
-  if ("unavailable" in projection) throw new ClaudeTransportError("configuration", projection.reason)
-  if (projection.expiresAt !== undefined && projection.expiresAt <= now) throw new ClaudeTransportError("configuration", "Claude credential placeholder expired")
+  if ("unavailable" in projection) throw new TransportError("claude", "configuration", projection.reason)
+  if (projection.expiresAt !== undefined && projection.expiresAt <= now) throw new TransportError("claude", "configuration", "Claude credential placeholder expired")
   return projection
 }
 
 export function claudeEnvironment(parent: NodeJS.ProcessEnv, binding?: ProviderBinding, configHome?: string): Record<string, string> {
-  const env = Object.fromEntries(Object.entries(parent).filter((entry): entry is [string, string] => entry[1] !== undefined))
+  const env = stringRecord(parent)
   if (!binding) return env
   for (const name of ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_SCOPES",
     "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "GOOGLE_APPLICATION_CREDENTIALS", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"]) delete env[name]

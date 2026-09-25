@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { createAcpProvider } from "./acp"
 import { createPiRpcProvider } from "./pi-rpc"
-import { HarnessProviderError } from "./types"
+import { TransportError } from "../../contract/errors"
 import * as providers from "./index"
 import { createTestServices } from "../../conformance/test-support/services"
 
@@ -33,9 +33,9 @@ test("ACP remote headers resolve only named secrets", () => {
   const transport = provider.createTransport({ descriptor, expectedRevision: 1, resolved, services: createTestServices() })
   expect(transport.kind).toBe("acp")
   expect(() => provider.createTransport({ descriptor: { ...descriptor, enabled: false }, expectedRevision: 1, resolved,
-    services: createTestServices() })).toThrow(HarnessProviderError)
+    services: createTestServices() })).toThrow(TransportError)
   expect(() => provider.createTransport({ descriptor, expectedRevision: 2, resolved,
-    services: createTestServices() })).toThrow(HarnessProviderError)
+    services: createTestServices() })).toThrow(TransportError)
   expect(() => provider.resolve({ descriptor, directory: "/work", secrets: {} })).toThrow("lease")
 })
 
@@ -51,9 +51,9 @@ test("Pi defaults its command and keeps environment secret bindings local", () =
   expect(provider.createTransport({ descriptor, expectedRevision: 1, resolved,
     services: createTestServices() }).kind).toBe("pi-rpc")
   expect(() => provider.createTransport({ descriptor: { ...descriptor, enabled: false }, expectedRevision: 1, resolved,
-    services: createTestServices() })).toThrow(HarnessProviderError)
+    services: createTestServices() })).toThrow(TransportError)
   expect(() => provider.createTransport({ descriptor, expectedRevision: 2, resolved,
-    services: createTestServices() })).toThrow(HarnessProviderError)
+    services: createTestServices() })).toThrow(TransportError)
   expect(() => provider.resolve({ descriptor, directory: "/work", secrets: {} })).toThrow("lease")
 })
 

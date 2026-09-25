@@ -1,6 +1,7 @@
 import type { HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
 import type { HarnessServices } from "../../contract/services"
 import type { HarnessTransport } from "../../contract/transport"
+import { TransportError } from "../../contract/errors"
 
 export type HarnessConnectionDescriptor<TConfig = unknown> = {
   connectionId: string
@@ -26,14 +27,6 @@ export type ConstructTransport<TConfig> = (config: TConfig, services: HarnessSer
 
 export type ResolvedConnection<TConfig> = { connectionId: string; configRevision: number; config: TConfig }
 
-export class HarnessProviderError extends Error {
-  readonly retryable = false
-  constructor(readonly code: "invalid_config" | "connection_unavailable", message: string, options?: ErrorOptions) {
-    super(message, options)
-    this.name = "HarnessProviderError"
-  }
-}
-
 export function assertCurrentConnection<TConfig, TResolved>(input: {
   descriptor: HarnessConnectionDescriptor<TConfig>
   expectedRevision: number
@@ -42,6 +35,6 @@ export function assertCurrentConnection<TConfig, TResolved>(input: {
   const { descriptor, expectedRevision, resolved } = input
   if (descriptor.providerKey !== providerKey || !descriptor.enabled || descriptor.configRevision !== expectedRevision ||
     resolved.connectionId !== descriptor.connectionId || resolved.configRevision !== expectedRevision) {
-    throw new HarnessProviderError("connection_unavailable", `${providerKey} connection is disabled or stale`)
+    throw new TransportError("provider", "connection_unavailable", `${providerKey} connection is disabled or stale`)
   }
 }

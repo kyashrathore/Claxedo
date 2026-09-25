@@ -6,6 +6,7 @@ import { permissionOptions } from "./permissions"
 import { ClaudeProcess } from "./process"
 import { askClaudePermission } from "./requests"
 import type { claudeTranslator } from "./translate"
+import { sessionMcpServers } from "../../contract"
 
 const protocolClaudePermissionMap = { deny: "deny" } as const
 
@@ -29,9 +30,8 @@ type Launch = {
 }
 
 function mcpServers(input: StartInput, services: HarnessServices): Record<string, McpServerConfig> {
-  const projected = [...input.projection.mcpServers]
-  const firstParty = input.locality === "local" ? services.firstPartyMcp(input.sessionId, input.locality) : undefined
-  if (firstParty) projected.push({ ...firstParty, origin: "first-party" })
+  const projected = sessionMcpServers(input, services, { includeFirstParty: input.locality === "local",
+    duplicate: (name) => new Error(`Duplicate Claude MCP server ${name}`) })
   return Object.fromEntries(projected.map((server): [string, McpServerConfig] => server.kind === "stdio"
     ? [server.name, { type: "stdio", command: server.command, args: [...server.args ?? []], env: server.env ? { ...server.env } : undefined }]
     : [server.name, { type: server.kind, url: server.url, headers: server.headers ? { ...server.headers } : undefined }]))

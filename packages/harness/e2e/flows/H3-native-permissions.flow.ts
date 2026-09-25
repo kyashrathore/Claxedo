@@ -11,14 +11,14 @@ const NATIVE = [
   { id: "codex", providerId: "openai", modelId: "gpt-4.1", tool: "exec_command", mode: "workspace-write" },
 ] as const
 
-async function pending(api: ClaxedoApi, directory: string, sessionId: string, excludes: string[] = []): Promise<PermissionRow> {
-  const deadline = Date.now() + 60_000
-  do {
-    const row = (await api.permissions(directory)).find((item) => item.sessionID === sessionId && !excludes.includes(item.id))
-    if (row) return row
-    await Bun.sleep(100)
-  } while (Date.now() < deadline)
-  throw new Error(`No new permission for ${sessionId}`)
+async function pending(api: ClaxedoApi, stream: EventStream, directory: string, sessionId: string, excludes: string[] = [], since = 0): Promise<PermissionRow> {
+  await stream.waitFor((frame) => frameType(frame) === "permission.asked" && frameSessionId(frame) === sessionId
+    && stream.frames.indexOf(frame) >= since
+    && !excludes.includes(String((frame.data.payload as { properties?: { id?: string } }).properties?.id)),
+    { label: `new permission for ${sessionId}`, timeoutMs: 60_000 })
+  const row = (await api.permissions(directory)).find((item) => item.sessionID === sessionId && !excludes.includes(item.id))
+  assert.ok(row, `No new permission for ${sessionId} after permission.asked`)
+  return row
 }
 
 async function refused(call: () => Promise<unknown>, status: number) {
@@ -53,7 +53,7 @@ export async function run() {
       const session = await api.createSession(directory, { harness: { id: harness.id, access: "native" },
         permissionMode: harness.mode, model: { providerId: harness.providerId, modelId: harness.modelId } })
       await api.promptAsync(directory, session.id, `Run the command, then reply with exactly this one token: ${marker}`)
-      const once = await pending(api, directory, session.id)
+      const once = await pending(api, stream, directory, session.id)
       assert.ok(stream.frames.some((frame) => frameType(frame) === "permission.asked" && frameSessionId(frame) === session.id))
       const otherMarker = `H3_${harness.id.toUpperCase()}_FOREIGN`
       const foreignOutput = path.join(stack.dataDir, `${harness.id}-foreign.txt`)
@@ -61,7 +61,7 @@ export async function run() {
       const other = await api.createSession(directory, { harness: { id: harness.id, access: "native" },
         permissionMode: harness.mode, model: { providerId: harness.providerId, modelId: harness.modelId } })
       await api.promptAsync(directory, other.id, `Run the command, then reply with exactly this one token: ${otherMarker}`)
-      const foreign = await pending(api, directory, other.id)
+      const foreign = await pending(api, stream, directory, other.id)
       const repliesBefore = stream.frames.filter((frame) => frameType(frame) === "permission.replied").length
       const foreignMessages = await api.messages(directory, other.id)
       await refused(() => api.replyPermission(directory, session.id, foreign.id, "once"), 409)
@@ -88,9 +88,9 @@ export async function run() {
       scriptCommand(stack, harness, alwaysMarker, different)
       const alwaysSince = stream.frames.length
       await api.promptAsync(directory, session.id, `Run the commands, then reply with exactly this one token: ${alwaysMarker}`)
-      const always = await pending(api, directory, session.id)
+      const always = await pending(api, stream, directory, session.id, [], alwaysSince)
       await api.replyPermission(directory, session.id, always.id, "always")
-      const next = await pending(api, directory, session.id, [always.id])
+      const next = await pending(api, stream, directory, session.id, [always.id], alwaysSince)
       assert.equal((await api.permissions(directory)).filter((row) => row.sessionID === session.id).length, 1,
         `${harness.id} prompted for an identical second call`)
       await api.replyPermission(directory, session.id, next.id, "once")
@@ -103,7 +103,7 @@ export async function run() {
       scriptCommand(stack, harness, denyMarker, deniedFile)
       const denySince = stream.frames.length
       await api.promptAsync(directory, session.id, `Run the command, then reply with exactly this one token: ${denyMarker}`)
-      const deny = await pending(api, directory, session.id)
+      const deny = await pending(api, stream, directory, session.id, [], denySince)
       await api.replyPermission(directory, session.id, deny.id, "reject")
       await idle(stream, session.id, `${harness.id} deny idle`, denySince)
       await assert.rejects(() => fs.access(deniedFile), (error: unknown) => (error as NodeJS.ErrnoException).code === "ENOENT")

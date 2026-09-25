@@ -2,7 +2,7 @@ import type { RuntimeTokenUsage } from "@claxedo/agent-event-runtime"
 import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
 import type { ProjectedEvent } from "../event-pump.js"
 import { tokenUsage, type TokenUsage } from "../session-port.js"
-import { errorMessage } from "@claxedo/helpers"
+import { errorMessage, settleAtRequestDeadline } from "@claxedo/helpers"
 import { asRecord as rec, asString as str } from "@claxedo/helpers/guards"
 
 type UsageEvent = Extract<AgentRuntimeEvent, { type: "usage" }>
@@ -56,16 +56,12 @@ export const SESSION_TOTAL_READ_MS = 5_000
 export type SessionTotal = { tokens: TokenUsage | undefined } | { failure: string }
 
 export async function readSessionTotal(read: () => Promise<TokenUsage | undefined>, deadlineMs = SESSION_TOTAL_READ_MS): Promise<SessionTotal> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const expired = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`the engine did not report the session total within ${deadlineMs}ms`)), deadlineMs)
-  })
   try {
-    return { tokens: await Promise.race([read(), expired]) }
+    return { tokens: await settleAtRequestDeadline("session total",
+      { deadlineAt: Date.now() + deadlineMs, signal: new AbortController().signal }, read(), () => {},
+      () => new Error(`the engine did not report the session total within ${deadlineMs}ms`)) }
   } catch (error) {
     return { failure: errorMessage(error) }
-  } finally {
-    clearTimeout(timer)
   }
 }
 

@@ -114,9 +114,12 @@ const ENTRIES = [
   // same key the HTTP oracle uses; and `platform/auth/runtime-token-keys.ts`,
   // the key-pair loader it shares with the owner grant, unreached here before
   // because this node composes no owner grants. No package edge.
+  // +1 module: `deployments/private-repo-hosts.ts`, the one reader of
+  // CLAXEDO_PRIVATE_REPO_HOSTS that the self-hosted and hosted deployments
+  // share. No package edge.
   // `script/product-boundary/policies/server.ts` holds the review; this is the
-  // same measurement recorded a second time, so the two must agree. 127/41.
-  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 127, packages: 41 },
+  // same measurement recorded a second time, so the two must agree. 128/41.
+  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 128, packages: 41 },
 ] as const
 
 /** The remaining cloud compositions. */

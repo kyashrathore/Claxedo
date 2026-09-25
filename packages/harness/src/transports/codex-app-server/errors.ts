@@ -1,14 +1,13 @@
-export class CodexTransportError extends Error {
-  readonly retryable: boolean
+import { TransportError } from "../../contract/errors"
+
+export class CodexTransportError extends TransportError {
   constructor(readonly className: "process" | "protocol" | "session" | "configuration", message: string, options?: { cause?: unknown; retryable?: boolean }) {
-    super(message, { cause: options?.cause })
-    this.name = "CodexTransportError"
-    this.retryable = options?.retryable ?? className === "process"
+    super("codex", className, message, options)
   }
 }
 
 export class CodexRequestRefusal extends CodexTransportError {
-  constructor(readonly code: number, message: string) {
+  constructor(readonly rpcCode: number, message: string) {
     super("protocol", message)
   }
 }

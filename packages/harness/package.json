@@ -50,7 +50,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p e2e/tsconfig.json",
     "check": "bun scripts/check.ts",
     "test": "bun run check && bun test src scripts e2e/harness",
-    "flows": "bun e2e/flows/run.ts"
+    "flows": "bun e2e/flows/run.ts",
+    "corpus": "bun e2e/harness/corpus.ts"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "1.3.0",

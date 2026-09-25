@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto"
+import { errorMessage } from "@claxedo/helpers"
 import type { ProviderTurnInput, ProviderTurnResult, ProviderTurnSettlement } from "@claxedo/harness/contract"
 import type { RuntimeStore } from "../store"
 import type { BrokerSessionEvents } from "./session-events"
@@ -49,7 +50,7 @@ export class BrokerProviderTurns {
         await run(turnId, controller.signal)
       } catch (error) {
         state = "failed"
-        failure = String(error)
+        failure = errorMessage(error)
       }
       if (controller.signal.aborted) state = "cancelled"
       try {
@@ -62,7 +63,7 @@ export class BrokerProviderTurns {
         for (const event of finished.events) this.delivery.broadcast(sessionId, event)
       } catch (error) {
         state = "failed"
-        failure = String(error)
+        failure = errorMessage(error)
       } finally {
         this.events.releaseProviderTurn(sessionId, turnId)
         this.controllers.delete(sessionId)

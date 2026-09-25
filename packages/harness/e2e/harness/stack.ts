@@ -14,6 +14,7 @@ import { withholdSteerReply } from "./steer-reply-fault"
 import { interruptClaudeSteer } from "./claude-steer-fault"
 import { startScriptedCursorBackend, type ScriptedCursorBackend } from "./cursor/backend"
 import { openEventStream, type EventStream, type EventStreamOptions } from "./stream"
+export { startHostedStack } from "./hosted-stack"
 
 export type Stack = {
   url: string

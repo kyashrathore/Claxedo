@@ -6,7 +6,8 @@ This package connects Claxedo to agent harnesses. The repo root `AGENTS.md` stil
 
 - **Core** (`src/contract/`, `src/broker/`, `src/registry/`, `src/capabilities/`, `src/translate/`): Claxedo's own concepts. It never imports a transport, a profile, or a vendor SDK.
 - **Composition** (`src/compose.ts`): wires the registry to built-in and custom transport constructors. It may import the registry and every transport; only the package export imports it.
-- **Transports** (`src/transports/<kind>/`): how we drive one kind of harness and read its events. A transport imports only `src/contract/`, `src/translate/`, its profile, its own folder, its own vendor SDK, Node built-ins and `@claxedo/helpers`.
+- **RPC** (`src/rpc/`): framing and request correlation over owned channels. It imports the contract and has no harness policy.
+- **Transports** (`src/transports/<kind>/`): how we drive one kind of harness and read its events. A transport imports only `src/contract/`, `src/translate/`, `src/rpc/`, its profile, its own folder, its own vendor SDK, Node built-ins and `@claxedo/helpers`.
 - **Profiles** (`src/profiles/<harness>/`): the documented format of a harness's skills, MCP config and plugins, and its delivery per transport. Every rule cites the doc it comes from. A profile never grants plugin authority.
 
 ## What a transport does and never does

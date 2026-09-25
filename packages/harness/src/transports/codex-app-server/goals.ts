@@ -1,6 +1,7 @@
-import { isRuntimeGoalStatus, type AgentGoalMutationResult, type RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
+import { type AgentGoalMutationResult, type RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import { asRecordOrEmpty } from "@claxedo/helpers/guards"
-import type { HarnessSession, NativeGoalOperations, SessionBroker } from "../../contract"
+import { errorMessage } from "@claxedo/helpers"
+import { goalSnapshotFromRecord, type HarnessSession, type NativeGoalOperations, type SessionBroker } from "../../contract"
 import { CodexTransportError } from "./errors"
 import type { CodexTerminals } from "./terminals"
 import type { CodexRpc } from "./rpc"
@@ -9,20 +10,11 @@ type GoalEntry = { rpc: CodexRpc; broker: SessionBroker; goal: RuntimeGoalSnapsh
   providerTurn?: { id: string }; turn?: { id?: string } }
 
 export function snapshotFromCodexGoal(sessionId: string, value: unknown): RuntimeGoalSnapshot {
-  const goal = asRecordOrEmpty(value)
-  const objective = goal.objective
-  const rawStatus = goal.status
-  const status = rawStatus === "usageLimited" || rawStatus === "budgetLimited" ? "limited" : rawStatus
-  if (typeof objective !== "string" || !isRuntimeGoalStatus(status)) {
-    throw new CodexTransportError("protocol", "Codex returned an invalid goal")
-  }
-  return { sessionId, objective, status,
-    createdAt: typeof goal.createdAt === "number" ? goal.createdAt : Date.now(),
-    updatedAt: typeof goal.updatedAt === "number" ? goal.updatedAt : Date.now(),
-    ...(typeof goal.tokenBudget === "number" ? { tokenBudget: goal.tokenBudget } : {}),
-    ...(typeof goal.tokensUsed === "number" ? { tokensUsed: goal.tokensUsed } : {}),
-    ...(typeof goal.timeUsedSeconds === "number" ? { timeUsedSeconds: goal.timeUsedSeconds } : {}),
-  }
+  return goalSnapshotFromRecord(sessionId, value, {
+    invalid: () => new CodexTransportError("protocol", "Codex returned an invalid goal"),
+    now: Date.now(),
+    status: (status) => status === "usageLimited" || status === "budgetLimited" ? "limited" : status,
+  })
 }
 
 type ResolveGoalEntry = (session: HarnessSession) => GoalEntry
@@ -35,7 +27,7 @@ async function setGoalState(resolve: ResolveGoalEntry, session: HarnessSession, 
     entry.goal = goal
     await entry.broker.goal.publish(goal)
     return { ok: true, goal }
-  } catch (error) { return { ok: false, status: "failed", message: String(error) } }
+  } catch (error) { return { ok: false, status: "failed", message: errorMessage(error) } }
 }
 
 async function clearGoalState(resolve: ResolveGoalEntry, session: HarnessSession): Promise<AgentGoalMutationResult<null>> {
@@ -46,7 +38,7 @@ async function clearGoalState(resolve: ResolveGoalEntry, session: HarnessSession
     entry.goal = null
     await entry.broker.goal.publish(null)
     return { ok: true, goal: null }
-  } catch (error) { return { ok: false, status: "failed", message: String(error) } }
+  } catch (error) { return { ok: false, status: "failed", message: errorMessage(error) } }
 }
 
 async function interrupt(resolve: ResolveGoalEntry, session: HarnessSession): Promise<void> {

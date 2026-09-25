@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto"
+import { prefixedRandomId } from "@claxedo/helpers"
 import type { SessionConfigOption, SessionNotification } from "@agentclientprotocol/sdk"
 import type { DraftLaunch, HarnessServices, StartInput } from "../../contract"
 import { connectAcp, type AcpConnectionOptions, type AcpPeer } from "./connection"
@@ -10,6 +10,7 @@ import { AcpStartupDeadline } from "./deadline"
 import { acpAgentList } from "./extensions/agents"
 import { acpGroups } from "./extensions/groups"
 import type { AgentAgent } from "@claxedo/agent-runtime-contract"
+import { sessionMcpServers } from "../../contract"
 
 type Commands = Extract<SessionNotification["update"], { sessionUpdate: "available_commands_update" }>["availableCommands"]
 
@@ -46,7 +47,7 @@ export class AcpDraftProbes {
   }
 
   private async run(draft: DraftLaunch, needCommands: boolean, needAgents: boolean) {
-    const input: StartInput = { ...draft, sessionId: `probe-${randomUUID()}` }
+    const input: StartInput = { ...draft, sessionId: prefixedRandomId("probe", "-") }
     let resolveCommands!: (commands: Commands) => void
     const commands = new Promise<Commands>((resolve) => { resolveCommands = resolve })
     const peer = await connectAcp(input, this.connection, this.services, {
@@ -59,8 +60,8 @@ export class AcpDraftProbes {
     if (this.disposed) { await peer.retire(); throw new AcpTransportError("connection", "ACP transport disposed during probe") }
     this.peers.add(peer)
     try {
-      const first = this.services.firstPartyMcp(input.sessionId, input.locality)
-      const projected = [...input.projection.mcpServers, ...(first ? [{ ...first, origin: "first-party" as const }] : [])]
+      const projected = sessionMcpServers(input, this.services, { includeFirstParty: true,
+        duplicate: (name) => new AcpTransportError("configuration", `Duplicate ACP MCP server ${name}`) })
       const servers = this.filterMcp({ servers: projected, locality: input.locality,
         mcpCapabilities: peer.handshake.agentCapabilities?.mcpCapabilities,
         supportsMcpServers: this.connection.supportsMcpServers }).servers

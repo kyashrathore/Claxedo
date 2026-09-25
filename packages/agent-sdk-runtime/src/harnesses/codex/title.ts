@@ -3,7 +3,7 @@ import { asRecord } from "@claxedo/helpers/guards"
 import { controlRequestDeadline, modelRequestDeadline } from "../shared/request-deadline"
 import { Log } from "../../log"
 import { text, type JsonRecord } from "../shared/sdk-runtime-adapter"
-import type { RequestDeadline } from "@claxedo/process-ownership/launch"
+import type { RequestDeadline } from "@claxedo/helpers"
 
 
 const log = Log.create({ service: "codex-title" })

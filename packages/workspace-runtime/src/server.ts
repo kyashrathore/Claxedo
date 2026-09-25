@@ -616,6 +616,13 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
   }
   type SessionToolRegistration = Parameters<typeof host.registerSessionTools>[0]
   const sessionToolGroups = new Map<string, Map<string, SessionToolRegistration>>()
+  const dispatchSessionTool = async (url: string, call: { sessionID: string; name: string; toolCallID: string; input: unknown }) => {
+    const response = await contributionFetch(new Request(url, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify(call) }))
+    const body = await response.text()
+    if (!response.ok) throw new Error(`Claxedo Session tool ${call.name} failed (${response.status}): ${body}`)
+    return body ? JSON.parse(body) : null
+  }
   const registerSessionToolGroup = (group: string) => async (registration: SessionToolRegistration) => {
     const groups = sessionToolGroups.get(registration.sessionId) ?? new Map<string, SessionToolRegistration>()
     groups.set(group, registration)
@@ -624,6 +631,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
       sessionId: registration.sessionId,
       ...(registration.harness ? { harness: registration.harness } : {}),
       callbackUrl: registration.callbackUrl,
+      dispatch: dispatchSessionTool,
       tools: [...groups.values()].flatMap((value) => value.tools.map((tool) => ({
         ...tool,
         callbackUrl: value.callbackUrl,
@@ -643,6 +651,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
       sessionId,
       ...(registrations[0]?.harness ? { harness: registrations[0].harness } : {}),
       callbackUrl: registrations[0].callbackUrl,
+      dispatch: dispatchSessionTool,
       tools: registrations.flatMap((value) => value.tools.map((tool) => ({
         ...tool,
         callbackUrl: value.callbackUrl,

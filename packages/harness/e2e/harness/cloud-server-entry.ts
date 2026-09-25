@@ -3,11 +3,13 @@ import { pathToFileURL } from "node:url"
 import { createLocalBrokeringSandboxDriver } from "@claxedo/sandbox-manager/drivers/local-brokering"
 import { startSelfHostedServer } from "../../../claxedo-server/src/deployments/self-hosted-node/start"
 import { REPO_ROOT, TSX_LOADER } from "./node-loader"
+import { cloudFaultDriver, installCloudConfigFault } from "./cloud-faults"
 
 const port = Number(process.env.CLAXEDO_SERVER_PORT)
 const modelUrl = process.env.CLAXEDO_E2E_MODEL_URL
 const root = process.env.CLAXEDO_DATA_DIR
 if (!Number.isSafeInteger(port) || !modelUrl || !root) throw new Error("cloud test stack needs port, model URL and data directory")
+installCloudConfigFault(process.env.CLAXEDO_E2E_CLOUD_FAULT)
 
 const textImports = pathToFileURL(path.join(REPO_ROOT, "packages/workspace-runtime/src/text-imports.mjs")).href
 const sandboxDriver = createLocalBrokeringSandboxDriver({
@@ -20,6 +22,9 @@ const sandboxDriver = createLocalBrokeringSandboxDriver({
     path.join(REPO_ROOT, "packages/workspace-runtime/src/cli.ts"),
   ],
   allowedOrigins: [`http://127.0.0.1:${port}`, modelUrl],
+  upstreams: { "https://api.openai.com": modelUrl },
+  directOrigins: [`http://127.0.0.1:${port}`,
+    ...(process.env.CLAXEDO_WORKSPACE_RELAY_URL ? [process.env.CLAXEDO_WORKSPACE_RELAY_URL] : [])],
   inheritedEnv: {
     PATH: process.env.PATH ?? "",
     ...(process.env.PI_EXECUTABLE ? { PI_EXECUTABLE: process.env.PI_EXECUTABLE } : {}),
@@ -28,6 +33,6 @@ const sandboxDriver = createLocalBrokeringSandboxDriver({
   },
 })
 
-void startSelfHostedServer({ port, sandboxDriver }).then(() => {
+void startSelfHostedServer({ port, sandboxDriver: cloudFaultDriver(sandboxDriver, process.env.CLAXEDO_E2E_CLOUD_FAULT) }).then(() => {
   console.log(`[claxedo-server] listening on http://127.0.0.1:${port}`)
 })

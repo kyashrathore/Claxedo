@@ -5,9 +5,10 @@ import type {
   ProjectedMcpServer, RoutedEvent, SessionBroker, StartInput, TransportCapabilities,
   TransportConfigUpdate, TurnBroker, TurnInput, TurnRef, Deadline,
 } from "../../contract"
+import { attachedSessionEntry, configGenerationChanged, mergeStartInput } from "../../contract"
 import { connectAcp, type AcpConnectionOptions, type AcpPeer } from "./connection"
 import { AcpTransportError } from "./errors"
-import { AcpQueue } from "./queue"
+import { AsyncPushQueue } from "@claxedo/helpers"
 import { acpElicitation, acpMcp, acpPermission, acpPrompt } from "./protocol"
 import { restoreAcp } from "./restore"
 import type { MissingSessionContext } from "./restore"
@@ -37,7 +38,7 @@ export type AcpEntry = {
   start: StartInput
   broker: SessionBroker
   peer: AcpPeer
-  queue?: AcpQueue<RoutedEvent>
+  queue?: AsyncPushQueue<RoutedEvent>
   receive?: (notification: SessionNotification) => void
   turnBroker?: TurnBroker
   phase: "ready" | "busy" | "uncertain"
@@ -105,9 +106,7 @@ export class AcpTransport implements HarnessTransport {
   }
 
   private entry(session: HarnessSession): AcpEntry {
-    const entry = this.entries.get(session.binding.sessionId)
-    if (!entry || entry.session.binding.upstreamSessionId !== session.binding.upstreamSessionId) throw new AcpTransportError("session", "ACP session is not attached")
-    return entry
+    return attachedSessionEntry(this.entries, session, () => new AcpTransportError("session", "ACP session is not attached"))
   }
 
   private mcp(entry: Pick<AcpEntry, "start" | "peer">): McpServerSpec[] {
@@ -190,7 +189,7 @@ export class AcpTransport implements HarnessTransport {
     finally { release?.() }
   }
 
-  private quiet(entry: AcpEntry, session: HarnessSession, queue: AcpQueue<RoutedEvent>): AcpQuiet {
+  private quiet(entry: AcpEntry, session: HarnessSession, queue: AsyncPushQueue<RoutedEvent>): AcpQuiet {
     return new AcpQuiet(this.services.clock, this.connection.promptTimeoutMs ?? 300_000, () => {
       entry.phase = "uncertain"
       entry.cancelSent = entry.peer.agent.cancel({ sessionId: session.binding.upstreamSessionId })
@@ -204,7 +203,7 @@ export class AcpTransport implements HarnessTransport {
     entry.phase = "busy"
     entry.cancelled = false
     entry.turnBroker = broker
-    const queue = new AcpQueue<RoutedEvent>()
+    const queue = new AsyncPushQueue<RoutedEvent>()
     entry.queue = queue
     entry.quiet = this.quiet(entry, session, queue)
     entry.receive = acpReceiver(entry.start.config.harness.id, session, queue)
@@ -247,12 +246,10 @@ export class AcpTransport implements HarnessTransport {
     if (entry.phase === "uncertain") {
       return { state: "refused", reason: "ACP session outcome is uncertain" }
     }
-    const changed = Boolean(update.credentials && update.credentials.leaseGeneration !== entry.start.credentials.leaseGeneration)
-      || Boolean(update.projection && update.projection.generation !== entry.start.projection.generation)
+    const next = mergeStartInput(entry.start, update)
+    const changed = configGenerationChanged(entry.start, next)
     if (!changed) return { state: "applied" }
-    entry.start = { ...entry.start,
-      ...(update.credentials ? { credentials: update.credentials } : {}),
-      ...(update.projection ? { projection: update.projection } : {}) }
+    entry.start = next
     if (entry.phase === "busy") { entry.pendingRestart = true; return { state: "deferred", until: "after-active-turns" } }
     await this.restart(entry)
     return { state: "applied" }

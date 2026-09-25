@@ -2,7 +2,8 @@ import { EventEmitter } from "node:events"
 import { PassThrough } from "node:stream"
 import type { SpawnedProcess, SpawnOptions } from "@anthropic-ai/claude-agent-sdk"
 import type { Deadline, HarnessServices, OwnedProcess } from "../../contract"
-import { ClaudeTransportError } from "./errors"
+import { TransportError } from "../../contract/errors"
+import { errorMessage, settleAtRequestDeadline, stringRecord } from "@claxedo/helpers"
 
 function claudeRetirementDeadline(): Deadline {
   return { at: Date.now() + 5_000, signal: new AbortController().signal }
@@ -15,14 +16,13 @@ export class ClaudeProcess extends EventEmitter implements SpawnedProcess {
   killed = false
   exitCode: number | null = null
   private exited = false
-  private retirement?: Promise<void>
 
   constructor(private readonly services: HarnessServices, options: SpawnOptions, sessionId: string, role: "harness" | "probe" = "harness") {
     super()
     this.started = services.spawn({ file: options.command, args: options.args, cwd: options.cwd ?? process.cwd(),
-      env: Object.fromEntries(Object.entries(options.env).filter((entry): entry is [string, string] => entry[1] !== undefined)) },
+      env: stringRecord(options.env) },
     { role, label: "Claude Code SDK", sessionId }).catch((error: unknown) => {
-      throw new ClaudeTransportError("process", "Claude Code spawn failed", true, { cause: error })
+      throw new TransportError("claude", "process", "Claude Code spawn failed", { retryable: true, cause: error })
     })
     const onAbort = () => { void this.retire(claudeRetirementDeadline()).catch((error: unknown) => this.fail(error)) }
     if (options.signal.aborted) onAbort()
@@ -40,39 +40,26 @@ export class ClaudeProcess extends EventEmitter implements SpawnedProcess {
   }
 
   private fail(error: unknown): void {
-    this.services.log.error("Claude process failed", { error: error instanceof Error ? error.message : String(error) })
-    if (this.listenerCount("error")) this.emit("error", error instanceof Error ? error : new Error(String(error)))
+    this.services.log.error("Claude process failed", { error: errorMessage(error) })
+    if (this.listenerCount("error")) this.emit("error", error instanceof Error ? error : new Error(errorMessage(error)))
     this.stdout.destroy()
   }
 
   kill(): boolean {
     if (this.killed) return false
     this.killed = true
-    this.retirement = this.retire(claudeRetirementDeadline())
-    void this.retirement.then(undefined, (error: unknown) => this.fail(error))
+    void this.retire(claudeRetirementDeadline()).then(undefined, (error: unknown) => this.fail(error))
     return true
   }
 
   async retire(limit: Deadline): Promise<void> {
-    if (this.retirement) return this.retirement
     const stopping = this.started.then(async (owned) => {
       if (this.exited) return
       const outcome = await owned.retire(limit.at > Date.now() && !limit.signal.aborted ? limit : claudeRetirementDeadline())
-      if (!outcome.stopped) throw new ClaudeTransportError("process", outcome.error.message, true)
+      if (!outcome.stopped) throw new TransportError("claude", "process", outcome.error.message, { retryable: true })
     })
-    let timer: ReturnType<typeof setTimeout> | undefined
-    let onAbort: (() => void) | undefined
-    const deadline = new Promise<never>((_resolve, reject) => {
-      timer = setTimeout(() => reject(new ClaudeTransportError("process", "Claude Code spawn retirement timed out", true)),
-        Math.max(0, limit.at - Date.now()))
-      onAbort = () => reject(new ClaudeTransportError("process", "Claude Code spawn retirement cancelled", true))
-      if (limit.signal.aborted) onAbort()
-      else limit.signal.addEventListener("abort", onAbort, { once: true })
-    })
-    this.retirement = Promise.race([stopping, deadline]).finally(() => {
-      if (timer) clearTimeout(timer)
-      if (onAbort) limit.signal.removeEventListener("abort", onAbort)
-    })
-    return this.retirement
+    return settleAtRequestDeadline("Claude Code spawn retirement",
+      { deadlineAt: limit.at, signal: limit.signal }, stopping, () => {}, (_what, aborted) =>
+        new TransportError("claude", "process", aborted ? "Claude Code spawn retirement cancelled" : "Claude Code spawn retirement timed out", { retryable: true }))
   }
 }

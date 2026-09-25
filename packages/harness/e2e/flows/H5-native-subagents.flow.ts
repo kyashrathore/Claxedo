@@ -23,21 +23,17 @@ export async function run() {
       const parent = await api.createSession(directory, { harness: { id: harness.id, access: "native" },
         permissionMode: harness.mode, model: { providerId: harness.providerId, modelId: harness.modelId } })
       await api.promptAsync(directory, parent.id, `Delegate one child task, then reply with exactly this one token: ${marker}`)
-      const deadline = Date.now() + 90_000
-      let child = (await api.sessions(directory)).find((row) => row.parentID === parent.id)
-      while (!child && Date.now() < deadline) {
-        await Bun.sleep(100)
-        child = (await api.sessions(directory)).find((row) => row.parentID === parent.id)
-      }
+      await stream.waitFor((frame) => frameType(frame) === "subagent.updated" && frameSessionId(frame) === parent.id
+        && typeof (frame.data.payload as { properties?: { update?: { childSessionId?: unknown } } }).properties?.update?.childSessionId === "string",
+      { label: `${harness.id} child created`, timeoutMs: 90_000 })
+      const child = (await api.sessions(directory)).find((row) => row.parentID === parent.id)
       assert.ok(child, `${harness.id} did not create a child session`)
       assert.equal((await api.session(directory, child.id)).parentID, parent.id)
       await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === parent.id,
         { label: `${harness.id} parent idle`, timeoutMs: 90_000 })
-      let childText = assistantText(await api.messages(directory, child.id))
-      while (!childText && Date.now() < deadline) {
-        await Bun.sleep(100)
-        childText = assistantText(await api.messages(directory, child.id))
-      }
+      await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === child.id,
+        { label: `${harness.id} child idle`, timeoutMs: 90_000 })
+      const childText = assistantText(await api.messages(directory, child.id))
       assert.ok(childText, `${harness.id} child transcript was empty`)
       assert.ok(stream.frames.some((frame) => frameType(frame) === "subagent.updated" && frameSessionId(frame) === parent.id))
       assert.ok(stream.frames.some((frame) => frameType(frame) === "message.part.updated" && frameSessionId(frame) === child.id))

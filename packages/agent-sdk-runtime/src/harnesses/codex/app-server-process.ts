@@ -1,3 +1,5 @@
+import { settleAtRequestDeadline } from "@claxedo/helpers"
+import type { RequestDeadline } from "@claxedo/helpers"
 import { type ChildProcess } from "child_process"
 import { randomUUID } from "crypto"
 import { DEFAULT_RECOVERY_BUDGETS, type RecoveryBudgets } from "@claxedo/agent-runtime-contract"
@@ -13,12 +15,11 @@ import { errorMessage, text, type JsonRecord } from "../shared/sdk-runtime-adapt
 import { resolveHarnessCommand } from "@claxedo/process-ownership/windows-process"
 import {
   launchOwnedProcess,
-  settleAtRequestDeadline,
+  deadlineExceeded,
   RecoveryCodedError,
   type LaunchOwnershipStore,
   type OwnedLaunch,
   type CreationIdentity,
-  type RequestDeadline,
   type RetirementResult,
 } from "@claxedo/process-ownership/launch"
 
@@ -250,7 +251,7 @@ export class CodexAppServerProcess {
       this.pending.set(id, { resolve, reject })
       this.write({ id, method, params })
     })
-    return settleAtRequestDeadline(`codex ${method}`, deadline, answer, () => this.pending.delete(id))
+    return settleAtRequestDeadline(`codex ${method}`, deadline, answer, () => this.pending.delete(id), deadlineExceeded)
   }
 
   notify(method: string, params?: unknown) {

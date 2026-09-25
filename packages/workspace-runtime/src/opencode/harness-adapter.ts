@@ -14,7 +14,7 @@ import { WorkspaceScope } from "@claxedo/harness/opencode-sdk/scope"
 import type { ProjectedEvent } from "@claxedo/harness/opencode-sdk/event-pump"
 import { openCodePartId, type SessionMessage, type SessionSummary } from "@claxedo/harness/opencode-sdk/session-port"
 import { createTurnUsage, readSessionTotal } from "@claxedo/harness/opencode-sdk/translate/turn-usage"
-import { errorMessage } from "../error-message"
+import { errorMessage } from "@claxedo/helpers"
 import { rec, str } from "../json-value"
 
 type AdapterOptions = Readonly<{

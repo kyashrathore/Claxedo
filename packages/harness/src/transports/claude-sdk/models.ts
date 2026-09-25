@@ -1,7 +1,8 @@
 import { query, type AgentInfo, type ModelInfo, type Query, type SlashCommand } from "@anthropic-ai/claude-agent-sdk"
 import type { AgentConfigOption } from "@claxedo/agent-runtime-contract"
 import type { DraftLaunch, HarnessServices, StartInput } from "../../contract"
-import { ClaudeTransportError } from "./errors"
+import { TransportError } from "../../contract/errors"
+import { modelAndEffortOptions } from "../../contract"
 import { claudeLaunchContext, type ClaudeSdkOptions } from "./launch-context"
 import { ClaudeProcess } from "./process"
 
@@ -77,18 +78,13 @@ export function requiredClaudeEffort(models: readonly ModelInfo[], modelId: stri
   if (!requested) return undefined
   const row = claudeCatalogModel(models, modelId)
   if (row?.supportsEffort && row.supportedEffortLevels?.some((level) => level === requested)) return requested
-  throw new ClaudeTransportError("configuration", `Claude does not run ${row?.value ?? modelId} at effort ${requested}`)
+  throw new TransportError("claude", "configuration", `Claude does not run ${row?.value ?? modelId} at effort ${requested}`)
 }
 
 export function modelOptions(models: readonly ModelInfo[], currentModel: string): AgentConfigOption[] {
   if (!models.length) return []
   const selected = claudeCatalogModel(models, currentModel)
-  const result: AgentConfigOption[] = [{ id: "model", name: "Model", category: "model", type: "select",
-    ...(selected ? { currentValue: selected.value } : {}),
-    selectOptions: models.map((model) => ({ id: model.value, name: model.displayName, description: model.description })) }]
-  if (selected?.supportsEffort && (selected.supportedEffortLevels?.length ?? 0) > 1) result.push({
-    id: "effort", name: "Effort", category: "thought_level", type: "select",
-    selectOptions: selected.supportedEffortLevels!.map((level) => ({ id: level, name: level[0]!.toUpperCase() + level.slice(1) })),
-  })
-  return result
+  return modelAndEffortOptions({ selected: selected?.value,
+    models: models.map((model) => ({ id: model.value, name: model.displayName, description: model.description })),
+    efforts: selected?.supportsEffort ? selected.supportedEffortLevels : undefined })
 }
