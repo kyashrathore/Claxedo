@@ -1,4 +1,4 @@
-import { dialog } from "electron"
+import { app, dialog } from "electron"
 
 import { DEFAULT_SERVER_URL_KEY, WSL_ENABLED_KEY } from "./constants"
 import { store } from "./store"
@@ -55,6 +55,7 @@ export async function checkHealthOrAskRetry(url: string): Promise<boolean> {
   while (true) {
     if (await checkHealth(url)) return true
 
+    await app.whenReady()
     const result = await dialog.showMessageBox({
       type: "warning",
       message: `Could not connect to configured server:\n${url}\n\nWould you like to retry or start a local server instead?`,
