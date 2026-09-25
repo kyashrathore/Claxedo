@@ -147,8 +147,8 @@ export type DaytonaSandboxDriverOptions = {
   runtimeCommand?: string
   /** Workspace directory inside the sandbox. */
   workspaceDir?: string
-  /** Default runner injected as WORKSPACE_RUNTIME_RUNNER. */
-  runner?: string
+  /** Default native harness injected as WORKSPACE_RUNTIME_NATIVE_HARNESS. */
+  nativeHarness?: string
   /** Static control-plane config injected so the runtime verifies relay-proxied requests. */
   controlEnv?: WorkspaceRuntimeControlEnv
   /** Dynamic runtime env that needs the acquired sandbox id or current lease. */
@@ -352,7 +352,7 @@ export function createDaytonaSandboxDriver(
       port: runtimePort,
       source: input.source,
       env: input.env,
-      runner: options.runner,
+      nativeHarness: options.nativeHarness,
       controlEnv: options.controlEnv,
     })
   }

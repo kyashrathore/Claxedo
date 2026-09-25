@@ -46,7 +46,7 @@ export type BoxSandboxDriverOptions = {
   runtimePort?: number
   runtimeCommand?: string
   workspaceDir?: string
-  runner?: string
+  nativeHarness?: string
   /** Container name used for the runtime container inside the box. */
   containerName?: string
   /**
@@ -198,7 +198,7 @@ export function createBoxSandboxDriver(options: BoxSandboxDriverOptions): Sandbo
       host: "0.0.0.0",
       source: input.source,
       env: input.env,
-      runner: options.runner,
+      nativeHarness: options.nativeHarness,
     })
   }
 

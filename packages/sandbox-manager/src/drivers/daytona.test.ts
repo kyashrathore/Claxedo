@@ -104,7 +104,7 @@ const baseOptions = {
     relayJwksUrl: "https://relay.test/jwks.json",
     managementJwksUrl: "https://control.test/.well-known/jwks.json",
   },
-  runner: "opencode",
+  nativeHarness: "opencode",
 }
 const input = {
   workspaceId: "ws_1",
@@ -132,7 +132,7 @@ describe("DaytonaSandboxDriver", () => {
           WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_1",
           WORKSPACE_RUNTIME_HOST_ID: "claxedo-ws_1",
           WORKSPACE_RUNTIME_PORT: "2593",
-          WORKSPACE_RUNTIME_RUNNER: "opencode",
+          WORKSPACE_RUNTIME_NATIVE_HARNESS: "opencode",
           WORKSPACE_RUNTIME_RELAY_JWKS_URL: "https://relay.test/jwks.json",
           WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL: "https://control.test/.well-known/jwks.json",
         }),

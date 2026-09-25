@@ -78,7 +78,7 @@ describe("DockerSandboxDriver", () => {
       docker: docker.fn,
       syncLocalAuth: false,
       waitForHealth: false,
-      runner: "opencode",
+      nativeHarness: "opencode",
       env: (_input, host) => ({
         WORKSPACE_RUNTIME_LEASE_ID: `lease-${host.id}`,
         WORKSPACE_RUNTIME_SANDBOX_ID: host.id,
@@ -123,7 +123,7 @@ describe("DockerSandboxDriver", () => {
         "--env",
         "WORKSPACE_RUNTIME_HOST=0.0.0.0",
         "--env",
-        "WORKSPACE_RUNTIME_RUNNER=opencode",
+        "WORKSPACE_RUNTIME_NATIVE_HARNESS=opencode",
         "--env",
         "WORKSPACE_RUNTIME_SOURCE_KIND=git",
         "--env",
