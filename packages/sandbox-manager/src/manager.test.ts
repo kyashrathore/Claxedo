@@ -127,6 +127,7 @@ describe("sandbox manager", () => {
   test("stale acquiring leases are recovered with a new epoch", async () => {
     const store = createMemoryLeaseStore([
       sandboxLease({
+        routingId: "routing_test",
         workspaceId: "ws_1",
         status: "acquiring",
         epoch: 2,
@@ -203,6 +204,7 @@ describe("sandbox manager", () => {
   test("ordinary ensure of a ready lease does not roll back to its latest checkpoint", async () => {
     const store = createMemoryLeaseStore([
       sandboxLease({
+        routingId: "routing_test",
         workspaceId: "ws_1",
         status: "ready",
         sandboxId: "sandbox_1",
@@ -264,7 +266,7 @@ describe("sandbox manager", () => {
   })
 
   test("stale epoch writes are rejected by the lease store", async () => {
-    const store = createMemoryLeaseStore([sandboxLease({ workspaceId: "ws_1", epoch: 4, status: "acquiring" })])
+    const store = createMemoryLeaseStore([sandboxLease({ routingId: "routing_test", workspaceId: "ws_1", epoch: 4, status: "acquiring" })])
 
     await expect(store.update("ws_1", 3, { status: "ready" })).resolves.toBeUndefined()
     await expect(store.recordTarget("ws_1", 3, {
@@ -395,9 +397,33 @@ describe("sandbox manager", () => {
     expect(driver.ensureHost).toHaveBeenCalledTimes(2)
   })
 
+  test("routing identity changes on lazy resume and never repeats after release", async () => {
+    const store = createMemoryLeaseStore()
+    let url = "https://runtime.test/old"
+    const driver = fakeDriver({ ensureHost: vi.fn(async () => ({ sandboxId: "sandbox_1", hostId: "host_1", url })) })
+    const manager = createSandboxManager({ leaseStore: store, driver })
+    const first = await manager.ensure("ws_1", { homeRegion: "us-east" })
+    expect(first.status).toBe("ready")
+    if (first.status !== "ready") throw new Error("not ready")
+    expect(first.routingId).toEqual(expect.any(String))
+    url = "https://runtime.test/resumed"
+    const resumed = await manager.ensure("ws_1", { homeRegion: "us-east" })
+    expect(resumed.status).toBe("ready")
+    if (resumed.status !== "ready") throw new Error("not ready")
+    expect(resumed.epoch).toBe(first.epoch)
+    expect(resumed.routingId).not.toBe(first.routingId)
+    await store.release("ws_1")
+    const replaced = await manager.ensure("ws_1", { homeRegion: "us-east" })
+    if (replaced.status !== "ready") throw new Error("not ready")
+    expect(replaced.epoch).toBe(1)
+    expect(replaced.routingId).not.toBe(first.routingId)
+    expect(replaced.routingId).not.toBe(resumed.routingId)
+  })
+
   test("ready lease still re-ensures with the driver so auto-stopped runtimes resume on the same epoch", async () => {
     const store = createMemoryLeaseStore([
       sandboxLease({
+        routingId: "routing_test",
         workspaceId: "ws_1",
         status: "ready",
         epoch: 3,
@@ -434,6 +460,7 @@ describe("sandbox manager", () => {
   test("stopped lease keeps sandbox identity and restarts on the next epoch", async () => {
     const store = createMemoryLeaseStore([
       sandboxLease({
+        routingId: "routing_test",
         workspaceId: "ws_stopped",
         status: "stopped",
         epoch: 3,
@@ -482,6 +509,7 @@ describe("sandbox manager", () => {
   test("ready lease with an unchanged driver target stays ready on the same epoch", async () => {
     const store = createMemoryLeaseStore([
       sandboxLease({
+        routingId: "routing_test",
         workspaceId: "ws_1",
         status: "ready",
         epoch: 2,
@@ -516,6 +544,7 @@ describe("sandbox manager", () => {
   test("a transient resume failure keeps a ready lease serving instead of demoting it", async () => {
     const store = createMemoryLeaseStore([
       sandboxLease({
+        routingId: "routing_test",
         workspaceId: "ws_1",
         status: "ready",
         epoch: 3,
@@ -572,6 +601,7 @@ describe("sandbox manager", () => {
     const now = 10_000
     const store = createMemoryLeaseStore([
       sandboxLease({
+        routingId: "routing_test",
         workspaceId: "ws_1",
         status: "acquiring",
         epoch: 2,
@@ -734,6 +764,7 @@ describe("sandbox manager", () => {
   test("legacy capped lease without a cooldown timestamp stays unavailable until released", async () => {
     const store = createMemoryLeaseStore([
       sandboxLease({
+        routingId: "routing_test",
         workspaceId: "ws_1",
         status: "unavailable",
         epoch: 2,
@@ -766,6 +797,7 @@ describe("sandbox manager", () => {
   test("target resolves only from a ready lease with host and runtime URL", async () => {
     const store = createMemoryLeaseStore([
       sandboxLease({
+        routingId: "routing_test",
         workspaceId: "ws_ready",
         status: "ready",
         sandboxId: "sandbox_ready",
@@ -773,6 +805,7 @@ describe("sandbox manager", () => {
         hostId: "host_ready",
       }),
       sandboxLease({
+        routingId: "routing_test",
         workspaceId: "ws_partial",
         status: "ready",
         sandboxId: "sandbox_partial",
@@ -794,6 +827,7 @@ describe("sandbox manager", () => {
   test("register records liveness and activity without touching the provisioned identity", async () => {
     const store = createMemoryLeaseStore([
       sandboxLease({
+        routingId: "routing_test",
         workspaceId: "ws_1",
         status: "ready",
         epoch: 3,
@@ -826,7 +860,7 @@ describe("sandbox manager", () => {
 
   test("a snapshot cannot make an unprovisioned lease serve", async () => {
     const store = createMemoryLeaseStore([
-      sandboxLease({ workspaceId: "ws_1", status: "acquiring", epoch: 3 }),
+      sandboxLease({ routingId: "routing_test", workspaceId: "ws_1", status: "acquiring", epoch: 3 }),
     ])
     const manager = createSandboxManager({ leaseStore: store, driver: fakeDriver() })
 
@@ -850,8 +884,8 @@ describe("sandbox manager", () => {
       hostId: "host_1",
     }
     const store = createMemoryLeaseStore([
-      sandboxLease({ workspaceId: "ws_stopped", status: "stopped", epoch: 2, ...identity }),
-      sandboxLease({ workspaceId: "ws_destroyed", status: "destroyed", epoch: 2, ...identity }),
+      sandboxLease({ routingId: "routing_test", workspaceId: "ws_stopped", status: "stopped", epoch: 2, ...identity }),
+      sandboxLease({ routingId: "routing_test", workspaceId: "ws_destroyed", status: "destroyed", epoch: 2, ...identity }),
     ])
     const manager = createSandboxManager({ leaseStore: store, driver: fakeDriver() })
 
@@ -867,6 +901,7 @@ describe("sandbox manager", () => {
   test("heartbeat rejects a stale epoch without mutating the serving target", async () => {
     const store = createMemoryLeaseStore([
       sandboxLease({
+        routingId: "routing_test",
         workspaceId: "ws_1",
         status: "ready",
         epoch: 4,
@@ -962,6 +997,7 @@ describe("sandbox manager", () => {
   test("an unhealthy snapshot marks the lease unavailable and keeps its identity", async () => {
     const store = createMemoryLeaseStore([
       sandboxLease({
+        routingId: "routing_test",
         workspaceId: "ws_1",
         status: "ready",
         epoch: 2,
@@ -987,6 +1023,7 @@ describe("sandbox manager", () => {
   test("stop and destroy call the driver and update the current lease epoch", async () => {
     const store = createMemoryLeaseStore([
       sandboxLease({
+        routingId: "routing_test",
         workspaceId: "ws_stop",
         status: "ready",
         epoch: 4,
@@ -995,6 +1032,7 @@ describe("sandbox manager", () => {
         hostId: "host_stop",
       }),
       sandboxLease({
+        routingId: "routing_test",
         workspaceId: "ws_destroy",
         status: "ready",
         epoch: 9,
@@ -1033,6 +1071,7 @@ describe("sandbox manager", () => {
   test("snapshot resolves the canonical ready target before calling the driver", async () => {
     const store = createMemoryLeaseStore([
       sandboxLease({
+        routingId: "routing_test",
         workspaceId: "ws_1",
         status: "ready",
         epoch: 3,
@@ -1144,6 +1183,7 @@ describe("sandbox manager", () => {
     const manager = createSandboxManager({
       leaseStore: createMemoryLeaseStore([
         sandboxLease({
+        routingId: "routing_test",
           workspaceId: "ws_live",
           epoch: 2,
           status: "ready",
@@ -1190,6 +1230,7 @@ describe("sandbox manager", () => {
     const manager = createSandboxManager({
       leaseStore: createMemoryLeaseStore([
         sandboxLease({
+        routingId: "routing_test",
           workspaceId: "ws_acquiring",
           epoch: 3,
           status: "acquiring",
@@ -1229,6 +1270,7 @@ describe("sandbox manager", () => {
     const manager = createSandboxManager({
       leaseStore: createMemoryLeaseStore([
         sandboxLease({
+        routingId: "routing_test",
           workspaceId: "ws_reused",
           epoch: 2,
           status: "ready",
@@ -1271,6 +1313,7 @@ describe("sandbox manager", () => {
     const manager = createSandboxManager({
       leaseStore: createMemoryLeaseStore([
         sandboxLease({
+        routingId: "routing_test",
           workspaceId: "ws_suspended",
           epoch: 2,
           status: "stopped",
@@ -1279,6 +1322,7 @@ describe("sandbox manager", () => {
           hostId: "host_suspended",
         }),
         sandboxLease({
+        routingId: "routing_test",
           workspaceId: "ws_remnant",
           epoch: 2,
           status: "destroyed",
@@ -1462,6 +1506,7 @@ describe("sandbox manager", () => {
   test("an empty secret list reaches a resuming driver as a withdrawal", async () => {
     const store = createMemoryLeaseStore([
       sandboxLease({
+        routingId: "routing_test",
         workspaceId: "ws_stopped",
         status: "stopped",
         epoch: 3,

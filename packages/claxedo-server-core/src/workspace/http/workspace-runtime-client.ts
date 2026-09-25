@@ -28,6 +28,7 @@ export type RuntimeGeneration = Readonly<{
   hostId: string
   homeRegion: string
   leaseEpoch: number
+  routingId?: string
   relayUrl: string
   accessToken: Readonly<{
     token: string
@@ -153,18 +154,20 @@ export function createWorkspaceRuntimeClient(input: {
             hostId: previous.hostId,
             homeRegion: previous.homeRegion,
             epoch: previous.leaseEpoch,
+            routingId: previous.routingId,
           }
     const homeRegion = normalizeClaxedoRegion(active.homeRegion, defaultHomeRegion)
     const sameTarget =
       previous &&
       previous.hostId === active.hostId &&
       previous.homeRegion === homeRegion &&
-      previous.leaseEpoch === active.epoch
+      previous.routingId === active.routingId
     const [relayUrl, minted] = await Promise.all([
       sameTarget ? previous.relayUrl : relayProvider.getRelayEndpoint(ws.id, homeRegion),
       relayProvider.mintRuntimeAccessToken({
         workspaceId: ws.id,
         hostId: active.hostId,
+        routingId: active.routingId,
         ...principal,
         ttlMs: 10 * 60_000,
       }),
@@ -173,6 +176,7 @@ export function createWorkspaceRuntimeClient(input: {
       hostId: active.hostId,
       homeRegion,
       leaseEpoch: active.epoch,
+      routingId: active.routingId,
       relayUrl,
       accessToken: Object.freeze({
         token: minted.token,

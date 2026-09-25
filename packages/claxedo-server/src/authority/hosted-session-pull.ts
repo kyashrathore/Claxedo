@@ -161,17 +161,20 @@ async function hostedWorkspaceForPull(
   return { workspaceId, ws, workspace, role }
 }
 
+type RuntimePullInput = {
+  workspaceId: string
+  ws: Workspace
+  hostId: string
+  routingId?: string
+  homeRegion: ClaxedoRegion
+  role: RelayRole
+  path: string
+}
+
 async function runtimeFetch(
   services: ControlPlaneServices,
   auth: ControlPlaneAuthContext | undefined,
-  input: {
-    workspaceId: string
-    ws: Workspace
-    hostId: string
-    homeRegion: ClaxedoRegion
-    role: RelayRole
-    path: string
-  },
+  input: RuntimePullInput,
 ) {
   const provider = services.relay.provider
   if (!provider) {
@@ -193,6 +196,7 @@ async function runtimeFetch(
   const token = await provider.mintRuntimeAccessToken({
     workspaceId: input.workspaceId,
     hostId: input.hostId,
+    routingId: input.routingId,
     principalKind: "user",
     auth: signed,
     ...await resolveRuntimeActor(requireAuthority(services), signed),
@@ -221,14 +225,7 @@ async function runtimeFetch(
 async function runtimeJson(
   services: ControlPlaneServices,
   auth: ControlPlaneAuthContext | undefined,
-  input: {
-    workspaceId: string
-    ws: Workspace
-    hostId: string
-    homeRegion: ClaxedoRegion
-    role: RelayRole
-    path: string
-  },
+  input: RuntimePullInput,
 ) {
   const res = await runtimeFetch(services, auth, input)
   if (res.ok) return await res.json().catch(() => undefined)
@@ -242,14 +239,7 @@ async function runtimeJson(
 async function verifiedRuntimeJson(
   services: ControlPlaneServices,
   auth: ControlPlaneAuthContext | undefined,
-  input: {
-    workspaceId: string
-    ws: Workspace
-    hostId: string
-    homeRegion: ClaxedoRegion
-    role: RelayRole
-    path: string
-  },
+  input: RuntimePullInput,
 ) {
   const health = asRecord(await runtimeJson(services, auth, {
     ...input,

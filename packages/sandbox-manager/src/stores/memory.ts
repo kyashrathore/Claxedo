@@ -101,6 +101,7 @@ export function sandboxLease(input: Partial<SandboxLease> & { workspaceId: strin
     homeRegion: input.homeRegion ?? "us-east",
     driver: input.driver ?? "test",
     epoch: input.epoch ?? 1,
+    routingId: input.routingId,
     status: input.status ?? "ready",
     retryCount: input.retryCount ?? 0,
     createdAt: input.createdAt ?? Date.now(),

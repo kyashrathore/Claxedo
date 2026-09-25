@@ -118,6 +118,7 @@ export function InternalRelayResolverRoutes(options: InternalRelayResolverOption
     }
     const waitUntil = guardedWaitUntil(c)
     const target = await options.targetLookup({
+      routingId: trimToUndefined(c.req.query("routingId")),
       workspaceId,
       hostId,
       ...(waitUntil ? { waitUntil } : {}),
@@ -129,7 +130,7 @@ export function InternalRelayResolverRoutes(options: InternalRelayResolverOption
     })
     if (target instanceof Response) return target
     if (!target.found) {
-      const status = target.code === "relay_resolver_workspace_not_found" ? 404 : 409
+      const status = target.code === "runtime_access_token_invalid" ? 401 : target.code === "relay_resolver_workspace_not_found" ? 404 : 409
       const message =
         target.code === "relay_resolver_workspace_not_found"
           ? "Workspace not found"

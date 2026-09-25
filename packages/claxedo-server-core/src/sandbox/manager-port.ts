@@ -20,6 +20,7 @@ export type SandboxReadyTarget = {
     metadata?: Record<string, string>
   }
   epoch: number
+  routingId?: string
   homeRegion: string
 }
 

@@ -217,6 +217,7 @@ export function toSandboxLeaseRow(columns: RawLeaseColumns): SandboxLeaseRow {
     lease_id: leaseText(columns.lease_id) ?? "",
     home_region: leaseText(columns.home_region) ?? undefined,
     epoch: leaseInteger(columns.epoch) ?? 0,
+    routing_id: leaseText(columns.routing_id),
     status: leaseStatus(columns.status),
     driver: leaseDriver(columns.driver),
     driver_resource_id: leaseText(columns.driver_resource_id),

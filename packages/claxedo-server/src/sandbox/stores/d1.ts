@@ -35,6 +35,7 @@ const COLUMNS = [
   "lease_id",
   "home_region",
   "epoch",
+  "routing_id",
   "status",
   "driver",
   "driver_resource_id",
@@ -89,6 +90,7 @@ function toSandboxLease(input: SandboxLeaseRow): SandboxLease {
     homeRegion: normalizeClaxedoRegion(input.home_region),
     driver: input.driver,
     epoch: input.epoch,
+    routingId: input.routing_id ?? undefined,
     status: sandboxLeaseStatus(input.status),
     retryCount: input.retry_count,
     createdAt: input.created_at,
@@ -123,6 +125,7 @@ function rowValues(
     lease.hostId ?? current?.lease_id ?? `${lease.workspaceId}:${lease.epoch}`,
     lease.homeRegion,
     lease.epoch,
+    lease.routingId ?? null,
     sandboxLeaseRowStatus(lease),
     lease.driver,
     lease.driverResourceId ?? null,
@@ -186,13 +189,14 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
     const result = await database
       .prepare(
         `update ${TABLE} set ${columns.map((column) => `${column} = ?`).join(", ")}
-         where workspace_id = ? and epoch = ?${expectedStatus === undefined ? "" : " and status = ?"} returning *`,
+         where workspace_id = ? and epoch = ?${expectedStatus === undefined ? "" : " and status = ?"}${columns.includes("routing_id") ? " and routing_id is ?" : ""} returning *`,
       )
       .bind(
         ...columns.map((column) => values[COLUMNS.indexOf(column)] ?? null),
         workspaceId,
         expectedEpoch,
         ...(expectedStatus === undefined ? [] : [expectedStatus]),
+        ...(columns.includes("routing_id") ? [current.routing_id ?? null] : []),
       )
       .first()
     return result ? toSandboxLease(toLeaseRow(result)) : undefined
@@ -275,7 +279,7 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
         expectedEpoch,
         applySandboxProvisionedTarget(toSandboxLease(current), target, clock()),
         current,
-        ["lease_id", "sandbox_id", "url", "driver_resource_id", "labels_json", "persistence_json", "status", "retry_count", "next_retry_at", "last_error", "updated_at"],
+        ["routing_id", "lease_id", "sandbox_id", "url", "driver_resource_id", "labels_json", "persistence_json", "status", "retry_count", "next_retry_at", "last_error", "updated_at"],
         current.status,
       )
     },

@@ -16,6 +16,7 @@ describe("sandboxFetch", () => {
     const sandboxManager = {
       ensure: vi.fn(async () => ({
         status: "ready" as const,
+        routingId: "route-1",
         workspaceId: "ws_1",
         sandboxId: "sb_1",
         hostId: "host_1",
@@ -59,6 +60,7 @@ describe("sandboxFetch", () => {
     expect(relayProvider.mintRuntimeAccessToken).toHaveBeenCalledWith({
       workspaceId: "ws_1",
       hostId: "host_1",
+      routingId: "route-1",
       principalKind: "service",
       actorId: "control-plane",
       actorKind: "agent",
@@ -80,6 +82,7 @@ describe("sandboxFetch", () => {
       ensure: vi.fn(),
       target: vi.fn(async () => ({
         status: "ready" as const,
+        routingId: "route-1",
         workspaceId: "ws_1",
         sandboxId: "sb_1",
         hostId: "host_1",
@@ -126,6 +129,7 @@ describe("sandboxFetch", () => {
     const sandboxManager = {
       ensure: vi.fn(async () => ({
         status: "ready" as const,
+        routingId: "route-1",
         workspaceId: "ws_1",
         sandboxId: "sb_1",
         hostId: "host_1",
@@ -180,6 +184,7 @@ describe("sandboxFetch", () => {
     const sandboxManager = {
       ensure: vi.fn(async () => ({
         status: "ready" as const,
+        routingId: "route-1",
         workspaceId: "ws_legacy",
         sandboxId: "sb_1",
         hostId: "host_1",

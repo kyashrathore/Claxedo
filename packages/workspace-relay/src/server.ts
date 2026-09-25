@@ -230,15 +230,8 @@ export type CachedHostGenerationOptions = {
   now?: () => number
 }
 
-export type TargetLookupArgs = { workspaceId: string; hostId: string }
+export type TargetLookupArgs = { workspaceId: string; hostId: string; routingId?: string }
 export type TargetLookup = (args: TargetLookupArgs) => Promise<WorkspaceRelayTarget | undefined>
-
-export type CachedTargetOptions = {
-  /** TTL in milliseconds for positive target responses. Defaults to 5_000. */
-  ttlMs?: number
-  /** Clock injection for tests. Defaults to `Date.now`. */
-  now?: () => number
-}
 
 export type WorkspaceRelayAuditEvent = {
   action:
@@ -677,45 +670,17 @@ export async function checkHostTunnelGeneration(
   return { ok: true }
 }
 
-/**
- * Caches positive workspace target lookups by workspace+host. Missing targets
- * are only coalesced while in flight, not retained, so cold-start polling can
- * see readiness as soon as the control plane records it.
- */
-export function createCachedTargetClient(
-  inner: TargetLookup,
-  options: CachedTargetOptions = {},
-): TargetLookup {
-  const ttlMs = options.ttlMs ?? 5_000
-  const now = options.now ?? Date.now
-  const cache = new Map<string, {
-    expiresAt: number
-    promise?: Promise<WorkspaceRelayTarget | undefined>
-    result?: WorkspaceRelayTarget
-  }>()
-
-  return async (args) => {
-    const key = `${args.workspaceId}\0${args.hostId}`
-    const at = now()
-    const entry = cache.get(key)
-    if (entry && entry.expiresAt > at) {
-      if (entry.result) return entry.result
-      if (entry.promise) return await entry.promise
-    }
-
-    const promise = inner(args)
-      .then((result) => {
-        pruneExpiringCache(cache, now(), RESOLVER_CACHE_MAX_ENTRIES)
-        if (result) cache.set(key, { result, expiresAt: now() + ttlMs })
-        else cache.delete(key)
-        return result
-      })
-      .catch((err) => {
-        cache.delete(key)
-        throw err
-      })
-    cache.set(key, { promise, expiresAt: at + ttlMs })
-    return await promise
+export function createCoalescedTargetClient(inner: TargetLookup): TargetLookup {
+  const pending = new Map<string, Promise<WorkspaceRelayTarget | undefined>>()
+  return (args) => {
+    const key = `${args.workspaceId}\0${args.hostId}\0${args.routingId ?? ""}`
+    const existing = pending.get(key)
+    if (existing) return existing
+    const promise = Promise.resolve().then(() => inner(args)).finally(() => {
+      if (pending.get(key) === promise) pending.delete(key)
+    })
+    if (pending.size < RESOLVER_CACHE_MAX_ENTRIES) pending.set(key, promise)
+    return promise
   }
 }
 

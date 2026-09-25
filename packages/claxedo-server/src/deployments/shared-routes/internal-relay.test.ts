@@ -331,3 +331,18 @@ describe("InternalRelayResolverRoutes /internal/relay/host-generation", () => {
     expect((await bare.fetch(authedRequest("/internal/relay/host-generation?enrollmentId=enr_1"))).status).toBe(501)
   })
 })
+
+test("target route transmits the token routing identity and returns the renewable 401", async () => {
+  const asked: (string | undefined)[] = []
+  const app = buildApp({
+    revocationLookup: async () => ({ active: true }),
+    targetLookup: async ({ routingId }) => {
+      asked.push(routingId)
+      return { found: false, code: "runtime_access_token_invalid" }
+    },
+  })
+  const response = await app.fetch(authedRequest("/internal/relay/target?workspaceId=ws_1&hostId=host_1&routingId=old"))
+  expect(response.status).toBe(401)
+  expect(await response.json()).toMatchObject({ error: { code: "runtime_access_token_invalid" } })
+  expect(asked).toEqual(["old"])
+})

@@ -52,3 +52,34 @@ test("relay: a started workspace's link is adopted, so the next read asks the co
   expect(server.calls).toEqual([])
   expect(runtimeFetch).toHaveBeenCalledTimes(1)
 })
+
+test("relay: a fenced token renews once through connection POST and adopts the result", async () => {
+  const server = control({ relayUrl: link.relayUrl, runtimeAccessToken: "fresh", tokenExpiresAt: link.tokenExpiresAt })
+  runtimeFetch.mockResolvedValueOnce(Response.json({ code: "runtime_access_token_invalid" }, { status: 401 }))
+  runtimeFetch.mockResolvedValueOnce(Response.json({ code: "runtime_access_token_invalid" }, { status: 401 }))
+  const relay = createRelay(server.request)
+  relay.adopt(link)
+  expect((await relay.fetch("ws_1", "/session/status")).status).toBe(401)
+  expect(server.calls).toEqual([{ path: "/api/workspace/ws_1/connection", method: "POST" }])
+  expect(runtimeFetch).toHaveBeenCalledTimes(2)
+  expect(new Headers(runtimeFetch.mock.calls[1]?.[1]?.headers).get("authorization")).toBe("Bearer fresh")
+})
+
+test("relay: upstream failures do not renew or resend", async () => {
+  const server = control({})
+  runtimeFetch.mockResolvedValue(Response.json({}, { status: 502 }))
+  const relay = createRelay(server.request)
+  relay.adopt(link)
+  expect((await relay.fetch("ws_1", "/session/status")).status).toBe(502)
+  expect(server.calls).toEqual([])
+  expect(runtimeFetch).toHaveBeenCalledTimes(1)
+})
+
+test("relay: expiry refresh remains a read and cannot wake a stopped workspace", async () => {
+  const server = control({ status: "stopped", workspaceId: "ws_1" })
+  const relay = createRelay(server.request)
+  relay.adopt({ ...link, tokenExpiresAt: Date.now() })
+  await expect(relay.fetch("ws_1", "/session/status")).rejects.toMatchObject({ code: WORKSPACE_STOPPED })
+  expect(server.calls).toEqual([{ path: "/api/workspace/ws_1/connection", method: undefined }])
+  expect(runtimeFetch).not.toHaveBeenCalled()
+})

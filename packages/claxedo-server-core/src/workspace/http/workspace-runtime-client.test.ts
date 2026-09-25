@@ -24,6 +24,7 @@ function ready(hostId: string, homeRegion: string, epoch: number) {
     hostId,
     homeRegion,
     epoch,
+    routingId: `route-${epoch}`,
   }
 }
 
@@ -115,7 +116,7 @@ describe("WorkspaceRuntimeClient", () => {
       .fn()
       .mockResolvedValueOnce(ready("host-a", "us-east", 1))
       .mockResolvedValueOnce(ready("host-b", "eu-west", 2))
-    const { client } = clientOptions({ ensure })
+    const { client, relayProvider: relay } = clientOptions({ ensure })
     const seen: Array<{ url: string; authorization: string | null }> = []
     installFetch(async (url, init) => {
       seen.push({ url: requestUrl(url), authorization: new Headers(init?.headers).get("authorization") })
@@ -137,6 +138,10 @@ describe("WorkspaceRuntimeClient", () => {
         accessToken: expect.objectContaining({ token: "token-host-b", hostId: "host-b" }),
       }),
     )
+    expect(vi.mocked(relay.mintRuntimeAccessToken).mock.calls.map(([input]) => [input.hostId, input.routingId])).toEqual([
+      ["host-a", "route-1"],
+      ["host-b", "route-2"],
+    ])
   })
 
   test("keeps concurrent movement requests on complete old or new generations", async () => {

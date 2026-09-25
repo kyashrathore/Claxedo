@@ -42,6 +42,8 @@ export type RelayTokenInput = {
   actorName?: string
   actorAvatarUrl?: string
   ttlMs: number
+  /** Present for cloud workspaces; assigned atomically with the sandbox address. */
+  routingId?: string
   /**
    * The signed caller a USER-principal token is minted for.
    *
@@ -88,7 +90,7 @@ export type RelayTargetResult =
     }
   | {
       found: false
-      code: "relay_resolver_workspace_not_found" | "relay_resolver_workspace_target_unavailable"
+      code: "runtime_access_token_invalid" | "relay_resolver_workspace_not_found" | "relay_resolver_workspace_target_unavailable"
     }
 
 /**
@@ -105,6 +107,7 @@ export type HostTunnelTargetResult =
 export type HostTunnelTargetResolver = (workspaceId: string) => Promise<HostTunnelTargetResult>
 
 export type RelayTargetLookup = (args: {
+  routingId?: string
   workspaceId: string
   hostId: string
   /**

@@ -316,6 +316,7 @@ function services(): ControlPlaneServices {
 function readySandboxManager(hostId = "ws_1") {
   const ready = (workspaceId: string) => ({
     status: "ready" as const,
+    routingId: "routing_test",
     workspaceId,
     sandboxId: hostId,
     url: `https://runtime.example.test/${workspaceId}`,
@@ -710,7 +711,7 @@ describe("workspace routes signed control plane authority", () => {
 
   test("signed cloud create holds provisioning open past the response on Workers", async () => {
     const svc = services()
-    const ensure = vi.fn(async () => ({ status: "ready", epoch: 1, homeRegion: "us-east", sandboxId: "sb_1", url: "https://sb.test" }))
+    const ensure = vi.fn(async () => ({ status: "ready", routingId: "routing_test", epoch: 1, homeRegion: "us-east", sandboxId: "sb_1", url: "https://sb.test" }))
     svc.sandbox.sandboxManager = { ensure } as never
     const app = WorkspaceRoutes(svc, { authConfig, verifier })
     const waitUntil = vi.fn()
@@ -1959,6 +1960,7 @@ describe("workspace routes signed control plane authority", () => {
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "ws_1",
+      routingId: "routing_test",
       role: "owner",
     })
     expect(svc.authority?.recordRuntimeAccessToken).toHaveBeenCalledWith(
@@ -2004,6 +2006,7 @@ describe("workspace routes signed control plane authority", () => {
     // `target` and never reach the provisioning call.
     const target = vi.fn(async () => ({
       status: "ready" as const,
+      routingId: "routing_test",
       workspaceId: "ws_1",
       sandboxId: "sandbox_manager",
       url: "https://runtime-manager.test/ws_1",
@@ -2046,6 +2049,7 @@ describe("workspace routes signed control plane authority", () => {
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_manager",
+      routingId: "routing_test",
       role: "owner",
     })
     expect(svc.authority?.recordRuntimeAccessToken).toHaveBeenCalledWith(
@@ -2250,6 +2254,7 @@ describe("workspace routes signed control plane authority", () => {
     const svc = services()
     const target = vi.fn(async () => ({
       status: "ready" as const,
+      routingId: "routing_test",
       workspaceId: "ws_1",
       sandboxId: "sandbox_manager",
       url: "https://runtime-manager.test/ws_1",
@@ -2290,6 +2295,7 @@ describe("workspace routes signed control plane authority", () => {
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_manager",
+      routingId: "routing_test",
       role: "owner",
     })
     expect(svc.authority?.usersMe).not.toHaveBeenCalled()
@@ -2855,6 +2861,7 @@ describe("workspace routes signed control plane authority", () => {
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "ws_1",
+      routingId: "routing_test",
       role: "owner",
     })
     expect(svc.authority?.recordRuntimeAccessToken).toHaveBeenCalledWith(

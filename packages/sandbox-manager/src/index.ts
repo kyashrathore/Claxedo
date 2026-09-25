@@ -333,6 +333,7 @@ export type SandboxLease = {
   homeRegion: SandboxRegion
   driver: string
   epoch: number
+  routingId?: string
   status: SandboxLeaseStatus
   retryCount: number
   updatedAt: number
@@ -438,9 +439,15 @@ export function applySandboxProvisionedTarget(
   target: SandboxProvisionedTarget,
   updatedAt: number,
 ): SandboxLease {
+  const sameTarget = current.status === "ready"
+    && current.url === target.url
+    && current.sandboxId === target.sandboxId
+    && current.hostId === target.hostId
+    && current.driverResourceId === target.driverResourceId
   return {
     ...current,
     status: "ready",
+    routingId: sameTarget && current.routingId ? current.routingId : crypto.randomUUID(),
     sandboxId: target.sandboxId,
     url: target.url,
     hostId: target.hostId,
@@ -653,6 +660,7 @@ export type SandboxBootMode = "restore" | "resume" | "cold-start"
 export type SandboxEnsureResult =
   | ({ status: "ready" } & SandboxTarget & {
       epoch: number
+      routingId?: string
       homeRegion: SandboxRegion
       /**
        * Set when the driver call for this ensure failed on a lease that was
@@ -666,7 +674,7 @@ export type SandboxEnsureResult =
   | { status: "unavailable"; retryAfterMs?: number; error?: string; epoch?: number; homeRegion: SandboxRegion }
 
 export type SandboxTargetResult =
-  | ({ status: "ready" } & SandboxTarget & { epoch: number; homeRegion: SandboxRegion })
+  | ({ status: "ready" } & SandboxTarget & { epoch: number; routingId?: string; homeRegion: SandboxRegion })
   | {
       status: "unavailable"
       reason: string
@@ -908,7 +916,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
   }
 
   async function leaseTarget(lease: SandboxLease): Promise<SandboxTargetResult> {
-    if (lease.status !== "ready" || !lease.sandboxId || !lease.url || !lease.hostId) {
+    if (lease.status !== "ready" || !lease.sandboxId || !lease.url || !lease.hostId || !lease.routingId) {
       return {
         status: "unavailable",
         reason: "runtime_lease_not_ready",
@@ -929,6 +937,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         resourceId: lease.driverResourceId ?? lease.sandboxId,
       },
       epoch: lease.epoch,
+      routingId: lease.routingId,
       homeRegion: lease.homeRegion,
     }
   }
