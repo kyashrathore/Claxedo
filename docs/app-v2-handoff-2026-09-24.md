@@ -413,7 +413,31 @@ At 19:08 the owner said: finish in-progress work; start no new work.
 - **E. Follow-at-end had two owners**: anchorBottom and the virtualizer's anchor. The fix removes one. It's neutral for performance and simpler.
 - **F. DOMPurify re-read its config on every call** (about 27% of sanitize). The fix configures it once.
 
-**Status:** B–F change `src/transcript` and the timeline, which AGENTS.md reserves for an owner-signed, corpus-proven slice. They're on `v2/stream-slice`, one commit per fix, each with its corpus case, and `scratchpad/perf/exp-stream/SLICE.md` explains every commit. **Owner:** sign off, and it merges.
+**Status:**
+- B–F change `src/transcript` and the timeline, which AGENTS.md reserves for an owner-signed, corpus-proven slice.
+- They're on **`v2/stream-slice`**, ready for the owner. Each fix is its own commit with its corpus case and a red run. E is dropped: it saved no CPU.
+- The corpus can now replay a live turn and compare it with today's app at every hold. Until now no case covered the streaming renderer.
+- **Checks on the tip:** the whole corpus plus flows 03, 04, 09 and 11, on web and phone, 37 passed.
+- **Write-up:** `docs/app-v2-stream-slice.md` (commit by commit, before/after, the case, the red run).
+- **Owner:** sign off, and it merges.
+
+**Measured on the slice** (feat → slice, v1 in brackets, heap after a forced GC):
+
+| | 1x | 4x |
+|---|---|---|
+| Delta to paint, p50 | 9.0–9.2 → 8.2–8.5 ms [5.7] | 13.9–14.1 → 10.9–11.5 ms [13.7] |
+| Frames over 16.7 ms | 0–2 → 0 [0] | 21–31 → 13–14 [16] |
+| Main thread busy | 13.1–14.1% → 10.3–11.2% [17.7–18.5%] | 45.6–50.4% → 28.0–35.2% [66%] |
+| Heap | 37.5 → 16.7 MiB [43] | 37.5 → 16.9 MiB [43] |
+| DOM nodes | 48.6k → 3.7k [48.7k] | 48.6k → 3.7k [48.8k] |
+
+**Open after the slice:**
+- **Latency at 1x:** the median delta-to-paint at 1x is still 8.2–8.5 ms against v1's 5.7, cause not measured.
+- **Follow-at-end offset:** v2 ends 72–76 px above v1's scrollTop on a long streamed reply, with or without E. That's a parity difference, and the timeline owns it.
+- **v1 bugs v2 reproduces** (the baselines record them):
+  - an early reference link stays unresolved after a late definition;
+  - a `$$` fence split across deltas sometimes leaves a stray paragraph.
+- **v1 dropping the stream:** twice, a v1 run at 4x stopped following the stream.
 
 **Remaining long frames:**
 - mounting a new tool card: 15–25 ms at 1x;
