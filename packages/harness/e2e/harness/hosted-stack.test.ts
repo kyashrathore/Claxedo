@@ -93,6 +93,7 @@ test("certified hosted Worker signs in two GitHub people and refuses unbrokered 
 
     const attempts = await stack.outboundAttempts()
     expect(attempts.map((attempt) => attempt.url).sort()).toEqual([
+      `${stack.relayUrl}/workspaces/${workspace.workspaceId}/api/wr/agent-plugins/apply`,
       "https://1.1.1.1/dns-query?name=git.hosted.test&type=A",
       "https://1.1.1.1/dns-query?name=git.hosted.test&type=AAAA",
     ])

@@ -7,6 +7,7 @@ import { createLocalBrokeringSandboxDriver } from "@claxedo/sandbox-manager/driv
 import type { SandboxBrokeredSecret, SandboxTarget } from "@claxedo/sandbox-manager"
 import { parseRegistrations, type EgressRegistration } from "../../../claxedo-server/scripts/sandbox/cloudflare-worker/src/outbound-credentials"
 import { REPO_ROOT, TSX_LOADER } from "./node-loader"
+import { PINNED_PI } from "./pinned-pi"
 import { scriptedGithub } from "./hosted-scripted-github"
 
 type HostedSandboxWorkerInput = {
@@ -120,12 +121,14 @@ export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) 
   const textImports = pathToFileURL(path.join(REPO_ROOT, "packages/workspace-runtime/src/text-imports.mjs")).href
   const driver = createLocalBrokeringSandboxDriver({
     root: input.root,
-    executable: process.execPath,
+    executable: process.env.CLAXEDO_E2E_NODE ?? process.execPath,
     args: ["--conditions=development", "--import", textImports, "--import", TSX_LOADER, path.join(REPO_ROOT, "packages/workspace-runtime/src/cli.ts")],
-    allowedOrigins: [input.controlPlaneUrl, input.relayUrl, input.modelUrl, new URL(input.gitUrl).origin],
+    allowedOrigins: [input.controlPlaneUrl, input.relayUrl, new URL(input.gitUrl).origin],
+    directOrigins: [input.controlPlaneUrl, input.relayUrl, new URL(input.gitUrl).origin],
+    upstreams: { "https://api.openai.com": input.modelUrl, "https://api.anthropic.com": input.modelUrl },
     inheritedEnv: {
       PATH: process.env.PATH ?? "",
-      ...(process.env.PI_EXECUTABLE ? { PI_EXECUTABLE: process.env.PI_EXECUTABLE } : {}),
+      PI_EXECUTABLE: PINNED_PI,
       ...(process.env.LANG ? { LANG: process.env.LANG } : {}),
       ...(process.env.CI ? { CI: process.env.CI } : {}),
       NODE_EXTRA_CA_CERTS: input.certificate,
