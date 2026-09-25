@@ -91,8 +91,6 @@ function adapter(input: {
       getMessagePage: (binding, page) => input.getMessagePage!(binding.sessionId, page, binding.directory),
     } : {}),
     cancelTurn: async () => ({ execution: "terminal" as const, cleanup: "verified_clear" as const }),
-    revert: async () => {},
-    unrevert: async () => {},
     forkSession: async () => ({ id: "forked" }),
     executeCommand: async () => {},
     listCommands: async () => [],
@@ -1594,212 +1592,37 @@ describe("createSessionRoutes directory-less sessions", () => {
     expect(await unsupported.json()).toMatchObject({ error: { code: "unsupported_operation" } })
   })
 
-  test("shell forwards command, agent, model, and messageID to the adapter and discards its result", async () => {
-    const calls: unknown[] = []
-    const app = createSessionRoutes({
-      resolveAdapter: () => ({
-        ...adapter(),
-        shell: async (id: string, input: unknown, directory: RuntimeDirectory) => {
-          calls.push({ id, input, directory })
+  for (const route of ["shell", "summarize", "revert", "unrevert"] as const) {
+    test(`${route} answers 501 without resolving a harness`, async () => {
+      const response = await createSessionRoutes({
+        resolveAdapter: () => {
+          throw new Error(`${route} resolved a harness`)
         },
-      }),
-      resolveDirectory: () => "/workspace",
-      publishGlobal: () => {},
-    })
+        resolveDirectory: () => "/workspace",
+        publishGlobal: () => {},
+      }).request(`http://localhost/session/session_1/${route}`, { method: "POST" })
 
-    const response = await app.request("http://localhost/session/session_1/shell", {
-      method: "POST",
-      body: JSON.stringify({
-        command: "ls -la",
-        agent: "build",
-        model: { providerID: "opencode", modelID: "model" },
-        messageID: "msg_1",
-      }),
-    })
-
-    expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ ok: true })
-    expect(calls).toEqual([{
-      id: "session_1",
-      input: {
-        command: "ls -la",
-        agent: "build",
-        model: { providerID: "opencode", modelID: "model" },
-        messageID: "msg_1",
-      },
-      directory: "/workspace",
-    }])
-  })
-
-  test("shell defaults command and agent to empty strings and omits model/messageID when absent", async () => {
-    const calls: unknown[] = []
-    const app = createSessionRoutes({
-      resolveAdapter: () => ({
-        ...adapter(),
-        shell: async (_id: string, input: unknown) => { calls.push(input) },
-      }),
-      resolveDirectory: () => "/workspace",
-      publishGlobal: () => {},
-    })
-
-    const response = await app.request("http://localhost/session/session_1/shell", {
-      method: "POST",
-      body: JSON.stringify({}),
-    })
-
-    expect(response.status).toBe(200)
-    expect(calls).toEqual([{ command: "", agent: "" }])
-  })
-
-  test("shell refuses when the adapter does not advertise commands support", async () => {
-    const response = await createSessionRoutes({
-      resolveAdapter: () => ({
-        ...adapter(),
-        readHarnessCapabilities: () => ({
-          harness: "codex",
-          abort: false,
-          reconnect: false,
-          replay: false,
-          permissions: false,
-          questions: false,
-          todos: false,
-          commands: false,
-          fork: false,
-          revert: false,
-          unrevert: false,
-          configOptions: false,
-          subagents: false,
-          effortLevels: NO_HARNESS_EFFORT,
-          instructionChannel: "turn-system-prompt",
-        }),
-        shell: undefined,
-      }) as unknown as AgentHarnessAdapter,
-      resolveDirectory: () => "/workspace",
-      publishGlobal: () => {},
-    }).request("http://localhost/session/session_1/shell", {
-      method: "POST",
-      body: JSON.stringify({ command: "ls", agent: "build" }),
-    })
-
-    expect(response.status).toBe(409)
-    expect(await response.json()).toMatchObject({
-      error: { code: "unsupported_operation", capability: "commands", harness: "codex" },
-    })
-  })
-
-  test("shell refuses when the harness advertises commands but the adapter has no shell method", async () => {
-    const response = await createSessionRoutes({
-      resolveAdapter: () => ({ ...adapter(), shell: undefined }) as unknown as AgentHarnessAdapter,
-      resolveDirectory: () => "/workspace",
-      publishGlobal: () => {},
-    }).request("http://localhost/session/session_1/shell", {
-      method: "POST",
-      body: JSON.stringify({ command: "ls", agent: "build" }),
-    })
-
-    expect(response.status).toBe(409)
-    expect(await response.json()).toMatchObject({
-      error: { code: "unsupported_operation", reason: "adapter_method_unavailable" },
-    })
-  })
-
-  test("summarize forwards providerID, modelID, and auto to the adapter and discards its result", async () => {
-    const calls: unknown[] = []
-    const app = createSessionRoutes({
-      resolveAdapter: () => ({
-        ...adapter(),
-        summarize: async (id: string, input: unknown, directory: RuntimeDirectory) => {
-          calls.push({ id, input, directory })
+      expect(response.status).toBe(501)
+      expect(await response.json()).toEqual({
+        ok: false,
+        error: {
+          code: "unsupported_operation",
+          operation: route,
+          reason: "not_implemented",
+          message: `${route} is not implemented`,
         },
-      }),
-      resolveDirectory: () => "/workspace",
-      publishGlobal: () => {},
+      })
     })
+  }
 
-    const response = await app.request("http://localhost/session/session_1/summarize", {
-      method: "POST",
-      body: JSON.stringify({ providerID: "opencode", modelID: "model", auto: true }),
-    })
+  test("a denied caller is refused before learning an operation is not implemented", async () => {
+    const response = await managedRoutes({
+      policy: managedPolicy({ authorize: async () => ({ allowed: false, status: 403, code: "session_access_denied", message: "Private session" }) }),
+      adapter: adapter(),
+    }).request("http://localhost/session/session_1/revert", { method: "POST" })
 
-    expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ ok: true })
-    expect(calls).toEqual([{
-      id: "session_1",
-      input: { providerID: "opencode", modelID: "model", auto: true },
-      directory: "/workspace",
-    }])
-  })
-
-  test("summarize defaults providerID and modelID to empty strings and omits auto when absent", async () => {
-    const calls: unknown[] = []
-    const app = createSessionRoutes({
-      resolveAdapter: () => ({
-        ...adapter(),
-        summarize: async (_id: string, input: unknown) => { calls.push(input) },
-      }),
-      resolveDirectory: () => "/workspace",
-      publishGlobal: () => {},
-    })
-
-    const response = await app.request("http://localhost/session/session_1/summarize", {
-      method: "POST",
-      body: JSON.stringify({}),
-    })
-
-    expect(response.status).toBe(200)
-    expect(calls).toEqual([{ providerID: "", modelID: "" }])
-  })
-
-  test("summarize refuses when the adapter does not advertise commands support", async () => {
-    const response = await createSessionRoutes({
-      resolveAdapter: () => ({
-        ...adapter(),
-        readHarnessCapabilities: () => ({
-          harness: "codex",
-          abort: false,
-          reconnect: false,
-          replay: false,
-          permissions: false,
-          questions: false,
-          todos: false,
-          commands: false,
-          fork: false,
-          revert: false,
-          unrevert: false,
-          configOptions: false,
-          subagents: false,
-          effortLevels: NO_HARNESS_EFFORT,
-          instructionChannel: "turn-system-prompt",
-        }),
-        summarize: undefined,
-      }) as unknown as AgentHarnessAdapter,
-      resolveDirectory: () => "/workspace",
-      publishGlobal: () => {},
-    }).request("http://localhost/session/session_1/summarize", {
-      method: "POST",
-      body: JSON.stringify({ providerID: "opencode", modelID: "model" }),
-    })
-
-    expect(response.status).toBe(409)
-    expect(await response.json()).toMatchObject({
-      error: { code: "unsupported_operation", capability: "commands", harness: "codex" },
-    })
-  })
-
-  test("summarize refuses when the harness advertises commands but the adapter has no summarize method", async () => {
-    const response = await createSessionRoutes({
-      resolveAdapter: () => ({ ...adapter(), summarize: undefined }) as unknown as AgentHarnessAdapter,
-      resolveDirectory: () => "/workspace",
-      publishGlobal: () => {},
-    }).request("http://localhost/session/session_1/summarize", {
-      method: "POST",
-      body: JSON.stringify({ providerID: "opencode", modelID: "model" }),
-    })
-
-    expect(response.status).toBe(409)
-    expect(await response.json()).toMatchObject({
-      error: { code: "unsupported_operation", reason: "adapter_method_unavailable" },
-    })
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({ error: { code: "session_access_denied" } })
   })
 
   test("prompt_async falls back to 204 when admission does not settle within the bound", async () => {

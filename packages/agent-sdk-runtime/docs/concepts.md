@@ -13,7 +13,7 @@ This package gives hosts one harness-control language:
 ```text
 host request
   -> AgentRuntime
-  -> harness factory
+  -> registered adapter
   -> adapter driver
   -> harness access (configured connection or native)
   -> runtime event stream
@@ -126,37 +126,30 @@ becomes `blocked` instead of being inferred as `complete`.
 
 ```ts
 import { createAgentRuntime } from "@claxedo/agent-sdk-runtime"
-import { pi } from "@claxedo/agent-sdk-runtime/harnesses"
+import { PiHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import { createMemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
 
 const runtime = createAgentRuntime({
   store: createMemoryRuntimeStore(),
-  harnesses: [pi()],
+  harnesses: [{ id: "pi", access: "native", create: (context) => new PiHarnessAdapter(context) }],
 })
 ```
 
-### Harness Factories
+### Harness Registration
 
-Harness factories register one harness family or access mode with an
-`AgentRuntime`.
-
-Examples:
+An `AgentHarnessFactory` record names an id and access mode and creates a
+concrete adapter from the runtime context. The host chooses which adapters to
+register; the runtime supplies their store, event hub, and failure sink.
 
 ```ts
-import { claude, codex, pi } from "@claxedo/agent-sdk-runtime/harnesses"
+import { ClaudeHarnessAdapter, CodexHarnessAdapter, PiHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 
 const harnesses = [
-  claude({ access: "native" }),
-  codex({ access: "native" }),
-  pi(),
+  { id: "claude", access: "native", create: (context) => new ClaudeHarnessAdapter(context) },
+  { id: "codex", access: "native", create: (context) => new CodexHarnessAdapter(context) },
+  { id: "pi", access: "native", create: (context) => new PiHarnessAdapter(context) },
 ]
 ```
-
-The factory owns harness-specific construction details such as process binary,
-remote URL, SDK driver, and transport setup.
-
-The adapter does not own product auth, workspace sharing, channel dedupe,
-database sync, route policy, gateway selection, or billing.
 
 ### SessionConfig
 
@@ -326,7 +319,7 @@ New host logic should prefer canonical runtime events when possible.
    The choice may come from SessionConfig, user settings, workspace defaults,
    or control-plane placement.
 
-4. AgentRuntime chooses a registered harness factory
+4. AgentRuntime chooses a registered adapter
    The runtime constructs or reuses the adapter driver for that harness.
 
 5. Runtime publishes turn events
@@ -374,10 +367,10 @@ import {
 } from "@claxedo/agent-sdk-runtime"
 ```
 
-Use subpaths for harness factories, stores, and integration utilities:
+Use subpaths for adapters, stores, and integration utilities:
 
 ```ts
-import { claude, pi } from "@claxedo/agent-sdk-runtime/harnesses"
+import { ClaudeHarnessAdapter, PiHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import { createSqliteRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/sqlite"
 import { createRuntimeEventHub } from "@claxedo/agent-sdk-runtime/runtime-event-hub"
 import { createVirtualSessionEnv } from "@claxedo/agent-sdk-runtime/virtual-session-env"

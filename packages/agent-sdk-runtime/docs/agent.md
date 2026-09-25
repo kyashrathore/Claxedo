@@ -23,7 +23,7 @@ own those concerns.
 | Mental model | [concepts.md](./concepts.md) | no import |
 | Stable runtime facade | [api.md](./api.md) | `@claxedo/agent-sdk-runtime` |
 | Host/runtime boundary | [boundaries.md](./boundaries.md) | no import |
-| Harness factories | [recipes.md](./recipes.md) | `@claxedo/agent-sdk-runtime/harnesses` |
+| Harness adapters | [recipes.md](./recipes.md) | `@claxedo/agent-sdk-runtime/adapters` |
 | In-memory or virtual session environment | [recipes.md](./recipes.md) | `@claxedo/agent-sdk-runtime/virtual-session-env` |
 | Claxedo client-presentation events | [api.md](./api.md) | `@claxedo/agent-sdk-runtime/compat-events` |
 | Copy-paste examples | [recipes.md](./recipes.md) | depends on recipe |
@@ -51,13 +51,12 @@ import {
 } from "@claxedo/agent-sdk-runtime"
 ```
 
-Use subpaths for harness factories and stores:
+Use subpaths for adapters and stores:
 
 ```ts
-import { claude, codex, pi } from "@claxedo/agent-sdk-runtime/harnesses"
+import { ClaudeHarnessAdapter, CodexHarnessAdapter, PiHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import { createSqliteRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/sqlite"
 ```
 
-Concrete adapter classes are internal/advanced implementation details. Choose a
-harness through the `harnesses` factory subpath so host code stays at the
-runtime level.
+Register concrete adapters through `AgentHarnessFactory` records so the runtime
+provides their store, event hub, and failure sink.
