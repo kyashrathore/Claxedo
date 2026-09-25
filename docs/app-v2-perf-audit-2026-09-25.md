@@ -397,3 +397,62 @@ These counts did not vary across runs, so each can be an exact or ceiling assert
 | Back to session | 3 | 47–67 | 397–489 | 3–6 | 49 | 19 | 2 |
 | Resize, each direction | 0 | 9 | 312 | 5 | 4 | 2 | 1 |
 | Heap after boot, after GC | 32,764 KB, 1,460 Nodes, 153 listeners | | | | | | |
+
+## Scenario 10: switching sessions with the workspace panel open, then switching panel tabs
+
+The panel was opened on "Greeting", `docs/ci-green-staging-handoff-2026-09-23.md` was opened as a file tab, then the 4 sessions were switched twice (unvisited, then visited). The harness now also counts Solid computations re-run per component owner and DOM mutations per region (rail row, panel, composer, timeline turns, shell). It does this by patching Solid's dev `runComputation` in the browser (see Method addendum below). 1 run each here; the counts repeat from scenario 3.
+
+| Switch (visited pass) | v1 panel mutations | v2 panel mutations | v1 restyled | v2 restyled | v1 longest task | v2 longest task | v2 computations |
+|---|---|---|---|---|---|---|---|
+| → a session without the panel | 0–13 | 0–20 | 61–150 | 134–1,258 | 21 ms | 10–25 ms | 1,712–2,631 |
+| **→ "Greeting" (panel open)** | **88** | **54** | **1,584** | **1,246** | **29 ms** | **38 ms** | **5,833** |
+
+- The panel's open state is remembered per session (`src/panel/session-memory.ts`, `rememberPanelPerSession`), and its body unmounts when hidden (README: "The body mounts while the panel is shown and unmounts 140 ms" later). Switching back to a session whose panel was open therefore re-mounts the Files tree, the Review tab and the file viewer from scratch: `Dynamic<FileTreeNode>` 360 runs, `Switch<KindMark>` 342, 1,246 elements restyled, and a 34–38 ms task (2 frames) in every v2 run. The project, tree, review and file are the same as before the switch.
+- v1 does the same (88 panel mutations, 1,584 restyled, 26–29 ms). Shared, lag.
+- Design fix: keep the panel body mounted and hidden while the placement is unchanged, or cache the tree's rendered state per placement. Remounting identical content on every switch is the cost.
+
+Panel tab switching (Greeting, panel open):
+
+| Step | v1 API | v2 API | v1 mutations | v2 mutations | v1 restyled | v2 restyled | v1 computations | v2 computations |
+|---|---|---|---|---|---|---|---|---|
+| File → Review tab | 3 (polling) | 0 | 107 | 107 | 240 | 245 | 1,147 | 965 |
+| Review → file tab | 0 | 0 | 124 | 119 | 378 | 363 | 1,332 | 843 |
+| Open Changes | 4 | 1 | 27 | 25 | 169 | 158 | 878 | 838 |
+| Open Files | 6 (polling) | 0 | 36 | 38 | 399 | 745 | 259 | 174 |
+
+Every panel-tab mutation stays inside the panel region in both apps. Switching tabs re-renders the tab body each time (about 100 mutations and 1,000 computations), because only the selected tab is mounted. No terminal tab existed, so none was measured.
+
+## Scenario 11: the harness/model picker on a new draft
+
+On the draft page: open "Select harness and model", expand Harness, pick Claude Code, scroll the model list, type "sonnet" into "Search models" and delete it, pick Codex, pick Claude Code again, then Escape. The draft started at "Select agent", which cannot be re-selected, so "set back" means back to Claude Code ("Default (recommended)"). The choice lives in `localStorage` (`…workspace:session.draft-default.v1`) of the throwaway browser context; nothing was sent to the server. 2 runs each, identical.
+
+| Step | v1 API | v2 API | v1 mutations | v2 mutations | v1 restyled | v2 restyled | v1 computations | v2 computations |
+|---|---|---|---|---|---|---|---|---|
+| Open picker | 0 | 0 | 16 | 16 | 170 | 172 | 325 | 309 |
+| Expand Harness | 0 | 0 | 33 | 32 | 201 | 203 | 349 | 338 |
+| Pick Claude Code | 5–6 | 2 | 79 | 76 | 513 | 500 | ~1,000 | 974 |
+| Scroll model list | 0 (3 polling) | 0 | 2 | 2 | 7 | 16 | 16–21 | 13 |
+| Type "sonnet" (6 keys) | 0 | 0 | 16 | 16 | 234 | 234 | 1,566 | 1,536 |
+| Delete it (6 keys) | 0 | 0 | 15 | 15 | 269 | 269 | 1,838 | 1,808 |
+| Pick Codex | 7 | 2 | 109 | 91 | – | 439 | – | 912 |
+| Pick Claude Code again | 2 | 2 | 92 | 88 | 462 | 449 | 1,086 | 1,029 |
+
+v2 matches v1 on rendering and makes fewer requests per pick: 2 (`permission/modes`, `harness/options`), where v1 also fetches `commands`, `agents`, `session/capabilities` and `workspace/resolve`. No step exceeded 18 ms.
+
+Shared wasted work: each search keystroke re-runs about 250–300 computations (`Show<For>` 942 runs for 6 keys), because every model row's `Show` re-evaluates the filter even though only 2–3 rows change. Design fix: filter the list once in a memo and let `For` diff it, instead of a per-row `Show` over the unfiltered list.
+
+## Scenario 12: the composer's "+" (Add) menu
+
+In "Greeting": open "+", close it, then open each item that opens something (Commands "/", Context "@", Shell command "!") and dismiss it with Escape. "Images and files" opens the OS file chooser and "Goal" toggles a mode, so neither was clicked. The composer text was verified empty after each. The menu has no submenus. 2 runs each, identical.
+
+| Step | v1 mutations | v2 mutations | v1 restyled | v2 restyled | v1 computations | v2 computations | v1 longest task | v2 longest task |
+|---|---|---|---|---|---|---|---|---|
+| Open menu | 526 | 532 | 380–386 | 393–400 | 366 | 351 | 13–14 ms | 13 ms |
+| Close menu | 179 | 181 | 181 | 164 | 40 | 40 | 3 ms | 4 ms |
+| Commands | 194 | 198 | **2,052** | 300 | **6,837** | 236 | 16–20 ms | 3–4 ms |
+| Context | 188 | 213 | 301 | 363 | 110 | 421 | 3 ms | 3–4 ms |
+| Shell command | 601 | 597–606 | 418 | 394–401 | 1,074 | 1,027–1,048 | 4 ms | 3 ms |
+
+- Opening the menu: 495 of v2's 532 mutations are `aria-hidden` writes on the icon sprite's `<symbol>` elements, and closing adds 165 more. That is the scenario-7 sprite finding, measured per region.
+- Shell-command mode re-renders the composer: 412–421 composer mutations and 839–858 `ButtonRoot` computations in both apps.
+- v2's Commands popover is 23× cheaper than v1's (236 vs 6,837 computations).
