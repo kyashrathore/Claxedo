@@ -7,13 +7,6 @@ import { AgentHarnessSelector } from "./agent-harness-selector"
 import { PromptAddMenu } from "./add-menu"
 import { PromptPermissionControl } from "./permission-control"
 
-/**
- * The composer's bottom row. Two clusters instead of one left-aligned strip:
- * actions and session policy on the left (`+`, auto-accept), the "who answers"
- * configuration on the right (harness, model, effort), with the submit control
- * following in `frame.tsx`. Agent/plan-mode selection lives in the `+` menu;
- * effort is folded into the model control rather than getting its own chip.
- */
 export function PromptToolbarControls(props: {
   fileAttachmentInput: () => JSX.Element
   addTitle: string
@@ -85,9 +78,6 @@ export function PromptToolbarControls(props: {
         enabled={() => {
           if (!props.approveEnabled() || !props.active()) return false
           const groups = props.permissionGroups()
-          // Harness or report still resolving: show the trigger in its
-          // unresolved "Permissions" state rather than leaving the slot empty —
-          // the control must exist before the reports arrive.
           if (!groups) return true
           const offered = groups.harness.rows
           if (offered.length > 0) return true

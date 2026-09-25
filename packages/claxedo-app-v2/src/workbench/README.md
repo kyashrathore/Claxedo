@@ -27,7 +27,7 @@ A pane kind that can be addressed by URL implements `fromRoute` and `toRoute` on
 
 ## Phone
 
-Below 768 px of workbench width the layout projects to one full-bleed pane (`collapse-projection.ts`); the split tree is kept, and the pane chrome hides.
+Below 768 px of workbench width the layout projects to one full-bleed pane (`collapse-projection.ts`); the split tree is kept. The pane chrome and the divider hide by the `workbench` container query in `workbench.css`, so a resize writes nothing to the DOM; the width is measured in script only while the layout is split, because only a split has pane rects to project.
 
 ## Keyboard
 

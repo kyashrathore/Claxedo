@@ -1,9 +1,10 @@
-import { createSignal, Show, type Accessor, type JSX } from "solid-js"
+import { createSignal, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
+import { useAgeClock } from "@/lib/clock"
 import type { SessionRowView } from "@/session"
 import { createHoverEngagement } from "../hover-engagement"
 import { railDictionary } from "../i18n"
-import { navigationStatus, sessionAge, type SessionMarker } from "../model"
+import { navigationStatus, sessionAge, sessionAgeSince, type SessionMarker } from "../model"
 import { NavigationRow, NavigationRowStatusGutter } from "./navigation-row"
 import { SessionRowMenu, type SessionRowMenuActions } from "./session-row-menu"
 import "../session-navigation.css"
@@ -14,7 +15,6 @@ export type SessionRowProps = SessionRowMenuActions & {
   readonly marker: SessionMarker | undefined
   readonly projectLabel: string
   readonly active: boolean
-  readonly now: Accessor<number>
   readonly onActivate: (row: SessionRowView) => void
   readonly prepareDrag?: () => string | undefined
 }
@@ -68,6 +68,7 @@ export function RailSessionRow(props: SessionRowProps): JSX.Element {
   const [menu, setMenu] = createSignal<{ x: number; y: number }>()
   const engagement = createHoverEngagement()
   const status = () => navigationStatus(props.row)
+  const now = useAgeClock(() => sessionAgeSince(props.row))
   const openMenu = (event: MouseEvent) => {
     event.preventDefault()
     setMenu({ x: event.clientX, y: event.clientY })
@@ -92,7 +93,7 @@ export function RailSessionRow(props: SessionRowProps): JSX.Element {
       </div>
       <div class="size-6 shrink-0 relative z-10 flex items-center justify-end self-stretch">
         <span class="ui-session-navigation-time flex items-center justify-end text-xs tabular-nums">
-          {sessionAge(props.row, props.now())}
+          {sessionAge(props.row, now())}
         </span>
         <ArchiveButton row={props.row} engaged={engagement.engaged()} onArchive={props.onArchive} />
       </div>

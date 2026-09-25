@@ -1,4 +1,4 @@
-import { createMemo, For, Show, type Accessor, type JSX } from "solid-js"
+import { createMemo, For, Show, type JSX } from "solid-js"
 import type { SessionId } from "@/server"
 import type { SessionList, SessionRowView } from "@/session"
 import type { TerminalItem } from "@/terminal"
@@ -13,7 +13,6 @@ export type ProjectRowsProps = SessionRowMenuActions & {
   readonly list: SessionList
   readonly activeSessionId: string | undefined
   readonly activeTerminalId: string | undefined
-  readonly now: Accessor<number>
   readonly onActivate: (row: SessionRowView) => void
   readonly markerOf: (row: SessionRowView) => SessionMarker | undefined
   readonly projectLabel: string
@@ -50,7 +49,6 @@ function SessionRows(props: ProjectRowsProps): JSX.Element {
               marker={props.markerOf(session())}
               projectLabel={props.projectLabel}
               active={props.activeSessionId === sessionId}
-              now={props.now}
               onActivate={props.onActivate}
               onRename={props.onRename}
               onArchive={props.onArchive}

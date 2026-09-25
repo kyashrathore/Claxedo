@@ -56,14 +56,9 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
     input.seed(scope)
     const key = stamp(params)
     const existingSession = !!params?.sessionId && params.sessionId !== "new"
-    // The session still runs its own harness under a held pick, so its config
-    // describes the harness the user just picked away from.
     if (existingSession && input.state(scope)?.heldFrom) return
     if (existingSession) input.markServer?.(scope)
     const draftDefault = existingSession ? undefined : input.beginDraftDefault?.(scope, params)
-    // The draft harness selection persists across directory switches — the
-    // embedded local runtime backs every harness, so a user's choice is never
-    // force-reset to OpenCode when navigating between workspaces.
     if (input.cache.getSeen(scope) === key) return
     return runs.start(scope, key, async (active) => {
       const placementId = params?.placementId
@@ -73,16 +68,8 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
     })
   }
   return {
-    // An explicit user selection owns the scope immediately. Any hydration
-    // already waiting on its status read must not apply its older server snapshot
-    // after that click and silently restore the previous harness.
     cancel: runs.cancel,
     hydrate,
-    // Re-run a single hydration probe for a scope that is still "polling". Hydrate
-    // is one-shot (guarded by the per-scope "seen" stamp), so a bounded re-probe
-    // must first CLEAR that stamp; otherwise hydrate early-returns and the harness
-    // stays Connecting forever. Any probe already in flight is deduped by the
-    // pending guard inside `hydrate`, so re-probing never stacks requests.
     reprobe: async (scope: string, params?: ScopeInput) => {
       input.cache.clearSeen(scope)
       return hydrate(scope, params)
@@ -90,7 +77,6 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
   }
 }
 
-/** One hydration per scope and stamp: a repeat joins the one in flight, and a newer one or a cancel retires it. */
 function createRunTracker<ScopeInput extends HarnessScopeInput>(cache: HarnessHydratorCache<ScopeInput>) {
   const generations = new Map<string, number>()
   const pending = new Map<string, { key: string; run: Promise<void> }>()
@@ -136,10 +122,6 @@ async function hydrateSession<ScopeInput extends HarnessScopeInput>(input: Hydra
   const data = await readHarnessStatus(input, run.params)
   if (!run.active()) return
   if (data) return applyAndMarkSeen(input, run, data)
-  // A missing/failed config is not evidence that the existing session
-  // belongs to a different harness. Keep it retryable and, when the
-  // session's row names its harness, expose that harness while the
-  // model/config is still connecting.
   input.setPollingHydration(run.scope, run.params.sessionHarness)
 }
 
@@ -149,7 +131,6 @@ async function applyAndMarkSeen<ScopeInput extends HarnessScopeInput>(input: Hyd
   if (run.active()) input.cache.setSeen(run.scope, run.key)
 }
 
-/** Marks `type` ready and loads its options when it has any; false when its capabilities could not be read. */
 async function settleOnHarness<ScopeInput extends HarnessScopeInput>(input: HydratorInput<ScopeInput>, scope: string, type: HarnessType, params: ScopeInput) {
   input.setReadyHydration(scope, type)
   const configOptions = await probeConfigOptions(input, scope, type)
@@ -187,16 +168,8 @@ async function readSessionHarness<ScopeInput extends HarnessScopeInput>(input: H
   })
   const hit = config ? harnessStateFromSessionConfig(config) : undefined
   if (hit) return hit
-  // A successful object response is not a transport retry. If it violates
-  // the existing-session config contract by omitting harness identity, keep
-  // the harness the session's row names visible and settle as unavailable
-  // instead of polling forever or exposing the seeded OpenCode selection.
   const refType = params.sessionHarness
   if (refType && config) return { type: refType, activeType: refType, ready: false, status: "error", error: "Session harness configuration is unavailable" }
-  // Existing-session identity comes only from its persisted config. A
-  // directory harness status describes the workspace default, not this
-  // conversation, so falling through would overwrite Codex ownership with
-  // an unrelated OpenCode selection after a transient config failure.
   return undefined
 }
 

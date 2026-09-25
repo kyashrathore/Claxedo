@@ -239,3 +239,10 @@ A **Settings → Projects** section lists the projects and holds their managemen
 
 ## Owner, 2026-09-25 19:45: no fixes to v1
 - v1 (`packages/claxedo-app` on dev) gets no fixes, including the "Too many redirects" crash in v1's route sync (`app-shell-route-sync.ts`) that the owner hit on a v1 build. v2 replaces v1 at the swap.
+
+## Orchestrator, 2026-09-25: Composer budget re-based after parity voided the frame swap
+- The plan's 5.5k Composer budget assumed swapping today's `PromptInputFrame` for upstream's `PromptInputV2` frame. The parity ruling (port v1's UI, don't restyle) voided that swap, so the composer is today's frame, moved.
+- The owner approved re-basing at 10:05 ("all good"), after the composer's no-comments triage.
+- After the triage (593 comment blocks: real constraints moved into `src/composer/README.md` under Constraints, the rest deleted), `src/composer` measured 10,147 lines. Splitting its 14 size violations by responsibility then added 835 lines of module seams (imports and prop types), to 10,982.
+- Merging feat/app-v2's hidden-pane command registration (`composer-commands.ts`) added 5 more, to 10,987.
+- The budget row is set to the measured 10,987, with no headroom, inside the owner's 11.1k; v1's composer is 12.3k.

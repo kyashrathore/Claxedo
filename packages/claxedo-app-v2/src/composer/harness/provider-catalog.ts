@@ -1,6 +1,7 @@
-import { createMemo, createSignal, type Accessor } from "solid-js"
+import { createMemo, createResource, createSignal, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import type { Server } from "@/server"
+import { catalogHarnessId, isCatalogHarness, type HarnessType } from "./profile"
 
 export const POPULAR_PROVIDERS: readonly string[] = ["opencode", "opencode-go", "anthropic", "github-copilot", "openai", "google", "openrouter", "vercel"]
 
@@ -36,4 +37,57 @@ export function createProviderCatalog(input: { server: Server; harness: Accessor
     default: () => catalog()?.default ?? {},
     connected,
   }
+}
+
+export type ProviderCatalogRead = ReturnType<typeof createProviderCatalog>
+
+export function createProviderCatalogRows(providers: ProviderCatalogRead) {
+  return createMemo(() => {
+    const connected = new Set(providers.connected().map((provider) => provider.id))
+    const rows = [...providers.all().values()].flatMap((provider) =>
+      Object.values(provider.models).map((item) => ({
+        id: item.id,
+        name: item.name,
+        provider: { id: provider.id, name: provider.name },
+        connected: item.connected,
+        free: item.free,
+      })),
+    )
+    return {
+      connected,
+      rows,
+      eligibleModels: rows
+        .filter((item) => item.connected)
+        .map((item) => ({ providerId: item.provider.id, modelId: item.id })),
+    }
+  })
+}
+
+export type ProviderCatalogRows = ReturnType<ReturnType<typeof createProviderCatalogRows>>
+
+export function createProviderCatalogReadiness(input: { providers: ProviderCatalogRead; harness: Accessor<HarnessType | undefined> }) {
+  const hydrationKey = () => JSON.stringify([
+    input.providers.queryKey(),
+    input.providers.connected().map((provider) => provider.id).sort(),
+  ])
+  const answered = () =>
+    !!catalogHarnessId(input.harness())
+    && input.providers.resolved()
+    && !input.providers.loading()
+    && !input.providers.error()
+  const [hydrated] = createResource(
+    () => answered() && hydrationKey(),
+    async (key) => {
+      await hydrateConnectedProviderDetails(input.providers)
+      return key
+    },
+  )
+  const ready = () => answered() && hydrated.latest === hydrationKey()
+  const unread = () => !!input.harness() && isCatalogHarness(input.harness()!) && !input.providers.resolved()
+  const variants = (model: { providerId?: string; modelId?: string }) => {
+    const provider = model.providerId ? input.providers.all().get(model.providerId) : undefined
+    const row = Object.values(provider?.models ?? {}).find((item) => item.id === model.modelId)
+    return Object.keys(row?.variants ?? {})
+  }
+  return { ready, unread, variants }
 }

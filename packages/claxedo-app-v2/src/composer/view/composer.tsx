@@ -1,42 +1,20 @@
-import { createEffect, createMemo, createSignal, Show } from "solid-js"
+import { createMemo, Show } from "solid-js"
 import { useCommands } from "@/shell"
 import { useDialog } from "@/ui"
-import type { FileContextItem, ImagePart } from "../model"
+import type { FileContextItem } from "../model"
 import { promptText } from "../model"
 import { createComposer, type ComposerProps } from "../setup"
 import { acceptedFileTypes } from "../attachments/files"
-import { firstMarkNumber, numberImageMarks, type NumberedImageMark } from "../marks/marks"
-import { ImageMarkEditor } from "../marks/editor"
 import { renderPromptEditor } from "../editor/serialization"
-import { promptDesignPlaceholder } from "../role-gate"
-import type { AtItem } from "../suggestions"
-import { PROMPT_EXAMPLES } from "./examples"
 import { PromptInputFrame } from "./frame"
-import { promptPlaceholder } from "./placeholder"
-import { promptAtOptionKey } from "./prompt-options"
-import type { AtOption } from "./slash-popover"
 import { createPromptToolbarMotion } from "./toolbar-motion"
 import { createComposerToasts, ReadingNotices } from "./notice"
 import { SessionHealthPeek } from "./health-peek"
-import { commentFocus } from "./comment-routing"
+import { createEditorPlaceholder } from "./editor-placeholder"
+import { createPromptPopoverBindings } from "./popover-bindings"
+import { createPromptContextBindings } from "./context-bindings"
+import { createPromptImageMarkBindings } from "./image-mark-bindings"
 import { usePanel } from "@/panel"
-
-function atOption(item: AtItem): AtOption {
-  if (item.kind === "file") return { type: "file", path: item.path, display: item.path }
-  return { type: "document", documentId: item.id, display: item.entry.label, originKind: "managed", placementKind: "local", status: item.entry.group }
-}
-
-function createAtOptions(items: () => readonly AtItem[]) {
-  const pairs = createMemo(() => items().map((item) => ({ item, option: atOption(item) })))
-  return {
-    flat: createMemo(() => pairs().map((pair) => pair.option)),
-    itemOf: (key: string) => pairs().find((pair) => promptAtOptionKey(pair.option) === key)?.item,
-    keyOf: (id: string | undefined) => {
-      const pair = pairs().find((candidate) => candidate.item.id === id)
-      return pair ? promptAtOptionKey(pair.option) : undefined
-    },
-  }
-}
 
 export function Composer(props: ComposerProps) {
   const composer = createComposer(props)
@@ -47,52 +25,15 @@ export function Composer(props: ComposerProps) {
   const mode = () => controller.state.mode
   const popover = () => (controller.state.popover.kind === "closed" ? null : controller.state.popover.kind)
   const motion = createPromptToolbarMotion({ shellMode: () => mode() === "shell", pending: composer.harnessPending })
-  const [placeholderIndex] = createSignal(Math.floor(Math.random() * PROMPT_EXAMPLES.length))
-  const at = createAtOptions(composer.suggestions.atItems)
   const panel = usePanel()
-  const [activeComment, setActiveComment] = createSignal<string>()
   createComposerToasts(composer)
-  let slashPopover: HTMLDivElement | undefined
 
   const fileItems = createMemo(() => composer.draft().context.filter((item): item is FileContextItem => item.type === "file"))
-  const commentCount = createMemo(() => (mode() === "shell" ? 0 : fileItems().filter((item) => !!item.comment?.trim()).length))
-  const contextItems = createMemo(() => (mode() === "shell" ? fileItems().filter((item) => !item.comment?.trim()) : fileItems()))
   const dirty = createMemo(() => promptText(composer.draft().prompt).length > 0 || composer.draft().prompt.some((part) => part.type !== "text"))
-  const suggest = createMemo(() => !props.view?.messages().some((message) => message.role === "user"))
-  const placeholder = () =>
-    promptPlaceholder({
-      mode: mode(),
-      commentCount: commentCount(),
-      example: suggest() ? t(PROMPT_EXAMPLES[placeholderIndex()]) : "",
-      suggest: suggest(),
-      t,
-    })
-  const designPlaceholder = () =>
-    composer.draft().goalArmed
-      ? t("prompt.goal.placeholder")
-      : promptDesignPlaceholder({ authorityBlock: props.readOnly ? "workspace-role" : undefined, mode: mode(), shellPlaceholder: placeholder() })
-
-  createEffect(() => {
-    if (popover() !== "slash") return
-    const active = controller.state.activeId
-    if (!active || !slashPopover) return
-    requestAnimationFrame(() => slashPopover?.querySelector(`[data-slash-id="${CSS.escape(active)}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" }))
-  })
-
-  const openMarks = (image: ImagePart, focusIndex?: number) => {
-    dialog.show(() => (
-      <ImageMarkEditor
-        image={image}
-        firstNumber={firstMarkNumber(composer.images(), image.id)}
-        focusIndex={focusIndex}
-        onSave={(marks) => composer.store.setImageMarks(composer.key(), image.id, marks)}
-      />
-    ))
-  }
-  const removeImageMark = (entry: NumberedImageMark) => {
-    const image = composer.images().find((part) => part.id === entry.imageId)
-    if (image) composer.store.setImageMarks(composer.key(), image.id, (image.marks ?? []).filter((_, index) => index !== entry.index))
-  }
+  const designPlaceholder = createEditorPlaceholder({ composer, mode, fileItems, view: () => props.view, readOnly: () => props.readOnly })
+  const popoverBindings = createPromptPopoverBindings({ composer, popover, keybind: commands.keybind })
+  const contextBindings = createPromptContextBindings({ composer, mode, fileItems, panel })
+  const imageMarkBindings = createPromptImageMarkBindings({ composer, dialog })
 
   return (
     <>
@@ -101,6 +42,9 @@ export function Composer(props: ComposerProps) {
     </Show>
     <ReadingNotices composer={composer} />
     <PromptInputFrame
+      {...popoverBindings}
+      {...contextBindings}
+      {...imageMarkBindings}
       rootRef={composer.refs.setRoot}
       editorRef={(element) => {
         composer.refs.setEditor(element)
@@ -136,41 +80,6 @@ export function Composer(props: ComposerProps) {
         controller.onKeyDown(event)
       }}
       focusEditor={() => controller.focusEditor()}
-      popover={popover()}
-      documentPicker={false}
-      setSlashPopoverRef={(element) => {
-        slashPopover = element
-      }}
-      atFlat={at.flat()}
-      atActive={popover() === "at" ? at.keyOf(controller.state.activeId) : undefined}
-      atKey={promptAtOptionKey}
-      setAtActive={(key) => {
-        const item = at.itemOf(key)
-        if (item) controller.setActive(item.id)
-      }}
-      onAtSelect={(option) => {
-        const item = at.itemOf(promptAtOptionKey(option))
-        if (item) controller.selectAt(item)
-      }}
-      slashFlat={composer.suggestions.slashItems()}
-      slashActive={popover() === "slash" ? controller.state.activeId : undefined}
-      setSlashActive={controller.setActive}
-      onSlashSelect={controller.selectSlash}
-      commandKeybind={(id) => commands.keybind(id) || undefined}
-      contextItems={contextItems()}
-      contextActive={(item) => !!item.commentId && item.commentId === activeComment()}
-      openComment={(item) => {
-        const focus = commentFocus(item)
-        if (!focus) return
-        setActiveComment(item.commentId)
-        panel.show(focus)
-      }}
-      removeContextItem={(item) => composer.store.removeContext(composer.key(), item.key)}
-      imageAttachments={composer.images()}
-      imageMarks={numberImageMarks(composer.images())}
-      openImageMarks={openMarks}
-      removeImageMark={removeImageMark}
-      removeAttachment={(id) => composer.store.removeImage(composer.key(), id)}
       fileInputRef={composer.refs.setFileInput}
       acceptedFileTypes={acceptedFileTypes}
       addAttachments={(files) => void composer.reader.addFiles(files)}

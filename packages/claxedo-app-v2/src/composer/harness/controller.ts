@@ -13,16 +13,8 @@ export type HarnessSelectionControllerStore = {
   canCreateWithoutModel?(scope: string): boolean
   setConnectionDeclaration?(scope: string, declaration: HarnessConnectionRef | undefined): void
   hydrate(scope: string, input?: HarnessScopeInput): void | Promise<void>
-  /** Re-run a hydration probe for a scope still stuck in "polling". */
   reprobe(scope: string, input?: HarnessScopeInput): void | Promise<void>
-  /**
-   * Standing harness-health probe: fetch the harness route directly and move
-   * readiness ready<->degraded from the forwarded `harnessHealth`. Unlike
-   * `reprobe`, it bypasses the session-config short-circuit so a harness that died
-   * after settling is observed on an existing session.
-   */
   probeHealth(scope: string, input?: HarnessScopeInput): void | Promise<void>
-  /** Transition a never-settling harness to the terminal "error" readiness. */
   markUnavailable(scope: string): void
   setHarness(scope: string, type: HarnessType, input?: HarnessScopeInput): void | Promise<void>
   setModel(scope: string, model: ModelChoice, input?: HarnessScopeInput, labels?: DraftDefaultLabels): void | Promise<void>
@@ -31,7 +23,6 @@ export type HarnessSelectionControllerStore = {
   rememberDraftModel(scope: string, model: ModelChoice, input?: HarnessScopeInput, labels?: DraftDefaultLabels): void | boolean
   resolveDraftDefault(scope: string, input: Omit<ResolveDraftDefaultInput, "saved">): boolean
   harness(scope: string): HarnessType | undefined
-  /** The harness picked for an existing session that its next send switches it to. */
   heldHarness?(scope: string): HarnessType | undefined
   isHarnessMode(scope: string): boolean
   readiness(scope: string): HarnessReadiness
@@ -72,10 +63,8 @@ export type HarnessSelectionSnapshot = {
   models: HarnessModelChoice[]
   selectedModel: string
   selectedModelProvider?: string
-  /** Reasoning/thinking levels for the CURRENT model, when offered. */
   thoughtLevels: readonly HarnessOptionChoice[]
   selectedThoughtLevel: string | undefined
-  /** Faster tiers the CURRENT model offers; empty when it runs at one speed. */
   serviceTiers: readonly HarnessOptionChoice[]
   selectedServiceTier: string | undefined
   selectedModelKey?: ModelChoice
