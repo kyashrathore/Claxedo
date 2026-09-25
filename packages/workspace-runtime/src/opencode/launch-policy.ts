@@ -1,6 +1,6 @@
 import type { Mcp, Plugin, Skill } from "@opencode-ai/plugin"
 import { promises as fs } from "node:fs"
-import type { OpenCodeHost } from "./host"
+import { openCodeLocationClient, type OpenCodeHost } from "./host"
 import type { WorkspaceScope } from "./scope"
 import { loadSkills } from "./skill-info"
 
@@ -79,10 +79,9 @@ export function createLaunchPolicy() {
   return {
     plugin,
     async store(host: OpenCodeHost, scope: WorkspaceScope): Promise<LaunchPolicyStore> {
-      // Plugins set up per location on that location's first use. The engine
-      // keys locations by real path, so a symlinked workspace directory still
-      // resolves to the one store its plugin instance registered.
-      await (await host.client()).model.list({ location: { directory: scope.directory } })
+      // The engine keys locations by real path, so a symlinked workspace
+      // directory still resolves to the one store its plugin instance registered.
+      await openCodeLocationClient(host, scope.directory)
       const store = stores.get(await fs.realpath(scope.directory).catch(() => scope.directory)) ?? stores.get(scope.directory)
       if (!store) throw new Error("OpenCode launch policy was not initialized for the workspace")
       return store

@@ -1,0 +1,4 @@
+packages/agent-runtime-contract/src/harnesses.ts (AGENT_HARNESS_DEFINITIONS)
+packages/agent-runtime-contract/src/harness-table.ts
+packages/claxedo-server-core/src/agent-plugins/runtime/harness-registry.ts
+packages/agent-sdk-runtime/src/mcp-resolver.ts (MCP_CAPABLE_AGENTS)

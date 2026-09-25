@@ -1,0 +1,7 @@
+packages/claxedo-local-server/src/agent-plugins/runtime/adapters/claude.ts
+packages/claxedo-local-server/src/agent-plugins/runtime/adapters/codex.ts
+packages/claxedo-local-server/src/agent-plugins/runtime/adapters/cursor.ts
+packages/claxedo-local-server/src/agent-plugins/runtime/adapters/mcp-projection.ts
+packages/claxedo-local-server/src/agent-plugins/runtime/adapters/native.ts
+packages/claxedo-local-server/src/agent-plugins/runtime/adapters/opencode.ts
+packages/claxedo-local-server/src/agent-plugins/runtime/adapters/types.ts

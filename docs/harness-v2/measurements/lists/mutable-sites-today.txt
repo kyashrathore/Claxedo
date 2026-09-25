@@ -1,0 +1,14 @@
+packages/agent-sdk-runtime/src/target.ts:3:let id: string | undefined
+packages/agent-sdk-runtime/src/harnesses/cursor/auth.ts:30:let appliedBindingUrl: string | undefined
+packages/agent-sdk-runtime/src/harnesses/cursor/auth.ts:62:let loadedBackendUrl: { value: string | undefined; binding: boolean } | undefined
+packages/agent-sdk-runtime/src/harnesses/pi/executable.ts:127:const verified = new Map<string, Promise<void>>()
+packages/agent-sdk-runtime/src/harnesses/pi/auth.ts:130:const profiles = new Map<string, { owners: number; operations: number; pending: Promise<void> }>()
+packages/agent-sdk-runtime/src/harnesses/acp/turn-runner.ts:52:const activePromptCounts = new Map<string, number>()
+packages/agent-sdk-runtime/src/harnesses/acp/turn-runner.ts:53:const activePromptWaiters = new Map<string, Set<() => void>>()
+packages/agent-sdk-runtime/src/harnesses/acp/elicitation.ts:20:const liveOwners = new WeakMap<AgentRuntimeStoreWithRecovery, Set<AcpElicitationInteractions>>()
+packages/agent-sdk-runtime/src/harnesses/acp/session.ts:340:const liveModesSeen = new Map<string, readonly AgentPermissionMode[]>()
+packages/agent-sdk-runtime/src/harnesses/acp/pattern-validation.ts:8:let active = 0
+packages/agent-sdk-runtime/src/harnesses/acp/transport.ts:79:const retiring = new Map<string, Set<ACPRetirement>>()
+packages/agent-event-runtime/src/harnesses/acp/state.ts:119:let unserializableContentSeq = 0
+packages/process-ownership/src/launch/identity.ts:98:let bootTime: Promise<string> | undefined
+packages/process-ownership/src/launch/launch-gate.ts:259:let gateChild: { file: string; runner: string[] } | undefined

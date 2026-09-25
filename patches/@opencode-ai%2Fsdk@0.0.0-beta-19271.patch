@@ -1,0 +1,133 @@
+diff --git a/dist/effect/index.js b/dist/effect/index.js
+--- a/dist/effect/index.js
++++ b/dist/effect/index.js
+@@ -1,4 +1,4 @@
+-export * as OpenCode from "./opencode";
+-export * as Tool from "./tool";
++export * as OpenCode from "./opencode.js";
++export * as Tool from "./tool.js";
+ export { ClientError } from "@opencode-ai/client/effect";
+-export * from "../contracts";
++export * from "../contracts.js";
+diff --git a/dist/effect/opencode.js b/dist/effect/opencode.js
+--- a/dist/effect/opencode.js
++++ b/dist/effect/opencode.js
+@@ -1,8 +1,8 @@
+-export * as OpenCode from "./opencode";
++export * as OpenCode from "./opencode.js";
+ import { OpenCode } from "@opencode-ai/client/effect";
+ import { Context, Effect, Layer } from "effect";
+ import { FetchHttpClient, HttpClient } from "effect/unstable/http";
+-import { EmbeddedHost } from "../internal/host";
++import { EmbeddedHost } from "../internal/host.js";
+ export const create = Effect.fn("OpenCode.create")(function* (options = {}, embed = {}) {
+   const host = yield* Effect.acquireRelease(EmbeddedHost.create(options, embed), (host) => Effect.promise(host.close)), httpClient = yield* HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer)), client = yield* OpenCode.make({ baseUrl: "http://opencode.local" }).pipe(Effect.provideService(HttpClient.HttpClient, HttpClient.transformResponse(httpClient, Effect.provideService(FetchHttpClient.Fetch, host.fetch))));
+   return {
+diff --git a/dist/effect/workerd.js b/dist/effect/workerd.js
+--- a/dist/effect/workerd.js
++++ b/dist/effect/workerd.js
+@@ -1,7 +1,7 @@
+-export * as OpenCodeWorkerd from "./workerd";
++export * as OpenCodeWorkerd from "./workerd.js";
+ import { Layer } from "effect";
+-import { WorkerdProfile } from "../internal/workerd";
+-import { OpenCode } from "./opencode";
++import { WorkerdProfile } from "../internal/workerd.js";
++import { OpenCode } from "./opencode.js";
+ export const create = ({ log, workspaceProviders, instances, ...options }) => {
+   const profile = WorkerdProfile.make(options);
+   return OpenCode.create({ ...profile.options, log, workspaceProviders, instances }, { overrides: profile.replacements });
+diff --git a/dist/index.js b/dist/index.js
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -1,4 +1,4 @@
+-export * as OpenCode from "./opencode";
+-export * as Tool from "./tool";
++export * as OpenCode from "./opencode.js";
++export * as Tool from "./tool.js";
+ export { ClientError } from "@opencode-ai/client";
+-export * from "./contracts";
++export * from "./contracts.js";
+diff --git a/dist/internal/fetch.js b/dist/internal/fetch.js
+--- a/dist/internal/fetch.js
++++ b/dist/internal/fetch.js
+@@ -1,4 +1,4 @@
+-export * as OwnedFetch from "./fetch";
++export * as OwnedFetch from "./fetch.js";
+ export function make(handler, dispose) {
+   const requests = new Set, shutdown = new AbortController, closed = Error("OpenCode host is closed");
+   let closePromise;
+diff --git a/dist/internal/host.js b/dist/internal/host.js
+--- a/dist/internal/host.js
++++ b/dist/internal/host.js
+@@ -1,4 +1,4 @@
+-export * as EmbeddedHost from "./host";
++export * as EmbeddedHost from "./host.js";
+ import { SdkPlugins } from "@opencode-ai/core/plugin/sdk";
+ import { SessionRestart } from "@opencode-ai/core/session/execution/restart";
+ import { Workspace } from "@opencode-ai/core/workspace";
+@@ -6,9 +6,9 @@
+ import { createEmbeddedRoutes } from "@opencode-ai/server/routes";
+ import { Context, Effect, Layer, ManagedRuntime, Scope } from "effect";
+ import { HttpEffect, HttpRouter, HttpServer, HttpServerRequest } from "effect/unstable/http";
+-import { context, layer } from "../logging";
+-import { OwnedFetch } from "./fetch";
+-import { SdkInstances } from "./instances";
++import { context, layer } from "../logging.js";
++import { OwnedFetch } from "./fetch.js";
++import { SdkInstances } from "./instances.js";
+ export const create = Effect.fn("EmbeddedHost.create")(function* (options = {}, embed = {}) {
+   const { log, workspaceProviders, instances, ...server } = options, selector = instances ? SdkInstances.provide(instances, yield* Effect.context()) : void 0, runtime = ManagedRuntime.make(createEmbeddedRoutes({
+     ...server,
+diff --git a/dist/internal/instances.js b/dist/internal/instances.js
+--- a/dist/internal/instances.js
++++ b/dist/internal/instances.js
+@@ -1,4 +1,4 @@
+-export * as SdkInstances from "./instances";
++export * as SdkInstances from "./instances.js";
+ import { Instance } from "@opencode-ai/core/instance";
+ import { LocationServiceMap } from "@opencode-ai/core/location-service-map";
+ import { Plugin } from "@opencode-ai/core/plugin";
+diff --git a/dist/internal/workerd.js b/dist/internal/workerd.js
+--- a/dist/internal/workerd.js
++++ b/dist/internal/workerd.js
+@@ -1,4 +1,4 @@
+-export * as WorkerdProfile from "./workerd";
++export * as WorkerdProfile from "./workerd.js";
+ import { ServerWorkerd } from "@opencode-ai/server/workerd";
+ export function make({ config, ...options }) {
+   const server = {
+diff --git a/dist/opencode.js b/dist/opencode.js
+--- a/dist/opencode.js
++++ b/dist/opencode.js
+@@ -1,2 +1,2 @@
+-import { PromiseSdk } from "./promise";
++import { PromiseSdk } from "./promise.js";
+ export const create = (options = {}) => PromiseSdk.create(options);
+diff --git a/dist/promise.js b/dist/promise.js
+--- a/dist/promise.js
++++ b/dist/promise.js
+@@ -1,8 +1,8 @@
+-export * as PromiseSdk from "./promise";
++export * as PromiseSdk from "./promise.js";
+ import { OpenCode } from "@opencode-ai/client";
+ import { Session } from "@opencode-ai/schema/session";
+ import { Effect, Schema } from "effect";
+-import { EmbeddedHost } from "./internal/host";
++import { EmbeddedHost } from "./internal/host.js";
+ export async function create(options = {}, embed = {}) {
+   const { plugins, instances, ...hostOptions } = options, host = await Effect.runPromise(EmbeddedHost.create({
+     ...hostOptions,
+diff --git a/dist/workerd.js b/dist/workerd.js
+--- a/dist/workerd.js
++++ b/dist/workerd.js
+@@ -1,6 +1,6 @@
+-export * as OpenCodeWorkerd from "./workerd";
+-import { WorkerdProfile } from "./internal/workerd";
+-import { PromiseSdk } from "./promise";
++export * as OpenCodeWorkerd from "./workerd.js";
++import { WorkerdProfile } from "./internal/workerd.js";
++import { PromiseSdk } from "./promise.js";
+ export const create = ({ log, plugins, instances, ...options }) => {
+   const profile = WorkerdProfile.make(options);
+   return PromiseSdk.create({ ...profile.options, log, plugins, instances }, { overrides: profile.replacements });

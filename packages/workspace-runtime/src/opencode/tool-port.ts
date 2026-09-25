@@ -1,5 +1,5 @@
 import type { Plugin } from "@opencode-ai/plugin"
-import type { OpenCodeHost } from "./host"
+import { openCodeLocationClient, type OpenCodeHost } from "./host"
 import type { WorkspaceScope } from "./scope"
 
 export type SessionTool = Readonly<{
@@ -101,7 +101,7 @@ export function createToolPort(host: OpenCodeHost): OpenCodeToolPort {
       sessions.set(input.sessionID, input)
       try {
         await ensureInstalled()
-        await (await host.client()).model.list({ location: { directory: input.scope.directory } })
+        await openCodeLocationClient(host, input.scope.directory)
         const reload = reloads.get(input.scope.directory)
         if (!reload) throw new Error("OpenCode tool plugin was not initialized for the workspace")
         await reload()

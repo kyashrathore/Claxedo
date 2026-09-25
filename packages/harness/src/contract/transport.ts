@@ -8,7 +8,6 @@ import type {
   AgentPermissionModeState,
   AgentTodo,
   ConnectionRuntimeStatus,
-  PromptModel,
   RuntimeGoalSnapshot,
   SessionConfig,
   SessionConfigUpdate,
@@ -21,7 +20,7 @@ import type { PluginProjection, ResolvedCredentials } from "./projection"
 import type { HarnessServices } from "./services"
 import type { AttachInput, Deadline, HarnessSession, RoutedEvent, StartInput, TurnInput, TurnRef } from "./session"
 
-export type TransportKind = "claude-sdk" | "codex-app-server" | "cursor-sdk" | "acp" | "pi-rpc" | "opencode-http"
+export type TransportKind = "claude-sdk" | "codex-app-server" | "cursor-sdk" | "acp" | "pi-rpc" | "opencode-sdk"
 
 export type TransportConfigUpdate = {
   credentials?: ResolvedCredentials
@@ -33,9 +32,9 @@ export type ConfigApplied =
   | { state: "deferred"; until: "after-active-turns" | "next-session" }
   | { state: "refused"; reason: string }
 
-export type ConfigTarget =
-  | { session: HarnessSession }
-  | { draft: { directory: string; model?: PromptModel } }
+export type DraftLaunch = Omit<StartInput, "sessionId" | "title" | "instructions">
+
+export type ConfigTarget = { session: HarnessSession } | { draft: DraftLaunch }
 
 export type TransportHealth = {
   status: "ok" | "degraded" | "unavailable"
@@ -98,7 +97,7 @@ export interface HarnessTransport {
   attach(input: AttachInput, session: SessionBroker): Promise<HarnessSession>
   send(session: HarnessSession, turn: TurnInput, broker: TurnBroker): AsyncIterable<RoutedEvent>
   cancel(session: HarnessSession, turn: TurnRef, deadline: Deadline): Promise<AdapterCancelOutcome>
-  configure(update: TransportConfigUpdate): Promise<ConfigApplied>
+  configure(session: HarnessSession, update: TransportConfigUpdate): Promise<ConfigApplied>
   close(session: HarnessSession): Promise<void>
   dispose(): Promise<void>
   readonly steer?: SteerOperations

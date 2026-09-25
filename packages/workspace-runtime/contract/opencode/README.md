@@ -1,6 +1,6 @@
 # Upstream OpenCode SDK diagnostic probes
 
-This isolated, unpatched npm fixture characterizes beta-18684. It is not a
+This isolated, unpatched npm fixture characterizes beta-19271. It is not a
 workspace member or a production execution path. Its own lockfile prevents
 repository patches or workspace aliases from hiding upstream defects.
 

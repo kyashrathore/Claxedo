@@ -4,6 +4,8 @@ import { RequestError, type AgentSideConnection, type PromptResponse, type Sessi
 import { asString } from "@claxedo/helpers/guards"
 import { recordElicitationReceipt, recordPermissionReceipt } from "./receipts"
 import { ACP_FAULT_ENV, ACP_WITHHOLD_ONCE_ENV, holdEnteredFile, holdReleaseFile, type AcpScript, type AcpStep, type AcpToolStep } from "./script"
+import { deliveredToolOutput } from "./parts-fault"
+import { deliveredUsage } from "./usage-fault"
 
 export type TurnContext = {
   connection: AgentSideConnection
@@ -63,7 +65,7 @@ async function playTool(context: TurnContext, step: AcpToolStep) {
   const status = step.status ?? "completed"
   const content = step.content ?? (step.text !== undefined ? [textContent(step.text)] : [])
   const rawOutput = step.output ?? (status === "failed" ? { error: step.text ?? "The scripted tool failed" } : step.text ?? null)
-  await update(context, { sessionUpdate: "tool_call_update", toolCallId, status, content, rawOutput })
+  await update(context, { sessionUpdate: "tool_call_update", toolCallId, status, content, rawOutput: deliveredToolOutput(rawOutput) })
 }
 
 function diffTool(step: Extract<AcpStep, { kind: "diff" }>): AcpToolStep {
@@ -166,6 +168,9 @@ async function playStep(context: TurnContext, step: AcpStep): Promise<PromptResp
     case "text":
       await sendText(context, step.text, step.chunks)
       return undefined
+    case "usage":
+      await update(context, { sessionUpdate: "usage_update", used: step.used, size: step.size })
+      return undefined
     case "prompt":
       await sendText(context, context.prompt)
       return undefined
@@ -221,5 +226,6 @@ export async function playScript(context: TurnContext, script: AcpScript): Promi
     const result = await playStep(context, step)
     if (result) return result
   }
-  return { stopReason: script.stopReason ?? "end_turn", ...(script.usage ? { usage: script.usage } : {}) }
+  const usage = deliveredUsage(script.usage)
+  return { stopReason: script.stopReason ?? "end_turn", ...(usage ? { usage } : {}) }
 }
