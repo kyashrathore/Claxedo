@@ -569,6 +569,7 @@
       },
       "devDependencies": {
         "@anthropic-ai/sdk": "0.115.0",
+        "@claxedo/sandbox-manager": "workspace:*",
         "@tsconfig/node-lts": "22.0.4",
         "@types/bun": "catalog:",
         "@types/node": "catalog:",
@@ -625,6 +626,7 @@
       "name": "@claxedo/sandbox-manager",
       "version": "0.10.0",
       "dependencies": {
+        "@claxedo/egress-broker": "workspace:*",
         "@claxedo/helpers": "workspace:*",
         "@claxedo/sandbox-contract": "workspace:*",
         "@daytona/sdk": "0.211.2",

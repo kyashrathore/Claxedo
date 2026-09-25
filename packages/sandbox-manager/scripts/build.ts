@@ -19,6 +19,7 @@ const entries = [
   "src/drivers/daytona.ts",
   "src/drivers/docker.ts",
   "src/drivers/exe.ts",
+  "src/drivers/local-brokering.ts",
   "src/drivers/fetch-bridge.ts",
   "src/drivers/modal.ts",
   "src/drivers/vercel.ts",

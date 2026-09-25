@@ -48,14 +48,14 @@ import {
   configureWorkspaceSupervisorOptions,
   workspaceSupervisorServerUrl,
 } from "./options"
-import type { WorkspaceSupervisorOptions } from "./runtime-env"
+import type { ConfiguredWorkspaceSupervisorOptions } from "./options"
 
 export { verifyWorkspaceRuntimeControlToken } from "./control-token"
 export { workspaceSupervisorServerUrl }
 
 const log = Log.create({ service: "workspace-supervisor" })
 
-export function configureWorkspaceSupervisor(input: WorkspaceSupervisorOptions) {
+export function configureWorkspaceSupervisor(input: ConfiguredWorkspaceSupervisorOptions) {
   configureWorkspaceSupervisorOptions(input)
   // The supervisor owns sandbox leases, so it is the one that can teach the
   // workspace store to read them. Wiring the store to import the lease table

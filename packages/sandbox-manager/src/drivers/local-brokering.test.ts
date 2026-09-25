@@ -1,0 +1,69 @@
+import { afterEach, expect, test } from "vitest"
+import fs from "node:fs/promises"
+import os from "node:os"
+import path from "node:path"
+import http from "node:http"
+import { createLocalBrokeringSandboxDriver } from "./local-brokering"
+
+const roots: string[] = []
+afterEach(async () => {
+  for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true })
+})
+
+function sendProxy(proxy: URL, destination: string, header: string) {
+  return new Promise<number>((resolve, reject) => {
+    const request = http.request({ host: proxy.hostname, port: proxy.port, path: destination, method: "POST", headers: { authorization: header } }, (response) => {
+      response.resume()
+      response.on("end", () => resolve(response.statusCode ?? 0))
+    })
+    request.on("error", reject)
+    request.end("{}")
+  })
+}
+
+test("local broker keeps the key outside the runtime and withdraws it on ensure", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "local-broker-test-"))
+  roots.push(root)
+  const received: string[] = []
+  const upstream = http.createServer((request, response) => {
+    received.push(request.headers.authorization ?? "")
+    response.writeHead(200).end("ok")
+  })
+  await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve))
+  try {
+    const address = upstream.address()
+    if (!address || typeof address === "string") throw new Error("upstream has no port")
+    const origin = `http://127.0.0.1:${address.port}`
+    const executable = process.execPath
+    const args = ["-e", `require('node:http').createServer((req,res)=>{if(req.url==='/global/health')res.end('ok');else if(req.url==='/direct'){const s=require('node:net').connect(Number(process.env.DIRECT_PORT),'127.0.0.1');s.on('connect',()=>{s.destroy();res.end('connected')});s.on('error',(e)=>res.end(e.code))}else res.end(JSON.stringify(process.env))}).listen(process.env.WORKSPACE_RUNTIME_PORT,'127.0.0.1')`]
+    const driver = createLocalBrokeringSandboxDriver({ root, executable, args, allowedOrigins: [origin], inheritedEnv: { DIRECT_PORT: String(address.port) } })
+    const key = "actual-provider-secret-unique"
+    const placeholder = "claxedo-broker:MODEL_KEY"
+    const ensure = { workspaceId: "one", homeRegion: "local", epoch: 1, labels: {}, secrets: [{ name: "MODEL_KEY", value: key, hosts: [new URL(origin).host], header: "authorization", scheme: "Bearer", methods: ["POST"], pathPrefixes: ["/v1"] }] }
+    const target = await driver.ensureHost(ensure)
+    if ("provisioning" in target) throw new Error("local test driver did not return a ready target")
+    const env = await (await fetch(target.url)).json() as Record<string, string>
+    expect(JSON.stringify(env)).not.toContain(key)
+    expect(env.MODEL_KEY).toBe(placeholder)
+    expect(await (await fetch(`${target.url}/direct`)).text()).not.toBe("connected")
+    const files = await fs.readdir(root, { recursive: true })
+    for (const file of files) {
+      const full = path.join(root, file)
+      if ((await fs.stat(full)).isFile()) expect(await fs.readFile(full, "utf8")).not.toContain(key)
+    }
+    const proxy = new URL(env.HTTP_PROXY)
+    expect(await sendProxy(proxy, `${origin}/v1/messages`, `Bearer ${placeholder}`)).toBe(200)
+    expect(received).toEqual([`Bearer ${key}`])
+    expect(await sendProxy(proxy, "http://unknown.invalid/v1/messages", `Bearer ${placeholder}`)).toBe(403)
+    const withdrawn = await driver.ensureHost({ ...ensure, secrets: [] })
+    if ("provisioning" in withdrawn) throw new Error("local test driver did not return a withdrawn target")
+    const withdrawnEnv = await (await fetch(withdrawn.url)).json() as Record<string, string>
+    expect(withdrawnEnv.MODEL_KEY).toBeUndefined()
+    expect(await sendProxy(new URL(withdrawnEnv.HTTP_PROXY), `${origin}/v1/messages`, `Bearer ${placeholder}`)).toBe(403)
+    expect(received).toEqual([`Bearer ${key}`])
+    await driver.stop?.(withdrawn)
+  } finally {
+    upstream.closeAllConnections()
+    await new Promise<void>((resolve) => upstream.close(() => resolve()))
+  }
+})

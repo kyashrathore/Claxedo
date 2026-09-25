@@ -3,6 +3,7 @@ import type { HarnessServices, StartInput } from "../../contract"
 import { projectCodexThreadConfig } from "."
 
 const input: StartInput = {
+  workspaceId: "w1",
   sessionId: "s1", directory: "/work", locality: "local",
   owner: { kind: "machine-owner" },
   config: { harness: { id: "codex", access: "native" } },

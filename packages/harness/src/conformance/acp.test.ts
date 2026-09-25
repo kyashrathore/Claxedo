@@ -8,8 +8,9 @@ import { startScriptedAcpWebSocket } from "../../e2e/harness/acp/websocket"
 import { acpScriptToken, writeAcpScript } from "../../e2e/harness/acp/script"
 import { readAcpRequests } from "../../e2e/harness/acp/requests"
 import { expect, test } from "bun:test"
-import { createSessionBroker } from "../broker"
-import { authority, origin } from "./test-support/memory-ports"
+import { createRequestBroker, createSessionBroker } from "../broker"
+import { MemoryPorts, authority, origin } from "./test-support/memory-ports"
+import { createTestServices } from "./test-support/services"
 
 type AcpBackend = ConformanceBackend & {
   root: string
@@ -78,7 +79,7 @@ for (const kind of ["process", "websocket"] as const) {
     makeTransport(services, state) {
       const peer = state as AcpBackend
       return new AcpTransport(services, peer.connection, filterMcpServers,
-        async () => { throw new Error("No saved transcript in this conformance scenario") }, () => "w1")
+        async () => { throw new Error("No saved transcript in this conformance scenario") })
     },
   })
 }
@@ -89,7 +90,7 @@ runConformance({
   makeTransport(services, state) {
     const peer = state as AcpBackend
     return new AcpTransport(services, peer.connection, filterMcpServers,
-      async () => { throw new Error("No saved transcript in this conformance scenario") }, () => "w1")
+      async () => { throw new Error("No saved transcript in this conformance scenario") })
   },
 })
 
@@ -103,7 +104,7 @@ test("a missing native ACP session persists saved context before rebinding", asy
       return new AcpTransport(services, peer.connection, filterMcpServers, async () => {
         order.push("context")
         return { from: peer.harness, pending: true, transcript: "Saved conversation", reason: "missing-session" }
-      }, () => "w1")
+      })
     },
   })
   try {
@@ -123,6 +124,24 @@ test("a missing native ACP session persists saved context before rebinding", asy
   } finally { await context.close() }
 })
 
+test("ACP publishes a command update received outside a turn", async () => {
+  const context = await setupConformance({
+    name: "acp outside commands", backend: () => backend("websocket"),
+    makeTransport(services, state) {
+      const peer = state as AcpBackend
+      return new AcpTransport(services, peer.connection, filterMcpServers,
+        async () => { throw new Error("No saved transcript in this conformance scenario") })
+    },
+  })
+  try {
+    for (let attempt = 0; !context.ports.sessionEvents.some((row) => (row.event as { type?: string }).type === "available-commands-update") && attempt < 100; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+    expect(context.ports.sessionEvents).toContainEqual(expect.objectContaining({ sessionId: "s1",
+      event: expect.objectContaining({ type: "available-commands-update" }) }))
+  } finally { await context.close() }
+})
+
 test("a busy workspace does not hold another workspace's ACP config restart", async () => {
   const context = await setupConformance({
     name: "acp workspace restart",
@@ -130,18 +149,18 @@ test("a busy workspace does not hold another workspace's ACP config restart", as
     makeTransport(services, state) {
       const peer = state as AcpBackend
       return new AcpTransport(services, peer.connection, filterMcpServers,
-        async () => { throw new Error("No saved transcript in this conformance scenario") },
-        (directory) => directory === peer.directory ? "w1" : "w2")
+        async () => { throw new Error("No saved transcript in this conformance scenario") })
     },
   })
   try {
     const secondDirectory = path.join((context.backend as AcpBackend).root, "other")
     await fs.mkdir(secondDirectory)
-    const secondStart = { ...context.start, sessionId: "s2", directory: secondDirectory }
+    const secondStart = { ...context.start, sessionId: "s2", workspaceId: "w2", directory: secondDirectory }
     context.ports.current.set("s2", { ...authority, sessionId: "s2", directory: secondDirectory, workspaceId: "w2" })
+    context.ports.directories.set("s2", secondDirectory)
     const secondBroker = createSessionBroker(context.owner, { sessionId: "s2", directory: secondDirectory,
       workspaceId: "w2", origin })
-    await context.transport.start(secondStart, secondBroker)
+    const secondSession = await context.transport.start(secondStart, secondBroker)
     const running = (async () => {
       const events = []
       for await (const event of context.transport.send(context.session, context.turn(context.backend.permissionCommand!), context.turnBroker())) events.push(event)
@@ -154,15 +173,16 @@ test("a busy workspace does not hold another workspace's ACP config restart", as
     }
     expect(pending).toBeDefined()
     const changed = { ...context.start.credentials, leaseGeneration: "rotated" }
-    expect(await context.transport.configure({ credentials: changed })).toEqual({ state: "deferred", until: "after-active-turns" })
+    expect(await context.transport.configure(context.session, { credentials: changed })).toEqual({ state: "deferred", until: "after-active-turns" })
     const beforeReply = await readAcpRequests(context.backend.directory)
-    expect(beforeReply.some((row) => row.method === "session/resume" && row.params.cwd === secondDirectory)).toBe(true)
+    expect(beforeReply.some((row) => row.method === "session/resume" && row.params.cwd === secondDirectory)).toBe(false)
     expect(beforeReply.some((row) => row.method === "session/resume" && row.params.cwd === context.backend.directory)).toBe(false)
     const answer = await context.owner.broker.answer(pending!.request.requestId,
       { kind: "permission", decision: "deny" }, { sessionId: "s1" })
     expect(answer.ok).toBe(true)
     await running
     expect((await readAcpRequests(context.backend.directory)).some((row) => row.method === "session/resume" && row.params.cwd === context.backend.directory)).toBe(true)
+    expect((await readAcpRequests(context.backend.directory)).some((row) => row.method === "session/resume" && row.params.cwd === secondSession.directory)).toBe(false)
   } finally { await context.close() }
 })
 
@@ -178,7 +198,7 @@ test("a hung ACP session/new times out and retires its started process", async (
     makeTransport(services, state) {
       const peer = state as AcpBackend
       return new AcpTransport(services, peer.connection, filterMcpServers,
-        async () => { throw new Error("No saved transcript in this conformance scenario") }, () => "w1")
+        async () => { throw new Error("No saved transcript in this conformance scenario") })
     },
   })).rejects.toThrow("session/new timed out")
   expect(processes).toHaveLength(1)
@@ -192,7 +212,7 @@ test("the targeted red ACP agent fails at session/prompt", async () => {
     makeTransport(services, state) {
       const peer = state as AcpBackend
       return new AcpTransport(services, peer.connection, filterMcpServers,
-        async () => { throw new Error("No saved transcript in this conformance scenario") }, () => "w1")
+        async () => { throw new Error("No saved transcript in this conformance scenario") })
     },
   })
   try {
@@ -215,7 +235,7 @@ test("a human permission wait suspends ACP's quiet deadline", async () => {
     makeTransport(services, state) {
       const peer = state as AcpBackend
       return new AcpTransport(services, peer.connection, filterMcpServers,
-        async () => { throw new Error("No saved transcript in this conformance scenario") }, () => "w1")
+        async () => { throw new Error("No saved transcript in this conformance scenario") })
     },
   })
   try {
@@ -251,7 +271,7 @@ test("a startup elicitation suspends session/new and binds to its reservation", 
     makeTransport(services, state) {
       const peer = state as AcpBackend
       return new AcpTransport(services, peer.connection, filterMcpServers,
-        async () => { throw new Error("No saved transcript in this conformance scenario") }, () => "w1")
+        async () => { throw new Error("No saved transcript in this conformance scenario") })
     },
   })
   let pending = owner?.broker.list({ sessionId: "s1" }).find((row) => row.request.kind === "elicitation")
@@ -269,6 +289,79 @@ test("a startup elicitation suspends session/new and binds to its reservation", 
   finally { await context.close() }
 })
 
+test("a draft ACP probe cancels startup questions, deduplicates, and retires its process", async () => {
+  const state = await backend("process", "resume", true, undefined, false, true)
+  const services = createTestServices()
+  const transport = new AcpTransport(services, state.connection, filterMcpServers,
+    async () => { throw new Error("No saved transcript in this conformance scenario") })
+  const draft = { workspaceId: "w1", directory: state.directory, locality: "local" as const, owner: state.owner,
+    config: { harness: state.harness, model: state.model }, model: state.model, credentials: state.credentials,
+    projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] } }
+  try {
+    expect(await transport.config.options({ draft }, "peek")).toEqual([])
+    const [first, second] = await Promise.all([
+      transport.config.options({ draft }, "probe"), transport.config.options({ draft }, "probe"),
+    ])
+    expect(first).toEqual(second)
+    expect(first.some((item) => item.id === "mode")).toBe(true)
+    expect(await transport.config.options({ draft }, "probe")).toEqual(first)
+    expect(await transport.config.options({ draft }, "peek")).toEqual(first)
+    expect((await transport.config.permissionModes({ draft })).modes.map((mode) => mode.id)).toEqual(["default", "review"])
+    const requests = await readAcpRequests(state.directory)
+    expect(requests.filter((row) => row.method === "session/new")).toHaveLength(1)
+    expect(requests.find((row) => row.method === "startup/answer")?.params).toMatchObject({ action: "cancel" })
+    expect(services.processes).toHaveLength(1)
+    expect(await services.processes[0]!.exited).toBeDefined()
+  } finally { await transport.dispose(); await state.close() }
+})
+
+test("a failed ACP draft probe retires and can be retried", async () => {
+  const state = await backend("process", "resume", true, "session/new")
+  const services = createTestServices()
+  const transport = new AcpTransport(services, { ...state.connection, startupTimeoutMs: 100 }, filterMcpServers,
+    async () => { throw new Error("No saved transcript in this conformance scenario") })
+  const draft = { workspaceId: "w1", directory: state.directory, locality: "local" as const, owner: state.owner,
+    config: { harness: state.harness, model: state.model }, model: state.model, credentials: state.credentials,
+    projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] } }
+  try {
+    await expect(transport.config.options({ draft }, "probe")).rejects.toThrow("draft probe timed out")
+    await expect(transport.config.options({ draft }, "probe")).rejects.toThrow("draft probe timed out")
+    expect(services.processes).toHaveLength(2)
+    expect(await Promise.all(services.processes.map((process) => process.exited))).toHaveLength(2)
+  } finally { await transport.dispose(); await state.close() }
+})
+
+test("disposing ACP during a startup ask persists cancellation before process retirement", async () => {
+  const state = await backend("process", "resume", true, undefined, false, true)
+  const services = createTestServices()
+  const ports = new MemoryPorts()
+  const start = { sessionId: "s1", workspaceId: "w1", directory: state.directory,
+    connectionId: "scripted-acp", operationId: "start-1" }
+  ports.startBinding = start
+  ports.directories.set("s1", state.directory)
+  const owner = createRequestBroker(ports)
+  const broker = createSessionBroker(owner, { ...start, start, origin })
+  const transport = new AcpTransport(services, state.connection, filterMcpServers,
+    async () => { throw new Error("No saved transcript in this conformance scenario") })
+  const input = { ...start, locality: "local" as const, owner: state.owner,
+    config: { harness: state.harness, model: state.model }, model: state.model, credentials: state.credentials,
+    projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] } }
+  try {
+    const starting = transport.start(input, broker)
+    let pending = owner.broker.list({ sessionId: "s1" }).find((row) => row.request.kind === "elicitation")
+    for (let attempt = 0; !pending && attempt < 500; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      pending = owner.broker.list({ sessionId: "s1" }).find((row) => row.request.kind === "elicitation")
+    }
+    expect(pending).toBeDefined()
+    await transport.dispose()
+    await expect(starting).rejects.toThrow()
+    expect(ports.readAnswer("s1", pending!.request.requestId)).toEqual({ kind: "cancelled" })
+    expect(await owner.broker.answer(pending!.request.requestId, { kind: "rejected" }, { start })).toMatchObject({ refusal: "stale" })
+    expect(await services.processes[0]!.exited).toBeDefined()
+  } finally { await transport.dispose(); await state.close() }
+})
+
 test("silence cancels the ACP prompt and fences its uncertain session", async () => {
   const context = await setupConformance({
     name: "acp silence",
@@ -279,7 +372,7 @@ test("silence cancels the ACP prompt and fences its uncertain session", async ()
     makeTransport(services, state) {
       const peer = state as AcpBackend
       return new AcpTransport(services, peer.connection, filterMcpServers,
-        async () => { throw new Error("No saved transcript in this conformance scenario") }, () => "w1")
+        async () => { throw new Error("No saved transcript in this conformance scenario") })
     },
   })
   try {
@@ -305,7 +398,7 @@ test("ACP child updates use a child route and brokered lineage", async () => {
     makeTransport(services, state) {
       const peer = state as AcpBackend
       return new AcpTransport(services, peer.connection, filterMcpServers,
-        async () => { throw new Error("No saved transcript in this conformance scenario") }, () => "w1")
+        async () => { throw new Error("No saved transcript in this conformance scenario") })
     },
   })
   try {
@@ -324,6 +417,6 @@ runConformance({
   makeTransport(services, state) {
     const peer = state as AcpBackend
     return new AcpTransport(services, peer.connection, filterMcpServers,
-      async () => { throw new Error("No saved transcript in this conformance scenario") }, () => "w1")
+      async () => { throw new Error("No saved transcript in this conformance scenario") })
   },
 })

@@ -14,7 +14,6 @@ export function sameStart(a: AgentSessionStartBinding, b: AgentSessionStartBindi
 export function sameTurnAuthority(a: TurnAuthority, b: TurnAuthority): boolean {
   return a.sessionId === b.sessionId && a.workspaceId === b.workspaceId &&
     a.directory === b.directory && a.connectionId === b.connectionId &&
-    a.upstreamSessionId === b.upstreamSessionId &&
     a.ownerGeneration === b.ownerGeneration && a.turnId === b.turnId
 }
 
