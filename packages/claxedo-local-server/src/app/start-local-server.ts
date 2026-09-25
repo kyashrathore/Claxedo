@@ -37,8 +37,7 @@ import { withDataDirOwnership } from "@claxedo/server-core/platform/runtime/lib/
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { workspaceSupervisorInstalled } from "@claxedo/server-core/workspace/supervisor-port"
 import { drainOpenCodeSdkRuntime, openCodeSdkRuntime } from "@claxedo/server-core/opencode/sdk-runtime"
-import { configureAgentConfig, disposeAgentConfig, watchUserConfigFile } from "@claxedo/server-core/agent-config/index"
-import { fanOutConfig } from "../agent-config/fanout"
+import { configureAgentConfig, disposeAgentConfig } from "@claxedo/server-core/agent-config/index"
 import { createLocalApp, type LocalAppOptions } from "./local-app"
 import { createLocalControlPlaneServices } from "./local-services"
 import {
@@ -54,7 +53,6 @@ import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
 import { localBuiltinToolGroupsReader } from "../agent-plugins/builtin-groups"
 import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import { projectLocalSessionMetaFromEvent, sessionMetaProjectionTap } from "../session/session-meta-tap"
-import { migrateCredentials } from "../credentials/operations/migrate"
 import { dropCopiedHarnessLogins } from "../credentials/operations/drop-copied-harness-logins"
 import { createLocalCredentialBroker } from "../credentials/broker"
 import { hostProviderConfigProjectAuth } from "@claxedo/server-core/credentials/host-provider-config"
@@ -226,11 +224,6 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     projectAuth: hostProviderConfigProjectAuth((input) => credentialBroker.projectAuth(input), hostProviderConfig),
     ...(options.harnessLaunch ? { harnessLaunch: options.harnessLaunch } : {}),
   })
-  const stopConfigWatch = watchUserConfigFile(() => {
-    fanOutConfig().catch((error: unknown) => {
-      log.warn("config fan-out after an on-disk edit failed", { error: String(error) })
-    })
-  })
   // A placeholder expires; re-projecting on this interval and re-applying the
   // snapshot is what puts the next one in front of the next turn's spawn.
   const stopConfigRenewal = startEmbeddedWorkspaceRuntimeConfigRenewal()
@@ -239,12 +232,8 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   // repair checks and statement preparation.
   ClaxedoDB.raw()
 
-  // Deferred and non-blocking: a credential migration must never gate startup.
   dropCopiedHarnessLogins().catch((error: unknown) => {
     log.warn("Failed to forget copied harness logins", { error: String(error) })
-  })
-  migrateCredentials().catch((error) => {
-    log.warn("credential migration failed", { error: String(error) })
   })
 
   const usageRevisionStore = createSqliteUsageLedger()
@@ -435,7 +424,6 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     })
     stopOperation = (async () => {
       try {
-        stopConfigWatch()
         stopConfigRenewal()
         options.daemon?.lifecycle.stop()
         // An owner this process could not retire is reported and the rest of

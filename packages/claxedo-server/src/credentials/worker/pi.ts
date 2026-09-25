@@ -15,6 +15,7 @@ function credentialError(status: 400 | 503, code: string, message: string) {
 export function hostedPiCredentials(input: {
   resolveOrgId(auth: SignedControlPlaneAuth): Promise<string>
   credentials: ((orgId: string) => ControlPlaneCredentials) | undefined
+  changed?: (orgId: string) => Promise<void>
 }) {
   const credentials = async (auth: SignedControlPlaneAuth) => {
     if (!input.credentials) throw credentialError(503, "pi_credentials_unavailable", "Hosted credentials are disabled")
@@ -38,14 +39,18 @@ export function hostedPiCredentials(input: {
       if (!piProviderTakesApiKey(providerID)) {
         throw credentialError(400, "pi_provider_unsupported", "This Pi provider does not accept API keys")
       }
+      const orgId = await input.resolveOrgId(auth)
       const store = await credentials(auth)
       await store.putCredential({ provider_id: providerID, kind: "api_key", source: "managed", secret: key })
+      await input.changed?.(orgId)
     },
     deletePiCredential: async (auth: SignedControlPlaneAuth, providerID: string) => {
       const ids = piCredentialProviderIDs(providerID)
       if (!ids.length) throw credentialError(400, "pi_provider_unsupported", "Unknown Pi provider")
+      const orgId = await input.resolveOrgId(auth)
       const store = await credentials(auth)
       for (const id of ids) await store.deleteCredentialsByProvider(id)
+      await input.changed?.(orgId)
     },
   }
 }

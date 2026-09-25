@@ -43,7 +43,7 @@ describe("fanOutConfig", () => {
       new Error("runtime rejected config containing sk-secret"),
     )
 
-    await expect(fanOutConfig()).resolves.toBeUndefined()
+    await expect(fanOutConfig()).rejects.toThrow("config fan-out failed")
 
     expect(mocks.broadcastRuntimeConfig).toHaveBeenCalledOnce()
     expect(mocks.syncEmbeddedWorkspaceRuntimes).toHaveBeenCalledOnce()

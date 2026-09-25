@@ -26,10 +26,6 @@ function cfgFile() {
   return path.join(root, "user-agent-config.json")
 }
 
-function backupFile(legacyVersion: number) {
-  return path.join(root, `user-agent-config.legacy-v${legacyVersion}.json`)
-}
-
 function trustedConnection(overrides: Partial<HarnessConnectionDescriptor> = {}): HarnessConnectionDescriptor {
   return {
     connectionId: "conn-primary",
@@ -64,34 +60,14 @@ describe("agent config", () => {
     else process.env.CLAXEDO_DATA_DIR = prev
   })
 
-  // ── watchUserConfigFile ────────────────────────────────────────────────
-
-  test("an edit made outside the API is reported, an API save is not", async () => {
-    const changes: number[] = []
-    const stop = mod.watchUserConfigFile(() => changes.push(Date.now()))
-    try {
-      await mod.saveUserConfig({ version: 3, mcp: {}, connections: {} })
-      await new Promise((resolve) => setTimeout(resolve, 700))
-      expect(changes).toHaveLength(0)
-
-      const edited = { version: 3 as const, mcp: {}, connections: { [trustedConnection().connectionId]: trustedConnection() } }
-      await fs.writeFile(cfgFile(), JSON.stringify(edited, null, 2) + "\n")
-      const deadline = Date.now() + 5_000
-      while (changes.length === 0 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50))
-      expect(changes).toHaveLength(1)
-
-      await mod.saveUserConfig({ ...edited, defaultConnectionId: trustedConnection().connectionId })
-      await new Promise((resolve) => setTimeout(resolve, 700))
-      expect(changes).toHaveLength(1)
-
-      // Reverting by hand to what the API last wrote is still an external edit.
-      await fs.writeFile(cfgFile(), JSON.stringify(edited, null, 2) + "\n")
-      const revertDeadline = Date.now() + 5_000
-      while (changes.length < 2 && Date.now() < revertDeadline) await new Promise((resolve) => setTimeout(resolve, 50))
-      expect(changes).toHaveLength(2)
-    } finally {
-      stop()
-    }
+  test("stores settings in SQLite and ignores an old JSON file", async () => {
+    await fs.mkdir(root, { recursive: true })
+    await fs.writeFile(cfgFile(), JSON.stringify({ version: 3, mcp: { old: { type: "remote", url: "https://old.test" } }, connections: {} }))
+    expect((await mod.loadUserConfig()).mcp).toEqual({})
+    await mod.saveUserConfig({ version: 3, mcp: { current: { type: "remote", url: "https://current.test" } }, connections: {} })
+    ClaxedoDB.close()
+    expect((await mod.loadUserConfig()).mcp.current?.url).toBe("https://current.test")
+    expect((await fs.readFile(cfgFile(), "utf8"))).toContain("old.test")
   })
 
   // ── defaultHarness ────────────────────────────────────────────────────
@@ -121,161 +97,41 @@ describe("agent config", () => {
     })).toEqual({ kind: "native", harnessId: "claude" })
   })
 
-  test("rejects a v3 file that carries legacy runner, harness, and ACP keys", async () => {
-    await fs.mkdir(root, { recursive: true })
-    await fs.writeFile(cfgFile(), JSON.stringify({ version: 3, connections: {},
-      mcp: {},
-      harness: { id: "openclaw", access: "acp" },
-      acp: { openclaw: { label: "OpenClaw", command: ["openclaw", "acp"] } },
-    }))
-    await expect(mod.loadUserConfig()).rejects.toMatchObject({
-      code: "user_agent_config_invalid_schema",
-    })
+  test("rejects obsolete config keys", async () => {
+    await expect(mod.saveUserConfig({ version: 3, connections: {}, mcp: {}, harness: { id: "pi" } } as never))
+      .rejects.toMatchObject({ code: "user_agent_config_invalid_schema" })
   })
 
   test("accepts the embedded-SDK OpenCode harness as a native default", async () => {
-    await fs.mkdir(root, { recursive: true })
-    await fs.writeFile(cfgFile(), JSON.stringify({
-      version: 3,
-      connections: {},
-      mcp: {},
-      defaultHarness: { kind: "native", harnessId: "opencode" },
-    }))
+    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {}, defaultHarness: { kind: "native", harnessId: "opencode" } })
     expect((await mod.loadUserConfig()).defaultHarness).toEqual({ kind: "native", harnessId: "opencode" })
   })
 
-  test("still rejects an unknown native default", async () => {
-    await fs.mkdir(root, { recursive: true })
-    await fs.writeFile(cfgFile(), JSON.stringify({
-      version: 3,
-      connections: {},
-      mcp: {},
-      defaultHarness: { kind: "native", harnessId: "mystery" },
-    }))
+  test("rejects an unknown native default", async () => {
+    await expect(mod.saveUserConfig({ version: 3, connections: {}, mcp: {}, defaultHarness: { kind: "native", harnessId: "mystery" } } as never))
+      .rejects.toMatchObject({ code: "user_agent_config_invalid_schema" })
+  })
+
+  test("returns default config when the SQLite row does not exist", async () => {
+    expect(await mod.loadUserConfig()).toEqual({ version: 3, connections: {}, mcp: {}, sandbox_driver: {} })
+  })
+
+  test("rejects an invalid schema stored in SQLite", async () => {
+    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {} })
+    ClaxedoDB.raw().prepare("update claxedo_user_agent_config set config_json = ? where user_id = ?")
+      .run(JSON.stringify({ version: 4, mcp: {}, connections: {} }), "__local__")
     await expect(mod.loadUserConfig()).rejects.toMatchObject({ code: "user_agent_config_invalid_schema" })
   })
 
-  // ── loadUserConfig / saveUserConfig ──────────────────────────────────
-
-  test("returns default config when file does not exist", async () => {
-    const config = await mod.loadUserConfig()
-    expect(config).toEqual({ version: 3, connections: {}, mcp: {}, sandbox_driver: {} })
-  })
-
-  test("migrates the operator's unversioned file to v3, backs it up, and stays migrated", async () => {
-    await fs.mkdir(root, { recursive: true })
-    const legacy = JSON.stringify({
-      mcp: {},
-      harness: { id: "opencode", access: "native" },
-      acp: { openclaw: { label: "OpenClaw", command: ["openclaw", "acp"] } },
-      sandbox_driver: { default_driver: "daytona" },
-    })
-    await fs.writeFile(cfgFile(), legacy)
-
-    const expected = {
-      version: 3,
-      mcp: {},
-      connections: {},
-      defaultHarness: { kind: "native", harnessId: "opencode" },
-      sandbox_driver: { default_driver: "daytona" },
-    }
-    expect(await mod.loadUserConfig()).toEqual(expected)
-    expect(await fs.readFile(backupFile(2), "utf-8")).toBe(legacy)
-    expect(JSON.parse(await fs.readFile(cfgFile(), "utf-8"))).toEqual(expected)
-
-    expect(await mod.loadUserConfig()).toEqual(expected)
-    expect(await fs.readFile(backupFile(2), "utf-8")).toBe(legacy)
-  })
-
-  test("migrates declared v1 and v2 files, keeping mcp and the sandbox driver", async () => {
-    await fs.mkdir(root, { recursive: true })
-    for (const version of [1, 2]) {
-      await fs.rm(backupFile(version), { force: true })
-      await fs.writeFile(cfgFile(), JSON.stringify({
-        version,
-        mcp: { "my-tool": { type: "stdio", command: "npx", args: ["tool"] } },
-          sandbox_driver: { default_driver: "modal", auth: { modal: { token_id: "id" } } },
-        harnesses: [],
-      }))
-
-      expect(await mod.loadUserConfig()).toEqual({
-        version: 3,
-        mcp: { "my-tool": { type: "stdio", command: "npx", args: ["tool"] } },
-        connections: {},
-          sandbox_driver: { default_driver: "modal", auth: { modal: { token_id: "id" } } },
-      })
-      expect(JSON.parse(await fs.readFile(backupFile(version), "utf-8")).version).toBe(version)
-    }
-  })
-
-  test("drops legacy ACP and runner selections that have no v3 equivalent", async () => {
-    await fs.mkdir(root, { recursive: true })
-    await fs.writeFile(cfgFile(), JSON.stringify({
-      mcp: {},
-      harness: { id: "openclaw", access: "acp" },
-      model: "some-model",
-      runner: { type: "claude-sdk" },
-      acp: { openclaw: { label: "OpenClaw", command: ["openclaw", "acp"] } },
-    }))
-
-    const migrated = await mod.loadUserConfig()
-    expect(migrated).toEqual({ version: 3, mcp: {}, connections: {}, sandbox_driver: {} })
-    expect(migrated.defaultHarness).toBeUndefined()
-    expect(await fs.readFile(cfgFile(), "utf-8")).not.toContain("openclaw")
-    expect(await fs.readFile(backupFile(2), "utf-8")).toContain("openclaw")
-  })
-
-  test("fails closed on a malformed legacy file without backing it up or rewriting it", async () => {
-    await fs.mkdir(root, { recursive: true })
-    const malformed = JSON.stringify({ mcp: "not-a-map", harness: { id: "opencode", access: "native" } })
-    await fs.writeFile(cfgFile(), malformed)
-
-    await expect(mod.loadUserConfig()).rejects.toMatchObject({
-      code: "user_agent_config_invalid_schema",
-    })
-    expect(await fs.readFile(cfgFile(), "utf-8")).toBe(malformed)
-    await expect(fs.stat(backupFile(2))).rejects.toMatchObject({ code: "ENOENT" })
-  })
-
-  test("rejects a file declaring a version that is neither legacy nor current", async () => {
-    await fs.mkdir(root, { recursive: true })
-    await fs.writeFile(cfgFile(), JSON.stringify({ version: 4, mcp: {}, connections: {} }))
-    await expect(mod.loadUserConfig()).rejects.toMatchObject({
-      code: "user_agent_config_invalid_schema",
-    })
-  })
-
-  test("rejects malformed config without exposing or overwriting its contents", async () => {
+  test("rejects invalid SQLite JSON without logging its contents or overwriting the row", async () => {
     const secret = "sk-secret-that-must-stay-private"
+    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {} })
     const malformed = `{"mcp":{},"auth":{"openai":"${secret}"},`
-    await fs.mkdir(root, { recursive: true })
-    await fs.writeFile(cfgFile(), malformed)
-
-    const mutation = async () => {
-      const config = await mod.loadUserConfig()
-      config.mcp.added = { type: "remote", url: "https://example.test" }
-      await mod.saveUserConfig(config)
-    }
-
-    const result = mutation()
-    await expect(result).rejects.toMatchObject({
-      name: "UserAgentConfigLoadError",
-      code: "user_agent_config_invalid_json",
-      message: "User agent config contains invalid JSON",
-    })
-    await expect(result).rejects.not.toThrow(secret)
-    expect(await fs.readFile(cfgFile(), "utf-8")).toBe(malformed)
-  })
-
-  test("propagates non-missing config read errors instead of treating them as first run", async () => {
-    await fs.mkdir(cfgFile(), { recursive: true })
-
-    await expect(mod.loadUserConfig()).rejects.toMatchObject({
-      name: "UserAgentConfigLoadError",
-      code: "user_agent_config_read_failed",
-      message: "Failed to read user agent config",
-    })
-    expect((await fs.stat(cfgFile())).isDirectory()).toBe(true)
+    ClaxedoDB.raw().prepare("update claxedo_user_agent_config set config_json = ? where user_id = ?")
+      .run(malformed, "__local__")
+    await expect(mod.loadUserConfig()).rejects.not.toThrow(secret)
+    const row = ClaxedoDB.raw().prepare("select config_json from claxedo_user_agent_config where user_id = ?").get("__local__") as { config_json: string }
+    expect(row.config_json).toBe(malformed)
   })
 
   test("round-trips config through save and load", async () => {
@@ -304,60 +160,28 @@ describe("agent config", () => {
   })
 
   test("keeps only canonical sandbox driver config", async () => {
-    await fs.mkdir(root, { recursive: true })
-    await fs.writeFile(cfgFile(), JSON.stringify({ version: 3, connections: {},
-      mcp: {},
-      sandbox_driver: {
-        default_provider: "vercel",
-        default_driver: "modal",
-        auth: {
-          default_provider: { api_key: "legacy" },
-          daytona: { api_key: " dtn ", provider_secret: "legacy-secret" },
-          modal: { token_id: "id", token_secret: " secret ", extra: "ignored" },
-          unknown: { api_key: "ignored" },
-        },
-      },
-    }))
-
-    const loaded = await mod.loadUserConfig()
-
-    expect(loaded.sandbox_driver).toEqual({
+    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {}, sandbox_driver: {
       default_driver: "modal",
       auth: {
-        daytona: { api_key: "dtn" },
-        modal: { token_id: "id", token_secret: "secret" },
+        daytona: { api_key: " dtn " },
+        modal: { token_id: "id", token_secret: " secret " },
       },
-    })
-    expect(mod.sandboxDriverConfig(loaded)).toEqual(loaded.sandbox_driver)
-  })
-
-  test("rejects legacy sandbox provider config", async () => {
-    await fs.mkdir(root, { recursive: true })
-    await fs.writeFile(cfgFile(), JSON.stringify({ version: 3, connections: {},
-      mcp: {},
-      sandbox: {
-        default_driver: "modal",
-        auth: {
-          modal: {
-            token_id: "id",
-            token_secret: "secret",
-          },
-        },
-      },
-    }))
-
-    await expect(mod.loadUserConfig()).rejects.toMatchObject({
-      code: "user_agent_config_invalid_schema",
+    } })
+    const loaded = await mod.loadUserConfig()
+    expect(loaded.sandbox_driver).toEqual({
+      default_driver: "modal",
+      auth: { daytona: { api_key: "dtn" }, modal: { token_id: "id", token_secret: "secret" } },
     })
   })
 
-  test("save creates directory if it doesn't exist", async () => {
+  test("rejects the removed sandbox provider config", async () => {
+    await expect(mod.saveUserConfig({ version: 3, connections: {}, mcp: {}, sandbox: { default_driver: "modal" } } as never))
+      .rejects.toMatchObject({ code: "user_agent_config_invalid_schema" })
+  })
+
+  test("save creates the SQLite database under the data directory", async () => {
     await mod.saveUserConfig({ version: 3, connections: {}, mcp: {} })
-    const exists = await fs
-      .stat(cfgFile())
-      .then(() => true)
-      .catch(() => false)
-    expect(exists).toBe(true)
+    expect((await fs.stat(path.join(root, "claxedo.db"))).isFile()).toBe(true)
   })
 
   // ── getRuntimeConfigSnapshot ────────────────────────────────────────

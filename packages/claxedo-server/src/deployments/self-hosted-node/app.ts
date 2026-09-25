@@ -79,7 +79,7 @@ import {
 } from "@claxedo/local-server/self-hosted-execution"
 import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "@claxedo/server-core/platform/runtime/profile"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
-import { dropCopiedHarnessLogins, migrateCredentials, projectLocalSessionMetaFromEvent } from "@claxedo/local-server/self-hosted-execution"
+import { dropCopiedHarnessLogins, projectLocalSessionMetaFromEvent } from "@claxedo/local-server/self-hosted-execution"
 import { CredentialRoutes, createUsageQuotaReader, localControlPlaneCredentials, requestOrg } from "@claxedo/local-server/self-hosted-execution"
 import { ProviderAuthRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { NetworkPolicyRoutes } from "@claxedo/local-server/self-hosted-execution"
@@ -1917,12 +1917,8 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
       : {}),
   })
 
-  // Migrate legacy plaintext credentials into the managed secret backend.
   dropCopiedHarnessLogins().catch((err: unknown) => {
     console.error("[claxedo-server] WARN  could not forget copied harness logins:", err)
-  })
-  migrateCredentials().catch((err) => {
-    console.error("[claxedo-server] WARN  credential migration failed:", err)
   })
 
   captureControlPlaneStartupTelemetry(services, { port })

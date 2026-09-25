@@ -2,8 +2,6 @@ import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
 import type { D1Database } from "@cloudflare/workers-types"
 import type { Hono } from "hono"
 import { sandboxDriverCatalog, sandboxDriverId } from "@claxedo/sandbox-manager/driver-catalog"
-import type { Workspace } from "@claxedo/server-core/workspace/store/index"
-import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import type { ControlPlaneRouteContribution } from "@claxedo/server-core/platform/http/route-contribution"
@@ -22,6 +20,7 @@ import {
   hostedConnectionsAuthenticate,
 } from "../connections/hosted-d1/setup"
 import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "../workspace/route-support"
+import { hostedRuntimeFetch } from "../workspace/hosted-runtime-fetch"
 import { D1SignedAgentPluginActivationStore } from "./activation/d1-store"
 import { hostedAgentPluginArtifactStore, type AgentPluginR2Bucket } from "./artifacts/r2-artifact-adapter"
 import { hostedAgentPluginsModule } from "./module"
@@ -292,31 +291,13 @@ export function createHostedAgentPluginsComposition(input: {
   const provisioner = createHostedAgentPluginRuntimeProvisioner({
     activations,
     artifacts,
-    runtimeFetch: (workspaceId, identity, requestPath, init) => {
-      const workspace: Workspace = {
-        id: workspaceId,
-        org_id: identity.organizationId,
-        project_id: identity.projectId,
-        directory: "/workspace",
-        kind: "cloud",
-        created_at: 0,
-        updated_at: 0,
-      }
-      return sandboxFetch(workspace, requestPath, init, {
-        ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
-        ...(services.relay.provider ? { relayProvider: services.relay.provider } : {}),
-        ...(services.defaultHomeRegion ? { defaultHomeRegion: services.defaultHomeRegion } : {}),
-        orgId: identity.organizationId,
-        // Provisioning is a machine actor, not the signed human: it materializes
-        // the pinned plugin trees before any user turn runs. The D1 runtime
-        // authority mints service runtime tokens only for the one control-plane
-        // service actor ("control-plane", owner role), the same actor the
-        // checkpoint routes use; a feature-named actor is refused.
-        runtimeActor: { principalKind: "service", actorId: "control-plane", actorKind: "agent" },
-        role: "owner",
-        resume: false,
-      })
-    },
+    runtimeFetch: (workspaceId, identity, requestPath, init) => hostedRuntimeFetch(
+      services,
+      workspaceId,
+      { orgId: identity.organizationId, projectId: identity.projectId },
+      requestPath,
+      init,
+    ),
   })
 
   // The hosted prepare/provision rail is a CLOUD VM rail: it pushes the

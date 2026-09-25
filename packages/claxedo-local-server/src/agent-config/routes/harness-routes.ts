@@ -1,6 +1,7 @@
 import { Hono, type Context } from "hono"
-import type { RuntimeHarnessSelection, UserAgentConfig } from "@claxedo/server-core/agent-config/index"
+import type { RuntimeHarnessSelection } from "@claxedo/server-core/agent-config/index"
 import { defaultHarness, isConnectionId, isNativeHarnessId, loadUserConfig, saveUserConfig } from "@claxedo/server-core/agent-config/index"
+import { AgentConfigMutationError, parseHarnessSelection, setDefaultHarness } from "@claxedo/server-core/agent-config/mutations"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
@@ -9,6 +10,9 @@ import type { AgentConfigRouteOptions } from "../route-options"
 import { sandboxFetchOptionsForRequest } from "../../workspace/sandbox-fetch-options"
 import { asRecord } from "@claxedo/helpers/guards"
 import { trimToUndefined } from "@claxedo/helpers/string"
+import { fanOutConfig } from "../fanout"
+
+const store = { read: loadUserConfig, write: saveUserConfig }
 
 export function agentConfigHarnessRoutes(options: AgentConfigRouteOptions = {}) {
   return new Hono()
@@ -43,7 +47,7 @@ async function updateHarnessResponse(c: Context, options: AgentConfigRouteOption
   if (denied) return denied
   const body = await c.req.json().catch(() => undefined)
   const row = asRecord(body)
-  const selection = parseSelection(row?.harness)
+  const selection = parseHarnessSelection(row?.harness)
   if (!selection) return c.json(errorBody("agent_config_harness_required", "A native harness or configured connection is required"), 400)
   const sessionId = trimToUndefined(row?.sessionId) || c.req.query("sessionId") || c.req.header("x-session-id")
   if (sessionId) {
@@ -52,10 +56,13 @@ async function updateHarnessResponse(c: Context, options: AgentConfigRouteOption
       "Session bindings are immutable; start a new session to use another agent connection",
     ), 409)
   }
-  const config = await loadUserConfig()
-  const next = applyDefault(config, selection)
-  if (next instanceof Error) return c.json(errorBody("agent_config_connection_unavailable", next.message), 409)
-  await saveUserConfig(next)
+  try {
+    await setDefaultHarness(store, selection)
+  } catch (error) {
+    if (error instanceof AgentConfigMutationError) return c.json(errorBody(error.code, error.message), error.status)
+    throw error
+  }
+  await fanOutConfig()
   return c.json({ ok: true, ...statusBody(selection, { status: "configured", ready: false }) })
 }
 
@@ -93,28 +100,6 @@ function selectionFromQuery(c: Context): RuntimeHarnessSelection | undefined {
   }
   if (connectionId !== undefined && isConnectionId(connectionId)) return { kind: "connection", connectionId: connectionId.trim() }
   return undefined
-}
-
-function parseSelection(input: unknown): RuntimeHarnessSelection | undefined {
-  const row = asRecord(input)
-  if (row?.kind === "native" && typeof row.harnessId === "string" && isNativeHarnessId(row.harnessId)) {
-    return { kind: "native", harnessId: row.harnessId }
-  }
-  if (row?.kind === "connection" && typeof row.connectionId === "string" && isConnectionId(row.connectionId)) {
-    return { kind: "connection", connectionId: row.connectionId.trim() }
-  }
-  return undefined
-}
-
-function applyDefault(config: UserAgentConfig, selection: RuntimeHarnessSelection): UserAgentConfig | Error {
-  if (selection.kind === "native") {
-    const { defaultConnectionId: _, ...rest } = config
-    return { ...rest, defaultHarness: selection }
-  }
-  const connection = config.connections[selection.connectionId]
-  if (!connection?.enabled) return new Error(`Connection ${selection.connectionId} is not installed and enabled`)
-  const { defaultHarness: _, ...rest } = config
-  return { ...rest, defaultConnectionId: selection.connectionId }
 }
 
 function appendSelection(url: URL, selection: RuntimeHarnessSelection) {

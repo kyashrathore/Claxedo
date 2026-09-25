@@ -5,18 +5,14 @@
  *   - User MCP servers
  *   - Slash commands (markdown files in ~/.claxedo/commands/)
  *
- * User config persisted at: ~/.claxedo/user-agent-config.json
  * Command .md files at:     ~/.claxedo/commands/<name>.md
  */
 
-import { asRecord } from "@claxedo/helpers/guards"
-import { watchRealDirectory } from "@claxedo/helpers/real-path"
-import { createHash } from "crypto"
 import * as fs from "fs"
 import * as path from "path"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
-import { isSandboxDriverID, type SandboxDriverConfig } from "@claxedo/sandbox-contract"
+import type { SandboxDriverConfig } from "@claxedo/sandbox-contract"
 import {
   loadManagedMcpState,
   harnessAgent,
@@ -27,8 +23,6 @@ import {
 import {
   createHarnessConnectionSchema,
   explicitDefaultHarness,
-  isConnectionId,
-  isNativeHarnessId,
 } from "./connections"
 import type {
   ConnectionProvider,
@@ -59,8 +53,11 @@ export {
   createVmConnectionSecretResolver,
   publicConnectionUnavailable,
 } from "./connection-secrets"
-import { jsonStringRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import type { SandboxSecretBrokering } from "../credentials/native-delivery"
+import { invalidSchema, sandboxDriverConfig, validateUserAgentConfig, type UserAgentConfig } from "./config"
+import { sqliteUserAgentConfigRepository } from "./sqlite-repository"
+export { sandboxDriverConfig } from "./config"
+export type { UserAgentConfig, UserMcpServer } from "./config"
 export type {
   ConnectionSecretUnavailableReason,
   PublicConnectionUnavailable,
@@ -80,46 +77,7 @@ function commandDir() {
   return path.join(claxedoDir(), "commands")
 }
 
-function userConfigFile() {
-  return path.join(claxedoDir(), "user-agent-config.json")
-}
-
 // ── Types ──────────────────────────────────────────────────────────────────
-
-export interface UserMcpServer {
-  /** "stdio" spawns a local subprocess; "remote" connects to an HTTP/SSE endpoint */
-  type: "stdio" | "remote"
-  // stdio
-  command?: string
-  args?: string[]
-  env?: Record<string, string>
-  // remote
-  url?: string
-  headers?: Record<string, string>
-  disabled?: boolean
-}
-
-export interface UserAgentConfig {
-  version: 3
-  mcp: Record<string, UserMcpServer>
-  connections: Record<string, HarnessConnectionDescriptor>
-  /** Explicit operator policy. Omission leaves agent selection unresolved. */
-  defaultConnectionId?: string
-  /** Explicit native default; mutually exclusive with defaultConnectionId. */
-  defaultHarness?: Extract<RuntimeHarnessSelection, { kind: "native" }>
-  sandbox_driver?: SandboxDriverConfig
-}
-
-class UserAgentConfigLoadError extends Error {
-  constructor(
-    readonly code: "user_agent_config_read_failed" | "user_agent_config_invalid_json" | "user_agent_config_invalid_schema",
-    message: string,
-    options?: ErrorOptions,
-  ) {
-    super(message, options)
-    this.name = "UserAgentConfigLoadError"
-  }
-}
 
 export interface RuntimeConfigSnapshot {
   version: 4
@@ -198,7 +156,6 @@ function sanitizeName(name: string): string {
   return name.replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 64)
 }
 
-const stringRecord = jsonStringRecord
 
 // ── Trusted generic connections ───────────────────────────────────────────
 
@@ -229,342 +186,24 @@ export function harnessConnectionRows(
 
 // ── User config (MCP servers) ──────────────────────────────────────────────
 
-/**
- * The plaintext `auth` map an older config file still holds.
- *
- * Not part of `UserAgentConfig`: nothing runs a harness on it, and the loader
- * drops the key. It is readable here for the one boot pass that drains it into
- * the secret backend, after which `saveUserConfig` writes the file without it.
- */
-export async function legacyPlaintextAuth(): Promise<Record<string, string>> {
-  const raw = await fs.promises.readFile(userConfigFile(), "utf-8").catch(() => undefined)
-  if (raw === undefined) return {}
-  try {
-    return stringRecord(asRecord(JSON.parse(raw))?.auth) ?? {}
-  } catch {
-    return {}
-  }
-}
+const LOCAL_CONFIG_ID = "__local__"
 
 export async function loadUserConfig(): Promise<UserAgentConfig> {
-  const raw = await fs.promises.readFile(userConfigFile(), "utf-8").catch((error: unknown) => {
-    if (isNodeError(error, "ENOENT")) return undefined
-    throw new UserAgentConfigLoadError(
-      "user_agent_config_read_failed",
-      "Failed to read user agent config",
-      { cause: error },
-    )
-  })
-  if (raw === undefined) return emptyUserAgentConfig()
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    throw new UserAgentConfigLoadError(
-      "user_agent_config_invalid_json",
-      "User agent config contains invalid JSON",
-    )
-  }
-  const row = asRecord(parsed)
-  const legacyVersion = row ? legacyConfigVersion(row) : undefined
-  if (row && legacyVersion !== undefined) return migrateLegacyUserConfig(row, raw, legacyVersion)
-  return validateUserAgentConfig(parsed)
-}
-
-function isNodeError(error: unknown, code: string) {
-  return !!error && typeof error === "object" && "code" in error && error.code === code
+  return sqliteUserAgentConfigRepository(harnessConnectionSchema).read(LOCAL_CONFIG_ID)
 }
 
 export async function saveUserConfig(config: UserAgentConfig): Promise<void> {
-  const next = validateUserAgentConfig(config)
+  const next = validateUserAgentConfig(config, harnessConnectionSchema)
   const previous = await loadUserConfig()
   const revisionProblems = connectionRevisionProblems(previous.connections, next.connections)
   if (revisionProblems.length > 0) {
     throw invalidSchema(revisionProblems.map((problem) => `${problem.connectionId}: ${problem.problem}`).join("; "))
   }
-  await writeUserConfigFile(next)
+  await sqliteUserAgentConfigRepository(harnessConnectionSchema).write(LOCAL_CONFIG_ID, next)
   log.info("Saved user agent config", {
     mcpServers: Object.keys(next.mcp),
     connections: Object.keys(next.connections),
   })
-}
-
-/** Every active watcher's "already seen" sink, told about each API write before it lands. */
-const configWriteSinks = new Set<(digest: string) => void>()
-
-function digest(text: string) {
-  return createHash("sha256").update(text).digest("hex")
-}
-
-async function writeUserConfigFile(config: UserAgentConfig): Promise<void> {
-  await fs.promises.mkdir(claxedoDir(), { recursive: true, mode: 0o755 })
-  const target = userConfigFile()
-  const temporary = `${target}.${process.pid}.${crypto.randomUUID()}.tmp`
-  const text = JSON.stringify(config, null, 2) + "\n"
-  try {
-    await fs.promises.writeFile(temporary, text, { mode: 0o600 })
-    for (const sink of configWriteSinks) sink(digest(text))
-    await fs.promises.rename(temporary, target)
-  } catch (error) {
-    await fs.promises.unlink(temporary).catch(() => undefined)
-    throw error
-  }
-}
-
-/**
- * Reports edits to the config file that did not come through `saveUserConfig`,
- * so a hand-edited connection reaches the runtimes the same way a saved one
- * does. The directory is watched rather than the file: an editor's atomic save
- * replaces the inode, which a file watch would silently stop following.
- */
-export function watchUserConfigFile(onExternalChange: () => void): () => void {
-  const dir = claxedoDir()
-  const name = path.basename(userConfigFile())
-  fs.mkdirSync(dir, { recursive: true, mode: 0o755 })
-  let seen = fs.existsSync(userConfigFile()) ? digest(fs.readFileSync(userConfigFile(), "utf-8")) : undefined
-  const sink = (written: string) => {
-    seen = written
-  }
-  configWriteSinks.add(sink)
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const check = async () => {
-    timer = undefined
-    const raw = await fs.promises.readFile(userConfigFile(), "utf-8").catch(() => undefined)
-    if (raw === undefined) return
-    const current = digest(raw)
-    if (current === seen) return
-    seen = current
-    log.info("User agent config changed on disk outside the API")
-    onExternalChange()
-  }
-  const watcher = watchRealDirectory(dir, undefined, (_event, filename) => {
-    if (filename !== null && filename !== name) return
-    if (timer) clearTimeout(timer)
-    timer = setTimeout(() => void check(), 200)
-    timer.unref()
-  })
-  watcher.on("error", (error) => {
-    log.warn("User agent config watch failed", { error: String(error) })
-  })
-  return () => {
-    configWriteSinks.delete(sink)
-    if (timer) clearTimeout(timer)
-    timer = undefined
-    watcher.close()
-  }
-}
-
-// ── Forward migration of pre-v3 files ──────────────────────────────────────
-
-/**
- * The legacy schema version a file is written in, or undefined when it is not
- * legacy. The v2-era loader persisted no `version` field at all, so a file
- * without one is a v2 file.
- */
-function legacyConfigVersion(row: Record<string, unknown>): number | undefined {
-  if (row.version === undefined) return 2
-  if (row.version === 1 || row.version === 2) return row.version
-  return undefined
-}
-
-async function migrateLegacyUserConfig(
-  row: Record<string, unknown>,
-  raw: string,
-  legacyVersion: number,
-): Promise<UserAgentConfig> {
-  const defaultHarness = legacyNativeDefault(row.harness)
-  const migrated = validateUserAgentConfig({
-    version: 3,
-    mcp: row.mcp ?? {},
-    connections: {},
-    ...(defaultHarness ? { defaultHarness } : {}),
-    sandbox_driver: row.sandbox_driver,
-  })
-  const carried = new Set(["version", "mcp", "sandbox_driver", ...(defaultHarness ? ["harness"] : [])])
-  const dropped = Object.keys(row).filter((key) => !carried.has(key))
-
-  const backup = path.join(claxedoDir(), `user-agent-config.legacy-v${legacyVersion}.json`)
-  await fs.promises.writeFile(backup, raw, { flag: "wx", mode: 0o600 }).catch((error: unknown) => {
-    if (isNodeError(error, "EEXIST")) return
-    throw error
-  })
-  await writeUserConfigFile(migrated)
-
-  log.info("Migrated user agent config to v3", {
-    from: legacyVersion,
-    backup,
-    defaultHarness: migrated.defaultHarness?.harnessId,
-  })
-  if (dropped.length > 0) {
-    log.warn("Dropped legacy user agent config fields with no v3 equivalent", {
-      dropped,
-      backup,
-    })
-  }
-  return migrated
-}
-
-/**
- * A legacy `harness` survives only as an explicit native selection. Legacy ACP
- * identities carry a bare command, not the provider-validated descriptor a v3
- * connection requires, so they are dropped rather than half-translated.
- */
-function legacyNativeDefault(input: unknown): Extract<RuntimeHarnessSelection, { kind: "native" }> | undefined {
-  const row = asRecord(input)
-  if (!row || row.access !== "native" || typeof row.id !== "string" || !isNativeHarnessId(row.id)) return undefined
-  return { kind: "native", harnessId: row.id }
-}
-
-function emptyUserAgentConfig(): UserAgentConfig {
-  return { version: 3, mcp: {}, connections: {}, sandbox_driver: {} }
-}
-
-function validateUserAgentConfig(input: unknown): UserAgentConfig {
-  const row = asRecord(input)
-  if (!row || row.version !== 3) throw invalidSchema("version must be exactly 3")
-  const allowed = new Set([
-    "version",
-    "mcp",
-    "connections",
-    "defaultConnectionId",
-    "defaultHarness",
-    // Accepted and dropped. Nothing reads plaintext `auth` any more, but an
-    // existing file on disk still carries it, and refusing the field takes the
-    // user's MCP servers and connections down with it.
-    "auth",
-    "sandbox_driver",
-  ])
-  const unsupported = Object.keys(row).find((key) => !allowed.has(key))
-  if (unsupported) throw invalidSchema(`unsupported field: ${unsupported}`)
-  const mcp = asRecord(row.mcp)
-  if (!mcp) throw invalidSchema("mcp must be an object map")
-  const connections = validateHarnessConnections(row.connections)
-  if (connections.problems.length > 0) {
-    throw invalidSchema(connections.problems.map((problem) =>
-      `${problem.connectionId || "connections"}: ${problem.problem}`).join("; "))
-  }
-  const defaultConnectionId = row.defaultConnectionId
-  if (defaultConnectionId !== undefined && (typeof defaultConnectionId !== "string" || !isConnectionId(defaultConnectionId))) {
-    throw invalidSchema("defaultConnectionId must be a valid connection id")
-  }
-  const defaultHarness = validateNativeDefault(row.defaultHarness)
-  if (row.defaultHarness !== undefined && !defaultHarness) {
-    throw invalidSchema("defaultHarness must be an explicit supported native selection")
-  }
-  if (defaultConnectionId && defaultHarness) {
-    throw invalidSchema("defaultConnectionId and defaultHarness are mutually exclusive")
-  }
-  if (defaultConnectionId) {
-    const connection = connections.accepted[defaultConnectionId]
-    if (!connection) throw invalidSchema("defaultConnectionId must name an installed connection")
-    if (!connection.enabled) throw invalidSchema("defaultConnectionId must name an enabled connection")
-  }
-  return {
-    version: 3,
-    mcp: mcpEntries(mcp),
-    connections: connections.accepted,
-    ...(defaultConnectionId ? { defaultConnectionId } : {}),
-    ...(defaultHarness ? { defaultHarness } : {}),
-    sandbox_driver: sandboxDriverConfig({ sandbox_driver: row.sandbox_driver }),
-  }
-}
-
-function validateNativeDefault(input: unknown): Extract<RuntimeHarnessSelection, { kind: "native" }> | undefined {
-  const row = asRecord(input)
-  if (!row || row.kind !== "native" || typeof row.harnessId !== "string" || !isNativeHarnessId(row.harnessId))
-    return undefined
-  if (Object.keys(row).some((key) => key !== "kind" && key !== "harnessId")) return undefined
-  return { kind: "native", harnessId: row.harnessId }
-}
-
-function mcpEntries(input: Record<string, unknown>): Record<string, UserMcpServer> {
-  return Object.fromEntries(Object.entries(input).flatMap(([key, value]) => {
-    const row = asRecord(value)
-    if (!row || (row.type !== "stdio" && row.type !== "remote")) return []
-    return [[key, {
-      type: row.type,
-      ...(typeof row.command === "string" ? { command: row.command } : {}),
-      ...(Array.isArray(row.args) && row.args.every((arg) => typeof arg === "string") ? { args: [...row.args] } : {}),
-      ...(stringRecord(row.env) ? { env: stringRecord(row.env) } : {}),
-      ...(typeof row.url === "string" ? { url: row.url } : {}),
-      ...(stringRecord(row.headers) ? { headers: stringRecord(row.headers) } : {}),
-      ...(typeof row.disabled === "boolean" ? { disabled: row.disabled } : {}),
-    } satisfies UserMcpServer]]
-  }))
-}
-
-function invalidSchema(detail: string) {
-  return new UserAgentConfigLoadError(
-    "user_agent_config_invalid_schema",
-    `User agent config does not match schema v3: ${detail}`,
-  )
-}
-
-export function sandboxDriverConfig(
-  config?: { sandbox_driver?: unknown },
-): SandboxDriverConfig {
-  const row = asRecord(config?.sandbox_driver)
-  if (!row) return {}
-  const defaultDriver = typeof row.default_driver === "string" && isSandboxDriverID(row.default_driver)
-    ? row.default_driver
-    : undefined
-  const auth = sandboxDriverAuthConfig(row.auth)
-  return {
-    ...(defaultDriver ? { default_driver: defaultDriver } : {}),
-    ...(auth ? { auth } : {}),
-  }
-}
-
-function sandboxDriverAuthConfig(input: unknown): SandboxDriverConfig["auth"] | undefined {
-  const row = asRecord(input)
-  if (!row) return undefined
-
-  const auth: NonNullable<SandboxDriverConfig["auth"]> = {}
-  const daytona = asRecord(row.daytona)
-  const modal = asRecord(row.modal)
-  const vercel = asRecord(row.vercel)
-  const cloudflare = asRecord(row.cloudflare)
-  const docker = asRecord(row.docker)
-  const daytonaApiKey = credential(daytona, "api_key")
-  const modalTokenId = credential(modal, "token_id")
-  const modalTokenSecret = credential(modal, "token_secret")
-  const vercelAccessToken = credential(vercel, "access_token")
-  const vercelTeamId = credential(vercel, "team_id")
-  const vercelProjectId = credential(vercel, "project_id")
-  const cloudflareApiToken = credential(cloudflare, "api_token")
-  const cloudflareWorkerUrl = credential(cloudflare, "worker_url")
-  const dockerImage = credential(docker, "image")
-
-  if (daytonaApiKey) auth.daytona = { api_key: daytonaApiKey }
-  if (modalTokenId || modalTokenSecret) {
-    auth.modal = {
-      ...(modalTokenId ? { token_id: modalTokenId } : {}),
-      ...(modalTokenSecret ? { token_secret: modalTokenSecret } : {}),
-    }
-  }
-  if (vercelAccessToken || vercelTeamId || vercelProjectId) {
-    auth.vercel = {
-      ...(vercelAccessToken ? { access_token: vercelAccessToken } : {}),
-      ...(vercelTeamId ? { team_id: vercelTeamId } : {}),
-      ...(vercelProjectId ? { project_id: vercelProjectId } : {}),
-    }
-  }
-  if (cloudflareApiToken || cloudflareWorkerUrl) {
-    auth.cloudflare = {
-      ...(cloudflareApiToken ? { api_token: cloudflareApiToken } : {}),
-      ...(cloudflareWorkerUrl ? { worker_url: cloudflareWorkerUrl } : {}),
-    }
-  }
-  if (dockerImage) auth.docker = { image: dockerImage }
-
-  return Object.keys(auth).length ? auth : undefined
-}
-
-function credential(row: Record<string, unknown> | undefined, key: string): string | undefined {
-  const value = row?.[key]
-  if (typeof value !== "string") return undefined
-  const txt = value.trim()
-  return txt ? txt : undefined
 }
 
 export function setSandboxDriverConfig(
@@ -684,4 +323,3 @@ export async function deleteCommand(name: string): Promise<boolean> {
     return false
   }
 }
-
