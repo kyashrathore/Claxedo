@@ -14,9 +14,10 @@ import type { MissingSessionContext } from "./restore"
 import { claudeOptionsMeta } from "./extensions/claude-options"
 import { AcpStartupDeadline } from "./deadline"
 import { AcpQuiet } from "./quiet"
-import { acpReceiver } from "./events"
+import { acpObserveSubagent, acpReceiver, acpUnknown, acpUpdate } from "./events"
 import { acpConfig } from "./config"
-import { acpSubagentObservation, supportsAcpSubagents } from "./extensions/subagents"
+import { supportsAcpSubagents } from "./extensions/subagents"
+import { AcpDraftProbes } from "./probe"
 
 export type AcpMcpFilter = (input: {
   servers: readonly ProjectedMcpServer[]
@@ -38,6 +39,7 @@ export type AcpEntry = {
   pendingRestart: boolean
   quiet?: AcpQuiet
   startup?: AcpStartupDeadline
+  startupAbort: AbortController
   cancelSent?: Promise<void>
   commands: { name: string; description?: string }[]
   options: SessionConfigOption[]
@@ -47,13 +49,15 @@ export class AcpTransport implements HarnessTransport {
   readonly kind = "acp" as const
   private readonly entries = new Map<string, AcpEntry>()
   private readonly starting = new Set<AcpEntry>()
+  private readonly startingAborts = new Set<AbortController>()
+  private readonly probes: AcpDraftProbes
   private disposed = false
   readonly health = {
     connection: (_directory: string, sessionId?: string) => ({ state: sessionId && !this.entries.has(sessionId) ? "disconnected" as const : "ready" as const, processes: [] }),
     runtime: (_directory: string, sessionId?: string) => ({ status: sessionId && !this.entries.has(sessionId) ? "unavailable" as const : "ok" as const }),
   }
   private readonly commandOperations = { list: async (directory: string) => this.byDirectory(directory).commands }
-  private readonly configOperations = acpConfig((session: HarnessSession) => this.entry(session), (directory: string) => this.byDirectory(directory))
+  private readonly configOperations = acpConfig((session: HarnessSession) => this.entry(session), (draft, mode) => this.probes.options(draft, mode))
   private readonly forkOperations = { fork: async (session: HarnessSession, _messageId: string) => {
     const entry = this.entry(session)
     const result = await entry.peer.agent.unstable_forkSession({ sessionId: session.binding.upstreamSessionId,
@@ -61,12 +65,13 @@ export class AcpTransport implements HarnessTransport {
     return { upstreamSessionId: result.sessionId }
   } }
   get commands() { return [...this.entries.values()].some((entry) => entry.commands.length > 0) ? this.commandOperations : undefined }
-  get config() { return [...this.entries.values()].some((entry) => entry.options.length > 0) ? this.configOperations : undefined }
+  get config() { return this.configOperations }
   get fork() { return [...this.entries.values()].some((entry) => entry.peer.handshake.agentCapabilities?.sessionCapabilities?.fork) ? this.forkOperations : undefined }
 
   constructor(private readonly services: HarnessServices, private readonly connection: AcpConnectionOptions,
-    private readonly filterMcp: AcpMcpFilter, private readonly missingContext: MissingSessionContext,
-    private readonly workspaceId: (directory: string) => string) {}
+    private readonly filterMcp: AcpMcpFilter, private readonly missingContext: MissingSessionContext) {
+    this.probes = new AcpDraftProbes(services, connection, filterMcp)
+  }
 
   async capabilities(context: { sessionId?: string; directory: string }): Promise<TransportCapabilities> {
     const entry = context.sessionId ? this.entries.get(context.sessionId) : [...this.entries.values()].find((item) => item.session.directory === context.directory)
@@ -110,16 +115,20 @@ export class AcpTransport implements HarnessTransport {
   private async open(input: StartInput, broker: SessionBroker): Promise<AcpEntry> {
     if (this.disposed) throw new AcpTransportError("connection", "ACP transport disposed")
     let entry: AcpEntry | undefined
-    const peer = await connectAcp(input, this.connection, this.services, {
-      permission: (request) => this.permission(entry, broker, request),
-      elicitation: (request) => this.elicitation(entry, broker, request),
+    const startupAbort = new AbortController()
+    this.startingAborts.add(startupAbort)
+    let peer: AcpPeer
+    try { peer = await connectAcp(input, this.connection, this.services, {
+      permission: (request) => this.permission(entry, broker, request, startupAbort.signal),
+      elicitation: (request) => this.elicitation(entry, broker, request, startupAbort.signal),
       complete: (notification) => (entry?.turnBroker ?? broker).completeElicitation(notification.elicitationId),
-      update: (notification) => this.update(entry, notification),
-      extension: (_sessionId, update) => this.observeSubagent(entry, update),
-    })
-    if (this.disposed) { await peer.retire(); throw new AcpTransportError("connection", "ACP transport disposed during startup") }
-    entry = { start: input, broker, peer, phase: "ready", cancelled: false, pendingRestart: false, commands: [], options: [],
-      session: { binding: { sessionId: input.sessionId, workspaceId: this.workspaceId(input.directory), directory: input.directory,
+      update: (notification) => acpUpdate(entry, notification, (update) => acpObserveSubagent(entry, update)),
+      extension: (_sessionId, update) => acpObserveSubagent(entry, update),
+      unknown: (sessionId, method, payload) => acpUnknown(entry, sessionId, method, payload),
+    }) } catch (error) { this.startingAborts.delete(startupAbort); throw error }
+    if (this.disposed) { this.startingAborts.delete(startupAbort); await peer.retire(); throw new AcpTransportError("connection", "ACP transport disposed during startup") }
+    entry = { start: input, broker, peer, phase: "ready", cancelled: false, pendingRestart: false, commands: [], options: [], startupAbort,
+      session: { binding: { sessionId: input.sessionId, workspaceId: input.workspaceId, directory: input.directory,
         connectionId: input.config.harness.id, upstreamSessionId: "" }, directory: input.directory, locality: input.locality } }
     this.starting.add(entry)
     return entry
@@ -138,9 +147,10 @@ export class AcpTransport implements HarnessTransport {
       await broker.rebind(result.sessionId)
       if (this.disposed) throw new AcpTransportError("connection", "ACP transport disposed during startup")
       this.starting.delete(entry)
+      this.startingAborts.delete(entry.startupAbort)
       this.entries.set(input.sessionId, entry)
       return entry.session
-    } catch (error) { this.starting.delete(entry); await entry.peer.retire(); throw error }
+    } catch (error) { this.starting.delete(entry); this.startingAborts.delete(entry.startupAbort); await entry.peer.retire(); throw error }
   }
 
   async attach(input: AttachInput, broker: SessionBroker): Promise<HarnessSession> {
@@ -151,43 +161,29 @@ export class AcpTransport implements HarnessTransport {
       await broker.rebind(upstreamSessionId)
       if (this.disposed) throw new AcpTransportError("connection", "ACP transport disposed during attach")
       this.starting.delete(entry)
+      this.startingAborts.delete(entry.startupAbort)
       this.entries.set(input.sessionId, entry)
       return entry.session
-    } catch (error) { this.starting.delete(entry); await entry.peer.retire(); throw error }
+    } catch (error) { this.starting.delete(entry); this.startingAborts.delete(entry.startupAbort); await entry.peer.retire(); throw error }
   }
 
-  private async permission(entry: AcpEntry | undefined, broker: SessionBroker, request: RequestPermissionRequest) {
+  private async permission(entry: AcpEntry | undefined, broker: SessionBroker, request: RequestPermissionRequest,
+    startupSignal: AbortSignal) {
     if (entry?.session.binding.upstreamSessionId && request.sessionId !== entry.session.binding.upstreamSessionId) return { outcome: { outcome: "cancelled" as const } }
     const release = entry?.startup?.hold() ?? entry?.quiet?.hold()
     try {
-      const response = await acpPermission(request, entry?.turnBroker ?? broker, broker.sessionId)
+      const response = await acpPermission(request, entry?.turnBroker ?? broker, broker.sessionId,
+        entry?.turnBroker ? undefined : { signal: startupSignal })
       return entry?.cancelled ? { outcome: { outcome: "cancelled" as const } } : response
     } finally { release?.() }
   }
 
-  private async elicitation(entry: AcpEntry | undefined, broker: SessionBroker, request: CreateElicitationRequest) {
+  private async elicitation(entry: AcpEntry | undefined, broker: SessionBroker, request: CreateElicitationRequest,
+    startupSignal: AbortSignal) {
     const release = entry?.startup?.hold() ?? entry?.quiet?.hold()
-    try { return await acpElicitation(request, entry?.turnBroker ?? broker) }
+    try { return await acpElicitation(request, entry?.turnBroker ?? broker,
+      entry?.turnBroker ? undefined : { signal: startupSignal }) }
     finally { release?.() }
-  }
-
-  private async update(entry: AcpEntry | undefined, notification: SessionNotification): Promise<void> {
-    if (!entry) return
-    if (notification.update.sessionUpdate === "available_commands_update") {
-      entry.commands = notification.update.availableCommands.map((item) => ({ name: item.name, description: item.description }))
-    }
-    if (notification.update.sessionUpdate === "config_option_update") entry.options = notification.update.configOptions
-    await this.observeSubagent(entry, notification.update)
-    entry.quiet?.touch()
-    entry.receive?.(notification)
-  }
-
-  private async observeSubagent(entry: AcpEntry | undefined, update: unknown): Promise<void> {
-    if (!entry?.turnBroker || !supportsAcpSubagents(entry.peer.handshake)) return
-    const child = acpSubagentObservation(update)
-    if (!child) return
-    const ref = await entry.turnBroker.observeSubagent(child.observation)
-    if (ref) entry.turnBroker.associateChild(child.key, ref)
   }
 
   private quiet(entry: AcpEntry, session: HarnessSession, queue: AcpQueue<RoutedEvent>): AcpQuiet {
@@ -242,26 +238,25 @@ export class AcpTransport implements HarnessTransport {
     return { execution: "unknown" as const, cleanup: "unknown" as const }
   }
 
-  async configure(update: TransportConfigUpdate): Promise<ConfigApplied> {
-    if ([...this.entries.values()].some((entry) => entry.phase === "uncertain")) {
+  async configure(session: HarnessSession, update: TransportConfigUpdate): Promise<ConfigApplied> {
+    const entry = this.entry(session)
+    if (entry.phase === "uncertain") {
       return { state: "refused", reason: "ACP session outcome is uncertain" }
     }
-    let deferred = false
-    for (const entry of this.entries.values()) {
-      const changed = Boolean(update.credentials && update.credentials.leaseGeneration !== entry.start.credentials.leaseGeneration)
-        || Boolean(update.projection && update.projection.generation !== entry.start.projection.generation)
-      if (!changed) continue
-      entry.start = { ...entry.start,
-        ...(update.credentials ? { credentials: update.credentials } : {}),
-        ...(update.projection ? { projection: update.projection } : {}) }
-      if (entry.phase === "busy") { entry.pendingRestart = true; deferred = true }
-      else await this.restart(entry)
-    }
-    return deferred ? { state: "deferred", until: "after-active-turns" } : { state: "applied" }
+    const changed = Boolean(update.credentials && update.credentials.leaseGeneration !== entry.start.credentials.leaseGeneration)
+      || Boolean(update.projection && update.projection.generation !== entry.start.projection.generation)
+    if (!changed) return { state: "applied" }
+    entry.start = { ...entry.start,
+      ...(update.credentials ? { credentials: update.credentials } : {}),
+      ...(update.projection ? { projection: update.projection } : {}) }
+    if (entry.phase === "busy") { entry.pendingRestart = true; return { state: "deferred", until: "after-active-turns" } }
+    await this.restart(entry)
+    return { state: "applied" }
   }
 
   private async restart(entry: AcpEntry): Promise<void> {
     entry.pendingRestart = false
+    entry.startupAbort.abort()
     await entry.peer.retire()
     const next = await this.open(entry.start, entry.broker)
     try {
@@ -274,21 +269,25 @@ export class AcpTransport implements HarnessTransport {
       await entry.broker.rebind(upstreamSessionId)
       if (this.disposed) throw new AcpTransportError("connection", "ACP transport disposed during restart")
       this.starting.delete(next)
+      this.startingAborts.delete(next.startupAbort)
       this.entries.set(entry.session.binding.sessionId, next)
-    } catch (error) { this.starting.delete(next); await next.peer.retire(); throw error }
+    } catch (error) { this.starting.delete(next); this.startingAborts.delete(next.startupAbort); await next.peer.retire(); throw error }
   }
 
   async close(session: HarnessSession): Promise<void> {
     const entry = this.entry(session)
     this.entries.delete(session.binding.sessionId)
+    entry.startupAbort.abort()
     await entry.peer.retire()
   }
 
   async dispose(): Promise<void> {
     this.disposed = true
+    for (const controller of this.startingAborts) controller.abort()
     const entries = [...this.entries.values(), ...this.starting]
+    for (const entry of entries) entry.startupAbort.abort()
     this.entries.clear()
     this.starting.clear()
-    await Promise.all(entries.map((entry) => entry.peer.retire()))
+    await Promise.all([...entries.map((entry) => entry.peer.retire()), this.probes.dispose()])
   }
 }

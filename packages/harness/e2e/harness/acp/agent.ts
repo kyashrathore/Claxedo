@@ -81,8 +81,11 @@ export class ScriptedAgent implements Agent {
     rememberSession(this.dir, sessionId)
     const mcp = params.mcpServers.find((server) => server.name === "scripted")
     if (mcp && "url" in mcp && typeof mcp.url === "string") this.mcpUrls.set(sessionId, mcp.url)
-    if (this.startupQuestion) await this.connection.unstable_createElicitation({ sessionId, mode: "form", message: "Startup question",
-      requestedSchema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"] } })
+    if (this.startupQuestion) {
+      const answer = await this.connection.unstable_createElicitation({ sessionId, mode: "form", message: "Startup question",
+        requestedSchema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"] } })
+      if (this.record) await recordAcpRequest(this.dir, "startup/answer", answer, this.headers)
+    }
     queueMicrotask(() => {
       void this.connection.sessionUpdate({ sessionId, update: { sessionUpdate: "available_commands_update", availableCommands: [{ name: "scripted", description: "Run a named scripted reply" }] } })
     })

@@ -30,14 +30,15 @@ export function acpPrompt(turn: TurnInput): ContentBlock[] {
   return blocks
 }
 
-export async function acpPermission(request: RequestPermissionRequest, broker: TurnBroker | SessionBroker, sessionId: string): Promise<RequestPermissionResponse> {
+export async function acpPermission(request: RequestPermissionRequest, broker: TurnBroker | SessionBroker, sessionId: string,
+  askOptions?: { signal?: AbortSignal }): Promise<RequestPermissionResponse> {
   const requestId = randomUUID()
   const options = request.options.map((option) => ({ optionId: option.optionId, kind: option.kind, name: option.name }))
   const answer = await broker.ask({ kind: "permission", requestId, options,
     grantKey: acpGrantKey(request.toolCall.kind, request.toolCall.title),
     permission: { id: requestId, sessionID: sessionId, permission: request.toolCall.kind ?? "other",
       title: request.toolCall.title ?? undefined, patterns: request.toolCall.locations?.map((item) => item.path) ?? [], always: [],
-      metadata: { toolCallId: request.toolCall.toolCallId }, harnessPayload: request } })
+      metadata: { toolCallId: request.toolCall.toolCallId }, harnessPayload: request } }, askOptions)
   return permissionOutcome(answer, options)
 }
 
@@ -54,12 +55,13 @@ function permissionOutcome(answer: RequestAnswer, options: { optionId: string; k
   return { outcome: { outcome: "selected", optionId: chosen.optionId } }
 }
 
-export async function acpElicitation(request: CreateElicitationRequest, broker: TurnBroker | SessionBroker): Promise<CreateElicitationResponse> {
+export async function acpElicitation(request: CreateElicitationRequest, broker: TurnBroker | SessionBroker,
+  options?: { signal?: AbortSignal }): Promise<CreateElicitationResponse> {
   if (request.mode !== "form" && request.mode !== "url") return { action: "cancel" }
   const answer = await broker.ask({ kind: "elicitation", requestId: randomUUID(), mode: request.mode,
     message: request.message, ...("requestedSchema" in request ? { schema: request.requestedSchema } : {}),
     ...("url" in request && typeof request.url === "string" ? { url: request.url,
-      ...(typeof request.elicitationId === "string" ? { elicitationId: request.elicitationId } : {}) } : {}) })
+      ...(typeof request.elicitationId === "string" ? { elicitationId: request.elicitationId } : {}) } : {}) }, options)
   if (answer.kind === "form") return { action: "accept", content: formContent(answer.values) }
   if (answer.kind === "consent") return { action: answer.accepted ? "accept" : "decline" }
   return { action: "cancel" }
