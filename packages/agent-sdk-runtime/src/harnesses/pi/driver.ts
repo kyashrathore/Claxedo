@@ -29,6 +29,7 @@ import { providerProjectionRecord, type ProviderProjection } from "../../provide
 import { PiJsonLines, PiRpcProcess, type PiRpcMessage } from "./rpc-process"
 import { listPiCatalogModels } from "./catalog"
 import { createPiOptionsCache, type PiOptionsProbe } from "./options-cache"
+import { createUnsettledLaunches } from "./unsettled-launches"
 import { createProcessLoss } from "../shared/process-loss"
 import { requirePiExecutable, verifyPiExecutable, piCommand } from "./executable"
 import { ensurePiTitleExtension, generatePiTitle, setPiSessionName } from "./title-extension"
@@ -84,6 +85,9 @@ export class PiRpcDriver implements SdkRuntimeDriver {
   private readonly processLoss = createProcessLoss(() => this.host.reportHealthChanged?.())
   /** Retirements that did not establish an exit; they defer the auth profile's release. */
   private readonly blockers = new Map<string, RetirementResult>()
+  private readonly unsettled = createUnsettledLaunches(() => {
+    if (this.disposing) void this.releaseWhenUnblocked()
+  })
   private disposing = false
   private readonly agentDir: string
   private readonly authProfile: ReturnType<typeof retainPiAuth>
@@ -265,6 +269,7 @@ export class PiRpcDriver implements SdkRuntimeDriver {
   private async start(directory: string, args: string[], model?: string) {
     if (!directory.trim()) throw new Error("Pi requires a workspace directory")
     assertPiProvidersBindable(this.auth, model)
+    await this.unsettled.sweep()
     await fs.mkdir(this.agentDir, { recursive: true, mode: 0o700 })
     await fs.mkdir(path.join(this.agentDir, "sessions"), { recursive: true })
     const binary = this.options.binary ?? requirePiExecutable()
@@ -285,7 +290,7 @@ export class PiRpcDriver implements SdkRuntimeDriver {
       await process.request("get_state", {}, controlRequestDeadline())
       return process
     } catch (error) {
-      this.recordUnresolved(`start:${randomUUID()}`, await process.dispose())
+      this.unsettled.hold(process, await process.dispose())
       throw error
     }
   }
@@ -307,7 +312,7 @@ export class PiRpcDriver implements SdkRuntimeDriver {
         ...(provider && modelId ? { model: { providerID: "pi", modelID: `${provider}/${modelId}` } } : {}),
       }
     } catch (error) {
-      this.recordUnresolved(`start:${randomUUID()}`, await process.dispose())
+      this.unsettled.hold(process, await process.dispose())
       throw error
     }
   }
@@ -362,10 +367,12 @@ export class PiRpcDriver implements SdkRuntimeDriver {
   }
 
   /**
-   * Keyed by the launch it describes, so a later retirement of the same launch
-   * can drop it. Kept apart from `processLoss`, which is this driver's record
-   * of a process dying under a turn: an unresolved retirement is a different
-   * state with a different remedy, and `readRuntimeHealth` reports it first.
+   * Keyed by the session whose launch it describes, so that session's next
+   * retirement can drop it. Only a session's own launch lands here, because
+   * its unresolved retirement refuses that session a replacement, and
+   * `readRuntimeHealth` reports it first. A launch no session owns goes to
+   * `unsettled`: it refuses nothing, so it reports nothing. Kept apart from
+   * `processLoss`, this driver's record of a process dying under a turn.
    */
   private recordUnresolved(id: string, result: RetirementResult) {
     if (retirementSettled(result)) return
@@ -416,7 +423,7 @@ export class PiRpcDriver implements SdkRuntimeDriver {
       if (state?.sessionId !== id) throw new Error("Pi resumed a different session")
       return this.remember(id, process, directory)
     } catch (error) {
-      this.recordUnresolved(id, await process.dispose())
+      this.unsettled.hold(process, await process.dispose())
       throw error
     }
   }
@@ -646,7 +653,7 @@ export class PiRpcDriver implements SdkRuntimeDriver {
         selectedThinking: text(state?.thinkingLevel) ?? "off",
       }
     } finally {
-      this.recordUnresolved(`probe:${randomUUID()}`, await probe.dispose())
+      this.unsettled.hold(probe, await probe.dispose())
     }
   }
   peekConfigOptions(currentModel: string): AgentConfigOption[] {
@@ -702,7 +709,7 @@ export class PiRpcDriver implements SdkRuntimeDriver {
 
   /** Retirements that never established an exit, and the auth release they hold. */
   retirementBlockers(): readonly RetirementResult[] {
-    return [...this.blockers.values()]
+    return [...this.blockers.values(), ...this.unsettled.results()]
   }
 
   /**
@@ -712,7 +719,8 @@ export class PiRpcDriver implements SdkRuntimeDriver {
    * credentials it holds, not containment.
    */
   private async releaseWhenUnblocked() {
-    if (this.blockers.size) return false
+    await this.unsettled.sweep()
+    if (this.blockers.size || this.unsettled.results().length) return false
     await this.authProfile.release()
     return true
   }

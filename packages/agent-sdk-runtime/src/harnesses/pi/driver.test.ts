@@ -6,13 +6,14 @@ import { PiHarnessAdapter } from "./index"
 import { resolvePiExecutable, unpinnedPiReason } from "./executable"
 import { cancelAdapterTurn } from "../../test-utils/cancel-turn"
 import { installFakePiRpc } from "../../test-utils/fake-pi-rpc.mjs"
-import { PiRpcDriver } from "./driver"
+import { createPiRpcDriver, PiRpcDriver } from "./driver"
 import type { RetirementResult } from "../../launch"
 import { createMemoryRuntimeStore } from "../../stores/memory"
 import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import type { PromptInput } from "../../index"
 import { PiRpcProcess } from "./rpc-process"
 import { createProcessLoss } from "../shared/process-loss"
+import { createUnsettledLaunches } from "./unsettled-launches"
 
 test.each(["resolve", "reject"] as const)(
   "an idle RPC check cannot dispose a new turn after a stale %s",
@@ -425,12 +426,14 @@ test("a deferred auth release is retried by the retirement that settles the laun
     readRuntimeHealth(): { status: string; reason?: string }
     host: { reportHealthChanged(): void }
     processLoss: ReturnType<typeof createProcessLoss>
+    unsettled: ReturnType<typeof createUnsettledLaunches>
   }
   let healthReports = 0
   driver.host = { reportHealthChanged: () => { healthReports++ } }
   driver.processLoss = createProcessLoss(() => { healthReports++ })
   driver.entries = new Map()
   driver.blockers = new Map()
+  driver.unsettled = createUnsettledLaunches(() => {})
   driver.authProfile = { release: async () => { released.push("released") } }
   driver.goalController = { dispose: async () => {} }
 
@@ -460,4 +463,40 @@ test("a deferred auth release is retried by the retirement that settles the laun
   expect(released).toEqual(["released"])
   expect(driver.readRuntimeHealth()).toMatchObject({ status: "ok" })
   expect(healthReports).toBe(2)
+})
+
+test("a model probe whose retirement does not settle leaves pi available, holds the auth release, and is dropped once it settles", async () => {
+  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "pi-unsettled-probe-"))
+  const released: string[] = []
+  const driver = createPiRpcDriver({ reportHealthChanged: () => {} } as never, { agentDir }) as unknown as {
+    unsettled: ReturnType<typeof createUnsettledLaunches>
+    authProfile: { release(): Promise<void> }
+    readRuntimeHealth(): { status: string }
+    dispose(): Promise<void>
+  }
+  driver.authProfile = { release: async () => { released.push("released") } }
+  const exits = new Set<(error: Error) => void>()
+  let settles = false
+  const probe = {
+    dispose: async (): Promise<RetirementResult> => settles
+      ? { leader: "exited", descendants: "unknown", signals: [] }
+      : { leader: "unknown", descendants: "unknown", signals: [], error: { code: "ownership_unverified", message: "ps timed out" } },
+    onExit: (listener: (error: Error) => void) => {
+      exits.add(listener)
+      return () => exits.delete(listener)
+    },
+  }
+  try {
+    driver.unsettled.hold(probe, await probe.dispose())
+    expect(driver.readRuntimeHealth()).toEqual({ status: "ok" })
+    await driver.dispose()
+    expect(released).toEqual([])
+    settles = true
+    for (const listener of exits) listener(new Error("exited"))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(driver.unsettled.results()).toEqual([])
+    expect(released).toEqual(["released"])
+  } finally {
+    await fs.rm(agentDir, { recursive: true, force: true })
+  }
 })
