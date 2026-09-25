@@ -87,17 +87,14 @@ async function shrunkOrRefused(file: File, shrink: ImageShrink): Promise<Blob | 
   return shrunk
 }
 
-export async function readImageDraft(
-  file: File,
-  shrink: ImageShrink = canvasShrink,
-): Promise<TaskAttachmentDraft | ImageRefusal> {
+export async function readImageDraft(file: File): Promise<TaskAttachmentDraft | ImageRefusal> {
   const mime = mimeOf(file)
   if (!mime) return { filename: file.name, reason: "not_an_image" }
   let source: Blob = file
   let stored = mime
   let filename = file.name
   if (file.size > TASKS_BOUNDS.taskAttachmentMaxBytes) {
-    const shrunk = await shrunkOrRefused(file, shrink)
+    const shrunk = await shrunkOrRefused(file, canvasShrink)
     if (!shrunk || !isTaskAttachmentMime(shrunk.type)) return { filename: file.name, reason: "too_large" }
     source = shrunk
     stored = shrunk.type

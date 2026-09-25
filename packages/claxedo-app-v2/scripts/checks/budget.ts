@@ -4,16 +4,16 @@ import { codeExtensions, isTranslationFile, listFiles, parseArgs, pluginsDirecto
 import { lineCount } from "./lib/parse"
 import { finish, type Violation } from "./lib/report"
 
-type Part = { readonly name: string; readonly budget: number; readonly folders: readonly string[]; readonly except?: readonly string[] }
+type Part = { readonly name: string; readonly budget?: number; readonly folders: readonly string[]; readonly except?: readonly string[] }
 type Row = { readonly name: string; readonly lines: number; readonly budget: number | undefined; readonly at: string }
 
 const parts: readonly Part[] = [
-  { name: "Server adapter", budget: 4000, folders: ["src/server"] },
+  { name: "Server adapter (no budget until its dedicated rebuild; DECISIONS 2026-09-26)", folders: ["src/server"] },
   { name: "Session client, including the session list store", budget: 9500, folders: ["src/session"], except: ["src/session/view"] },
   { name: "Session screen incl. the kept timeline and docks", budget: 14300, folders: ["src/session/view"] },
   { name: "Composer (re-based to its measured size after the no-comments triage and size splits; DECISIONS 2026-09-25)", budget: 10987, folders: ["src/composer"] },
   { name: "Rail and workbench", budget: 8300, folders: ["src/rail", "src/workbench"] },
-  { name: "Browser tabs", budget: 1100, folders: ["src/browser"] },
+  { name: "Browser tabs (re-based to its measured size: the parity ruling kept v1's chrome; DECISIONS 2026-09-26)", budget: 1375, folders: ["src/browser"] },
   { name: "Shell and platform", budget: 6500, folders: ["src/shell", "src/auth", "src/i18n", "src/lib", "src/*"], except: ["src/lib/machine.ts"] },
   { name: "Terminal", budget: 4300, folders: ["src/terminal"] },
   { name: "Settings, with accounts and machines", budget: 5200, folders: ["src/settings", "src/accounts", "src/machines"] },
@@ -21,9 +21,10 @@ const parts: readonly Part[] = [
   { name: "Review, git, files", budget: 4300, folders: ["src/review", "src/files", "src/git"] },
   { name: "Projects and cloud", budget: 3000, folders: ["src/projects", "src/cloud"] },
   { name: "Onboarding and usage", budget: 1800, folders: ["src/onboarding", "src/usage"] },
-  { name: "Plugin host", budget: 1700, folders: ["src/plugins"] },
-  { name: "Marketplace", budget: 1800, folders: ["src/marketplace"] },
-  { name: "Tasks, an app domain; the plan's number is the Tasks plugin's", budget: 2500, folders: ["src/tasks"] },
+  { name: "Plugin host (re-based to its measured size after the frame split: per-manifest approval and the App plugins settings; DECISIONS 2026-09-26)", budget: 2064, folders: ["src/plugins"] },
+  { name: "Web plugin frame: the sandboxed frame runtime and its host bridge (split from the plugin host; DECISIONS 2026-09-26)", budget: 864, folders: ["src/plugins/frame"] },
+  { name: "Marketplace (re-based to its measured size: v1's directory ported under the parity rule; DECISIONS 2026-09-26)", budget: 2348, folders: ["src/marketplace"] },
+  { name: "Tasks, an app domain (re-based to its measured size; the plan's 2.5k was the Tasks plugin's; DECISIONS 2026-09-26)", budget: 4414, folders: ["src/tasks"] },
   { name: "Notifications (no plan number; measured 2026-09-25, for review)", budget: 129, folders: ["src/notifications"] },
   { name: "Workspace panel (no plan number; measured 2026-09-25, for review)", budget: 1750, folders: ["src/panel"] },
   { name: "Moved in from the session feature (lands in rail and review)", budget: 600, folders: [] },

@@ -5,7 +5,7 @@ import type { FileContent } from "@/server"
 import { FileMedia } from "@/transcript"
 import { ClaxedoIcon as Icon, ClaxedoIconV2 as IconV2, Button, DiffChanges, FileIcon, Tooltip } from "@/ui"
 import { MAX_DIFF_CHANGED_LINES } from "../diff-content"
-import { dictionary } from "../i18n"
+import { reviewDictionary } from "../i18n"
 
 export type ReviewFileHeaderDiff = {
   readonly file: string
@@ -30,7 +30,7 @@ export function ReviewCodeViewFileHeader(props: {
 }
 
 function RowControls(props: { readonly file: string; readonly onViewFile?: (file: string) => void }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(reviewDictionary)
   return (
     <div data-slot="session-review-row-controls" class="ui-session-review-row-controls">
       <Tooltip value={t("review.copy")} placement="top" gutter={4}>
@@ -77,7 +77,7 @@ export function ReviewFileHeaderContent(props: {
   readonly onViewFile?: (file: string) => void
   readonly showControls?: boolean
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(reviewDictionary)
   const file = () => props.diff.file
   const directory = () => parentPath(file())
   return (
@@ -124,7 +124,7 @@ function PendingBody(props: {
   readonly error: string | undefined
   readonly onRetry: (file: string) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(reviewDictionary)
   return (
     <div class="px-3 py-4 text-12-regular text-text-weak" data-review-content-file={props.file}>
       <Show when={props.error} fallback={<div role="status">{t("review.diff.loading")}</div>}>
@@ -146,7 +146,7 @@ function LargeDiff(props: {
   readonly changedLines: number
   readonly onRenderAnyway: (file: string) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(reviewDictionary)
   return (
     <div data-slot="session-review-large-diff">
       <div data-slot="session-review-large-diff-title">{t("review.largeDiff.title")}</div>

@@ -8,9 +8,7 @@ import { useProjectsText } from "../i18n"
 import { useProjects } from "../store"
 
 export interface DialogSelectDirectoryProps {
-  title?: string
-  multiple?: boolean
-  onSelect: (result: string | string[] | null) => void
+  onSelect: (result: string) => void
 }
 
 export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
@@ -37,14 +35,14 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
     uniqueRows([...recentProjects(), ...(await directories(value)).map((absolute) => toRow(absolute, home(), "folders"))])
 
   function resolve(absolute: string) {
-    props.onSelect(props.multiple ? [absolute] : absolute)
+    props.onSelect(absolute)
     dialog.close()
   }
 
   return (
     <Dialog
       flush
-      title={props.title ?? t("projects.directory.title")}
+      title={t("projects.directory.title")}
       class="theme-directory-picker overlay-palette"
       action={
         <button

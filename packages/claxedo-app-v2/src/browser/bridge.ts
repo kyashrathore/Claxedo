@@ -1,9 +1,7 @@
 import { isRecord } from "@claxedo/helpers/guards"
-import type { BrowserBox, BrowserConsoleEntry, BrowserConsoleLevel } from "./model"
+import type { BrowserConsoleEntry } from "./model"
 
 export type BrowserResult = { readonly ok: boolean; readonly error?: string }
-
-export type BrowserScreenshotClip = BrowserBox & { readonly scale?: number }
 
 export type BrowserScreenshotResult =
   | { readonly ok: true; readonly dataUrl: string; readonly mimeType: "image/png" | "image/jpeg" }
@@ -15,31 +13,18 @@ export type BrowserNavigationState =
   | { readonly ok: true; readonly url: string; readonly canGoBack: boolean; readonly canGoForward: boolean }
   | { readonly ok: false; readonly error: string }
 
-export type BrowserConsoleQuery = {
-  readonly since?: number
-  readonly level?: BrowserConsoleLevel
-  readonly limit?: number
-}
-
 export type BrowserBridge = {
-  readonly enabled: () => Promise<boolean>
   readonly register: (paneId: string, webContentsId: number) => Promise<BrowserResult>
   readonly unregister: (paneId: string) => Promise<BrowserResult>
   readonly navigate: (paneId: string, url: string) => Promise<BrowserResult>
-  readonly getConsoleLogs: (paneId: string, query?: BrowserConsoleQuery) => Promise<BrowserConsoleEntry[]>
   readonly onConsoleEntry: (paneId: string, listener: (entry: BrowserConsoleEntry) => void) => () => void
-  readonly captureScreenshot: (
-    paneId: string,
-    options?: { clip?: BrowserScreenshotClip },
-  ) => Promise<BrowserScreenshotResult>
-  readonly setInspectMode: (paneId: string, enabled: boolean) => Promise<BrowserResult>
-  readonly onNodeSelected: (paneId: string, listener: (payload: unknown) => void) => () => void
-  readonly getNavigationState?: (paneId: string) => Promise<BrowserNavigationState>
-  readonly goBack?: (paneId: string) => Promise<BrowserResult>
-  readonly goForward?: (paneId: string) => Promise<BrowserResult>
-  readonly reload?: (paneId: string, hard?: boolean) => Promise<BrowserResult>
-  readonly openDevTools?: (paneId: string) => Promise<BrowserResult>
-  readonly clearStorage?: (paneId: string, storages?: BrowserStorageKey[]) => Promise<BrowserResult>
+  readonly captureScreenshot: (paneId: string) => Promise<BrowserScreenshotResult>
+  readonly getNavigationState: (paneId: string) => Promise<BrowserNavigationState>
+  readonly goBack: (paneId: string) => Promise<BrowserResult>
+  readonly goForward: (paneId: string) => Promise<BrowserResult>
+  readonly reload: (paneId: string, hard?: boolean) => Promise<BrowserResult>
+  readonly openDevTools: (paneId: string) => Promise<BrowserResult>
+  readonly clearStorage: (paneId: string, storages?: BrowserStorageKey[]) => Promise<BrowserResult>
 }
 
 export type BrowserWebview = HTMLElement & {
@@ -49,15 +34,17 @@ export type BrowserWebview = HTMLElement & {
 }
 
 const REQUIRED_METHODS = [
-  "enabled",
   "register",
   "unregister",
   "navigate",
-  "getConsoleLogs",
   "onConsoleEntry",
   "captureScreenshot",
-  "setInspectMode",
-  "onNodeSelected",
+  "getNavigationState",
+  "goBack",
+  "goForward",
+  "reload",
+  "openDevTools",
+  "clearStorage",
 ] as const
 
 function isBrowserBridge(value: unknown): value is BrowserBridge {

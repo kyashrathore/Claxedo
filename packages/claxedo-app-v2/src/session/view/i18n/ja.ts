@@ -1,6 +1,6 @@
 import type { SessionScreenTextKey } from "./en"
 
-export const ja: Partial<Record<SessionScreenTextKey, string>> = {
+export default {
   "sessionScreen.loading": "メッセージを読み込み中...",
   "sessionScreen.action.dismiss": "閉じる",
   "sessionScreen.action.back": "戻る",
@@ -88,4 +88,4 @@ export const ja: Partial<Record<SessionScreenTextKey, string>> = {
   "sessionScreen.requests.loadFailed": "保留中の権限リクエストや質問を読み込めませんでした。再試行して続行してください。",
   "command.session.new": "新しいセッション",
   "command.category.session": "セッション",
-}
+} satisfies Partial<Record<SessionScreenTextKey, string>>

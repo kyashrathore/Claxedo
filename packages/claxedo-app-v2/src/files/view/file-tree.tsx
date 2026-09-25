@@ -3,7 +3,7 @@ import { createStore } from "solid-js/store"
 import { createVirtualizer } from "@tanstack/solid-virtual"
 import { useTranslator } from "@/i18n"
 import type { FileNode } from "@/server"
-import { dictionary } from "../i18n"
+import { filesDictionary } from "../i18n"
 import type { ChangeKind } from "../model"
 import { treeRows, type RevealBatches, type TreeRow } from "../tree-rows"
 import type { TreeSource } from "../tree-source"
@@ -57,7 +57,7 @@ function createMarks(props: FileTreeProps) {
 }
 
 export function FileTree(props: FileTreeProps): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(filesDictionary)
   const batches = createBatches(() => props.source)
   const rows = createMemo(() =>
     treeRows({ source: props.source, active: props.active, batchSize: props.visibleLimit ?? Number.POSITIVE_INFINITY, batches: batches.of }),

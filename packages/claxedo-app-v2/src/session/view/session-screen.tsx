@@ -1,11 +1,11 @@
-import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js"
-import { Composer, promptText, sessionComposerKey, useComposerStore, type ComposerRecovery } from "@/composer"
+import { createEffect, createMemo, createSignal, Match, on, Show, Switch } from "solid-js"
+import { Composer, promptText, sessionComposerKey, useComposerStore } from "@/composer"
 import { usePhone } from "@/lib/viewport"
 import { FailureBoundary, FailureNotice } from "@/lib/failure"
 import { sessionId, useServer, type SessionRef } from "@/server"
 import { usePanel } from "@/panel"
 import { useSessionStores, type SessionView } from "@/session"
-import { draftPath, sessionPath, settingsPath, useCommands, useShellRoute, type PaneProps } from "@/shell"
+import { sessionPath, useCommands, useShellRoute, type PaneProps } from "@/shell"
 import { useDialog } from "@/ui"
 import { useWorkbench } from "@/workbench"
 import { createQueueEdit } from "./queue-edit"
@@ -17,12 +17,12 @@ import { createTimelineHost } from "./timeline-host"
 import { createTimelineScroll } from "./timeline-scroll"
 import { createDockFollow } from "./dock-follow"
 import { SessionTimelineSkeleton } from "./session-timeline-skeleton"
-import { createSessionScreenKeydownHandler } from "./session-screen-keydown"
+import { installSessionScreenKeydown } from "./session-screen-keydown"
 import { SessionConnectionLine } from "./connection-line"
 import { commitDeltasEachFrame } from "./delta-frames"
 import { registerSessionCommands } from "./session-commands"
-import { recoverTurn } from "./turn-recovery-actions"
-import { floatingPeekStep, type FloatingPeekState } from "./floating-peek"
+import { createScreenTurnRecovery } from "./turn-recovery-actions"
+import { createFloatingPeek } from "./floating-peek"
 import { PreviousMessagesRow, turnActive } from "./timeline"
 import { PlacementStateCards } from "./workspace-sleep"
 import "./session-screen.css"
@@ -81,24 +81,18 @@ function SessionBody(props: {
   const todo = createTodoDock(() => props.view)
   const blocked = () => props.view.requests().length > 0
   const users = createMemo(() => userMessages(props.view))
-  const [peekToggles, setPeekToggles] = createSignal(0)
-  const [sends, setSends] = createSignal(0)
-  const peek = createMemo<FloatingPeekState>((previous) =>
-    floatingPeekStep(previous, {
-      floating: props.floating,
-      toggles: peekToggles(),
-      sends: sends(),
-      sessionId: props.view.ref.sessionId,
-      loaded: !!props.view.conversation(),
-      turns: users().length,
-    }),
-  )
-  const transcriptCollapsed = () => props.floating && !peek().peeked
+  const peek = createFloatingPeek({
+    floating: () => props.floating,
+    sessionId: () => props.view.ref.sessionId,
+    loaded: () => !!props.view.conversation(),
+    turns: () => users().length,
+  })
+  const transcriptCollapsed = () => props.floating && !peek.peeked()
   const composers = useComposerStore()
   let body: HTMLDivElement | undefined
   const draft = () => composers.draft(sessionComposerKey(props.view.ref))
   const driving = () => props.active && !props.readOnly
-  const handleKeyDown = createSessionScreenKeydownHandler({
+  installSessionScreenKeydown({
     active: driving,
     dialogActive: () => dialog.active,
     inputEl: () => body?.querySelector<HTMLDivElement>('[data-component="prompt-input"]') ?? undefined,
@@ -109,16 +103,7 @@ function SessionBody(props: {
   const commands = useCommands()
   createMessageLinks({ view: () => props.view, users, scroll, active: driving, commands, t })
   registerSessionCommands({ commands, placementId: () => props.view.ref.placementId, active: driving, navigate: (path) => routing.navigate(path), t })
-  let recovery: ComposerRecovery | undefined
-  const recover = (kind: Parameters<typeof recoverTurn>[2], userMessageId: string) =>
-    recoverTurn(props.view, {
-      startNewSession: () => routing.navigate(draftPath(props.view.ref.placementId)),
-      openProviders: () => routing.navigate(settingsPath("models")),
-      switchModelAndResend: async (text) => recovery?.switchModelAndResend(text),
-      resend: (text) => recovery?.resend(text),
-    }, kind, userMessageId)
-  document.addEventListener("keydown", handleKeyDown)
-  onCleanup(() => document.removeEventListener("keydown", handleKeyDown))
+  const recovery = createScreenTurnRecovery(() => props.view, (path) => routing.navigate(path))
   const setDock = createDockFollow(scroll)
   return (
     <div ref={body} data-slot="session-screen-body" classList={{ "session-floating-overlay": props.floating }}>
@@ -127,9 +112,9 @@ function SessionBody(props: {
           <div class="session-floating-peek">
             <PreviousMessagesRow
               count={users().length}
-              expanded={peek().peeked}
+              expanded={peek.peeked()}
               testId="session-transcript-peek"
-              onReveal={() => setPeekToggles((count) => count + 1)}
+              onReveal={peek.toggle}
               t={host.t}
             />
           </div>
@@ -139,7 +124,7 @@ function SessionBody(props: {
           data-session-transcript-collapsed={transcriptCollapsed() ? "true" : undefined}
           classList={{ "session-floating-timeline": props.floating, "session-floating-timeline-collapsed": transcriptCollapsed() }}
         >
-          <SessionTimeline view={props.view} host={host} active={props.active} onScreen={!transcriptCollapsed()} scroll={scroll} onRecover={recover} />
+          <SessionTimeline view={props.view} host={host} active={props.active} onScreen={!transcriptCollapsed()} scroll={scroll} onRecover={recovery.recover} />
         </div>
       </div>
       <div
@@ -168,13 +153,13 @@ function SessionBody(props: {
                   attachmentWorkspace={true}
                   hidden={blocked()}
                   afterAccepted={() => {
-                    setSends((count) => count + 1)
+                    peek.sent()
                     queueEdit.accepted()
                   }}
                   queuedEdit={queueEdit.edit}
                   dropZone={() => body}
                   collapsible={props.floating}
-                  registerRecovery={(next) => (recovery = next)}
+                  registerRecovery={recovery.register}
                 />
               </Show>
             </div>

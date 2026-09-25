@@ -26,15 +26,6 @@ function PluginFailed(props: { readonly name: string; readonly error: unknown; r
   )
 }
 
-export function PluginOff(props: { readonly pluginName: string }): JSX.Element {
-  const t = usePluginsText()
-  return (
-    <div role="status" class="plugin-slot-off">
-      {t("plugins.off", { name: props.pluginName })}
-    </div>
-  )
-}
-
 export function boundedView<Props extends object>(pluginName: string, view: Component<Props>): Component<Props> {
   return (props: Props) => (
     <PluginBoundary pluginName={pluginName}>

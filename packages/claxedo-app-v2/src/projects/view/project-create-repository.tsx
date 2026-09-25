@@ -26,7 +26,7 @@ export function createFormLook(comfortable: boolean): CreateFormLook {
   }
 }
 
-export function UrlField(props: { look: CreateFormLook; url: string; onUrl: (url: string) => void; host: string | undefined; leadField?: (element: HTMLElement) => void }) {
+export function UrlField(props: { look: CreateFormLook; url: string; onUrl: (url: string) => void; host: string | undefined }) {
   const t = useProjectsText()
   return (
     <label class="flex flex-col gap-1">
@@ -39,7 +39,6 @@ export function UrlField(props: { look: CreateFormLook; url: string; onUrl: (url
         aria-label={t("projects.add.url")}
         spellcheck={false}
         class={props.look.field}
-        ref={(element) => props.leadField?.(element)}
       />
       <span class={props.look.hint}>
         {props.host ? t("projects.create.url.hint.host", { host: props.host }) : t("projects.create.url.hint.none")}
@@ -76,7 +75,6 @@ type RepositoryListProps = {
   onQuery: (query: string) => void
   selected: string | undefined
   onSelect: (fullName: string) => void
-  leadField?: (element: HTMLElement) => void
 }
 
 function RepositoryRows(props: RepositoryListProps & { matches: readonly CodeHostRepository[] }): JSX.Element {
@@ -137,7 +135,6 @@ export function RepositoryList(props: RepositoryListProps) {
         autocomplete="off"
         spellcheck={false}
         class={`${props.look.box} ${props.look.comfortable ? "text-14-regular" : "text-13-regular"} w-full min-w-0 text-text-strong placeholder:text-text-weak/60 focus:outline-none focus:border-border-interactive-base`}
-        ref={(element) => props.leadField?.(element)}
       />
       <div
         role="radiogroup"

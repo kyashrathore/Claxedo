@@ -1,7 +1,7 @@
 import { For, Show, createSignal, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { useCoarsePointer, usePhone } from "@/lib/viewport"
-import { dictionary, type TerminalKey } from "../i18n"
+import { terminalDictionary, type TerminalKey } from "../i18n"
 import { resolveAccessoryKey, type AccessoryKey } from "./accessory-keys"
 
 const KEYS: readonly { readonly id: AccessoryKey; readonly label: string; readonly name: TerminalKey }[] = [
@@ -18,7 +18,7 @@ export function AccessoryRow(props: {
   readonly onKey: (data: string) => void
   readonly active: () => boolean
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(terminalDictionary)
   const [ctrlArmed, setCtrlArmed] = createSignal(false)
   const coarse = useCoarsePointer()
   const phone = usePhone()
@@ -40,7 +40,6 @@ export function AccessoryRow(props: {
         role="toolbar"
         aria-label={t("terminal.keys")}
         data-testid="terminal-keys"
-        data-component="terminal-accessory-row"
         class="fixed inset-x-0 bottom-0 z-40 flex items-stretch gap-1 border-t border-border-weak-base/60 bg-surface-base/95 px-1.5 py-1 backdrop-blur"
         style={{ "padding-bottom": "max(0.25rem, env(safe-area-inset-bottom))" }}
       >

@@ -5,6 +5,7 @@ import { moduleDictionary } from "../dictionary"
 import { frameDefinition } from "../frame/definition"
 import type { FrameSource } from "../frame/open"
 import type { PluginBuild, PluginOrigin } from "../model"
+import { bundleDefinition, importBundle, NOT_A_PLUGIN } from "../bundle"
 
 export class LivePluginLoadError extends Error {
   constructor(readonly pluginId: string, message: string) {
@@ -38,20 +39,9 @@ function originOf(row: LivePlugin, hash: string): PluginOrigin {
 }
 
 function definitionOf(row: LiveRow, module: unknown): PluginDefinition {
-  const candidate = (module as { readonly default?: unknown }).default
-  if (typeof candidate === "object" && candidate !== null && typeof (candidate as PluginDefinition).activate === "function") {
-    return candidate as PluginDefinition
-  }
-  throw new LivePluginLoadError(row.id, "the bundle's default export is not definePlugin(...)")
-}
-
-async function importBundle(code: string): Promise<unknown> {
-  const url = URL.createObjectURL(new Blob([code], { type: "text/javascript" }))
-  try {
-    return await import(/* @vite-ignore */ url)
-  } finally {
-    URL.revokeObjectURL(url)
-  }
+  const definition = bundleDefinition(module)
+  if (!definition) throw new LivePluginLoadError(row.id, NOT_A_PLUGIN)
+  return definition
 }
 
 function manifestOf(row: LiveRow, definition: PluginDefinition): PluginManifest {

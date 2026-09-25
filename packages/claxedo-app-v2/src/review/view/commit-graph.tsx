@@ -2,7 +2,7 @@ import { For, Show, type JSX } from "solid-js"
 import { useI18n, useTranslator } from "@/i18n"
 import { formatRelativeTime } from "@/lib/relative-time"
 import type { GitCommit } from "@/server"
-import { dictionary } from "../i18n"
+import { reviewDictionary } from "../i18n"
 import { SourceControlSectionHeader } from "./change-group"
 
 function CommitRow(props: {
@@ -61,7 +61,7 @@ export function CommitGraph(props: {
   readonly selectedHash?: string
   readonly onSelect: (commit: GitCommit) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(reviewDictionary)
   return (
     <section
       data-testid="source-control-graph"

@@ -4,7 +4,7 @@ import { useTranslator, type DomainTranslate } from "@/i18n"
 import { SettingsEmpty, SettingsList, SettingsRow } from "@/settings"
 import { Button } from "@/ui"
 import type { ListFailure, MorePages } from "../data/queries"
-import { dictionary, type TasksKey } from "../i18n"
+import { tasksDictionary, type TasksKey } from "../i18n"
 import { SLOT_KEYS, configuredSlotsOf, shortAge } from "../model"
 import { ListFailureNotice, LoadMore } from "../view/load-more"
 
@@ -48,7 +48,7 @@ function PresetRow(props: {
   readonly list: PresetListProps
   readonly now: number
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const input = () => ({ presetId: props.preset.id, revision: props.preset.revision })
   const busy = () => props.list.busyPresetId === props.preset.id
   return (
@@ -98,7 +98,7 @@ function PresetRow(props: {
 }
 
 export function PresetList(props: PresetListProps): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const now = Date.now()
   return (
     <div class="flex flex-col gap-3" data-testid="preset-list">

@@ -11,6 +11,7 @@ Owns: the account, as one port with two bindings: the browser's own sign-in sess
 - `BrowserAuthAdapter` (`browser-auth.ts`): the provider-neutral contract. `better-auth-adapter.ts` is the one implementation: it composes `better-auth-client.ts` (the library's client, its results and the callback URL), `better-auth-session.ts` (the signals, the live descriptor, the session and `initialize`) and `better-auth-actions.ts` (sign-in, sign-up and sign-out). The web's binding (`better-auth-binding.ts`) builds it.
 - `BrowserAuthDescriptor`: the live deployment's declaration, read from `GET /api/claxedo/auth/descriptor` and checked field by field against this build; a mismatch leaves the app signed out with the reason, never a startup failure.
 - `AuthUser`: the sanitized identity (id, name, email, image). No token ever reaches a component; the `bearer` control-plane access exists for the server transport and the CLI exchange only, and the desktop has none.
+- The auth routes answer JSON, and a proxy's HTML error page has no fields to read, so `authResponseBody` reads a body only when the response says it is JSON (`better-auth-error.ts`).
 - Origins (`origins.ts`): `apiOrigin()` is `VITE_CLAXEDO_SERVER_URL` or the page origin; `appOrigin()` is the page origin; `serverIssuesSessions()` is `VITE_CLAXEDO_ISSUES_SESSIONS !== "0"`.
 
 ## Machine

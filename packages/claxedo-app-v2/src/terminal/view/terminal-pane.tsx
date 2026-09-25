@@ -7,7 +7,7 @@ import { showToast } from "@/ui"
 import type { PaneProps } from "@/shell"
 import type { TerminalBackend } from "../backend/types"
 import { useTerminalRuntime } from "../context"
-import { dictionary } from "../i18n"
+import { terminalDictionary } from "../i18n"
 import {
   transitionConnection,
   type TerminalConnection,
@@ -21,7 +21,7 @@ import { TerminalStatus, useConnectionToasts } from "./terminal-status"
 export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
   const server = useServer()
   const terminals = useTerminalRuntime()
-  const t = useTranslator(dictionary)
+  const t = useTranslator(terminalDictionary)
   const { placementId, terminalId } = props.state
   const preferences = usePreferences()
   const store = terminals.store(placementId)

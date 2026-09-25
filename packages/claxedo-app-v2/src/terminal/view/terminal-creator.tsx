@@ -1,13 +1,13 @@
 import { createResource, createSignal, For, Show, type JSX } from "solid-js"
 import { useErrorCopy, useTranslator } from "@/i18n"
-import { NewSessionContextRow, resolveDraftPlacement, type DraftCreation } from "@/projects"
+import { createDraftPlacementResolver, NewSessionContextRow, type DraftCreation } from "@/projects"
 import { toAppError, useServer, type PlacementId } from "@/server"
 import type { PaneProps } from "@/shell"
 import { ClaxedoIcon, ClaxedoLogo } from "@/ui"
 import { useWorkbench } from "@/workbench"
 import { useTerminalRuntime } from "../context"
 import { terminalCreatorPaneKind } from "../creator-pane"
-import { dictionary } from "../i18n"
+import { terminalDictionary } from "../i18n"
 import { terminalLaunchers, type TerminalLauncher } from "../launchers"
 import "./terminal-creator.css"
 
@@ -19,11 +19,10 @@ function LauncherTile(props: {
   readonly starting: string | undefined
   readonly onLaunch: (launcher: TerminalLauncher) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(terminalDictionary)
   return (
     <button
       type="button"
-      data-slot="terminal-launcher"
       data-launcher-id={props.launcher.id}
       disabled={!!props.starting}
       onClick={() => props.onLaunch(props.launcher)}
@@ -66,7 +65,7 @@ function useInstalledAgents(placementId: () => PlacementId) {
 }
 
 export function TerminalCreator(props: PaneProps<TerminalCreatorState>): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(terminalDictionary)
   const errorCopy = useErrorCopy()
   const runtime = useTerminalRuntime()
   const server = useServer()
@@ -76,6 +75,7 @@ export function TerminalCreator(props: PaneProps<TerminalCreatorState>): JSX.Ele
   const [starting, setStarting] = createSignal<string>()
   const [error, setError] = createSignal<string>()
   const [creating, setCreating] = createSignal<DraftCreation>()
+  const draft = createDraftPlacementResolver()
   const launchers = () =>
     terminalLaunchers(t("terminal.creator.shell"), installed.state === "ready" ? installed() : undefined)
   const launch = async (launcher: TerminalLauncher) => {
@@ -85,7 +85,7 @@ export function TerminalCreator(props: PaneProps<TerminalCreatorState>): JSX.Ele
     try {
       const project = projectId()
       const placementId = project
-        ? await resolveDraftPlacement({ projectId: project, placementId: props.state.placementId })
+        ? await draft.resolve({ projectId: project, placementId: props.state.placementId })
         : props.state.placementId
       const terminal = await runtime.store(placementId).create({ command: launcher.command, title: launcher.title })
       runtime.open({ placementId, terminalId: terminal.id }, props.paneId)
@@ -109,6 +109,7 @@ export function TerminalCreator(props: PaneProps<TerminalCreatorState>): JSX.Ele
                   projectId={project()}
                   placementId={props.state.placementId}
                   branch={false}
+                  resolver={draft}
                   onCreatingChange={setCreating}
                   onOpen={(target) =>
                     workbench.replacePane(props.paneId, terminalCreatorPaneKind, { placementId: target.placementId })
@@ -127,7 +128,7 @@ export function TerminalCreator(props: PaneProps<TerminalCreatorState>): JSX.Ele
                 <span class="text-sm font-medium text-text-weak">{t("terminal.creator.title")}</span>
           <Show when={creating()}>
             {(kind) => (
-              <span data-slot="terminal-new-create-note" class="truncate text-xs text-v2-text-text-faint">
+              <span class="truncate text-xs text-v2-text-text-faint">
                 {t(kind() === "cloud" ? "terminal.creator.inNewSandbox" : "terminal.creator.inNewWorktree")}
               </span>
             )}
@@ -148,7 +149,6 @@ export function TerminalCreator(props: PaneProps<TerminalCreatorState>): JSX.Ele
               <Show when={error()}>
                 {(message) => (
                   <div
-                    data-slot="terminal-new-error"
                     class="border-t border-border-weaker-base px-3.5 py-2.5 text-xs text-icon-critical-base"
                   >
                     {message()}

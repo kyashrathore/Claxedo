@@ -1,15 +1,15 @@
 import { createSignal } from "solid-js"
 import { TASKS_BOUNDS, type TaskAttachmentDraft } from "@claxedo/tasks"
 import type { TasksKey } from "../i18n"
-import { imageRefusalPhrase, isImageRefusal, readImageDraft, type ImageShrink } from "./image-drafts"
+import { imageRefusalPhrase, isImageRefusal, readImageDraft } from "./image-drafts"
 
 export type ImageNotice = { readonly key: TasksKey; readonly params: Readonly<Record<string, string | number>> }
 
-async function readAll(files: readonly File[], room: number, shrink: ImageShrink | undefined) {
+async function readAll(files: readonly File[], room: number) {
   const admitted: TaskAttachmentDraft[] = []
   let notice: ImageNotice | undefined
   for (const file of files.slice(0, Math.max(0, room))) {
-    const read = await readImageDraft(file, shrink)
+    const read = await readImageDraft(file)
     if (isImageRefusal(read)) notice ??= imageRefusalPhrase(read)
     else admitted.push(read)
   }
@@ -20,7 +20,6 @@ async function readAll(files: readonly File[], room: number, shrink: ImageShrink
 export function createImageQueue(input: {
   readonly images: () => readonly TaskAttachmentDraft[]
   readonly setImages: (images: readonly TaskAttachmentDraft[]) => void
-  readonly shrink?: ImageShrink
 }) {
   const [notice, setNotice] = createSignal<ImageNotice>()
   const [reading, setReading] = createSignal(0)
@@ -39,7 +38,7 @@ export function createImageQueue(input: {
     reads = reads
       .then(async () => {
         try {
-          const result = await readAll(files, TASKS_BOUNDS.taskAttachmentsMax - input.images().length, input.shrink)
+          const result = await readAll(files, TASKS_BOUNDS.taskAttachmentsMax - input.images().length)
           admit(result.admitted, result.notice)
         } finally {
           setReading((count) => count - 1)

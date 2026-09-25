@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "i18n.error.auth.title": "Erneut anmelden",
   "i18n.error.auth.message": "Deine Anmeldung ist abgelaufen oder wurde abgelehnt. Melde dich erneut an, um fortzufahren.",
   "i18n.error.auth.retry": "Anmelden",

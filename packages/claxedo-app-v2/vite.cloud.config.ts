@@ -1,4 +1,4 @@
-import { defineConfig, loadEnv, type HtmlTagDescriptor, type Plugin, type UserConfig } from "vite"
+import { defineConfig, loadEnv, type Plugin, type UserConfig } from "vite"
 import solidPlugin from "vite-plugin-solid"
 import tailwindcss from "@tailwindcss/vite"
 import { fileURLToPath } from "node:url"
@@ -6,78 +6,6 @@ import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { dirname } from "node:path"
 import { resolveAccountBindingSelection } from "./vite.account-binding"
 import { webContentSecurityPolicyPlugin } from "./vite.content-security-policy"
-
-/**
- * The chunks the authenticated app awaits BEFORE first paint. app/entry/app.tsx's
- * preloadClaxedoAppShell() dynamic-imports runtime-providers, whose
- * preloadRuntimeProviders() then awaits feature-ports + secondary-feature-ports
- * and finally app-shell-bootstrap. Vite only emits <link rel="modulepreload">
- * for the entry's STATIC imports, so without help the browser discovers each of
- * these only when the previous module executes — a 3-hop network waterfall
- * (main → runtime-providers → feature-ports → app-shell-bootstrap) on the
- * critical path. Keep in sync with preloadRuntimeProviders() in
- * src/app/entry/runtime-providers.tsx and BOOT_CLOSURE_ROOTS in
- * scripts/check-forbidden-eager-deps.ts.
- */
-const BOOT_CHUNK_NAMES = ["runtime-providers", "feature-ports", "secondary-feature-ports", "app-shell-bootstrap"]
-
-/**
- * Injects <link rel="modulepreload"> for the boot chunks (and their static
- * import closure) into the built index.html, so they download in parallel with
- * the entry chunk instead of serially after it executes. Hash-safe: file names
- * are read from the emitted bundle, never hardcoded. Applies to any HTML input
- * built with this config (cloud, local via vite.local.config.ts, demo) — the
- * plugin only acts on chunk names it finds in that build's bundle.
- */
-function bootChunkModulepreloadPlugin(): Plugin {
-  let base = "/"
-  return {
-    name: "claxedo:boot-chunk-modulepreload",
-    apply: "build",
-    configResolved(config) {
-      base = config.base
-    },
-    transformIndexHtml: {
-      order: "post",
-      handler(_html, ctx) {
-        const bundle = ctx.bundle
-        // `generateBundle` has not run (dev/serve): nothing to preload.
-        if (!bundle) return []
-        if (!ctx.filename.endsWith("/index.html")) return []
-        // Vite already emits modulepreload links for the entry's static
-        // imports (vendor-solid, vendor-better-auth); skip those and the entry.
-        const seen = new Set<string>()
-        for (const output of Object.values(bundle)) {
-          if (output.type === "chunk" && output.isEntry) {
-            seen.add(output.fileName)
-            for (const imported of output.imports) seen.add(imported)
-          }
-        }
-        const files: string[] = []
-        const add = (fileName: string) => {
-          if (seen.has(fileName)) return
-          seen.add(fileName)
-          const chunk = bundle[fileName]
-          if (!chunk || chunk.type !== "chunk") return
-          files.push(fileName)
-          // A modulepreload does not fetch the module's own static imports,
-          // so walk them too — they are needed before boot evaluation anyway.
-          for (const imported of chunk.imports) add(imported)
-        }
-        for (const name of BOOT_CHUNK_NAMES) {
-          for (const output of Object.values(bundle)) {
-            if (output.type === "chunk" && !output.isEntry && output.name === name) add(output.fileName)
-          }
-        }
-        return files.map<HtmlTagDescriptor>((fileName) => ({
-          tag: "link",
-          attrs: { rel: "modulepreload", crossorigin: true, href: `${base}${fileName}` },
-          injectTo: "head",
-        }))
-      },
-    },
-  }
-}
 
 const normalizePath = (p: string) => p.replace(/\\/g, "/")
 const shikiThemesDist = normalizePath(
@@ -148,7 +76,7 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
     || env.VITE_CLAXEDO_SERVER_URL
     || "http://127.0.0.1:2593"
   return {
-    plugins: [claxedoWorkspaceSource(), solidPlugin(), tailwindcss(), bootChunkModulepreloadPlugin(), webContentSecurityPolicyPlugin(env.VITE_CLAXEDO_SERVER_URL)],
+    plugins: [claxedoWorkspaceSource(), solidPlugin(), tailwindcss(), webContentSecurityPolicyPlugin(env.VITE_CLAXEDO_SERVER_URL)],
     publicDir: "public",
     server: {
       host: "0.0.0.0",

@@ -3,7 +3,7 @@ import type { ConfigurationSlot, SessionReference, Task, TaskSessionLinkView } f
 import { useTranslator } from "@/i18n"
 import { Button, Tag } from "@/ui"
 import type { TaskStartOffer } from "../data/start"
-import { dictionary } from "../i18n"
+import { tasksDictionary } from "../i18n"
 import { SLOT_KEYS, slotAttempt, type TaskLinkGroup } from "../model"
 import { TaskStartControl } from "./task-row-controls"
 
@@ -22,7 +22,7 @@ function Attempts(props: {
   readonly history: readonly TaskSessionLinkView[]
   readonly onOpenSession: (ref: SessionReference) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   return (
     <Show when={props.history.length > 0} fallback={<p class="tsk-hint">{t("tasks.slot.noSession")}</p>}>
       <ul class="tsk-attempts">
@@ -57,7 +57,7 @@ function Attempts(props: {
 }
 
 export function SlotRow(props: SlotRowProps): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const next = () => slotAttempt(props.group ? [props.group] : [], props.slot)
   const current = () => next().current
   const unsent = () => {

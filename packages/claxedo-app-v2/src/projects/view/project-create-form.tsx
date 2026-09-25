@@ -1,6 +1,6 @@
 import { createMemo, createSignal, Show, type Accessor, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { codeHostIntegrations, toAppError, useServer, type Project, type ProjectSource } from "@/server"
+import { codeHostConnections, codeHostIntegrations, toAppError, useServer, type Project, type ProjectSource } from "@/server"
 import { useProjectsText } from "../i18n"
 import { ConnectCodeHost } from "./project-create-connect"
 import { AccountSelect, createFormLook, RepositoryList, UrlField, type CreateFormLook } from "./project-create-repository"
@@ -14,12 +14,10 @@ export type ProjectCreateFormProps = {
   size?: "compact" | "comfortable"
   localExecution: boolean
   pickFolder?: () => Promise<string | undefined>
-  initial?: { folder?: string }
-  leadField?: (element: HTMLElement) => void
   onCancel?: () => void
 } & Submit
 
-function FolderField(props: { look: CreateFormLook; folder: string; onChoose: () => void; leadField?: (element: HTMLElement) => void }) {
+function FolderField(props: { look: CreateFormLook; folder: string; onChoose: () => void }) {
   const t = useProjectsText()
   const text = () => (props.look.comfortable ? "text-14-regular" : "text-13-regular")
   return (
@@ -31,7 +29,6 @@ function FolderField(props: { look: CreateFormLook; folder: string; onChoose: ()
         title={props.folder || undefined}
         class={`${props.look.box} flex w-full min-w-0 items-center gap-2 text-left transition-colors hover:border-border-interactive-base focus-visible:border-border-interactive-base focus-visible:outline-none`}
         onClick={() => props.onChoose()}
-        ref={(element) => props.leadField?.(element)}
       >
         <Icon name="folder" size="small" class="shrink-0 text-icon-weak-base" />
         <Show when={props.folder} fallback={<span class={`min-w-0 flex-1 truncate ${text()} text-text-weak/60`}>{t("projects.create.folder.placeholder")}</span>}>
@@ -62,14 +59,13 @@ function NameField(props: { look: CreateFormLook; name: string; onName: (name: s
 function createRepositoryChoice(active: Accessor<boolean>) {
   const server = useServer()
   const offered = useQuery(() => ({ ...server.queries.integrations.catalog(), enabled: active() }))
-  const connections = useQuery(() => ({ ...server.queries.codeHost.connections(), enabled: active() }))
   const integration = () => codeHostIntegrations(offered.data)[0]
-  const usable = createMemo(() => (connections.data ?? []).filter((connection) => connection.status !== "broken"))
+  const usable = createMemo(() => codeHostConnections(offered.data).filter((connection) => connection.status !== "broken"))
   const [chosenId, setChosenId] = createSignal<string>()
   const connection = createMemo(() => usable().find((item) => item.id === chosenId()) ?? usable()[0])
   const [entry, setEntry] = createSignal<"list" | "url">("list")
   const view = (): "checking" | "url" | "connect" | "list" => {
-    if (offered.isPending || connections.isPending) return "checking"
+    if (offered.isPending) return "checking"
     if (!integration() || entry() === "url") return "url"
     return connection() ? "list" : "connect"
   }
@@ -92,7 +88,6 @@ function RepositorySection(props: {
   selected: string | undefined
   onSelect: (fullName: string) => void
   onEntry: () => void
-  leadField?: (element: HTMLElement) => void
 }): JSX.Element {
   const t = useProjectsText()
   const host = () => props.choice.integration()?.name
@@ -119,13 +114,12 @@ function RepositorySection(props: {
               onQuery={props.onQuery}
               selected={props.selected}
               onSelect={props.onSelect}
-              {...(props.leadField ? { leadField: props.leadField } : {})}
             />
           </>
         )}
       </Show>
       <Show when={props.choice.view() === "url"}>
-        <UrlField look={props.look} url={props.url} onUrl={props.onUrl} host={host()} {...(props.leadField ? { leadField: props.leadField } : {})} />
+        <UrlField look={props.look} url={props.url} onUrl={props.onUrl} host={host()} />
       </Show>
       <Show when={host()}>
         {(name) => (
@@ -140,7 +134,7 @@ function RepositorySection(props: {
 
 function createFormState(props: ProjectCreateFormProps) {
   const [name, setName] = createSignal("")
-  const [folder, setFolder] = createSignal(props.initial?.folder ?? "")
+  const [folder, setFolder] = createSignal("")
   const [repoUrl, setRepoUrl] = createSignal("")
   const [busy, setBusy] = createSignal(false)
   const [error, setError] = createSignal("")
@@ -220,11 +214,10 @@ export function ProjectCreateForm(props: ProjectCreateFormProps) {
               form.setError("")
               form.choice.setEntry(form.choice.entry() === "url" ? "list" : "url")
             }}
-            {...(props.leadField ? { leadField: props.leadField } : {})}
           />
         }
       >
-        <FolderField look={look()} folder={form.folder()} onChoose={() => void chooseFolder()} {...(props.leadField ? { leadField: props.leadField } : {})} />
+        <FolderField look={look()} folder={form.folder()} onChoose={() => void chooseFolder()} />
       </Show>
       <NameField look={look()} name={form.name()} onName={form.setName} />
       <Show when={form.error()}>

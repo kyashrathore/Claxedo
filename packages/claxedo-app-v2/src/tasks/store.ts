@@ -16,7 +16,6 @@ type TasksState = {
   dateField: TaskDateField
   railCollapsed: boolean
   projectId: string | undefined
-  selectedTaskId: string | undefined
   taskEdits: Record<string, TaskEditDraft>
   taskConflicts: Record<string, string>
   taskErrors: Record<string, string>
@@ -36,7 +35,6 @@ function initialState(): TasksState {
     dateField: "updated",
     railCollapsed: false,
     projectId: undefined,
-    selectedTaskId: undefined,
     taskEdits: {},
     taskConflicts: {},
     taskErrors: {},
@@ -100,8 +98,7 @@ export function createTasksStore() {
     setGrouped: (value: boolean) => setState("grouped", value),
     setDateField: (field: TaskDateField) => setState("dateField", field),
     toggleRail: () => setState("railCollapsed", (collapsed) => !collapsed),
-    setProjectId: (projectId: string) => setState({ projectId, selectedTaskId: undefined }),
-    selectTask: (taskId: string | undefined) => setState("selectedTaskId", taskId),
+    setProjectId: (projectId: string) => setState({ projectId }),
     startedWith: (taskId: string, presetId: string) =>
       setState(
         produce((draft) => {

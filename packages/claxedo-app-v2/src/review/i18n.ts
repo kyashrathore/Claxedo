@@ -108,7 +108,7 @@ const en = {
 
 export type ReviewKey = keyof typeof en
 
-export const dictionary = {
+export const reviewDictionary = {
   en,
   ar,
   br,

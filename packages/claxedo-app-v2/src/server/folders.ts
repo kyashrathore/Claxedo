@@ -2,7 +2,7 @@ import { isRecord, onlyStrings, readString } from "../lib/record"
 import { ServerError } from "./errors"
 import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
-import type { Transport } from "./transport"
+import { withQuery, type Transport } from "./transport"
 import type { FetchQuery } from "./types"
 
 export type FolderEntry = { readonly name: string; readonly absolute: string }
@@ -17,10 +17,6 @@ export type FolderQueries = {
 export type FoldersApi = {
   readonly search: (scope: string, query: string, limit: number) => Promise<readonly string[]>
   readonly browsable: () => Promise<boolean>
-}
-
-function withQuery(path: string, params: Readonly<Record<string, string>>): string {
-  return `${path}?${new URLSearchParams(params).toString()}`
 }
 
 async function readPaths(transport: Transport): Promise<ServerPaths> {

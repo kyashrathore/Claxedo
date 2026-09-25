@@ -2,7 +2,7 @@ import { For, Show, createSignal, type JSX } from "solid-js"
 import { TASK_STATUSES, type TaskStatus } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
 import { Button, Switch, Tag, IconButton, Popover, Select } from "@/ui"
-import { dictionary } from "../i18n"
+import { tasksDictionary } from "../i18n"
 import type { TaskProject } from "../links"
 import {
   TASK_COLLECTIONS,
@@ -31,7 +31,7 @@ function trigger(testId: string, icon?: "sliders") {
 }
 
 function CollectionToggle(props: { readonly store: TasksStore }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   return (
     <div class="tsk-segmented" role="group" aria-label={t("tasks.toolbar.collection")}>
       <For each={TASK_COLLECTIONS}>
@@ -53,7 +53,7 @@ function CollectionToggle(props: { readonly store: TasksStore }): JSX.Element {
 }
 
 function FilterTags(props: ToolbarProps): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const project = () => props.projects.find((entry) => entry.id === props.projectId)
   return (
     <>
@@ -80,7 +80,7 @@ function FilterTags(props: ToolbarProps): JSX.Element {
 }
 
 function FilterPopover(props: ToolbarProps): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const [open, setOpen] = createSignal(false)
   const project = () => props.projects.find((entry) => entry.id === props.projectId)
   const statusLabel = (choice: StatusChoice) =>
@@ -128,7 +128,7 @@ function FilterPopover(props: ToolbarProps): JSX.Element {
 }
 
 function DisplayPopover(props: { readonly store: TasksStore }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const [open, setOpen] = createSignal(false)
   const groupingLabel = (entry: Grouping) => t(entry.grouped ? "tasks.toolbar.groupStatus" : "tasks.toolbar.groupNone")
   return (
@@ -186,7 +186,7 @@ function DisplayPopover(props: { readonly store: TasksStore }): JSX.Element {
 }
 
 function ViewToggle(props: { readonly store: TasksStore }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const board = () => props.store.state.view === "board"
   return (
     <div class="tsk-segmented" role="group" aria-label={t("tasks.toolbar.view")}>

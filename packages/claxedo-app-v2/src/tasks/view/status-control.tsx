@@ -2,7 +2,7 @@ import { For, type JSX } from "solid-js"
 import { DropdownMenu, Icon } from "@/ui"
 import { TASK_STATUSES, isTaskStatus, type TaskStatus } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
-import { dictionary } from "../i18n"
+import { tasksDictionary } from "../i18n"
 import { TASK_STATUS_KEYS } from "../model"
 
 const STATUS_ICONS: Readonly<
@@ -30,7 +30,7 @@ export function TaskStatusIcon(props: { readonly status: TaskStatus; readonly la
 }
 
 export function TaskStatusChip(props: { readonly status: TaskStatus }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   return (
     <span class="tsk-status">
       <TaskStatusIcon status={props.status} />
@@ -46,7 +46,7 @@ export function StatusMenuItems(props: {
   readonly testId?: string
   readonly onChange: (status: TaskStatus) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   return (
     <DropdownMenu.RadioGroup
       aria-label={props.label}
@@ -78,7 +78,7 @@ export function StatusControl(props: {
   readonly label: string
   readonly testId?: string
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   return (
     <DropdownMenu placement="bottom-start">
       <DropdownMenu.Trigger

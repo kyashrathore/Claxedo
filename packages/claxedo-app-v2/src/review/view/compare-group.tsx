@@ -2,7 +2,7 @@ import { For, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import type { AppError } from "@/server"
 import { useErrorText } from "../errors"
-import { dictionary } from "../i18n"
+import { reviewDictionary } from "../i18n"
 import { ChangeRow, SourceControlSectionHeader, type ChangeEntry } from "./change-group"
 
 function CompareRows(props: {
@@ -10,7 +10,7 @@ function CompareRows(props: {
   readonly activePath?: string
   readonly onOpen: (entry: ChangeEntry) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(reviewDictionary)
   return (
     <Show
       when={props.entries.length > 0}
@@ -46,7 +46,7 @@ export function CompareGroup(props: {
   readonly activePath?: string
   readonly onOpen: (entry: ChangeEntry) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(reviewDictionary)
   const errorText = useErrorText()
   return (
     <section

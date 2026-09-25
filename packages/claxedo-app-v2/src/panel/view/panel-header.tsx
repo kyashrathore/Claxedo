@@ -9,14 +9,14 @@ import {
   setReviewToolbarSlot,
 } from "@/ui"
 import { filePathFromTab } from "../focus"
-import { dictionary } from "../i18n"
+import { panelDictionary } from "../i18n"
 import { usePanel } from "../store"
 import { PanelTabStrip } from "./tab-strip"
 import { PanelToggleButton } from "./toggle"
 import { WorkspaceToolButtons } from "./tool-buttons"
 
 function PanelChrome(): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(panelDictionary)
   const panel = usePanel()
   const label = () => (panel.fullWidth() ? t("panel.restore") : t("panel.maximize"))
   return (
@@ -53,7 +53,7 @@ function Tools(): JSX.Element {
 }
 
 function FileContext(props: { readonly path: string }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(panelDictionary)
   const files = useFiles()
   const label = () => (files.markdownSource(props.path) ? t("panel.markdown.preview") : t("panel.markdown.source"))
   return (

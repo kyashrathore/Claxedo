@@ -60,7 +60,7 @@ Today's props keep their names, except `parentID` → `parentId`, and `status`, 
 - Mount snapshots (scroll, measurements, open and revealed tools, fold counts) are kept for 64 sessions; fold choices for 16. Both are module-level caches kept from today, listed as named exceptions in `scripts/checks/data/module-state-exceptions.ts`; they move to provider-owned stores after the swap.
 - The message-navigation rail mounts only after the first reveal and only on an idle callback, and reserves its gutter through `data-session-timeline-nav-gutter` on the root.
 - The column is 768 px wide and 880 px from 1536 px (`WIDE_VIEWPORT_MIN_WIDTH`, the `2xl:` classes on the same column); the rail needs 60 px on each side of it.
-- File paths in the transcript resolve through `@/lib/workspace-file-focus`: `~`, traversal and out-of-placement paths never open; `:line[:col]` suffixes are parsed off.
+- File paths in the transcript and terminal links resolve through `@/lib/workspace-file-focus`: `~`, traversal, out-of-placement paths and the placement folder itself never open; `:line[:col]` suffixes are parsed off, so `src/foo.ts:42` opens `src/foo.ts`. `~` cannot be expanded in the app, and a wrong path would open a blank tab, because the server answers empty content for a file that does not exist instead of an error.
 
 ## Why the rows are built this way
 

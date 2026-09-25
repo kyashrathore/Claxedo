@@ -1,12 +1,12 @@
 import { For, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import type { PluginCandidate } from "@/server"
-import { dictionary } from "../i18n"
+import { marketplaceDictionary } from "../i18n"
 import { activationSummary, installedHarnesses } from "../model"
 import { CHIP } from "./chrome"
 
 export function PluginFacts(props: { readonly plugin: PluginCandidate }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   const status = () => {
     const summary = activationSummary(props.plugin)
     const state = t(summary.state.key)
@@ -14,7 +14,6 @@ export function PluginFacts(props: { readonly plugin: PluginCandidate }): JSX.El
   }
   return (
     <dl
-      data-component="agent-plugin-facts"
       class="grid grid-cols-[5.5rem_1fr] items-baseline gap-x-3 gap-y-1.5 border-b border-border-weak-base px-4 py-3 text-12-regular"
     >
       <dt class="text-text-weaker">{t("marketplace.facts.status")}</dt>

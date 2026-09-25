@@ -33,35 +33,122 @@ function dot(status: Todo["status"]) {
   )
 }
 
-export function SessionTodoDock(props: {
+type TodoDockProps = {
   todos: readonly Todo[]
   collapsed: boolean
   onToggle: () => void
   collapseLabel: string
   expandLabel: string
   dockProgress: number
-}) {
-  const t = useSessionScreenText()
-  const [store, setStore] = createStore({
-    height: 320,
-  })
+}
 
+function activeTodo(todos: readonly Todo[]) {
+  return (
+    todos.find((todo) => todo.status === "in_progress") ??
+    todos.find((todo) => todo.status === "pending") ??
+    todos.filter((todo) => todo.status === "completed").at(-1) ??
+    todos[0]
+  )
+}
+
+function TodoProgress(props: { todos: readonly Todo[]; shut: number }) {
+  const t = useSessionScreenText()
   const total = createMemo(() => props.todos.length)
   const done = createMemo(() => props.todos.filter((todo) => todo.status === "completed").length)
   const label = createMemo(() => t("sessionScreen.todo.progress", { done: done(), total: total() }))
   const progress = createMemo(() =>
     t("sessionScreen.todo.progress", { done: doneToken, total: totalToken }).split(/(\u0000done\u0000|\u0000total\u0000)/),
   )
-
-  const active = createMemo(
-    () =>
-      props.todos.find((todo) => todo.status === "in_progress") ??
-      props.todos.find((todo) => todo.status === "pending") ??
-      props.todos.filter((todo) => todo.status === "completed").at(-1) ??
-      props.todos[0],
+  return (
+    <span
+      class="text-14-regular text-text-strong cursor-default inline-flex items-baseline shrink-0 overflow-visible"
+      aria-label={label()}
+      style={{
+        "--tool-motion-odometer-ms": "600ms",
+        "--tool-motion-mask": "18%",
+        "--tool-motion-mask-height": "0px",
+        "--tool-motion-spring-ms": "560ms",
+        "white-space": "pre",
+        opacity: `${Math.max(0, Math.min(1, 1 - props.shut))}`,
+      }}
+    >
+      <Index each={progress()}>
+        {(item) =>
+          item() === doneToken ? (
+            <AnimatedNumber value={done()} />
+          ) : item() === totalToken ? (
+            <AnimatedNumber value={total()} />
+          ) : (
+            <span>{item()}</span>
+          )
+        }
+      </Index>
+    </span>
   )
+}
 
-  const preview = createMemo(() => active()?.content ?? "")
+function TodoDockHeader(props: TodoDockProps & { shut: number; turn: number }) {
+  const preview = createMemo(() => activeTodo(props.todos)?.content ?? "")
+  return (
+    <div
+      data-action="session-todo-toggle"
+      class="pl-3 pr-2 py-2 flex items-center gap-2 overflow-visible"
+      role="button"
+      tabIndex={0}
+      onClick={props.onToggle}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return
+        event.preventDefault()
+        props.onToggle()
+      }}
+    >
+      <TodoProgress todos={props.todos} shut={props.shut} />
+      <div
+        class="ml-1 min-w-0 overflow-hidden"
+        style={{
+          flex: "1 1 auto",
+          "max-width": "100%",
+        }}
+      >
+        <TextReveal
+          class="text-14-regular text-text-base cursor-default"
+          text={props.collapsed ? preview() : undefined}
+          duration={600}
+          travel={25}
+          edge={17}
+          spring="cubic-bezier(0.34, 1, 0.64, 1)"
+          springSoft="cubic-bezier(0.34, 1, 0.64, 1)"
+          growOnly
+          truncate
+        />
+      </div>
+      <div class="ml-auto">
+        <IconButton
+          data-action="session-todo-toggle-button"
+          data-collapsed={props.collapsed ? "true" : "false"}
+          icon="chevron-down"
+          size="normal"
+          variant="ghost"
+          style={{ transform: `rotate(${props.turn * 180}deg)` }}
+          onMouseDown={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+          }}
+          onClick={(event) => {
+            event.stopPropagation()
+            props.onToggle()
+          }}
+          aria-label={props.collapsed ? props.expandLabel : props.collapseLabel}
+        />
+      </div>
+    </div>
+  )
+}
+
+export function SessionTodoDock(props: TodoDockProps) {
+  const [store, setStore] = createStore({
+    height: 320,
+  })
   const collapse = useSpring(() => (props.collapsed ? 1 : 0), { visualDuration: 0.3, bounce: 0 })
   const dock = createMemo(() => Math.max(0, Math.min(1, props.dockProgress)))
   const shut = createMemo(() => 1 - dock())
@@ -92,90 +179,13 @@ export function SessionTodoDock(props: {
       }}
     >
       <div ref={contentRef}>
-        <div
-          data-action="session-todo-toggle"
-          class="pl-3 pr-2 py-2 flex items-center gap-2 overflow-visible"
-          role="button"
-          tabIndex={0}
-          onClick={props.onToggle}
-          onKeyDown={(event) => {
-            if (event.key !== "Enter" && event.key !== " ") return
-            event.preventDefault()
-            props.onToggle()
-          }}
-        >
-          <span
-            class="text-14-regular text-text-strong cursor-default inline-flex items-baseline shrink-0 overflow-visible"
-            aria-label={label()}
-            style={{
-              "--tool-motion-odometer-ms": "600ms",
-              "--tool-motion-mask": "18%",
-              "--tool-motion-mask-height": "0px",
-              "--tool-motion-spring-ms": "560ms",
-              "white-space": "pre",
-              opacity: `${Math.max(0, Math.min(1, 1 - shut()))}`,
-            }}
-          >
-            <Index each={progress()}>
-              {(item) =>
-                item() === doneToken ? (
-                  <AnimatedNumber value={done()} />
-                ) : item() === totalToken ? (
-                  <AnimatedNumber value={total()} />
-                ) : (
-                  <span>{item()}</span>
-                )
-              }
-            </Index>
-          </span>
-          <div
-            class="ml-1 min-w-0 overflow-hidden"
-            style={{
-              flex: "1 1 auto",
-              "max-width": "100%",
-            }}
-          >
-            <TextReveal
-              class="text-14-regular text-text-base cursor-default"
-              text={props.collapsed ? preview() : undefined}
-              duration={600}
-              travel={25}
-              edge={17}
-              spring="cubic-bezier(0.34, 1, 0.64, 1)"
-              springSoft="cubic-bezier(0.34, 1, 0.64, 1)"
-              growOnly
-              truncate
-            />
-          </div>
-          <div class="ml-auto">
-            <IconButton
-              data-action="session-todo-toggle-button"
-              data-collapsed={props.collapsed ? "true" : "false"}
-              icon="chevron-down"
-              size="normal"
-              variant="ghost"
-              style={{ transform: `rotate(${turn() * 180}deg)` }}
-              onMouseDown={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-              }}
-              onClick={(event) => {
-                event.stopPropagation()
-                props.onToggle()
-              }}
-              aria-label={props.collapsed ? props.expandLabel : props.collapseLabel}
-            />
-          </div>
-        </div>
-
+        <TodoDockHeader {...props} shut={shut()} turn={turn()} />
         <div
           aria-hidden={props.collapsed || off()}
           classList={{
             "pointer-events-none": hide() > 0.1,
           }}
           style={{
-            // Unset, not "visible": an explicit value would override the
-            // hidden a docked pane inherits under the full-view panel.
             visibility: off() ? "hidden" : undefined,
             opacity: `${Math.max(0, Math.min(1, 1 - hide()))}`,
           }}

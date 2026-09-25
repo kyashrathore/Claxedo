@@ -2,10 +2,10 @@ import { Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { Button } from "@/ui"
 import type { ListFailure, MorePages } from "../data/queries"
-import { dictionary } from "../i18n"
+import { tasksDictionary } from "../i18n"
 
 export function LoadMore(props: { readonly more?: MorePages; readonly testId: string }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const label = (more: MorePages) => {
     if (more.loading === true) return t("tasks.loading")
     return more.error !== undefined ? t("tasks.retry") : t("tasks.loadMore")
@@ -37,7 +37,7 @@ export function LoadMore(props: { readonly more?: MorePages; readonly testId: st
 }
 
 export function ListFailureNotice(props: { readonly failure?: ListFailure; readonly testId: string }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   return (
     <Show when={props.failure}>
       {(failure) => (

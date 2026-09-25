@@ -2,7 +2,7 @@ import { For, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import type { PluginCandidate, PluginMcpServer, PluginToolGroup } from "@/server"
 import { Switch } from "@/ui"
-import { dictionary, type MarketplaceKey } from "../i18n"
+import { marketplaceDictionary, type MarketplaceKey } from "../i18n"
 import { isBuiltIn, toolGroups } from "../model"
 import { ROW } from "./chrome"
 
@@ -20,7 +20,7 @@ function ToolGroupRows(props: {
   readonly pending: boolean
   readonly onToolGroup: (group: PluginToolGroup, enabled: boolean) => void
 }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   return (
     <>
       <For each={props.groups}>
@@ -53,7 +53,7 @@ const AUTH_KEYS: Record<"public" | "local" | "harness", MarketplaceKey> = {
 }
 
 function ServerRow(props: { readonly server: PluginMcpServer; readonly retained: boolean }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   const auth = () => props.server.authentication
   const oauth = () => auth().state === "oauth"
   const message = () => {

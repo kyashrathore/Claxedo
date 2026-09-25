@@ -1,6 +1,5 @@
 import { createSignal, type Accessor } from "solid-js"
 import { useNavigate } from "@solidjs/router"
-import { useCloudPlacer } from "@/cloud"
 import { draftProjectName, primaryPlacement } from "@/projects"
 import { createOrOpenFolderProject, toAppError, useServer, type PlacementId, type ProjectSource } from "@/server"
 import { draftPath } from "@/shell"
@@ -27,13 +26,12 @@ function createStepper() {
 
 function usePlaceProject(localExecution: Accessor<boolean>): (draft: OnboardingDraft) => Promise<PlacementId> {
   const server = useServer()
-  const cloud = useCloudPlacer()
   const t = useOnboardingText()
   return async (draft) => {
     const input = { source: draft.source, ...(draft.name ? { name: draft.name } : {}) }
     if (!localExecution()) {
       const project = await server.projects.create(input)
-      return (await cloud.create({ projectId: project.id })).id
+      return (await server.cloud.create({ projectId: project.id })).id
     }
     const project = await createOrOpenFolderProject(server, input)
     const placement = primaryPlacement(server.placements.list(), project.id)

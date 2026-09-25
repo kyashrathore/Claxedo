@@ -1,7 +1,7 @@
 import { sessionComposerKey, useComposerStore, type ImagePart } from "@/composer"
 import { useActiveSession } from "@/files"
 import { useTranslator, type DomainTranslate } from "@/i18n"
-import { dictionary, type BrowserKey } from "./i18n"
+import { browserDictionary, type BrowserKey } from "./i18n"
 import type { PickedElement } from "./model"
 import { hostOf } from "./url"
 
@@ -40,7 +40,7 @@ function screenshotPart(pick: PickedElement): ImagePart | undefined {
 }
 
 export function usePickDelivery(): PickDelivery {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(browserDictionary)
   const composer = useComposerStore()
   const session = useActiveSession()
   return (pick) => {

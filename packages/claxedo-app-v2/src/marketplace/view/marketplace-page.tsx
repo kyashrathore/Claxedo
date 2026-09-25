@@ -6,7 +6,7 @@ import { isBuiltIn, isInstalled } from "../model"
 import { ALL, personalEntryKey } from "../sections"
 import { createSourceActions } from "../source-actions"
 import { useTranslator } from "@/i18n"
-import { dictionary } from "../i18n"
+import { marketplaceDictionary } from "../i18n"
 import { AddSourceForm } from "./add-source"
 import type { CardAction } from "./card"
 import { PluginDetailPane } from "./detail-pane"
@@ -43,7 +43,7 @@ function createCardAction(
   actions: ReturnType<typeof createPluginActions>,
   add: (plugin: PluginCandidate) => Promise<void>,
 ) {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   return (plugin: PluginCandidate): CardAction | undefined => {
     if (isBuiltIn(plugin) || isInstalled(plugin)) return undefined
     const disabled =
@@ -69,7 +69,7 @@ function directoryKeys(selection: ReturnType<typeof createSelection>, grid: () =
 }
 
 export function MarketplacePage(): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(marketplaceDictionary)
   const directory = createDirectory()
   const selection = createSelection({ candidates: directory.candidates, personal: directory.personal })
   const controls = createCatalogControls(directory)

@@ -8,7 +8,7 @@ import { createRendererBudget } from "./backend/renderer-budget"
 import { useCloseEndedTerminals, useEndTerminalOnClose } from "./close"
 import { useNewTerminalCommand } from "./commands"
 import { TerminalsContext, type Terminals } from "./context"
-import { dictionary } from "./i18n"
+import { terminalDictionary } from "./i18n"
 import { createTerminalStore } from "./store"
 import { createTerminalStoreCache } from "./store-cache"
 import { terminalPaneKind } from "./pane"
@@ -19,7 +19,7 @@ export function TerminalProvider(props: ParentProps): JSX.Element {
   const server = useServer()
   const workbench = useWorkbench()
   const panel = usePanel()
-  const t = useTranslator(dictionary)
+  const t = useTranslator(terminalDictionary)
   const cache = createTerminalStoreCache(STORE_CAP, (placementId) =>
     createTerminalStore({ server, placementId, defaultTitle: () => t("terminal.title") }),
   )

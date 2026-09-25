@@ -15,7 +15,6 @@ const HARNESS_PATH = "/api/claxedo/agent-config/harness"
 
 export type HarnessConfigApi = {
   readonly serverUrl: string
-  /** Today's app keys a workspace by its folder when this machine serves it, and by its workspace id otherwise. */
   readonly workspaceKey: (placementId: PlacementId) => string | undefined
   readonly folderHarness: (placementId: PlacementId, sessionId?: string) => Promise<HarnessState | undefined>
   readonly options: (request: HarnessOptionsRequest) => Promise<HarnessOptions>

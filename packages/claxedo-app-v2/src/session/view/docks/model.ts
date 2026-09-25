@@ -1,4 +1,4 @@
-import type { AppError } from "@/server"
+import type { AppError, GoalAction } from "@/server"
 import type { RequestState } from "@/session"
 import type { Transition } from "@/lib/machine"
 import { unreachable } from "@/lib/machine"
@@ -42,9 +42,9 @@ export type GoalSnapshot = {
   readonly timeUsedSeconds?: number
 }
 
-export type GoalAction = "pause" | "resume" | "remove"
+export type GoalControl = Exclude<GoalAction, "stop">
 
-export type GoalActions = Partial<Record<GoalAction, () => Promise<void>>>
+export type GoalActions = Partial<Record<GoalControl, () => Promise<void>>>
 
 export function goalControls(goal: GoalSnapshot, actions: GoalActions) {
   return {

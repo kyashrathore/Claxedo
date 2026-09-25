@@ -2,7 +2,7 @@ import { createMemo, createSignal, type Accessor } from "solid-js"
 import type { SelectedLineRange } from "@pierre/diffs"
 import { useTranslator } from "@/i18n"
 import { createLineCommentController, type LineCommentAnnotationMeta, type TextFileProps } from "@/transcript"
-import { dictionary } from "../i18n"
+import { filesDictionary } from "../i18n"
 
 export type FileLineComment = {
   readonly id: string
@@ -55,7 +55,7 @@ export function createFileComments(input: {
   readonly selected: Accessor<SelectedLineRange | null>
   readonly setSelected: (range: SelectedLineRange | null) => void
 }): FileCommentProps {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(filesDictionary)
   const [opened, setOpened] = createSignal<string | null>(null)
   const [commenting, setCommenting] = createSignal<SelectedLineRange | null>(null)
   const comments = createMemo(() =>
@@ -80,7 +80,15 @@ export function createFileComments(input: {
     onDelete: (comment) => input.store.remove(comment.id),
     editSubmitLabel: t("files.comment.save"),
   })
-  const enabled = () => input.store.enabled()
+  return commentProps(controller, comments, () => input.store.enabled(), input.setSelected)
+}
+
+function commentProps(
+  controller: ReturnType<typeof createLineCommentController<Comment>>,
+  comments: Accessor<Comment[]>,
+  enabled: Accessor<boolean>,
+  setSelected: (range: SelectedLineRange | null) => void,
+): FileCommentProps {
   return {
     get enableGutterUtility() {
       return enabled()
@@ -98,7 +106,7 @@ export function createFileComments(input: {
     },
     renderAnnotation: controller.renderAnnotation,
     renderGutterUtility: (getHoveredRow) => (enabled() ? (controller.renderGutterUtility(getHoveredRow) ?? null) : null),
-    onLineSelected: (range) => (enabled() ? controller.onLineSelected(range) : input.setSelected(range)),
+    onLineSelected: (range) => (enabled() ? controller.onLineSelected(range) : setSelected(range)),
     onLineNumberSelectionEnd: (range) => enabled() && controller.onLineSelectionEnd(range),
     onLineSelectionEnd: (range) => enabled() && controller.onLineSelectionEnd(range),
   }

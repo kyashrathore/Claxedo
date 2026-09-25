@@ -2,13 +2,13 @@ import { Show, type JSX } from "solid-js"
 import { Portal } from "solid-js/web"
 import { useTranslator } from "@/i18n"
 import { browserToolbarSlot, ClaxedoIconButton as IconButton, Tooltip } from "@/ui"
-import { dictionary } from "../i18n"
+import { browserDictionary } from "../i18n"
 import type { BrowserTab } from "../tab"
 import { AddressBar } from "./address-bar"
 import { ToolbarActions } from "./toolbar-actions"
 
 function NavigationButtons(props: { readonly tab: BrowserTab }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(browserDictionary)
   return (
     <div class="flex items-center gap-0.5">
       <Tooltip value={t("browser.back")} placement="bottom">
@@ -49,7 +49,7 @@ function NavigationButtons(props: { readonly tab: BrowserTab }): JSX.Element {
 }
 
 function ToolbarRow(props: { readonly tab: BrowserTab }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(browserDictionary)
   const inspecting = () => props.tab.state().kind === "picking"
   return (
     <div

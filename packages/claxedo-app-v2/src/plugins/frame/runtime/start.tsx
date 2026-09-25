@@ -2,6 +2,7 @@ import { ErrorBoundary, type JSX } from "solid-js"
 import { render } from "solid-js/web"
 import type { PluginDefinition } from "@claxedo/plugin-api"
 import type { Translations } from "@/i18n"
+import { bundleDefinition, importBundle, NOT_A_PLUGIN } from "../../bundle"
 import { moduleDictionary } from "../../dictionary"
 import { failureReason } from "../../failure"
 import type { FoundMention, FrameBoot, FrameInvoke, RenderTarget } from "../protocol"
@@ -20,14 +21,10 @@ function applyDocument(boot: FrameBoot): void {
 }
 
 async function importPlugin(code: string): Promise<{ readonly definition: PluginDefinition; readonly dictionary?: Translations }> {
-  const url = URL.createObjectURL(new Blob([code], { type: "text/javascript" }))
-  try {
-    const module = (await import(/* @vite-ignore */ url)) as { readonly default?: PluginDefinition }
-    if (typeof module.default?.activate !== "function") throw new Error("the bundle's default export is not definePlugin(...)")
-    return { definition: module.default, dictionary: moduleDictionary(module) }
-  } finally {
-    URL.revokeObjectURL(url)
-  }
+  const module = await importBundle(code)
+  const definition = bundleDefinition(module)
+  if (!definition) throw new Error(NOT_A_PLUGIN)
+  return { definition, dictionary: moduleDictionary(module) }
 }
 
 function emptyEntries(): FrameEntries {

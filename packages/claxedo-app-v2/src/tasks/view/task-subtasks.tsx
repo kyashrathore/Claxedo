@@ -3,7 +3,7 @@ import { TASKS_BOUNDS, type TaskStatus, type TaskSummary } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
 import { Button, Icon, TextField } from "@/ui"
 import type { MorePages } from "../data/queries"
-import { dictionary } from "../i18n"
+import { tasksDictionary } from "../i18n"
 import { LoadMore } from "./load-more"
 import { StatusControl } from "./status-control"
 
@@ -21,7 +21,7 @@ export type TaskSubtasksProps = {
 }
 
 function SubtaskRow(props: { readonly child: TaskSummary; readonly list: TaskSubtasksProps }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   return (
     <div class="tsk-subtask">
       <button
@@ -49,7 +49,7 @@ function SubtaskRow(props: { readonly child: TaskSummary; readonly list: TaskSub
 }
 
 function AddSubtask(props: { readonly busy?: boolean; readonly onAdd: (title: string) => void }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const [title, setTitle] = createSignal("")
   const [adding, setAdding] = createSignal(false)
   const submit = () => {
@@ -105,7 +105,7 @@ function AddSubtask(props: { readonly busy?: boolean; readonly onAdd: (title: st
 }
 
 export function TaskSubtasks(props: TaskSubtasksProps): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const done = createMemo(() => props.items.filter((child) => child.status === "done").length)
   return (
     <section class="tsk-subtasks" data-testid="task-subtasks" aria-label={t("tasks.subtasks")}>

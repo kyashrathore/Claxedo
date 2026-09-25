@@ -1,6 +1,6 @@
 import type { SessionScreenTextKey } from "./en"
 
-export const fr: Partial<Record<SessionScreenTextKey, string>> = {
+export default {
   "sessionScreen.loading": "Chargement des messages...",
   "sessionScreen.action.dismiss": "Ignorer",
   "sessionScreen.action.back": "Retour",
@@ -87,4 +87,4 @@ export const fr: Partial<Record<SessionScreenTextKey, string>> = {
   "command.message.next.description": "Aller au message utilisateur suivant",
   "sessionScreen.requests.loadFailed": "Impossible de charger les autorisations ou les questions en attente. Réessayez pour continuer.",
   "command.session.new": "Nouvelle session",
-}
+} satisfies Partial<Record<SessionScreenTextKey, string>>

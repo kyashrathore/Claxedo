@@ -10,8 +10,6 @@ export type Translations<Keys extends string = string> = {
 
 export type TemplateParams = Readonly<Record<string, string | number>>
 
-export type MergedDictionaries = Readonly<Record<Locale, Dictionary>>
-
 export function fillTemplate(text: string, params?: TemplateParams): string {
   if (!params) return text
   return text.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (match, name: string) => {
@@ -20,28 +18,56 @@ export function fillTemplate(text: string, params?: TemplateParams): string {
   })
 }
 
-export function mergeDictionaries(domains: readonly Translations[], locales: readonly Locale[]): MergedDictionaries {
-  const merged: Record<string, Record<string, string>> = {}
-  for (const locale of locales) merged[locale] = {}
-  for (const domain of domains) {
-    for (const locale of locales) {
-      const source = domain[locale]
-      if (!source) continue
-      const target = merged[locale]
-      for (const [key, value] of Object.entries(source)) {
-        if (value === undefined) continue
-        if (locale === "en" && key in target) {
-          console.error(`i18n key "${key}" is defined by two domains; the first definition stays`)
-          continue
-        }
-        if (key in target) continue
-        target[key] = value
-      }
-    }
-  }
-  return merged as MergedDictionaries
+export type Resolved = { readonly text: string; readonly found: boolean }
+
+export type Dictionaries = {
+  readonly add: (domain: Translations) => boolean
+  readonly remove: (domain: Translations) => boolean
+  readonly resolve: (locale: Locale, key: string) => Resolved
 }
 
-export function lookup(merged: MergedDictionaries, locale: Locale, key: string): string {
-  return merged[locale][key] ?? merged.en[key] ?? key
+function fold(target: Record<string, string>, domain: Translations, locale: Locale) {
+  const source = domain[locale]
+  if (!source) return
+  for (const [key, value] of Object.entries(source)) {
+    if (value === undefined) continue
+    if (key in target) {
+      if (locale === "en") console.error(`i18n key "${key}" is defined by two domains; the first definition stays`)
+      continue
+    }
+    target[key] = value
+  }
+}
+
+export function createDictionaries(): Dictionaries {
+  const domains: Translations[] = []
+  const built = new Map<Locale, Record<string, string>>()
+  const dictionary = (locale: Locale) => {
+    const existing = built.get(locale)
+    if (existing) return existing
+    const target: Record<string, string> = {}
+    for (const domain of domains) fold(target, domain, locale)
+    built.set(locale, target)
+    return target
+  }
+  return {
+    add: (domain) => {
+      if (domains.includes(domain)) return false
+      domains.push(domain)
+      for (const [locale, target] of built) fold(target, domain, locale)
+      return true
+    },
+    remove: (domain) => {
+      const index = domains.indexOf(domain)
+      if (index < 0) return false
+      domains.splice(index, 1)
+      built.clear()
+      return true
+    },
+    resolve: (locale, key) => {
+      const own = dictionary(locale)[key]
+      if (own !== undefined) return { text: own, found: true }
+      return { text: dictionary("en")[key] ?? key, found: false }
+    },
+  }
 }

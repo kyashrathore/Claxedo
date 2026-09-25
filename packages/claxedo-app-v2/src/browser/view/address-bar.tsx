@@ -1,14 +1,14 @@
 import { createEffect, createSignal, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { ClaxedoIcon as Icon } from "@/ui"
-import { dictionary } from "../i18n"
+import { browserDictionary } from "../i18n"
 import type { BrowserTab } from "../tab"
 import { normalizeAddressBarInput, visibleUrl } from "../url"
 
 const BLUR_SETTLE_MS = 120
 
 export function AddressBar(props: { readonly tab: BrowserTab }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(browserDictionary)
   const [draft, setDraft] = createSignal(visibleUrl(props.tab.state().url))
   const [focused, setFocused] = createSignal(false)
   const inspecting = () => props.tab.state().kind === "picking"

@@ -1,4 +1,5 @@
 import type { TerminalCheckpoint } from "@claxedo/workspace-runtime/client"
+import type { TerminalSize } from "@/server"
 import type { Disposer } from "@/shell"
 import type { RendererBudget } from "./renderer-budget"
 
@@ -8,8 +9,6 @@ export type TerminalColors = {
   readonly cursor: string
   readonly selectionBackground: string
 }
-
-export type TerminalSize = { readonly cols: number; readonly rows: number }
 
 export type FileLinkClick = (path: string, line?: number, col?: number, lineEnd?: number, colEnd?: number) => void
 

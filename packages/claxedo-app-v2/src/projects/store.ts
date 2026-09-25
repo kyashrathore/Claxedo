@@ -1,6 +1,6 @@
 import { createMemo, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { useServer, type AppError, type Machine, type Placement, type Project, type ProjectId } from "@/server"
+import { useServer, type AppError, type Placement, type Project, type ProjectId } from "@/server"
 
 export type Loaded<T> =
   | { readonly kind: "loading" }
@@ -41,12 +41,6 @@ export function useProject(id: Accessor<ProjectId>): Accessor<ProjectView> {
 export function useProjectPlacements(projectId: Accessor<ProjectId>): Accessor<Loaded<readonly Placement[]>> {
   const server = useServer()
   const query = useQuery(() => server.queries.placements.byProject(projectId()))
-  return createMemo(() => loaded(query))
-}
-
-export function useMachines(): Accessor<Loaded<readonly Machine[]>> {
-  const server = useServer()
-  const query = useQuery(() => server.queries.machines.list())
   return createMemo(() => loaded(query))
 }
 

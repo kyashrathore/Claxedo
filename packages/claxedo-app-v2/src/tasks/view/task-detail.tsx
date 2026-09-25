@@ -3,7 +3,7 @@ import type { ConfigurationSlot, SessionReference, TaskSessionLinkView, TaskStat
 import { useTranslator } from "@/i18n"
 import { Button, IconButton } from "@/ui"
 import type { TaskStartOffer } from "../data/start"
-import { dictionary } from "../i18n"
+import { tasksDictionary } from "../i18n"
 import { taskKey, type TaskDetailView } from "../model"
 import { ProseField } from "./prose-field"
 import { TaskRail } from "./task-rail"
@@ -72,7 +72,7 @@ function ParentCrumb(props: TaskDetailProps): JSX.Element {
 }
 
 function SaveRow(props: TaskDetailProps): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   return (
     <Show when={props.dirty} fallback={<span class="tsk-spacer" />}>
       <span class="tsk-spacer" />
@@ -96,7 +96,7 @@ function SaveRow(props: TaskDetailProps): JSX.Element {
 }
 
 function Crumbs(props: TaskDetailProps): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const task = () => props.view.task
   return (
     <nav class="tsk-crumbs" aria-label={t("tasks.detail.breadcrumb")}>
@@ -143,7 +143,7 @@ function Crumbs(props: TaskDetailProps): JSX.Element {
 }
 
 function ParentTag(props: TaskDetailProps): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   return (
     <Show when={props.view.parent}>
       {(parent) => (
@@ -163,7 +163,7 @@ function ParentTag(props: TaskDetailProps): JSX.Element {
 }
 
 function DetailMain(props: TaskDetailProps): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(tasksDictionary)
   const patch = (input: Partial<TaskDetailEdit>) => props.onEditChange({ ...props.edit, ...input })
   return (
     <div class="tsk-detail-main">

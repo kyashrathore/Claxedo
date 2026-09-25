@@ -1,6 +1,6 @@
 import type { SessionScreenTextKey } from "./en"
 
-export const th: Partial<Record<SessionScreenTextKey, string>> = {
+export default {
   "sessionScreen.loading": "กำลังโหลดข้อความ...",
   "sessionScreen.action.dismiss": "ปิด",
   "sessionScreen.action.back": "ย้อนกลับ",
@@ -88,4 +88,4 @@ export const th: Partial<Record<SessionScreenTextKey, string>> = {
   "sessionScreen.requests.loadFailed": "ไม่สามารถโหลดคำขอสิทธิ์หรือคำถามที่รอดำเนินการได้ ลองอีกครั้งเพื่อดำเนินการต่อ",
   "command.session.new": "เซสชันใหม่",
   "command.category.session": "เซสชัน",
-}
+} satisfies Partial<Record<SessionScreenTextKey, string>>

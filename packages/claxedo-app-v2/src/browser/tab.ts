@@ -1,5 +1,6 @@
 import { createSignal, onCleanup, type Accessor } from "solid-js"
 import type { PlacementId } from "@/server"
+import { failureMessage } from "@/lib/failure"
 import { unreachable } from "@/lib/machine"
 import type { BrowserBridge, BrowserResult, BrowserWebview } from "./bridge"
 import { GUEST_PICKER_MODE_CHANNEL } from "./guest"
@@ -53,36 +54,20 @@ function createConsoleLog(bridge: BrowserBridge | undefined, paneId: string) {
   return { entries, clear: () => setEntries([]) }
 }
 
-function actionCall(
-  bridge: BrowserBridge,
-  paneId: string,
-  action: BrowserAction,
-): (() => Promise<BrowserResult>) | undefined {
+function actionCall(bridge: BrowserBridge, paneId: string, action: BrowserAction): Promise<BrowserResult> {
   switch (action) {
-    case "back": {
-      const call = bridge.goBack
-      return call ? () => call(paneId) : undefined
-    }
-    case "forward": {
-      const call = bridge.goForward
-      return call ? () => call(paneId) : undefined
-    }
-    case "reload": {
-      const call = bridge.reload
-      return call ? () => call(paneId, false) : undefined
-    }
-    case "hardReload": {
-      const call = bridge.reload
-      return call ? () => call(paneId, true) : undefined
-    }
-    case "devTools": {
-      const call = bridge.openDevTools
-      return call ? () => call(paneId) : undefined
-    }
-    case "clearCookies": {
-      const call = bridge.clearStorage
-      return call ? () => call(paneId, ["cookies"]) : undefined
-    }
+    case "back":
+      return bridge.goBack(paneId)
+    case "forward":
+      return bridge.goForward(paneId)
+    case "reload":
+      return bridge.reload(paneId, false)
+    case "hardReload":
+      return bridge.reload(paneId, true)
+    case "devTools":
+      return bridge.openDevTools(paneId)
+    case "clearCookies":
+      return bridge.clearStorage(paneId, ["cookies"])
     default:
       return unreachable(action)
   }
@@ -114,12 +99,11 @@ function failureNotice(action: BrowserAction, error: string | undefined): Browse
 }
 
 async function runAction(host: ActionHost, action: BrowserAction) {
-  const call = host.bridge && actionCall(host.bridge, host.paneId, action)
-  if (!call) {
+  if (!host.bridge) {
     host.notify({ key: "browser.web.hint" })
     return
   }
-  const result = await call()
+  const result = await actionCall(host.bridge, host.paneId, action)
   if (!result.ok) {
     if (navigational(action)) host.send({ type: "failed", reason: result.error ?? action })
     const notice = failureNotice(action, result.error)
@@ -133,10 +117,9 @@ async function runAction(host: ActionHost, action: BrowserAction) {
 function createNavigation(bridge: BrowserBridge | undefined, paneId: string, notify: (notice: BrowserNotice) => void) {
   const [history, setHistory] = createSignal<BrowserHistory>({ canGoBack: false, canGoForward: false })
   const refreshHistory = async () => {
-    const read = bridge?.getNavigationState
-    if (!read) return
+    if (!bridge) return
     try {
-      const result = await read(paneId)
+      const result = await bridge.getNavigationState(paneId)
       if (result.ok) setHistory({ canGoBack: result.canGoBack, canGoForward: result.canGoForward })
       else notify({ text: result.error })
     } catch (error) {
@@ -163,7 +146,7 @@ async function navigatePage(page: PageContext, registered: boolean, url: string)
     const result = await page.bridge.navigate(page.paneId, url)
     if (!result.ok) page.send({ type: "failed", reason: result.error ?? url })
   } catch (error) {
-    page.send({ type: "failed", reason: error instanceof Error ? error.message : String(error) })
+    page.send({ type: "failed", reason: failureMessage(error) })
   }
 }
 

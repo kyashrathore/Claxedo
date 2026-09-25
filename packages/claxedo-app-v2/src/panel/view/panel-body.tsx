@@ -10,7 +10,7 @@ import { usePreferences } from "@/settings"
 import { useShellRegistries, type PanelView } from "@/shell"
 import { Markdown } from "@/transcript"
 import { filePathFromTab } from "../focus"
-import { dictionary } from "../i18n"
+import { panelDictionary } from "../i18n"
 import { usePanel, type Panel } from "../store"
 
 const NAVIGATOR_TRANSITION = "transform 120ms cubic-bezier(0.2, 0, 0, 1), width 120ms cubic-bezier(0.2, 0, 0, 1)"
@@ -196,7 +196,7 @@ function ActiveTab(props: { readonly placementId: PlacementId }): JSX.Element {
 }
 
 function WorkspacePending(props: { readonly placementId: PlacementId }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(panelDictionary)
   const server = useServer()
   const offline = () => server.placements.byId(props.placementId)?.reachable === false
   const connecting = () => server.connection().kind === "connecting"
@@ -217,7 +217,7 @@ function WorkspacePending(props: { readonly placementId: PlacementId }): JSX.Ele
 }
 
 export function PanelBody(props: { readonly tabsShown: boolean }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(panelDictionary)
   const panel = usePanel()
   return (
     <Show

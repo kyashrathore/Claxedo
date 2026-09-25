@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "i18n.error.auth.title": "Reconnectez-vous",
   "i18n.error.auth.message": "Votre connexion a expiré ou a été refusée. Reconnectez-vous pour continuer.",
   "i18n.error.auth.retry": "Se connecter",
