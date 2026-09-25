@@ -45,6 +45,20 @@ The screens: onboarding's three steps (`welcome-project`, `onboarding-ai`, `onbo
 
 Add a screen in `e2e/parity/screens.ts`: its id (use the inventory's screen name), `fresh` or `seeded`, its sizes, its path per app, and its steps. Steps use v1's accessible names on both apps. A step that fails on v2 is reported in red: v2 lacks v1's control, which is a parity finding, not a tool bug.
 
+## Performance: a streaming turn
+
+```sh
+CLAXEDO_E2E_PORT_RANGE=48200-48279 bun run e2e:perf-stream -- --variants=v1,v2 --runs=2 --throttle=4 --heap --out=/tmp/stream-perf
+```
+
+One isolated stack serves each variant from its own origin on a fixed port (48280 plus its position, or `name:distDir:port`), built from source unless a dist is given. It seeds one session of 22 scripted turns per run, then streams one reply into it: a 12k-character report with headings, lists, five code fences, a table and a Mermaid diagram, with a shell call, a diff, a read and a search between its text parts, sent 8 characters every 25 ms through the scripted agent's `delayMs`. `--long` streams one 25k-character text part instead. Runs alternate the variants' order. Each run records, in a fresh Chromium context at 1440×900 and device scale 2:
+
+- per delta, the time from the chunk reaching the page to the end of the frame that painted it (`e2e/perf/probe.js` taps the event stream and a mutation observer);
+- frame intervals, long animation frames with their scripts, and the distance from the end of the timeline while it follows;
+- main-thread, script, style and layout time from `Performance.getMetrics`, a CPU profile, and the heap and DOM node count after a forced collection; `--heap` adds a sampling heap profile of what survives, `--trace` a timeline trace.
+
+`--throttle=4` slows the CPU fourfold. Each run writes `<label>-<variant>-run<N>.json`, `.cpuprofile` and, when asked, `.heapprofile` and `.trace.json` to `--out`; the builds' hidden source maps map them back to source.
+
 ## Writing a flow
 
 One spec per user flow, named `e2e/flows/NN-flow-name.spec.ts`, where `NN` is the flow number from the plan. The spec imports everything from `../harness`:
@@ -121,7 +135,7 @@ Script steps (`AcpStep`):
 
 | Step | Emits |
 | --- | --- |
-| `{ kind: "text", text, chunks? }` | `agent_message_chunk` text, optionally split into `chunks` deltas |
+| `{ kind: "text", text, chunks?, delayMs? }` | `agent_message_chunk` text, optionally split into `chunks` deltas sent `delayMs` apart |
 | `{ kind: "reasoning", text }` | `agent_thought_chunk` |
 | `{ kind: "image", data, mimeType }` | an image content block |
 | `{ kind: "plan", entries }` | a `plan` update (todo list) |

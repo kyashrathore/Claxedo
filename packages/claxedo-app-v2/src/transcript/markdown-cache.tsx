@@ -28,22 +28,21 @@ const config = {
   ADD_ATTR: ["d", "viewBox", "preserveAspectRatio", "xmlns", "target"],
 }
 
-if (typeof window !== "undefined" && DOMPurify.isSupported) {
-  DOMPurify.addHook("afterSanitizeAttributes", (node: Element) => {
-    if (!(node instanceof HTMLAnchorElement)) return
-    if (node.target !== "_blank") return
+const markdownPurifier = typeof window === "undefined" || !DOMPurify.isSupported ? undefined : DOMPurify(window)
+markdownPurifier?.setConfig(config)
+markdownPurifier?.addHook("afterSanitizeAttributes", (node: Element) => {
+  if (!(node instanceof HTMLAnchorElement)) return
+  if (node.target !== "_blank") return
 
-    const rel = node.getAttribute("rel") ?? ""
-    const set = new Set(rel.split(/\s+/).filter(Boolean))
-    set.add("noopener")
-    set.add("noreferrer")
-    node.setAttribute("rel", Array.from(set).join(" "))
-  })
-}
+  const rel = node.getAttribute("rel") ?? ""
+  const set = new Set(rel.split(/\s+/).filter(Boolean))
+  set.add("noopener")
+  set.add("noreferrer")
+  node.setAttribute("rel", Array.from(set).join(" "))
+})
 
 export function sanitizeMarkdown(html: string) {
-  if (!DOMPurify.isSupported) return ""
-  return DOMPurify.sanitize(html, config)
+  return markdownPurifier?.isSupported ? markdownPurifier.sanitize(html) : ""
 }
 
 const SAFE_SVG_URI = /^(?:(?:https?|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i
