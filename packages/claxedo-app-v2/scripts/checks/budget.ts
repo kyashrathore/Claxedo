@@ -4,21 +4,11 @@ import { codeExtensions, isTranslationFile, listFiles, parseArgs, pluginsDirecto
 import { lineCount } from "./lib/parse"
 import { finish, type Violation } from "./lib/report"
 
-type Part = { readonly name: string; readonly budget: number; readonly folders: readonly string[]; readonly except?: readonly string[] }
+type Part = { readonly name: string; readonly budget?: number; readonly folders: readonly string[]; readonly except?: readonly string[] }
 type Row = { readonly name: string; readonly lines: number; readonly budget: number | undefined; readonly at: string }
 
 const parts: readonly Part[] = [
-  { name: "Server adapter: transport, streams, intake, errors and the contract (re-based with its split; DECISIONS 2026-09-26)", budget: 2312, folders: ["src/server"] },
-  { name: "Server adapter: sessions, status, session sources and cloud session sync", budget: 1436, folders: ["src/server/session-*", "src/server/sessions.ts", "src/server/status.ts", "src/server/turn.ts", "src/server/latest-turn.ts", "src/server/central-session.ts", "src/server/wire/session-row.ts", "src/server/wire/status.ts", "src/server/wire/prompt.ts", "src/server/wire/queue.ts", "src/server/wire/goal.ts", "src/server/wire/requests.ts", "src/server/wire/subagents.ts", "src/server/wire/transcript.ts", "src/server/wire/ascending-id.ts", "src/server/wire/list-order.ts"] },
-  { name: "Server adapter: placements, projects, machines, capabilities, folders", budget: 658, folders: ["src/server/workspaces.ts", "src/server/worktrees.ts", "src/server/project-folder.ts", "src/server/projects.ts", "src/server/machines.ts", "src/server/capabilities.ts", "src/server/folders.ts", "src/server/wire/placements*", "src/server/wire/projects.ts"] },
-  { name: "Server adapter: cloud workspaces and the dead-sandbox wake", budget: 601, folders: ["src/server/cloud*", "src/server/placement-runtime.ts", "src/server/placement-streams.ts", "src/server/workspace-wakes*", "src/server/workspace-start*", "src/server/wake-machine*", "src/server/wire/cloud.ts", "src/server/wire/connection.ts"] },
-  { name: "Server adapter: the signed desktop's account catalog", budget: 423, folders: ["src/server/account.ts", "src/server/account.test.ts", "src/server/account-link*", "src/server/account-placements*", "src/server/wire/account-catalog.ts"] },
-  { name: "Server adapter: accounts and provider connect", budget: 362, folders: ["src/server/accounts.ts", "src/server/account-types.ts", "src/server/wire/accounts.ts", "src/server/provider-connect.ts", "src/server/wire/custom-provider.ts", "src/server/wire/providers.ts"] },
-  { name: "Server adapter: harness config, options, permission modes, provider catalogs", budget: 620, folders: ["src/server/harness-*", "src/server/session-config.ts", "src/server/permission-modes.ts", "src/server/agent-connections.ts", "src/server/provider-catalogs.ts", "src/server/wire/harness-*", "src/server/wire/permission-modes.ts", "src/server/wire/provider-catalog.ts"] },
-  { name: "Server adapter: Marketplace", budget: 652, folders: ["src/server/marketplace*", "src/server/wire/marketplace*"] },
-  { name: "Server adapter: integrations and sandbox providers", budget: 334, folders: ["src/server/integrations.ts", "src/server/sandbox-providers.ts"] },
-  { name: "Server adapter: git, files, terminals", budget: 484, folders: ["src/server/git*", "src/server/files.ts", "src/server/terminal*", "src/server/wire/terminals.ts"] },
-  { name: "Server adapter: tasks, usage, live plugins, hosted operations", budget: 361, folders: ["src/server/tasks.ts", "src/server/usage*", "src/server/live-plugin*", "src/server/wire/live-plugins.ts", "src/server/operations*"] },
+  { name: "Server adapter (no budget until its dedicated rebuild; DECISIONS 2026-09-26)", folders: ["src/server"] },
   { name: "Session client, including the session list store", budget: 9500, folders: ["src/session"], except: ["src/session/view"] },
   { name: "Session screen incl. the kept timeline and docks", budget: 14300, folders: ["src/session/view"] },
   { name: "Composer (re-based to its measured size after the no-comments triage and size splits; DECISIONS 2026-09-25)", budget: 10987, folders: ["src/composer"] },
@@ -79,7 +69,6 @@ function partOf(path: string): Part | undefined {
 
 function matches(path: string, folder: string): boolean {
   if (folder === "src/*") return dirname(path) === "src"
-  if (folder.endsWith("*")) return path.startsWith(folder.slice(0, -1))
   return path === folder || path.startsWith(`${folder}/`)
 }
 

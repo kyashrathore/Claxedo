@@ -259,34 +259,11 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - On the web, each app plugin's sandboxed frame gets its own stricter policy on top: no outside images or media. A frame can only tighten the inherited policy.
 - Desktop in-app plugins can load outside images. That's part of the desktop residual already accepted and warned about.
 
-## Orchestrator, 2026-09-26: Server adapter budget re-based: split along its responsibilities, each part at its measured size
-- The plan's 4.0k was one estimate for "one transport; one wire module; one error table; one status owner". The adapter measured 8,297 lines, 1,122 of them tests; the budget counts tests.
-- Real duplicates went first (8,297 → 8,243): the second decoder of `/api/claxedo/integrations`, the second machine-logins read, a copy of `withQuery`, and prompt-delivery types restating the runtime contract's. A read-only audit found about 170 lines of such candidates in all, so reduction cannot close a 4.3k gap.
-- Scope that later owner rulings added and the 4.0k did not price:
-  - session sources merged on the server (17:45);
-  - the account credential behind AccountPort and the signed desktop's account catalog (18:40);
-  - the dead-sandbox flow with its wake machine and remote placement streams (16:20);
-  - cloud session sync with the control plane;
-  - the Marketplace catalog contract (02:10);
-  - integrations, sandbox providers, plugin hosted operations and live plugins;
-  - the harness options and permission-mode lane (COMP-105..114, "Server gaps" 10:05).
-- The one row becomes eleven parts, each budgeted at its measured size with no headroom:
-
-  | Part | Lines |
-  | --- | --- |
-  | transport, streams, intake, errors and the contract (the remainder of `src/server`) | 2,312 |
-  | sessions, status, session sources and cloud session sync | 1,436 |
-  | placements, projects, machines, capabilities, folders | 658 |
-  | cloud workspaces and the dead-sandbox wake | 601 |
-  | the signed desktop's account catalog | 423 |
-  | accounts and provider connect | 362 |
-  | harness config, options, permission modes, provider catalogs | 620 |
-  | Marketplace | 652 |
-  | integrations and sandbox providers | 334 |
-  | git, files, terminals | 484 |
-  | tasks, usage, live plugins, hosted operations | 361 |
-
-- Files stay where they are, so no lane's branch conflicts. `budget.ts` lists each part's files and file-name prefixes (a trailing `*`), and the longest match wins. A new adapter file lands in the transport part, whose ceiling has no headroom, so its author must place it.
+## Owner, 2026-09-26: src/server budget deferred to its dedicated rebuild
+- "leave src/server for now, we anyway will do dedicated rebuild later."
+- The budget table reports the adapter's lines with no ceiling. It measured 8,243 lines, 1,122 of them tests, against the plan's 4.0k.
+- Duplicates already removed stay removed: the second decoder of `/api/claxedo/integrations`, the second machine-logins read, a copy of `withQuery`, and prompt-delivery types restating the runtime contract's.
+- The rebuild sets the adapter's budget. The scope that later rulings added and the 4.0k did not price: session sources, the signed desktop's account catalog behind AccountPort, the dead-sandbox wake, cloud session sync, the Marketplace catalog contract, integrations and plugin hosted operations, and the harness options lane.
 
 ## Orchestrator, 2026-09-26: Plugin host budget re-based: the web frame is its own part
 - The plan's 1.7k priced a web "iframe bridge". What was built is a second runtime: a control frame plus a slot frame per page, section and overlay, a mirrored `PluginApi` and its own bundle, locked down by the owner's 22:40 frame policy. `src/plugins/frame` (host bridge and frame runtime) is now its own part, budgeted at its measured 864.
