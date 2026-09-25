@@ -23,8 +23,8 @@ const sandboxDriver = createLocalBrokeringSandboxDriver({
   ],
   allowedOrigins: [`http://127.0.0.1:${port}`, modelUrl],
   upstreams: { "https://api.openai.com": modelUrl },
-  controlPlaneOrigin: `http://127.0.0.1:${port}`,
-  ...(process.env.CLAXEDO_WORKSPACE_RELAY_URL ? { relayOrigin: process.env.CLAXEDO_WORKSPACE_RELAY_URL } : {}),
+  directOrigins: [`http://127.0.0.1:${port}`,
+    ...(process.env.CLAXEDO_WORKSPACE_RELAY_URL ? [process.env.CLAXEDO_WORKSPACE_RELAY_URL] : [])],
   inheritedEnv: {
     PATH: process.env.PATH ?? "",
     ...(process.env.PI_EXECUTABLE ? { PI_EXECUTABLE: process.env.PI_EXECUTABLE } : {}),

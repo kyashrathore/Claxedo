@@ -39,11 +39,13 @@ export const serverSelfHosted: Policy = {
     requiredPackages: ["@claxedo/local-server", "better-sqlite3", "better-auth"],
   },
   /**
-   * Measured 127 modules / 41 packages, with no headroom.
+   * Measured 128 modules / 41 packages, with no headroom.
    *
    * The reviewed owners this entry is allowed to reach beyond the single
    * binary's own usage pipeline: `@claxedo/local-server`'s Agent Plugins and
    * Tasks compositions, which the desktop's server entry mounts too;
+   * `src/deployments/private-repo-hosts.ts`, shared by the self-hosted and
+   * hosted deployments so both read the same private-host input;
    * `src/tasks/self-hosted-composition.ts`, owned here rather than in
    * `@claxedo/local-server` because it binds THIS deployment's identity — the
    * embedded issuer's bearer verifier and the local SQLite workspace authority
@@ -125,7 +127,7 @@ export const serverSelfHosted: Policy = {
    * because it composes no owner grants. No package edge: jose and the
    * server-core auth ports were already here.
    */
-  ceilings: { modules: 127, packages: 41 },
+  ceilings: { modules: 128, packages: 41 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { ascendingMessageIds } from "./message-ids"
 import { directTransport, type HttpTransport } from "./transport"
+import { activateCorpus } from "./wire-corpus"
 
 export class ApiError extends Error {
   constructor(readonly method: string, readonly route: string, readonly status: number, readonly body: string) {
@@ -53,7 +54,7 @@ export class ClaxedoApi {
     readonly url: string,
     private readonly transport: HttpTransport = directTransport,
     private readonly options: ApiOptions = {},
-  ) {}
+  ) { activateCorpus() }
 
   private async call<T>(method: string, route: string, options: CallOptions = {}): Promise<T> {
     const target = new URL(route, this.url)

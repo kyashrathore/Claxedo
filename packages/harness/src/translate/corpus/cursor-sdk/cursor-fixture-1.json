@@ -1,0 +1,214 @@
+{
+  "adapter": "cursor-sdk",
+  "initialState": {
+    "assistantTextByRunId": {},
+    "thinkingTextByRunId": {},
+    "toolsByCallId": {}
+  },
+  "calls": [
+    {
+      "state": {
+        "assistantTextByRunId": {},
+        "thinkingTextByRunId": {},
+        "toolsByCallId": {}
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "payload": {
+          "type": "tool_call",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "call_id": "tool-shell-1",
+          "name": "shell",
+          "status": "running",
+          "args": {
+            "command": "bun test",
+            "workingDirectory": "/repo"
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "assistantTextByRunId": {},
+          "thinkingTextByRunId": {},
+          "toolsByCallId": {
+            "tool-shell-1": {
+              "toolName": "shell",
+              "kind": "command_execution",
+              "input": {
+                "command": "bun test",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              }
+            }
+          }
+        },
+        "events": [
+          {
+            "type": "tool-start",
+            "toolCallId": "tool-shell-1",
+            "toolName": "shell",
+            "kind": "command_execution",
+            "display": {
+              "kind": "command_execution",
+              "intent": "shell",
+              "command": "bun test",
+              "description": "bun test",
+              "input": {
+                "command": "bun test",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "command_execution"
+              }
+            }
+          },
+          {
+            "type": "tool-input",
+            "toolCallId": "tool-shell-1",
+            "input": {
+              "command": "bun test",
+              "workingDirectory": "/repo",
+              "cwd": "/repo"
+            },
+            "display": {
+              "kind": "command_execution",
+              "intent": "shell",
+              "command": "bun test",
+              "description": "bun test",
+              "input": {
+                "command": "bun test",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "command_execution"
+              }
+            }
+          },
+          {
+            "type": "tool-status",
+            "toolCallId": "tool-shell-1",
+            "status": "running",
+            "display": {
+              "kind": "command_execution",
+              "intent": "shell",
+              "command": "bun test",
+              "description": "bun test",
+              "input": {
+                "command": "bun test",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "command_execution"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "assistantTextByRunId": {},
+        "thinkingTextByRunId": {},
+        "toolsByCallId": {
+          "tool-shell-1": {
+            "toolName": "shell",
+            "kind": "command_execution",
+            "input": {
+              "command": "bun test",
+              "workingDirectory": "/repo",
+              "cwd": "/repo"
+            }
+          }
+        }
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "payload": {
+          "type": "tool_call",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "call_id": "tool-shell-1",
+          "name": "shell",
+          "status": "completed",
+          "args": {
+            "command": "bun test",
+            "workingDirectory": "/repo"
+          },
+          "result": {
+            "status": "success",
+            "value": {
+              "exitCode": 0,
+              "stdout": "passed",
+              "stderr": ""
+            }
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "assistantTextByRunId": {},
+          "thinkingTextByRunId": {},
+          "toolsByCallId": {
+            "tool-shell-1": {
+              "toolName": "shell",
+              "kind": "command_execution",
+              "input": {
+                "command": "bun test",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              }
+            }
+          }
+        },
+        "events": [
+          {
+            "type": "tool-output",
+            "toolCallId": "tool-shell-1",
+            "output": {
+              "exitCode": 0,
+              "stdout": "passed",
+              "stderr": ""
+            },
+            "display": {
+              "kind": "command_execution",
+              "intent": "shell",
+              "command": "bun test",
+              "description": "bun test",
+              "input": {
+                "command": "bun test",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              }
+            },
+            "metadata": {
+              "exitCode": 0,
+              "cursor": {
+                "itemType": "command_execution"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

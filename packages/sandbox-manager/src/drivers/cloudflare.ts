@@ -149,7 +149,7 @@ export function createCloudflareSandboxDriver(
 ): SandboxDriver {
   const fetchWorker = options.fetch ?? fetch
   const doFetch = async (url: string, init: RequestInit) => {
-    const response = await fetchWorker(url, { ...init, redirect: "error" })
+    const response = await fetchWorker(url, { ...init, redirect: "manual" })
     if (response.redirected || (response.status >= 300 && response.status < 400)) throw new Error("Cloudflare Worker redirects are not allowed")
     return response
   }
