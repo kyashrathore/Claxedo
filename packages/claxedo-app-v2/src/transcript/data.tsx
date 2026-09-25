@@ -18,13 +18,6 @@ export type NormalizedProviderListResponse = {
   connected: Array<string>
 }
 
-/**
- * A session row as this view needs one.
- *
- * `slug` and `version` are required on `AgentPresentationSession` and read
- * nowhere in this package; inventory-sourced rows carry neither, so demanding
- * them only forced the caller to assert. Complete rows still satisfy this.
- */
 type DataSession =
   & Omit<AgentPresentationSession, "slug" | "version">
   & Partial<Pick<AgentPresentationSession, "slug" | "version">>
@@ -89,10 +82,6 @@ export type DataProviderProps = {
     toolCallId?: string,
     hostableCallIds?: ReadonlySet<string>,
   ) => SubagentView[]
-  /**
-   * A workspace-relative path to a URL the browser can fetch. Tool attachments that
-   * stayed on disk carry only a path, so without this they have nothing to render.
-   */
   fileUrl?: (path: string) => string | undefined
   readToolImage?: (attachment: AgentFilePart, signal: AbortSignal) => Promise<Blob>
 }
@@ -115,20 +104,20 @@ function transcriptData(props: DataProviderProps) {
   }
 }
 
-export type TranscriptData = ReturnType<typeof transcriptData>
+type RendererData = ReturnType<typeof transcriptData>
 
-const DataContext = createContext<TranscriptData>()
+const DataContext = createContext<RendererData>()
 
 export function DataProvider(props: ParentProps<DataProviderProps>) {
   return <DataContext.Provider value={transcriptData(props)}>{props.children}</DataContext.Provider>
 }
 
-export function useData(): TranscriptData {
+export function useData(): RendererData {
   const data = useContext(DataContext)
   if (!data) throw new Error("useData needs a DataProvider above it")
   return data
 }
 
-export function useOptionalData(): TranscriptData | undefined {
+export function useOptionalData(): RendererData | undefined {
   return useContext(DataContext)
 }

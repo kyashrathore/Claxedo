@@ -1,9 +1,5 @@
 import { type SelectedLineRange, type SelectionSide } from "@pierre/diffs"
 
-/**
- * Which column of a split diff a selection belongs to. `@pierre/diffs` owns the definition;
- * this alias only gives it the name this package's diff code uses.
- */
 export type DiffSelectionSide = SelectionSide
 
 export function findDiffSide(node: HTMLElement): DiffSelectionSide {
@@ -18,7 +14,6 @@ export function findDiffSide(node: HTMLElement): DiffSelectionSide {
   return code.hasAttribute("data-deletions") ? "deletions" : "additions"
 }
 
-/** Maps a `data-line-type` attribute to the side it belongs to, or `undefined` when it names neither. */
 export function diffSideFromLineType(type: string | undefined): DiffSelectionSide | undefined {
   if (type === "change-deletion") return "deletions"
   if (type === "change-addition" || type === "change-additions") return "additions"

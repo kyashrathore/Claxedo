@@ -27,9 +27,6 @@
     gap: 4px;
   }
 
-  /* The dim end of the critical ramp, the same step `success` and `info` cards take
-     for their accent. `--card-accent` is the vivid alarm red and overpowers a
-     transcript drawn in hairlines. */
   [data-component="tool-error-card-icon"] .ui-icon {
     color: var(--icon-critical-active);
   }

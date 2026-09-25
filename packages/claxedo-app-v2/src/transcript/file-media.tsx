@@ -97,8 +97,6 @@ export function FileMedia(props: { media?: FileMediaOptions; fallback: () => JSX
     }
 
     let active = true
-    // Keep the previous media visible while re-reading the same file (e.g. a vcs
-    // diff refresh); only a key change resets to the loading placeholder.
     if (untrack(() => remote.key) === input.key) setRemote({ loading: true, error: false })
     else setRemote({ key: input.key, loading: true, error: false, src: undefined, mime: undefined })
     void input.readFile(input.path).then(
