@@ -1,3 +1,4 @@
+import { createMemo, createRoot, untrack, type Accessor } from "solid-js"
 import { asRecord, isRecord, readField, readString } from "@/lib/record"
 import {
   parseCommentNote,
@@ -205,7 +206,7 @@ export namespace Timeline {
     const partByID = new Map(assistantPartRefs.map((ref) => [ref.part.id, ref.part] as const))
     const partOfRef = (ref: PartRef) => {
       const found = partByID.get(ref.partID)
-      return found ? { ...found, userOpen: isPartExpanded(ref.partID) } : found
+      return found ? { ...untrack(() => ({ ...found })), userOpen: isPartExpanded(ref.partID) } : found
     }
     const liveFoldableCount = countFoldableGroups(groupSegments(assistantPartRefs).flat(), partOfRef)
     // A switched-to session is seeded with two messages — the turn's owning user
@@ -559,13 +560,24 @@ function lastKnownPartActivity(parts: Part[]): number | undefined {
   return times.length ? Math.max(...times) : undefined
 }
 
+const textPresence = new WeakMap<object, Accessor<boolean>>()
+
+function hasText(part: Part & { text?: string }) {
+  let present = textPresence.get(part)
+  if (!present) {
+    present = createRoot(() => createMemo(() => !!part.text?.trim()))
+    textPresence.set(part, present)
+  }
+  return present()
+}
+
 function renderablePart(part: Part, showReasoning = true) {
   if (part.type === "tool") {
     if (isHiddenTool(part)) return false
     return !isPendingQuestion(part)
   }
-  if (part.type === "text") return !!part.text?.trim()
-  if (part.type === "reasoning") return showReasoning && !!part.text?.trim()
+  if (part.type === "text") return hasText(part)
+  if (part.type === "reasoning") return showReasoning && hasText(part)
   return renderableParts.has(part.type)
 }
 
