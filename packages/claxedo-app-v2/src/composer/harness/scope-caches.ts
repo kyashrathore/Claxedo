@@ -1,0 +1,72 @@
+import type { HarnessHydratorCache } from "./harness-hydrator"
+import type { HarnessSessionModelSyncCache, SessionModelSyncState } from "./harness-model-writer"
+import type { HarnessOptionsLoaderCache } from "./harness-options-loader"
+import type { HarnessSwitcherCache } from "./harness-switcher"
+import type { HarnessScopeInput } from "./store-policy"
+
+function pendingSlots<Value>() {
+  const slots = new Map<string, Value>()
+  return {
+    get: (key: string) => slots.get(key),
+    set: (key: string, value: Value) => void slots.set(key, value),
+    remove: (key: string, value: Value) => {
+      if (slots.get(key) === value) slots.delete(key)
+    },
+  }
+}
+
+function optionsCache(): HarnessOptionsLoaderCache {
+  const seq = new Map<string, number>()
+  const tries = new Map<string, number>()
+  return {
+    nextSeq: (scope) => {
+      const next = (seq.get(scope) ?? 0) + 1
+      seq.set(scope, next)
+      return next
+    },
+    getSeq: (scope) => seq.get(scope),
+    getTries: (scope) => tries.get(scope),
+    setTries: (scope, value) => void tries.set(scope, value),
+    clearTries: (scope) => void tries.delete(scope),
+  }
+}
+
+function hydratorCache(): HarnessHydratorCache<HarnessScopeInput> {
+  const seen = new Map<string, string>()
+  const hydrations = pendingSlots<Promise<void>>()
+  return {
+    getSeen: (scope) => seen.get(scope),
+    setSeen: (scope, key) => void seen.set(scope, key),
+    clearSeen: (scope) => void seen.delete(scope),
+    getPending: hydrations.get,
+    setPending: hydrations.set,
+    removePending: hydrations.remove,
+    fetchSessionConfig: (_params, run) => run(),
+  }
+}
+
+function sessionModelCache(): HarnessSessionModelSyncCache {
+  const states = new Map<string, SessionModelSyncState>()
+  const syncs = pendingSlots<Promise<void>>()
+  return {
+    getState: (key) => states.get(key),
+    setState: (key, value) => void states.set(key, value),
+    getPending: (key, model) => syncs.get(`${key}\n${model}`),
+    setPending: (key, model, value) => syncs.set(`${key}\n${model}`, value),
+    removePending: (key, model, value) => syncs.remove(`${key}\n${model}`, value),
+  }
+}
+
+export type ScopeCaches = ReturnType<typeof createScopeCaches>
+
+export function createScopeCaches() {
+  const options = optionsCache()
+  const switches = pendingSlots<Promise<void>>()
+  const switcher: HarnessSwitcherCache = {
+    getPending: switches.get,
+    setPending: switches.set,
+    removePending: switches.remove,
+    clearOptionsTries: (scope) => options.clearTries(scope),
+  }
+  return { options, hydrator: hydratorCache(), switcher, sessionModel: sessionModelCache() }
+}
