@@ -14,7 +14,6 @@ import {
 } from "@/server"
 import { terminalsApi } from "./api"
 import { transitionLoad, type TerminalLoad, type TerminalLoadEvent, type TerminalRow } from "./model"
-import { launcherTitle, nextTerminalNumber } from "./titles"
 
 export type TerminalStore = {
   readonly placementId: PlacementId
@@ -35,7 +34,7 @@ export type TerminalLaunch = { readonly command?: string; readonly title?: strin
 export type TerminalStoreInput = {
   readonly server: Server
   readonly placementId: PlacementId
-  readonly numberedTitle: (number: number) => string
+  readonly defaultTitle: () => string
 }
 
 type TerminalRows = ReturnType<typeof createTerminalRows>
@@ -111,11 +110,11 @@ type StoreParts = {
   readonly api: TerminalsApi
   readonly placementId: PlacementId
   readonly rows: TerminalRows
-  readonly numberedTitle: () => string
+  readonly defaultTitle: () => string
 }
 
 async function createTerminal(input: StoreParts, launch: TerminalLaunch | undefined): Promise<Terminal> {
-  const title = launch?.title ? launcherTitle(launch.title, input.rows.all()) : input.numberedTitle()
+  const title = launch?.title ?? input.defaultTitle()
   const command = launch?.command ? { command: launch.command } : {}
   const terminal = await input.api.create({ placementId: input.placementId, title, createRequestId: uuid(), ...command })
   input.rows.upsert(terminal)
@@ -129,7 +128,7 @@ async function recoverTerminal(
   const previous = input.rows.find(terminalId)
   const terminal = await input.api.create({
     placementId: input.placementId,
-    title: previous?.title ?? input.numberedTitle(),
+    title: previous?.title ?? input.defaultTitle(),
     createRequestId: uuid(),
     previousTerminalId: terminalId,
     ...(previous?.sessionId ? { sessionId: previous.sessionId } : {}),
@@ -155,13 +154,12 @@ export function createTerminalStore(input: TerminalStoreInput): TerminalStore {
     }),
   )
   loadTerminalList(api, placementId, rows, load)
-  const numberedTitle = () => input.numberedTitle(nextTerminalNumber(rows.all()))
   return {
     placementId,
     load: load.state,
     rows: rows.all,
     row: rows.find,
-    create: (launch) => createTerminal({ api, placementId, rows, numberedTitle }, launch),
+    create: (launch) => createTerminal({ api, placementId, rows, defaultTitle: input.defaultTitle }, launch),
     drop: rows.remove,
     close: async (terminalId) => {
       await api.remove(placementId, terminalId).catch((cause: unknown) => {
@@ -175,6 +173,6 @@ export function createTerminalStore(input: TerminalStoreInput): TerminalStore {
     },
     clearSeen: rows.clearSeen,
     lost: rows.lost,
-    recover: (terminalId) => recoverTerminal({ api, placementId, rows, numberedTitle }, terminalId),
+    recover: (terminalId) => recoverTerminal({ api, placementId, rows, defaultTitle: input.defaultTitle }, terminalId),
   }
 }
