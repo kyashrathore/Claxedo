@@ -39,6 +39,7 @@
     "@claxedo/agent-event-runtime": "workspace:*",
     "@claxedo/agent-runtime-contract": "workspace:*",
     "@claxedo/helpers": "workspace:*",
+    "@cursor/sdk": "1.0.24",
     "@opencode-ai/plugin": "0.0.0-beta-19271",
     "@opencode-ai/schema": "0.0.0-beta-19271",
     "@opencode-ai/sdk": "0.0.0-beta-19271"
