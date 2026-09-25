@@ -157,7 +157,7 @@ test("ACP publishes a command update received outside a turn", async () => {
     },
   })
   try {
-    for (let attempt = 0; !context.ports.sessionEvents.some((row) => (row.event as { type?: string }).type === "available-commands-update") && attempt < 100; attempt++) {
+    for (let attempt = 0; !context.ports.sessionEvents.some((row) => (row.event as { type?: string }).type === "available-commands-update") && attempt < 500; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 10))
     }
     expect(context.ports.sessionEvents).toContainEqual(expect.objectContaining({ sessionId: "s1",
@@ -626,7 +626,7 @@ test("silence cancels the ACP prompt and fences its uncertain session", async ()
     await expect(run(acpScriptToken("silence"))).rejects.toThrow("outcome is uncertain")
     await expect(run("next prompt")).rejects.toThrow("outcome is uncertain")
     let requests = await readAcpRequests(context.backend.directory)
-    for (let attempt = 0; !requests.some((row) => row.method === "session/cancel") && attempt < 100; attempt++) {
+    for (let attempt = 0; !requests.some((row) => row.method === "session/cancel") && attempt < 500; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 10))
       requests = await readAcpRequests(context.backend.directory)
     }

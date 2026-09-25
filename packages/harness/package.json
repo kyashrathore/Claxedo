@@ -17,6 +17,12 @@
       "types": "./dist/broker/index.d.ts",
       "import": "./dist/broker/index.js"
     },
+    "./testing": {
+      "development": "./src/test-support/index.ts",
+      "bun": "./src/test-support/index.ts",
+      "types": "./dist/test-support/index.d.ts",
+      "import": "./dist/test-support/index.js"
+    },
     "./contract": {
       "development": "./src/contract/index.ts",
       "bun": "./src/contract/index.ts",

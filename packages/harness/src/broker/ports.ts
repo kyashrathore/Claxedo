@@ -42,11 +42,13 @@ export type AdmittedSubagentObservation = {
 }
 
 export type SubagentAdmissionStore = {
+  hasChild(parentSessionId: string, childSessionId: string): boolean
   admit(input: {
     parentSessionId: string
     observation: SubagentObservation
     allocateKey: () => string
     allocateChildSessionId?: () => string
+    child?: ChildSessionRef
   }): AdmittedSubagentObservation
   markPublished(parentSessionId: string, observationId: string): void
 }
@@ -59,7 +61,7 @@ export interface BrokerPorts {
   readPending(scope: RequestScope): readonly PendingRequest[]
   persistAnswer(pending: PendingRequest, answer: RequestAnswer, automatic: boolean, grantKey?: string): Promise<readonly AgentRuntimeEvent[]>
   readAnswer(sessionId: string, requestId: string): RequestAnswer | undefined
-  publish(event: BrokerEvent): Promise<void>
+  publish(event: BrokerEvent, pending?: PendingRequest): Promise<void>
   readPermissionState(sessionId: string): Record<string, unknown> | undefined
   readGoal(sessionId: string): RuntimeGoalSnapshot | null
   publishGoal(sessionId: string, snapshot: RuntimeGoalSnapshot | null): Promise<void>
@@ -72,6 +74,7 @@ export interface BrokerPorts {
   publishSessionEvent(sessionId: string, event: OutsideTurnEvent): Promise<void>
   meterUsage(usage: OutsideTurnUsage): void
   readonly subagentAdmissionStore: SubagentAdmissionStore
+  bindChildCorrelation(parentSessionId: string, correlationKey: string, childSessionId: string): void
   admitChildSession(parentSessionId: string, childSessionId: string, observation: SubagentObservation): Promise<ChildSessionRef>
   publishSubagent(parentSessionId: string, event: SubagentUpdatedEvent): Promise<void>
   publishSubagentDiagnostic(parentSessionId: string, diagnostic: RuntimeDiagnostic): Promise<void>

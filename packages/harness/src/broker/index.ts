@@ -3,6 +3,7 @@ import { goalPort, admitProviderTurn } from "./goals"
 import type { BrokerPorts, SessionBrokerContext, TurnBrokerContext } from "./ports"
 import { RequestTable } from "./requests/table"
 import { SubagentBroker } from "./subagents"
+export { createMemorySubagentAdmissionStore } from "./subagents/admission"
 
 export type BrokerOwner = {
   ports: BrokerPorts
@@ -62,4 +63,4 @@ export function createSessionBroker(owner: BrokerOwner, context: SessionBrokerCo
   }
 }
 
-export type { BrokerPorts, SessionBrokerContext, TurnBrokerContext, TurnAuthority } from "./ports"
+export type { AdmittedSubagentObservation, BrokerEvent, BrokerPorts, SessionBrokerContext, TurnBrokerContext, TurnAuthority } from "./ports"

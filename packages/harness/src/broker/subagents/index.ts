@@ -7,18 +7,17 @@ export class SubagentBroker {
   constructor(private readonly ports: BrokerPorts) {}
 
   associate(sessionId: string, correlationKey: string, child: ChildSessionRef): void {
-    const observationId = `host-association:${correlationKey}`
-    const admitted = this.ports.subagentAdmissionStore.admit({
-      parentSessionId: sessionId,
-      observation: {
-        observationId,
-        subagentKey: correlationKey,
-        providerKind: "claxedo",
-        childSessionId: child.sessionId,
-      },
-      allocateKey: () => correlationKey,
-    })
-    this.ports.subagentAdmissionStore.markPublished(sessionId, admitted.observationId)
+    if (!this.ports.subagentAdmissionStore.hasChild(sessionId, child.sessionId)) {
+      const admitted = this.ports.subagentAdmissionStore.admit({
+        parentSessionId: sessionId,
+        observation: { observationId: `host-association:${correlationKey}`,
+          subagentKey: correlationKey, providerKind: "claxedo", childSessionId: child.sessionId },
+        allocateKey: () => correlationKey,
+        child,
+      })
+      this.ports.subagentAdmissionStore.markPublished(sessionId, admitted.observationId)
+    }
+    this.ports.bindChildCorrelation(sessionId, correlationKey, child.sessionId)
   }
 
   async observe(sessionId: string, observation: SubagentObservation): Promise<ChildSessionRef | undefined> {

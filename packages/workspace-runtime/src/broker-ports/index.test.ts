@@ -1,0 +1,504 @@
+import { afterEach, describe, expect, test } from "bun:test"
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
+import { createRequestBroker, createSessionBroker, createTurnBroker } from "@claxedo/harness/broker"
+import { MemoryPorts, registerBrokerBehaviorCases, registerBrokerPortCases } from "@claxedo/harness/testing"
+import type { PendingRequest } from "@claxedo/harness/contract"
+import type { BrokerEvent, TurnAuthority } from "@claxedo/harness/broker"
+import { RuntimeStore } from "../store"
+import { createRuntimeEventHub } from "../runtime-event-hub"
+import { createStoreBrokerPorts, type StoreBrokerPortOptions } from "./index"
+
+const origin = { actor: { kind: "machine-owner" as const }, via: "loopback" as const, reissued: false }
+const question = (id: string) => ({
+  kind: "question" as const, requestId: id,
+  question: { id, sessionID: "s1", questions: [{ header: "Question", question: "Continue?", options: [], custom: true }] },
+})
+const permission = (id: string) => ({
+  kind: "permission" as const, requestId: id, grantKey: "run",
+  permission: { id, sessionID: "s1", permission: "execute", patterns: [], always: [], metadata: {} },
+})
+
+const opened: { store: RuntimeStore; root: string }[] = []
+
+function setup(options: Partial<StoreBrokerPortOptions> = {}) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "broker-store-"))
+  const store = new RuntimeStore(root)
+  opened.push({ store, root })
+  store.bindSession({
+    sessionId: "s1", workspaceId: "w1", directory: "/work", connectionId: "c1",
+    upstreamSessionId: "up1", agentSessionId: "up1", createdAt: 1,
+  })
+  store.updateSessionConfig("s1", {
+    harness: { id: "claude", access: "native" }, agent: "general",
+    model: { providerID: "anthropic", modelID: "test" },
+  })
+  const lease = store.acquireTurnLease("s1")
+  if (!lease) throw new Error("Expected turn lease")
+  store.startTurn({
+    sessionId: "s1", assistantMessageId: "t1", agent: "general",
+    model: { providerID: "anthropic", modelID: "test" }, parts: [],
+  })
+  const publishers = createRuntimeEventHub()
+  const ports = createStoreBrokerPorts(store, {
+    ownerGeneration: "g1", patternEvaluator: async () => {}, publishers,
+    reportOwnerFailure: (_sessionId, error) => { throw error },
+    ...options,
+  })
+  const authority = ports.currentTurnAuthority("s1")
+  if (!authority) throw new Error("Expected turn authority")
+  return { root, store, ports, authority, publishers }
+}
+
+afterEach(() => {
+  for (const entry of opened.splice(0)) {
+    entry.store.close()
+    fs.rmSync(entry.root, { recursive: true, force: true })
+  }
+})
+
+const tick = async () => { for (let index = 0; index < 12; index++) await Promise.resolve() }
+
+registerBrokerPortCases("runtime store", () => {
+  const { store, ports, authority } = setup()
+  return {
+    ports, authority,
+    prepareProviderTurn: () => {
+      const leaseId = store.readTurnAuthority("s1")?.leaseId
+      if (!leaseId) throw new Error("Missing initial lease")
+      store.finishTurn({ sessionId: "s1", assistantMessageId: "t1", leaseId,
+        outcome: { status: "completed", completedAt: 10 } })
+      store.releaseTurnLease("s1", leaseId)
+    },
+    abortProviderTurn: () => ports.abortProviderTurn("s1"),
+    close: () => {},
+  }
+})
+
+class StoreBehaviorPorts extends MemoryPorts {
+  private readonly store: RuntimeStore
+  private readonly real: ReturnType<typeof createStoreBrokerPorts>
+
+  constructor() {
+    super()
+    const fixture = setup({ clock: this.clock,
+      patternEvaluator: (checks, signal) => this.services.patternEvaluator(checks, signal),
+      reportOwnerFailure: (_sessionId, error) => { this.failures.push(error) },
+    })
+    this.store = fixture.store
+    this.real = fixture.ports
+    Object.defineProperty(this, "subagentAdmissionStore", { value: this.real.subagentAdmissionStore })
+    const currentSet = this.current.set.bind(this.current)
+    this.current.set = (sessionId, value) => {
+      this.syncAuthority(sessionId, value)
+      return currentSet(sessionId, value)
+    }
+    const currentDelete = this.current.delete.bind(this.current)
+    this.current.delete = (sessionId) => {
+      this.finishActiveTurn(sessionId)
+      return currentDelete(sessionId)
+    }
+    const stateSet = this.states.set.bind(this.states)
+    this.states.set = (sessionId, value) => {
+      this.store.updateSessionConfig(sessionId, { permissionState: value })
+      return stateSet(sessionId, value)
+    }
+    const pendingSet = this.pendingRows.set.bind(this.pendingRows)
+    this.pendingRows.set = (key, pending) => {
+      const event: BrokerEvent = pending.request.kind === "permission"
+        ? { id: `permission.asked:${pending.sessionId}:${pending.request.requestId}`,
+          type: "permission.asked", properties: pending.request.permission }
+        : { id: `question.asked:${pending.sessionId}:${pending.request.requestId}`,
+          type: "question.asked", properties: pending.request.kind === "question"
+            ? pending.request.question : { id: pending.request.requestId, sessionID: pending.sessionId, questions: [] } }
+      void this.real.publish(event, pending)
+      return pendingSet(key, pending)
+    }
+    const answerSet = this.answers.set.bind(this.answers)
+    this.answers.set = (key, answer) => {
+      const decoded: unknown = JSON.parse(key)
+      if (!Array.isArray(decoded) || typeof decoded[0] !== "string" || typeof decoded[1] !== "string") {
+        throw new Error("Invalid test answer key")
+      }
+      const pending: PendingRequest = { sessionId: decoded[0], request: question(decoded[1]),
+        askedAt: 1, upstreamSessionId: "up1" }
+      void this.real.persistAnswer(pending, answer, false)
+      return answerSet(key, answer)
+    }
+  }
+
+  private finishActiveTurn(sessionId: string): void {
+    const active = this.real.currentTurnAuthority(sessionId)
+    const leaseId = this.store.readTurnAuthority(sessionId)?.leaseId
+    if (!active || !leaseId) return
+    this.store.finishTurn({ sessionId, assistantMessageId: active.turnId, leaseId,
+      outcome: { status: "completed", completedAt: Date.now() } })
+    this.store.releaseTurnLease(sessionId, leaseId)
+  }
+
+  private syncAuthority(sessionId: string, desired: TurnAuthority): void {
+    const active = this.real.currentTurnAuthority(sessionId)
+    if (active && active.turnId !== desired.turnId) this.finishActiveTurn(sessionId)
+    this.store.bindSession({ sessionId, workspaceId: desired.workspaceId, directory: desired.directory,
+      connectionId: desired.connectionId, upstreamSessionId: desired.upstreamSessionId,
+      agentSessionId: desired.upstreamSessionId })
+    this.store.updateSessionConfig(sessionId, { harness: { id: "claude", access: "native" },
+      agent: "general", model: { providerID: "anthropic", modelID: "test" } })
+    if (this.real.currentTurnAuthority(sessionId)) return
+    const lease = this.store.acquireTurnLease(sessionId)
+    if (!lease) throw new Error(`No test lease for ${sessionId}`)
+    this.store.startTurn({ sessionId, assistantMessageId: desired.turnId, agent: "general",
+      model: { providerID: "anthropic", modelID: "test" }, parts: [] })
+  }
+
+  override currentTurnAuthority(sessionId: string) { return this.real.currentTurnAuthority(sessionId) }
+  override readStart(sessionId: string) {
+    if (this.startBinding?.sessionId === sessionId) {
+      const existing = this.store.sessionStarts.get(sessionId)
+      if (!existing) this.store.sessionStarts.begin(this.startBinding)
+      if (this.startStatus === "starting" && existing?.status !== "starting") {
+        const record = { binding: this.startBinding, status: "starting", createdAt: 1, updatedAt: 1 }
+        this.store.brokerDatabase().prepare("UPDATE session_start SET data_json = ? WHERE session_id = ?")
+          .run(JSON.stringify(record), sessionId)
+      } else if (this.startStatus !== "starting" && (!existing || existing.status === "starting")) {
+        this.store.sessionStarts.finish(this.startBinding, this.startStatus === "created"
+          ? { status: "created", upstreamSessionId: "up1" } : { status: "failed", error: "failed" })
+      }
+    }
+    return this.real.readStart(sessionId)
+  }
+  override readPending(scope: { sessionId: string } | { directory: string }) { return this.real.readPending(scope) }
+  override async persistAnswer(...args: Parameters<MemoryPorts["persistAnswer"]>) {
+    if (this.failPersist) throw new Error("disk unavailable")
+    if (args[3] && this.failGrant) throw new Error("grant write unavailable")
+    const before = this.real.readAnswer(args[0].sessionId, args[0].request.requestId)
+    const events = await this.real.persistAnswer(...args)
+    if (!before) this.saved.push({ pending: args[0], answer: args[1], automatic: args[2] })
+    return events
+  }
+  override readAnswer(sessionId: string, requestId: string) { return this.real.readAnswer(sessionId, requestId) }
+  override async publish(...args: Parameters<MemoryPorts["publish"]>) {
+    await this.publishGate
+    await this.real.publish(...args)
+    this.published.push(args[0])
+  }
+  override readPermissionState(sessionId: string) {
+    this.onReadPermissionState?.()
+    return this.real.readPermissionState(sessionId)
+  }
+  override readGoal(sessionId: string) { return this.real.readGoal(sessionId) }
+  override publishGoal(sessionId: string, snapshot: Parameters<typeof this.real.publishGoal>[1]) {
+    return this.real.publishGoal(sessionId, snapshot)
+  }
+  override async admitProviderTurn(...args: Parameters<typeof this.real.admitProviderTurn>) {
+    this.finishActiveTurn(args[0])
+    return this.real.admitProviderTurn(...args)
+  }
+  override cancelProviderTurn() { this.real.abortProviderTurn("s1") }
+  override async drainProviderEvent(...args: Parameters<typeof this.real.drainProviderEvent>) {
+    await this.real.drainProviderEvent(...args)
+    this.drained.push(args[2])
+  }
+  override meterUsage(usage: Parameters<typeof this.real.meterUsage>[0]) { this.real.meterUsage(usage) }
+  override async publishSessionEvent(...args: Parameters<typeof this.real.publishSessionEvent>) {
+    await this.real.publishSessionEvent(...args)
+    this.sessionEvents.push({ sessionId: args[0], event: args[1] })
+  }
+  override async admitChildSession(...args: Parameters<typeof this.real.admitChildSession>) {
+    return this.real.admitChildSession(...args)
+  }
+  override bindChildCorrelation(...args: Parameters<typeof this.real.bindChildCorrelation>) {
+    this.real.bindChildCorrelation(...args)
+  }
+  override async publishSubagent(...args: Parameters<typeof this.real.publishSubagent>) {
+    await this.real.publishSubagent(...args)
+    this.subagents.push(args[1])
+  }
+  override async publishSubagentDiagnostic(...args: Parameters<typeof this.real.publishSubagentDiagnostic>) {
+    await this.real.publishSubagentDiagnostic(...args)
+    this.diagnostics.push(args[1])
+  }
+  override async rebind(sessionId: string, upstreamSessionId: string) {
+    await this.real.rebind(sessionId, upstreamSessionId)
+    const current = this.current.get(sessionId)
+    if (current) Map.prototype.set.call(this.current, sessionId, { ...current, upstreamSessionId })
+  }
+  override persistHandoff(...args: Parameters<typeof this.real.persistHandoff>) { return this.real.persistHandoff(...args) }
+  override config(sessionId: string) { return this.real.config(sessionId) }
+  override reportOwnerFailure(sessionId: string, error: unknown) { this.real.reportOwnerFailure(sessionId, error) }
+}
+
+registerBrokerBehaviorCases("runtime store", () => new StoreBehaviorPorts())
+
+describe("store broker ports", () => {
+  test("first answer wins across a reopened store and directory reads are scoped", async () => {
+    const { root, store, ports } = setup()
+    const request = question("first")
+    const pending: PendingRequest = { sessionId: "s1", request, askedAt: 10, upstreamSessionId: "up1" }
+    await ports.publish({ id: "question.asked:s1:first", type: "question.asked", properties: request.question }, pending)
+    expect(ports.readPending({ directory: "/work" })).toEqual([pending])
+    expect(ports.readPending({ directory: "/other" })).toEqual([])
+    await ports.persistAnswer(pending, { kind: "cancelled" }, false)
+    await ports.persistAnswer(pending, { kind: "rejected" }, false)
+    expect(ports.readAnswer("s1", "first")).toEqual({ kind: "cancelled" })
+    store.close()
+    const reopened = new RuntimeStore(root)
+    opened.push({ store: reopened, root })
+    expect(createStoreBrokerPorts(reopened, {
+      ownerGeneration: "g1", patternEvaluator: async () => {}, publishers: createRuntimeEventHub(),
+      reportOwnerFailure: (_id, error) => { throw error },
+    }).readAnswer("s1", "first")).toEqual({ kind: "cancelled" })
+  })
+
+  test("pending reads separate directories, duplicate native ids and startup requests", async () => {
+    const { store, ports } = setup()
+    store.bindSession({ sessionId: "s2", workspaceId: "w1", directory: "/other", connectionId: "c1",
+      upstreamSessionId: "up2", agentSessionId: "up2" })
+    const first: PendingRequest = { sessionId: "s1", request: question("shared"), askedAt: 1, upstreamSessionId: "up1" }
+    const second: PendingRequest = { sessionId: "s2", request: { ...question("shared"),
+      question: { ...question("shared").question, sessionID: "s2" } }, askedAt: 2, upstreamSessionId: "up2" }
+    const start = { sessionId: "s3", workspaceId: "w1", directory: "/work", connectionId: "c1", operationId: "op" }
+    store.sessionStarts.begin(start)
+    const startup: PendingRequest = { sessionId: "s3", request: { ...question("startup"),
+      question: { ...question("startup").question, sessionID: "s3" } }, askedAt: 3, start }
+    for (const pending of [first, second, startup]) {
+      if (pending.request.kind !== "question") throw new Error("Question expected")
+      await ports.publish({ id: `question.asked:${pending.sessionId}:${pending.request.requestId}`,
+        type: "question.asked", properties: pending.request.question }, pending)
+    }
+    expect(ports.readPending({ directory: "/work" }).map((row) => row.sessionId)).toEqual(["s1", "s3"])
+    expect(ports.readPending({ directory: "/other" }).map((row) => row.sessionId)).toEqual(["s2"])
+    await ports.persistAnswer(first, { kind: "rejected" }, false)
+    expect(ports.readPending({ directory: "/other" }).map((row) => row.request.requestId)).toEqual(["shared"])
+  })
+
+  test("reply-only cancellation remains readable after reopening", async () => {
+    const { root, store, ports } = setup()
+    const pending: PendingRequest = { sessionId: "s1", request: question("unpublished"), askedAt: 1, upstreamSessionId: "up1" }
+    await ports.persistAnswer(pending, { kind: "cancelled" }, false)
+    expect(ports.readPending({ sessionId: "s1" })).toEqual([])
+    store.close()
+    const reopened = new RuntimeStore(root)
+    opened.push({ store: reopened, root })
+    const reopenedPorts = createStoreBrokerPorts(reopened, { ownerGeneration: "g1",
+      patternEvaluator: async () => {}, publishers: createRuntimeEventHub(),
+      reportOwnerFailure: (_id, error) => { throw error } })
+    expect(reopenedPorts.readAnswer("s1", "unpublished")).toEqual({ kind: "cancelled" })
+  })
+
+  test("an aborted ask saves cancelled and a rebind keeps an earlier ask answerable", async () => {
+    const { ports, authority } = setup()
+    const owner = createRequestBroker(ports)
+    const controller = new AbortController()
+    const turn = createTurnBroker(owner, { authority, origin, signal: controller.signal })
+    const aborted = turn.ask(question("abort"))
+    await tick()
+    controller.abort()
+    expect(await aborted).toEqual({ kind: "cancelled" })
+    expect(ports.readAnswer("s1", "abort")).toEqual({ kind: "cancelled" })
+    expect(await owner.broker.answer("abort", { kind: "rejected" }, { sessionId: "s1" })).toMatchObject({ refusal: "stale" })
+    const live = createTurnBroker(owner, { authority, origin, signal: new AbortController().signal })
+    const before = live.ask(question("before"))
+    await tick()
+    const session = createSessionBroker(owner, { sessionId: "s1", workspaceId: "w1", directory: "/work", origin })
+    await session.rebind("up2")
+    const after = live.ask(question("after"))
+    await tick()
+    expect(owner.broker.list({ sessionId: "s1" }).map((row) => row.upstreamSessionId)).toEqual(["up1", "up2"])
+    expect(await owner.broker.answer("before", { kind: "rejected" }, { sessionId: "s1" })).toMatchObject({ ok: true })
+    expect(await owner.broker.answer("after", { kind: "rejected" }, { sessionId: "s1" })).toMatchObject({ ok: true })
+    expect(await Promise.all([before, after])).toEqual([{ kind: "rejected" }, { kind: "rejected" }])
+    expect(ports.currentTurnAuthority("s1")?.upstreamSessionId).toBe("up2")
+  })
+
+  test("answer and grant roll back together when the grant write fails", async () => {
+    const { store, ports } = setup()
+    const request = permission("grant")
+    const pending: PendingRequest = { sessionId: "s1", request, askedAt: 10, upstreamSessionId: "up1" }
+    await ports.publish({ id: "permission.asked:s1:grant", type: "permission.asked", properties: request.permission }, pending)
+    store.brokerDatabase().exec("CREATE TRIGGER deny_broker_grant BEFORE UPDATE OF permission_state_json ON session BEGIN SELECT RAISE(ABORT, 'grant failed'); END")
+    await expect(ports.persistAnswer(pending, { kind: "permission", decision: "allow_always" }, false, '["c1","run"]')).rejects.toThrow("grant failed")
+    expect(ports.readAnswer("s1", "grant")).toBeUndefined()
+    expect(ports.readPermissionState("s1")?.brokerGrants).toBeUndefined()
+    store.brokerDatabase().exec("DROP TRIGGER deny_broker_grant")
+    await ports.persistAnswer(pending, { kind: "permission", decision: "allow_always" }, false, '["c1","run"]')
+    expect(ports.readAnswer("s1", "grant")).toEqual({ kind: "permission", decision: "allow_always" })
+    expect(ports.readPermissionState("s1")?.brokerGrants).toEqual(['["c1","run"]'])
+  })
+
+  test("provider admission resolves before completion and settlement is terminal", async () => {
+    const { store, ports } = setup()
+    const lease = store.readTurnAuthority("s1")?.leaseId
+    if (!lease) throw new Error("Missing initial lease")
+    store.finishTurn({ sessionId: "s1", assistantMessageId: "t1", leaseId: lease, outcome: { status: "completed", completedAt: 10 } })
+    store.releaseTurnLease("s1", lease)
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const cancelled = await ports.admitProviderTurn("s1", { reason: "goal" }, async (_turnId, signal) => {
+      await held
+      if (signal.aborted) throw new Error("runtime cancelled")
+    })
+    expect(cancelled.admitted).toBe(true)
+    ports.abortProviderTurn("s1")
+    release()
+    if (cancelled.admitted) expect(await cancelled.settled).toEqual({ state: "cancelled" })
+    const completed = await ports.admitProviderTurn("s1", { reason: "provider" }, async () => {})
+    if (completed.admitted) expect(await completed.settled).toEqual({ state: "completed" })
+    const failed = await ports.admitProviderTurn("s1", { reason: "provider" }, async () => { throw new Error("failed") })
+    if (failed.admitted) expect(await failed.settled).toEqual({ state: "failed", error: "Error: failed" })
+  })
+
+  test("session events and outside-turn usage enter the existing journal projection", async () => {
+    const { store, ports, publishers } = setup()
+    const live: string[] = []
+    publishers.subscribeGlobal((envelope) => live.push(envelope.payload.type))
+    publishers.subscribeRuntime((envelope) => live.push(envelope.payload.type))
+    await ports.publishSessionEvent("s1", { type: "harness-notice", code: "ready", message: "Ready", severity: "info" })
+    ports.meterUsage({ sessionId: "s1", directory: "/work", assistantMessageId: "t1",
+      usage: { type: "usage", contextSize: 100, contextUsed: 10,
+        observation: { kind: "delta", tokens: { input: 5, output: 2, reasoning: null,
+          cache: { read: 0, write: 0 } } } } })
+    const rows = store.brokerDatabase().prepare<{ type: string }>(
+      "SELECT type FROM runtime_journal WHERE session_id = ? AND kind = 'event' ORDER BY seq",
+    ).all("s1")
+    expect(rows.map((row) => row.type)).toContain("session.usage")
+    expect(rows.map((row) => row.type)).toContain("runtime.diagnostic")
+    expect(live).toContain("session.usage")
+    expect(live).toContain("usage")
+  })
+
+  test("child provider events project into the admitted child session", async () => {
+    const { store, ports, publishers } = setup()
+    const owner = createRequestBroker(ports)
+    const authority = ports.currentTurnAuthority("s1")
+    if (!authority) throw new Error("Missing turn authority")
+    const turn = createTurnBroker(owner, { authority, origin, signal: new AbortController().signal })
+    const child = await turn.observeSubagent({ observationId: "child-start", providerKind: "acp",
+      providerId: "upstream-child", transcript: { kind: "messages" }, status: "running" })
+    if (!child) throw new Error("Missing child session")
+    turn.associateChild("route-alias", child)
+    const seen: string[] = []
+    publishers.subscribeRuntime((envelope) => seen.push(envelope.sessionId))
+    await ports.drainProviderEvent("s1", "t1", { event: { type: "text-delta", delta: "child output" },
+      route: { kind: "child", correlationKey: "route-alias" } })
+    expect(seen).toContain(child.sessionId)
+    const parentRows = store.brokerDatabase().prepare<{ type: string }>(
+      "SELECT type FROM runtime_journal WHERE session_id = ? AND kind = 'event'",
+    ).all("s1")
+    const childRows = store.brokerDatabase().prepare<{ type: string }>(
+      "SELECT type FROM runtime_journal WHERE session_id = ? AND kind = 'event'",
+    ).all(child.sessionId)
+    expect(childRows.length).toBeGreaterThan(0)
+    expect(parentRows.map((row) => row.type)).not.toContain("message.part.updated")
+  })
+
+  test("subagent admission keeps revisions and child identity across restart", async () => {
+    const { root, store, ports } = setup()
+    const first = ports.subagentAdmissionStore.admit({
+      parentSessionId: "s1", observation: { observationId: "o1", providerKind: "claude",
+        providerId: "agent-1", transcript: { kind: "live" } },
+      allocateKey: () => "key", allocateChildSessionId: () => "child",
+    })
+    await ports.publishSubagent("s1", first.event)
+    ports.subagentAdmissionStore.markPublished("s1", "o1")
+    const child = await ports.admitChildSession("s1", "child", { observationId: "o1" })
+    store.close()
+    const reopened = new RuntimeStore(root)
+    opened.push({ store: reopened, root })
+    const again = reopened.admit({
+      parentSessionId: "s1", observation: { observationId: "o1", providerKind: "claude", providerId: "agent-1", transcript: { kind: "live" } },
+      allocateKey: () => "wrong",
+    })
+    expect(again.published).toBe(true)
+    const later = reopened.admit({
+      parentSessionId: "s1", observation: { observationId: "o2", providerKind: "claude",
+        providerId: "agent-1", status: "completed" }, allocateKey: () => "wrong",
+    })
+    expect(later.event.subagentKey).toBe(first.event.subagentKey)
+    expect(later.event.revision).toBe(2)
+    const replayChild = await createStoreBrokerPorts(reopened, {
+      ownerGeneration: "g1", patternEvaluator: async () => {}, publishers: createRuntimeEventHub(),
+      reportOwnerFailure: (_id, error) => { throw error },
+    }).admitChildSession("s1", "child", { observationId: "o1" })
+    expect(replayChild).toEqual(child)
+  })
+
+  test("subagent updates and diagnostics reach the journal and live subscribers", async () => {
+    const { store, ports, publishers } = setup()
+    const live: string[] = []
+    publishers.subscribeGlobal((envelope) => live.push(envelope.payload.type))
+    publishers.subscribeRuntime((envelope) => live.push(envelope.payload.type))
+    const admitted = ports.subagentAdmissionStore.admit({ parentSessionId: "s1",
+      observation: { observationId: "event-output", providerKind: "claude", providerId: "agent" },
+      allocateKey: () => "agent" })
+    await ports.publishSubagent("s1", admitted.event)
+    await ports.publishSubagentDiagnostic("s1", { code: "binding-unknown", message: "No child",
+      severity: "warn", source: "subagent-admission" })
+    const rows = store.brokerDatabase().prepare<{ type: string }>(
+      "SELECT type FROM runtime_journal WHERE session_id = ? AND kind = 'event' ORDER BY seq",
+    ).all("s1")
+    expect(rows.map((row) => row.type)).toEqual(expect.arrayContaining(["subagent.updated", "runtime.diagnostic"]))
+    expect(live).toEqual(expect.arrayContaining(["subagent.updated", "runtime.diagnostic", "diagnostic"]))
+  })
+
+  test("form patterns use the supplied evaluator before publication", async () => {
+    const evaluated: unknown[] = []
+    const { ports } = setup({ patternEvaluator: async (checks) => { evaluated.push(checks) } })
+    const authority = ports.currentTurnAuthority("s1")
+    if (!authority) throw new Error("Missing turn authority")
+    const owner = createRequestBroker(ports)
+    const turn = createTurnBroker(owner, { authority, origin, signal: new AbortController().signal })
+    const waiting = turn.ask({ kind: "elicitation", requestId: "form-evaluator", mode: "form",
+      message: "Value", schema: { type: "object", properties: { value: { type: "string", pattern: "^ok$" } } } })
+    await tick()
+    expect(evaluated).toEqual([[{ field: "value", pattern: "^ok$" }]])
+    expect(ports.readPending({ sessionId: "s1" }).map((row) => row.request.requestId)).toEqual(["form-evaluator"])
+    await owner.broker.answer("form-evaluator", { kind: "rejected" }, { sessionId: "s1" })
+    await waiting
+  })
+
+  test("owner failures reach the supplied reporter with its receiver", () => {
+    const reporter = {
+      failures: [] as { sessionId: string; error: unknown }[],
+      reportOwnerFailure(sessionId: string, error: unknown) { this.failures.push({ sessionId, error }) },
+    }
+    const { ports } = setup(reporter)
+    const failure = new Error("provider failed")
+    const owner = createRequestBroker(ports)
+    createSessionBroker(owner, { sessionId: "s1", workspaceId: "w1", directory: "/work", origin }).reportFailure(failure)
+    expect(reporter.failures).toEqual([{ sessionId: "s1", error: failure }])
+  })
+
+  test("a request deadline expires on the injected manual clock", async () => {
+    let fire: (() => void) | undefined
+    let delay: number | undefined
+    const clock = { now: () => 10,
+      setTimeout: (callback: () => void, ms: number) => { fire = callback; delay = ms; return callback },
+      clearTimeout: (handle: unknown) => { if (handle === fire) fire = undefined },
+    }
+    const { ports } = setup({ clock })
+    const authority = ports.currentTurnAuthority("s1")
+    if (!authority) throw new Error("Missing turn authority")
+    const owner = createRequestBroker(ports)
+    const turn = createTurnBroker(owner, { authority, origin, signal: new AbortController().signal, expiresAt: 100 })
+    const waiting = turn.ask({ ...question("deadline"), expiresAt: 20 })
+    await tick()
+    expect(delay).toBe(10)
+    fire?.()
+    expect(await waiting).toEqual({ kind: "expired" })
+    expect(ports.readAnswer("s1", "deadline")).toEqual({ kind: "expired" })
+  })
+
+  test("start, goal, handoff and config use their existing session rows", async () => {
+    const { store, ports } = setup()
+    const binding = { sessionId: "s1", workspaceId: "w1", connectionId: "c1", directory: "/work", operationId: "op" }
+    store.sessionStarts.begin(binding)
+    expect(ports.readStart("s1")?.status).toBe("starting")
+    const goal = { sessionId: "s1", objective: "Finish", status: "active" as const, createdAt: 1, updatedAt: 1 }
+    await ports.publishGoal("s1", goal)
+    expect(ports.readGoal("s1")).toEqual(goal)
+    await ports.persistHandoff("s1", { from: { id: "pi", access: "native" }, pending: true, transcript: "context" })
+    expect(ports.config("s1").handoff?.transcript).toBe("context")
+  })
+})
