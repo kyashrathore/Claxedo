@@ -59,7 +59,8 @@ Directives a tool reads are not comments and stay, with no prose added: `// @ts-
 ## Names
 
 - Use Claxedo names only, outside `src/server/wire/`:
-  - `sessionId`, not `sessionID` (same for message, part, provider, model, call and project ids);
+  - `sessionId`, not `sessionID` (same for message, part, provider, model, call and project ids). The runtime contract's own fields `sessionID`, `messageID`, `partID`, `providerID` and `modelID` keep their spelling as property keys and accesses; a local, a parameter, a prop or an app type that names one uses the Claxedo spelling;
+  - a `data-component` value, and a `data-slot` value outside the kit (`src/ui`), exists only where something reads it: a stylesheet (the kit's, session-ui's or v2's), a selector in code, an e2e flow or the perf harness. `scripts/checks/claxedo-names.ts` fails an unread or computed value;
   - `@claxedo/*`, never `@opencode-ai/*` outside `src/ui`: today's kit (`@opencode-ai/ui`, `@opencode-ai/session-ui`) is the look, and code reaches it only through `@/ui`;
   - no `oc-` prefixes, no `globalSDK` or `globalSync`, no OpenCode event names, no `directory` routing.
 - Name the domain concept, not the mechanism: `SessionRow`, `TurnStatus`, `startTurn`.
