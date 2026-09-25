@@ -19,7 +19,7 @@ import { hasMorePages, initialListState, type ListEvent, type ListState } from "
 import { createKeyedReads } from "./keyed-reads"
 import { createListReads, type ListReads } from "./reads"
 import { transition } from "./transition"
-import { createRowViewCache, sameItems, sameSessions, UNKNOWN_STATUS, visibleRows } from "./visible-rows"
+import { createRowViewCache, rowViews, UNKNOWN_STATUS, visibleOrder } from "./visible-rows"
 
 export type SessionListInternal = SessionList & {
   readonly start: () => void
@@ -97,15 +97,17 @@ function applyServerEvent(list: Machine<ListState, ListEvent>, reads: ListReads,
   }
 }
 
-function createRowReads(state: Accessor<ListState>, requests: RequestsInternal) {
+function createRowReads(state: Accessor<ListState>, requests: RequestsInternal, windows: Accessor<ListState["windows"]>) {
   const cache = createRowViewCache()
-  const shown = createMemo(() => visibleRows(state(), requests.openBySession(), cache))
-  const entryOf = createKeyedReads(createMemo(() => state().entries))
-  const statusOf = createKeyedReads(createMemo(() => state().statuses))
+  const entries = createMemo(() => state().entries)
+  const statuses = createMemo(() => state().statuses)
+  const order = createMemo(() => visibleOrder({ entries: entries(), windows: windows() }))
+  const views = createMemo(() => rowViews({ order: order(), data: { entries: entries(), statuses: statuses() }, openRequests: requests.openBySession(), cache }))
+  const entryOf = createKeyedReads(entries)
+  const statusOf = createKeyedReads(statuses)
   return {
-    rows: createMemo(() => shown().views, undefined, { equals: sameItems }),
-    order: createMemo(() => shown().views.map((view) => view.ref), undefined, { equals: sameSessions }),
-    view: createKeyedReads(() => shown().byId),
+    order,
+    view: createKeyedReads(views),
     rowOf: (sessionId: SessionId) => {
       const entry = entryOf(sessionId)
       return entry && entry.kind !== "tombstone" ? entry.row : undefined
@@ -120,7 +122,7 @@ export function createSessionList(server: Server, requests: RequestsInternal): S
   const { state, send } = list
   const windows = createMemo(() => state().windows)
   return {
-    ...createRowReads(state, requests),
+    ...createRowReads(state, requests, windows),
     state: createMemo(() => publicState(state())),
     hasMore: (placementIds) => hasMorePages(windows(), placementIds),
     moreState: createMemo(() => moreState(state())),

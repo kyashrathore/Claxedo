@@ -153,9 +153,9 @@ export function compareOrder(a: OrderKey, b: OrderKey): number {
 
 export const insideWindow = (key: OrderKey, tail: OrderKey): boolean => compareOrder(key, tail) <= 0
 
-export const windowTail = (data: ListData, placementId: PlacementId): OrderKey => data.windows.get(placementId)?.tail ?? WINDOW_EMPTY
+export const windowTail = (data: Pick<ListData, "windows">, placementId: PlacementId): OrderKey => data.windows.get(placementId)?.tail ?? WINDOW_EMPTY
 
-export const insidePlacementWindow = (data: ListData, row: SessionRow, key: OrderKey = orderKey(row)): boolean =>
+export const insidePlacementWindow = (data: Pick<ListData, "windows">, row: SessionRow, key: OrderKey = orderKey(row)): boolean =>
   insideWindow(key, windowTail(data, row.ref.placementId))
 
 export const windowRows = (window: FetchedWindow): readonly SessionRow[] => window.pages.flatMap((page) => page.rows)

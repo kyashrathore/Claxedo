@@ -6,7 +6,7 @@ import {
   insidePlacementWindow,
   orderKey,
   type ConfirmedEntry,
-  type ListState,
+  type ListData,
   type OrderKey,
   type PendingEntry,
 } from "./model"
@@ -26,16 +26,18 @@ export const UNKNOWN_STATUS: SessionStatusView = { kind: "unknown" }
 
 export const createRowViewCache = (): RowViewCache => ({ current: new Map() })
 
-function shownEntries(state: ListState): Shown[] {
+type OrderData = Pick<ListData, "entries" | "windows">
+
+export function visibleOrder(data: OrderData): readonly SessionRef[] {
   const shown: Shown[] = []
-  for (const entry of state.entries.values()) {
+  for (const entry of data.entries.values()) {
     if (entry.kind === "tombstone") continue
     if (entry.row.archivedAt !== undefined || entry.row.parentSessionId !== undefined) continue
     const key = orderKey(entry.row, entryActivityAt(entry))
-    if (entry.kind === "confirmed" && !insidePlacementWindow(state, entry.row, key)) continue
+    if (entry.kind === "confirmed" && !insidePlacementWindow(data, entry.row, key)) continue
     shown.push({ entry, key })
   }
-  return shown.sort((a, b) => compareOrder(a.key, b.key))
+  return shown.sort((a, b) => compareOrder(a.key, b.key)).map(({ entry }) => entry.row.ref)
 }
 
 function cachedView(
@@ -49,33 +51,24 @@ function cachedView(
   return { entry, status, waitingOnUser, view }
 }
 
-export type VisibleRows = {
-  readonly views: readonly SessionRowView[]
-  readonly byId: ReadonlyMap<SessionId, SessionRowView>
-}
-
-export function visibleRows(
-  state: ListState,
-  openRequests: ReadonlyMap<SessionId, readonly AgentRequest[]>,
-  cache: RowViewCache,
-): VisibleRows {
+export function rowViews(input: {
+  readonly order: readonly SessionRef[]
+  readonly data: Pick<ListData, "entries" | "statuses">
+  readonly openRequests: ReadonlyMap<SessionId, readonly AgentRequest[]>
+  readonly cache: RowViewCache
+}): ReadonlyMap<SessionId, SessionRowView> {
   const next = new Map<SessionId, CachedView>()
-  const byId = new Map<SessionId, SessionRowView>()
-  const views = shownEntries(state).map(({ entry }) => {
-    const id = entry.row.ref.sessionId
-    const status = state.statuses.get(id)?.status ?? UNKNOWN_STATUS
-    const waitingOnUser = (openRequests.get(id)?.length ?? 0) > 0
-    const cached = cachedView(cache.current.get(id), entry, status, waitingOnUser)
+  const views = new Map<SessionId, SessionRowView>()
+  for (const ref of input.order) {
+    const id = ref.sessionId
+    const entry = input.data.entries.get(id)
+    if (!entry || entry.kind === "tombstone") continue
+    const status = input.data.statuses.get(id)?.status ?? UNKNOWN_STATUS
+    const waitingOnUser = (input.openRequests.get(id)?.length ?? 0) > 0
+    const cached = cachedView(input.cache.current.get(id), entry, status, waitingOnUser)
     next.set(id, cached)
-    byId.set(id, cached.view)
-    return cached.view
-  })
-  cache.current = next
-  return { views, byId }
+    views.set(id, cached.view)
+  }
+  input.cache.current = next
+  return views
 }
-
-export const sameItems = <T>(previous: readonly T[], next: readonly T[]) =>
-  previous.length === next.length && previous.every((item, index) => item === next[index])
-
-export const sameSessions = (previous: readonly SessionRef[], next: readonly SessionRef[]) =>
-  previous.length === next.length && previous.every((ref, index) => ref.sessionId === next[index]?.sessionId)
