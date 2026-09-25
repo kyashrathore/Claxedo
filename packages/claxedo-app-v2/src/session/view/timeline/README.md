@@ -57,7 +57,7 @@ Today's props keep their names, except `parentID` → `parentId`, and `status`, 
 - The Thinking row is held for a short hide delay when status blips off `working` mid-stream, so the virtualizer does not collapse.
 - A row's key is stable across rebuilds (`TimelineRow.reuse`), and a tag-narrowed row accessor latches the last matching row for the tick before Solid disposes the branch.
 - `followsEnd` holds only while a turn streams; on a settled transcript a size change (a fold or a tool row opening) never re-pins the viewport to the end.
-- Mount snapshots (scroll, measurements, open and revealed tools, fold counts) are kept for 64 sessions; fold choices for 16. Both are module-level caches kept from today; their home is an open ruling.
+- Mount snapshots (scroll, measurements, open and revealed tools, fold counts) are kept for 64 sessions; fold choices for 16. Both are module-level caches kept from today, listed as named exceptions in `scripts/checks/data/module-state-exceptions.ts`; they move to provider-owned stores after the swap.
 - The message-navigation rail mounts only after the first reveal and only on an idle callback, and reserves its gutter through `data-session-timeline-nav-gutter` on the root.
 - The column is 768 px wide and 880 px from 1536 px (`WIDE_VIEWPORT_MIN_WIDTH`, the `2xl:` classes on the same column); the rail needs 60 px on each side of it.
 - File paths in the transcript resolve through `@/lib/workspace-file-focus`: `~`, traversal and out-of-placement paths never open; `:line[:col]` suffixes are parsed off.
