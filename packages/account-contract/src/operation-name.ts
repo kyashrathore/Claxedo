@@ -50,7 +50,6 @@ export type HostedOperationName =
   | "session.list"
   | "session.navigationList"
   | "session.page"
-  | "project.catalog"
   | "session.projection.register"
   | "session.projection.checkpoint"
   | "session.projection.repair"

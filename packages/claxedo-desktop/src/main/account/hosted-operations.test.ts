@@ -107,10 +107,6 @@ describe("resolveHostedOperation", () => {
     expect(() => resolveHostedOperation("session.page", { limit: 50 })).toThrow(MissingOperationParameter)
   })
 
-  test("the account's project catalog takes no parameters", () => {
-    expect(resolveHostedOperation("project.catalog", { projectId: "prj_1" })).toEqual({ method: "GET", path: "/project" })
-  })
-
   test("appends only declared query keys from input", () => {
     expect(resolveHostedOperation("session.shares.list", {
       sessionId: "ses_1",

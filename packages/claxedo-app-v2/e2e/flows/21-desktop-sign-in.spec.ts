@@ -1,4 +1,4 @@
-import { expect, interceptSystemBrowser, test, UI, type Account } from "../harness"
+import { expect, interceptSystemBrowser, makeCloudWorkspace, test, UI, type Account } from "../harness"
 
 type Consent = { clientId?: string; client_id?: string }
 
@@ -8,14 +8,18 @@ async function consentedClients(account: Account, url: string) {
   return (JSON.parse(reply.body) as Consent[]).map((consent) => consent.clientId ?? consent.client_id)
 }
 
-test("21 desktop sign-in: main signs in through the system browser, the card names the account, the account's workspace joins the rail, and log out ends it", { tag: "@desktop" }, async ({ signed, signedDesktop, page }) => {
+test("21 desktop sign-in: main signs in through the system browser, the card names the account, the account's cloud and machine workspaces join the rail, and log out ends it", { tag: "@desktop" }, async ({ signedCloud: signed, signedDesktop, page }) => {
   await signed.makeWorkspace("remote-app", "Remote App")
+  await makeCloudWorkspace(signed, "Cloudy")
   await signedDesktop.makeWorkspace("local-app", "Local App")
   const window = signedDesktop.window
   await window.reload()
   const rail = window.getByRole("navigation", { name: UI.rail })
+  const machineProject = rail.getByText("Remote App")
+  const cloudProject = rail.getByText("main", { exact: true })
   await expect(rail.getByText("Local App")).toBeVisible()
-  await expect(rail.getByText("Remote App")).toHaveCount(0)
+  await expect(machineProject).toHaveCount(0)
+  await expect(cloudProject).toHaveCount(0)
 
   const browser = await interceptSystemBrowser(signedDesktop.electron)
   await window.getByRole("button", { name: "Sign in", exact: true }).click()
@@ -31,13 +35,15 @@ test("21 desktop sign-in: main signs in through the system browser, the card nam
 
   const card = window.getByRole("button", { name: signed.owner.name, exact: true })
   await expect(card).toBeVisible()
-  await expect(rail.getByText("Remote App")).toBeVisible()
+  await expect(machineProject).toBeVisible()
+  await expect(cloudProject).toBeVisible()
   await expect(rail.getByText("Local App")).toBeVisible()
   expect(await consentedClients(signed.owner, signed.stack.url)).toContain("claxedo-desktop")
 
   await card.click()
   await window.getByRole("menuitem", { name: "Log out" }).click()
   await expect(window.getByRole("button", { name: "Sign in", exact: true })).toBeVisible()
-  await expect(rail.getByText("Remote App")).toHaveCount(0)
+  await expect(machineProject).toHaveCount(0)
+  await expect(cloudProject).toHaveCount(0)
   await expect(rail.getByText("Local App")).toBeVisible()
 })

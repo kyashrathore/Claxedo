@@ -1,6 +1,6 @@
 import { QueryClient } from "@tanstack/solid-query"
 import { createSignal } from "solid-js"
-import { createHostedAccount } from "./account"
+import { createHostedAccount, type HostedAccount } from "./account"
 import { createAccountsApi } from "./accounts"
 import { createCapabilities, type CapabilitiesOwner } from "./capabilities"
 import { createCloudApi } from "./cloud"
@@ -89,7 +89,7 @@ function createStartup(input: {
   return { ready: start(), retry }
 }
 
-function serverApis(transport: Transport, workspaces: Workspaces, status: StatusOwner, queryClient: QueryClient, queries: ServerQueries, projection: SessionProjection) {
+function serverApis(transport: Transport, workspaces: Workspaces, status: StatusOwner, queryClient: QueryClient, queries: ServerQueries, projection: SessionProjection, account: HostedAccount | undefined) {
   const project = (id: ProjectId) => queryClient.fetchQuery(queries.projects.byId(id))
   const wakes = createWorkspaceWakes(transport, workspaces)
   return {
@@ -119,14 +119,15 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     livePlugins: createLivePluginsApi(transport),
     harnessConfig: createHarnessConfigApi(transport, workspaces, queryClient),
     request: transport.request,
-    operation: createOperations(transport).run,
+    operation: createOperations(transport, account).run,
   }
 }
 
 export function createServer(config: ServerConfig): ServerHandle {
   const queryClient = createQueryClient()
   const transport = createTransport(config)
-  const workspaces = createWorkspaces(transport, queryClient, config.account ? createHostedAccount(config.account) : undefined)
+  const account = config.account ? createHostedAccount(config.account) : undefined
+  const workspaces = createWorkspaces(transport, queryClient, account)
   const status = createStatusOwner(transport)
   const intake = createEventIntake({ serverUrl: transport.serverUrl, queryClient, workspaces, status })
   const [connection, setConnection] = createSignal<ConnectionState>({ kind: "connecting" })
@@ -143,7 +144,7 @@ export function createServer(config: ServerConfig): ServerHandle {
     capabilities: capabilities.value,
     queryClient,
     subscribe: intake.subscribe,
-    ...serverApis(transport, workspaces, status, queryClient, queries, projection),
+    ...serverApis(transport, workspaces, status, queryClient, queries, projection, account),
     attachPlacement: placementStreams.attach,
     queries,
     retryConnection: startup.retry,

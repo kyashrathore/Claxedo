@@ -1,46 +1,88 @@
 import { isRecord } from "../../lib/record"
-import { projectId } from "../ids"
-import type { Project } from "../types"
-import { placementsFromProjects, type PlacementRecord } from "./placements"
+import { machineId, placementId, projectId } from "../ids"
+import type { Placement, Project } from "../types"
+import type { PlacementRecord } from "./placements"
 
 export type AccountCatalog = {
   readonly projects: readonly Project[]
   readonly placements: readonly PlacementRecord[]
 }
 
-function text(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined
+type Row = Record<string, unknown>
+
+function text(row: Row, ...keys: readonly string[]): string | undefined {
+  for (const key of keys) {
+    const value = row[key]
+    if (typeof value === "string" && value.length > 0) return value
+  }
+  return undefined
 }
 
-function time(row: Record<string, unknown>, key: "created" | "updated"): number {
-  const times = isRecord(row.time) ? row.time : {}
-  const value = times[key]
-  return typeof value === "number" && Number.isFinite(value) ? value : 0
+function time(row: Row, ...keys: readonly string[]): number | undefined {
+  for (const key of keys) {
+    const value = row[key]
+    if (typeof value === "number" && Number.isFinite(value)) return value
+  }
+  return undefined
 }
 
-function accountProject(row: Record<string, unknown>, placements: readonly PlacementRecord[]): Project | undefined {
-  const id = text(row.id)
-  if (!id) return undefined
-  const own = placements.filter((record) => record.placement.projectId === id)
-  const repository = own.map((record) => record.placement.gitRemote).find((remote) => remote !== undefined)
+function ownerRepository(remote: string | undefined) {
+  return remote?.match(/[:/]([^/]+\/[^/]+?)(?:\.git)?$/)?.[1]
+}
+
+function projectName(row: Row, id: string) {
+  return text(row, "project_name", "projectName", "repo_name", "repoName") ?? ownerRepository(text(row, "repo_url", "repoUrl")) ?? text(row, "display_name", "displayName", "workspace_name", "workspaceName") ?? id
+}
+
+function placementOf(row: Row, workspace: string, project: string): PlacementRecord {
+  const cloud = text(row, "backing") !== "local-worktree"
+  const host = isRecord(row.placement) ? text(row.placement, "host_enrollment_id") : undefined
+  const remoteDirectory = text(row, "remote_directory", "remoteDirectory")
+  const gitRemote = text(row, "repo_url", "repoUrl")
+  const placement: Placement = {
+    id: placementId(workspace),
+    projectId: projectId(project),
+    kind: cloud ? "cloud" : "worktree",
+    label: text(row, "workspace_name", "workspaceName", "display_name", "displayName") ?? workspace,
+    ...(remoteDirectory ? { path: remoteDirectory } : {}),
+    reachable: row.reachable === true,
+    ...(host ? { machineId: machineId(host) } : {}),
+    ...(gitRemote ? { gitRemote } : {}),
+  }
+  return { placement, route: { directory: `workspace:${workspace}`, workspaceId: workspace, remote: true } }
+}
+
+function projectFromRows(id: string, rows: readonly Row[], placements: readonly PlacementRecord[]): Project {
+  const named = rows.map((row) => projectName(row, id)).find((name) => name !== id) ?? id
+  const repository = placements.map((record) => record.placement.gitRemote).find((remote) => remote !== undefined)
+  const created = Math.min(...rows.map((row) => time(row, "created_at", "createdAt") ?? 0))
+  const updated = Math.max(...rows.map((row) => time(row, "updated_at", "updatedAt", "last_seen_at") ?? created))
   return {
     id: projectId(id),
-    name: text(row.name) ?? id,
+    name: named,
     ...(repository ? { source: { kind: "repository", url: repository } } : {}),
-    available: own.some((record) => record.placement.reachable),
+    available: placements.some((record) => record.placement.reachable),
     env: {},
-    createdAt: time(row, "created"),
-    updatedAt: time(row, "updated"),
+    createdAt: created,
+    updatedAt: updated,
   }
 }
 
-function remote(record: PlacementRecord): PlacementRecord {
-  const workspaceId = record.route.workspaceId
-  return { placement: record.placement, route: { directory: `workspace:${workspaceId}`, workspaceId, remote: true } }
-}
-
 export function accountCatalogFromWire(rows: readonly unknown[]): AccountCatalog {
-  const placements = placementsFromProjects(rows, undefined).map(remote)
-  const projects = rows.filter(isRecord).map((row) => accountProject(row, placements)).filter((project) => project !== undefined)
-  return { projects, placements }
+  const groups = new Map<string, { rows: Row[]; placements: PlacementRecord[] }>()
+  const seen = new Set<string>()
+  for (const row of rows.filter(isRecord)) {
+    const workspace = text(row, "workspace_id", "workspaceId", "id")
+    if (!workspace || seen.has(workspace)) continue
+    seen.add(workspace)
+    const project = text(row, "project_id", "projectId") ?? workspace
+    const group = groups.get(project) ?? { rows: [], placements: [] }
+    group.rows.push(row)
+    group.placements.push(placementOf(row, workspace, project))
+    groups.set(project, group)
+  }
+  return {
+    projects: [...groups.entries()].map(([id, group]) => projectFromRows(id, group.rows, group.placements)),
+    placements: [...groups.values()].flatMap((group) => group.placements),
+  }
 }
