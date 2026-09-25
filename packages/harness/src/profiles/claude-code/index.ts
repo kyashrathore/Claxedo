@@ -2,6 +2,7 @@ import fs from "node:fs/promises"
 import { constants } from "node:fs"
 import path from "node:path"
 import type { SdkPluginConfig } from "@anthropic-ai/claude-agent-sdk"
+import { realPathWithinRoot } from "@claxedo/helpers/fs"
 import type { PluginProjection } from "../../contract"
 
 const SETTINGS = ["settings.json", "settings.local.json", "cowork_settings.json"] as const
@@ -45,10 +46,10 @@ export function scrubClaudeSettings(content: string): Record<string, unknown> {
 }
 
 async function copyReadOnly(source: string, target: string, home: string, visited = new Set<string>(), externalSkill = false): Promise<void> {
-  const resolved = await fs.realpath(source)
+  const { resolved, within } = await realPathWithinRoot(source, home)
   const stat = await fs.stat(source)
   let boundary = home
-  if (resolved !== home && !resolved.startsWith(home + path.sep)) {
+  if (!within) {
     if (!externalSkill || !stat.isDirectory()) throw new Error("Claude config mirror link escapes the person's home")
     try { await fs.access(path.join(resolved, "SKILL.md")) }
     catch (error) { throw new Error("Claude external skill link has no SKILL.md", { cause: error }) }

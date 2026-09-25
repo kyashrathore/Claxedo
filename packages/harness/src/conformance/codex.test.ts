@@ -225,7 +225,7 @@ test("Codex native goals use the running app-server", async () => {
       expect((await transport.goals.read(session))?.objective).toBe(started.goal.objective)
       expect((await transport.goals.pause(session)).ok).toBe(true)
       expect((await transport.goals.resume(session, broker)).ok).toBe(true)
-      expect((await transport.goals.stop(session)).ok).toBe(true)
+      expect(await transport.goals.stop(session)).toMatchObject({ ok: true })
     }
   } finally {
     await transport.dispose()
