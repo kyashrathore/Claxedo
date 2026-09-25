@@ -105,7 +105,6 @@ export function ChangeRow(props: {
     >
       <button
         type="button"
-        data-slot="open"
         class="flex h-full min-w-0 flex-1 items-center gap-1.5 text-left"
         onClick={() => props.onOpen()}
       >
