@@ -27,7 +27,9 @@ export async function run() {
       if (frameType(frame) !== "message.part.updated") return false
       const part = (frame.data.payload as { properties?: { part?: { text?: string } } }).properties?.part
       return part?.text?.includes("Cache busted — agent context rebuilt from saved conversation") ?? false
-    }, { label: "ACP recovery marker", timeoutMs: 60_000 })
+    }, { label: "ACP recovery marker", timeoutMs: 60_000 }).catch(async (error: unknown) => {
+      throw new Error(`${String(error)}; frames=${JSON.stringify(stream.frames.map((frame) => frameType(frame)))}; status=${JSON.stringify(await api.status(workspace.directory))}; messages=${JSON.stringify(await api.messages(workspace.directory, session.id)).slice(-1200)}; daemon=${stack.daemon.log().slice(-1200)}`)
+    })
     const config = await api.sessionConfig(workspace.directory, session.id)
     const handoff = config.handoff as { pending?: boolean; transcript?: string; reason?: string } | undefined
     assert.equal(handoff?.pending, true, "handoff must be stored before the replacement turn completes")

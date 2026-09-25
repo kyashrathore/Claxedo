@@ -141,9 +141,38 @@ async function nativeGoal(harnessId: "claude" | "codex") {
   }
 }
 
+async function claudeEvaluatedGoal() {
+  const stack = await startStack({ label: "h6-claude-evaluated" })
+  try {
+    const api = new ClaxedoApi(stack.url)
+    const workspace = await stack.daemon.makeWorkspace("h6-claude-evaluated")
+    const stream = await stack.events(workspace.directory)
+    const model = { providerId: "claude", modelId: "claude-sonnet-4-6" }
+    const session = await api.createSession(workspace.directory, {
+      harness: { id: "claude", access: "native" }, model, title: "H6 Claude evaluated Goal",
+    })
+    const objective = "Produce the scripted Claude goal evidence"
+    const started = await api.startGoal(workspace.directory, session.id, objective)
+    assert.equal(started.goal?.objective, objective)
+    await stream.waitFor((frame) => frameType(frame) === "goal.cleared"
+      && (frame.data.payload as { properties?: { sessionID?: string } }).properties?.sessionID === session.id,
+    { label: "Claude evaluator clearing the completed Goal", timeoutMs: 60_000 })
+    assert.equal(await api.goal(workspace.directory, session.id), null, "Claude clears its native Goal after the evaluator accepts it")
+    assert.equal((await api.goalState(workspace.directory, session.id)).goal, null)
+    assert.ok((await api.messages(workspace.directory, session.id)).some((message) => message.info.role === "assistant"))
+    assert.ok(stream.frames.some((frame) => frameType(frame) === "message.part.updated"))
+    assert.ok(stack.scripted.requests.filter((request) => request.prompt.includes("stopping condition been satisfied")).length >= 2, "Claude must run both evaluator checks")
+    assert.deepEqual(unexpectedEgress(stack.egress.attempts), [])
+    console.log("H6 Claude: two evaluator checks cleared its Goal on the route and live frame; stored messages passed")
+  } finally {
+    await stack.close()
+  }
+}
+
 export async function run() {
   await acpGoal()
   await piEvaluatedGoal()
   await nativeGoal("claude")
+  await claudeEvaluatedGoal()
   await nativeGoal("codex")
 }

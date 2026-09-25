@@ -149,6 +149,28 @@ export class ClaxedoApi {
     return this.call<Record<string, unknown>>("GET", `/session/${encodeURIComponent(id)}/config`, { directory })
   }
 
+  configOptions(directory: string, id: string, model?: string) {
+    return this.call<{ options: Array<{ id: string; currentValue?: string; selectOptions?: Array<{ id: string }> }> }>(
+      "GET", `/session/${encodeURIComponent(id)}/config-options`, { directory, ...(model ? { query: { model } } : {}) },
+    )
+  }
+
+  updateSessionConfig(directory: string, id: string, body: Record<string, unknown>) {
+    return this.call<Record<string, unknown>>("PATCH", `/session/${encodeURIComponent(id)}/config`, { directory, body })
+  }
+
+  permissionMode(directory: string, id: string) {
+    return this.call<{ currentModeId?: string; appliesFrom: "next-turn" | "next-session"; modes: Array<{ id: string }> }>(
+      "GET", `/session/${encodeURIComponent(id)}/permission-mode`, { directory },
+    )
+  }
+
+  setPermissionMode(directory: string, id: string, modeId: string) {
+    return this.call<{ currentModeId?: string; appliesFrom: "next-turn" | "next-session" }>(
+      "PUT", `/session/${encodeURIComponent(id)}/permission-mode`, { directory, body: { modeId } },
+    )
+  }
+
   goalState(directory: string, id: string) {
     return this.call<{ capabilities: { implemented: boolean; available: boolean; actions: string[] }; goal: GoalSnapshot | null }>(
       "GET", `/session/${encodeURIComponent(id)}/goal/state`, { directory },

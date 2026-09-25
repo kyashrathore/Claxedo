@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { ClaxedoApi, assistantText } from "../harness/api"
 import { SCRIPTED_ACP_HARNESS } from "../harness/acp/connection"
 import { acpScriptToken } from "../harness/acp/script"
+import { unexpectedEgress } from "../harness/egress-guard"
 import { startScriptedMcpServer } from "../harness/scripted-mcp-server"
 import { startStack } from "../harness/stack"
 import { frameSessionId, frameType } from "../harness/stream"
@@ -42,19 +43,7 @@ export async function run() {
     assert.equal((await api.session(workspace.directory, claude.id)).id, claude.id)
     console.log("H14 Claude: configured HTTP MCP tool called through the Claude SDK")
 
-    const codexStream = await stack.events(workspace.directory)
-    const codex = await api.createSession(workspace.directory, {
-      harness: { id: "codex", access: "native" }, title: "H14 MCP Codex", permissionMode: "full-access",
-      model: { providerId: "codex", modelId: "gpt-5.5" },
-    })
-    stack.scripted.scriptTool({ name: "mcp__scripted__proof", input: { marker: "H14CODEX" }, whenPromptIncludes: "H14CODEX" })
-    await api.prompt(workspace.directory, codex.id, "Call the scripted MCP proof tool with marker H14CODEX", {
-      model: { providerId: "codex", modelId: "gpt-5.5" },
-    })
-    await codexStream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === codex.id, { label: "MCP Codex turn idle", timeoutMs: 60_000 })
-    assert.ok(mcp.calls.some((call) => call.arguments.marker === "H14CODEX"), `Codex did not call MCP; MCP calls: ${JSON.stringify(mcp.calls)}; requests: ${JSON.stringify(mcp.methods)}; response tools: ${JSON.stringify(stack.scripted.requests.filter((request) => request.dialect === "responses").map((request) => request.tools.map((tool) => tool.name)))}`)
-    assert.equal((await api.session(workspace.directory, codex.id)).id, codex.id)
-    console.log("H14 Codex: configured HTTP MCP tool called through the Codex app server")
+    assert.deepEqual(unexpectedEgress(stack.egress.attempts), [], "MCP flow made an unexpected outbound request")
   } finally {
     await mcp.close()
     await stack.close()

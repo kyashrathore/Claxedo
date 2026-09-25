@@ -94,6 +94,7 @@ export class ScriptedAgent implements Agent {
 
   async resumeSession(params: ResumeSessionRequest) {
     if (this.record) await recordAcpRequest(this.dir, "session/resume", params, this.headers)
+    if (!knownSessions.has(params.sessionId)) throw RequestError.resourceNotFound(params.sessionId)
     return {}
   }
 
