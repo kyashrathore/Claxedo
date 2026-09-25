@@ -43,6 +43,7 @@ async function setup(input: ConformanceInput) {
   backend.configureServices?.(services)
   const ports = new MemoryPorts()
   Object.assign(ports, { clock: services.clock })
+  ports.directories.set("s1", backend.directory)
   ports.current.set("s1", { ...authority, directory: backend.directory })
   const owner = createRequestBroker(ports)
   ports.startBinding = { sessionId: "s1", directory: backend.directory, workspaceId: "w1",
@@ -54,7 +55,7 @@ async function setup(input: ConformanceInput) {
   })
   const transport = input.makeTransport(services, backend)
   const start: StartInput = {
-    sessionId: "s1", directory: backend.directory, locality: backend.locality ?? "local", owner: backend.owner,
+    sessionId: "s1", workspaceId: "w1", directory: backend.directory, locality: backend.locality ?? "local", owner: backend.owner,
     config: { harness: backend.harness, model: backend.model }, model: backend.model,
     projection: backend.projection ?? { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] },
     credentials: backend.credentials,
@@ -114,6 +115,7 @@ export function runConformance(input: ConformanceInput): void {
     test("starts a real process, streams text and usage, and closes it", async () => {
       const context = await setup(input)
       try {
+        expect(context.session.binding.workspaceId).toBe(context.start.workspaceId)
         const events = await collect(context.transport, context.session, context.turn(context.backend.textCommand ?? "Reply with exactly this one token: PICONFORM"), context.turnBroker())
         expect(events.some((item) => item.event.type === "text-delta" && item.event.delta.includes("PICONFORM"))).toBe(true)
         expect(events.some((item) => item.event.type === "usage")).toBe(true)
@@ -173,7 +175,7 @@ export function runConformance(input: ConformanceInput): void {
           const controller = new AbortController()
           const running = collect(context.transport, context.session, context.turn("Reply with exactly this one token: PICANCEL"), context.turnBroker(controller.signal))
           await new Promise((resolve) => setTimeout(resolve, 300))
-          const update = await context.transport.configure({ credentials: context.backend.credentials })
+          const update = await context.transport.configure(context.session, { credentials: context.backend.credentials })
           if (capabilities.timing.credentials === "after-active-turns") expect(update.state).toBe("refused")
           const outcome = await context.transport.cancel(context.session, { turnId: "t1", assistantMessageId: "a1" }, { at: Date.now() + 5_000, signal: controller.signal })
           expect(["terminal", "unknown"].includes(outcome.execution)).toBe(true)
@@ -182,7 +184,7 @@ export function runConformance(input: ConformanceInput): void {
           await running
         }
         const rotation = await context.backend.rotate?.()
-        expect((await context.transport.configure({ credentials: rotation?.credentials ?? context.backend.credentials })).state).toBe("applied")
+        expect((await context.transport.configure(context.session, { credentials: rotation?.credentials ?? context.backend.credentials })).state).toBe("applied")
         if (rotation) {
           await collect(context.transport, context.session, context.turn("Reply with exactly this one token: PIROTATED"), context.turnBroker())
           expect(rotation.observed()).toBe(true)
@@ -335,6 +337,111 @@ export function runConformance(input: ConformanceInput): void {
         await running
         expect(context.ports.saved.some((row) => row.answer.kind === "cancelled")).toBe(true)
         expect(context.ports.saved.some((row) => row.answer.kind === "permission" && row.answer.decision.startsWith("allow"))).toBe(false)
+      } finally { await context.close() }
+    }, 60_000)
+
+    test("an aborted ask is durably cancelled and a late answer is stale", async () => {
+      const context = await setup(input)
+      try {
+        const capabilities = await context.transport.capabilities({ directory: context.backend.directory })
+        if (!capabilities.requests.questions && !capabilities.requests.permissions) return
+        const requestId = "conformance-request-abort"
+        const request = capabilities.requests.questions ? {
+          kind: "question" as const, requestId,
+          question: { id: requestId, sessionID: "s1", questions: [{ header: "Confirm", question: "Continue?", options: [], custom: true }] },
+        } : {
+          kind: "permission" as const, requestId,
+          permission: { id: requestId, sessionID: "s1", permission: "execute", patterns: [], always: [], metadata: {} },
+        }
+        const controller = new AbortController()
+        const asked = context.turnBroker().ask(request, { signal: controller.signal })
+        for (let index = 0; index < 12; index++) await Promise.resolve()
+        controller.abort()
+        expect(await asked).toEqual({ kind: "cancelled" })
+        expect(context.ports.readAnswer("s1", requestId)).toEqual({ kind: "cancelled" })
+        expect(await context.owner.broker.answer(requestId, { kind: "rejected" }, { sessionId: "s1" })).toMatchObject({ refusal: "stale" })
+      } finally { await context.close() }
+    }, 60_000)
+
+    test("a credential update targets one session while another turn runs", async () => {
+      const context = await setup(input)
+      try {
+        const capabilities = await context.transport.capabilities({ directory: context.backend.directory })
+        if (capabilities.timing.credentials !== "after-active-turns" ||
+          (!context.backend.hold && !context.backend.permissionCommand)) return
+        await collect(context.transport, context.session, context.turn("Reply with exactly this one token: CONFORMANCEPREPARE"), context.turnBroker())
+        const secondStart = { ...context.start, sessionId: "s2", workspaceId: "w2" }
+        context.ports.current.set("s2", { ...authority, sessionId: "s2", workspaceId: "w2", directory: context.backend.directory })
+        context.ports.directories.set("s2", context.backend.directory)
+        const secondBroker = createSessionBroker(context.owner, { sessionId: "s2", workspaceId: "w2",
+          directory: context.backend.directory, origin: context.backend.origin ?? origin })
+        const second = await context.transport.start(secondStart, secondBroker)
+        const secondTurnBroker = createTurnBroker(context.owner, { authority: context.ports.current.get("s2")!,
+          origin: context.backend.origin ?? origin, signal: new AbortController().signal })
+        const release = context.backend.hold?.("CONFORMANCESECOND")
+        const running = collect(context.transport, second, context.turn(release ?
+          "Reply with exactly this one token: CONFORMANCESECOND" : context.backend.permissionCommand!), secondTurnBroker)
+        let pending: ReturnType<typeof context.owner.broker.list>[number] | undefined
+        if (!release) {
+          for (let attempt = 0; attempt < 500; attempt++) {
+            pending = context.owner.broker.list({ sessionId: "s2" }).find((row) => row.request.kind === "permission")
+            if (pending) break
+            await new Promise((resolve) => setTimeout(resolve, 10))
+          }
+          expect(pending).toBeDefined()
+        } else await new Promise((resolve) => setTimeout(resolve, 300))
+        const secondProcess = context.services.processes.at(-1)
+        const update = await context.transport.configure(context.session, { credentials: {
+          ...context.backend.credentials, leaseGeneration: "session-one-only",
+        } })
+        expect(update.state).toBe("applied")
+        if (secondProcess) expect(context.services.processes.at(-1)).not.toBe(secondProcess)
+        if (pending) expect((await context.owner.broker.answer(pending.request.requestId,
+          { kind: "permission", decision: "deny" }, { sessionId: "s2" })).ok).toBe(true)
+        release?.()
+        expect((await running).some((item) => item.event.type === "finish")).toBe(true)
+      } finally { await context.close() }
+    }, 60_000)
+
+    test("a draft launch probes config options once and retires its process", async () => {
+      const context = await setup(input)
+      try {
+        if (!context.transport.config) return
+        const { sessionId: _sessionId, title: _title, instructions: _instructions, ...draft } = context.start
+        const before = context.services.processes.length
+        const [first, second] = await Promise.all([
+          context.transport.config.options({ draft }, "probe"), context.transport.config.options({ draft }, "probe"),
+        ])
+        expect(first).toEqual(second)
+        expect(first.length).toBeGreaterThan(0)
+        if (context.backend.locality !== "remote") {
+          expect(context.services.processes).toHaveLength(before + 1)
+          expect(await context.services.processes.at(-1)!.exited).toBeDefined()
+        }
+        expect(await context.transport.config.options({ draft }, "probe")).toEqual(first)
+      } finally { await context.close() }
+    }, 60_000)
+
+    test("provider turn admission returns before settlement", async () => {
+      const context = await setup(input)
+      try {
+        const capabilities = await context.transport.capabilities({ directory: context.backend.directory })
+        if (!capabilities.goals.available) return
+        let release!: () => void
+        const gate = new Promise<void>((resolve) => { release = resolve })
+        const result = await context.sessionBroker.admitProviderTurn({ reason: "goal" }, async function* () {
+          await gate
+          yield { event: { type: "text-delta", delta: "native goal" } }
+        })
+        expect(result.admitted).toBe(true)
+        if (!result.admitted) return
+        let settled = false
+        void result.settled.then(() => { settled = true })
+        await Promise.resolve()
+        expect(settled).toBe(false)
+        release()
+        expect(await result.settled).toEqual({ state: "completed" })
+        expect(context.ports.drained).toHaveLength(1)
       } finally { await context.close() }
     }, 60_000)
 

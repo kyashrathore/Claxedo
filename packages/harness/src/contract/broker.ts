@@ -77,13 +77,20 @@ export type ProviderTurnInput = {
 }
 
 export type ProviderTurnResult =
-  | { admitted: true; turnId: string }
+  | { admitted: true; turnId: string; settled: Promise<ProviderTurnSettlement> }
   | { admitted: false; reason: "busy" | "closed" }
+
+export type ProviderTurnSettlement = { state: "completed" } | { state: "failed"; error: string } | { state: "cancelled" }
+
+export type OutsideTurnEvent = AgentRuntimeEventOf<
+  | "rate-limit" | "auth-status" | "mcp-server-status" | "available-commands-update" | "config-update"
+  | "session-info" | "session-title" | "session-agent" | "harness-notice" | "diagnostic"
+>
 
 export interface TurnBroker {
   readonly signal: AbortSignal
   readonly origin: TurnOrigin
-  ask(request: TurnRequest): Promise<RequestAnswer>
+  ask(request: TurnRequest, options?: { signal?: AbortSignal }): Promise<RequestAnswer>
   completeElicitation(elicitationId: string): Promise<void>
   observeSubagent(observation: SubagentObservation): Promise<ChildSessionRef | undefined>
   associateChild(correlationKey: string, child: ChildSessionRef): void
@@ -91,7 +98,7 @@ export interface TurnBroker {
 
 export interface SessionBroker {
   readonly sessionId: string
-  ask(request: TurnRequest): Promise<RequestAnswer>
+  ask(request: TurnRequest, options?: { signal?: AbortSignal }): Promise<RequestAnswer>
   completeElicitation(elicitationId: string): Promise<void>
   rebind(upstreamSessionId: string): Promise<void>
   persistHandoff(context: SessionHandoff): Promise<void>
@@ -100,6 +107,7 @@ export interface SessionBroker {
     run: (broker: TurnBroker) => AsyncIterable<RoutedEvent>,
   ): Promise<ProviderTurnResult>
   meter(usage: OutsideTurnUsage): void
+  publish(event: OutsideTurnEvent): Promise<void>
   readonly goal: {
     read(): RuntimeGoalSnapshot | null
     publish(snapshot: RuntimeGoalSnapshot | null): Promise<void>

@@ -88,7 +88,7 @@ export class PiRpcTransport implements HarnessTransport {
       await rpc.retire(deadline(this.services.clock))
       throw new PiTransportError("protocol", "Pi did not return a session id")
     }
-    const binding = { sessionId: input.sessionId, workspaceId: path.resolve(input.directory), directory: input.directory,
+    const binding = { sessionId: input.sessionId, workspaceId: input.workspaceId, directory: input.directory,
       connectionId: "pi-rpc", upstreamSessionId: state.sessionId }
     const session = { binding, directory: input.directory, locality: input.locality }
     this.entries.set(input.sessionId, { session, start: input, profile, rpc, busy: false, settled: true })
@@ -207,26 +207,25 @@ export class PiRpcTransport implements HarnessTransport {
     }
   }
 
-  async configure(update: TransportConfigUpdate): Promise<ConfigApplied> {
+  async configure(session: HarnessSession, update: TransportConfigUpdate): Promise<ConfigApplied> {
+    const entry = this.entry(session)
     if (!update.credentials && !update.projection) return { state: "applied" }
-    if ([...this.entries.values()].some((entry) => entry.busy)) return { state: "refused", reason: "Cannot reconfigure Pi during an active turn" }
-    for (const entry of this.entries.values()) {
-      const start = { ...entry.start,
-        ...(update.credentials ? { credentials: update.credentials } : {}),
-        ...(update.projection ? { projection: update.projection } : {}) }
-      const profile = selectPiProfile(start.owner, start.credentials, start.directory, start.sessionId, this.options, entry.profile.kind)
-      await preparePiProfile(profile, start.model)
-      await entry.rpc.retire(deadline(this.services.clock))
-      const rpc = await this.launch(start, profile, await this.sessionFile(profile, entry.session.binding.upstreamSessionId))
-      const state = await rpc.request("get_state")
-      if (!state || typeof state !== "object" || !("sessionId" in state) || state.sessionId !== entry.session.binding.upstreamSessionId) {
-        await rpc.retire(deadline(this.services.clock))
-        throw new PiTransportError("session", "Pi resumed a different session after credential change")
-      }
-      entry.rpc = rpc
-      entry.profile = profile
-      entry.start = start
+    if (entry.busy) return { state: "refused", reason: "Cannot reconfigure Pi during an active turn" }
+    const start = { ...entry.start,
+      ...(update.credentials ? { credentials: update.credentials } : {}),
+      ...(update.projection ? { projection: update.projection } : {}) }
+    const profile = selectPiProfile(start.owner, start.credentials, start.directory, start.sessionId, this.options, entry.profile.kind)
+    await preparePiProfile(profile, start.model)
+    await entry.rpc.retire(deadline(this.services.clock))
+    const rpc = await this.launch(start, profile, await this.sessionFile(profile, entry.session.binding.upstreamSessionId))
+    const state = await rpc.request("get_state")
+    if (!state || typeof state !== "object" || !("sessionId" in state) || state.sessionId !== entry.session.binding.upstreamSessionId) {
+      await rpc.retire(deadline(this.services.clock))
+      throw new PiTransportError("session", "Pi resumed a different session after credential change")
     }
+    entry.rpc = rpc
+    entry.profile = profile
+    entry.start = start
     return { state: "applied" }
   }
 

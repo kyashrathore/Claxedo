@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { ClaxedoApi, assistantText } from "../harness/api"
+import { armPiRpcFault, piRpcFaultEvidence } from "../harness/pi-rpc-fault"
 import { startStack } from "../harness/stack"
 import { frameSessionId, frameType } from "../harness/stream"
 
@@ -27,7 +28,7 @@ async function installProfile(agentDir: string, modelUrl: string, auth: Buffer) 
 }
 
 export async function run() {
-  const stack = await startStack({ label: "h18-pi-owner" })
+  const stack = await startStack({ label: "h18-pi-owner", piRpcFault: true })
   try {
     const workspace = await stack.daemon.makeWorkspace("h18")
     const own = path.join(stack.dataDir, ".pi", "agent")
@@ -39,8 +40,20 @@ export async function run() {
     const stream = await stack.events(workspace.directory)
     const model = { providerId: "pi", modelId: "openai/gpt-4.1" }
     const session = await api.createSession(workspace.directory, { harness: { id: "pi", access: "native" }, model })
-    await api.prompt(workspace.directory, session.id, "Reply with exactly this one token: H18START", { model })
-    await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id, { label: "H18 start idle" })
+    await armPiRpcFault(stack.dataDir)
+    let rpcError: unknown
+    try {
+      await api.prompt(workspace.directory, session.id, "Reply with exactly this one token: H18START", { model })
+      await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id, { label: "H18 start idle" })
+    } catch (error) { rpcError = error }
+    const faultEvidence = await piRpcFaultEvidence(stack.dataDir)
+    assert.match(faultEvidence, /^injected ([^\n]+)\nreal \1\n$/, "H18 injected both malformed replies before Pi's real reply")
+    const lastTurn = (await api.session(workspace.directory, session.id)).lastTurn
+    if (rpcError !== undefined || lastTurn?.status !== "completed") {
+      const accepted = /H18 (mismatched command|unknown id)/.exec(`${lastTurn?.error ?? ""}\n${stack.daemon.log()}`)
+      if (!accepted) throw rpcError ?? new Error(`H18 start turn ended ${JSON.stringify(lastTurn)}`)
+      assert.fail(`H-18: Pi settled a request from the malformed reply "${accepted[0]}" before its real reply`)
+    }
     const commandReply = await fetch(`${stack.url}/command?directory=${encodeURIComponent(workspace.directory)}`)
     if (!commandReply.ok) throw new Error(`H18 command readback failed: ${await commandReply.text()}`)
     const commands = await commandReply.json() as { name?: string }[]

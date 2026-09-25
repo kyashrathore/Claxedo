@@ -19,6 +19,7 @@ import {
   type ForkSessionRequest,
   type PromptRequest,
   type PromptResponse,
+  type SetSessionConfigOptionRequest,
 } from "@agentclientprotocol/sdk"
 import { isTitlePrompt, lastMarker } from "../scripted-model-request"
 import { ACP_RED_ENV, ACP_SCRIPT_DIR_ENV, lastAcpScriptName, readAcpScript, recoveryContextDropped, type AcpScript } from "./script"
@@ -80,8 +81,11 @@ export class ScriptedAgent implements Agent {
     rememberSession(this.dir, sessionId)
     const mcp = params.mcpServers.find((server) => server.name === "scripted")
     if (mcp && "url" in mcp && typeof mcp.url === "string") this.mcpUrls.set(sessionId, mcp.url)
-    if (this.startupQuestion) await this.connection.unstable_createElicitation({ sessionId, mode: "form", message: "Startup question",
-      requestedSchema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"] } })
+    if (this.startupQuestion) {
+      const answer = await this.connection.unstable_createElicitation({ sessionId, mode: "form", message: "Startup question",
+        requestedSchema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"] } })
+      if (this.record) await recordAcpRequest(this.dir, "startup/answer", answer, this.headers)
+    }
     queueMicrotask(() => {
       void this.connection.sessionUpdate({ sessionId, update: { sessionUpdate: "available_commands_update", availableCommands: [{ name: "scripted", description: "Run a named scripted reply" }] } })
     })
@@ -119,11 +123,18 @@ export class ScriptedAgent implements Agent {
     return {}
   }
 
+  async setSessionConfigOption(params: SetSessionConfigOptionRequest) {
+    if (this.record) await recordAcpRequest(this.dir, "session/set_config_option", params, this.headers)
+    if (params.configId !== "mode" || typeof params.value !== "string") throw RequestError.invalidParams()
+    return { configOptions: [{ id: "mode", name: "Agent", category: "mode" as const, type: "select" as const,
+      currentValue: params.value, options: [{ value: "default", name: "Default" }, { value: "review", name: "Review" }] }] }
+  }
+
   async prompt(params: PromptRequest): Promise<PromptResponse> {
     if (this.record) await recordAcpRequest(this.dir, "session/prompt", params, this.headers)
     const delivered = deliveredAcpPrompt(recoveryContextDropped(this.dir)
       ? params.prompt.filter((block) => block.type !== "text" || !block.text.includes("<session-context-recovery>"))
-      : params.prompt)
+      : params.prompt, this.dir)
     const text = promptText(delivered)
     if (red && !isTitlePrompt(text)) throw RequestError.internalError(undefined, "Scripted ACP red run: every turn fails")
     const script = await scriptFor(text, this.dir)

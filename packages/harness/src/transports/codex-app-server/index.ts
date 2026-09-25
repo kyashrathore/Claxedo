@@ -7,7 +7,7 @@ import type {
 } from "../../contract"
 import { prepareCodexProfile } from "../../profiles/codex"
 import type { JsonValue, v2 } from "@claxedo/agent-event-runtime/harnesses/codex"
-import { CodexEvents, CodexEventQueue } from "./events"
+import { CodexEvents, CodexEventQueue, publishCodexQuota } from "./events"
 import { CodexTransportError } from "./errors"
 import { snapshotFromCodexGoal, createCodexGoals } from "./goals"
 import { answerCodexRequest } from "./requests"
@@ -121,7 +121,7 @@ export class CodexAppServerTransport implements HarnessTransport {
       const threadId = asString(asRecordOrEmpty(result.thread).id) ?? ""
       if (!threadId || (resumed && threadId !== resumed)) throw new CodexTransportError("session", "Codex returned a different or missing thread")
       const session: HarnessSession = { directory: input.directory, locality: input.locality, binding: {
-        sessionId: input.sessionId, workspaceId: path.resolve(input.directory), directory: input.directory,
+        sessionId: input.sessionId, workspaceId: input.workspaceId, directory: input.directory,
         connectionId: "codex-app-server", upstreamSessionId: threadId,
       } }
       const entry: Entry = { state: "ready", start: input, session, broker, rpc, goal: null }
@@ -158,6 +158,13 @@ export class CodexAppServerTransport implements HarnessTransport {
 
   private outsideTurn(entry: Entry, message: RpcMessage): void {
     const params = asRecordOrEmpty(message.params)
+    if (message.method === "account/rateLimits/updated") {
+      if (entry.state !== "busy" && !entry.providerTurn) {
+        void publishCodexQuota(entry.broker, entry.session.binding.upstreamSessionId, message)
+          .catch((error: unknown) => entry.broker.reportFailure(error))
+      }
+      return
+    }
     if (asString(params.threadId) !== entry.session.binding.upstreamSessionId) return
     if (message.method === "thread/goal/updated" || message.method === "thread/goal/cleared") {
       entry.goal = message.method === "thread/goal/cleared" ? null : snapshotFromCodexGoal(entry.session.binding.sessionId, params.goal)
@@ -173,7 +180,18 @@ export class CodexAppServerTransport implements HarnessTransport {
       }
       return
     }
+    if (entry.state !== "busy" && message.method !== "turn/started") {
+      for (const item of new CodexEvents(entry.session.binding.upstreamSessionId).ingest(message)) {
+        if (item.event.type === "diagnostic" && item.event.diagnostic.code === "unrecognized-event") {
+          void entry.broker.publish(item.event).catch((error: unknown) => entry.broker.reportFailure(error))
+        }
+      }
+    }
     if (message.method !== "turn/started" || entry.state === "busy" || entry.goal?.status !== "active") return
+    this.beginProviderTurn(entry, message, params)
+  }
+
+  private beginProviderTurn(entry: Entry, message: RpcMessage, params: Record<string, unknown>): void {
     const id = asString(asRecordOrEmpty(params.turn).id) ?? ""
     if (!id) return
     const queue = new CodexEventQueue<RoutedEvent>()
@@ -187,6 +205,10 @@ export class CodexAppServerTransport implements HarnessTransport {
       }
     }).then((result) => {
       if (!result.admitted) { queue.end(); entry.providerTurn = undefined }
+      else void result.settled.then((settlement) => {
+        if (settlement.state === "failed") entry.broker.reportFailure(new CodexTransportError("session", settlement.error))
+        if (settlement.state !== "completed") { queue.end(); entry.providerTurn = undefined }
+      })
     }, (error: unknown) => { queue.fail(error); entry.broker.reportFailure(error) })
   }
 
@@ -215,6 +237,7 @@ export class CodexAppServerTransport implements HarnessTransport {
       const params: v2.TurnStartParams = { threadId: session.binding.upstreamSessionId, input: userInput(turn), cwd: session.directory,
         ...(turn.model?.modelID && turn.model.modelID !== "default" ? { model: turn.model.modelID } : {}),
         ...(turn.effort ? { effort: reasoningEffort(turn.effort) } : {}),
+        ...(turn.prompt.serviceTier !== undefined ? { serviceTier: turn.prompt.serviceTier } : {}),
         approvalPolicy: "on-request", approvalsReviewer: "user" }
       const result = asRecordOrEmpty(await startCodexTurn(entry.rpc, params, projectCodexThreadConfig(entry.start, this.services)))
       entry.turn.id = asString(asRecordOrEmpty(result.turn).id) ?? entry.turn.id ?? ""
@@ -245,19 +268,18 @@ export class CodexAppServerTransport implements HarnessTransport {
     return { ok: true as const }
   } }
 
-  async configure(update: TransportConfigUpdate): Promise<ConfigApplied> {
+  async configure(session: HarnessSession, update: TransportConfigUpdate): Promise<ConfigApplied> {
+    const entry = this.entry(session)
     if (!update.credentials && !update.projection) return { state: "applied" }
-    if ([...this.entries.values()].some((entry) => entry.state === "busy")) return { state: "refused", reason: "Codex turn is active" }
-    for (const entry of this.entries.values()) {
-      const start = { ...entry.start, ...(update.credentials ? { credentials: update.credentials } : {}),
-        ...(update.projection ? { projection: update.projection } : {}) }
-      if (JSON.stringify(start.credentials) === JSON.stringify(entry.start.credentials)
-        && JSON.stringify(start.projection) === JSON.stringify(entry.start.projection)) continue
-      const threadId = entry.session.binding.upstreamSessionId
-      await entry.rpc.retire(codexRetirementDeadline(this.services))
-      this.entries.delete(entry.start.sessionId)
-      await this.open(start, entry.broker, threadId)
-    }
+    if (entry.state === "busy") return { state: "refused", reason: "Codex turn is active" }
+    const start = { ...entry.start, ...(update.credentials ? { credentials: update.credentials } : {}),
+      ...(update.projection ? { projection: update.projection } : {}) }
+    if (JSON.stringify(start.credentials) === JSON.stringify(entry.start.credentials)
+      && JSON.stringify(start.projection) === JSON.stringify(entry.start.projection)) return { state: "applied" }
+    const threadId = entry.session.binding.upstreamSessionId
+    await entry.rpc.retire(codexRetirementDeadline(this.services))
+    this.entries.delete(entry.start.sessionId)
+    await this.open(start, entry.broker, threadId)
     return { state: "applied" }
   }
 
