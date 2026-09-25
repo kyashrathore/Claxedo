@@ -110,6 +110,8 @@ The build was the same (6d9c0a91a9), and the host was just as quiet. v2 had 0 in
 | open-file, light (no prefetch, disclosed) | 26.1 ms | 32.4 ms |
 | collapse-all, light / moderate / heavy | 24.1 / 24.4 / 24.8 ms | 26.7 / 26.9 / 27.8 ms |
 
+**Caveat found after the run:** the packaged v2 renderer was **unminified** (a 6.72 MB main chunk; minified it's 3.67 MB). `claxedo-desktop/vite.renderer-v2.ts` never set `minify`, while v1's renderer config sets `minify: "esbuild"`. Every v2 number above comes from the unminified build. exp-idle is committing the fix with a package-step check; the rerun uses minified builds.
+
 **Must-win targets:**
 - **Met:** idle CPU, panel open return, and long rows (988 ms, target ≤ 1 s, though it ties v1).
 - **Not met:** idle memory (775 MiB, target ≤ 700) and fresh start (1.41 s, target ≤ 1.1, a tie).
@@ -434,6 +436,15 @@ At 19:08 the owner said: finish in-progress work; start no new work.
   - creating a worktree doesn't invalidate the root git queries;
   - the scripted ACP subagent step sends no tool call, so no live check exercises `toolCallEdges`;
   - adapter probes need `bun run pi:install` in agent-sdk-runtime first (Playwright's global setup does it, the probe doesn't).
+
+- **A cancelled turn is recorded as completed (runtime; both apps).** The harnesses signal a cancelled turn as `session-status idle` without `finish`:
+  - ACP `translateStopReason("cancelled")` (`agent-event-runtime/src/harnesses/acp/translate-session-update.ts`);
+  - Codex `cancelled`/`interrupted`;
+  - Cursor `cancelled`.
+
+  `outcomeFromPayload` (`agent-sdk-runtime/src/runtime/turn-outcome.ts`) maps that idle to `{status: "completed"}`, and the turn's own producer finalizes with it. `finalizeCancelled` (`runtime/recovery.ts`) then finds the turn already finished and doesn't write its `{status: "cancelled", reason: "abort"}`. So neither app ever shows "Interrupted" after a Stop. Proven on v1 with the scripted ACP agent answering `cancelled` (lane-transcript-3; the ready corpus case is in `scratchpad/comments/interrupted-*`).
+  - **Fix:** a terminal cancelled event in the runtime vocabulary. It belongs in the harness rebuild (`docs/plans/2026-09-24-002-refactor-harness-rebuild-plan.md`).
+  - Parity holds meanwhile, since v1 has the same defect.
 
 ## Deletion candidates
 
