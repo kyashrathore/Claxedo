@@ -8,7 +8,7 @@ type Call = { url: string; method: string; body: any }
 function harness(responder: (call: Call) => { status: number; json: any }) {
   const calls: Call[] = []
   const fetch = vi.fn(async (url: any, init: any) => {
-    expect(init?.redirect).toBe("error")
+    expect(init?.redirect).toBe("manual")
     const call: Call = {
       url: String(url),
       method: init?.method ?? "GET",
@@ -50,6 +50,7 @@ describe("CloudflareSandboxDriver", () => {
     const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
     await expect(driver.ensureHost(createInput)).rejects.toThrow(/redirects/)
     expect(calls).toHaveLength(1)
+    expect(fetch).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ redirect: "manual" }))
   })
   test("ensureHost boots the runtime, sends the credential env, and returns the worker-proxied url", async () => {
     // The worker now returns its own data-plane proxy URL (no exposePort preview

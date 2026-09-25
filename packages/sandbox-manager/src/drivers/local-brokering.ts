@@ -1,5 +1,5 @@
 import { execFileSync, spawn, type ChildProcess } from "node:child_process"
-import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs"
+import { closeSync, mkdtempSync, openSync, readFileSync, realpathSync, writeFileSync } from "node:fs"
 import fs from "node:fs/promises"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import { createServer as createHttpsServer } from "node:https"
@@ -16,8 +16,7 @@ export type LocalBrokeringDriverOptions = {
   executable: string
   args: string[]
   allowedOrigins: readonly string[]
-  controlPlaneOrigin: string
-  relayOrigin?: string
+  directOrigins: readonly string[]
   upstreams?: Readonly<Record<string, string>>
   inheritedEnv?: Record<string, string>
 }
@@ -81,16 +80,21 @@ async function reserveLocalRuntimePort(): Promise<number> {
   return port
 }
 
-async function waitForLocalRuntimeHealth(url: string, child: ChildProcess) {
+async function waitForLocalRuntimeHealth(url: string, child: ChildProcess, logFile: string) {
+  const lastLines = async () => (await fs.readFile(logFile, "utf8")).trimEnd().split("\n").slice(-40).join("\n")
   const until = Date.now() + 20_000
   while (Date.now() < until) {
-    if (child.exitCode !== null) throw new Error(`local sandbox runtime exited: ${child.exitCode}`)
+    if (child.exitCode !== null || child.signalCode !== null) {
+      const lines = await lastLines()
+      throw new Error(`local sandbox runtime exited: ${child.exitCode ?? child.signalCode}${lines ? `\n${lines}` : ""}`)
+    }
     try {
       if ((await fetch(`${url}/global/health`, { signal: AbortSignal.timeout(1_000) })).ok) return
     } catch { /* The runtime may still be binding its listener. */ }
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
-  throw new Error("local sandbox runtime did not become healthy")
+  const lines = await lastLines()
+  throw new Error(`local sandbox runtime did not become healthy${lines ? `\n${lines}` : ""}`)
 }
 
 async function closeHost(host: Host) {
@@ -118,7 +122,7 @@ export function createLocalBrokeringSandboxDriver(options: LocalBrokeringDriverO
     }
     return [parsed.origin, destination.origin] as const
   }))
-  const directOrigins = [options.controlPlaneOrigin, options.relayOrigin].filter((origin): origin is string => origin !== undefined).map((origin) => new URL(origin))
+  const directOrigins = options.directOrigins.map((origin) => new URL(origin))
   const directDestinations = directOrigins.map((url) => {
     if (!(["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) && ["http:", "https:"].includes(url.protocol))) {
       throw new Error("local brokering direct origins must use loopback HTTP")
@@ -147,6 +151,11 @@ export function createLocalBrokeringSandboxDriver(options: LocalBrokeringDriverO
     }
     const home = path.join(directory, "home")
     await Promise.all([fs.mkdir(workspace, { recursive: true }), fs.mkdir(home)])
+    const trustedCertificates = path.join(directory, "trusted-cas.pem")
+    await fs.writeFile(trustedCertificates, Buffer.concat([
+      readFileSync(authority.certificate),
+      ...(options.inheritedEnv?.NODE_EXTRA_CA_CERTS ? [readFileSync(options.inheritedEnv.NODE_EXTRA_CA_CERTS)] : []),
+    ]), { mode: 0o600 })
     const runtimePort = await reserveLocalRuntimePort()
     const hostId = input.hostId ?? `local-${input.workspaceId}`
     const target: SandboxTarget = {
@@ -264,21 +273,28 @@ export function createLocalBrokeringSandboxDriver(options: LocalBrokeringDriverO
         NO_PROXY: directOrigins.map((url) => url.host).join(","),
         no_proxy: directOrigins.map((url) => url.host).join(","),
         NODE_USE_ENV_PROXY: "1",
-        NODE_EXTRA_CA_CERTS: authority.certificate,
+        NODE_EXTRA_CA_CERTS: trustedCertificates,
       }
       for (const secret of host.secrets) {
         if (Object.values(env).some((value) => value.includes(secret.value))) throw new Error("brokered secret entered sandbox environment")
       }
       const networkPolicy = `(version 1) (allow default) (deny network-outbound) (deny file-read* (subpath ${JSON.stringify(authority.privateDirectory)})) (allow process-exec (literal "/bin/ps") (with no-sandbox)) ${[`localhost:${proxyPort}`, ...directDestinations].map((destination) => `(allow network-outbound (remote tcp ${JSON.stringify(destination)}))`).join(" ")}`
-      const child = spawn("/usr/bin/sandbox-exec", ["-p", networkPolicy, options.executable, ...options.args], {
-        cwd: workspace,
-        env,
-        stdio: "ignore",
-      })
+      const logFile = path.join(directory, "runtime.log")
+      const log = openSync(logFile, "w", 0o600)
+      let child: ChildProcess
+      try {
+        child = spawn("/usr/bin/sandbox-exec", ["-p", networkPolicy, options.executable, ...options.args], {
+          cwd: workspace,
+          env,
+          stdio: ["ignore", log, log],
+        })
+      } finally {
+        closeSync(log)
+      }
       host.child = child
       if (!child.pid) throw new Error("local sandbox runtime did not start")
       hosts.set(input.workspaceId, host)
-      await waitForLocalRuntimeHealth(target.url, child)
+      await waitForLocalRuntimeHealth(target.url, child, logFile)
       const targets = path.join(options.root, "local-broker-targets")
       await fs.mkdir(targets, { recursive: true })
       await fs.writeFile(path.join(targets, `${input.workspaceId}.json`), JSON.stringify({ url: target.url, directory: workspace, home, pid: child.pid, secretNames: host.secrets.map((secret) => secret.name) }))

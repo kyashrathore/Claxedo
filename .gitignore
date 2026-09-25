@@ -27,6 +27,7 @@ ts-dist
 # its own rule; packages/claxedo-server and the sandbox/bench workers did not,
 # so a dry-run left untracked junk in the tree.
 .wrangler/
+packages/claxedo-server/scripts/.wrangler-hosted-e2e-*.toml
 .astro
 .cache
 .crabbox/
