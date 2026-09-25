@@ -22,6 +22,13 @@ export type SessionListQuery = {
   sort: SessionListSort
   limit: number
   cursor?: string
+  /**
+   * The order key of the last row the reader holds: the page is the rows
+   * after it. A reader merging several servers' pages resumes each from the
+   * merge's own position with it. `cursor` is v1's opaque form of the same
+   * position and is deleted with v1.
+   */
+  after?: SessionOrderKey
 }
 
 export type SessionNavigationRow = {
@@ -82,6 +89,8 @@ export type SessionListResponse = {
     totalKnown?: number
   }>
   nextCursor?: string
+  /** The `after` that reads the next page; present only when more rows follow. */
+  nextAfter?: string
   totalKnown?: number
 }
 
@@ -117,6 +126,7 @@ export function parseSessionListQuery(url: URL): SessionListQuery {
     sort: sortValue(url.searchParams.get("sort")),
     limit: limitValue(url.searchParams.get("limit")),
     ...(trimToUndefined(url.searchParams.get("cursor")) ? { cursor: trimToUndefined(url.searchParams.get("cursor")) } : {}),
+    ...afterParam(url.searchParams.get("after"), url.searchParams.has("cursor")),
   }
 }
 
@@ -147,6 +157,7 @@ export function buildSessionListResponse(input: {
     items: page.items,
     totalKnown: rows.length,
     ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
+    ...(page.nextAfter ? { nextAfter: page.nextAfter } : {}),
   }
 }
 
@@ -213,9 +224,11 @@ function pageRows(query: SessionListQuery, rows: SessionNavigationRow[], cursorA
     : rows
   const items = window.slice(0, query.limit)
   const last = items[items.length - 1]
+  const more = items.length < window.length && last
   return {
     items,
-    nextCursor: items.length < window.length && last ? encodeCursor(query, last) : undefined,
+    nextCursor: more ? encodeCursor(query, last) : undefined,
+    nextAfter: more ? encodeSessionListAfter(last) : undefined,
   }
 }
 
@@ -443,7 +456,7 @@ function compareRows(a: SessionNavigationRow, b: SessionNavigationRow, sort: Ses
   return compareSessionOrder(sessionOrderKey(a), sessionOrderKey(b), sort)
 }
 
-function rowAfterCursor(row: SessionNavigationRow, cursor: CursorShape, sort: SessionListSort) {
+function rowAfterCursor(row: SessionNavigationRow, cursor: SessionOrderKey, sort: SessionListSort) {
   return compareSessionOrder(sessionOrderKey(row), cursor, sort) > 0
 }
 
@@ -456,7 +469,8 @@ export function sessionOrderKey(row: SessionOrderKey): SessionOrderKey {
   }
 }
 
-function cursorOfQuery(query: SessionListQuery) {
+function cursorOfQuery(query: SessionListQuery): SessionOrderKey | undefined {
+  if (query.after) return query.after
   if (!query.cursor) return undefined
   const cursor = decodeCursor(query.cursor)
   if (cursor.query !== querySignature(query)) throw new Error("invalid_session_list_cursor")
@@ -484,6 +498,28 @@ function decodeCursor(value: string): CursorShape {
     throw new Error("invalid_session_list_cursor")
   }
   return parsed
+}
+
+export function encodeSessionListAfter(key: SessionOrderKey) {
+  return Buffer.from(JSON.stringify(sessionOrderKey(key)), "utf8").toString("base64url")
+}
+
+function afterParam(value: string | null, withCursor: boolean): { after?: SessionOrderKey } {
+  const raw = trimToUndefined(value)
+  if (!raw) return {}
+  if (withCursor) throw new Error("invalid_session_list_cursor")
+  const parsed = parseCursorJson(raw)
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    typeof parsed.updatedAt !== "number" ||
+    typeof parsed.createdAt !== "number" ||
+    typeof parsed.sessionRef !== "string" ||
+    ("lastHumanTurnAt" in parsed && typeof parsed.lastHumanTurnAt !== "number")
+  ) {
+    throw new Error("invalid_session_list_cursor")
+  }
+  return { after: sessionOrderKey(parsed) }
 }
 
 function parseCursorJson(value: string) {

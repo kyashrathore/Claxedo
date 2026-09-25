@@ -36,7 +36,7 @@ export type FetchedPage = {
   readonly projectId: ProjectId
   readonly rows: readonly SessionRow[]
   readonly statuses: ReadonlyMap<SessionId, ListedStatus>
-  readonly nextCursor: string | undefined
+  readonly nextAfter: string | undefined
 }
 
 export type FailedPage = { readonly projectId: ProjectId; readonly error: AppError }
@@ -47,7 +47,7 @@ export type FetchedWindow = {
   readonly sentAt: number
 }
 
-export type ProjectWindow = { readonly tail: OrderKey; readonly nextCursor: string | undefined }
+export type ProjectWindow = { readonly tail: OrderKey; readonly nextAfter: string | undefined }
 
 export type ListData = {
   readonly entries: ReadonlyMap<SessionId, ListEntry>
@@ -156,7 +156,7 @@ export const insideProjectWindow = (data: Pick<ListData, "windows">, row: Sessio
   insideWindow(key, windowTail(data, row.ref.projectId))
 
 
-export const hasMorePages = (windows: ListData["windows"], projectId: ProjectId): boolean => windows.get(projectId)?.nextCursor !== undefined
+export const hasMorePages = (windows: ListData["windows"], projectId: ProjectId): boolean => windows.get(projectId)?.nextAfter !== undefined
 
 function laterHumanTurn(current: SessionRow, incoming: SessionRow): number | undefined {
   if (current.lastHumanTurnAt === undefined) return incoming.lastHumanTurnAt

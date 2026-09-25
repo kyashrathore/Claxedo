@@ -29,11 +29,11 @@ type ReadContext = {
   readonly followUp: Machine<FollowUp, FollowUpEvent>
 }
 
-type PageTarget = { readonly projectId: ProjectId; readonly cursor?: string }
+type PageTarget = { readonly projectId: ProjectId; readonly after?: string }
 
 async function readPage(context: ReadContext, target: PageTarget): Promise<FetchedPage> {
-  const page = await context.server.sessions.list({ projectId: target.projectId, cursor: target.cursor, limit: PAGE_SIZE })
-  return { projectId: target.projectId, rows: page.rows, statuses: page.statuses, nextCursor: page.nextCursor }
+  const page = await context.server.sessions.list({ projectId: target.projectId, after: target.after, limit: PAGE_SIZE })
+  return { projectId: target.projectId, rows: page.rows, statuses: page.statuses, nextAfter: page.nextAfter }
 }
 
 async function firstPageTargets(context: ReadContext): Promise<PageTarget[]> {
@@ -80,11 +80,11 @@ async function fetchFirst(context: ReadContext): Promise<void> {
 async function loadMore(context: ReadContext, projectId: ProjectId): Promise<void> {
   const { state, send } = context.list
   const current = state()
-  const cursor = current.windows.get(projectId)?.nextCursor
-  if (current.kind !== "live" || current.more.get(projectId)?.kind === "loading" || cursor === undefined) return
+  const after = current.windows.get(projectId)?.nextAfter
+  if (current.kind !== "live" || current.more.get(projectId)?.kind === "loading" || after === undefined) return
   send({ type: "moreStarted", projectId })
   try {
-    send({ type: "moreFetched", projectId, window: await readWindow(context, [{ projectId, cursor }]) })
+    send({ type: "moreFetched", projectId, window: await readWindow(context, [{ projectId, after }]) })
   } catch (cause) {
     send({ type: "moreFailed", projectId, error: toAppError(cause) })
   }

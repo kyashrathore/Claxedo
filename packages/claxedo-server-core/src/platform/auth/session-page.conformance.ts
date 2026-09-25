@@ -112,6 +112,17 @@ export async function exerciseSessionPageConformance(
   conform(!walkedIds.some((id) => colleagues.includes(id) || id === inserted[1] || strangers.includes(id)),
     "the walk returned another person's session")
 
+  const settledOrder = (await readListPage(authority, reader.auth, `scope=project&projectId=${projectId}&limit=100`)).rows.map((row) => row.sessionId)
+  const byAfter: string[] = []
+  let after: string | undefined
+  for (let steps = 0; steps < 20; steps++) {
+    const next = await readListPage(authority, reader.auth, `scope=project&projectId=${projectId}&limit=3${after ? `&after=${after}` : ""}`)
+    byAfter.push(...next.rows.map((row) => row.sessionId))
+    if (!next.nextAfter) break
+    after = next.nextAfter
+  }
+  conform(JSON.stringify(byAfter) === JSON.stringify(settledOrder), "an after-key walk did not give the project page's order")
+
   const strangerSees = (await readListPage(authority, stranger.auth, `scope=project&projectId=${projectId}&limit=100`)).rows
     .map((row) => row.sessionId)
   const readerSeesOfStrangersProject = (await readListPage(
@@ -133,7 +144,7 @@ async function readListPage(authority: PrivateSessionAuthority, auth: SignedCont
   const scope = query.scope === "project" ? { projectId: query.projectId! } : { workspaceId: query.workspaceId! }
   const sessions = await authority.listSessionPage(auth, { ...sessionListKeysetPage(query), ...scope })
   const response = buildSessionListResponse({ query, sessions, cursorApplied: true })
-  return { rows: response.items ?? [], nextCursor: response.nextCursor }
+  return { rows: response.items ?? [], nextCursor: response.nextCursor, nextAfter: response.nextAfter }
 }
 
 function isStrictlyOrdered(rows: SessionNavigationRow[]) {

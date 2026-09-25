@@ -128,14 +128,14 @@ export type Todo = AgentTodo
 export type FileDiff = AgentSnapshotFileDiff
 export type Subagent = AgentSubagentUpdate
 
-export type SessionListInput = { readonly projectId: ProjectId; readonly cursor?: string; readonly limit: number }
+export type SessionListInput = { readonly projectId: ProjectId; readonly after?: string; readonly limit: number }
 
 export type ListedStatus = { readonly status: SessionStatus; readonly waitingOnUser: boolean }
 
 export type SessionPage = {
   readonly rows: readonly SessionRow[]
   readonly statuses: ReadonlyMap<SessionId, ListedStatus>
-  readonly nextCursor?: string
+  readonly nextAfter?: string
 }
 
 export type TranscriptPage = { readonly entries: readonly TranscriptEntry[]; readonly olderCursor?: string }

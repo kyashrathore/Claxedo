@@ -68,7 +68,7 @@ function pruneTombstones<S extends ListData>(data: S, before: number): S {
 const laterKey = (a: OrderKey, b: OrderKey): OrderKey => (compareOrder(a, b) >= 0 ? a : b)
 
 function pageTail(page: FetchedPage, fallback: OrderKey): OrderKey {
-  if (page.nextCursor === undefined) return WINDOW_ALL
+  if (page.nextAfter === undefined) return WINDOW_ALL
   let tail: OrderKey | undefined
   for (const row of page.rows) tail = tail ? laterKey(tail, orderKey(row)) : orderKey(row)
   return tail ?? fallback
@@ -93,7 +93,7 @@ export function extendWindow<S extends ListData>(data: S, window: FetchedWindow)
   const next = withWindows(data, window, (windows) => {
     for (const page of window.pages) {
       const current = windowTail(data, page.projectId)
-      windows.set(page.projectId, { tail: laterKey(current, pageTail(page, current)), nextCursor: page.nextCursor })
+      windows.set(page.projectId, { tail: laterKey(current, pageTail(page, current)), nextAfter: page.nextAfter })
     }
   })
   return mergePages(next, window)
@@ -105,7 +105,7 @@ export function refreshWindow<S extends ListData>(data: S, window: FetchedWindow
       const current = windowTail(data, page.projectId)
       const tail = pageTail(page, current)
       if (data.windows.has(page.projectId) && compareOrder(current, tail) >= 0) continue
-      windows.set(page.projectId, { tail, nextCursor: page.nextCursor })
+      windows.set(page.projectId, { tail, nextAfter: page.nextAfter })
     }
   })
   return mergePages(next, window)
@@ -127,7 +127,7 @@ function dropMissingFromPages<S extends ListData>(data: S, window: FetchedWindow
 
 export function replaceWindow<S extends ListData>(data: S, window: FetchedWindow): S {
   const next = withWindows(dropMissingFromPages(data, window), window, (windows) => {
-    for (const page of window.pages) windows.set(page.projectId, { tail: pageTail(page, WINDOW_ALL), nextCursor: page.nextCursor })
+    for (const page of window.pages) windows.set(page.projectId, { tail: pageTail(page, WINDOW_ALL), nextAfter: page.nextAfter })
   })
   return mergePages(next, window)
 }

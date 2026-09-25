@@ -37,10 +37,10 @@ async function listedOf(context: SessionContext, items: readonly unknown[]) {
 export async function listSessions(context: SessionContext, options: SessionListInput): Promise<SessionPage> {
   const { transport } = context
   const listPath = transport.loopback ? "/api/claxedo/session-list" : "/api/control/session-list"
-  const query = { scope: "project", projectId: options.projectId, sort: "human_turn_desc", limit: options.limit, cursor: options.cursor }
-  const body = await transport.json<{ items?: unknown; nextCursor?: unknown }>(withQuery(listPath, query))
+  const query = { scope: "project", projectId: options.projectId, sort: "human_turn_desc", limit: options.limit, after: options.after }
+  const body = await transport.json<{ items?: unknown; nextAfter?: unknown }>(withQuery(listPath, query))
   const listed = await listedOf(context, Array.isArray(body.items) ? body.items : [])
-  return { ...listed, ...(typeof body.nextCursor === "string" ? { nextCursor: body.nextCursor } : {}) }
+  return { ...listed, ...(typeof body.nextAfter === "string" ? { nextAfter: body.nextAfter } : {}) }
 }
 
 export async function onRuntime<T>(

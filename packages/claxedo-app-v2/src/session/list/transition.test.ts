@@ -18,8 +18,8 @@ function row(project: ProjectId, id: string, createdAt: number, lastHumanTurnAt?
   }
 }
 
-function page(project: ProjectId, rows: SessionRow[], nextCursor?: string, statuses: Array<[string, ListedStatus]> = []): FetchedPage {
-  return { projectId: project, rows, nextCursor, statuses: new Map(statuses.map(([id, status]) => [sessionId(id), status])) }
+function page(project: ProjectId, rows: SessionRow[], nextAfter?: string, statuses: Array<[string, ListedStatus]> = []): FetchedPage {
+  return { projectId: project, rows, nextAfter, statuses: new Map(statuses.map(([id, status]) => [sessionId(id), status])) }
 }
 
 function window(pages: FetchedPage[], failures: FetchedWindow["failures"] = [], sentAt = 1_000): FetchedWindow {
@@ -65,8 +65,8 @@ test("show more extends only its own project, and a page that ends the project s
 
   const extended = run(held, { type: "moreFetched", projectId: ALPHA, window: window([page(ALPHA, [row(ALPHA, "a2", 20)])]) })
   expect(shown(extended)).toEqual(["a1", "b-late", "b1", "a2", "a-late"])
-  expect(extended.windows.get(ALPHA)?.nextCursor).toBeUndefined()
-  expect(extended.windows.get(BRAVO)?.nextCursor).toBe("cursor-b")
+  expect(extended.windows.get(ALPHA)?.nextAfter).toBeUndefined()
+  expect(extended.windows.get(BRAVO)?.nextAfter).toBe("cursor-b")
 })
 
 test("a project whose page failed keeps the others' rows and names its own failure", () => {

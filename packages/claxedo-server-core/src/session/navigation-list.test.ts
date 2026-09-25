@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { buildSessionListResponse, parseSessionListQuery } from "./navigation-list"
+import { buildSessionListResponse, encodeSessionListAfter, parseSessionListQuery } from "./navigation-list"
 
 describe("session list owner mapping", () => {
   test("maps owner_* fields onto navigation rows for rail favicons", () => {
@@ -75,5 +75,55 @@ describe("human_turn_desc", () => {
       cursor = page.nextCursor
     }
     expect(seen).toEqual(["spoken-2", "spoken-1", "quiet-new", "quiet-old"])
+  })
+})
+
+describe("the after key", () => {
+  const row = (sessionId: string, workspaceId: string, created: number, humanTurn?: number) => ({
+    session_id: sessionId,
+    workspace_id: workspaceId,
+    project_id: "prj_1",
+    created_at: created,
+    updated_at: created,
+    ...(humanTurn === undefined ? {} : { last_human_turn_at: humanTurn }),
+  })
+  const query = (limit: number, after?: string) =>
+    parseSessionListQuery(new URL(
+      `http://test.local/session-list?scope=project&projectId=prj_1&sort=human_turn_desc&limit=${limit}${after ? `&after=${after}` : ""}`,
+    ))
+
+  test("round-trips an order key, and refuses one sent with a cursor or malformed", () => {
+    const key = { updatedAt: 5, createdAt: 4, lastHumanTurnAt: 9, sessionRef: "workspace:ws_1:session:ses_1" }
+    expect(query(5, encodeSessionListAfter(key)).after).toEqual(key)
+    const unprompted = { updatedAt: 5, createdAt: 4, sessionRef: "workspace:ws_1:session:ses_2" }
+    expect(query(5, encodeSessionListAfter(unprompted)).after).toEqual(unprompted)
+    expect(() => parseSessionListQuery(new URL(`http://test.local/?after=${encodeSessionListAfter(key)}&cursor=x`)))
+      .toThrow("invalid_session_list_cursor")
+    expect(() => query(5, "not-a-key")).toThrow("invalid_session_list_cursor")
+  })
+
+  test("two stores walked with one shared key give their union in order, with nothing skipped or repeated", () => {
+    const local = [row("l1", "ws_local", 10, 90), row("l2", "ws_local", 20), row("l3", "ws_local", 30), row("l4", "ws_local", 40)]
+    const cloud = [row("c1", "ws_cloud", 15, 95), row("c2", "ws_cloud", 25), row("c3", "ws_cloud", 35)]
+    const readStore = (store: typeof local, after?: string) => buildSessionListResponse({ query: query(2, after), sessions: store })
+    const walked: string[] = []
+    let after: string | undefined
+    for (let pages = 0; pages < 10; pages++) {
+      const pagesRead = [readStore(local, after), readStore(cloud, after)]
+      const merged = buildSessionListResponse({ query: query(2), sessions: pagesRead.flatMap((page) => page.items ?? []).map((item) => ({
+        session_id: item.sessionId,
+        workspace_id: item.workspaceId,
+        project_id: item.projectId,
+        created_at: item.createdAt,
+        updated_at: item.updatedAt,
+        ...(item.lastHumanTurnAt === undefined ? {} : { last_human_turn_at: item.lastHumanTurnAt }),
+      })) })
+      walked.push(...(merged.items ?? []).map((item) => item.sessionId))
+      const more = pagesRead.some((page) => page.nextAfter) || (merged.items?.length ?? 0) < pagesRead.reduce((sum, page) => sum + (page.items?.length ?? 0), 0)
+      const last = merged.items?.at(-1)
+      if (!more || !last) break
+      after = encodeSessionListAfter(last)
+    }
+    expect(walked).toEqual(["c1", "l1", "l4", "c3", "l3", "c2", "l2"])
   })
 })

@@ -88,7 +88,7 @@ test("31 a delete lands during a fetch", async ({ stack, api, app }) => {
   await stream.received("Race fence first page")
   await first.release()
   await expectRailEqualsServer(app, checked)
-  const more = await holdListRead(app, (url) => url.searchParams.has("cursor"))
+  const more = await holdListRead(app, (url) => url.searchParams.has("after"))
   await app.getByTestId("rail-sidebar-session-load-more").first().click()
   await more.computed
   await api.deleteSession(checked.directory, order[3])

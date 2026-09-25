@@ -2060,6 +2060,38 @@ describe("machine session rows", () => {
     expect(await page(alice)).toEqual([])
   })
 
+  test("a superseded serving generation's token publishes nothing", async () => {
+    const { input, publish, page, alice, publisher } = await served()
+    await expect(publish({ rows: [row("ses_before")] })).resolves.toEqual({ accepted: 1, refused: [] })
+
+    const next = await input.hostAccess.acquireHostServingGeneration(await principal(input, publisher.enrollmentId))
+    await machineBeat(input, publisher.enrollmentId, [{ workspaceId: "ws_local", revision: 1 }], { generation: next.generation })
+
+    await expect(publish({ rows: [row("ses_after")] }))
+      .resolves.toMatchObject({ refused: [{ sessionId: "ses_after", reason: "workspace_not_served" }] })
+    await expect(publish({ rows: [row("ses_after")] }, { ...publisher, generation: next.generation }))
+      .resolves.toEqual({ accepted: 1, refused: [] })
+    expect((await page(alice)).map((item) => item.session_id).sort()).toEqual(["ses_after", "ses_before"])
+  })
+
+  test("a workspace reassigned to another host takes no rows from the first host's token", async () => {
+    const { input, publish, alice } = await served()
+    const other = await enrollAccountMachine(input, alice, "machine-other")
+    await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_local", hostId: "machine-other", remoteDirectory: "/srv/other" })
+    const otherMachine = await principal(input, other.enrollmentId)
+    await machineBeat(input, other.enrollmentId, [{ workspaceId: "ws_local", revision: 2 }])
+
+    await expect(publish({ rows: [row("ses_stale_host")] }))
+      .resolves.toMatchObject({ refused: [{ sessionId: "ses_stale_host", reason: "workspace_not_served" }] })
+    await expect(publish({ rows: [row("ses_new_host")] }, {
+      hostId: "machine-other",
+      ownerUserId: alice.principal!.userId,
+      workspaceIds: ["ws_local"],
+      enrollmentId: other.enrollmentId,
+      generation: otherMachine.generation,
+    })).resolves.toEqual({ accepted: 1, refused: [] })
+  })
+
   test("refuses a session id registered in another workspace", async () => {
     const { publish, sessions, alice } = await served()
     await sessions.reserveSession(alice, { operationId: "op_cloud", sessionId: "ses_taken", workspaceId: "ws_cloud", kind: "create" })

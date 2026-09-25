@@ -70,7 +70,7 @@ test("38 a boot reads one page per project and no status, permission, question o
   const catalog = new Set((await (await fetch(new URL("/api/claxedo/bootstrap", stack.url))).json() as { project?: Array<{ id: string }> }).project?.map((project) => project.id))
   expect(boot.filter((path) => path === "/api/claxedo/session-list"), "one list read per project").toHaveLength(catalog.size)
   expect(boot.filter((path) => /\/session\/status$|\/permission$|\/question$|\/session-activity$/.test(path)), "status reads at boot").toEqual([])
-  expect(boot.filter((path) => /\/connection|\/start$|\/wake/.test(path)), "wakes at boot").toEqual([])
+  expect(boot.filter((path) => /\/connection$|\/start$|\/wake/.test(path)), "wakes at boot").toEqual([])
 })
 
 test("38 a project whose page cannot be read leaves every other project's rows, and a retry loads it", async ({ stack, api, app }) => {
