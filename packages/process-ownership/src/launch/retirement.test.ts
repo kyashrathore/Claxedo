@@ -123,7 +123,7 @@ test.skipIf(!posix)("init's group is never signalled, even when its identity ver
   if (!init) throw new Error("pid 1 was not readable")
   const signalled: Array<number> = []
   const kill = spyOn(process, "kill").mockImplementation((pid) => {
-    signalled.push(Number(pid))
+    signalled.push(pid)
     return true
   })
   let outcome: RetirementResult
