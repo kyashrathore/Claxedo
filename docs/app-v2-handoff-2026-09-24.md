@@ -428,6 +428,13 @@ At 19:08 the owner said: finish in-progress work; start no new work.
 - **Fixed in the runtime today (take effect after a daemon restart or rebuild):**
   - a stopped turn publishes the questions and permissions it settles (2b7f71a178);
   - a harness without Goals reports them as not implemented, so its sessions open (09caeef9dd).
+- **No read across workspaces.** Boot makes 3 reads per reachable placement (`/session/status`, `/permission`, `/question`, which is v1's set since 8c551d4757) on top of the session-list page. v1 reads only for workspaces with rows on screen. A single cross-workspace status read on the server would make boot one request.
+- **Left open by the adapter lane:**
+  - `SessionRow.harness` from `config.harness.id`;
+  - the "Untitled session" fallback;
+  - creating a worktree doesn't invalidate the root git queries;
+  - the scripted ACP subagent step sends no tool call, so no live check exercises `toolCallEdges`;
+  - adapter probes need `bun run pi:install` in agent-sdk-runtime first (Playwright's global setup does it, the probe doesn't).
 
 ## Deletion candidates
 
