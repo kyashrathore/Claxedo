@@ -252,7 +252,7 @@ The harness layer holds the most valuable things Claxedo handles: people's provi
 | **The first-party MCP bearer (owner-acting, 24 hours) is sent to remote ACP agents** | `acp/process-manager.ts:343-348` | H-1: the remote filter in P2 |
 | **Stdio MCP servers are sent to remote ACP agents** | `mcp-resolver.ts:284-290` through `process-manager.ts:344` | H-2: the remote filter |
 | **ACP releases a permission before saving the reply** | `acp/index.ts:609-610` | H-3 |
-| **No identity of the actor reaches a transport** | `AgentExecutionBinding`, `PromptInput` | `TurnInput.origin` (C-12) |
+| **No identity of the actor reaches a transport** | `AgentExecutionBinding`, `PromptInput` | `StartInput.owner` for credentials and `TurnInput.origin` for authorization and audit (C-12) |
 | **Reusing today's Pi code on the owner's folder would wipe their login** | `pi/auth.ts:119-121`, `:160` | The owner transport never writes the folder |
 | **Brokered Codex very likely starts without plugins.** An availability gap, not a leak | `codex/broker.ts:47-52` | H-4 |
 | **Three harnesses in the cloud image are installed by unpinned `curl \| bash` installers** (`cursor-agent`, Amp, `droid`). A supply-chain risk | `scripts/sandbox/Dockerfile`, `cloudflare-worker/Dockerfile` | C-13 |
@@ -563,6 +563,9 @@ Every defect the reviews found, all fixed in this plan. Each regression test is 
 | H-13 | Native turns never store the assistant message's tokens: Claude's `result` usage, Codex's `thread/tokenUsage/updated` and Pi's `message_end` usage each become a `session.usage` event with the right message id, and session totals are right, but the stored assistant `info.tokens` stays zero (ACP stores them; found by H13) | Correctness | the runtime projection that folds `session.usage` into stored messages | Usage folds into the assistant message it names, for every harness | P3 | H13.claude, H13.codex, H13.pi |
 | H-14 | A session id isn't owned across workspaces: creating an id that exists in workspace A from workspace B returns 201 and launches a second native session, because the create path resolves workspace-local state before any global ownership check (found by H37) | Correctness | the session create route and session registration in `workspace-runtime` | One owner per session id, checked before any harness launches; the conflict refused with a typed error | P3 | H37.scope |
 | H-15 | Public session routes answer some refusals untyped: a message to an unknown session is a bare 500, and a create with no directory a bare 404 (found by H37) | Correctness | `workspace-runtime` session routes | Typed refusals before any harness is resolved | P3 | H37.typed |
+| H-16 | A harness without todos answers the todo read as an empty list: Pi declares no todos, yet `GET /session/:id/todo` returns `200 []`, because a truthy empty replay returns before the capability check (found by H37) | Correctness | the todo route in `workspace-runtime/src/routes/session-core.ts` | The capability decides first: a typed `unsupported_operation`, which the app's todo reads treat as no todos | P3 | H37.todo |
+| H-17 | Deleting a session whose harness switch is still pending leaves the kept source process running: deletion reaches only the target adapter, not the runtime's release of the kept source (found by H35) | Availability | session deletion in `workspace-runtime` (`releaseKeptHandoffSource` is never reached) | Deletion through the runtime's own session transaction, which retires a kept source | P3 | H35.delete |
+| H-18 | Pi accepts a response whose `command` differs from the pending request, settling that request before Pi's real reply (found by H18) | Correctness | `agent-sdk-runtime/src/harnesses/pi/rpc-process.ts` `receive()` | The Pi RPC transport answers each request only from a reply matching its id and command. It ignores an unknown id (a late reply after a timeout) and a mismatched command, each as a diagnostic, and keeps waiting for the real reply until the request's own timeout | P3 | H18 |
 | C-1 | Hosted never delivers provider credentials to a cloud sandbox | Availability | `supervisor/sandbox.ts:108` is the only caller | The delivery path run on hosted, over the existing brokering | P2 cloud | H19 (local and live), H30 |
 | C-2 | Hosted has no settings store and never sends the settings snapshot; its provider screen is a stub | Availability | `config-sync.ts` (self-hosted only); `routes/hosted/shell.ts:170-175` | A D1 settings store, snapshot push and fan-out on hosted | P2 cloud | H28 |
 | C-3 | OpenCode fails in a hosted sandbox | Availability | `runtime-boot.ts:141-143`, `workspace/runtime.ts:564-568` | Composed when a session asks for it | P2 OpenCode, cloud | H19, OpenCode case |
@@ -574,7 +577,7 @@ Every defect the reviews found, all fixed in this plan. Each regression test is 
 | C-9 | The startup harness key is half-renamed: drivers write `WORKSPACE_RUNTIME_RUNNER`, the runtime reads other names | Correctness | `sandbox-manager/src/runtime-env.ts:51`, `runtime-boot.ts:99-113` | One name, written and read | P2 cloud | H19, default-harness case |
 | C-10 | The sandbox-side secret resolver isn't connected | Availability | `connection-secrets.ts:84` (no callers); `workspace/runtime.ts:920-925` | Connected through the registry | P2 cloud | H32 |
 | C-11 | OpenCode never receives provider credentials in any sandbox | Availability | `opencode-runtime.ts:15` | Providers bound | P2 OpenCode | H19, OpenCode case |
-| C-12 | Accounts are picked per org everywhere, never per person | Correctness, security | `registry.ts:185`; activation carries no actor; the broker's identity is `"operator"` | Owner written, actor carried, credentials chosen by `TurnInput.origin` | P1.3, P2 cloud | H31 |
+| C-12 | Accounts are picked per org everywhere, never per person | Correctness, security | `registry.ts:185`; activation carries no actor; the broker's identity is `"operator"` | Owner written, actor carried, credentials chosen by the session's owner (`StartInput.owner`, `selectSessionCredentials`) | P1.3, P2 cloud | H31 |
 | C-13 | Three agent programs in the image come from unpinned `curl \| bash` installers | Security (supply chain) | the sandbox Dockerfiles | Pinned by version and checksum | P2 cloud | An image check that fails on any unpinned install |
 | C-14 | Unsigned desktop onboarding offers a cloud sandbox the daemon can't create (404), and saves a driver key nothing uses | UX | `execution-step.tsx:54`, `workspace-control-routes.ts:54` | v2 onboarding offers cloud only when a control plane that can create one is connected | App v2 | H34 |
 | T-1 | An e2e spec sets the dead startup key, so it likely tests nothing | Test | `real-session-directory-isolation.spec.ts:96` | Sets the real key, with a red run | P2 cloud, with C-9 | Its own red run |
@@ -1272,20 +1275,20 @@ Every slice deletes what it replaces.
 
 ### P1: contract, broker, Pi
 
-- [ ] **P1.0 Contract frozen:** the operation map complete, every row callable. `Progress:`
+- [ ] **P1.0 Contract frozen:** the operation map complete, every row callable. `Progress:` the contract is in `packages/harness/src/contract/`; the transport lanes' proposals are folded in once by the contract pass (`hv2/contract-pass`).
 - [ ] **P1.1 The runtime host and projection moved** into `workspace-runtime` unchanged, and `spawn` implemented. Wire corpus unchanged. `Progress:` `sse.ts` moved and the `spawn` service built over `process-ownership` (3658717af4). The host, the rest of the projection, `compat-events.ts`, `turn-projection.ts` and `child-event-routing.ts` move in the P3 cutover slice: today's drivers import them, so moving them earlier would invert the dependency.
-- [ ] **P1.2 Broker:** requests with the full contract, grants and ceilings, start requests, subagents, goal plumbing and provider turns, usage, cancel. `Progress:`
-- [ ] **P1.4 Conformance suite** (`packages/harness/src/conformance/`): one set of cases every transport runs through the contract, with the real broker over in-memory runtime ports and the transport's real harness program behind the scripted model server or the scripted ACP agent. It carries the kept invariants the invariant map assigns to transports. `Progress:`
+- [ ] **P1.2 Broker:** requests with the full contract, grants and ceilings, start requests, subagents, goal plumbing and provider turns, usage, cancel. `Progress:` merged (0e3c8e2b99) with two review rounds' fixes (7039146100, ec4f6c5b56). Provider-turn admission, live rebind, abort-aware asks and outside-turn events come with the contract pass.
+- [ ] **P1.4 Conformance suite** (`packages/harness/src/conformance/`): one set of cases every transport runs through the contract, with the real broker over in-memory runtime ports and the transport's real harness program behind the scripted model server or the scripted ACP agent. It carries the kept invariants the invariant map assigns to transports. `Progress:` `runConformance` runs the real Pi 0.85.1, the real Codex 0.133.0 and the scripted ACP agent (process and websocket) through the real broker; permission cases came with ACP (93d3b2e8a9).
 - [ ] **P1.3 Pi transport and profile:**
   - the machine owner's sessions on their own Pi, whoever sends the turn; other owners' sessions brokered;
   - `get_commands`; all nine extension-UI methods (H-5, H-6);
   - the conformance suite green against the pinned Pi; H1, H4, H6, H12, H18 and H20 go green at the P3 cutover.
-  - `Progress:`
+  - `Progress:` the transport (518 lines) and profile (94) merged (dd82818f5a); H18 and H20 red at H-5 and H-6 on today's adapter. Open: a `.js` Pi binary runs whatever `node` is on PATH, `process.env` defaults belong in the composition, and `commands.list` needs a live session.
 
 ### P2: transports, profiles and cloud delivery, in parallel
 
-- [ ] **Claude SDK,** with the `claude-code` profile and its SDK delivery; the conformance suite green; H1–H15 eligible at P3. `Progress:`
-- [ ] **Codex app-server,** with `CODEX_HOME` composed from credentials and the profile (H-4); goals and provider turns; thread recovery; the conformance suite green; its flows at P3. `Progress:`
+- [ ] **Claude SDK,** with the `claude-code` profile and its SDK delivery; the conformance suite green; H1–H15 eligible at P3. `Progress:` the transport (398 lines) and profile (38) are built in `hv2/claude-transport` with the real CLI in the suite; unmerged until the contract pass lands, then native goals, model and effort discovery, attachments, profile parity and its kept rows.
+- [ ] **Codex app-server,** with `CODEX_HOME` composed from credentials and the profile (H-4); goals and provider turns; thread recovery; the conformance suite green; its flows at P3. `Progress:` merged (6c1cba7e5d): 666 lines, the composed home (H-4), projected MCP servers (H-10), the real Codex 0.133.0 in the suite. Open: provider-started goal turns end to end, and kept rows (the grant matrix, request-id concurrency, disposal during initialize, model precedence).
 - [ ] **Cursor SDK,** with a worker per backend binding; the conformance suite green; H25 at P3. `Progress:`
 - [ ] **ACP:**
   - one transport, extension files, `restore/`;
@@ -1295,13 +1298,13 @@ Every slice deletes what it replaces.
   - instance state, not a process-wide counter (H-8);
   - `claude-agent-acp`'s `_meta` delivery;
   - the conformance suite green; H16, H21, H24, H26 and defects H-1, H-2, H-3, H-8 green at P3.
-  - `Progress:`
+  - `Progress:` merged (2ffc7cfc4a): the transport, `restore/`, process and websocket agents in the suite. Open: the draft probe and startup-request retirement (contract pass), streamable-HTTP conformance, optional handshake groups, and its kept rows.
 - [ ] **OpenCode, one path: the embedded engine** (decision 2).
   - The engine moved from `workspace-runtime/src/opencode` behind `HarnessTransport` into `src/transports/opencode-sdk/`, split to the 300-line file limit.
   - Provider credentials in every placement (C-3, C-11), applied without aborting a running turn; requests through the broker.
   - The conformance suite green; H17 at P3.
   - The server adapter and `OPENCODE_URL` go in P4's package deletions (H-7).
-  - `Progress:`
+  - `Progress:` decided 2026-09-25; part 1, the engine moved into the transport's folder, runs in `hv2/opencode-sdk`; part 2, the transport, follows the contract pass.
 - [ ] **Cloud: one repository and hosted delivery (C-1, C-2).**
   - One repository for credentials and settings, D1 and SQLite behind it.
   - The delivery path run on hosted: brokered provider secrets per person, the settings snapshot, fan-out, credential reconciliation.
