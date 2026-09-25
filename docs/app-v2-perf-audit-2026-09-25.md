@@ -6,14 +6,24 @@ Owner rules checked: no element re-renders unless required; no network call unle
 
 ## Summary
 
-v2 is cheaper than v1 on almost every count: idle network 0 vs 10–25 requests per 30 s, boot 15 vs 44 requests, no polling, 5–10× less script time per action, CLS 0. Four problems remain, in this order:
+v2 is cheaper than v1 on almost every count:
+- idle network: 0 vs 9–24 requests per 30 s;
+- boot: 15 vs 44 requests;
+- streaming: 13× fewer Solid computations and 6× fewer requests per turn;
+- no polling;
+- CLS 0.
 
-1. Every session switch leaks the whole previous transcript while an image probe is pending: +12,240 Nodes, +760 listeners and +9.9 MB per 80 switches, against v1's flat line.
-2. Transcript scroll restyles 2.4× as many elements as v1 (11,394 vs 4,696), flushed synchronously in rAF.
-3. A 10 s clock interval runs for the app's lifetime.
-4. Machine-level catalogs are re-fetched on every session mount: 3 requests per switch or Back.
+The problems that remain, worst first:
 
-The ranked list, the suspected items, the regression gates and the per-action baseline are at the end.
+1. **Files search** re-renders the whole tree and fetches directory listings on every keystroke, and clearing it blocks for about 100 ms. This is the worst interaction found. v1 shares the design; v2's clear is heavier.
+2. **Session switching leaks** the previous transcript while an image probe is pending: +12,240 Nodes and +9.9 MB per 80 switches. v1 stays flat.
+3. **A question or permission dock unmounts and re-mounts the whole composer**, with re-fetches (invariant 3 FAIL, shared).
+4. **Isolation leaks while streaming.** A background session's deltas wake 8 frames per second. Status events re-run every rail row's computations. The hidden transcript behind the floating composer keeps computing. The scroll thumb's geometry is written 0.6 times per delta.
+5. **Panel re-mounts** on every switch back to a session with the panel open (34–38 ms). Panel maximize, restore and close restyle about 5,200 elements.
+6. **Transcript scroll restyles 2.4× as many elements** as v1.
+7. **Smaller network waste:** catalogs re-fetched per session mount; the files and git state re-fetched twice at every turn end; harness health polled during turns.
+
+The report opens with the ranked exploratory findings and the isolation invariants (the regression gate), then the per-scenario measurements, the full ranked list, the suspected items, the gates and the per-action baseline.
 
 ## Exploratory findings, ranked (scenario 13)
 
