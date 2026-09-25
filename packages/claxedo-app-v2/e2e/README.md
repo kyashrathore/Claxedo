@@ -102,6 +102,7 @@ Rules the checks enforce:
 | `api` | `ClaxedoApi` | An HTTP client for the daemon at `stack.url` |
 | `app` | `Page` | Playwright's page, already at `stack.url/` |
 | `signed` | `SignedStack` | A stack signed through its own issuer, behind HTTPS (below); a signed flow uses it with Playwright's `page` instead of `stack` |
+| `signedDesktop` | `Desktop` | The Electron app whose account is `signed`: main's `CLAXEDO_CORE_ORIGIN` is the stack's HTTPS front, trusted through `NODE_EXTRA_CA_CERTS` and its certificate's SPKI; the keychain is cut (below). `interceptSystemBrowser(desktop.electron)` replaces main's `shell.openExternal`, so a flow opens the authorization page in Playwright's `page` and the consent redirect reaches main's loopback callback |
 
 ### `stack.daemon`
 
@@ -185,18 +186,18 @@ An `Account` is `{ name, email, password, subject, api, transport }`. Its `api` 
 
 ### Signed stack: next steps
 
-Flows 21, 22, 23 and 36 are on hold (owner, 19:08). What the signed stack lacks for them, and the options:
+Flows 22, 23 and 36 are on hold (owner, 19:08); flow 21 runs through option C below. What the signed stack lacks for them, and the options:
 
 - v1 shows its "Share session" control only for a signed session it reaches as central, through the relay (`session-header.tsx:78-90`). On this stack v1 reaches the owner's folder workspaces as local, so the control never mounts, and a second account's reads are refused with 403 `relay_actor_unverified`.
 - **A: the relay in the harness.** Start `@claxedo/workspace-relay` on a lane port, set `CLAXEDO_WORKSPACE_RELAY_URL`, the resolver token and the keys, and enroll the box as a host, so its workspaces are central. All harness code; the browser still signs in through `/login`. Largest: it re-derives part of `packages/claxedo-server/src/signed-browser-relay-fixture.mjs`.
 - **B: an embedded-issuer mode in that fixture.** It already runs a relay, a host tunnel and a registered host, but signs browsers in only through the test bypass v2 does not have. Less code, but it edits a server test fixture v1's signed-web specs share.
-- **C: flow 21 first. Ruled out (orchestrator, safety line).** The desktop would sign in to this stack through its own sign-in (system browser, loopback callback), which the embedded issuer serves, with no relay. But the isolated desktop still reaches this Mac's login keychain: in the `desktop` fixture, with `HOME` in the spec's data directory, `safeStorage.isEncryptionAvailable()` answers true, so a sign-in would write its storage key into the owner's real keychain. No desktop sign-in flow runs until the fixture cuts the keychain.
+- **C: flow 21 first. Done (owner-approved, 2026-09-25).** The desktop signs in to this stack through its own sign-in (system browser, loopback callback), which the embedded issuer serves, with no relay. The keychain is cut: the desktop fixture launches Electron with `--use-mock-keychain` on macOS, so Chromium's OSCrypt, which `safeStorage` uses, keeps its key in memory instead of the login keychain, and the fixture refuses to start a signed desktop (`signedDesktop`) unless main's command line carries that switch.
 
 So the recommendation is A.
 
-### Keychain: what the desktop fixture does not isolate
+### Keychain
 
-Moving `HOME` hides the login keychain from the `security` tool (it answers 44), but not from Electron's `safeStorage`, which goes through the Security framework and the user's own keychain search list. Any desktop flow that stores a credential through `safeStorage` would touch the owner's keychain. Today no flow does.
+Moving `HOME` hides the login keychain from the `security` tool (it answers 44), but not from Electron's `safeStorage`, which goes through the Security framework and the user's own keychain search list. So on macOS the desktop fixture always passes `--use-mock-keychain`, and a signed desktop (`signedDesktop`) is refused unless `app.commandLine.hasSwitch("use-mock-keychain")` holds in main before the window loads.
 
 ### v1 known bugs (flow 31)
 

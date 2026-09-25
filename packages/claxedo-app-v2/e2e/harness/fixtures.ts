@@ -1,7 +1,7 @@
 import { test as base, expect, type Page, type TestInfo } from "@playwright/test"
 import { ClaxedoApi } from "./api"
 import { appChoice, ensureAppBuilt, signedDistDir, type AppBuild } from "./app"
-import { launchDesktop, type Desktop } from "./desktop"
+import { launchDesktop, type Desktop, type DesktopAccount } from "./desktop"
 import { ensureDesktopBuilt, type DesktopBuild } from "./desktop-build"
 import { unexpectedEgress, type EgressAttempt } from "./egress-guard"
 import { releasePort, reservePort } from "./ports"
@@ -14,6 +14,7 @@ export type HarnessFixtures = {
   app: Page
   desktop: Desktop
   signed: SignedStack
+  signedDesktop: Desktop
 }
 
 type SignedBuild = AppBuild & { frontPort: number }
@@ -79,17 +80,24 @@ export const test = base.extend<HarnessFixtures, HarnessWorkerFixtures>({
     refuseEgress(signed.stack.egress.attempts)
   },
   desktop: async ({ desktopBuild }, use, testInfo) => {
-    const how = desktopBuild.built ? `built in ${desktopBuild.ms} ms` : "already current"
-    testInfo.annotations.push({ type: "desktop build", description: how })
-    const desktop = await launchDesktop({ label: testInfo.title, red: redRun() })
-    try {
-      await use(desktop)
-    } finally {
-      await attachLogOnFailure(testInfo, desktop.egress.attempts, "desktop.log", desktop.log)
-      await desktop.close()
-    }
-    refuseEgress(desktop.egress.attempts)
+    await useDesktop(testInfo, desktopBuild, undefined, use)
+  },
+  signedDesktop: async ({ desktopBuild, signed }, use, testInfo) => {
+    await useDesktop(testInfo, desktopBuild, { coreOrigin: signed.url, trust: signed.trust }, use)
   },
 })
+
+async function useDesktop(testInfo: TestInfo, desktopBuild: DesktopBuild, account: DesktopAccount | undefined, use: (desktop: Desktop) => Promise<void>) {
+  const how = desktopBuild.built ? `built in ${desktopBuild.ms} ms` : "already current"
+  testInfo.annotations.push({ type: "desktop build", description: how })
+  const desktop = await launchDesktop({ label: testInfo.title, red: redRun(), ...(account ? { account } : {}) })
+  try {
+    await use(desktop)
+  } finally {
+    await attachLogOnFailure(testInfo, desktop.egress.attempts, "desktop.log", desktop.log)
+    await desktop.close()
+  }
+  refuseEgress(desktop.egress.attempts)
+}
 
 export { expect }

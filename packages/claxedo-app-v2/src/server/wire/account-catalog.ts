@@ -34,8 +34,13 @@ function accountProject(row: Record<string, unknown>, placements: readonly Place
   }
 }
 
+function remote(record: PlacementRecord): PlacementRecord {
+  const workspaceId = record.route.workspaceId
+  return { placement: record.placement, route: { directory: `workspace:${workspaceId}`, workspaceId, remote: true } }
+}
+
 export function accountCatalogFromWire(rows: readonly unknown[]): AccountCatalog {
-  const placements = placementsFromProjects(rows, undefined)
+  const placements = placementsFromProjects(rows, undefined).map(remote)
   const projects = rows.filter(isRecord).map((row) => accountProject(row, placements)).filter((project) => project !== undefined)
   return { projects, placements }
 }

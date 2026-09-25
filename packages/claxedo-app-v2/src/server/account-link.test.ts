@@ -63,6 +63,11 @@ test("account link: a control-plane project with a local project's own id pairs 
   expect(linked.placements[0]?.placement.projectId).toBe(projectId("local_notes"))
 })
 
+test("account link: every account placement is reached as a remote workspace, whatever the machine that serves it calls it", () => {
+  const nodeRows = accountCatalogFromWire([{ id: "prj_node", worktree: "/srv/app", workspaces: { "/srv/app": { id: "ws_node", directory: "/srv/app", reachable: true } } }])
+  expect(nodeRows.placements[0]?.route).toEqual({ directory: "workspace:ws_node", workspaceId: "ws_node", remote: true })
+})
+
 test("account link: an empty account catalog pairs nothing", () => {
   const linked = linkAccountCatalog(local, accountCatalogFromWire([]))
   expect({ placements: linked.placements, projects: linked.projects }).toEqual({ placements: [], projects: [] })
