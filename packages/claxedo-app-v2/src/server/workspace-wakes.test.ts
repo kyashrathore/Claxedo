@@ -1,6 +1,7 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
 import { createRoot } from "solid-js"
+import { ServerError } from "./errors"
 import { placementId } from "./ids"
 import type { Placement } from "./types"
 import type { RuntimeRoute, Transport } from "./transport"
@@ -11,50 +12,71 @@ import type { Workspaces } from "./workspaces"
 const cloud = placementId("ws_cloud")
 const folder = placementId("ws_folder")
 
+type Start = { resolve: () => void; reject: (error: unknown) => void }
+
 function fixture(running: { value: boolean }) {
-  const starts: string[] = []
-  let finish: () => void = () => undefined
+  const starts: Start[] = []
   const placements: Record<string, Placement> = {
-    ws_cloud: { id: cloud, projectId: "proj" as Placement["projectId"], kind: "cloud", label: "main", reachable: running.value },
+    ws_cloud: { id: cloud, projectId: "proj" as Placement["projectId"], kind: "cloud", label: "main", reachable: false },
     ws_folder: { id: folder, projectId: "proj" as Placement["projectId"], kind: "folder", label: "repo", reachable: false },
   }
   const transport = {
-    startRuntime: (workspaceId: string, options?: StartOptions) => {
-      starts.push(workspaceId)
+    startRuntime: (_workspaceId: string, options?: StartOptions) => {
       options?.onProgress?.({ kind: "provisioning", bootMode: "resume" })
-      return new Promise<void>((resolve) => (finish = resolve))
+      return new Promise<void>((resolve, reject) => starts.push({ resolve, reject }))
     },
   } as Pick<Transport, "startRuntime"> as Transport
   const workspaces = {
     load: async () => ({ declaration: { hostAggregate: false, issuesSessions: true, documents: false }, placements: [] }),
-    byId: (id: string) => ({ ...placements[id]!, reachable: id === "ws_cloud" ? running.value : false }),
+    byId: (id: string) => ({ ...placements[id]!, reachable: id === "ws_cloud" && running.value }),
     locate: async (id: string): Promise<RuntimeRoute> => ({ directory: `workspace:${id}`, workspaceId: id, remote: true }),
     refresh: async () => undefined,
   } as Pick<Workspaces, "load" | "byId" | "locate" | "refresh"> as Workspaces
-  return { starts, finish: () => finish(), wakes: createRoot(() => createWorkspaceWakes(transport, workspaces)) }
+  return { starts, wakes: createRoot(() => createWorkspaceWakes(transport, workspaces)) }
 }
 
 async function settle() {
   for (let tick = 0; tick < 10; tick += 1) await Promise.resolve()
 }
 
-test("wakes: a send to a stopped cloud workspace starts it once, however many sends wait on it, and reports the boot while it wakes", async () => {
+test("wakes: a send to an asleep cloud workspace starts it once, however many sends wait on it, and the workspace reads waking, then live", async () => {
   const running = { value: false }
-  const { starts, finish, wakes } = fixture(running)
+  const { starts, wakes } = fixture(running)
+  expect(wakes.runtime(cloud)).toEqual({ kind: "asleep" })
 
   const first = wakes.wakeIfStopped(cloud)
   const second = wakes.wakeIfStopped(cloud)
   await settle()
-  expect(starts).toEqual(["ws_cloud"])
-  expect(wakes.waking(cloud)).toEqual({ kind: "provisioning", bootMode: "resume" })
+  expect(starts).toHaveLength(1)
+  expect(wakes.runtime(cloud)).toEqual({ kind: "waking", bootMode: "resume" })
 
   running.value = true
-  finish()
+  starts[0]!.resolve()
   await Promise.all([first, second])
-  expect(wakes.waking(cloud)).toBeUndefined()
+  expect(wakes.runtime(cloud)).toEqual({ kind: "live" })
 })
 
-test("wakes: a running workspace, or a placement that is not in the cloud, is never started by a send", async () => {
+test("wakes: a refused start leaves the workspace asleep with the server's reason, and a retry can wake it", async () => {
+  const running = { value: false }
+  const { starts, wakes } = fixture(running)
+  const refusal = new ServerError({ class: "conflict", code: "cloud_runtime_unavailable", message: "Cloud runtime is unavailable" })
+
+  const send = wakes.wakeIfStopped(cloud)
+  await settle()
+  starts[0]!.reject(refusal)
+  await expect(send).rejects.toBe(refusal)
+  expect(wakes.runtime(cloud)).toEqual({ kind: "wakeFailed", error: refusal })
+
+  const retry = wakes.start(cloud)
+  await settle()
+  expect(wakes.runtime(cloud).kind).toBe("waking")
+  running.value = true
+  starts[1]!.resolve()
+  await retry
+  expect(wakes.runtime(cloud)).toEqual({ kind: "live" })
+})
+
+test("wakes: a live workspace, or a placement that is not in the cloud, is never started by a send", async () => {
   const running = { value: true }
   const { starts, wakes } = fixture(running)
 

@@ -57,7 +57,7 @@ export function createCloudApi(transport: Transport, workspaces: Workspaces, wak
       return workspace
     },
     start: wakes.start,
-    waking: wakes.waking,
+    runtime: wakes.runtime,
     stop: async (id) => {
       await transport.json<unknown>(at(id, "/lifecycle/stop"), jsonInit("POST", {}))
     },

@@ -68,6 +68,8 @@ export type SessionScreenTextKey =
   | "sessionScreen.workspace.waking"
   | "sessionScreen.workspace.restoring"
   | "sessionScreen.workspace.resuming"
+  | "sessionScreen.workspace.wakeFailed"
+  | "sessionScreen.workspace.retryWake"
   | "sessionScreen.child.promptDisabled"
   | "sessionScreen.child.backToParent"
   | "command.message.previous"
@@ -144,6 +146,8 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.workspace.waking": "Waking up the workspace…",
   "sessionScreen.workspace.restoring": "Restoring it from a snapshot",
   "sessionScreen.workspace.resuming": "Resuming its sandbox",
+  "sessionScreen.workspace.wakeFailed": "Couldn't wake the workspace.",
+  "sessionScreen.workspace.retryWake": "Try again",
   "sessionScreen.child.promptDisabled": "Subagent sessions cannot be prompted.",
   "sessionScreen.child.backToParent": "Back to main session.",
   "sessionScreen.timeline.command.session.new": "New session",
