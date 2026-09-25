@@ -1214,10 +1214,10 @@ Every slice deletes what it replaces.
   - B flows green on `dev` with targeted red runs.
   - Every defect's regression test recorded red on `dev`, H-4 included.
   - `Progress:`
-- [ ] **P0.5 Invariant map,** per test case, plus every fix commit. It must finish before P0.3 deletes anything. `Progress:` five of six parts: 1,477 cases, of which 516 (35%) guard invariants no flow can observe and stay as focused tests, 501 are covered by flows, 443 by the two corpora, 17 are obsolete. The map adds flows H35 to H37 and lists fix commits no test guards.
+- [x] **P0.5 Invariant map,** per test case, plus every fix commit. It must finish before P0.3 deletes anything. `Progress:` done (`docs/harness-v2/invariant-map/`): 1,655 cases, of which 651 (39%) guard invariants no flow can observe and stay as focused tests, 503 are covered by flows, 483 by the two corpora, 18 are obsolete. The map adds flows H35 to H37 and lists the fix commits no test guards.
 - [ ] **P0.3 Deletions:** the generated Codex protocol (generated at build, fresh-clone run), the harness factories, and the four add-ons with no implementer. `Progress:` the protocol is generated at build from Codex 0.133.0, the version the sandbox runs, with a test that fails when the pins drift (b5ff388d93). The factories and add-ons wait for the invariant map.
 - [x] **P0.4 Checks and ratchet** at decision 12's numbers. `Progress:` `bun run check` in `packages/harness`, with a passing and a violating fixture per check and budgets in `budget.json` (1a1db3486d).
-- [ ] **P0.6 Profiles from docs:**
+- [x] **P0.6 Profiles from docs** (`docs/harness-v2/profiles.md`):
   - format and delivery per transport, with citations;
   - whether projection adds to or replaces the user's setup;
   - `claude-agent-acp`'s `_meta` options;

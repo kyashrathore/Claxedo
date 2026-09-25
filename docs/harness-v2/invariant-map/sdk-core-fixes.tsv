@@ -1,0 +1,106 @@
+sha	subject	covered_by	notes
+7affdc4bec	fix(test): run harness CLIs in tests under a temporary home	test-utils/isolated-home.test.ts > CLI-spawning tests leave a stand-in for the developer's home untouched	The fix added the guard itself
+5d6aa44139	fix(agent-sdk-runtime): split switchHarness so build:packages passes again	runtime.test.ts > routes harness changes from config.update through conversation handoff	Handoff-transaction split; behavior guarded by the handoff rows
+1c2eaa9f8f	Merge branch 'dev' into fix/native-effort-session	harness-effort.test.ts + thought-level-option.test.ts	Merge commit; the branch's substance is effort/model handling, guarded by the effort tests
+9b5e1e06c3	fix(handoff): keep the left harness's session until a message is sent	runtime.test.ts > resumes the left harness's own session and config when it is picked back	Deferred release of the source session
+8846d3947e	Merge branch 'dev' into fix/native-effort-session	harness-effort.test.ts + thought-level-option.test.ts	Merge commit; same branch substance
+883f30b8ab	fix(handoff): mark a harness switch on the message that crosses it	runtime.test.ts > continues across harnesses in a fresh native thread with the completed transcript	One handoff part on the crossing message
+262a1dea0f	fix(launch): a Windows gate child reads its boot token from the registry and its start time under a PowerShell budget	launch/identity.test.ts > Windows boot-identity cases	Windows process identity (file now at packages/process-ownership/src/launch/)
+0a4aa2a28c	fix(recovery): a Stop the harness honours reports the turn saved; inspect finds an idle session's owner	runtime/recovery.test.ts > a harness that ends the turn's stream before answering the cancellation reports the turn saved	
+90ef036b56	fix(helpers): one owner for the Claxedo data and state directories	UNCOVERED	paths.ts is live but has no test; suggested: a test that data and state directory resolution returns one canonical root
+dbb05a9c44	fix(runtime): a configured data directory must be absolute	UNCOVERED	Suggested: sessions.create/config write with a relative data directory is refused before any store write
+7ed6e3edae	fix(launch): the spawn-ownership check tolerates Linux's two whole-second floors	launch/identity.test.ts > process-start flooring cases	Platform timestamp flooring
+cc304f2f88	fix(runtime): give the harness lint residuals owners instead of silencing them	UNCOVERED	Lint/async-caller repair across compat-events and the gate child; no behavior change to guard
+42a0c875fe	fix(runtime): green the harness suites and drop the assertions the seam no longer needs	launch/identity.test.ts + first-party-mcp.secrets.test.ts	Test-repair commit; the secrets test's real IdleReaper double came from it
+2a565c9abc	fix(recovery): a standalone runtime owns its launches under its own scope	launch/launch-gate.test.ts > ownership-scope cases	
+799c3a7740	fix(recovery): a Node host resolves its loader, not the payload's directory	launch/launch-gate.test.ts > gate child resolution cases	
+5504273fcd	fix(recovery): the OpenCode adapter gets the failure sink, and a drop with no owner is kept	runtime/recovery.test.ts > inspection/failure-retention rows	A dropped report with no owner is retained in inspection
+ba2d7e0545	fix(recovery): Codex enumerates every thread a turn owns, each read on its own budget	FLOW(H2)	In-scope touch is only the Codex fake; cleanup-verification substance is the stop flow
+32090eb565	fix(recovery): bound the Goal stop, verify Claude's pid is the one it spawned, and drive the matrix	runtime/recovery.test.ts > Goal mutation that outlives the turn it stops + launch/identity.test.ts	Bounded stop + spawn-time identity check
+f567873959	fix(recovery): Codex reads its inventory before calling a turn's resources clear	FLOW(H2)	Cleanup evidence must come from the provider, not local maps
+d57da36428	fix(recovery): reconciliation never signals the generation that is running	launch/launch-gate.test.ts > generation-scoped ownership rows	The running owner is never reconciled away
+445e296241	fix(build): the gate child is inert on import, and the manifest covers its entrypoints	launch/launch-gate.test.ts > gate activation cases	Importing the child must not run it
+9ddb848b96	fix(recovery): two absent leases are not a match	stores/sqlite.test.ts > a writer carrying no lease is refused, whether or not the session granted one	Also stores/memory.test.ts null-lease row
+9c67fede95	fix(recovery): a settled operation is retained for the contract's window	runtime/recovery.test.ts > for the contract's retention, not for whatever this caller's deadlines were	
+a1f9ab1f42	fix(recovery): a restored reducer holds exactly the leases its snapshot names	stores/memory.test.ts > snapshots rows	Snapshot restore replaces, never merges
+c104b05bff	fix(recovery): the packaged app can find its launch gate, and a wedged fence can be released	launch/launch-gate.test.ts	Gate resolution + fence release
+3c2bd73322	fix(recovery): an operation survives its owner's restart for the callers that hold its receipt	runtime/recovery.test.ts > an operation that outlives the owner that issued it	
+289142b4b0	fix(recovery): the launches a previous owner left behind are found and finished	launch/launch-gate.test.ts + launch/retirement.test.ts	Orphaned-launch reconciliation
+d02520cafb	fix(recovery): the gate's identity is checked, and the rules that hold it are tested	launch/identity.test.ts + launch/launch-gate.test.ts	The commit's own note: three rules now fail if deleted
+b368c4f7b8	fix(recovery): an owner answers, and writes, only what it has the authority to	runtime/recovery.test.ts > the authority a finalization must hold + a lease that moved to another owner	The commit body enumerates the same invariants
+5d01360c03	fix(recovery): a Goal mutation ends the turn it was asked about	runtime/recovery.test.ts > finalizes the turn it was asked about across the harness/provider await	
+ca84657ac5	fix(recovery): a terminal is owned by its own workspace's store	launch/identity.test.ts + launch/launch-gate.test.ts	Per-workspace launch ownership
+8508a2a864	fix(recovery): the SQLite fence is the store's own, and a missing operation says why	stores/sqlite.test.ts > lease-fencing rows + "is not recorded in this store" update refusal	
+27c6834265	fix(security): P-5 subagent bindings come only from the create_subagent result	subagent-admission.test.ts > a harness tool edge naming a claxedo key the host never minted is refused	The grant-keys invariant
+b7d9578ecf	fix(security): P-32 private auth/attachment writes and stdin prompt delivery	FLOW(H20)	In-scope touch is only the Pi RPC fake; substance is Pi credential/attachment privacy (also covered by the pi lane)
+a2178e8268	fix(security): P-40 own-property lookups, file-part url schemes, explicit binding ownership	UNCOVERED	No in-scope file touched; suggested: a file-part with a non-https url scheme is refused at admission
+8fb9dfbdbf	fix(streams): round-8 review — a rebuilt ring is holed where the authority could not decide, terminals heal from the runtime's recorded lifecycle	sse.test.ts > continues a reconstructed principal sequence after its last issued cursor + terminal reserve row	
+6e1f1eb846	fix(streams): round-7 review — a lease outlives the authority's absence, actor-keyed replay scopes, narrowing drops the cursor	sse.test.ts > cursor/gap-detection rows	
+2a6b4a42ae	fix(events): round-2 review fixes — one delivery per connection, one stream per workspace, resume across a re-mint	sse.test.ts > subscribes before replay and deduplicates setup-gap live events	
+e368db53fc	fix(events): round-1 review fixes for the two-stream refactor	sse.test.ts + compat-events.*.test.ts	
+d1363a8e5e	fix(session): an attachment recorded as a synthetic text reads back as its file part	compat-events.parts.test.ts	File-part projection
+845879a8a7	fix(session): a pasted image is recorded as the file part the composer sent	compat-events.parts.test.ts	
+a5b9b03ea3	fix(engine): one module instance of the OpenCode core, no fff indexer, refusals answered 502	UNCOVERED	Guards the embedded OpenCode engine, which the plan deletes; no regression test needed
+71504ab131	fix(session): a lost part frame is repaired by the next history read, not by the end of the turn	sse.test.ts > replay-gap rows	
+25d3f103db	fix(markdown): budget the first-frame parse; one completion branch in the turn runner	runtime.test.ts > publishes completion only after adapter cleanup releases next-turn admission	
+5385778e43	fix(session): a title chosen at create is the caller's; harness write-back never fails a rename	runtime.test.ts > a title chosen at create outranks the prompt placeholder and generation	
+414e646bf8	Revert "fix(transcript): let a skill row open and show what the skill did"	UNCOVERED	In-scope touch is only the Pi RPC fake; the reverted behavior is app-side. Suggested: n/a — substance lives outside this lane
+20fdb18874	fix(pi): recreate a created session whose process died before its file existed	FLOW(H9)	Process dies mid-turn/before bind; substance in the pi lane
+d6dc63590c	fix(projection): give the record parser an explicit row-failure policy	provider-projection.test.ts	Row-failure policy in the projection
+b477ff71b0	fix(runtime): let each harness declare how it takes a session's instruction block	session-instructions.test.ts	The instruction-channel contract this file now pins
+4c4cd31526	fix(pi): align runtime and sandbox pins with 0.85.1	UNCOVERED	Version-pin alignment in fixtures; suggested: none needed — a pin bump
+466090ee59	fix(agent-sdk-runtime): restate two comments the source-shape gate rejects	first-turn-error.test.ts + provider-projection.test.ts	Comment-only restatement
+0f53c6fd67	fix(codex): keep the broker's code out of a rewritten 401	first-turn-error.test.ts > reads the broker's own verdict rows	The stderr rewrite must not strip the broker code
+08076cc9d4	fix(credentials): give every broker refusal a code and a message	first-turn-error.test.ts	The {"error":"code"} body shape the classifier reads
+f9613858a8	fix(credentials): read the broker mounts' own refusal as a harness fault	first-turn-error.test.ts > the loopback_required row	loopback mounts classify as harness, not credential
+e17f76b9d4	fix(harness): keep one workspace's placeholder out of another's turns	FLOW(H21)	Workspace-scoped Pi profile dir — the two-workspaces isolation flow
+b832241284	fix(credentials): strip every companion header a binding owns, and read one account id	FLOW(H19)	Brokered companion-header stripping; sandbox key isolation
+b4e7af1e4c	fix(opencode): let the engine refuse an unusable account, and renew what it holds	UNCOVERED	Embedded-OpenCode-engine credential path; the plan deletes the engine. Suggested: none under the new contract
+52eee917ff	fix(harness): deliver a projection to a driver through applyConfig alone	provider-projection.test.ts + connection-provider.test.ts	Registry-id-keyed credential projection
+9997b6ec05	fix(credentials): classify a brokered failure by the broker's own code	first-turn-error.test.ts > the broker-verdict each table	This commit added that table
+183ccbc157	fix(credentials): renew a placeholder from its own expiry, and refuse an expired one	provider-projection.test.ts	Placeholder renewal scheduling
+88eaa17bba	fix(credentials): name the credential in the refusal a turn reports	provider-projection.test.ts + first-turn-error.test.ts	
+557897e40f	fix(runtime): hand a session on when the prompt it was handed to cannot start	runtime/turn-admission.test.ts > a woken prompt that cannot start hands the session to the next waiter	
+229d03b557	fix(runtime): start queued prompts in order and re-issue them at boot	runtime/turn-admission.test.ts > prompts queued for one session start in the order they were queued	
+ac106c3a3c	fix: clear every test that was red on dev before this branch	runtime.test.ts + runtime/recovery.test.ts	Red-test repair across runtime and goal controller
+c83de27639	fix(subagents): stop phantom rows and dead child tabs in the subagent pipeline	subagent-admission.test.ts	Body: "each is a red test here" — the correlation/dedup rows
+8b1e49671d	fix(runtime): persist permission ceilings across session mutations	permission-ceiling.test.ts + stores/sqlite.test.ts > persists permission modes through reopen	
+656cf95af2	fix(app): retire deleted sessions across desktop restart	FLOW(H27)	Deletion persisting across restart; in-scope touch is compat-events
+da4acdafb4	fix(runtime): publish turn completion after provider cleanup	runtime.test.ts > publishes completion only after adapter cleanup releases next-turn admission	
+d0d2de5812	fix(session): report Claude rate limits as usage limits	first-turn-error.test.ts > usage_limit rows	
+5dd3e9d365	fix(runtime): terminate Goal tools and publish cancellation idle	runtime/recovery.test.ts > Goal mutation rows + runtime.test.ts goal rows	In-scope touch is the Codex fake
+0ad6904970	fix(codex): persist Goal requests and parent autonomous replies	stores/memory.test.ts + stores/sqlite.test.ts	Goal/recovery persistence in both stores
+2729a7f609	fix(claxedo): settle Goal cancellation from interaction docks	runtime/recovery.test.ts > Goal mutation rows	
+f9388371ed	fix(claxedo): persist Claude approval rules across session restarts	stores/sqlite.test.ts > persists permission modes through reopen	
+763c6b1695	fix(runtime): preserve session permission modes across restart	stores/sqlite.test.ts > persists permission modes through reopen and clears them on a harness change	
+aeb4412663	fix(codex): stop terminals owned by the interrupted turn	FLOW(H9)	In-scope touch is the Codex fake; terminal teardown on interruption
+566ae65441	fix(subagents): preserve cross-harness child ownership and presentation	subagent-admission.test.ts + session-model.test.ts	Host-owned child binding stays authoritative
+5e503ddc41	chore(lint): apply oxlint safe autofixes and scope test-file type rules	UNCOVERED	Mechanical lint pass; no behavior to guard
+fde747c235	fix(runtime): resolve review findings on the generic harness cutover	adapter-contract.test.ts + runtime.test.ts	Contract-boundary review fixes
+5cbc0f5e52	fix(opencode): complete the embedded SDK cutover on Node	UNCOVERED	Embedded-engine cutover; the plan deletes it. Suggested: none
+327508fca1	fix(runtime): reconcile generic harness contracts with dev	adapter-contract.test.ts + runtime.test.ts	Contract reconciliation
+85029da478	fix(harness,projection,app): a viewer's reply row is parented on the turn's user message	compat-events.author.test.ts	Reply parenting convention
+80be5590b2	fix(runtime,server): a turn's author travels with its prompt; server characterizations follow their owners	runtime.test.ts > carries the turn author into the harness prompt and omits it when absent	
+77425a57fa	fix(agent-sdk-runtime): carry the turn author into the harness prompt	runtime.test.ts > carries the turn author into the harness prompt	The exact regression this row guards
+202ae9be2f	fix(runtime): admit the host's own turn driver past the eventDelivery guard	runtime/subscription.test.ts + runtime.test.ts subscription rows	Host-internal subscriptions need no identity
+a41bcfe833	fix(runtime): subagent child-session identity is owned by admission	subagent-admission.test.ts > child identity is the strongest correlator	One resolver owns the correlation
+11044d6bb0	wip(review-fixes): phases 2-3 — restored fallbacks, dedup refactors, and branch-wide test repair	live-model-source.test.ts + runtime.test.ts	Branch-wide wip; live-model fallbacks covered by live-model-source tests
+e99e57ff2b	wip(review-fixes): phase 1 — driver, adapter, runtime-store, and app-seam repairs	stores/sqlite.test.ts + runtime.test.ts	wip bundle; store/runtime substance covered
+bb1bab608e	wip(goal-mode): snapshot before automated review-fix pass	process-observer.test.ts + stores/sqlite.test.ts	Checkpoint commit; per-area coverage carried by the named files' tests
+903b2d4dec	checkpoint: desktop signed-mode fixes and live staging repairs	runtime.test.ts + stores/memory.test.ts	Checkpoint commit; substance carried by focused tests
+247b2a7f42	fix(agent-sdk-runtime): enforce authoritative runtime boundaries	runtime.test.ts > executes only through the complete canonical binding and reads history from the store	
+d8b5e2f6fd	fix(multiplayer): harden tenant authority contracts	runtime/recovery.test.ts > who may read and act	
+cc32157715	fix(multiplayer): close tenant authority review gaps	runtime/recovery.test.ts > who may read and act	
+9a3d9241bb	fix(cursor-sdk): require auth and stop static catalog fallbacks	live-model-source.test.ts	No catalog backstop without credentials
+ab68ecd0a0	fix(codex): surface real usage-limit errors instead of placeholders	first-turn-error.test.ts > usage_limit rows	
+cb2ed7229b	fix(session): stop visit/status from reshuffling rail list order	stores/sqlite.test.ts > persists sessions / message-order rows	List-order stability on no-op writes
+a2fc67aa1b	fix(ci): stabilize signed session contracts	UNCOVERED	CI/flake stabilization; suggested: none needed — not a runtime behavior
+5b1f8840d1	fix(session): recover canonical state after interrupted turns	runtime/recovery.test.ts + runtime.test.ts > persisted unfinished turn row	Interrupted-turn canonical state
+429f980029	fix(session): harden harness handoff recovery	runtime.test.ts > keeps a recovering session's own thread and pending context when another harness is picked	
+fa1ae4940e	fix(session): continue across models and harnesses	session-handoff.test.ts + runtime.test.ts handoff rows	
+9ee4c57806	fix(session): continue conversations across models and harnesses	session-handoff.test.ts + runtime.test.ts handoff rows	
+17e2bc83b1	fix(sdk): kill shimmed harness process trees on Windows; explicit temp-dir retry loop	launch/retirement.test.ts + launch/launch-gate.test.ts	Windows process-tree kill; files now under process-ownership
+5b45b1cb0f	fix(tests): clear run 354's unmasked layers — Windows agent-sdk-runtime, port leases, transient desktop fetch	UNCOVERED	Test-infrastructure/CI flake repair; suggested: none needed
+803e41820b	fix(runtime): preserve native harness process ownership	process-observer.test.ts + launch/identity.test.ts	Process-identity ownership
+f69bde5308	fix(runtime): complete cross-harness subagent integration	subagent-admission.test.ts	Cross-harness child ownership matrix
+5295ed7a83	fix(app,server,opencode): stop caching API and event-stream responses	sse.test.ts > SSE responses cannot enter the browser HTTP cache	no-store on SSE responses
