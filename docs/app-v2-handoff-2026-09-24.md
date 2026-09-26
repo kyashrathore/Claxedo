@@ -13,7 +13,7 @@
   - the relay routing identity (8b58832259);
   - the perf-gate static checks and the scroll-thumb fix (35b0600844).
 - **Open, each on its branch:**
-  - `v2/plugin-tools`: the app plugin MCP tools. Codex's review fixes are uncommitted in the worktree (59 files). Resume with `codex exec resume 01a0daa8-305c-79d1-a6d4-a69db923ff0b` after `codex login`.
+  - `v2/plugin-tools`: app plugin MCP authoring reviewed and committed in `1ba04969a0`, integration through `b05be61886` merged in `ff2024064c`. Owner provenance, stale connections, member ancestry, and OpenCode/Pi tool reach are covered. Flow 40 passed three times after the merge; app-v2's 21 checks passed. Acceptance remains blocked by local-server module budgets (110/109 published, 82/80 source) and unchanged V1 theme lint; helper divergence has no growth. See [the command/results report](app-v2-parity/PLUGIN-TOOLS-VERIFICATION.md).
   - `v2/perf-gate`: the runtime budget gate (flow 40, cache-hit), 73def1a4be. It is proven red on five planted regressions and red today on recorded debt. Its `e2e/budgets/README.md` lists the debt by owner: 60 frames per idle window with the panel open, streaming computations outside the transcript, and 32 caches with no measured hit.
   - **Idle frames with the panel open: not a defect.** A trace over 10 idle seconds shows 20 DrawFrames and 48–59 BeginFrames, with 0 paints, style recalcs, rAF callbacks or timers. The panel's Files search input takes focus on open (`src/files/view/files-navigator.tsx`, `autofocus`, as v1's `files-navigator.tsx:251` does), and its caret blinks twice a second. After a blur, frames are 0. The perf gate's idle scenario must blur or budget the caret; `v2/idle-frames` has no commits and can be deleted.
   - The publication benchmark rerun on the final tip needs `v2/bench` (c77feed464) and a quiet host.
@@ -535,7 +535,7 @@ At 19:08 the owner said: finish in-progress work; start no new work.
 
 ## Next steps, in order
 
-0. **Plugins by asking any session** (DECISIONS "Owner, 2026-09-25 12:55"): authoring moves from the `claxedo plugin` CLI to three Claxedo MCP tools (`plugin.create`, `plugin.add`, `plugin.check`), and the skill reaches every harness. Queued after the performance audit. The follow-up design, where plugin UI is A2UI JSON drawn with the app's own components and plugin logic runs sandboxed on every platform, is `docs/plans/2026-09-25-001-app-plugins-declarative-ui-plan.md`. For now app plugins stay as they are: sandboxed frame on the web, in-app on desktop with the user warned.
+0. **Plugins by asking any session** (DECISIONS "Owner, 2026-09-25 12:55"): authoring uses four Claxedo MCP tools (`app_plugin_create`, `app_plugin_add`, `app_plugin_check`, `app_plugin_guide`), and the guide reaches every harness. The plugin CLI is deleted. The follow-up design, where plugin UI is A2UI JSON drawn with the app's own components and plugin logic runs sandboxed on every platform, is `docs/plans/2026-09-25-001-app-plugins-declarative-ui-plan.md`. For now app plugins stay as they are: sandboxed frame on the web, in-app on desktop with the user warned.
 1. **Owner:** test 4480 against 4481. Each difference becomes an inventory row or a DECISIONS line.
 2. **Owner:** sign off `v2/stream-slice`, exp-stream's five transcript fixes (see [Streaming at 60 Hz](#streaming-at-60-hz-exp-stream-2026-09-25)). Then merge it and run the whole corpus.
 3. **The seven panel rows that go to v1:**

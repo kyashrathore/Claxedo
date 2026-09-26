@@ -110,6 +110,12 @@ export type WorkspaceRuntimeStore =
     listSessions(directory: string): AgentSession[]
     getMessagePage?: (id: string, page: AgentMessagePageInput) => AgentMessagePage | undefined
     /**
+     * Whether a relayed turn reached this session or one above it. Optional: a
+     * store with no turn journal cannot say, and a caller asking whether a
+     * session is the machine owner's alone takes that as a no.
+     */
+    relayedTurnInLineage?: (id: string, ownerActorId?: string) => boolean
+    /**
      * How much of one turn this store can account for. Optional: a store with
      * no turn journal of its own has no coverage to report, and the route then
      * answers that nothing here owns the turn.
@@ -2232,6 +2238,10 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     },
     hasSession(sessionId: string) {
       return !!store().getSession(sessionId)
+    },
+    drivenOnlyByMachineUser(sessionId: string, ownerActorId?: string) {
+      const current = store()
+      return !!current.getSession(sessionId) && current.relayedTurnInLineage?.(sessionId, ownerActorId) === false
     },
     frames: hostFrames.tap,
     getSessionConfig: readSessionConfig,

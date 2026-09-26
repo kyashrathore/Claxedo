@@ -457,6 +457,7 @@ describe("POST /heartbeat, machine caller (v3)", () => {
         jti: "jti_htt",
         hostId: "host_1",
         enrollmentId: "enr_1",
+        ownerActorId: "act_owner",
         workspaceIds: ["ws_1"],
         relayUrl: "https://relay.test/",
       },
@@ -476,6 +477,7 @@ describe("POST /heartbeat, machine caller (v3)", () => {
     const body = await (await signedCall(key, "/heartbeat", beat())).json() as { hostTunnel?: Record<string, unknown> }
 
     expect(body.hostTunnel?.enrollmentId).toBe("enr_1")
+    expect(body.hostTunnel?.ownerActorId).toBe("act_owner")
   })
 
   test("carries the machine's sealing key and acked revision to the authority, and the ack relays the pending provider configuration", async () => {

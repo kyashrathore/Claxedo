@@ -150,15 +150,17 @@ export function runtimeToolAccess(tool: McpRuntimeToolName, gating: McpToolGatin
 /**
  * Access for a tool over a surface the session-core inventory does not cover —
  * the managed-process routes, the diff routes, the control plane's workspace
- * routes, the documents service and the Tasks routes. Their write class is
- * declared because no machine-checked table classifies them; anything over a
- * session-core route must take `runtimeToolAccess` instead.
+ * routes, the documents service, the Tasks routes and app plugin authoring.
+ * Their write class is declared because no machine-checked table classifies
+ * them; anything over a session-core route must take `runtimeToolAccess`
+ * instead.
  *
- * `operation` is the Tasks grant a tool needs, and is the one part of an access
- * declaration checked against the client rather than the credential.
+ * `operation` is the Tasks grant a tool needs and `appPlugins` the authoring
+ * grant; they are the parts of an access declaration checked against the
+ * client rather than the credential.
  */
 export function declaredToolAccess(
-  gating: McpToolGating & Readonly<{ write: boolean; operation?: TasksOperation }>,
+  gating: McpToolGating & Readonly<{ write: boolean; operation?: TasksOperation; appPlugins?: true }>,
 ): McpToolAccess {
   return {
     audiences: gating.audiences,
@@ -166,5 +168,6 @@ export function declaredToolAccess(
     scope: gating.scope,
     ...(gating.destructive ? { destructive: true } : {}),
     ...(gating.operation ? { operation: gating.operation } : {}),
+    ...(gating.appPlugins ? { appPlugins: true } : {}),
   }
 }

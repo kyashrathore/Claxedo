@@ -30,7 +30,7 @@ export type ScriptedModelRequest = {
   tools: ScriptedModelTool[]
 }
 
-export type ScriptedToolCall = { name: string; input: unknown; namespace?: string; whenPromptIncludes?: string; autoModeSeverity?: 0 }
+export type ScriptedToolCall = { name: string; input: unknown; namespace?: string; format?: "custom"; whenPromptIncludes?: string; autoModeSeverity?: 0 }
 export type ScriptedError = { marker: string; status: number; message: string; model?: string }
 
 export type ScriptedModelServer = {
@@ -88,7 +88,7 @@ function pendingReply(state: ServerState, request: ScriptedModelBody, prompt: st
   const tool = state.pendingTool
   if (tool && (tool.whenPromptIncludes ? prompt.includes(tool.whenPromptIncludes) : !hasToolResult(request))) {
     state.pendingTool = undefined
-    return { kind: "tool", name: tool.name, input: tool.input, ...(tool.namespace ? { namespace: tool.namespace } : {}) }
+    return { kind: "tool", name: tool.name, input: tool.input, ...(tool.namespace ? { namespace: tool.namespace } : {}), ...(tool.format ? { format: tool.format } : {}) }
   }
   const text = state.pendingText
   if (text && prompt.includes(text.marker)) {

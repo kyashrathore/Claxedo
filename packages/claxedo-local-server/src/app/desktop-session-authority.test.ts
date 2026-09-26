@@ -460,6 +460,7 @@ describe("the composition's own relay actor", () => {
         credential: {
           hostId: "host_machine",
           enrollmentId: "enr_this_machine",
+        ownerActorId: "actor_owner",
           // The tunnel dials this and gets no upgrade; what the test needs from
           // serving is the machine identity a relay token is bound to.
           relayUrl: keySetOrigin,

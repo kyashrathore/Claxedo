@@ -16,6 +16,7 @@ source by the three processes that mount it.
 | `src/tools/registry.ts` | `createToolRegistry(server, ctx)`: one `McpServer` per connection, built for one credential; a tool the credential may not use is never registered, and the handler re-checks anyway. |
 | `src/tools/target.ts`, `src/tools/session-reach.ts` | Where a call may act: the workspace a runtime credential may write to, and the session it may drive — itself and the children it started, read from the runtime's stored rows rather than from the call. |
 | `src/client/` | `ClaxedoMcpClient`, the one client every tool calls; no tool builds a URL. |
+| `src/tools/app-plugins.ts`, `app-plugins-guide.ts` | App plugin authoring (`app_plugin_create`, `app_plugin_check`, `app_plugin_add`, `app_plugin_guide`) and the authoring guide, the one copy every harness reads. |
 
 ## The three mounts
 
@@ -47,6 +48,14 @@ The credential decides which tools `tools/list` returns: a runtime credential
 sees the `runtime` audience, a user credential the `user` audience, and a
 read-only credential sees no write. A tool outside the audience is not
 registered, so calling it anyway is answered by the SDK as an unknown tool.
+
+## App plugins
+
+The `app-plugins` group lets a session make an app plugin for the Claxedo app on the machine it runs on. Its tools exist only when the client carries an `AppPluginsGrant`, and a composition hands one only to a session of the machine's owner, bound to that session's workspace folder: the desktop's local server for a session no relayed turn has reached (its own or an ancestor's), the self-hosted node for a session in a workspace an operator owns. A cloud runtime and the hosted worker serve none. The grant is the daemon's (`packages/claxedo-local-server/src/plugins/authoring.ts`): it scaffolds, checks with `@claxedo/plugin-build`, and registers through the same live-plugin service the `/api/claxedo/live-plugins` route uses.
+
+The guide is served by the tools themselves rather than as a skill, because the MCP server is the one channel every harness that can act on it shares: `app_plugin_create` returns it with the new folder and `app_plugin_guide` returns it on demand. MCP prompts reach a model only when a person invokes them, and not every harness reads resources or server instructions.
+
+A model can be talked into making a plugin by text it reads: a file, a page, a tool result. The guide tells it to act only on the person's request, but the gate is the app: a newly added plugin, or one whose manifest asks for more access, runs only after the person turns it on in a dialog that lists what it may reach.
 
 ## Sessions, elicitation, limits
 

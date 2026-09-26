@@ -1,6 +1,6 @@
 import type { McpServer, ToolCallback } from "@modelcontextprotocol/sdk/server/mcp.js"
 import type { ShapeOutput } from "@modelcontextprotocol/sdk/server/zod-compat.js"
-import { assertToolAccess, McpAccessDenied, toolListed, type McpToolAccess, type McpToolContext } from "../context"
+import { assertToolAccess, McpAccessDenied, toolGrants, toolListed, type McpToolAccess, type McpToolContext } from "../context"
 import { mcpToolRefusal, toCallToolResult, type McpToolResult, type McpToolShape } from "../mcp-tool"
 
 export type McpToolDefinition<Shape extends McpToolShape> = Readonly<{
@@ -39,26 +39,28 @@ export type ToolRegistry = ToolRegistrar & {
   /** Every name registered, listed or not, with its access; the pinned-list tests read this. */
   readonly declared: ReadonlyMap<string, McpToolAccess>
   readonly listed: readonly string[]
+  refresh(): void
 }
 
 /**
  * One server per connection, built for one credential: a tool the credential
- * may not use is not registered, so `tools/list` is already the audience's
- * list, and the handler re-checks anyway because a client can call what it
- * was not shown. Destructive tools require accepted host elicitation; a
+ * may not use is not listed. Session ownership is refreshed on each request;
+ * the handler re-checks because a client can call what it was not shown. Destructive tools require accepted host elicitation; a
  * client that auto-accepts its own elicitation is bound
  * by scope, not by this prompt.
  */
 export function createToolRegistry(server: McpServer, ctx: McpToolContext): ToolRegistry {
   const declared = new Map<string, McpToolAccess>()
   const listed: string[] = []
+  const refreshers: Array<() => void> = []
   return {
     ctx,
     declared,
     listed,
+    refresh() { for (const refresh of refreshers) refresh() },
     tool<Shape extends McpToolShape>(name: string, definition: McpToolDefinition<Shape>, handler: McpToolHandler<Shape>) {
       declared.set(name, definition.access)
-      if (!toolListed(ctx.credential, definition.access, ctx.client.tasks?.operations)) return
+      if (!toolListed(ctx.credential, definition.access, { ...toolGrants(ctx.client), appPlugins: ctx.client.appPlugins !== undefined })) return
       listed.push(name)
       // `ToolCallback<Shape>` is a conditional type over the shape; it resolves
       // only for a concrete shape, so a callback written once for every shape
@@ -67,7 +69,7 @@ export function createToolRegistry(server: McpServer, ctx: McpToolContext): Tool
       // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- see above: `ToolCallback<Shape>` resolves only for a concrete shape.
       const callback = (async (args: ShapeOutput<Shape>) => {
           try {
-            assertToolAccess(ctx.credential, name, definition.access, ctx.client.tasks?.operations)
+            assertToolAccess(ctx.credential, name, definition.access, toolGrants(ctx.client))
             if (definition.access.destructive) {
               const elicit = ctx.elicit
               if (!elicit) return toCallToolResult(mcpToolRefusal(`${name} requires confirmation, but this client does not support elicitation`))
@@ -100,7 +102,7 @@ export function createToolRegistry(server: McpServer, ctx: McpToolContext): Tool
             throw error
           }
         }) as unknown as ToolCallback<Shape>
-      server.registerTool(
+      const registered = server.registerTool(
         name,
         {
           description: definition.description,
@@ -112,6 +114,14 @@ export function createToolRegistry(server: McpServer, ctx: McpToolContext): Tool
         },
         callback,
       )
+      if (definition.access.appPlugins) {
+        const refresh = () => {
+          const allowed = toolListed(ctx.credential, definition.access, toolGrants(ctx.client))
+          if (registered.enabled !== allowed) registered.update({ enabled: allowed })
+        }
+        refreshers.push(refresh)
+        refresh()
+      }
     },
   }
 }

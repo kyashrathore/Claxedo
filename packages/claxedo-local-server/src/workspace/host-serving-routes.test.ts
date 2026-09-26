@@ -24,6 +24,7 @@ const state = () => hostServingState({ sessionAuthority: embeddedWorkspaceRuntim
 type AckHostTunnel = HostTunnelTokenSignerResult & {
   hostId: string
   enrollmentId: string
+  ownerActorId: string
   workspaceIds: string[]
   relayUrl?: string
 }
@@ -35,6 +36,7 @@ function ackCredential(): AckHostTunnel {
     jti: "jti-1",
     hostId: "host_machine-1",
     enrollmentId: "enr_this_machine",
+        ownerActorId: "actor_owner",
     workspaceIds: ["11111111-1111-4111-8111-111111111111"],
     relayUrl: "https://relay.claxedo.test",
   }
@@ -96,6 +98,11 @@ describe("host serving routes", () => {
     const response = await put(null)
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ serving: false, sessionAuthority: "local" })
+  })
+
+  test("refuses a serving credential that cannot name the machine owner", async () => {
+    const { ownerActorId: _owner, ...credential } = ackCredential()
+    expect((await put(credential)).status).toBe(400)
   })
 
   test("rejects a body whose field names are not the producer's", async () => {

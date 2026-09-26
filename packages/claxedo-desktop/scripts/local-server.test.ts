@@ -122,6 +122,12 @@ test("the production build refuses to start without the local-server bundle", as
       path.join(root, "src", "main", "navigation-guard.ts"),
     )
 
+    fs.mkdirSync(path.join(root, "src", "shared"), { recursive: true })
+    fs.copyFileSync(
+      path.join(import.meta.dir, "..", "src", "shared", "desktop-product.ts"),
+      path.join(root, "src", "shared", "desktop-product.ts"),
+    )
+
     const proc = Bun.spawn({
       cmd: ["bun", path.join(root, "scripts", "build.ts")],
       cwd: root,

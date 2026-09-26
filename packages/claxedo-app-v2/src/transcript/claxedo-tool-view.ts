@@ -43,6 +43,10 @@ export const CLAXEDO_TOOL_TITLE_KEYS = {
   workspace_checkpoint: "transcript.claxedoTool.workspace_checkpoint",
   workspace_restore: "transcript.claxedoTool.workspace_restore",
   workspace_lifecycle: "transcript.claxedoTool.workspace_lifecycle",
+  app_plugin_create: "transcript.claxedoTool.app_plugin_create",
+  app_plugin_check: "transcript.claxedoTool.app_plugin_check",
+  app_plugin_add: "transcript.claxedoTool.app_plugin_add",
+  app_plugin_guide: "transcript.claxedoTool.app_plugin_guide",
 } as const satisfies Record<string, TranscriptTextKey>
 
 export type ClaxedoToolName = keyof typeof CLAXEDO_TOOL_TITLE_KEYS

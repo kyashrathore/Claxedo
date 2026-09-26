@@ -1,3 +1,5 @@
+import { firstPartyMcpProvider, type FirstPartyMcpProvider } from "../../first-party-mcp"
+import { configurePiMcp, ensurePiMcpExtension } from "./first-party-mcp"
 import {
   assertPiProvidersBindable,
   piProviderOverrides,
@@ -50,6 +52,7 @@ type Entry = {
   directory: string
   busy: boolean
   idleGeneration: number
+  mcp?: boolean
   idle?: ReturnType<typeof setTimeout>
   /** Set when a retirement did not establish that this launch stopped. */
   retiring?: RetirementResult
@@ -74,6 +77,7 @@ export class PiRpcDriver implements SdkRuntimeDriver {
   readonly instructionChannel = "prompt-prefix" as const
   readonly interactions = { permissions: false, questions: true } as const
   readonly goals
+  private firstPartyMcp?: FirstPartyMcpProvider
   private evaluators = 0
   private readonly goalController
   private projectedProviders?: PiProviderOverrides
@@ -236,6 +240,7 @@ export class PiRpcDriver implements SdkRuntimeDriver {
     this.optionsCache = createPiOptionsCache(this.agentDir)
   }
   async applyConfig(config: Record<string, unknown>) {
+    this.firstPartyMcp = firstPartyMcpProvider(config)
     const auth = providerProjectionRecord(config.auth, {}, { onInvalid: "reject" })
     if (config.auth !== undefined && !auth) {
       throw new Error("pi harness received an auth map that is not provider projections")
@@ -275,10 +280,11 @@ export class PiRpcDriver implements SdkRuntimeDriver {
     const binary = this.options.binary ?? requirePiExecutable()
     await verifyPiExecutable(binary)
     const titleExtension = await ensurePiTitleExtension(this.agentDir)
+    const mcpExtension = await ensurePiMcpExtension(this.agentDir)
     const process = await PiRpcProcess.start({
       binary,
       directory,
-      args: ["--mode", "rpc", "--session-dir", path.join(this.agentDir, "sessions"), "-e", titleExtension, ...args],
+      args: ["--mode", "rpc", "--session-dir", path.join(this.agentDir, "sessions"), "-e", titleExtension, "-e", mcpExtension, ...args],
       env: this.environment(),
       observer: this.host.processObserver,
       // A composition that gave this driver no store still gets a launch
@@ -521,6 +527,10 @@ export class PiRpcDriver implements SdkRuntimeDriver {
         return
       }
       if (!input.input.model) throw new Error("Pi turn requires a resolved model")
+      if (this.firstPartyMcp || entry.mcp) {
+        await configurePiMcp(entry.process, this.firstPartyMcp?.server(input.sessionId))
+        entry.mcp = this.firstPartyMcp !== undefined
+      }
       const model = piModel(input.input.model)
       await process.request("set_model", { provider: model.providerID, modelId: model.modelID }, controlRequestDeadline())
       if (input.input.variant) {

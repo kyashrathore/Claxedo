@@ -87,11 +87,16 @@ describe("the first-party MCP a local session is launched with", () => {
 
     // The runtime audience a machine that has decided nothing serves: a model
     // inside a session drives sessions, subagents, processes and documents,
-    // answers only its own children's questions, and never approves a
-    // permission, rejects a question, deletes a session or touches workspace
-    // compute. No `task_*`: the Tasks group starts off, so the tools are
-    // unregistered and the grant they would act with is never issued.
+    // makes app plugins for this machine's owner, answers only its own
+    // children's questions, and never approves a permission, rejects a
+    // question, deletes a session or touches workspace compute. No `task_*`:
+    // the Tasks group starts off, so the tools are unregistered and the grant
+    // they would act with is never issued.
     expect((await client.listTools()).tools.map((tool) => tool.name).sort()).toEqual([
+      "app_plugin_add",
+      "app_plugin_check",
+      "app_plugin_create",
+      "app_plugin_guide",
       "create_subagent",
       "documents_list",
       "documents_open",
@@ -168,6 +173,35 @@ describe("the first-party MCP a local session is launched with", () => {
       session: { id: sessionId, directory: live.workspace.directory },
       config: { harness: { id: "opencode" } },
     })
+  })
+
+  test("makes an app plugin in its own workspace, checks it red then green, and registers it with this daemon", async () => {
+    const client = await live.connect(sessionId)
+    const directory = path.join(await fs.realpath(live.workspace.directory), ".claxedo", "plugins", "live-notes")
+
+    const created = await callTool(client, "app_plugin_create", { name: "Live notes" })
+    expect(created.isError, toolText(created)).not.toBe(true)
+    expect(toolText(created)).toContain(`at ${directory}: package.json, src/app.tsx.`)
+
+    const entry = path.join(directory, "src", "app.tsx")
+    const scaffold = await fs.readFile(entry, "utf8")
+    await fs.writeFile(entry, scaffold.replace(`label: "Live notes"`, "label: 7"))
+    expect(toolJson(await callTool(client, "app_plugin_check", { directory }))).toMatchObject({
+      ok: false,
+      diagnostics: [{ stage: "typecheck", file: path.join("src", "app.tsx"), code: "TS2322" }],
+    })
+    await fs.writeFile(entry, scaffold)
+    expect(toolJson(await callTool(client, "app_plugin_check", { directory }))).toEqual({ directory, ok: true, pluginId: "live-notes", diagnostics: [] })
+
+    const outside = await callTool(client, "app_plugin_add", { directory: path.dirname(await fs.realpath(live.workspace.directory)) })
+    expect(outside.isError).toBe(true)
+    expect(toolText(outside)).toContain("is outside this session's workspace")
+
+    expect(toolJson(await callTool(client, "app_plugin_add", { directory }))).toMatchObject({ id: "live-notes", status: "ready", directory })
+    const listed = await (await live.call(`http://127.0.0.1:${live.port}/api/claxedo/live-plugins`)).json() as { plugins: Array<{ id: string; status: string; directory: string }> }
+    expect(listed.plugins).toEqual([expect.objectContaining({ id: "live-notes", status: "ready", directory })])
+    const removed = await live.call(`http://127.0.0.1:${live.port}/api/claxedo/live-plugins/live-notes`, { method: "DELETE" })
+    expect(removed.status).toBe(204)
   })
 
   test("admits a real turn through session_send and reads it back through session_transcript", async () => {

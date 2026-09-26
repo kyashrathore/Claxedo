@@ -18,6 +18,7 @@
 
 export {
   configureEmbeddedWorkspaceRuntime,
+  embeddedSessionDrivenOnlyByMachineUser,
   embeddedWorkspaceRuntimeSessionAuthority,
   ensureEmbeddedWorkspaceRuntime,
   onEmbeddedWorkspaceRuntime,
@@ -83,6 +84,7 @@ export { migrateCredentials } from "./credentials/operations/migrate"
 export { dropCopiedHarnessLogins } from "./credentials/operations/drop-copied-harness-logins"
 export { projectLocalSessionMetaFromEvent } from "./session/session-meta-tap"
 
+export { appPluginAuthoring } from "./plugins/authoring"
 export { LivePluginRoutes } from "./plugins/routes"
 export { LIVE_PLUGINS_ROUTE_PATH } from "./plugins/service"
 

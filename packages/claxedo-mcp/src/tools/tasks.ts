@@ -24,6 +24,7 @@ import type { McpToolContext } from "../context"
 import { mcpToolRefusal, type McpToolResult } from "../mcp-tool"
 import type { ToolRegistrar } from "./registry"
 import { declaredToolAccess } from "./inventory"
+import { assertDetachedSessionCreation } from "./session-reach"
 import { targetScope, toolJson, toolTarget } from "./target"
 
 const PROJECT_ARG = {
@@ -209,6 +210,7 @@ export function registerTaskTools(registry: ToolRegistrar) {
       sessionIdFromHandler: true,
     },
     async (args, ctx, addressed) => tasksRefusals(async () => {
+      assertDetachedSessionCreation(ctx)
       const client = tasksClient(ctx)
       const detail = await client.getTask(args.task)
       const slot = args.slot ?? "primary"

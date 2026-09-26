@@ -18,24 +18,11 @@ export function exited(child: ChildProcess): Promise<number | null> {
   return new Promise((resolve) => child.once("exit", (code) => resolve(code)))
 }
 
-function signalProcess(child: ChildProcess, signal: NodeJS.Signals, processGroup: boolean) {
-  if (processGroup && process.platform !== "win32" && child.pid) {
-    try {
-      process.kill(-child.pid, signal)
-      return
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error
-    }
-  }
-  child.kill(signal)
-}
-
 export function stopProcess(
   child: ChildProcess | undefined,
-  options: { processGroup?: boolean; graceMs?: number } = {},
+  options: { graceMs?: number } = {},
 ): Promise<void> {
   if (!child || child.exitCode !== null || child.signalCode) return Promise.resolve()
-  const processGroup = options.processGroup ?? false
   return new Promise<void>((resolve, reject) => {
     const finish = (error?: Error) => {
       clearTimeout(timer)
@@ -47,7 +34,7 @@ export function stopProcess(
     const onError = (error: Error) => finish(error)
     const timer = setTimeout(() => {
       try {
-        signalProcess(child, "SIGKILL", processGroup)
+        child.kill("SIGKILL")
       } catch (error) {
         finish(error as Error)
       }
@@ -55,7 +42,7 @@ export function stopProcess(
     child.once("exit", onExit)
     child.once("error", onError)
     try {
-      signalProcess(child, "SIGTERM", processGroup)
+      child.kill("SIGTERM")
     } catch (error) {
       finish(error as Error)
     }

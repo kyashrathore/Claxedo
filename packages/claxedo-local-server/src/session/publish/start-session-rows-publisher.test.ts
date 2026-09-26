@@ -120,6 +120,7 @@ async function boot() {
               jti: `jti-${credential.token}`,
               hostId: "host_machine-1",
               enrollmentId: "enr_this_machine",
+              ownerActorId: "actor_owner",
               workspaceIds: credential.workspaceIds,
               relayUrl: cp.origin,
             }

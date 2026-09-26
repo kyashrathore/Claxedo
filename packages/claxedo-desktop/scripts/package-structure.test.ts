@@ -134,6 +134,9 @@ function withAsar(
   const packaged = options.includeBoundary === false ? files : [...files, ...requiredPackagedBoundaryEntries(files)]
   const resources = path.join(root, "dist/mac/Claxedo.app/Contents/Resources")
   fakeAsar(path.join(resources, "app.asar"), packaged)
+  const compileCache = path.join(resources, "claxedo-server-compile-cache")
+  fs.mkdirSync(compileCache, { recursive: true })
+  fs.writeFileSync(path.join(compileCache, "manifest.json"), JSON.stringify({ version: 1, entries: [] }))
   if (options.includeSdk !== false) {
     const inventory = Object.entries(embeddedSdkPins()).map(([name, version]) => ({ name, version, directory: name }))
     for (const entry of inventory) {

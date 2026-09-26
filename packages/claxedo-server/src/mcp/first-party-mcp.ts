@@ -38,6 +38,8 @@ export type FirstPartyMcpContributionInput = Readonly<{
    * on a deployment that serves no Tasks, and then the tools are not listed.
    */
   tasks?: (credential: McpCredential) => Promise<McpClientInputs["tasks"]> | McpClientInputs["tasks"]
+  /** App plugin authoring for a session of the machine's owner; absent on a deployment with no daemon of its own. */
+  appPlugins?: (credential: McpCredential) => Promise<McpClientInputs["appPlugins"]> | McpClientInputs["appPlugins"]
   /** Where a write is recorded when no authority can attribute it. */
   auditFallback: (record: ReturnType<typeof mcpAuditRecord>) => void
 }>
@@ -62,6 +64,7 @@ export function firstPartyMcpContribution(input: FirstPartyMcpContributionInput)
     createClient: async (credential, request) => {
       const authorization = request.headers.get("authorization")
       const tasks = await input.tasks?.(credential)
+      const appPlugins = await input.appPlugins?.(credential)
       return input.options.createClient({
         deployment: input.mount,
         credential,
@@ -74,6 +77,7 @@ export function firstPartyMcpContribution(input: FirstPartyMcpContributionInput)
           : {}),
         ...(input.local ? { local: await input.local(credential, request) } : {}),
         ...(tasks ? { tasks } : {}),
+        ...(appPlugins ? { appPlugins } : {}),
       })
     },
     registerTools: input.options.registerTools ?? [],

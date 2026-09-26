@@ -53,7 +53,7 @@ export function promptText(request: ScriptedModelBody) {
 export function hasToolResult(request: ScriptedModelBody) {
   if (request.dialect === "responses") {
     return Array.isArray(request.body.input)
-      && request.body.input.some((item) => asRecord(item)?.type === "function_call_output")
+      && request.body.input.some((item) => ["function_call_output", "custom_tool_call_output"].includes(String(asRecord(item)?.type)))
   }
   if (request.dialect === "messages") {
     return request.body.messages.some((message) =>
@@ -85,14 +85,22 @@ export function modelRequestBody(dialect: ScriptedDialect, input: unknown): Scri
 }
 
 export function modelTools(body: ScriptedModelBody["body"]): ScriptedModelTool[] {
-  return (body.tools ?? []).flatMap((tool) => {
+  const additional = "input" in body && Array.isArray(body.input)
+    ? body.input.flatMap((item) => {
+        const row = asRecord(item)
+        return row?.type === "additional_tools" && Array.isArray(row.tools) ? row.tools : []
+      })
+    : []
+  const flatten = (tools: unknown[], namespace?: string): ScriptedModelTool[] => tools.flatMap((tool) => {
     const row = asRecord(tool)
+    if (row?.type === "namespace" && typeof row.name === "string" && Array.isArray(row.tools)) return flatten(row.tools, row.name)
     const fn = asRecord(row?.function)
     const name = typeof row?.name === "string" ? row.name : typeof fn?.name === "string" ? fn.name : undefined
     if (!name) return []
     const inputSchema = row?.input_schema ?? fn?.parameters
-    return [{ name, ...(inputSchema ? { inputSchema } : {}) }]
+    return [{ name: namespace ? `${namespace}.${name}` : name, ...(inputSchema ? { inputSchema } : {}) }]
   })
+  return flatten([...(body.tools ?? []), ...additional])
 }
 
 export async function readJson(incoming: IncomingMessage): Promise<unknown> {

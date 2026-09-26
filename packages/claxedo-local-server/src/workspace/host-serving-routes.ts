@@ -57,6 +57,7 @@ const servingBody = z
         // enrollment would serve while this daemon told every local client it
         // was some other machine.
         enrollmentId: z.string().min(1).max(200),
+        ownerActorId: z.string().min(1).max(200),
         // Optional in the ack (a deployment without a configured relay mints
         // no URL) but required to SERVE: a credential without a relay to dial
         // is treated as invalid rather than silently unroutable.
@@ -81,7 +82,7 @@ export function HostServingRoutes() {
       const credential = parsed.data.credential
       // Ahead of the tunnel: the first relayed request can arrive as soon as
       // it opens, and it is verified against these.
-      setLocalHostEndpoints(credential ? parsed.data.endpoints : undefined)
+      setLocalHostEndpoints(credential ? { ...parsed.data.endpoints, ownerActorId: credential.ownerActorId } : undefined)
       const state = await setHostServing(
         credential
           ? {

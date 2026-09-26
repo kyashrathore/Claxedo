@@ -1,3 +1,5 @@
+export { connectFirstPartyMcp } from "./first-party-mcp-client"
+export { firstPartyMcpProvider, type FirstPartyMcpProvider } from "./first-party-mcp"
 import fs from "fs"
 import path from "path"
 import type { McpServer } from "@agentclientprotocol/sdk"

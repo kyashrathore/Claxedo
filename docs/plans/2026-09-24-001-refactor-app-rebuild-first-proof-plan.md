@@ -18,7 +18,7 @@ Because the directory gets its old name back, CI workflows and scripts that poin
 - a desktop build target that loads v2;
 - the benchmark driver, moved to the benchmark repo;
 - the first-party plugin packages under `plugins/`;
-- the CLI's `claxedo plugin` commands and the plugin-authoring skill;
+- the four `app_plugin_*` tools and authoring guide on Claxedo MCP;
 - the server additions you approved: the projects route ([The projects route](#the-projects-route)) and the daemon's live-plugin routes ([Live plugins](#live-plugins)).
 
 A harness-status fix is added only if P0.7 shows it is needed and you approve it ([Where today's contract falls short](#where-todays-contract-falls-short)).
@@ -762,7 +762,7 @@ A user asks an agent, inside the app, for a plugin, and the running app picks it
 
 **In Claxedo:**
 1. **One format.** A plugin is a package whose `package.json` has a `claxedo` block: `id`, `name`, the `app` entry, `requires`, and the server routes it may call. The four first-party plugins use the same format.
-2. **Where it lives.** Any folder on the user's machine, registered in place with the daemon (`claxedo plugin add <dir>`). The registry belongs to the machine's owner.
+2. **Where it lives.** A folder inside the session's workspace, registered in place with the daemon by `app_plugin_add`. The registry belongs to the machine's owner.
 3. **Build.** The daemon watches registered folders, builds them with esbuild, and serves each build as a hashed, immutable bundle. The app provides `solid-js`, the plugin API and the v2 kit at runtime, so plugins stay small and look native.
 4. **Notify and swap.** The daemon sends `plugins.changed` on the stream the app already reads.
    - The host activates the new version in a fresh root, then disposes the old one.
@@ -773,9 +773,9 @@ A user asks an agent, inside the app, for a plugin, and the running app picks it
      - The plugin API reaches the iframe over `postMessage`, limited to the manifest's primitives and routes.
      - The host passes the v2 tokens in, so the plugin looks close to native.
 6. **Prompting.**
-   - A `claxedo-plugin-authoring` skill, added to every session, carries the API reference and examples.
-   - The CLI gets `claxedo plugin new | add | dev | check`; `check` typechecks against the API, then builds.
-   - "Make me a plugin that …" ends with the plugin live in the app.
+   - The Claxedo MCP server exposes `app_plugin_create`, `app_plugin_check`, `app_plugin_add`, and `app_plugin_guide` to the machine owner's own sessions across Claude Code, Codex, OpenCode, and Pi.
+   - `app_plugin_check` typechecks against the API, then builds. The guide carries the API reference and examples; there are no plugin CLI commands or harness-specific authoring skills.
+   - "Make me a plugin that …" ends with an in-app confirmation before the plugin runs.
 7. **Safety nets:**
    - an error boundary per contribution;
    - Settings → Plugins lists every plugin, with on, off and remove;
@@ -784,8 +784,8 @@ A user asks an agent, inside the app, for a plugin, and the running app picks it
 8. **Not in this slice:** user plugins running on the server, and plugins for hosted cloud workspaces.
 
 **New daemon pieces:**
-- `GET /api/claxedo/plugins`;
-- the bundle route, `GET /api/claxedo/plugins/:id/:hash/app.js`;
+- `GET /api/claxedo/live-plugins`;
+- the bundle route, `GET /api/claxedo/live-plugins/:id/:hash/app.js`;
 - add and remove;
 - the folder watcher and build;
 - the `plugins.changed` event.

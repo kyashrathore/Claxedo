@@ -119,6 +119,12 @@ export type WorkspaceHost = {
   unresolvedLaunches: () => Promise<LaunchOwnershipRecord[]>
   hasSession: (sessionId: string) => boolean
   /**
+   * The session exists and no turn relayed from another caller reached it or
+   * any session it descends from: everything it was asked came from the
+   * person at this machine or from sessions they drove.
+   */
+  drivenOnlyByMachineUser: (sessionId: string, ownerActorId?: string) => boolean
+  /**
    * Every frame this host's `wr/events` serves, verbatim, for a process
    * hosting several runtimes behind one stream. One object for the host's
    * lifetime, so a consumer may subscribe across `mount`; it is fed by the

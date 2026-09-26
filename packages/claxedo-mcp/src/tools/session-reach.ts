@@ -28,6 +28,12 @@ import { targetScope } from "./target"
  */
 export type SessionReach = "own-children" | "itself-or-own-children"
 
+export function assertDetachedSessionCreation(ctx: McpToolContext): void {
+  if (ctx.credential.kind === "runtime" && ctx.client.appPlugins && !ctx.client.appPlugins.allowed()) {
+    throw new McpAccessDenied("app-plugins", "A member-driven session cannot create a detached root session on the owner's behalf; use subagent_spawn to preserve its parent and permissions")
+  }
+}
+
 export type SessionReachInput = Readonly<{
   ctx: McpToolContext
   tool: string

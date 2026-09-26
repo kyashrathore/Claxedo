@@ -195,8 +195,8 @@ A **Settings → Projects** section lists the projects and holds their managemen
 
 ## Owner, 2026-09-25 12:55: plugins are made by asking any session
 - The owner wants to ask any Claxedo session "add me a plugin" and get it. No CLI, and no harness-specific setup.
-- **Decision:** plugin authoring becomes three tools on the Claxedo MCP server, which every harness connects to: `plugin.create` (scaffold), `plugin.add` (register with the daemon, which builds, watches and notifies the app as today) and `plugin.check` (typecheck and build, returning errors).
-- The authoring skill describes those tools and reaches every harness, not only OpenCode's `config.skills`.
+- **Decision:** plugin authoring becomes four tools on the Claxedo MCP server, which every harness connects to: `app_plugin_create` (scaffold), `app_plugin_add` (register with the daemon, which builds, watches and notifies the app as today), `app_plugin_check` (typecheck and build, returning errors), and `app_plugin_guide` (the authoring guide).
+- The MCP guide describes those tools and reaches Claude Code, Codex, OpenCode, and Pi.
 - The app's one-time confirmation before a new plugin runs stays.
 - The `claxedo plugin` CLI goes once the tools land.
 

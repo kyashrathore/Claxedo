@@ -17,7 +17,7 @@ import type { WorkspaceSummary, WorkspaceTarget } from "../client/contract"
 import type { ToolRegistrar } from "./registry"
 import { runtimeToolAccess } from "./inventory"
 import { recoveryResult } from "./recovery-report"
-import { assertSessionReach } from "./session-reach"
+import { assertDetachedSessionCreation, assertSessionReach } from "./session-reach"
 import { assertWritableTarget, targetScope, toolJson, toolTarget, WORKSPACE_TARGET_SCHEMA, type WorkspaceTargetArgs } from "./target"
 
 /** The harnesses `?nativeHarness=` names; `satisfies` refuses one the runtime does not have. */
@@ -108,6 +108,7 @@ export function registerSessionTools(registry: ToolRegistrar) {
       sessionIdFromHandler: true,
     },
     async (args, ctx, addressed) => {
+      assertDetachedSessionCreation(ctx)
       const placed = await placeSession(ctx, args, args.placement)
       const created = await createSession(ctx, placed.target, {
         ...(args.harness ? { harness: args.harness } : {}),

@@ -1,3 +1,4 @@
+import { SessionAuthoringOwnership } from "./session/authoring-ownership"
 import { randomBytes } from "crypto"
 import fs from "fs"
 import { createRequire } from "module"
@@ -843,6 +844,7 @@ export class RuntimeStore {
   private root: string
   private db: SqliteDatabase
   private subagentAdmission = createMemorySubagentAdmissionStore()
+  private authoringOwnership: SessionAuthoringOwnership
   private closed = false
   // A journaled write may outlive its projection. The session stays gated
   // until the projection catches up, so its checkpoint cannot skip the rows
@@ -878,6 +880,7 @@ export class RuntimeStore {
     this.db.exec("PRAGMA busy_timeout = 5000")
     this.db.exec("PRAGMA foreign_keys = ON")
     this.migrate()
+    this.authoringOwnership = new SessionAuthoringOwnership(this.db)
     this.sessionStarts = sqliteSessionStarts(this.db)
     this.hydrateSubagentAdmission()
     this.replay()
@@ -2269,6 +2272,7 @@ export class RuntimeStore {
           record.grant ?? null,
           record.serviceTier ?? null,
         )
+      this.authoringOwnership.record(record.sessionId, record.actor?.actorId)
       return record
     }, "immediate")
   }
@@ -4350,6 +4354,10 @@ export class RuntimeStore {
       .prepare<MessageProjectionRow>("SELECT id, ord, info_json FROM message WHERE session_id = ? ORDER BY ord ASC")
       .all(sessionId)
     return this.hydrateMessages(sessionId, msgs)
+  }
+
+  relayedTurnInLineage(sessionId: string, ownerActorId?: string): boolean {
+    return this.authoringOwnership.foreignActorInLineage(sessionId, ownerActorId)
   }
 
   getLatestUserMessageId(sessionId: string) {

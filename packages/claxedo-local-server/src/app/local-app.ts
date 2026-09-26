@@ -44,7 +44,7 @@ import { SessionMetaRoutes } from "../session/routes/meta-routes"
 import { LocalWorkspaceRoutes } from "../workspace/routes/resolve-route"
 import { ShellRoutes } from "../shell/routes"
 import { createHostAggregateEventsHandler } from "../shell/host-events"
-import { onEmbeddedWorkspaceRuntime } from "../deployments/local/embedded-workspace-runtime"
+import { embeddedSessionDrivenOnlyByMachineUser, onEmbeddedWorkspaceRuntime } from "../deployments/local/embedded-workspace-runtime"
 import { ProjectRoutes } from "@claxedo/server-core/projects/routes"
 import { localProjectStore, systemRepoAddresses } from "@claxedo/server-core/projects/local-store"
 import { requireSignedControlPlaneRoute } from "../platform/http/control-plane-route-auth"
@@ -81,7 +81,9 @@ import {
   type RecoveryRefusal,
   type RecoveryRequest,
 } from "@claxedo/agent-runtime-contract"
+import { localHostOwnerActorId } from "../deployments/local/host-session-authority"
 import { localDocumentsRoutes } from "./local-documents"
+import { appPluginAuthoring } from "../plugins/authoring"
 import { LivePluginRoutes } from "../plugins/routes"
 import { LIVE_PLUGINS_ROUTE_PATH } from "../plugins/service"
 
@@ -533,6 +535,10 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
         const workspace = await resolveWorkspace({ workspaceId: credential.workspaceId })
         if (!workspace || workspace.kind !== "local") throw new Error("The runtime workspace is unavailable")
         const inProcess = (runtimeRequest: Request) => app.fetch(markInProcessDaemonRequest(runtimeRequest))
+        const { sessionId } = credential
+        const ownerDriven = sessionId
+          ? () => embeddedSessionDrivenOnlyByMachineUser(credential.workspaceId, sessionId, localHostOwnerActorId())
+          : undefined
         const localFetch = inProcessFetch(inProcess, { "x-workspace-id": credential.workspaceId })
         // A session reaches the Tasks routes as itself: the registry issues a
         // handle for its workspace and session, and the capability branch of
@@ -552,6 +558,9 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
           deployment: "loopback",
           credential,
           request,
+          ...(ownerDriven
+            ? { appPlugins: appPluginAuthoring({ roots: [workspace.directory], ownerDriven }) }
+            : {}),
           documents: { fetch: localFetch },
           tasks: {
             fetch: grant ? inProcessFetch(inProcess, { authorization: `Bearer ${grant}` }) : localFetch,
