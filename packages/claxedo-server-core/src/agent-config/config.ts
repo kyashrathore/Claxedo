@@ -2,22 +2,10 @@ import { asRecord } from "@claxedo/helpers/guards"
 import { isSandboxDriverID, type SandboxDriverConfig } from "@claxedo/sandbox-contract"
 import type { HarnessConnectionDescriptor } from "@claxedo/agent-sdk-runtime"
 import type { RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
-import { jsonStringRecord } from "../platform/runtime/lib/json"
 import { createHarnessConnectionSchema, isConnectionId, isNativeHarnessId } from "./connections"
-
-export interface UserMcpServer {
-  type: "stdio" | "remote"
-  command?: string
-  args?: string[]
-  env?: Record<string, string>
-  url?: string
-  headers?: Record<string, string>
-  disabled?: boolean
-}
 
 export interface UserAgentConfig {
   version: 3
-  mcp: Record<string, UserMcpServer>
   connections: Record<string, HarnessConnectionDescriptor>
   defaultConnectionId?: string
   defaultHarness?: Extract<RuntimeHarnessSelection, { kind: "native" }>
@@ -25,7 +13,7 @@ export interface UserAgentConfig {
 }
 
 export function emptyUserAgentConfig(): UserAgentConfig {
-  return { version: 3, mcp: {}, connections: {}, sandbox_driver: {} }
+  return { version: 3, connections: {}, sandbox_driver: {} }
 }
 
 export function validateUserAgentConfig(
@@ -34,11 +22,9 @@ export function validateUserAgentConfig(
 ): UserAgentConfig {
   const row = asRecord(input)
   if (!row || row.version !== 3) throw invalidSchema("version must be exactly 3")
-  const allowed = new Set(["version", "mcp", "connections", "defaultConnectionId", "defaultHarness", "sandbox_driver"])
+  const allowed = new Set(["version", "connections", "defaultConnectionId", "defaultHarness", "sandbox_driver"])
   const unsupported = Object.keys(row).find((key) => !allowed.has(key))
   if (unsupported) throw invalidSchema(`unsupported field: ${unsupported}`)
-  const mcp = asRecord(row.mcp)
-  if (!mcp) throw invalidSchema("mcp must be an object map")
   const validatedConnections = connections.validate(row.connections)
   if (validatedConnections.problems.length > 0) {
     throw invalidSchema(validatedConnections.problems.map((problem) =>
@@ -68,19 +54,6 @@ export function validateUserAgentConfig(
   }
   return {
     version: 3,
-    mcp: Object.fromEntries(Object.entries(mcp).flatMap(([key, value]) => {
-      const server = asRecord(value)
-      if (!server || (server.type !== "stdio" && server.type !== "remote")) return []
-      return [[key, {
-        type: server.type,
-        ...(typeof server.command === "string" ? { command: server.command } : {}),
-        ...(Array.isArray(server.args) && server.args.every((arg) => typeof arg === "string") ? { args: [...server.args] } : {}),
-        ...(jsonStringRecord(server.env) ? { env: jsonStringRecord(server.env) } : {}),
-        ...(typeof server.url === "string" ? { url: server.url } : {}),
-        ...(jsonStringRecord(server.headers) ? { headers: jsonStringRecord(server.headers) } : {}),
-        ...(typeof server.disabled === "boolean" ? { disabled: server.disabled } : {}),
-      } satisfies UserMcpServer]]
-    })),
     connections: validatedConnections.accepted,
     ...(typeof defaultConnectionId === "string" && defaultConnectionId ? { defaultConnectionId } : {}),
     ...(defaultHarness ? { defaultHarness } : {}),

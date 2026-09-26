@@ -11,7 +11,7 @@ import {
 } from "@claxedo/server-core/credentials/native-delivery-plan"
 import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority/services"
 import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "./route-support"
-import { hostedRuntimeFetch } from "./hosted-runtime-fetch"
+import { hostedRuntimeConfigApply } from "./hosted-runtime-fetch"
 
 export function createHostedRuntimeDelivery(input: {
   authority: WorkspaceAuthority
@@ -20,6 +20,7 @@ export function createHostedRuntimeDelivery(input: {
   driver: SandboxDriver
   settings: UserAgentConfigRepository
   credentials(orgId: string): ControlPlaneCredentials
+  signingEnv: Record<string, string | undefined>
 }) {
   const owner = async (workspaceId: string) => {
     const person = await input.authority.resolveWorkspaceOwner?.(workspaceId)
@@ -41,24 +42,17 @@ export function createHostedRuntimeDelivery(input: {
   const snapshot = async (workspaceId: string) => {
     const person = await owner(workspaceId)
     const config = await userAgentConfigStore(input.settings, person.userId).read()
+    const auth = nativeProviderAuth(await deliveries(person.orgId))
     return {
       version: 4 as const,
       mcp: {},
       connections: Object.values(config.connections),
       ...(explicitDefaultHarness(config) ? { defaultHarness: explicitDefaultHarness(config) } : {}),
-      auth: nativeProviderAuth(await deliveries(person.orgId)),
+      auth,
     }
   }
   const push = async (workspaceId: string) => {
-    const person = await owner(workspaceId)
-    const response = await hostedRuntimeFetch(
-      input.services,
-      workspaceId,
-      person,
-      "/api/wr/config",
-      { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(await snapshot(workspaceId)) },
-    )
-    if (!response.ok) throw new Error(`hosted runtime config push failed: ${response.status} ${await response.text()}`)
+    await hostedRuntimeConfigApply(input.services, workspaceId, await snapshot(workspaceId), input.signingEnv)
   }
   const prepare = async ({ workspaceId }: WorkspaceRuntimeContext): Promise<WorkspaceRuntimePreparation> => {
     const person = await owner(workspaceId)

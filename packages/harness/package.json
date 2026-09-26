@@ -5,6 +5,12 @@
   "type": "module",
   "license": "MIT",
   "exports": {
+    "./providers": {
+      "development": "./src/registry/providers/index.ts",
+      "bun": "./src/registry/providers/index.ts",
+      "types": "./dist/registry/providers/index.d.ts",
+      "import": "./dist/registry/providers/index.js"
+    },
     "./contract": {
       "development": "./src/contract/index.ts",
       "bun": "./src/contract/index.ts",

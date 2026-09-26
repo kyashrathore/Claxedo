@@ -209,7 +209,6 @@ beforeEach(async () => {
   configureAgentConfig({ connectionProviders: [provider] })
   await saveUserConfig({
     version: 3,
-    mcp: {},
     connections: {
       [CONNECTION_ID]: {
         connectionId: CONNECTION_ID,

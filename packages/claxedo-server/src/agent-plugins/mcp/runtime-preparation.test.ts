@@ -71,6 +71,7 @@ async function subject(input: {
   brokering?: "native" | "none"
   connected?: boolean
   multipleIssuers?: boolean
+  withLocalCommand?: boolean
 } = {}) {
   const env = await signingEnv()
   const resolveConnection = vi.fn(async () => input.connected === false
@@ -102,7 +103,10 @@ async function subject(input: {
           root: ".",
           manifest: { $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", name: "docs" },
           skills: [{ name: "docs", description: "Docs", path: "skills/docs/SKILL.md" }],
-          mcp: { status: "valid", servers: [{ name: "docs", type: "streamable-http", url: "https://mcp.example/mcp" }] },
+          mcp: { status: "valid", servers: [
+            { name: "docs", type: "streamable-http", url: "https://mcp.example/mcp" },
+            ...(input.withLocalCommand ? [{ name: "local", type: "stdio" as const, command: "missing-from-image" }] : []),
+          ] },
         },
       }),
     },
@@ -122,6 +126,16 @@ async function subject(input: {
 }
 
 describe("hosted MCP runtime preparation", () => {
+  test("reports an unavailable local command without minting a credential", async () => {
+    const value = await subject({ withLocalCommand: true })
+    const plan = agentPluginMcpRuntimePlan(value.preparation)
+    const local = plan.mcpServers.filter((server) => server.serverName === "local")
+    expect(local).toHaveLength(2)
+    expect(local.every((server) => server.state === "unavailable" && server.reason === "mcp_transport_unsupported")).toBe(true)
+    expect(value.preparation.secrets).toHaveLength(2)
+    expect(value.oauthFetch).toHaveBeenCalled()
+  })
+
   test("delivers one unreadable, exact-scope gateway credential per active harness", async () => {
     const value = await subject()
     expect(value.preparation.secrets).toHaveLength(2)

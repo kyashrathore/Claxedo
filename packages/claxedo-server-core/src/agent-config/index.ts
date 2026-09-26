@@ -2,7 +2,6 @@
  * Centralized Agent Configuration
  *
  * Stores trusted operator configuration for agent runtimes:
- *   - User MCP servers
  *   - Slash commands (markdown files in ~/.claxedo/commands/)
  *
  * Command .md files at:     ~/.claxedo/commands/<name>.md
@@ -13,13 +12,6 @@ import * as path from "path"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import type { SandboxDriverConfig } from "@claxedo/sandbox-contract"
-import {
-  loadManagedMcpState,
-  harnessAgent,
-  resolveEffectiveMcp,
-  resolveUserMcp,
-  type ResolvedMcpServer,
-} from "@claxedo/workspace-runtime/config"
 import {
   createHarnessConnectionSchema,
   explicitDefaultHarness,
@@ -57,7 +49,7 @@ import type { SandboxSecretBrokering } from "../credentials/native-delivery"
 import { invalidSchema, sandboxDriverConfig, validateUserAgentConfig, type UserAgentConfig } from "./config"
 import { sqliteUserAgentConfigRepository } from "./sqlite-repository"
 export { sandboxDriverConfig } from "./config"
-export type { UserAgentConfig, UserMcpServer } from "./config"
+export type { UserAgentConfig } from "./config"
 export type {
   ConnectionSecretUnavailableReason,
   PublicConnectionUnavailable,
@@ -81,7 +73,7 @@ function commandDir() {
 
 export interface RuntimeConfigSnapshot {
   version: 4
-  mcp: Record<string, ResolvedMcpServer>
+  mcp: Record<string, never>
   connections: HarnessConnectionDescriptor[]
   defaultHarness?: RuntimeHarnessSelection
   /** Broker endpoints and placeholders; the credential values stay with the authority. */
@@ -201,7 +193,6 @@ export async function saveUserConfig(config: UserAgentConfig): Promise<void> {
   }
   await sqliteUserAgentConfigRepository(harnessConnectionSchema).write(LOCAL_CONFIG_ID, next)
   log.info("Saved user agent config", {
-    mcpServers: Object.keys(next.mcp),
     connections: Object.keys(next.connections),
   })
 }
@@ -217,26 +208,6 @@ export function defaultHarness(
   config?: UserAgentConfig,
 ): RuntimeHarnessSelection | undefined {
   return config ? explicitDefaultHarness(config) : undefined
-}
-
-async function runtimeMcp(
-  config: UserAgentConfig,
-  harness: RuntimeHarnessSelection | undefined,
-  scope: RuntimeConfigSecretScope,
-) {
-  const userMcp = scope === "shared" ? {} : config.mcp
-  if (!harness) return resolveUserMcp(userMcp)
-  if (harness.kind === "connection") return resolveUserMcp(userMcp)
-  const agent = harnessAgent(harness.harnessId)
-  if (!agent) return resolveUserMcp(userMcp)
-  const state = await loadManagedMcpState()
-  return resolveEffectiveMcp({
-    state,
-    agent,
-    control: "managed",
-    userMcp,
-    strict: true,
-  }).mcp
 }
 
 export async function getRuntimeConfigSnapshot(
@@ -258,7 +229,6 @@ export async function getRuntimeConfigSnapshot(
     }
   }
   const scope = options.secretScope ?? "local"
-  const mcp = await runtimeMcp(config, selected, scope)
   const auth = await agentConfigOptions.projectAuth?.({
     scope,
     ...(options.orgId ? { orgId: options.orgId } : {}),
@@ -268,7 +238,7 @@ export async function getRuntimeConfigSnapshot(
   const harnessLaunch = await agentConfigOptions.harnessLaunch?.()
   return {
     version: 4,
-    mcp,
+    mcp: {},
     connections: Object.values(config.connections),
     ...(selected ? { defaultHarness: selected } : {}),
     auth,

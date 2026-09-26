@@ -239,6 +239,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
         driver: input.sandbox.driver,
         settings,
         credentials: plane.orgCredentials,
+        signingEnv: input.env,
       })
     : undefined
 

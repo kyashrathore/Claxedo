@@ -6,10 +6,8 @@ import {
   AgentConfigMutationError,
   connectionRows,
   deleteConnection,
-  deleteMcpServer,
   parseHarnessSelection,
   putConnection,
-  putMcpServer,
   setDefaultHarness,
 } from "@claxedo/server-core/agent-config/mutations"
 import { explicitDefaultHarness } from "@claxedo/server-core/agent-config/connections"
@@ -62,19 +60,6 @@ export function hostedAgentConfigRoutes(input: {
       await deleteConnection(store, c.req.param("connectionId"))
       return { ok: true }
     }))
-    .get("/mcp", async (c) => {
-      const scope = await storeFor(c)
-      if ("response" in scope) return scope.response
-      return c.json((await scope.store.read()).mcp)
-    })
-    .post("/mcp/:name", (c) => mutation(c, async ({ store }) => {
-      await putMcpServer(store, c.req.param("name"), await c.req.json())
-      return { ok: true, name: c.req.param("name") }
-    }))
-    .delete("/mcp/:name", (c) => mutation(c, async ({ store }) => {
-      await deleteMcpServer(store, c.req.param("name"))
-      return { ok: true }
-    }))
     .post("/harness", (c) => mutation(c, async ({ store }) => {
       const body = asRecord(await c.req.json())
       const selection = parseHarnessSelection(body?.harness)
@@ -89,7 +74,7 @@ export function hostedAgentConfigRoutes(input: {
       const scope = await storeFor(c)
       if ("response" in scope) return scope.response
       const config = await scope.store.read()
-      return c.json({ version: 4, mcp: config.mcp, connections: Object.values(config.connections),
+      return c.json({ version: 4, connections: Object.values(config.connections),
         ...(explicitDefaultHarness(config) ? { defaultHarness: explicitDefaultHarness(config) } : {}) })
     })
 }

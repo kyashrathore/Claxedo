@@ -1,30 +1,51 @@
-import type { Workspace } from "@claxedo/server-core/workspace/store/index"
-import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
+import { mintSupervisorBackplaneToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
+import { CONTROL_PLANE_RUNTIME_ACTOR } from "@claxedo/server-core/platform/auth/runtime-actor"
+import { createWorkspaceRuntimeClient } from "@claxedo/workspace-runtime/client"
+import type { RuntimeSnapshot } from "@claxedo/workspace-runtime/config"
 import type { ControlPlaneServices } from "../authority/services"
 
-export function hostedRuntimeFetch(
+async function readyTarget(services: ControlPlaneServices, workspaceId: string) {
+  const manager = services.sandbox.sandboxManager
+  if (!manager) throw new Error("hosted sandbox manager is unavailable")
+  const target = await manager.target(workspaceId)
+  if (target.status !== "ready") throw new Error(`hosted sandbox ${workspaceId} is unavailable`)
+  return target
+}
+
+export async function hostedRuntimeFetch(
   services: ControlPlaneServices,
   workspaceId: string,
   identity: { orgId: string; projectId: string },
   requestPath: string,
   init: RequestInit,
 ) {
-  const workspace: Workspace = {
-    id: workspaceId,
-    org_id: identity.orgId,
-    project_id: identity.projectId,
-    directory: "/workspace",
-    kind: "cloud",
-    created_at: 0,
-    updated_at: 0,
-  }
-  return sandboxFetch(workspace, requestPath, init, {
-    ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
-    ...(services.relay.provider ? { relayProvider: services.relay.provider } : {}),
-    ...(services.defaultHomeRegion ? { defaultHomeRegion: services.defaultHomeRegion } : {}),
+  const target = await readyTarget(services, workspaceId)
+  const relay = services.relay.provider
+  if (!relay) throw new Error("hosted runtime token issuer is unavailable")
+  const token = await relay.mintRuntimeAccessToken({
+    workspaceId,
+    hostId: target.hostId,
     orgId: identity.orgId,
-    runtimeActor: { principalKind: "service", actorId: "control-plane", actorKind: "agent" },
+    ...CONTROL_PLANE_RUNTIME_ACTOR,
     role: "owner",
-    resume: false,
+    ttlMs: 10 * 60_000,
   })
+  const headers = new Headers(init.headers)
+  headers.set("authorization", `Bearer ${token.token}`)
+  return fetch(`${target.url.replace(/\/+$/, "")}${requestPath}`, { ...init, headers })
+}
+
+export async function hostedRuntimeConfigApply(
+  services: ControlPlaneServices,
+  workspaceId: string,
+  snapshot: RuntimeSnapshot,
+  signingEnv: Record<string, string | undefined>,
+) {
+  const target = await readyTarget(services, workspaceId)
+  const token = await mintSupervisorBackplaneToken({
+    workspaceId,
+    hostId: target.hostId,
+    subject: "workspace-supervisor",
+  }, signingEnv)
+  await createWorkspaceRuntimeClient({ baseUrl: target.url }).applyConfig(snapshot, { token: token.supervisorBackplaneToken })
 }

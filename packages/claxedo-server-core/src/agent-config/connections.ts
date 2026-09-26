@@ -1,17 +1,12 @@
 import { asRecord } from "@claxedo/helpers/guards"
-import {
-  AGENT_HARNESS_IDS,
-  ConnectionProviderError,
-  createAcpConnectionProvider,
-  createConnectionProviderRegistry,
-  type HarnessConnectionDescriptor,
-  type HarnessConnectionRef,
-} from "@claxedo/agent-sdk-runtime"
+import { stringRecord } from "@claxedo/helpers"
+import { AGENT_HARNESS_IDS, isAcpConnectionId, type HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
+import { createAcpProvider } from "@claxedo/harness/providers"
+import type { HarnessConnectionDescriptor } from "@claxedo/harness/providers"
 import {
   type RuntimeHarnessSelection,
   type RuntimeNativeHarnessId,
 } from "@claxedo/workspace-runtime/config"
-import { jsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 
 export type {
   HarnessConnectionDescriptor,
@@ -25,7 +20,44 @@ export type HarnessConnectionProblem = {
 }
 
 type NativeHarnessSelection = Extract<RuntimeHarnessSelection, { kind: "native" }>
-type ConnectionProviderRegistry = ReturnType<typeof createConnectionProviderRegistry>
+type ConnectionProviderRegistry = {
+  validateDescriptor(input: HarnessConnectionDescriptor): HarnessConnectionDescriptor
+  publicRef(input: HarnessConnectionDescriptor): HarnessConnectionRef
+  assertRevision(input: HarnessConnectionDescriptor, previous: HarnessConnectionDescriptor): void
+}
+
+function defaultConnectionProviderRegistry(): ConnectionProviderRegistry {
+  const provider = createAcpProvider()
+  const validateDescriptor = (input: HarnessConnectionDescriptor) => {
+    if (!isAcpConnectionId(input.connectionId)) throw new Error("connectionId must be a lowercase session harness slug of at most 64 characters")
+    if (!Number.isSafeInteger(input.configRevision) || input.configRevision < 1) throw new Error("configRevision must be a positive safe integer")
+    if (input.providerKey !== provider.providerKey) throw new Error(`Connection provider ${input.providerKey} is not installed`)
+    return { ...input, config: provider.validateConfig(input.config) }
+  }
+  return {
+    validateDescriptor,
+    publicRef(input) {
+      const descriptor = validateDescriptor(input)
+      const projection = provider.project(descriptor.config)
+      return { connectionId: descriptor.connectionId, enabled: descriptor.enabled,
+        label: projection.label, readiness: descriptor.enabled ? projection.readiness : "disabled",
+        capabilities: projection.capabilities,
+        ...(projection.modelSelection ? { modelSelection: projection.modelSelection } : {}) }
+    },
+    assertRevision(input, previous) {
+      if (input.connectionId !== previous.connectionId || input.providerKey !== previous.providerKey) {
+        throw new Error("connectionId and providerKey are immutable")
+      }
+      if (input.configRevision < previous.configRevision) throw new Error(`Connection ${input.connectionId} config revision moved backwards`)
+      const next = validateDescriptor(input)
+      const prior = validateDescriptor(previous)
+      if (provider.immutableIdentity(next.config)
+        !== provider.immutableIdentity(prior.config)) {
+        throw new Error(`Connection ${input.connectionId} cannot be retargeted; create a new connectionId`)
+      }
+    },
+  }
+}
 
 const DESCRIPTOR_KEYS = new Set([
   "connectionId",
@@ -41,7 +73,7 @@ const DESCRIPTOR_KEYS = new Set([
  * agent-sdk providers own descriptor config validation and public projection.
  */
 export function createHarnessConnectionSchema(
-  registry: ConnectionProviderRegistry = createConnectionProviderRegistry([createAcpConnectionProvider()]),
+  registry: ConnectionProviderRegistry = defaultConnectionProviderRegistry(),
 ) {
   function validate(input: unknown): {
     accepted: Record<string, HarnessConnectionDescriptor>
@@ -140,8 +172,11 @@ function descriptorCandidate(
   if (typeof row.providerKey !== "string") return { problem: "providerKey must be a non-empty opaque string" }
   if (typeof row.configRevision !== "number") return { problem: "configRevision must be a non-negative safe integer" }
   if (typeof row.enabled !== "boolean") return { problem: "enabled must be a boolean" }
-  const secretRefs = stringRecord(row.secretRefs)
-  if (row.secretRefs !== undefined && !secretRefs) return { problem: "secretRefs must be a string map" }
+  const refs = asRecord(row.secretRefs)
+  const secretRefs = refs ? stringRecord(refs, { requireAllStrings: true }) : undefined
+  if (row.secretRefs !== undefined && (!refs || Object.keys(secretRefs ?? {}).length !== Object.keys(refs).length)) {
+    return { problem: "secretRefs must be a string map" }
+  }
   return {
     descriptor: {
       connectionId: row.connectionId,
@@ -155,17 +190,5 @@ function descriptorCandidate(
 }
 
 function providerProblem(error: unknown) {
-  if (error instanceof ConnectionProviderError) return error.message
   return error instanceof Error ? error.message : "connection descriptor is invalid"
-}
-
-function stringRecord(input: unknown): Record<string, string> | undefined {
-  const row = jsonRecord(input)
-  if (!row) return undefined
-  const out: Record<string, string> = {}
-  for (const [key, value] of Object.entries(row)) {
-    if (typeof value !== "string") return undefined
-    out[key] = value
-  }
-  return out
 }

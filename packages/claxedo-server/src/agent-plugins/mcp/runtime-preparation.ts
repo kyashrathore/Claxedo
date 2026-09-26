@@ -235,7 +235,18 @@ export function createHostedMcpRuntimePreparer(input: HostedMcpRuntimePreparerIn
     for (const { selection, artifact } of loaded) {
       if (artifact.plugin.mcp.status !== "valid") continue
       for (const server of artifact.plugin.mcp.servers) {
-        if (server.type !== "streamable-http") continue
+        if (server.type !== "streamable-http") {
+          for (const harnessId of selection.harnessIds) {
+            mcpServers.push(unavailable({
+              pluginInstanceId: selection.pluginInstanceId,
+              artifactDigest: selection.artifactDigest,
+              harnessId,
+              serverName: server.name,
+              reason: "mcp_transport_unsupported",
+            }))
+          }
+          continue
+        }
         const integrationId = await mcpOAuthIntegrationId({
           pluginInstanceId: selection.pluginInstanceId,
           serverName: server.name,

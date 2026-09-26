@@ -55,7 +55,6 @@ describe("runtime config secret scoping", () => {
     await updateCredentialStatus(revoked.id, "revoked", undefined, "org-a")
     await saveUserConfig({
       version: 3,
-      mcp: {},
       connections: {
         external: {
           connectionId: "external",
@@ -97,7 +96,7 @@ describe("runtime config secret scoping", () => {
       expiresAt: 1_800_000_000_000,
     }
     const calls: unknown[] = []
-    await saveUserConfig({ version: 3, mcp: {}, connections: {} })
+    await saveUserConfig({ version: 3, connections: {} })
     configureAgentConfig({
       projectAuth: async (input): Promise<Record<string, typeof projection>> => {
         calls.push(input)
@@ -122,7 +121,7 @@ describe("runtime config secret scoping", () => {
       scope: "shared", consent: { at: Date.now(), surface: "cli" },
     }, "org-a")
     expect(setActiveCredentials([marked.id], "org-a")).toMatchObject({ ok: true })
-    await saveUserConfig({ version: 3, mcp: {}, connections: {} })
+    await saveUserConfig({ version: 3, connections: {} })
     configureAgentConfig({ projectAuth: selfHostedCredentialAuthority() })
 
     const own = await getRuntimeConfigSnapshot(undefined, { secretScope: "shared", orgId: "org-a", workspaceId: "ws_1", secretBrokering: "native" })
@@ -140,37 +139,4 @@ describe("runtime config secret scoping", () => {
     expect(JSON.stringify([own, foreign])).not.toContain("sk-ant-")
   })
 
-  test("shared runtime snapshots exclude local-only MCP overlays", async () => {
-    await saveUserConfig({
-      version: 3,
-      connections: {},
-      mcp: {
-        "local-stdio": {
-          type: "stdio",
-          command: "node",
-          args: ["local.js"],
-          env: { LOCAL_SECRET: "local-secret" },
-        },
-        "local-remote": {
-          type: "remote",
-          url: "https://mcp.example.test",
-          headers: { Authorization: "Bearer local-secret" },
-        },
-      },
-    })
-
-    const shared = await getRuntimeConfigSnapshot(undefined, { secretScope: "shared" })
-    expect(shared.mcp["local-stdio"]).toBeUndefined()
-    expect(shared.mcp["local-remote"]).toBeUndefined()
-
-    const local = await getRuntimeConfigSnapshot(undefined, { secretScope: "local" })
-    expect(local.mcp["local-stdio"]).toMatchObject({
-      source: "user",
-      env: { LOCAL_SECRET: "local-secret" },
-    })
-    expect(local.mcp["local-remote"]).toMatchObject({
-      source: "user",
-      headers: { Authorization: "Bearer local-secret" },
-    })
-  })
 })

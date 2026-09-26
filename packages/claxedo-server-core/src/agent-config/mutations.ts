@@ -1,12 +1,11 @@
 import { asRecord } from "@claxedo/helpers/guards"
-import { jsonStringRecord } from "../platform/runtime/lib/json"
 import {
   createHarnessConnectionSchema,
   explicitDefaultHarness,
   isConnectionId,
   isNativeHarnessId,
 } from "./connections"
-import type { UserAgentConfig, UserMcpServer } from "./config"
+import type { UserAgentConfig } from "./config"
 import type { UserAgentConfigStore } from "./repository"
 import type { RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
 
@@ -75,42 +74,4 @@ export async function setDefaultHarness(store: UserAgentConfigStore, selection: 
   }
   await store.write(next)
   return explicitDefaultHarness(next)
-}
-
-export async function putMcpServer(store: UserAgentConfigStore, name: string, body: unknown) {
-  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(name)) {
-    throw new AgentConfigMutationError("agent_config_mcp_name_invalid", "Invalid server name (alphanumeric, dash, underscore only)")
-  }
-  const row = asRecord(body)
-  if (!row) throw new AgentConfigMutationError("agent_config_invalid_body", "Invalid JSON body")
-  const disabled = typeof row.disabled === "boolean" ? { disabled: row.disabled } : {}
-  let server: UserMcpServer
-  if (row.type === "stdio") {
-    if (typeof row.command !== "string") {
-      throw new AgentConfigMutationError("agent_config_mcp_command_required", "command is required for stdio servers")
-    }
-    server = {
-      type: "stdio",
-      command: row.command,
-      args: Array.isArray(row.args) ? row.args.filter((arg): arg is string => typeof arg === "string") : [],
-      env: jsonStringRecord(row.env),
-      ...disabled,
-    }
-  } else if (row.type === "remote") {
-    if (typeof row.url !== "string") {
-      throw new AgentConfigMutationError("agent_config_mcp_url_required", "url is required for remote servers")
-    }
-    server = { type: "remote", url: row.url, headers: jsonStringRecord(row.headers), ...disabled }
-  } else {
-    throw new AgentConfigMutationError("agent_config_mcp_type_invalid", "type must be 'stdio' or 'remote'")
-  }
-  const config = await store.read()
-  await store.write({ ...config, mcp: { ...config.mcp, [name]: server } })
-  return server
-}
-
-export async function deleteMcpServer(store: UserAgentConfigStore, name: string) {
-  const config = await store.read()
-  if (!(name in config.mcp)) throw new AgentConfigMutationError("agent_config_mcp_not_found", "MCP server not found", 404)
-  await store.write({ ...config, mcp: Object.fromEntries(Object.entries(config.mcp).filter(([id]) => id !== name)) })
 }

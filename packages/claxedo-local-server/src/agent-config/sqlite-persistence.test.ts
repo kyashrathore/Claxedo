@@ -26,18 +26,16 @@ afterAll(async () => {
 
 describe("local agent settings repository", () => {
   test("the route reads the persisted SQLite row after the database reopens", async () => {
-    await saveUserConfig({ version: 3, connections: {}, mcp: { docs: { type: "remote", url: "https://docs.test/mcp" } } })
+    await saveUserConfig({ version: 3, connections: {}, defaultHarness: { kind: "native", harnessId: "pi" } })
     ClaxedoDB.close()
-    const response = await createAgentConfigRoutes().request("/mcp")
+    const response = await createAgentConfigRoutes().request("/")
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ docs: { type: "remote", url: "https://docs.test/mcp" } })
+    expect(await response.json()).toMatchObject({ defaultHarness: { kind: "native", harnessId: "pi" } })
   })
 
   test("an old file cannot override the SQLite row", async () => {
-    await saveUserConfig({ version: 3, connections: {}, mcp: {} })
-    await fs.writeFile(path.join(root, "user-agent-config.json"), JSON.stringify({ version: 3, connections: {}, mcp: {
-      old: { type: "remote", url: "https://old.test/mcp" },
-    } }))
-    expect((await loadUserConfig()).mcp).toEqual({})
+    await saveUserConfig({ version: 3, connections: {}, defaultHarness: { kind: "native", harnessId: "pi" } })
+    await fs.writeFile(path.join(root, "user-agent-config.json"), JSON.stringify({ version: 3, connections: {}, defaultHarness: { kind: "native", harnessId: "claude" } }))
+    expect((await loadUserConfig()).defaultHarness).toEqual({ kind: "native", harnessId: "pi" })
   })
 })

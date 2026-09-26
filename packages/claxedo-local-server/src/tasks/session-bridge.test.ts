@@ -219,7 +219,6 @@ async function harness(input: { offeredModelId?: string; effortLevels?: HarnessE
   // applied directly to the host would be gone by the time it lands.
   await saveUserConfig({
     version: 3,
-    mcp: {},
     connections: {
       [CONNECTION_ID]: {
         connectionId: CONNECTION_ID,
