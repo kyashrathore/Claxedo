@@ -25,7 +25,7 @@ async function showSettingsNav(app: Page, isMobile: boolean) {
   await expect(async () => {
     const open = app.getByRole("button", { name: UI.openRail })
     if (isMobile && (await open.isVisible())) await open.click()
-    await expect(nav).toBeInViewport({ timeout: 1000 })
+    await expect(nav).toBeInViewport({ ratio: 1, timeout: 1000 })
   }).toPass()
 }
 
