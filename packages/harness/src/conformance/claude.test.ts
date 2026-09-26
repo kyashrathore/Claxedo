@@ -14,11 +14,17 @@ import { MemoryPorts, authority } from "./test-support/memory-ports"
 import { createTestServices } from "./test-support/services"
 import type { TestServices } from "./test-support/services"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
-import type { CanUseTool } from "@anthropic-ai/claude-agent-sdk"
+import { AbortError, type CanUseTool, type Query, type SDKMessage } from "@anthropic-ai/claude-agent-sdk"
+import type { HarnessBinding, RoutedEvent, TurnInput } from "../contract"
+import { ClaudeGoals } from "../transports/claude-sdk/goals"
+import type { ClaudeQueryLauncher } from "../transports/claude-sdk/query-options"
 import { askClaudePermission } from "../transports/claude-sdk/requests"
+import { sdkModes } from "../transports/claude-sdk/permissions"
+import { pollUntil } from "./test-support/poll"
 
 type ClaudeBackend = ConformanceBackend & {
   root: string
+  config: { harness: ConformanceBackend["harness"]; model: ConformanceBackend["model"]; permissionMode?: string }
   configRoot: string
   userConfigRoot: string
   env: NodeJS.ProcessEnv
@@ -57,9 +63,60 @@ function watchedServices(services: TestServices, state: ClaudeBackend): TestServ
   } }
 }
 
-function configurePorts(ports: MemoryPorts, state: Pick<ClaudeBackend, "harness" | "model">): void {
-  Object.assign(ports, { config: (sessionId: string) => ({ harness: state.harness, model: state.model,
+function configurePorts(ports: MemoryPorts, state: Pick<ClaudeBackend, "config">): void {
+  Object.assign(ports, { config: (sessionId: string) => ({ ...state.config,
     ...(ports.states.get(sessionId) ? { permissionState: ports.states.get(sessionId) } : {}) }) })
+}
+
+async function fileMode(target: string): Promise<number> {
+  return (await fs.stat(target)).mode & 0o777
+}
+
+async function attachedClaude(state: ClaudeBackend, previous?: { ports: MemoryPorts; binding: HarnessBinding }) {
+  const services = createTestServices()
+  const ports = previous?.ports ?? new MemoryPorts()
+  configurePorts(ports, state)
+  Object.assign(ports, { clock: services.clock })
+  ports.directories.set("s1", state.directory)
+  ports.current.set("s1", { ...authority, directory: state.directory, ...(previous ? { upstreamSessionId: previous.binding.upstreamSessionId } : {}) })
+  const owner = createRequestBroker(ports)
+  const origin = { actor: state.owner, via: "relay" as const, reissued: false }
+  const broker = createSessionBroker(owner, { sessionId: "s1", directory: state.directory, workspaceId: "w1", origin })
+  const transport = new ClaudeSdkTransport(watchedServices(services, state), { executable: "claude", configRoot: state.configRoot,
+    userConfigRoot: state.userConfigRoot, env: state.env })
+  const start = { sessionId: "s1", workspaceId: "w1", directory: state.directory, locality: "local" as const, owner: state.owner,
+    config: { harness: state.harness, model: state.model }, model: state.model, credentials: state.credentials,
+    projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] } }
+  const started = previous ? await transport.attach({ ...start, binding: previous.binding }, broker) : await transport.start(start, broker)
+  const session = () => ({ ...started, binding: ports.bindings.get("s1") ?? started.binding })
+  const turn = (turnId: string, text: string): TurnInput => ({ turnId, userMessageId: `u-${turnId}`, assistantMessageId: `a-${turnId}`, origin,
+    model: state.model, prompt: { agent: "claude", assistantMessageId: `a-${turnId}`, parts: [{ type: "text", text }] }, todos: [] })
+  const turnBroker = (turnId: string) => {
+    ports.current.set("s1", { ...authority, directory: state.directory, upstreamSessionId: session().binding.upstreamSessionId, turnId })
+    return createTurnBroker(owner, { authority: ports.current.get("s1")!, origin, signal: new AbortController().signal })
+  }
+  const pending = () => owner.broker.list({ sessionId: "s1" }).find((row) => row.request.kind === "permission")
+  const collect = async (turnId: string, text: string) => {
+    const events: RoutedEvent[] = []
+    for await (const event of transport.send(session(), turn(turnId, text), turnBroker(turnId))) events.push(event)
+    return events
+  }
+  const awaitPending = async () => {
+    const found = await pollUntil(pending, Date.now() + 10_000)
+    if (!found) throw new Error("Claude did not ask permission")
+    return found
+  }
+  const collectWithoutAsk = async (turnId: string, text: string) => {
+    const settled = new AbortController()
+    const running = collect(turnId, text).finally(() => settled.abort())
+    const asked = await Promise.race([running.then(() => undefined), pollUntil(pending, Date.now() + 15_000, settled.signal)])
+    if (asked) await owner.broker.answer(asked.request.requestId, { kind: "permission", decision: "deny" }, { sessionId: "s1" })
+    const events = await running
+    expect(asked).toBeUndefined()
+    return events
+  }
+  return { services, ports, owner, origin, broker, transport, session, turn, turnBroker, pending, awaitPending, collect, collectWithoutAsk,
+    close: async () => { await transport.dispose() } }
 }
 
 async function backend(): Promise<ClaudeBackend> {
@@ -94,16 +151,18 @@ async function backend(): Promise<ClaudeBackend> {
   const env = { ...process.env, HTTPS_PROXY: proxy, HTTP_PROXY: proxy, ALL_PROXY: proxy, NO_PROXY: "127.0.0.1,localhost",
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1", DISABLE_GROWTHBOOK: "1", DISABLE_UPDATES: "1",
     CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL: "1" }
+  const harness = { id: "claude" as const, access: "native" as const }
+  const model = { providerID: "anthropic", modelID: "default" }
   return {
     root, directory, userConfigRoot, configRoot, env, attempts, sockets, samples, sampledPids, listener, authFile, server,
+    config: { harness, model }, alternateModel: { providerID: "anthropic", modelID: "sonnet" },
     owner: { kind: "person", userId: "owner" },
     sharedSender: { actor: { kind: "person", userId: "member" }, via: "relay", reissued: false },
     harness: { id: "claude", access: "native" }, expectedMcp: "session",
     model: { providerID: "anthropic", modelID: "default" },
     credentials: { providers: { anthropic: { baseUrl: server.url, placeholder: "claude-conformance-placeholder", authMode: "api-key" } },
       secrets: {}, leaseGeneration: "conformance" },
-    onSetup: ({ ports }) => configurePorts(ports, { harness: { id: "claude", access: "native" },
-      model: { providerID: "anthropic", modelID: "default" } }),
+    onSetup: ({ ports }) => configurePorts(ports, { config: { harness, model } }),
     unrunnableTurn: withUndeliverableFile,
     hold: (marker) => {
       const release = server.holdTextReplies(marker)
@@ -320,7 +379,7 @@ test("a saved Claude grant survives transport recreation and stays in its sessio
   } finally { await second.dispose() }
 })
 
-test("the broker records a Claude command ceiling denial before the SDK resumes", async () => {
+test("the deny floor is Claude's rule alone: a floor command Claude asks about still reaches the person", async () => {
   const ports = new MemoryPorts()
   const owner = createRequestBroker(ports)
   ports.current.set("s1", { ...authority, connectionId: "claude-sdk" })
@@ -330,9 +389,150 @@ test("the broker records a Claude command ceiling denial before the SDK resumes"
     owner: origin.actor, config: { harness: { id: "claude" as const, access: "native" as const } },
     projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] },
     credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" } }
-  const reply = await askClaudePermission(input, broker, "Bash", { command: "rm -rf ~mine" },
+  const reply = askClaudePermission(input, broker, "Bash", { command: "rm -rf ~mine" },
     { signal: new AbortController().signal } as Parameters<CanUseTool>[2])
-  expect(reply.behavior).toBe("deny")
-  expect(ports.saved).toContainEqual(expect.objectContaining({ answer: { kind: "permission", decision: "deny" } }))
-  expect(owner.broker.list({ sessionId: "s1" })).toHaveLength(0)
+  const pending = await pollUntil(() => owner.broker.list({ sessionId: "s1" })[0], Date.now() + 2_000)
+  expect(pending?.request.kind).toBe("permission")
+  expect(ports.saved).toHaveLength(0)
+  expect(await owner.broker.answer(pending!.request.requestId, { kind: "permission", decision: "deny" }, { sessionId: "s1" })).toMatchObject({ ok: true })
+  expect((await reply).behavior).toBe("deny")
+})
+
+test.each([...sdkModes])("the Claude profile's deny floor holds in %s mode, visibly, without a broker request", async (mode: string) => {
+  const state = await backend()
+  state.config.permissionMode = mode
+  const context = await attachedClaude(state)
+  const floor = path.join(state.root, "floor")
+  await fs.mkdir(floor, { mode: 0o700 })
+  try {
+    state.server.scriptTool({ name: "Bash", input: { command: `chmod -R 777 ${floor}` } })
+    const events = await context.collect("t1", "Run the scripted Bash tool")
+    expect(context.owner.broker.list({ sessionId: "s1" })).toHaveLength(0)
+    expect(context.ports.saved).toHaveLength(0)
+    expect(await fileMode(floor)).toBe(0o700)
+    expect(events.some((row) => row.event.type === "tool-error" && /has been denied/.test(row.event.error))).toBe(true)
+  } finally { await context.close(); await state.close() }
+}, 60_000)
+
+test("a command outside the floor runs unprompted in bypassPermissions mode", async () => {
+  const state = await backend()
+  state.config.permissionMode = "bypassPermissions"
+  const context = await attachedClaude(state)
+  const outside = path.join(state.root, "outside")
+  await fs.mkdir(outside, { mode: 0o700 })
+  try {
+    state.server.scriptTool({ name: "Bash", input: { command: `chmod -R 755 ${outside}` } })
+    const events = await context.collectWithoutAsk("t1", "Run the scripted Bash tool")
+    expect(await fileMode(outside)).toBe(0o755)
+    expect(events.some((row) => row.event.type === "tool-error")).toBe(false)
+  } finally { await context.close(); await state.close() }
+}, 60_000)
+
+test("a permission mode set in the runtime's config reaches the next Claude launch", async () => {
+  const state = await backend()
+  const context = await attachedClaude(state)
+  const out = path.join(state.directory, "out.txt")
+  try {
+    state.config.permissionMode = "bypassPermissions"
+    expect((await context.transport.config.permissionModes({ session: context.session() })).currentModeId).toBe("bypassPermissions")
+    expect(await context.transport.config.read(context.session())).toMatchObject({ permissionMode: "bypassPermissions" })
+    state.server.scriptTool({ name: "Bash", input: { command: `printf hi > ${out}` } })
+    await context.collectWithoutAsk("t1", "Run the scripted Bash tool")
+    expect(await fs.readFile(out, "utf8")).toBe("hi")
+  } finally { await context.close(); await state.close() }
+}, 60_000)
+
+test("the config preview names the runtime's current model, not the start model", async () => {
+  const state = await backend()
+  const context = await attachedClaude(state)
+  try {
+    state.config.model = { providerID: "anthropic", modelID: "sonnet" }
+    const current = await context.transport.config.options({ session: context.session() }, "probe")
+    expect(current.resolvedModel?.id).toBe("sonnet")
+    const requested = await context.transport.config.options({ session: context.session(), model: { providerID: "anthropic", modelID: "haiku" } }, "probe")
+    expect(requested.resolvedModel?.id).toBe("haiku")
+  } finally { await context.close(); await state.close() }
+}, 60_000)
+
+test("Always allow persists Claude's suggested rules through the broker's grants and replays them on the next launch", async () => {
+  const state = await backend()
+  const first = await attachedClaude(state)
+  const outside = path.join(state.root, "outside")
+  await fs.mkdir(outside, { mode: 0o700 })
+  const command = `chmod -R 750 ${outside}`
+  const originalSettings = await fs.readFile(path.join(state.userConfigRoot, "settings.json"))
+  let second: Awaited<ReturnType<typeof attachedClaude>> | undefined
+  try {
+    state.server.scriptTool({ name: "Bash", input: { command } })
+    const running = first.collect("t1", "Run the scripted Bash tool")
+    const pending = await first.awaitPending()
+    expect(JSON.parse(pending.request.kind === "permission" ? pending.request.grantKey ?? "null" : "null"))
+      .toMatchObject({ tool: "Bash", directory: state.directory, updates: [{ type: "addRules", behavior: "allow", destination: "session",
+        rules: [{ toolName: "Bash", ruleContent: command }] }] })
+    expect(await first.owner.broker.answer(pending.request.requestId, { kind: "permission", decision: "allow_always" }, { sessionId: "s1" }))
+      .toMatchObject({ ok: true })
+    await running
+    expect(await fileMode(outside)).toBe(0o750)
+    expect(first.ports.states.get("s1")?.brokerGrants).toHaveLength(1)
+    expect(first.ports.saved).toHaveLength(1)
+    expect(await fs.readFile(path.join(state.userConfigRoot, "settings.json"))).toEqual(originalSettings)
+    expect(await fs.stat(path.join(state.directory, ".claude")).then(() => true, () => false)).toBe(false)
+    const binding = first.session().binding
+    await first.close()
+    await fs.chmod(outside, 0o700)
+    second = await attachedClaude(state, { ports: first.ports, binding })
+    state.server.scriptToolSequence("AGAIN", [{ name: "Bash", input: { command } }])
+    await second.collectWithoutAsk("t2", "AGAIN: run the scripted Bash tool")
+    expect(second.ports.saved).toHaveLength(1)
+    expect(await fileMode(outside)).toBe(0o750)
+  } finally { await second?.close(); await first.close(); await state.close() }
+}, 90_000)
+
+function goalStream(messages: AsyncIterable<SDKMessage>): Query {
+  return { [Symbol.asyncIterator]: () => messages[Symbol.asyncIterator](), close() {} } as Query
+}
+
+const goalEntry = () => ({ session: { directory: "/work", locality: "local" as const, binding: { sessionId: "s1", workspaceId: "w1", directory: "/work",
+  connectionId: "claude-sdk", upstreamSessionId: "up1" } }, input: { sessionId: "s1", workspaceId: "w1", directory: "/work", locality: "local" as const,
+  owner: { kind: "machine-owner" as const }, config: { harness: { id: "claude" as const, access: "native" as const } },
+  projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] }, credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" } } })
+
+function abortingLauncher(): ClaudeQueryLauncher {
+  return { launch: async (spec: Parameters<ClaudeQueryLauncher["launch"]>[0]) => goalStream({ async *[Symbol.asyncIterator]() {
+    yield { type: "active_goal", session_id: "up1", uuid: "g1", value: { condition: "Ship", iterations: 1, set_at: 1_700_000_000, tokens_at_start: 0 } } as unknown as SDKMessage
+    if (!spec.abort.signal.aborted) await new Promise<void>((resolve) => spec.abort.signal.addEventListener("abort", () => resolve(), { once: true }))
+    throw new AbortError("aborted")
+  } }) } as unknown as ClaudeQueryLauncher
+}
+
+function memoryBroker() {
+  const ports = new MemoryPorts()
+  ports.current.set("s1", { ...authority, connectionId: "claude-sdk" })
+  let goal: import("@claxedo/agent-runtime-contract").RuntimeGoalSnapshot | null = null
+  Object.assign(ports, { readGoal: () => goal, publishGoal: async (_sessionId: string, snapshot: typeof goal) => { goal = snapshot } })
+  const broker = createSessionBroker(createRequestBroker(ports), { sessionId: "s1", workspaceId: "w1", directory: "/work", origin: { actor: { kind: "machine-owner" }, via: "loopback", reissued: false } })
+  return { ports, broker }
+}
+
+test("a runtime cancel of the admitted Goal turn settles cancelled and pauses the Goal", async () => {
+  const { ports, broker } = memoryBroker()
+  const goals = new ClaudeGoals(abortingLauncher())
+  expect((await goals.start(goalEntry(), broker, "Ship")).ok).toBe(true)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(broker.goal.read()?.status).toBe("active")
+  ports.cancelProviderTurn()
+  expect(await goals.cancel("s1")).toEqual({ state: "cancelled" })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(broker.goal.read()?.status).toBe("paused")
+  expect(goals.turnId("s1")).toBeUndefined()
+})
+
+test("the transport's own Goal abort ends the run as a cancellation, not a failure", async () => {
+  const { broker } = memoryBroker()
+  const goals = new ClaudeGoals(abortingLauncher())
+  expect((await goals.start(goalEntry(), broker, "Ship")).ok).toBe(true)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(await goals.cancel("s1")).toEqual({ state: "completed" })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(broker.goal.read()?.status).toBe("active")
 })

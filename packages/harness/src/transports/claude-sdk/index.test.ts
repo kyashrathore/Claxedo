@@ -12,8 +12,9 @@ const origin = { actor: input.owner, via: "loopback" as const, reissued: false }
 const turn: TurnInput = { turnId: "t1", userMessageId: "u1", assistantMessageId: "a1", origin, todos: [],
   prompt: { agent: "claude", assistantMessageId: "a1", parts: [{ type: "text", text: "hello" }] } }
 const services = { log: { debug() {}, info() {}, warn() {}, error() {} } } as unknown as HarnessServices
+const runtimeConfig = { current: { ...input.config, instructions: "keep me", permissionMode: "plan" } }
 const sessionBroker = { rebind: async (upstreamSessionId: string) => Object.freeze({ sessionId: "s1", workspaceId: "w1", directory: "/work",
-  connectionId: "claude-sdk", upstreamSessionId }) } as unknown as SessionBroker
+  connectionId: "claude-sdk", upstreamSessionId }), config: () => runtimeConfig.current } as unknown as SessionBroker
 
 function transport(messages: AsyncIterable<SDKMessage>, specs: Parameters<ClaudeQueryLauncher["launch"]>[0][] = []) {
   const value = new ClaudeSdkTransport(services, { executable: "claude", configRoot: "/tmp/claude-test", userConfigRoot: "/tmp/claude-user", env: {} })
@@ -30,7 +31,7 @@ test("a reconstructed binding attaches to the same Claude session without object
     userConfigRoot: "/tmp/person-claude", env: {} })
   const session = await value.start(input, sessionBroker)
   const reconstructed = JSON.parse(JSON.stringify(session)) as typeof session
-  expect(await value.config.read(reconstructed)).toEqual(input.config)
+  expect(await value.config.read(reconstructed)).toEqual(runtimeConfig.current)
   await expect(value.config.read({ ...reconstructed, binding: { ...reconstructed.binding, workspaceId: "other" } }))
     .rejects.toMatchObject({ transport: "claude", code: "session" })
   await value.close(session)
@@ -84,4 +85,31 @@ test("goal cancellation reports unknown when admission settles failed", async ()
   Object.assign(value, { goalRuntime: { turnId: () => "t1", cancel: async () => ({ state: "failed", error: "retirement failed" }) } })
   expect(await value.cancel(session, { turnId: "t1", assistantMessageId: "a1" }, { at: Date.now() + 1000, signal: new AbortController().signal }))
     .toMatchObject({ execution: "unknown", cleanup: "unknown", error: { message: "retirement failed" } })
+})
+
+test("Claude session config has one owner, the runtime, and the transport keeps no copy", async () => {
+  const value = new ClaudeSdkTransport({} as HarnessServices, { executable: "claude", configRoot: "/tmp/claxedo-claude", userConfigRoot: "/tmp/person-claude", env: {} })
+  const session = await value.start({ ...input, config: { ...input.config, permissionMode: "default" } }, sessionBroker)
+  try {
+    expect(await value.config.read(session)).toEqual(runtimeConfig.current)
+    expect((await value.config.permissionModes({ session })).currentModeId).toBe("plan")
+    expect((await value.config.setPermissionMode(session, "acceptEdits")).currentModeId).toBe("acceptEdits")
+    expect((await value.config.permissionModes({ session })).currentModeId).toBe("plan")
+    await expect(value.config.setPermissionMode(session, "unknown")).rejects.toMatchObject({ code: "configuration" })
+    const updated = await value.config.update(session, { model: { providerID: "anthropic", modelID: "haiku" }, permissionMode: null })
+    expect(updated).toEqual({ ...runtimeConfig.current, model: { providerID: "anthropic", modelID: "haiku" }, permissionMode: undefined })
+    expect(updated.instructions).toBe("keep me")
+    await expect(value.config.update(session, { permissionMode: "unknown" })).rejects.toMatchObject({ code: "configuration" })
+    expect(await value.config.read(session)).toEqual(runtimeConfig.current)
+  } finally { await value.close(session) }
+})
+
+test("goal cancellation reports terminal cleanup once admission settles cancelled or completed", async () => {
+  for (const state of ["cancelled", "completed"] as const) {
+    const value = transport({ async *[Symbol.asyncIterator]() {} })
+    const session = await value.start(input, sessionBroker)
+    Object.assign(value, { goalRuntime: { turnId: () => "t1", cancel: async () => ({ state }) } })
+    expect(await value.cancel(session, { turnId: "t1", assistantMessageId: "a1" }, { at: Date.now() + 1000, signal: new AbortController().signal }))
+      .toEqual({ execution: "terminal", cleanup: "owned" })
+  }
 })

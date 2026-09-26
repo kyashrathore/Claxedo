@@ -1,6 +1,7 @@
 import type { CanUseTool } from "@anthropic-ai/claude-agent-sdk"
 import { permissionDecision, permissionRequest, requestQuestionAnswers, questionRequest, type StartInput, type TurnBroker } from "../../contract"
 import { TransportError } from "../../contract/errors"
+import { claudeGrant } from "./grants"
 
 const protocolPermissionMap = {
   allowOnce: "allow_once", allowAlways: "allow_always", rejectAlways: "reject_always", allow: "allow", deny: "deny",
@@ -28,21 +29,18 @@ export async function askClaudePermission(input: StartInput, broker: TurnBroker,
     return { behavior: protocolPermissionMap.allow, updatedInput: { ...toolInput,
       answers: Object.fromEntries(answers.map((value, index) => [questions[index]?.question, value.join(", ")])) } }
   }
-  const grantKey = toolName === "Bash" && typeof toolInput.command === "string" && toolInput.command && options.blockedPath &&
-    !options.matchedAskRule && !options.decisionReason
-    ? JSON.stringify({ toolName, toolInput: Object.fromEntries(Object.entries(toolInput).filter(([key]) => key !== "description")),
-      directory: input.directory, mode: input.config.permissionMode ?? "default", blockedPath: options.blockedPath,
-      agentID: options.agentID }) : undefined
+  const grant = claudeGrant({ directory: input.directory, permissionMode: input.config.permissionMode }, toolName, toolInput, options)
   const answer = await broker.ask(permissionRequest({ sessionId: input.sessionId, permission: toolName, title: options.title ?? toolName,
-    ...(grantKey ? { grantKey } : {}), metadata: { input: toolInput, description: options.description ?? "", turnId },
+    ...(grant ? { grantKey: grant.key } : {}), metadata: { input: toolInput, description: options.description ?? "", turnId },
     harnessPayload: { toolName, toolInput, suggestions: options.suggestions },
     options: protocolPermissionMap.options,
   }), { signal: options.signal })
   if (options.signal.aborted || broker.signal.aborted) return { behavior: protocolPermissionMap.deny, message: "Turn cancelled" }
   const decision = permissionDecision(answer)
   if (!decision) return { behavior: protocolPermissionMap.deny, message: "Permission dismissed" }
-  if (decision === protocolPermissionMap.allowOnce || decision === protocolPermissionMap.allowAlways) {
-    return { behavior: protocolPermissionMap.allow, updatedInput: toolInput }
+  if (decision === protocolPermissionMap.allowOnce) return { behavior: protocolPermissionMap.allow, updatedInput: toolInput }
+  if (decision === protocolPermissionMap.allowAlways) {
+    return { behavior: protocolPermissionMap.allow, updatedInput: toolInput, ...(grant?.updates ? { updatedPermissions: grant.updates } : {}) }
   }
   return { behavior: protocolPermissionMap.deny, message: "Permission denied", interrupt: decision === protocolPermissionMap.rejectAlways }
 }

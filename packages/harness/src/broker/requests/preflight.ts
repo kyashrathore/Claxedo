@@ -1,7 +1,6 @@
 import type { RequestAnswer, TurnRequest } from "../../contract/broker"
 import type { BrokerPorts } from "../ports"
 import { hasGrant } from "../grants"
-import { permissionCeilingDenies } from "../permission-ceilings"
 import { substitutePermissionOption } from "../options"
 import { pendingRequest, type RequestAuthority } from "./authority"
 
@@ -16,11 +15,6 @@ export async function preflight(
     const pending = pendingRequest(ports, authority, request)
     await ports.persistAnswer(pending, { kind: "expired" }, false)
     return { kind: "expired" }
-  }
-  if (request.kind === "permission" && permissionCeilingDenies(authority.value.connectionId, request)) {
-    const answer = { kind: "permission", decision: "deny" } as const
-    await ports.persistAnswer(pendingRequest(ports, authority, request), answer, true)
-    return answer
   }
   if (request.kind === "permission" && hasGrant(ports, sessionId, authority.value.connectionId, request)) {
     const automatic = substitutePermissionOption({ kind: "permission", decision: "allow_always" }, request.options)
