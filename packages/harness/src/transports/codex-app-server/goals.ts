@@ -45,7 +45,13 @@ async function interrupt(resolve: ResolveGoalEntry, session: HarnessSession): Pr
   const entry = resolve(session)
   const turnId = entry.providerTurn?.id ?? entry.turn?.id
   if (!turnId) return
-  await entry.terminals.stop(turnId, { at: Date.now() + 10_000, signal: new AbortController().signal })
+  const deadline = { at: Date.now() + 10_000, signal: new AbortController().signal }
+  const stopped = await entry.terminals.stop(turnId, deadline)
+  const confirmed = stopped.execution === "terminal" && stopped.cleanup === "verified_clear"
+    ? stopped : await entry.terminals.confirm(turnId, stopped, deadline)
+  if (confirmed.execution !== "terminal" || confirmed.cleanup !== "verified_clear") {
+    throw new CodexTransportError("process", "Codex turn interruption or background cleanup is unverified")
+  }
 }
 
 export function createCodexGoals(resolve: ResolveGoalEntry): NativeGoalOperations {
@@ -59,15 +65,15 @@ export function createCodexGoals(resolve: ResolveGoalEntry): NativeGoalOperation
     },
     start: (session, objective) => setGoalState(resolve, session, { objective }),
     pause: async (session) => {
-      const result = await setGoalState(resolve, session, { status: "paused" })
-      if (result.ok) await interrupt(resolve, session)
-      return result
+      try { await interrupt(resolve, session) }
+      catch (error) { return { ok: false, status: "failed", message: errorMessage(error) } }
+      return setGoalState(resolve, session, { status: "paused" })
     },
     resume: (session) => setGoalState(resolve, session, { status: "active" }),
     stop: async (session) => {
-      const result = await clearGoalState(resolve, session)
-      if (result.ok) await interrupt(resolve, session)
-      return result
+      try { await interrupt(resolve, session) }
+      catch (error) { return { ok: false, status: "failed", message: errorMessage(error) } }
+      return clearGoalState(resolve, session)
     },
     delete: (session) => clearGoalState(resolve, session),
   }

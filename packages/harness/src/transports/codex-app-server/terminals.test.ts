@@ -24,3 +24,13 @@ test("Codex stop pages the terminal inventory and terminates only this turn's pr
     threadId: "thread-1", processId: "terminal-owned",
   })
 })
+
+test("Codex confirmation waits for this turn and verifies the remaining terminal inventory", async () => {
+  const rpc = { request: async (method: string) => method === "thread/backgroundTerminals/list" ? { data: [] } : {} } as CodexRpc
+  const terminals = new CodexTerminals(rpc, "thread-1")
+  const deadline = { at: Date.now() + 1_000, signal: new AbortController().signal }
+  const confirmation = terminals.confirm("turn-1", { execution: "unknown", cleanup: "unknown" }, deadline)
+  terminals.observe({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-other" } } })
+  terminals.observe({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-1" } } })
+  expect(await confirmation).toEqual({ execution: "terminal", cleanup: "verified_clear" })
+})

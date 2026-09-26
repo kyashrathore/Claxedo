@@ -2,7 +2,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
-import { writePrivateFileAtomic } from "@claxedo/helpers/fs"
+import { realPathWithinRoot, writePrivateFileAtomic } from "@claxedo/helpers/fs"
 import type { PluginProjection, ResolvedCredentials } from "../../contract"
 
 const MARKETPLACE = "claxedo-agent-plugins"
@@ -35,10 +35,15 @@ async function marketplace(home: string, projection: PluginProjection): Promise<
     names.add(name)
     const pluginSource = path.join(source, "plugins", name)
     await fs.mkdir(path.dirname(pluginSource), { recursive: true, mode: 0o700 })
-    await fs.cp(item.root, pluginSource, { recursive: true, force: true, dereference: true })
+    const pluginRoot = await fs.realpath(item.root)
+    const filter = async (pathname: string) => {
+      if (!(await realPathWithinRoot(pathname, pluginRoot)).within) throw new Error(`Codex plugin link escapes its root: ${pathname}`)
+      return true
+    }
+    await fs.cp(item.root, pluginSource, { recursive: true, force: true, dereference: true, filter })
     const destination = path.join(cache, name, version)
     await fs.mkdir(path.dirname(destination), { recursive: true, mode: 0o700 })
-    await fs.cp(item.root, destination, { recursive: true, force: true, dereference: true })
+    await fs.cp(item.root, destination, { recursive: true, force: true, dereference: true, filter })
     plugins.push({ name, source: { source: "local", path: `./plugins/${name}` } })
   }
   await fs.writeFile(path.join(manifest, "marketplace.json"), JSON.stringify({ name: MARKETPLACE, plugins }), { mode: 0o600 })
