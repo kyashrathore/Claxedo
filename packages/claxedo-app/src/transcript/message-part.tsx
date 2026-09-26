@@ -1238,7 +1238,7 @@ export function UserMessageDisplay(props: {
       >
         <div data-slot="user-message-body" class="ui-user-message-body" data-markdown={renderAsMarkdown() ? "true" : undefined}>
           <div
-            class="ui-user-message-text"
+            data-slot="user-message-text" class="ui-user-message-text"
             data-comments={messageComments().length > 0 ? "true" : undefined}
             data-markdown={renderAsMarkdown() ? "true" : undefined}
           >
@@ -1731,7 +1731,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
 
   return (
     <Show when={text()}>
-      <div class="ui-text-part" data-timeline-part-id={part().id}>
+      <div data-component="text-part" class="ui-text-part" data-timeline-part-id={part().id}>
         <div data-slot="text-part-body">
           <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
         </div>
