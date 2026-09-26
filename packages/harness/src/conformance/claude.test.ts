@@ -318,3 +318,20 @@ test("a saved Claude grant survives transport recreation and stays in its sessio
     expect((await isolated).behavior).toBe("deny")
   } finally { await second.dispose() }
 })
+
+test("the broker records a Claude command ceiling denial before the SDK resumes", async () => {
+  const ports = new MemoryPorts()
+  const owner = createRequestBroker(ports)
+  ports.current.set("s1", { ...authority, connectionId: "claude-sdk" })
+  const origin = { actor: { kind: "machine-owner" as const }, via: "loopback" as const, reissued: false }
+  const broker = createTurnBroker(owner, { authority: ports.current.get("s1")!, origin, signal: new AbortController().signal })
+  const input = { sessionId: "s1", workspaceId: "w1", directory: "/work", locality: "local" as const,
+    owner: origin.actor, config: { harness: { id: "claude" as const, access: "native" as const } },
+    projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] },
+    credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" } }
+  const reply = await askClaudePermission(input, broker, "Bash", { command: "rm -rf ~mine" },
+    { signal: new AbortController().signal } as Parameters<CanUseTool>[2])
+  expect(reply.behavior).toBe("deny")
+  expect(ports.saved).toContainEqual(expect.objectContaining({ answer: { kind: "permission", decision: "deny" } }))
+  expect(owner.broker.list({ sessionId: "s1" })).toHaveLength(0)
+})

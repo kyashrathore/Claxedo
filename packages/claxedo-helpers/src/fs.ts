@@ -2,14 +2,20 @@ import { Buffer } from "node:buffer"
 import { randomUUID } from "node:crypto"
 import { readFileSync } from "node:fs"
 import { mkdirSync, openSync, writeSync, closeSync, renameSync, unlinkSync } from "node:fs"
-import { mkdir, open, readFile, rename, stat, unlink } from "node:fs/promises"
+import { mkdir, open, readFile, realpath, rename, stat, unlink } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
 
 import { sleep } from "./async"
 import { isRecord } from "./guards"
+import { inside } from "./path"
 import { isOwnerOnlyDescriptor, readWindowsFileProtection, writeWindowsPrivateFile } from "./windows-private-file"
 
 export { PrivateFileError } from "./windows-private-file"
+
+export async function realPathWithinRoot(source: string, root: string): Promise<{ resolved: string; within: boolean }> {
+  const resolved = await realpath(source)
+  return { resolved, within: inside(root, resolved) }
+}
 
 /**
  * Node-only. Never re-exported from the package root: the fs-touching Codex

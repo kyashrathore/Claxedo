@@ -114,8 +114,9 @@ export class ClaudeSdkTransport implements HarnessTransport {
     const { runtime, tasks } = claudeTranslator(turn.assistantMessageId, turn.todos)
     const abort = new AbortController()
     entry.active = { id: turn.turnId, abort, input }
-    if (broker.signal.aborted) abort.abort()
-    else broker.signal.addEventListener("abort", () => abort.abort(), { once: true })
+    const onAbort = () => abort.abort()
+    if (broker.signal.aborted) onAbort()
+    else broker.signal.addEventListener("abort", onAbort, { once: true })
     const aborted = () => entry.active?.abort.signal.aborted === true
     let settled = false
     let result: SDKMessage | undefined
@@ -131,10 +132,12 @@ export class ClaudeSdkTransport implements HarnessTransport {
       if (result) {
         for (const event of await translateClaude(result, runtime, tasks, broker)) yield event
       }
+      if (!result && !abort.signal.aborted) throw new TransportError("claude", "protocol", "Claude SDK stream ended without a result")
       settled = true
     } catch (error) {
       if (!aborted() || !(error instanceof AbortError)) throw error
     } finally {
+      broker.signal.removeEventListener("abort", onAbort)
       input.settle(settled ? "ended" : "failed")
       entry.active = undefined
       await Promise.all([...entry.processes].map(async (child) => { await child.retire({ at: Date.now() + 5_000, signal: new AbortController().signal }); entry.processes.delete(child) }))
@@ -211,8 +214,10 @@ export class ClaudeSdkTransport implements HarnessTransport {
   async cancel(session: HarnessSession, turn: TurnRef, deadline: Deadline) {
     const entry = this.entry(session)
     if (this.goalRuntime.turnId(entry.input.sessionId) === turn.turnId) {
-      await this.goalRuntime.cancel(entry.input.sessionId)
-      return { execution: "terminal" as const, cleanup: "owned" as const }
+      const settlement = await this.goalRuntime.cancel(entry.input.sessionId)
+      if (settlement?.state === "cancelled") return { execution: "terminal" as const, cleanup: "owned" as const }
+      return { execution: "unknown" as const, cleanup: "unknown" as const,
+        ...(settlement?.state === "failed" ? { error: { code: "internal_error" as const, message: settlement.error } } : {}) }
     }
     if (!entry.active || entry.active.id !== turn.turnId) return { execution: "terminal" as const, cleanup: "unknown" as const }
     entry.active.abort.abort()

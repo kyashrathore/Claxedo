@@ -1,6 +1,7 @@
 import { MessageChannel, Worker, type MessagePort } from "node:worker_threads"
 import { TransportError } from "../../contract/errors"
-import { stringRecord } from "@claxedo/helpers"
+import { settleAtRequestDeadline, singleFlightUntil, stringRecord } from "@claxedo/helpers"
+import type { Deadline } from "../../contract"
 import type { WorkerReply, WorkerRequest } from "./protocol"
 import { PendingRpcRequests } from "../../rpc/pending"
 
@@ -47,18 +48,21 @@ export class CursorWorker {
     this.pending.fail(error)
   }
 
-  call(command: WorkerRequest, onEvent?: (reply: WorkerReply) => void): Promise<WorkerReply> {
+  call(command: WorkerRequest, onEvent?: (reply: WorkerReply) => void, deadline?: Deadline): Promise<WorkerReply> {
     if (this.failure) return Promise.reject(this.failure)
     const id = ++this.nextId
-    return this.pending.request(id, onEvent, undefined, () => new TransportError("cursor", "worker", "Cursor worker did not answer"),
+    const request = this.pending.request(id, onEvent, undefined, () => new TransportError("cursor", "worker", "Cursor worker did not answer"),
       () => this.port.postMessage({ ...command, id }))
+    const limit = deadline ?? { at: Date.now() + (command.kind === "run" ? 300_000 : 30_000), signal: new AbortController().signal }
+    return settleAtRequestDeadline(`Cursor ${command.kind}`, { deadlineAt: limit.at, signal: limit.signal },
+      request, () => { void this.retire().catch((error: unknown) => console.error("Cursor worker retirement failed", error)) },
+      (what) => new TransportError("cursor", "worker", `${what} exceeded its deadline`))
   }
 
-  async retire(): Promise<void> {
+  readonly retire = singleFlightUntil(async () => {
     this.fail(new TransportError("cursor", "worker", "Cursor SDK worker retired"))
-    this.port.close()
     await this.worker.terminate()
-  }
+  }, () => true)
 }
 
 export class CursorWorkerRegistry {

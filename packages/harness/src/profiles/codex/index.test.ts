@@ -39,3 +39,20 @@ test("brokered Codex home refuses a symlink without writing through it", async (
     expect(await fs.readdir(target)).toEqual([])
   } finally { await fs.rm(root, { recursive: true, force: true }) }
 })
+
+test("Codex plugin projection refuses links outside the plugin root", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-plugin-link-"))
+  const home = path.join(root, "home")
+  const plugin = path.join(root, "plugin")
+  const privateFile = path.join(root, "private.txt")
+  await fs.mkdir(path.join(plugin, ".codex-plugin"), { recursive: true })
+  await fs.writeFile(path.join(plugin, ".codex-plugin", "plugin.json"), JSON.stringify({ name: "sample", version: "1.0.0" }))
+  await fs.writeFile(privateFile, "private content")
+  await fs.symlink(privateFile, path.join(plugin, "linked-private.txt"))
+  try {
+    await expect(prepareCodexProfile({ home,
+      credentials: { providers: { codex: { baseUrl: "http://127.0.0.1", placeholder: "placeholder", authMode: "api-key" } }, secrets: {}, leaseGeneration: "g1" },
+      projection: { generation: "g1", mcpServers: [], notApplied: [], pluginRoots: [{ pluginInstanceId: "sample", root: plugin, dataRoot: root }] },
+    })).rejects.toThrow("escapes")
+  } finally { await fs.rm(root, { recursive: true, force: true }) }
+})

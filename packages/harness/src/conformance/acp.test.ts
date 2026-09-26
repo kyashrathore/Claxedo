@@ -4,6 +4,8 @@ import path from "node:path"
 import { runConformance, setupConformance, type ConformanceBackend } from "./test-support/run"
 import { filterMcpServers } from "../capabilities/mcp-filter"
 import { AcpTransport } from "../transports/acp"
+import { acpUpdate } from "../transports/acp/events"
+import type { AcpEntry } from "../transports/acp"
 import { startScriptedAcpWebSocket } from "../../e2e/harness/acp/websocket"
 import { startScriptedAcpHttp } from "../../e2e/harness/acp/http"
 import { acpScriptToken, writeAcpScript } from "../../e2e/harness/acp/script"
@@ -436,6 +438,147 @@ test("a draft ACP probe cancels startup questions, deduplicates, and retires its
     expect(services.processes).toHaveLength(1)
     expect(await services.processes[0]!.exited).toBeDefined()
   } finally { await transport.dispose(); await state.close() }
+})
+
+test("ACP child catalog updates leave the parent commands and options intact", async () => {
+  const context = await setupConformance({
+    name: "acp child catalog", backend: () => backend("process"),
+    makeTransport(services, state) {
+      return new AcpTransport(services, (state as AcpBackend).connection, filterMcpServers,
+        async () => { throw new Error("No saved transcript in this conformance scenario") })
+    },
+  })
+  try {
+    const entry = (context.transport as unknown as { entries: Map<string, AcpEntry> }).entries.get("s1")!
+    const commands = entry.commands
+    const options = entry.options
+    const sessionId = `child-of-${context.session.binding.upstreamSessionId}`
+    await acpUpdate(entry, { sessionId, update: { sessionUpdate: "available_commands_update",
+      availableCommands: [{ name: "child-only", description: "Child command" }] } }, async () => {})
+    await acpUpdate(entry, { sessionId, update: { sessionUpdate: "config_option_update", configOptions: [] } }, async () => {})
+    expect(entry.commands).toEqual(commands)
+    expect(entry.options).toEqual(options)
+  } finally { await context.close() }
+})
+
+test("ACP failed cancellation makes an active turn uncertain", async () => {
+  const context = await setupConformance({
+    name: "acp failed cancellation", backend: () => backend("process"),
+    makeTransport(services, state) {
+      return new AcpTransport(services, (state as AcpBackend).connection, filterMcpServers,
+        async () => { throw new Error("No saved transcript in this conformance scenario") })
+    },
+  })
+  try {
+    const entry = (context.transport as unknown as { entries: Map<string, AcpEntry> }).entries.get("s1")!
+    entry.peer.agent.cancel = async () => { throw new Error("cancel refused") }
+    const running = (async () => {
+      for await (const _event of context.transport.send(context.session,
+        context.turn(acpScriptToken("silence")), context.turnBroker())) {}
+    })()
+    const settled = running.then(() => undefined, (error: unknown) => error)
+    for (let attempt = 0; attempt < 500; attempt++) {
+      if ((await readAcpRequests(context.backend.directory)).some((row) => row.method === "session/prompt")) break
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+    const result = await context.transport.cancel(context.session, { turnId: "t1", assistantMessageId: "a1" },
+      { at: Date.now() + 5_000, signal: new AbortController().signal })
+    expect(result.error?.message).toContain("cancel refused")
+    expect((await settled as Error).message).toContain("outcome is uncertain")
+  } finally { await context.close() }
+})
+
+test("ACP abort handles rejected cancellation and releases the turn", async () => {
+  const context = await setupConformance({
+    name: "acp failed abort", backend: () => backend("process"),
+    makeTransport(services, state) {
+      return new AcpTransport(services, (state as AcpBackend).connection, filterMcpServers,
+        async () => { throw new Error("No saved transcript in this conformance scenario") })
+    },
+  })
+  try {
+    const entry = (context.transport as unknown as { entries: Map<string, AcpEntry> }).entries.get("s1")!
+    entry.peer.agent.cancel = async () => { throw new Error("abort cancel refused") }
+    const controller = new AbortController()
+    const running = (async () => {
+      for await (const _event of context.transport.send(context.session,
+        context.turn(acpScriptToken("silence")), context.turnBroker(controller.signal))) {}
+    })()
+    const settled = running.then(() => undefined, (error: unknown) => error)
+    for (let attempt = 0; attempt < 500; attempt++) {
+      if ((await readAcpRequests(context.backend.directory)).some((row) => row.method === "session/prompt")) break
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+    controller.abort()
+    const outcome = await Promise.race([
+      settled,
+      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 2_000)),
+    ])
+    expect(outcome).toBeInstanceOf(Error)
+    expect((outcome as Error).message).toContain("outcome is uncertain")
+    expect(entry.phase).toBe("uncertain")
+  } finally { await context.close() }
+})
+
+test("ACP draft probe cache excludes credentials and expires", async () => {
+  const state = await backend("process")
+  const services = createTestServices()
+  const transport = new AcpTransport(services, state.connection, filterMcpServers,
+    async () => { throw new Error("No saved transcript in this conformance scenario") })
+  const draft = { workspaceId: "w1", directory: state.directory, locality: "local" as const, owner: state.owner,
+    config: { harness: state.harness, model: state.model }, model: state.model,
+    credentials: { ...state.credentials, secrets: { API_KEY: "probe-secret-sentinel" } },
+    projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] } }
+  try {
+    await transport.config.options({ draft }, "probe")
+    const probes = (transport as unknown as { probes: { cache: Map<string, unknown> } }).probes
+    expect([...probes.cache.keys()].join(" ")).not.toContain("probe-secret-sentinel")
+    await transport.config.options({ draft: { ...draft, workspaceId: "w2" } }, "probe")
+    const now = services.clock.now()
+    services.clock.now = () => now + 60_000
+    await transport.config.options({ draft }, "probe")
+    expect(probes.cache.size).toBe(1)
+    expect((await readAcpRequests(state.directory)).filter((row) => row.method === "session/new")).toHaveLength(3)
+  } finally { await transport.dispose(); await state.close() }
+})
+
+test("ACP HTTP retirement closes a connection with a write in flight", async () => {
+  const fetchRequest = globalThis.fetch
+  let hold = false
+  let deletes = 0
+  let entered!: () => void
+  let release!: () => void
+  const writing = new Promise<void>((resolve) => { entered = resolve })
+  const held = new Promise<void>((resolve) => { release = resolve })
+  globalThis.fetch = ((input, init) => {
+    if (init?.method === "DELETE") deletes++
+    if (hold && init?.method === "POST") {
+      entered()
+      return held.then(() => fetchRequest(input, init))
+    }
+    return fetchRequest(input, init)
+  }) as typeof fetch
+  let context: Awaited<ReturnType<typeof setupConformance>> | undefined
+  try {
+    context = await setupConformance({
+      name: "acp HTTP write retirement", backend: () => backend("streamable-http", "resume", true, undefined, false, false, ["agents"]),
+      makeTransport(services, state) {
+        return new AcpTransport(services, (state as AcpBackend).connection, filterMcpServers,
+          async () => { throw new Error("No saved transcript in this conformance scenario") })
+      },
+    })
+    hold = true
+    const listing = context.transport.agents!.list({ session: context.session })
+    void listing.then(undefined, () => undefined)
+    await writing
+    await expect(context.transport.dispose()).resolves.toBeUndefined()
+    expect(deletes).toBe(1)
+    await expect(listing).rejects.toThrow()
+  } finally {
+    release()
+    globalThis.fetch = fetchRequest
+    await context?.close()
+  }
 })
 
 test("a failed ACP draft probe retires and can be retried", async () => {

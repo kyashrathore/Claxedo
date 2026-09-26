@@ -95,6 +95,7 @@ export class RequestTable implements RequestBroker {
       await this.orphans.settled(key)
       const prior = this.ports.readAnswer(sessionId, request.requestId)
       if (prior) return prior
+      if (!requestOwnerIsCurrent(this.ports, authority)) return this.saveCancelled(authority, request)
       if (request.kind === "elicitation" && request.mode === "form") {
         try { await validateRequest(this.ports, request, signal) }
         catch (error) {
@@ -103,8 +104,10 @@ export class RequestTable implements RequestBroker {
         }
       }
       if (signal?.aborted) return this.saveCancelled(authority, request)
+      if (!requestOwnerIsCurrent(this.ports, authority)) return this.saveCancelled(authority, request)
       const immediate = await preflight(this.ports, authority, request, expiresAt, signal)
       if (immediate) return immediate
+      if (!requestOwnerIsCurrent(this.ports, authority)) return this.saveCancelled(authority, request)
       return await this.register(authority, request, key, expiresAt, signal)
     } finally {
       this.asking.delete(key)

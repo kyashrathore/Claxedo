@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { denyFloor, modeParity, modes, permissionOptions, sdkModes } from "./permissions"
+import { modeParity, modes, permissionOptions, sdkModes } from "./permissions"
 
 const config = { harness: { id: "claude", access: "native" } } as const
 
@@ -16,7 +16,8 @@ test("bypass mode still carries the native deny floor and exact accepted rules",
   expect(options.permissionMode).toBe("bypassPermissions")
   expect(options.allowDangerouslySkipPermissions).toBe(true)
   expect(options.settings.permissions.allow).toEqual(["Bash(echo (hello))"])
-  expect(options.settings.permissions.deny).toEqual(["Write", ...denyFloor])
+  expect(options.settings.permissions.deny).toEqual(["Write", "Bash(rm -rf /*)", "Bash(rm -rf ~*)", "Bash(git push --force*)",
+    "Bash(curl *| sh)", "Bash(curl *| bash)", "Bash(wget *| sh)", "Bash(chmod -R 777*)"])
   expect(options.additionalDirectories).toEqual(["/tmp/approved"])
 })
 

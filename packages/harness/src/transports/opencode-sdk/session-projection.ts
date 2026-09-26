@@ -9,6 +9,8 @@ export function project(scope: WorkspaceScope, input: unknown): SessionSummary {
   const title = str(row.title)
   const parentID = str(row.parentID)
   const tokens = tokenUsage(row.tokens)
+  const idleAt = num(time?.idle)
+  const outcome = row.outcome === "succeeded" || row.outcome === "failed" || row.outcome === "interrupted" ? row.outcome : undefined
   return {
     id: str(row.id) ?? "",
     ...(title === undefined ? {} : { title }),
@@ -16,6 +18,8 @@ export function project(scope: WorkspaceScope, input: unknown): SessionSummary {
     directory: scope.directory,
     createdAt: num(time?.created) ?? 0,
     updatedAt: num(time?.updated) ?? 0,
+    ...(idleAt === undefined ? {} : { idleAt }),
+    ...(outcome === undefined ? {} : { outcome }),
     ...(tokens === undefined ? {} : { tokens }),
   }
 }
