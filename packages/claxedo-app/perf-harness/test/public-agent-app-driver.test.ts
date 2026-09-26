@@ -52,6 +52,7 @@ function harness(extraSessionIds: string[] = []) {
     ["destination", target("destination", "native-destination")],
   ])
   for (const id of extraSessionIds) readinessTargets.set(id, target(id, `native-${id}`))
+  const listed = { ids: [...new Set(extraSessionIds)].map((id) => `native-${id}`) }
   const driver = createClaxedoPublicDriver({
     hello: { protocolVersion: 1 },
     prepare: async () => ({
@@ -80,6 +81,7 @@ function harness(extraSessionIds: string[] = []) {
       clock += 2
       return { kind: "single-monotonic-clock", clock: "test-renderer", start, end: clock }
     },
+    listedSessionIds: async () => listed.ids,
     executeSessionNavigation: async (benchmarkCase, source, destination, preset) => {
       navigationExecutions.push({ benchmarkCase, source, destination, preset })
       return measurement()
@@ -90,7 +92,7 @@ function harness(extraSessionIds: string[] = []) {
     },
     shutdown: async () => ({ terminated: [], survivors: [], forced: [] }),
   })
-  return { driver, activations, launches, navigationExecutions, panelExecutions }
+  return { driver, listed, activations, launches, navigationExecutions, panelExecutions }
 }
 
 function measurement() {
@@ -214,6 +216,25 @@ describe("Claxedo public driver", () => {
     ])
     expect(cold.durationMs).toBe(2)
     expect(warm.durationMs).toBe(2)
+  })
+
+  test("walks the list one row down per step, rejecting a step to anything but the next row", async () => {
+    const scenario = await readScenario("session-switch-walk-v1")
+    const cases = expandCases(scenario, "smoke")
+    const ids = cases.flatMap((item) => ("destinationSessionId" in item ? [item.destinationSessionId] : []))
+    const { driver, listed, activations } = harness(ids)
+    await prepare(driver, "session-switch-walk-v1", scenario)
+    await driver.launch({ scenarioId: "session-switch-walk-v1", stateHandle: "sealed-p1", initialSessionId: "control", groupId: "walk" })
+    for (const benchmarkCase of cases) await driver.execute({ scenarioId: "session-switch-walk-v1", case: benchmarkCase })
+    expect(activations).toEqual(ids)
+    await driver.shutdown()
+    await driver.launch({ scenarioId: "session-switch-walk-v1", stateHandle: "sealed-p1", initialSessionId: "control", groupId: "walk" })
+    listed.ids = [listed.ids[1]!, listed.ids[0]!, ...listed.ids.slice(2)]
+    await driver.execute({ scenarioId: "session-switch-walk-v1", case: cases[0]! })
+    await expect(driver.execute({ scenarioId: "session-switch-walk-v1", case: cases[1]! })).rejects.toThrow(/not directly below/)
+    await expect(driver.execute({ scenarioId: "session-switch-walk-v1", case: { ...cases[0]!, caseId: "again" } })).rejects.toThrow(
+      /does not match this process's visits/,
+    )
   })
 
   test("measures application start from the requested exact state", async () => {

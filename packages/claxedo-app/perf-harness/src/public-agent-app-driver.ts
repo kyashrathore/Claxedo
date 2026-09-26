@@ -7,7 +7,7 @@ import path from "node:path"
 import { serveDriver, type DriverHandlers, type PrepareParams } from "agent-app-benchmark/driver-sdk"
 import type { WorkspaceFixtureManifest, WorkspaceLoad } from "agent-app-benchmark/driver-sdk"
 import { measureSessionActivation } from "./agent-browser-observer"
-import { readFlag } from "./page-value"
+import { readFlag, readText } from "./page-value"
 import { launchPackagedClaxedo, type ClaxedoLaunch, type OwnedProcess as LaunchedProcess } from "./agent-claxedo-launcher"
 import { isRecord, numberField, recordField, recordsField, textField } from "./json-fields"
 import { materializeClaxedoPublicCorpus, type ClaxedoPublicMaterialization } from "./public-corpus-materializer"
@@ -33,22 +33,35 @@ import {
  */
 const RESOURCE_CONTROL_READINESS_TIMEOUT_MS = 5_000
 
-const APP_START_SCENARIO_IDS: readonly string[] = ["app-start-v1", "app-start-fast-v1", "app-start-fast-v2"]
-const SESSION_SWITCH_SCENARIO_IDS: readonly string[] = ["session-switch-v1", "session-switch-fast-v1", "session-switch-fast-v2"]
-const SESSION_NAVIGATION_SCENARIO_IDS: readonly string[] = ["session-navigation-v1", "session-navigation-fast-v1"]
-const WORKSPACE_PANEL_SCENARIO_IDS: readonly string[] = ["workspace-panel-v1", "workspace-panel-fast-v1"]
+const APP_START_SCENARIO_IDS: readonly string[] = ["app-start-v1", "app-start-fast-v1", "app-start-fast-v2", "app-start-fast-v3"]
+const SESSION_SWITCH_SCENARIO_IDS: readonly string[] = [
+  "session-switch-v1",
+  "session-switch-fast-v1",
+  "session-switch-fast-v2",
+  "session-switch-walk-v1",
+]
+const SESSION_NAVIGATION_SCENARIO_IDS: readonly string[] = [
+  "session-navigation-v1",
+  "session-navigation-fast-v1",
+  "session-navigation-fast-v2",
+]
+const WORKSPACE_PANEL_SCENARIO_IDS: readonly string[] = ["workspace-panel-v1", "workspace-panel-fast-v1", "workspace-panel-fast-v2"]
 
 export const PUBLIC_SCENARIO_IDS = [
   "app-start-v1",
   "app-start-fast-v1",
   "app-start-fast-v2",
+  "app-start-fast-v3",
   "session-switch-v1",
   "session-switch-fast-v1",
   "session-switch-fast-v2",
+  "session-switch-walk-v1",
   "session-navigation-v1",
   "session-navigation-fast-v1",
+  "session-navigation-fast-v2",
   "workspace-panel-v1",
   "workspace-panel-fast-v1",
+  "workspace-panel-fast-v2",
 ] as const
 
 /**
@@ -86,8 +99,10 @@ type LaunchParams = {
 
 type SwitchCase = {
   caseId: string
-  workload: "isolated-latency" | "transcript-size-latency" | "progressive-resource" | "resource-control"
+  workload: "isolated-latency" | "transcript-size-latency" | "progressive-resource" | "resource-control" | "list-walk"
   sessionState?: "cold" | "warm"
+  /** A list walk's step within its pass; step 0 enters the list from outside or wraps to its top. */
+  walkPosition?: number
   sourceSessionId?: string
   destinationSessionId: string
 }
@@ -114,6 +129,8 @@ type DriverDependencies = {
   prepare(params: PrepareParams): Promise<Prepared>
   launch(stateHandle: string, initialSessionId: string): Promise<ActiveLaunch>
   activate(target: Target, readinessTimeoutMs?: number): Promise<Clock>
+  /** Native session ids of the rail's session rows, top to bottom. */
+  listedSessionIds(): Promise<readonly string[]>
   executePanelAction?(
     benchmarkCase: WorkspacePanelCase,
     target: Target,
@@ -149,6 +166,8 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
   let preparedScenarioId: string | undefined
   /** Logical session IDs first-visited in the current app process (history returns may reuse them later). */
   let visitedDestinations = new Set<string>()
+  /** Logical session ids the list walk has shown in the running process. */
+  let walkedSessions = new Set<string>()
 
   const requirePrepared = () => {
     if (!prepared) throw new Error("Claxedo driver has not prepared the public corpus")
@@ -205,6 +224,7 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
       if (launch.processes.length === 0) throw new Error("Claxedo launch returned no application root")
       active = true
       visitedDestinations = new Set()
+      walkedSessions = new Set()
       return { ready: true, processes: launch.processes, readiness: launch.readiness }
     },
     execute: async (params) => {
@@ -281,6 +301,22 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
       if (!active) throw new Error("Claxedo session switching requires a running application")
       const benchmarkCase = params.case
       const destination = resolveTarget(benchmarkCase.destinationSessionId)
+      if (benchmarkCase.workload === "list-walk") {
+        const source = resolveTarget(benchmarkCase.sourceSessionId ?? "control")
+        if ((benchmarkCase.sessionState === "cold") === walkedSessions.has(destination.logicalSessionId)) {
+          throw new Error(`Claxedo list-walk ${benchmarkCase.sessionState} step to ${destination.logicalSessionId} does not match this process's visits`)
+        }
+        if (benchmarkCase.walkPosition !== 0) {
+          const listed = await dependencies.listedSessionIds()
+          const sourceRow = listed.indexOf(source.sessionId)
+          if (sourceRow < 0 || listed[sourceRow + 1] !== destination.sessionId) {
+            throw new Error(`Claxedo lists ${destination.logicalSessionId} ${sourceRow < 0 ? "without" : "not directly below"} ${source.logicalSessionId}`)
+          }
+        }
+        const clock = await dependencies.activate(destination)
+        walkedSessions.add(destination.logicalSessionId)
+        return execution(benchmarkCase.caseId, clock, readinessReceipt(clock.end))
+      }
       const control = resolveTarget(benchmarkCase.sourceSessionId ?? "control")
       if (benchmarkCase.workload !== "resource-control") {
         if (benchmarkCase.sessionState === "warm") await dependencies.activate(destination)
@@ -296,6 +332,7 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
       const { terminated, survivors } = await dependencies.shutdown()
       active = false
       visitedDestinations = new Set()
+      walkedSessions = new Set()
       return { terminated, survivors }
     },
   }
@@ -542,6 +579,17 @@ async function makeDefaultDependencies(applicationId: ApplicationId): Promise<Dr
         start: result.trustedEventAtMs,
         end: result.paintedAtMs,
       }
+    },
+    listedSessionIds: async () => {
+      if (!current) throw new Error("Claxedo renderer is not running")
+      const rows = await current.page.evaluate(() =>
+        Array.from(
+          document.querySelectorAll<HTMLElement>('[data-testid="rail-sidebar-session-row"][data-session-id]'),
+          (row) => row.dataset.sessionId ?? "",
+        ),
+      )
+      if (!Array.isArray(rows)) throw new Error("Claxedo rail rows did not read as a list")
+      return rows.map(readText)
     },
     executePanelAction: async (benchmarkCase, target, preset) => {
       if (!current || !workspaceFixture) throw new Error("Claxedo public panel fixture is not prepared")
@@ -970,7 +1018,8 @@ function parseBenchmarkCase(value: unknown): SwitchCase | StartCase | SessionNav
     workload === "isolated-latency" ||
     workload === "transcript-size-latency" ||
     workload === "progressive-resource" ||
-    workload === "resource-control"
+    workload === "resource-control" ||
+    workload === "list-walk"
   ) {
     const destinationSessionId = textField(value, "destinationSessionId")
     if (destinationSessionId === undefined) {
@@ -978,11 +1027,13 @@ function parseBenchmarkCase(value: unknown): SwitchCase | StartCase | SessionNav
     }
     const sessionState = textField(value, "sessionState")
     const sourceSessionId = textField(value, "sourceSessionId")
+    const walkPosition = numberField(value, "walkPosition")
     return {
       caseId,
       workload,
       destinationSessionId,
       ...(sessionState === "cold" || sessionState === "warm" ? { sessionState } : {}),
+      ...(walkPosition === undefined ? {} : { walkPosition }),
       ...(sourceSessionId === undefined ? {} : { sourceSessionId }),
     }
   }
