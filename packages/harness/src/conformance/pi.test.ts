@@ -3,7 +3,7 @@ import os from "node:os"
 import path from "node:path"
 import { expect, test } from "bun:test"
 import { createTestServices } from "./test-support/services"
-import { runConformance, type ConformanceBackend } from "./test-support/run"
+import { runConformance, setupConformance, type ConformanceBackend } from "./test-support/run"
 import { ensurePinnedPi, PINNED_PI } from "../../e2e/harness/pinned-pi"
 import { reservePort, releasePort } from "../../e2e/harness/ports"
 import { startScriptedModelServer } from "../../e2e/harness/scripted-model-server"
@@ -30,6 +30,7 @@ const extension = `export default function (pi) {
     },
   })
 }
+
 `
 
 async function backend(): Promise<PiBackend> {
@@ -61,6 +62,79 @@ async function backend(): Promise<PiBackend> {
     close: async () => { await server.close(); releasePort(port); await fs.rm(root, { recursive: true, force: true }) },
   }
 }
+
+test("Pi failed configuration restart removes the retired session", async () => {
+  const context = await setupConformance({
+    name: "pi failed restart", backend,
+    makeTransport(services, state) {
+      const pi = state as PiBackend
+      return new PiRpcTransport(services, { binary: PINNED_PI, placement: "loopback", machineOwnerUserId: "owner",
+        canUseOwnLogin: true, stateRoot: path.join(pi.root, "claxedo"), ownerAgentDir: pi.agentDir,
+        runtime: process.execPath, env: process.env })
+    },
+  })
+  try {
+    const entry = (context.transport as unknown as { entries: Map<string, { profile: { sessionDir: string } }> }).entries.get("s1")!
+    await fs.rm(entry.profile.sessionDir, { recursive: true, force: true })
+    await expect(context.transport.configure(context.session,
+      { credentials: { ...context.backend.credentials, leaseGeneration: "changed" } })).rejects.toThrow()
+    expect(context.transport.health?.connection(context.backend.directory, "s1").state).toBe("disconnected")
+    const send = async () => {
+      for await (const _event of context.transport.send(context.session, context.turn("after failed restart"), context.turnBroker())) {}
+    }
+    await expect(send()).rejects.toThrow("not attached")
+  } finally { await context.close() }
+}, 30_000)
+
+test("Pi settles a turn and cancels its unanswered dialog", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-settled-dialog-"))
+  const script = path.join(root, "scripted-pi.js")
+  await fs.writeFile(script, `const readline = require("node:readline");
+const fs = require("node:fs");
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+readline.createInterface({ input: process.stdin }).on("line", (line) => {
+  const request = JSON.parse(line);
+  if (request.type === "extension_ui_response") {
+    fs.writeFileSync(process.env.PI_DIALOG_RESPONSE_FILE, JSON.stringify(request));
+    return;
+  }
+  send({ type: "response", id: request.id, command: request.type, success: true,
+    data: request.type === "get_state" ? { sessionId: "scripted-pi" } : {} });
+  if (request.type === "prompt") {
+    send({ type: "extension_ui_request", id: "orphan-dialog", method: "confirm", title: "Orphan", message: "Still open?" });
+    send({ type: "agent_settled" });
+  }
+});`)
+  const context = await setupConformance({
+    name: "pi orphan dialog", backend: async () => ({ root, directory: root, harness: { id: "pi", access: "native" },
+      model: { providerID: "pi", modelID: "openai/gpt-4.1" }, owner: { kind: "machine-owner" },
+      credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" },
+      close: async () => { await fs.rm(root, { recursive: true, force: true }) } }),
+    makeTransport(services, state) {
+      const pi = state as PiBackend
+      return new PiRpcTransport(services, { binary: script, placement: "loopback", machineOwnerUserId: "owner",
+        canUseOwnLogin: true, stateRoot: path.join(pi.root, "claxedo"), ownerAgentDir: path.join(pi.root, "agent"),
+        runtime: process.execPath, env: { ...process.env, PI_DIALOG_RESPONSE_FILE: path.join(root, "response.json") } })
+    },
+  })
+  try {
+    const running = (async () => {
+      for await (const _event of context.transport.send(context.session, context.turn("dialog"), context.turnBroker())) {}
+    })()
+    const completed = running.then(() => "settled", (error: unknown) => `failed: ${String(error)}`)
+    const entry = (context.transport as unknown as { entries: Map<string, { settled: boolean }> }).entries.get("s1")!
+    for (let attempt = 0; !entry.settled && attempt < 500; attempt++) await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(entry.settled).toBe(true)
+    await expect(Promise.race([
+      completed,
+      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 2_000)),
+    ])).resolves.toBe("settled")
+    expect(context.owner.broker.list({ sessionId: "s1" }).filter((row) => row.request.kind === "question")).toHaveLength(0)
+    expect(JSON.parse(await fs.readFile(path.join(root, "response.json"), "utf8"))).toEqual({
+      type: "extension_ui_response", id: "orphan-dialog", cancelled: true,
+    })
+  } finally { await context.close() }
+}, 15_000)
 
 runConformance({
   name: "pi-rpc",
