@@ -3,7 +3,7 @@ import { turnError } from "../errors"
 import type { RetryAction, SessionStatus } from "../types"
 import { isRecord } from "../../lib/record"
 
-function retryAction(value: unknown): RetryAction | undefined {
+function retryActionFromWire(value: unknown): RetryAction | undefined {
   if (!isRecord(value)) return undefined
   const { reason, provider, title, message, label, link } = value
   if (typeof reason !== "string" || typeof provider !== "string" || typeof title !== "string" || typeof message !== "string" || typeof label !== "string") return undefined
@@ -19,7 +19,7 @@ function runtimeStatusFromWire(value: unknown): AgentRuntimeStatus | undefined {
     case "retry": {
       const { attempt, message, next } = value
       if (typeof attempt !== "number" || typeof message !== "string" || typeof next !== "number") return undefined
-      const action = retryAction(value.action)
+      const action = retryActionFromWire(value.action)
       return { type: "retry", attempt, message, next, ...(action ? { action } : {}) }
     }
     case "recovering":

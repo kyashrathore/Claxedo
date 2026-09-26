@@ -53,7 +53,7 @@ export function parentOf(input: string) {
   return v.slice(0, i)
 }
 
-function modeOf(input: string) {
+function inputPathMode(input: string) {
   const raw = normalizeDriveRoot(input.trim())
   if (!raw) return "relative"
   if (raw.startsWith("~")) return "tilde"
@@ -74,7 +74,7 @@ function tildeOf(absolute: string, home: string) {
 
 export function displayPath(path: string, input: string, home: string) {
   const full = trimTrailing(path)
-  if (modeOf(input) === "absolute") return full
+  if (inputPathMode(input) === "absolute") return full
   return tildeOf(full, home) || full
 }
 

@@ -7,7 +7,7 @@ const DEFAULT_AGENT = "build"
 
 type WirePart = RuntimePromptInput["parts"][number]
 
-function attachmentPart(attachment: PromptAttachment): WirePart {
+function wireAttachmentPart(attachment: PromptAttachment): WirePart {
   switch (attachment.kind) {
     case "file":
       return {
@@ -39,7 +39,7 @@ export function promptBody(input: PromptInput, messageId: string) {
     ...(input.permissionMode !== undefined ? { permissionMode: input.permissionMode } : {}),
     ...(input.serviceTier !== undefined ? { serviceTier: input.serviceTier } : {}),
     ...(input.delivery ? { delivery: input.delivery } : {}),
-    parts: [{ type: "text", text: input.text } as WirePart, ...input.attachments.map(attachmentPart)],
+    parts: [{ type: "text", text: input.text } as WirePart, ...input.attachments.map(wireAttachmentPart)],
   }
 }
 

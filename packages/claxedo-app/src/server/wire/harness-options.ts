@@ -18,7 +18,7 @@ function acpChoice(value: unknown): HarnessOptionChoice | undefined {
   return { id: value.value, name: value.name, ...(typeof value.description === "string" ? { description: value.description } : {}) }
 }
 
-function decoded(values: unknown, decode: (value: unknown) => HarnessOptionChoice | undefined): readonly HarnessOptionChoice[] {
+function decodedChoices(values: unknown, decode: (value: unknown) => HarnessOptionChoice | undefined): readonly HarnessOptionChoice[] {
   return Array.isArray(values) ? values.flatMap((value) => decode(value) ?? []) : []
 }
 
@@ -27,15 +27,15 @@ function configOptions(values: readonly unknown[]): readonly ConfigOption[] {
     isRecord(value) && typeof value.id === "string" && typeof value.name === "string" && (value.type === "select" || value.type === "boolean"))
 }
 
-function select(options: readonly ConfigOption[], category: string): HarnessOptionSelect | undefined {
+function optionSelect(options: readonly ConfigOption[], category: string): HarnessOptionSelect | undefined {
   const option = options.find((item) => item.category === category && item.type === "select")
   if (!option) return undefined
-  const native = decoded(option.selectOptions, selectOption)
-  const choices = native.length > 0 ? native : decoded(option.options, acpChoice)
+  const native = decodedChoices(option.selectOptions, selectOption)
+  const choices = native.length > 0 ? native : decodedChoices(option.options, acpChoice)
   return { choices, ...(typeof option.currentValue === "string" ? { current: option.currentValue } : {}) }
 }
 
-function source(value: unknown): HarnessOptionsSource {
+function optionsSource(value: unknown): HarnessOptionsSource {
   return value === "harness" || value === "catalog" ? value : "empty"
 }
 
@@ -44,15 +44,15 @@ export function harnessOptionsFromWire(body: unknown): HarnessOptions {
   const options = configOptions(Array.isArray(body) ? body : Array.isArray(body.options) ? body.options : [])
   const resolvedModel = isRecord(body) ? selectOption(body.resolvedModel) : undefined
   const live = Array.isArray(body) || (body.source === undefined && body.stale === undefined)
-  const models = select(options, "model")
-  const thoughtLevels = select(options, "thought_level")
+  const models = optionSelect(options, "model")
+  const thoughtLevels = optionSelect(options, "thought_level")
   return {
-    source: live ? "harness" : source(body.source),
+    source: live ? "harness" : optionsSource(body.source),
     stale: live ? false : body.stale === true,
     offersOptions: options.length > 0,
     ...(models && models.choices.length > 0 ? { models } : {}),
     ...(thoughtLevels && thoughtLevels.choices.length > 1 ? { thoughtLevels } : {}),
-    serviceTiers: decoded(options.find((item) => item.category === "service_tier" && item.type === "select")?.selectOptions, selectOption),
+    serviceTiers: decodedChoices(options.find((item) => item.category === "service_tier" && item.type === "select")?.selectOptions, selectOption),
     ...(resolvedModel ? { resolvedModel } : {}),
   }
 }
