@@ -170,8 +170,6 @@ describe("public OpenCode corpus materialization", () => {
       })
       const target = result.readinessTargets.get("control")!
       expect(target.expectedPartIds).toEqual(["prt_step", "prt_tool", "prt_assistant"])
-      expect(Object.keys(target.expectedTextPartSha256)).toEqual(["prt_assistant"])
-      expect(target.expectedContentSha256.msg_assistant).toBe(target.expectedTextPartSha256.prt_assistant)
     } finally {
       await rm(root, { recursive: true, force: true })
     }

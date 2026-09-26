@@ -41,8 +41,6 @@ function harness(extraSessionIds: string[] = []) {
     sessionId,
     title: logicalSessionId,
     expectedMessageIds: [`message-${logicalSessionId}`],
-    expectedContentSha256: {},
-    expectedTextPartSha256: {},
     expectedPartIds: [],
   })
   const readinessTargets = new Map([
@@ -563,8 +561,6 @@ describe("Claxedo public driver", () => {
           workspaceDirectory: "/workspace",
           title: "Session A",
           expectedMessageIds: [],
-          expectedContentSha256: {},
-          expectedTextPartSha256: {},
           expectedPartIds: [],
         },
         { manifest: {} as never, files: ["src/a.ts"], changed: ["src/a.ts"], openFiles: ["src/a.ts", "src/b.ts"] },
@@ -611,8 +607,6 @@ describe("Claxedo prepared-state cache", () => {
     workspaceDirectory: "/workspaces/workspace-a",
     expectedMessageIds: ["msg_1"],
     expectedPartIds: ["prt_1", "prt_2"],
-    expectedContentSha256: { msg_1: "a".repeat(64) },
-    expectedTextPartSha256: { prt_1: "b".repeat(64) },
   }
   const materialization = {
     corpusDigestSha256: "c".repeat(64),

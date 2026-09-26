@@ -770,17 +770,13 @@ function parseCachedTarget(
   const workspaceDirectory = textField(record, "workspaceDirectory")
   const expectedMessageIds = stringArray(record.expectedMessageIds)
   const expectedPartIds = stringArray(record.expectedPartIds)
-  const expectedContentSha256 = stringRecord(record.expectedContentSha256)
-  const expectedTextPartSha256 = stringRecord(record.expectedTextPartSha256)
   if (
     !sessionId ||
     title === undefined ||
     !logicalSessionId ||
     !workspaceDirectory ||
     !expectedMessageIds ||
-    !expectedPartIds ||
-    !expectedContentSha256 ||
-    !expectedTextPartSha256
+    !expectedPartIds
   )
     return undefined
   return {
@@ -790,8 +786,6 @@ function parseCachedTarget(
     workspaceDirectory,
     expectedMessageIds,
     expectedPartIds,
-    expectedContentSha256,
-    expectedTextPartSha256,
   }
 }
 

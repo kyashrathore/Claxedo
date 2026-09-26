@@ -122,14 +122,11 @@ export type PaintedMessage = {
   kind: "UserMessage" | "AssistantPart";
   /**
    * The part-group identity of the painted row. An assistant message renders
-   * one row PER PART GROUP, all stamped with the same message id, so the
-   * message id alone cannot say which content the row shows — and a message
-   * taller than the viewport never has its first text part on screen at the
-   * bottom-anchored open, so content verification must be part-granular.
+   * one row per part group, all stamped with the same message id, so only the
+   * part id says whether the row belongs to the latest turn's parts.
    */
   partId: string | undefined;
   textLength: number;
-  contentSha256: string;
   composerVisibleAndEnabled: boolean;
   surfaceFocused: boolean;
   timelineCoverage: TimelineCoverage;
@@ -137,9 +134,6 @@ export type PaintedMessage = {
 
 type SemanticTimelineTarget = {
   expectedMessageIds: readonly string[];
-  expectedContentSha256: Readonly<Record<string, string>>;
-  /** sha256(trimmed raw text) per latest-turn TEXT part id. */
-  expectedTextPartSha256: Readonly<Record<string, string>>;
   /** Every latest-turn part id, text or not. */
   expectedPartIds: readonly string[];
 };
@@ -259,7 +253,7 @@ function readTimelineCoverage(value: unknown): TimelineCoverage {
   ]);
 }
 
-function readPaintedMessage(value: unknown): Omit<PaintedMessage, "contentSha256"> {
+function readPaintedMessage(value: unknown): PaintedMessage {
   const record = readRecord(value);
   const kind = readText(record.kind);
   if (kind !== "UserMessage" && kind !== "AssistantPart") {
@@ -292,7 +286,6 @@ function readStablePaint(value: unknown) {
   return {
     paintedAtMs: readNumber(record.paintedAtMs),
     paintedMessage: readPaintedMessage(record.paintedMessage),
-    contentText: readText(record.contentText),
     frames: readList(record.frames).map(readPaintStabilityFrame),
   };
 }
@@ -400,43 +393,16 @@ export function completeFirstFold(coverage: TimelineCoverage) {
 }
 
 /**
- * Content verification for the painted row, part-granular where possible:
- * - a row showing a TEXT part must hash-match that part's raw text;
- * - a row showing a transformed part (tool call, diff — rendered as a
- *   summary, so raw payload text can never hash-match the rendered text
- *   without duplicating the renderer) must be a real latest-turn part and
- *   have painted non-empty text;
- * - a row with no part identity (user rows, pre-part-id markup) falls back
- *   to the message-level sha.
+ * The painted row is the destination's own latest turn: an assistant row shows
+ * one of that turn's parts (a text part or a transformed tool/diff part), and a
+ * row without part identity is the turn's message. The rendered text is not
+ * compared with the corpus: every app renders markdown its own way, and the
+ * rule the three compared drivers share is identity plus painted text.
  */
-export function paintedContentVerification(
-  message: PaintedMessage,
-  target: SemanticTimelineTarget,
-):
-  | { mode: "text-part-sha256"; expectedSha256: string; passed: boolean }
-  | { mode: "part-identity"; passed: boolean }
-  | { mode: "message-sha256"; expectedSha256: string | undefined; passed: boolean } {
-  if (message.kind === "AssistantPart" && message.partId !== undefined) {
-    const expectedSha256 = target.expectedTextPartSha256[message.partId];
-    if (expectedSha256 !== undefined)
-      return {
-        mode: "text-part-sha256",
-        expectedSha256,
-        passed: expectedSha256 === message.contentSha256,
-      };
-    return {
-      mode: "part-identity",
-      passed:
-        target.expectedPartIds.includes(message.partId) &&
-        message.textLength > 0,
-    };
-  }
-  const expectedSha256 = target.expectedContentSha256[message.messageId];
-  return {
-    mode: "message-sha256",
-    expectedSha256,
-    passed: expectedSha256 === message.contentSha256,
-  };
+export function latestTurnIdentity(message: PaintedMessage, target: SemanticTimelineTarget): boolean {
+  if (!target.expectedMessageIds.includes(message.messageId)) return false
+  if (message.kind === "AssistantPart" && message.partId !== undefined) return target.expectedPartIds.includes(message.partId)
+  return true
 }
 
 export function semanticTimelinePaintReady(
@@ -444,8 +410,7 @@ export function semanticTimelinePaintReady(
   target: SemanticTimelineTarget,
 ) {
   return (
-    target.expectedMessageIds.includes(message.messageId) &&
-    paintedContentVerification(message, target).passed &&
+    latestTurnIdentity(message, target) &&
     message.textLength > 0 &&
     message.composerVisibleAndEnabled &&
     message.surfaceFocused &&
@@ -507,14 +472,12 @@ export async function measureSessionActivation(
     }: {
       id: string;
       expectedMessageIds: string[];
-      expectedContentSha256: Record<string, string>;
       readinessTimeoutMs: number;
       confirmationFrames: number;
     }) =>
       new Promise<{
         paintedAtMs: number;
-        paintedMessage: Omit<PaintedMessage, "contentSha256">;
-        contentText: string;
+        paintedMessage: PaintedMessage;
         frames: PaintStabilityFrame[];
       }>(
         (resolve, reject) => {
@@ -526,10 +489,7 @@ export async function measureSessionActivation(
                 startIndex: number;
                 startedAtMs: number;
                 signature: string;
-                sample: {
-                  paintedMessage: Omit<PaintedMessage, "contentSha256">;
-                  contentText: string;
-                };
+                paintedMessage: PaintedMessage;
               }
             | undefined;
           // The target's timeline root may not exist before the click, so the
@@ -683,8 +643,7 @@ export async function measureSessionActivation(
             | {
                 signature: string;
                 signatureValue: Record<string, unknown>;
-                paintedMessage: Omit<PaintedMessage, "contentSha256">;
-                contentText: string;
+                paintedMessage: PaintedMessage;
               }
             | undefined => {
             const candidate = document.querySelector<HTMLElement>(
@@ -842,7 +801,7 @@ export async function measureSessionActivation(
               !completeFirstFold
             )
               return undefined;
-            const paintedMessage: Omit<PaintedMessage, "contentSha256"> = {
+            const paintedMessage: PaintedMessage = {
               messageId,
               kind,
               partId,
@@ -880,7 +839,7 @@ export async function measureSessionActivation(
                 ];
               }),
             };
-            return { signature: JSON.stringify(signatureValue), signatureValue, paintedMessage, contentText: text };
+            return { signature: JSON.stringify(signatureValue), signatureValue, paintedMessage };
           };
           const notReadyDiagnostic = () => {
             const candidate = document.querySelector<HTMLElement>(
@@ -945,15 +904,14 @@ export async function measureSessionActivation(
                 startIndex: index,
                 startedAtMs: observedAtMs,
                 signature: current.signature,
-                sample: { paintedMessage: current.paintedMessage, contentText: current.contentText },
+                paintedMessage: current.paintedMessage,
               };
             }
             if (run && index - run.startIndex >= confirmationFrames) {
               mutations.disconnect();
               resolve({
                 paintedAtMs: run.startedAtMs,
-                paintedMessage: run.sample.paintedMessage,
-                contentText: run.sample.contentText,
+                paintedMessage: run.paintedMessage,
                 frames,
               });
               return;
@@ -975,7 +933,6 @@ export async function measureSessionActivation(
     {
       id: target.sessionId,
       expectedMessageIds: [...target.expectedMessageIds],
-      expectedContentSha256: { ...target.expectedContentSha256 },
       readinessTimeoutMs: hooks?.readinessTimeoutMs ?? 30_000,
       confirmationFrames: PAINT_SETTLE_CONFIRMATION_FRAMES,
     },
@@ -983,12 +940,7 @@ export async function measureSessionActivation(
   await clickVisibleSessionActivation(page, target.sessionId);
   const stablePaint = readStablePaint(await stablePaintPromise);
   await hooks?.onPainted?.();
-  const contentSha256 = stablePaint
-    ? await sha256Text(stablePaint.contentText)
-    : "";
-  const paintedMessage = stablePaint
-    ? { ...stablePaint.paintedMessage, contentSha256 }
-    : undefined;
+  const paintedMessage = stablePaint?.paintedMessage;
   const timing = readActionResult(
     await page.evaluate(
       async (input: { token: string; paintedAtMs?: number }) =>
@@ -1061,12 +1013,6 @@ async function clickVisibleSessionActivation(page: Page, sessionId: string) {
   const index = readNumber(answer.index);
   if (index < 0) throw new Error(`Claxedo has no visible hit-testable session row for ${sessionId}: ${JSON.stringify(readRecords(answer.candidates))}`);
   await page.locator(selector).nth(index).click();
-}
-
-async function sha256Text(value: string) {
-  const bytes = new TextEncoder().encode(value.trim().replace(/\s+/gu, " "));
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 export async function measureWarmSwitches(

@@ -332,7 +332,7 @@ async function materializeSession(input: {
   let sessionInfo: SessionInfo | undefined
   let currentMessage: MessageInfo | undefined
   let latestAssistant:
-    | { messageId: string; partIds: string[]; textSha256ByPart: Record<string, string>; textSha256?: string }
+    | { messageId: string; partIds: string[] }
     | undefined
   const lines = createInterface({ input: createReadStream(file), crlfDelay: Infinity })
   for await (const line of lines) {
@@ -385,14 +385,9 @@ async function materializeSession(input: {
       transcriptBytes += partPayloadBytes(part)
       if (currentMessage.role === "assistant") {
         if (latestAssistant?.messageId !== currentMessage.id) {
-          latestAssistant = { messageId: currentMessage.id, partIds: [], textSha256ByPart: {} }
+          latestAssistant = { messageId: currentMessage.id, partIds: [] }
         }
         latestAssistant.partIds.push(part.id)
-        if (part.type === "text" && typeof part.text === "string") {
-          const textSha256 = createHash("sha256").update(normalizeSemanticText(part.text)).digest("hex")
-          latestAssistant.textSha256ByPart[part.id] = textSha256
-          latestAssistant.textSha256 = textSha256
-        }
       }
     } else {
       throw new Error(`Claxedo rejected unknown OpenCode event type ${String(event.type)}`)
@@ -402,7 +397,7 @@ async function materializeSession(input: {
   if (fileHash.digest("hex") !== input.session.fileDigestSha256 || expectedSequence !== input.session.eventCount) {
     throw new Error(`Claxedo corpus file integrity failed for ${input.session.logicalSessionId}`)
   }
-  if (!sessionInfo || !latestAssistant?.textSha256 || transcriptBytes !== input.session.transcriptBytes) {
+  if (!sessionInfo || !latestAssistant || transcriptBytes !== input.session.transcriptBytes) {
     throw new Error(`Claxedo corpus semantics failed for ${input.session.logicalSessionId}`)
   }
   return {
@@ -420,8 +415,6 @@ async function materializeSession(input: {
       sessionId: input.session.nativeSessionId,
       title: sessionInfo.title,
       expectedMessageIds: [latestAssistant.messageId],
-      expectedContentSha256: { [latestAssistant.messageId]: latestAssistant.textSha256 },
-      expectedTextPartSha256: latestAssistant.textSha256ByPart,
       expectedPartIds: latestAssistant.partIds,
     },
     messageCount,
@@ -460,10 +453,6 @@ function partPayload(data: Record<string, unknown>): Pick<CanonicalPart, "type" 
     text: textField(data, "text"),
     ...(state ? { state: { input: state.input, output: textField(state, "output") } } : {}),
   }
-}
-
-function normalizeSemanticText(value: string): string {
-  return value.trim().replace(/\s+/gu, " ")
 }
 
 /**
