@@ -1,4 +1,4 @@
-import { useMarked, transcriptMarkdownExtensions, useDialog, ImagePreview, checksum, reportUiError, Icon, IconButtonV2, TooltipV2 } from "@/ui"
+import { useMarked, transcriptMarkdownExtensions, useDialog, ImagePreview, checksum, reportUiError, Icon, IconButton, TooltipV2 } from "@/ui"
 import { codeTheme } from "./code-theme"
 import { useTranscriptI18n } from "./i18n"
 import { useOptionalData } from "./data"
@@ -179,7 +179,7 @@ function MarkdownCopyButton(props: { labels: Accessor<CopyLabels>; copied: Acces
   const label = () => (props.copied() ? props.labels().copied : props.labels().copy)
   return (
     <TooltipV2 placement="top" value={label()}>
-      <IconButtonV2
+      <IconButton
         type="button"
         size="normal"
         variant="ghost-muted"
@@ -276,7 +276,7 @@ function createViewButton(label: string, onClick: () => void) {
   const dispose = render(
     () => (
       <TooltipV2 placement="top" value={label}>
-        <IconButtonV2
+        <IconButton
           type="button"
           size="small"
           variant="ghost-muted"

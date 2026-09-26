@@ -191,7 +191,7 @@ export function TaskStartControl(props: {
       <DropdownMenu placement="bottom-end" onOpenChange={props.onMenuOpenChange}>
         <DropdownMenu.Trigger
           as={IconButton}
-          icon="chevron-down"
+          icon={<Icon name="chevron-down" size="small" />}
           size="small"
           data-testid={`${props.testIdPrefix}-start-menu-${props.task.id}`}
           aria-label={t("tasks.start.withPreset", { title: props.task.title })}
@@ -217,7 +217,7 @@ export function TaskRowActions(props: {
     <DropdownMenu placement="bottom-end" onOpenChange={props.onMenuOpenChange}>
       <DropdownMenu.Trigger
         as={IconButton}
-        icon="three-dots"
+        icon={<Icon name="three-dots" size="small" />}
         size="small"
         variant="ghost"
         data-testid={`${props.testIdPrefix}-actions-${props.task.id}`}

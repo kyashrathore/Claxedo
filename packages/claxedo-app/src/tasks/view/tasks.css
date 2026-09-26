@@ -225,12 +225,12 @@
 }
 
 .tsk-split > .ui-button,
-.tsk-split .ui-icon-button {
+.tsk-split .ui-icon-button-v2 {
   border-radius: 0;
   box-shadow: none;
 }
 
-.tsk-split .ui-icon-button {
+.tsk-split .ui-icon-button-v2 {
   width: 22px;
   border-left: 1px solid var(--tsk-hairline);
 }
@@ -248,7 +248,7 @@
 @media (hover: hover) and (pointer: fine) {
   .tsk-tr .tsk-row-tools,
   .tsk-card .tsk-row-tools,
-  .tsk-column-head .ui-icon-button {
+  .tsk-column-head .ui-icon-button-v2 {
     opacity: 0;
     transition: opacity 100ms linear;
   }
@@ -257,8 +257,8 @@
   .tsk-tr:focus-within .tsk-row-tools,
   .tsk-card:hover .tsk-row-tools,
   .tsk-card:focus-within .tsk-row-tools,
-  .tsk-column:hover .tsk-column-head .ui-icon-button,
-  .tsk-column-head:focus-within .ui-icon-button,
+  .tsk-column:hover .tsk-column-head .ui-icon-button-v2,
+  .tsk-column-head:focus-within .ui-icon-button-v2,
   .tsk-tr[data-tools-open] .tsk-row-tools,
   .tsk-card[data-tools-open] .tsk-row-tools {
     opacity: 1;
@@ -274,7 +274,7 @@
 @media (prefers-reduced-motion: reduce) {
   .tsk-tr .tsk-row-tools,
   .tsk-card .tsk-row-tools,
-  .tsk-column-head .ui-icon-button {
+  .tsk-column-head .ui-icon-button-v2 {
     transition: none;
   }
 }
@@ -319,7 +319,7 @@
   gap: 2px;
 }
 
-.tsk-filter-tag .ui-icon-button {
+.tsk-filter-tag .ui-icon-button-v2 {
   width: 16px;
   height: 16px;
   margin-right: -4px;

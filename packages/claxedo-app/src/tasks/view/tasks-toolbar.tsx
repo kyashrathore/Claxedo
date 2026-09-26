@@ -1,7 +1,7 @@
 import { For, Show, createSignal, type JSX } from "solid-js"
 import { TASK_STATUSES, type TaskStatus } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
-import { Button, Switch, Tag, IconButton, Popover, Select } from "@/ui"
+import { Button, Switch, Tag, Icon, IconButton, Popover, Select } from "@/ui"
 import { tasksDictionary } from "../i18n"
 import type { TaskProject } from "../links"
 import {
@@ -65,7 +65,7 @@ function FilterTags(props: ToolbarProps): JSX.Element {
           <Tag class="tsk-filter-tag">
             {t(TASK_STATUS_KEYS[status()])}
             <IconButton
-              icon="close-small"
+              icon={<Icon name="close-small" size="small" />}
               size="small"
               variant="ghost"
               data-testid="tasks-status-filter-clear"

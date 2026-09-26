@@ -32,7 +32,7 @@ import type {
   AgentUserMessage,
 } from "@claxedo/agent-runtime-contract"
 import { useData } from "./data"
-import { useFileComponent, useDialog, Accordion, StickyAccordionHeader, Collapsible, FileIcon, Icon, Checkbox, DiffChanges, ImagePreview, getDirectory as _getDirectory, getFilename, checksum, Tooltip, IconButton, IconV2, IconButtonV2, ButtonV2, TooltipV2, TextShimmer, type IconProps } from "@/ui"
+import { useFileComponent, useDialog, Accordion, StickyAccordionHeader, Collapsible, FileIcon, Icon, Checkbox, DiffChanges, ImagePreview, getDirectory as _getDirectory, getFilename, checksum, Tooltip, IconButton, IconV2, ButtonV2, TooltipV2, TextShimmer, type IconProps } from "@/ui"
 import { type TranscriptI18n, useTranscriptI18n } from "./i18n"
 import { BasicTool, GenericTool, shellExitCode, ToolExitCode } from "./basic-tool"
 import { ScrollableOutput } from "./scrollable-output"
@@ -238,7 +238,7 @@ function MessageActionButton(
       fallback={
         <Tooltip value={props.label} placement="top" gutter={4}>
           <IconButton
-            icon={props.icon}
+            icon={<Icon name={props.icon} size="small" />}
             size="normal"
             variant="ghost"
             disabled={props.disabled}
@@ -250,7 +250,7 @@ function MessageActionButton(
       }
     >
       <TooltipV2 value={props.label} placement="top" gutter={4}>
-        <IconButtonV2
+        <IconButton
           icon={<IconV2 name={icon()} size="small" />}
           size="normal"
           variant="ghost-muted"
@@ -2226,7 +2226,7 @@ ToolRegistry.register({
         <div class="ui-bash-output">
           <div class="ui-bash-copy">
             <TooltipV2 value={copied() ? i18n.t("transcript.message.copied") : i18n.t("transcript.message.copy")} placement="top">
-              <IconButtonV2
+              <IconButton
                 icon={<IconV2 name={copied() ? "check" : "outline-copy"} size="small" />}
                 size="normal"
                 variant="ghost-muted"
@@ -2791,7 +2791,7 @@ ToolRegistry.register({
           subtitle: plan().title,
           action: plan().markdown ? (
             <IconButton
-              icon="open-file"
+              icon={<Icon name="open-file" size="small" />}
               variant="ghost"
               size="small"
               aria-label={i18n.t("transcript.tool.plan.open")}
