@@ -19,6 +19,10 @@ const input: StartInput = {
   credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" },
 }
 
+function rebindTo(directory: string) {
+  return async (upstreamSessionId: string) => Object.freeze({ sessionId: "s1", workspaceId: "w1", directory, connectionId: "codex-app-server", upstreamSessionId })
+}
+
 test("Codex receives every projected MCP server and local first-party server", () => {
   const services = { firstPartyMcp: () => ({ kind: "http", name: "claxedo", url: "http://127.0.0.1:47503" }) } as unknown as HarnessServices
   const config = projectCodexThreadConfig(input, services)
@@ -79,7 +83,7 @@ test("Codex owner refresh and dynamic tool requests receive protocol responses",
     clock: { now: Date.now, setTimeout, clearTimeout } } as unknown as HarnessServices
   const transport = new CodexAppServerTransport(services, { binary: "unused", homeRoot: path.join(root, "homes"), ownerHome: home,
     fetch: async () => new Response(JSON.stringify({ access_token: "new-access", refresh_token: "new-refresh" }), { status: 200 }) })
-  const broker = { rebind: async () => {}, goal: { publish: async () => {} } } as unknown as SessionBroker
+  const broker = { rebind: rebindTo("/work"), goal: { publish: async () => {} } } as unknown as SessionBroker
   const send = (id: number, method: string, params: unknown) => new Promise<Record<string, unknown>>((resolve) => {
     responses.set(id, resolve)
     stdout.write(`${JSON.stringify({ id, method, params })}\n`)
@@ -104,9 +108,11 @@ async function scriptedTransport() {
   let turnStarted!: () => void
   const started = new Promise<void>((resolve) => { turnStarted = resolve })
   let retired = 0
+  const frames: { id?: number; method?: string; params?: unknown }[] = []
   stdin.on("data", (chunk) => {
     for (const line of String(chunk).trim().split("\n")) {
-      const frame = JSON.parse(line) as { id?: number; method?: string }
+      const frame = JSON.parse(line) as { id?: number; method?: string; params?: unknown }
+      frames.push(frame)
       if (frame.id === undefined) continue
       const result = frame.method === "thread/start" ? { thread: { id: "thread-1" } }
         : frame.method === "model/list" ? { data: [{ model: "test-model", isDefault: true }] }
@@ -122,7 +128,7 @@ async function scriptedTransport() {
   const transport = new CodexAppServerTransport(services, { binary: "unused", homeRoot: path.join(root, "homes"), ownerHome: path.join(root, "owner") })
   const startInput = { ...input, directory: root, projection: { generation: "g1", pluginRoots: [], notApplied: [], mcpServers: [] } }
   const close = async () => { await transport.dispose(); await fs.rm(root, { recursive: true, force: true }) }
-  return { transport, startInput, stdout, started, retired: () => retired, close }
+  return { transport, startInput, stdout, started, frames, retired: () => retired, close }
 }
 
 test("failed Codex rebind leaves no attached entry for the retired process", async () => {
@@ -140,7 +146,7 @@ test("failed Codex rebind leaves no attached entry for the retired process", asy
 
 test("a preceding Codex turn completion cannot end the current streamed turn", async () => {
   const peer = await scriptedTransport()
-  const broker = { rebind: async () => {}, goal: { publish: async () => {} }, reportFailure: () => {} } as unknown as SessionBroker
+  const broker = { rebind: rebindTo(peer.startInput.directory), goal: { publish: async () => {} }, reportFailure: () => {} } as unknown as SessionBroker
   try {
     const session = await peer.transport.start(peer.startInput, broker)
     const turn = { turnId: "t1", userMessageId: "u1", assistantMessageId: "a1", origin: { actor: { kind: "person", userId: "owner" }, via: "relay", reissued: false },
@@ -160,7 +166,7 @@ test("a preceding Codex turn completion cannot end the current streamed turn", a
 
 test("a malformed frame fails a Codex streamed turn and retires its process", async () => {
   const peer = await scriptedTransport()
-  const broker = { rebind: async () => {}, goal: { publish: async () => {} }, reportFailure: () => {} } as unknown as SessionBroker
+  const broker = { rebind: rebindTo(peer.startInput.directory), goal: { publish: async () => {} }, reportFailure: () => {} } as unknown as SessionBroker
   try {
     const session = await peer.transport.start(peer.startInput, broker)
     const turn = { turnId: "t1", userMessageId: "u1", assistantMessageId: "a1", origin: { actor: { kind: "person", userId: "owner" }, via: "relay", reissued: false },
@@ -171,5 +177,22 @@ test("a malformed frame fails a Codex streamed turn and retires its process", as
     peer.stdout.write("{malformed\n")
     await expect(running).rejects.toThrow("Invalid Codex JSON-RPC frame")
     expect(peer.retired()).toBe(1)
+  } finally { await peer.close() }
+})
+
+test("a Codex turn without a resolved model starts the default model, not the thread's start or config model", async () => {
+  const peer = await scriptedTransport()
+  const broker = { rebind: rebindTo(peer.startInput.directory), goal: { publish: async () => {} }, reportFailure: () => {} } as unknown as SessionBroker
+  try {
+    const session = await peer.transport.start({ ...peer.startInput, model: { providerID: "codex", modelID: "start-model" },
+      config: { ...peer.startInput.config, model: { providerID: "codex", modelID: "config-model" } } }, broker)
+    const turn = { turnId: "t1", userMessageId: "u1", assistantMessageId: "a1", origin: { actor: { kind: "person", userId: "owner" }, via: "relay", reissued: false },
+      prompt: { agent: "codex", assistantMessageId: "a1", parts: [{ type: "text", text: "Reply" }] }, todos: [] } as TurnInput
+    const running = (async () => { for await (const _event of peer.transport.send(session, turn, { signal: new AbortController().signal } as TurnBroker)) {} })()
+    await peer.started
+    peer.stdout.write(`${JSON.stringify({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-current", status: "completed" } } })}\n`)
+    await running
+    expect(peer.frames.find((frame) => frame.method === "thread/start")?.params).toMatchObject({ model: "start-model" })
+    expect(peer.frames.find((frame) => frame.method === "turn/start")?.params).toMatchObject({ model: "test-model" })
   } finally { await peer.close() }
 })

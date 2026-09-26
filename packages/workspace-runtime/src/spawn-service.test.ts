@@ -33,6 +33,24 @@ async function waitForOutput(stream: NodeJS.ReadableStream, pattern: RegExp): Pr
   })
 }
 
+test("spawn refuses an already-aborted signal and leaves no launch unresolved", async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), "harness-spawn-abort-"))
+  const ownership = volatileLaunchOwnership()
+  const controller = new AbortController()
+  controller.abort()
+  try {
+    await expect(createSpawnService(ownership)({
+      file: "/bin/sh",
+      args: ["-c", "exit 0"],
+      cwd,
+      env: Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)),
+    }, { role: "harness", label: "aborted proof", sessionId: "spawn-abort", signal: controller.signal })).rejects.toThrow("aborted")
+    expect(await ownership.listUnresolved({ kind: "standalone", sessionId: "spawn-abort" })).toEqual([])
+  } finally {
+    await rm(cwd, { recursive: true, force: true })
+  }
+})
+
 test("spawn observes output and retires the child and its descendant", async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), "harness-spawn-"))
   const ownership = volatileLaunchOwnership()
@@ -43,7 +61,7 @@ test("spawn observes output and retires the child and its descendant", async () 
       args: ["-c", "sleep 30 & child=$!; printf 'CHILD:%s\\n' \"$child\"; wait"],
       cwd,
       env: Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)),
-    }, { role: "harness", label: "descendant proof", sessionId: "spawn-test" })
+    }, { role: "harness", label: "descendant proof", signal: new AbortController().signal, sessionId: "spawn-test" })
     const output = await waitForOutput(owned.stdout, /CHILD:(\d+)/)
     const descendant = Number(output.match(/CHILD:(\d+)/)?.[1])
     expect(descendant).toBeGreaterThan(0)
@@ -76,7 +94,7 @@ test("a retirement refused for an expired deadline can be retried and stops the 
       args: ["-c", "printf 'READY\\n'; sleep 30"],
       cwd,
       env: Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)),
-    }, { role: "harness", label: "retry proof", sessionId: "spawn-retry" })
+    }, { role: "harness", label: "retry proof", signal: new AbortController().signal, sessionId: "spawn-retry" })
     await waitForOutput(owned.stdout, /READY/)
     const refused = await owned.retire({ at: Date.now() - 1, signal: new AbortController().signal })
     expect(refused).toMatchObject({ stopped: false, error: { code: "deadline_exceeded" } })
@@ -105,7 +123,7 @@ test("spawn scrubs the runtime's internal secrets from every harness environment
         CLAXEDO_SERVER_URL: "http://127.0.0.1:4100",
         HARNESS_PLAIN: "kept",
       },
-    }, { role: "harness", label: "env scrub", sessionId: "spawn-env-test" })
+    }, { role: "harness", label: "env scrub", signal: new AbortController().signal, sessionId: "spawn-env-test" })
     const output = await waitForOutput(owned.stdout, /ENV:.*\n/)
     expect(output).toContain("ENV:unset|http://127.0.0.1:4100|kept")
     await owned.exited

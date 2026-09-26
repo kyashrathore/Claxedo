@@ -36,7 +36,7 @@ async function writeAttachment(directory: string, file: { bytes: Buffer; filenam
 }
 
 export async function claudePrompt(turn: TurnInput, directory: string): Promise<SDKUserMessage> {
-  const text = flattenTurnPrompt(turn, { system: "prompt", separator: "\n\n" })
+  const text = flattenTurnPrompt(turn, { separator: "\n\n", system: "channel" })
   const blocks: Block[] = []
   const paths: string[] = []
   const files = turn.prompt.parts.filter((part) => part.type === "file").map((part) => {
