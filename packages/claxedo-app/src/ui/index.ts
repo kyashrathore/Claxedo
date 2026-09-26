@@ -19,7 +19,7 @@ export {
 export { DialogV2 as Dialog, DialogBody, DialogFooter, DialogHeader, DialogTitle, DialogTitleGroup, type DialogProps } from "@opencode-ai/ui/v2/dialog-v2"
 export { DialogProvider, useDialog } from "@opencode-ai/ui/context/dialog"
 export { requestConfirm, type ConfirmOptions } from "./confirm"
-export { Field, type FieldProps, type FieldLabelProps } from "./field"
+export { FieldV2 as Field, type FieldV2Props as FieldProps, type FieldLabelProps } from "@opencode-ai/ui/v2/field-v2"
 export { ScrollThumb, type ScrollThumbProps } from "@opencode-ai/ui/scroll-thumb"
 export { type ScrollViewThumbVisibility } from "@opencode-ai/ui/scroll-view"
 export {

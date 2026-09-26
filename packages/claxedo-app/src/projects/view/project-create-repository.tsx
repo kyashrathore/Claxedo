@@ -1,4 +1,4 @@
-import { createMemo, createUniqueId, For, Show, type JSX } from "solid-js"
+import { createMemo, For, Show, type JSX } from "solid-js"
 import type { AppError, CodeHostConnection, CodeHostRepository } from "@/server"
 import { Field, Select } from "@/ui"
 import { useProjectsText } from "../i18n"
@@ -50,17 +50,16 @@ export function UrlField(props: { look: CreateFormLook; url: string; onUrl: (url
 export function AccountSelect(props: { connections: readonly CodeHostConnection[]; current: CodeHostConnection; onSelect: (id: string) => void }) {
   const t = useProjectsText()
   const label = (connection: CodeHostConnection) => connection.accountLabel ?? connection.providerName
-  const controlId = createUniqueId()
   return (
     <Field>
-      <Field.Label for={controlId}>{t("projects.add.account")}</Field.Label>
+      <Field.Label>{t("projects.add.account")}</Field.Label>
       <Select
         options={[...props.connections]}
         current={props.current}
         value={(item) => item.id}
         label={label}
         onSelect={(next) => next && props.onSelect(next.id)}
-        triggerProps={{ id: controlId }}
+        triggerProps={{ "aria-label": t("projects.add.account") }}
       />
     </Field>
   )
