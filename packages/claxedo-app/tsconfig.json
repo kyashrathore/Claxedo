@@ -8,7 +8,7 @@
     // Workspace packages export `development` -> src/*.ts ahead of `types` ->
     // dist/*.d.ts, so typecheck reads sibling SOURCE and never needs a build.
     "customConditions": ["development"],
-    "types": ["vite/client", "node", "vitest/globals", "@testing-library/jest-dom"],
+    "types": ["vite/client", "node"],
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "jsx": "preserve",
@@ -19,15 +19,15 @@
     "noEmit": true,
     "isolatedModules": true,
     "paths": {
-      "#terminal-backend": ["./src/features/terminal/core/backend/xterm"],
-      "@opencode-ai/app-shared": ["./src/features/extensions/data/index.ts"],
-      "@/*": ["./src/*"],
+      "#terminal-backend": ["./src/terminal/backend/xterm.ts"],
+                  "@/*": ["./src/*"],
+      "@claxedo/app/ui": ["./src/ui/index.ts"],
       "@claxedo/agent-event-runtime": ["../agent-event-runtime/src/index.ts"],
       "@claxedo/agent-event-runtime/contracts": ["../agent-event-runtime/src/contracts/index.ts"],
       "@claxedo/agent-event-runtime/client-presentation": ["../agent-event-runtime/src/projections/client-presentation/index.ts"]
     }
   },
-  "include": ["src", "vite.cloud.config.ts", "vitest.config.ts", "vitest.setup.ts"],
-  "exclude": ["dist", "node_modules", "src/**/test-support/**", "src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.vitest.ts", "src/**/*.vitest.tsx", "src/**/*.integration.vitest.tsx", "src/**/*.ui.vitest.tsx"]
+  "include": ["src"],
+  "exclude": ["dist", "node_modules"]
 
 }

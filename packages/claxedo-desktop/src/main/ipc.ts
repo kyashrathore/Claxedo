@@ -12,7 +12,7 @@ import type {
   WslConfig,
 } from "../preload/types"
 import type { BrowserRegistry } from "./browser/registry"
-import type { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
+import type { LocalDiagnostics } from "../shared/local-diagnostics"
 import { IS_PACKAGED } from "./constants"
 import { isOpenableLinkUrl } from "./navigation-guard"
 import { openIn } from "./open-in"

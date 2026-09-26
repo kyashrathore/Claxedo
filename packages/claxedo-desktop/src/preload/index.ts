@@ -1,6 +1,6 @@
 import "./zod-jitless"
 import { contextBridge, ipcRenderer, webUtils } from "electron"
-import { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
+import { LocalDiagnostics } from "../shared/local-diagnostics"
 import { applyDiagnosticsSnapshotUpdate } from "../shared/diagnostics-snapshot-update"
 import type {
   BrowserBridge,

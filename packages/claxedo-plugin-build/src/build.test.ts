@@ -10,7 +10,7 @@ import { buildPluginApp, PluginBuildError } from "./index"
 const APP = `import { createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
 import { definePlugin } from "@claxedo/plugin-api"
-import { Button } from "@claxedo/app-v2/ui"
+import { Button } from "@claxedo/app/ui"
 
 function Page() {
   const [count, setCount] = createSignal(0)
@@ -58,7 +58,7 @@ describe("buildPluginApp", () => {
     expect(built.manifest.id).toBe("notes")
     expect(built.hash).toMatch(/^[0-9a-f]{16}$/)
     expect(built.code).toContain(`globalThis.${PLUGIN_RUNTIME_GLOBAL}`)
-    for (const specifier of ["solid-js", "solid-js/web", "solid-js/store", "@claxedo/plugin-api", "@claxedo/app-v2/ui"]) {
+    for (const specifier of ["solid-js", "solid-js/web", "solid-js/store", "@claxedo/plugin-api", "@claxedo/app/ui"]) {
       expect(built.code).toContain(`runtime[${JSON.stringify(specifier)}]`)
       expect(built.code).not.toMatch(new RegExp(`from\\s+"${specifier.replace(/[/@.-]/g, "\\$&")}"`))
     }
@@ -97,7 +97,7 @@ describe("buildPluginApp", () => {
         "solid-js/web": web,
         "solid-js/store": await import("solid-js/store"),
         "@claxedo/plugin-api": await import("@claxedo/plugin-api"),
-        "@claxedo/app-v2/ui": { Button: () => undefined },
+        "@claxedo/app/ui": { Button: () => undefined },
       },
     })
     try {

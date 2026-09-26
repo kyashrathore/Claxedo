@@ -16,9 +16,6 @@ function memoryStore(input: { folders: boolean; records?: ProjectRecord[] }) {
     folders: input.folders,
     list: async () => [...records.values()],
     get: async (id) => records.get(id),
-    ...(input.folders
-      ? { byDirectory: async (directory: string) => [...records.values()].find((item) => item.directory === directory) }
-      : {}),
     create: async (create) => {
       created.push(create)
       const repository = create.source.kind === "repository" ? await create.source.resolve() : undefined
@@ -69,7 +66,6 @@ describe("the projects route over its store", () => {
     expect(res.status).toBe(400)
     expect(await res.json()).toMatchObject({ error: { code: "project_source_unsupported" } })
     expect(created).toEqual([])
-    expect((await app.request("http://localhost/by-directory?directory=%2Fsrv%2Frepo")).status).toBe(404)
   })
 
   test("a repository source reaches the store unresolved, and resolves to the URL and its name when the store asks", async () => {
@@ -111,7 +107,6 @@ describe("the projects route over its store", () => {
     const app = ProjectRoutes({ store, authenticate: asUnsigned })
     expect(await (await app.request("http://localhost/")).json()).toEqual({ projects: [records.get("prj_1")] })
     expect((await app.request("http://localhost/prj_1")).status).toBe(200)
-    expect(await (await app.request("http://localhost/by-directory?directory=%2Fsrv%2Fone")).json()).toMatchObject({ project: { id: "prj_1" } })
     expect(await (await app.request("http://localhost/prj_1", json("PATCH", { name: "Uno" }))).json()).toMatchObject({ project: { name: "Uno" } })
     expect(await (await app.request("http://localhost/prj_1", { method: "DELETE" })).json()).toEqual({ deleted: true })
     expect((await app.request("http://localhost/prj_1")).status).toBe(404)

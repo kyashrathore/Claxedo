@@ -41,7 +41,7 @@ These stay removed unless the owner says otherwise:
 **Exception: themes.** v1's themes come back. v1's default theme is Codex, not Claxedo.
 
 ## How to fix
-- **Port v1's UI; don't restyle v2's rebuilt UI.** For a surface that differs, move v1's component from `packages/claxedo-app-v2/src/legacy/` (`git mv`) into its v2 folder. Adapt only its data access, to the adapter (`@/server`) and stores (`@/session`). Then delete v2's rebuilt version.
+- **Port v1's UI; don't restyle v2's rebuilt UI.** For a surface that differs, move v1's component from the v2 app's `src/legacy/` tree (`git mv`; deleted at the swap) into its v2 folder. Adapt only its data access, to the adapter (`@/server`) and stores (`@/session`). Then delete v2's rebuilt version.
 - **v1's look is the kit.** v2 renders with v1's kit components and CSS (`@opencode-ai/ui`: its styles, theme, codex default, 16px root, SF Pro Text 14px/21px). Upstream's newer kit is used only where it renders identically.
 - **Verify every surface** against the matching v1 screenshot in `inventory/<area>/shots/`, and against v1 running at http://127.0.0.1:4481. Navigate and screenshot only on that daemon; it holds the owner's real data.
 
@@ -292,3 +292,10 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - **Subagents:** a subagent counts as background only when it has no spawning tool call, or when the whole history is loaded and its call is still absent. While older history is unloaded, it waits to render in its own turn (`src/session/view/subagent-views.ts`).
 - **The rail:** after the first surface paints, while older history exists and the loaded turns are below the rail's threshold (more than ten), v2 loads one older page (50 messages) through the same anchored path a scroll uses (`src/session/view/history-paging.ts`). It decides once per session view, so streaming never re-runs it. v1 loads older history only on a scroll.
 - The corpus case `two-turns` compares v2 against its own baseline (`two-turns.v2`), because its first load now shows both turns.
+
+## Owner, 2026-09-26: the swap: v2 becomes packages/claxedo-app; v1, session-ui and storybook are deleted
+- The owner tested v2 and approved: "i have tested it works, now delete old v1 and make v2 as default".
+- `packages/claxedo-app-v2` is now `packages/claxedo-app`, package `@claxedo/app`; the plugin host module is `@claxedo/app/ui`. There is no alias for the old names.
+- Deleted: `packages/claxedo-app` (v1), `packages/session-ui`, `packages/storybook`, `src/legacy`, the e2e v1 mode and `e2e/parity`, the desktop's v1 renderer and its v2 switch (`CLAXEDO_DESKTOP_RENDERER`, `dev:v2`, `package:mac:v2`, "Claxedo V2 Dev"), and the server paths only v1 read (`projectName` on cloud create, the hosted `/project` routes, the hosted name heuristics, `/api/claxedo/projects/by-directory`).
+- The corpus case `two-turns` now has a single baseline, the one v2 recorded.
+- `packages/ui` (the kit, `@opencode-ai/ui`) stays: the app reaches it through `src/ui`. Moving it into the app is a separate follow-up (lead, 2026-09-26).

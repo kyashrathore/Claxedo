@@ -7,11 +7,7 @@ import { sandboxDriverRoutes } from "../sandbox-driver-routes"
 import { listSandboxDrivers } from "@claxedo/sandbox-manager/driver-catalog"
 import { configureAgentConfig } from "@claxedo/server-core/agent-config/index"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/db"
-import {
-  WORKSPACE_DEFAULT_SANDBOX_DRIVER_PATH,
-  WORKSPACE_SANDBOX_DRIVERS_PATH,
-  workspaceSandboxDriverAuthPath,
-} from "../../../../claxedo-app/src/platform/runtime/agent/workspace-control-paths"
+import { SANDBOX_DRIVERS_PATH, sandboxDriverAuthPath } from "../../../../claxedo-app/src/server/wire/sandbox-drivers"
 
 // Sandbox-driver client/server route contract.
 //
@@ -29,11 +25,10 @@ import {
 //   - rename a client path   -> the constant changes -> 404 -> red
 //   - rename a response key  -> the shape assertion below -> red
 //
-// Importing app source from a server test follows the same rules as
-// `doorbell-event-contract.test.ts`: `runtime-contract.test.ts` scans
-// production source only (it skips `*.test.*`), so the import edge is legal,
-// and `workspace-control-paths.ts` is import-free so it needs no `@/` alias
-// resolution and adds no runtime edge. Keep that module import-free.
+// Importing app source from a server test is legal: `runtime-contract.test.ts`
+// scans production source only (it skips `*.test.*`). `wire/sandbox-drivers.ts`
+// is import-free, so it needs no `@/` alias resolution and adds no runtime
+// edge. Keep that module import-free.
 
 // `server.ts` mounts `WorkspaceRoutes` — which mounts `sandboxDriverRoutes` at
 // its own root — under this prefix. Asserted against the real source below so
@@ -88,10 +83,8 @@ describe("sandbox driver client/server route contract", () => {
   })
 
   test.each([
-    ["GET", WORKSPACE_SANDBOX_DRIVERS_PATH],
-    ["PUT", WORKSPACE_DEFAULT_SANDBOX_DRIVER_PATH],
-    ["PUT", workspaceSandboxDriverAuthPath(UNROUTABLE_DRIVER_ID)],
-    ["DELETE", workspaceSandboxDriverAuthPath(UNROUTABLE_DRIVER_ID)],
+    ["GET", SANDBOX_DRIVERS_PATH],
+    ["PUT", sandboxDriverAuthPath(UNROUTABLE_DRIVER_ID)],
   ])("%s %s is served by the real router", async (method, clientPath) => {
     const response = await mountedSandboxDriverApp().request(clientPath, {
       method,
@@ -116,9 +109,10 @@ describe("sandbox driver client/server route contract", () => {
   })
 
   test("the driver list response uses the keys the client destructures", () => {
-    // `sandbox-section.tsx` reads `data.drivers` / `data.default_driver`, and
-    // renders `item.fields` for the credential form. This is the same catalog
-    // function the GET handler returns, so a key rename fails here.
+    // The app's `server/sandbox-providers.ts` reads `drivers` and
+    // `default_driver`, and each driver's `fields` for the credential form. This
+    // is the same catalog function the GET handler returns, so a key rename
+    // fails here.
     const body = listSandboxDrivers({}, {})
 
     expect(Object.keys(body).sort()).toEqual(["default_driver", "drivers"])
@@ -128,21 +122,5 @@ describe("sandbox driver client/server route contract", () => {
     for (const driver of body.drivers) {
       expect(Object.keys(driver).sort()).toEqual(["configured", "default", "fields", "id", "label", "source"])
     }
-  })
-
-  test("the default-driver mutation reads the body key the client sends", async () => {
-    // `sandbox-section.tsx` PUTs `{ driver }`. The server's `defaultBody` parses
-    // `driver`; the old client sent `{ provider }`, which parsed to undefined
-    // and 400'd `sandbox_driver_unsupported` even once the path was correct.
-    const response = await mountedSandboxDriverApp().request(WORKSPACE_DEFAULT_SANDBOX_DRIVER_PATH, {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ provider: "daytona" }),
-    })
-
-    expect(response.status).toBe(400)
-    expect(await response.json()).toMatchObject({
-      error: { code: "sandbox_driver_unsupported" },
-    })
   })
 })

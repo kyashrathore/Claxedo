@@ -407,7 +407,8 @@ One previous generation is kept as `server.old.log`.
 - Generic CRUD route:
   `packages/claxedo-local-server/src/agent-config/routes/connection-routes.ts`
 - Browser decoder/store:
-  `packages/claxedo-app/src/platform/query/connection-catalog.ts`
+  `packages/claxedo-app/src/server/agent-connections.ts` (decoder in
+  `packages/agent-runtime-contract/src/connections.ts`)
 - External OpenCode descriptor and adapter:
   `packages/opencode-server-adapter/src/config.ts` and
   `packages/opencode-server-adapter/src/adapter.ts`

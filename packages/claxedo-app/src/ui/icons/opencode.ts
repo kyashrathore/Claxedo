@@ -1,4 +1,3 @@
-// Theme-independent choices are selected by resolveIconArtworkLibrary before these family mappings.
 import { PROCESS_ICON_GLYPHS } from "@opencode-ai/ui/process-icon-map"
 
 import type { IconProps as OpenCodeIconProps } from "@opencode-ai/ui/icon"
@@ -14,7 +13,6 @@ const OPEN_CODE_GLYPHS = [
   "openai",
   "cursor",
   "claude",
-  // Accepted as-is for now (user review, 2026-09-09).
   "monitor",
   "unified",
   "split",
@@ -36,7 +34,6 @@ const OPEN_CODE_GLYPHS = [
   "chevron-down",
   "chevron-left",
   "chevron-right",
-  // Accepted as-is for now (user review, 2026-09-09).
   "chevron-double-right",
   "circle-x",
   "close",
@@ -45,14 +42,11 @@ const OPEN_CODE_GLYPHS = [
   "terminal",
   "terminal-active",
   "review",
-  // Accepted as-is for now (user review, 2026-09-09).
   "review-active",
   "expand",
   "collapse",
   "code",
-  // Accepted as-is for now (user review, 2026-09-09).
   "code-lines",
-  // Accepted as-is for now (user review, 2026-09-09).
   "circle-ban-sign",
   "edit",
   "eye",
@@ -62,7 +56,6 @@ const OPEN_CODE_GLYPHS = [
   "plus-small",
   "plus",
   "new-session",
-  // Accepted as-is for now (user review, 2026-09-09).
   "new-session-active",
   "pencil-line",
   "mcp",
@@ -79,9 +72,7 @@ const OPEN_CODE_GLYPHS = [
   "layout-left",
   "layout-left-partial",
   "layout-left-full",
-  // Accepted as-is for now (user review, 2026-09-09).
   "layout-right-partial",
-  // Accepted as-is for now (user review, 2026-09-09).
   "layout-right-full",
   "open-external",
   "open-file",
@@ -97,7 +88,6 @@ const OPEN_CODE_GLYPHS = [
   "circle-alert",
   "circle-dashed",
   "circle-half",
-  // Accepted as-is for now (user review, 2026-09-09).
   "chevron-double-left",
   "file",
   "copy",
@@ -106,7 +96,6 @@ const OPEN_CODE_GLYPHS = [
   "share",
   "shield",
   "download",
-  // Accepted as-is for now (user review, 2026-09-09).
   "server",
   "branch",
   "edit",
@@ -117,7 +106,6 @@ const OPEN_CODE_GLYPHS = [
   "trash",
   "sliders",
   "keyboard",
-  // Accepted as-is for now (user review, 2026-09-09).
   "arrow-down-to-line",
   "warning",
   "reset",

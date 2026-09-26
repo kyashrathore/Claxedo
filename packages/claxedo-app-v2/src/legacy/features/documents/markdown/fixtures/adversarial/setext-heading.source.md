@@ -1,4 +1,0 @@
-Setext heading
-==============
-
-Body.

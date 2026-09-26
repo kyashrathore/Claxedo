@@ -1,4 +1,4 @@
-import { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
+import { LocalDiagnostics } from "../../shared/local-diagnostics"
 
 import { readUnknown } from "../../shared/json-read"
 import type { Profiler } from "./profiler"

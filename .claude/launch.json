@@ -2,18 +2,6 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "storybook",
-      "runtimeExecutable": "bun",
-      "runtimeArgs": [
-        "run",
-        "storybook",
-        "--",
-        "--no-open"
-      ],
-      "cwd": "packages/storybook",
-      "port": 6006
-    },
-    {
       "name": "claxedo-app",
       "runtimeExecutable": "bun",
       "runtimeArgs": [
@@ -21,7 +9,7 @@
         "dev"
       ],
       "cwd": "packages/claxedo-app",
-      "port": 4444
+      "port": 4445
     },
     {
       "name": "claxedo-app-verify",

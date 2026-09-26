@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { contentSecurityPolicy, ContentSecurityPolicyError } from "@claxedo/app-v2/content-security-policy"
+import { contentSecurityPolicy, ContentSecurityPolicyError } from "@claxedo/app/content-security-policy"
 import { rendererContentSecurityListener, rendererContentSecurityPolicy, type HeadersReceivedResponse } from "./renderer-content-security"
 
 const DOCUMENT = "file:///Applications/Claxedo.app/Contents/Resources/app.asar/out/renderer/index.local.html"
@@ -20,7 +20,7 @@ function respond(listener: ReturnType<typeof listen>, details: Parameters<Return
   return new Promise<HeadersReceivedResponse>((resolve) => listener(details, resolve))
 }
 
-describe("the v2 renderer policy", () => {
+describe("the renderer policy", () => {
   test("names exactly the daemon's origin for every network directive", () => {
     const policy = rendererContentSecurityPolicy("http://127.0.0.1:2593")
     expect(directive(policy, "connect-src")).toBe("connect-src 'self' http://127.0.0.1:2593 ws://127.0.0.1:2593")

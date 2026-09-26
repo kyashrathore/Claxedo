@@ -26,14 +26,6 @@ export function u8PackageBoundarySteps(
       label: "packaged resource inventory",
       command: ["bun", "./scripts/verify-package-contents.ts"],
     },
-    {
-      label: "unsigned startup trace",
-      command: ["bun", "./scripts/u8-packaged-smoke.ts"],
-    },
-    {
-      label: "signed activation trace",
-      command: ["bun", "./scripts/u8-signed-activation-smoke.ts"],
-    },
   ]
 }
 
@@ -58,5 +50,5 @@ if (import.meta.main) {
   for (const step of u8PackageBoundarySteps(process.platform, { existingPackage: args.has("--existing-package") })) {
     await runStep(step)
   }
-  console.log("[u8-package-boundary] packaged resource, unsigned startup, and signed activation contracts passed")
+  console.log("[u8-package-boundary] packaged resource contract passed")
 }

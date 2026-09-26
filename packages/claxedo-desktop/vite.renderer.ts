@@ -1,196 +1,80 @@
-import { loadEnv, type UserConfig, type Plugin } from "vite"
-import solidPlugin from "vite-plugin-solid"
-import tailwindcss from "@tailwindcss/vite"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-
-import { MAIN_RENDERER_DOCUMENT } from "./src/main/navigation-guard"
-import {
-  DEV_RENDERER_CSP,
-  PACKAGED_RENDERER_CSP,
-  rendererCspMetaTag,
-} from "./src/renderer/document-csp"
+import type { ConfigEnv, UserConfig } from "vite"
+import type { PluginOption } from "vite"
+import { cloudConfig } from "../claxedo-app/vite.cloud.config"
+import { WEB_CONTENT_SECURITY_POLICY_PLUGIN } from "../claxedo-app/vite.content-security-policy"
 import { desktopRendererBoundaryManifestPlugin } from "./scripts/product-boundary-manifests"
 
 const normalize = (value: string) => value.replaceAll("\\", "/")
+
+export const desktopDir = normalize(fileURLToPath(new URL("./", import.meta.url)))
+const appDir = normalize(fileURLToPath(new URL("../claxedo-app/", import.meta.url)))
+const rendererRoot = normalize(fileURLToPath(new URL("./src/renderer/", import.meta.url)))
 
 export function desktopRendererChunk(id: string) {
   // Mermaid's two class-diagram entries emit identical dynamic chunks.
   return /mermaid[^]*\/classDiagram/.test(id) ? "mermaid-classDiagram" : undefined
 }
 
-export const desktopDir = normalize(fileURLToPath(new URL("./", import.meta.url)))
-export const claxedoAppDir = normalize(fileURLToPath(new URL("../claxedo-app/", import.meta.url)))
-const agentEventRuntimeDir = normalize(fileURLToPath(new URL("../agent-event-runtime/", import.meta.url)))
-const rendererRoot = normalize(path.join(desktopDir, "src/renderer"))
-// Post-divorce (plan 006): the renderer resolves @/ against claxedo-app, not packages/app.
-const upstreamRoot = normalize(fileURLToPath(new URL("../claxedo-app/src/", import.meta.url)))
-/** Serve the one renderer document after assets/proxies, before Vite transforms HTML. */
-function rendererDocumentRoutes(): Plugin {
-  return {
-    name: "desktop-renderer-document-routes",
-    apply: "serve",
-    configureServer(server) {
-      // Vite installs returned hooks after its static-file middleware and before
-      // indexHtmlMiddleware. appType=mpa preserves the original request here;
-      // the default SPA middleware would already have rewritten it to index.html.
-      return () => server.middlewares.use((request, _response, next) => {
-        const pathname = request.url?.split("?", 1)[0] ?? ""
-        const acceptsHtml = request.headers.accept?.includes("text/html") || request.headers.accept?.includes("*/*")
-        if (
-          (request.method === "GET" || request.method === "HEAD") && acceptsHtml &&
-          !path.posix.extname(pathname) && !/^\/(?:@|api(?:\/|$)|assets(?:\/|$)|src(?:\/|$))/.test(pathname)
-        ) request.url = `/${MAIN_RENDERER_DOCUMENT}`
-        next()
-      })
-    },
-  }
+function appAliases(config: UserConfig) {
+  const aliases = config.resolve?.alias
+  if (!Array.isArray(aliases)) throw new Error("the app's Vite config no longer declares its aliases as a list")
+  return [
+    { find: /^#app$/, replacement: normalize(path.join(appDir, "src/app.tsx")) },
+    { find: /^#app\/styles$/, replacement: normalize(path.join(appDir, "src/styles.ts")) },
+    ...aliases,
+  ]
 }
 
-/**
- * Stamp the document CSP meta into every built HTML entry. `file://` documents
- * get no response headers, so this tag is the only CSP carrier in the packaged
- * window; in dev the same tag carries the looser policy Vite's client/HMR need.
- */
-export function rendererDocumentCsp(mode: string): Plugin {
-  const content = mode === "development" ? DEV_RENDERER_CSP : PACKAGED_RENDERER_CSP
-  return {
-    name: "desktop-renderer-document-csp",
-    transformIndexHtml: {
-      order: "pre",
-      handler: () => [rendererCspMetaTag(content)],
-    },
-  }
+type RendererOutput = NonNullable<NonNullable<UserConfig["build"]>["rollupOptions"]>["output"]
+
+function desktopOutput(output: RendererOutput): RendererOutput {
+  if (Array.isArray(output)) return output.map((item) => ({ ...item, manualChunks: desktopRendererChunk }))
+  return { ...output, manualChunks: desktopRendererChunk }
 }
 
-export function createElectronRenderer(mode: string): UserConfig {
-  const env = loadEnv(mode, claxedoAppDir, "VITE_")
-  const terminal = env.VITE_TERMINAL_BACKEND || process.env.VITE_TERMINAL_BACKEND || "xterm"
-  // `loadEnv` only copies prefixed process.env keys when a matching .env file
-  // exists. This worktree has none, so a build that wants the hosted chunk must
-  // also read the flag from the process (same precedence the contract tests
-  // document for `.env.local`).
-  const hostedActivationEnabled =
-    (env.VITE_CLAXEDO_HOSTED_ACTIVATION ?? process.env.VITE_CLAXEDO_HOSTED_ACTIVATION)?.trim() === "true"
-  const localServerUrl = env.VITE_CLAXEDO_SERVER_URL?.trim() || "http://127.0.0.1:2593"
-  // The hosted app a PHONE must open, baked per build.
-  //
-  // `loadEnv` reads these from claxedo-app, but `root` is the RENDERER
-  // directory, so Vite's own env handling never sees them — anything not
-  // explicitly forwarded through `define` below is simply absent at runtime.
-  // `VITE_CLAXEDO_APP_ORIGIN` was read by `remoteAccessAppOrigin()` and
-  // forwarded by nobody, so it was always undefined and the resolver fell
-  // through to its hardcoded production default: a STAGING desktop handed
-  // phones a `app.claxedo.com` QR code, which renders a blank page there
-  // because the workspace does not exist on that control plane.
-  const appOrigin = env.VITE_CLAXEDO_APP_ORIGIN?.trim() ?? ""
+function isWebContentSecurityPolicy(plugin: PluginOption) {
+  return typeof plugin === "object" && plugin !== null && "name" in plugin && plugin.name === WEB_CONTENT_SECURITY_POLICY_PLUGIN
+}
 
+function localServerUrl() {
+  return process.env.VITE_CLAXEDO_SERVER_URL?.trim() || "http://127.0.0.1:2593"
+}
+
+export function createElectronRenderer(env: ConfigEnv): UserConfig {
+  const app = cloudConfig(env, "desktop")
   return {
-    appType: "mpa",
-    define: {
-      // Replaced before Rollup links the graph. A self-build (unset/false)
-      // removes the dynamic import entirely; a release emits it as a hashed
-      // chunk while keeping the base document and its startup path local.
-      __CLAXEDO_HOSTED_ACTIVATION_ENABLED__: JSON.stringify(hostedActivationEnabled),
-      // Empty when unset, which `remoteAccessAppOrigin()` treats as "not
-      // baked" and falls back from — rather than baking the string
-      // "undefined", which is truthy and would be handed to a phone verbatim.
-      "import.meta.env.VITE_CLAXEDO_APP_ORIGIN": JSON.stringify(appOrigin),
-    },
-    plugins: [
-      rendererDocumentRoutes(),
-      rendererDocumentCsp(mode),
-      solidPlugin(),
-      tailwindcss(),
-      desktopRendererBoundaryManifestPlugin(desktopDir, "v1"),
-    ],
-    publicDir: normalize(path.join(claxedoAppDir, "public")),
+    ...app,
     root: rendererRoot,
-    worker: {
-      format: "es",
-    },
-    optimizeDeps: {
-      // The Markdown highlighter is first reached from a web worker after a
-      // session mounts. If Vite discovers it at that point, dependency
-      // optimization invalidates the worker's WASM URL and reloads the whole
-      // renderer in the middle of hydration.
-      include: ["@opencode-ai/session-ui > @shikijs/stream"],
-    },
-    server:
-      mode === "development"
-        ? {
-            proxy: {
-              "/api/claxedo/credentials": { target: localServerUrl, changeOrigin: true },
-              "/api/claxedo/integrations": { target: localServerUrl, changeOrigin: true },
-            },
-          }
-        : undefined,
-    build: {
-      // PostHog Error Tracking symbolication (release-claxedo.yml). Without
-      // maps a desktop stack frame arrives as `main-Ci34eFPC.js:1:284915`,
-      // which is untriageable. "hidden" writes *.map next to each chunk but
-      // adds no `//# sourceMappingURL` comment, so the packaged app never
-      // points at a map; the release workflow uploads them to PostHog and then
-      // deletes every *.map before packaging. Mirrors claxedo-app's
-      // vite.cloud.config.ts.
-      sourcemap: "hidden",
-      // electron-vite's renderer preset defaults minify off (plain Vite would
-      // default to esbuild). Minified chunks still symbolicate through the
-      // hidden maps above, so PostHog triage is unaffected.
-      minify: "esbuild",
-      rollupOptions: {
-        input: {
-          main: normalize(path.join(rendererRoot, MAIN_RENDERER_DOCUMENT)),
-          loading: normalize(path.join(rendererRoot, "loading.html")),
-        },
-        output: {
-          // Keep the optional facade recognizable while Rollup owns the
-          // dependency-safe split produced by the dynamic import.
-          chunkFileNames(chunk) {
-            if (chunk.facadeModuleId?.endsWith("/src/renderer/hosted-contributions.ts")) {
-              return "assets/desktop-hosted-contributions-[hash].js"
-            }
-            return "assets/[name]-[hash].js"
-          },
-          manualChunks: desktopRendererChunk,
-        },
+    base: "./",
+    publicDir: normalize(path.join(appDir, "public")),
+    plugins: [
+      ...(app.plugins ?? []).filter((plugin) => !isWebContentSecurityPolicy(plugin)),
+      desktopRendererBoundaryManifestPlugin(desktopDir),
+    ],
+    server: {
+      host: "127.0.0.1",
+      proxy: {
+        "/api/claxedo/credentials": { target: localServerUrl(), changeOrigin: true },
+        "/api/claxedo/integrations": { target: localServerUrl(), changeOrigin: true },
       },
     },
-    resolve: {
-      alias: [
-        {
-          find: /^@tanstack\/solid-query$/,
-          replacement: normalize(path.join(upstreamRoot, "../node_modules/@tanstack/solid-query")),
+    resolve: { ...app.resolve, alias: appAliases(app) },
+    build: {
+      ...app.build,
+      outDir: undefined,
+      // electron-vite's renderer preset defaults minify off; without this the
+      // renderer ships its main chunk unminified (6.7 MB instead of 3.7 MB).
+      minify: "esbuild",
+      rollupOptions: {
+        ...app.build?.rollupOptions,
+        output: desktopOutput(app.build?.rollupOptions?.output),
+        input: {
+          main: normalize(path.join(rendererRoot, "index.local.html")),
+          loading: normalize(path.join(rendererRoot, "loading.html")),
         },
-        {
-          find: "#terminal-backend",
-          replacement: normalize(path.join(claxedoAppDir, `src/features/terminal/core/backend/${terminal}.ts`)),
-        },
-        {
-          find: "@opencode-ai/app-shared",
-          replacement: normalize(path.join(claxedoAppDir, "src/features/extensions/data/index.ts")),
-        },
-        {
-          find: /^@claxedo\/app$/,
-          replacement: normalize(path.join(claxedoAppDir, "src/app/entry/index.tsx")),
-        },
-        {
-          find: /^@claxedo\/agent-event-runtime$/,
-          replacement: normalize(path.join(agentEventRuntimeDir, "src/index.ts")),
-        },
-        {
-          find: /^@claxedo\/agent-event-runtime\/contracts$/,
-          replacement: normalize(path.join(agentEventRuntimeDir, "src/contracts/index.ts")),
-        },
-        {
-          find: /^@claxedo\/agent-event-runtime\/client-presentation$/,
-          replacement: normalize(path.join(agentEventRuntimeDir, "src/projections/client-presentation/index.ts")),
-        },
-        {
-          find: "@/",
-          replacement: upstreamRoot,
-        },
-      ],
+      },
     },
   }
 }

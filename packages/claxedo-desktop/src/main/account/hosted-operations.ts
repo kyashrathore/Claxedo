@@ -155,7 +155,7 @@ export const HOSTED_OPERATIONS = {
     path: "/api/workspace/resolve",
     optionalQuery: ["workspaceId", "directory"],
   },
-  // `projectName`/`workspaceName`, not `displayName`. The create body is a
+  // `workspaceName`, not `displayName`. The create body is a
   // strict schema, so an undeclared field is a 400 for the whole request rather
   // than a field the server ignores.
   //
@@ -177,7 +177,7 @@ export const HOSTED_OPERATIONS = {
   "workspace.create": {
     method: "POST",
     path: "/api/workspace/create",
-    body: ["projectId", "projectName", "workspaceName", "repoUrl", "gitBranch", "driver", "connectionId", "repoFullName"],
+    body: ["projectId", "workspaceName", "repoUrl", "gitBranch", "driver", "connectionId", "repoFullName"],
   },
   // `approved` is not decoration. Every lifecycle operation except `stop`
   // refuses with 409 unless the caller states the approval explicitly, and an

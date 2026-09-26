@@ -16,7 +16,6 @@
 
 import {
   DESKTOP_ACCOUNT_BOUNDARY_MANIFEST,
-  DESKTOP_HOSTED_CONTRIBUTION_BOUNDARY_MANIFEST,
   REQUIRED_DESKTOP_BOUNDARY_MANIFEST_ENTRIES,
 } from "./product-boundary-manifests"
 
@@ -113,12 +112,8 @@ export function requiredPackagedBoundaryEntries(entries: readonly string[] = [])
   const accountShips = entries.some((entry) =>
     entry.startsWith("out/main/") && entry.includes("desktop-account-"),
   )
-  const hostedContributionShips = entries.some((entry) =>
-    entry.startsWith("out/renderer/") && entry.includes("desktop-hosted-contributions-"),
-  )
   return [
     ...REQUIRED_DESKTOP_BOUNDARY_MANIFEST_ENTRIES,
     ...(accountShips ? [DESKTOP_ACCOUNT_BOUNDARY_MANIFEST] : []),
-    ...(hostedContributionShips ? [DESKTOP_HOSTED_CONTRIBUTION_BOUNDARY_MANIFEST] : []),
   ]
 }

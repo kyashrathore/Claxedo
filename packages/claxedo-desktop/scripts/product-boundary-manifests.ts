@@ -9,7 +9,6 @@ import {
   serializeBuildManifest,
   type RollupBundleMetadata,
 } from "../../../script/product-boundary/normalize-build-manifest"
-import type { DesktopRenderer } from "../src/shared/desktop-product"
 
 const DEFAULT_DESKTOP_ROOT = fileURLToPath(new URL("../", import.meta.url))
 
@@ -17,14 +16,8 @@ export const DESKTOP_BOUNDARY_MANIFEST_DIR = "out/product-boundary"
 export const DESKTOP_MAIN_BOUNDARY_MANIFEST = `${DESKTOP_BOUNDARY_MANIFEST_DIR}/desktop-main.json`
 export const DESKTOP_ACCOUNT_BOUNDARY_MANIFEST = `${DESKTOP_BOUNDARY_MANIFEST_DIR}/desktop-account.json`
 export const DESKTOP_RENDERER_BOUNDARY_MANIFEST = `${DESKTOP_BOUNDARY_MANIFEST_DIR}/desktop-renderer-local.json`
-export const DESKTOP_HOSTED_CONTRIBUTION_BOUNDARY_MANIFEST =
-  `${DESKTOP_BOUNDARY_MANIFEST_DIR}/desktop-renderer-hosted-contributions.json`
 
-const RENDERER_ENTRIES: Readonly<Record<DesktopRenderer, string>> = {
-  v1: "src/renderer/local.tsx",
-  v2: "src/renderer-v2/main.tsx",
-}
-const HOSTED_CONTRIBUTION_ENTRY = "src/renderer/hosted-contributions.ts"
+const RENDERER_ENTRY = "src/renderer/main.tsx"
 
 export const REQUIRED_DESKTOP_BOUNDARY_MANIFEST_ENTRIES = [
   DESKTOP_MAIN_BOUNDARY_MANIFEST,
@@ -75,43 +68,14 @@ export function desktopMainBoundaryManifestPlugin(desktopRoot: string) {
   }
 }
 
-/**
- * Rollup metadata producer for the always-local renderer and its optional
- * hosted contribution.
- *
- * The base manifest follows static imports only. It records the dynamic edge
- * to the hosted contribution when capability is compiled in, but its module
- * and chunk lists remain an honest unsigned-startup closure. The optional
- * manifest then owns that dynamic subtree, excluding chunks already owned by
- * the base entry.
- */
-export function desktopRendererBoundaryManifestPlugin(desktopRoot: string, renderer: DesktopRenderer) {
+/** Rollup metadata producer for the renderer's static closure. */
+export function desktopRendererBoundaryManifestPlugin(desktopRoot: string) {
   const workspaceRoot = path.resolve(desktopRoot, "../..")
-  const localEntry = path.join(desktopRoot, RENDERER_ENTRIES[renderer])
-  const hostedEntry = path.join(desktopRoot, HOSTED_CONTRIBUTION_ENTRY)
+  const entry = path.join(desktopRoot, RENDERER_ENTRY)
   return {
     name: "claxedo-desktop-renderer-boundary-manifests",
     generateBundle(_outputOptions: unknown, bundle: RollupBundleMetadata) {
-      const base = normalizeRollupEntryBuildManifest({
-        entry: localEntry,
-        bundle,
-        workspaceRoot,
-        cutAtEntries: [hostedEntry],
-      })
-      writeManifest(desktopRoot, DESKTOP_RENDERER_BOUNDARY_MANIFEST, base)
-      if (!includesEntry(bundle, hostedEntry, workspaceRoot)) {
-        fs.rmSync(path.join(desktopRoot, DESKTOP_HOSTED_CONTRIBUTION_BOUNDARY_MANIFEST), { force: true })
-        return
-      }
-
-      const hosted = normalizeRollupEntryBuildManifest({
-        entry: hostedEntry,
-        bundle,
-        workspaceRoot,
-        includeDynamicImports: true,
-        excludeChunks: base.chunks,
-      })
-      writeManifest(desktopRoot, DESKTOP_HOSTED_CONTRIBUTION_BOUNDARY_MANIFEST, hosted)
+      writeManifest(desktopRoot, DESKTOP_RENDERER_BOUNDARY_MANIFEST, normalizeRollupEntryBuildManifest({ entry, bundle, workspaceRoot }))
     },
   }
 }
@@ -122,10 +86,10 @@ export function clearDesktopBoundaryManifests(root = DEFAULT_DESKTOP_ROOT) {
 }
 
 /** Validate deterministic build metadata before the build contract fingerprints it. */
-export function verifyDesktopBoundaryManifestSet(root: string, renderer: DesktopRenderer) {
+export function verifyDesktopBoundaryManifestSet(root: string) {
   const expected = new Map([
     [DESKTOP_MAIN_BOUNDARY_MANIFEST, "packages/claxedo-desktop/src/main/index.ts"],
-    [DESKTOP_RENDERER_BOUNDARY_MANIFEST, `packages/claxedo-desktop/${RENDERER_ENTRIES[renderer]}`],
+    [DESKTOP_RENDERER_BOUNDARY_MANIFEST, `packages/claxedo-desktop/${RENDERER_ENTRY}`],
   ])
   const directory = path.join(root, DESKTOP_BOUNDARY_MANIFEST_DIR)
   const actual = fs.existsSync(directory)
@@ -135,24 +99,14 @@ export function verifyDesktopBoundaryManifestSet(root: string, renderer: Desktop
         .sort()
     : []
   const required = [...expected.keys()].sort()
-  const allowed = [
-    ...required,
-    DESKTOP_ACCOUNT_BOUNDARY_MANIFEST,
-    DESKTOP_HOSTED_CONTRIBUTION_BOUNDARY_MANIFEST,
-  ].sort()
+  const allowed = [...required, DESKTOP_ACCOUNT_BOUNDARY_MANIFEST].sort()
   if (!required.every((file) => actual.includes(file)) || actual.some((file) => !allowed.includes(file))) {
     throw new Error(
-      `desktop boundary manifest set mismatch: expected ${required.join(", ")} plus optional account/hosted contributions; ` +
+      `desktop boundary manifest set mismatch: expected ${required.join(", ")} plus the optional account manifest; ` +
         `found ${actual.join(", ") || "none"}`,
     )
   }
 
-  if (actual.includes(DESKTOP_HOSTED_CONTRIBUTION_BOUNDARY_MANIFEST)) {
-    expected.set(
-      DESKTOP_HOSTED_CONTRIBUTION_BOUNDARY_MANIFEST,
-      `packages/claxedo-desktop/${HOSTED_CONTRIBUTION_ENTRY}`,
-    )
-  }
   if (actual.includes(DESKTOP_ACCOUNT_BOUNDARY_MANIFEST)) {
     expected.set(DESKTOP_ACCOUNT_BOUNDARY_MANIFEST, "packages/claxedo-desktop/src/main/account/index.ts")
   }
@@ -183,24 +137,6 @@ export function verifyDesktopBoundaryManifestSet(root: string, renderer: Desktop
     optional: DESKTOP_ACCOUNT_BOUNDARY_MANIFEST,
     chunkMarker: "desktop-account-",
   })
-  verifyOptional({
-    base: DESKTOP_RENDERER_BOUNDARY_MANIFEST,
-    optional: DESKTOP_HOSTED_CONTRIBUTION_BOUNDARY_MANIFEST,
-    chunkMarker: "desktop-hosted-contributions-",
-  })
 
-  const rendererDocument = path.join(root, "out/renderer/index.local.html")
-  if (fs.existsSync(rendererDocument)) {
-    const html = fs.readFileSync(rendererDocument, "utf8")
-    const preloads = [...html.matchAll(/<link\b[^>]*\brel=["']modulepreload["'][^>]*\bhref=["']([^"']+)["'][^>]*>/gi)]
-      .map((match) => match[1])
-    const eagerHosted = preloads.filter((entry) => entry.includes("desktop-hosted-contributions-"))
-    if (eagerHosted.length > 0) {
-      throw new Error(
-        `${DESKTOP_RENDERER_BOUNDARY_MANIFEST} is not an unsigned startup boundary; ` +
-          `index.local.html eagerly preloads ${eagerHosted.join(", ")}`,
-      )
-    }
-  }
   return [...expected.keys()].sort()
 }

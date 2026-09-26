@@ -44,7 +44,7 @@ Asking for more access makes the app ask the person again.
 
 ## What a plugin may import
 
-\`solid-js\`, \`solid-js/web\`, \`solid-js/store\`, \`@claxedo/plugin-api\` and \`@claxedo/app-v2/ui\` are provided by the app at runtime and never bundled. Use the app's kit from \`@claxedo/app-v2/ui\` (\`Button\`, \`TextField\`, \`Switch\`, \`Select\`, \`Card\`, \`Spinner\`, \`Tooltip\`) so the plugin looks native; do not add a UI library. The kit has no type contract yet, so the check treats its imports as untyped and only the build proves they exist.
+\`solid-js\`, \`solid-js/web\`, \`solid-js/store\`, \`@claxedo/plugin-api\` and \`@claxedo/app/ui\` are provided by the app at runtime and never bundled. Use the app's kit from \`@claxedo/app/ui\` (\`Button\`, \`TextField\`, \`Switch\`, \`Select\`, \`Card\`, \`Spinner\`, \`Tooltip\`) so the plugin looks native; do not add a UI library. The kit has no type contract yet, so the check treats its imports as untyped and only the build proves they exist.
 
 ## The API
 
@@ -87,7 +87,7 @@ Asking for more access makes the app ask the person again.
 ~~~tsx
 import { createSignal, For } from "solid-js"
 import { definePlugin } from "@claxedo/plugin-api"
-import { Button } from "@claxedo/app-v2/ui"
+import { Button } from "@claxedo/app/ui"
 
 function NotesPage() {
   const [notes, setNotes] = createSignal<string[]>([])

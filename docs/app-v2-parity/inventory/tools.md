@@ -26,7 +26,7 @@ Not seen live, compared from code:
 
 Global note: v2's root font size is 13px, where v1's is 16px (measured). Every rem-based class in v2 therefore renders at 81%: `h-7` is 23px, not 28px. The shell inventory should own that fix. Where this file gives v2 pixel sizes, they were measured unless a class name is quoted.
 
-Paths: v1 = `packages/claxedo-app/src`, v2 = `packages/claxedo-app-v2/src`. Line numbers are omitted; names are exact.
+Paths: v1 = the old app's `src` (deleted at the swap), v2 = `packages/claxedo-app/src`. Line numbers are omitted; names are exact.
 
 ## A0. The panel's own tabbed surface, and where files open (owner-reported, top priority)
 

@@ -249,8 +249,8 @@ describe("local project routes", () => {
     expect(patched.status).toBe(200)
     expect(((await patched.json()) as { project: { env: Record<string, string> } }).project.env).toEqual({ DATABASE_URL: "postgres://localhost/demo" })
 
-    const byDirectory = await app.request(`http://localhost/by-directory?directory=${encodeURIComponent(directory)}`)
-    expect(((await byDirectory.json()) as { project: { id: string; env: Record<string, string> } }).project).toMatchObject({ id, env: { DATABASE_URL: "postgres://localhost/demo" } })
+    const read = await app.request(`http://localhost/${id}`)
+    expect(((await read.json()) as { project: { id: string; env: Record<string, string> } }).project).toMatchObject({ id, env: { DATABASE_URL: "postgres://localhost/demo" } })
 
     const badEnv = await app.request(`http://localhost/${id}`, { ...json({ env: { "bad name": "x" } }), method: "PATCH" })
     expect(badEnv.status).toBe(400)
@@ -741,10 +741,10 @@ describe("project authorization between two unrelated signed accounts", () => {
     const theirs = await app.request("http://localhost/", { headers: asStranger })
     expect(await theirs.text()).not.toContain("operator-only-secret")
 
-    const byDirectory = await app.request(`http://localhost/by-directory?directory=${encodeURIComponent(directory)}`, { headers: asStranger })
-    expect(byDirectory.status).toBe(404)
-    expect(await byDirectory.json()).toMatchObject({ error: { code: "project_not_found" } })
-    expect((await app.request(`http://localhost/by-directory?directory=${encodeURIComponent(directory)}`, { headers: asOperator })).status).toBe(200)
+    const strangerRead = await app.request(`http://localhost/${project.id}`, { headers: asStranger })
+    expect(strangerRead.status).toBe(404)
+    expect(await strangerRead.json()).toMatchObject({ error: { code: "project_not_found" } })
+    expect((await app.request(`http://localhost/${project.id}`, { headers: asOperator })).status).toBe(200)
 
     const rewritten = await app.request(`http://localhost/${project.id}`, {
       ...post({ name: "Stranger Owned", env: { DEPLOY_KEY: "attacker-supplied" } }, asStranger),
@@ -753,7 +753,7 @@ describe("project authorization between two unrelated signed accounts", () => {
     expect(rewritten.status).toBe(403)
     expect(await rewritten.json()).toMatchObject({ error: { code: "project_access_denied" } })
 
-    const after = await (await app.request(`http://localhost/by-directory?directory=${encodeURIComponent(directory)}`, { headers: asOperator })).json() as { project: { name: string; env: Record<string, string> } }
+    const after = await (await app.request(`http://localhost/${project.id}`, { headers: asOperator })).json() as { project: { name: string; env: Record<string, string> } }
     expect(after.project).toMatchObject({ name: "Operator Folder", env: { DEPLOY_KEY: "operator-only-secret" } })
   })
 
@@ -761,7 +761,7 @@ describe("project authorization between two unrelated signed accounts", () => {
     const directory = await gitRepository("failclosed-read-")
     const bare = routes(authenticate, { clone: fakeClone })
     expect((await bare.request("http://localhost/", { headers: asOperator })).status).toBe(503)
-    expect((await bare.request(`http://localhost/by-directory?directory=${encodeURIComponent(directory)}`, { headers: asOperator })).status).toBe(503)
+    expect((await bare.request(`http://localhost/prj_1`, { headers: asOperator })).status).toBe(503)
     expect((await bare.request(`http://localhost/prj_1`, { ...post({ name: "Renamed" }, asOperator), method: "PATCH" })).status).toBe(503)
 
     const withoutOperator = routes(authenticate, { clone: fakeClone, authority: owners.authority })

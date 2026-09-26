@@ -153,11 +153,6 @@ jobs:
           bun run test:diagnostics-release
           bun run smoke:diagnostics
 
-      - name: Run rendered diagnostics task evaluator
-        if: inputs.leg == 'all' || inputs.leg == matrix.leg || inputs.leg == matrix.platform
-        working-directory: packages/claxedo-app
-        run: bun run test:diagnostics-release
-
       # Unsigned, dir-only package: proves the electron-builder config, the
       # native-module file sets and the packaged smoke — the three things that
       # failed repeatedly — without dmg/nsis/AppImage/deb/rpm assembly or

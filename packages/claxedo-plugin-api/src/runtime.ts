@@ -5,7 +5,7 @@ export const PLUGIN_RUNTIME_MODULES = [
   "solid-js/web",
   "solid-js/store",
   "@claxedo/plugin-api",
-  "@claxedo/app-v2/ui",
+  "@claxedo/app/ui",
 ] as const
 
 export type PluginRuntimeModule = (typeof PLUGIN_RUNTIME_MODULES)[number]

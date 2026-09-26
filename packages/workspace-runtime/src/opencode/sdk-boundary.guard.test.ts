@@ -145,8 +145,6 @@ describe("public SDK boundary", () => {
    * so a removal fails as loudly as an addition; it only ever shrinks.
    */
   const LEGACY_SDK_CONSUMERS = [
-    // A string inside a scanner's test fixture, not a real import.
-    "./packages/claxedo-app/src/architecture/scanners.test.ts",
     "./packages/workspace-runtime/scripts/stage-opencode-sdk.test.ts",
   ]
 

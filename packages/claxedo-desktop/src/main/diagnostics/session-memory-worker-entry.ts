@@ -2,7 +2,7 @@ import { createInterface } from "node:readline"
 import { createRequire } from "node:module"
 
 import { readArray, readString, readUnknown } from "../../shared/json-read"
-import { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
+import { LocalDiagnostics } from "../../shared/local-diagnostics"
 import { lowerDiagnosticsWorkerPriority } from "./process-metrics-worker"
 import {
   scanSessionMemoryStores,

@@ -19,29 +19,6 @@ export type AuthoritativeCheck = {
  * reviewable and unit-testable.
  */
 export const AUTHORITATIVE_CHECKS: Record<string, AuthoritativeCheck[]> = {
-  "@claxedo/app": [
-    {
-      label: "local renderer source closure",
-      cwd: "packages/claxedo-app",
-      command: ["bun", "test", "./src/architecture/local-entry-closure.guard.test.ts"],
-    },
-    {
-      label: "local renderer build",
-      cwd: "packages/claxedo-app",
-      command: ["bun", "run", "build:local"],
-    },
-    {
-      label: "identity-marker positive-control build",
-      cwd: "packages/claxedo-app",
-      command: ["bun", "run", "build:marker-control"],
-    },
-    {
-      label: "local emitted-bundle identity",
-      cwd: "packages/claxedo-app",
-      command: ["bun", "run", "check:local-bundle"],
-      env: { CLAXEDO_MARKER_CONTROL_DIR: "dist-marker-control" },
-    },
-  ],
   "@claxedo/local-server": [
     {
       label: "local-server production build",
@@ -135,20 +112,15 @@ export const AUTHORITATIVE_CHECKS: Record<string, AuthoritativeCheck[]> = {
   ],
   "@claxedo/desktop": [
     {
-      label: "desktop production build with optional contributions",
+      label: "desktop production build with sign-in",
       cwd: "packages/claxedo-desktop",
       command: ["bun", "run", "build"],
       env: { VITE_CLAXEDO_HOSTED_ACTIVATION: "true" },
     },
     {
-      label: "unsigned renderer and packaged-resource boundaries",
+      label: "packaged-resource boundaries",
       cwd: "packages/claxedo-desktop",
-      command: [
-        "bun",
-        "test",
-        "./src/renderer/renderer-entry-closure.guard.test.ts",
-        "./scripts/package-structure.test.ts",
-      ],
+      command: ["bun", "test", "./scripts/package-structure.test.ts"],
     },
   ],
 }

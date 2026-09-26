@@ -3,7 +3,7 @@ import type { Readable, Writable } from "node:stream"
 import { constants, cpus, setPriority, tmpdir } from "node:os"
 import { join } from "node:path"
 import { createInterface } from "node:readline"
-import { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
+import { LocalDiagnostics } from "../../shared/local-diagnostics"
 
 import { readArray, readNumber, readString, readUnknown } from "../../shared/json-read"
 

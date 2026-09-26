@@ -1,4 +1,4 @@
-import { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
+import { LocalDiagnostics } from "./local-diagnostics"
 
 export function applyDiagnosticsSnapshotUpdate(
   current: LocalDiagnostics.RetainedSnapshot | undefined,

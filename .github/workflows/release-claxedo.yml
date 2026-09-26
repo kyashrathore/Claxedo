@@ -81,53 +81,8 @@ jobs:
         working-directory: packages/claxedo-desktop
         run: bun run verify:diagnostics-privacy
 
-  diagnostics-performance:
-    needs: diagnostics-dependency-trust
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Bun
-        uses: ./.github/actions/setup-bun
-
-      - name: Install performance harness
-        working-directory: packages/claxedo-app/perf-harness
-        run: bun install --frozen-lockfile
-
-      - name: Build diagnostics package dependencies
-        run: bun run build:packages
-
-      - name: Build desktop diagnostics helper
-        working-directory: packages/claxedo-desktop
-        run: bun run build
-
-      - name: Build real app performance target
-        working-directory: packages/claxedo-app
-        run: bun run build
-
-      - name: Install performance browser
-        working-directory: packages/claxedo-app/perf-harness
-        run: bunx playwright install chromium
-
-      - name: Run counterbalanced diagnostics performance gate
-        working-directory: packages/claxedo-app/perf-harness
-        env:
-          CLAXEDO_PERF_APP_SCRIPT: serve
-        run: bun run ci:diagnostics
-
-      - name: Upload diagnostics performance evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: diagnostics-performance-${{ github.run_attempt }}
-          path: |
-            packages/claxedo-app/perf-harness/reports/latest.json
-            packages/claxedo-app/perf-harness/reports/latest.md
-          if-no-files-found: error
-          retention-days: 14
-
   build-desktop:
-    needs: [prepare, diagnostics-dependency-trust, diagnostics-performance]
+    needs: [prepare, diagnostics-dependency-trust]
     # Desktop public OAuth/control-plane values are environment-scoped, not
     # repo-level.
     #
@@ -346,11 +301,6 @@ jobs:
           mkdir -p .artifacts
           bun run test:diagnostics-release
           bun run smoke:diagnostics
-
-      - name: Run rendered diagnostics task evaluator
-        if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
-        working-directory: packages/claxedo-app
-        run: bun run test:diagnostics-release
 
       - name: Import Apple certificate
         if: runner.os == 'macOS' && (github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform)

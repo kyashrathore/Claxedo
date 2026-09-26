@@ -127,20 +127,6 @@ export function ProjectRoutes(options: ProjectRouteOptions) {
     return c.json({ project }, 201)
   })
 
-  if (store.byDirectory) {
-    const byDirectory = store.byDirectory.bind(store)
-    app.get("/by-directory", async (c) => {
-      const { access } = await caller(c)
-      const directory = c.req.query("directory")?.trim()
-      if (!directory) return c.json(apiError("project_invalid", "directory is required"), 400)
-      const project = await byDirectory(directory)
-      if (!project || !(await access.allowed(project.id, "read"))) {
-        return c.json(apiError("project_not_found", "No project at that directory"), 404)
-      }
-      return c.json({ project })
-    })
-  }
-
   app.get("/:id", async (c) => {
     const { access } = await caller(c)
     const id = routeParam(c, "id")

@@ -268,22 +268,6 @@ test("a packaged app must carry the always-local boundary manifests", () => {
   )
 })
 
-test("a packaged hosted-contribution chunk requires its separate boundary manifest", () => {
-  const files = [
-    "package.json",
-    "out/main/index.js",
-    "out/renderer/assets/desktop-hosted-contributions-abc123.js",
-  ]
-  expect(withAsar(files)).toEqual([])
-
-  const failures = withAsar(files, { includeBoundary: false })
-  expect(failures).toContainEqual(
-    expect.stringContaining(
-      "required product-boundary manifest is missing: out/product-boundary/desktop-renderer-hosted-contributions.json",
-    ),
-  )
-})
-
 test("a packaged account chunk requires its separate boundary manifest", () => {
   const files = ["package.json", "out/main/index.js", "out/main/desktop-account-abc123.js"]
   expect(withAsar(files)).toEqual([])

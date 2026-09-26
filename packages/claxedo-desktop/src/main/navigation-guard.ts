@@ -16,29 +16,24 @@
  * no handler installed Electron spawns a BrowserWindow that inherits these
  * webPreferences.
  *
- * Policy: the app document navigates normally, safe external URLs go to the OS
- * browser (what a user clicking a link actually means), everything else is
- * dropped. Kept free of electron imports so it is directly testable.
+ * Policy: the app document navigates normally and every other navigation or
+ * `window.open` is dropped. The app's live plugins run in this document, so a
+ * plugin's `location` or `window.open` must not become a way to send data out;
+ * the app's own links leave through the `open-link` IPC instead. Kept free of
+ * electron imports so it is directly testable.
  */
 
 /**
- * Schemes we are willing to hand to the OS. `shell.openExternal` invokes the
- * platform handler for whatever scheme it receives, making an unrestricted call
- * a launch primitive: `file:` opens bundles and executables, and every OS ships
- * its own privileged schemes. An allowlist is the only safe shape here — a
- * denylist loses to the next platform-specific scheme.
+ * Schemes the explicit `open-link` IPC hands to the OS. `shell.openExternal`
+ * invokes the platform handler for whatever scheme it receives, making an
+ * unrestricted call a launch primitive: `file:` opens bundles and executables,
+ * and every OS ships its own privileged schemes. An allowlist is the only safe
+ * shape here — a denylist loses to the next platform-specific scheme. `claxedo:`
+ * is this app's own registered scheme and `vscode:` the editor the workspace
+ * opens files in; one more entry is one more program an agent's rendered output
+ * can start. Navigation never consults it.
  */
-const EXTERNAL_SCHEMES = new Set(["http:", "https:", "mailto:"])
-
-/**
- * What the explicit `open-link` IPC may add: `claxedo:` is this app's own
- * registered scheme and `vscode:` the editor the workspace opens files in. The
- * list is closed because every entry is a launch of whatever handler the OS has
- * registered for that scheme, so one more entry is one more program an agent's
- * rendered output can start. Navigation never consults it — a page reaching a
- * handler by navigating is the thing `EXTERNAL_SCHEMES` exists to stop.
- */
-const LINK_SCHEMES = new Set([...EXTERNAL_SCHEMES, "claxedo:", "vscode:"])
+const LINK_SCHEMES = new Set(["http:", "https:", "mailto:", "claxedo:", "vscode:"])
 
 /**
  * The one renderer document every desktop emits and loads.
@@ -51,14 +46,6 @@ const LINK_SCHEMES = new Set([...EXTERNAL_SCHEMES, "claxedo:", "vscode:"])
  */
 export const MAIN_RENDERER_DOCUMENT = "index.local.html"
 
-export function isSafeExternalUrl(input: string) {
-  try {
-    return EXTERNAL_SCHEMES.has(new URL(input).protocol)
-  } catch {
-    return false
-  }
-}
-
 export function isOpenableLinkUrl(input: string) {
   try {
     return LINK_SCHEMES.has(new URL(input).protocol)
@@ -67,36 +54,20 @@ export function isOpenableLinkUrl(input: string) {
   }
 }
 
-/**
- * What the window does with a URL that is not the app document: v1 hands a safe
- * one to the OS browser; v2 refuses it, because v2's live plugins run in this
- * document and a plugin's `location` or `window.open` must not become a way to
- * send data out. v2's own links leave through the `open-link` IPC instead.
- */
-export type ExternalNavigation = "open" | "refuse"
-
-export type NavigationDecision =
-  /** The app document itself — let it through. */
-  | { action: "allow" }
-  /** Not ours, but safe to hand to the OS browser. */
-  | { action: "external"; url: string }
-  /** Neither — drop it. */
-  | { action: "block"; url: string }
+export type NavigationDecision = { action: "allow" } | { action: "block"; url: string }
 
 /**
  * In-window navigation. `isTrusted` is the caller's app-document check
  * (`isTrustedMainRendererUrl`), injected so this stays electron-free.
  */
-export function navigationDecision(url: string, isTrusted: (input: string) => boolean, external: ExternalNavigation): NavigationDecision {
-  if (isTrusted(url)) return { action: "allow" }
-  return external === "open" && isSafeExternalUrl(url) ? { action: "external", url } : { action: "block", url }
+export function navigationDecision(url: string, isTrusted: (input: string) => boolean): NavigationDecision {
+  return isTrusted(url) ? { action: "allow" } : { action: "block", url }
 }
 
 /**
  * `window.open` / `target="_blank"`. Never "allow": a new window would inherit
- * this window's webPreferences, preload included, so even a trusted-looking URL
- * gets routed rather than granted a bridge-bearing window of its own.
+ * this window's webPreferences, preload included.
  */
-export function windowOpenDecision(url: string, external: ExternalNavigation): Exclude<NavigationDecision, { action: "allow" }> {
-  return external === "open" && isSafeExternalUrl(url) ? { action: "external", url } : { action: "block", url }
+export function windowOpenDecision(url: string): Exclude<NavigationDecision, { action: "allow" }> {
+  return { action: "block", url }
 }

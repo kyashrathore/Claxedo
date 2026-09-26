@@ -26,20 +26,12 @@ outputs:
     value: ${{ steps.detect.outputs.windows }}
   unit_matrix:
     value: ${{ steps.detect.outputs.unit_matrix }}
-  mermaid:
-    value: ${{ steps.detect.outputs.mermaid }}
-  boundary_app:
-    value: ${{ steps.detect.outputs.boundary_app }}
   boundary_local_server:
     value: ${{ steps.detect.outputs.boundary_local_server }}
   boundary_host_connector:
     value: ${{ steps.detect.outputs.boundary_host_connector }}
   boundary_server:
     value: ${{ steps.detect.outputs.boundary_server }}
-  core_e2e:
-    value: ${{ steps.detect.outputs.core_e2e }}
-  tier_real:
-    value: ${{ steps.detect.outputs.tier_real }}
   sandbox_image:
     value: ${{ steps.detect.outputs.sandbox_image }}
   reason:

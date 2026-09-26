@@ -1,5 +1,0 @@
-[
-  "features/session/harness/options-state.test.ts",
-  "platform/runtime/agent/workspace-relay-connection.test.ts",
-  "platform/runtime/workspace-runtime-route-audit.test.ts"
-]

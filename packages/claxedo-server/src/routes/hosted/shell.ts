@@ -57,7 +57,7 @@ import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import type { RelayRole } from "@claxedo/workspace-relay"
 import type { RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
 import { readJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
-import { asFiniteNumber, asRecord, asString } from "@claxedo/helpers/guards"
+import { asRecord, asString } from "@claxedo/helpers/guards"
 
 export type HostedShellRouteOptions = {
   authentication?: RequestAuthenticationAdapter
@@ -157,21 +157,6 @@ function hostedPath(directory?: string) {
   }
 }
 
-// Shape mirror of `dirProject()` in routes/client-presentation.ts. The app's
-// `projectCurrentQuery` only reads `.id`.
-function hostedProject(directory: string) {
-  const id = directory || "hosted"
-  const name = directory.split(/[\\/]/).filter(Boolean).pop() ?? directory
-  const now = Date.now()
-  return {
-    id,
-    worktree: directory,
-    name: name || id,
-    time: { created: now, updated: now },
-    sandboxes: [] as string[],
-  }
-}
-
 function piProviderAuth() {
   return {
     anthropic: [{ type: "api", label: "API Key" }],
@@ -179,50 +164,16 @@ function piProviderAuth() {
   }
 }
 
-/**
- * "owner/repo" from a git remote. Mirrors the app's
- * `app/workbench/rail/rail-git-remote.ts` — the rail has always labelled
- * projects this way; the composer could not because the grouping below dropped
- * `repo_url` before it ever reached the client.
- */
-function ownerRepo(remote: string | undefined) {
-  if (!remote) return undefined
-  return remote.match(/[:/]([^/]+\/[^/]+?)(?:\.git)?$/)?.[1]
-}
-
-/**
- * The PROJECT's display name.
- *
- * `display_name` is deliberately LAST-but-one: it is the WORKSPACE name, and
- * the hosted create dialog posts `workspaceName: "main"` for the first
- * workspace, so preferring it labelled every hosted cloud project "main".
- * There is no `project_name` column on workspaces — the repo
- * identity is the only project-scoped name the row actually carries.
- */
-function projectDisplayName(row: Record<string, unknown> | undefined, projectId: string) {
-  return asString(row?.project_name) ??
-    asString(row?.projectName) ??
-    asString(row?.repo_name) ??
-    asString(row?.repoName) ??
-    ownerRepo(asString(row?.repo_url) ?? asString(row?.repoUrl)) ??
-    asString(row?.display_name) ??
-    asString(row?.displayName) ??
-    projectId
-}
-
 // The local server projects the same inventory, and the two must stay in step.
 // They cannot be one function: the local one reaches the fs-backed agent config
 // and workspace store, which the Worker bundle cannot carry. The inventory
 // tells the app shell which directories a signed workspace occupies, and so
 // which runtime-owned reads (provider, files, PTY) take the relay.
-export function signedShellProjects(workspaces: unknown[], now: number, readyCloud: ReadonlySet<string>) {
+export function signedShellProjects(workspaces: unknown[], readyCloud: ReadonlySet<string>) {
   const groups = new Map<string, {
     id: string
-    name: string
     directories: string[]
     workspaces: Record<string, unknown>
-    created: number
-    updated: number
   }>()
   for (const workspace of workspaces) {
     const row = asRecord(workspace)
@@ -234,22 +185,7 @@ export function signedShellProjects(workspaces: unknown[], now: number, readyClo
     const remoteDirectory = asString(row?.remote_directory) ?? asString(row?.remoteDirectory)
     const projectId = asString(row?.project_id) ?? asString(row?.projectID) ?? workspaceId
     const workspaceName = asString(row?.workspace_name) ?? asString(row?.workspaceName) ?? asString(row?.display_name) ?? asString(row?.displayName) ?? workspaceId
-    const created = asFiniteNumber(row?.created_at) ?? asFiniteNumber(row?.createdAt) ?? now
-    const updated = asFiniteNumber(row?.updated_at) ?? asFiniteNumber(row?.updatedAt) ?? asFiniteNumber(row?.last_seen_at) ?? created
-    const group = groups.get(projectId) ?? {
-      id: projectId,
-      name: projectDisplayName(row, projectId),
-      directories: [],
-      workspaces: {},
-      created,
-      updated,
-    }
-    group.created = Math.min(group.created, created)
-    group.updated = Math.max(group.updated, updated)
-    // A project's rows are not uniform: only some carry repo identity. If this
-    // group was opened by a bare row its name is still the raw project id, so
-    // let a later row that DOES know the repo upgrade it.
-    if (group.name === projectId) group.name = projectDisplayName(row, projectId)
+    const group = groups.get(projectId) ?? { id: projectId, directories: [], workspaces: {} }
     const backing = authorityRowBacking(row)
     group.directories.push(workspaceId)
     group.workspaces[workspaceId] = {
@@ -268,11 +204,7 @@ export function signedShellProjects(workspaces: unknown[], now: number, readyClo
   }
   return [...groups.values()].map((group) => ({
     id: group.id,
-    name: group.name,
     worktree: group.directories[0] ?? group.id,
-    // The app shell's home page sorts recent projects by `time.updated`; a
-    // missing `time` crashes the whole app, so always provide it.
-    time: { created: group.created, updated: group.updated },
     sandboxes: group.directories,
     workspaces: group.workspaces,
   }))
@@ -297,8 +229,7 @@ async function signedAuth(c: Context, options: HostedShellRouteOptions) {
 }
 
 // The one legal `directory -> workspaceId` narrowing point on the hosted
-// central. Mirrors the app's `workspaceIdFromRef`
-// (`claxedo-app/src/platform/identity/legacy-resolver.ts`): the app sends
+// central. The app sends
 // either a bare `ws_...`/uuid workspace id or that id prefixed
 // `workspace:<id>` — a hosted central has no filesystem, so those are the
 // only two shapes a `directory` query param can legally carry here. Anything
@@ -549,7 +480,7 @@ async function signedProjects(c: Context, options: HostedShellRouteOptions, acti
   if (!options.listWorkspaces) return []
   const listed = await options.listWorkspaces(auth)
   const workspaces = Array.isArray(listed) ? listed : []
-  return signedShellProjects(workspaces, Date.now(), await readyCloudWorkspaces(options.sandboxManager, workspaces))
+  return signedShellProjects(workspaces, await readyCloudWorkspaces(options.sandboxManager, workspaces))
 }
 
 /**
@@ -730,25 +661,6 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
       if (!hasCredential(c, options)) return c.json(declaration)
       try {
         return c.json({ ...declaration, project: await signedProjects(c, options) })
-      } catch (err) {
-        return authErrorResponse(c, err)
-      }
-    })
-    .get("/project", async (c) => {
-      try {
-        return c.json(await signedProjects(c, options))
-      } catch (err) {
-        return authErrorResponse(c, err)
-      }
-    })
-    .get("/project/current", (c) => c.json(hostedProject(directoryInput(c))))
-    .get("/project/:id", async (c) => {
-      try {
-        const id = c.req.param("id")
-        const project = (await signedProjects(c, options)).find((item) => item.id === id)
-        return project
-          ? c.json(project)
-          : c.json({ error: { code: "project_not_found", message: "Project not found" } }, 404)
       } catch (err) {
         return authErrorResponse(c, err)
       }

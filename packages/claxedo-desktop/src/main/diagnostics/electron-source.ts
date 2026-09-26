@@ -1,4 +1,4 @@
-import type { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
+import type { LocalDiagnostics } from "../../shared/local-diagnostics"
 
 import type { DiagnosticsObservation, DiagnosticsSource } from "./profiler"
 

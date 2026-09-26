@@ -8,26 +8,18 @@ const root = join(import.meta.dir, "..")
 const cbx = join(root, "script", "cbx")
 const stateFile = join(root, ".crabbox", "ci", "last-run.json")
 
-const coreShards = Array.from({ length: 12 }, (_, index) => `pr-e2e-core-${String(index + 1).padStart(2, "0")}`)
-const awsCoreShards = coreShards.map((job) => `${job}-aws`)
 const groups = {
   "pr-linux": [
     "pr-unit-linux-aws",
     "pr-typecheck-linux-aws",
-    ...awsCoreShards,
-    "pr-e2e-tier-real-linux-aws",
     "pr-packages-dry-run-linux-aws",
     "pr-relay-bench-linux-aws",
-    "pr-storybook-linux-aws",
   ],
   "pr-linux-hetzner": [
     "pr-unit-linux",
     "pr-typecheck-linux",
-    ...coreShards,
-    "pr-e2e-tier-real-linux",
     "pr-packages-dry-run-linux",
     "pr-relay-bench-linux",
-    "pr-storybook-linux",
   ],
   "pr-native": ["pr-unit-windows"],
 } as const
@@ -44,10 +36,6 @@ const focusedJobs = [
   "focus-server-core-windows",
   "focus-helpers-windows",
   "focus-native-acceptance-windows",
-  "focus-e2e-tier-real-claude-native-linux-aws",
-  "focus-e2e-tier-real-codex-native-linux-aws",
-  "focus-e2e-tier-real-cursor-linux-aws",
-  "focus-e2e-tier-real-web-linux-aws",
 ] as const
 const allJobs = new Set([...Object.values(groups).flat(), ...releaseJobs, ...focusedJobs])
 

@@ -1,80 +1,11 @@
-import { defineConfig, loadEnv, type HtmlTagDescriptor, type Plugin, type UserConfig } from "vite"
+import { defineConfig, loadEnv, type Plugin, type UserConfig } from "vite"
 import solidPlugin from "vite-plugin-solid"
 import tailwindcss from "@tailwindcss/vite"
 import { fileURLToPath } from "node:url"
-import { readFileSync } from "node:fs"
-import { resolveBrowserAuthBuildSelection } from "./vite.browser-auth"
-
-/**
- * The chunks the authenticated app awaits BEFORE first paint. app/entry/app.tsx's
- * preloadClaxedoAppShell() dynamic-imports runtime-providers, whose
- * preloadRuntimeProviders() then awaits feature-ports + secondary-feature-ports
- * and finally app-shell-bootstrap. Vite only emits <link rel="modulepreload">
- * for the entry's STATIC imports, so without help the browser discovers each of
- * these only when the previous module executes — a 3-hop network waterfall
- * (main → runtime-providers → feature-ports → app-shell-bootstrap) on the
- * critical path. Keep in sync with preloadRuntimeProviders() in
- * src/app/entry/runtime-providers.tsx and BOOT_CLOSURE_ROOTS in
- * scripts/check-forbidden-eager-deps.ts.
- */
-const BOOT_CHUNK_NAMES = ["runtime-providers", "feature-ports", "secondary-feature-ports", "app-shell-bootstrap"]
-
-/**
- * Injects <link rel="modulepreload"> for the boot chunks (and their static
- * import closure) into the built index.html, so they download in parallel with
- * the entry chunk instead of serially after it executes. Hash-safe: file names
- * are read from the emitted bundle, never hardcoded. Applies to any HTML input
- * built with this config (cloud, local via vite.local.config.ts, demo) — the
- * plugin only acts on chunk names it finds in that build's bundle.
- */
-function bootChunkModulepreloadPlugin(): Plugin {
-  let base = "/"
-  return {
-    name: "claxedo:boot-chunk-modulepreload",
-    apply: "build",
-    configResolved(config) {
-      base = config.base
-    },
-    transformIndexHtml: {
-      order: "post",
-      handler(_html, ctx) {
-        const bundle = ctx.bundle
-        // `generateBundle` has not run (dev/serve): nothing to preload.
-        if (!bundle) return []
-        // Vite already emits modulepreload links for the entry's static
-        // imports (vendor-solid, vendor-better-auth); skip those and the entry.
-        const seen = new Set<string>()
-        for (const output of Object.values(bundle)) {
-          if (output.type === "chunk" && output.isEntry) {
-            seen.add(output.fileName)
-            for (const imported of output.imports) seen.add(imported)
-          }
-        }
-        const files: string[] = []
-        const add = (fileName: string) => {
-          if (seen.has(fileName)) return
-          seen.add(fileName)
-          const chunk = bundle[fileName]
-          if (!chunk || chunk.type !== "chunk") return
-          files.push(fileName)
-          // A modulepreload does not fetch the module's own static imports,
-          // so walk them too — they are needed before boot evaluation anyway.
-          for (const imported of chunk.imports) add(imported)
-        }
-        for (const name of BOOT_CHUNK_NAMES) {
-          for (const output of Object.values(bundle)) {
-            if (output.type === "chunk" && !output.isEntry && output.name === name) add(output.fileName)
-          }
-        }
-        return files.map<HtmlTagDescriptor>((fileName) => ({
-          tag: "link",
-          attrs: { rel: "modulepreload", crossorigin: true, href: `${base}${fileName}` },
-          injectTo: "head",
-        }))
-      },
-    },
-  }
-}
+import { existsSync, readFileSync, realpathSync } from "node:fs"
+import { dirname } from "node:path"
+import { resolveAccountBindingSelection, type AccountBindingId } from "./vite.account-binding"
+import { webContentSecurityPolicyPlugin } from "./vite.content-security-policy"
 
 const normalizePath = (p: string) => p.replace(/\\/g, "/")
 const shikiThemesDist = normalizePath(
@@ -98,13 +29,43 @@ function devTls(): { key: Buffer; cert: Buffer } | undefined {
   }
 }
 
+function claxedoWorkspaceSource(): Plugin {
+  const roots = [
+    fileURLToPath(new URL("./node_modules/", import.meta.url)),
+    fileURLToPath(new URL("../../node_modules/", import.meta.url)),
+  ]
+  const manifestFor = (name: string) => {
+    for (const root of roots) {
+      const path = `${root}${name}/package.json`
+      if (existsSync(path)) return path
+    }
+    return undefined
+  }
+  return {
+    name: "claxedo-workspace-source",
+    enforce: "pre",
+    resolveId(source) {
+      const match = /^(@claxedo\/[^/]+)(\/.+)?$/.exec(source)
+      if (!match) return null
+      const manifestPath = manifestFor(match[1])
+      if (!manifestPath) return null
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { exports?: Record<string, unknown> }
+      const entry = manifest.exports?.[match[2] ? `.${match[2]}` : "."]
+      if (!entry || typeof entry !== "object") return null
+      const development = (entry as Record<string, unknown>).development
+      if (typeof development !== "string") return null
+      return normalizePath(realpathSync(`${dirname(manifestPath)}/${development}`))
+    },
+  }
+}
+
 /**
  * Cloud-specific Vite configuration for Claxedo.
  */
-function cloudConfig({ mode }: { mode: string }): UserConfig {
+export function cloudConfig({ mode }: { mode: string }, binding?: AccountBindingId): UserConfig {
   const env = loadEnv(mode, process.cwd(), "VITE_")
-  const browserAuth = resolveBrowserAuthBuildSelection(
-    env.VITE_CLAXEDO_AUTH_ADAPTER || process.env.VITE_CLAXEDO_AUTH_ADAPTER,
+  const accountBinding = resolveAccountBindingSelection(
+    binding ?? (env.VITE_CLAXEDO_AUTH_ADAPTER || process.env.VITE_CLAXEDO_AUTH_ADAPTER),
   )
   // 2593 tracks DEFAULT_CLAXEDO_SERVER_PORT in claxedo-server (see
   // src/deployments/local/port.ts) — the port `claxedo-server dev` listens on.
@@ -115,12 +76,12 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
     || env.VITE_CLAXEDO_SERVER_URL
     || "http://127.0.0.1:2593"
   return {
-    plugins: [solidPlugin(), tailwindcss(), bootChunkModulepreloadPlugin()],
+    plugins: [claxedoWorkspaceSource(), solidPlugin(), tailwindcss(), webContentSecurityPolicyPlugin(env.VITE_CLAXEDO_SERVER_URL)],
     publicDir: "public",
     server: {
       host: "0.0.0.0",
       allowedHosts: true,
-      port: Number(process.env.PORT) || 4444,
+      port: Number(process.env.PORT) || 4445,
       strictPort: true,
       ...(devTls() ? { https: devTls() } : {}),
       proxy: [
@@ -155,6 +116,7 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
     },
     worker: {
       format: "es",
+      plugins: () => [claxedoWorkspaceSource(), solidPlugin()],
     },
     optimizeDeps: {
       exclude: ["@pierre/diffs", "@pierre/theming"],
@@ -171,11 +133,15 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
       // the publish directory.
       sourcemap: "hidden",
       rollupOptions: {
-        input: { main: fileURLToPath(new URL("./index.html", import.meta.url)) },
+        input: {
+          main: fileURLToPath(new URL("./index.html", import.meta.url)),
+          browserPreview: fileURLToPath(new URL("./browser-preview.html", import.meta.url)),
+          cliCallback: fileURLToPath(new URL("./cli-callback.html", import.meta.url)),
+        },
         output: {
           manualChunks: {
             "vendor-solid": ["solid-js", "solid-js/web", "solid-js/store"],
-            ...browserAuth.manualChunks,
+            ...accountBinding.manualChunks,
           },
         },
       },
@@ -183,14 +149,14 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
     resolve: {
       alias: [
         {
-          find: "#browser-auth-adapter",
-          replacement: normalizePath(fileURLToPath(new URL(browserAuth.module, import.meta.url))),
+          find: "#account-binding",
+          replacement: normalizePath(fileURLToPath(new URL(accountBinding.module, import.meta.url))),
         },
         // Keep the terminal backend lazy-loaded without making it configurable.
         {
           find: "#terminal-backend",
           replacement: normalizePath(
-            fileURLToPath(new URL("./src/features/terminal/core/backend/xterm.ts", import.meta.url)),
+            fileURLToPath(new URL("./src/terminal/backend/xterm.ts", import.meta.url)),
           ),
         },
         {
@@ -218,8 +184,12 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
           replacement: `${shikiThemesDist}index.mjs`,
         },
         {
+          find: "@claxedo/app/ui",
+          replacement: normalizePath(fileURLToPath(new URL("./src/ui/index.ts", import.meta.url))),
+        },
+        {
           find: "lru_map",
-          replacement: normalizePath(fileURLToPath(new URL("./src/lib/lru-map.ts", import.meta.url))),
+          replacement: normalizePath(fileURLToPath(new URL("./src/transcript/diff/lru-map.ts", import.meta.url))),
         },
         // General @/ alias (lowest priority) — resolves to claxedo's own src
         // (upstream packages/app fully vendored; divorce plan 006)

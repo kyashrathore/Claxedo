@@ -241,7 +241,7 @@ The client cannot derive this. A signed node runs its embedded issuer on
 localhost, so the URL is the one a daemon has, and a build flag describes the
 bundle rather than the server it reached. The app resolves the declaration
 before its first render
-(`packages/claxedo-app/src/app/boot/data/deployment-posture.ts`) and three
+(`bootstrapCatalog` in `packages/claxedo-app/src/server/wire/placements.ts`) and three
 surfaces read it: the sign-in gate (`CloudAuthGate`), the browser identity
 provider's startup (`startBrowserAuth`, which loads no provider SDK against a
 server that issues no sessions), and the first-project canvas. The request

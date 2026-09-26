@@ -6,39 +6,29 @@
  */
 
 import type { Policy } from "../policy.ts"
-import { appLocal } from "./app-local.ts"
 import { localServer } from "./local-server.ts"
 import { hostConnector } from "./host-connector.ts"
 import { serverSelfHosted } from "./server.ts"
-import {
-  desktopAccountComposition,
-  desktopHostedContribution,
-  desktopMainComposition,
-  desktopRendererUnsigned,
-} from "./desktop.ts"
+import { desktopAccountComposition, desktopMainComposition, desktopRenderer } from "./desktop.ts"
 
 export const POLICIES: Policy[] = [
-  appLocal,
   localServer,
   hostConnector,
   serverSelfHosted,
   desktopMainComposition,
   desktopAccountComposition,
-  desktopRendererUnsigned,
-  desktopHostedContribution,
+  desktopRenderer,
 ]
 
 /** Package name -> the policies its `verify:closure` runs. */
 export const PRODUCTS: Record<string, string[]> = {
-  "@claxedo/app": ["app-local"],
   "@claxedo/local-server": ["local-server"],
   "@claxedo/host-connector": ["host-connector"],
   "@claxedo/server": ["server-self-hosted"],
   "@claxedo/desktop": [
     "desktop-main-composition",
     "desktop-account-composition",
-    "desktop-renderer-unsigned",
-    "desktop-hosted-contribution",
+    "desktop-renderer",
   ],
 }
 

@@ -85,32 +85,19 @@ describe("desktop server launch wiring", () => {
     expect(manifest.dependencies?.["@claxedo/agent-sdk-runtime"]).toBeDefined()
   })
 
-  test("the renderer boots through the app package entry, not a source-relative path", () => {
-    // A package specifier is what lets the boundary guards see the edge.
-    const renderer = read("src/renderer/shell.tsx")
-    expect(renderer).toMatch(/from "@claxedo\/app(\/[^"]*)?"/)
-    expect(renderer).not.toContain("../../claxedo-app/src")
+  test("the renderer boots the app through the #app alias, not a source-relative path", () => {
+    // `vite.renderer.ts` maps `#app` to the app package's entry.
+    const renderer = read("src/renderer/main.tsx")
+    expect(renderer).toMatch(/^import \{ App \} from "#app"$/m)
+    expect(renderer).not.toMatch(/from "\.\.\/\.\.\/claxedo-app/)
   })
 
   test("the renderer never receives an account bearer", () => {
-    // Signed desktop calls cross the closed Electron AccountPort operation map.
-    // Neither the base entry nor its optional activation may recreate a browser
-    // auth session or hand a raw bearer to shared fetch.
-    for (const renderer of [read("src/renderer/local.tsx"), read("src/renderer/hosted-contributions.ts")]) {
-      expect(renderer).not.toMatch(/^import[^\n]*@claxedo\/app\/auth/m)
-      expect(renderer).not.toMatch(/^configureApiRuntime\(/m)
-    }
-  })
-
-  test("binds machine remote access to the Host Connector, with no HTTP fallback", () => {
-    // `@claxedo/local-server` serves no `/api/claxedo/remote-access/*` path;
-    // without this binding "Enable remote access" posts into a 404.
-    const renderer = read("src/renderer/hosted-contributions.ts")
-
-    expect(renderer).toMatch(/^\s*configureDesktopMachineRemoteAccess\(\)$/m)
-    // Never the HTTP one: the desktop binding refuses when the preload exposes
-    // no bridge, and an HTTP fallback would hide that.
-    expect(renderer).not.toContain("configureHttpMachineRemoteAccess")
+    // Signed desktop calls cross the closed Electron AccountPort operation map,
+    // so the entry never recreates a browser auth session or configures fetch.
+    const renderer = read("src/renderer/main.tsx")
+    expect(renderer).not.toMatch(/^import[^\n]*\/auth/m)
+    expect(renderer).not.toMatch(/^configureApiRuntime\(/m)
   })
 
   test("presents the daemon capability under the header the daemon reads it from", () => {

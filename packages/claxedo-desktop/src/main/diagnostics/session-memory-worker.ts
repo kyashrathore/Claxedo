@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process"
 import { join } from "node:path"
-import { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
+import { LocalDiagnostics } from "../../shared/local-diagnostics"
 import { readUnknown } from "../../shared/json-read"
 import type { SessionMemoryScanPaths } from "./session-memory-scan"
 

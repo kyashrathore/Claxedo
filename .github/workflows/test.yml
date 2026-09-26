@@ -13,13 +13,10 @@ on:
     inputs:
       linux-unit-only:
         description: >-
-          Run the whole unit suite on Linux and nothing else: no Windows leg, no
-          e2e. Every e2e shard and tier-real reach real
-          Playwright results and every one of them has failing tests (run
-          35737110865), and the Windows leg is still red in package suites
-          after its embedded OpenCode verification step, so a release gate that
-          required them could never open; the deploy gates on what this
-          repository can prove.
+          Run the whole unit suite on Linux and nothing else: no Windows leg.
+          The Windows leg is still red in package suites after its embedded
+          OpenCode verification step, so a release gate that required it could
+          never open; the deploy gates on what this repository can prove.
         type: boolean
         default: false
 
@@ -45,13 +42,9 @@ jobs:
       docs: ${{ steps.changed.outputs.docs }}
       unit: ${{ inputs.linux-unit-only && 'true' || steps.changed.outputs.unit }}
       unit_matrix: ${{ inputs.linux-unit-only && '[{"name":"linux","host":"ubuntu-latest"}]' || steps.changed.outputs.unit_matrix }}
-      mermaid: ${{ steps.changed.outputs.mermaid }}
-      boundary_app: ${{ steps.changed.outputs.boundary_app }}
       boundary_local_server: ${{ steps.changed.outputs.boundary_local_server }}
       boundary_host_connector: ${{ steps.changed.outputs.boundary_host_connector }}
       boundary_server: ${{ steps.changed.outputs.boundary_server }}
-      core_e2e: ${{ inputs.linux-unit-only && 'false' || steps.changed.outputs.core_e2e }}
-      tier_real: ${{ inputs.linux-unit-only && 'false' || steps.changed.outputs.tier_real }}
     steps:
       - name: Checkout repository history
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -97,10 +90,6 @@ jobs:
     defaults:
       run:
         shell: bash
-    env:
-      # Consumed by the Linux-only mermaid verification steps below; inert on
-      # the Windows leg, which skips them.
-      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
     steps:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -116,13 +105,6 @@ jobs:
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
 
-      # The app's `test` script ends in the perf-harness suite, and perf-harness
-      # is not a workspace package: the root install leaves its node_modules
-      # empty and every `agent-app-benchmark` import fails to resolve.
-      - name: Install performance harness
-        working-directory: packages/claxedo-app/perf-harness
-        run: bun install --frozen-lockfile
-
       - name: Configure git identity
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
@@ -136,51 +118,6 @@ jobs:
           restore-keys: |
             turbo-${{ runner.os }}-${{ hashFiles('turbo.json', '**/package.json') }}-
             turbo-${{ runner.os }}-
-
-      # session-ui's mermaid path CANNOT be unit tested, so it rides here rather
-      # than in `bun turbo test`: `bun test` has no DOM, happy-dom's HTML parser
-      # drops every child of an <svg> while its XML parser makes DOMPurify a
-      # no-op (see the header of markdown-svg-sanitize.test.ts -- both failure
-      # modes produce a GREEN test that checked nothing), and markdown.tsx only
-      # loads inside a Vite graph at all, because markdown-worker.ts imports
-      # `./markdown-shiki.worker.ts?worker&url`. So these are real-Chromium
-      # scripts. They run before the build and the 35-minute test step so a
-      # mermaid regression fails fast, and Linux-only for the same reason as the
-      # docs check above. Roughly 2-3 minutes with a warm browser cache.
-      #
-      # The pair is deliberate and neither half covers the other: the sanitizer
-      # script proves mermaid's SVG is filtered, the wiring script proves the
-      # renderer is reached at all. `renderMermaidBlocks` was dead code for its
-      # entire life -- no diagram ever rendered -- and the sanitizer suite stayed
-      # green the whole time, because a sanitizer cannot notice that nothing
-      # calls it.
-      - name: Read Playwright version
-        if: runner.os == 'Linux' && matrix.lane == 'rest' && needs.changes.outputs.mermaid == 'true'
-        id: playwright-version
-        run: |
-          version=$(node -e 'const p=require("./packages/claxedo-app/package.json");console.log((p.devDependencies??{})["@playwright/test"]??p.dependencies["@playwright/test"])')
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      # Same key as the e2e jobs below, so this shares their cache entry.
-      - name: Cache Playwright browsers
-        if: runner.os == 'Linux' && matrix.lane == 'rest' && needs.changes.outputs.mermaid == 'true'
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: ${{ github.workspace }}/.playwright-browsers
-          key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright-version.outputs.version }}-chromium
-
-      - name: Install Playwright Chromium
-        if: runner.os == 'Linux' && matrix.lane == 'rest' && needs.changes.outputs.mermaid == 'true'
-        working-directory: packages/claxedo-app
-        run: npx playwright install chromium
-
-      # No `bun turbo build` needed: everything these two import
-      # (@opencode-ai/ui, /core, /sdk) is exported from source, not dist.
-      - name: Verify mermaid rendering (sanitizer + wiring)
-        if: runner.os == 'Linux' && matrix.lane == 'rest' && needs.changes.outputs.mermaid == 'true'
-        timeout-minutes: 15
-        working-directory: packages/session-ui
-        run: bun run verify:mermaid
 
       # packages/*/dist is gitignored and several @claxedo packages resolve each
       # other through their dist exports, so the suites that import them need
@@ -197,13 +134,9 @@ jobs:
         run: bun run --cwd packages/workspace-runtime test:opencode-node
 
       # Product boundaries are independent release artifacts. Keep each public
-      # command separately selectable so an app-only change does not build the
-      # server products, and ordinary CI never invokes Desktop's production
-      # build. The release workflows retain Desktop's complete boundary gate.
-      - name: Verify app package boundary
-        if: runner.os == 'Linux' && matrix.lane == 'rest' && needs.changes.outputs.boundary_app == 'true'
-        run: bun run --cwd packages/claxedo-app verify:closure
-
+      # command separately selectable so a change to one product does not build
+      # the others, and ordinary CI never invokes Desktop's production build.
+      # The release workflows retain Desktop's complete boundary gate.
       - name: Verify local-server package boundary
         if: runner.os == 'Linux' && matrix.lane == 'rest' && needs.changes.outputs.boundary_local_server == 'true'
         run: bun run --cwd packages/claxedo-local-server verify:closure
@@ -267,13 +200,11 @@ jobs:
         if: always()
         uses: mikepenz/action-junit-report@bccf2e31636835cf0874589931c4116687171386 # v6.4.0
         with:
-          # `junit*.xml`, not `junit.xml`: several packages run more than one
-          # runner and write one report each -- @claxedo/app emits `junit.xml`
-          # (bun) plus `junit-vitest.xml` (Solid component renders), and
-          # @claxedo/workspace-relay emits `junit-bun-adapter.xml` /
-          # `junit-workerd.xml`. Those suites already gate the job through their
-          # exit code; the narrower glob only meant their results were missing
-          # from the published check.
+          # `junit*.xml`, not `junit.xml`: a package that runs more than one
+          # runner writes one report each -- @claxedo/workspace-relay emits
+          # `junit-bun-adapter.xml` / `junit-workerd.xml`. Those suites already
+          # gate the job through their exit code; the narrower glob only meant
+          # their results were missing from the published check.
           report_paths: |
             packages/*/.artifacts/unit/junit*.xml
           check_name: "unit results (${{ matrix.settings.name }}, ${{ matrix.lane }})"
@@ -293,359 +224,12 @@ jobs:
             packages/*/.artifacts/unit/junit.xml
             packages/*/*/.artifacts/unit/junit.xml
 
-  e2e-build:
-    # Build every reusable input in one job: the production workspace exports,
-    # then one exact app artifact for each build-time auth composition. Keeping
-    # this in one job avoids adding another setup-dominated dependency stage.
-    name: e2e reusable builds
-    needs: changes
-    # Serves every e2e lane: the core shards and tier-real both consume the
-    # workspace dist artifact this job uploads, so the dist-resolved packages
-    # build once per run instead of once per job.
-    if: needs.changes.outputs.core_e2e == 'true' || needs.changes.outputs.tier_real == 'true'
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Bun
-        uses: ./.github/actions/setup-bun
-        with:
-          install-flags: --frozen-lockfile
-
-      - name: Build dist-resolved workspace packages
-        run: bun run build:packages
-
-      # `build:packages` owns which packages resolve through dist/. A list of
-      # paths here would have to mirror its filter set by hand, and every
-      # shard fails at test discovery on any package the list misses.
-      - name: Upload reusable workspace dist
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: claxedo-e2e-workspace-dist-${{ github.sha }}-${{ github.run_attempt }}
-          path: packages/*/dist
-          if-no-files-found: error
-          retention-days: 1
-
-      # Auth mode is a build-time composition boundary. Upload the first build
-      # before the second replaces dist/, and bind each manifest to this commit.
-      - name: Build reusable E2E app (test-user)
-        working-directory: packages/claxedo-app
-        run: bun run build:e2e
-        env:
-          CLAXEDO_E2E_AUTH_MODE: test-user
-          VITE_CLAXEDO_SERVER_URL: http://127.0.0.1:3001
-          VITE_CLAXEDO_SETTINGS_CONNECTIONS_ENABLED: "true"
-          VITE_CLAXEDO_SETTINGS_SANDBOX_PROVIDERS_ENABLED: "true"
-
-      - name: Upload reusable E2E app (test-user)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: claxedo-app-e2e-test-user-${{ github.sha }}-${{ github.run_attempt }}
-          path: packages/claxedo-app/dist
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Build reusable E2E app (local-unsigned)
-        working-directory: packages/claxedo-app
-        run: bun run build:e2e
-        env:
-          CLAXEDO_E2E_AUTH_MODE: local-unsigned
-          VITE_CLAXEDO_SERVER_URL: http://127.0.0.1:3001
-          VITE_CLAXEDO_SETTINGS_CONNECTIONS_ENABLED: "true"
-          VITE_CLAXEDO_SETTINGS_SANDBOX_PROVIDERS_ENABLED: "true"
-
-      - name: Upload reusable E2E app (local-unsigned)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: claxedo-app-e2e-local-unsigned-${{ github.sha }}-${{ github.run_attempt }}
-          path: packages/claxedo-app/dist
-          if-no-files-found: error
-          retention-days: 1
-
-  e2e:
-    # Six shards per auth mode keep each browser leg bounded while avoiding the
-    # old setup-dominated 24-job matrix. Measured on 2026-08-27, the 24 jobs used
-    # 109 runner-minutes, with 48 minutes spent before their Playwright steps.
-    # The app build is now owned by e2e-build above and reused by every shard.
-    name: e2e (linux ${{ matrix.auth-mode }}, ${{ matrix.shard }}/6)
-    needs: [changes, e2e-build]
-    if: needs.changes.outputs.core_e2e == 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4, 5, 6]
-        auth-mode: [test-user, local-unsigned]
-    runs-on: ubuntu-latest
-    env:
-      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          # Playwright 1.59 hangs while extracting Chromium with Node 24.16.
-          node-version: "24.15"
-
-      - name: Setup Bun
-        uses: ./.github/actions/setup-bun
-        with:
-          install-flags: --frozen-lockfile
-
-      - name: Read Playwright version
-        id: playwright-version
-        run: |
-          version=$(node -e 'const p=require("./packages/claxedo-app/package.json");console.log((p.devDependencies??{})["@playwright/test"]??p.dependencies["@playwright/test"])')
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Playwright browsers
-        id: playwright-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: ${{ github.workspace }}/.playwright-browsers
-          key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright-version.outputs.version }}-chromium
-
-      # Test discovery imports the same production dist/ exports as the Vite
-      # build. Restore the exact closure produced once by e2e-build.
-      - name: Download reusable workspace dist
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: claxedo-e2e-workspace-dist-${{ github.sha }}-${{ github.run_attempt }}
-          path: packages
-
-      - name: Install Playwright Chromium
-        working-directory: packages/claxedo-app
-        run: npx playwright install chromium
-
-      - name: Download reusable E2E app
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: claxedo-app-e2e-${{ matrix.auth-mode }}-${{ github.sha }}-${{ github.run_attempt }}
-          path: packages/claxedo-app/dist
-
-      - name: Verify browser assertion helpers reject broken fixtures
-        if: matrix.shard == 1 && matrix.auth-mode == 'test-user'
-        working-directory: packages/claxedo-app
-        run: bun run test:e2e:oracles
-
-      # claxedo-app's Playwright suite (packages/claxedo-app/e2e/playwright): the
-      # @core-tagged specs run on every PR in these shards. Tier R (real backend +
-      # real harness binaries against a scripted model endpoint) runs as the
-      # separate `e2e-tier-real` job below. Tier L (live real-credential specs)
-      # runs in NO CI lane — it is local/manual only, by design: it needs real
-      # provider credentials. Do not describe it as "nightly" here unless a
-      # scheduled workflow actually exists.
-      - name: Run claxedo-app e2e core suite (${{ matrix.auth-mode }}, shard ${{ matrix.shard }}/6)
-        working-directory: packages/claxedo-app
-        timeout-minutes: 30
-        run: bun run test:e2e:core:base -- --shard=${{ matrix.shard }}/6
-        env:
-          # Preview the exact auth-mode artifact downloaded above. `preview`
-          # refuses to rebuild or serve an artifact whose manifest does not
-          # match this mode and commit.
-          CLAXEDO_E2E_SERVE_MODE: preview
-          # Every watched browser flow runs twice: once with the historical
-          # synthetic Test User and once as a loopback visitor with no user.
-          # playwright.config.ts owns the corresponding Vite auth composition.
-          CLAXEDO_E2E_AUTH_MODE: ${{ matrix.auth-mode }}
-          # Videos of passing tests bloat shard artifacts; failures keep theirs.
-          PLAYWRIGHT_VIDEO: "0"
-
-      - name: Upload Playwright artifacts
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: playwright-linux-${{ matrix.auth-mode }}-shard${{ matrix.shard }}-${{ github.run_attempt }}
-          if-no-files-found: ignore
-          retention-days: 7
-          path: |
-            packages/claxedo-app/e2e/junit-*.xml
-            packages/claxedo-app/e2e/playwright/test-results
-            packages/claxedo-app/e2e/playwright/report
-
-  # Tier R: real claxedo-server + real embedded engine + real harness binaries,
-  # with ONLY the model endpoint scripted (e2e/helpers/scripted-model-server.ts).
-  # Its own job because the app build bakes VITE_CLAXEDO_SERVER_URL for this
-  # lane's backend port (4317), so it cannot share a shard's build. Hermetic —
-  # the harness CLIs are installed but never
-  # authenticate; the scripted endpoint is the only network the model path sees.
-  e2e-tier-real:
-    name: e2e (tier-real)
-    needs: [changes, e2e-build]
-    if: needs.changes.outputs.tier_real == 'true'
-    runs-on: ubuntu-latest
-    env:
-      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          # Playwright 1.59 hangs while extracting Chromium with Node 24.16.
-          node-version: "24.15"
-
-      - name: Setup Bun
-        uses: ./.github/actions/setup-bun
-        with:
-          install-flags: --frozen-lockfile
-
-      - name: Read Playwright version
-        id: playwright-version
-        run: |
-          version=$(node -e 'const p=require("./packages/claxedo-app/package.json");console.log((p.devDependencies??{})["@playwright/test"]??p.dependencies["@playwright/test"])')
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Playwright browsers
-        id: playwright-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: ${{ github.workspace }}/.playwright-browsers
-          key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright-version.outputs.version }}-chromium
-
-      # The claude/codex/pi CLIs the native scenarios spawn. No credentials —
-      # the scripted endpoint answers everything, so these never authenticate.
-      # Pi is pinned to PI_VERSION (agent-sdk-runtime harnesses/pi/executable.ts),
-      # which refuses any other build. ACP agents are operator configuration, so
-      # this lane installs none.
-      - name: Install harness CLIs
-        run: npm install -g @anthropic-ai/claude-code @openai/codex @earendil-works/pi-coding-agent@0.85.1
-
-      - name: Download reusable workspace dist
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: claxedo-e2e-workspace-dist-${{ github.sha }}-${{ github.run_attempt }}
-          path: packages
-
-      - name: Install Playwright Chromium
-        working-directory: packages/claxedo-app
-        run: npx playwright install chromium
-
-      - name: Build tier-real E2E app once
-        working-directory: packages/claxedo-app
-        run: bun run build:e2e
-        env:
-          VITE_CLAXEDO_SERVER_URL: http://127.0.0.1:4317
-
-      # One Playwright invocation PER SCENARIO. The cross-scenario coupling is
-      # FIXED (seedDefaultHarness makes hydration and the UI switch agree; full
-      # runs are reproducible), but per-scenario isolation stays: it is the
-      # configuration every scenario was verified under, and it means one red
-      # scenario names itself instead of poisoning the run.
-      #
-      # All built-in scenarios are on the gate. Operator ACP connections are
-      # exercised by the generic runtime integration suite because their
-      # executable and credentials belong to operator configuration.
-      # every defect the tier surfaced has been fixed and its scenario
-      # graduated, which was always the point — a blocking job that is red on
-      # every PR for known reasons trains people to ignore it, so a defect
-      # graduating to the gate is the definition of fixed.
-      #
-      # What the tier caught, in the order the scenarios graduated:
-      #   opencode     — a reply arriving under two ids rendered as two
-      #                  messages (client store, `assistantTurnIndex`), and the
-      #                  scenario had been silently running on the anthropic
-      #                  default rather than the scripted model — caught only by
-      #                  the per-dialect counters.
-      #   claude-sdk   — the session busy lock was released when the drain
-      #                  finished rather than when the turn settled, so a prompt
-      #                  arriving inside that ~515ms tail was refused with
-      #                  "Session is already processing a message". One run
-      #                  missed the release by a millisecond.
-      #
-      # Per-scenario invocation stays regardless: it is the configuration every
-      # scenario was verified under, and it means one red scenario names itself
-      # instead of poisoning the run.
-      - name: Run tier-real e2e (gate — all scenarios)
-        working-directory: packages/claxedo-app
-        timeout-minutes: 30
-        env:
-          CLAXEDO_E2E_SERVE_MODE: preview
-          PLAYWRIGHT_VIDEO: "0"
-        run: |
-          set -euo pipefail
-          # The step above builds once. Each isolated Playwright invocation
-          # starts a preview of that same verified artifact without rebuilding.
-          # Each pattern is a title fragment of a `real harness journeys` test in
-          # e2e/playwright/real-harness-local.spec.ts; `e2e/discovery.test.ts` pins
-          # the titles, so a rename fails there before it silently empties this gate.
-          failed=()
-          for scenario in \
-            "pi-workspace harness completes exact turns|local new-worktree session receives its first reply" \
-            "claude native SDK harness completes exact turns" \
-            "codex native SDK harness completes exact turns" \
-            "cursor harness materializes without silently routing"; do
-            echo "=== Tier R gate scenario: ${scenario} ==="
-            bun run test:e2e:real -- --grep "${scenario}" || failed+=("${scenario}")
-          done
-          if (( ${#failed[@]} )); then
-            printf '::error::tier-real scenario failed: %s\n' "${failed[@]}"
-            exit 1
-          fi
-
-      # The org-team multiplayer spec composes its proof video with ffmpeg's
-      # libx264, and the ubuntu-24.04 runner image ships no ffmpeg.
-      - name: Install ffmpeg
-        if: ${{ !cancelled() }}
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
-
-      # These specs own their real hosted-node/relay fixtures and production
-      # web builds, so the config-level webServer must stay disabled. Run them
-      # together on one worker: their fixed port blocks and output directories
-      # are distinct, but serial execution avoids concurrent Vite builds
-      # starving the 4-vCPU runner and keeps one combined Playwright report.
-      - name: Run signed web relay e2e (cloud + host tunnel + org-team multiplayer)
-        if: ${{ !cancelled() }}
-        working-directory: packages/claxedo-app
-        timeout-minutes: 60
-        env:
-          CLAXEDO_E2E_SUITE: core
-          CLAXEDO_TIER_REAL_E2E: "1"
-          PLAYWRIGHT_SKIP_WEBSERVER: "1"
-          PLAYWRIGHT_VIDEO: "0"
-        run: >-
-          npx playwright test
-          --config playwright.config.ts
-          e2e/playwright/web-signed-cloud.spec.ts
-          e2e/playwright/web-signed-host-tunnel.spec.ts
-          e2e/playwright/web-signed-org-team-multiplayer.spec.ts
-          --workers=1
-
-      - name: Upload Playwright artifacts
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: playwright-tier-real-${{ github.run_attempt }}
-          if-no-files-found: ignore
-          retention-days: 7
-          path: |
-            packages/claxedo-app/e2e/playwright/test-results
-            packages/claxedo-app/e2e/playwright/report
-
   # Stable branch-protection target: optional jobs may be skipped by the change
   # policy, while this one check still fails if any selected gate fails.
   result:
     name: CI result
     if: always()
-    needs: [changes, docs, unit, e2e-build, e2e, e2e-tier-real]
+    needs: [changes, docs, unit]
     runs-on: ubuntu-latest
     steps:
       - name: Require every selected gate to pass
@@ -653,13 +237,8 @@ jobs:
           CHANGES_RESULT: ${{ needs.changes.result }}
           DOCS_RESULT: ${{ needs.docs.result }}
           UNIT_RESULT: ${{ needs.unit.result }}
-          E2E_BUILD_RESULT: ${{ needs.e2e-build.result }}
-          E2E_RESULT: ${{ needs.e2e.result }}
-          TIER_REAL_RESULT: ${{ needs.e2e-tier-real.result }}
           DOCS_SELECTED: ${{ needs.changes.outputs.docs }}
           UNIT_SELECTED: ${{ needs.changes.outputs.unit }}
-          CORE_E2E_SELECTED: ${{ needs.changes.outputs.core_e2e }}
-          TIER_REAL_SELECTED: ${{ needs.changes.outputs.tier_real }}
         run: |
           require_gate() {
             label="$1"
@@ -681,6 +260,3 @@ jobs:
           }
           require_gate "Documentation" "$DOCS_SELECTED" "$DOCS_RESULT"
           require_gate "Unit" "$UNIT_SELECTED" "$UNIT_RESULT"
-          require_gate "E2E build" "$CORE_E2E_SELECTED" "$E2E_BUILD_RESULT"
-          require_gate "Core E2E" "$CORE_E2E_SELECTED" "$E2E_RESULT"
-          require_gate "Tier-real E2E" "$TIER_REAL_SELECTED" "$TIER_REAL_RESULT"

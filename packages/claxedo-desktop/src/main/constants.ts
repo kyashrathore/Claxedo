@@ -1,8 +1,7 @@
-import { parseDesktopRenderer, type DesktopChannel } from "../shared/desktop-product"
+import type { DesktopChannel } from "../shared/desktop-product"
 
 const raw = import.meta.env.CLAXEDO_CHANNEL
 export const CHANNEL: DesktopChannel = raw === "dev" || raw === "beta" || raw === "prod" ? raw : "dev"
-export const RENDERER = parseDesktopRenderer(import.meta.env.CLAXEDO_DESKTOP_RENDERER)
 
 // electron-updater's GitHub provider fetches `${UPDATE_CHANNEL}.yml` (plus
 // `-mac`/`-linux` variants) from the release. Stable keeps "latest" for its

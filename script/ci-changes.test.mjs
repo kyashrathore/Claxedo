@@ -13,11 +13,10 @@ await test("documentation-only changes run documentation checks and no product g
   assert.equal(result.docs, true)
   assert.equal(result.unit, false)
   assert.equal(result.typecheck, false)
-  assert.equal(result.core_e2e, false)
-  assert.equal(result.tier_real, false)
   assert.equal(result.windows, false)
-  assert.equal(result.boundary_app, false)
   assert.equal(result.boundary_server, false)
+  assert.equal(result.boundary_local_server, false)
+  assert.equal(result.boundary_host_connector, false)
 })
 
 await test("unknown non-documentation paths still receive affected code validation", () => {
@@ -25,46 +24,51 @@ await test("unknown non-documentation paths still receive affected code validati
   assert.equal(result.docs, false)
   assert.equal(result.unit, true)
   assert.equal(result.typecheck, true)
-  assert.equal(result.core_e2e, false)
+  assert.equal(result.windows, false)
 })
 
-await test("ordinary application UI changes run affected code and core browser gates", () => {
-  const result = classifyChangedFiles(["packages/claxedo-app/src/app/workbench/rail/workspace-tab.tsx"])
+await test("application UI changes run affected code validation and no server or Windows gate", () => {
+  const result = classifyChangedFiles(["packages/claxedo-app/src/rail/switcher-items.ts"])
   assert.equal(result.unit, true)
   assert.equal(result.typecheck, true)
-  assert.equal(result.core_e2e, true)
   assert.equal(result.windows, false)
-  assert.equal(result.mermaid, false)
-  assert.equal(result.tier_real, false)
-  assert.equal(result.boundary_app, true)
+  assert.equal(result.boundary_server, false)
+  assert.equal(result.boundary_local_server, false)
+  assert.equal(result.boundary_host_connector, false)
+  assert.equal(result.sandbox_image, false)
 })
 
-await test("Mermaid changes select the real-browser security and wiring gate", () => {
-  const result = classifyChangedFiles(["packages/session-ui/src/components/markdown.tsx"])
-  assert.equal(result.mermaid, true)
-  assert.equal(result.core_e2e, true)
-  assert.equal(result.boundary_app, true)
+await test("shared kit changes are ordinary code changes", () => {
+  const result = classifyChangedFiles(["packages/ui/src/context/marked.tsx"])
+  assert.equal(result.unit, true)
+  assert.equal(result.windows, false)
+  assert.equal(result.boundary_server, false)
 })
 
-await test("server changes select Windows, server boundaries, and tier-real without core browser shards", () => {
+await test("server changes select Windows and the server boundary", () => {
   const result = classifyChangedFiles(["packages/claxedo-server/src/workspace/routes/session.ts"])
   assert.equal(result.unit, true)
   assert.equal(result.windows, true)
   assert.equal(result.boundary_server, true)
-  assert.equal(result.tier_real, true)
-  assert.equal(result.core_e2e, false)
+  assert.equal(result.boundary_local_server, false)
+})
+
+await test("server-core changes select every boundary that consumes it", () => {
+  const result = classifyChangedFiles(["packages/claxedo-server-core/src/projects/store.ts"])
+  assert.equal(result.boundary_server, true)
+  assert.equal(result.boundary_local_server, true)
+  assert.equal(result.boundary_host_connector, true)
 })
 
 await test("cross-platform process runtime changes retain the Windows unit leg", () => {
   const result = classifyChangedFiles(["packages/agent-sdk-runtime/src/harnesses/shared/windows-process.ts"])
   assert.equal(result.unit, true)
   assert.equal(result.windows, true)
-  assert.equal(result.core_e2e, false)
 })
 
-await test("onboarding feature changes run the core browser matrix and select no lane of their own", () => {
-  const result = classifyChangedFiles(["packages/claxedo-app/src/features/onboarding/funnel.ts"])
-  assert.equal(result.core_e2e, true)
+await test("onboarding changes select no lane of their own", () => {
+  const result = classifyChangedFiles(["packages/claxedo-app/src/onboarding/wizard.ts"])
+  assert.equal(result.unit, true)
   assert.equal("onboarding" in result, false)
 })
 
@@ -72,23 +76,22 @@ await test("desktop source changes run source tests but never request a regular 
   const result = classifyChangedFiles(["packages/claxedo-desktop/src/main/windows.ts"])
   assert.equal(result.unit, true)
   assert.equal(result.windows, true)
-  assert.equal(result.core_e2e, false)
   assert.equal("desktop" in result, false)
 })
 
-await test("tier-real specs do not launch the unrelated core browser matrix", () => {
-  const result = classifyChangedFiles(["packages/claxedo-app/e2e/playwright/web-signed-cloud.spec.ts"])
-  assert.equal(result.tier_real, true)
-  assert.equal(result.core_e2e, false)
+await test("product-boundary infrastructure selects every boundary gate", () => {
+  const result = classifyChangedFiles(["script/product-boundary/verify.ts"])
+  assert.equal(result.full, false)
+  assert.equal(result.boundary_server, true)
+  assert.equal(result.boundary_local_server, true)
+  assert.equal(result.boundary_host_connector, true)
 })
 
 await test("CI foundations fail open to the complete non-release suite", () => {
   const result = classifyChangedFiles([".github/workflows/test.yml"])
   assert.equal(result.full, true)
   assert.equal(result.windows, true)
-  assert.equal(result.mermaid, true)
-  assert.equal(result.core_e2e, true)
-  assert.equal(result.tier_real, true)
+  assert.equal(result.boundary_server, true)
 })
 
 await test("the shared Bun.build wrapper fails open to the complete non-release suite", () => {
@@ -96,11 +99,7 @@ await test("the shared Bun.build wrapper fails open to the complete non-release 
   assert.equal(result.full, true)
   assert.equal(result.unit, true)
   assert.equal(result.windows, true)
-  // The mermaid sanitizer verification imports it, and mermaid is the one gate
-  // whose only coverage of this module is an end-to-end browser run.
-  assert.equal(result.mermaid, true)
-  assert.equal(result.core_e2e, true)
-  assert.equal(result.tier_real, true)
+  assert.equal(result.boundary_server, true)
 })
 
 await test("an empty or unavailable comparison fails open", () => {
@@ -128,7 +127,7 @@ await test("the sandbox image is selected by the Worker and every package baked 
 
 await test("the sandbox image is not rebuilt for changes that cannot reach it", () => {
   for (const file of [
-    "packages/claxedo-app/src/app/workbench/rail/workspace-tab.tsx",
+    "packages/claxedo-app/src/rail/switcher-items.ts",
     "packages/claxedo-server/src/platform/auth/better-auth-configuration.ts",
     "packages/claxedo-desktop/src/main/index.ts",
     "packages/workspace-relay/src/cloudflare.ts",

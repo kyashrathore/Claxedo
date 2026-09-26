@@ -218,11 +218,6 @@ export function localProjectStore(deps: LocalProjectStoreDeps = {}): ProjectStor
 
     get: findProject,
 
-    async byDirectory(directory) {
-      const workspace = await getWorkspaceByDirectory(directory)
-      return workspace?.project_id ? findProject(workspace.project_id) : undefined
-    },
-
     async create(input, caller) {
       const register = signedOnly(caller, deps.registerWorkspace, "Project registration")
       if (input.name && await nameTaken(input.name)) {

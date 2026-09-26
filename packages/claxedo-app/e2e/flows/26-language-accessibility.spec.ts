@@ -1,0 +1,80 @@
+import type { Page } from "@playwright/test"
+import {
+  expect,
+  expectWithinBaseline,
+  SCRIPTED_ACP_HARNESS,
+  test,
+  type ClaxedoApi,
+  type SessionRow,
+  type Stack,
+  type Workspace,
+  UI,
+} from "../harness"
+
+type Arranged = { readonly workspace: Workspace; readonly session: SessionRow }
+
+async function arrange(stack: Stack, api: ClaxedoApi): Promise<Arranged> {
+  const workspace = await stack.daemon.makeWorkspace("language", "Language")
+  const session = await api.createSession(workspace.directory, { title: "Sprache", harness: SCRIPTED_ACP_HARNESS })
+  return { workspace, session }
+}
+
+async function expectGerman(app: Page): Promise<void> {
+  await expect.poll(() => app.evaluate(() => document.documentElement.lang)).toBe("de")
+  await expect(app.getByRole("navigation", { name: "Projekte und Sitzungen" })).toBeVisible()
+}
+
+async function expectSessionOpen(stack: Stack, app: Page, rail: string, title: string): Promise<void> {
+  await test.step("no session title bar (DECISIONS Owner, 17:15)", async () => {
+    await expect(app.getByRole("navigation", { name: rail }).getByRole("button", { name: title, exact: true })).toHaveAttribute("aria-current", "page")
+  })
+  return
+  await expect(app.getByRole("heading", { level: 1, name: title })).toBeVisible()
+}
+
+async function openGeneralSettings(stack: Stack, app: Page): Promise<void> {
+  await app.getByRole("button", { name: UI.signedOutAccount }).click()
+  await app.getByRole("menuitem", { name: "Settings" }).click()
+  await test.step("no General section; Language is its own section (DECISIONS Owner, 00:55)", async () => {
+    await app.getByRole("group", { name: "App" }).getByRole("link", { name: "Language", exact: true }).click()
+    await expect(app.getByRole("heading", { level: 1, name: "Language" })).toBeVisible()
+  })
+  return
+  await expect(app.getByRole("heading", { level: 1, name: "General" })).toBeVisible()
+}
+
+async function english(stack: Stack, api: ClaxedoApi, app: Page): Promise<Arranged> {
+  await expect(app.getByRole("heading", { level: 1, name: "Start with a project" })).toBeVisible()
+  await expectWithinBaseline(app, "home")
+  const arranged = await arrange(stack, api)
+  await app.goto(`${stack.url}/`)
+  await app.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "Sprache" }).click()
+  await expect(app).toHaveURL(new RegExp(`/s/${arranged.session.id}$`))
+  await expectSessionOpen(stack, app, UI.rail, "Sprache")
+  await expectWithinBaseline(app, "session-page")
+  await app.keyboard.press("ControlOrMeta+Shift+KeyP")
+  await expect(app.getByRole("dialog", { name: UI.palette })).toBeVisible()
+  await expectWithinBaseline(app, "command-palette")
+  await app.keyboard.press("Escape")
+  return arranged
+}
+
+async function german(stack: Stack, api: ClaxedoApi, app: Page, arranged: Arranged): Promise<void> {
+  await openGeneralSettings(stack, app)
+  await expectWithinBaseline(app, "settings-surface")
+  await app.getByRole("group", { name: "Language" }).getByRole("button", { name: "English" }).click()
+  await app.getByRole("option", { name: "Deutsch" }).click()
+  await expectGerman(app)
+  await app.goto(`${stack.url}/`)
+  await expectGerman(app)
+  const title = (await api.session(arranged.workspace.directory, arranged.session.id)).title
+  await app.getByRole("navigation", { name: "Projekte und Sitzungen" }).getByRole("button", { name: title }).click()
+  await expectSessionOpen(stack, app, "Projekte und Sitzungen", title)
+  await expectWithinBaseline(app, "session-page")
+}
+
+test.skip(({ isMobile }) => isMobile, "flow 26 runs at desktop width; flow 33 sweeps the phone")
+
+test("26 language switch and an accessibility sweep of the main screens", async ({ stack, api, app }) => {
+  await german(stack, api, app, await english(stack, api, app))
+})

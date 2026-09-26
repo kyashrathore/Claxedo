@@ -1,18 +1,17 @@
 import windowState from "electron-window-state"
-import { app, BrowserWindow, nativeImage, shell, type WebContents } from "electron"
+import { app, BrowserWindow, nativeImage, type WebContents } from "electron"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import log from "electron-log/main.js"
 
 import { isBrowserTabEnabled } from "./browser/flag"
-import { IS_PACKAGED, RENDERER } from "./constants"
+import { IS_PACKAGED } from "./constants"
 import { resolveDevIdentity, tintIcon } from "./dev-identity"
 import { parseWindowSize } from "./window-size"
 import {
   MAIN_RENDERER_DOCUMENT,
   navigationDecision,
   windowOpenDecision,
-  type ExternalNavigation,
   type NavigationDecision,
 } from "./navigation-guard"
 import { trustWindowWithBridge } from "./ipc-caller-guard"
@@ -37,8 +36,6 @@ const root = dirname(fileURLToPath(import.meta.url))
  * contribution chunk inside this base composition, never a second document.
  */
 const RENDERER_DOCUMENT = MAIN_RENDERER_DOCUMENT
-
-const EXTERNAL_NAVIGATION: ExternalNavigation = RENDERER === "v2" ? "refuse" : "open"
 
 function iconsDir() {
   return IS_PACKAGED ? join(process.resourcesPath, "icons") : join(root, "../../resources/icons")
@@ -152,17 +149,16 @@ export function loadMainWindow(win: BrowserWindow) {
  */
 export function wireNavigationGuard(wc: WebContents) {
   const perform = (decision: NavigationDecision, context: string) => {
-    if (decision.action === "external") void shell.openExternal(decision.url)
-    else if (decision.action === "block") log.warn(`[security] blocked ${context} to ${decision.url}`)
+    if (decision.action === "block") log.warn(`[security] blocked ${context} to ${decision.url}`)
   }
   wc.on("will-navigate", (event, urlString) => {
-    const decision = navigationDecision(urlString, isTrustedMainRendererUrl, EXTERNAL_NAVIGATION)
+    const decision = navigationDecision(urlString, isTrustedMainRendererUrl)
     if (decision.action === "allow") return
     event.preventDefault()
     perform(decision, "main-window navigation")
   })
   wc.setWindowOpenHandler(({ url }) => {
-    perform(windowOpenDecision(url, EXTERNAL_NAVIGATION), "window.open")
+    perform(windowOpenDecision(url), "window.open")
     return { action: "deny" as const }
   })
 }

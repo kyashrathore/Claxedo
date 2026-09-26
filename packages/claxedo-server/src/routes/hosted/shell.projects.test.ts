@@ -27,7 +27,6 @@ describe("signedShellProjects", () => {
           workspace_name: "shared checkout",
         },
       ],
-      1_800_000_000_000,
       new Set(),
     )
 
@@ -40,7 +39,7 @@ describe("signedShellProjects", () => {
   })
 
   test("a row that states no placement is the provisioner's, never the reader's own machine", () => {
-    const projects = signedShellProjects([{ workspace_id: "ws_bare", project_id: "proj_bare" }], 1_800_000_000_000, new Set())
+    const projects = signedShellProjects([{ workspace_id: "ws_bare", project_id: "proj_bare" }], new Set())
 
     expect(projects[0]?.workspaces).toMatchObject({ ws_bare: { backing: "cloud-vm" } })
   })
@@ -51,7 +50,6 @@ describe("signedShellProjects", () => {
         { workspace_id: "ws_running", project_id: "proj_one", backing: "cloud-vm" },
         { workspace_id: "ws_stopped", project_id: "proj_one", backing: "cloud-vm" },
       ],
-      1_800_000_000_000,
       new Set(["ws_running"]),
     )
 
@@ -64,7 +62,6 @@ describe("signedShellProjects", () => {
         { workspace_id: "ws_online", project_id: "proj_one", backing: "local-worktree", host_online: true },
         { workspace_id: "ws_offline", project_id: "proj_one", backing: "local-worktree", host_online: false },
       ],
-      1_800_000_000_000,
       new Set(),
     )
 

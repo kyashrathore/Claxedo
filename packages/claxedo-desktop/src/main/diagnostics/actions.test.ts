@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
+import type { LocalDiagnostics } from "../../shared/local-diagnostics"
 
 import { createDiagnosticsActions } from "./actions"
 import type { DiagnosticsOwnerDescriptor } from "../../shared/diagnostics-transport"

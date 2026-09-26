@@ -69,10 +69,4 @@ describe("restart wiring", () => {
     expect(await read("src/main/windows.ts")).toMatch(/packaged: globals\.packaged/)
     expect(await read("src/main/index.ts")).toMatch(/packaged: IS_PACKAGED,/)
   })
-
-  test("restart never kills the durable local daemon", async () => {
-    const restart = await read("src/renderer/restart.ts")
-    expect(restart).not.toMatch(/killSidecar/)
-    expect(await read("src/renderer/local.tsx")).not.toMatch(/killSidecar/)
-  })
 })

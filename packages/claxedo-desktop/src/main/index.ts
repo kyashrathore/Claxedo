@@ -20,7 +20,7 @@ import { reportInstall } from "./install-telemetry"
 // and a desktop app that hangs instead of failing fast.
 const telemetryClient = installDesktopTelemetry()
 
-const packagedProduct = desktopProduct(CHANNEL, RENDERER)
+const packagedProduct = desktopProduct(CHANNEL)
 const devIdentity = resolveDevIdentity(IS_PACKAGED)
 app.setName(IS_PACKAGED ? packagedProduct.productName : devIdentity.name)
 // The userData suffix keeps each worktree's dev profile — and its
@@ -50,7 +50,7 @@ import { resolveSystemClaude } from "./claude-executable"
 import { loadServerEnvForDevelopment, resolveDesktopServerDataDir } from "./server-env"
 import type { BrowserRegistry } from "./browser/registry"
 import { setupBrowserTab } from "./browser/setup"
-import { CHANNEL, IS_PACKAGED, RENDERER, UPDATE_CHANNEL, UPDATER_ENABLED } from "./constants"
+import { CHANNEL, IS_PACKAGED, UPDATE_CHANNEL, UPDATER_ENABLED } from "./constants"
 import { desktopProduct } from "../shared/desktop-product"
 import { resolveDevIdentity } from "./dev-identity"
 import { findFreePort, resolveBaseServerPort } from "./server-port"
@@ -163,7 +163,7 @@ const serverReady = defer<ServerReadyData>()
 const daemonEndpoint = defer<DaemonEndpoint>()
 /**
  * The origin of the server this window will talk to, known as soon as main
- * picks the port or adopts a daemon: the v2 document's policy names it.
+ * picks the port or adopts a daemon: the renderer document's policy names it.
  */
 const serverOrigin = defer<string>()
 const daemon = createDaemonFetch({ endpoint: () => daemonEndpoint.promise })
@@ -623,16 +623,14 @@ class DaemonUnresolvedError extends Error {
 }
 
 async function initialize(serverConnectionStarted: Promise<ServerConnection>) {
-  if (RENDERER === "v2") {
-    session.defaultSession.webRequest.onHeadersReceived(
-      { urls: rendererDocumentUrlPatterns() },
-      rendererContentSecurityListener({
-        serverOrigin: serverOrigin.promise,
-        isRendererDocument: isRendererDocumentUrl,
-        devServerUrl: process.env.ELECTRON_RENDERER_URL,
-      }),
-    )
-  }
+  session.defaultSession.webRequest.onHeadersReceived(
+    { urls: rendererDocumentUrlPatterns() },
+    rendererContentSecurityListener({
+      serverOrigin: serverOrigin.promise,
+      isRendererDocument: isRendererDocumentUrl,
+      devServerUrl: process.env.ELECTRON_RENDERER_URL,
+    }),
+  )
   const loadingTask = (async () => {
     try {
       const serverConnection = await serverConnectionStarted

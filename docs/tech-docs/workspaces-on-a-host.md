@@ -6,9 +6,9 @@ stores where it runs — a `backing` (`local-worktree` or `cloud-vm`) and a
 `placement { host_enrollment_id, directory }` — and nothing about how a
 client reaches it. The client answers that itself, at open time, by asking
 one question of the placement: **is that host me?** The attached server
-declares its own enrollment id in its bootstrap body; `placementWire` in
-`packages/claxedo-app/src/platform/runtime/placement-wire.ts` compares the
-two and answers `loopback` or `relay`. The wire is never stored and never
+declares its own enrollment id in its bootstrap body; `remoteOf` in
+`packages/claxedo-app/src/server/wire/placements.ts` compares the
+two and marks the placement own (`loopback`) or remote (`relay`). The wire is never stored and never
 sent.
 
 This document follows one user from publishing a machine to attaching to a
@@ -101,7 +101,9 @@ the live serving arrangement and is what the daemon declares to its own
 clients (B.1); it goes away with every way serving ends.
 
 **A.4 Publishing one workspace** — `publishWorkspacePlacement`
-(`packages/claxedo-app/src/features/workspaces/data/share-workspace.ts`) goes
+(the old app's `features/workspaces/data/share-workspace.ts`, deleted at the
+swap; the app has no caller today, while Electron main still routes
+`workspace.assignHost` in `packages/claxedo-desktop/src/main/account/hosted-operations.ts`) goes
 through the machine remote-access port when one is bound (the desktop) and
 otherwise posts the self-hosted server's own `POST /api/workspace/:id/host-assignment`.
 On the desktop the port is `claxedo.hostConnector.share`, which carries a
@@ -148,7 +150,7 @@ ingress (F.2), never by its address.
 
 ## B. The client sees the machine and its workspace
 
-**B.1 Boot** — `packages/claxedo-app/src/app/entry/browser-auth-startup.ts`
+**B.1 Boot** — `browserAccountBinding` in `packages/claxedo-app/src/auth/browser-binding.ts`
 starts identity without gating `render()`; `CloudAuthGate` holds its
 children while `loading`. The shell's `GET /api/claxedo/bootstrap`
 (`packages/claxedo-local-server/src/deployments/shared-routes/bootstrap.ts`)
@@ -470,8 +472,8 @@ organization.
 Nothing in this list was run while this document was written; each entry
 names the file and what it claims to cover.
 
-- **Tier M** (`packages/claxedo-app/e2e/helpers/mock-runtime.ts`, contracts
-  in `e2e/helpers/contracts/*`) mocks the whole server. Its control-plane
+- **Tier M** (the old app's `e2e/helpers/mock-runtime.ts`, contracts
+  in `e2e/helpers/contracts/*`; deleted at the swap) mocked the whole server. Its control-plane
   rows carry `backing`, `placement { host_enrollment_id, directory }`,
   `remote_directory` and `host_online`, and its connection mint carries
   `sessionAuthority`. `e2e/playwright/core-host-tunnel-workspace.spec.ts`

@@ -145,7 +145,6 @@ describe("desktop-local product contract", () => {
       "/api/claxedo/plugins/*",
       "/api/claxedo/projects",
       "/api/claxedo/projects/:id",
-      "/api/claxedo/projects/by-directory",
       "/api/claxedo/session",
       "/api/claxedo/session-list",
       "/api/claxedo/session/:id/meta",

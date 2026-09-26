@@ -30,7 +30,7 @@ nothing in the neutral graph changes.
 | Port | Contract | Reference implementations |
 |---|---|---|
 | Identity (server) | `ControlPlaneAuthAdapter` in [`platform/auth/auth.ts`](../packages/claxedo-server-core/src/platform/auth/auth.ts) | Better Auth |
-| Identity (browser) | `BrowserAuthAdapter` in [`platform/auth/browser-auth.ts`](../packages/claxedo-app/src/platform/auth/browser-auth.ts) | [`better-auth-browser-auth.ts`](../packages/claxedo-app/src/platform/auth/better-auth-browser-auth.ts) |
+| Identity (browser) | `BrowserAuthAdapter` in [`auth/browser-auth.ts`](../packages/claxedo-app/src/auth/browser-auth.ts) | [`better-auth-adapter.ts`](../packages/claxedo-app/src/auth/better-auth-adapter.ts) |
 | Application authority (tenancy, workspaces, sessions, orgs) | `WorkspaceAuthority` in [`platform/auth/authority.ts`](../packages/claxedo-server-core/src/platform/auth/authority.ts) | [D1](../packages/claxedo-server/src/authority/adapters/d1/workspace-authority.ts), [SQLite](../packages/claxedo-server-core/src/authority/adapters/sqlite/workspace-authority.ts) |
 | Sandbox leases | `SandboxLeaseStore` in [`sandbox-manager`](../packages/sandbox-manager/src/index.ts) | SQLite |
 | Connections / credentials | conformance kit in [`@claxedo/connections`](../packages/claxedo-connections/src/conformance/index.ts) | memory, SQLite |
@@ -130,11 +130,10 @@ migration.**
    and desktop sign-in fail at descriptor decode with `invalid_descriptor`
    before any of the server work above is ever exercised.
 4. Browser side: add your id to `BROWSER_AUTH_ADAPTERS`, write a module
-   implementing `BrowserAuthAdapter` (`initialize` / `useAuth` / `getToken`,
-   plus a unique `implementationMarker`), and add a branch to
-   `resolveBrowserAuthBuildSelection` in
-   [`vite.browser-auth.ts`](../packages/claxedo-app/vite.browser-auth.ts) naming
-   your module and its vendor chunk.
+   implementing `BrowserAuthAdapter` (`initialize` / `useAuth` / `getToken`),
+   and add a branch to `resolveAccountBindingSelection` in
+   [`vite.account-binding.ts`](../packages/claxedo-app/vite.account-binding.ts)
+   naming your module and its vendor chunk.
 
    Two rules the port enforces and you must respect: `initialize()` must
    **resolve in every case**, including when nobody can be signed in — a

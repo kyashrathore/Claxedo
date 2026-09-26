@@ -7,7 +7,7 @@ import { parseCompilerOutput } from "./typecheck"
 
 const APP = `import { createSignal } from "solid-js"
 import { definePlugin } from "@claxedo/plugin-api"
-import { Button } from "@claxedo/app-v2/ui"
+import { Button } from "@claxedo/app/ui"
 
 function Page() {
   const [count, setCount] = createSignal(0)

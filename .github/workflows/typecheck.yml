@@ -53,12 +53,6 @@ jobs:
       - name: Build dist-resolved workspace packages
         run: bun run build:packages
 
-      # perf-harness is not a workspace package: without its own install its
-      # agent-app-benchmark imports are `error` types too.
-      - name: Install performance harness
-        working-directory: packages/claxedo-app/perf-harness
-        run: bun install --frozen-lockfile
-
       # The root .oxlintrc.json sets every enabled rule to error, so this
       # fails on any finding, exactly like the pre-push hook (`bun run prepush`).
       - name: Run lint

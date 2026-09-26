@@ -28,10 +28,4 @@ describe("set-zoom-factor handler wiring", () => {
     expect(handler).toContain("Number.isFinite(")
     expect(handler).toContain("clampZoomFactor(")
   })
-
-  test("the renderer clamps with the same range", () => {
-    const renderer = readFileSync(path.join(import.meta.dir, "../renderer/webview-zoom.ts"), "utf8")
-    expect(renderer).toContain("clampZoomFactor(")
-    expect(renderer).not.toMatch(/MAX_ZOOM_LEVEL|MIN_ZOOM_LEVEL/)
-  })
 })

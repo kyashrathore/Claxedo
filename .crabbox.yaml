@@ -64,123 +64,6 @@ jobs:
     command: bash script/cbx-ci-remote.sh typecheck-linux
     stop: auto
 
-  pr-e2e-core-01:
-    provider: hetzner
-    target: linux
-    architecture: amd64
-    serverType: cpx42
-    shell: true
-    command: bash script/cbx-ci-remote.sh e2e-core 1 12
-    stop: auto
-
-  pr-e2e-core-02:
-    provider: hetzner
-    target: linux
-    architecture: amd64
-    serverType: cpx42
-    shell: true
-    command: bash script/cbx-ci-remote.sh e2e-core 2 12
-    stop: auto
-
-  pr-e2e-core-03:
-    provider: hetzner
-    target: linux
-    architecture: amd64
-    serverType: cpx42
-    shell: true
-    command: bash script/cbx-ci-remote.sh e2e-core 3 12
-    stop: auto
-
-  pr-e2e-core-04:
-    provider: hetzner
-    target: linux
-    architecture: amd64
-    serverType: cpx42
-    shell: true
-    command: bash script/cbx-ci-remote.sh e2e-core 4 12
-    stop: auto
-
-  pr-e2e-core-05:
-    provider: hetzner
-    target: linux
-    architecture: amd64
-    serverType: cpx42
-    shell: true
-    command: bash script/cbx-ci-remote.sh e2e-core 5 12
-    stop: auto
-
-  pr-e2e-core-06:
-    provider: hetzner
-    target: linux
-    architecture: amd64
-    serverType: cpx42
-    shell: true
-    command: bash script/cbx-ci-remote.sh e2e-core 6 12
-    stop: auto
-
-  pr-e2e-core-07:
-    provider: hetzner
-    target: linux
-    architecture: amd64
-    serverType: cpx42
-    shell: true
-    command: bash script/cbx-ci-remote.sh e2e-core 7 12
-    stop: auto
-
-  pr-e2e-core-08:
-    provider: hetzner
-    target: linux
-    architecture: amd64
-    serverType: cpx42
-    shell: true
-    command: bash script/cbx-ci-remote.sh e2e-core 8 12
-    stop: auto
-
-  pr-e2e-core-09:
-    provider: hetzner
-    target: linux
-    architecture: amd64
-    serverType: cpx42
-    shell: true
-    command: bash script/cbx-ci-remote.sh e2e-core 9 12
-    stop: auto
-
-  pr-e2e-core-10:
-    provider: hetzner
-    target: linux
-    architecture: amd64
-    serverType: cpx42
-    shell: true
-    command: bash script/cbx-ci-remote.sh e2e-core 10 12
-    stop: auto
-
-  pr-e2e-core-11:
-    provider: hetzner
-    target: linux
-    architecture: amd64
-    serverType: cpx42
-    shell: true
-    command: bash script/cbx-ci-remote.sh e2e-core 11 12
-    stop: auto
-
-  pr-e2e-core-12:
-    provider: hetzner
-    target: linux
-    architecture: amd64
-    serverType: cpx42
-    shell: true
-    command: bash script/cbx-ci-remote.sh e2e-core 12 12
-    stop: auto
-
-  pr-e2e-tier-real-linux:
-    provider: hetzner
-    target: linux
-    architecture: amd64
-    serverType: cpx42
-    shell: true
-    command: bash script/cbx-ci-remote.sh e2e-tier-real
-    stop: auto
-
   pr-packages-dry-run-linux:
     provider: hetzner
     target: linux
@@ -197,15 +80,6 @@ jobs:
     serverType: cpx42
     shell: true
     command: bash script/cbx-ci-remote.sh relay-bench
-    stop: auto
-
-  pr-storybook-linux:
-    provider: hetzner
-    target: linux
-    architecture: amd64
-    serverType: cpx42
-    shell: true
-    command: bash script/cbx-ci-remote.sh storybook
     stop: auto
 
   # Canonical AWS Linux matrix selected by `script/cbx-ci.ts run pr-linux`.
@@ -236,67 +110,12 @@ jobs:
     <<: *aws_linux_job
     command: bash script/cbx-ci-remote.sh typecheck-linux
 
-  pr-e2e-core-01-aws:
-    <<: *aws_linux_job
-    command: bash script/cbx-ci-remote.sh e2e-core 1 12
-  pr-e2e-core-02-aws:
-    <<: *aws_linux_job
-    command: bash script/cbx-ci-remote.sh e2e-core 2 12
-  pr-e2e-core-03-aws:
-    <<: *aws_linux_job
-    command: bash script/cbx-ci-remote.sh e2e-core 3 12
-  pr-e2e-core-04-aws:
-    <<: *aws_linux_job
-    command: bash script/cbx-ci-remote.sh e2e-core 4 12
-  pr-e2e-core-05-aws:
-    <<: *aws_linux_job
-    command: bash script/cbx-ci-remote.sh e2e-core 5 12
-  pr-e2e-core-06-aws:
-    <<: *aws_linux_job
-    command: bash script/cbx-ci-remote.sh e2e-core 6 12
-  pr-e2e-core-07-aws:
-    <<: *aws_linux_job
-    command: bash script/cbx-ci-remote.sh e2e-core 7 12
-  pr-e2e-core-08-aws:
-    <<: *aws_linux_job
-    command: bash script/cbx-ci-remote.sh e2e-core 8 12
-  pr-e2e-core-09-aws:
-    <<: *aws_linux_job
-    command: bash script/cbx-ci-remote.sh e2e-core 9 12
-  pr-e2e-core-10-aws:
-    <<: *aws_linux_job
-    command: bash script/cbx-ci-remote.sh e2e-core 10 12
-  pr-e2e-core-11-aws:
-    <<: *aws_linux_job
-    command: bash script/cbx-ci-remote.sh e2e-core 11 12
-  pr-e2e-core-12-aws:
-    <<: *aws_linux_job
-    command: bash script/cbx-ci-remote.sh e2e-core 12 12
-
-  pr-e2e-tier-real-linux-aws:
-    <<: *aws_linux_job
-    command: bash script/cbx-ci-remote.sh e2e-tier-real
-  focus-e2e-tier-real-claude-native-linux-aws:
-    <<: *aws_linux_job
-    command: bash script/cbx-ci-remote.sh e2e-tier-real-scenario "claude native"
-  focus-e2e-tier-real-codex-native-linux-aws:
-    <<: *aws_linux_job
-    command: bash script/cbx-ci-remote.sh e2e-tier-real-scenario "codex native"
-  focus-e2e-tier-real-cursor-linux-aws:
-    <<: *aws_linux_job
-    command: bash script/cbx-ci-remote.sh e2e-tier-real-scenario "cursor harness"
-  focus-e2e-tier-real-web-linux-aws:
-    <<: *aws_linux_job
-    command: bash script/cbx-ci-remote.sh e2e-tier-real-web
   pr-packages-dry-run-linux-aws:
     <<: *aws_linux_job
     command: bash script/cbx-ci-remote.sh packages-dry-run
   pr-relay-bench-linux-aws:
     <<: *aws_linux_job
     command: bash script/cbx-ci-remote.sh relay-bench
-  pr-storybook-linux-aws:
-    <<: *aws_linux_job
-    command: bash script/cbx-ci-remote.sh storybook
 
   pr-unit-windows:
     provider: aws
