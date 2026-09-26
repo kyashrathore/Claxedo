@@ -176,8 +176,8 @@ describe("hosted production Pi and connection discovery", () => {
     expect(catalog.connected).toEqual([])
     expect((await app.request("/auth/openai?harness=pi", { method: "PUT", headers: headers(), body: JSON.stringify({ auth: { key: "secret" } }) })).status).toBe(503)
     const connections = "/api/claxedo/agent-config/connections"
-    expect((await app.request(connections)).status).toBe(401)
-    expect(await (await app.request(connections, { headers: headers() })).json()).toEqual({ status: "unsupported", reason: "operator_local_configuration" })
+    expect((await app.request(connections)).status).toBe(404)
+    expect((await app.request(connections, { headers: headers() })).status).toBe(404)
     expect((await app.request("/api/claxedo/agent-config/harness/acp-connections", { headers: headers() })).status).toBe(404)
   })
 

@@ -26,6 +26,7 @@ import {
 } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import {
   SUPPORTED_AGENT_PLUGIN_HARNESSES,
+  agentPluginHarnessTargets,
   isAgentPluginHarnessId,
   type AgentPluginHarnessId,
 } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
@@ -246,6 +247,7 @@ export function LocalAgentPluginActivationRoutes(input: {
     return c.json({
       revision: after,
       supportedHarnesses: SUPPORTED_AGENT_PLUGIN_HARNESSES,
+      harnessTargets: agentPluginHarnessTargets(),
       candidates: [...candidates, ...retained, builtIn],
       errors: resolved.errors,
     })

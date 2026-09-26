@@ -12,7 +12,7 @@ import { createLocalAgentPluginsComposition } from "./local-composition"
 /**
  * Whole-lifecycle exercise of the local Agent Plugins rail through its real
  * public entrypoints: the HTTP catalog/activation routes, the durable artifact
- * store, on-disk generation materialization, and the `harnessLaunch` contract
+ * store, on-disk generation materialization, and the runtime contribution
  * the workspace runtime hands to each harness adapter.
  *
  * The launch assertions restate each driver's parser contract exactly
@@ -137,8 +137,11 @@ describe("local Agent Plugins lifecycle", () => {
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({ reconciliation: { state: "applied" } })
 
-    const launch = await composition.harnessLaunch()
-    expect(Object.keys(launch).toSorted()).toEqual([...SUPPORTED_AGENT_PLUGIN_HARNESSES].toSorted())
+    const contribution = await composition.runtimeContribution()
+    const launch = contribution.harnessLaunch
+    // Custom ACP agents take the plugin as the snapshot's MCP map, never as a launch row.
+    expect(Object.keys(launch).toSorted()).toEqual(SUPPORTED_AGENT_PLUGIN_HARNESSES.filter((harnessId) => harnessId !== "acp").toSorted())
+    expect(Object.values(contribution.mcp).map((server) => server.source)).toEqual(["plugin"])
 
     // OpenCode: the SDK harness adapter receives `launch.config` verbatim (embedded SDK config shape).
     const openCode = launch.opencode.config as { skills?: string[]; mcp?: Record<string, unknown> }
@@ -195,7 +198,7 @@ describe("local Agent Plugins lifecycle", () => {
       expectedRevision: catalog.revision,
     })
     expect(enabled.status).toBe(200)
-    const afterEnable = await composition.harnessLaunch()
+    const afterEnable = (await composition.runtimeContribution()).harnessLaunch
     expect((afterEnable.claude.pluginRoots as string[])).toHaveLength(1)
 
     const enabledCatalog = await readCatalog(app)
@@ -210,7 +213,7 @@ describe("local Agent Plugins lifecycle", () => {
     })
     expect(disabled.status).toBe(200)
 
-    const afterDisable = await composition.harnessLaunch()
+    const afterDisable = (await composition.runtimeContribution()).harnessLaunch
     expect((afterDisable.claude?.pluginRoots as string[] | undefined) ?? []).toEqual([])
     expect((afterDisable.opencode.config as { skills?: string[] }).skills).toHaveLength(1)
 
@@ -251,7 +254,7 @@ describe("local Agent Plugins lifecycle", () => {
     expect(retainedRow.retainedDigest).toBe(retainedDigest)
     expect(retainedRow.updateAvailable).toBe(false)
 
-    const launch = await second.composition.harnessLaunch()
+    const launch = (await second.composition.runtimeContribution()).harnessLaunch
     const skills = (launch.opencode.config as { skills: string[] }).skills[0]
     await expect(fs.readFile(path.join(skills, "code-review", "SKILL.md"), "utf8"))
       .resolves.toContain("name: code-review")
@@ -265,7 +268,7 @@ describe("local Agent Plugins lifecycle", () => {
     })
     expect(rebuilt.status).toBe(200)
     expect(await rebuilt.json()).toMatchObject({ reconciliation: { state: "applied" } })
-    const rebuiltLaunch = await second.composition.harnessLaunch()
+    const rebuiltLaunch = (await second.composition.runtimeContribution()).harnessLaunch
     const claudeRoots = rebuiltLaunch.claude.pluginRoots as string[]
     expect(claudeRoots).toHaveLength(1)
     await expect(fs.readFile(path.join(claudeRoots[0], ".claude-plugin", "plugin.json"), "utf8"))

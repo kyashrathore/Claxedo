@@ -58,7 +58,7 @@ async function scriptFor(text: string, dir: string): Promise<AcpScript> {
 
 export class ScriptedAgent implements Agent {
   private readonly turns = new Map<string, AbortController>()
-  private readonly mcpUrls = new Map<string, string>()
+  private readonly mcpUrls = new Map<string, { url: string; headers: Record<string, string> }>()
   private readonly goalRequest: ReturnType<typeof scriptedGoals>
 
   constructor(private readonly connection: AgentSideConnection, private readonly dir: string, private readonly headers: Record<string, string> = {}, private readonly record = true,
@@ -86,8 +86,11 @@ export class ScriptedAgent implements Agent {
     if (process.env.SCRIPTED_ACP_HANG_NEW === "1") await new Promise<never>(() => {})
     const sessionId = `scripted-${randomUUID()}`
     rememberSession(this.dir, sessionId)
-    const mcp = params.mcpServers.find((server) => server.name === "scripted")
-    if (mcp && "url" in mcp && typeof mcp.url === "string") this.mcpUrls.set(sessionId, mcp.url)
+    const mcp = params.mcpServers.find((server) => server.name === "scripted" || server.name.endsWith("-scripted"))
+    if (mcp && "url" in mcp && typeof mcp.url === "string") {
+      const headers = Array.isArray(mcp.headers) ? mcp.headers : []
+      this.mcpUrls.set(sessionId, { url: mcp.url, headers: Object.fromEntries(headers.map((header) => [header.name, header.value])) })
+    }
     if (this.startupQuestion) {
       const answer = await this.connection.unstable_createElicitation({ sessionId, mode: "form", message: "Startup question",
         requestedSchema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"] } })
@@ -154,7 +157,7 @@ export class ScriptedAgent implements Agent {
     this.turns.get(params.sessionId)?.abort()
     this.turns.set(params.sessionId, controller)
     try {
-      return await playScript({ connection: this.connection, sessionId: params.sessionId, scriptDir: this.dir, signal: controller.signal, prompt: text, mcpUrl: this.mcpUrls.get(params.sessionId) }, script)
+      return await playScript({ connection: this.connection, sessionId: params.sessionId, scriptDir: this.dir, signal: controller.signal, prompt: text, mcp: this.mcpUrls.get(params.sessionId) }, script)
     } finally {
       if (this.turns.get(params.sessionId) === controller) this.turns.delete(params.sessionId)
     }

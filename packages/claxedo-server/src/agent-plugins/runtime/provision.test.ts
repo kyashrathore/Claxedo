@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from "vitest"
 import { inspectPluginTree } from "@claxedo/server-core/agent-plugins/artifacts/acquire"
 import { decodePluginTreeBase64 } from "@claxedo/server-core/agent-plugins/artifacts/codec"
 import { agentPluginTree } from "@claxedo/server-core/agent-plugins/artifacts/tree"
-import type { AgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
+import { SUPPORTED_AGENT_PLUGIN_HARNESSES } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import {
   AGENT_PLUGINS_APPLY_VERSION_DEFAULT,
   AGENT_PLUGINS_APPLY_VERSION_SELECTED,
@@ -18,7 +18,7 @@ async function artifact(name: string) {
 }
 
 function snapshot(input: { first: `sha256:${string}`; second: `sha256:${string}` }): SignedAgentPluginRuntimeSnapshot {
-  const harnesses = Object.fromEntries((["opencode", "claude", "codex", "cursor"] as AgentPluginHarnessId[]).map((harnessId) => [harnessId, {
+  const harnesses = Object.fromEntries(SUPPORTED_AGENT_PLUGIN_HARNESSES.map((harnessId) => [harnessId, {
     revision: 9,
     pluginInstanceId: "claxedo/review",
     harnessId,

@@ -27,14 +27,25 @@ export async function hostedWorkspace(stack: HostedStack, owner: HostedPerson, n
   }, owner)
   if (!created.ok) throw new Error(`hosted workspace create failed: ${created.status} ${await created.text()}`)
   const { workspaceId } = await created.json() as { workspaceId: string }
-  const started = await hostedFetch(stack, `/api/workspace/${encodeURIComponent(workspaceId)}/connection`, {
-    method: "POST", headers: { "content-type": "application/json" }, body: "{}",
-  }, owner)
-  if (started.status !== 200 && started.status !== 409) {
-    throw new Error(`hosted connection start failed: ${started.status} ${await started.text()}`)
+  let connected = false
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const started = await hostedFetch(stack, `/api/workspace/${encodeURIComponent(workspaceId)}/connection`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: "{}",
+    }, owner)
+    if (started.ok) {
+      connected = true
+      break
+    }
+    const body = await started.json() as { error?: { code?: string } }
+    if (started.status !== 409 || body.error?.code !== "cloud_runtime_unavailable") {
+      throw new Error(`hosted connection start failed: ${started.status} ${JSON.stringify(body)}`)
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500))
   }
+  if (!connected) throw new Error(`hosted workspace ${workspaceId} never finished provisioning`)
   const targetFile = path.join(stack.root, "local-broker-targets", `${workspaceId}.json`)
   let runtimeAccessToken: string | undefined
+  let connectionReadback = "none"
   for (let attempt = 0; attempt < 60; attempt++) {
     try {
       await fs.access(targetFile)
@@ -42,11 +53,13 @@ export async function hostedWorkspace(stack: HostedStack, owner: HostedPerson, n
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
     }
     const readback = await hostedFetch(stack, `/api/workspace/${encodeURIComponent(workspaceId)}/connection`, {}, owner)
-    if (readback.ok) runtimeAccessToken = (await readback.json() as { runtimeAccessToken?: string }).runtimeAccessToken
+    const body = await readback.json() as { runtimeAccessToken?: string }
+    connectionReadback = `${readback.status} ${JSON.stringify(body)}`
+    if (readback.ok) runtimeAccessToken = body.runtimeAccessToken
     if (runtimeAccessToken) break
     await new Promise((resolve) => setTimeout(resolve, 500))
   }
-  if (!runtimeAccessToken) throw new Error(`hosted workspace ${workspaceId} did not connect`)
+  if (!runtimeAccessToken) throw new Error(`hosted workspace ${workspaceId} did not connect: ${connectionReadback}`)
   let healthStatus = 0
   for (let attempt = 0; attempt < 30; attempt++) {
     const health = await fetch(`${stack.relayUrl}/workspaces/${encodeURIComponent(workspaceId)}/api/wr/health`, {

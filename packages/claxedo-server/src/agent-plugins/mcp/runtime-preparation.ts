@@ -144,6 +144,17 @@ export type HostedMcpRuntimePreparerInput = {
   secretBrokering: SandboxDriverMetadata["secretBrokering"]
   /** Where each minted gateway token is written down, so a workspace's deletion can take it back. */
   passes?: SandboxPassRegister
+  /**
+   * The commands the sandbox image ships. A plugin's local-command server runs
+   * in a sandbox only when its command is one of them; every other one is
+   * reported unavailable rather than launched against a missing binary.
+   */
+  imageCommands?: readonly string[]
+}
+
+function imageDeclares(commands: readonly string[] | undefined, command: string) {
+  const name = command.split("/").at(-1) ?? command
+  return (commands ?? []).includes(name)
 }
 
 export function createHostedMcpRuntimePreparation(input: HostedMcpRuntimePreparerInput) {
@@ -235,7 +246,19 @@ export function createHostedMcpRuntimePreparer(input: HostedMcpRuntimePreparerIn
     for (const { selection, artifact } of loaded) {
       if (artifact.plugin.mcp.status !== "valid") continue
       for (const server of artifact.plugin.mcp.servers) {
-        if (server.type !== "streamable-http") continue
+        if (server.type === "stdio" && imageDeclares(input.imageCommands, server.command)) continue
+        if (server.type !== "streamable-http") {
+          for (const harnessId of selection.harnessIds) {
+            mcpServers.push(unavailable({
+              pluginInstanceId: selection.pluginInstanceId,
+              artifactDigest: selection.artifactDigest,
+              harnessId,
+              serverName: server.name,
+              reason: server.type === "stdio" ? "mcp_command_not_in_image" : "mcp_transport_unsupported",
+            }))
+          }
+          continue
+        }
         const integrationId = await mcpOAuthIntegrationId({
           pluginInstanceId: selection.pluginInstanceId,
           serverName: server.name,
@@ -333,11 +356,16 @@ export function createHostedMcpRuntimePreparer(input: HostedMcpRuntimePreparerIn
           }
           const endpoint = gatewayEndpoint(base, scope, style)
           const credential = await mintMcpGatewayToken(scope, input.signingEnv, input.passes ? { register: input.passes } : {})
+          // A provider edge attaches the credential only within the stated
+          // methods and paths, and an empty policy names nothing; Streamable
+          // HTTP is POST, GET for the event stream and DELETE to end a session.
           secrets.push({
             name: endpoint.secretName,
             value: `Bearer ${credential.token}`,
             hosts: [endpoint.host],
             header: "Authorization",
+            methods: ["GET", "POST", "DELETE"],
+            pathPrefixes: [new URL(endpoint.url).pathname],
           })
           mcpServers.push({
             ...identity,

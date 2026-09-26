@@ -78,7 +78,7 @@ describe("syncLocalCredentials", () => {
     // Removed rather than overwritten: `saveUserConfig` reads the file first,
     // so a test that left an unreadable one behind would fail every test after it.
     await fs.rm(userConfigFile, { force: true })
-    await saveUserConfig({ version: 3, connections: {}, mcp: {}, sandbox_driver: {} })
+    await saveUserConfig({ version: 3, connections: {}, sandbox_driver: {} })
   })
 
   afterAll(async () => {
@@ -107,7 +107,6 @@ describe("syncLocalCredentials", () => {
     process.env.MODAL_TOKEN_SECRET = "modal-secret"
 
     await saveUserConfig({ version: 3, connections: {},
-      mcp: {},
       sandbox_driver: {
         auth: {
           modal: {

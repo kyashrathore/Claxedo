@@ -56,6 +56,8 @@ import { messagePageCursor, parseMessagePageInput } from "../../session/message-
 import type { HostedControlPlane } from "../../authority/hosted-services"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import { hostedPiCredentials } from "../../credentials/worker/pi"
+import { hostedAgentConfigRoutes } from "../../agent-config/hosted-routes"
+import type { UserAgentConfigRepository } from "@claxedo/server-core/agent-config/repository"
 import {
   liveSyncRoomNameForPrincipal,
   nudgeLiveSyncRoom,
@@ -99,6 +101,9 @@ export type HostedCoreAppOptions = {
   product: StaticProductDescriptor
   requestGuardExemptions: readonly RouteGuardExemption[]
   productWorkspace?: HostedCoreProductWorkspaceOptions
+  agentConfigRepository?: UserAgentConfigRepository
+  settingsChanged?: (userId: string) => Promise<void>
+  credentialsChanged?: (orgId: string) => Promise<void>
   userDeployedIdentityAdmission?: UserDeployedIdentityAdmission
   /**
    * Build-composed product route families (Agent Plugins today). An entry
@@ -315,7 +320,11 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       ...(services.authority ? { resolveOrgId: (auth) => services.authority!.resolveOrgId(auth) } : {}),
       serviceCatalog: options.serviceCatalog,
       harnessStatus: hostedHarnessRuntimeStatus(services),
-      ...hostedPiCredentials({ resolveOrgId: (auth) => requireAuthority(services).resolveOrgId(auth), credentials: plane.orgCredentials }),
+      ...hostedPiCredentials({
+        resolveOrgId: (auth) => requireAuthority(services).resolveOrgId(auth),
+        credentials: plane.orgCredentials,
+        ...(options.credentialsChanged ? { changed: options.credentialsChanged } : {}),
+      }),
     }),
   )
   app.route(
@@ -351,6 +360,14 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
     )
   }
   app.route("/api/workspace", HostedWorkspaceRoutes(services, workspaceOptions))
+  if (options.agentConfigRepository) {
+    app.route("/api/claxedo/agent-config", hostedAgentConfigRoutes({
+      services,
+      authentication: options.authentication,
+      repository: options.agentConfigRepository,
+      changed: options.settingsChanged ?? (async () => {}),
+    }))
+  }
   app.route("/api/claxedo/host/enrollments", HostEnrollmentRoutes(services, workspaceOptions))
   app.route("/api/claxedo/host/invitations", HostInvitationRoutes(services, workspaceOptions))
   app.route("/api/claxedo/remote-access", RemoteAccessOwnerRoutes({

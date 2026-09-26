@@ -5,6 +5,10 @@ import {
   sandboxLeaseEnv as sandboxLeaseVariables,
   workspaceRuntimeRelayVerificationEnv,
 } from "@claxedo/server-core/hosts/workspace-runtime/env"
+import {
+  supervisorBackplaneTokenAudience,
+  supervisorBackplaneTokenIssuer,
+} from "@claxedo/server-core/platform/auth/runtime-access-token"
 
 export type WorkspaceSupervisorOptions = {
   server_url: string
@@ -55,15 +59,15 @@ export function controlPlaneVerificationEnv(
     return {
       WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL: `${controlPlaneUrl.replace(/\/+$/g, "")}/api/runtime-authority/session-authorize`,
       WORKSPACE_RUNTIME_MANAGEMENT_VERIFY_PEM: publicKeyPem,
-      WORKSPACE_RUNTIME_MANAGEMENT_ISSUER: "claxedo-control-plane",
-      WORKSPACE_RUNTIME_MANAGEMENT_AUDIENCE: "supervisor-backplane",
+      WORKSPACE_RUNTIME_MANAGEMENT_ISSUER: supervisorBackplaneTokenIssuer,
+      WORKSPACE_RUNTIME_MANAGEMENT_AUDIENCE: supervisorBackplaneTokenAudience,
     }
   }
   return {
     WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL: `${controlPlaneUrl.replace(/\/+$/g, "")}/api/runtime-authority/session-authorize`,
     WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL: `${controlPlaneUrl.replace(/\/+$/g, "")}/.well-known/jwks.json`,
-    WORKSPACE_RUNTIME_MANAGEMENT_ISSUER: "claxedo-control-plane",
-    WORKSPACE_RUNTIME_MANAGEMENT_AUDIENCE: "supervisor-backplane",
+    WORKSPACE_RUNTIME_MANAGEMENT_ISSUER: supervisorBackplaneTokenIssuer,
+    WORKSPACE_RUNTIME_MANAGEMENT_AUDIENCE: supervisorBackplaneTokenAudience,
   }
 }
 

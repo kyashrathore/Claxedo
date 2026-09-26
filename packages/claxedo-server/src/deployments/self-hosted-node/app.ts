@@ -31,7 +31,8 @@ import { initNodeObservability } from "../../platform/telemetry/errors/node"
 import { reportError } from "../../platform/telemetry/errors/report"
 import { requestIsHttps, securityHeaderEntries, withSecurityHeaders } from "@claxedo/server-core/platform/http/security-headers"
 import { drainOpenCodeSdkRuntime, openCodeSdkRuntime } from "@claxedo/server-core/opencode/sdk-runtime"
-import { configureAgentConfig } from "@claxedo/server-core/agent-config/index"
+import { configureAgentConfig, type AgentConfigOptions } from "@claxedo/server-core/agent-config/index"
+import { defaultConnectionConfigs } from "@claxedo/server-core/agent-config/connections"
 import { projectNativeProviderAuth } from "@claxedo/server-core/credentials/native-delivery"
 import {
   mountControlPlaneRouteContributions,
@@ -79,7 +80,7 @@ import {
 } from "@claxedo/local-server/self-hosted-execution"
 import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "@claxedo/server-core/platform/runtime/profile"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
-import { dropCopiedHarnessLogins, migrateCredentials, projectLocalSessionMetaFromEvent } from "@claxedo/local-server/self-hosted-execution"
+import { dropCopiedHarnessLogins, projectLocalSessionMetaFromEvent } from "@claxedo/local-server/self-hosted-execution"
 import { CredentialRoutes, createUsageQuotaReader, localControlPlaneCredentials, requestOrg } from "@claxedo/local-server/self-hosted-execution"
 import { ProviderAuthRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { NetworkPolicyRoutes } from "@claxedo/local-server/self-hosted-execution"
@@ -1630,6 +1631,8 @@ export type ControlPlaneStackOptions = {
   processObserver?: ProcessObserver
   /** Explicit build/composition contributions (Agent Plugins); absent in the disabled product. */
   routeContributions?: readonly ControlPlaneRouteContribution[]
+  /** Agent Plugins' contribution to every runtime snapshot this box pushes; absent in the disabled product. */
+  pluginRuntime?: AgentConfigOptions["pluginRuntime"]
   /** Issued to this box's own sessions; the Tasks routes in `routeContributions` verify them. */
   tasksGrants?: TasksSessionGrants
 }
@@ -1896,14 +1899,13 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   }
   // The credential authority for this box: a local runtime's harness receives a
   // broker endpoint on this same listener and the value stays in this process.
-  // The per-harness launch projection is the one other agent-config option;
-  // this deployment does not contribute it.
   const credentialBroker = options.egressBroker
     ? undefined
     : createLocalCredentialBroker({ dataDir: dataDir(), brokerOrigin: `http://127.0.0.1:${port}` })
   configureAgentConfig({
-    connectionProviders,
+    connectionConfigs: [...defaultConnectionConfigs(), createOpenCodeServerConnectionProvider()],
     projectAuth: selfHostedCredentialAuthority(credentialBroker),
+    ...(options.pluginRuntime ? { pluginRuntime: options.pluginRuntime } : {}),
   })
   // A placeholder expires; re-projecting on this interval and re-applying the
   // snapshot is what puts the next one in front of the next turn's spawn.
@@ -1917,12 +1919,8 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
       : {}),
   })
 
-  // Migrate legacy plaintext credentials into the managed secret backend.
   dropCopiedHarnessLogins().catch((err: unknown) => {
     console.error("[claxedo-server] WARN  could not forget copied harness logins:", err)
-  })
-  migrateCredentials().catch((err) => {
-    console.error("[claxedo-server] WARN  credential migration failed:", err)
   })
 
   captureControlPlaneStartupTelemetry(services, { port })

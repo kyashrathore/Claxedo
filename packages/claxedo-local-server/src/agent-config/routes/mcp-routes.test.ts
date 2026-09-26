@@ -84,13 +84,13 @@ describe("one-click hosted MCP install", () => {
     expect(claude).toEqual({ mcpServers: {} })
   })
 
-  test("does not shadow the named-server route", async () => {
+  test("has no named-server route", async () => {
     const response = await app.request("/mcp/mcp-install", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ type: "remote" }),
     })
 
-    expect(await response.json()).toMatchObject({ error: { code: "agent_config_mcp_url_required" } })
+    expect(response.status).toBe(404)
   })
 })

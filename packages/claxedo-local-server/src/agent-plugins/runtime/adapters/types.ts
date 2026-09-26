@@ -1,18 +1,7 @@
 import type { AgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import type { ValidatedAgentPlugin } from "@claxedo/server-core/agent-plugins/catalog/types"
 import type { ArtifactDigest } from "@claxedo/server-core/agent-plugins/activation/types"
-
-type RuntimeMcpServerProjectionIdentity = {
-  pluginInstanceId: string
-  artifactDigest: ArtifactDigest
-  harnessId: AgentPluginHarnessId
-  serverName: string
-}
-
-export type RuntimeMcpServerProjection = RuntimeMcpServerProjectionIdentity & (
-  | { state: "gateway"; url: string; headers?: Record<string, string> }
-  | { state: "unavailable"; reason: string }
-)
+import type { RuntimeMcpServerProjection } from "@claxedo/server-core/agent-plugins/runtime/mcp-projection"
 
 export type GenerationPluginRoot = {
   pluginInstanceId: string

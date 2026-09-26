@@ -213,13 +213,12 @@ async function harness(input: { offeredModelId?: string; effortLevels?: HarnessE
     ...(input.effortLevels ? { effortLevels: input.effortLevels } : {}),
   })
   configureEmbeddedWorkspaceRuntime({ connectionProviders: [fixture.provider] })
-  configureAgentConfig({ connectionProviders: [fixture.provider] })
+  configureAgentConfig({ connectionConfigs: [fixture.provider] })
   // The bridge dispatches through the local runtime port, and a create there
   // resynchronizes the runtime from the user config first: a connection
   // applied directly to the host would be gone by the time it lands.
   await saveUserConfig({
     version: 3,
-    mcp: {},
     connections: {
       [CONNECTION_ID]: {
         connectionId: CONNECTION_ID,
