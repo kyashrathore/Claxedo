@@ -1,5 +1,5 @@
 import { asRecordOrEmpty } from "@claxedo/helpers/guards"
-import { AsyncPushQueue, errorMessage } from "@claxedo/helpers"
+import { AsyncPushQueue, errorMessage, settleAtRequestDeadline } from "@claxedo/helpers"
 import type { RoutedEvent, StartInput, TurnBroker, TurnInput } from "../../contract"
 import type { ProjectedEvent } from "./event-pump"
 import { TransportError } from "../../contract/errors.js"
@@ -13,6 +13,9 @@ import { flattenTurnPrompt } from "../../translate/prompt"
 
 export type OpenCodeTurnState = { start: StartInput; scope: WorkspaceScope; upstream: string;
   active: boolean; assistantMessageID?: string }
+
+class StreamLost extends Error {}
+class TurnAborted extends Error {}
 
 export function promptRequest(turn: TurnInput) {
   const files: Array<{ ref: string; name?: string }> = []
@@ -41,19 +44,43 @@ function listenOpenCodeEvents(runtime: OpenCodeRuntime, state: OpenCodeTurnState
   })
 }
 
-async function admitOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnState, turn: TurnInput): Promise<ReturnType<typeof createTurnUsage>> {
+async function admitOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnState, turn: TurnInput, signal: AbortSignal): Promise<{
+  usage: ReturnType<typeof createTurnUsage>; admittedAt: number }> {
   const model = turn.model ?? state.start.config.model
   if (!model) throw new TransportError("opencode", "configuration", "OpenCode turn requires a resolved model")
   assertProviderAvailable(state.start.credentials, model.providerID)
   await runtime.providersBound()
   await runtime.events.ready()
+  if (signal.aborted) throw new TurnAborted("OpenCode turn was aborted")
   const usage = createTurnUsage(state.upstream, await readSessionTotal(async () =>
     (await runtime.sessions.get(state.scope, state.upstream)).tokens))
   if (turn.prompt.agent) await runtime.sessions.switchAgent(state.scope, state.upstream, turn.prompt.agent)
   await runtime.sessions.switchModel(state.scope, state.upstream, { providerID: model.providerID, modelID: model.modelID,
     ...(state.start.config.variant ? { variant: state.start.config.variant } : {}) })
-  await runtime.sessions.prompt(state.scope, state.upstream, promptRequest(turn))
-  return usage
+  if (signal.aborted) throw new TurnAborted("OpenCode turn was aborted")
+  const admitted = await runtime.sessions.prompt(state.scope, state.upstream, promptRequest(turn))
+  return { usage, admittedAt: admitted.createdAt }
+}
+
+async function* reconcileOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnState,
+  usage: ReturnType<typeof createTurnUsage>, admittedAt: number, wait: boolean, signal: AbortSignal): AsyncIterable<RoutedEvent> {
+  if (wait) await settleAtRequestDeadline("OpenCode session wait",
+    { deadlineAt: Date.now() + 60_000, signal },
+    runtime.sessions.wait(state.scope, state.upstream), () => {},
+    () => new TransportError("opencode", "engine", "OpenCode session wait deadline expired"))
+  const snapshot = await settleAtRequestDeadline("OpenCode session reconciliation",
+    { deadlineAt: Date.now() + 5_000, signal: new AbortController().signal },
+    runtime.sessions.get(state.scope, state.upstream), () => {},
+    () => new TransportError("opencode", "engine", "OpenCode session reconciliation deadline expired"))
+  if (snapshot.idleAt === undefined || snapshot.idleAt < admittedAt || !snapshot.outcome) {
+    yield route({ type: "error", error: "OpenCode turn ended without a terminal session outcome", harness: "opencode" })
+    return
+  }
+  const closing = usage.close(await readSessionTotal(async () => snapshot.tokens))
+  if (closing) yield route(closing)
+  yield route(snapshot.outcome === "failed"
+    ? { type: "error", error: "OpenCode execution failed", harness: "opencode" }
+    : { type: "finish", sessionId: state.upstream, harness: "opencode" })
 }
 
 async function* streamOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnState, queue: AsyncPushQueue<ProjectedEvent>,
@@ -77,16 +104,28 @@ async function* streamOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurn
 export async function* runOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnState, turn: TurnInput,
   broker: TurnBroker): AsyncIterable<RoutedEvent> {
   if (state.active) throw new TransportError("opencode", "session", "OpenCode session already has an active turn")
+  if (!runtime.events.subscribeLoss) throw new TransportError("opencode", "engine", "OpenCode event loss subscription is unavailable")
   state.active = true
   const queue = new AsyncPushQueue<ProjectedEvent>()
   const unsubscribe = listenOpenCodeEvents(runtime, state, broker, queue)
+  const unsubscribeLoss = runtime.events.subscribeLoss(() => queue.fail(new StreamLost("OpenCode event stream lost")))
+  const abort = () => queue.fail(new TurnAborted("OpenCode turn was aborted"))
+  broker.signal.addEventListener("abort", abort, { once: true })
+  if (broker.signal.aborted) abort()
   try {
-    const usage = await admitOpenCodeTurn(runtime, state, turn)
-    yield* streamOpenCodeTurn(runtime, state, queue, usage)
+    const { usage, admittedAt } = await admitOpenCodeTurn(runtime, state, turn, broker.signal)
+    try { yield* streamOpenCodeTurn(runtime, state, queue, usage) }
+    catch (error) {
+      if (error instanceof StreamLost || error instanceof TurnAborted) {
+        yield* reconcileOpenCodeTurn(runtime, state, usage, admittedAt, error instanceof StreamLost, broker.signal)
+      } else throw error
+    }
   } catch (error) {
     yield route({ type: "error", error: errorMessage(error), harness: "opencode" })
   } finally {
     unsubscribe()
+    unsubscribeLoss()
+    broker.signal.removeEventListener("abort", abort)
     state.active = false
     state.assistantMessageID = undefined
   }

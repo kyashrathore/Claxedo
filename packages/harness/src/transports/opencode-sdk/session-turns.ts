@@ -29,7 +29,7 @@ async function admitPrompt(host: OpenCodeHost, scope: WorkspaceScope, sessionID:
       }
 }
 
-function promptPort(host: OpenCodeHost): Pick<OpenCodeSessionPort, "prompt" | "command" | "interrupt"> {
+function promptPort(host: OpenCodeHost): Pick<OpenCodeSessionPort, "prompt" | "command" | "interrupt" | "wait"> {
   return {
     prompt: (scope, sessionID, request) => admitPrompt(host, scope, sessionID, request),
     async command(scope, sessionID, input) {
@@ -47,6 +47,9 @@ function promptPort(host: OpenCodeHost): Pick<OpenCodeSessionPort, "prompt" | "c
         sessionID,
         ...(options?.continue === undefined ? {} : { continue: options.continue }),
       })
+    },
+    async wait(scope, sessionID) {
+      await (await ownedClient(host, scope, sessionID)).sessions.wait({ sessionID })
     },
   }
 }
@@ -82,6 +85,6 @@ function historyPort(host: OpenCodeHost): Pick<OpenCodeSessionPort, "revertTo" |
 }
 
 export function sessionTurns(host: OpenCodeHost): Pick<OpenCodeSessionPort,
-  "prompt" | "command" | "interrupt" | "revertTo" | "clearRevert" | "messages"> {
+  "prompt" | "command" | "interrupt" | "wait" | "revertTo" | "clearRevert" | "messages"> {
   return { ...promptPort(host), ...historyPort(host) }
 }

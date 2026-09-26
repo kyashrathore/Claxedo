@@ -121,14 +121,14 @@ class TurnUsage {
       return this.usage("delta", tokens, id, model)
   }
 
-  close(closed: SessionTotal, terminal: ProjectedEvent): AgentRuntimeEvent | undefined {
+  close(closed: SessionTotal, terminal?: ProjectedEvent): AgentRuntimeEvent | undefined {
       if ("failure" in this.opened) return this.unreconciled(`the session total before the prompt was not read: ${this.opened.failure}`)
       if ("failure" in closed) return this.unreconciled(closed.failure)
       if (!this.opened.tokens || !closed.tokens) return this.unreconciled("the engine reported no session token total")
       const grown = subtractTokens(closed.tokens, this.opened.tokens)
       if (recordsNothing(grown)) return undefined
       const [only] = this.servedModels.size === 1 && JSON.stringify(grown) === JSON.stringify(this.observed) ? this.servedModels : []
-      return this.usage("cumulative", grown, durableId(terminal), only)
+      return this.usage("cumulative", grown, terminal ? durableId(terminal) : undefined, only)
   }
 }
 
