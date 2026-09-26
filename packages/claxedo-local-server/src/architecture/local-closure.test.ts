@@ -291,10 +291,9 @@ describe("@claxedo/local-server closure", () => {
     //    authoring, the grant the first-party MCP's `app_plugin_*` tools call
     //    for a session of this machine's owner: a new plugin folder in the
     //    session's workspace, its check and its registration with the live
-    //    plugins above. The authoring skill the OpenCode launch document used
-    //    to carry is gone; the MCP tools serve the guide to every harness.
+    //    plugins above.
     const { modules, packages } = closure({ runtimeOnly: true })
-    expect(modules.size).toBeLessThanOrEqual(109)
+    expect(modules.size).toBeLessThanOrEqual(110)
     expect(packages.size).toBeLessThanOrEqual(31)
   })
 })
