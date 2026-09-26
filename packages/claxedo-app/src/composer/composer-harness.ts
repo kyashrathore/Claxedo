@@ -1,21 +1,29 @@
 import { createMemo, type Accessor } from "solid-js"
 import { useServer, type HarnessConfigApi, type Server } from "@/server"
-import { connectionHarness, harnessSelectionValue, nativeHarness, NATIVE_HARNESS_IDS, type NativeHarnessId } from "@/lib/harness-selection"
+import { harnessSelectionValue } from "@/lib/harness-selection"
 import type { Submission } from "./model"
 import type { ComposerKey } from "./store"
 import type { ComposerProps } from "./setup"
 import type { useComposerText } from "./text"
 import { useHarnessConfig } from "./harness/context"
 import { createHarnessSelectionController, createHarnessSubmitController, type HarnessScopeInput, type HarnessSelectionSnapshot } from "./harness/controller"
-import { harnessSelectionId, type HarnessType } from "./harness/profile"
+import { harnessSelectionId } from "./harness/profile"
+import { knownSessionModel } from "./harness/session-known-model"
 import { createComposerPermissionSurface } from "./permission/permission-mode-wiring"
 import { harnessModesUnavailable } from "./role-gate"
 
 export type ComposerHarness = ReturnType<typeof createComposerHarness>
 
-function harnessOfId(id: string): HarnessType {
-  const native = NATIVE_HARNESS_IDS.find((candidate): candidate is NativeHarnessId => candidate === id)
-  return native ? nativeHarness(native) : connectionHarness(id)
+function harnessScopeInput(props: ComposerProps): HarnessScopeInput {
+  const view = props.view
+  if (!view) return { placementId: props.placementId }
+  const sessionHarness = view.row()?.harness
+  return {
+    placementId: view.ref.placementId,
+    sessionId: view.ref.sessionId,
+    sessionRef: view.ref,
+    ...(sessionHarness ? { sessionHarness, sessionModel: () => knownSessionModel(sessionHarness, view.row(), view.messages()) } : {}),
+  }
 }
 
 export function createComposerHarness(props: ComposerProps, key: Accessor<ComposerKey>, t: ReturnType<typeof useComposerText>) {
@@ -23,16 +31,7 @@ export function createComposerHarness(props: ComposerProps, key: Accessor<Compos
   const store = useHarnessConfig()
   const controller = createHarnessSelectionController(store)
   const submit = createHarnessSubmitController(store)
-  const scopeInput = createMemo<HarnessScopeInput>(() => {
-    const view = props.view
-    if (!view) return { placementId: props.placementId }
-    return {
-      placementId: view.ref.placementId,
-      sessionId: view.ref.sessionId,
-      sessionRef: view.ref,
-      ...(props.sessionHarness ? { sessionHarness: harnessOfId(props.sessionHarness) } : {}),
-    }
-  })
+  const scopeInput = createMemo(() => harnessScopeInput(props))
   const selection = createMemo(() => controller.read(key()))
   const permissionMode = permissionModeFor({ key, submit, scopeInput, selection, api: server.harnessConfig, queries: server.queries.harnesses, t })
   const harness = createMemo(() => {

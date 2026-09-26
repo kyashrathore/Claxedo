@@ -224,12 +224,25 @@ test("12 a session switch shows the previous session until the next one is laid 
   const elsewhere = await seedTurns(stack, api, there.directory, "Elsewhere", 12)
   const long = await seedTurns(stack, api, here.directory, "Long", 30, { lines: 40 })
   const failed = await seedTurns(stack, api, here.directory, "Failed", 12, { lastFails: true })
+  const short = await seedTurns(stack, api, here.directory, "Short", 1)
+  const pi = await api.createSession(here.directory, { title: "Pi", harness: { id: "pi", access: "native" } })
+  await api.prompt(here.directory, pi.id, "Pi turn: review the fixture.")
   await app.goto(`${stack.url}${sessionRoute(here.id, previous.id)}`)
   await expect(app.getByText("Previous reply line 6.").first()).toBeVisible()
   const settled = apiRequests(app, stack.url)
   await settled()
 
-  for (const [label, next] of [["unvisited", target], ["another workspace", elsewhere], ["long rows", long], ["failed last turn", failed], ["visited", previous]] as const) {
+  const acp = { model: "Scripted ACP default", nameKnown: true }
+  const switches = [
+    { label: "unvisited", next: target, ...acp },
+    { label: "unvisited short", next: short, ...acp },
+    { label: "unvisited Pi", next: pi, model: "anthropic/claude-opus-4-8", nameKnown: false },
+    { label: "another workspace", next: elsewhere, ...acp },
+    { label: "long rows", next: long, ...acp },
+    { label: "failed last turn", next: failed, ...acp },
+    { label: "visited", next: previous, ...acp },
+  ]
+  for (const { label, next, model, nameKnown } of switches) {
     await test.step(`switch to the ${label} session`, async () => {
       const frames = await recordSwitchFrames(app, { targetId: next.id, quietFrames: 30 })
       await app.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: next.title, exact: true }).click()
@@ -239,7 +252,9 @@ test("12 a session switch shows the previous session until the next one is laid 
       expect.soft(seen.empty, "frames with an empty, loading or missing session body").toEqual([])
       expect.soft(seen.overlaid, "frames painting two sessions at once").toEqual([])
       expect.soft(seen.jumps, `frames where the ${label} session's rows or scroll moved after it first showed`).toEqual([])
-      expect.soft(seen.footers, `composer footer labels of the ${label} session`).toHaveLength(1)
+      if (nameKnown) expect.soft(seen.footers, `composer footer labels of the ${label} session`).toHaveLength(1)
+      expect.soft(seen.footers[0], `the ${label} session's first footer names its model`).toContain(model)
+      expect.soft(seen.footers[0], `the ${label} session's first footer`).not.toMatch(/Select (model|agent)/)
       expect.soft(seen.railApart, "frames where the rail selects a session other than the one shown").toEqual([])
       expect.soft(seen.sessions, "sessions shown, in order").toEqual(seen.sessions.length === 1 ? [next.id] : [seen.sessions[0], next.id])
     })

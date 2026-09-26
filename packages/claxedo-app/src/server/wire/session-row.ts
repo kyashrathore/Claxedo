@@ -1,6 +1,7 @@
 import type { AgentSession } from "@claxedo/agent-runtime-contract"
 import { sessionId, type PlacementId, type ProjectId, type SessionId } from "../ids"
-import type { ListedStatus, SessionRef, SessionRow } from "../types"
+import type { ListedStatus, ModelChoice, SessionRef, SessionRow } from "../types"
+import { sessionConfigFromWire } from "./harness-state"
 
 export type Address = {
   readonly placementFor: (directory: string, workspaceId?: string) => { readonly placementId: PlacementId; readonly projectId: ProjectId } | undefined
@@ -44,6 +45,14 @@ export function sessionRowFromListItem(item: unknown, address: Address): Session
   }
 }
 
+function configuredSelection(info: AgentSession & { readonly config?: unknown }): Pick<SessionRow, "harness" | "model"> {
+  const config = sessionConfigFromWire(info.config)
+  const harness = config?.harness?.type
+  const { modelId, providerId } = config?.model ?? {}
+  const model: ModelChoice | undefined = modelId && providerId ? { providerId, modelId, ...(config?.variant ? { variant: config.variant } : {}) } : undefined
+  return { ...(harness ? { harness } : {}), ...(model ? { model } : {}) }
+}
+
 export function sessionRowFromSession(info: AgentSession, ref: SessionRef): SessionRow {
   const created = info.time?.created ?? 0
   const updated = info.time?.updated ?? created
@@ -59,6 +68,7 @@ export function sessionRowFromSession(info: AgentSession, ref: SessionRef): Sess
     ...(archived ? { archivedAt: archived } : {}),
     ...(parent ? { parentSessionId: sessionId(parent) as SessionId } : {}),
     ...(info.lastTurn ? { lastTurn: info.lastTurn } : {}),
+    ...configuredSelection(info),
   }
 }
 

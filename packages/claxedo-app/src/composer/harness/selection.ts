@@ -1,7 +1,6 @@
 import type { HarnessOptionChoice, ModelChoice } from "@/server"
 import type { HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
 import {
-  harnessDisplayLabel,
   harnessSelectionId,
   isCatalogHarness,
   isClientDefaultPlaceholder,
@@ -27,11 +26,6 @@ export type HarnessSelectionState = {
 export function harnessMode(type?: HarnessType) {
   if (type) return "harness"
   return "unknown"
-}
-
-export function harnessDisplayName(state: Pick<HarnessSelectionState, "harness">) {
-  if (!state.harness) return "Select agent"
-  return harnessDisplayLabel(harnessSelectionId(state.harness))
 }
 
 export type HarnessModelChoice = HarnessOptionChoice & { providerId?: string }

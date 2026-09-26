@@ -1,4 +1,4 @@
-import type { HarnessConnectionState, HarnessHealth, HarnessOptionChoice, HarnessOptionsSource, HarnessState } from "@/server"
+import type { HarnessConnectionState, HarnessHealth, HarnessOptionChoice, HarnessOptionsSource, HarnessState, ModelChoice } from "@/server"
 import type { HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
 import {
   hardFailedHarness,
@@ -8,7 +8,7 @@ import {
 import { harnessMode, type HarnessReadiness } from "./selection"
 import type { DraftDefault } from "./draft-defaults"
 import type { DraftDefaultAuthority, DraftDefaultResult } from "./draft-default-policy"
-import { isCatalogHarnessId } from "@/lib/harness-selection"
+import { isCatalogHarnessId, sameHarnessSelection } from "@/lib/harness-selection"
 
 export type HarnessStoreState = {
   harnessMode: "harness" | "unknown"
@@ -71,6 +71,7 @@ export function harnessStatusPatch(input: {
   current?: HarnessStoreState
 }): HarnessStorePatch {
   const want = input.data.type ?? input.current?.harness
+  const kept = sameHarnessSelection(input.current?.harness, want) ? input.current : undefined
   if (!want) return {
     harnessMode: "unknown",
     readiness: input.data.ready === false || hardFailedHarness(input.data) ? "error" : "unresolved",
@@ -79,13 +80,13 @@ export function harnessStatusPatch(input: {
   return {
     harnessMode: harnessMode(want),
     harness: want,
-    selectedModel: input.data.model ?? input.current?.selectedModel ?? "",
-    selectedModelProvider: input.data.modelProviderId ?? input.current?.selectedModelProvider,
+    selectedModel: input.data.model ?? kept?.selectedModel ?? "",
+    selectedModelProvider: input.data.modelProviderId ?? kept?.selectedModelProvider,
     readiness: statusReadiness(input.data),
     connectionState: statusConnection(want, input.data, input.current),
     configError: input.data.error ?? undefined,
     workspaceId: input.data.workspaceId ?? input.current?.workspaceId,
-    ...(input.data.thoughtLevel ? { selectedThoughtLevel: input.data.thoughtLevel } : {}),
+    selectedThoughtLevel: input.data.thoughtLevel ?? kept?.selectedThoughtLevel,
   }
 }
 
@@ -108,6 +109,16 @@ export function readyHarnessHydrationPatch(type: HarnessType, hasConfigOptions =
     harnessMode: harnessMode(type),
     readiness: "ready",
     ...(!hasConfigOptions ? emptyOptionsPatch(type) : {}),
+  }
+}
+
+export function knownHarnessHydrationPatch(type: HarnessType, model?: ModelChoice): HarnessStorePatch {
+  return {
+    harness: type,
+    harnessMode: harnessMode(type),
+    selectedModel: model?.modelId ?? "",
+    selectedModelProvider: model?.providerId,
+    selectedThoughtLevel: model?.variant,
   }
 }
 

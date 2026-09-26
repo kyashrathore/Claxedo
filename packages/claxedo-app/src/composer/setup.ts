@@ -22,7 +22,6 @@ export type ComposerProps = {
   readonly composerKey: ComposerKey
   readonly placementId?: PlacementId
   readonly view?: SessionView
-  readonly sessionHarness?: string
   readonly attachmentWorkspace: boolean
   readonly readOnly?: boolean
   readonly hidden?: boolean

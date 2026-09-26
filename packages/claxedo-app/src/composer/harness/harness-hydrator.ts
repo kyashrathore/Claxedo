@@ -2,7 +2,7 @@ import { harnessHasConfigOptions, type HarnessType } from "./profile"
 import type { HarnessStoreState } from "./store-state"
 import type { DraftDefault } from "./draft-defaults"
 import type { DraftDefaultApplication } from "./draft-default-policy"
-import type { HarnessState, PlacementId, PlacementKind, SessionConfig, SessionRef } from "@/server"
+import type { HarnessState, ModelChoice, PlacementId, PlacementKind, SessionConfig, SessionRef } from "@/server"
 import {
   harnessStateFromSessionConfig,
   shouldHydrateDraftFromHarnessStatus,
@@ -29,6 +29,7 @@ type HydratorInput<ScopeInput extends HarnessScopeInput> = {
   markServer?(scope: string): void
   applyStatus(scope: string, data: HarnessState, params?: ScopeInput): Promise<void>
   setPollingHydration(scope: string, type?: HarnessType): void
+  setKnownHydration(scope: string, type: HarnessType, model?: ModelChoice): void
   setReadyHydration(scope: string, type: HarnessType, hasConfigOptions?: boolean): void
   setCapabilityError?(scope: string, message: string): void
   fetchConfigOptions(scope: string, type: HarnessType, params?: ScopeInput): Promise<unknown> | void
@@ -119,6 +120,8 @@ async function hydrateDraft<ScopeInput extends HarnessScopeInput>(input: Hydrato
 }
 
 async function hydrateSession<ScopeInput extends HarnessScopeInput>(input: HydratorInput<ScopeInput>, run: Run<ScopeInput>) {
+  const known = run.params.sessionHarness
+  if (known && !input.state(run.scope)?.harness) input.setKnownHydration(run.scope, known, run.params.sessionModel?.())
   const data = await readHarnessStatus(input, run.params)
   if (!run.active()) return
   if (data) return applyAndMarkSeen(input, run, data)

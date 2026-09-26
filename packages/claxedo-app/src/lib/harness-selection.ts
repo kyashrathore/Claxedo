@@ -64,3 +64,8 @@ export function harnessSelectionQuery(input: HarnessSelection):
     ? { nativeHarness: input.harnessId }
     : { connectionId: input.connectionId }
 }
+
+export function harnessSelectionOf(id: string): HarnessSelection {
+  const native = NATIVE_HARNESS_IDS.find((candidate): candidate is NativeHarnessId => candidate === id)
+  return native ? nativeHarness(native) : connectionHarness(id)
+}

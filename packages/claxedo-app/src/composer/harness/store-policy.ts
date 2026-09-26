@@ -1,4 +1,4 @@
-import type { HarnessState, PlacementId, PlacementKind, SessionConfig, SessionRef } from "@/server"
+import type { HarnessState, ModelChoice, PlacementId, PlacementKind, SessionConfig, SessionRef } from "@/server"
 import { harnessHasConfigOptions, type HarnessType } from "./profile"
 
 export type HarnessScopeInput = {
@@ -6,6 +6,7 @@ export type HarnessScopeInput = {
   sessionId?: string
   sessionRef?: SessionRef
   sessionHarness?: HarnessType
+  sessionModel?: () => ModelChoice | undefined
   saveDraftDefault?: false
 }
 

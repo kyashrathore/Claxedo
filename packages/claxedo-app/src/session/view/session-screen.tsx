@@ -151,7 +151,6 @@ function SessionBody(props: {
                   composerKey={sessionComposerKey(props.view.ref)}
                   placementId={props.view.ref.placementId}
                   view={props.view}
-                  sessionHarness={props.view.row()?.harness}
                   attachmentWorkspace={true}
                   hidden={blocked()}
                   afterAccepted={() => {

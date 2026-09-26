@@ -88,7 +88,6 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     selection,
     harness,
     picked,
-    catalogSelected,
     catalog,
     polling: isPolling,
     availability,

@@ -19,6 +19,7 @@ function hydrator(runtime: { folder?: () => Promise<HarnessState | undefined>; c
     markServer: (scope) => void events.push(`server ${scope}`),
     applyStatus: async (scope, data) => void events.push(`status ${scope} ${JSON.stringify(data.type)}`),
     setPollingHydration: (scope, type) => void events.push(`polling ${scope} ${JSON.stringify(type)}`),
+    setKnownHydration: (scope, type, model) => void events.push(`known ${scope} ${JSON.stringify(type)} ${model?.modelId ?? "no model"}`),
     setReadyHydration: (scope, type, options) => void events.push(`ready ${scope} ${JSON.stringify(type)}${options === false ? " without options" : ""}`),
     fetchConfigOptions: async (scope) => void events.push(`options ${scope}`),
     runtime: {
@@ -50,7 +51,7 @@ test("hydrator: a session reads its own config, and an unreadable one keeps the 
   expect(good.events).toEqual(["server session:s1", `status session:s1 ${JSON.stringify(claude)}`])
   const failing = hydrator({ config: async () => Promise.reject(new TypeError("fetch failed")) })
   await failing.hydrator.hydrate("session:s1", { placementId, sessionId: "s1", sessionRef, sessionHarness: codex })
-  expect(failing.events).toEqual(["server session:s1", `polling session:s1 ${JSON.stringify(codex)}`])
+  expect(failing.events).toEqual(["server session:s1", `known session:s1 ${JSON.stringify(codex)} no model`, `polling session:s1 ${JSON.stringify(codex)}`])
 })
 
 test("hydrator: a cancel retires the read in flight, and a reprobe runs again", async () => {
