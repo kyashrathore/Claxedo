@@ -19,7 +19,7 @@ export function sameOrigin(a: string, b: string): boolean {
   return left.origin === right.origin
 }
 
-export function hostOf(url: string): string {
+export function displayHost(url: string): string {
   return URL.canParse(url) ? new URL(url).host || url : url
 }
 

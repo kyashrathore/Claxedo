@@ -2,7 +2,7 @@ import type { AccountBinding, AccountSession } from "./binding"
 import type { BrowserAuthAdapter } from "./browser-auth"
 import { apiOrigin, appOrigin, serverIssuesSessions } from "./origins"
 
-function start(adapter: BrowserAuthAdapter) {
+function startBrowserAuth(adapter: BrowserAuthAdapter) {
   adapter
     .initialize({ apiOrigin: apiOrigin(), appOrigin: appOrigin(), issuesSessions: serverIssuesSessions() })
     .catch((error: unknown) => console.error("Browser sign-in could not start", { error }))
@@ -12,7 +12,7 @@ export function browserAccountBinding(adapter: BrowserAuthAdapter): AccountBindi
   return {
     open: (): AccountSession => {
       const browser = adapter.useAuth()
-      start(adapter)
+      startBrowserAuth(adapter)
       return {
         methods: browser.methods,
         user: browser.user,

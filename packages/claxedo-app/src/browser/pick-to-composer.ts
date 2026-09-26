@@ -3,14 +3,14 @@ import { useActiveSession } from "@/files"
 import { useTranslator, type DomainTranslate } from "@/i18n"
 import { browserDictionary, type BrowserKey } from "./i18n"
 import type { PickedElement } from "./model"
-import { hostOf } from "./url"
+import { displayHost } from "./url"
 
 const SNIPPET_MAX_CHARS = 600
 
 export type PickDelivery = (pick: PickedElement) => boolean
 
 function pickLabel(t: DomainTranslate<BrowserKey>, pick: PickedElement): string {
-  return t("browser.pick.label", { tag: pick.tagName, host: hostOf(pick.pageUrl) })
+  return t("browser.pick.label", { tag: pick.tagName, host: displayHost(pick.pageUrl) })
 }
 
 function pickText(pick: PickedElement): string {

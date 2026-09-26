@@ -46,7 +46,7 @@ export function QuotaWindowMeter(props: { readonly account: string; readonly win
   )
 }
 
-function accountLabel(account: QuotaAccount): string {
+function quotaAccountLabel(account: QuotaAccount): string {
   return account.label ?? account.harness
 }
 
@@ -57,17 +57,17 @@ export function QuotaWindows(props: { readonly accounts: readonly QuotaAccount[]
       <Show when={props.accounts.length > 0} fallback={<p class="usage-note">{t("usage.quota.empty")}</p>}>
         <For each={props.accounts}>
           {(account) => (
-            <article class="usage-card" aria-label={accountLabel(account)}>
+            <article class="usage-card" aria-label={quotaAccountLabel(account)}>
               <header class="usage-card-head">
                 <ProviderIcon id={HARNESS_ICON[account.harness] ?? account.harness} class="size-4 shrink-0 icon-strong-base" />
-                <span class="usage-card-title">{accountLabel(account)}</span>
+                <span class="usage-card-title">{quotaAccountLabel(account)}</span>
                 <Show when={account.plan}>{(plan) => <span class="usage-card-meta">{plan()}</span>}</Show>
                 <Show when={account.inUse}>
                   <span class="usage-card-badge">{t("usage.quota.inUse")}</span>
                 </Show>
               </header>
               <Show when={account.usageError}>{(error) => <p class="usage-note" data-tone="danger">{error()}</p>}</Show>
-              <For each={account.windows}>{(window) => <QuotaWindowMeter account={accountLabel(account)} window={window} />}</For>
+              <For each={account.windows}>{(window) => <QuotaWindowMeter account={quotaAccountLabel(account)} window={window} />}</For>
             </article>
           )}
         </For>

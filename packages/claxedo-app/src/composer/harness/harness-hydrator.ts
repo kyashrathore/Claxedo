@@ -55,7 +55,7 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
   const runs = createRunTracker(input.cache)
   const hydrate = async (scope: string, params?: ScopeInput) => {
     input.seed(scope)
-    const key = stamp(params)
+    const key = scopeStamp(params)
     const existingSession = !!params?.sessionId && params.sessionId !== "new"
     if (existingSession && input.state(scope)?.heldFrom) return
     if (existingSession) input.markServer?.(scope)
@@ -65,7 +65,7 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
       const placementId = params?.placementId
       if (!params || !placementId) return
       const run = { scope, key, params, placementId, draftDefault, active }
-      await (existingSession ? hydrateSession(input, run) : hydrateDraft(input, run))
+      await (existingSession ? hydrateSessionHarness(input, run) : hydrateDraft(input, run))
     })
   }
   return {
@@ -119,7 +119,7 @@ async function hydrateDraft<ScopeInput extends HarnessScopeInput>(input: Hydrato
   if (active()) input.cache.setSeen(scope, run.key)
 }
 
-async function hydrateSession<ScopeInput extends HarnessScopeInput>(input: HydratorInput<ScopeInput>, run: Run<ScopeInput>) {
+async function hydrateSessionHarness<ScopeInput extends HarnessScopeInput>(input: HydratorInput<ScopeInput>, run: Run<ScopeInput>) {
   const known = run.params.sessionHarness
   if (known && !input.state(run.scope)?.harness) input.setKnownHydration(run.scope, known, run.params.sessionModel?.())
   const data = await readHarnessStatus(input, run.params)
@@ -176,7 +176,7 @@ async function readSessionHarness<ScopeInput extends HarnessScopeInput>(input: H
   return undefined
 }
 
-function stamp(input?: HarnessScopeInput) {
+function scopeStamp(input?: HarnessScopeInput) {
   if (input?.sessionId && input.sessionId !== "new") {
     return [`session:${input.sessionId}`, input.placementId ?? "", input.sessionHarness ? JSON.stringify(input.sessionHarness) : ""].join("\n")
   }
