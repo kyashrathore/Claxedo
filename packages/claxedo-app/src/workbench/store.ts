@@ -4,9 +4,11 @@ import { isRecord } from "@/lib/record"
 import type { AnyPaneKind, Json, PaneKind, PaneRoute } from "@/shell"
 import { constructWorkbenchState } from "./construct"
 import { createDragController, type DragController } from "./drag/pointer-drag"
+import { createHandover, type Handing } from "./handover"
 import { createLayoutApi, type WorkbenchApi } from "./layout-api"
 import { createPaneApi, type PaneApi } from "./pane-api"
 import { reducers } from "./reducers/index"
+import { createRevealHolds, type RevealHolds } from "./reveal-holds"
 import { selectors } from "./selectors"
 import type { WorkbenchState } from "./types"
 import { validate } from "./validate"
@@ -33,6 +35,8 @@ export type WorkbenchStore = WorkbenchApi &
   readonly move: (tabId: string, index: number) => void
   readonly onClosed: <State>(kind: PaneKind<State>, listener: (state: State) => void) => () => void
   readonly drag: DragController
+  readonly holds: RevealHolds
+  readonly handing: Accessor<Handing | undefined>
 }
 
 function closeContentReducer(state: WorkbenchState, contentId: string): WorkbenchState {
@@ -180,6 +184,8 @@ export function createWorkbenchStore(key: string, kinds: Accessor<readonly AnyPa
   const open = createOpen({ record, setRecord, apply, keyOf })
 
   const closeContent = (contentId: string) => apply((s) => closeContentReducer(s, contentId))
+  const holds = createRevealHolds()
+  const handing = createHandover({ layout, revealed: holds.revealed })
 
   return {
     ...createPaneApi({ layout, content, open, apply, closeContent }),
@@ -195,6 +201,8 @@ export function createWorkbenchStore(key: string, kinds: Accessor<readonly AnyPa
     move: (tabId, index) => apply((s) => reducers.contents.reorder(s, tabId, index)),
     onClosed: closed.add,
     drag: createDragController(),
-    ...createLayoutApi(layout, apply),
+    holds,
+    handing,
+    ...createLayoutApi(layout, apply, handing),
   }
 }

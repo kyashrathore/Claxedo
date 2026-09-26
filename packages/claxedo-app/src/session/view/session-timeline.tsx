@@ -1,4 +1,4 @@
-import { createMemo, Show } from "solid-js"
+import { createMemo, Show, type Accessor } from "solid-js"
 import { usePhone } from "@/lib/viewport"
 import { sessionId, useServer } from "@/server"
 import type { SessionView } from "@/session"
@@ -6,6 +6,7 @@ import { sessionLinkPath } from "@/shell"
 import { DataProvider, TranscriptKitProviders, type TranscriptUserMessage } from "@/transcript"
 import { MessageTimeline, type SessionErrorClass, type TimelineHost } from "./timeline"
 import type { TimelineScroll } from "./timeline-scroll"
+import { SessionTimelineSkeleton } from "./session-timeline-skeleton"
 import { subagentViews } from "./subagent-views"
 import { useSessionScreenText } from "./text"
 import "./transcript-kit.css"
@@ -19,6 +20,7 @@ export function userMessages(view: SessionView): TranscriptUserMessage[] {
 
 export function SessionTimeline(props: {
   readonly view: SessionView
+  readonly firstView: Accessor<boolean>
   readonly host: TimelineHost
   readonly active: boolean
   readonly onScreen: boolean
@@ -46,7 +48,7 @@ export function SessionTimeline(props: {
         }
         resolveSubagents={resolveSubagents}
       >
-        <Show when={props.view.conversation()}>
+        <Show when={props.firstView()} fallback={<SessionTimelineSkeleton centered={!phone()} sessionId={props.view.ref.sessionId} />}>
           <MessageTimeline
             {...props.scroll.props}
             host={props.host}

@@ -1,4 +1,3 @@
-import { createEffect, untrack } from "solid-js"
 import type { SessionView } from "@/session"
 
 const TOP_THRESHOLD = 200
@@ -10,8 +9,6 @@ export function createHistoryPaging(input: {
   readonly scroller: () => HTMLElement | undefined
   readonly userScrolled: () => boolean
   readonly anchor: () => HistoryAnchor
-  readonly active: () => boolean
-  readonly wantsOlder: () => boolean
 }) {
   const loadOlder = async () => {
     const view = input.view()
@@ -21,16 +18,6 @@ export function createHistoryPaging(input: {
     await view.loadOlder()
     anchor.restore()
   }
-  const filled = new WeakSet<SessionView>()
-  createEffect(() => {
-    const view = input.view()
-    if (!input.active() || filled.has(view) || !view.conversation()) return
-    filled.add(view)
-    if (!view.hasOlder() || untrack(view.olderPagesLoaded) > 0 || !untrack(input.wantsOlder)) return
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      if (input.view() === view && input.active()) void loadOlder()
-    }))
-  })
   return {
     onScroll: () => {
       const el = input.scroller()

@@ -3,7 +3,7 @@ import { useTranslator } from "@/i18n"
 import { useProjectList } from "@/projects"
 import { useServer } from "@/server"
 import { useSessionStores, type SessionRowView } from "@/session"
-import { draftPath, sessionLinkPath, useShellRoute } from "@/shell"
+import { draftPath, panePlacementOf, sessionLinkPath, useShellRoute } from "@/shell"
 import { terminalPaneKind, useTerminals } from "@/terminal"
 import { useWorkbench } from "@/workbench"
 import { railDictionary } from "../i18n"
@@ -24,19 +24,23 @@ export function ProjectTree(): JSX.Element {
   const sectionByKey = createMemo(() => new Map(sections().map((section) => [section.key, section])))
   const grouped = createMemo(() => sessionIdsByProject(stores.list.order()))
   const sessionIdsOf = (section: ProjectSection) => (section.projectId ? grouped().get(section.projectId) : undefined) ?? []
+  const workbench = useWorkbench()
+  const shown = createMemo(() => {
+    const content = routing.placementId() ? workbench.selectors.shownContent() : null
+    return content ? workbench.routeOf(content) : undefined
+  })
   const activeProjectId = createMemo(() => {
-    const placement = routing.placementId()
+    const placement = panePlacementOf(shown())
     return placement ? server.placements.byId(placement)?.projectId : undefined
   })
   const activeSessionId = () => {
-    const route = routing.route()
-    return route.kind === "session" ? route.sessionId : undefined
+    const pane = shown()
+    return pane?.kind === "session" ? pane.sessionId : undefined
   }
   const activeTerminalId = () => {
-    const route = routing.route()
-    return route.kind === "terminal" ? route.terminalId : undefined
+    const pane = shown()
+    return pane?.kind === "terminal" ? pane.terminalId : undefined
   }
-  const workbench = useWorkbench()
   const prepareDrag = (row: RailRow) =>
     row.kind === "session"
       ? workbench.openRoute({ kind: "session", ...row.session.ref }, false)
@@ -48,7 +52,8 @@ export function ProjectTree(): JSX.Element {
     if (section.placementId) routing.navigate(draftPath(section.placementId))
   }
   const archive = async (section: ProjectSection, row: SessionRowView) => {
-    if (activeSessionId() === row.ref.sessionId) {
+    const route = routing.route()
+    if (route.kind === "session" && route.sessionId === row.ref.sessionId) {
       const nextId = siblingAfterArchive(sessionIdsOf(section), row.ref.sessionId)
       const next = nextId ? stores.list.view(nextId) : undefined
       if (next) openSession(next)

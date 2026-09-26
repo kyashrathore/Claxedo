@@ -167,7 +167,7 @@ export function CompactSwitcher(): JSX.Element {
   useActiveScroll(
     () => strip,
     () => {
-      const focused = workbench.selectors.focusedContent()
+      const focused = workbench.selectors.shownContent()
       return focused ? elements.get(focused) : undefined
     },
   )
@@ -185,7 +185,7 @@ export function CompactSwitcher(): JSX.Element {
             {(item) => (
               <SwitcherTab
                 item={item()}
-                active={workbench.selectors.focusedContent() === contentId}
+                active={workbench.selectors.shownContent() === contentId}
                 hint={hint(index())}
                 onElement={(element) => {
                   elements.set(contentId, element)

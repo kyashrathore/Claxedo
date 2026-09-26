@@ -61,14 +61,61 @@ type TimelineCoverage = {
   rowCount: number;
 };
 
-type PaintStabilityFrame = {
-  atMs: number;
+export type PaintSettleFrame = {
+  /** `performance.now()` right after this frame's sample was taken. */
+  observedAtMs: number;
   ready: boolean;
+  signature?: Record<string, unknown>;
+  /** A childList or characterData mutation inside the timeline root arrived since the previous frame. */
+  mutated: boolean;
+};
+
+type PaintStabilityFrame = PaintSettleFrame & {
+  atMs: number;
   /** Harness JS plus any synchronous style/layout forced by semantic reads. */
   observerSampleMs: number;
-  signature?: Record<string, unknown>;
   diagnostic?: Record<string, unknown>;
 };
+
+/**
+ * Unchanged frames that confirm a settle. A 60 fps recording of the switch
+ * put the last visible change 90-150 ms after the first content (a tail-only
+ * first view, then the prepended older page, once a placeholder flash), and a
+ * follow-up read lands 30-100 ms after the first. Fifteen frames at 60 Hz is
+ * 250 ms, past both. Counted in frames, not wall time, so a display below
+ * 60 Hz widens the window rather than narrowing it.
+ */
+export const PAINT_SETTLE_CONFIRMATION_FRAMES = 15;
+
+/**
+ * The visual settle of a switched session: the first frame of the final run of
+ * `confirmationFrames + 1` consecutive ready frames with one signature and no
+ * timeline mutation between them. The reported time is that first frame's
+ * observation, so the confirmation window is never charged to the product.
+ * The in-page observer is stringified into the renderer and cannot import
+ * this, so it applies the same rule inline and its answer is checked here.
+ */
+export function paintSettle(
+  frames: readonly PaintSettleFrame[],
+  confirmationFrames: number,
+): { settledAtMs: number; runStartIndex: number } | undefined {
+  let run: { startIndex: number; signature: string } | undefined;
+  for (let index = 0; index < frames.length; index++) {
+    const frame = frames[index]!;
+    if (!frame.ready || frame.signature === undefined) {
+      run = undefined;
+      continue;
+    }
+    const signature = JSON.stringify(frame.signature);
+    if (!run || frame.mutated || signature !== run.signature) {
+      run = { startIndex: index, signature };
+    }
+    if (index - run.startIndex >= confirmationFrames) {
+      return { settledAtMs: frames[run.startIndex]!.observedAtMs, runStartIndex: run.startIndex };
+    }
+  }
+  return undefined;
+}
 
 export type PaintedMessage = {
   messageId: string;
@@ -232,8 +279,9 @@ function readPaintedMessage(value: unknown): Omit<PaintedMessage, "contentSha256
 function readPaintStabilityFrame(value: unknown): PaintStabilityFrame {
   const record = readRecord(value);
   return {
-    ...readNumberFields(record, ["atMs", "observerSampleMs"]),
+    ...readNumberFields(record, ["atMs", "observedAtMs", "observerSampleMs"]),
     ready: readBoolean(record.ready),
+    mutated: readBoolean(record.mutated),
     signature: optionalRecord(record.signature),
     diagnostic: optionalRecord(record.diagnostic),
   };
@@ -417,15 +465,18 @@ export async function installAgentBrowserObserver(page: {
  * Windows a side observation to exactly the interval the duration covers.
  *
  * A CPU profile of a session switch is only readable if it starts at the
- * trusted click and ends at the stable paint. Started any earlier it also
- * contains sidebar pagination — fixture discovery the measured duration
+ * trusted click and ends once the settle is confirmed. Started any earlier it
+ * also contains sidebar pagination — fixture discovery the measured duration
  * deliberately excludes — and every frame of that shows up as app cost that
  * no user pays.
  */
 export type ActivationHooks = {
   /** After the action is armed, before the trusted click. */
   onArmed?: () => Promise<void>
-  /** As soon as the stable painted frame is observed. */
+  /**
+   * Once the settle is confirmed, `PAINT_SETTLE_CONFIRMATION_FRAMES` after
+   * the reported paint; the profile window is that much longer than the duration.
+   */
   onPainted?: () => Promise<void>
   readinessTimeoutMs?: number
 }
@@ -444,20 +495,21 @@ export async function measureSessionActivation(
     token,
   );
   await hooks?.onArmed?.();
-  // Install the semantic paint observer before the trusted pointerdown. The
-  // old order clicked, waited for a locator in Node, then made another browser
-  // round trip before sampling; if the app painted during that gap, the clock
-  // still charged two later confirmation frames to the product.
+  // Installed before the trusted pointerdown: a frame the app paints during a
+  // Node round trip would be missing from the settle run, and the mutation
+  // observer must see every timeline mutation from the click on.
   const stablePaintPromise = page.evaluate(
     ({
       id,
       expectedMessageIds,
       readinessTimeoutMs,
+      confirmationFrames,
     }: {
       id: string;
       expectedMessageIds: string[];
       expectedContentSha256: Record<string, string>;
       readinessTimeoutMs: number;
+      confirmationFrames: number;
     }) =>
       new Promise<{
         paintedAtMs: number;
@@ -468,8 +520,47 @@ export async function measureSessionActivation(
         (resolve, reject) => {
           const expected = new Set(expectedMessageIds);
           const deadline = performance.now() + readinessTimeoutMs;
-          let previousSignature: string | undefined;
           const frames: PaintStabilityFrame[] = [];
+          let run:
+            | {
+                startIndex: number;
+                startedAtMs: number;
+                signature: string;
+                sample: {
+                  paintedMessage: Omit<PaintedMessage, "contentSha256">;
+                  contentText: string;
+                };
+              }
+            | undefined;
+          // The target's timeline root may not exist before the click, so the
+          // whole document is observed and records are attributed by ancestry.
+          let timelineMutations = 0;
+          const countTimelineMutations = (records: MutationRecord[]) => {
+            for (const record of records) {
+              const node = record.target;
+              const element =
+                node instanceof Element ? node : node.parentElement;
+              const timeline = element?.closest<HTMLElement>(
+                "[data-session-timeline-root]",
+              );
+              const root = timeline?.closest<HTMLElement>(
+                '[data-testid="session-page-root"]',
+              );
+              if (root?.dataset.sessionId === id) timelineMutations++;
+            }
+          };
+          const mutations = new MutationObserver(countTimelineMutations);
+          mutations.observe(document.documentElement, {
+            childList: true,
+            characterData: true,
+            subtree: true,
+          });
+          const takeTimelineMutations = () => {
+            countTimelineMutations(mutations.takeRecords());
+            const count = timelineMutations;
+            timelineMutations = 0;
+            return count;
+          };
           const hashText = (value: string) => {
             let hash = 2_166_136_261;
             for (let index = 0; index < value.length; index++) {
@@ -572,7 +663,20 @@ export async function measureSessionActivation(
               expectedRows,
               documentFocused: document.hasFocus(),
               documentVisibility: document.visibilityState,
-              previousSignature,
+              run: run
+                ? {
+                    startIndex: run.startIndex,
+                    startedAtMs: run.startedAtMs,
+                    length: frames.length - run.startIndex,
+                    signature: run.signature,
+                  }
+                : undefined,
+              frameCount: frames.length,
+              lastFrames: frames.slice(-4).map((frame) => ({
+                atMs: frame.atMs,
+                ready: frame.ready,
+                mutated: frame.mutated,
+              })),
             };
           };
           const sample = ():
@@ -651,11 +755,15 @@ export async function measureSessionActivation(
             if (!composerVisibleAndEnabled || !surfaceFocused) return undefined;
             // KTD11: app-specific progressive and staged-ready markers never
             // end the neutral clock. Canonical DOM content, generic geometry,
-            // composer usability, focus, and two equal frames are sufficient.
+            // composer usability, focus, and an unchanged run of frames are
+            // sufficient. A loading placeholder only holds the clock open.
+            if (candidate.querySelector("[data-session-timeline-loading]"))
+              return undefined;
             const timeline = candidate.querySelector<HTMLElement>(
               "[data-session-timeline-root]",
             );
-            if (!timeline) return undefined;
+            if (!timeline || timeline.querySelector('[data-slot="skeleton"]'))
+              return undefined;
             const viewport = timeline.querySelector<HTMLElement>(
               '[data-slot="session-timeline-scroll"] [data-scrollable]',
             );
@@ -674,9 +782,10 @@ export async function measureSessionActivation(
                 bounds.top < view.bottom
               );
             };
-            const virtualRows = [
+            const mountedRows = [
               ...viewport.querySelectorAll<HTMLElement>("[data-timeline-key]"),
-            ]
+            ];
+            const virtualRows = mountedRows
               .filter(visible)
               .sort(
                 (left, right) =>
@@ -730,7 +839,6 @@ export async function measureSessionActivation(
               !messageId ||
               (kind !== "UserMessage" && kind !== "AssistantPart") ||
               text.length === 0 ||
-              row.querySelector('[data-slot="skeleton"]') ||
               !completeFirstFold
             )
               return undefined;
@@ -752,6 +860,12 @@ export async function measureSessionActivation(
               scrollHeight: viewport.scrollHeight,
               clientHeight: viewport.clientHeight,
               timelineCoverage,
+              rootOpacity: getComputedStyle(candidate).opacity,
+              timelineOpacity: getComputedStyle(timeline).opacity,
+              mountedRowCount: mountedRows.length,
+              mountedKeysHash: hashText(
+                mountedRows.map((item) => item.dataset.timelineKey ?? "").join("\n"),
+              ),
               rows: virtualRows.map((item) => {
                 const bounds = item.getBoundingClientRect();
                 const rowText = item.innerText.trim();
@@ -806,33 +920,49 @@ export async function measureSessionActivation(
               virtualKeys: timeline?.dataset.sessionTimelineKeyCount,
             };
           };
-          const frame = (paintedAtMs: number) => {
+          const frame = (frameAtMs: number) => {
             const observerStartedAtMs = performance.now();
             const current = sample();
+            // Observation time, not the frame's scheduled timestamp: a late frame's
+            // rAF argument precedes the moment the sample is actually seen.
+            const observedAtMs = performance.now();
+            const mutated = takeTimelineMutations() > 0;
             const diagnostic = current || !(window as Window & { __claxedoPerfTrace?: boolean }).__claxedoPerfTrace ? undefined : notReadyDiagnostic();
+            const index = frames.length;
             frames.push({
-              atMs: paintedAtMs,
+              atMs: frameAtMs,
+              observedAtMs,
               ready: !!current,
-              observerSampleMs: performance.now() - observerStartedAtMs,
+              mutated,
+              observerSampleMs: observedAtMs - observerStartedAtMs,
               signature: current?.signatureValue,
               diagnostic,
             });
-            if (current && current.signature === previousSignature) {
+            if (!current) {
+              run = undefined;
+            } else if (!run || mutated || current.signature !== run.signature) {
+              run = {
+                startIndex: index,
+                startedAtMs: observedAtMs,
+                signature: current.signature,
+                sample: { paintedMessage: current.paintedMessage, contentText: current.contentText },
+              };
+            }
+            if (run && index - run.startIndex >= confirmationFrames) {
+              mutations.disconnect();
               resolve({
-                // Observation time, not the frame's scheduled timestamp: a late frame's
-                // rAF argument precedes the moment the stable sample is actually seen.
-                paintedAtMs: performance.now(),
-                paintedMessage: current.paintedMessage,
-                contentText: current.contentText,
+                paintedAtMs: run.startedAtMs,
+                paintedMessage: run.sample.paintedMessage,
+                contentText: run.sample.contentText,
                 frames,
               });
               return;
             }
-            previousSignature = current?.signature;
             if (performance.now() >= deadline) {
+              mutations.disconnect();
               reject(
                 new Error(
-                  `Claxedo timeline did not paint a stable canonical latest-turn message: ${JSON.stringify(timeoutDiagnostic())}`,
+                  `Claxedo timeline did not settle on a canonical latest-turn message: ${JSON.stringify(timeoutDiagnostic())}`,
                 ),
               );
               return;
@@ -847,6 +977,7 @@ export async function measureSessionActivation(
       expectedMessageIds: [...target.expectedMessageIds],
       expectedContentSha256: { ...target.expectedContentSha256 },
       readinessTimeoutMs: hooks?.readinessTimeoutMs ?? 30_000,
+      confirmationFrames: PAINT_SETTLE_CONFIRMATION_FRAMES,
     },
   );
   await clickVisibleSessionActivation(page, target.sessionId);
@@ -877,6 +1008,13 @@ export async function measureSessionActivation(
       state: "invalid",
       reason: "visible-real-message-missing-after-stable-paint",
     };
+  const settle = paintSettle(stablePaint.frames, PAINT_SETTLE_CONFIRMATION_FRAMES);
+  if (settle?.settledAtMs !== stablePaint.paintedAtMs) {
+    return {
+      state: "invalid",
+      reason: `paint-settle-mismatch:${JSON.stringify({ reported: stablePaint.paintedAtMs, verified: settle })}`,
+    };
+  }
   if (!paintedMessage || !semanticTimelinePaintReady(paintedMessage, target)) {
     return {
       state: "invalid",

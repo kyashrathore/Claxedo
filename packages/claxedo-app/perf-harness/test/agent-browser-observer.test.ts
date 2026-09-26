@@ -1,11 +1,82 @@
 import { describe, expect, test } from "bun:test"
 import {
+  PAINT_SETTLE_CONFIRMATION_FRAMES,
   completeFirstFold,
+  paintSettle,
   paintedContentVerification,
   seededSwitchSequence,
   semanticTimelinePaintReady,
   warmSwitchPlan,
+  type PaintSettleFrame,
 } from "../src/agent-browser-observer"
+
+const FRAME_MS = 1000 / 60
+
+function frame(index: number, signature: string | undefined, mutated = false): PaintSettleFrame {
+  return {
+    observedAtMs: 100 + index * FRAME_MS,
+    ready: signature !== undefined,
+    signature: signature === undefined ? undefined : { rows: signature },
+    mutated,
+  }
+}
+
+function frames(spec: string): PaintSettleFrame[] {
+  return [...spec].map((code, index) => {
+    if (code === ".") return frame(index, undefined)
+    if (code === "!") return frame(index, "a", true)
+    return frame(index, code)
+  })
+}
+
+describe("paint settle", () => {
+  const confirm = 3
+
+  test("confirms fifteen unchanged frames, 250 ms at 60 Hz", () => {
+    expect(PAINT_SETTLE_CONFIRMATION_FRAMES).toBe(15)
+    expect(PAINT_SETTLE_CONFIRMATION_FRAMES * FRAME_MS).toBeGreaterThanOrEqual(250)
+  })
+
+  test("reports the first frame of the final run, not the confirming frame", () => {
+    const settled = paintSettle(frames("..aaaa"), confirm)
+    expect(settled).toEqual({ settledAtMs: frame(2, "a").observedAtMs, runStartIndex: 2 })
+  })
+
+  test("does not settle while the run is shorter than the confirmation window", () => {
+    expect(paintSettle(frames("..aaa"), confirm)).toBeUndefined()
+    expect(paintSettle(frames(""), confirm)).toBeUndefined()
+    expect(paintSettle(frames("......"), confirm)).toBeUndefined()
+  })
+
+  test("a tail-only first view followed by a prepend settles at the prepended view", () => {
+    const settled = paintSettle(frames(".aabbbb"), confirm)
+    expect(settled).toEqual({ settledAtMs: frame(3, "b").observedAtMs, runStartIndex: 3 })
+  })
+
+  test("a placeholder flash back to the same content restarts the run", () => {
+    const settled = paintSettle(frames("aaa.aaaa"), confirm)
+    expect(settled).toEqual({ settledAtMs: frame(4, "a").observedAtMs, runStartIndex: 4 })
+  })
+
+  test("a mutation-only frame with an unchanged signature restarts the run", () => {
+    const sequence = frames("aaa!aaaa")
+    expect(sequence[3]).toMatchObject({ ready: true, mutated: true, signature: { rows: "a" } })
+    expect(paintSettle(sequence, confirm)).toEqual({ settledAtMs: frame(3, "a").observedAtMs, runStartIndex: 3 })
+    expect(paintSettle(frames("aaa!aa"), confirm)).toBeUndefined()
+  })
+
+  test("signature comparison is by value across the JSON boundary", () => {
+    const sequence = frames("aaaa").map((entry) => ({ ...entry, signature: { rows: [["k1", 12, 0.5]], scrollTop: 10 } }))
+    expect(paintSettle(sequence, confirm)?.runStartIndex).toBe(0)
+    const shifted = sequence.map((entry, index) => (index === 2 ? { ...entry, signature: { ...entry.signature, scrollTop: 11 } } : entry))
+    expect(paintSettle(shifted, confirm)).toBeUndefined()
+  })
+
+  test("the earliest complete run wins even when a later change follows", () => {
+    const settled = paintSettle(frames("aaaab"), confirm)
+    expect(settled?.runStartIndex).toBe(0)
+  })
+})
 
 describe("agent browser scenario ordering", () => {
   test("rejects an overflowing first fold whose mounted rows leave a blank gap", () => {

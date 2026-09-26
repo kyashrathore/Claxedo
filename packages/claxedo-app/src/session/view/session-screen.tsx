@@ -7,7 +7,7 @@ import { usePanel } from "@/panel"
 import { useSessionStores, type SessionView } from "@/session"
 import { sessionPath, useCommands, useShellRoute, type PaneProps } from "@/shell"
 import { useDialog } from "@/ui"
-import { useWorkbench } from "@/workbench"
+import { holdPaneReveal, useWorkbench } from "@/workbench"
 import { createQueueEdit } from "./queue-edit"
 import { createTodoDock, SessionDocks, TodoDockSlot } from "./session-docks"
 import { SessionTimeline, userMessages } from "./session-timeline"
@@ -16,6 +16,7 @@ import { useSessionScreenText, type SessionScreenText } from "./text"
 import { createTimelineHost } from "./timeline-host"
 import { createTimelineScroll } from "./timeline-scroll"
 import { createDockFollow } from "./dock-follow"
+import { createFirstView } from "./first-view"
 import { SessionTimelineSkeleton } from "./session-timeline-skeleton"
 import { installSessionScreenKeydown } from "./session-screen-keydown"
 import { SessionConnectionLine } from "./connection-line"
@@ -77,6 +78,7 @@ function SessionBody(props: {
     const status = props.view.status()
     return status.kind !== "unknown" && turnActive(status)
   }
+  const firstView = createFirstView(() => props.view)
   const scroll = createTimelineScroll({ view: () => props.view, active: () => props.active, working })
   const todo = createTodoDock(() => props.view)
   const blocked = () => props.view.requests().length > 0
@@ -124,7 +126,7 @@ function SessionBody(props: {
           data-session-transcript-collapsed={transcriptCollapsed() ? "true" : undefined}
           classList={{ "session-floating-timeline": props.floating, "session-floating-timeline-collapsed": transcriptCollapsed() }}
         >
-          <SessionTimeline view={props.view} host={host} active={props.active} onScreen={!transcriptCollapsed()} scroll={scroll} onRecover={recovery.recover} />
+          <SessionTimeline view={props.view} firstView={firstView} host={host} active={props.active} onScreen={!transcriptCollapsed()} scroll={scroll} onRecover={recovery.recover} />
         </div>
       </div>
       <div
@@ -178,6 +180,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
   const floating = () => !props.readOnly && panel.maximized() && props.active
   const view = createMemo(() => stores.open(props.sessionRef))
   commitDeltasEachFrame(view)
+  holdPaneReveal(() => view().state().kind === "loading")
   const failure = () => {
     const state = view().state()
     return state.kind === "failed" ? state : undefined

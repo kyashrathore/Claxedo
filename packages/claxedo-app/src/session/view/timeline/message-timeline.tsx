@@ -34,6 +34,7 @@ import {
   WorkGroup,
 } from "@/transcript"
 import { isPhoneWidth } from "@/lib/viewport"
+import { holdPaneReveal } from "@/workbench"
 import { ClaxedoIcon as Icon, FileIcon, ScrollView, resolveTranscriptTypography, transcriptTypographyStyle, showToast } from "@/ui"
 import { Binary, getFilename } from "@/ui/utils"
 import { ClaxedoSessionRetry } from "./claxedo-session-retry"
@@ -502,6 +503,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const [initialRevealReady, setInitialRevealReady] = createSignal(warmMeasurements || initialRowCount === 0)
   const [progressiveReady, setProgressiveReady] = createSignal(warmMeasurements || initialRowCount === 0)
   const messageNavMountReady = createMessageNavDeferredMount(props.active, initialRevealReady, messageNavGutterVisible)
+  holdPaneReveal(() => !initialRevealReady() || timelineRows().some((row) => row._tag === "TurnLoading") || (messageNavGutterVisible() && !messageNavMountReady()))
   let initialRowsScheduled = initialRowCount > 0
   let cancelFirstFoldReveal: (() => void) | undefined
   const prepareScrollOverscan = () => {

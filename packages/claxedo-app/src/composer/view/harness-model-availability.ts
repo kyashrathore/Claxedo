@@ -1,4 +1,5 @@
 import { createMemo, type Accessor } from "solid-js"
+import { holdPaneReveal } from "@/workbench"
 import type { HarnessSelectionSnapshot } from "../harness/controller"
 import { isCatalogHarness, type HarnessType } from "../harness/profile"
 import { connectionAllowsNoModel } from "../harness/selection"
@@ -35,6 +36,7 @@ export function createModelAvailability(input: ModelAvailabilityInput) {
   const isStale = () => input.selection().optionsStale
   const optionsLoading = () => input.selection().optionsLoading
   const modelLoading = createMemo(() => input.harness() && isCatalogHarness(input.harness()) ? input.catalog.providers.loading() : optionsLoading())
+  holdPaneReveal(modelLoading)
   const hasModelOptions = createMemo(() => input.rows().length > 0)
   const managedDefaultModel = createManagedDefaultModel(input)
   const modelUnavailable = createMemo(() => {
