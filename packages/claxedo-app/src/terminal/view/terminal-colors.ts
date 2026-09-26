@@ -1,4 +1,4 @@
-import { withAlpha, type HexColor } from "@opencode-ai/ui/theme"
+import { withAlpha, type HexColor } from "@/ui/utils"
 import { TERMINAL_FONT_FAMILY } from "../backend/options"
 import type { TerminalColors } from "../backend/types"
 
