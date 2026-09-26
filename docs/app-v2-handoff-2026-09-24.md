@@ -1,6 +1,13 @@
 # App v2 rebuild — handoff (2026-09-24)
 
-**Where it stands (2026-09-26 05:40, feat/app-v2 4da233314a).** v2 runs on today's server next to today's app, and is ready for the owner's test on 4480 against v1 on 4481. Nothing is pushed, `packages/claxedo-app` is untouched, and there is no swap.
+**Where it stands (2026-09-26 09:00, feat/app-v2 408f741e08).** v2 runs on today's server next to today's app, and is ready for the owner's test on 4480 against v1 on 4481. Nothing is pushed, `packages/claxedo-app` is untouched, and there is no swap.
+
+- **Landed after 05:40:**
+  - app plugin MCP tools with owner-only provenance and every harness connected (446612923c);
+  - the packaged plugin toolchain isolated from SDK dependencies, which fixed desktop packaging (64e642b9ac);
+  - `data-shell-settled` restored for the benchmark driver, deferred past boot (84c53820a6);
+  - the cold session-switch regression from 9023e8c2f4 fixed, 42.5 → 26.8 ms (408f741e08).
+- **Still owed:** a publication benchmark run on AC with a quiet host. Indicative run 3 ran on battery and found the two defects above.
 
 - **Verified on 4da233314a:**
   - in `packages/claxedo-app-v2`: `bun run typecheck`, `typecheck:e2e`, `test` (183 pass), `build`, and `check` (21 of 21 steps, including the new freshness and css-invalidation checks);
