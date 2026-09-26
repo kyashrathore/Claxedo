@@ -86,7 +86,8 @@ function proofProvider(extra: Record<string, unknown> = {}, models: Record<strin
 
 function transport(services: ConstructorParameters<typeof OpenCodeSdkTransport>[0], state: OpenCodeBackend,
   config: Record<string, unknown> = {}) {
-  return new OpenCodeSdkTransport(services, { databasePath: path.join(state.root, "opencode.db"),
+  return new OpenCodeSdkTransport(services, { login: { placement: "loopback", machineOwnerUserId: "machine", canUseOwnLogin: true },
+    databasePath: path.join(state.root, "opencode.db"),
     configContent: JSON.stringify({ model: "proof/proof", small_model: "proof/proof", enabled_providers: ["proof"],
       provider: { proof: proofProvider() },
       agent: { pi: { description: "Conformance", prompt: "Follow the instruction exactly" } },

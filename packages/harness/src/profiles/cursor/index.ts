@@ -4,8 +4,7 @@ import path from "node:path"
 import type { McpServerConfig, SettingSource } from "@cursor/sdk"
 import { lstatIfExists, realPathWithinRoot } from "@claxedo/helpers/fs"
 import { asRecord } from "@claxedo/helpers/guards"
-import type { McpServerSpec, PluginProjection, SkillRoot, TurnActor } from "../../contract"
-import type { RuntimePlacement } from "../../registry/credentials"
+import type { MachineLoginPolicy, McpServerSpec, PluginProjection, SkillRoot, TurnActor } from "../../contract"
 import { mirrorConfigTree, type ConfigMirrorOptions } from "../config-mirror"
 
 const OWNER = "claxedo-agent-plugins"
@@ -14,8 +13,6 @@ const MARKER = ".claxedo-agent-plugin.json"
 const MIRRORED = ["mcp.json", "settings.json", "sandbox.json", "hooks.json", "rules", "skills", "skills-cursor", "agents"] as const
 const SECRET_FILE = /^(?:mcp-auth\.json|auth\.json)$|(?:^|[-_.])(?:credential|credentials|oauth|auth|secret|token|password|keychain)(?:[-_.]|$)/i
 const mirror: ConfigMirrorOptions = { secretFile: SECRET_FILE, externalSkills: true }
-
-export type CursorLoginOptions = { placement: RuntimePlacement; machineOwnerUserId: string; canUseOwnLogin: boolean }
 
 export type CursorPluginOptions = { settingSources?: SettingSource[] }
 
@@ -34,7 +31,7 @@ export function projectCursorMcpServers(servers: readonly McpServerSpec[]): Reco
   return result
 }
 
-export function cursorHomeKey(owner: TurnActor, login: Pick<CursorLoginOptions, "machineOwnerUserId">, binding: string,
+export function cursorHomeKey(owner: TurnActor, login: Pick<MachineLoginPolicy, "machineOwnerUserId">, binding: string,
   projection: Pick<PluginProjection, "pluginRoots">): string {
   const selection = [...new Set(projection.pluginRoots.map((plugin) => plugin.pluginInstanceId))].sort()
   const ownerId = owner.kind === "person" ? owner.userId : login.machineOwnerUserId

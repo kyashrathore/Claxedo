@@ -1,6 +1,6 @@
 import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import { AsyncPushQueue, errorMessage, settleAtRequestDeadline } from "@claxedo/helpers"
-import type { RoutedEvent, StartInput, TurnBroker, TurnInput } from "../../contract"
+import type { RoutedEvent, StartInput, TurnBroker, TurnInput, MachineLoginPolicy } from "../../contract"
 import type { ProjectedEvent } from "./event-pump"
 import { TransportError } from "../../contract/errors.js"
 import type { OpenCodeRuntime } from "./runtime"
@@ -50,11 +50,11 @@ function listenOpenCodeEvents(runtime: OpenCodeRuntime, state: OpenCodeTurnState
   })
 }
 
-async function admitOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnState, turn: TurnInput, signal: AbortSignal): Promise<{
+async function admitOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnState, turn: TurnInput, signal: AbortSignal, login: MachineLoginPolicy): Promise<{
   usage: ReturnType<typeof createTurnUsage>; admittedAt: number }> {
   const model = turn.model
   if (!model) throw new TransportError("opencode", "configuration", "OpenCode turn requires a resolved model")
-  assertProviderAvailable(state.start, model.providerID)
+  assertProviderAvailable(state.start, model.providerID, login)
   await runtime.providersBound()
   await runtime.events.ready()
   if (signal.aborted) throw new TurnAborted("OpenCode turn was aborted")
@@ -121,7 +121,7 @@ async function* streamOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurn
 }
 
 export async function* runOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnState, turn: TurnInput,
-  broker: TurnBroker): AsyncIterable<RoutedEvent> {
+  broker: TurnBroker, login: MachineLoginPolicy): AsyncIterable<RoutedEvent> {
   if (state.active) throw new TransportError("opencode", "session", "OpenCode session already has an active turn")
   if (!runtime.events.subscribeLoss) throw new TransportError("opencode", "engine", "OpenCode event loss subscription is unavailable")
   state.active = true
@@ -132,7 +132,7 @@ export async function* runOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCode
   broker.signal.addEventListener("abort", abort, { once: true })
   if (broker.signal.aborted) abort()
   try {
-    const { usage, admittedAt } = await admitOpenCodeTurn(runtime, state, turn, broker.signal)
+    const { usage, admittedAt } = await admitOpenCodeTurn(runtime, state, turn, broker.signal, login)
     try { yield* streamOpenCodeTurn(runtime, state, queue, usage) }
     catch (error) {
       if (error instanceof StreamLost || error instanceof TurnAborted) {
