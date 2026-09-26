@@ -278,7 +278,7 @@ export async function reconcileCredentialsIntoSdk(
   const customEnv = new Map(custom.map((provider) => [provider.providerID, provider.env]))
   withholdEngineProviderEnv(bound.flatMap((providerID) => customEnv.get(providerID) ?? ENGINE_PROVIDER_ENV[providerID] ?? []))
   await runtime.defineProviders(custom.map((provider) => customProviderDefinition(provider, overlays[provider.providerID])))
-  await runtime.bindProviders(overlays)
+  await runtime.bindProviders({ overlays, unbound: "engine" })
   const dueAt = projectionRenewalDueAt(auth, projectedAt)
   renewal = { org, ...(dueAt === undefined ? {} : { at: dueAt }) }
   log.info("OpenCode SDK providers bound to the credential broker", { bound: bound.length, removed: removed.length })

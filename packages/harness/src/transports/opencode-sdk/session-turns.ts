@@ -54,19 +54,8 @@ function promptPort(host: OpenCodeHost): Pick<OpenCodeSessionPort, "prompt" | "c
   }
 }
 
-function historyPort(host: OpenCodeHost): Pick<OpenCodeSessionPort, "revertTo" | "clearRevert" | "messages"> {
+function historyPort(host: OpenCodeHost): Pick<OpenCodeSessionPort, "messages"> {
   return {
-    async revertTo(scope, sessionID, messageID, options) {
-      const client = await ownedClient(host, scope, sessionID)
-      await client.sessions.revert.stage({
-        sessionID,
-        messageID,
-        ...(options?.files === undefined ? {} : { files: options.files }),
-      })
-    },
-    async clearRevert(scope, sessionID) {
-      await (await ownedClient(host, scope, sessionID)).sessions.revert.clear({ sessionID })
-    },
     async messages(scope, sessionID, page) {
       const client = await ownedClient(host, scope, sessionID)
       const response = await client.message.list({
@@ -85,6 +74,6 @@ function historyPort(host: OpenCodeHost): Pick<OpenCodeSessionPort, "revertTo" |
 }
 
 export function sessionTurns(host: OpenCodeHost): Pick<OpenCodeSessionPort,
-  "prompt" | "command" | "interrupt" | "wait" | "revertTo" | "clearRevert" | "messages"> {
+  "prompt" | "command" | "interrupt" | "wait" | "messages"> {
   return { ...promptPort(host), ...historyPort(host) }
 }

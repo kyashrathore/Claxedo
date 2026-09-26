@@ -14,15 +14,19 @@ export function eventAssistantMessageID(event: ProjectedEvent): string | undefin
   return typeof id === "string" ? id : undefined
 }
 
+export type SessionOutcome = "succeeded" | "failed" | "interrupted"
+
+export function sessionOutcome(outcome: SessionOutcome, sessionID: string, error?: unknown): AgentRuntimeEvent {
+  if (outcome !== "failed") return { type: "finish", sessionId: sessionID, harness: "opencode" }
+  const reason = error === undefined ? "" : errorMessage(error)
+  return { type: "error", error: reason || "OpenCode execution failed", harness: "opencode" }
+}
+
 export function terminal(event: ProjectedEvent, sessionID: string): AgentRuntimeEvent | undefined {
   const data = asRecordOrEmpty(event.data)
-  if (event.type === "session.execution.succeeded") return { type: "finish", sessionId: sessionID, harness: "opencode" }
-  if (event.type === "session.execution.interrupted") return { type: "finish", sessionId: sessionID, harness: "opencode" }
-  if (event.type === "session.execution.failed") {
-    const error = data.error
-    const reason = errorMessage(error)
-    return { type: "error", error: reason || "OpenCode execution failed", harness: "opencode" }
-  }
+  if (event.type === "session.execution.succeeded") return sessionOutcome("succeeded", sessionID)
+  if (event.type === "session.execution.interrupted") return sessionOutcome("interrupted", sessionID)
+  if (event.type === "session.execution.failed") return sessionOutcome("failed", sessionID, data.error)
   return undefined
 }
 

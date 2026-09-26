@@ -1,12 +1,13 @@
 import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import { AsyncPushQueue, errorMessage, settleAtRequestDeadline } from "@claxedo/helpers"
-import type { RoutedEvent, StartInput, TurnBroker, TurnInput } from "../../contract"
+import type { RoutedEvent, StartInput, TurnBroker, TurnInput, MachineLoginPolicy } from "../../contract"
 import type { ProjectedEvent } from "./event-pump"
 import { TransportError } from "../../contract/errors.js"
 import type { OpenCodeRuntime } from "./runtime"
 import type { WorkspaceScope } from "./scope"
+import type { SessionSummary } from "./session-types"
 import { assertProviderAvailable } from "./credentials.js"
-import { eventAssistantMessageID, eventSessionID, projectTurnEvent, terminal } from "./translate/event.js"
+import { eventAssistantMessageID, eventSessionID, projectTurnEvent, sessionOutcome, terminal } from "./translate/event.js"
 import { createTurnUsage, readSessionTotal } from "./translate/turn-usage.js"
 import { answerOpenCodeRequest } from "./requests.js"
 import { flattenTurnPrompt } from "../../translate/prompt"
@@ -14,8 +15,13 @@ import { flattenTurnPrompt } from "../../translate/prompt"
 export type OpenCodeTurnState = { start: StartInput; scope: WorkspaceScope; upstream: string;
   active: boolean; assistantMessageID?: string }
 
+const STREAM_LOSS_WAIT_MS = 60_000
+const INTERRUPT_WAIT_MS = 5_000
+const SNAPSHOT_READ_MS = 5_000
+
 class StreamLost extends Error {}
 class TurnAborted extends Error {}
+class InterruptWaitExpired extends Error {}
 
 export function promptRequest(turn: TurnInput) {
   const files: Array<{ ref: string; name?: string }> = []
@@ -44,11 +50,11 @@ function listenOpenCodeEvents(runtime: OpenCodeRuntime, state: OpenCodeTurnState
   })
 }
 
-async function admitOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnState, turn: TurnInput, signal: AbortSignal): Promise<{
+async function admitOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnState, turn: TurnInput, signal: AbortSignal, login: MachineLoginPolicy): Promise<{
   usage: ReturnType<typeof createTurnUsage>; admittedAt: number }> {
   const model = turn.model
   if (!model) throw new TransportError("opencode", "configuration", "OpenCode turn requires a resolved model")
-  assertProviderAvailable(state.start.credentials, model.providerID)
+  assertProviderAvailable(state.start, model.providerID, login)
   await runtime.providersBound()
   await runtime.events.ready()
   if (signal.aborted) throw new TurnAborted("OpenCode turn was aborted")
@@ -56,31 +62,44 @@ async function admitOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnSt
     (await runtime.sessions.get(state.scope, state.upstream)).tokens))
   if (turn.prompt.agent) await runtime.sessions.switchAgent(state.scope, state.upstream, turn.prompt.agent)
   await runtime.sessions.switchModel(state.scope, state.upstream, { providerID: model.providerID, modelID: model.modelID,
-    ...(state.start.config.variant ? { variant: state.start.config.variant } : {}) })
+    ...(turn.effort ? { variant: turn.effort } : {}) })
   if (signal.aborted) throw new TurnAborted("OpenCode turn was aborted")
   const admitted = await runtime.sessions.prompt(state.scope, state.upstream, promptRequest(turn))
   return { usage, admittedAt: admitted.createdAt }
 }
 
-async function* reconcileOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnState,
-  usage: ReturnType<typeof createTurnUsage>, admittedAt: number, wait: boolean, signal: AbortSignal): AsyncIterable<RoutedEvent> {
-  if (wait) await settleAtRequestDeadline("OpenCode session wait",
-    { deadlineAt: Date.now() + 60_000, signal },
-    runtime.sessions.wait(state.scope, state.upstream), () => {},
-    () => new TransportError("opencode", "engine", "OpenCode session wait deadline expired"))
-  const snapshot = await settleAtRequestDeadline("OpenCode session reconciliation",
-    { deadlineAt: Date.now() + 5_000, signal: new AbortController().signal },
+async function settledSnapshot(runtime: OpenCodeRuntime, state: OpenCodeTurnState, cause: StreamLost | TurnAborted,
+  signal: AbortSignal): Promise<SessionSummary> {
+  const idle = runtime.sessions.wait(state.scope, state.upstream)
+  void idle.then(undefined, () => undefined)
+  if (cause instanceof StreamLost) {
+    await settleAtRequestDeadline("OpenCode session wait", { deadlineAt: Date.now() + STREAM_LOSS_WAIT_MS, signal }, idle, () => {},
+      () => new TransportError("opencode", "engine", "OpenCode session wait deadline expired"))
+  } else {
+    await runtime.sessions.interrupt(state.scope, state.upstream)
+    try {
+      await settleAtRequestDeadline("OpenCode interrupt wait", { deadlineAt: Date.now() + INTERRUPT_WAIT_MS, signal: new AbortController().signal },
+        idle, () => {}, () => new InterruptWaitExpired("OpenCode interrupt wait deadline expired"))
+    } catch (error) {
+      if (!(error instanceof InterruptWaitExpired)) throw error
+    }
+  }
+  return settleAtRequestDeadline("OpenCode session reconciliation",
+    { deadlineAt: Date.now() + SNAPSHOT_READ_MS, signal: new AbortController().signal },
     runtime.sessions.get(state.scope, state.upstream), () => {},
     () => new TransportError("opencode", "engine", "OpenCode session reconciliation deadline expired"))
+}
+
+async function* reconcileOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnState,
+  usage: ReturnType<typeof createTurnUsage>, admittedAt: number, cause: StreamLost | TurnAborted, signal: AbortSignal): AsyncIterable<RoutedEvent> {
+  const snapshot = await settledSnapshot(runtime, state, cause, signal)
   if (snapshot.idleAt === undefined || snapshot.idleAt < admittedAt || !snapshot.outcome) {
-    yield route({ type: "error", error: "OpenCode turn ended without a terminal session outcome", harness: "opencode" })
-    return
+    if (cause instanceof TurnAborted) return
+    throw new TransportError("opencode", "engine", "OpenCode turn ended without a terminal session outcome")
   }
   const closing = usage.close(await readSessionTotal(async () => snapshot.tokens))
   if (closing) yield route(closing)
-  yield route(snapshot.outcome === "failed"
-    ? { type: "error", error: "OpenCode execution failed", harness: "opencode" }
-    : { type: "finish", sessionId: state.upstream, harness: "opencode" })
+  yield route(sessionOutcome(snapshot.outcome, state.upstream))
 }
 
 async function* streamOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnState, queue: AsyncPushQueue<ProjectedEvent>,
@@ -102,7 +121,7 @@ async function* streamOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurn
 }
 
 export async function* runOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnState, turn: TurnInput,
-  broker: TurnBroker): AsyncIterable<RoutedEvent> {
+  broker: TurnBroker, login: MachineLoginPolicy): AsyncIterable<RoutedEvent> {
   if (state.active) throw new TransportError("opencode", "session", "OpenCode session already has an active turn")
   if (!runtime.events.subscribeLoss) throw new TransportError("opencode", "engine", "OpenCode event loss subscription is unavailable")
   state.active = true
@@ -113,11 +132,11 @@ export async function* runOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCode
   broker.signal.addEventListener("abort", abort, { once: true })
   if (broker.signal.aborted) abort()
   try {
-    const { usage, admittedAt } = await admitOpenCodeTurn(runtime, state, turn, broker.signal)
+    const { usage, admittedAt } = await admitOpenCodeTurn(runtime, state, turn, broker.signal, login)
     try { yield* streamOpenCodeTurn(runtime, state, queue, usage) }
     catch (error) {
       if (error instanceof StreamLost || error instanceof TurnAborted) {
-        yield* reconcileOpenCodeTurn(runtime, state, usage, admittedAt, error instanceof StreamLost, broker.signal)
+        yield* reconcileOpenCodeTurn(runtime, state, usage, admittedAt, error, broker.signal)
       } else throw error
     }
   } finally {

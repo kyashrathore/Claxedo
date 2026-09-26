@@ -1,9 +1,8 @@
 import type { ProviderProjection } from "@claxedo/agent-runtime-contract"
 import type { ResolvedCredentials } from "../contract/projection"
 import type { TurnActor } from "../contract/session"
-import { ownerMayUseMachineLogin } from "../contract/credentials"
+import { ownerMayUseMachineLogin, type MachineLoginPolicy } from "../contract/credentials"
 
-export type RuntimePlacement = "desktop" | "loopback" | "self-hosted" | "cloud"
 export type CredentialProfile = "owner-login" | "brokered"
 
 export type SelectedAccount = {
@@ -11,11 +10,8 @@ export type SelectedAccount = {
   secrets: Readonly<Record<string, string>>
 }
 
-export type CredentialSelectionInput = {
+export type CredentialSelectionInput = MachineLoginPolicy & {
   owner: TurnActor
-  placement: RuntimePlacement
-  machineOwnerUserId: string
-  canUseOwnLogin: boolean
   profile: {
     kind: "providers"
     providerIds: readonly string[]

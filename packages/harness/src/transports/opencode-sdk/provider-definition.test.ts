@@ -129,7 +129,7 @@ test("a bound declared provider sends to its binding with the placeholder, never
   const { runtime, scope } = engine()
 
   await runtime.defineProviders([acme(upstream.url)])
-  await runtime.bindProviders({ acme: { baseURL: broker.url, apiKey: "broker-placeholder" } })
+  await runtime.bindProviders({ overlays: { acme: { baseURL: broker.url, apiKey: "broker-placeholder" } }, unbound: "engine" })
   await turn(runtime, scope, () => broker.requests.length > 0)
 
   expect(broker.requests[0]).toMatchObject({ path: "/v1/chat/completions", authorization: "Bearer broker-placeholder", tenant: "prod" })

@@ -9,7 +9,8 @@ import type {
 } from "../../contract"
 import { attachedSessionEntry, configOptionsPreview, mergeStartInput } from "../../contract"
 import { TransportError } from "../../contract/errors"
-import { composeCursorHome, cursorHomeKey, type CursorLoginOptions, type CursorPluginOptions } from "../../profiles/cursor"
+import { composeCursorHome, cursorHomeKey, type CursorPluginOptions } from "../../profiles/cursor"
+import type { MachineLoginPolicy } from "../../contract"
 import { cursorCredential, type CursorCredential } from "./credentials"
 import { CursorGoals } from "./goals"
 import { CursorHostRegistry, type CursorHostKey } from "./host-registry"
@@ -20,7 +21,7 @@ import type { HostModel } from "./protocol"
 import { cursorSessionTitle } from "./title"
 import { cursorPrompt, streamCursorRun } from "./turn"
 
-export type CursorSdkTransportOptions = CursorLoginOptions & { homeRoot: string; env?: NodeJS.ProcessEnv }
+export type CursorSdkTransportOptions = MachineLoginPolicy & { homeRoot: string; env?: NodeJS.ProcessEnv }
 
 type Entry = {
   session: HarnessSession

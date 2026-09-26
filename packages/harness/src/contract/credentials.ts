@@ -2,11 +2,11 @@ import { isProviderUnavailable, type ProviderProjection, type ProviderUnavailabl
 import type { ResolvedCredentials } from "./projection"
 import type { TurnActor } from "./session"
 
-export function ownerMayUseMachineLogin(owner: TurnActor, options: {
-  placement: "desktop" | "loopback" | "self-hosted" | "cloud"
-  machineOwnerUserId: string
-  canUseOwnLogin: boolean
-}): boolean {
+export type RuntimePlacement = "desktop" | "loopback" | "self-hosted" | "cloud"
+
+export type MachineLoginPolicy = { placement: RuntimePlacement; machineOwnerUserId: string; canUseOwnLogin: boolean }
+
+export function ownerMayUseMachineLogin(owner: TurnActor, options: MachineLoginPolicy): boolean {
   return (owner.kind === "machine-owner" || owner.userId === options.machineOwnerUserId) &&
     options.canUseOwnLogin && (options.placement === "desktop" || options.placement === "loopback")
 }

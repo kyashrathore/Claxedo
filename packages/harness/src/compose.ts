@@ -11,8 +11,7 @@ import { CodexAppServerTransport, type CodexTransportOptions } from "./transport
 import { ClaudeSdkTransport } from "./transports/claude-sdk"
 import type { ClaudeSdkOptions } from "./transports/claude-sdk/launch-context"
 import { CursorSdkTransport, type CursorSdkTransportOptions } from "./transports/cursor-sdk"
-import { OpenCodeSdkTransport } from "./transports/opencode-sdk/transport"
-import type { OpenCodeRuntimeOptions } from "./transports/opencode-sdk/runtime"
+import { OpenCodeSdkTransport, type OpenCodeSdkTransportOptions } from "./transports/opencode-sdk/transport"
 
 export type HarnessCompositionOptions = {
   acp: { missingContext: MissingSessionContext }
@@ -20,7 +19,7 @@ export type HarnessCompositionOptions = {
   codex: CodexTransportOptions
   claude: ClaudeSdkOptions
   cursor: CursorSdkTransportOptions
-  opencode: OpenCodeRuntimeOptions
+  opencode: OpenCodeSdkTransportOptions
 }
 
 export type ConnectionTransportInput = {
