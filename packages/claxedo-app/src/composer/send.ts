@@ -108,7 +108,7 @@ type SendInput = {
   goalStopFailed: (error: unknown) => void
 }
 
-async function stopTurn(view: SessionView, goalStopFailed: (error: unknown) => void) {
+async function stopSessionTurn(view: SessionView, goalStopFailed: (error: unknown) => void) {
   if (view.goal()?.status !== "active") return view.stop()
   try {
     await view.controlGoal("stop")
@@ -125,7 +125,7 @@ function createStop(view: Accessor<SessionView | undefined>, goalStopFailed: (er
     if (!current || state.state().kind === "stopping") return
     state.send({ type: "stopStarted" })
     try {
-      await stopTurn(current, goalStopFailed)
+      await stopSessionTurn(current, goalStopFailed)
       state.send({ type: "stopFinished" })
     } catch (error) {
       state.send({ type: "stopFailed", error: toAppError(error) })
@@ -145,7 +145,7 @@ function createArmGoal(input: SendInput) {
 
 export type BootPhase = "booting" | "sending"
 
-async function deliver(input: SendInput, draft: Draft, goal: GoalIntent, clientRequestId: string, setBoot: (phase: BootPhase | undefined) => void): Promise<SessionView> {
+async function deliverDraft(input: SendInput, draft: Draft, goal: GoalIntent, clientRequestId: string, setBoot: (phase: BootPhase | undefined) => void): Promise<SessionView> {
   const key = input.key()
   const delivery = input.working() ? "queue" : undefined
   const submission = await input.submission()
@@ -181,7 +181,7 @@ export function createComposerSend(input: SendInput) {
     const clientRequestId = randomId()
     state.send({ type: "sendStarted", clientRequestId })
     try {
-      const view = await deliver(input, draft, goal, clientRequestId, setBoot)
+      const view = await deliverDraft(input, draft, goal, clientRequestId, setBoot)
       state.send({ type: "sendAccepted", clientRequestId })
       input.afterAccepted?.(view)
     } catch (error) {

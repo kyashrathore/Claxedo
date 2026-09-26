@@ -56,7 +56,7 @@ export function requestTransition(state: RequestState, event: RequestMachineEven
   }
 }
 
-function withEntries(data: RequestsData, entries: ReadonlyMap<RequestId, RequestEntry>): RequestsData {
+function withRequestEntries(data: RequestsData, entries: ReadonlyMap<RequestId, RequestEntry>): RequestsData {
   return { ...data, entries }
 }
 
@@ -72,7 +72,7 @@ function opened(data: RequestsData, ref: SessionRef, request: AgentRequest, at: 
   const current = data.entries.get(request.id)
   const entries = new Map(data.entries)
   entries.set(request.id, { ref, request, at, state: current?.state ?? OPEN })
-  return withEntries(data, entries)
+  return withRequestEntries(data, entries)
 }
 
 function closed(data: RequestsData, requestId: RequestId, at: number): RequestsData {
@@ -94,7 +94,7 @@ export function readErrorOf(data: RequestsData, sessionId: SessionId): AppError 
   return outcome?.kind === "failed" ? outcome.error : undefined
 }
 
-function read(data: RequestsData, ref: SessionRef, requests: readonly AgentRequest[], sentAt: number): RequestsData {
+function applyRequestRead(data: RequestsData, ref: SessionRef, requests: readonly AgentRequest[], sentAt: number): RequestsData {
   const listed = new Set(requests.map((request) => request.id))
   const entries = new Map(data.entries)
   for (const [id, entry] of data.entries) {
@@ -107,7 +107,7 @@ function read(data: RequestsData, ref: SessionRef, requests: readonly AgentReque
     if ((data.closedAt.get(request.id) ?? Number.NEGATIVE_INFINITY) >= sentAt) continue
     entries.set(request.id, { ref, request, at: sentAt, state: OPEN })
   }
-  return withOutcome(withEntries(data, entries), ref, { kind: "read", sentAt })
+  return withOutcome(withRequestEntries(data, entries), ref, { kind: "read", sentAt })
 }
 
 function replied(data: RequestsData, requestId: RequestId, event: RequestMachineEvent): RequestsData {
@@ -117,7 +117,7 @@ function replied(data: RequestsData, requestId: RequestId, event: RequestMachine
   if (state === current.state) return data
   const entries = new Map(data.entries)
   entries.set(requestId, { ...current, state })
-  return withEntries(data, entries)
+  return withRequestEntries(data, entries)
 }
 
 export function applyRequestsEvent(data: RequestsData, event: RequestsEvent): RequestsData {
@@ -127,7 +127,7 @@ export function applyRequestsEvent(data: RequestsData, event: RequestsEvent): Re
     case "closed":
       return closed(data, event.requestId, event.at)
     case "read":
-      return read(data, event.ref, event.requests, event.sentAt)
+      return applyRequestRead(data, event.ref, event.requests, event.sentAt)
     case "readFailed":
       return withOutcome(data, event.ref, { kind: "failed", sentAt: event.sentAt, error: event.error })
     case "replyStarted":

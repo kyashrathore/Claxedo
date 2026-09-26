@@ -6,7 +6,7 @@ import { createRequests, type RequestsInternal } from "../requests"
 import { createSessionTranscript } from "../transcript"
 import { OPEN_SESSION_LIMIT, createOpenSessions, type OpenSessions } from "./open-sessions"
 
-function dispatch(event: ServerEvent, list: SessionListInternal, requests: RequestsInternal, open: OpenSessions): void {
+function dispatchServerEvent(event: ServerEvent, list: SessionListInternal, requests: RequestsInternal, open: OpenSessions): void {
   list.apply(event)
   requests.apply(event)
   if (event.type === "streamGap") return open.forEach((session) => session.gap())
@@ -22,7 +22,7 @@ export function createSessionStores(server: Server): SessionStores {
     (ref) => createSessionTranscript(server, ref, { list, requests }),
     (sessionId) => list.closed(sessionId),
   )
-  const unsubscribe = server.subscribe((event) => dispatch(event, list, requests, open))
+  const unsubscribe = server.subscribe((event) => dispatchServerEvent(event, list, requests, open))
   onCleanup(() => {
     unsubscribe()
     open.disposeAll()

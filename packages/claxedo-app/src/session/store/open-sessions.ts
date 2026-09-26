@@ -34,7 +34,7 @@ function evictBeyondLimit(open: OpenState): void {
   }
 }
 
-function get(open: OpenState, ref: SessionRef): SessionTranscript {
+function touchOrOpen(open: OpenState, ref: SessionRef): SessionTranscript {
   const hit = open.entries.get(ref.sessionId)
   if (hit) {
     open.entries.delete(ref.sessionId)
@@ -55,7 +55,7 @@ export function createOpenSessions(
 ): OpenSessions {
   const open: OpenState = { entries: new Map(), limit, owner, make, onEvicted }
   return {
-    get: (ref) => get(open, ref),
+    get: (ref) => touchOrOpen(open, ref),
     byId: (sessionId) => open.entries.get(sessionId)?.view,
     forEach: (visit) => {
       for (const entry of open.entries.values()) visit(entry.view)
