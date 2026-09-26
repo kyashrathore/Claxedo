@@ -1,6 +1,6 @@
 import type { SDKActiveGoalMessage, SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { AgentGoalMutationResult } from "@claxedo/agent-runtime-contract"
-import type { HarnessSession, ProviderTurnSettlement, RoutedEvent, SessionBroker, StartInput, TurnBroker } from "../../contract"
+import type { HarnessSession, ProviderTurnSettlement, RoutedEvent, SessionBroker, StartInput, TurnBroker, TurnRef } from "../../contract"
 import { ClaudeProcess } from "./process"
 import { ClaudeQueryLauncher } from "./query-options"
 import { observeClaudeSessionMessage } from "./session-events"
@@ -9,17 +9,20 @@ import { errorMessage } from "@claxedo/helpers"
 
 type Running = { turnId: string; abort: AbortController; settled: Promise<ProviderTurnSettlement> }
 
+export type ClaudeGoalEntry = { session: HarnessSession; input: StartInput }
+
 export class ClaudeGoals {
   private readonly running = new Map<string, Running>()
 
   constructor(private readonly launcher: ClaudeQueryLauncher) {}
 
-  async start(session: HarnessSession, input: StartInput, broker: SessionBroker, objective: string): Promise<AgentGoalMutationResult> {
+  async start(entry: ClaudeGoalEntry, broker: SessionBroker, objective: string): Promise<AgentGoalMutationResult> {
+    const { input } = entry
     if (this.running.has(input.sessionId)) return { ok: false, status: "conflict", message: "Claude Goal is running" }
     const abort = new AbortController()
-    const admitted = await broker.admitProviderTurn({ reason: "goal" }, (turnBroker) => this.run(session, input, broker, turnBroker, `/goal ${objective}`, abort))
+    const admitted = await broker.admitProviderTurn({ reason: "goal" }, (turnBroker, turn) => this.run(entry, broker, turnBroker, turn, `/goal ${objective}`, abort))
     if (!admitted.admitted) return { ok: false, status: "conflict", message: `Claude Goal admission ${admitted.reason}` }
-    const running = { turnId: admitted.turnId, abort, settled: admitted.settled }
+    const running = { turnId: admitted.turn.turnId, abort, settled: admitted.settled }
     this.running.set(input.sessionId, running)
     void admitted.settled.then(async (outcome) => {
       if (this.running.get(input.sessionId) === running) this.running.delete(input.sessionId)
@@ -31,17 +34,17 @@ export class ClaudeGoals {
     return { ok: true, goal: broker.goal.read() }
   }
 
-  async stop(session: HarnessSession, input: StartInput, broker: SessionBroker): Promise<AgentGoalMutationResult> {
-    const running = this.running.get(input.sessionId)
+  async stop(entry: ClaudeGoalEntry, broker: SessionBroker): Promise<AgentGoalMutationResult> {
+    const running = this.running.get(entry.input.sessionId)
     if (running) { running.abort.abort(); await running.settled }
     const goal = broker.goal.read()
     if (!goal) return { ok: false, status: "not_found", message: "Claude Goal is absent" }
-    if (session.binding.upstreamSessionId.startsWith("claude-sdk:")) return { ok: false, status: "failed", message: "Claude Goal has no native session to clear" }
+    if (entry.session.binding.upstreamSessionId.startsWith("claude-sdk:")) return { ok: false, status: "failed", message: "Claude Goal has no native session to clear" }
     const abort = new AbortController()
     const timeout = setTimeout(() => abort.abort(), 30_000)
     try {
       let confirmed = false
-      for await (const _event of this.run(session, input, broker, undefined, "/goal clear", abort, true, () => { confirmed = true })) {}
+      for await (const _event of this.run(entry, broker, undefined, undefined, "/goal clear", abort, true, () => { confirmed = true })) {}
       if (!confirmed) throw new Error("Claude did not confirm clearing the native Goal")
       const paused = { ...goal, status: "paused" as const, updatedAt: Date.now() }
       await broker.goal.publish(paused)
@@ -61,16 +64,17 @@ export class ClaudeGoals {
 
   turnId(sessionId: string): string | undefined { return this.running.get(sessionId)?.turnId }
 
-  private async *run(session: HarnessSession, input: StartInput, broker: SessionBroker, turnBroker: TurnBroker | undefined,
+  private async *run(entry: ClaudeGoalEntry, broker: SessionBroker, turnBroker: TurnBroker | undefined, turn: TurnRef | undefined,
     prompt: string, abort: AbortController, clear = false, confirm?: () => void): AsyncIterable<RoutedEvent> {
-    const { runtime, tasks } = claudeTranslator(session.binding.sessionId)
+    const assistantMessageId = turn?.assistantMessageId ?? entry.session.binding.sessionId
+    const { runtime, tasks } = claudeTranslator(assistantMessageId)
     const processes = new Set<ClaudeProcess>()
-    const stream = await this.launcher.launch({ session, input, broker, turnBroker, prompt, abort, processes, runtime,
-      assistantMessageId: session.binding.sessionId, clear })
+    const stream = await this.launcher.launch({ session: entry.session, input: entry.input, broker, turnBroker, prompt, abort, processes, runtime,
+      assistantMessageId, ...(turn ? { turnId: turn.turnId } : {}), clear })
     let sawResult = false
     try {
       for await (const message of stream as AsyncIterable<SDKMessage | SDKActiveGoalMessage>) {
-        const observed = await observeClaudeSessionMessage(message, session, broker, abort.signal)
+        const observed = await observeClaudeSessionMessage(message, entry, broker, abort.signal)
         if (observed.kind === "active-goal") continue
         const current = observed.message
         if (current.type === "result") sawResult = true

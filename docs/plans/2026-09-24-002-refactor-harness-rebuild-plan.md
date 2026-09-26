@@ -1345,7 +1345,7 @@ Every slice deletes what it replaces.
 
 ### P3: the cutover
 
-- [ ] The runtime host calls the contract for every harness in one slice, and every old adapter is deleted in the same slice. Every eligible flow green; both corpora unchanged. `Progress:`
+- [ ] The runtime host calls the contract for every harness in one slice, and every old adapter is deleted in the same slice. Every eligible flow green; both corpora unchanged. `Progress:` the contract commit landed on `hv2/p3-cutover` (G1/G6 config preview, G5 capability sources, `spawn`'s signal, the admitted provider turn's identity, and review findings A, B, C, AA, H and V), every transport adopted it, and no production path switched; see `docs/harness-v2/p3-cutover.md`, "Run 6 status".
 - [ ] In the same slice: the runtime host and the rest of the projection move into `workspace-runtime`, and the subagent admission rules move into the broker, with the runtime store persisting only their state, so the broker's tests run the real rules instead of a fake. `Progress:`
 
 ### P4: cleanup

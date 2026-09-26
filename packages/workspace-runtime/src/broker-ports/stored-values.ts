@@ -27,7 +27,7 @@ function optionalNumber(value: unknown): number | undefined {
   return parsed
 }
 
-function permission(value: unknown): AgentPermission {
+function storedBrokerPermission(value: unknown): AgentPermission {
   const row = requiredBrokerRecord(value)
   const options = row.options === undefined ? undefined : arr(row.options)?.map((item) => {
     const option = requiredBrokerRecord(item)
@@ -88,7 +88,7 @@ export function parseStoredRequest(json: string): TurnRequest {
       return { optionId: requiredBrokerString(option.optionId), kind: acceptedKind, name: requiredBrokerString(option.name) }
     })
     if (row.options !== undefined && !options) throw new Error("Invalid stored request options")
-    return { ...common, kind: "permission", permission: permission(row.permission),
+    return { ...common, kind: "permission", permission: storedBrokerPermission(row.permission),
       ...(options === undefined ? {} : { options }),
       ...(row.grantKey === undefined ? {} : { grantKey: requiredBrokerString(row.grantKey) }) }
   }

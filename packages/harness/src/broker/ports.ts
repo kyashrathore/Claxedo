@@ -20,7 +20,7 @@ import type {
   RequestAnswer,
 } from "../contract/broker"
 import type { Clock, HarnessServices } from "../contract/services"
-import type { RoutedEvent, TurnOrigin } from "../contract/session"
+import type { HarnessBinding, RoutedEvent, TurnOrigin, TurnRef } from "../contract/session"
 
 export type TurnAuthority = AgentExecutionBinding & {
   ownerGeneration: string
@@ -68,9 +68,9 @@ export interface BrokerPorts {
   admitProviderTurn(
     sessionId: string,
     input: ProviderTurnInput,
-    run: (turnId: string, signal: AbortSignal) => Promise<void>,
+    run: (turn: TurnRef, signal: AbortSignal) => Promise<void>,
   ): Promise<ProviderTurnResult>
-  drainProviderEvent(sessionId: string, turnId: string, event: RoutedEvent): Promise<void>
+  drainProviderEvent(sessionId: string, turn: TurnRef, event: RoutedEvent): Promise<void>
   publishSessionEvent(sessionId: string, event: OutsideTurnEvent): Promise<void>
   meterUsage(usage: OutsideTurnUsage): void
   readonly subagentAdmissionStore: SubagentAdmissionStore
@@ -78,7 +78,7 @@ export interface BrokerPorts {
   admitChildSession(parentSessionId: string, childSessionId: string, observation: SubagentObservation): Promise<ChildSessionRef>
   publishSubagent(parentSessionId: string, event: SubagentUpdatedEvent): Promise<void>
   publishSubagentDiagnostic(parentSessionId: string, diagnostic: RuntimeDiagnostic): Promise<void>
-  rebind(sessionId: string, upstreamSessionId: string): Promise<void>
+  rebind(sessionId: string, upstreamSessionId: string): Promise<HarnessBinding>
   persistHandoff(sessionId: string, context: SessionHandoff): Promise<void>
   config(sessionId: string): SessionConfig
   reportOwnerFailure(sessionId: string, error: unknown): void

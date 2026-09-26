@@ -10,7 +10,7 @@ import type {
   SubagentObservation,
 } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent, AgentRuntimeEventOf } from "@claxedo/agent-event-runtime/contracts"
-import type { RoutedEvent, TurnOrigin } from "./session"
+import type { HarnessBinding, RoutedEvent, TurnOrigin, TurnRef } from "./session"
 
 export type PermissionOptionKind = "allow_once" | "allow_always" | "reject_once" | "reject_always"
 
@@ -77,7 +77,7 @@ export type ProviderTurnInput = {
 }
 
 export type ProviderTurnResult =
-  | { admitted: true; turnId: string; settled: Promise<ProviderTurnSettlement> }
+  | { admitted: true; turn: TurnRef; settled: Promise<ProviderTurnSettlement> }
   | { admitted: false; reason: "busy" | "closed" }
 
 export type ProviderTurnSettlement = { state: "completed" } | { state: "failed"; error: string } | { state: "cancelled" }
@@ -100,11 +100,11 @@ export interface SessionBroker {
   readonly sessionId: string
   ask(request: TurnRequest, options?: { signal?: AbortSignal }): Promise<RequestAnswer>
   completeElicitation(elicitationId: string): Promise<void>
-  rebind(upstreamSessionId: string): Promise<void>
+  rebind(upstreamSessionId: string): Promise<HarnessBinding>
   persistHandoff(context: SessionHandoff): Promise<void>
   admitProviderTurn(
     input: ProviderTurnInput,
-    run: (broker: TurnBroker) => AsyncIterable<RoutedEvent>,
+    run: (broker: TurnBroker, turn: TurnRef) => AsyncIterable<RoutedEvent>,
   ): Promise<ProviderTurnResult>
   meter(usage: OutsideTurnUsage): void
   publish(event: OutsideTurnEvent): Promise<void>
@@ -139,4 +139,5 @@ export interface RequestBroker {
     answer: RequestAnswer,
     target: { sessionId: string } | { start: AgentSessionStartBinding },
   ): Promise<AnswerResult>
+  closeSession(sessionId: string): void
 }

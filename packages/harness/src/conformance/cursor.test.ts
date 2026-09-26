@@ -2,7 +2,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { expect, test } from "bun:test"
-import { runConformance, setupConformance, type ConformanceBackend } from "./test-support/run"
+import { runConformance, setupConformance, type ConformanceBackend, withUndeliverableFile } from "./test-support/run"
 import { reservePort, releasePort } from "../../e2e/harness/ports"
 import { startScriptedCursorBackend } from "../../e2e/harness/cursor/backend"
 import { egressProxyEnv, startEgressGuard, unexpectedEgress } from "../../e2e/harness/egress-guard"
@@ -30,6 +30,7 @@ async function backend(): Promise<CursorBackend> {
     credentials: { providers: { cursor: { baseUrl: server.url, placeholder: "cursor-conformance-placeholder", authMode: "bearer" } },
       secrets: {}, leaseGeneration: "conformance" },
     owner: { kind: "machine-owner" }, expectedMcp: "session", textCommand: "CURSOR_SCRIPT:conformance",
+    unrunnableTurn: withUndeliverableFile,
     close: async () => {
       console.log(`Cursor outbound attempts: ${JSON.stringify(guard.attempts)}`)
       const unexpected = unexpectedEgress(guard.attempts)
@@ -93,7 +94,7 @@ test("a failed run leaves another session on the shared worker running", async (
     makeTransport: (services) => new CursorSdkTransport(services, state.env) })
   try {
     const second = await context.transport.start({ ...context.start, sessionId: "s2" },
-      { rebind: async () => {} } as unknown as SessionBroker)
+      { rebind: async (upstreamSessionId: string) => ({ ...context.session.binding, sessionId: "s2", upstreamSessionId }) } as unknown as SessionBroker)
     const held = (async () => {
       const events = []
       for await (const event of context.transport.send(second, context.turn("CURSOR_SCRIPT:held"), context.turnBroker())) events.push(event)
@@ -183,7 +184,8 @@ test("two bindings use separate SDK module registries", async () => {
   try {
     const one = await setupConformance({ name: "first", backend: async () => first, makeTransport: () => transport })
     const secondSession = await transport.start({ ...one.start, sessionId: "s2", workspaceId: "w2",
-      directory: second.directory, credentials: second.credentials }, { rebind: async () => {} } as unknown as SessionBroker)
+      directory: second.directory, credentials: second.credentials }, { rebind: async (upstreamSessionId: string) =>
+        ({ sessionId: "s2", workspaceId: "w2", directory: second.directory, connectionId: "cursor-sdk", upstreamSessionId }) } as unknown as SessionBroker)
     const collect = async (session: HarnessSession) => {
       const events = []
       for await (const event of transport.send(session, one.turn("CURSOR_SCRIPT:conformance"), one.turnBroker())) events.push(event)

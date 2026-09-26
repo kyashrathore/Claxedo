@@ -4,6 +4,15 @@ import os from "node:os"
 import path from "node:path"
 import { createTestServices } from "./services"
 
+test("spawn refuses an already-aborted signal and starts nothing", async () => {
+  const services = createTestServices()
+  const controller = new AbortController()
+  controller.abort()
+  await expect(services.spawn({ file: process.execPath, args: ["-e", "0"], cwd: os.tmpdir(), env: { ...process.env } as Record<string, string> },
+    { role: "harness", label: "aborted spawn", signal: controller.signal })).rejects.toThrow("aborted")
+  expect(services.processes).toHaveLength(0)
+})
+
 test.skipIf(process.platform === "win32")("retirement kills a descendant that ignores TERM", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "pi-process-group-"))
   const pidFile = path.join(directory, "descendant.pid")
@@ -14,7 +23,7 @@ fs.writeFileSync(process.argv[1],String(child.pid));
 setInterval(()=>{},1000);`
   const services = createTestServices()
   const owned = await services.spawn({ file: process.execPath, args: ["-e", script, pidFile], cwd: directory, env: { ...process.env } as Record<string, string> },
-    { role: "harness", label: "descendant test" })
+    { role: "harness", label: "descendant test", signal: new AbortController().signal })
   try {
     let descendant = 0
     const until = Date.now() + 2_000

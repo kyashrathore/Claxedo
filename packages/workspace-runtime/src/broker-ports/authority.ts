@@ -1,5 +1,6 @@
 import type { SessionHandoff } from "@claxedo/agent-runtime-contract"
 import type { TurnAuthority } from "@claxedo/harness/broker"
+import type { HarnessBinding } from "@claxedo/harness/contract"
 import type { RuntimeStore } from "../store"
 
 export class BrokerAuthority {
@@ -26,13 +27,16 @@ export class BrokerAuthority {
     return this.store.sessionStarts.get(sessionId)
   }
 
-  async rebind(sessionId: string, upstreamSessionId: string): Promise<void> {
+  async rebind(sessionId: string, upstreamSessionId: string): Promise<HarnessBinding> {
     const binding = this.store.getExecutionBinding(sessionId)
     if (!binding) throw new Error(`Session ${sessionId} has no execution binding`)
     this.store.bindSession({
       sessionId, workspaceId: binding.workspaceId, directory: binding.directory,
       connectionId: binding.connectionId, upstreamSessionId, agentSessionId: upstreamSessionId,
     })
+    const committed = this.store.getExecutionBinding(sessionId)
+    if (!committed) throw new Error(`Session ${sessionId} lost its execution binding`)
+    return committed
   }
 
   async persistHandoff(sessionId: string, context: SessionHandoff): Promise<void> {

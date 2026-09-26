@@ -9,6 +9,7 @@ import { pollUntil } from "./poll"
 
 export type ConformanceBackend = {
   execution?: "process" | "in-process"
+  unrunnableTurn(turn: TurnInput): TurnInput
   agent?: string
   directory: string
   harness: StartInput["config"]["harness"]
@@ -64,20 +65,26 @@ async function setup(input: ConformanceInput) {
     projection: backend.projection ?? { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] },
     credentials: backend.credentials,
   }
-  let session: HarnessSession
-  try { session = await transport.start(start, sessionBroker) }
+  let started: HarnessSession
+  try { started = await transport.start(start, sessionBroker) }
   catch (error) { await transport.dispose(); await backend.close(); throw error }
   ports.startStatus = "created"
-  ports.current.set("s1", { ...authority, directory: backend.directory, upstreamSessionId: session.binding.upstreamSessionId })
+  const binding = () => ports.bindings.get("s1") ?? started.binding
   const turnBroker = (signal = new AbortController().signal) => createTurnBroker(owner, {
-    authority: { ...authority, directory: backend.directory, upstreamSessionId: session.binding.upstreamSessionId }, origin: turnOrigin, signal,
+    authority: { ...authority, directory: backend.directory, upstreamSessionId: binding().upstreamSessionId }, origin: turnOrigin, signal,
   })
   const close = async () => { await transport.dispose(); await backend.close() }
-  return { backend, services, ports, owner, transport, start, session, sessionBroker, turnBroker,
+  return { backend, services, ports, owner, transport, start, started, sessionBroker, turnBroker,
+    get session(): HarnessSession { return { ...started, binding: binding() } },
     turn: (message: string) => turn(backend.model, backend.agent ?? "build", message, turnOrigin), close }
 }
 
 export { setup as setupConformance }
+
+export function withUndeliverableFile(turn: TurnInput): TurnInput {
+  return { ...turn, prompt: { ...turn.prompt, parts: [...turn.prompt.parts,
+    { type: "file", mime: "image/png", filename: "remote.png", url: "https://attachments.invalid/remote.png" }] } }
+}
 
 async function pendingQuestion(context: Awaited<ReturnType<typeof setup>>) {
   const pending = await pollUntil(() => context.owner.broker.list({ sessionId: context.session.binding.sessionId })
@@ -130,6 +137,54 @@ export function runConformance(input: ConformanceInput): void {
       } finally { await context.close() }
     }, 60_000)
 
+    test("the session's binding is the frozen binding the broker committed", async () => {
+      const context = await setup(input)
+      try {
+        expect(Object.isFrozen(context.started.binding)).toBe(true)
+        expect(context.ports.bindings.get("s1")).toEqual(context.started.binding)
+        expect(() => { (context.started.binding as { upstreamSessionId: string }).upstreamSessionId = "forged" }).toThrow()
+      } finally { await context.close() }
+    }, 60_000)
+
+    test("the goals capability agrees with the goals operation group", async () => {
+      const context = await setup(input)
+      try {
+        const capabilities = await context.transport.capabilities({ directory: context.backend.directory, sessionId: context.session.binding.sessionId })
+        expect(capabilities.goals.implemented).toBe(context.transport.goals !== undefined)
+      } finally { await context.close() }
+    }, 60_000)
+
+    test("a turn the transport cannot run rejects the iteration and yields no error event", async () => {
+      const context = await setup(input)
+      try {
+        const events: RoutedEvent[] = []
+        const failure = await (async () => {
+          const unrunnable = context.backend.unrunnableTurn(context.turn("Reply with exactly this one token: UNRUNNABLE"))
+          for await (const event of context.transport.send(context.session, unrunnable, context.turnBroker())) events.push(event)
+        })().then(() => undefined, (error: unknown) => error)
+        expect(failure).toBeInstanceOf(Error)
+        expect(events.filter((item) => item.event.type === "error")).toEqual([])
+      } finally { await context.close() }
+    }, 60_000)
+
+    test("config options preview names the model the harness holds and derives it from the select", async () => {
+      const context = await setup(input)
+      try {
+        if (!context.transport.config) return
+        const previews = [
+          await context.transport.config.options({ session: context.session }, "probe"),
+          await context.transport.config.options({ session: context.session, model: context.backend.model }, "probe"),
+        ]
+        for (const preview of previews) {
+          expect(preview.options).toBeArray()
+          if (!preview.resolvedModel) continue
+          const select = preview.options.find((option) => option.type === "select" && (option.category === "model" || option.id === "model"))
+          expect(select?.currentValue).toBe(preview.resolvedModel.id)
+          expect(select?.selectOptions?.find((choice) => choice.id === preview.resolvedModel?.id)?.name).toBe(preview.resolvedModel.name)
+        }
+      } finally { await context.close() }
+    }, 60_000)
+
     test("tool events and declared optional groups", async () => {
       const context = await setup(input)
       try {
@@ -140,7 +195,7 @@ export function runConformance(input: ConformanceInput): void {
           expect(events.some((item) => item.event.type === "tool-start")).toBe(true)
           expect(events.some((item) => item.event.type === "tool-output")).toBe(true)
         }
-        if (capabilities.commands) expect(await context.transport.commands?.list({ session: context.session })).toBeArray()
+        if (context.transport.commands) expect(await context.transport.commands.list({ session: context.session })).toBeArray()
         if (capabilities.titles === "harness") {
           expect(context.transport.naming).toBeDefined()
           await context.transport.naming?.rename?.(context.session, "Conformance title")
@@ -155,8 +210,7 @@ export function runConformance(input: ConformanceInput): void {
     test("steers an active turn when declared", async () => {
       const context = await setup(input)
       try {
-        const capabilities = await context.transport.capabilities({ directory: context.backend.directory })
-        if (!capabilities.steer || !context.backend.hold) return
+        if (!context.transport.steer || !context.backend.hold) return
         const release = context.backend.hold("PISTEER")
         const running = collect(context.transport, context.session, context.turn("Reply with exactly this one token: PISTEER"), context.turnBroker())
         await heldRequest(context.backend, "PISTEER")
@@ -418,7 +472,7 @@ export function runConformance(input: ConformanceInput): void {
           context.transport.config.options({ draft }, "probe"), context.transport.config.options({ draft }, "probe"),
         ])
         expect(first).toEqual(second)
-        expect(first.length).toBeGreaterThan(0)
+        expect(first.options.length).toBeGreaterThan(0)
         if (context.backend.execution === "in-process") expect(context.services.processes).toHaveLength(0)
         else if (context.backend.locality !== "remote") {
           expect(context.services.processes).toHaveLength(before + 1)
@@ -431,11 +485,10 @@ export function runConformance(input: ConformanceInput): void {
     test("a draft launch lists commands and retires its process", async () => {
       const context = await setup(input)
       try {
-        const capabilities = await context.transport.capabilities({ directory: context.backend.directory, sessionId: context.session.binding.sessionId })
-        if (!capabilities.commands) return
+        if (!context.transport.commands) return
         const { sessionId: _sessionId, title: _title, instructions: _instructions, ...draft } = context.start
         const before = context.services.processes.length
-        const commands = await context.transport.commands?.list({ draft })
+        const commands = await context.transport.commands.list({ draft })
         expect(commands).toBeArray()
         expect(commands?.length).toBeGreaterThan(0)
         if (context.backend.execution === "in-process") expect(context.services.processes).toHaveLength(0)
@@ -449,9 +502,8 @@ export function runConformance(input: ConformanceInput): void {
     test("agent listing uses its session or draft target", async () => {
       const context = await setup(input)
       try {
-        const capabilities = await context.transport.capabilities({ directory: context.backend.directory, sessionId: context.session.binding.sessionId })
-        if (!capabilities.agents) return
-        const sessionAgents = await context.transport.agents?.list({ session: context.session })
+        if (!context.transport.agents) return
+        const sessionAgents = await context.transport.agents.list({ session: context.session })
         expect(sessionAgents?.length).toBeGreaterThan(0)
         const { sessionId: _sessionId, title: _title, instructions: _instructions, ...draft } = context.start
         expect(await context.transport.agents?.list({ draft })).toEqual(sessionAgents)

@@ -27,7 +27,11 @@ function startInput(directory: string, id: string, access: "native" | "connectio
     credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" } }
 }
 
-test("harness package composition starts ACP, Pi, Codex and Claude and constructs Cursor", async () => {
+function committed(directory: string, connectionId: string) {
+  return async (upstreamSessionId: string) => ({ sessionId: "s1", workspaceId: "w1", directory, connectionId, upstreamSessionId })
+}
+
+test("harness package composition starts ACP, Pi, Codex, Claude and OpenCode and constructs Cursor", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "harness-compose-"))
   const peer = path.join(root, "peer.cjs")
   await fs.writeFile(peer, peerSource, { mode: 0o755 })
@@ -44,28 +48,37 @@ test("harness package composition starts ACP, Pi, Codex and Claude and construct
       env: { ...process.env, COMPOSE_PEER_KIND: "codex" } },
     claude: { executable: "claude", configRoot: path.join(root, "claude-homes"),
       userConfigRoot: path.join(root, "claude-owner"), env: process.env },
-    cursor: { env: process.env } })
-  const broker = { rebind: async () => {} } as unknown as SessionBroker
+    cursor: { env: process.env },
+    opencode: { databasePath: path.join(root, "opencode.db"), configContent: JSON.stringify({ model: "proof/proof",
+      provider: { proof: { npm: "@ai-sdk/openai-compatible", name: "Proof", models: { proof: { name: "Proof", limit: { context: 32_000, output: 1_024 } } } } } }) } })
+  const brokerFor = (connectionId: string) => ({ rebind: committed(root, connectionId) }) as unknown as SessionBroker
   try {
     const acpDescriptor = { connectionId: "acp-1", providerKey: "acp", configRevision: 1, enabled: true,
       config: { label: "ACP", connection: { kind: "process", command: process.execPath, args: [peer],
         env: { COMPOSE_PEER_KIND: "acp" } }, secretBindings: { env: { TOKEN: "token" } } } }
     const acp = composer.connection({ descriptor: acpDescriptor, directory: root, expectedRevision: 1, secrets: { token: "resolved" } })
-    try { expect((await acp.start(startInput(root, "acp", "connection"), broker)).binding.upstreamSessionId).toBe("acp-peer") }
+    try { expect((await acp.start(startInput(root, "acp", "connection"), brokerFor("acp-1"))).binding.upstreamSessionId).toBe("acp-peer") }
     finally { await acp.dispose() }
     const pi = composer.builtIn("pi")
-    try { expect((await pi.start(startInput(root, "pi", "native"), broker)).binding.upstreamSessionId).toBe("pi-peer") }
+    try { expect((await pi.start(startInput(root, "pi", "native"), brokerFor("pi-rpc"))).binding.upstreamSessionId).toBe("pi-peer") }
     finally { await pi.dispose() }
     const codex = composer.builtIn("codex")
     expect(codex.commands).toBeUndefined()
-    try { expect((await codex.start(startInput(root, "codex", "native"), broker)).binding.upstreamSessionId).toBe("codex-peer") }
+    try { expect((await codex.start(startInput(root, "codex", "native"), brokerFor("codex-app-server"))).binding.upstreamSessionId).toBe("codex-peer") }
     finally { await codex.dispose() }
     const claude = composer.builtIn("claude")
-    try { expect((await claude.start(startInput(root, "claude", "native"), broker)).binding.connectionId).toBe("claude-sdk") }
+    try { expect((await claude.start(startInput(root, "claude", "native"), brokerFor("claude-sdk"))).binding.connectionId).toBe("claude-sdk") }
     finally { await claude.dispose() }
     const cursor = composer.builtIn("cursor")
     try { expect(cursor.kind).toBe("cursor-sdk") }
     finally { await cursor.dispose() }
+    const opencode = composer.builtIn("opencode")
+    try {
+      const session = await opencode.start(startInput(root, "opencode", "native"), brokerFor("opencode-sdk"))
+      expect(session.binding.connectionId).toBe("opencode-sdk")
+      expect(session.binding.upstreamSessionId.length).toBeGreaterThan(0)
+      await opencode.close(session)
+    } finally { await opencode.dispose() }
     expect(() => composer.connection({ descriptor: { ...acpDescriptor, enabled: false }, directory: root,
       expectedRevision: 1, secrets: { token: "resolved" } })).toThrow("disabled or stale")
     expect(() => composer.connection({ descriptor: acpDescriptor, directory: root,

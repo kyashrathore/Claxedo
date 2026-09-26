@@ -1,5 +1,5 @@
 import { TransportError, type HarnessServices, type HarnessTransport } from "./contract"
-import { harnessRecord, type BuiltInHarnessId } from "./registry/table"
+import { harnessRecord, type NativeHarnessId } from "./registry/table"
 import { createAcpProvider } from "./registry/providers/acp"
 import { createPiRpcProvider } from "./registry/providers/pi-rpc"
 import type { CustomHarnessProvider, HarnessConnectionDescriptor } from "./registry/providers/types"
@@ -11,6 +11,8 @@ import { CodexAppServerTransport, type CodexTransportOptions } from "./transport
 import { ClaudeSdkTransport } from "./transports/claude-sdk"
 import type { ClaudeSdkOptions } from "./transports/claude-sdk/launch-context"
 import { CursorSdkTransport } from "./transports/cursor-sdk"
+import { OpenCodeSdkTransport } from "./transports/opencode-sdk/transport"
+import type { OpenCodeRuntimeOptions } from "./transports/opencode-sdk/runtime"
 
 export type HarnessCompositionOptions = {
   acp: { missingContext: MissingSessionContext }
@@ -18,6 +20,7 @@ export type HarnessCompositionOptions = {
   codex: CodexTransportOptions
   claude: ClaudeSdkOptions
   cursor: { env: NodeJS.ProcessEnv }
+  opencode: OpenCodeRuntimeOptions
 }
 
 export type ConnectionTransportInput = {
@@ -40,14 +43,15 @@ export function createHarnessComposer(services: HarnessServices, options: Harnes
     return provider.createTransport({ descriptor, expectedRevision: input.expectedRevision, resolved, services })
   }
   return {
-    builtIn(id: BuiltInHarnessId | "pi"): HarnessTransport {
+    builtIn(id: NativeHarnessId): HarnessTransport {
       const record = harnessRecord(id)
       if (!record || record.access !== "native") throw new TransportError("provider", "connection_unavailable", `Unknown built-in harness: ${id}`)
       if (record.transport === "pi-rpc") return new PiRpcTransport(services, options.pi)
       if (record.transport === "codex-app-server") return new CodexAppServerTransport(services, options.codex)
       if (record.transport === "claude-sdk") return new ClaudeSdkTransport(services, options.claude)
       if (record.transport === "cursor-sdk") return new CursorSdkTransport(services, options.cursor.env)
-      throw new TransportError("provider", "connection_unavailable", `Transport is not composed: ${record.transport}`)
+      if (record.transport === "opencode-sdk") return new OpenCodeSdkTransport(services, options.opencode)
+      throw new TransportError("provider", "connection_unavailable", `Transport is not native: ${record.transport}`)
     },
     connection(input: ConnectionTransportInput): HarnessTransport {
       if (input.descriptor.providerKey === "acp") return createConnection(acp, input)

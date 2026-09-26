@@ -242,9 +242,21 @@ describe(`${name} request broker`, () => {
     const admission = await session.admitProviderTurn({ reason: "goal" }, async function* () {
       yield { event: { type: "text-delta", delta: "hello" } }
     })
-    expect(admission).toMatchObject({ admitted: true, turnId: expect.any(String) })
+    expect(admission).toMatchObject({ admitted: true, turn: { turnId: expect.any(String), assistantMessageId: expect.any(String) } })
     if (admission.admitted) expect(await admission.settled).toEqual({ state: "completed" })
     expect(ports.drained).toHaveLength(1)
+  })
+
+  test("a provider turn hands its run the admitted identity and drains under it", async () => {
+    const { ports, owner } = setup()
+    const session = createSessionBroker(owner, { sessionId: "s1", workspaceId: "w1", directory: "/work", origin })
+    const result = await session.admitProviderTurn({ reason: "goal" }, async function* (_broker, turn) {
+      yield { event: { type: "text-delta", delta: turn.assistantMessageId } }
+    })
+    expect(result.admitted).toBe(true)
+    if (!result.admitted) return
+    expect(await result.settled).toEqual({ state: "completed" })
+    expect(ports.drained).toEqual([{ event: { type: "text-delta", delta: result.turn.assistantMessageId } }])
   })
 
   test("a provider turn the runtime cancels before its run ends settles cancelled", async () => {
@@ -698,6 +710,22 @@ describe(`${name} broker review regressions`, () => {
     expect(owner.broker.list({ sessionId: "s1" })).toHaveLength(1)
     controller.abort()
     expect(await first).toEqual({ kind: "cancelled" })
+  })
+
+  test("accepted URL consent is released when its session closes", async () => {
+    const { ports, owner, turn } = setup()
+    const request = { kind: "elicitation" as const, mode: "url" as const, message: "Connect", url: "https://example.com", elicitationId: "oauth" }
+    const first = turn.ask({ ...request, requestId: "url-before-close" })
+    await tick()
+    await owner.broker.answer("url-before-close", { kind: "consent", accepted: true }, { sessionId: "s1" })
+    expect(await first).toEqual({ kind: "consent", accepted: true })
+    owner.broker.closeSession("s1")
+    const second = turn.ask({ ...request, requestId: "url-after-close" })
+    await tick()
+    expect(owner.broker.list({ sessionId: "s1" })).toHaveLength(1)
+    await owner.broker.answer("url-after-close", { kind: "rejected" }, { sessionId: "s1" })
+    expect(await second).toEqual({ kind: "rejected" })
+    expect(ports.saved).toHaveLength(2)
   })
 
   test("F11 duplicate permission answer is a refusal during validation", async () => {

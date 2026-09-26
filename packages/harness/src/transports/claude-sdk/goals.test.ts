@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import type { Query, SDKMessage } from "@anthropic-ai/claude-agent-sdk"
-import type { HarnessSession, SessionBroker, StartInput, TurnBroker } from "../../contract"
+import type { HarnessSession, SessionBroker, StartInput, TurnBroker, TurnRef } from "../../contract"
 import { ClaudeGoals } from "./goals"
 import type { ClaudeQueryLauncher } from "./query-options"
 
@@ -14,25 +14,47 @@ function session(): HarnessSession {
     connectionId: "claude-sdk", upstreamSessionId: "up1" } }
 }
 
+function entry() {
+  return { session: session(), input }
+}
+
 function stream(messages: AsyncIterable<SDKMessage>): Query {
   return { [Symbol.asyncIterator]: () => messages[Symbol.asyncIterator](), close() {} } as Query
 }
+
+const admitted: TurnRef = { turnId: "goal-turn", assistantMessageId: "goal-assistant" }
 
 function broker(initial: "active" | "absent" = "absent") {
   let goal: { sessionId: string; objective: string; status: "active" | "paused" | "blocked"; createdAt: number; updatedAt: number; lastReason?: string } | null =
     initial === "active" ? { sessionId: "s1", objective: "Ship", status: "active", createdAt: 1, updatedAt: 1 } : null
   let settled: Promise<unknown> | undefined
-  const value = { sessionId: "s1", config: () => input.config, rebind: async () => {},
+  const value = { sessionId: "s1", config: () => input.config, rebind: async (upstreamSessionId: string) => ({ ...session().binding, upstreamSessionId }),
     goal: { read: () => goal, publish: async (next: typeof goal) => { goal = next } },
-    admitProviderTurn: async (_request: unknown, run: (turn: TurnBroker) => AsyncIterable<unknown>) => {
+    admitProviderTurn: async (_request: unknown, run: (turn: TurnBroker, ref: TurnRef) => AsyncIterable<unknown>) => {
       settled = (async () => {
-        try { for await (const _event of run({ signal: new AbortController().signal } as TurnBroker)) {} return { state: "completed" as const } }
+        try { for await (const _event of run({ signal: new AbortController().signal } as TurnBroker, admitted)) {} return { state: "completed" as const } }
         catch (error) { return { state: "failed" as const, error: error instanceof Error ? error.message : String(error) } }
       })()
-      return { admitted: true as const, turnId: "goal-turn", settled }
+      return { admitted: true as const, turn: admitted, settled }
     } } as unknown as SessionBroker
   return { value, settled: () => settled }
 }
+
+test("a native Goal runs under the admitted turn's identity", async () => {
+  const state = broker()
+  const specs: Parameters<ClaudeQueryLauncher["launch"]>[0][] = []
+  const launcher = { launch: async (spec: Parameters<ClaudeQueryLauncher["launch"]>[0]) => {
+    specs.push(spec)
+    return stream({ async *[Symbol.asyncIterator]() {
+      yield { type: "result", subtype: "success", is_error: false, num_turns: 1, session_id: "up1" } as SDKMessage
+    } })
+  } } as unknown as ClaudeQueryLauncher
+  const goals = new ClaudeGoals(launcher)
+  expect((await goals.start(entry(), state.value, "Ship")).ok).toBe(true)
+  expect(goals.turnId("s1")).toBe("goal-turn")
+  await state.settled()
+  expect(specs[0]).toMatchObject({ turnId: "goal-turn", assistantMessageId: "goal-assistant" })
+})
 
 test("a dead native Goal query settles failed and blocks the active Goal", async () => {
   const state = broker()
@@ -42,7 +64,7 @@ test("a dead native Goal query settles failed and blocks the active Goal", async
     throw new Error("query died")
   } }) } as unknown as ClaudeQueryLauncher
   const goals = new ClaudeGoals(launcher)
-  expect((await goals.start(session(), input, state.value, "Ship")).ok).toBe(true)
+  expect((await goals.start(entry(), state.value, "Ship")).ok).toBe(true)
   await state.settled()
   await new Promise((resolve) => setTimeout(resolve, 0))
   expect(state.value.goal.read()).toMatchObject({ status: "blocked", lastReason: "query died" })
@@ -54,7 +76,7 @@ test("an unconfirmed clear leaves the Goal blocked", async () => {
   const launcher = { launch: async () => stream({ async *[Symbol.asyncIterator]() {
     yield { type: "result", subtype: "success", is_error: false, num_turns: 1, session_id: "up1" } as SDKMessage
   } }) } as unknown as ClaudeQueryLauncher
-  const result = await new ClaudeGoals(launcher).stop(session(), input, state.value)
+  const result = await new ClaudeGoals(launcher).stop(entry(), state.value)
   expect(result).toMatchObject({ ok: false, status: "failed" })
   expect(state.value.goal.read()).toMatchObject({ status: "blocked", lastReason: "Claude did not confirm clearing the native Goal" })
 })
@@ -75,8 +97,9 @@ test("stop drains the admitted Goal turn before clearing it", async () => {
     } })
   } } as unknown as ClaudeQueryLauncher
   const goals = new ClaudeGoals(launcher)
-  expect((await goals.start(session(), input, state.value, "Ship")).ok).toBe(true)
-  const stopped = await goals.stop(session(), input, state.value)
+  const current = entry()
+  expect((await goals.start(current, state.value, "Ship")).ok).toBe(true)
+  const stopped = await goals.stop(current, state.value)
   expect(stopped).toMatchObject({ ok: true, goal: { status: "paused" } })
   expect(order).toEqual(["goal drained", "clear launched"])
 })
@@ -90,6 +113,6 @@ test("goal cancellation returns a failed settlement when owned retirement fails"
     } })
   } } as unknown as ClaudeQueryLauncher
   const goals = new ClaudeGoals(launcher)
-  expect((await goals.start(session(), input, state.value, "Ship")).ok).toBe(true)
+  expect((await goals.start(entry(), state.value, "Ship")).ok).toBe(true)
   expect(await goals.cancel("s1")).toEqual({ state: "failed", error: "retirement failed" })
 })

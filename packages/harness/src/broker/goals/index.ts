@@ -1,6 +1,6 @@
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import type { ProviderTurnInput, ProviderTurnResult, TurnBroker } from "../../contract/broker"
-import type { RoutedEvent } from "../../contract/session"
+import type { RoutedEvent, TurnRef } from "../../contract/session"
 import type { BrokerPorts } from "../ports"
 
 export function goalPort(ports: BrokerPorts, sessionId: string) {
@@ -19,13 +19,13 @@ export function admitProviderTurn(
   ports: BrokerPorts,
   sessionId: string,
   input: ProviderTurnInput,
-  makeTurn: (turnId: string, signal: AbortSignal) => TurnBroker,
-  run: (broker: TurnBroker) => AsyncIterable<RoutedEvent>,
+  makeTurn: (turn: TurnRef, signal: AbortSignal) => TurnBroker,
+  run: (broker: TurnBroker, turn: TurnRef) => AsyncIterable<RoutedEvent>,
 ): Promise<ProviderTurnResult> {
-  return ports.admitProviderTurn(sessionId, input, async (turnId, signal) => {
-    const broker = makeTurn(turnId, signal)
-    for await (const event of run(broker)) {
-      await ports.drainProviderEvent(sessionId, turnId, event)
+  return ports.admitProviderTurn(sessionId, input, async (turn, signal) => {
+    const broker = makeTurn(turn, signal)
+    for await (const event of run(broker, turn)) {
+      await ports.drainProviderEvent(sessionId, turn, event)
     }
   })
 }

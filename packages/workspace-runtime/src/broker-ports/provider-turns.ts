@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { errorMessage } from "@claxedo/helpers"
-import type { ProviderTurnInput, ProviderTurnResult, ProviderTurnSettlement } from "@claxedo/harness/contract"
+import type { ProviderTurnInput, ProviderTurnResult, ProviderTurnSettlement, TurnRef } from "@claxedo/harness/contract"
 import type { RuntimeStore } from "../store"
 import type { BrokerSessionEvents } from "./session-events"
 import type { BrokerEventDelivery } from "./delivery"
@@ -20,7 +20,7 @@ export class BrokerProviderTurns {
 
   async admit(
     sessionId: string, input: ProviderTurnInput,
-    run: (turnId: string, signal: AbortSignal) => Promise<void>,
+    run: (turn: TurnRef, signal: AbortSignal) => Promise<void>,
   ): Promise<ProviderTurnResult> {
     const session = this.store.getSession(sessionId) as { time?: { archived?: number } } | null
     if (!session || session.time?.archived) return { admitted: false, reason: "closed" }
@@ -29,6 +29,7 @@ export class BrokerProviderTurns {
     const leaseId = this.store.acquireTurnLease(sessionId)
     if (!leaseId) return { admitted: false, reason: "busy" }
     const turnId = randomUUID()
+    const turn: TurnRef = { turnId, assistantMessageId: turnId }
     const controller = new AbortController()
     try {
       const started = this.store.startTurn({
@@ -47,7 +48,7 @@ export class BrokerProviderTurns {
       let state: "completed" | "failed" | "cancelled" = "completed"
       let failure: string | undefined
       try {
-        await run(turnId, controller.signal)
+        await run(turn, controller.signal)
       } catch (error) {
         state = "failed"
         failure = errorMessage(error)
@@ -71,6 +72,6 @@ export class BrokerProviderTurns {
       }
       return state === "failed" ? { state, error: failure ?? "Provider turn failed" } : { state }
     })
-    return { admitted: true, turnId, settled }
+    return { admitted: true, turn, settled }
   }
 }

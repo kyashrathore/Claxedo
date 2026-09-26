@@ -37,7 +37,7 @@ test("host services use the owned spawn, transcript resolver, clock and logger",
     ["register", { workspaceId: "w1", parentSessionId: "s1", providerKind: "cursor", filePath: "/tmp/t.json" }],
     ["open", { workspaceId: "w1", parentSessionId: "s1", handle: "h1" }]])
   const child = await services.spawn({ file: "/bin/sh", args: ["-c", "printf ready"], cwd: "/tmp", env: { PATH: process.env.PATH ?? "/usr/bin:/bin" } },
-    { role: "probe", label: "service boundary" })
+    { role: "probe", label: "service boundary", signal: new AbortController().signal })
   expect((await child.exited).code).toBe(0)
   expect(await child.retire({ at: Date.now() + 5_000, signal: new AbortController().signal })).toEqual({ stopped: true })
 })

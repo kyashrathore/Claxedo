@@ -8,6 +8,7 @@ import type {
   AgentPermissionModeState,
   AgentTodo,
   ConnectionRuntimeStatus,
+  PromptModel,
   RuntimeGoalSnapshot,
   SessionConfig,
   SessionConfigUpdate,
@@ -35,6 +36,13 @@ export type DraftLaunch = Omit<StartInput, "sessionId" | "title" | "instructions
 
 export type ConfigTarget = { session: HarnessSession } | { draft: DraftLaunch }
 
+export type ConfigPreviewTarget = { session: HarnessSession; model?: PromptModel } | { draft: DraftLaunch }
+
+export type ConfigOptionsPreview = {
+  options: readonly AgentConfigOption[]
+  resolvedModel?: { id: string; name: string }
+}
+
 export type TransportHealth = {
   status: "ok" | "degraded" | "unavailable"
   reason?: string
@@ -57,7 +65,7 @@ export interface NativeGoalOperations {
 export interface ConfigOperations {
   read(session: HarnessSession): Promise<SessionConfig>
   update(session: HarnessSession, update: SessionConfigUpdate): Promise<SessionConfig>
-  options(target: ConfigTarget, mode: "probe" | "peek"): Promise<readonly AgentConfigOption[]>
+  options(target: ConfigPreviewTarget, mode: "probe" | "peek"): Promise<ConfigOptionsPreview>
   permissionModes(target: ConfigTarget): Promise<AgentPermissionModeState>
   setPermissionMode(session: HarnessSession, modeId: string): Promise<AgentPermissionModeState>
 }

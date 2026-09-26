@@ -32,12 +32,14 @@ export type AcpPeer = {
   retire(): Promise<void>
 }
 
+export type AcpLaunch = { role: "harness" | "probe"; signal: AbortSignal }
+
 export async function connectAcp(input: StartInput, options: AcpConnectionOptions, services: HarnessServices, handlers: AcpHandlers,
-  role: "harness" | "probe" = "harness"): Promise<AcpPeer> {
+  launch: AcpLaunch): Promise<AcpPeer> {
   if ((options.kind === "process") !== (input.locality === "local")) {
     throw new AcpTransportError("configuration", "ACP connection kind does not match locality")
   }
-  const { process, stream } = await openStream(input, options, services, role)
+  const { process, stream } = await openStream(input, options, services, launch)
   const startup = new AcpStartupDeadline(services.clock, options.startupTimeoutMs ?? 10_000, "initialize")
   let initializing = true
   const inbound = extensionStream(stream, handlers)
@@ -123,11 +125,11 @@ function subagentWire(message: unknown): { sessionId: string; update: unknown } 
 }
 
 async function openStream(input: StartInput, options: AcpConnectionOptions, services: HarnessServices,
-  role: "harness" | "probe"): Promise<{ process?: OwnedProcess; stream: Stream }> {
+  launch: AcpLaunch): Promise<{ process?: OwnedProcess; stream: Stream }> {
   if (options.kind === "process") {
     const process = await services.spawn({ file: options.command, args: options.args ?? [], cwd: input.directory,
       env: { ...processEnv(), ...options.env, ...input.credentials.secrets } },
-      { role, label: "ACP", sessionId: input.sessionId })
+      { role: launch.role, label: "ACP", sessionId: input.sessionId, signal: launch.signal })
     const streams = processByteStreams(process)
     const stream = ndJsonStream(streams.output, streams.input)
     return { process, stream }

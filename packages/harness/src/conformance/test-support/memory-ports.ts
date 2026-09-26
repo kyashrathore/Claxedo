@@ -2,6 +2,7 @@ import type { AgentSessionStartBinding, RuntimeGoalSnapshot, SessionConfig, Suba
 import { errorMessage } from "@claxedo/helpers"
 import type { AgentRuntimeEvent, SubagentUpdatedEvent } from "@claxedo/agent-event-runtime/contracts"
 import type { PendingRequest, ProviderTurnInput, ProviderTurnResult, RequestAnswer } from "../../contract/broker"
+import type { HarnessBinding, TurnRef } from "../../contract/session"
 import type { BrokerEvent, BrokerPorts, SubagentAdmissionStore, TurnAuthority } from "../../broker/ports"
 import { createMemorySubagentAdmissionStore } from "../../broker/subagents/admission"
 
@@ -97,19 +98,20 @@ export class MemoryPorts implements BrokerPorts {
   providerTurn?: AbortController
   nextProviderTurn = 0
   cancelProviderTurn() { this.providerTurn?.abort() }
-  async admitProviderTurn(_sessionId: string, _input: ProviderTurnInput, run: (id: string, signal: AbortSignal) => Promise<void>): Promise<ProviderTurnResult> {
+  async admitProviderTurn(_sessionId: string, _input: ProviderTurnInput, run: (turn: TurnRef, signal: AbortSignal) => Promise<void>): Promise<ProviderTurnResult> {
     const controller = new AbortController()
     this.providerTurn = controller
     const turnId = `provider-${++this.nextProviderTurn}`
+    const turn: TurnRef = { turnId, assistantMessageId: turnId }
     const authority = this.current.get(_sessionId)
     if (authority) this.current.set(_sessionId, { ...authority, turnId })
-    const settled = Promise.resolve().then(() => run(turnId, controller.signal)).then(
+    const settled = Promise.resolve().then(() => run(turn, controller.signal)).then(
       () => controller.signal.aborted ? { state: "cancelled" as const } : { state: "completed" as const },
       (error: unknown) => controller.signal.aborted ? { state: "cancelled" as const } : { state: "failed" as const, error: errorMessage(error) },
     )
-    return { admitted: true as const, turnId, settled }
+    return { admitted: true as const, turn, settled }
   }
-  async drainProviderEvent(_sessionId: string, _turnId: string, event: unknown) { this.drained.push(event) }
+  async drainProviderEvent(_sessionId: string, _turn: TurnRef, event: unknown) { this.drained.push(event) }
   meterUsage(_usage: unknown) {}
   sessionEvents: { sessionId: string; event: unknown }[] = []
   async publishSessionEvent(sessionId: string, event: unknown) { this.sessionEvents.push({ sessionId, event }) }
@@ -121,9 +123,16 @@ export class MemoryPorts implements BrokerPorts {
   async publishSubagentDiagnostic(_sessionId: string, diagnostic: unknown) {
     this.diagnostics.push(diagnostic)
   }
-  async rebind(sessionId: string, upstream: string) {
+  bindings = new Map<string, HarnessBinding>()
+  async rebind(sessionId: string, upstream: string): Promise<HarnessBinding> {
     const current = this.current.get(sessionId)
     if (current) this.current.set(sessionId, { ...current, upstreamSessionId: upstream })
+    const identity = current ?? this.startBinding
+    if (!identity || identity.sessionId !== sessionId) throw new Error(`Session ${sessionId} has no binding to rebind`)
+    const binding: HarnessBinding = { sessionId, workspaceId: identity.workspaceId, directory: identity.directory,
+      connectionId: identity.connectionId, upstreamSessionId: upstream }
+    this.bindings.set(sessionId, binding)
+    return binding
   }
   async persistHandoff(_sessionId: string, _context: unknown) {}
   config(_sessionId: string): SessionConfig { throw new Error("unused") }

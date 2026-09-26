@@ -3,7 +3,7 @@ import os from "node:os"
 import path from "node:path"
 import { expect, test } from "bun:test"
 import { createTestServices } from "./test-support/services"
-import { runConformance, setupConformance, type ConformanceBackend } from "./test-support/run"
+import { runConformance, setupConformance, type ConformanceBackend, withUndeliverableFile } from "./test-support/run"
 import { assertListedCommandsRun } from "./test-support/commands"
 import { ensurePinnedPi, PINNED_PI } from "../../e2e/harness/pinned-pi"
 import { reservePort, releasePort } from "../../e2e/harness/ports"
@@ -60,6 +60,7 @@ async function backend(): Promise<PiBackend> {
     hold: (marker) => server.holdTextReplies(marker),
     held: (marker) => server.textGateReached(marker),
     scriptTool: (name, input) => server.scriptTool({ name, input }),
+    unrunnableTurn: withUndeliverableFile,
     close: async () => { await server.close(); releasePort(port); await fs.rm(root, { recursive: true, force: true }) },
   }
 }
@@ -108,7 +109,7 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
 });`)
   const context = await setupConformance({
     name: "pi orphan dialog", backend: async () => ({ root, directory: root, harness: { id: "pi", access: "native" },
-      model: { providerID: "pi", modelID: "openai/gpt-4.1" }, owner: { kind: "machine-owner" },
+      model: { providerID: "pi", modelID: "openai/gpt-4.1" }, owner: { kind: "machine-owner" }, unrunnableTurn: withUndeliverableFile,
       credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" },
       close: async () => { await fs.rm(root, { recursive: true, force: true }) } }),
     makeTransport(services, state) {
@@ -195,7 +196,8 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
     const session = await transport.start({ sessionId: "s1", workspaceId: "w1", directory: root, locality: "local",
       owner: { kind: "machine-owner" }, config: { harness: { id: "pi", access: "native" } },
       projection: { generation: "g1", pluginRoots: [], mcpServers: [], notApplied: [] },
-      credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" } }, { rebind: async () => {} } as never)
+      credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" } }, { rebind: async (upstreamSessionId: string) =>
+        ({ sessionId: "s1", workspaceId: "w1", directory: root, connectionId: "pi-rpc", upstreamSessionId }) } as never)
     expect(session.binding.upstreamSessionId).toBe("composed-runtime")
     await transport.close(session)
     await expect(fs.access(marker)).rejects.toMatchObject({ code: "ENOENT" })

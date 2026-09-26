@@ -18,12 +18,12 @@ export type TurnOrigin = {
   reissued: boolean
 }
 
-export type HarnessBinding = AgentExecutionBinding
+export type HarnessBinding = Readonly<AgentExecutionBinding>
 
 export type HarnessSession = {
-  binding: HarnessBinding
-  directory: string
-  locality: Locality
+  readonly binding: HarnessBinding
+  readonly directory: string
+  readonly locality: Locality
 }
 
 export type StartInput = {
@@ -44,11 +44,13 @@ export type AttachInput = Omit<StartInput, "title" | "instructions"> & {
   binding: HarnessBinding
 }
 
+export type TurnPrompt = Omit<PromptInput, "model" | "variant" | "system">
+
 export type TurnInput = {
   turnId: string
   userMessageId: string
   assistantMessageId: string
-  prompt: PromptInput
+  prompt: TurnPrompt
   model?: PromptModel
   effort?: string | null
   system?: string

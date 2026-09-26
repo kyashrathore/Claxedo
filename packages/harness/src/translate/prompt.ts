@@ -1,7 +1,7 @@
 import type { TurnInput } from "../contract"
 
-export function flattenTurnPrompt(turn: TurnInput, options: { system: "turn" | "prompt"; separator: "\n" | "\n\n" }): string {
-  const system = options.system === "turn" ? turn.system : turn.prompt.system
+export function flattenTurnPrompt(turn: TurnInput, options: { separator: "\n" | "\n\n"; system: "prefix" | "channel" }): string {
+  const system = options.system === "prefix" ? turn.system : undefined
   const texts = turn.prompt.parts.flatMap((part) => part.type === "text" ? [part.text] : [])
   if (options.separator === "\n") return [system, texts.join("\n")].filter(Boolean).join("\n\n")
   return [system, ...texts].filter(Boolean).join("\n\n")

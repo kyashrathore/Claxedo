@@ -220,9 +220,11 @@ class StoreBehaviorPorts extends MemoryPorts {
     this.diagnostics.push(args[1])
   }
   override async rebind(sessionId: string, upstreamSessionId: string) {
-    await this.real.rebind(sessionId, upstreamSessionId)
+    const binding = await this.real.rebind(sessionId, upstreamSessionId)
     const current = this.current.get(sessionId)
     if (current) Map.prototype.set.call(this.current, sessionId, { ...current, upstreamSessionId })
+    this.bindings.set(sessionId, binding)
+    return binding
   }
   override persistHandoff(...args: Parameters<typeof this.real.persistHandoff>) { return this.real.persistHandoff(...args) }
   override config(sessionId: string) { return this.real.config(sessionId) }
@@ -335,7 +337,7 @@ describe("store broker ports", () => {
     store.releaseTurnLease("s1", lease)
     let release!: () => void
     const held = new Promise<void>((resolve) => { release = resolve })
-    const cancelled = await ports.admitProviderTurn("s1", { reason: "goal" }, async (_turnId, signal) => {
+    const cancelled = await ports.admitProviderTurn("s1", { reason: "goal" }, async (_turn, signal) => {
       await held
       if (signal.aborted) throw new Error("runtime cancelled")
     })
@@ -380,7 +382,7 @@ describe("store broker ports", () => {
     turn.associateChild("route-alias", child)
     const seen: string[] = []
     publishers.subscribeRuntime((envelope) => seen.push(envelope.sessionId))
-    await ports.drainProviderEvent("s1", "t1", { event: { type: "text-delta", delta: "child output" },
+    await ports.drainProviderEvent("s1", { turnId: "t1", assistantMessageId: "t1" }, { event: { type: "text-delta", delta: "child output" },
       route: { kind: "child", correlationKey: "route-alias" } })
     expect(seen).toContain(child.sessionId)
     const parentRows = store.brokerDatabase().prepare<{ type: string }>(

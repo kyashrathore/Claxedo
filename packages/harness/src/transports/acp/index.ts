@@ -96,9 +96,9 @@ export class AcpTransport implements HarnessTransport {
       modelSelection: { status: "optional" }, effortLevels: { status: "unresolved", models: [] },
       instructionChannel: "prompt-prefix", configOwner: "harness",
       requests: { permissions: true, questions: false, elicitation: true },
-      steer: groups?.steer ?? false, subagents: Boolean(entry && supportsAcpSubagents(entry.peer.handshake)),
+      subagents: Boolean(entry && supportsAcpSubagents(entry.peer.handshake)),
       goals: groups?.goals ?? { implemented: false, available: false, actions: [], recovery: "blocked", optionalFields: [] },
-      fork: Boolean(declared?.sessionCapabilities?.fork), agents: groups?.agents ?? false, commands: Boolean(entry?.commands.length), todos: false,
+      todos: false,
       history: "store", titles: "none", pluginIntake: { mcp: this.connection.supportsMcpServers === false ? "none" : "session", skills: "none" },
       mcpTransports: { stdio: this.connection.kind === "process" && this.connection.supportsMcpServers !== false,
         http: this.connection.supportsMcpServers !== false && mcp?.http === true,
@@ -128,7 +128,7 @@ export class AcpTransport implements HarnessTransport {
       update: (notification) => acpUpdate(entry, notification, (update) => acpObserveSubagent(entry, update)),
       extension: (_sessionId, update) => acpObserveSubagent(entry, update),
       unknown: (sessionId, method, payload) => acpUnknown(entry, sessionId, method, payload),
-    }) } catch (error) { startupAbort.abort(); this.startingAborts.delete(startupAbort); throw error }
+    }, { role: "harness", signal: startupAbort.signal }) } catch (error) { startupAbort.abort(); this.startingAborts.delete(startupAbort); throw error }
     if (this.disposed) { this.startingAborts.delete(startupAbort); await peer.retire(); throw new AcpTransportError("connection", "ACP transport disposed during startup") }
     entry = { start: input, broker, peer, phase: "ready", cancelled: false, pendingRestart: false, commands: [], options: [], startupAbort,
       pendingUpdates: [],
@@ -146,9 +146,8 @@ export class AcpTransport implements HarnessTransport {
       const result = await entry.startup.run(entry.peer.agent.newSession({ cwd: input.directory, mcpServers: this.mcp(entry).map(acpMcp),
         ...(meta ? { _meta: meta } : {}) }))
       entry.startup = undefined
-      entry.session.binding.upstreamSessionId = result.sessionId
       entry.options = result.configOptions ?? []
-      await broker.rebind(result.sessionId)
+      entry.session = { ...entry.session, binding: await broker.rebind(result.sessionId) }
       await acpFlushUpdates(entry, (update) => acpObserveSubagent(entry, update))
       if (this.disposed) throw new AcpTransportError("connection", "ACP transport disposed during startup")
       this.starting.delete(entry)
@@ -164,8 +163,7 @@ export class AcpTransport implements HarnessTransport {
       entry.startup = new AcpStartupDeadline(this.services.clock, this.connection.startupTimeoutMs ?? 10_000, "session restore")
       const upstreamSessionId = await entry.startup.run(restoreAcp(entry.peer, input, this.mcp(entry).map(acpMcp), broker, this.missingContext))
       entry.startup = undefined
-      entry.session.binding = { ...input.binding, upstreamSessionId }
-      await broker.rebind(upstreamSessionId)
+      entry.session = { ...entry.session, binding: await broker.rebind(upstreamSessionId) }
       await acpFlushUpdates(entry, (update) => acpObserveSubagent(entry, update))
       if (this.disposed) throw new AcpTransportError("connection", "ACP transport disposed during attach")
       this.starting.delete(entry)
@@ -264,11 +262,9 @@ export class AcpTransport implements HarnessTransport {
       const upstreamSessionId = await next.startup.run(restoreAcp(next.peer, { ...entry.start, binding: entry.session.binding },
         this.mcp(next).map(acpMcp), entry.broker, this.missingContext))
       next.startup = undefined
-      entry.session.binding.upstreamSessionId = upstreamSessionId
-      next.session = entry.session
+      next.session = { ...entry.session, binding: await entry.broker.rebind(upstreamSessionId) }
       next.options = entry.options
       next.commands = entry.commands
-      await entry.broker.rebind(upstreamSessionId)
       await acpFlushUpdates(next, (update) => acpObserveSubagent(next, update))
       if (this.disposed) throw new AcpTransportError("connection", "ACP transport disposed during restart")
       this.starting.delete(next)

@@ -1,6 +1,6 @@
 import {
-  AGENT_HARNESS_DEFINITIONS, HARNESS_IDS, HARNESS_TABLE, isHarnessId,
-  type HarnessId as BuiltInHarnessId,
+  AGENT_HARNESS_DEFINITIONS, AGENT_HARNESS_IDS, HARNESS_IDS, HARNESS_TABLE, isHarnessId,
+  type AgentHarnessId, type HarnessId as BuiltInHarnessId,
 } from "@claxedo/agent-runtime-contract"
 import type { TransportKind } from "../contract/transport"
 
@@ -8,14 +8,24 @@ export type { BuiltInHarnessId }
 
 export const CUSTOM_HARNESS_PROVIDER_KEYS = ["acp", "pi-rpc"] as const
 export type CustomHarnessProviderKey = (typeof CUSTOM_HARNESS_PROVIDER_KEYS)[number]
-export type HarnessId = BuiltInHarnessId | "pi" | CustomHarnessProviderKey
+export type NativeHarnessId = AgentHarnessId
+export type HarnessId = NativeHarnessId | CustomHarnessProviderKey
 
 const BUILT_IN_TRANSPORTS = {
   claude: "claude-sdk",
   codex: "codex-app-server",
   cursor: "cursor-sdk",
   pi: "pi-rpc",
-} as const satisfies Readonly<Record<BuiltInHarnessId | "pi", TransportKind>>
+  opencode: "opencode-sdk",
+} as const satisfies Readonly<Record<NativeHarnessId, TransportKind>>
+
+const BUILT_IN_MCP = {
+  claude: true,
+  codex: true,
+  cursor: true,
+  pi: false,
+  opencode: true,
+} as const satisfies Readonly<Record<NativeHarnessId, boolean>>
 
 const CUSTOM_TRANSPORTS: Readonly<Record<CustomHarnessProviderKey, TransportKind>> = {
   acp: "acp",
@@ -34,7 +44,13 @@ export type BuiltInHarnessRecord = {
   mcp: boolean
 } & (typeof HARNESS_TABLE)[BuiltInHarnessId]
 
-export type NativePiRecord = { id: "pi"; access: "native"; transport: "pi-rpc"; mcp: false; label: string }
+export type NativeEngineRecord = {
+  id: Exclude<NativeHarnessId, BuiltInHarnessId>
+  access: "native"
+  transport: TransportKind
+  mcp: boolean
+  label: string
+}
 
 export type CustomHarnessRecord = {
   id: CustomHarnessProviderKey
@@ -43,14 +59,20 @@ export type CustomHarnessRecord = {
   mcp: boolean
 }
 
-export type HarnessRecord = BuiltInHarnessRecord | NativePiRecord | CustomHarnessRecord
+export type HarnessRecord = BuiltInHarnessRecord | NativeEngineRecord | CustomHarnessRecord
+
+function isEngineHarnessId(id: string): id is Exclude<NativeHarnessId, BuiltInHarnessId> {
+  return (AGENT_HARNESS_IDS as readonly string[]).includes(id) && !isHarnessId(id)
+}
 
 export function harnessRecord(id: BuiltInHarnessId): BuiltInHarnessRecord
 export function harnessRecord(id: string): HarnessRecord | undefined
 export function harnessRecord(id: string): HarnessRecord | undefined {
-  if (isHarnessId(id)) return { id, access: "native", transport: BUILT_IN_TRANSPORTS[id], mcp: true, ...HARNESS_TABLE[id] }
-  if (id === "pi") return { id, access: "native", transport: BUILT_IN_TRANSPORTS.pi, mcp: false,
-    label: AGENT_HARNESS_DEFINITIONS.find((item) => item.id === "pi")!.label }
+  if (isHarnessId(id)) return { id, access: "native", transport: BUILT_IN_TRANSPORTS[id], mcp: BUILT_IN_MCP[id], ...HARNESS_TABLE[id] }
+  if (isEngineHarnessId(id)) {
+    return { id, access: "native", transport: BUILT_IN_TRANSPORTS[id], mcp: BUILT_IN_MCP[id],
+      label: AGENT_HARNESS_DEFINITIONS.find((item) => item.id === id)!.label }
+  }
   const key = CUSTOM_HARNESS_PROVIDER_KEYS.find((candidate) => candidate === id)
   if (key) {
     return { id: key, access: "connection", transport: CUSTOM_TRANSPORTS[key], mcp: CUSTOM_MCP[key] }
@@ -59,7 +81,7 @@ export function harnessRecord(id: string): HarnessRecord | undefined {
 }
 
 export function harnessesForTransport(kind: TransportKind): readonly HarnessRecord[] {
-  return [...HARNESS_IDS, "pi", ...CUSTOM_HARNESS_PROVIDER_KEYS]
+  return [...HARNESS_IDS, ...AGENT_HARNESS_IDS.filter((id) => !isHarnessId(id)), ...CUSTOM_HARNESS_PROVIDER_KEYS]
     .map((id) => harnessRecord(id))
     .filter((record): record is HarnessRecord => record !== undefined && record.transport === kind)
 }
