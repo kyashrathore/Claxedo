@@ -2,14 +2,16 @@
 import { expect, test } from "bun:test"
 import { QueryClient } from "@tanstack/solid-query"
 import { placementId, projectId, sessionId } from "./ids"
+import { sessionEndpoint } from "./session-context"
 import { NO_GOAL } from "./session-goal"
 import { readOlder, readSession } from "./session-reads"
 import { createStatusOwner } from "./status"
-import type { RuntimeRoute, Transport } from "./transport"
+import { withQuery, type RuntimeRoute, type Transport } from "./transport"
 import { workspaceStopped } from "./wire/connection"
 import { createWorkspaces } from "./workspaces"
 
 const ref = { projectId: projectId("proj_1"), placementId: placementId("ws_cloud"), sessionId: sessionId("ses_1") }
+const historyPath = withQuery(sessionEndpoint(ref, "/message"), { view: "latest-surface" })
 
 const stored = [
   { info: { id: "msg_1", sessionID: "ses_1", role: "user", time: { created: 1 } }, parts: [{ id: "prt_1", type: "text", text: "why?" }] },
@@ -30,7 +32,7 @@ function bootstrap(reachable: () => boolean, machine: boolean) {
   }
 }
 
-function fakeServer(options: { reachable: () => boolean; machine?: boolean; runtime?: (path: string) => Response }) {
+function fakeServer(options: { reachable: () => boolean; machine?: boolean; runtime?: (path: string) => Response | Promise<Response> }) {
   const requests: string[] = []
   const runtimeCalls: string[] = []
   const request = async (path: string) => {
@@ -135,4 +137,62 @@ test("session reads: an offline machine's session renders its published row, rea
   expect(server.runtimeCalls).toEqual([])
   expect((await readOlder(server.context, ref, "cursor_older")).entries).toEqual([])
   expect(server.runtimeCalls).toEqual([])
+})
+
+for (const machine of [false, true]) {
+  test(`session reads: ${machine ? "machine" : "cloud"} history starts while session metadata is pending`, async () => {
+    const metadata = Promise.withResolvers<Response>()
+    const server = fakeServer({
+      reachable: () => true,
+      machine,
+      runtime: (path) => {
+        if (path === "/session/ses_1") return metadata.promise
+        if (path === historyPath) return Response.json(stored)
+        return Response.json([])
+      },
+    })
+    const reads = readSession(server.context, ref)
+    let landed = false
+    const surface = reads.surface.then((value) => { landed = true; return value })
+    await Promise.all([reads.requests, reads.todos, reads.goal])
+    try {
+      expect(landed).toBe(false)
+      expect(machine ? server.runtimeCalls : server.requests).toContain(machine
+        ? historyPath
+        : "/api/control/sessions/ses_1/messages?workspaceId=ws_cloud&view=latest-surface")
+    } finally {
+      metadata.resolve(Response.json({ id: "ses_1", title: "Live title", time: { created: 10, updated: 30 } }))
+      await Promise.all([surface, reads.status])
+    }
+    expect((await surface).row.title).toBe("Live title")
+    expect((await surface).transcript.entries.map((entry) => entry.info.id)).toEqual(["msg_1", "msg_2"])
+  })
+}
+
+for (const failedRead of ["metadata", "history"]) {
+  test(`session reads: a failed ${failedRead} read rejects the concurrent surface`, async () => {
+    const failure = new Error(`${failedRead} unavailable`)
+    const server = fakeServer({
+      reachable: () => true,
+      machine: true,
+      runtime: (path) => {
+        if (path === "/session/ses_1") return failedRead === "metadata"
+          ? Promise.reject(failure)
+          : Response.json({ id: "ses_1", title: "Live title", time: { created: 10, updated: 30 } })
+        if (path === historyPath) return failedRead === "history" ? Promise.reject(failure) : Response.json(stored)
+        return Response.json([])
+      },
+    })
+    const reads = readSession(server.context, ref)
+    const [surface] = await Promise.allSettled([reads.surface, reads.status, reads.requests, reads.todos, reads.goal])
+    expect(surface).toEqual({ status: "rejected", reason: failure })
+  })
+}
+
+test("session reads: a failed placement lookup rejects every read without an unhandled metadata rejection", async () => {
+  const failure = new Error("catalog unavailable")
+  const server = fakeServer({ reachable: () => { throw failure } })
+  const reads = readSession(server.context, ref)
+  const results = await Promise.allSettled([reads.surface, reads.status, reads.requests, reads.todos, reads.goal])
+  for (const result of results) expect(result).toEqual({ status: "rejected", reason: failure })
 })

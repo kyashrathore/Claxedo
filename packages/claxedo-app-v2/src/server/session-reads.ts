@@ -47,12 +47,16 @@ function readHistory(context: SessionContext, ref: SessionRef, home: SessionHome
   return readPage(context, home.route, withQuery(sessionEndpoint(ref, "/message"), page))
 }
 
-async function readSurface(context: SessionContext, ref: SessionRef, home: SessionHome, session: AgentPresentationSession | undefined): Promise<SessionSurfaceRead> {
-  const [transcript, row] = await Promise.all([
-    readHistory(context, ref, home),
-    session ? sessionRowFromSession(session, ref) : readCentralRow(context.transport, home.route.workspaceId, ref),
+async function readSurface(context: SessionContext, ref: SessionRef, session: Promise<AgentPresentationSession | undefined>): Promise<SessionSurfaceRead> {
+  const home = context.workspaces.home(ref)
+  const [transcript, details] = await Promise.all([
+    home.then((home) => readHistory(context, ref, home)),
+    Promise.all([home, session]).then(async ([home, row]) => ({
+      row: row ? sessionRowFromSession(row, ref) : await readCentralRow(context.transport, home.route.workspaceId, ref),
+      diff: row?.summary?.diffs ?? [],
+    })),
   ])
-  return { row, transcript, diff: session?.summary?.diffs ?? [] }
+  return { ...details, transcript }
 }
 
 export function readSession(context: SessionContext, ref: SessionRef): SessionReads {
@@ -60,7 +64,7 @@ export function readSession(context: SessionContext, ref: SessionRef): SessionRe
   const live = <T>(read: (route: RuntimeRoute) => Promise<T>, stopped: T) => onRuntime(context, ref, read, async () => stopped)
   const session = live<AgentPresentationSession | undefined>((route) => transport.runtimeJson<AgentPresentationSession>(route, sessionEndpoint(ref)), undefined)
   return {
-    surface: Promise.all([context.workspaces.home(ref), session]).then(([home, row]) => readSurface(context, ref, home, row)),
+    surface: readSurface(context, ref, session),
     status: live(async (route) => {
       const row = await session
       return row ? context.status.read(route, ref, row) : STOPPED_STATUS
