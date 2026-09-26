@@ -78,14 +78,14 @@ type PaintStabilityFrame = PaintSettleFrame & {
 };
 
 /**
- * Unchanged frames that confirm a settle. A 60 fps recording of the switch
- * put the last visible change 90-150 ms after the first content (a tail-only
- * first view, then the prepended older page, once a placeholder flash), and a
- * follow-up read lands 30-100 ms after the first. Fifteen frames at 60 Hz is
- * 250 ms, past both. Counted in frames, not wall time, so a display below
- * 60 Hz widens the window rather than narrowing it.
+ * Unchanged frames that confirm a settle, the count the T3 and OpenCode
+ * drivers use. A 60 fps recording of the switch put the last visible change
+ * 90-150 ms after the first content (a tail-only first view, then the
+ * prepended older page, once a placeholder flash), and a follow-up read lands
+ * 30-100 ms after the first. The reference MacBook display runs at 120 Hz,
+ * where 30 frames is 250 ms, past both; at 60 Hz it is 500 ms.
  */
-export const PAINT_SETTLE_CONFIRMATION_FRAMES = 15;
+export const PAINT_SETTLE_CONFIRMATION_FRAMES = 30;
 
 /**
  * The visual settle of a switched session: the first frame of the final run of

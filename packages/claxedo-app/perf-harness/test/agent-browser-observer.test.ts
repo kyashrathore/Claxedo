@@ -32,9 +32,9 @@ function frames(spec: string): PaintSettleFrame[] {
 describe("paint settle", () => {
   const confirm = 3
 
-  test("confirms fifteen unchanged frames, 250 ms at 60 Hz", () => {
-    expect(PAINT_SETTLE_CONFIRMATION_FRAMES).toBe(15)
-    expect(PAINT_SETTLE_CONFIRMATION_FRAMES * FRAME_MS).toBeGreaterThanOrEqual(250)
+  test("confirms thirty unchanged frames, 250 ms at 120 Hz", () => {
+    expect(PAINT_SETTLE_CONFIRMATION_FRAMES).toBe(30)
+    expect(PAINT_SETTLE_CONFIRMATION_FRAMES * (FRAME_MS / 2)).toBeGreaterThanOrEqual(250)
   })
 
   test("reports the first frame of the final run, not the confirming frame", () => {

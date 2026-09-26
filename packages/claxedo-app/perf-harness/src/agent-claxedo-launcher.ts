@@ -535,10 +535,13 @@ export async function launchPackagedClaxedo(input: {
     const readinessTarget = input.readinessTargets[0];
     if (!readinessTarget) throw new Error("Packaged Claxedo readiness requires a canonical session target");
     const semanticReadiness = await measureSessionActivation(connectedPage, readinessTarget);
-    const endTimestamp = performance.now();
     if (semanticReadiness.state !== "exact") {
       throw new Error(`Packaged Claxedo strict semantic readiness failed: ${semanticReadiness.reason}`);
     }
+    // The start clock ends at the renderer's settle frame, not when the
+    // confirmation window after it closes.
+    const rendererTimeOrigin = readNumber(await connectedPage.evaluate(() => performance.timeOrigin));
+    const endTimestamp = rendererTimeOrigin + semanticReadiness.paintedAtMs - performance.timeOrigin;
     if (ownershipTimer) clearInterval(ownershipTimer);
     ownershipTimer = undefined;
     await refreshKnown();
