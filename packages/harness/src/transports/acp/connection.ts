@@ -11,7 +11,7 @@ import { AcpStartupDeadline } from "./deadline"
 import { processByteStreams } from "./streams"
 import { stringRecord } from "@claxedo/helpers"
 
-export type AcpConnectionOptions = ({ startupTimeoutMs?: number; promptTimeoutMs?: number } & (
+export type AcpConnectionOptions = ({ startupTimeoutMs?: number; promptTimeoutMs?: number; sharedFilesystem?: boolean } & (
   | { kind: "process"; command: string; args?: readonly string[]; env?: Readonly<Record<string, string>>; supportsMcpServers?: boolean }
   | { kind: "websocket"; url: string; headers?: Readonly<Record<string, string>>; protocols?: readonly string[]; supportsMcpServers?: boolean }
   | { kind: "streamable-http"; url: string; headers?: Readonly<Record<string, string>>; supportsMcpServers?: boolean }))

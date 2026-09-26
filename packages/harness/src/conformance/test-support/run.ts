@@ -10,10 +10,12 @@ import { pollUntil } from "./poll"
 export type ConformanceBackend = {
   execution?: "process" | "in-process"
   unrunnableTurn(turn: TurnInput): TurnInput
+  cleanupWithoutCommands?: "verified_clear"
   agent?: string
   directory: string
   harness: StartInput["config"]["harness"]
   model: PromptModel
+  alternateModel?: PromptModel
   credentials: ResolvedCredentials
   owner: TurnActor
   origin?: TurnOrigin
@@ -171,13 +173,18 @@ export function runConformance(input: ConformanceInput): void {
       const context = await setup(input)
       try {
         if (!context.transport.config) return
+        const alternate = context.backend.alternateModel
         const previews = [
           await context.transport.config.options({ session: context.session }, "probe"),
-          await context.transport.config.options({ session: context.session, model: context.backend.model }, "probe"),
+          await context.transport.config.options({ session: context.session, model: alternate ?? context.backend.model }, "probe"),
         ]
+        if (alternate) {
+          expect(previews[0]?.resolvedModel?.id).toBe(context.backend.model.modelID)
+          expect(previews[1]?.resolvedModel?.id).toBe(alternate.modelID)
+        }
         for (const preview of previews) {
           expect(preview.options).toBeArray()
-          if (!preview.resolvedModel) continue
+          if (!preview.resolvedModel) { expect(alternate).toBeUndefined(); continue }
           const select = preview.options.find((option) => option.type === "select" && (option.category === "model" || option.id === "model"))
           expect(select?.currentValue).toBe(preview.resolvedModel.id)
           expect(select?.selectOptions?.find((choice) => choice.id === preview.resolvedModel?.id)?.name).toBe(preview.resolvedModel.name)
@@ -240,7 +247,8 @@ export function runConformance(input: ConformanceInput): void {
           if (capabilities.timing.credentials === "after-active-turns") expect(update.state).toBe("refused")
           const outcome = await context.transport.cancel(context.session, { turnId: "t1", assistantMessageId: "a1" }, { at: Date.now() + 5_000, signal: controller.signal })
           expect(["terminal", "unknown"].includes(outcome.execution)).toBe(true)
-          expect(outcome.cleanup).not.toBe("verified_clear")
+          if (context.backend.cleanupWithoutCommands) expect(outcome.cleanup).toBe(context.backend.cleanupWithoutCommands)
+          else expect(outcome.cleanup).not.toBe("verified_clear")
           release()
           await running
         }

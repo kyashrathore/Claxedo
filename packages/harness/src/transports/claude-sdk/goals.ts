@@ -1,6 +1,8 @@
-import type { SDKActiveGoalMessage, SDKMessage } from "@anthropic-ai/claude-agent-sdk"
+import { AbortError, type SDKActiveGoalMessage, type SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { AgentGoalMutationResult } from "@claxedo/agent-runtime-contract"
 import type { HarnessSession, ProviderTurnSettlement, RoutedEvent, SessionBroker, StartInput, TurnBroker, TurnRef } from "../../contract"
+import { nativeGoalPrompt } from "../../contract"
+import { claudeStreamEndedWithoutResult } from "./errors"
 import { ClaudeProcess } from "./process"
 import { ClaudeQueryLauncher } from "./query-options"
 import { observeClaudeSessionMessage } from "./session-events"
@@ -20,7 +22,7 @@ export class ClaudeGoals {
     const { input } = entry
     if (this.running.has(input.sessionId)) return { ok: false, status: "conflict", message: "Claude Goal is running" }
     const abort = new AbortController()
-    const admitted = await broker.admitProviderTurn({ reason: "goal" }, (turnBroker, turn) => this.run(entry, broker, turnBroker, turn, `/goal ${objective}`, abort))
+    const admitted = await broker.admitProviderTurn({ reason: "goal" }, (turnBroker, turn) => this.run(entry, broker, turnBroker, turn, nativeGoalPrompt(objective), abort))
     if (!admitted.admitted) return { ok: false, status: "conflict", message: `Claude Goal admission ${admitted.reason}` }
     const running = { turnId: admitted.turn.turnId, abort, settled: admitted.settled }
     this.running.set(input.sessionId, running)
@@ -44,7 +46,7 @@ export class ClaudeGoals {
     const timeout = setTimeout(() => abort.abort(), 30_000)
     try {
       let confirmed = false
-      for await (const _event of this.run(entry, broker, undefined, undefined, "/goal clear", abort, true, () => { confirmed = true })) {}
+      for await (const _event of this.run(entry, broker, undefined, undefined, nativeGoalPrompt("clear"), abort, true, () => { confirmed = true })) {}
       if (!confirmed) throw new Error("Claude did not confirm clearing the native Goal")
       const paused = { ...goal, status: "paused" as const, updatedAt: Date.now() }
       await broker.goal.publish(paused)
@@ -69,6 +71,9 @@ export class ClaudeGoals {
     const assistantMessageId = turn?.assistantMessageId ?? entry.session.binding.sessionId
     const { runtime, tasks } = claudeTranslator(assistantMessageId)
     const processes = new Set<ClaudeProcess>()
+    const onAbort = () => abort.abort()
+    if (turnBroker?.signal.aborted) onAbort()
+    else turnBroker?.signal.addEventListener("abort", onAbort, { once: true })
     const stream = await this.launcher.launch({ session: entry.session, input: entry.input, broker, turnBroker, prompt, abort, processes, runtime,
       assistantMessageId, ...(turn ? { turnId: turn.turnId } : {}), clear })
     let sawResult = false
@@ -86,8 +91,11 @@ export class ClaudeGoals {
         }
         if (turnBroker) for (const event of await translateClaude(current, runtime, tasks, turnBroker)) yield event
       }
-      if (!sawResult && !abort.signal.aborted) throw new Error("Claude Goal stream ended without a result")
+      if (!sawResult && !abort.signal.aborted) throw claudeStreamEndedWithoutResult()
+    } catch (error) {
+      if (!abort.signal.aborted || !(error instanceof AbortError)) throw error
     } finally {
+      turnBroker?.signal.removeEventListener("abort", onAbort)
       stream.close()
       await Promise.all([...processes].map((child) => child.retire({ at: Date.now() + 5_000, signal: new AbortController().signal })))
     }

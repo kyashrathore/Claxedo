@@ -2,8 +2,8 @@ import { createHash } from "node:crypto"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { piCredentialProviderIDs, type PromptModel } from "@claxedo/agent-runtime-contract"
-import type { PluginProjection, ResolvedCredentials, TurnActor } from "../../contract"
-import type { CredentialProfile, RuntimePlacement } from "../../registry/credentials"
+import type { MachineLoginPolicy, PluginProjection, ResolvedCredentials, TurnActor } from "../../contract"
+import type { CredentialProfile } from "../../registry/credentials"
 import { ownerMayUseMachineLogin, selectedProviderProjection } from "../../contract"
 import { stringRecord } from "@claxedo/helpers"
 import { writePrivateFileAtomic } from "@claxedo/helpers/fs"
@@ -15,10 +15,7 @@ export type PiProfile = {
   credentials: ResolvedCredentials
 }
 
-export type PiProfileOptions = {
-  placement: RuntimePlacement
-  machineOwnerUserId: string
-  canUseOwnLogin: boolean
+export type PiProfileOptions = MachineLoginPolicy & {
   stateRoot: string
   ownerAgentDir: string
 }

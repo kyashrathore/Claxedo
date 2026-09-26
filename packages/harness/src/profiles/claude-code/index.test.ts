@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { claudePlugins, composeClaudeConfigHome, scrubClaudeSettings } from "./index"
+import { CLAUDE_COMMAND_DENY_RULES, claudePermissionSettings, claudePlugins, composeClaudeConfigHome, scrubClaudeSettings } from "./index"
 
 test("plugin roots reach the SDK as distinct local folders", () => {
   expect(claudePlugins({ generation: "g1", mcpServers: [], notApplied: [], pluginRoots: [
@@ -102,4 +102,11 @@ test("brokered history is mirrored once and Claude's own later session stays res
     await composeClaudeConfigHome(target, source)
     expect(await fs.readFile(path.join(target, "projects", "live.jsonl"), "utf8")).toBe("CLI session")
   } finally { await fs.rm(root, { recursive: true, force: true }) }
+})
+
+test("the profile ships the command deny floor in Claude's rule syntax under every launch's settings", () => {
+  expect(CLAUDE_COMMAND_DENY_RULES.length).toBeGreaterThan(0)
+  for (const rule of CLAUDE_COMMAND_DENY_RULES) expect(rule).toMatch(/^Bash\(.+\)$/)
+  expect(claudePermissionSettings(["Read"], ["Bash(git push *)"], ["Write"]))
+    .toEqual({ permissions: { allow: ["Read"], ask: ["Bash(git push *)"], deny: ["Write", ...CLAUDE_COMMAND_DENY_RULES] } })
 })

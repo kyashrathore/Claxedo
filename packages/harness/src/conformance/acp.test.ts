@@ -15,6 +15,7 @@ import { createRequestBroker, createSessionBroker, createTurnBroker } from "../b
 import { MemoryPorts, authority, origin } from "./test-support/memory-ports"
 import { createTestServices } from "./test-support/services"
 import { assertListedCommandsRun } from "./test-support/commands"
+import { SESSION_TITLE_SYSTEM_PROMPT } from "../../e2e/harness/config"
 
 type AcpBackend = ConformanceBackend & {
   root: string
@@ -41,6 +42,10 @@ async function backend(kind: "process" | "websocket" | "streamable-http", restor
   await writeAcpScript(directory, "subagent", { steps: [{ kind: "subagent", name: "Researcher", task: "Inspect the file",
     steps: [{ kind: "text", text: "Child result" }] }] })
   await writeAcpScript(directory, "refused", { steps: [{ kind: "error", message: "Scripted ACP refused this prompt" }] })
+  await writeAcpScript(directory, "permission-refused", { steps: [
+    { kind: "permission", tool: "execute", title: "Run scripted command", text: "permission result" },
+    { kind: "error", message: "Scripted ACP refused after permission" },
+  ] })
   const server = kind === "websocket" ? await startScriptedAcpWebSocket(directory, { restoreMode, holdMethod, startupQuestion, groups })
     : kind === "streamable-http" ? await startScriptedAcpHttp(directory, { restoreMode, startupQuestion, groups }) : undefined
   const connection = kind === "websocket" && server
@@ -55,7 +60,7 @@ async function backend(kind: "process" | "websocket" | "streamable-http", restor
   return {
     root, directory, connection, locality: server ? "remote" : "local",
     harness: { id: "scripted-acp", access: "connection" },
-    model: { providerID: "scripted-acp", modelID: "scripted" },
+    model: { providerID: "scripted-acp", modelID: "default" },
     credentials: { providers: {}, secrets: {}, leaseGeneration: "conformance" },
     owner: { kind: "machine-owner" as const },
     ...(server ? {
@@ -208,8 +213,13 @@ test("a busy workspace does not hold another workspace's ACP config restart", as
       { kind: "permission", decision: "deny" }, { sessionId: "s1" })
     expect(answer.ok).toBe(true)
     await running
-    expect((await readAcpRequests(context.backend.directory)).some((row) => row.method === "session/resume" && row.params.cwd === context.backend.directory)).toBe(true)
-    expect((await readAcpRequests(context.backend.directory)).some((row) => row.method === "session/resume" && row.params.cwd === secondSession.directory)).toBe(false)
+    let restarted = await readAcpRequests(context.backend.directory)
+    for (let attempt = 0; !restarted.some((row) => row.method === "session/resume" && row.params.cwd === context.backend.directory) && attempt < 500; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      restarted = await readAcpRequests(context.backend.directory)
+    }
+    expect(restarted.some((row) => row.method === "session/resume" && row.params.cwd === context.backend.directory)).toBe(true)
+    expect(restarted.some((row) => row.method === "session/resume" && row.params.cwd === secondSession.directory)).toBe(false)
   } finally { await context.close() }
 })
 
@@ -1028,8 +1038,11 @@ for (const group of ["steer", "agents", "goals", "health"] as const) {
             await running
           }
         } else if (group === "agents") {
-          expect(context.transport.agents !== undefined).toBe(present)
-          if (present) expect(await context.transport.agents?.list({ session: context.session })).toHaveLength(2)
+          const listed = await context.transport.agents!.list({ session: context.session })
+          expect(listed).toEqual(present
+            ? [{ name: "default", description: "Default", mode: "primary" }, { name: "review", description: "Review", mode: "primary" }]
+            : [{ name: "default", description: "Default", mode: "primary" }, { name: "review", description: "Review", mode: "primary" }])
+          expect((await readAcpRequests(context.backend.directory)).some((row) => row.method === "session/agents/list")).toBe(present)
         } else if (group === "goals") {
           expect(caps.goals.available).toBe(present)
           expect(context.transport.goals !== undefined).toBe(present)
@@ -1046,3 +1059,436 @@ for (const group of ["steer", "agents", "goals", "health"] as const) {
     })
   }
 }
+
+type FakeTimers = Map<number, { callback: () => void; ms: number }>
+
+function fakeClock(services: { clock: ReturnType<typeof createTestServices>["clock"] }): FakeTimers {
+  const timers: FakeTimers = new Map()
+  let next = 0
+  services.clock = { now: () => Date.now(), setTimeout(callback, ms) {
+    const id = ++next
+    timers.set(id, { callback, ms })
+    return id
+  }, clearTimeout(handle) { timers.delete(handle as number) } }
+  return timers
+}
+
+async function waitFor<T>(read: () => Promise<T | undefined> | T | undefined, label: string, attempts = 500): Promise<T> {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const value = await read()
+    if (value !== undefined) return value
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  throw new Error(`${label} did not happen`)
+}
+
+async function deferredRestartFailure(context: Awaited<ReturnType<typeof setupConformance>>, script: string) {
+  const timers = fakeClock(context.services)
+  const running = (async () => {
+    const events = []
+    for await (const event of context.transport.send(context.session, context.turn(acpScriptToken(script)), context.turnBroker())) events.push(event)
+    return events
+  })()
+  const settled = running.then((events) => ({ kind: "events" as const, events }), (error: unknown) => ({ kind: "error" as const, error }))
+  const pending = await waitFor(() => context.owner.broker.list({ sessionId: "s1" }).find((row) => row.request.kind === "permission"), "permission")
+  expect(await context.transport.configure(context.session, { credentials: { ...context.start.credentials, leaseGeneration: "rotated" } }))
+    .toEqual({ state: "deferred", until: "after-active-turns" })
+  expect((await context.owner.broker.answer(pending.request.requestId, { kind: "permission", decision: "allow_once" }, { sessionId: "s1" })).ok).toBe(true)
+  const outcome = await Promise.race([settled, new Promise<"pending">((resolve) => setTimeout(() => resolve("pending"), 3_000))])
+  await waitFor(async () => (await readAcpRequests(context.backend.directory)).some((row) => row.method === "session/resume") || undefined, "session/resume")
+  const restore = [...timers.values()].filter((timer) => timer.ms === 10_000).at(-1)
+  expect(restore).toBeDefined()
+  restore!.callback()
+  const failure = await waitFor(() => context.ports.failures[0], "reported restart failure")
+  expect(String(failure)).toContain("session restore timed out")
+  const refused = async () => {
+    for await (const _event of context.transport.send(context.session, context.turn("after failed restart"), context.turnBroker())) {}
+  }
+  await expect(refused()).rejects.toThrow("ACP session restart failed: ACP session restore timed out")
+  return outcome
+}
+
+test("a completed turn stays completed when its deferred ACP restart fails", async () => {
+  const context = await setupConformance({
+    name: "acp deferred restart after completion", backend: () => backend("websocket", "resume", true, "session/resume"),
+    makeTransport(services, state) {
+      return new AcpTransport(services, (state as AcpBackend).connection, filterMcpServers,
+        async () => { throw new Error("No saved transcript in this conformance scenario") })
+    },
+  })
+  try {
+    const outcome = await deferredRestartFailure(context, "permission")
+    expect(outcome).not.toBe("pending")
+    expect(outcome).toMatchObject({ kind: "events" })
+    if (outcome !== "pending" && outcome.kind === "events") expect(outcome.events.some((item) => item.event.type === "finish")).toBe(true)
+  } finally { await context.close() }
+}, 30_000)
+
+test("a failed turn keeps its own error when its deferred ACP restart fails", async () => {
+  const context = await setupConformance({
+    name: "acp deferred restart after failure", backend: () => backend("websocket", "resume", true, "session/resume"),
+    makeTransport(services, state) {
+      return new AcpTransport(services, (state as AcpBackend).connection, filterMcpServers,
+        async () => { throw new Error("No saved transcript in this conformance scenario") })
+    },
+  })
+  try {
+    const outcome = await deferredRestartFailure(context, "permission-refused")
+    expect(outcome).not.toBe("pending")
+    expect(outcome).toMatchObject({ kind: "error" })
+    if (outcome !== "pending" && outcome.kind === "error") expect(String(outcome.error)).toContain("Scripted ACP refused after permission")
+  } finally { await context.close() }
+}, 30_000)
+
+test("an ACP Stop after an idle cancel still reaches the agent", async () => {
+  const context = await setupConformance({
+    name: "acp stale cancel", backend: () => backend("websocket"),
+    makeTransport(services, state) {
+      return new AcpTransport(services, (state as AcpBackend).connection, filterMcpServers,
+        async () => { throw new Error("No saved transcript in this conformance scenario") })
+    },
+  })
+  try {
+    for await (const _event of context.transport.send(context.session, context.turn(acpScriptToken("text")), context.turnBroker())) {}
+    const idle = await context.transport.cancel(context.session, { turnId: "t1", assistantMessageId: "a1" }, { at: Date.now() + 5_000, signal: new AbortController().signal })
+    expect(idle).toEqual({ execution: "terminal", cleanup: "unknown" })
+    expect((await readAcpRequests(context.backend.directory)).filter((row) => row.method === "session/cancel")).toHaveLength(0)
+    const running = (async () => {
+      const events = []
+      for await (const event of context.transport.send(context.session, context.turn(acpScriptToken("silence")), context.turnBroker())) events.push(event)
+      return events
+    })()
+    await waitFor(async () => (await readAcpRequests(context.backend.directory)).filter((row) => row.method === "session/prompt").length === 2 || undefined, "second prompt")
+    const stopped = await context.transport.cancel(context.session, { turnId: "t2", assistantMessageId: "a2" }, { at: Date.now() + 5_000, signal: new AbortController().signal })
+    expect(stopped.error).toBeUndefined()
+    await waitFor(async () => (await readAcpRequests(context.backend.directory)).some((row) => row.method === "session/cancel") || undefined, "session/cancel", 200)
+    expect((await running).some((item) => item.event.type === "finish")).toBe(true)
+  } finally { await context.close() }
+}, 30_000)
+
+test("an ACP cancel honors its deadline while an HTTP write hangs", async () => {
+  const fetchRequest = globalThis.fetch
+  let release!: () => void
+  const held = new Promise<void>((resolve) => { release = resolve })
+  let heldCancels = 0
+  globalThis.fetch = ((input, init) => {
+    if (init?.method === "POST" && typeof init.body === "string" && init.body.includes("session/cancel")) {
+      heldCancels++
+      return held.then(() => fetchRequest(input, init))
+    }
+    return fetchRequest(input, init)
+  }) as typeof fetch
+  let context: Awaited<ReturnType<typeof setupConformance>> | undefined
+  try {
+    context = await setupConformance({
+      name: "acp bounded cancel", backend: () => backend("streamable-http"),
+      makeTransport(services, state) {
+        return new AcpTransport(services, (state as AcpBackend).connection, filterMcpServers,
+          async () => { throw new Error("No saved transcript in this conformance scenario") })
+      },
+    })
+    const running = (async () => {
+      for await (const _event of context.transport.send(context.session, context.turn(acpScriptToken("silence")), context.turnBroker())) {}
+    })()
+    const settled = running.then(() => "completed", (error: unknown) => String(error))
+    const directory = context.backend.directory
+    await waitFor(async () => (await readAcpRequests(directory)).some((row) => row.method === "session/prompt") || undefined, "session/prompt")
+    const outcome = await Promise.race([
+      context.transport.cancel(context.session, { turnId: "t1", assistantMessageId: "a1" }, { at: Date.now() + 300, signal: new AbortController().signal }),
+      new Promise<"pending">((resolve) => setTimeout(() => resolve("pending"), 3_000)),
+    ])
+    expect(outcome).not.toBe("pending")
+    expect(outcome).toMatchObject({ execution: "unknown", error: { code: "provider_unreachable" } })
+    if (outcome !== "pending") expect(outcome.error?.message).toContain("session/cancel timed out")
+    expect(heldCancels).toBe(1)
+    expect(await Promise.race([settled, new Promise<"pending">((resolve) => setTimeout(() => resolve("pending"), 3_000))])).toContain("outcome is uncertain")
+  } finally {
+    release()
+    globalThis.fetch = fetchRequest
+    await context?.close()
+  }
+}, 30_000)
+
+test("an ACP agent without plugin intake receives MCP servers and a not-applied report", async () => {
+  const context = await setupConformance({
+    name: "acp plugins not applied",
+    async backend() {
+      const state = await backend("process")
+      return { ...state, projection: { generation: "g1", notApplied: [],
+        pluginRoots: [{ pluginInstanceId: "plugin-one", root: path.join(state.root, "plugin"), dataRoot: path.join(state.root, "plugin-data") }],
+        mcpServers: [{ kind: "http" as const, name: "plugin-http", url: "http://127.0.0.1:47357/mcp", origin: "plugin" as const }] } }
+    },
+    makeTransport(services, state) {
+      return new AcpTransport(services, (state as AcpBackend).connection, filterMcpServers,
+        async () => { throw new Error("No saved transcript in this conformance scenario") })
+    },
+  })
+  try {
+    const created = (await readAcpRequests(context.backend.directory)).find((row) => row.method === "session/new")
+    expect((created!.params.mcpServers as { name: string }[]).map((server) => server.name)).toEqual(["plugin-http"])
+    expect(created?.params._meta).toBeUndefined()
+    const notice = context.ports.sessionEvents.find((row) => (row.event as { type?: string }).type === "harness-notice")
+    expect(notice?.event).toMatchObject({ code: "acp.plugins.not-applied", severity: "warn",
+      message: "Plugin plugin-one not applied: this ACP agent accepts MCP servers only",
+      details: { notApplied: [{ item: "plugin-one", reason: "unsupported-by-harness" }] } })
+  } finally { await context.close() }
+}, 30_000)
+
+const PARITY_ACP_AGENT = `const { agent, ndJsonStream, PROTOCOL_VERSION } = await import(process.env.ACP_SDK)
+const fs = await import("node:fs")
+const { Readable, Writable } = await import("node:stream")
+const log = (method, params) => fs.appendFileSync(process.env.PARITY_ACP_LOG, JSON.stringify({ method, params }) + "\\n")
+const flag = (name) => process.env[name] === "1"
+const caps = JSON.parse(process.env.PARITY_ACP_PROMPT_CAPS ?? '{"image":true,"embeddedContext":true}')
+const agentInfo = process.env.PARITY_ACP_AGENT_INFO ? JSON.parse(process.env.PARITY_ACP_AGENT_INFO) : { name: "parity-acp", version: "1.0.0" }
+const state = { mode: "default", model: "scripted/alpha", effort: "low" }
+const modes = () => ({ currentModeId: state.mode, availableModes: [{ id: "default", name: "Default" }, { id: "review", name: "Review" }] })
+const options = () => [
+  { id: "mode", name: "Agent", category: "mode", type: "select", currentValue: state.mode, options: [{ value: "default", name: "Default" }, { value: "review", name: "Review" }] },
+  { id: "model", name: "Model", category: "model", type: "select", currentValue: state.model, options: [{ value: "scripted/alpha", name: "Alpha" }, { value: "scripted/beta", name: "Beta" }] },
+  { id: "thought_level", name: "Effort", category: "thought_level", type: "select", currentValue: state.effort, options: [{ value: "low", name: "Low" }, { value: "high", name: "High" }] },
+]
+let sessions = 0
+agent()
+  .onRequest("initialize", async () => ({ protocolVersion: PROTOCOL_VERSION, agentInfo, authMethods: [],
+    agentCapabilities: { loadSession: true, promptCapabilities: caps, mcpCapabilities: { http: true, sse: true } } }))
+  .onRequest("session/new", async (context) => {
+    log("session/new", context.params)
+    const sessionId = "parity-" + (++sessions)
+    return flag("PARITY_ACP_MODES_ONLY") ? { sessionId, modes: modes() } : { sessionId, configOptions: options() }
+  })
+  .onRequest("session/set_config_option", async (context) => {
+    log("session/set_config_option", context.params)
+    const { configId, value } = context.params
+    if (configId === "mode") state.mode = value
+    if (configId === "model" && !flag("PARITY_ACP_CLAMP_MODEL")) state.model = value
+    if (configId === "thought_level") state.effort = value
+    return { configOptions: options() }
+  })
+  .onRequest("session/set_mode", async (context) => {
+    log("session/set_mode", context.params)
+    if (!flag("PARITY_ACP_CLAMP_MODE")) state.mode = context.params.modeId
+    await context.client.notify("session/update", { sessionId: context.params.sessionId, update: { sessionUpdate: "current_mode_update", currentModeId: state.mode } })
+    return {}
+  })
+  .onRequest("session/prompt", async (context) => {
+    log("session/prompt", context.params)
+    const text = context.params.prompt.filter((block) => block.type === "text").map((block) => block.text).join("\\n")
+    const reply = text.includes(process.env.PARITY_ACP_TITLE_MARK ?? "\\u0000") ? "Scripted parity title" : "PARITY_OK"
+    await context.client.notify("session/update", { sessionId: context.params.sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: reply } } })
+    return { stopReason: "end_turn" }
+  })
+  .onNotification("session/cancel", () => {})
+  .connect(ndJsonStream(Writable.toWeb(process.stdout), Readable.toWeb(process.stdin)))
+`
+
+type ParityRequest = { method: string; params: Record<string, unknown> }
+type ParityBackend = AcpBackend & { requests(): Promise<ParityRequest[]> }
+
+async function parityBackend(env: Record<string, string> = {}, connection: { sharedFilesystem?: boolean } = {}): Promise<ParityBackend> {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "acp-parity-"))
+  const directory = path.join(root, "work")
+  await fs.mkdir(directory)
+  const script = path.join(root, "parity-agent.mjs")
+  await fs.writeFile(script, PARITY_ACP_AGENT)
+  const log = path.join(root, "parity-requests.jsonl")
+  return {
+    root, directory, locality: "local", harness: { id: "parity-acp", access: "connection" },
+    model: { providerID: "scripted", modelID: "default" }, owner: { kind: "machine-owner" },
+    credentials: { providers: {}, secrets: {}, leaseGeneration: "conformance" },
+    connection: { kind: "process", command: process.execPath, args: [script], ...connection,
+      env: { ACP_SDK: import.meta.resolve("@agentclientprotocol/sdk"), PARITY_ACP_LOG: log, ...env } },
+    unrunnableTurn: (turn) => turn,
+    requests: async () => (await fs.readFile(log, "utf8").catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return ""
+      throw error
+    })).trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as ParityRequest),
+    close: async () => { await fs.rm(root, { recursive: true, force: true }) },
+  }
+}
+
+function parityTransport(services: ReturnType<typeof createTestServices>, state: ConformanceBackend) {
+  return new AcpTransport(services, (state as ParityBackend).connection, filterMcpServers,
+    async () => { throw new Error("No saved transcript in this conformance scenario") })
+}
+
+const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lp8AAAAASUVORK5CYII="
+const TEXT_BASE64 = Buffer.from("ACP parity text attachment\n").toString("base64")
+const WAV_BASE64 = Buffer.from("RIFF....WAVEfmt ").toString("base64")
+
+function attachedTurn(turn: TurnInputLike, parts: TurnInputLike["prompt"]["parts"]): TurnInputLike {
+  return { ...turn, prompt: { ...turn.prompt, parts: [...turn.prompt.parts, ...parts] } }
+}
+
+type TurnInputLike = ReturnType<Awaited<ReturnType<typeof setupConformance>>["turn"]>
+
+test("claude-agent-acp receives plugin roots through its claudeCode options", async () => {
+  const context = await setupConformance({
+    name: "acp claude plugins",
+    async backend() {
+      const state = await parityBackend({ PARITY_ACP_AGENT_INFO: JSON.stringify({ name: "@agentclientprotocol/claude-agent-acp", version: "0.81.2" }) })
+      return { ...state, projection: { generation: "g1", notApplied: [], mcpServers: [],
+        pluginRoots: [{ pluginInstanceId: "plugin-one", root: path.join(state.root, "plugin"), dataRoot: path.join(state.root, "plugin-data") }] } }
+    },
+    makeTransport: parityTransport,
+  })
+  try {
+    const created = (await (context.backend as ParityBackend).requests()).find((row) => row.method === "session/new")
+    expect(created?.params._meta).toEqual({ claudeCode: { options: { plugins: [{ type: "local", path: path.join((context.backend as ParityBackend).root, "plugin") }] } } })
+    expect(context.ports.sessionEvents.some((row) => (row.event as { type?: string }).type === "harness-notice")).toBe(false)
+  } finally { await context.close() }
+}, 30_000)
+
+test("ACP applies the turn's permission mode, model and effort through set_config_option before the prompt", async () => {
+  const context = await setupConformance({ name: "acp turn sync", backend: () => parityBackend(), makeTransport: parityTransport })
+  try {
+    const turn = { ...context.turn("Reply with exactly this one token: PARITY_OK"), model: { providerID: "scripted", modelID: "beta" }, effort: "high" }
+    turn.prompt = { ...turn.prompt, permissionMode: "review" }
+    const events = []
+    for await (const event of context.transport.send(context.session, turn, context.turnBroker())) events.push(event)
+    expect(events.some((item) => item.event.type === "finish")).toBe(true)
+    const requests = (await (context.backend as ParityBackend).requests()).filter((row) => row.method !== "session/new")
+    expect(requests.map((row) => [row.method, row.params.configId, row.params.value])).toEqual([
+      ["session/set_config_option", "mode", "review"],
+      ["session/set_config_option", "model", "scripted/beta"],
+      ["session/set_config_option", "thought_level", "high"],
+      ["session/prompt", undefined, undefined],
+    ])
+    expect((await context.transport.config!.permissionModes({ session: context.session })).currentModeId).toBe("review")
+    const preview = await context.transport.config!.options({ session: context.session }, "probe")
+    expect(preview.resolvedModel).toEqual({ id: "scripted/beta", name: "Beta" })
+    const capabilities = await context.transport.capabilities({ directory: context.backend.directory, sessionId: "s1" })
+    expect(capabilities.effortLevels).toEqual({ status: "unresolved", models: [{ modelID: "scripted/beta", levels: ["low", "high"] }] })
+    expect(capabilities.modelSelection).toEqual({ status: "optional" })
+    const again = []
+    for await (const event of context.transport.send(context.session, turn, context.turnBroker())) again.push(event)
+    expect((await (context.backend as ParityBackend).requests()).filter((row) => row.method === "session/set_config_option")).toHaveLength(3)
+  } finally { await context.close() }
+}, 30_000)
+
+test("ACP refuses an effort or model the agent does not offer or keep, without prompting", async () => {
+  const refusal = async (env: Record<string, string>, turn: (base: TurnInputLike) => TurnInputLike, message: string) => {
+    const context = await setupConformance({ name: "acp refused option", backend: () => parityBackend(env), makeTransport: parityTransport })
+    try {
+      const run = async () => { for await (const _event of context.transport.send(context.session, turn(context.turn("never sent")), context.turnBroker())) {} }
+      await expect(run()).rejects.toThrow(message)
+      expect((await (context.backend as ParityBackend).requests()).some((row) => row.method === "session/prompt")).toBe(false)
+    } finally { await context.close() }
+  }
+  await refusal({}, (base) => ({ ...base, effort: "max" }), "ACP agent does not offer effort max; it offers low, high")
+  await refusal({}, (base) => ({ ...base, model: { providerID: "scripted", modelID: "gamma" } }), "ACP agent does not offer model gamma")
+  await refusal({ PARITY_ACP_CLAMP_MODEL: "1" }, (base) => ({ ...base, model: { providerID: "scripted", modelID: "beta" } }),
+    "ACP agent kept model scripted/alpha instead of scripted/beta")
+}, 60_000)
+
+test("the ACP agent picker reaches the agent through config.update, and the agent list comes from the mode option", async () => {
+  const context = await setupConformance({ name: "acp agent picker", backend: () => parityBackend(), makeTransport: parityTransport })
+  try {
+    expect(await context.transport.agents!.list({ session: context.session })).toEqual([
+      { name: "default", description: "Default", mode: "primary" }, { name: "review", description: "Review", mode: "primary" }])
+    const { sessionId: _sessionId, title: _title, instructions: _instructions, ...draft } = context.start
+    expect(await context.transport.agents!.list({ draft })).toEqual(await context.transport.agents!.list({ session: context.session }))
+    await context.transport.config!.update(context.session, { agent: "review" })
+    expect((await (context.backend as ParityBackend).requests()).some((row) => row.method === "session/set_config_option" && row.params.configId === "mode" && row.params.value === "review")).toBe(true)
+    expect((await context.transport.config!.permissionModes({ session: context.session })).currentModeId).toBe("review")
+  } finally { await context.close() }
+}, 30_000)
+
+test("ACP permission modes come from the modes channel with the agent's current mode", async () => {
+  const context = await setupConformance({ name: "acp modes channel", backend: () => parityBackend({ PARITY_ACP_MODES_ONLY: "1" }), makeTransport: parityTransport })
+  try {
+    expect(await context.transport.config!.permissionModes({ session: context.session })).toEqual({
+      modes: [{ id: "default", name: "Default" }, { id: "review", name: "Review" }], currentModeId: "default", appliesFrom: "next-turn" })
+    const { sessionId: _sessionId, title: _title, instructions: _instructions, ...draft } = context.start
+    expect((await context.transport.config!.permissionModes({ draft })).modes.map((mode) => mode.id)).toEqual(["default", "review"])
+    expect(await context.transport.agents!.list({ session: context.session })).toEqual([
+      { name: "default", description: "Default", mode: "primary" }, { name: "review", description: "Review", mode: "primary" }])
+    expect((await context.transport.config!.setPermissionMode(context.session, "review")).currentModeId).toBe("review")
+    expect((await (context.backend as ParityBackend).requests()).some((row) => row.method === "session/set_mode" && row.params.modeId === "review")).toBe(true)
+    await expect(context.transport.config!.setPermissionMode(context.session, "bogus")).rejects.toThrow("does not offer permission mode bogus")
+  } finally { await context.close() }
+}, 30_000)
+
+test("a turn whose permission mode the agent clamps through the modes channel is refused", async () => {
+  const context = await setupConformance({ name: "acp clamped mode", backend: () => parityBackend({ PARITY_ACP_MODES_ONLY: "1", PARITY_ACP_CLAMP_MODE: "1" }), makeTransport: parityTransport })
+  try {
+    const turn = context.turn("never sent")
+    turn.prompt = { ...turn.prompt, permissionMode: "review" }
+    const run = async () => { for await (const _event of context.transport.send(context.session, turn, context.turnBroker())) {} }
+    await expect(run()).rejects.toThrow("ACP kept permission mode default instead of review")
+    expect((await (context.backend as ParityBackend).requests()).some((row) => row.method === "session/prompt")).toBe(false)
+  } finally { await context.close() }
+}, 30_000)
+
+test("ACP delivers attachments by the agent's prompt capabilities", async () => {
+  const context = await setupConformance({ name: "acp inline attachments",
+    backend: () => parityBackend({ PARITY_ACP_PROMPT_CAPS: JSON.stringify({ image: true, audio: true, embeddedContext: true }) }), makeTransport: parityTransport })
+  try {
+    const turn = attachedTurn(context.turn("Review the attachments. Reply with exactly this one token: PARITY_OK"), [
+      { type: "file", mime: "image/png", filename: "parity.png", url: `data:image/png;base64,${PNG}` },
+      { type: "file", mime: "text/plain", filename: "parity.txt", url: `data:text/plain;base64,${TEXT_BASE64}` },
+      { type: "file", mime: "audio/wav", filename: "parity.wav", url: `data:audio/wav;base64,${WAV_BASE64}` },
+      { type: "file", mime: "image/png", filename: "remote.png", url: "https://attachments.invalid/remote.png" },
+    ])
+    for await (const _event of context.transport.send(context.session, turn, context.turnBroker())) {}
+    const prompt = (await (context.backend as ParityBackend).requests()).find((row) => row.method === "session/prompt")?.params.prompt as Record<string, unknown>[]
+    expect(prompt).toEqual([
+      { type: "text", text: "Review the attachments. Reply with exactly this one token: PARITY_OK" },
+      { type: "image", mimeType: "image/png", data: PNG },
+      { type: "resource", resource: { uri: "wr://attachment/1", blob: TEXT_BASE64, mimeType: "text/plain" } },
+      { type: "audio", mimeType: "audio/wav", data: WAV_BASE64 },
+    ])
+  } finally { await context.close() }
+}, 30_000)
+
+test("an ACP attachment the agent cannot receive fails the turn before the prompt", async () => {
+  const context = await setupConformance({ name: "acp undeliverable attachment",
+    backend: () => parityBackend({ PARITY_ACP_PROMPT_CAPS: JSON.stringify({ image: true }) }), makeTransport: parityTransport })
+  try {
+    const turn = attachedTurn(context.turn("never sent"), [{ type: "file", mime: "text/plain", filename: "parity.txt", url: `data:text/plain;base64,${TEXT_BASE64}` }])
+    const run = async () => { for await (const _event of context.transport.send(context.session, turn, context.turnBroker())) {} }
+    await expect(run()).rejects.toThrow("ACP agent cannot receive a text/plain attachment: it negotiated no inline content and does not share the workspace")
+    expect((await (context.backend as ParityBackend).requests()).some((row) => row.method === "session/prompt")).toBe(false)
+    const events = []
+    for await (const event of context.transport.send(context.session, context.turn("Reply with exactly this one token: PARITY_OK"), context.turnBroker())) events.push(event)
+    expect(events.some((item) => item.event.type === "finish")).toBe(true)
+  } finally { await context.close() }
+}, 30_000)
+
+test("an ACP agent sharing the workspace receives attachments as files and links", async () => {
+  const context = await setupConformance({ name: "acp shared filesystem attachments",
+    backend: () => parityBackend({ PARITY_ACP_PROMPT_CAPS: JSON.stringify({}) }, { sharedFilesystem: true }), makeTransport: parityTransport })
+  try {
+    const turn = attachedTurn(context.turn("Read the file. Reply with exactly this one token: PARITY_OK"), [
+      { type: "file", mime: "text/plain", filename: "parity.txt", url: `data:text/plain;base64,${TEXT_BASE64}` }])
+    for await (const _event of context.transport.send(context.session, turn, context.turnBroker())) {}
+    const prompt = (await (context.backend as ParityBackend).requests()).find((row) => row.method === "session/prompt")?.params.prompt as Record<string, unknown>[]
+    const link = prompt.find((block) => block.type === "resource_link") as { uri: string; name: string; mimeType: string } | undefined
+    expect(link).toMatchObject({ name: "parity.txt", mimeType: "text/plain" })
+    const written = new URL(link!.uri).pathname
+    expect(written.startsWith(path.join(context.backend.directory, ".claxedo", "attachments"))).toBe(true)
+    expect(await fs.readFile(written, "utf8")).toBe("ACP parity text attachment\n")
+    expect((prompt[0] as { text: string }).text).toBe(`Read the file. Reply with exactly this one token: PARITY_OK\nAttached file (text/plain): ${written}`)
+  } finally { await context.close() }
+}, 30_000)
+
+test("ACP names a session through a throwaway session on the same agent", async () => {
+  const context = await setupConformance({ name: "acp title",
+    backend: () => parityBackend({ PARITY_ACP_TITLE_MARK: "Generate a concise, single-line title" }), makeTransport: parityTransport })
+  try {
+    for await (const _event of context.transport.send(context.session, context.turn("Reply with exactly this one token: PARITY_OK"), context.turnBroker())) {}
+    const title = await context.transport.naming!.generateTitle!(context.session, { directory: context.backend.directory, system: SESSION_TITLE_SYSTEM_PROMPT,
+      user: "<conversation>\nUser: Reply with exactly this one token: PARITY_OK\n</conversation>", signal: AbortSignal.timeout(20_000) })
+    expect(title).toBe("Scripted parity title")
+    const requests = await (context.backend as ParityBackend).requests()
+    expect(requests.filter((row) => row.method === "session/new")).toHaveLength(2)
+    const prompts = requests.filter((row) => row.method === "session/prompt")
+    expect(prompts).toHaveLength(2)
+    expect(prompts[1]?.params.sessionId).not.toBe(context.session.binding.upstreamSessionId)
+    expect(JSON.stringify(prompts[0]?.params)).not.toContain("Generate a concise")
+    expect((await context.transport.capabilities({ directory: context.backend.directory, sessionId: "s1" })).titles).toBe("side-request")
+    const events = []
+    for await (const event of context.transport.send(context.session, context.turn("Reply with exactly this one token: PARITY_OK"), context.turnBroker())) events.push(event)
+    expect(events.some((item) => item.event.type === "finish")).toBe(true)
+  } finally { await context.close() }
+}, 30_000)

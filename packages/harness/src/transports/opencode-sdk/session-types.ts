@@ -115,10 +115,6 @@ export type OpenCodeSessionPort = Readonly<{
   interrupt(scope: WorkspaceScope, sessionID: string, options?: { continue?: boolean }): Promise<void>
   wait(scope: WorkspaceScope, sessionID: string): Promise<void>
 
-  revertTo(scope: WorkspaceScope, sessionID: string, messageID: string, options?: { files?: boolean }): Promise<void>
-
-  clearRevert(scope: WorkspaceScope, sessionID: string): Promise<void>
-
   messages(
     scope: WorkspaceScope,
     sessionID: string,

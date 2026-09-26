@@ -1,5 +1,5 @@
 import { prefixedRandomId } from "@claxedo/helpers"
-import type { SessionConfigOption, SessionNotification } from "@agentclientprotocol/sdk"
+import type { SessionNotification } from "@agentclientprotocol/sdk"
 import type { DraftLaunch, HarnessServices, StartInput } from "../../contract"
 import { connectAcp, type AcpConnectionOptions, type AcpPeer } from "./connection"
 import type { AcpMcpFilter } from "./index"
@@ -10,25 +10,25 @@ import { AcpStartupDeadline } from "./deadline"
 import { acpAgentList } from "./extensions/agents"
 import { acpGroups } from "./extensions/groups"
 import type { AgentAgent } from "@claxedo/agent-runtime-contract"
-import { sessionMcpServers } from "../../contract"
+import { draftProbeKey, DraftProbeCache, sessionMcpServers } from "../../contract"
+import { acpAgents, acpModeState, type AcpCatalog } from "./options"
 
 type Commands = Extract<SessionNotification["update"], { sessionUpdate: "available_commands_update" }>["availableCommands"]
-type ProbeResult = { options: SessionConfigOption[]; commands: Commands; agents: AgentAgent[] }
-
-const CACHE_MS = 30_000
-const MAX_CACHE_ENTRIES = 64
+type ProbeResult = { catalog: AcpCatalog; commands: Commands; agents: AgentAgent[] }
 
 export class AcpDraftProbes {
   private readonly peers = new Set<AcpPeer>()
-  private readonly cache = new Map<string, { result: Promise<ProbeResult>; expiresAt: number }>()
+  private readonly cache: DraftProbeCache<ProbeResult>
   private readonly disposeAbort = new AbortController()
   private disposed = false
 
   constructor(private readonly services: HarnessServices, private readonly connection: AcpConnectionOptions,
-    private readonly filterMcp: AcpMcpFilter) {}
+    private readonly filterMcp: AcpMcpFilter) {
+    this.cache = new DraftProbeCache(services.clock)
+  }
 
-  options(draft: DraftLaunch, mode: "probe" | "peek"): Promise<SessionConfigOption[]> {
-    return this.result(draft, mode, false, false).then((result) => result.options)
+  catalog(draft: DraftLaunch, mode: "probe" | "peek"): Promise<AcpCatalog> {
+    return this.result(draft, mode, false, false).then((result) => result.catalog)
   }
 
   commands(draft: DraftLaunch): Promise<Commands> {
@@ -39,26 +39,16 @@ export class AcpDraftProbes {
     return this.result(draft, "probe", false, true).then((result) => result.agents)
   }
 
-  private result(draft: DraftLaunch, mode: "probe" | "peek", needCommands: boolean, needAgents: boolean) {
+  private result(draft: DraftLaunch, mode: "probe" | "peek", needCommands: boolean, needAgents: boolean): Promise<ProbeResult> {
     if (this.disposed) throw new AcpTransportError("connection", "ACP transport disposed")
-    const key = JSON.stringify([draft.workspaceId, draft.directory, draft.locality, draft.owner,
-      draft.config.harness, draft.model, draft.projection.generation, draft.credentials.leaseGeneration,
-      needCommands, needAgents])
-    const now = this.services.clock.now()
-    for (const [cachedKey, value] of this.cache) if (value.expiresAt <= now) this.cache.delete(cachedKey)
+    const key = draftProbeKey(draft, needCommands, needAgents)
     const cached = this.cache.get(key)
-    if (cached) return cached.result
-    if (mode === "peek") return Promise.resolve({ options: [], commands: [], agents: [] })
-    const probe = this.run(draft, needCommands, needAgents)
-    if (this.cache.size >= MAX_CACHE_ENTRIES) this.cache.delete(this.cache.keys().next().value!)
-    this.cache.set(key, { result: probe, expiresAt: now + CACHE_MS })
-    void probe.then(undefined, () => {
-      if (this.cache.get(key)?.result === probe) this.cache.delete(key)
-    })
-    return probe
+    if (cached) return cached
+    if (mode === "peek") return Promise.resolve({ catalog: { options: [], modes: [] }, commands: [], agents: [] })
+    return this.cache.set(key, this.run(draft, needCommands, needAgents))
   }
 
-  private async run(draft: DraftLaunch, needCommands: boolean, needAgents: boolean) {
+  private async run(draft: DraftLaunch, needCommands: boolean, needAgents: boolean): Promise<ProbeResult> {
     const input: StartInput = { ...draft, sessionId: prefixedRandomId("probe", "-") }
     let resolveCommands!: (commands: Commands) => void
     const commands = new Promise<Commands>((resolve) => { resolveCommands = resolve })
@@ -77,16 +67,17 @@ export class AcpDraftProbes {
       const servers = this.filterMcp({ servers: projected, locality: input.locality,
         mcpCapabilities: peer.handshake.agentCapabilities?.mcpCapabilities,
         supportsMcpServers: this.connection.supportsMcpServers }).servers
-      const meta = claudeOptionsMeta(peer.handshake, input)
+      const { meta } = claudeOptionsMeta(peer.handshake, input)
       const deadline = new AcpStartupDeadline(this.services.clock, this.connection.startupTimeoutMs ?? 10_000, "draft probe")
       const result = await deadline.run(peer.agent.newSession({ cwd: input.directory, mcpServers: servers.map(acpMcp),
         ...(meta ? { _meta: meta } : {}) }))
-      const agents = needAgents && acpGroups(peer.handshake).agents
+      const catalog: AcpCatalog = { options: result.configOptions ?? [], ...acpModeState(result.modes) }
+      const agents = !needAgents ? [] : acpGroups(peer.handshake).agents
         ? await new AcpStartupDeadline(this.services.clock, this.connection.startupTimeoutMs ?? 10_000, "draft agents")
-          .run(acpAgentList(peer.agent, result.sessionId)) : []
-      if (!needCommands) return { options: result.configOptions ?? [], commands: [], agents }
+          .run(acpAgentList(peer.agent, result.sessionId)) : acpAgents(catalog)
+      if (!needCommands) return { catalog, commands: [], agents }
       const commandUpdate = new AcpStartupDeadline(this.services.clock, this.connection.startupTimeoutMs ?? 10_000, "draft commands")
-      return { options: result.configOptions ?? [], commands: await commandUpdate.run(commands), agents }
+      return { catalog, commands: await commandUpdate.run(commands), agents }
     } finally {
       this.peers.delete(peer)
       await peer.retire()

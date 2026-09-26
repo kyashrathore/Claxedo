@@ -116,3 +116,11 @@ test("goal cancellation returns a failed settlement when owned retirement fails"
   expect((await goals.start(entry(), state.value, "Ship")).ok).toBe(true)
   expect(await goals.cancel("s1")).toEqual({ state: "failed", error: "retirement failed" })
 })
+
+test("a Goal stream that ends without a result fails with the transport's protocol error", async () => {
+  const state = broker()
+  const launcher = { launch: async () => stream({ async *[Symbol.asyncIterator]() {} }) } as unknown as ClaudeQueryLauncher
+  const goals = new ClaudeGoals(launcher)
+  expect((await goals.start(entry(), state.value, "Ship")).ok).toBe(true)
+  expect(await state.settled()).toEqual({ state: "failed", error: "Claude SDK stream ended without a result" })
+})

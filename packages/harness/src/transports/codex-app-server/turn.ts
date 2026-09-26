@@ -4,8 +4,9 @@ import type { HarnessServices, HarnessSession, RoutedEvent, TurnBroker, TurnInpu
 import type { Entry } from "./index"
 import { CodexEvents } from "./events"
 import { CodexTransportError } from "./errors"
-import { codexTurnParams } from "./input"
+import { codexThreadResumeParams, codexTurnParams } from "./input"
 import { codexTurnSettings, type CodexModel } from "./models"
+import { codexPermissionSettings } from "./modes"
 import { startCodexTurn } from "./recovery"
 import { projectCodexThreadConfig } from "./configuration"
 import type { RpcMessage } from "./rpc"
@@ -14,9 +15,15 @@ function listenTurn(entry: Entry, session: HarnessSession, queue: AsyncPushQueue
   const events = new CodexEvents(session.binding.upstreamSessionId)
   const early: RpcMessage[] = []
   const ingest = (message: RpcMessage) => {
-    if (!message.method || (message.method !== "account/rateLimits/updated"
-      && asString(asRecordOrEmpty(message.params).threadId) !== session.binding.upstreamSessionId)) return
+    if (!message.method) return
+    const threadId = asString(asRecordOrEmpty(message.params).threadId)
+    const child = threadId ? entry.children.get(threadId) : undefined
     try {
+      if (threadId && child) {
+        for (const event of child.ingest(message)) queue.push({ ...event, route: { kind: "child", correlationKey: threadId } })
+        return
+      }
+      if (message.method !== "account/rateLimits/updated" && threadId !== session.binding.upstreamSessionId) return
       if (message.method === "turn/started" || message.method === "turn/completed") {
         const id = asString(asRecordOrEmpty(asRecordOrEmpty(message.params).turn).id)
         if (!entry.turn?.id) { early.push(message); return }
@@ -36,8 +43,12 @@ async function startTurn(entry: Entry, session: HarnessSession, turn: TurnInput,
   const settings = codexTurnSettings(await models(), {
     model: turn.model?.modelID, effort: turn.effort, serviceTier: turn.prompt.serviceTier,
   })
-  const params = codexTurnParams(turn, session.binding.upstreamSessionId, session.directory, settings)
-  const result = asRecordOrEmpty(await startCodexTurn(entry.rpc, params, projectCodexThreadConfig(entry.start, services)))
+  const mode = codexPermissionSettings(entry.start.config.permissionMode)
+  const threadId = session.binding.upstreamSessionId
+  const params = await codexTurnParams(turn, threadId, session.directory, settings, mode)
+  const resume = codexThreadResumeParams(threadId, entry.start, projectCodexThreadConfig(entry.start, services), mode)
+  if (entry.turn) entry.turn.settings = settings
+  const result = asRecordOrEmpty(await startCodexTurn(entry.rpc, params, resume))
   const id = asString(asRecordOrEmpty(result.turn).id)
   if (!id) throw new CodexTransportError("protocol", "Codex turn/start returned no turn id")
   if (entry.turn) entry.turn.id = id
@@ -47,13 +58,14 @@ export async function* runCodexTurn(entry: Entry, session: HarnessSession, turn:
   services: HarnessServices, models: () => Promise<CodexModel[]>, cancel: () => Promise<unknown>): AsyncIterable<RoutedEvent> {
   if (entry.state !== "ready" || entry.providerTurn) throw new CodexTransportError("session", "Codex turn already active")
   entry.state = "busy"
-  entry.turn = { broker }
+  entry.turn = { broker, settings: {} }
   const queue = new AsyncPushQueue<RoutedEvent>()
   const listener = listenTurn(entry, session, queue)
   const onAbort = () => { void cancel().catch((error: unknown) => entry.broker.reportFailure(error)) }
   broker.signal.addEventListener("abort", onAbort, { once: true })
   try {
     await startTurn(entry, session, turn, services, models)
+    if (broker.signal.aborted) onAbort()
     listener.accept()
     for await (const event of queue) yield event
   } finally {

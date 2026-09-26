@@ -33,7 +33,7 @@ test("an unavailable account disables its provider in the engine's own catalog",
   try {
     expect(await providerIds()).toContain("claxedo_test")
 
-    await runtime.bindProviders({ claxedo_test: { unavailable: true, reason: "auth_failed" } })
+    await runtime.bindProviders({ overlays: { claxedo_test: { unavailable: true, reason: "auth_failed" } }, unbound: "engine" })
 
     expect(await providerIds()).not.toContain("claxedo_test")
     expect(runtime.providerUnavailableReason("claxedo_test")).toBe("auth_failed")
@@ -45,9 +45,9 @@ test("an unavailable account disables its provider in the engine's own catalog",
 test("a bound account leaves its provider selectable in the catalog", async () => {
   const { runtime, scope, close } = engine()
   try {
-    await runtime.bindProviders({
+    await runtime.bindProviders({ overlays: {
       claxedo_test: { baseURL: "http://127.0.0.1:2595/bindings/b1/v1", apiKey: "placeholder" },
-    })
+    }, unbound: "engine" })
 
     expect((await runtime.catalog.models(scope)).map((model) => model.providerID)).toContain("claxedo_test")
     expect(runtime.providerUnavailableReason("claxedo_test")).toBeUndefined()
@@ -59,7 +59,7 @@ test("a bound account leaves its provider selectable in the catalog", async () =
 test("a provider nobody bound stays selectable and names no refusal", async () => {
   const { runtime, scope, close } = engine()
   try {
-    await runtime.bindProviders({})
+    await runtime.bindProviders({ overlays: {}, unbound: "engine" })
 
     expect((await runtime.catalog.models(scope)).map((model) => model.providerID)).toContain("claxedo_test")
     expect(runtime.providerUnavailableReason("claxedo_test")).toBeUndefined()

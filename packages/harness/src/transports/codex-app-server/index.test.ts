@@ -3,7 +3,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { PassThrough } from "node:stream"
-import type { HarnessServices, OwnedProcess, SessionBroker, StartInput, TurnBroker, TurnInput } from "../../contract"
+import type { Clock, DraftLaunch, HarnessServices, OwnedProcess, SessionBroker, StartInput, TurnBroker, TurnInput } from "../../contract"
 import { projectCodexThreadConfig } from "./configuration"
 import { CodexAppServerTransport } from "."
 
@@ -59,101 +59,97 @@ test("disposing during pending initialize retires the process before start rejec
   } finally { await fs.rm(root, { recursive: true, force: true }) }
 })
 
-test("Codex owner refresh and dynamic tool requests receive protocol responses", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-requests-"))
-  const home = path.join(root, "owner")
-  await fs.mkdir(home)
-  await fs.writeFile(path.join(home, "auth.json"), JSON.stringify({ tokens: { refresh_token: "old-refresh", account_id: "account-1" } }))
-  const stdin = new PassThrough()
-  const stdout = new PassThrough()
-  let exit!: (value: { code: number | null; signal: string | null }) => void
-  const exited = new Promise<{ code: number | null; signal: string | null }>((resolve) => { exit = resolve })
-  const responses = new Map<number, (value: Record<string, unknown>) => void>()
-  stdin.on("data", (chunk) => {
-    for (const line of String(chunk).trim().split("\n")) {
-      const frame = JSON.parse(line) as { id?: number; method?: string; result?: unknown; error?: unknown }
-      if (frame.method === "initialize") stdout.write(`${JSON.stringify({ id: frame.id, result: {} })}\n`)
-      else if (frame.method === "thread/start") stdout.write(`${JSON.stringify({ id: frame.id, result: { thread: { id: "thread-1" } } })}\n`)
-      else if (frame.id !== undefined) responses.get(frame.id)?.(frame)
-    }
-  })
-  const process: OwnedProcess = { pid: 5_000_001, stdin, stdout, stderr: new PassThrough(), exited,
-    retire: async () => { exit({ code: 0, signal: null }); return { stopped: true } } }
-  const services = { spawn: async () => process, firstPartyMcp: () => undefined,
-    clock: { now: Date.now, setTimeout, clearTimeout } } as unknown as HarnessServices
-  const transport = new CodexAppServerTransport(services, { binary: "unused", homeRoot: path.join(root, "homes"), ownerHome: home,
-    fetch: async () => new Response(JSON.stringify({ access_token: "new-access", refresh_token: "new-refresh" }), { status: 200 }) })
-  const broker = { rebind: rebindTo("/work"), goal: { publish: async () => {} } } as unknown as SessionBroker
-  const send = (id: number, method: string, params: unknown) => new Promise<Record<string, unknown>>((resolve) => {
-    responses.set(id, resolve)
-    stdout.write(`${JSON.stringify({ id, method, params })}\n`)
-  })
-  try {
-    await transport.start({ ...input, projection: { generation: "g1", pluginRoots: [], notApplied: [], mcpServers: [] } }, broker)
-    expect((await send(0, "account/chatgptAuthTokens/refresh", {})).result).toEqual({
-      accessToken: "new-access", chatgptAccountId: "account-1", chatgptPlanType: null,
-    })
-    expect((await send(1, "item/tool/call", { tool: "spawn_agent" })).result).toEqual({
-      contentItems: [{ type: "inputText", text: "Dynamic tool spawn_agent is unavailable." }], success: false,
-    })
-  } finally { await transport.dispose(); await fs.rm(root, { recursive: true, force: true }) }
-})
+type Frame = { id?: number; method?: string; params?: Record<string, unknown> }
 
-async function scriptedTransport() {
+async function scriptedTransport(options: { holdTurnStart?: boolean; clock?: Clock } = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-scripted-"))
-  const stdin = new PassThrough()
-  const stdout = new PassThrough()
-  let exit!: (value: { code: number | null; signal: string | null }) => void
-  const exited = new Promise<{ code: number | null; signal: string | null }>((resolve) => { exit = resolve })
+  const frames: Frame[] = []
+  const processes: { stdout: PassThrough; exit: (value: { code: number | null; signal: string | null }) => void }[] = []
   let turnStarted!: () => void
   const started = new Promise<void>((resolve) => { turnStarted = resolve })
   let retired = 0
-  const frames: { id?: number; method?: string; params?: unknown }[] = []
-  stdin.on("data", (chunk) => {
-    for (const line of String(chunk).trim().split("\n")) {
-      const frame = JSON.parse(line) as { id?: number; method?: string; params?: unknown }
-      frames.push(frame)
-      if (frame.id === undefined) continue
-      const result = frame.method === "thread/start" ? { thread: { id: "thread-1" } }
-        : frame.method === "model/list" ? { data: [{ model: "test-model", isDefault: true }] }
-          : frame.method === "turn/start" ? { turn: { id: "turn-current" } } : {}
-      stdout.write(`${JSON.stringify({ id: frame.id, result })}\n`)
-      if (frame.method === "turn/start") turnStarted()
-    }
-  })
-  const process: OwnedProcess = { pid: 5_000_002, stdin, stdout, stderr: new PassThrough(), exited,
-    retire: async () => { retired++; exit({ code: 0, signal: null }); return { stopped: true } } }
-  const services = { spawn: async () => process, firstPartyMcp: () => undefined,
-    clock: { now: Date.now, setTimeout, clearTimeout } } as unknown as HarnessServices
+  let heldTurnStart: number | undefined
+  const spawn = async (): Promise<OwnedProcess> => {
+    const stdin = new PassThrough()
+    const stdout = new PassThrough()
+    let exit!: (value: { code: number | null; signal: string | null }) => void
+    const exited = new Promise<{ code: number | null; signal: string | null }>((resolve) => { exit = resolve })
+    processes.push({ stdout, exit })
+    stdin.on("data", (chunk) => {
+      for (const line of String(chunk).trim().split("\n")) {
+        const frame = JSON.parse(line) as Frame
+        frames.push(frame)
+        if (frame.id === undefined) continue
+        if (frame.method === "turn/start" && options.holdTurnStart) { heldTurnStart = frame.id; turnStarted(); continue }
+        const result = frame.method === "thread/start" ? { thread: { id: "thread-1" } }
+          : frame.method === "model/list" ? { data: [{ model: "test-model", isDefault: true }] }
+            : frame.method === "turn/start" ? { turn: { id: "turn-current" } } : {}
+        stdout.write(`${JSON.stringify({ id: frame.id, result })}\n`)
+        if (frame.method === "turn/start") turnStarted()
+      }
+    })
+    return { pid: 5_000_002 + processes.length, stdin, stdout, stderr: new PassThrough(), exited,
+      retire: async () => { retired++; exit({ code: 0, signal: null }); return { stopped: true } } }
+  }
+  const services = { spawn, firstPartyMcp: () => undefined,
+    clock: options.clock ?? { now: Date.now, setTimeout, clearTimeout } } as unknown as HarnessServices
   const transport = new CodexAppServerTransport(services, { binary: "unused", homeRoot: path.join(root, "homes"), ownerHome: path.join(root, "owner") })
   const startInput = { ...input, directory: root, projection: { generation: "g1", pluginRoots: [], notApplied: [], mcpServers: [] } }
   const close = async () => { await transport.dispose(); await fs.rm(root, { recursive: true, force: true }) }
-  return { transport, startInput, stdout, started, frames, retired: () => retired, close }
+  const releaseTurnStart = () => {
+    if (heldTurnStart === undefined) throw new Error("No held turn/start")
+    processes.at(-1)!.stdout.write(`${JSON.stringify({ id: heldTurnStart, result: { turn: { id: "turn-current" } } })}\n`)
+  }
+  const liveBroker = () => ({ rebind: rebindTo(root), goal: { publish: async () => {} }, reportFailure: () => {} } as unknown as SessionBroker)
+  return { transport, startInput, started, frames, releaseTurnStart, liveBroker, retired: () => retired,
+    get stdout() { return processes.at(-1)!.stdout }, spawned: () => processes.length, exitLatest: () => processes.at(-1)!.exit({ code: 1, signal: null }), close }
 }
+
+const turnInput = { turnId: "t1", userMessageId: "u1", assistantMessageId: "a1", origin: { actor: { kind: "person", userId: "owner" }, via: "relay", reissued: false },
+  prompt: { agent: "codex", assistantMessageId: "a1", parts: [{ type: "text", text: "Reply" }] }, todos: [] } as TurnInput
+
+test("Codex refuses the external-auth token refresh request as an unsupported method and answers tool calls outside a turn", async () => {
+  const peer = await scriptedTransport()
+  const responses = new Map<number, (value: Frame & { result?: unknown; error?: { code: number } }) => void>()
+  const send = (id: number, method: string, params: unknown) => new Promise<Frame & { result?: unknown; error?: { code: number } }>((resolve) => {
+    responses.set(id, resolve)
+    peer.stdout.write(`${JSON.stringify({ id, method, params })}\n`)
+  })
+  try {
+    await peer.transport.start(peer.startInput, peer.liveBroker())
+    const written = new Set<number>()
+    const poll = async (id: number) => {
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const frame = peer.frames.find((row) => row.id === id && row.method === undefined && !written.has(id)) as (Frame & { result?: unknown; error?: { code: number } }) | undefined
+        if (frame) { written.add(id); responses.get(id)?.(frame); return }
+        await new Promise((resolve) => setTimeout(resolve, 2))
+      }
+    }
+    const refresh = send(0, "account/chatgptAuthTokens/refresh", { reason: "unauthorized" })
+    await poll(0)
+    expect((await refresh).error?.code).toBe(-32601)
+    const tool = send(1, "item/tool/call", { tool: "spawn_agent", arguments: { task_name: "x", message: "y" } })
+    await poll(1)
+    expect((await tool).result).toEqual({ contentItems: [{ type: "inputText", text: "Dynamic tool spawn_agent is unavailable." }], success: false })
+  } finally { await peer.close() }
+})
 
 test("failed Codex rebind leaves no attached entry for the retired process", async () => {
   const peer = await scriptedTransport()
   const broker = { rebind: async () => { throw new Error("rebind rejected") } } as unknown as SessionBroker
-  const session = { directory: peer.startInput.directory, locality: "local", binding: {
-    sessionId: "s1", workspaceId: "w1", directory: peer.startInput.directory, connectionId: "codex-app-server", upstreamSessionId: "thread-1",
-  } }
   try {
     await expect(peer.transport.start(peer.startInput, broker)).rejects.toThrow("rebind rejected")
     expect(peer.retired()).toBe(1)
-    expect((peer.transport as unknown as { entries: Map<string, unknown> }).entries.has(session.binding.sessionId)).toBe(false)
+    expect((peer.transport as unknown as { entries: Map<string, unknown> }).entries.has("s1")).toBe(false)
   } finally { await peer.close() }
 })
 
 test("a preceding Codex turn completion cannot end the current streamed turn", async () => {
   const peer = await scriptedTransport()
-  const broker = { rebind: rebindTo(peer.startInput.directory), goal: { publish: async () => {} }, reportFailure: () => {} } as unknown as SessionBroker
   try {
-    const session = await peer.transport.start(peer.startInput, broker)
-    const turn = { turnId: "t1", userMessageId: "u1", assistantMessageId: "a1", origin: { actor: { kind: "person", userId: "owner" }, via: "relay", reissued: false },
-      prompt: { agent: "codex", assistantMessageId: "a1", parts: [{ type: "text", text: "Reply" }] }, todos: [] } as TurnInput
-    const turnBroker = { signal: new AbortController().signal } as TurnBroker
+    const session = await peer.transport.start(peer.startInput, peer.liveBroker())
     let settled = false
-    const running = (async () => { for await (const _event of peer.transport.send(session, turn, turnBroker)) {} })()
+    const running = (async () => { for await (const _event of peer.transport.send(session, turnInput, { signal: new AbortController().signal } as TurnBroker)) {} })()
       .finally(() => { settled = true })
     await peer.started
     peer.stdout.write(`${JSON.stringify({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-previous", status: "completed" } } })}\n`)
@@ -166,12 +162,9 @@ test("a preceding Codex turn completion cannot end the current streamed turn", a
 
 test("a malformed frame fails a Codex streamed turn and retires its process", async () => {
   const peer = await scriptedTransport()
-  const broker = { rebind: rebindTo(peer.startInput.directory), goal: { publish: async () => {} }, reportFailure: () => {} } as unknown as SessionBroker
   try {
-    const session = await peer.transport.start(peer.startInput, broker)
-    const turn = { turnId: "t1", userMessageId: "u1", assistantMessageId: "a1", origin: { actor: { kind: "person", userId: "owner" }, via: "relay", reissued: false },
-      prompt: { agent: "codex", assistantMessageId: "a1", parts: [{ type: "text", text: "Reply" }] }, todos: [] } as TurnInput
-    const running = (async () => { for await (const _event of peer.transport.send(session, turn,
+    const session = await peer.transport.start(peer.startInput, peer.liveBroker())
+    const running = (async () => { for await (const _event of peer.transport.send(session, turnInput,
       { signal: new AbortController().signal } as TurnBroker)) {} })()
     await peer.started
     peer.stdout.write("{malformed\n")
@@ -182,17 +175,75 @@ test("a malformed frame fails a Codex streamed turn and retires its process", as
 
 test("a Codex turn without a resolved model starts the default model, not the thread's start or config model", async () => {
   const peer = await scriptedTransport()
-  const broker = { rebind: rebindTo(peer.startInput.directory), goal: { publish: async () => {} }, reportFailure: () => {} } as unknown as SessionBroker
   try {
     const session = await peer.transport.start({ ...peer.startInput, model: { providerID: "codex", modelID: "start-model" },
-      config: { ...peer.startInput.config, model: { providerID: "codex", modelID: "config-model" } } }, broker)
-    const turn = { turnId: "t1", userMessageId: "u1", assistantMessageId: "a1", origin: { actor: { kind: "person", userId: "owner" }, via: "relay", reissued: false },
-      prompt: { agent: "codex", assistantMessageId: "a1", parts: [{ type: "text", text: "Reply" }] }, todos: [] } as TurnInput
-    const running = (async () => { for await (const _event of peer.transport.send(session, turn, { signal: new AbortController().signal } as TurnBroker)) {} })()
+      config: { ...peer.startInput.config, model: { providerID: "codex", modelID: "config-model" } } }, peer.liveBroker())
+    const running = (async () => { for await (const _event of peer.transport.send(session, turnInput, { signal: new AbortController().signal } as TurnBroker)) {} })()
     await peer.started
     peer.stdout.write(`${JSON.stringify({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-current", status: "completed" } } })}\n`)
     await running
     expect(peer.frames.find((frame) => frame.method === "thread/start")?.params).toMatchObject({ model: "start-model" })
     expect(peer.frames.find((frame) => frame.method === "turn/start")?.params).toMatchObject({ model: "test-model" })
+  } finally { await peer.close() }
+})
+
+test("a process exit mid-turn fails the streamed turn through the channel's failure listeners", async () => {
+  const peer = await scriptedTransport()
+  try {
+    const session = await peer.transport.start(peer.startInput, peer.liveBroker())
+    const running = (async () => { for await (const _event of peer.transport.send(session, turnInput,
+      { signal: new AbortController().signal } as TurnBroker)) {} })()
+    await peer.started
+    peer.exitLatest()
+    await expect(running).rejects.toThrow("Codex exit failed")
+  } finally { await peer.close() }
+})
+
+test("a cancel that lands before turn/start answers still interrupts the turn once its id is known", async () => {
+  const peer = await scriptedTransport({ holdTurnStart: true })
+  try {
+    const session = await peer.transport.start(peer.startInput, peer.liveBroker())
+    const controller = new AbortController()
+    const running = (async () => { for await (const _event of peer.transport.send(session, turnInput, { signal: controller.signal } as TurnBroker)) {} })()
+    await peer.started
+    controller.abort()
+    peer.releaseTurnStart()
+    for (let attempt = 0; attempt < 50 && !peer.frames.some((frame) => frame.method === "turn/interrupt"); attempt++) await new Promise((resolve) => setTimeout(resolve, 2))
+    expect(peer.frames.find((frame) => frame.method === "turn/interrupt")?.params).toEqual({ threadId: "thread-1", turnId: "turn-current" })
+    peer.stdout.write(`${JSON.stringify({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-current", status: "interrupted" } } })}\n`)
+    await running
+  } finally { await peer.close() }
+})
+
+test("Codex hands the spawn owner the whole environment and applies no scrub of its own", async () => {
+  const peer = await scriptedTransport()
+  const seen: Record<string, string>[] = []
+  const services = (peer.transport as unknown as { services: HarnessServices }).services
+  const spawn = services.spawn.bind(services)
+  services.spawn = async (command, options) => { seen.push({ ...command.env }); return spawn(command, options) }
+  ;(peer.transport as unknown as { options: { env?: NodeJS.ProcessEnv } }).options.env = { PATH: "/usr/bin", CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN: "broker-secret" }
+  try {
+    await peer.transport.start(peer.startInput, peer.liveBroker())
+    expect(seen[0]?.CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN).toBe("broker-secret")
+    expect(seen[0]?.CODEX_HOME).toBeDefined()
+  } finally { await peer.close() }
+})
+
+test("Codex draft probes are keyed on non-secret identity, shared across rotations of one lease, and expire", async () => {
+  let now = 1_000_000
+  const peer = await scriptedTransport({ clock: { now: () => now, setTimeout, clearTimeout } })
+  const draft = (placeholder: string): DraftLaunch => ({ workspaceId: "w1", directory: peer.startInput.directory, locality: "local", owner: { kind: "machine-owner" },
+    config: { harness: { id: "codex", access: "native" } }, projection: { generation: "g1", pluginRoots: [], notApplied: [], mcpServers: [] },
+    credentials: { providers: { codex: { baseUrl: "http://127.0.0.1:47509/v1", placeholder, authMode: "api-key" } }, secrets: { token: placeholder }, leaseGeneration: "lease-1" } })
+  try {
+    expect((await peer.transport.config.options({ draft: draft("secret-one") }, "probe")).options.length).toBeGreaterThan(0)
+    expect(peer.spawned()).toBe(1)
+    await peer.transport.config.options({ draft: draft("secret-two") }, "probe")
+    expect(peer.spawned()).toBe(1)
+    const probes = (peer.transport as unknown as { probes: { keys(): Iterable<string> } }).probes
+    expect(JSON.stringify([...probes.keys()])).not.toContain("secret-")
+    now += 31_000
+    await peer.transport.config.options({ draft: draft("secret-one") }, "probe")
+    expect(peer.spawned()).toBe(2)
   } finally { await peer.close() }
 })
