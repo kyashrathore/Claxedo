@@ -177,6 +177,32 @@ The build was the same (6d9c0a91a9), and the host was just as quiet. v2 had 0 in
 
 **Required architecture check:** `bun run test:architecture-ratchets` was run after measurement and exited 1. Its 13 tests passed and all eight product-boundary policies passed; the helper ratchet then reported 4,235 findings, including three reserved helper names and a clone count of 4,148 against the existing 166 baseline. The scanner inventories `packages/`, not the scratchpad. No ceiling or baseline was changed. See `architecture-ratchets.log`. Owner/follow-up: the repository helper-canonicalization lane must resolve the source findings and rerun this check; this benchmark/report task does not claim that gate is green.
 
+### Benchmark, publication run 4 (final tip, AC, 2026-09-26 10:19–10:51 IST)
+
+**Interrupted; publication-grade results are not available.** The requested final-tip benchmark could not complete its fast pair during this window. Five attempts were discarded after host-monitor interruptions; the full suite was not started. There are no accepted winners, ratios, or changes versus publication run 2 / indicative run 3. Panel validity and the cold-switch recovery remain unverified by a completed run. Do not treat this section as a passing performance gate.
+
+**Build:** `5b64bffc3b13900bfb11ca2403ca12da88967fda`, on `v2/bench-final`, merging `feat/app-v2` at `8b11cefc6f4e6a45ee7e10120f7c450f355a7f94`. This includes panel settled-state fix `84c53820a6`, cold-history read fix `408f741e08`, and packaging fix `64e642b9ac`. `bun install` exited 0 with no dependency changes. Both original macOS package commands exited 0 and passed unchanged packaging invariants. V2 is minified: `main-yaEW0OC9.js`, 3,805.76 kB in build output. Packaged minification/compile-cache verification returned `failures: []`.
+
+**Host:** Apple M4 Pro, 12 logical CPUs, 24 GiB RAM, macOS arm64. AC at every recorded check; battery charged from 12% to 49%. Packaging triggered a lengthy Spotlight cooldown. Before every attempted suite, the one-minute load was below 3, with two quiet readings 30 seconds apart. `uptime` and `pmset -g batt` were recorded at attempt start/stop; no attempt reached ten minutes. During attempts, AC, load and process CPU were sampled every ten seconds. The wrapper additionally enforced a conservative aggregate-external-CPU threshold of 150%, alongside an individual-process threshold of 80%. The aggregate threshold was extra operator policy, not an original framework validity rule or a user-specified numeric limit; two attempts tripped only that extra threshold. Clarification was requested before relaxing it; it was not relaxed.
+
+| Attempt | Start IST | Start load | Stop IST | Trigger | Outcome |
+|---|---|---:|---|---|---|
+| 0 | 10:36:59 | 2.29 | 10:37:19 | Outside ChatGPT renderer 107.5% CPU; aggregate 201% | Discarded |
+| 1 | 10:38:59 | 2.53 | 10:39:29 | macOS spindump 87.6% CPU (later 96.9%); reparented owned app also initially misattributed | Discarded |
+| 2 | 10:42:26 | 2.32 | 10:43:16 | Aggregate outside CPU 196.5%; largest process 21.1% | Discarded |
+| 3 | 10:44:53 | 1.74 | 10:45:33 | Aggregate outside CPU 209.9%; load 2.70; largest process 22.6% | Discarded |
+| 4 | 10:50:11 | 1.62 | 10:50:31 | macOS duetexpertd 96.9% CPU; aggregate 160%; load 3.57 | Discarded |
+
+**Invalid counts / winners:** no accepted suite exists, so accepted invalid counts and V1/V2 win counts are **not available**, not zero. Attempt 1 wrote partial startup results: V1 15/20 invalid after driver interruption, V2 0/20 invalid; every observation from that attempt is excluded. Other attempts produced no completed `result.json`. These interrupted results cannot support a per-row publication table. No panel observations were completed, and cold-switch comparisons against run 2 or run 3 remain unverified.
+
+**Method preserved:** framework `b7758eedcbc293c8dd920494446fb4c69e54c68d`, original verified corpus digests (fast `48fbc90b47a1779d1853ea25f63adca2c3018a73745434ec27df72201dc37472`, full `beeb966459bb2b8ebeb8df1654625054decbd69a93e1d70e63addfcae610d2a1`), headed packaged apps, balanced mirrored serial schedule, fast publication repetitions (10 startup / 3 switching), and original statistical/withholding rules. Full publication preset (5 per scenario) is prepared but unrun. No benchmark budget or validity rule was loosened. The monitor was corrected to recognize reparented task-owned app processes and to stop the comparison immediately on interruption, allowing driver cleanup before terminating the owned comparison PID. Individually verified owned server survivors were terminated; no owner process, process group, or reserved owner port was touched.
+
+**Raw attempt evidence and exact commands:** `/Users/yashvardhansingh/test/opencode-app-v2-lanes/bench-final/scratchpad/publication-run-4/`. `commands.md` records merge, install, package, copy, artifact verification, corpus verification, ratchet, wrapper commands and interruption cleanup. Each `attempt-*` directory retains expanded `fast-command.json`, config, host/process logs, contamination trigger, framework log and any partial raw output. `cooldown.log` retains the preflight wait. Analysis/report scripts are prepared but no completed comparison manifest exists. No push or prohibited test suite was run.
+
+**Repository check:** `bun run test:architecture-ratchets` exited 1. Its 13 tests and all eight product-boundary policies passed; the helper ratchet reported the same 4,235 findings as run 3, including 4,148 cloned copies against baseline 166. No budget/baseline was changed. Owner: helper-canonicalization lane; resolve the source findings and rerun the gate.
+
+**Follow-up / owner:** the benchmark operator needs a sustained quiet-host window (macOS background work was repeatedly active), plus resolution of the explicitly disclosed extra aggregate guard. Reuse these successfully built apps; rerun the complete fast pair and then full suite, never combine discarded attempts. Only then publish every-row medians/p95, ratios, verdicts, invalid counts and changes versus runs 2/3, and confirm panel validity and cold-switch recovery.
+
 ## The goal in four parts
 
 The owner's words: better, performant, easy code, less LOC. Each part gives the rule, where it stands (observed on `feat/app-v2`), and what is next.
