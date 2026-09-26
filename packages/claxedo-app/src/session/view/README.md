@@ -11,7 +11,7 @@ The pane that shows one session: the moved timeline (`timeline/`, owned by the t
 
 | Concept | Home |
 | --- | --- |
-| The screen's load states: loading (placeholder after 150 ms), missing, failed with retry, ready | `session-screen.tsx`, from `SessionView.state` |
+| The screen's load states: loading (placeholder after 150 ms), missing, failed with retry, ready. While the session loads, the screen holds the workbench's reveal, so a switch keeps the previous session on screen instead of the placeholder | `session-screen.tsx`, from `SessionView.state` |
 | The `TimelineHost` the moved timeline reads | `timeline-host.ts` |
 | Following the end of a streaming turn, the jump button state, message selection from the nav rail, paging older history | `auto-scroll.ts`, `timeline-scroll.ts`, `history-paging.ts`, `scroll-anchor.ts` |
 | Which dock shows: the first open request (permission or question), the goal, the todo list. The todo list shows only while a turn runs and the list is unfinished, so a finished list goes away (the owner's rule; today's app keeps it). Its collapsed state is kept per session in sessionStorage: it survives a reload and nothing longer. While a request is open the todo list and the composer are hidden, as today, but stay mounted, so a request dock mounts and leaves alone; the hidden composer offers no palette commands and takes no dropped files. The todo list's lift under the composer is its own negative bottom margin (`session-screen.css`), none when floating | `session-docks.tsx`, `docks/`, `session-screen.tsx` |

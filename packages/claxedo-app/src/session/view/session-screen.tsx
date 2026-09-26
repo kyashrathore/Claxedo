@@ -7,7 +7,7 @@ import { usePanel } from "@/panel"
 import { useSessionStores, type SessionView } from "@/session"
 import { sessionPath, useCommands, useShellRoute, type PaneProps } from "@/shell"
 import { useDialog } from "@/ui"
-import { useWorkbench } from "@/workbench"
+import { holdPaneReveal, useWorkbench } from "@/workbench"
 import { createQueueEdit } from "./queue-edit"
 import { createTodoDock, SessionDocks, TodoDockSlot } from "./session-docks"
 import { SessionTimeline, userMessages } from "./session-timeline"
@@ -178,6 +178,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
   const floating = () => !props.readOnly && panel.maximized() && props.active
   const view = createMemo(() => stores.open(props.sessionRef))
   commitDeltasEachFrame(view)
+  holdPaneReveal(() => view().state().kind === "loading")
   const failure = () => {
     const state = view().state()
     return state.kind === "failed" ? state : undefined

@@ -14,8 +14,10 @@ import { createContentIndex } from "./content-index"
 import { Divider } from "./divider"
 import { rectStyle } from "./geometry"
 import { useWorkbenchChords } from "./keyboard-chords"
+import { createHandover } from "./handover"
 import { createMountedContents } from "./mount-policy"
 import { PaneChrome } from "./pane-chrome"
+import { createRevealHolds } from "./reveal-holds"
 
 export type WorkbenchProps = {
   readonly renderEmpty?: () => JSX.Element
@@ -50,6 +52,8 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
   const displayRects = createMemo(() => (collapsed() ? collapsePaneRects(wb.layout()) : trueRects()))
   const index = createContentIndex(wb.layout, displayRects)
   const mounted = createMountedContents(wb.layout, index.assigned)
+  const holds = createRevealHolds()
+  const handover = createHandover({ layout: wb.layout, displayed: index.isDisplayed, revealed: holds.revealed })
   const surfaceKeys = createSurfaceKeyRouter(() => wb.layout().focusedPaneId)
   useWorkbenchChords({ wb, keyMap: props.keyMap, surfaceKeys, onCloseFocusedPane: props.onCloseFocusedPane })
   const dropTarget = createWorkbenchDropTarget({
@@ -69,41 +73,49 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
   return (
     <div ref={rootEl} data-testid="workbench-root" class="workbench-root" tabindex="-1">
       <Show when={wb.layout().panes.length > 0} fallback={empty()}>
-        <For each={wb.layout().panes}>
-          {(pane) => (
-            <div
-              data-testid={`pane-${pane.id}`}
-              data-pane-id={pane.id}
-              class="workbench-pane"
-              style={paneStyle(pane.id)}
-              onMouseDown={() => wb.split.focus(pane.id)}
-            >
-              <Show when={!pane.contentId}>{empty()}</Show>
-            </div>
-          )}
-        </For>
-        <Show when={rootSplit()}>{(split) => <Divider split={split()} root={() => rootEl} />}</Show>
-        <For each={mounted()}>
-          {(contentId) => (
-            <ContentSlot
-              contentId={contentId}
-              paneOf={index.paneOf}
-              displayed={index.isDisplayed}
-              displayRects={displayRects}
-              surfaceKeys={surfaceKeys}
-            />
-          )}
-        </For>
-        <For each={wb.layout().panes}>
-          {(pane) => <PaneChrome pane={pane} style={paneStyle(pane.id)} closable={wb.layout().panes.length > 1} />}
-        </For>
-        <Show when={dropTarget()}>
-          {(target) => (
-            <div data-testid={`drop-target-${target().paneId}`} class="workbench-drop-target" style={paneStyle(target().paneId)}>
-              <DropTargetOverlay edge={target().edge} />
-            </div>
-          )}
-        </Show>
+        <div class="workbench-layer">
+          <For each={wb.layout().panes}>
+            {(pane) => (
+              <div
+                data-testid={`pane-${pane.id}`}
+                data-pane-id={pane.id}
+                class="workbench-pane"
+                style={paneStyle(pane.id)}
+                onMouseDown={() => wb.split.focus(pane.id)}
+              >
+                <Show when={!pane.contentId}>{empty()}</Show>
+              </div>
+            )}
+          </For>
+          <Show when={rootSplit()}>{(split) => <Divider split={split()} root={() => rootEl} />}</Show>
+        </div>
+        <div class="workbench-layer">
+          <For each={mounted()}>
+            {(contentId) => (
+              <ContentSlot
+                contentId={contentId}
+                paneOf={index.paneOf}
+                presence={handover.presence}
+                heldBy={handover.heldBy}
+                holds={holds}
+                displayRects={displayRects}
+                surfaceKeys={surfaceKeys}
+              />
+            )}
+          </For>
+        </div>
+        <div class="workbench-layer">
+          <For each={wb.layout().panes}>
+            {(pane) => <PaneChrome pane={pane} style={paneStyle(pane.id)} closable={wb.layout().panes.length > 1} />}
+          </For>
+          <Show when={dropTarget()}>
+            {(target) => (
+              <div data-testid={`drop-target-${target().paneId}`} class="workbench-drop-target" style={paneStyle(target().paneId)}>
+                <DropTargetOverlay edge={target().edge} />
+              </div>
+            )}
+          </Show>
+        </div>
       </Show>
     </div>
   )
