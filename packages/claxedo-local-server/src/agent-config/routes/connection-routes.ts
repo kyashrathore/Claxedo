@@ -38,7 +38,9 @@ export function agentConfigConnectionRoutes(options: AgentConfigRouteOptions = {
         await fanOutConfig()
         return c.json({ ok: true, connections })
       } catch (error) {
-        if (error instanceof AgentConfigMutationError) return c.json(errorBody(error.code, error.message), error.status)
+        if (error instanceof AgentConfigMutationError) {
+          return c.json({ ...errorBody(error.code, error.message), ...(error.problems ? { problems: error.problems } : {}) }, error.status)
+        }
         throw error
       }
     })

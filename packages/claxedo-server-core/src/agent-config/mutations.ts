@@ -4,6 +4,7 @@ import {
   explicitDefaultHarness,
   isConnectionId,
   isNativeHarnessId,
+  type HarnessConnectionProblem,
 } from "./connections"
 import type { UserAgentConfig } from "./config"
 import type { UserAgentConfigStore } from "./repository"
@@ -12,7 +13,13 @@ import type { RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
 const connections = createHarnessConnectionSchema()
 
 export class AgentConfigMutationError extends Error {
-  constructor(readonly code: string, message: string, readonly status: 400 | 404 | 409 = 400) {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly status: 400 | 404 | 409 = 400,
+    /** Each refused descriptor by id, for a caller that sent several. */
+    readonly problems?: readonly HarnessConnectionProblem[],
+  ) {
     super(message)
   }
 }
@@ -22,11 +29,11 @@ export async function putConnection(store: UserAgentConfigStore, connectionId: s
   const config = await store.read()
   const proposed = connections.validate({ ...config.connections, [connectionId]: body })
   if (proposed.problems.length) {
-    throw new AgentConfigMutationError("agent_config_connection_invalid", proposed.problems.map((item) => item.problem).join("; "))
+    throw new AgentConfigMutationError("agent_config_connection_invalid", proposed.problems.map((item) => item.problem).join("; "), 400, proposed.problems)
   }
   const revisions = connections.revisionProblems(config.connections, proposed.accepted)
   if (revisions.length) {
-    throw new AgentConfigMutationError("agent_config_connection_invalid", revisions.map((item) => item.problem).join("; "))
+    throw new AgentConfigMutationError("agent_config_connection_invalid", revisions.map((item) => item.problem).join("; "), 400, revisions)
   }
   await store.write({ ...config, connections: proposed.accepted })
   return connections.publicRows(proposed.accepted)

@@ -3,6 +3,7 @@ import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/auth
 import type { UserAgentConfigRepository } from "@claxedo/server-core/agent-config/repository"
 import { userAgentConfigStore } from "@claxedo/server-core/agent-config/repository"
 import { explicitDefaultHarness } from "@claxedo/server-core/agent-config/connections"
+import type { AcpRuntimeMcpServer } from "@claxedo/server-core/agent-plugins/runtime/mcp-projection"
 import { builtInProviderRow } from "@claxedo/server-core/credentials/built-in-destinations"
 import {
   nativeProviderAuth,
@@ -12,6 +13,20 @@ import {
 import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority/services"
 import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "./route-support"
 import { hostedRuntimeConfigApply } from "./hosted-runtime-fetch"
+
+/**
+ * The whole stack a sandbox is provisioned with. The base delivery supplies
+ * provider credentials and the settings snapshot; a feature entry (Agent
+ * Plugins) layers its own preparation, provisioning and the MCP servers the
+ * snapshot carries for custom ACP connections, then registers the composed
+ * hooks here so a refresh of a running sandbox runs everything the first
+ * connection ran.
+ */
+export type HostedRuntimeHooks = {
+  prepareRuntime: (context: WorkspaceRuntimeContext) => Promise<WorkspaceRuntimePreparation>
+  provisionRuntime: (context: WorkspaceRuntimeContext, preparation?: WorkspaceRuntimePreparation) => Promise<void>
+  acpMcp?: (workspaceId: string, preparation: WorkspaceRuntimePreparation | undefined) => Promise<Record<string, AcpRuntimeMcpServer>>
+}
 
 export function createHostedRuntimeDelivery(input: {
   authority: WorkspaceAuthority
@@ -39,24 +54,25 @@ export function createHostedRuntimeDelivery(input: {
       secretBrokering: input.driver.metadata.secretBrokering,
     })
   }
-  const snapshot = async (workspaceId: string) => {
-    const person = await owner(workspaceId)
-    const config = await userAgentConfigStore(input.settings, person.userId).read()
-    const auth = nativeProviderAuth(await deliveries(person.orgId))
-    return {
-      version: 4 as const,
-      mcp: {},
-      connections: Object.values(config.connections),
-      ...(explicitDefaultHarness(config) ? { defaultHarness: explicitDefaultHarness(config) } : {}),
-      auth,
-    }
-  }
-  const push = async (workspaceId: string) => {
-    await hostedRuntimeConfigApply(input.services, workspaceId, await snapshot(workspaceId), input.signingEnv)
-  }
   const prepare = async ({ workspaceId }: WorkspaceRuntimeContext): Promise<WorkspaceRuntimePreparation> => {
     const person = await owner(workspaceId)
     return { secrets: nativeProviderSecrets(await deliveries(person.orgId)) }
+  }
+  const push = async (workspaceId: string, preparation: WorkspaceRuntimePreparation | undefined) => {
+    const person = await owner(workspaceId)
+    const config = await userAgentConfigStore(input.settings, person.userId).read()
+    const auth = nativeProviderAuth(await deliveries(person.orgId))
+    await hostedRuntimeConfigApply(input.services, workspaceId, {
+      version: 4 as const,
+      mcp: await hooks.acpMcp?.(workspaceId, preparation) ?? {},
+      connections: Object.values(config.connections),
+      ...(explicitDefaultHarness(config) ? { defaultHarness: explicitDefaultHarness(config) } : {}),
+      auth,
+    }, input.signingEnv)
+  }
+  const hooks: HostedRuntimeHooks = {
+    prepareRuntime: prepare,
+    provisionRuntime: (context, preparation) => push(context.workspaceId, preparation),
   }
   const running = async (predicate: (person: Awaited<ReturnType<typeof owner>>) => boolean) => {
     const leases = await input.sandboxManager.list()
@@ -66,24 +82,32 @@ export function createHostedRuntimeDelivery(input: {
     }))
     return workspaces.filter((workspaceId): workspaceId is string => !!workspaceId)
   }
+  const refresh = async (workspaceId: string) => {
+    const context = { workspaceId }
+    const preparation = await hooks.prepareRuntime(context)
+    const target = await input.sandboxManager.target(workspaceId)
+    if (target.status !== "ready") return
+    const ensured = await input.sandboxManager.ensure(workspaceId, {
+      homeRegion: target.homeRegion,
+      secrets: preparation.secrets ?? [],
+    })
+    if (ensured.status !== "ready") throw new Error(`hosted runtime refresh failed: ${ensured.status}`)
+    await hooks.provisionRuntime(context, preparation)
+  }
+  const refreshRunning = async (predicate: (person: Awaited<ReturnType<typeof owner>>) => boolean) => {
+    await Promise.all((await running(predicate)).map(refresh))
+  }
   return {
     prepareRuntime: prepare,
-    provisionRuntime: async ({ workspaceId }: WorkspaceRuntimeContext) => push(workspaceId),
-    settingsChanged: async (userId: string) => {
-      await Promise.all((await running((person) => person.userId === userId)).map(push))
+    provisionRuntime: hooks.provisionRuntime,
+    /** Installs the composed stack; the base hooks alone run until a feature entry calls this. */
+    composeRuntime(next: HostedRuntimeHooks) {
+      hooks.prepareRuntime = next.prepareRuntime
+      hooks.provisionRuntime = next.provisionRuntime
+      hooks.acpMcp = next.acpMcp
     },
-    reconcileCredentialDelivery: async (orgId: string) => {
-      await Promise.all((await running((person) => person.orgId === orgId)).map(async (workspaceId) => {
-        const next = await prepare({ workspaceId })
-        const target = await input.sandboxManager.target(workspaceId)
-        if (target.status !== "ready") return
-        const ensured = await input.sandboxManager.ensure(workspaceId, {
-          homeRegion: target.homeRegion,
-          secrets: next.secrets,
-        })
-        if (ensured.status !== "ready") throw new Error(`hosted credential reconcile failed: ${ensured.status}`)
-        await push(workspaceId)
-      }))
-    },
+    settingsChanged: (userId: string) => refreshRunning((person) => person.userId === userId),
+    pluginsChanged: (userId: string) => refreshRunning((person) => person.userId === userId),
+    reconcileCredentialDelivery: (orgId: string) => refreshRunning((person) => person.orgId === orgId),
   }
 }

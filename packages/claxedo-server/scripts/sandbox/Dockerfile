@@ -21,7 +21,7 @@ RUN apt-get update && \
 RUN npm i -g --min-release-age=2 \
       tsx@4.22.3 \
       @anthropic-ai/claude-code@2.1.150 \
-      @openai/codex@0.133.0 \
+      @openai/codex@0.156.1 \
       @google/gemini-cli@0.43.0 \
       @earendil-works/pi-coding-agent@0.85.1
 

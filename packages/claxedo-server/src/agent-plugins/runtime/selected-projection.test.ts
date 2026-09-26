@@ -1,10 +1,11 @@
 import { describe, expect, test, vi } from "vitest"
 import type { AgentPluginArtifactStore, RetainedAgentPluginArtifact } from "@claxedo/server-core/agent-plugins/artifacts/types"
+import { SUPPORTED_AGENT_PLUGIN_HARNESSES } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import type { AgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import { selectedAgentPluginProjection } from "./selected-projection"
 import type { SignedAgentPluginRuntimeSnapshot } from "./provision"
 
-const HARNESSES: AgentPluginHarnessId[] = ["opencode", "claude", "codex", "cursor"]
+const HARNESSES: AgentPluginHarnessId[] = [...SUPPORTED_AGENT_PLUGIN_HARNESSES]
 
 type PluginFixture = {
   instanceId: string

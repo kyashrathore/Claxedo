@@ -1,18 +1,15 @@
 import { asRecord } from "@claxedo/helpers/guards"
 import { stringRecord } from "@claxedo/helpers"
 import { AGENT_HARNESS_IDS, isAcpConnectionId, type HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
-import { createAcpProvider } from "@claxedo/harness/providers"
-import type { HarnessConnectionDescriptor } from "@claxedo/harness/providers"
+import { acpConnectionConfig } from "@claxedo/harness/providers"
+import type { ConnectionConfigHooks, HarnessConnectionDescriptor } from "@claxedo/harness/providers"
 import {
   type RuntimeHarnessSelection,
   type RuntimeNativeHarnessId,
 } from "@claxedo/workspace-runtime/config"
 
-export type {
-  HarnessConnectionDescriptor,
-  HarnessConnectionRef,
-} from "@claxedo/agent-sdk-runtime"
-
+export type { ConnectionConfigHooks, HarnessConnectionDescriptor } from "@claxedo/harness/providers"
+export type { HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
 
 export type HarnessConnectionProblem = {
   connectionId: string
@@ -20,43 +17,10 @@ export type HarnessConnectionProblem = {
 }
 
 type NativeHarnessSelection = Extract<RuntimeHarnessSelection, { kind: "native" }>
-type ConnectionProviderRegistry = {
-  validateDescriptor(input: HarnessConnectionDescriptor): HarnessConnectionDescriptor
-  publicRef(input: HarnessConnectionDescriptor): HarnessConnectionRef
-  assertRevision(input: HarnessConnectionDescriptor, previous: HarnessConnectionDescriptor): void
-}
 
-function defaultConnectionProviderRegistry(): ConnectionProviderRegistry {
-  const provider = createAcpProvider()
-  const validateDescriptor = (input: HarnessConnectionDescriptor) => {
-    if (!isAcpConnectionId(input.connectionId)) throw new Error("connectionId must be a lowercase session harness slug of at most 64 characters")
-    if (!Number.isSafeInteger(input.configRevision) || input.configRevision < 1) throw new Error("configRevision must be a positive safe integer")
-    if (input.providerKey !== provider.providerKey) throw new Error(`Connection provider ${input.providerKey} is not installed`)
-    return { ...input, config: provider.validateConfig(input.config) }
-  }
-  return {
-    validateDescriptor,
-    publicRef(input) {
-      const descriptor = validateDescriptor(input)
-      const projection = provider.project(descriptor.config)
-      return { connectionId: descriptor.connectionId, enabled: descriptor.enabled,
-        label: projection.label, readiness: descriptor.enabled ? projection.readiness : "disabled",
-        capabilities: projection.capabilities,
-        ...(projection.modelSelection ? { modelSelection: projection.modelSelection } : {}) }
-    },
-    assertRevision(input, previous) {
-      if (input.connectionId !== previous.connectionId || input.providerKey !== previous.providerKey) {
-        throw new Error("connectionId and providerKey are immutable")
-      }
-      if (input.configRevision < previous.configRevision) throw new Error(`Connection ${input.connectionId} config revision moved backwards`)
-      const next = validateDescriptor(input)
-      const prior = validateDescriptor(previous)
-      if (provider.immutableIdentity(next.config)
-        !== provider.immutableIdentity(prior.config)) {
-        throw new Error(`Connection ${input.connectionId} cannot be retargeted; create a new connectionId`)
-      }
-    },
-  }
+/** The providers a control plane accepts descriptors for when the composition installs none. */
+export function defaultConnectionConfigs(): readonly ConnectionConfigHooks<unknown>[] {
+  return [acpConnectionConfig()]
 }
 
 const DESCRIPTOR_KEYS = new Set([
@@ -69,12 +33,48 @@ const DESCRIPTOR_KEYS = new Set([
 ])
 
 /**
- * Server-core owns persistence and atomic-map validation, while the installed
- * agent-sdk providers own descriptor config validation and public projection.
+ * The one descriptor policy: server-core owns identity, revision and
+ * retargeting rules, while each installed provider's config hooks own the
+ * shape of `config`.
  */
 export function createHarnessConnectionSchema(
-  registry: ConnectionProviderRegistry = defaultConnectionProviderRegistry(),
+  configs: readonly ConnectionConfigHooks<unknown>[] = defaultConnectionConfigs(),
 ) {
+  const providers = new Map<string, ConnectionConfigHooks<unknown>>()
+  for (const provider of configs) {
+    if (providers.has(provider.providerKey)) throw new Error(`Connection provider ${provider.providerKey} is registered more than once`)
+    providers.set(provider.providerKey, provider)
+  }
+  const providerFor = (providerKey: string) => {
+    const provider = providers.get(providerKey)
+    if (!provider) throw new Error(`Connection provider ${providerKey} is not installed`)
+    return provider
+  }
+  const validateDescriptor = (input: HarnessConnectionDescriptor): HarnessConnectionDescriptor => {
+    if (!isAcpConnectionId(input.connectionId)) throw new Error("connectionId must be a lowercase session harness slug of at most 64 characters")
+    if (!Number.isSafeInteger(input.configRevision) || input.configRevision < 1) throw new Error("configRevision must be a positive safe integer")
+    return { ...input, config: providerFor(input.providerKey).validateConfig(input.config) }
+  }
+  const publicRef = (input: HarnessConnectionDescriptor): HarnessConnectionRef => {
+    const descriptor = validateDescriptor(input)
+    const projection = providerFor(descriptor.providerKey).project(descriptor.config)
+    return { connectionId: descriptor.connectionId, enabled: descriptor.enabled,
+      label: projection.label, readiness: descriptor.enabled ? projection.readiness : "disabled",
+      capabilities: projection.capabilities,
+      ...(projection.modelSelection ? { modelSelection: projection.modelSelection } : {}) }
+  }
+  const assertRevision = (input: HarnessConnectionDescriptor, previous: HarnessConnectionDescriptor): void => {
+    if (input.connectionId !== previous.connectionId || input.providerKey !== previous.providerKey) {
+      throw new Error("connectionId and providerKey are immutable")
+    }
+    if (input.configRevision < previous.configRevision) throw new Error(`Connection ${input.connectionId} config revision moved backwards`)
+    const provider = providerFor(input.providerKey)
+    if (provider.immutableIdentity
+      && provider.immutableIdentity(validateDescriptor(input).config) !== provider.immutableIdentity(validateDescriptor(previous).config)) {
+      throw new Error(`Connection ${input.connectionId} cannot be retargeted; create a new connectionId`)
+    }
+  }
+
   function validate(input: unknown): {
     accepted: Record<string, HarnessConnectionDescriptor>
     problems: HarnessConnectionProblem[]
@@ -101,7 +101,7 @@ export function createHarnessConnectionSchema(
         continue
       }
       try {
-        const descriptor = registry.validateDescriptor(candidate.descriptor)
+        const descriptor = validateDescriptor(candidate.descriptor)
         accepted[mapKey] = descriptor
       } catch (error) {
         problems.push({ connectionId: mapKey, problem: providerProblem(error) })
@@ -113,7 +113,7 @@ export function createHarnessConnectionSchema(
   function publicRows(
     connections: Record<string, HarnessConnectionDescriptor>,
   ): HarnessConnectionRef[] {
-    return Object.values(connections).map((connection) => registry.publicRef(connection))
+    return Object.values(connections).map((connection) => publicRef(connection))
   }
 
   function revisionProblems(
@@ -125,7 +125,7 @@ export function createHarnessConnectionSchema(
       const prior = previous[connectionId]
       if (!prior) continue
       try {
-        registry.assertRevision(descriptor, prior)
+        assertRevision(descriptor, prior)
       } catch (error) {
         problems.push({ connectionId, problem: providerProblem(error) })
         continue

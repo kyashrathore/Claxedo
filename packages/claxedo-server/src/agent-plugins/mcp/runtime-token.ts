@@ -1,7 +1,7 @@
 import { credentialFault } from "../../platform/auth/runtime-token-keys"
 import { mintSandboxPass, verifySandboxPass } from "../../platform/auth/sandbox-pass"
 import type { SandboxPassRegister } from "../../platform/auth/sandbox-pass-register"
-import type { AgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
+import { isAgentPluginHarnessId, type AgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import { isArtifactDigest, type ArtifactDigest } from "@claxedo/server-core/agent-plugins/activation/types"
 
 export const MCP_GATEWAY_TOKEN_AUDIENCE = "agent-plugins-mcp-gateway" as const
@@ -44,7 +44,7 @@ function gatewayScope(
     return typeof value === "string" && value ? value : undefined
   }
   const harnessId = read("harness_id")
-  if (harnessId !== "opencode" && harnessId !== "claude" && harnessId !== "codex" && harnessId !== "cursor") return undefined
+  if (!isAgentPluginHarnessId(harnessId)) return undefined
   const execution = read("execution")
   if (execution !== "default" && execution !== "selected") return undefined
   const artifactDigest = read("artifact_digest")

@@ -1,4 +1,5 @@
 import type { AgentPluginCollectionSource } from "./catalog/types"
+import type { SignedControlPlaneAuth } from "../platform/auth/auth"
 
 /**
  * Product-owned catalog boundary. The product returns only sources the current
@@ -8,7 +9,10 @@ export type CatalogSourceProvider = {
   listAuthorizedSources(options?: { fresh?: boolean }): Promise<readonly AgentPluginCollectionSource[]>
 }
 
-/** Schedules application of a committed activation revision. */
+/**
+ * Applies a committed activation revision. A signed rail passes the caller,
+ * whose running sandboxes are the ones the revision reaches.
+ */
 export type AgentPluginReconcilePort = {
-  reconcile(revision: number): Promise<{ state: "applied" | "scheduled" }>
+  reconcile(revision: number, auth?: SignedControlPlaneAuth): Promise<{ state: "applied" | "scheduled" }>
 }

@@ -25,6 +25,9 @@ export type CustomHarnessProvider<TConfig, TResolved = TConfig> = {
 
 export type ConstructTransport<TConfig> = (config: TConfig, services: HarnessServices) => HarnessTransport
 
+export type ConnectionConfigHooks<TConfig> = Pick<CustomHarnessProvider<TConfig>, "providerKey" | "validateConfig" | "project">
+  & Partial<Pick<CustomHarnessProvider<TConfig>, "immutableIdentity">>
+
 export type ResolvedConnection<TConfig> = { connectionId: string; configRevision: number; config: TConfig }
 
 export function assertCurrentConnection<TConfig, TResolved>(input: {

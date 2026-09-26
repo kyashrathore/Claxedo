@@ -12,7 +12,7 @@ export async function run() {
   const stack = await startStack({ label: "h15-codex-brokered" })
   const mcp = await startScriptedMcpServer()
   try {
-    const applied = await applyScriptedPluginProfile(stack.url, mcp.url, ["codex"])
+    const applied = await applyScriptedPluginProfile(stack.url, { harnessIds: ["codex"], servers: { proof: { type: "streamable-http", url: mcp.url } } })
     assert.equal(applied.active, true)
     const operatorConfig = await fs.readFile(path.join(stack.dataDir, ".codex", "config.toml"), "utf8")
     assert.match(operatorConfig, /BEGIN CLAXEDO AGENT PLUGINS/, "the Codex profile must first reach the operator home")

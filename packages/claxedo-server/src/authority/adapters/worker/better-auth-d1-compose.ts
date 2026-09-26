@@ -103,6 +103,8 @@ export type BetterAuthD1UserDeployedCompositionInput = {
 
 export type BetterAuthD1UserDeployedComposition = {
   plane: HostedControlPlane
+  /** The sandbox delivery stack a feature entry composes onto; absent without a sandbox driver. */
+  runtimeDelivery?: ReturnType<typeof createHostedRuntimeDelivery>
   options: Omit<HostedCoreAppOptions, "liveSyncRoom" | "sharedRateLimitStore">
   /** Better Auth owns browser and native protocol routes plus AUTH_DB state. */
   authHandler(request: Request): Promise<Response>
@@ -245,6 +247,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
 
   return {
     plane,
+    ...(delivery ? { runtimeDelivery: delivery } : {}),
     options: {
       authentication,
       serviceCatalog,

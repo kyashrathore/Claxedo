@@ -131,6 +131,7 @@ export async function startSelfHostedServer(options: SelfHostedStartOptions) {
     port: options.port,
     ...(options.sandboxDriver ? { sandboxDriver: options.sandboxDriver } : {}),
     routeContributions: [...agentPlugins.routeContributions, ...tasks.routeContributions],
+    pluginRuntime: agentPlugins.runtimeContribution,
     ...(tasks.grants ? { tasksGrants: tasks.grants } : {}),
   })
 }

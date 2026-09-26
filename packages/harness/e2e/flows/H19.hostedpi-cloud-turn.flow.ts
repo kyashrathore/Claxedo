@@ -39,7 +39,7 @@ export async function run() {
     try {
       const model = { providerId: "pi", modelId: "openai/gpt-4.1" }
       const session = await hostedSession(stack, owner, workspace, { id: "pi", access: "native" }, model)
-      await api.prompt(workspace.directory, session.id, "Reply with exactly HOSTEDPITURN", { model })
+      await api.prompt(workspace.directory, session.id, "Reply with exactly this one token: HOSTEDPITURN", { model })
       const settled = await stream.waitFor((frame) => frameSessionId(frame) === session.id &&
         (frameType(frame) === "session.idle" || frameType(frame) === "session.error"), { label: "hosted Pi settlement", timeoutMs: 60_000 })
       const messages = await api.messages(workspace.directory, session.id)

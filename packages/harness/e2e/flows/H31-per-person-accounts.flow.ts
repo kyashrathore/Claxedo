@@ -36,7 +36,7 @@ export async function run() {
     })
     try {
       const session = await hostedSession(stack, owner, workspace, { id: "pi", access: "native" }, model)
-      await api.prompt(workspace.directory, session.id, "Reply with exactly H31OWNER", { model })
+      await api.prompt(workspace.directory, session.id, "Reply with exactly this one token: H31OWNER", { model })
       const settled = await stream.waitFor((frame) => frameSessionId(frame) === session.id &&
         (frameType(frame) === "session.idle" || frameType(frame) === "session.error"), { label: "H31 owner settlement", timeoutMs: 60_000 })
       const spent = stack.model.requests.find((request) => request.prompt.includes("H31OWNER"))

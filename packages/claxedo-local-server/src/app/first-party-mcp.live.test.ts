@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import fs from "node:fs/promises"
 import path from "node:path"
+import { SUPPORTED_AGENT_PLUGIN_HARNESSES } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import { callTool, startLiveFirstPartyMcp, toolJson, toolText, type LiveMcpFixture } from "./test-support/first-party-mcp-live"
 
 /**
@@ -131,7 +132,7 @@ describe("the first-party MCP a local session is launched with", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         pluginInstanceId: "claxedo:tasks",
-        harnessIds: ["opencode", "claude", "codex", "cursor"],
+        harnessIds: [...SUPPORTED_AGENT_PLUGIN_HARNESSES],
         choice: true,
         expectedRevision: before.revision,
       }),

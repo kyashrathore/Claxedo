@@ -10,7 +10,7 @@ export async function run() {
   const stack = await startStack({ label: "h15-codex-plugin" })
   const mcp = await startScriptedMcpServer()
   try {
-    const applied = await applyScriptedPluginProfile(stack.url, mcp.url, ["codex"])
+    const applied = await applyScriptedPluginProfile(stack.url, { harnessIds: ["codex"], servers: { proof: { type: "streamable-http", url: mcp.url } } })
     assert.equal(applied.active, true)
     const api = new ClaxedoApi(stack.url)
     const workspace = await stack.daemon.makeWorkspace("h15-codex-plugin")

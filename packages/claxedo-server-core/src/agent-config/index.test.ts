@@ -226,18 +226,23 @@ describe("agent config", () => {
     expect(snap.connections).toEqual([])
   })
 
-  test("snapshot obtains opaque harness launch options from the composition", async () => {
+  test("snapshot carries the plugin module's launch rows and its ACP MCP map", async () => {
     await mod.saveUserConfig({ version: 3, connections: {} })
+    const docs = { name: "review-1a2b3c4d-docs", source: "plugin" as const, transport: "remote" as const, url: "https://docs.example/mcp", headers: {} }
     mod.configureAgentConfig({
-      harnessLaunch: async () => ({
-        claude: { pluginRoots: ["/runtime/plugins/review"] },
+      pluginRuntime: async () => ({
+        harnessLaunch: { claude: { pluginRoots: ["/runtime/plugins/review"] } },
+        mcp: { [docs.name]: docs },
       }),
     })
     const snap = await mod.getRuntimeConfigSnapshot()
     expect(snap.harnessLaunch).toEqual({
       claude: { pluginRoots: ["/runtime/plugins/review"] },
     })
-    expect(normalizeRuntimeSnapshot(snap)?.harnessLaunch).toEqual(snap.harnessLaunch)
+    expect(snap.mcp).toEqual({ [docs.name]: docs })
+    const applied = normalizeRuntimeSnapshot(snap)
+    expect(applied?.harnessLaunch).toEqual(snap.harnessLaunch)
+    expect(applied?.mcp).toEqual(snap.mcp)
   })
 
   test("snapshot emits only the clean v4 connection contract", async () => {

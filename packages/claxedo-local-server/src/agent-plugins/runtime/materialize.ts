@@ -19,11 +19,12 @@ import {
   readActiveGeneration,
 } from "./generation"
 import { pluginDataDirectory, pluginInstanceStorageKey } from "./plugin-data"
+import { readAcpAgentPluginConfig } from "./adapters/acp"
+import type { AcpRuntimeMcpServer, RuntimeMcpServerProjection } from "@claxedo/server-core/agent-plugins/runtime/mcp-projection"
 import type {
   AgentPluginHarnessProjectionAdapter,
   GenerationPluginRoot,
   HarnessPluginProjection,
-  RuntimeMcpServerProjection,
 } from "./adapters/types"
 import { isRecord } from "../../platform/json"
 
@@ -55,6 +56,7 @@ export type MaterializedAgentPluginGeneration = {
   generationId: string
   revision: number
   root: string
+  identity: AgentPluginRuntimeIdentity
   execution: AgentPluginMaterializationExecution
   projections: Partial<Record<AgentPluginHarnessId, HarnessPluginProjection>>
   cleanupWarning?: string
@@ -145,9 +147,21 @@ export async function readMaterializedAgentPluginGeneration(
     generationId: active.generationId,
     revision: active.revision,
     root,
+    identity: readIdentity(manifest.identity),
     execution: readExecution(manifest.execution),
     projections,
   }
+}
+
+function readIdentity(value: unknown): AgentPluginRuntimeIdentity {
+  if (isRecord(value) && value.mode === "unsigned" && typeof value.machineId === "string" && value.machineId) {
+    return { mode: "unsigned", machineId: value.machineId }
+  }
+  if (isRecord(value) && value.mode === "signed" && typeof value.userId === "string" && value.userId
+    && typeof value.projectId === "string" && value.projectId) {
+    return { mode: "signed", userId: value.userId, projectId: value.projectId }
+  }
+  throw new AgentPluginMaterializationError("artifact-unavailable", "Active Agent Plugins generation has an invalid identity")
 }
 
 /**
@@ -296,7 +310,8 @@ export async function materializeAgentPluginGeneration(input: {
         && candidate.artifactDigest === server.artifactDigest
         && candidate.harnessIds.includes(server.harnessId))
       const declared = plugin?.plugin.mcp.status === "valid"
-        ? plugin.plugin.mcp.servers.find((candidate) => candidate.name === server.serverName && candidate.type !== "stdio")
+        ? plugin.plugin.mcp.servers.find((candidate) => candidate.name === server.serverName
+            && (server.state === "unavailable" || candidate.type !== "stdio"))
         : undefined
       if (!plugin || !declared) {
         throw new AgentPluginMaterializationError(
@@ -361,6 +376,7 @@ export async function materializeAgentPluginGeneration(input: {
       generationId,
       revision: input.revision,
       root: finalRoot,
+      identity: input.identity,
       execution,
       projections,
       ...(cleanupWarning ? { cleanupWarning } : {}),
@@ -371,13 +387,17 @@ export async function materializeAgentPluginGeneration(input: {
   }
 }
 
-/** Translate one materialized generation into the opaque launch contract consumed by harness drivers. */
+/**
+ * Translate one materialized generation into the opaque launch contract
+ * consumed by native harness drivers. The ACP projection is not a launch row:
+ * custom connections take it as the snapshot's MCP map (`agentPluginAcpMcp`).
+ */
 export async function agentPluginHarnessLaunch(
   generation: Pick<MaterializedAgentPluginGeneration, "projections"> | undefined,
 ) {
   const result: Record<string, Record<string, unknown>> = {}
   for (const [harnessId, projection] of Object.entries(generation?.projections ?? {})) {
-    if (!projection) continue
+    if (!projection || harnessId === "acp") continue
     if (projection.configFile) {
       const config = JSON.parse(await fs.readFile(projection.configFile, "utf8")) as unknown
       if (!config || typeof config !== "object" || Array.isArray(config)) {
@@ -392,4 +412,12 @@ export async function agentPluginHarnessLaunch(
     result[harnessId] = { pluginRoots: projection.pluginRoots.map((plugin) => plugin.root) }
   }
   return result
+}
+
+/** The MCP servers every ACP connection receives from this generation; empty when no plugin is active for ACP. */
+export async function agentPluginAcpMcp(
+  generation: Pick<MaterializedAgentPluginGeneration, "projections"> | undefined,
+): Promise<Record<string, AcpRuntimeMcpServer>> {
+  const configFile = generation?.projections.acp?.configFile
+  return configFile ? readAcpAgentPluginConfig(configFile) : {}
 }

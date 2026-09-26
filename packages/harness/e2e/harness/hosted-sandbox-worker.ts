@@ -1,5 +1,5 @@
 import { appendFile, readFile } from "node:fs/promises"
-import { createServer } from "node:https"
+import { createServer, request as httpsRequest } from "node:https"
 import http, { type IncomingMessage, type ServerResponse } from "node:http"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
@@ -9,6 +9,11 @@ import { parseRegistrations, type EgressRegistration } from "../../../claxedo-se
 import { REPO_ROOT, TSX_LOADER } from "./node-loader"
 import { PINNED_PI } from "./pinned-pi"
 import { scriptedGithub } from "./hosted-scripted-github"
+import { scriptedHostedMcp } from "./hosted-scripted-mcp"
+import { hostedFaultSecrets } from "./cloud-faults"
+
+/** The plugin MCP gateway's own origin, as production keeps it apart from the control plane's. */
+export const HOSTED_MCP_GATEWAY_ORIGIN = "https://gateway.hosted-e2e.test"
 
 type HostedSandboxWorkerInput = {
   root: string
@@ -53,9 +58,16 @@ async function body(request: IncomingMessage) {
   return record(JSON.parse(Buffer.concat(chunks).toString("utf8")))
 }
 
+/**
+ * The Cloudflare Worker writes a registration's whole value into the header
+ * whose placeholder it matched. This stand-in's substitution composes a scheme
+ * back only when the sandbox presented one: a provider SDK sends
+ * `Bearer <placeholder>`, so its registration is split; a plugin MCP
+ * registration is presented raw and keeps its complete value.
+ */
 function localSecrets(registrations: EgressRegistration[]): SandboxBrokeredSecret[] {
   return registrations.map((row) => {
-    const authorization = row.header.toLowerCase() === "authorization"
+    const authorization = row.header.toLowerCase() === "authorization" && !row.name.startsWith("CLAXEDO_MCP_")
     const match = authorization ? /^([A-Za-z]+) (.+)$/.exec(row.value) : null
     return {
       name: row.name,
@@ -104,8 +116,13 @@ function proxy(request: IncomingMessage, responseStream: ServerResponse, target:
   const destination = new URL(target.url)
   destination.pathname = `/${rest}`
   destination.search = search
+  return forward(request, responseStream, destination)
+}
+
+function forward(request: IncomingMessage, responseStream: ServerResponse, destination: URL) {
   const headers = { ...request.headers }
   delete headers.host
+  delete headers["x-claxedo-e2e-target-url"]
   const upstream = http.request(destination, { method: request.method, headers }, (received) => {
     responseStream.writeHead(received.statusCode ?? 502, received.headers)
     received.pipe(responseStream)
@@ -117,15 +134,47 @@ function proxy(request: IncomingMessage, responseStream: ServerResponse, target:
   request.pipe(upstream)
 }
 
+/**
+ * The brokering driver forwards a sandbox's gateway requests to a loopback
+ * HTTP destination; the control plane serves HTTPS on its own origin, which
+ * in production is the gateway's origin too, so this listener carries them
+ * across under the control plane's host. Bodies stay uncompressed because the
+ * driver's own forwarder re-sends the upstream headers over a decoded body.
+ */
+async function startGatewayForwarder(controlPlaneUrl: string) {
+  const target = new URL(controlPlaneUrl)
+  const server = http.createServer((request, res) => {
+    const headers = { ...request.headers, host: target.host, "accept-encoding": "identity" }
+    const upstream = httpsRequest({ hostname: target.hostname, port: target.port, path: request.url, method: request.method, headers }, (received) => {
+      res.writeHead(received.statusCode ?? 502, received.headers)
+      received.pipe(res)
+    })
+    upstream.on("error", (error) => {
+      if (!res.headersSent) response(res, 502, { error: error.message })
+      else res.destroy(error)
+    })
+    request.pipe(upstream)
+  })
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject)
+    server.listen(0, "127.0.0.1", resolve)
+  })
+  const address = server.address()
+  if (!address || typeof address === "string") throw new Error("gateway forwarder has no port")
+  return { url: `http://127.0.0.1:${address.port}`, close: () => new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => resolve()) }) }
+}
+
 export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) {
   const textImports = pathToFileURL(path.join(REPO_ROOT, "packages/workspace-runtime/src/text-imports.mjs")).href
+  const gateway = await startGatewayForwarder(input.controlPlaneUrl)
   const driver = createLocalBrokeringSandboxDriver({
     root: input.root,
     executable: process.env.CLAXEDO_E2E_NODE ?? process.execPath,
-    args: ["--conditions=development", "--import", textImports, "--import", TSX_LOADER, path.join(REPO_ROOT, "packages/workspace-runtime/src/cli.ts")],
+    // The VM image's own entry: the Claxedo runtime composition with the Agent Plugins apply route mounted.
+    args: ["--conditions=development", "--import", textImports, "--import", TSX_LOADER, path.join(REPO_ROOT, "packages/claxedo-server/src/hosts/workspace-runtime/host-entry.agent-plugins.ts")],
     allowedOrigins: [input.controlPlaneUrl, input.relayUrl, new URL(input.gitUrl).origin],
     directOrigins: [input.controlPlaneUrl, input.relayUrl, new URL(input.gitUrl).origin],
-    upstreams: { "https://api.openai.com": input.modelUrl, "https://api.anthropic.com": input.modelUrl },
+    upstreams: { "https://api.openai.com": input.modelUrl, "https://api.anthropic.com": input.modelUrl, [HOSTED_MCP_GATEWAY_ORIGIN]: gateway.url },
     inheritedEnv: {
       PATH: process.env.PATH ?? "",
       PI_EXECUTABLE: PINNED_PI,
@@ -149,6 +198,9 @@ export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) 
       if (outbound) {
         const github = await scriptedGithub(request, url)
         if (github) return sendResponse(res, github)
+        const mcp = await scriptedHostedMcp(request, url, input.root)
+        if (mcp) return sendResponse(res, mcp)
+        if (url.origin === new URL(input.relayUrl).origin) return forward(request, res, url)
         if (url.origin !== `https://127.0.0.1:${input.port}`) {
           await appendFile(path.join(input.root, "hosted-outbound-attempts.jsonl"), JSON.stringify({ method: request.method, url: url.href }) + "\n")
           return response(res, 599, { error: "outbound refused by hosted e2e" })
@@ -209,7 +261,7 @@ export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) 
         source: source(env),
         workspaceRoot: path.join(input.root, "sandbox-workspaces", id),
         env: runtimeEnv(env, input.root, id),
-        secrets: localSecrets(registrations),
+        secrets: hostedFaultSecrets(localSecrets(registrations), process.env.CLAXEDO_E2E_HOSTED_FAULT),
       })
       if ("provisioning" in target) return response(res, 503, { ready: false, error: "workspace-runtime did not become ready" })
       sandboxes.set(id, { target, labels, registrations })
@@ -230,6 +282,7 @@ export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) 
       sandboxes.clear()
       server.closeAllConnections()
       await new Promise<void>((resolve) => server.close(() => resolve()))
+      await gateway.close()
     },
   }
 }

@@ -81,7 +81,7 @@ describe("local Agent Plugins composition", () => {
     })
     expect(activation.status).toBe(200)
 
-    const launch = await composition.harnessLaunch()
+    const launch = (await composition.runtimeContribution()).harnessLaunch
     const config = launch.opencode?.config as { skills?: string[] }
     expect(config.skills).toHaveLength(1)
     const skills = config.skills![0]
@@ -116,7 +116,7 @@ describe("local Agent Plugins composition", () => {
       },
     })
     await restarted.ready
-    const relaunch = await restarted.harnessLaunch()
+    const relaunch = (await restarted.runtimeContribution()).harnessLaunch
     const relaunchSkills = (relaunch.opencode?.config as { skills: string[] } | undefined)?.skills
     const reprojected = relaunchSkills?.[0]
     if (!reprojected) throw new Error("relaunch projected no skill root")
@@ -151,7 +151,7 @@ describe("local Agent Plugins composition", () => {
     await composition.ready
     // Nothing enabled on the machine: the launch carries only each adapter's
     // empty shape, and that is exactly what must come back after sign-out.
-    const machineLaunch = await composition.harnessLaunch()
+    const machineLaunch = (await composition.runtimeContribution()).harnessLaunch
     expect(machineLaunch.claude).toBeUndefined()
 
     const inspected = await inspectPluginTree(agentPluginTree([
@@ -213,7 +213,7 @@ describe("local Agent Plugins composition", () => {
     expect(applied.status).toBe(200)
     expect(await applied.json()).toMatchObject({ active: true, revision: 7, userId: "usr_1" })
 
-    const launch = await composition.harnessLaunch()
+    const launch = (await composition.runtimeContribution()).harnessLaunch
     const claudeRoot = (launch.claude?.pluginRoots as string[] | undefined)?.[0]
     expect(claudeRoot).toContain(path.join(data, "runtime-signed", "agent-plugins", "generations", "generation-7-"))
     const mcp = JSON.parse(await fs.readFile(path.join(claudeRoot!, ".mcp.json"), "utf8")) as {
@@ -230,7 +230,7 @@ describe("local Agent Plugins composition", () => {
       body: JSON.stringify({ ...signedWorld, secrets: [{ name: "CLAXEDO_MCP_ABC", value: "Bearer rotated-token" }] }),
     })
     expect(refreshed.status).toBe(200)
-    const rotatedRoot = ((await composition.harnessLaunch()).claude?.pluginRoots as string[] | undefined)?.[0]
+    const rotatedRoot = (((await composition.runtimeContribution()).harnessLaunch).claude?.pluginRoots as string[] | undefined)?.[0]
     if (!rotatedRoot) throw new Error("relaunch projected no plugin root")
     const rotated = JSON.parse(await fs.readFile(path.join(rotatedRoot, ".mcp.json"), "utf8")) as {
       mcpServers: { context7: { headers?: { Authorization?: string } } }
@@ -243,6 +243,107 @@ describe("local Agent Plugins composition", () => {
       body: "null",
     })
     expect(await withdrawn.json()).toEqual({ active: false })
-    expect(await composition.harnessLaunch()).toEqual(machineLaunch)
+    expect((await composition.runtimeContribution()).harnessLaunch).toEqual(machineLaunch)
+  })
+
+  test("a plugin activated for custom ACP agents contributes its MCP servers to every runtime snapshot", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-plugin-acp-"))
+    roots.push(root)
+    const data = path.join(root, "data")
+    process.env.CLAXEDO_DATA_DIR = data
+    const changes: number[] = []
+    const composition = createLocalAgentPluginsComposition({
+      CODEX_HOME: path.join(root, "codex-home"),
+      HOME: path.join(root, "home"),
+    }, {
+      sources: { async listAuthorizedSources() { return [] } },
+      changed: async () => { changes.push(changes.length + 1) },
+    })
+    await composition.ready
+    expect(changes).toEqual([])
+    const inspected = await inspectPluginTree(agentPluginTree([
+      {
+        path: "plugin.json",
+        kind: "file",
+        executableMode: 0,
+        bytes: new TextEncoder().encode(JSON.stringify({
+          $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+          name: "docs",
+          version: "1.0.0",
+        })),
+      },
+      {
+        path: "mcp.json",
+        kind: "file",
+        executableMode: 0,
+        bytes: new TextEncoder().encode(JSON.stringify({
+          $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+          mcpServers: {
+            docs: { type: "streamable-http", url: "https://mcp.docs.test/mcp" },
+            local: { type: "stdio", command: "docs-local", args: ["${PLUGIN_ROOT}/index.js"] },
+          },
+        })),
+      },
+    ]))
+    const app = new Hono()
+    mountControlPlaneRouteContributions({
+      contributions: composition.routeContributions,
+      mount: (contribution) => app.route(contribution.path, contribution.routes),
+    })
+    const applied = await app.request("http://local.test/api/claxedo/plugins/signed-runtime", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        version: 1,
+        identity: { mode: "signed", userId: "usr_1", projectId: "all-projects" },
+        revision: 3,
+        selections: [{ pluginInstanceId: "claxedo:docs", artifactDigest: inspected.digest, harnessIds: ["acp"] }],
+        artifacts: [{ digest: inspected.digest, tree: encodePluginTreeBase64(inspected.tree) }],
+        mcpServers: [{
+          pluginInstanceId: "claxedo:docs",
+          artifactDigest: inspected.digest,
+          harnessId: "acp",
+          serverName: "docs",
+          state: "gateway",
+          url: "https://cp.test/api/claxedo/plugins/mcp/integration-docs",
+          brokeredSecretName: "CLAXEDO_MCP_DOCS",
+        }],
+        secrets: [{ name: "CLAXEDO_MCP_DOCS", value: "Bearer gateway-token" }],
+      }),
+    })
+    expect(applied.status).toBe(200)
+    expect(changes).toEqual([1])
+    const contribution = await composition.runtimeContribution()
+    expect(contribution.harnessLaunch.acp).toBeUndefined()
+    const names = Object.keys(contribution.mcp)
+    expect(names.map((name) => name.replace(/^docs-[0-9a-f]{8}-/, ""))).toEqual(["docs", "local"])
+    expect(contribution.mcp[names[0]]).toMatchObject({
+      source: "plugin",
+      transport: "remote",
+      url: "https://cp.test/api/claxedo/plugins/mcp/integration-docs",
+      headers: { Authorization: "Bearer gateway-token" },
+    })
+    const local = contribution.mcp[names[1]]
+    expect(local).toMatchObject({ source: "plugin", transport: "stdio", command: "docs-local" })
+    expect(local?.transport === "stdio" ? local.args[0] : undefined).toMatch(/runtime-signed\/agent-plugins\/generations\/generation-3-.*index\.js$/)
+
+    // A daemon restart keeps the pushed world until the desktop withdraws it.
+    ClaxedoDB.close()
+    const restarted = createLocalAgentPluginsComposition({
+      CODEX_HOME: path.join(root, "codex-home"),
+      HOME: path.join(root, "home"),
+    }, { sources: { async listAuthorizedSources() { return [] } } })
+    await restarted.ready
+    expect(restarted.signedRuntime.state()).toMatchObject({ active: true, revision: 3, userId: "usr_1" })
+    expect(Object.keys((await restarted.runtimeContribution()).mcp)).toEqual(names)
+
+    const withdrawn = await app.request("http://local.test/api/claxedo/plugins/signed-runtime", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: "null",
+    })
+    expect(withdrawn.status).toBe(200)
+    expect(changes).toEqual([1, 2])
+    expect((await composition.runtimeContribution()).mcp).toEqual({})
   })
 })

@@ -518,7 +518,9 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             //    than an org id we invent to make the count work.
             await Promise.resolve(options.sandboxUsage?.recordLeaseTenant({ caller: { kind: "signed", auth }, workspaceId })).catch(() => undefined)
           })
-          .catch(() => undefined))
+          .catch((cause: unknown) => {
+            console.error(`[workspace] background provisioning of ${workspaceId} failed`, cause instanceof Error ? cause.message : String(cause))
+          }))
 
         return c.json({ workspaceId, directory })
       })

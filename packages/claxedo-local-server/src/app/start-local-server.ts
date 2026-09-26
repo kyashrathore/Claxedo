@@ -38,6 +38,7 @@ import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { workspaceSupervisorInstalled } from "@claxedo/server-core/workspace/supervisor-port"
 import { drainOpenCodeSdkRuntime, openCodeSdkRuntime } from "@claxedo/server-core/opencode/sdk-runtime"
 import { configureAgentConfig, disposeAgentConfig } from "@claxedo/server-core/agent-config/index"
+import { defaultConnectionConfigs } from "@claxedo/server-core/agent-config/connections"
 import { createLocalApp, type LocalAppOptions } from "./local-app"
 import { createLocalControlPlaneServices } from "./local-services"
 import {
@@ -80,8 +81,8 @@ export type StartLocalServerOptions = Omit<LocalAppOptions, "onError" | "service
   onError?: LocalAppOptions["onError"]
   /** Desktop diagnostics observer for spawned harness processes. */
   processObserver?: Parameters<typeof configureEmbeddedWorkspaceRuntime>[0]["processObserver"]
-  /** Opaque launch options supplied by an optional harness feature module. */
-  harnessLaunch?: NonNullable<Parameters<typeof configureAgentConfig>[0]>["harnessLaunch"]
+  /** The Agent Plugins module's contribution to every runtime snapshot. */
+  pluginRuntime?: NonNullable<Parameters<typeof configureAgentConfig>[0]>["pluginRuntime"]
 }
 
 export type LocalServer = {
@@ -217,12 +218,12 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     brokerOrigin: firstPartyMcpBaseUrl,
   })
   configureAgentConfig({
-    connectionProviders,
+    connectionConfigs: [...defaultConnectionConfigs(), createOpenCodeServerConnectionProvider()],
     // The owner's pushed rows are written over the broker's answer: a
     // provider the owner named resolves to the owner's account, every other
     // one to whatever this machine holds.
     projectAuth: hostProviderConfigProjectAuth((input) => credentialBroker.projectAuth(input), hostProviderConfig),
-    ...(options.harnessLaunch ? { harnessLaunch: options.harnessLaunch } : {}),
+    ...(options.pluginRuntime ? { pluginRuntime: options.pluginRuntime } : {}),
   })
   // A placeholder expires; re-projecting on this interval and re-applying the
   // snapshot is what puts the next one in front of the next turn's spawn.

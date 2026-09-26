@@ -12,6 +12,11 @@ async function readyTarget(services: ControlPlaneServices, workspaceId: string) 
   return target
 }
 
+/**
+ * A sandbox behind a relay-access driver verifies relay host tokens, so the
+ * plane reaches its routes the way every other caller does: through the relay,
+ * which exchanges the runtime access token minted here.
+ */
 export async function hostedRuntimeFetch(
   services: ControlPlaneServices,
   workspaceId: string,
@@ -30,9 +35,11 @@ export async function hostedRuntimeFetch(
     role: "owner",
     ttlMs: 10 * 60_000,
   })
+  const relayUrl = await relay.getRelayEndpoint(workspaceId, target.homeRegion)
   const headers = new Headers(init.headers)
   headers.set("authorization", `Bearer ${token.token}`)
-  return fetch(`${target.url.replace(/\/+$/, "")}${requestPath}`, { ...init, headers })
+  headers.set("x-claxedo-directory", `workspace:${workspaceId}`)
+  return fetch(`${relayUrl.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(workspaceId)}${requestPath}`, { ...init, headers })
 }
 
 export async function hostedRuntimeConfigApply(

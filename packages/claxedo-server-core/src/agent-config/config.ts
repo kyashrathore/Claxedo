@@ -1,8 +1,7 @@
 import { asRecord } from "@claxedo/helpers/guards"
 import { isSandboxDriverID, type SandboxDriverConfig } from "@claxedo/sandbox-contract"
-import type { HarnessConnectionDescriptor } from "@claxedo/agent-sdk-runtime"
 import type { RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
-import { createHarnessConnectionSchema, isConnectionId, isNativeHarnessId } from "./connections"
+import { createHarnessConnectionSchema, isConnectionId, isNativeHarnessId, type HarnessConnectionDescriptor } from "./connections"
 
 export interface UserAgentConfig {
   version: 3

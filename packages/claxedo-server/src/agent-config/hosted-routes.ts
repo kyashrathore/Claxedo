@@ -41,7 +41,7 @@ export function hostedAgentConfigRoutes(input: {
       return c.json(result)
     } catch (error) {
       if (error instanceof AgentConfigMutationError) {
-        return c.json({ error: { code: error.code, message: error.message } }, error.status)
+        return c.json({ error: { code: error.code, message: error.message }, ...(error.problems ? { problems: error.problems } : {}) }, error.status)
       }
       throw error
     }

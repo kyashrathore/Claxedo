@@ -15,21 +15,19 @@ import type { SandboxDriverConfig } from "@claxedo/sandbox-contract"
 import {
   createHarnessConnectionSchema,
   explicitDefaultHarness,
+  type ConnectionConfigHooks,
+  type HarnessConnectionDescriptor,
+  type HarnessConnectionRef,
 } from "./connections"
-import type {
-  ConnectionProvider,
-  HarnessConnectionDescriptor,
-  HarnessConnectionRef,
-} from "@claxedo/agent-sdk-runtime"
-import { createAcpConnectionProvider, createConnectionProviderRegistry } from "@claxedo/agent-sdk-runtime"
 import type { ProviderProjectionSource, RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
+import type { AcpRuntimeMcpServer } from "../agent-plugins/runtime/mcp-projection"
 
 export type {
   ConnectionReadiness,
   HarnessConnectionCapabilities,
-  HarnessConnectionDescriptor,
   HarnessConnectionRef,
-} from "@claxedo/agent-sdk-runtime"
+} from "@claxedo/agent-runtime-contract"
+export type { ConnectionConfigHooks, HarnessConnectionDescriptor } from "./connections"
 export type {
   RuntimeHarnessSelection,
   RuntimeNativeHarnessId,
@@ -73,7 +71,8 @@ function commandDir() {
 
 export interface RuntimeConfigSnapshot {
   version: 4
-  mcp: Record<string, never>
+  /** The MCP servers active plugins deliver to every custom ACP connection. */
+  mcp: Record<string, AcpRuntimeMcpServer>
   connections: HarnessConnectionDescriptor[]
   defaultHarness?: RuntimeHarnessSelection
   /** Broker endpoints and placeholders; the credential values stay with the authority. */
@@ -84,20 +83,25 @@ export interface RuntimeConfigSnapshot {
 
 export type RuntimeConfigSecretScope = "local" | "shared"
 
+/** What Agent Plugins contributes to a runtime snapshot: native launch rows and the ACP MCP map. */
+export type AgentPluginRuntimeContribution = {
+  harnessLaunch: Record<string, Record<string, unknown>>
+  mcp: Record<string, AcpRuntimeMcpServer>
+}
+
 export interface CommandItem {
   name: string
   content: string
 }
 
 export type AgentConfigOptions = {
-  /** Providers installed by this product composition. */
-  connectionProviders?: readonly ConnectionProvider<unknown, unknown>[]
+  /** The connection providers whose descriptors this composition accepts; the ACP provider alone when absent. */
+  connectionConfigs?: readonly ConnectionConfigHooks<unknown>[]
   /**
-   * Opaque per-harness launch options an optional product module (Agent
-   * Plugins) projects into every runtime snapshot. Read on each snapshot so
-   * a re-projection after activation reaches the next config push.
+   * The Agent Plugins module's contribution, read on each snapshot so a
+   * re-projection after activation reaches the next config push.
    */
-  harnessLaunch?: () => Promise<Record<string, Record<string, unknown>>>
+  pluginRuntime?: () => Promise<AgentPluginRuntimeContribution>
   /**
    * The credential authority that turns this host's active accounts into
    * broker-backed projections. A composition that installs none sends no
@@ -137,9 +141,7 @@ export function projectRuntimeAuth(input: {
 export function configureAgentConfig(options: AgentConfigOptions = {}) {
   disposeAgentConfig()
   agentConfigOptions = options
-  harnessConnectionSchema = createHarnessConnectionSchema(createConnectionProviderRegistry(
-    options.connectionProviders ?? [createAcpConnectionProvider()],
-  ))
+  harnessConnectionSchema = createHarnessConnectionSchema(options.connectionConfigs)
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -235,14 +237,14 @@ export async function getRuntimeConfigSnapshot(
     ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
     ...(options.secretBrokering ? { secretBrokering: options.secretBrokering } : {}),
   }) ?? {}
-  const harnessLaunch = await agentConfigOptions.harnessLaunch?.()
+  const plugins = await agentConfigOptions.pluginRuntime?.()
   return {
     version: 4,
-    mcp: {},
+    mcp: plugins?.mcp ?? {},
     connections: Object.values(config.connections),
     ...(selected ? { defaultHarness: selected } : {}),
     auth,
-    ...(harnessLaunch && Object.keys(harnessLaunch).length ? { harnessLaunch } : {}),
+    ...(plugins && Object.keys(plugins.harnessLaunch).length ? { harnessLaunch: plugins.harnessLaunch } : {}),
   }
 }
 

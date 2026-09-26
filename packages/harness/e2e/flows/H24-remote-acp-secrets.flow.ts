@@ -4,6 +4,7 @@ import { scriptedAcpWebSocketConnection } from "../harness/acp/connection"
 import { readAcpRequests, type RecordedAcpRequest } from "../harness/acp/requests"
 import { acpScriptToken } from "../harness/acp/script"
 import { startScriptedAcpWebSocket } from "../harness/acp/websocket"
+import { applyScriptedPluginProfile, scriptedPluginServerName } from "../harness/scripted-plugin-profile"
 import { startStack } from "../harness/stack"
 import { frameSessionId, frameType } from "../harness/stream"
 import { directTransport, sendJson } from "../harness/transport"
@@ -15,7 +16,7 @@ function assertNoRemoteLeaks(requests: RecordedAcpRequest[], method: string, lab
   assert.ok(call, `${label}: remote agent received no ${method}`)
   const servers = call.params.mcpServers as McpEntry[] | undefined
   assert.ok(Array.isArray(servers), `${label}: ${method} omitted mcpServers`)
-  assert.ok(servers.some((server) => server.name === "h24_http" && server.type === "http"), `${label}: ${method} omitted the allowed HTTP MCP server`)
+  assert.ok(servers.some((server) => scriptedPluginServerName("h24_http").test(server.name ?? "") && server.type === "http"), `${label}: ${method} omitted the plugin's HTTP MCP server`)
   assert.equal(call.authorization, null, `${label}: ${method} carried a websocket Authorization header`)
   const errors: Error[] = []
   const check = (condition: boolean, message: string) => { if (!condition) errors.push(new Error(message)) }
@@ -31,10 +32,13 @@ export async function run() {
   const stack = await startStack({ label: "h24-remote-acp" })
   const remotes = [] as Array<Awaited<ReturnType<typeof startScriptedAcpWebSocket>>>
   try {
-    await sendJson(directTransport, "POST", `${stack.url}/api/claxedo/agent-config/mcp/h24_local`,
-      { type: "stdio", command: "h24-local-command" }, "H24 stdio MCP config")
-    await sendJson(directTransport, "POST", `${stack.url}/api/claxedo/agent-config/mcp/h24_http`,
-      { type: "remote", url: "https://mcp.example.test/h24" }, "H24 HTTP MCP config")
+    await applyScriptedPluginProfile(stack.url, {
+      harnessIds: ["acp"],
+      servers: {
+        h24_local: { type: "stdio", command: "h24-local-command" },
+        h24_http: { type: "streamable-http", url: "https://mcp.example.test/h24" },
+      },
+    })
     await stack.acp.write("h24-turn", { steps: [{ kind: "text", text: "H24 remote reply" }] })
     const api = new ClaxedoApi(stack.url)
     const errors: Error[] = []
