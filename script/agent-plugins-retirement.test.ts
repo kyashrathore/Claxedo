@@ -6,7 +6,7 @@ import path from "node:path"
 const ROOT = path.resolve(import.meta.dirname, "..")
 const THIS_FILE = "script/agent-plugins-retirement.test.ts"
 /** Replayed session logs quote whatever the agent said at the time, retired names included. */
-const TRANSCRIPT_LAB_FIXTURE = "packages/session-ui/src/components/transcript-lab-fixture.json"
+const TRANSCRIPT_LAB_FIXTURE = "packages/claxedo-app/e2e/corpus/seeds/transcript-lab-fixture.json"
 const EXPECTED_ROOTS = [".github", "packages", "script", "public-docs"] as const
 const TEXT_EXTENSIONS = new Set([".json", ".md", ".yml", ".yaml", ".ts", ".tsx", ".mts", ".cts", ".js", ".mjs", ".cjs", ".sh", ".ps1"])
 const ROOT_TEXT_FILES = new Set([".dockerignore", ".gitignore", "README.md"])

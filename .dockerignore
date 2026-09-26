@@ -49,7 +49,5 @@ packages/claxedo-desktop/dist
 packages/claxedo-desktop/resources
 packages/claxedo-desktop/out
 packages/claxedo-desktop/test-results
-packages/claxedo-app/dist-selfhost
 packages/claxedo-app/dist
-packages/claxedo-app/dist-demo
 docs

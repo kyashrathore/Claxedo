@@ -10,7 +10,6 @@ LANE=${1:?usage: cbx-ci-remote.sh <lane> [lane arguments...]}
 shift
 
 export CI=true
-export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/claxedo-playwright}"
 
 # Digest verification uses constants pinned in this file. A sums file fetched
 # from the same host as the archive would share the archive's trust domain, so
@@ -167,13 +166,6 @@ build_dist_packages() {
   bun run build:packages
 }
 
-install_chromium() {
-  (
-    cd packages/claxedo-app
-    ./node_modules/.bin/playwright install --with-deps chromium
-  )
-}
-
 install_linux_gui_dependencies() {
   sudo apt-get update
   sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
@@ -193,26 +185,10 @@ install_linux_native_build_dependencies() {
     python3-setuptools
 }
 
-install_harness_clis() {
-  # Exact pins keep lanes off a moving @latest target. npm still verifies the
-  # tarball against registry integrity, and env -i keeps freshly downloaded
-  # package lifecycle scripts (claude-code's postinstall materializes the
-  # native binary) away from lane credentials.
-  local claude_code_version=2.1.278
-  local codex_version=0.155.1
-  local prefix="$HOME/.cache/claxedo-ci/harness-clis"
-  mkdir -p "$prefix"
-  env -i HOME="$HOME" PATH="$PATH" \
-    npm install --prefix "$prefix" --no-fund --no-audit \
-    "@anthropic-ai/claude-code@$claude_code_version" "@openai/codex@$codex_version"
-  export PATH="$prefix/node_modules/.bin:$PATH"
-}
-
 run_diagnostics() {
   install_linux_gui_dependencies
   install_root
   install_app_server_native_dependencies
-  (cd packages/claxedo-app/perf-harness && bun install --frozen-lockfile)
   build_dist_packages
   (
     cd packages/claxedo-desktop
@@ -220,13 +196,6 @@ run_diagnostics() {
     CLAXEDO_DIAGNOSTICS_VERIFY_ADVISORIES=1 bun run verify:diagnostics-dependencies
     bun run verify:diagnostics-privacy
     bun run test:diagnostics-release
-  )
-  (cd packages/claxedo-app && bun run test:diagnostics-release)
-  (cd packages/claxedo-app && bun run build && bun run verify:closure)
-  install_chromium
-  (
-    cd packages/claxedo-app/perf-harness
-    CLAXEDO_PERF_APP_SCRIPT=serve bun run ci:diagnostics
   )
   (
     cd packages/claxedo-desktop
@@ -267,7 +236,6 @@ run_release_gates_linux_x64() {
     CLAXEDO_DIAGNOSTICS_DEBUG=1 \
       bun run smoke:diagnostics
   )
-  (cd packages/claxedo-app && bun run test:diagnostics-release)
   (
     cd packages/claxedo-desktop
     CLAXEDO_CHANNEL=prod \
@@ -284,12 +252,9 @@ run_unit() {
   install_linux_gui_dependencies
   install_root
   install_app_server_native_dependencies
-  (cd packages/claxedo-app/perf-harness && bun install --frozen-lockfile)
   git config --global user.email "github-actions[bot]@users.noreply.github.com"
   git config --global user.name "github-actions[bot]"
   bun run docs:check-links
-  install_chromium
-  (cd packages/session-ui && bun run verify:mermaid)
   build_dist_packages
   bun run --cwd packages/claxedo-local-server verify:closure
   bun run --cwd packages/claxedo-host-connector verify:closure
@@ -310,19 +275,12 @@ run_workspace_files() {
 run_typecheck() {
   install_root
   build_dist_packages
-  (cd packages/claxedo-app/perf-harness && bun install --frozen-lockfile)
   bun run lint
   bun typecheck
 }
 
-prepare_e2e() {
-  install_root
-  build_dist_packages
-  install_chromium
-}
-
 install_app_server_native_dependencies() {
-  # Unit and real E2E lanes spawn package-local child processes. Rebuild the
+  # The unit lane spawns package-local child processes. Rebuild the
   # canonical isolated workspace links after a fresh AWS sync so those children
   # resolve the native better-sqlite3 owner from server-core. A hoisted install
   # leaves Bun's existing package-local links pointing at a removed .bun target.
@@ -338,133 +296,6 @@ install_app_server_native_dependencies() {
   bun script/apply-dependency-patches.ts
   test -e packages/claxedo-server/node_modules/better-sqlite3
   test -e packages/claxedo-server-core/node_modules/better-sqlite3
-}
-
-run_e2e_core() {
-  local shard=${1:?e2e-core requires a shard number}
-  local total=${2:?e2e-core requires a shard count}
-  if [[ ! "$shard" =~ ^[0-9]+$ || ! "$total" =~ ^[0-9]+$ || shard -lt 1 || shard -gt total ]]; then
-    echo "e2e-core requires numeric shard index/count within 1..N (got '$shard/$total')" >&2
-    return 2
-  fi
-  prepare_e2e
-  # Core discovery imports server-side harness modules even when their tagged
-  # tests are excluded. Materialize the app/server native dependency graph
-  # before Playwright loads those modules; a root-only Bun install does not
-  # expose better-sqlite3 from a fresh generic AWS image.
-  install_app_server_native_dependencies
-  (
-    cd packages/claxedo-app
-    CLAXEDO_E2E_SERVE_MODE=build-preview \
-    PLAYWRIGHT_VIDEO=0 \
-    VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:3001 \
-    VITE_CLAXEDO_E2E=1 \
-      bun run test:e2e:core:base -- --shard="$shard/$total"
-  )
-}
-
-prepare_e2e_tier_real() {
-  install_root
-  install_app_server_native_dependencies
-  install_harness_clis
-  build_dist_packages
-  install_chromium
-}
-
-# test.yml's tier-real gate loop, one --grep per entry; e2e/discovery.test.ts
-# pins this list to the workflow's.
-TIER_REAL_SCENARIOS=(
-  "pi-workspace harness completes exact turns|local new-worktree session receives its first reply"
-  "claude native SDK harness completes exact turns"
-  "codex native SDK harness completes exact turns"
-  "cursor harness materializes without silently routing"
-)
-
-# .crabbox.yaml is never synced to the box, so a focused job names its scenario
-# by a fragment of one TIER_REAL_SCENARIOS entry rather than carrying a copy.
-tier_real_scenario_for() {
-  local key=${1:?tier-real scenario key is required} match="" entry
-  for entry in "${TIER_REAL_SCENARIOS[@]}"; do
-    [[ "$entry" == *"$key"* ]] && match=$entry
-  done
-  if [[ -z "$match" ]]; then
-    echo "no tier-real scenario matches '$key'; see TIER_REAL_SCENARIOS in script/cbx-ci-remote.sh" >&2
-    return 2
-  fi
-  printf '%s\n' "$match"
-}
-
-run_e2e_tier_real_scenario() {
-  local scenario
-  scenario=$(tier_real_scenario_for "${1:?tier-real scenario key is required}") || return
-  prepare_e2e_tier_real
-  (
-    cd packages/claxedo-app
-    VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:4317 bun run build:e2e
-    CLAXEDO_E2E_SERVE_MODE=preview PLAYWRIGHT_VIDEO=0 \
-      bun run test:e2e:real -- --grep "$scenario"
-  )
-}
-
-run_e2e_tier_real_web() {
-  prepare_e2e_tier_real
-  (
-    cd packages/claxedo-app
-    CLAXEDO_E2E_SUITE=core \
-    CLAXEDO_TIER_REAL_E2E=1 \
-    PLAYWRIGHT_SKIP_WEBSERVER=1 \
-    PLAYWRIGHT_VIDEO=0 \
-      npx playwright test \
-        --config playwright.config.ts \
-        e2e/playwright/web-signed-cloud.spec.ts \
-        e2e/playwright/web-signed-host-tunnel.spec.ts \
-        e2e/playwright/web-signed-org-team-multiplayer.spec.ts \
-        --workers=1
-  )
-}
-
-run_e2e_tier_real_web_target() {
-  local spec=${1:?signed web spec is required}
-  local scenario=${2:?signed web scenario grep is required}
-  if [[ "$spec" != e2e/playwright/*.spec.ts || "$spec" == *..* ]]; then
-    echo "e2e-tier-real-web-target spec must be e2e/playwright/*.spec.ts (got '$spec')" >&2
-    return 2
-  fi
-  prepare_e2e_tier_real
-  (
-    cd packages/claxedo-app
-    CLAXEDO_E2E_SUITE=core \
-    CLAXEDO_TIER_REAL_E2E=1 \
-    PLAYWRIGHT_SKIP_WEBSERVER=1 \
-    PLAYWRIGHT_VIDEO=0 \
-      npx playwright test \
-        --config playwright.config.ts \
-        "$spec" \
-        --grep "$scenario" \
-        --workers=1
-  )
-}
-
-run_e2e_tier_real() {
-  prepare_e2e_tier_real
-  (
-    cd packages/claxedo-app
-    VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:4317 bun run build:e2e
-    for scenario in "${TIER_REAL_SCENARIOS[@]}"; do
-      CLAXEDO_E2E_SERVE_MODE=preview PLAYWRIGHT_VIDEO=0 \
-        bun run test:e2e:real -- --grep "$scenario"
-    done
-    CLAXEDO_E2E_SUITE=core \
-    CLAXEDO_TIER_REAL_E2E=1 \
-    PLAYWRIGHT_SKIP_WEBSERVER=1 \
-    PLAYWRIGHT_VIDEO=0 \
-      npx playwright test \
-        --config playwright.config.ts \
-        e2e/playwright/web-signed-cloud.spec.ts \
-        e2e/playwright/web-signed-host-tunnel.spec.ts \
-        e2e/playwright/web-signed-org-team-multiplayer.spec.ts \
-        --workers=1
-  )
 }
 
 run_packages_dry_run() {
@@ -491,25 +322,14 @@ run_relay_bench() {
   )
 }
 
-run_storybook() {
-  install_root
-  bun --cwd packages/storybook build
-}
-
 case "$LANE" in
   diagnostics-linux) run_diagnostics ;;
   release-gates-linux-x64) run_release_gates_linux_x64 ;;
   unit-linux) run_unit ;;
   workspace-files-linux) run_workspace_files ;;
   typecheck-linux) run_typecheck ;;
-  e2e-core) run_e2e_core "$@" ;;
-  e2e-tier-real) run_e2e_tier_real ;;
-  e2e-tier-real-scenario) run_e2e_tier_real_scenario "$@" ;;
-  e2e-tier-real-web) run_e2e_tier_real_web ;;
-  e2e-tier-real-web-target) run_e2e_tier_real_web_target "$@" ;;
   packages-dry-run) run_packages_dry_run ;;
   relay-bench) run_relay_bench ;;
-  storybook) run_storybook ;;
   *)
     echo "unknown Crabbox CI lane: $LANE" >&2
     exit 2

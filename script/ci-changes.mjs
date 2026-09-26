@@ -11,11 +11,11 @@ const equalsAny = (file, paths) => paths.includes(file)
 
 // `script/bun-build.ts` is the single `Bun.build` wrapper behind every bundle in
 // the repository — the desktop server and host-connector bundles, the
-// local-server and host-connector builds, workspace-runtime's node bundle, and
-// session-ui's mermaid sanitizer verification. Nothing under `script/` belongs
-// to a package prefix, so a change to it would otherwise select no gate at all
-// and a broken bundler could ship green. Its six consumers span every gate, so
-// it fails open to the full suite rather than being enumerated per-gate.
+// local-server and host-connector builds, and workspace-runtime's node bundle.
+// Nothing under `script/` belongs to a package prefix, so a change to it would
+// otherwise select no gate at all and a broken bundler could ship green. Its
+// consumers span every gate, so it fails open to the full suite rather than
+// being enumerated per-gate.
 const GLOBAL_FILES = [
   "package.json",
   "bun.lock",
@@ -52,12 +52,6 @@ const WINDOWS_PREFIXES = [
   "script/cbx-test-windows.ps1",
 ]
 
-const APP_DEPENDENCY_PREFIXES = [
-  "packages/claxedo-app/",
-  "packages/session-ui/",
-  "packages/ui/",
-]
-
 const SERVER_DEPENDENCY_PREFIXES = [
   "packages/agent-event-runtime/",
   "packages/agent-sdk-runtime/",
@@ -89,20 +83,6 @@ const SANDBOX_IMAGE_PREFIXES = [
 ]
 const SANDBOX_IMAGE_WORKFLOWS = [".github/workflows/deploy-cloudflare-sandbox-worker.yml"]
 
-const TIER_REAL_APP_PREFIXES = [
-  "packages/claxedo-app/e2e/helpers/",
-  "packages/claxedo-app/e2e/playwright/real-",
-  "packages/claxedo-app/e2e/playwright/web-signed-",
-  "packages/claxedo-app/playwright.config.ts",
-  "packages/claxedo-app/src/features/session/actions/",
-  "packages/claxedo-app/src/features/session/data/",
-  "packages/claxedo-app/src/features/session/providers/",
-  "packages/claxedo-app/src/features/session/store/",
-  "packages/claxedo-app/src/platform/api/",
-  "packages/claxedo-app/src/platform/auth/",
-  "packages/claxedo-app/src/platform/runtime/",
-]
-
 function isDocumentation(file) {
   if (startsWithAny(file, DOC_PREFIXES)) return true
   const name = file.split("/").at(-1) ?? ""
@@ -115,25 +95,6 @@ function isUnitRelevant(file) {
   // Turbo still narrows package work, but a new root config or source tree can
   // never silently produce a green CI run with no code validation.
   return true
-}
-
-function isMermaidRelevant(file) {
-  return startsWithAny(file, [
-    "packages/session-ui/",
-    "packages/ui/src/context/marked",
-    "packages/claxedo-app/src/features/session/ui/mermaid-timeline",
-  ])
-}
-
-function isCoreE2ERelevant(file) {
-  if (!startsWithAny(file, APP_DEPENDENCY_PREFIXES)) return false
-  if (file.includes("/e2e/playwright/real-") || file.includes("/e2e/playwright/web-signed-")) return false
-  if (/(^|\/)([^/]+\.)?(test|vitest)\.[cm]?[jt]sx?$/.test(file) && !file.includes("/e2e/")) return false
-  return true
-}
-
-function isTierRealRelevant(file) {
-  return startsWithAny(file, [...SERVER_DEPENDENCY_PREFIXES, ...TIER_REAL_APP_PREFIXES])
 }
 
 function isProductBoundaryInfrastructure(file) {
@@ -158,7 +119,6 @@ function resultFor(files, forceFull, reason) {
   const windows = full || codeFiles.some((file) => startsWithAny(file, WINDOWS_PREFIXES))
   const boundaryInfrastructure = full || codeFiles.some(isProductBoundaryInfrastructure)
 
-  const boundaryApp = boundaryInfrastructure || codeFiles.some((file) => startsWithAny(file, APP_DEPENDENCY_PREFIXES))
   const boundaryLocalServer =
     boundaryInfrastructure ||
     codeFiles.some((file) =>
@@ -186,13 +146,9 @@ function resultFor(files, forceFull, reason) {
     unit,
     typecheck: unit,
     windows,
-    mermaid: full || codeFiles.some(isMermaidRelevant),
-    boundary_app: boundaryApp,
     boundary_local_server: boundaryLocalServer,
     boundary_host_connector: boundaryHostConnector,
     boundary_server: boundaryServer,
-    core_e2e: full || codeFiles.some(isCoreE2ERelevant),
-    tier_real: full || codeFiles.some(isTierRealRelevant),
     sandbox_image: full || codeFiles.some(isSandboxImageRelevant),
     reason,
     files,
@@ -226,13 +182,9 @@ function writeGitHubOutputs(result, outputFile) {
     "unit",
     "typecheck",
     "windows",
-    "mermaid",
-    "boundary_app",
     "boundary_local_server",
     "boundary_host_connector",
     "boundary_server",
-    "core_e2e",
-    "tier_real",
     "sandbox_image",
   ]
   const lines = scalarKeys.map((key) => `${key}=${result[key]}`)
