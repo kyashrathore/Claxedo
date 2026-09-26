@@ -104,7 +104,7 @@ function scheduleReconnect(run: StreamRun) {
   if (state.kind !== "reconnecting") return
   run.reconnectTimer = setTimeout(() => {
     run.reconnectTimer = undefined
-    void connect(run)
+    void openStreamAttempt(run)
   }, reconnectDelayMs(state.attempt - 1))
 }
 
@@ -117,7 +117,7 @@ async function openResponse(run: StreamRun, controller: AbortController) {
   return response.body
 }
 
-async function connect(run: StreamRun) {
+async function openStreamAttempt(run: StreamRun) {
   if (run.closed) return
   const controller = new AbortController()
   run.attempt = controller
@@ -144,7 +144,7 @@ function retry(run: StreamRun) {
   if (state.kind === "reconnecting" && !run.reconnectTimer) return
   if (run.reconnectTimer) clearTimeout(run.reconnectTimer)
   run.reconnectTimer = undefined
-  void connect(run)
+  void openStreamAttempt(run)
 }
 
 function close(run: StreamRun) {
@@ -165,6 +165,6 @@ export function openStream(options: StreamOptions): Stream {
     reconnectTimer: undefined,
     watchdog: undefined,
   }
-  void connect(run)
+  void openStreamAttempt(run)
   return { state: run.connection.state, cursor: () => run.cursor, retry: () => retry(run), close: () => close(run) }
 }

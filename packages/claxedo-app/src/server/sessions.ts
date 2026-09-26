@@ -64,7 +64,7 @@ async function replyToRequest(context: SessionContext, ref: SessionRef, id: Requ
   await transport.runtimeJson<unknown>(where, questionPath("reject"), { method: "POST" })
 }
 
-async function sendPrompt(context: SessionContext, wakes: WorkspaceWakes, ref: SessionRef, input: PromptInput, messageId: string): Promise<PromptDelivery> {
+async function postPrompt(context: SessionContext, wakes: WorkspaceWakes, ref: SessionRef, input: PromptInput, messageId: string): Promise<PromptDelivery> {
   await wakes.wakeIfStopped(ref.placementId)
   const where = await context.workspaces.route(ref)
   if (input.goal) {
@@ -93,7 +93,7 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
       void projection.created(row.ref)
       return row
     },
-    prompt: (ref, input) => sendPrompt(context, wakes, ref, input, input.messageId ?? newMessageId()),
+    prompt: (ref, input) => postPrompt(context, wakes, ref, input, input.messageId ?? newMessageId()),
     stop: async (ref) => cancelRunningTurn(transport, await workspaces.route(ref), ref),
     reply: (ref, id, answer) => replyToRequest(context, ref, id, answer),
     rename: (ref, title) => patchSession(context, ref, { title }),

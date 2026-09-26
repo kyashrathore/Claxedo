@@ -110,7 +110,7 @@ export function registerSessionTools(registry: ToolRegistrar) {
     async (args, ctx, addressed) => {
       assertDetachedSessionCreation(ctx)
       const placed = await placeSession(ctx, args, args.placement)
-      const created = await createSession(ctx, placed.target, {
+      const created = await createRuntimeSession(ctx, placed.target, {
         ...(args.harness ? { harness: args.harness } : {}),
         ...(args.title ? { title: args.title } : {}),
         ...(placed.target.directory ? { directory: placed.target.directory } : {}),
@@ -279,7 +279,7 @@ export function registerSessionTools(registry: ToolRegistrar) {
  * session member has no argument for, and a body `harness` field is refused
  * 400 on purpose.
  */
-async function createSession(
+async function createRuntimeSession(
   ctx: McpToolContext,
   target: WorkspaceTarget,
   input: Readonly<{ harness?: string; title?: string; directory?: string }>,

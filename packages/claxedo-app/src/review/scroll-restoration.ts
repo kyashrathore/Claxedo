@@ -21,18 +21,18 @@ function visible(element: HTMLElement | undefined): element is HTMLElement {
   return !!element && element.isConnected && element.clientHeight > 0
 }
 
-function rows(element: HTMLElement): HTMLElement[] {
+function reviewFileRows(element: HTMLElement): HTMLElement[] {
   return Array.from(element.querySelectorAll<HTMLElement>("[data-review-file]"))
 }
 
 function anchorFor(element: HTMLElement, path: string | undefined): HTMLElement | undefined {
-  return path ? rows(element).find((row) => row.dataset.reviewFile === path) : undefined
+  return path ? reviewFileRows(element).find((row) => row.dataset.reviewFile === path) : undefined
 }
 
 function nearestAnchor(element: HTMLElement): HTMLElement | undefined {
   const top = element.getBoundingClientRect().top
   const distance = (row: HTMLElement) => Math.abs(row.getBoundingClientRect().top - top)
-  return rows(element)
+  return reviewFileRows(element)
     .filter((row) => {
       const rect = row.getBoundingClientRect()
       return rect.width > 0 && rect.height > 0

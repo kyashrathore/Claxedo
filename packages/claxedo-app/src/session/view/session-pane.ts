@@ -13,13 +13,13 @@ export function decodeSessionRef(value: Json): SessionRef | undefined {
   return { projectId: projectId(project), placementId: placementId(placement), sessionId: sessionId(session) }
 }
 
-function sessionTitle(ref: SessionRef): string {
+function paneTitle(ref: SessionRef): string {
   return useSessionStores().list.view(ref.sessionId)?.title || useSessionScreenText()("sessionScreen.untitled")
 }
 
 export const sessionPaneKind: PaneKind<SessionRef> = {
   kind: "session",
-  title: sessionTitle,
+  title: paneTitle,
   icon: "speech-bubble",
   view: SessionScreen,
   encode: (state) => ({ projectId: state.projectId, placementId: state.placementId, sessionId: state.sessionId }),

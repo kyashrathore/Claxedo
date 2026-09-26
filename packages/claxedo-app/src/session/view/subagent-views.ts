@@ -6,7 +6,7 @@ export type SubagentLabels = { readonly subagent: string; readonly task: string 
 const STATUSES: ReadonlySet<string> = new Set(["pending", "running", "paused", "interrupted", "completed", "failed", "killed"])
 const TRANSCRIPTS: ReadonlySet<string> = new Set(["live", "file", "messages", "none"])
 
-function statusOf(entry: SessionSubagent): SubagentView["status"] {
+function subagentStatus(entry: SessionSubagent): SubagentView["status"] {
   return entry.status && STATUSES.has(entry.status) ? entry.status : "unknown"
 }
 
@@ -48,7 +48,7 @@ function subagentView(entry: SessionSubagent, context: ViewContext): SubagentVie
     subagentKey: entry.subagentKey,
     ...(role ? { toolCallRole: role } : {}),
     ...(entry.mode ? { mode: entry.mode } : {}),
-    status: statusOf(entry),
+    status: subagentStatus(entry),
     label: entry.label || labels.subagent,
     agentLabel: entry.subagentType || entry.providerKind || labels.subagent,
     description: entry.description || labels.task,

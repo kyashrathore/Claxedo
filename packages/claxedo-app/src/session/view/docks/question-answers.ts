@@ -111,7 +111,7 @@ function select(context: QuestionContext, index: number): void {
   )
 }
 
-function next(context: QuestionContext): "submit" | "moved" {
+function advanceQuestion(context: QuestionContext): "submit" | "moved" {
   if (context.draft.editing) commitCustom(context)
   if (context.draft.tab >= context.total() - 1) return "submit"
   goTo(context, context.draft.tab + 1)
@@ -147,7 +147,7 @@ export function createQuestionAnswers(questions: Accessor<readonly AgentQuestion
     customToggle: () => customToggle(context),
     customUpdate: (value: string, selected?: boolean) => customUpdate(context, value, selected),
     commitCustom: () => commitCustom(context),
-    next: () => next(context),
+    next: () => advanceQuestion(context),
     back: () => (draft.tab > 0 ? goTo(context, draft.tab - 1) : undefined),
     goTo: (tab: number) => goTo(context, tab),
     collapse: () => collapse(context),

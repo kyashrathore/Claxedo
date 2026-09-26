@@ -3,13 +3,13 @@ import type { TranscriptContext } from "./context"
 import { prependPage } from "./conversation"
 
 export function loadOlder(context: TranscriptContext): Promise<void> {
-  context.olderRead.current ??= readOlder(context).finally(() => {
+  context.olderRead.current ??= loadOlderPage(context).finally(() => {
     context.olderRead.current = undefined
   })
   return context.olderRead.current
 }
 
-async function readOlder(context: TranscriptContext): Promise<void> {
+async function loadOlderPage(context: TranscriptContext): Promise<void> {
   const cursor = context.olderCursor()
   if (cursor === undefined) return
   context.older.send({ type: "olderStarted" })
