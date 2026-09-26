@@ -14,7 +14,7 @@ export function runtimeStatusKind(status: unknown): SessionRowStatusKind {
   return type === "busy" || type === "retry" || type === "recovering" ? type : "idle"
 }
 
-async function readJson(read: RuntimeStatusRead, workspaceId: string, path: RuntimeStatusPath) {
+async function readRuntimeStatus(read: RuntimeStatusRead, workspaceId: string, path: RuntimeStatusPath) {
   const response = await read(workspaceId, path)
   if (!response) return undefined
   if (!response.ok) throw new Error(`${path} answered ${response.status} for workspace ${workspaceId}`)
@@ -30,14 +30,14 @@ export async function readRuntimeSessionActivity(
   read: RuntimeStatusRead,
   workspaceId: string,
 ): Promise<Map<string, RuntimeSessionActivity> | undefined> {
-  const status = await readJson(read, workspaceId, "/session/status")
+  const status = await readRuntimeStatus(read, workspaceId, "/session/status")
   if (status === undefined) return undefined
   const sessions = new Map<string, RuntimeSessionActivity>()
   for (const [sessionId, value] of Object.entries(record(status) ?? {})) {
     sessions.set(sessionId, { kind: runtimeStatusKind(value), pending: new Set() })
   }
   for (const path of ["/permission", "/question"] as const) {
-    const rows = await readJson(read, workspaceId, path)
+    const rows = await readRuntimeStatus(read, workspaceId, path)
     for (const row of Array.isArray(rows) ? rows : []) {
       const sessionId = raw(record(row)?.sessionID)
       const id = raw(record(row)?.id)

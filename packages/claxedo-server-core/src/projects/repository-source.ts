@@ -61,7 +61,7 @@ export function lastPathSegment(value: string) {
   return value.replace(/\/+$/, "").split("/").pop() ?? ""
 }
 
-function invalid() {
+function invalidRepository() {
   return new ProjectStoreError(400, "project_repository_invalid", "That is not a repository URL this server can clone")
 }
 
@@ -89,10 +89,10 @@ export async function resolveRepository(
 ): Promise<RepositoryResolution> {
   if ("repoUrl" in source) {
     const repoUrl = safeRepoUrl(source.repoUrl)
-    if (!repoUrl) throw invalid()
+    if (!repoUrl) throw invalidRepository()
     await admitted(repoUrl, caller, deps)
     const name = trimmedProjectName(lastPathSegment(repoUrl).replace(/\.git$/, ""))
-    if (!name) throw invalid()
+    if (!name) throw invalidRepository()
     const credential = await connectedCredential(repoUrl, caller, deps)
     return { repoUrl, name, ...(credential ? { credential } : {}) }
   }
@@ -107,10 +107,10 @@ export async function resolveRepository(
   if (!access.ok) throw new ProjectStoreError(access.status, access.code, access.message)
   const repoUrl = safeRepoUrl(access.repository.cloneUrl)
   const host = repoUrl && repoUrlHost(repoUrl)
-  if (!repoUrl || !host) throw invalid()
+  if (!repoUrl || !host) throw invalidRepository()
   await admitted(repoUrl, caller, deps)
   const name = trimmedProjectName(lastPathSegment(source.repo.fullName))
-  if (!name) throw invalid()
+  if (!name) throw invalidRepository()
   return { repoUrl, name, credential: { host, authorization: githubCloneAuthorization(access.token) } }
 }
 

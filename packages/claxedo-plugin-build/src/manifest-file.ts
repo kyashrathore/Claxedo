@@ -12,7 +12,7 @@ export type PluginPackage = {
   appEntry: string
 }
 
-async function readJson(file: string): Promise<unknown> {
+async function readPluginPackageJson(file: string): Promise<unknown> {
   let text: string
   try {
     text = await fs.readFile(file, "utf8")
@@ -28,7 +28,7 @@ async function readJson(file: string): Promise<unknown> {
 
 export async function readPluginPackage(rootDir: string): Promise<PluginPackage> {
   const packageJsonPath = path.join(rootDir, PLUGIN_PACKAGE_FILE)
-  const packageJson = await readJson(packageJsonPath)
+  const packageJson = await readPluginPackageJson(packageJsonPath)
   let manifest: PluginManifest
   try {
     manifest = readPluginManifest(packageJson)
