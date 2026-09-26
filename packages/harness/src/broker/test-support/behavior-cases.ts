@@ -102,7 +102,17 @@ describe(`${name} request broker`, () => {
     const context = { sessionId: "s1", directory: "/work", workspaceId: "w1", connectionId: "c1", operationId: "op", start, origin }
     const waiting = createSessionBroker(owner, context).ask(question("ended-start"))
     await tick()
-    await owner.endStart(context)
+    let release!: () => void
+    const gate = new Promise<void>((done) => { release = done })
+    const persist = ports.persistAnswer.bind(ports)
+    ports.persistAnswer = async (...args) => { await gate; return persist(...args) }
+    let released = false
+    void waiting.then(() => { released = true })
+    const ending = owner.endStart(context)
+    await tick()
+    expect(released).toBe(false)
+    release()
+    await ending
     expect(await waiting).toEqual({ kind: "cancelled" })
     expect(ports.readAnswer("s1", "ended-start")).toEqual({ kind: "cancelled" })
   })
