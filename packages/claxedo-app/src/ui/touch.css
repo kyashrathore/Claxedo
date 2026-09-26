@@ -4,12 +4,12 @@
   }
 
   @media (pointer: coarse) {
-    .v2-segmented-control-item,
+    .ui-segmented-control-v2-item,
     .scroll-thumb {
       position: relative;
     }
 
-    .v2-segmented-control-item::before,
+    .ui-segmented-control-v2-item::before,
     .scroll-thumb::before {
       content: "";
       position: absolute;
