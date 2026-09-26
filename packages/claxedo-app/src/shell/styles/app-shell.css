@@ -157,6 +157,11 @@ body [data-component="menu-v2-content"] {
   border-radius: var(--radius-3xl);
 }
 
+.command-palette-container {
+  align-self: flex-start;
+  margin-top: max(8px, calc(50vh - 256px));
+}
+
 body:has([data-slot="dialog-content"].command-palette-dialog) .ui-dialog-overlay {
   background-color: hsl(from var(--background-base) h s l / 0.45);
   animation: claxedoPaletteBackdropHide 100ms ease-in forwards;
