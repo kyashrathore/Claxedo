@@ -1,5 +1,5 @@
 export { createEgressBroker, type BrokerOptions } from "./broker.js"
-export { substituteNativeSecrets, type NativeBrokeredSecret } from "./native-substitution.js"
+export { brokeredSecretFromRegistration, substituteNativeSecrets, type BrokeredRegistration, type NativeBrokeredSecret } from "./native-substitution.js"
 export { brokerErrorBody } from "./errors.js"
 export { BROKER_ROUTE_PATTERN, isBrokerPath, loopbackBrokerRoutes } from "./mount.js"
 export { mintRuntimeToken, verifyRuntimeToken, type RuntimeTokenClaims } from "./token.js"

@@ -149,7 +149,7 @@ describe("hosted MCP runtime preparation", () => {
     const plan = agentPluginMcpRuntimePlan(value.preparation)
     expect(plan.revision).toBe(4)
     expect(plan.mcpServers).toHaveLength(2)
-    expect(new Set(value.preparation.secrets!.map((secret) => secret.hosts[0])).size).toBe(2)
+    expect(new Set(value.preparation.secrets!.map((secret) => secret.hosts[0]))).toEqual(new Set(["mcp-gateway.example"]))
     expect(value.resolveConnection).toHaveBeenCalledTimes(1)
 
     const first = value.preparation.secrets![0]
@@ -159,7 +159,7 @@ describe("hosted MCP runtime preparation", () => {
     // one would refuse every gateway request the sandbox makes.
     expect(first.methods).toEqual(["GET", "POST", "DELETE"])
     expect(first.pathPrefixes).toEqual([new URL(plan.mcpServers.find((server) => server.state === "gateway")!.url!).pathname])
-    expect(first.hosts[0]).toMatch(/^mcp-[a-f0-9]{32}-mcp-gateway\.example$/)
+    expect(first.hosts).toEqual(["mcp-gateway.example"])
     const scope = await verifyMcpGatewayToken(first.value.replace(/^Bearer /, ""), {
       integrationId: await mcpOAuthIntegrationId({ pluginInstanceId: "claxedo/docs", serverName: "docs" }),
     }, value.env)

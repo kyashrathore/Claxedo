@@ -77,7 +77,6 @@ async function main(input: Input) {
     CLAXEDO_CREDENTIALS_KEK: Buffer.alloc(32, 7).toString("base64"),
     CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1",
     CLAXEDO_PUBLIC_URL: apiOrigin,
-    CLAXEDO_AGENT_PLUGINS_MCP_GATEWAY_STYLE: "origin",
     CLAXEDO_AGENT_PLUGINS_MCP_GATEWAY_URL: "https://gateway.hosted-e2e.test/",
     CLAXEDO_MCP_OAUTH_CLIENTS: JSON.stringify({ "https://auth.hosted-e2e.test": { clientId: "hosted-e2e-mcp-client" } }),
     CLAXEDO_ENVIRONMENT_ID: "hosted-e2e-environment",

@@ -45,7 +45,6 @@ import { hostedMcpGatewayAuthorization } from "./mcp/gateway-authorization"
 import {
   agentPluginMcpRuntimePlan,
   createHostedMcpRuntimePreparer,
-  type McpGatewayEndpointStyle,
 } from "./mcp/runtime-preparation"
 import { hostedMcpCatalogAuthentication } from "./mcp/catalog-auth"
 import { hostedMcpClientMetadata } from "./mcp/client-metadata"
@@ -148,12 +147,6 @@ export function mcpOAuthClientsFromEnv(
   return result
 }
 
-function endpointStyle(value: string | undefined): McpGatewayEndpointStyle {
-  if (value === undefined || value === "" || value === "origin") return "origin"
-  if (value === "subdomain") return "subdomain"
-  throw new Error("CLAXEDO_AGENT_PLUGINS_MCP_GATEWAY_STYLE must be origin or subdomain")
-}
-
 /**
  * The runtime credential can only stay unreadable to the agent when the
  * selected sandbox driver brokers secrets. A control-plane-only deployment
@@ -230,7 +223,8 @@ export function createHostedAgentPluginsComposition(input: {
   const sourceRegistry = new D1AgentPluginSourceStore({ database: input.database, authority })
   const sourceProviders = createAgentPluginSourceProviderCache(githubFetch)
   // The public origin doubles as the OAuth client identity document host and,
-  // by default, as the MCP gateway origin (see `McpGatewayEndpointStyle`).
+  // unless `CLAXEDO_AGENT_PLUGINS_MCP_GATEWAY_URL` names another origin, as the
+  // MCP gateway origin.
   const publicUrl = required(env.CLAXEDO_PUBLIC_URL ?? env.BETTER_AUTH_URL, "CLAXEDO_PUBLIC_URL")
   const clientMetadata = hostedMcpClientMetadata(publicUrl)
   const preRegistered = mcpOAuthClientsFromEnv(env.CLAXEDO_MCP_OAUTH_CLIENTS)
@@ -304,7 +298,6 @@ export function createHostedAgentPluginsComposition(input: {
     resolveConnection,
     oauth,
     gatewayUrl: env.CLAXEDO_AGENT_PLUGINS_MCP_GATEWAY_URL?.trim() || publicUrl,
-    endpointStyle: endpointStyle(env.CLAXEDO_AGENT_PLUGINS_MCP_GATEWAY_STYLE),
     signingEnv: env,
     secretBrokering: secretBrokering(input.plane),
     passes: input.passes,

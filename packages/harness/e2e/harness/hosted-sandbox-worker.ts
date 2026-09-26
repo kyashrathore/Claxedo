@@ -3,6 +3,7 @@ import { createServer, request as httpsRequest } from "node:https"
 import http, { type IncomingMessage, type ServerResponse } from "node:http"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
+import { brokeredSecretFromRegistration } from "@claxedo/egress-broker"
 import { createLocalBrokeringSandboxDriver } from "@claxedo/sandbox-manager/drivers/local-brokering"
 import type { SandboxBrokeredSecret, SandboxTarget } from "@claxedo/sandbox-manager"
 import { parseRegistrations, type EgressRegistration } from "../../../claxedo-server/scripts/sandbox/cloudflare-worker/src/outbound-credentials"
@@ -58,26 +59,10 @@ async function body(request: IncomingMessage) {
   return record(JSON.parse(Buffer.concat(chunks).toString("utf8")))
 }
 
-/**
- * The Cloudflare Worker writes a registration's whole value into the header
- * whose placeholder it matched. This stand-in's substitution composes a scheme
- * back only when the sandbox presented one: a provider SDK sends
- * `Bearer <placeholder>`, so its registration is split; a plugin MCP
- * registration is presented raw and keeps its complete value.
- */
 function localSecrets(registrations: EgressRegistration[]): SandboxBrokeredSecret[] {
   return registrations.map((row) => {
-    const authorization = row.header.toLowerCase() === "authorization" && !row.name.startsWith("CLAXEDO_MCP_")
-    const match = authorization ? /^([A-Za-z]+) (.+)$/.exec(row.value) : null
-    return {
-      name: row.name,
-      value: match?.[2] ?? row.value,
-      hosts: row.hosts,
-      header: row.header,
-      ...(match ? { scheme: match[1] } : {}),
-      methods: row.methods,
-      pathPrefixes: row.pathPrefixes,
-    }
+    const secret = brokeredSecretFromRegistration(row)
+    return { ...secret, hosts: [...secret.hosts] }
   })
 }
 

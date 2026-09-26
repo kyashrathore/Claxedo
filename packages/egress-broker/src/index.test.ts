@@ -12,6 +12,7 @@ test("the package exposes request policy and token minting, and no binding autho
     "BROKER_ROUTE_PATTERN",
     "bindingBaseUrl",
     "brokerErrorBody",
+    "brokeredSecretFromRegistration",
     "createEgressBroker",
     "isBrokerPath",
     "loopbackBrokerRoutes",
