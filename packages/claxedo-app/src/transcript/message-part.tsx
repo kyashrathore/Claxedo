@@ -2337,7 +2337,7 @@ ToolRegistry.register({
               </div>
               <div data-slot="message-part-actions">
                 <Show when={!pending() && props.metadata.filediff}>
-                  <DiffChanges changes={props.metadata.filediff} variant="muted-hover" />
+                  <DiffChanges changes={props.metadata.filediff} />
                 </Show>
               </div>
             </div>
@@ -2598,10 +2598,7 @@ ToolRegistry.register({
                 </div>
                 <div data-slot="message-part-actions">
                   <Show when={!pending()}>
-                    <DiffChanges
-                      changes={{ additions: single()!.additions, deletions: single()!.deletions }}
-                      variant="muted-hover"
-                    />
+                    <DiffChanges changes={{ additions: single()!.additions, deletions: single()!.deletions }} />
                   </Show>
                 </div>
               </div>

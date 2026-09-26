@@ -6,7 +6,7 @@
 @import "@opencode-ai/ui/button.css" layer(components);
 @import "@opencode-ai/ui/card.css" layer(components);
 @import "@opencode-ai/ui/collapsible.css" layer(components);
-@import "@opencode-ai/ui/diff-changes.css" layer(components);
+
 @import "@opencode-ai/ui/dock-surface.css" layer(components);
 @import "@opencode-ai/ui/dropdown-menu.css" layer(components);
 @import "@opencode-ai/ui/file-icon.css" layer(components);
