@@ -135,6 +135,31 @@ The build was the same (6d9c0a91a9), and the host was just as quiet. v2 had 0 in
   - exp-idle owns start and memory.
   - Either one's fixes land through the owning lane.
 
+### Benchmark, publication run 3 (final tip, 2026-09-26 06:02–06:10 IST)
+
+**BLOCKED before measurement: neither packaged app passes the existing package validation.** No fast-pair or full-suite benchmark was started, and no performance result is claimed.
+
+The isolated branch `v2/bench-final`, at `~/test/opencode-app-v2-lanes/bench-final`, merges app tip `446612923c4937a7fb6c0f611453871a4f4180f3` with driver tip `c77feed46483962dda2267d76a8095c78f23a991`. Its build hash is **`521da71f8efe2c84547960ccff73e35a9d1e2f01`**. The merge had no conflicts and changed only the four perf-harness files from `v2/bench`. No application source was edited. `bun install` succeeded without tracked dependency changes.
+
+**Packaging:** both `package:mac` and `package:mac:v2` built macOS arm64 applications, then exited 1 with `Embedded SDK package does not match inventory: zod`. `bundle-claxedo-server.ts` stages the OpenCode SDK and then the plugin toolchain into the same `node_modules`. The SDK inventory declares root `zod` 4.1.8, but `stage-plugin-toolchain.ts:61–64` copies the plugin API's zod 4.4.3 declarations **and package.json** over it. This comes from plugin-toolchain commit `9ee7f09045`; it is not a driver failure. The package check was not weakened and the invalid artifacts were not benchmarked. Owner/follow-up: the plugin-tools/desktop packaging lane must give the plugin declaration closure a location that does not overwrite the SDK runtime, then validate and repackage both apps before the rerun.
+
+V2's renderer **is minified**: the main chunk is `main-DTMCrH14.js`, 3,836,532 bytes. The packaged startup-artifact verifier passed with no failures, including minification and compile-cache source checks. This does not override the separate SDK inventory failure. An earlier fresh-worktree prebuild failure (Host Connector racing the absent `@claxedo/helpers/dist/guards.mjs`) was resolved by building the 14 declared published-package prerequisites before retrying; all 14 build tasks passed.
+
+**Host conditions:** Apple M4 Pro, macOS arm64. The Mac remained on battery (49% → 47%), unlike runs 1 and 2 on AC. Initial `uptime` load averages were **4.88 / 3.97 / 3.97**. During preparation the observed triples were 13.23/6.49/4.91, 9.51/6.33/4.91, 6.04/6.13/4.97, 4.82/5.83/4.91, 9.99/6.82/5.34, 12.81/7.92/5.82, and 17.21/9.72/6.58; the final check was **16.95 / 10.46 / 6.98**. Spotlight `mds_stores` was observed at 248.6% CPU after packaging. No measurement was attempted on this loaded host. The owner must connect AC, and the run must wait for other heavy work to finish and the one-minute load to fall below 3.5. No owner process or reserved port was touched.
+
+**Method preserved for the rerun:** framework revision `b7758eedcbc293c8dd920494446fb4c69e54c68d`; headed packaged apps; preset `claxedo-v1-vs-v2-fast` in publication mode (10 start repetitions, 3 switch repetitions), then `claxedo-v1-vs-v2` in publication mode (5 repetitions per scenario). Both original corpora verified: fast digest `48fbc90b47a1779d1853ea25f63adca2c3018a73745434ec27df72201dc37472`, full digest `beeb966459bb2b8ebeb8df1654625054decbd69a93e1d70e63addfcae610d2a1`. Keep the existing invalid-observation withholding and statistical verdict rules. Run 2's raw verdict has **51 rows: 49 scored and 2 withheld**, clarifying the earlier “49 rows” wording.
+
+| Result | Fast pair | Full suite |
+|---|---|---|
+| Comparison rows | 11, all unmeasured | 51, all unmeasured |
+| v1 / v2 invalid observations | Not available; no observations collected | Not available; no observations collected |
+| v2 wins / v1 wins | Unverified | Unverified |
+| Median / p95 / ratio / change versus run 2 | Unverified | Unverified |
+
+**Commands run:** worktree creation and `git merge --no-ff v2/bench`; `bun install`; `CSC_IDENTITY_AUTO_DISCOVERY=false bun run package:mac -- --dir --publish never` (initial prebuild failure, then inventory failure after prerequisite build); `bun -e 'import { buildPublishedPackages } from "./packages/claxedo-desktop/scripts/published-packages.ts"; await buildPublishedPackages(process.cwd(), console.log)'` from the worktree root; `CSC_IDENTITY_AUTO_DISCOVERY=false bun run package:mac:v2 -- --dir --publish never`; both `node bin/agent-app-benchmark.mjs corpus verify --input artifacts/corpora/<original-corpus>` checks; the original run-2 `verdict`; the packaged startup-artifact verifier; repeated `uptime`, `pmset -g batt`, and read-only process inspection. The complete exact commands and outcomes are in `~/test/opencode-app-v2-lanes/bench-final/scratchpad/bench-final/commands.md`.
+
+**Raw evidence:** `~/test/opencode-app-v2-lanes/bench-final/scratchpad/bench-final/` contains `package-v1.log`, `build-prerequisites.log`, `package-v1-retry.log`, `package-v2.log`, and `host-log.txt`. There is **no new comparison-data directory**. The prepared `run-publication.sh` and `analyze.mjs` have not been run. The publication rerun, per-row tables, v1 losses, and run-2 comparison remain open pending valid packages and host conditions. No push or prohibited test suite was run.
+
 ## The goal in four parts
 
 The owner's words: better, performant, easy code, less LOC. Each part gives the rule, where it stands (observed on `feat/app-v2`), and what is next.
