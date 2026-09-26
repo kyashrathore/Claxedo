@@ -17,6 +17,7 @@ async function readOlder(context: TranscriptContext): Promise<void> {
     const page = await context.server.sessions.older(context.ref, cursor)
     prependPage(context.setData, page)
     context.setOlderCursor(page.olderCursor)
+    context.setOlderPages((count) => count + 1)
     context.older.send({ type: "olderLanded" })
   } catch (cause) {
     context.older.send({ type: "olderFailed", error: toAppError(cause) })
