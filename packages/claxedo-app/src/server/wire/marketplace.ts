@@ -1,23 +1,18 @@
+import { asRecord } from "@claxedo/helpers/guards"
 import type { PluginChange, PluginSourceRecord } from "../marketplace-types"
-
-type Row = Record<string, unknown>
-
-function record(value: unknown): Row | undefined {
-  return value && typeof value === "object" ? (value as Row) : undefined
-}
 
 const SOURCE_KINDS: readonly PluginSourceRecord["kind"][] = ["claxedo", "personal", "organization"]
 
 export function pluginChangeFromWire(value: unknown): PluginChange | undefined {
-  const row = record(value)
-  const reconciliation = record(row?.reconciliation)
+  const row = asRecord(value)
+  const reconciliation = asRecord(row?.reconciliation)
   if (!row || typeof row.revision !== "number" || !Number.isSafeInteger(row.revision) || typeof reconciliation?.state !== "string") return undefined
   const message = typeof reconciliation.message === "string" ? reconciliation.message : undefined
   return { revision: row.revision, reconciliation: { state: reconciliation.state, ...(message ? { message } : {}) } }
 }
 
 export function pluginSourceFromWire(value: unknown): PluginSourceRecord | undefined {
-  const row = record(value)
+  const row = asRecord(value)
   const kind = SOURCE_KINDS.find((candidate) => candidate === row?.kind)
   if (!row || !kind) return undefined
   const { id, label, repository, ref, canRemove } = row
@@ -27,7 +22,7 @@ export function pluginSourceFromWire(value: unknown): PluginSourceRecord | undef
 }
 
 export function pluginSourcesFromWire(value: unknown): readonly PluginSourceRecord[] | undefined {
-  const rows = record(value)?.sources
+  const rows = asRecord(value)?.sources
   if (!Array.isArray(rows)) return undefined
   return rows.flatMap((row) => {
     const source = pluginSourceFromWire(row)

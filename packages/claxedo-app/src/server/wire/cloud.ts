@@ -1,10 +1,6 @@
 import { placementId, projectId } from "../ids"
 import type { CloudWorkspace, CloudWorkspaceStatus, CodeHostRepository } from "../cloud-types"
-import { isRecord } from "../../lib/record"
-
-function text(value: unknown) {
-  return typeof value === "string" && value.length > 0 ? value : undefined
-}
+import { isRecord, nonEmptyString } from "@claxedo/helpers/guards"
 
 function cloudStatusFromWire(status: unknown, step?: unknown, message?: unknown): CloudWorkspaceStatus {
   switch (status) {
@@ -13,7 +9,7 @@ function cloudStatusFromWire(status: unknown, step?: unknown, message?: unknown)
     case "cloning":
     case "starting_runtime":
     case "waiting_health":
-      return { kind: "provisioning", step: text(step) ?? (typeof status === "string" ? status : "provisioning") }
+      return { kind: "provisioning", step: nonEmptyString(step) ?? (typeof status === "string" ? status : "provisioning") }
     case "starting":
       return { kind: "starting" }
     case "ready":
@@ -26,7 +22,7 @@ function cloudStatusFromWire(status: unknown, step?: unknown, message?: unknown)
       return { kind: "stopped" }
     case "error":
     case "failed":
-      return { kind: "failed", reason: text(message) ?? "The cloud workspace failed" }
+      return { kind: "failed", reason: nonEmptyString(message) ?? "The cloud workspace failed" }
     default:
       return { kind: "failed", reason: `The cloud workspace reports an unknown status: ${String(status)}` }
   }
@@ -35,20 +31,20 @@ function cloudStatusFromWire(status: unknown, step?: unknown, message?: unknown)
 export function provisionStatus(frame: Record<string, unknown>): CloudWorkspaceStatus {
   const step = frame.step
   if (step === "ready") return { kind: "ready" }
-  if (step === "error") return { kind: "failed", reason: text(frame.message) ?? "Provisioning failed" }
-  return { kind: "provisioning", step: text(step) ?? "provisioning" }
+  if (step === "error") return { kind: "failed", reason: nonEmptyString(frame.message) ?? "Provisioning failed" }
+  return { kind: "provisioning", step: nonEmptyString(step) ?? "provisioning" }
 }
 
 export function cloudWorkspaceFromRow(row: unknown): CloudWorkspace | undefined {
   if (!isRecord(row)) return undefined
-  const id = text(row.workspace_id) ?? text(row.workspaceId)
-  const owner = text(row.project_id) ?? text(row.projectId)
+  const id = nonEmptyString(row.workspace_id) ?? nonEmptyString(row.workspaceId)
+  const owner = nonEmptyString(row.project_id) ?? nonEmptyString(row.projectId)
   if (!id || !owner) return undefined
-  const branch = text(row.git_branch) ?? text(row.gitBranch) ?? text(row.branch)
+  const branch = nonEmptyString(row.git_branch) ?? nonEmptyString(row.gitBranch) ?? nonEmptyString(row.branch)
   return {
     id: placementId(id),
     projectId: projectId(owner),
-    name: text(row.workspace_name) ?? text(row.workspaceName) ?? text(row.display_name) ?? id,
+    name: nonEmptyString(row.workspace_name) ?? nonEmptyString(row.workspaceName) ?? nonEmptyString(row.display_name) ?? id,
     ...(branch ? { branch } : {}),
     status: cloudStatusFromWire(row.status, row.step, row.error),
   }
@@ -56,7 +52,7 @@ export function cloudWorkspaceFromRow(row: unknown): CloudWorkspace | undefined 
 
 export function codeHostRepositoryFromRow(row: unknown): CodeHostRepository | undefined {
   if (!isRecord(row)) return undefined
-  const id = text(row.id)
-  const fullName = text(row.fullName)
+  const id = nonEmptyString(row.id)
+  const fullName = nonEmptyString(row.fullName)
   return id && fullName ? { id, fullName, private: row.private === true } : undefined
 }

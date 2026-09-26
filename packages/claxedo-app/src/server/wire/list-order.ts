@@ -1,3 +1,5 @@
+import { asFiniteNumber } from "@claxedo/helpers/guards"
+
 export type ListOrderKey = {
   readonly updatedAt: number
   readonly createdAt: number
@@ -5,16 +7,12 @@ export type ListOrderKey = {
   readonly sessionRef: string
 }
 
-function number(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined
-}
-
 export function listOrderKey(item: unknown): ListOrderKey | undefined {
   if (!item || typeof item !== "object") return undefined
   const row = item as Record<string, unknown>
-  const createdAt = number(row.createdAt)
-  const updatedAt = number(row.updatedAt)
-  const lastHumanTurnAt = number(row.lastHumanTurnAt)
+  const createdAt = asFiniteNumber(row.createdAt)
+  const updatedAt = asFiniteNumber(row.updatedAt)
+  const lastHumanTurnAt = asFiniteNumber(row.lastHumanTurnAt)
   if (createdAt === undefined || updatedAt === undefined || typeof row.sessionRef !== "string") return undefined
   return { updatedAt, createdAt, ...(lastHumanTurnAt === undefined ? {} : { lastHumanTurnAt }), sessionRef: row.sessionRef }
 }

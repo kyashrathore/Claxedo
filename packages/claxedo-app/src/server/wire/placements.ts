@@ -1,7 +1,7 @@
 import { machineId, placementId, projectId, type MachineId } from "../ids"
 import type { RuntimeRoute } from "../transport"
 import type { Placement } from "../types"
-import { isRecord } from "../../lib/record"
+import { isRecord, nonEmptyString } from "@claxedo/helpers/guards"
 
 export type PlacementRecord = {
   readonly placement: Placement
@@ -24,11 +24,7 @@ export const UNENROLLED_MACHINE = "this-machine"
 
 export const WORKTREE_ROUTE = "/experimental/worktree"
 
-function text(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined
-}
-
-function kindOf(row: Record<string, unknown>, root: boolean): Placement["kind"] {
+function placementKind(row: Record<string, unknown>, root: boolean): Placement["kind"] {
   if (row.kind === "cloud" || row.backing === "cloud-vm") return "cloud"
   return root ? "folder" : "worktree"
 }
@@ -36,36 +32,36 @@ function kindOf(row: Record<string, unknown>, root: boolean): Placement["kind"] 
 function remoteOf(row: Record<string, unknown>, self: string | undefined): { remote: boolean; machine?: MachineId } {
   if (row.kind === "cloud" || row.backing === "cloud-vm") return { remote: true }
   const placement = isRecord(row.placement) ? row.placement : undefined
-  const enrollment = text(placement?.host_enrollment_id)
+  const enrollment = nonEmptyString(placement?.host_enrollment_id)
   const own = enrollment !== undefined && enrollment === self
   if (row.backing === "local-worktree" && !own) return { remote: true, ...(enrollment ? { machine: machineId(enrollment) } : {}) }
   return { remote: false, machine: machineId(self ?? UNENROLLED_MACHINE) }
 }
 
-function label(row: Record<string, unknown>, directory: string) {
-  return text(row.workspace_name) ?? text(row.workspaceName) ?? directory.split("/").filter(Boolean).pop() ?? directory
+function placementLabel(row: Record<string, unknown>, directory: string) {
+  return nonEmptyString(row.workspace_name) ?? nonEmptyString(row.workspaceName) ?? directory.split("/").filter(Boolean).pop() ?? directory
 }
 
 function gitRemoteOf(project: Record<string, unknown>, row: Record<string, unknown>): string | undefined {
   const git = isRecord(project.git) ? project.git : {}
-  return text(row.repo_url) ?? text(row.repoUrl) ?? text(row.git_remote) ?? text(row.gitRemote) ?? text(git.remote)
+  return nonEmptyString(row.repo_url) ?? nonEmptyString(row.repoUrl) ?? nonEmptyString(row.git_remote) ?? nonEmptyString(row.gitRemote) ?? nonEmptyString(git.remote)
 }
 
 function placementRecord(project: Record<string, unknown>, key: string, row: Record<string, unknown>, self: string | undefined): PlacementRecord | undefined {
-  const id = text(row.workspaceId) ?? text(row.workspace_id) ?? text(row.id) ?? key
-  const owner = text(project.id)
+  const id = nonEmptyString(row.workspaceId) ?? nonEmptyString(row.workspace_id) ?? nonEmptyString(row.id) ?? key
+  const owner = nonEmptyString(project.id)
   if (!owner) return undefined
-  const directory = text(row.directory) ?? key
-  const location = text(row.remote_directory) ?? text(row.remoteDirectory) ?? directory
+  const directory = nonEmptyString(row.directory) ?? key
+  const location = nonEmptyString(row.remote_directory) ?? nonEmptyString(row.remoteDirectory) ?? directory
   const { remote, machine } = remoteOf(row, self)
-  const root = directory === text(project.worktree)
+  const root = directory === nonEmptyString(project.worktree)
   const gitRemote = gitRemoteOf(project, row)
   return {
     placement: {
       id: placementId(id),
       projectId: projectId(owner),
-      kind: kindOf(row, root),
-      label: label(row, location),
+      kind: placementKind(row, root),
+      label: placementLabel(row, location),
       path: location,
       reachable: row.reachable === true,
       ...(machine ? { machineId: machine } : {}),
@@ -95,7 +91,7 @@ export function bootstrapCatalog(body: unknown): BootstrapCatalog {
   const events = isRecord(root.events) ? root.events : {}
   const deployment = isRecord(root.deployment) ? root.deployment : {}
   const host = isRecord(root.host) ? root.host : {}
-  const enrollmentId = text(host.enrollment)
+  const enrollmentId = nonEmptyString(host.enrollment)
   return {
     declaration: {
       hostAggregate: events.hostAggregate === true,

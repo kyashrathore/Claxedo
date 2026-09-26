@@ -10,7 +10,7 @@ import { isPermissionWire, isQuestionWire, permissionRequest, questionRequest } 
 import { sessionRefFor, sessionRowFromSession, type Address } from "./session-row"
 import { sessionStatusFromTurnError, sessionStatusFromWire } from "./status"
 import { terminalEvent } from "./terminals"
-import { isRecord } from "../../lib/record"
+import { isRecord, nonEmptyString } from "@claxedo/helpers/guards"
 
 export type Frame = {
   readonly directory?: string
@@ -20,10 +20,6 @@ export type Frame = {
   readonly raw: Record<string, unknown>
 }
 
-function text(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined
-}
-
 function isSessionInfo(value: unknown): value is AgentSession {
   return isRecord(value) && typeof value.id === "string"
 }
@@ -31,10 +27,10 @@ function isSessionInfo(value: unknown): value is AgentSession {
 export function frameOf(input: unknown): Frame | undefined {
   if (!isRecord(input)) return undefined
   const payload = isRecord(input.payload) ? input.payload : input
-  const type = text(payload.type)
+  const type = nonEmptyString(payload.type)
   if (!type) return undefined
-  const directory = text(payload.directory) ?? text(input.directory)
-  const workspaceId = text(payload.workspaceId) ?? text(input.workspaceId)
+  const directory = nonEmptyString(payload.directory) ?? nonEmptyString(input.directory)
+  const workspaceId = nonEmptyString(payload.workspaceId) ?? nonEmptyString(input.workspaceId)
   return {
     ...(directory ? { directory } : {}),
     ...(workspaceId ? { workspaceId } : {}),
@@ -44,11 +40,11 @@ export function frameOf(input: unknown): Frame | undefined {
   }
 }
 
-function sessionIdOf(frame: Frame): string | undefined {
+function frameSessionId(frame: Frame): string | undefined {
   const properties = frame.properties ?? {}
   const info = isRecord(properties.info) ? properties.info : undefined
   const part = isRecord(properties.part) ? properties.part : undefined
-  return text(properties.sessionID) ?? text(info?.sessionID) ?? text(info?.id) ?? text(part?.sessionID)
+  return nonEmptyString(properties.sessionID) ?? nonEmptyString(info?.sessionID) ?? nonEmptyString(info?.id) ?? nonEmptyString(part?.sessionID)
 }
 
 export function placementDirectory(frame: Frame): string | undefined {
@@ -56,12 +52,12 @@ export function placementDirectory(frame: Frame): string | undefined {
 }
 
 function refOf(frame: Frame, address: Address): SessionRef | undefined {
-  const sessionId = sessionIdOf(frame)
+  const sessionId = frameSessionId(frame)
   if (!sessionId || !frame.directory) return undefined
   return sessionRefFor(address, { directory: frame.directory, workspaceId: frame.workspaceId, sessionId })
 }
 
-function placementOf(frame: Frame, address: Address) {
+function framePlacementId(frame: Frame, address: Address) {
   return frame.directory ? address.placementFor(frame.directory, frame.workspaceId)?.placementId : undefined
 }
 
@@ -81,20 +77,20 @@ function transcriptEvent(frame: Frame, ref: SessionRef): ServerEvent | undefined
     case "message.updated":
       return isAgentMessageInfo(properties.info) ? { type: "messageUpserted", ref, message: properties.info } : undefined
     case "message.removed": {
-      const messageId = text(properties.messageID)
+      const messageId = nonEmptyString(properties.messageID)
       return messageId ? { type: "messageRemoved", ref, messageId } : undefined
     }
     case "message.part.updated":
       return isAgentContentPart(properties.part) ? { type: "partUpserted", ref, part: properties.part } : undefined
     case "message.part.removed": {
-      const messageId = text(properties.messageID)
-      const partId = text(properties.partID)
+      const messageId = nonEmptyString(properties.messageID)
+      const partId = nonEmptyString(properties.partID)
       return messageId && partId ? { type: "partRemoved", ref, messageId, partId } : undefined
     }
     case "message.part.delta": {
-      const messageId = text(properties.messageID)
-      const partId = text(properties.partID)
-      const field = text(properties.field)
+      const messageId = nonEmptyString(properties.messageID)
+      const partId = nonEmptyString(properties.partID)
+      const field = nonEmptyString(properties.field)
       if (!messageId || !partId || !field || typeof properties.delta !== "string") return undefined
       return { type: "partDelta", ref, messageId, partId, field, delta: properties.delta }
     }
@@ -160,7 +156,7 @@ function requestEvent(frame: Frame, ref: SessionRef): ServerEvent | undefined {
     case "permission.replied":
     case "question.replied":
     case "question.rejected": {
-      const id = text(properties.requestID)
+      const id = nonEmptyString(properties.requestID)
       return id ? { type: "requestClosed", ref, requestId: requestId(id) } : undefined
     }
     default:
@@ -169,7 +165,7 @@ function requestEvent(frame: Frame, ref: SessionRef): ServerEvent | undefined {
 }
 
 function controlEvent(frame: Frame, address: Address): ServerEvent | undefined {
-  const placementId = placementOf(frame, address)
+  const placementId = framePlacementId(frame, address)
   const scoped = placementId ? { placementId } : {}
   switch (frame.type) {
     case "file.watcher.updated":
@@ -177,7 +173,7 @@ function controlEvent(frame: Frame, address: Address): ServerEvent | undefined {
       return placementId ? { type: "filesChanged", placementId } : undefined
     case "project.updated": {
       const info = isRecord(frame.properties?.info) ? frame.properties.info : undefined
-      const id = text(info?.id)
+      const id = nonEmptyString(info?.id)
       return id ? { type: "projectChanged", projectId: projectId(id) } : { type: "placementsChanged" }
     }
     case "session.lifecycle":
@@ -189,7 +185,7 @@ function controlEvent(frame: Frame, address: Address): ServerEvent | undefined {
     case "plugins.changed":
       return { type: "pluginsChanged" }
     case "provision": {
-      const workspaceId = text(frame.raw.workspaceId)
+      const workspaceId = nonEmptyString(frame.raw.workspaceId)
       return workspaceId ? { type: "cloudWorkspaceChanged", workspaceId: placementId ?? asPlacementId(workspaceId), status: provisionStatus(frame.raw) } : undefined
     }
     case "worktree.ready":

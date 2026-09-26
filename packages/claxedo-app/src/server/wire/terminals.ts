@@ -2,7 +2,7 @@ import type { TerminalCheckpoint } from "@claxedo/workspace-runtime/client"
 import type { ServerEvent } from "../events"
 import { sessionId, terminalId, type PlacementId } from "../ids"
 import type { Terminal, TerminalAgentStatus, TerminalFrame } from "../terminal-types"
-import { isRecord } from "../../lib/record"
+import { isRecord, nonEmptyString } from "@claxedo/helpers/guards"
 
 export const PTY_PATH = "/api/wr/pty"
 export const TERMINAL_HOOK_PATH = "/api/wr/hook/terminal-session"
@@ -10,22 +10,18 @@ export const PTY_NOT_FOUND = "pty_session_not_found"
 
 export type ParsedTerminalFrame = { readonly ok: true; readonly frame?: TerminalFrame } | { readonly ok: false; readonly reason: string }
 
-function text(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined
-}
-
 export function terminalFromWire(value: unknown, placementId: PlacementId): Terminal | undefined {
   if (!isRecord(value)) return undefined
-  const id = text(value.id)
+  const id = nonEmptyString(value.id)
   if (!id) return undefined
-  const cwd = text(value.cwd)
-  const owner = text(value.sessionId)
-  const command = text(value.command)
-  const createRequestId = text(value.createRequestId)
+  const cwd = nonEmptyString(value.cwd)
+  const owner = nonEmptyString(value.sessionId)
+  const command = nonEmptyString(value.command)
+  const createRequestId = nonEmptyString(value.createRequestId)
   return {
     id: terminalId(id),
     placementId,
-    title: text(value.title) ?? id,
+    title: nonEmptyString(value.title) ?? id,
     ...(cwd ? { cwd } : {}),
     ...(owner ? { sessionId: sessionId(owner) } : {}),
     ...(command ? { command } : {}),
@@ -57,17 +53,17 @@ export function terminalEvent(type: string, raw: Record<string, unknown>, placem
       return { type: type === "pty.created" ? "terminalCreated" : "terminalUpdated", terminal }
     }
     case "pty.exited": {
-      const id = text(raw.id)
+      const id = nonEmptyString(raw.id)
       if (!id) return undefined
       return { type: "terminalExited", placementId, terminalId: terminalId(id), ...(typeof raw.exitCode === "number" ? { code: raw.exitCode } : {}) }
     }
     case "pty.deleted": {
-      const id = text(raw.id)
+      const id = nonEmptyString(raw.id)
       return id ? { type: "terminalRemoved", placementId, terminalId: terminalId(id) } : undefined
     }
     case "agent.lifecycle": {
       const status = agentStatusFromWire(raw.eventType)
-      const id = text(raw.terminalId) ?? text(raw.tabId)
+      const id = nonEmptyString(raw.terminalId) ?? nonEmptyString(raw.tabId)
       return status && id ? { type: "terminalAgentStatusChanged", placementId, terminalId: terminalId(id), status } : undefined
     }
     default:

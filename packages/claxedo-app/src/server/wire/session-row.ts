@@ -1,3 +1,4 @@
+import { asFiniteNumber, nonEmptyString } from "@claxedo/helpers/guards"
 import type { AgentSession } from "@claxedo/agent-runtime-contract"
 import { sessionId, type PlacementId, type ProjectId, type SessionId } from "../ids"
 import type { ListedStatus, ModelChoice, SessionRef, SessionRow } from "../types"
@@ -5,14 +6,6 @@ import { sessionConfigFromWire } from "./harness-state"
 
 export type Address = {
   readonly placementFor: (directory: string, workspaceId?: string) => { readonly placementId: PlacementId; readonly projectId: ProjectId } | undefined
-}
-
-function text(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined
-}
-
-function number(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined
 }
 
 export function sessionRefFor(address: Address, input: { directory: string; workspaceId?: string; sessionId: string }): SessionRef | undefined {
@@ -24,19 +17,19 @@ export function sessionRefFor(address: Address, input: { directory: string; work
 export function sessionRowFromListItem(item: unknown, address: Address): SessionRow | undefined {
   if (!item || typeof item !== "object") return undefined
   const row = item as Record<string, unknown>
-  const id = text(row.sessionId)
-  const directory = text(row.directory)
-  const createdAt = number(row.createdAt)
-  const updatedAt = number(row.updatedAt)
+  const id = nonEmptyString(row.sessionId)
+  const directory = nonEmptyString(row.directory)
+  const createdAt = asFiniteNumber(row.createdAt)
+  const updatedAt = asFiniteNumber(row.updatedAt)
   if (!id || !directory || createdAt === undefined || updatedAt === undefined) return undefined
-  const ref = sessionRefFor(address, { directory, workspaceId: text(row.workspaceId), sessionId: id })
+  const ref = sessionRefFor(address, { directory, workspaceId: nonEmptyString(row.workspaceId), sessionId: id })
   if (!ref) return undefined
-  const lastHumanTurnAt = number(row.lastHumanTurnAt)
-  const archivedAt = number(row.archivedAt)
-  const parentSessionId = text(row.parentSessionId)
+  const lastHumanTurnAt = asFiniteNumber(row.lastHumanTurnAt)
+  const archivedAt = asFiniteNumber(row.archivedAt)
+  const parentSessionId = nonEmptyString(row.parentSessionId)
   return {
     ref,
-    title: text(row.title) ?? id,
+    title: nonEmptyString(row.title) ?? id,
     createdAt,
     updatedAt,
     ...(lastHumanTurnAt !== undefined ? { lastHumanTurnAt } : {}),
@@ -57,11 +50,11 @@ export function sessionRowFromSession(info: AgentSession, ref: SessionRef): Sess
   const created = info.time?.created ?? 0
   const updated = info.time?.updated ?? created
   const archived = info.time?.archived
-  const lastHumanTurnAt = number((info.time as { lastHumanTurn?: unknown } | undefined)?.lastHumanTurn)
-  const parent = text(info.parentID)
+  const lastHumanTurnAt = asFiniteNumber((info.time as { lastHumanTurn?: unknown } | undefined)?.lastHumanTurn)
+  const parent = nonEmptyString(info.parentID)
   return {
     ref,
-    title: text(info.title) ?? ref.sessionId,
+    title: nonEmptyString(info.title) ?? ref.sessionId,
     createdAt: created,
     updatedAt: updated,
     ...(lastHumanTurnAt !== undefined ? { lastHumanTurnAt } : {}),
@@ -75,15 +68,15 @@ export function sessionRowFromSession(info: AgentSession, ref: SessionRef): Sess
 export function sessionRowFromCentral(item: unknown, ref: SessionRef): SessionRow | undefined {
   if (!item || typeof item !== "object") return undefined
   const row = item as Record<string, unknown>
-  if (text(row.session_id) !== ref.sessionId) return undefined
-  const createdAt = number(row.created_at)
+  if (nonEmptyString(row.session_id) !== ref.sessionId) return undefined
+  const createdAt = asFiniteNumber(row.created_at)
   if (createdAt === undefined) return undefined
-  const lastHumanTurnAt = number(row.last_human_turn_at)
+  const lastHumanTurnAt = asFiniteNumber(row.last_human_turn_at)
   return {
     ref,
-    title: text(row.title) ?? ref.sessionId,
+    title: nonEmptyString(row.title) ?? ref.sessionId,
     createdAt,
-    updatedAt: number(row.updated_at) ?? createdAt,
+    updatedAt: asFiniteNumber(row.updated_at) ?? createdAt,
     ...(lastHumanTurnAt !== undefined ? { lastHumanTurnAt } : {}),
   }
 }
