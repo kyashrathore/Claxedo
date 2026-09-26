@@ -1,4 +1,5 @@
 import { createMemo, type Accessor } from "solid-js"
+import type { Handing } from "./handover"
 import { reducers } from "./reducers/index"
 import { selectors } from "./selectors"
 import type { Edge, MovePaneTarget, Pane, PaneRect, Snapshot, SplitPath, WorkbenchState } from "./types"
@@ -25,6 +26,7 @@ export type WorkbenchApi = {
     visiblePanes: () => readonly Pane[]
     paneRect: (paneId: string) => PaneRect | undefined
     focusedContent: () => string | null
+    shownContent: () => string | null
     mruHiddenContent: () => string | null
     snapshotFor: (contentId: string) => Snapshot | undefined
   }
@@ -32,8 +34,9 @@ export type WorkbenchApi = {
 
 type Apply = (mutation: (layout: WorkbenchState) => WorkbenchState) => void
 
-function selectorApi(layout: Accessor<WorkbenchState>): WorkbenchApi["selectors"] {
+function selectorApi(layout: Accessor<WorkbenchState>, handing: Accessor<Handing | undefined>): WorkbenchApi["selectors"] {
   const focusedContent = createMemo(() => selectors.focusedContent(layout()))
+  const shownContent = createMemo(() => selectors.shownContent(layout(), handing()))
   return {
     aliveContents: () => selectors.aliveContents(layout()),
     recentContents: () => selectors.recentContents(layout()),
@@ -41,12 +44,13 @@ function selectorApi(layout: Accessor<WorkbenchState>): WorkbenchApi["selectors"
     visiblePanes: () => selectors.visiblePanes(layout()),
     paneRect: (id) => selectors.paneRect(layout(), id),
     focusedContent,
+    shownContent,
     mruHiddenContent: () => selectors.mruHiddenContent(layout()),
     snapshotFor: (id) => selectors.snapshotFor(layout(), id),
   }
 }
 
-export function createLayoutApi(layout: Accessor<WorkbenchState>, apply: Apply): WorkbenchApi {
+export function createLayoutApi(layout: Accessor<WorkbenchState>, apply: Apply, handing: Accessor<Handing | undefined>): WorkbenchApi {
   const show = (s: WorkbenchState, id: string, focus: boolean) => (focus ? reducers.navigation.show(reducers.contents.add(s, id), id) : reducers.contents.add(s, id))
   return {
     contents: {
@@ -63,6 +67,6 @@ export function createLayoutApi(layout: Accessor<WorkbenchState>, apply: Apply):
       resize: (path, ratio) => apply((s) => reducers.split.resize(s, path, ratio)),
     },
     navigation: { show: (contentId) => apply((s) => reducers.navigation.show(s, contentId)) },
-    selectors: selectorApi(layout),
+    selectors: selectorApi(layout, handing),
   }
 }

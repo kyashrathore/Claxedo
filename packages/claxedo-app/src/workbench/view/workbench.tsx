@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { collapsePaneRects, isCollapsedWidth } from "../collapse-projection"
+import { handoverPresence } from "../handover"
 import { createWorkbenchDropTarget } from "../drag/drop-target"
 import { DropTargetOverlay } from "../drag/drop-target-overlay"
 import { workbenchDictionary } from "../i18n"
@@ -14,10 +15,8 @@ import { createContentIndex } from "./content-index"
 import { Divider } from "./divider"
 import { rectStyle } from "./geometry"
 import { useWorkbenchChords } from "./keyboard-chords"
-import { createHandover } from "./handover"
 import { createMountedContents } from "./mount-policy"
 import { PaneChrome } from "./pane-chrome"
-import { createRevealHolds } from "./reveal-holds"
 
 export type WorkbenchProps = {
   readonly renderEmpty?: () => JSX.Element
@@ -52,8 +51,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
   const displayRects = createMemo(() => (collapsed() ? collapsePaneRects(wb.layout()) : trueRects()))
   const index = createContentIndex(wb.layout, displayRects)
   const mounted = createMountedContents(wb.layout, index.assigned)
-  const holds = createRevealHolds()
-  const handover = createHandover({ layout: wb.layout, displayed: index.isDisplayed, revealed: holds.revealed })
+  const handover = handoverPresence(wb.handing, index.isDisplayed)
   const surfaceKeys = createSurfaceKeyRouter(() => wb.layout().focusedPaneId)
   useWorkbenchChords({ wb, keyMap: props.keyMap, surfaceKeys, onCloseFocusedPane: props.onCloseFocusedPane })
   const dropTarget = createWorkbenchDropTarget({
@@ -97,7 +95,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                 paneOf={index.paneOf}
                 presence={handover.presence}
                 heldBy={handover.heldBy}
-                holds={holds}
+                holds={wb.holds}
                 displayRects={displayRects}
                 surfaceKeys={surfaceKeys}
               />

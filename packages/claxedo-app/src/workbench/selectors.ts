@@ -1,3 +1,4 @@
+import type { Handing } from "./handover"
 import type { Pane, PaneRect, Snapshot, WorkbenchState } from "./types"
 import { computePaneRects, leafIdsInOrder } from "./reducers/tree-helpers"
 
@@ -29,6 +30,10 @@ export const selectors = {
   focusedContent(state: WorkbenchState): string | null {
     if (!state.focusedPaneId) return null
     return state.panes.find((p) => p.id === state.focusedPaneId)?.contentId ?? null
+  },
+
+  shownContent(state: WorkbenchState, handing: Handing | undefined): string | null {
+    return handing && handing.paneId === state.focusedPaneId ? handing.outgoing : selectors.focusedContent(state)
   },
 
   mruHiddenContent(state: WorkbenchState): string | null {

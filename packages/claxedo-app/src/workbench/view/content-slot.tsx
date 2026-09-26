@@ -8,8 +8,8 @@ import { PaneContextProvider, type PaneContext } from "../pane-context"
 import { useWorkbench } from "../provider"
 import type { PaneRect } from "../types"
 import { rectStyle } from "./geometry"
-import type { Presence } from "./handover"
-import type { RevealHolds } from "./reveal-holds"
+import type { Presence } from "../handover"
+import type { RevealHolds } from "../reveal-holds"
 
 export function ContentSlot(props: {
   contentId: string

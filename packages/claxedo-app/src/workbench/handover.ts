@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, type Accessor } from "solid-js"
 import { unreachable } from "@/lib/machine"
-import type { WorkbenchState } from "../types"
+import type { WorkbenchState } from "./types"
 
 export type Handover =
   | { readonly kind: "settled" }
@@ -43,18 +43,16 @@ function track(previous: Tracked, layout: WorkbenchState, revealed: number): Tra
   return { assigned, serial, state }
 }
 
-function effective(state: Handover, layout: WorkbenchState): Extract<Handover, { kind: "handing" }> | undefined {
+export type Handing = Extract<Handover, { kind: "handing" }>
+
+function effective(state: Handover, layout: WorkbenchState): Handing | undefined {
   if (state.kind !== "handing") return undefined
   if (!layout.panes.some((pane) => pane.id === state.paneId && pane.contentId === state.incoming)) return undefined
   if (!layout.contentIds.includes(state.outgoing) || layout.panes.some((pane) => pane.contentId === state.outgoing)) return undefined
   return state
 }
 
-export function createHandover(input: {
-  readonly layout: Accessor<WorkbenchState>
-  readonly displayed: (contentId: string) => boolean
-  readonly revealed: (contentId: string) => boolean
-}) {
+export function createHandover(input: { readonly layout: Accessor<WorkbenchState>; readonly revealed: (contentId: string) => boolean }): Accessor<Handing | undefined> {
   const [revealed, setRevealed] = createSignal(0)
   const tracked = createMemo<Tracked>((previous) => track(previous, input.layout(), revealed()), { assigned: new Map(), serial: 0, state: SETTLED })
   const handing = createMemo(() => effective(tracked().state, input.layout()))
@@ -62,14 +60,17 @@ export function createHandover(input: {
     const current = handing()
     if (current && input.revealed(current.incoming)) setRevealed(current.serial)
   })
-  const presence = (contentId: string): Presence => {
-    const current = handing()
-    if (current?.incoming === contentId) return "incoming"
-    if (current?.outgoing === contentId) return "outgoing"
-    return input.displayed(contentId) ? "shown" : "hidden"
-  }
+  return handing
+}
+
+export function handoverPresence(handing: Accessor<Handing | undefined>, displayed: (contentId: string) => boolean) {
   return {
-    presence,
+    presence: (contentId: string): Presence => {
+      const current = handing()
+      if (current?.incoming === contentId) return "incoming"
+      if (current?.outgoing === contentId) return "outgoing"
+      return displayed(contentId) ? "shown" : "hidden"
+    },
     heldBy: (contentId: string) => (handing()?.outgoing === contentId ? handing()?.paneId : undefined),
   }
 }
