@@ -808,7 +808,7 @@ function ExaOutput(props: { output?: string }) {
 
   return (
     <Show when={links().length > 0}>
-      <div data-component="exa-tool-output" class="ui-exa-tool-output">
+      <div class="ui-exa-tool-output">
         <div data-slot="exa-tool-links">
           <For each={links()}>
             {(url) => (
@@ -1238,7 +1238,7 @@ export function UserMessageDisplay(props: {
       >
         <div data-slot="user-message-body" class="ui-user-message-body" data-markdown={renderAsMarkdown() ? "true" : undefined}>
           <div
-            data-slot="user-message-text" class="ui-user-message-text"
+            class="ui-user-message-text"
             data-comments={messageComments().length > 0 ? "true" : undefined}
             data-markdown={renderAsMarkdown() ? "true" : undefined}
           >
@@ -1731,7 +1731,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
 
   return (
     <Show when={text()}>
-      <div data-component="text-part" class="ui-text-part" data-timeline-part-id={part().id}>
+      <div class="ui-text-part" data-timeline-part-id={part().id}>
         <div data-slot="text-part-body">
           <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
         </div>
@@ -2236,7 +2236,7 @@ ToolRegistry.register({
               />
             </TooltipV2>
           </div>
-          <ScrollableOutput slot="bash-scroll" class="ui-bash-scroll" revealed={props.revealed} onRevealedChange={props.onRevealedChange}>
+          <ScrollableOutput class="ui-bash-scroll" revealed={props.revealed} onRevealedChange={props.onRevealedChange}>
             <pre data-slot="bash-pre">
               <code>{text()}</code>
             </pre>

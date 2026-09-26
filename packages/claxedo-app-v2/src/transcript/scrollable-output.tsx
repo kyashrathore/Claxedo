@@ -8,7 +8,6 @@ export function outputOverflows(box: { scrollHeight: number; clientHeight: numbe
 export function ScrollableOutput(props: {
   children: JSX.Element
   component?: "tool-output"
-  slot?: "bash-scroll"
   class?: string
   label?: string
   revealed?: boolean
@@ -45,7 +44,6 @@ export function ScrollableOutput(props: {
       <div
         ref={box}
         data-component={props.component}
-        data-slot={props.slot}
         classList={{ "ui-scrollable-output": true, [props.class ?? ""]: !!props.class }}
         data-scrollable
         data-revealed={revealed() ? "true" : undefined}

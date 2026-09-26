@@ -32,10 +32,9 @@ export function ReviewCodeViewFileHeader(props: {
 function RowControls(props: { readonly file: string; readonly onViewFile?: (file: string) => void }): JSX.Element {
   const t = useTranslator(reviewDictionary)
   return (
-    <div data-slot="session-review-row-controls" class="ui-session-review-row-controls">
+    <div class="ui-session-review-row-controls">
       <Tooltip value={t("review.copy")} placement="top" gutter={4}>
         <button
-          data-slot="session-review-copy-button"
           class="ui-session-review-copy-button"
           type="button"
           aria-label={t("review.copy")}
@@ -54,7 +53,6 @@ function RowControls(props: { readonly file: string; readonly onViewFile?: (file
         {(view) => (
           <Tooltip value={t("review.openFile")} placement="top" gutter={4}>
             <button
-              data-slot="session-review-view-button"
               class="ui-session-review-view-button"
               type="button"
               aria-label={t("review.openFile")}
@@ -88,7 +86,7 @@ export function ReviewFileHeaderContent(props: {
       </Show>
       <span data-slot="session-review-filename">{`‪${basename(file())}‬`}</span>
       <div data-slot="session-review-trigger-actions">
-        <div data-slot="session-review-row-summary" class="ui-session-review-row-summary">
+        <div class="ui-session-review-row-summary">
           <Switch>
             <Match when={props.diff.status === "added"}>
               <span data-slot="session-review-change" data-type="added">

@@ -81,15 +81,13 @@ function readerFolders(root: string): string[] {
   return [
     ...own,
     join(repoRoot, "packages/ui/src"),
-    join(repoRoot, "packages/session-ui/src"),
-    join(repoRoot, "packages/claxedo-app/perf-harness"),
   ]
 }
 
 function writerFolders(root: string): string[] {
   const own = [join(root, "src"), pluginsDirectory(root)]
   if (root !== packageRoot) return [...own, join(root, "writers")]
-  return [...own, join(repoRoot, "packages/ui/src"), join(repoRoot, "packages/session-ui/src")]
+  return [...own, join(repoRoot, "packages/ui/src")]
 }
 
 function listed(folders: readonly string[], extensions: readonly string[]): string[] {

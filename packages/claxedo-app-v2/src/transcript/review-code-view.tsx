@@ -350,7 +350,6 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
     <div
       ref={root}
       data-component="session-review"
-      data-slot="session-review-scroll"
       class={props.class}
       style={{ ...styleVariables, height: "100%", "min-height": "0", overflow: "auto", position: "relative" }}
       onPointerMove={(event) => setHoveredFile(rowOf(event.target))}

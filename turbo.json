@@ -72,11 +72,6 @@
       "outputs": [".artifacts/unit/junit.xml"],
       "passThroughEnv": ["*"]
     },
-    "@opencode-ai/session-ui#test": {
-      "dependsOn": ["^build"],
-      "outputs": [".artifacts/unit/junit.xml"],
-      "passThroughEnv": ["*"]
-    },
     // Two runners, two reports: `junit.xml` from the `bun test` logic/architecture
     // lane, `junit-vitest.xml` from the vitest lane that renders Solid components
     // (`*.vitest.ts(x)`). The vitest lane had no CI wiring at all until

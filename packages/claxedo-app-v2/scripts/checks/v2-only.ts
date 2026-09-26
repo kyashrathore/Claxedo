@@ -4,9 +4,8 @@ import { codeExtensions, listFiles, parseArgs, rel, repoRoot, styleExtensions, u
 import { compilerOptions, createResolver, importsOf, readSource, startLine, type Resolver, type Source } from "./lib/parse"
 import { finish, type Violation } from "./lib/report"
 
-const kitFolders = ["packages/ui", "packages/session-ui", "packages/storybook"]
+const kitFolders = ["packages/ui"]
 const kitDoor = "src/ui"
-const sessionKit = "packages/session-ui"
 const kitStylesheets: Readonly<Record<string, readonly string[]>> = {
   "src/shell/styles/index.css": ["@opencode-ai/ui/styles/tailwind", "@opencode-ai/ui/v2/styles/tailwind.css"],
   "src/styles.ts": ["@opencode-ai/ui/v2/menu-v2.css", "@opencode-ai/ui/v2/tooltip-v2.css"],
@@ -55,9 +54,6 @@ function realPath(path: string): string | undefined {
 }
 
 function outsideDoor(root: string, file: string, specifier: string, target: string | undefined): string | undefined {
-  if (target && under(root, target, "src/legacy")) return `imports the old app (${rel(root, target)}); v2 code imports only v2 code`
-  if (specifier.startsWith("@opencode-ai/session-ui") || (target && under(repoRoot, target, sessionKit)))
-    return `imports ${sessionKit} through ${specifier}; v2's copies of it live in src/transcript`
   if (under(root, file, kitDoor)) return undefined
   if (specifier.startsWith("@opencode-ai/")) return `imports the kit ${specifier} outside src/ui; import it from @/ui`
   const kit = target ? kitFolders.find((folder) => under(repoRoot, target, folder)) : undefined
