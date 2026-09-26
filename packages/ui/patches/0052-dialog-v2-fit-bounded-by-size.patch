@@ -1,16 +1,20 @@
-Subject: dialog-v2: a fitted dialog grows with its content up to its size
+Subject: dialog-v2: a fitted dialog grows with its content up to a maximum
 
 What: `fit` comes after the size rules, so it also applies to `large` and `x-large`
-dialogs, and it bounds the card by its size's height as a maximum instead of
-dropping the bound: a fitted card is as tall as its content, up to 368 px
-(normal), 480 px (large) or 600 px (x-large), and scrolls inside past that.
+dialogs, and it bounds the card by a maximum height instead of dropping the
+bound: a fitted card is as tall as its content, up to its size's height (368 px
+normal, 480 px large, 600 px x-large), and scrolls inside past that. A caller
+sets another maximum through `--dialog-v2-fit-max-height` on the container
+(`containerClass`).
 Why: the size rules came after `fit` with the same specificity, so a
 `fit size="large"` dialog kept the fixed 480 px height and `fit` did nothing
 there, and a fitted dialog's only bound was the viewport. A palette with two
-matching rows drew a 480 px card with a mostly empty area under them.
+matching rows drew a 480 px card with a mostly empty area under them. The
+original generation's list and form dialogs fitted their content inside a
+640x512 box; the long forms keep that 512 px maximum through the property.
 
 diff --git a/src/v2/components/dialog-v2.css b/src/v2/components/dialog-v2.css
-index 79892dfa28..6f4da28228 100644
+index 79892dfa28..53470c889d 100644
 --- a/src/v2/components/dialog-v2.css
 +++ b/src/v2/components/dialog-v2.css
 @@ -155,16 +155,6 @@
@@ -38,7 +42,7 @@ index 79892dfa28..6f4da28228 100644
 +  &[data-fit] {
 +    .ui-dialog-container {
 +      height: auto;
-+      max-height: min(calc(100vh - 16px), 368px);
++      max-height: var(--dialog-v2-fit-max-height, min(calc(100vh - 16px), 368px));
 +
 +      .ui-dialog-content {
 +        min-height: 0;
@@ -47,10 +51,10 @@ index 79892dfa28..6f4da28228 100644
 +  }
 +
 +  &[data-fit][data-size="large"] .ui-dialog-container {
-+    max-height: min(calc(100vh - 32px), 480px);
++    max-height: var(--dialog-v2-fit-max-height, min(calc(100vh - 32px), 480px));
 +  }
 +
 +  &[data-fit][data-size="x-large"] .ui-dialog-container {
-+    max-height: min(calc(100vh - 92px), 600px);
++    max-height: var(--dialog-v2-fit-max-height, min(calc(100vh - 92px), 600px));
 +  }
  }

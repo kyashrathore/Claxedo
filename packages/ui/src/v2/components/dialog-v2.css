@@ -173,7 +173,7 @@
   &[data-fit] {
     .ui-dialog-container {
       height: auto;
-      max-height: min(calc(100vh - 16px), 368px);
+      max-height: var(--dialog-v2-fit-max-height, min(calc(100vh - 16px), 368px));
 
       .ui-dialog-content {
         min-height: 0;
@@ -182,10 +182,10 @@
   }
 
   &[data-fit][data-size="large"] .ui-dialog-container {
-    max-height: min(calc(100vh - 32px), 480px);
+    max-height: var(--dialog-v2-fit-max-height, min(calc(100vh - 32px), 480px));
   }
 
   &[data-fit][data-size="x-large"] .ui-dialog-container {
-    max-height: min(calc(100vh - 92px), 600px);
+    max-height: var(--dialog-v2-fit-max-height, min(calc(100vh - 92px), 600px));
   }
 }

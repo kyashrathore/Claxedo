@@ -7,7 +7,7 @@ export function chooseRecoveryModel(dialog: ReturnType<typeof useDialog>, title:
   return new Promise((resolve) => {
     dialog.show(
       () => (
-        <Dialog size="large" fit>
+        <Dialog size="large" fit containerClass="long-dialog-container">
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
           </DialogHeader>

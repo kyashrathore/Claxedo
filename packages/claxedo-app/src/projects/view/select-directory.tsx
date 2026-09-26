@@ -41,7 +41,7 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
   }
 
   return (
-    <Dialog size="large" fit class="theme-directory-picker overlay-palette">
+    <Dialog size="large" fit class="theme-directory-picker overlay-palette" containerClass="long-dialog-container">
       <DialogHeader>
         <DialogTitle>{t("projects.directory.title")}</DialogTitle>
       </DialogHeader>
