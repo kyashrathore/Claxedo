@@ -26,8 +26,8 @@ const baseline: readonly Baselined[] = [
   { file: "src/transcript/message-part.css", matcher: "will-change: opacity", owner: "transcript", reason: "always-on hint for hover-revealed message actions; the opacity transition alone suffices" },
   { file: "src/session/view/timeline/markdown-viewer.css", matcher: "will-change: transform", owner: "session", reason: "always-on hint on the viewer's centered placeholder; nothing animates it" },
   { file: "../ui/src/components/icon-button.css", matcher: "animation: stop-pulse", owner: "ui", reason: "the stop button's pulse while a turn runs; the button is mounted only then" },
-  { file: "../ui/src/components/text-shimmer.css", matcher: "animation-iteration-count: infinite", owner: "ui", reason: "the swept copy sweeps while mounted, and is mounted only while the shimmer is active" },
-  { file: "../ui/src/components/text-shimmer.css", matcher: "will-change: background-position", owner: "ui", reason: "the swept copy is mounted only while the shimmer is active" },
+  { file: "../ui/src/v2/components/text-shimmer-v2.css", matcher: "animation-iteration-count: infinite", owner: "ui", reason: "the swept copy sweeps while mounted, and is mounted only while the shimmer is active" },
+  { file: "../ui/src/v2/components/text-shimmer-v2.css", matcher: "will-change: background-position", owner: "ui", reason: "the swept copy is mounted only while the shimmer is active" },
   { file: "src/terminal/view/terminal-status.tsx", matcher: "space-y-3", owner: "terminal", reason: "failed-start message stack; use gap" },
   { file: "src/browser/view/console.tsx", matcher: "divide-y", owner: "browser", reason: "console log rows; use gap or a row border" },
 ]

@@ -28,6 +28,5 @@
 @import "@opencode-ai/ui/tag.css" layer(components);
 @import "@opencode-ai/ui/text-field.css" layer(components);
 @import "@opencode-ai/ui/text-reveal.css" layer(components);
-@import "@opencode-ai/ui/text-shimmer.css" layer(components);
 @import "@opencode-ai/ui/text-strikethrough.css" layer(components);
 @import "@opencode-ai/ui/tooltip.css" layer(components);
