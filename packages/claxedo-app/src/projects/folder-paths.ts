@@ -1,4 +1,4 @@
-import { getFilename } from "@/ui"
+import { getFilename } from "@/ui/utils"
 
 export type FolderRow = {
   absolute: string

@@ -1,4 +1,5 @@
-import { useMarked, transcriptMarkdownExtensions, useDialog, ImagePreview, checksum, reportUiError, Icon, IconButton, Tooltip } from "@/ui"
+import { useMarked, transcriptMarkdownExtensions, useDialog, ImagePreview, Icon, IconButton, Tooltip } from "@/ui"
+import { checksum, reportUiError } from "@/ui/utils"
 import { codeTheme } from "./code-theme"
 import { useTranscriptI18n } from "./i18n"
 import { useOptionalData } from "./data"

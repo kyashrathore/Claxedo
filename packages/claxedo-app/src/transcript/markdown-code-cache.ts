@@ -1,4 +1,4 @@
-import { checksum } from "@/ui"
+import { checksum } from "@/ui/utils"
 import type { MarkdownToken } from "./markdown-worker-protocol"
 
 export type CodeHighlight = {

@@ -1,4 +1,5 @@
-import { useFilteredList, getDirectory, getFilename, Button, FileIcon, Icon } from "@/ui"
+import { useFilteredList, Button, FileIcon, Icon } from "@/ui"
+import { getDirectory, getFilename } from "@/ui/utils"
 import { createSignal, For, onMount, Show, splitProps, type JSX } from "solid-js"
 import { installLineCommentStyles } from "./line-comment-styles"
 import { useTranscriptI18n } from "./i18n"

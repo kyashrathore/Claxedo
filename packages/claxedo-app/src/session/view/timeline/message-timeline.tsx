@@ -34,7 +34,8 @@ import {
   WorkGroup,
 } from "@/transcript"
 import { isPhoneWidth } from "@/lib/viewport"
-import { ClaxedoIcon as Icon, FileIcon, ScrollView, resolveTranscriptTypography, transcriptTypographyStyle, showToast, Binary, getFilename } from "@/ui"
+import { ClaxedoIcon as Icon, FileIcon, ScrollView, resolveTranscriptTypography, transcriptTypographyStyle, showToast } from "@/ui"
+import { Binary, getFilename } from "@/ui/utils"
 import { ClaxedoSessionRetry } from "./claxedo-session-retry"
 import { TimelineErrorPresentation } from "./first-turn-recovery-card"
 import { TimelineQueuedMessages } from "./timeline-queued-messages"

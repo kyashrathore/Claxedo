@@ -32,7 +32,8 @@ import type {
   AgentUserMessage,
 } from "@claxedo/agent-runtime-contract"
 import { useData } from "./data"
-import { useFileComponent, useDialog, Accordion, StickyAccordionHeader, Collapsible, FileIcon, Icon, Checkbox, DiffChanges, ImagePreview, getDirectory as _getDirectory, getFilename, checksum, Tooltip, IconButton, Button, TextShimmer, type IconProps } from "@/ui"
+import { useFileComponent, useDialog, Accordion, StickyAccordionHeader, Collapsible, FileIcon, Icon, Checkbox, DiffChanges, ImagePreview, Tooltip, IconButton, Button, TextShimmer, type IconProps } from "@/ui"
+import { getDirectory as _getDirectory, getFilename, checksum } from "@/ui/utils"
 import { type TranscriptI18n, useTranscriptI18n } from "./i18n"
 import { BasicTool, GenericTool, shellExitCode, ToolExitCode } from "./basic-tool"
 import { ScrollableOutput } from "./scrollable-output"

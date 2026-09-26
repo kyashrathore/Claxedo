@@ -1,4 +1,4 @@
-import { checksum } from "@/ui"
+import { checksum } from "@/ui/utils"
 import type { ModelChoice } from "@/server"
 import { harnessSelectionKey, isHarnessSelection, type HarnessSelection } from "@/lib/harness-selection"
 import { isCatalogHarnessId } from "@/lib/harness-selection"

@@ -1,5 +1,5 @@
 import { bundledLanguagesInfo } from "shiki"
-import { getFilename } from "@/ui"
+import { getFilename } from "@/ui/utils"
 import type { AgentFilePart } from "@claxedo/agent-runtime-contract"
 
 export function attached(part: AgentFilePart) {

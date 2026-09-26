@@ -1,4 +1,4 @@
-import { getFilename } from "@/ui"
+import { getFilename } from "@/ui/utils"
 import type { Server } from "@/server"
 import { cleanInput, joinPath, normalizeDriveRoot, parentOf, rootOf, trimTrailing } from "./folder-paths"
 
