@@ -57,14 +57,6 @@ export function harnessSelectionValue(input: HarnessSelection) {
   return input.kind === "native" ? input.harnessId : input.connectionId
 }
 
-export function harnessSelectionQuery(input: HarnessSelection):
-  | { nativeHarness: NativeHarnessId }
-  | { connectionId: string } {
-  return input.kind === "native"
-    ? { nativeHarness: input.harnessId }
-    : { connectionId: input.connectionId }
-}
-
 export function harnessSelectionOf(id: string): HarnessSelection {
   const native = NATIVE_HARNESS_IDS.find((candidate): candidate is NativeHarnessId => candidate === id)
   return native ? nativeHarness(native) : connectionHarness(id)

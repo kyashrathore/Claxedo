@@ -41,7 +41,7 @@ export function isNativeSdkHarness(type: HarnessType) {
 export function harnessModelPickerProvider(harness: HarnessType, item: { id: string; providerId?: string }) {
   const harnessId = item.providerId ?? harnessSelectionId(harness)
   const label = harnessDisplayLabel(harnessId)
-  if (!isNativeHarness(harness, "pi")) return { id: harnessId, name: label }
+  if (!selectsNativeHarness(harness, "pi")) return { id: harnessId, name: label }
   const slash = item.id.indexOf("/")
   const provider = slash > 0 ? item.id.slice(0, slash) : harnessId
   return {
@@ -54,7 +54,7 @@ export function harnessModelPickerProvider(harness: HarnessType, item: { id: str
   }
 }
 
-export function isNativeHarness(type: HarnessType, id: NativeHarnessId): boolean {
+export function selectsNativeHarness(type: HarnessType, id: NativeHarnessId): boolean {
   return type.kind === "native" && type.harnessId === id
 }
 

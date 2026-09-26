@@ -14,7 +14,7 @@ function harnessReferenceOf(selection: HarnessSelection): HarnessReference {
     : { id: selection.connectionId, access: "connection" }
 }
 
-function harnessSelectionOf(reference: HarnessReference): HarnessSelection | undefined {
+function harnessSelectionFromReference(reference: HarnessReference): HarnessSelection | undefined {
   if (reference.access === "connection") return connectionHarness(reference.id)
   const native = NATIVE_HARNESS_IDS.find((id) => id === reference.id)
   return native ? nativeHarness(native) : undefined
@@ -22,7 +22,7 @@ function harnessSelectionOf(reference: HarnessReference): HarnessSelection | und
 
 function choiceOf(configuration: ConfigurationDraft): DraftHarnessChoice {
   return {
-    harness: configuration.harness ? harnessSelectionOf(configuration.harness) : undefined,
+    harness: configuration.harness ? harnessSelectionFromReference(configuration.harness) : undefined,
     model: configuration.model ? { providerId: configuration.model.providerID, modelId: configuration.model.modelID } : undefined,
     effort: configuration.effort ?? undefined,
   }
