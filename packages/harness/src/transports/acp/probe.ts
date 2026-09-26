@@ -13,10 +13,14 @@ import type { AgentAgent } from "@claxedo/agent-runtime-contract"
 import { sessionMcpServers } from "../../contract"
 
 type Commands = Extract<SessionNotification["update"], { sessionUpdate: "available_commands_update" }>["availableCommands"]
+type ProbeResult = { options: SessionConfigOption[]; commands: Commands; agents: AgentAgent[] }
+
+const CACHE_MS = 30_000
+const MAX_CACHE_ENTRIES = 64
 
 export class AcpDraftProbes {
   private readonly peers = new Set<AcpPeer>()
-  private readonly cache = new Map<string, Promise<{ options: SessionConfigOption[]; commands: Commands; agents: AgentAgent[] }>>()
+  private readonly cache = new Map<string, { result: Promise<ProbeResult>; expiresAt: number }>()
   private disposed = false
 
   constructor(private readonly services: HarnessServices, private readonly connection: AcpConnectionOptions,
@@ -36,13 +40,20 @@ export class AcpDraftProbes {
 
   private result(draft: DraftLaunch, mode: "probe" | "peek", needCommands: boolean, needAgents: boolean) {
     if (this.disposed) throw new AcpTransportError("connection", "ACP transport disposed")
-    const key = JSON.stringify([draft, needCommands, needAgents])
+    const key = JSON.stringify([draft.workspaceId, draft.directory, draft.locality, draft.owner,
+      draft.config.harness, draft.model, draft.projection.generation, draft.credentials.leaseGeneration,
+      needCommands, needAgents])
+    const now = this.services.clock.now()
+    for (const [cachedKey, value] of this.cache) if (value.expiresAt <= now) this.cache.delete(cachedKey)
     const cached = this.cache.get(key)
-    if (cached) return cached
+    if (cached) return cached.result
     if (mode === "peek") return Promise.resolve({ options: [], commands: [], agents: [] })
     const probe = this.run(draft, needCommands, needAgents)
-    this.cache.set(key, probe)
-    void probe.then(undefined, () => this.cache.delete(key))
+    if (this.cache.size >= MAX_CACHE_ENTRIES) this.cache.delete(this.cache.keys().next().value!)
+    this.cache.set(key, { result: probe, expiresAt: now + CACHE_MS })
+    void probe.then(undefined, () => {
+      if (this.cache.get(key)?.result === probe) this.cache.delete(key)
+    })
     return probe
   }
 

@@ -27,7 +27,8 @@ export function piUiEvent(message: PiMessage): RoutedEvent | undefined {
   }
 }
 
-export async function answerPiDialog(message: PiMessage, rpc: PiRpc, broker: TurnBroker, sessionId: string, now: number): Promise<void> {
+export async function answerPiDialog(message: PiMessage, rpc: PiRpc, broker: TurnBroker, sessionId: string, now: number,
+  signal: AbortSignal): Promise<void> {
   if (message.type !== "extension_ui_request" || typeof message.method !== "string" || !dialogs.includes(message.method)) return
   if (typeof message.id !== "string") throw new Error("Pi extension dialog lacks an id")
   const choices = Array.isArray(message.options) ? message.options.filter((item): item is string => typeof item === "string") : undefined
@@ -41,7 +42,7 @@ export async function answerPiDialog(message: PiMessage, rpc: PiRpc, broker: Tur
       options: options?.map((label) => ({ label, description: "" })) ?? [],
       custom: message.method === "input" || message.method === "editor",
     }],
-  })))
+  }), { signal }))
   if (!answers) {
     rpc.send({ type: "extension_ui_response", id: message.id, cancelled: true })
     return

@@ -27,6 +27,29 @@ export function acpReceiver(harnessId: string, session: HarnessSession, queue: A
 export async function acpUpdate(entry: AcpEntry | undefined, notification: SessionNotification,
   observe: (update: SessionNotification["update"]) => Promise<void>): Promise<void> {
   if (!entry) return
+  if (entry.pendingUpdates) {
+    entry.pendingUpdates.push(notification)
+    return
+  }
+  await deliverAcpUpdate(entry, notification, observe)
+}
+
+export async function acpFlushUpdates(entry: AcpEntry,
+  observe: (update: SessionNotification["update"]) => Promise<void>): Promise<void> {
+  const pending = entry.pendingUpdates
+  if (!pending) return
+  while (pending.length) await deliverAcpUpdate(entry, pending.shift()!, observe)
+  entry.pendingUpdates = undefined
+}
+
+async function deliverAcpUpdate(entry: AcpEntry, notification: SessionNotification,
+  observe: (update: SessionNotification["update"]) => Promise<void>): Promise<void> {
+  if (notification.sessionId !== entry.session.binding.upstreamSessionId) {
+    await observe(notification.update)
+    entry.quiet?.touch()
+    entry.receive?.(notification)
+    return
+  }
   if (notification.update.sessionUpdate === "available_commands_update") {
     entry.commands = notification.update.availableCommands.map((item) => ({ name: item.name, description: item.description }))
   }
