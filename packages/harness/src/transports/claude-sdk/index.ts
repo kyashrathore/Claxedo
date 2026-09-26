@@ -6,14 +6,15 @@ import type {
   RoutedEvent, SessionBroker, StartInput, TransportCapabilities, TransportConfigUpdate,
   TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
-import { attachedSessionEntry, configOptionsPreview, mergeStartInput } from "../../contract"
+import { applySessionConfigUpdate, attachedSessionEntry, configOptionsPreview, mergeStartInput } from "../../contract"
 import { claudePrompt } from "./attachments"
 import { claudeBinding } from "./credentials"
 import { TransportError } from "../../contract/errors"
 import { ClaudeGoals } from "./goals"
 import type { ClaudeSdkOptions } from "./launch-context"
 import { ClaudeModelCatalog, modelOptions, requiredClaudeEffort } from "./models"
-import { modes } from "./permissions"
+import { modes, requireClaudeMode } from "./permissions"
+import { claudeStreamEndedWithoutResult } from "./errors"
 import { ClaudeProcess } from "./process"
 import { ClaudeQueryLauncher } from "./query-options"
 import { observeClaudeSessionMessage } from "./session-events"
@@ -127,7 +128,7 @@ export class ClaudeSdkTransport implements HarnessTransport {
       if (result) {
         for (const event of await translateClaude(result, runtime, tasks, broker)) yield event
       }
-      if (!result && !abort.signal.aborted) throw new TransportError("claude", "protocol", "Claude SDK stream ended without a result")
+      if (!result && !abort.signal.aborted) throw claudeStreamEndedWithoutResult()
       settled = true
     } catch (error) {
       if (!aborted() || !(error instanceof AbortError)) throw error
@@ -159,35 +160,28 @@ export class ClaudeSdkTransport implements HarnessTransport {
   }
 
   readonly config = {
-    read: async (session: HarnessSession) => this.entry(session).input.config,
+    read: async (session: HarnessSession) => this.entry(session).broker.config(),
     update: async (session: HarnessSession, update: import("@claxedo/agent-runtime-contract").SessionConfigUpdate) => {
       const entry = this.entry(session)
-      const { permissionMode, model, permissionState, ...rest } = { ...entry.input.config, ...update }
-      const config: StartInput["config"] = { ...rest,
-        ...(permissionMode === null ? {} : { permissionMode }),
-        ...(model === null ? {} : { model }),
-        ...(permissionState === null ? {} : { permissionState }),
-      }
-      entry.input = { ...entry.input, config }
-      return entry.input.config
+      if (update.permissionMode) requireClaudeMode(update.permissionMode)
+      return applySessionConfigUpdate(entry.broker.config(), update)
     },
     options: async (target: import("../../contract").ConfigPreviewTarget, mode: "probe" | "peek") => {
       const input = "session" in target ? this.entry(target.session).input : target.draft
-      const requested = "session" in target ? target.model : undefined
+      const current = "session" in target ? target.model?.modelID ?? this.entry(target.session).broker.config().model?.modelID
+        : target.draft.config.model?.modelID
       const models = mode === "probe" ? await this.models.load(input, "session" in target ? target.session.binding.sessionId : undefined)
         : this.models.peek(input) ?? []
-      return configOptionsPreview(modelOptions(models, requested?.modelID ?? input.model?.modelID ?? "default"))
+      return configOptionsPreview(modelOptions(models, current ?? "default"))
     },
     permissionModes: async (target: import("../../contract").ConfigTarget) => {
-      const selected = "session" in target ? this.entry(target.session).input.config.permissionMode : target.draft.config.permissionMode
+      const selected = "session" in target ? this.entry(target.session).broker.config().permissionMode : target.draft.config.permissionMode
       return { modes, currentModeId: selected ?? "default", appliesFrom: "next-turn" as const }
     },
     setPermissionMode: async (session: HarnessSession, modeId: string) => {
-      const state = await this.config.permissionModes({ session })
-      if (!state.modes.some((mode) => mode.id === modeId)) throw new TransportError("claude", "configuration", `Unknown Claude permission mode ${modeId}`)
-      const entry = this.entry(session)
-      entry.input = { ...entry.input, config: { ...entry.input.config, permissionMode: modeId } }
-      return { ...state, currentModeId: modeId }
+      this.entry(session)
+      requireClaudeMode(modeId)
+      return { modes, currentModeId: modeId, appliesFrom: "next-turn" as const }
     },
   }
 
@@ -209,7 +203,7 @@ export class ClaudeSdkTransport implements HarnessTransport {
     const entry = this.entry(session)
     if (this.goalRuntime.turnId(entry.input.sessionId) === turn.turnId) {
       const settlement = await this.goalRuntime.cancel(entry.input.sessionId)
-      if (settlement?.state === "cancelled") return { execution: "terminal" as const, cleanup: "owned" as const }
+      if (settlement?.state === "cancelled" || settlement?.state === "completed") return { execution: "terminal" as const, cleanup: "owned" as const }
       return { execution: "unknown" as const, cleanup: "unknown" as const,
         ...(settlement?.state === "failed" ? { error: { code: "internal_error" as const, message: settlement.error } } : {}) }
     }

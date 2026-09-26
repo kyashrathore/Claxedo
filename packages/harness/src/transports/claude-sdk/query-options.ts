@@ -6,7 +6,7 @@ import { permissionOptions } from "./permissions"
 import { ClaudeProcess } from "./process"
 import { askClaudePermission } from "./requests"
 import type { claudeTranslator } from "./translate"
-import { sessionMcpServers } from "../../contract"
+import { connectionGrantKeys, sessionMcpServers } from "../../contract"
 
 const protocolClaudePermissionMap = { deny: "deny" } as const
 
@@ -43,11 +43,11 @@ export class ClaudeQueryLauncher {
 
   async launch(spec: Launch): Promise<Query> {
     const { input, session, broker, turnBroker, abort, processes } = spec
-    const current = { ...input, config: { ...broker.config(), permissionMode: input.config.permissionMode } }
+    const current = { ...input, config: broker.config() }
     const context = await claudeLaunchContext(input, this.options, input.sessionId)
     return this.runQuery({ prompt: spec.prompt, options: {
       ...context,
-      ...permissionOptions(current.config),
+      ...permissionOptions(current.config, connectionGrantKeys(current.config.permissionState, session.binding.connectionId)),
       ...(session.binding.upstreamSessionId.startsWith("claude-sdk:") ? {} : { resume: session.binding.upstreamSessionId }),
       mcpServers: mcpServers(input, this.services), forwardSubagentText: true, abortController: abort,
       ...(spec.clear ? { tools: [], maxTurns: 1 } : { sessionStore: goalSessionStore(broker, abort.signal, {

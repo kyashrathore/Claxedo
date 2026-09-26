@@ -1,7 +1,8 @@
-import type { SDKActiveGoalMessage, SDKMessage } from "@anthropic-ai/claude-agent-sdk"
+import { AbortError, type SDKActiveGoalMessage, type SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { AgentGoalMutationResult } from "@claxedo/agent-runtime-contract"
 import type { HarnessSession, ProviderTurnSettlement, RoutedEvent, SessionBroker, StartInput, TurnBroker, TurnRef } from "../../contract"
 import { nativeGoalPrompt } from "../../contract"
+import { claudeStreamEndedWithoutResult } from "./errors"
 import { ClaudeProcess } from "./process"
 import { ClaudeQueryLauncher } from "./query-options"
 import { observeClaudeSessionMessage } from "./session-events"
@@ -70,6 +71,9 @@ export class ClaudeGoals {
     const assistantMessageId = turn?.assistantMessageId ?? entry.session.binding.sessionId
     const { runtime, tasks } = claudeTranslator(assistantMessageId)
     const processes = new Set<ClaudeProcess>()
+    const onAbort = () => abort.abort()
+    if (turnBroker?.signal.aborted) onAbort()
+    else turnBroker?.signal.addEventListener("abort", onAbort, { once: true })
     const stream = await this.launcher.launch({ session: entry.session, input: entry.input, broker, turnBroker, prompt, abort, processes, runtime,
       assistantMessageId, ...(turn ? { turnId: turn.turnId } : {}), clear })
     let sawResult = false
@@ -87,8 +91,11 @@ export class ClaudeGoals {
         }
         if (turnBroker) for (const event of await translateClaude(current, runtime, tasks, turnBroker)) yield event
       }
-      if (!sawResult && !abort.signal.aborted) throw new Error("Claude Goal stream ended without a result")
+      if (!sawResult && !abort.signal.aborted) throw claudeStreamEndedWithoutResult()
+    } catch (error) {
+      if (!abort.signal.aborted || !(error instanceof AbortError)) throw error
     } finally {
+      turnBroker?.signal.removeEventListener("abort", onAbort)
       stream.close()
       await Promise.all([...processes].map((child) => child.retire({ at: Date.now() + 5_000, signal: new AbortController().signal })))
     }

@@ -3,12 +3,14 @@ import path from "node:path"
 import type { SdkPluginConfig } from "@anthropic-ai/claude-agent-sdk"
 import { lstatIfExists } from "@claxedo/helpers/fs"
 import type { PluginProjection } from "../../contract"
-import { CLAUDE_COMMAND_DENY_RULES } from "../../broker/permission-ceilings"
 import { mirrorConfigTree } from "../config-mirror"
 
 const SETTINGS = ["settings.json", "settings.local.json", "cowork_settings.json"] as const
 const MIRRORED = ["CLAUDE.md", "memory", "agents", "commands", "skills", "plugins", "projects", "todos", "history.jsonl"] as const
 const CLAUDE_WRITTEN = ["projects", "todos", "history.jsonl"] as const
+
+export const CLAUDE_COMMAND_DENY_RULES = ["Bash(rm -rf /*)", "Bash(rm -rf ~*)", "Bash(git push --force*)", "Bash(curl *| sh)",
+  "Bash(curl *| bash)", "Bash(wget *| sh)", "Bash(chmod -R 777*)"] as const
 
 export function claudePermissionSettings(allow: string[], ask: string[], deny: string[]) {
   return { permissions: { allow, ask, deny: [...deny, ...CLAUDE_COMMAND_DENY_RULES] } }

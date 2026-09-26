@@ -15,6 +15,7 @@ export type ConformanceBackend = {
   directory: string
   harness: StartInput["config"]["harness"]
   model: PromptModel
+  alternateModel?: PromptModel
   credentials: ResolvedCredentials
   owner: TurnActor
   origin?: TurnOrigin
@@ -172,13 +173,18 @@ export function runConformance(input: ConformanceInput): void {
       const context = await setup(input)
       try {
         if (!context.transport.config) return
+        const alternate = context.backend.alternateModel
         const previews = [
           await context.transport.config.options({ session: context.session }, "probe"),
-          await context.transport.config.options({ session: context.session, model: context.backend.model }, "probe"),
+          await context.transport.config.options({ session: context.session, model: alternate ?? context.backend.model }, "probe"),
         ]
+        if (alternate) {
+          expect(previews[0]?.resolvedModel?.id).toBe(context.backend.model.modelID)
+          expect(previews[1]?.resolvedModel?.id).toBe(alternate.modelID)
+        }
         for (const preview of previews) {
           expect(preview.options).toBeArray()
-          if (!preview.resolvedModel) continue
+          if (!preview.resolvedModel) { expect(alternate).toBeUndefined(); continue }
           const select = preview.options.find((option) => option.type === "select" && (option.category === "model" || option.id === "model"))
           expect(select?.currentValue).toBe(preview.resolvedModel.id)
           expect(select?.selectOptions?.find((choice) => choice.id === preview.resolvedModel?.id)?.name).toBe(preview.resolvedModel.name)
