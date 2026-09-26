@@ -92,11 +92,11 @@ function drain(state: WriteQueueState): void {
   state.writing = true
   state.input.write(chunk, () => {
     state.writing = false
-    if (state.live.items.length > 0) schedule(state)
+    if (state.live.items.length > 0) scheduleDrain(state)
   })
 }
 
-function schedule(state: WriteQueueState): void {
+function scheduleDrain(state: WriteQueueState): void {
   if (state.overloaded || state.frame || state.writing) return
   state.frame = requestAnimationFrame(() => drain(state))
 }
@@ -106,7 +106,7 @@ function cancelFrame(state: WriteQueueState): void {
   state.frame = 0
 }
 
-function overload(state: WriteQueueState, dropped: number): void {
+function markOverloaded(state: WriteQueueState, dropped: number): void {
   state.overloaded = true
   state.input.onOverload(dropped)
 }
@@ -115,10 +115,10 @@ function enqueueLive(state: WriteQueueState, data: string): void {
   if (state.overloaded) return
   push(state.live, data, MAX_STREAM_BYTES)
   if (state.live.dropped >= MAX_DROPPED_CHUNKS) {
-    overload(state, state.live.dropped)
+    markOverloaded(state, state.live.dropped)
     return
   }
-  schedule(state)
+  scheduleDrain(state)
 }
 
 function enqueue(state: WriteQueueState, data: string): void {
@@ -127,7 +127,7 @@ function enqueue(state: WriteQueueState, data: string): void {
     return
   }
   push(state.pending, data, MAX_PENDING_BYTES)
-  if (state.pending.dropped >= MAX_DROPPED_CHUNKS) overload(state, state.pending.dropped)
+  if (state.pending.dropped >= MAX_DROPPED_CHUNKS) markOverloaded(state, state.pending.dropped)
 }
 
 function beginRestore(state: WriteQueueState): void {
@@ -144,7 +144,7 @@ function flushPending(state: WriteQueueState): void {
   state.pending = emptyStream()
 }
 
-function dispose(state: WriteQueueState): void {
+function disposeQueue(state: WriteQueueState): void {
   cancelFrame(state)
   state.overloaded = true
   state.live = emptyStream()
@@ -165,6 +165,6 @@ export function createWriteQueue(input: WriteQueueInput): WriteQueue {
     beginRestore: () => beginRestore(state),
     push: (data) => enqueue(state, data),
     flushPending: () => flushPending(state),
-    dispose: () => dispose(state),
+    dispose: () => disposeQueue(state),
   }
 }

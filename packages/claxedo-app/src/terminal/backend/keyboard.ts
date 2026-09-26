@@ -18,7 +18,7 @@ function chordWrite(event: KeyboardEvent, options: KeyboardOptions, data: string
   return false
 }
 
-function split(event: KeyboardEvent, run: (() => void) | undefined): false {
+function splitChord(event: KeyboardEvent, run: (() => void) | undefined): false {
   if (event.type === "keydown" && run) {
     event.preventDefault()
     event.stopPropagation()
@@ -46,7 +46,7 @@ function handleKey(event: KeyboardEvent, options: KeyboardOptions): boolean {
     return chordWrite(event, options, "\x03")
   }
   if (key === "d" && event.metaKey && !event.ctrlKey && !event.altKey) {
-    return split(event, event.shiftKey ? options.onSplitHorizontal : options.onSplitVertical)
+    return splitChord(event, event.shiftKey ? options.onSplitHorizontal : options.onSplitVertical)
   }
   return true
 }

@@ -1,6 +1,6 @@
 import type { Terminal as XTerm } from "@xterm/xterm"
 import { objectProperty } from "./reflect"
-import { scrollToBottom } from "./renderer"
+import { scrollViewportToBottom } from "./renderer"
 import type { TerminalBackend } from "./types"
 
 type AppearanceSurface = Pick<
@@ -39,7 +39,7 @@ export function viewportSurface(xterm: XTerm): ViewportSurface {
     getSelection: () => xterm.getSelection(),
     hasSelection: () => xterm.hasSelection(),
     scrollToLine: (line) => xterm.scrollToLine(line),
-    scrollToBottom: () => scrollToBottom(xterm),
+    scrollToBottom: () => scrollViewportToBottom(xterm),
     getViewportY: () => xterm.buffer.active.viewportY,
     isAtBottom: () => xterm.buffer.active.viewportY >= xterm.buffer.active.baseY,
     resize: (cols, rows) => xterm.resize(cols, rows),

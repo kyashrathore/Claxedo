@@ -54,7 +54,7 @@ function emit(state: AttachState, event: TerminalConnectionEvent): void {
   state.input.connection.send(event)
 }
 
-function overload(state: AttachState): void {
+function failOverloaded(state: AttachState): void {
   state.stream?.close()
   const error: AppError = { class: "internal", message: "Terminal output overloaded the write queue", retryable: false }
   emit(state, { type: "failed", failure: "overload", error })
@@ -128,7 +128,7 @@ function handleClose(state: AttachState, close: TerminalStreamClose): void {
   recover(state, close)
 }
 
-function opened(state: AttachState): void {
+function markOpened(state: AttachState): void {
   if (state.disposed) return
   emit(state, { type: "opened" })
   state.resize.onOpen()
@@ -143,7 +143,7 @@ async function connectStream(state: AttachState): Promise<void> {
       placementId,
       terminalId,
       cursor: state.cursor,
-      onOpen: () => opened(state),
+      onOpen: () => markOpened(state),
       onFrame: (frame) => receiveFrame(state, frame),
       onClose: (close) => handleClose(state, close),
     })
@@ -159,7 +159,7 @@ function createAttachState(input: AttachInput): AttachState {
     input,
     queue: createWriteQueue({
       write: (chunk, done) => input.backend.write(chunk, done),
-      onOverload: () => overload(state),
+      onOverload: () => failOverloaded(state),
     }),
     resize: createResizePublisher({
       backend: input.backend,

@@ -33,7 +33,7 @@ function clearScheduled(state: CoordinatorState): void {
   state.frame = undefined
 }
 
-function settle(state: CoordinatorState): void {
+function settleSize(state: CoordinatorState): void {
   clearScheduled(state)
   if (state.disposed) return
   if (state.suspended) {
@@ -50,11 +50,11 @@ function settle(state: CoordinatorState): void {
   state.deps.notify(next.cols, next.rows)
 }
 
-function schedule(state: CoordinatorState): void {
+function scheduleSettle(state: CoordinatorState): void {
   if (state.disposed) return
   if (state.timer !== undefined) window.clearTimeout(state.timer)
-  state.timer = window.setTimeout(() => settle(state), SETTLE_MS)
-  state.frame ??= requestAnimationFrame(() => settle(state))
+  state.timer = window.setTimeout(() => settleSize(state), SETTLE_MS)
+  state.frame ??= requestAnimationFrame(() => settleSize(state))
 }
 
 export function createResizeCoordinator(deps: ResizeCoordinatorDeps): ResizeCoordinator {
@@ -71,10 +71,10 @@ export function createResizeCoordinator(deps: ResizeCoordinatorDeps): ResizeCoor
     request() {
       if (state.disposed) return
       if (state.suspended) state.pendingWhileSuspended = true
-      else schedule(state)
+      else scheduleSettle(state)
     },
     flush() {
-      if (!state.disposed) settle(state)
+      if (!state.disposed) settleSize(state)
     },
     suspend() {
       state.suspended = true
@@ -85,7 +85,7 @@ export function createResizeCoordinator(deps: ResizeCoordinatorDeps): ResizeCoor
       state.suspended = false
       if (!state.pendingWhileSuspended) return
       state.pendingWhileSuspended = false
-      schedule(state)
+      scheduleSettle(state)
     },
     dispose() {
       state.disposed = true

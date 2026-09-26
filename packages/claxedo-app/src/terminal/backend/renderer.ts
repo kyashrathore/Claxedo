@@ -26,7 +26,7 @@ export type TerminalInstanceOptions = {
   readonly onUrlClick: (event: MouseEvent, url: string) => void
 }
 
-export function scrollToBottom(xterm: XTerm): void {
+export function scrollViewportToBottom(xterm: XTerm): void {
   const viewport = xterm.element?.querySelector(".xterm-viewport")
   if (!viewport) {
     xterm.scrollToBottom()
