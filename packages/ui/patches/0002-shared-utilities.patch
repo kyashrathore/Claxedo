@@ -1,0 +1,436 @@
+Subject: shared utilities the app imports through the kit
+
+What: src/utils (binary, encode, path, record, report-error, select-item, text),
+createSimpleContext's `useOptional` and structural `ready` read, the i18n fallback
+typed without casts, and useFilteredList's string search and Enter fallback.
+Why: the app reaches these through `@opencode-ai/ui/utils/*`, `context` and `hooks`.
+useFilteredList: `initialActive` is captured while the list is still empty, so Enter
+pressed before the async filter settled selected nothing; it now falls back to the
+first row, as `reset` does.
+
+diff --git a/src/context/helper.tsx b/src/context/helper.tsx
+index 172fed460ec63fc373e616fcbef40d8cb21be5ee..e9327951fb435b20ed545bf804471cb279145bdd 100644
+--- a/src/context/helper.tsx
++++ b/src/context/helper.tsx
+@@ -1,4 +1,16 @@
+-import { createContext, createMemo, Show, useContext, type ParentProps, type Accessor } from "solid-js"
++import { createContext, createMemo, Show, useContext, type ParentProps } from "solid-js"
++
++/*
++ * A context value may expose `ready` as a boolean or an accessor to gate its
++ * provider. `T` is opaque here, so the flag is read structurally rather than
++ * asserted onto the value.
++ */
++function isReadyValue(init: unknown): boolean {
++  if (typeof init !== "object" || init === null || !("ready" in init)) return true
++  const ready: unknown = init.ready
++  if (typeof ready === "function") return Boolean(ready())
++  return ready === undefined || Boolean(ready)
++}
+ 
+ export function createSimpleContext<T, Props extends Record<string, any>>(
+   input: {
+@@ -18,21 +30,24 @@ export function createSimpleContext<T, Props extends Record<string, any>>(
+       }
+ 
+       // Access init.ready inside the memo to make it reactive for getter properties
+-      const isReady = createMemo(() => {
+-        // @ts-expect-error
+-        const ready = init.ready as Accessor<boolean> | boolean | undefined
+-        return ready === undefined || (typeof ready === "function" ? ready() : ready)
+-      })
++      const isReady = createMemo(() => isReadyValue(init))
+       return (
+         <Show when={isReady()}>
+           <ctx.Provider value={init}>{props.children}</ctx.Provider>
+         </Show>
+       )
+     },
+-    use() {
++    /*
++     * An arrow property, not a method: every caller destructures this off the
++     * returned object (`const { use: useThing } = createSimpleContext(...)`),
++     * which would unbind a method.
++     */
++    use: () => {
+       const value = useContext(ctx)
+       if (!value) throw new Error(`${input.name} context must be used within a context provider`)
+       return value
+     },
++    /** For a consumer that has a sensible behaviour without the provider. */
++    useOptional: () => useContext(ctx),
+   }
+ }
+diff --git a/src/context/i18n.tsx b/src/context/i18n.tsx
+index be7a4d4f1e958f27f46cc0c6f922b2c750d7e91d..86ef31d1e0b6eb1e990dff1d01e433227c794164 100644
+--- a/src/context/i18n.tsx
++++ b/src/context/i18n.tsx
+@@ -50,14 +50,14 @@ function resolveTemplate(text: string, params?: UiI18nParams) {
+ const fallback: UiI18n = {
+   locale: () => "en",
+   t: (key, params) => {
+-    const value = en[key] ?? String(key)
++    const value = en[key] ?? key
+     return resolveTemplate(value, params)
+   },
+   plural: (key, count, params) =>
+     fallback.t(pluralKey(key, pluralCategory(fallback.locale(), count)), { ...params, count }),
+ }
+ 
+-const Context = createContext<UiI18n>(fallback)
++const Context = createContext(fallback)
+ 
+ function UiI18nProvider(props: ParentProps<{ value: UiI18n }>) {
+   return (
+diff --git a/src/hooks/use-filtered-list.tsx b/src/hooks/use-filtered-list.tsx
+index 552febb68a2ecbd5eae69743aab5e68543fb5eae..a63839fc7412fd438a1480b28b245ce17206c0ed 100644
+--- a/src/hooks/use-filtered-list.tsx
++++ b/src/hooks/use-filtered-list.tsx
+@@ -23,6 +23,9 @@ export function useFilteredList<T>(props: FilteredListProps<T>) {
+   type Group = { category: string; items: [T, ...T[]] }
+   const empty: Group[] = []
+ 
++  /** Search key for a list of plain strings, where each item is already its own text. */
++  const itemText = (item: T) => (typeof item === "string" ? item : "")
++
+   const [grouped, { refetch }] = createResource(
+     () => ({
+       filter: store.filter,
+@@ -39,9 +42,11 @@ export function useFilteredList<T>(props: FilteredListProps<T>) {
+           const skipFilter = props.skipFilter
+           const filterable = skipFilter ? x.filter((item) => !skipFilter(item)) : x
+           const skipped = skipFilter ? x.filter(skipFilter) : []
++          // A list of plain strings is its own search text: search it through the same
++          // key-based overload as everything else, so both branches yield the item itself.
+           const filtered =
+-            !props.filterKeys && Array.isArray(filterable) && filterable.every((e) => typeof e === "string")
+-              ? (fuzzysort.go(needle, filterable).map((x) => x.target) as T[])
++            !props.filterKeys && filterable.every((e) => typeof e === "string")
++              ? fuzzysort.go(needle, filterable, { key: itemText }).map((x) => x.obj)
+               : fuzzysort.go(needle, filterable, { keys: props.filterKeys! }).map((x) => x.obj)
+           return skipped.length ? [...filtered, ...skipped] : filtered
+         },
+@@ -90,9 +95,14 @@ export function useFilteredList<T>(props: FilteredListProps<T>) {
+   const onKeyDown = (event: KeyboardEvent) => {
+     if (event.key === "Enter" && !event.isComposing) {
+       event.preventDefault()
+-      const selectedIndex = flat().findIndex((x) => props.key(x) === list.active())
+-      const selected = flat()[selectedIndex]
+-      if (selected) props.onSelect?.(selected, selectedIndex)
++      const items = flat()
++      const selectedIndex = items.findIndex((x) => props.key(x) === list.active())
++      // `initialActive` is captured while `flat()` is still empty and `reset`
++      // runs in an effect after the async filter resolves, so Enter can land
++      // with items painted but no active key yet — same fallback they use.
++      const fallback = props.noInitialSelection ? undefined : items[0]
++      const selected = items[selectedIndex] ?? fallback
++      if (selected) props.onSelect?.(selected, selectedIndex === -1 ? 0 : selectedIndex)
+     } else if (event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
+       if (event.key === "n" || event.key === "p") {
+         event.preventDefault()
+diff --git a/src/utils/binary.ts b/src/utils/binary.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..16a813e56556cd5daf21c77afc9780c77c1a9334
+--- /dev/null
++++ b/src/utils/binary.ts
+@@ -0,0 +1,14 @@
++export const Binary = {
++  search<T>(array: T[], id: string, compare: (item: T) => string): { found: boolean; index: number } {
++    let left = 0
++    let right = array.length - 1
++    while (left <= right) {
++      const middle = Math.floor((left + right) / 2)
++      const middleId = compare(array[middle])
++      if (middleId === id) return { found: true, index: middle }
++      if (middleId < id) left = middle + 1
++      else right = middle - 1
++    }
++    return { found: false, index: left }
++  },
++}
+diff --git a/src/utils/encode.ts b/src/utils/encode.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..9db650e439b59c1a8b7e06c634f83706a9c1aee6
+--- /dev/null
++++ b/src/utils/encode.ts
+@@ -0,0 +1,47 @@
++export function base64Encode(value: string) {
++  const bytes = new TextEncoder().encode(value)
++  const binary = Array.from(bytes, (byte) => String.fromCharCode(byte)).join("")
++  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
++}
++
++export function base64Decode(value: string) {
++  const binary = atob(value.replace(/-/g, "+").replace(/_/g, "/"))
++  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0))
++  return new TextDecoder().decode(bytes)
++}
++
++export async function hash(content: string, algorithm = "SHA-256"): Promise<string> {
++  const digest = await crypto.subtle.digest(algorithm, new TextEncoder().encode(content))
++  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")
++}
++
++export function checksum(content: string): string | undefined {
++  if (!content) return undefined
++  let hash = 0x811c9dc5
++  for (let index = 0; index < content.length; index++) {
++    hash ^= content.charCodeAt(index)
++    hash = Math.imul(hash, 0x01000193)
++  }
++  return (hash >>> 0).toString(36)
++}
++
++export function sampledChecksum(content: string, limit = 500_000): string | undefined {
++  if (!content) return undefined
++  if (content.length <= limit) return checksum(content)
++
++  const size = 4096
++  const points = [
++    0,
++    Math.floor(content.length * 0.25),
++    Math.floor(content.length * 0.5),
++    Math.floor(content.length * 0.75),
++    content.length - size,
++  ]
++  const hashes = points
++    .map((point) => {
++      const start = Math.max(0, Math.min(content.length - size, point - Math.floor(size / 2)))
++      return checksum(content.slice(start, start + size)) ?? ""
++    })
++    .join(":")
++  return `${content.length}:${hashes}`
++}
+diff --git a/src/utils/path.ts b/src/utils/path.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..5f147e9b83d8d3483d761568e09b065057e81cd2
+--- /dev/null
++++ b/src/utils/path.ts
+@@ -0,0 +1,23 @@
++export function getFilename(path: string | undefined) {
++  if (!path) return ""
++  const trimmed = path.replace(/[/\\]+$/, "")
++  const parts = trimmed.split(/[/\\]/)
++  return parts[parts.length - 1] ?? ""
++}
++
++export function getDirectory(path: string | undefined) {
++  if (!path) return ""
++  const trimmed = path.replace(/[/\\]+$/, "")
++  const parts = trimmed.split(/[/\\]/)
++  return parts.slice(0, parts.length - 1).join("/") + "/"
++}
++
++export function getFilenameTruncated(path: string | undefined, maxLength = 20) {
++  const filename = getFilename(path)
++  if (filename.length <= maxLength) return filename
++  const lastDot = filename.lastIndexOf(".")
++  const extension = lastDot <= 0 ? "" : filename.slice(lastDot)
++  const available = maxLength - extension.length - 1
++  if (available <= 0) return filename.slice(0, maxLength - 1) + "…"
++  return filename.slice(0, available) + "…" + extension
++}
+diff --git a/src/utils/primitives.test.ts b/src/utils/primitives.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..b99c044506ef3993b23887a6d4d83663b13c78fc
+--- /dev/null
++++ b/src/utils/primitives.test.ts
+@@ -0,0 +1,56 @@
++import { expect, test } from "bun:test"
++import { Binary } from "./binary"
++import { base64Decode, base64Encode, checksum, sampledChecksum } from "./encode"
++import { getDirectory, getFilename, getFilenameTruncated } from "./path"
++import { readableText } from "./text"
++
++test("shared path helpers preserve Windows paths, empty inputs and extensions", () => {
++  expect(getFilename("C:\\work\\folder\\file.ts\\")).toBe("file.ts")
++  expect(getDirectory("C:\\work\\file.ts")).toBe("C:/work/")
++  expect(getFilename(undefined)).toBe("")
++  expect(getFilenameTruncated("/work/a-very-long-filename.ts", 12)).toBe("a-very-l….ts")
++})
++
++test("encoding preserves Unicode route keys and existing cache identities", () => {
++  const value = "/workspace/日本語/🚀"
++  expect(base64Decode(base64Encode(value))).toBe(value)
++  expect(checksum("hello")).toBe("m3bicr")
++  expect(checksum("")).toBeUndefined()
++  expect(sampledChecksum("hello")).toBe(checksum("hello"))
++  const large = "a".repeat(600_000)
++  expect(sampledChecksum(large)).not.toBe(sampledChecksum("b" + large.slice(1)))
++})
++
++test("binary search returns the existing item or its sorted insertion point", () => {
++  const rows = [{ id: "a" }, { id: "c" }, { id: "e" }]
++  expect(Binary.search(rows, "c", (row) => row.id)).toEqual({ found: true, index: 1 })
++  expect(Binary.search(rows, "b", (row) => row.id)).toEqual({ found: false, index: 1 })
++  expect(Binary.search(rows, "z", (row) => row.id)).toEqual({ found: false, index: 3 })
++  expect(Binary.search([], "a", String)).toEqual({ found: false, index: 0 })
++})
++
++test("readable text renders an object instead of the literal [object Object]", () => {
++  // The branch two suppressed no-base-to-string findings used to hide:
++  // a file body or an error line that reached `String()` as an object.
++  expect(readableText({ error: { message: "boom" } })).toBe('{"error":{"message":"boom"}}')
++  expect(readableText([1, 2])).toBe("[1,2]")
++  expect(readableText(new Error("boom"))).toBe("boom")
++  // A null-prototype object still serializes; only its name is unavailable.
++  expect(readableText(Object.create(null))).toBe("{}")
++
++  const circular: Record<string, unknown> = {}
++  circular.self = circular
++  expect(readableText(circular)).toBe("[unserializable Object]")
++
++  const anonymous: Record<string, unknown> = Object.create(null)
++  anonymous.self = anonymous
++  expect(readableText(anonymous)).toBe("[unserializable value]")
++
++  // Primitives keep their own toString, and nullish is "nothing to read".
++  expect(readableText("text")).toBe("text")
++  expect(readableText(7)).toBe("7")
++  expect(readableText(false)).toBe("false")
++  expect(readableText(9n)).toBe("9")
++  expect(readableText(undefined)).toBe("")
++  expect(readableText(null)).toBe("")
++})
+diff --git a/src/utils/record.ts b/src/utils/record.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..fb6598db8eec011938839a5aac2475aa8a2a6f74
+--- /dev/null
++++ b/src/utils/record.ts
+@@ -0,0 +1,12 @@
++/**
++ * Whether `key` names an entry of `record`, narrowing it to that record's key type.
++ *
++ * The sprite tables, icon-alias maps and option maps in this package are closed object
++ * literals whose keys are their own union, but a name arriving from props or from
++ * `Object.keys` is a plain `string`. `key in record` alone does not narrow a `string`,
++ * which is why those lookups used to assert the key type at each callsite. This states
++ * the check once, and an unknown key stays a real, handled case.
++ */
++export function isKeyOf<T extends object>(record: T, key: PropertyKey): key is keyof T {
++  return key in record
++}
+diff --git a/src/utils/report-error.test.ts b/src/utils/report-error.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..ff48ed08caa6b696941a13d532801fd1b6024531
+--- /dev/null
++++ b/src/utils/report-error.test.ts
+@@ -0,0 +1,20 @@
++import { afterEach, describe, expect, test } from "bun:test"
++import { reportUiError, setUiErrorReporter } from "./report-error"
++
++afterEach(() => setUiErrorReporter(undefined))
++
++describe("reportUiError", () => {
++  test("forwards the error and its source to the installed reporter", () => {
++    const seen: Array<[unknown, { source: string }]> = []
++    setUiErrorReporter((error, context) => seen.push([error, context]))
++    const error = new Error("sprite missing")
++
++    reportUiError(error, "svg-sprite:file-icon-sprite")
++
++    expect(seen).toEqual([[error, { source: "svg-sprite:file-icon-sprite" }]])
++  })
++
++  test("drops the error when no reporter is installed", () => {
++    expect(() => reportUiError(new Error("nobody listening"), "theme")).not.toThrow()
++  })
++})
+diff --git a/src/utils/report-error.ts b/src/utils/report-error.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..dfdd6e9843771aa11515d00955cd306d43e9de2e
+--- /dev/null
++++ b/src/utils/report-error.ts
+@@ -0,0 +1,17 @@
++export type UiErrorReporter = (error: unknown, context: { source: string }) => void
++
++let reporter: UiErrorReporter | undefined
++
++/**
++ * The app owns error tracking; this package cannot depend on it. The app
++ * installs its reporter once at boot, and until then (storybook, tests, the
++ * session app) a reported error is dropped rather than written to the console.
++ */
++export function setUiErrorReporter(next: UiErrorReporter | undefined) {
++  reporter = next
++}
++
++/** A failure this package handled itself and would otherwise have swallowed. */
++export function reportUiError(error: unknown, source: string) {
++  reporter?.(error, { source })
++}
+diff --git a/src/utils/select-item.ts b/src/utils/select-item.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..5cd7676713fe91578db291e0daa74cf7e90ef875
+--- /dev/null
++++ b/src/utils/select-item.ts
+@@ -0,0 +1,13 @@
++/**
++ * The string a select uses to key or label an item when the caller supplied no
++ * `value` / `label` accessor.
++ *
++ * Both select generations are generic in their item type but fall back to using the
++ * item itself as its own key and label. That fallback is only meaningful for a select
++ * OF strings, which is the documented contract for omitting the accessors — this
++ * checks it instead of asserting it, so a misuse renders nothing rather than a
++ * stringified object.
++ */
++export function selectItemText(item: unknown): string {
++  return typeof item === "string" ? item : ""
++}
+diff --git a/src/utils/text.ts b/src/utils/text.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..5eaf50c5786bfb7128b5f58e45f4f1a9911cea36
+--- /dev/null
++++ b/src/utils/text.ts
+@@ -0,0 +1,50 @@
++/**
++ * Render a value of unknown shape as text a person can read.
++ *
++ * A file viewer's contents and a turn's error message are both declared as
++ * `string` but sourced from an untrusted payload, so each defends against the
++ * value being something else. `String()` is right for the primitives and wrong
++ * for objects: it renders the literal text `[object Object]`, which as a file
++ * body or an error line tells the reader nothing about what actually arrived.
++ *
++ * Nullish is "nothing to read", not "unreadable", so it yields the empty
++ * string: both callers made that same choice separately before this existed.
++ */
++export function readableText(value: unknown): string {
++  if (value === null) return ""
++  switch (typeof value) {
++    case "undefined":
++      return ""
++    case "string":
++      return value
++    case "number":
++    case "boolean":
++    case "bigint":
++    case "symbol":
++    case "function":
++      // Each of these carries its own `toString`; only objects fall back to Object's.
++      return String(value)
++    default:
++      // Everything left is an object: `typeof` has no ninth result.
++      return objectText(value)
++  }
++}
++
++/**
++ * Serialize an object rather than stringify it, handling the two shapes that
++ * defeat `JSON.stringify`: an `Error` serializes to `{}` because its fields are
++ * not enumerable, and a circular structure (or a `bigint` field, or a `toJSON`
++ * that throws) throws outright.
++ */
++function objectText(value: object): string {
++  if (value instanceof Error) return value.message
++  try {
++    return JSON.stringify(value)
++  } catch {
++    // The value is real but unprintable; name its type rather than drop it.
++  }
++  if ("constructor" in value && typeof value.constructor === "function") {
++    return `[unserializable ${value.constructor.name}]`
++  }
++  return "[unserializable value]"
++}

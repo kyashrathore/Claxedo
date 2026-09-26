@@ -1,0 +1,4215 @@
+Subject: original-generation components: class style hooks, overlay roles, fixes
+
+What: every original-generation component the app loads carries `ui-*` class hooks
+next to its data attributes and its sheet selects the classes; overlays paint from
+the semantic overlay roles; spacing uses logical properties so RTL mirrors; type and
+radius come from theme tokens; plus component fixes (card's opt-in accent rail,
+select's settings trigger, text-shimmer mounting its swept copy only while sweeping,
+toast actions, list search action inside the field, ...).
+Why: Blink buckets a rule by its rightmost class, so a class-keyed rule is tried only
+on elements carrying that class, while every `[data-component]`/`[data-slot]` rule
+shares one attribute bucket tried on every element with the attribute.
+
+diff --git a/src/components/accordion.css b/src/components/accordion.css
+index 8f4de6edacf51a7c3a07e87c2a74bbb910b92fb6..c1835e4dbf6040ec5e3680351645b807d11e28f9 100644
+--- a/src/components/accordion.css
++++ b/src/components/accordion.css
+@@ -1,11 +1,11 @@
+-[data-component="accordion"] {
++.ui-accordion {
+   display: flex;
+   flex-direction: column;
+   align-items: flex-start;
+   gap: 0px;
+   align-self: stretch;
+ 
+-  [data-slot="accordion-item"] {
++  .ui-accordion-item {
+     width: 100%;
+     display: flex;
+     flex-direction: column;
+@@ -13,7 +13,7 @@
+     align-self: stretch;
+     overflow: visible;
+ 
+-    & + [data-slot="accordion-item"] {
++    & + .ui-accordion-item {
+       margin-top: -1px;
+     }
+ 
+@@ -24,7 +24,7 @@
+       margin: 0;
+       padding: 0;
+ 
+-      [data-slot="accordion-trigger"] {
++      .ui-accordion-trigger {
+         width: 100%;
+         display: flex;
+         height: 32px;
+@@ -67,21 +67,21 @@
+     }
+ 
+     &:first-child {
+-      [data-slot="accordion-header"] [data-slot="accordion-trigger"] {
++      [data-slot="accordion-header"] .ui-accordion-trigger {
+         border-top-left-radius: var(--radius-lg);
+         border-top-right-radius: var(--radius-lg);
+       }
+     }
+ 
+     &:last-child:not([data-expanded]) {
+-      [data-slot="accordion-header"] [data-slot="accordion-trigger"] {
++      [data-slot="accordion-header"] .ui-accordion-trigger {
+         border-bottom-left-radius: var(--radius-lg);
+         border-bottom-right-radius: var(--radius-lg);
+       }
+     }
+ 
+     &[data-expanded] {
+-      [data-slot="accordion-content"] {
++      .ui-accordion-content {
+         border: 0.5px solid var(--v2-border-border-base);
+         border-top: 0;
+         background-color: var(--v2-background-bg-layer-01);
+@@ -89,13 +89,13 @@
+     }
+ 
+     &:last-child[data-expanded] {
+-      [data-slot="accordion-content"] {
++      .ui-accordion-content {
+         border-bottom-left-radius: var(--radius-lg);
+         border-bottom-right-radius: var(--radius-lg);
+       }
+     }
+ 
+-    [data-slot="accordion-content"] {
++    .ui-accordion-content {
+       overflow: hidden;
+       width: 100%;
+       border: 0;
+@@ -104,8 +104,8 @@
+   }
+ }
+ 
+-body:not([data-new-layout]) [data-component="accordion"] {
+-  [data-slot="accordion-item"] [data-slot="accordion-header"] [data-slot="accordion-trigger"] {
++body:not([data-new-layout]) .ui-accordion {
++  [data-slot="accordion-item"] [data-slot="accordion-header"] .ui-accordion-trigger {
+     background-color: var(--background-stronger);
+     border-width: 1px;
+     border-color: var(--border-weak-base);
+@@ -120,7 +120,7 @@ body:not([data-new-layout]) [data-component="accordion"] {
+     }
+   }
+ 
+-  [data-slot="accordion-item"][data-expanded] [data-slot="accordion-content"] {
++  [data-slot="accordion-item"][data-expanded] .ui-accordion-content {
+     border-width: 1px;
+     border-color: var(--border-weak-base);
+     border-top: 0;
+@@ -128,6 +128,25 @@ body:not([data-new-layout]) [data-component="accordion"] {
+   }
+ }
+ 
++/* Kobalte writes the measured content box onto the accordion content element
++   itself, and only that element's own animation ever reads it. Unregistered
++   custom properties inherit, so each of those writes invalidated the inherited
++   style of the ENTIRE content subtree — for a mounted diff that is thousands of
++   elements of recalc for a value nothing below the content ever reads.
++   Registering them as non-inheriting keeps the animations working and confines
++   the invalidation to the one element that owns the value. */
++@property --kb-accordion-content-height {
++  syntax: "<length>";
++  inherits: false;
++  initial-value: 0px;
++}
++
++@property --kb-accordion-content-width {
++  syntax: "<length>";
++  inherits: false;
++  initial-value: 0px;
++}
++
+ @keyframes slideDown {
+   from {
+     height: 0;
+@@ -145,3 +164,10 @@ body:not([data-new-layout]) [data-component="accordion"] {
+     height: 0;
+   }
+ }
++/* The trigger's authoritative state controls its own caret, including default-open items. */
++.ui-accordion-trigger [data-slot="accordion-caret"] {
++  rotate: 0deg;
++}
++.ui-accordion-trigger[aria-expanded="true"] [data-slot="accordion-caret"] {
++  rotate: 180deg;
++}
+diff --git a/src/components/accordion.tsx b/src/components/accordion.tsx
+index 3179b8a1535bae3e5345a4384c9064bdbfec9fc0..4e71a5d52f49ceccaec1d605e005f3b4f773a7b6 100644
+--- a/src/components/accordion.tsx
++++ b/src/components/accordion.tsx
+@@ -15,6 +15,7 @@ function AccordionRoot(props: AccordionProps) {
+       {...rest}
+       data-component="accordion"
+       classList={{
++        "ui-accordion": true,
+         ...split.classList,
+         [split.class ?? ""]: !!split.class,
+       }}
+@@ -29,6 +30,7 @@ function AccordionItem(props: AccordionItemProps) {
+       {...rest}
+       data-slot="accordion-item"
+       classList={{
++        "ui-accordion-item": true,
+         ...split.classList,
+         [split.class ?? ""]: !!split.class,
+       }}
+@@ -58,7 +60,7 @@ function AccordionTrigger(props: ParentProps<AccordionTriggerProps>) {
+     <Kobalte.Trigger
+       {...rest}
+       data-slot="accordion-trigger"
+-      classList={{
++      classList={{ "ui-accordion-trigger": true,
+         ...split.classList,
+         [split.class ?? ""]: !!split.class,
+       }}
+@@ -73,8 +75,14 @@ function AccordionContent(props: ParentProps<AccordionContentProps>) {
+   return (
+     <Kobalte.Content
+       {...rest}
++      // `staticPresence` matches accordion.css: nothing there applies the
++      // slideDown/slideUp keyframes to the content element, so Kobalte's
++      // presence probe and content measurement have nothing to drive. Apply an
++      // animation to [data-slot="accordion-content"] and this prop must go.
++      // Current @kobalte/core types omit the prop; it is still honored at runtime.
++      {...({ staticPresence: true } as Record<string, unknown>)}
+       data-slot="accordion-content"
+-      classList={{
++      classList={{ "ui-accordion-content": true,
+         ...split.classList,
+         [split.class ?? ""]: !!split.class,
+       }}
+diff --git a/src/components/animated-number.css b/src/components/animated-number.css
+index 022b347e968907591ec049764f9845e0428c489b..0712605339c20de4434697b0fc051629e46b0283 100644
+--- a/src/components/animated-number.css
++++ b/src/components/animated-number.css
+@@ -5,7 +5,7 @@
+   line-height: inherit;
+   font-variant-numeric: tabular-nums;
+ 
+-  [data-slot="animated-number-value"] {
++  .ui-animated-number-value {
+     display: inline-flex;
+     flex-direction: row-reverse;
+     align-items: baseline;
+@@ -20,7 +20,7 @@
+     display: inline-block;
+     width: 1ch;
+     height: 1em;
+-    line-height: 1em;
++    line-height: var(--line-height-none);
+     overflow: hidden;
+     vertical-align: baseline;
+     -webkit-mask-image: linear-gradient(
+@@ -41,7 +41,7 @@
+     mask-repeat: no-repeat;
+   }
+ 
+-  [data-slot="animated-number-strip"] {
++  .ui-animated-number-strip {
+     display: inline-flex;
+     flex-direction: column;
+     transform: translateY(calc(var(--animated-number-offset, 10) * -1em));
+@@ -50,7 +50,7 @@
+     transition-timing-function: var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1));
+   }
+ 
+-  [data-slot="animated-number-strip"][data-animating="false"] {
++  .ui-animated-number-strip[data-animating="false"] {
+     transition-duration: 0ms;
+   }
+ 
+@@ -60,16 +60,16 @@
+     justify-content: center;
+     width: 1ch;
+     height: 1em;
+-    line-height: 1em;
++    line-height: var(--line-height-none);
+   }
+ }
+ 
+ @media (prefers-reduced-motion: reduce) {
+-  [data-component="animated-number"] [data-slot="animated-number-value"] {
++  [data-component="animated-number"] .ui-animated-number-value {
+     transition-duration: 0ms;
+   }
+ 
+-  [data-component="animated-number"] [data-slot="animated-number-strip"] {
++  [data-component="animated-number"] .ui-animated-number-strip {
+     transition-duration: 0ms;
+   }
+ }
+diff --git a/src/components/animated-number.tsx b/src/components/animated-number.tsx
+index 28edd7b706867a9b526c2cbed0609a034c7f34b9..6e303fed25efc296dc24818e3cde271307c17cb3 100644
+--- a/src/components/animated-number.tsx
++++ b/src/components/animated-number.tsx
+@@ -45,7 +45,7 @@ function Digit(props: { value: number; direction: 1 | -1 }) {
+   return (
+     <span data-slot="animated-number-digit">
+       <span
+-        data-slot="animated-number-strip"
++        data-slot="animated-number-strip" class="ui-animated-number-strip"
+         data-animating={animating() ? "true" : "false"}
+         onTransitionEnd={() => {
+           setState("animating", false)
+@@ -101,7 +101,7 @@ export function AnimatedNumber(props: { value: number; class?: string }) {
+ 
+   return (
+     <span data-component="animated-number" class={props.class} aria-label={label()}>
+-      <span data-slot="animated-number-value" style={{ "--animated-number-width": width() }}>
++      <span data-slot="animated-number-value" class="ui-animated-number-value" style={{ "--animated-number-width": width() }}>
+         <Index each={digits()}>{(digit) => <Digit value={digit()} direction={direction()} />}</Index>
+       </span>
+     </span>
+diff --git a/src/components/avatar.css b/src/components/avatar.css
+index 5872160771ce6c973817f0865b750a1235ed235b..6b77e5e283067d89cc26e1d0a36000386b127929 100644
+--- a/src/components/avatar.css
++++ b/src/components/avatar.css
+@@ -1,43 +1,43 @@
+-[data-component="avatar"] {
+-  --avatar-bg: var(--color-surface-info-base);
+-  --avatar-fg: var(--color-text-base);
++.ui-avatar {
++  --avatar-bg: var(--surface-info-base);
++  --avatar-fg: var(--text-base);
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   flex-shrink: 0;
+   border-radius: var(--radius-sm);
+-  border: 1px solid var(--color-border-weak-base);
++  border: 1px solid var(--border-weak-base);
+   font-family: var(--font-mono);
+-  font-weight: 500;
++  font-weight: var(--font-weight-medium);
+   text-transform: uppercase;
+   background-color: var(--avatar-bg);
+   color: var(--avatar-fg);
+ }
+ 
+-[data-component="avatar"][data-has-image] {
++.ui-avatar[data-has-image] {
+   background-color: transparent;
+   border: none;
+ }
+ 
+-[data-component="avatar"][data-size="small"] {
++.ui-avatar[data-size="small"] {
+   width: 1.25rem;
+   height: 1.25rem;
+-  font-size: 0.75rem;
+-  line-height: 1;
++  font-size: var(--font-size-small);
++  line-height: var(--line-height-none);
+ }
+ 
+-[data-component="avatar"][data-size="normal"] {
++.ui-avatar[data-size="normal"] {
+   width: 1.5rem;
+   height: 1.5rem;
+-  font-size: 1.125rem;
+-  line-height: 1.5rem;
++  font-size: var(--font-size-heading);
++  line-height: var(--line-height-24);
+ }
+ 
+-[data-component="avatar"][data-size="large"] {
++.ui-avatar[data-size="large"] {
+   width: 2rem;
+   height: 2rem;
+-  font-size: 1.25rem;
+-  line-height: 2rem;
++  font-size: var(--font-size-x-large);
++  line-height: var(--line-height-32);
+ }
+ 
+ [data-component="avatar"] [data-slot="avatar-image"] {
+diff --git a/src/components/avatar.tsx b/src/components/avatar.tsx
+index 035c2d304149e6472fecc1a6330bfe2c8a633d8f..91632642d6ebce9859d6c2ace1b853d0fae44c31 100644
+--- a/src/components/avatar.tsx
++++ b/src/components/avatar.tsx
+@@ -38,6 +38,7 @@ export function Avatar(props: AvatarProps) {
+       data-size={split.size || "normal"}
+       data-has-image={src ? "" : undefined}
+       classList={{
++        "ui-avatar": true,
+         ...split.classList,
+         [split.class ?? ""]: !!split.class,
+       }}
+diff --git a/src/components/button.css b/src/components/button.css
+index 923b2bab374b659fe7ffa369e51185570b56edc7..abfe9e07e245508ba3dd6e22f8e5c43650d64ce7 100644
+--- a/src/components/button.css
++++ b/src/components/button.css
+@@ -1,4 +1,4 @@
+-[data-component="button"] {
++.ui-button {
+   display: inline-flex;
+   align-items: center;
+   justify-content: center;
+@@ -16,7 +16,7 @@
+     border-color: var(--border-weak-base);
+     color: var(--icon-invert-base);
+ 
+-    [data-slot="icon-svg"] {
++    .ui-icon-svg {
+       color: var(--icon-invert-base);
+     }
+ 
+@@ -32,7 +32,7 @@
+     &:disabled {
+       background-color: var(--icon-strong-disabled);
+ 
+-      [data-slot="icon-svg"] {
++      .ui-icon-svg {
+         color: var(--icon-invert-base);
+       }
+     }
+@@ -43,7 +43,7 @@
+     background-color: transparent;
+     color: var(--text-strong);
+ 
+-    [data-slot="icon-svg"] {
++    .ui-icon-svg {
+       color: var(--icon-base);
+     }
+ 
+@@ -60,7 +60,7 @@
+       color: var(--text-weak);
+       cursor: not-allowed;
+ 
+-      [data-slot="icon-svg"] {
++      .ui-icon-svg {
+         color: var(--icon-disabled);
+       }
+     }
+@@ -101,7 +101,7 @@
+       cursor: not-allowed;
+     }
+ 
+-    [data-slot="icon-svg"] {
++    .ui-icon-svg {
+       color: var(--icon-base);
+     }
+   }
+@@ -128,7 +128,7 @@
+ 
+   &[data-size="normal"] {
+     height: 28px;
+-    line-height: 28px;
++    line-height: var(--line-height-28);
+     padding: 0 6px;
+     &[data-icon] {
+       padding: 0 12px 0 4px;
+@@ -157,7 +157,7 @@
+ 
+     /* text-14-medium */
+     font-family: var(--font-family-sans);
+-    font-size: 14px;
++    font-size: var(--font-size-base);
+     font-style: normal;
+     font-weight: var(--font-weight-medium);
+     line-height: var(--line-height-large); /* 142.857% */
+@@ -169,26 +169,26 @@
+   }
+ }
+ 
+-[data-component="button"].titlebar-icon[data-variant="ghost"][aria-expanded="true"] {
++.ui-button.titlebar-icon[data-variant="ghost"][aria-expanded="true"] {
+   background-color: var(--surface-base-active);
+ }
+ 
+-[data-component="button"].titlebar-icon[data-variant="ghost"][aria-expanded="true"] [data-slot="icon-svg"] {
++[data-component="button"].titlebar-icon[data-variant="ghost"][aria-expanded="true"] .ui-icon-svg {
+   color: var(--icon-strong-base);
+ }
+ 
+-[data-component="button"].titlebar-icon[data-variant="ghost"][aria-expanded="true"]:hover:not(:disabled) {
++.ui-button.titlebar-icon[data-variant="ghost"][aria-expanded="true"]:hover:not(:disabled) {
+   background-color: var(--surface-base-active);
+ }
+ 
+-[data-component="button"].titlebar-icon[data-variant="ghost"][aria-current="page"] {
++.ui-button.titlebar-icon[data-variant="ghost"][aria-current="page"] {
+   background-color: var(--surface-base-active);
+ }
+ 
+-[data-component="button"].titlebar-icon[data-variant="ghost"][aria-current="page"] [data-slot="icon-svg"] {
++[data-component="button"].titlebar-icon[data-variant="ghost"][aria-current="page"] .ui-icon-svg {
+   color: var(--icon-strong-base);
+ }
+ 
+-[data-component="button"].titlebar-icon[data-variant="ghost"][aria-current="page"]:hover:not(:disabled) {
++.ui-button.titlebar-icon[data-variant="ghost"][aria-current="page"]:hover:not(:disabled) {
+   background-color: var(--surface-base-active);
+ }
+diff --git a/src/components/button.tsx b/src/components/button.tsx
+index d1652145f51b72e1f0b4d65bef991fc3af8cd3d4..d486bb32fcf0c93f82d0c9e782bf345ccf848ea2 100644
+--- a/src/components/button.tsx
++++ b/src/components/button.tsx
+@@ -19,7 +19,7 @@ export function Button(props: ButtonProps) {
+       data-size={split.size || "normal"}
+       data-variant={split.variant || "secondary"}
+       data-icon={split.icon}
+-      classList={{
++      classList={{ "ui-button": true,
+         ...split.classList,
+         [split.class ?? ""]: !!split.class,
+       }}
+diff --git a/src/components/card.css b/src/components/card.css
+index 371901f4ee5b0e7e374aff771ef00cd34fa1bfe8..dd10d48a029c4aee5453df2291e6d3dc4e54f628 100644
+--- a/src/components/card.css
++++ b/src/components/card.css
+@@ -1,4 +1,4 @@
+-[data-component="card"] {
++.ui-card {
+   --card-pad-y: 10px;
+   --card-pad-r: 12px;
+   --card-pad-l: 10px;
+@@ -36,18 +36,29 @@
+     --card-indent: calc(var(--card-icon) + var(--card-gap));
+   }
+ 
+-  &::before {
++  /* The accent rail is opt-in (`data-accent` / `accent` prop), never variant-driven.
++     `--card-accent` still tints the title icon (see below) even when the rail is off. */
++  &[data-accent]::before {
+     content: "";
+     position: absolute;
+     left: 0;
+     top: var(--card-line-pad);
+     bottom: var(--card-line-pad);
+     width: 2px;
+-    border-radius: 2px;
++    border-radius: var(--radius-xs);
+     background-color: var(--card-accent);
+   }
+ 
+-  :where([data-card="title"], [data-slot="card-title"]) {
++  /*
++   * One branch per `:where()` rather than `:where([data-card="title"],
++   * [data-slot="card-title"])`. Blink takes a bucket key from a SINGLE-argument
++   * `:is()`/`:where()` but not from a multi-argument one, so the combined form
++   * lands in the universal bucket and is tried against every element in the
++   * document on every whole-document style pass. `:where()` contributes zero
++   * specificity in both forms, so the cascade is unchanged.
++   */
++  :where([data-card="title"]),
++  :where([data-slot="card-title"]) {
+     color: var(--v2-text-text-base);
+     font-weight: var(--font-weight-medium);
+   }
+@@ -58,7 +69,7 @@
+     gap: var(--card-gap);
+   }
+ 
+-  :where([data-slot="card-title"]) [data-component="icon"] {
++  :where([data-slot="card-title"]) .ui-icon {
+     color: var(--card-accent);
+   }
+ 
+@@ -71,7 +82,7 @@
+     flex: 0 0 auto;
+   }
+ 
+-  :where([data-slot="card-title-icon"][data-placeholder]) [data-component="icon"] {
++  :where([data-slot="card-title-icon"][data-placeholder]) .ui-icon {
+     color: var(--v2-text-text-faint);
+   }
+ 
+@@ -81,35 +92,35 @@
+     stroke-width: 1.5px !important;
+   }
+ 
+-  :where([data-card="description"], [data-slot="card-description"]) {
++  :where([data-card="description"]),
++  :where([data-slot="card-description"]) {
+     color: var(--v2-text-text-muted);
+     white-space: pre-wrap;
+     overflow-wrap: anywhere;
+     word-break: break-word;
+   }
+ 
+-  :where([data-card="actions"], [data-slot="card-actions"]) {
++  :where([data-card="actions"]),
++  :where([data-slot="card-actions"]) {
+     padding-left: var(--card-indent);
+   }
+ }
+ 
+-body:not([data-new-layout]) [data-component="card"] {
++body:not([data-new-layout]) .ui-card {
+   color: var(--text-strong);
+   --card-accent: var(--icon-active);
+ 
+-  :where([data-card="title"], [data-slot="card-title"]) {
++  :where([data-card="title"]),
++  :where([data-slot="card-title"]) {
+     color: var(--text-strong);
+   }
+ 
+-  :where([data-slot="card-title-icon"][data-placeholder]) [data-component="icon"] {
++  :where([data-slot="card-title-icon"][data-placeholder]) .ui-icon {
+     color: var(--text-weak);
+   }
+ 
+-  :where([data-card="description"], [data-slot="card-description"]) {
++  :where([data-card="description"]),
++  :where([data-slot="card-description"]) {
+     color: var(--text-base);
+   }
+-
+-  &[data-variant="error"] {
+-    --card-accent: var(--icon-critical-base) !important;
+-  }
+ }
+diff --git a/src/components/card.tsx b/src/components/card.tsx
+index 917644348f8e5285eee82a96e9b6f002ec65f306..c50933be2b470243cb023cdbe74f79aed13b9c5a 100644
+--- a/src/components/card.tsx
++++ b/src/components/card.tsx
+@@ -1,10 +1,17 @@
+ import { type ComponentProps, splitProps } from "solid-js"
+ import { Icon, type IconProps } from "./icon"
++import { isKeyOf } from "../utils/record"
+ 
+ type Variant = "normal" | "error" | "warning" | "success" | "info"
+ 
+ export interface CardProps extends ComponentProps<"div"> {
+   variant?: Variant
++  /**
++   * Opt in to the `::before` accent rail. The rail is never variant-driven — a plain
++   * `variant="error"`/`"warning"` Card must not paint it (D§1: failure whispers).
++   * `--card-accent` still tints the title icon regardless of this flag.
++   */
++  accent?: boolean
+ }
+ 
+ export interface CardTitleProps extends ComponentProps<"div"> {
+@@ -20,39 +27,44 @@ export interface CardTitleProps extends ComponentProps<"div"> {
+   icon?: IconProps["name"] | false | null
+ }
+ 
+-function pick(variant: Variant) {
+-  if (variant === "error") return "circle-ban-sign" as const
+-  if (variant === "warning") return "warning" as const
+-  if (variant === "success") return "circle-check" as const
+-  if (variant === "info") return "help" as const
+-  return
++/**
++ * What each signalling variant contributes: the default title icon and the token that
++ * tints it. One table so a new variant is added in a single place, and `normal` is
++ * absent because it contributes neither.
++ */
++const VARIANTS = {
++  error: { icon: "circle-ban-sign", accent: "var(--icon-critical-base)" },
++  warning: { icon: "warning", accent: "var(--icon-warning-base)" },
++  success: { icon: "circle-check", accent: "var(--icon-success-active)" },
++  info: { icon: "help", accent: "var(--icon-info-active)" },
++} as const satisfies Partial<Record<Variant, { icon: IconProps["name"]; accent: string }>>
++
++function variantStyle(variant: Variant) {
++  return isKeyOf(VARIANTS, variant) ? VARIANTS[variant] : undefined
+ }
+ 
+ function mix(style: ComponentProps<"div">["style"], value?: string) {
+   if (!value) return style
+   if (!style) return { "--card-accent": value }
+   if (typeof style === "string") return `${style};--card-accent:${value};`
+-  return { ...(style as Record<string, string | number>), "--card-accent": value }
++  return { ...style, "--card-accent": value }
+ }
+ 
+ export function Card(props: CardProps) {
+-  const [split, rest] = splitProps(props, ["variant", "style", "class", "classList"])
++  const [split, rest] = splitProps(props, ["variant", "accent", "style", "class", "classList"])
+   const variant = () => split.variant ?? "normal"
+-  const accent = () => {
+-    const v = variant()
+-    if (v === "error") return "var(--v2-state-fg-danger)"
+-    if (v === "warning") return "var(--icon-warning-active)"
+-    if (v === "success") return "var(--icon-success-active)"
+-    if (v === "info") return "var(--icon-info-active)"
+-    return
+-  }
++  // Colours the title icon / tool-error icon (both read `--card-accent`). Legacy tokens only —
++  // never feeds the rail on its own; the rail requires the separate `accent` opt-in below.
++  const accentColor = () => variantStyle(variant())?.accent
+   return (
+     <div
+       {...rest}
+       data-component="card"
+       data-variant={variant()}
+-      style={mix(split.style, accent())}
++      data-accent={split.accent ? "" : undefined}
++      style={mix(split.style, accentColor())}
+       classList={{
++        "ui-card": true,
+         ...split.classList,
+         [split.class ?? ""]: !!split.class,
+       }}
+@@ -65,10 +77,10 @@ export function Card(props: CardProps) {
+ export function CardTitle(props: CardTitleProps) {
+   const [split, rest] = splitProps(props, ["variant", "icon", "class", "classList", "children"])
+   const show = () => split.icon !== false && split.icon !== null
+-  const name = () => {
+-    if (split.icon === false || split.icon === null) return
++  const name = (): IconProps["name"] | undefined => {
++    if (split.icon === false || split.icon === null) return undefined
+     if (typeof split.icon === "string") return split.icon
+-    return pick(split.variant ?? "normal")
++    return variantStyle(split.variant ?? "normal")?.icon
+   }
+   const placeholder = () => !name()
+   return (
+diff --git a/src/components/checkbox.css b/src/components/checkbox.css
+index 3041799659165180e86c1c54045814d1e0409a3b..031e4d1565656567fe7ae7a95c9984d9b14bd7bd 100644
+--- a/src/components/checkbox.css
++++ b/src/components/checkbox.css
+@@ -1,4 +1,4 @@
+-[data-component="checkbox"] {
++.ui-checkbox {
+   display: flex;
+   align-items: var(--checkbox-align, center);
+   gap: 12px;
+@@ -16,7 +16,7 @@
+     border-width: 0;
+   }
+ 
+-  [data-slot="checkbox-checkbox-control"] {
++  .ui-checkbox-checkbox-control {
+     display: flex;
+     align-items: center;
+     justify-content: center;
+@@ -35,7 +35,7 @@
+     /* background-color: var(--surface-weak); */
+   }
+ 
+-  [data-slot="checkbox-checkbox-indicator"] {
++  .ui-checkbox-checkbox-indicator {
+     display: flex;
+     align-items: center;
+     justify-content: center;
+@@ -68,7 +68,7 @@
+   [data-slot="checkbox-checkbox-description"] {
+     color: var(--text-base);
+     font-family: var(--font-family-sans);
+-    font-size: 12px;
++    font-size: var(--font-size-small);
+     font-weight: var(--font-weight-regular);
+     line-height: var(--line-height-normal);
+     letter-spacing: var(--letter-spacing-normal);
+@@ -77,36 +77,36 @@
+   [data-slot="checkbox-checkbox-error"] {
+     color: var(--text-error);
+     font-family: var(--font-family-sans);
+-    font-size: 12px;
++    font-size: var(--font-size-small);
+     font-weight: var(--font-weight-regular);
+     line-height: var(--line-height-normal);
+     letter-spacing: var(--letter-spacing-normal);
+   }
+ 
+-  &:hover:not([data-disabled], [data-readonly]) [data-slot="checkbox-checkbox-control"] {
++  &:hover:not([data-disabled], [data-readonly]) .ui-checkbox-checkbox-control {
+     border-color: var(--border-hover);
+     background-color: var(--surface-hover);
+   }
+ 
+-  &:not([data-readonly]) [data-slot="checkbox-checkbox-input"]:focus-visible + [data-slot="checkbox-checkbox-control"] {
++  &:not([data-readonly]) [data-slot="checkbox-checkbox-input"]:focus-visible + .ui-checkbox-checkbox-control {
+     border-color: var(--border-focus);
+     box-shadow: var(--shadow-xs-border-focus);
+   }
+ 
+-  &[data-checked] [data-slot="checkbox-checkbox-control"],
+-  &[data-indeterminate] [data-slot="checkbox-checkbox-control"] {
++  &[data-checked] .ui-checkbox-checkbox-control,
++  &[data-indeterminate] .ui-checkbox-checkbox-control {
+     border-color: var(--border-base);
+     background-color: var(--surface-weak);
+   }
+ 
+-  &[data-checked]:hover:not([data-disabled], [data-readonly]) [data-slot="checkbox-checkbox-control"],
+-  &[data-indeterminate]:hover:not([data-disabled]) [data-slot="checkbox-checkbox-control"] {
++  &[data-checked]:hover:not([data-disabled], [data-readonly]) .ui-checkbox-checkbox-control,
++  &[data-indeterminate]:hover:not([data-disabled]) .ui-checkbox-checkbox-control {
+     border-color: var(--border-hover);
+     background-color: var(--surface-hover);
+   }
+ 
+-  &[data-checked] [data-slot="checkbox-checkbox-indicator"],
+-  &[data-indeterminate] [data-slot="checkbox-checkbox-indicator"] {
++  &[data-checked] .ui-checkbox-checkbox-indicator,
++  &[data-indeterminate] .ui-checkbox-checkbox-indicator {
+     opacity: 1;
+     transform: scale(1);
+   }
+@@ -115,12 +115,12 @@
+     cursor: not-allowed;
+   }
+ 
+-  &[data-disabled] [data-slot="checkbox-checkbox-control"] {
++  &[data-disabled] .ui-checkbox-checkbox-control {
+     border-color: var(--border-disabled);
+     background-color: var(--surface-disabled);
+   }
+ 
+-  &[data-invalid] [data-slot="checkbox-checkbox-control"] {
++  &[data-invalid] .ui-checkbox-checkbox-control {
+     border-color: var(--border-error);
+   }
+ 
+diff --git a/src/components/checkbox.tsx b/src/components/checkbox.tsx
+index 7187e4ac300b90db3b2cc205e8a2cbd4ae352aba..c90a859fe360907901c5bef3b8f83e0cf26fb697 100644
+--- a/src/components/checkbox.tsx
++++ b/src/components/checkbox.tsx
+@@ -11,10 +11,10 @@ export interface CheckboxProps extends ParentProps<ComponentProps<typeof Kobalte
+ export function Checkbox(props: CheckboxProps) {
+   const [local, others] = splitProps(props, ["children", "class", "label", "hideLabel", "description", "icon"])
+   return (
+-    <Kobalte {...others} data-component="checkbox">
++    <Kobalte {...others} data-component="checkbox" classList={{ "ui-checkbox": true }}>
+       <Kobalte.Input data-slot="checkbox-checkbox-input" />
+-      <Kobalte.Control data-slot="checkbox-checkbox-control">
+-        <Kobalte.Indicator data-slot="checkbox-checkbox-indicator">
++      <Kobalte.Control data-slot="checkbox-checkbox-control" class="ui-checkbox-checkbox-control">
++        <Kobalte.Indicator data-slot="checkbox-checkbox-indicator" class="ui-checkbox-checkbox-indicator">
+           {local.icon || (
+             <svg viewBox="0 0 12 12" fill="none" width="10" height="10" xmlns="http://www.w3.org/2000/svg">
+               <path
+diff --git a/src/components/collapsible.css b/src/components/collapsible.css
+index 8e0b6f1a9a7b8c4ba0496e40cb53f26736e93a9e..6ec4a71ded6436f36c80357c6258a59eca389033 100644
+--- a/src/components/collapsible.css
++++ b/src/components/collapsible.css
+@@ -1,4 +1,4 @@
+-[data-component="collapsible"] {
++.ui-collapsible {
+   width: 100%;
+   display: flex;
+   flex-direction: column;
+@@ -13,7 +13,7 @@
+     gap: var(--tool-content-gap);
+   }
+ 
+-  [data-slot="collapsible-trigger"] {
++  .ui-collapsible-trigger {
+     width: 100%;
+     display: flex;
+     height: 32px;
+@@ -24,14 +24,14 @@
+     user-select: none;
+     color: var(--text-base);
+ 
+-    [data-slot="collapsible-arrow"] {
++    .ui-collapsible-arrow {
+       opacity: 0;
+       transition: opacity 0.15s ease;
+       will-change: opacity;
+       transform: translateZ(0);
+     }
+ 
+-    [data-slot="collapsible-arrow-icon"] {
++    .ui-collapsible-arrow-icon {
+       display: inline-flex;
+       color: var(--icon-weaker);
+       transform: translateZ(0) rotate(-90deg);
+@@ -39,7 +39,7 @@
+       will-change: transform;
+     }
+ 
+-    &:hover [data-slot="collapsible-arrow"] {
++    &:hover .ui-collapsible-arrow {
+       opacity: 1;
+     }
+ 
+@@ -67,7 +67,7 @@
+       align-items: stretch;
+     }
+ 
+-    [data-slot="collapsible-arrow"] {
++    .ui-collapsible-arrow {
+       flex-shrink: 0;
+       width: 24px;
+       height: 24px;
+@@ -77,12 +77,12 @@
+     }
+   }
+ 
+-  [data-slot="collapsible-trigger"][aria-expanded="true"] {
+-    [data-slot="collapsible-arrow"] {
++  .ui-collapsible-trigger[aria-expanded="true"] {
++    .ui-collapsible-arrow {
+       opacity: 1;
+     }
+ 
+-    [data-slot="collapsible-arrow-icon"] {
++    .ui-collapsible-arrow-icon {
+       transform: translateZ(0) rotate(0deg);
+     }
+   }
+@@ -104,7 +104,7 @@
+     background-color: transparent;
+     border: none;
+ 
+-    > [data-slot="collapsible-trigger"] {
++    > .ui-collapsible-trigger {
+       background-color: transparent;
+       border: none;
+       padding: 0;
+@@ -123,18 +123,34 @@
+   }
+ 
+   &[data-variant="ghost"][data-scope="filetree"] {
+-    > [data-slot="collapsible-trigger"] {
++    > .ui-collapsible-trigger {
+       height: 24px;
+     }
+   }
+ 
+   &[data-variant="ghost"][data-scope="file-tree-v2"] {
+-    > [data-slot="collapsible-trigger"] {
++    > .ui-collapsible-trigger {
+       height: 28px;
+     }
+   }
+ }
+ 
++/* Non-inheriting for the same reason as the accordion pair in accordion.css:
++   Kobalte writes the measured content box on the collapsible content element,
++   and only that element's own animation reads it. Left unregistered, every
++   write invalidated the inherited style of the whole content subtree. */
++@property --kb-collapsible-content-height {
++  syntax: "<length>";
++  inherits: false;
++  initial-value: 0px;
++}
++
++@property --kb-collapsible-content-width {
++  syntax: "<length>";
++  inherits: false;
++  initial-value: 0px;
++}
++
+ @keyframes slideDown {
+   from {
+     height: 0;
+diff --git a/src/components/collapsible.tsx b/src/components/collapsible.tsx
+index b2a603264645afe1b3dee771e4f3aa03b571aec8..0a937fb1800a4cf0c697c9238fc093122d895a57 100644
+--- a/src/components/collapsible.tsx
++++ b/src/components/collapsible.tsx
+@@ -15,6 +15,7 @@ function CollapsibleRoot(props: CollapsibleProps) {
+       data-component="collapsible"
+       data-variant={local.variant || "normal"}
+       classList={{
++        "ui-collapsible": true,
+         ...local.classList,
+         [local.class ?? ""]: !!local.class,
+       }}
+@@ -24,17 +25,21 @@ function CollapsibleRoot(props: CollapsibleProps) {
+ }
+ 
+ function CollapsibleTrigger(props: ComponentProps<typeof Kobalte.Trigger>) {
+-  return <Kobalte.Trigger data-slot="collapsible-trigger" {...props} />
++  return <Kobalte.Trigger data-slot="collapsible-trigger" {...props} classList={{ "ui-collapsible-trigger": true }} />
+ }
+ 
+ function CollapsibleContent(props: ComponentProps<typeof Kobalte.Content>) {
+-  return <Kobalte.Content data-slot="collapsible-content" {...props} />
++  // `staticPresence` matches collapsible.css: the slideDown/slideUp keyframes
++  // are commented out, so nothing animates this element and Kobalte's presence
++  // probe and content measurement have nothing to drive. Re-enable those
++  // keyframes and this prop must go with them.
++  return <Kobalte.Content {...({ staticPresence: true } as Record<string, unknown>)} data-slot="collapsible-content" {...props} />
+ }
+ 
+ function CollapsibleArrow(props?: ComponentProps<"div">) {
+   return (
+-    <div data-slot="collapsible-arrow" {...(props || {})}>
+-      <span data-slot="collapsible-arrow-icon">
++    <div data-slot="collapsible-arrow" {...(props || {})} classList={{ "ui-collapsible-arrow": true }}>
++      <span data-slot="collapsible-arrow-icon" class="ui-collapsible-arrow-icon">
+         <Icon name="chevron-down" size="small" />
+       </span>
+     </div>
+diff --git a/src/components/context-menu.css b/src/components/context-menu.css
+index 1e366dccd42ae5d6d7399b15dd89e04ecbaeeb49..2b8bf79c1d30d9f6e5c012a8c219c00dfcbdc66c 100644
+--- a/src/components/context-menu.css
++++ b/src/components/context-menu.css
+@@ -1,20 +1,16 @@
+-[data-component="context-menu-content"],
+-[data-component="context-menu-sub-content"] {
++.ui-context-menu-content,
++.ui-context-menu-sub-content {
+   min-width: 8rem;
+   overflow: hidden;
+-  border: none;
+-  border-radius: var(--radius-md);
+-  box-shadow: var(--shadow-xs-border);
++  border: var(--surface-overlay-border, none);
++  border-radius: var(--surface-overlay-radius, var(--radius-md));
++  box-shadow: var(--surface-overlay-shadow, var(--shadow-xs-border));
+   background-clip: padding-box;
+-  background-color: var(--surface-raised-stronger-non-alpha);
++  background-color: var(--overlay-surface);
+   padding: 4px;
+   z-index: 100;
+   transform-origin: var(--kb-menu-content-transform-origin);
+ 
+-  &:focus-within,
+-  &:focus {
+-    outline: none;
+-  }
+ 
+   animation: contextMenuContentHide var(--transition-duration) var(--transition-easing) forwards;
+ 
+@@ -28,12 +24,28 @@
+   }
+ }
+ 
+-[data-component="context-menu-content"],
+-[data-component="context-menu-sub-content"] {
++/*
++ * Written out per class rather than nested as `&:focus-within, &:focus` under
++ * the two-selector parent above. Nesting there compiles to
++ * `:is(.ui-context-menu-content, .ui-context-menu-sub-content):focus-within`,
++ * whose rightmost compound is a multi-argument `:is()` — Blink gets no class key
++ * from that and files the rule in the universal bucket, where it is tried
++ * against every element in the document on every whole-document style pass.
++ * Specificity is (0,2,0) either way.
++ */
++.ui-context-menu-content:focus-within,
++.ui-context-menu-content:focus,
++.ui-context-menu-sub-content:focus-within,
++.ui-context-menu-sub-content:focus {
++  outline: none;
++}
++
++.ui-context-menu-content,
++.ui-context-menu-sub-content {
+   [data-slot="context-menu-item"],
+   [data-slot="context-menu-checkbox-item"],
+   [data-slot="context-menu-radio-item"],
+-  [data-slot="context-menu-sub-trigger"] {
++  .ui-context-menu-sub-trigger {
+     position: relative;
+     display: flex;
+     align-items: center;
+@@ -48,7 +60,7 @@
+     font-weight: var(--font-weight-medium);
+     line-height: var(--line-height-large);
+     letter-spacing: var(--letter-spacing-normal);
+-    color: var(--text-strong);
++    color: var(--overlay-text);
+ 
+     transition-property: background-color, color;
+     transition-duration: var(--transition-duration);
+@@ -56,18 +68,18 @@
+     user-select: none;
+ 
+     &:hover {
+-      background-color: var(--surface-raised-base-hover);
++      background-color: var(--overlay-surface-hover);
+     }
+ 
+     &[data-disabled] {
+-      color: var(--text-weak);
++      color: var(--overlay-text-muted);
+       pointer-events: none;
+     }
+   }
+ 
+-  [data-slot="context-menu-sub-trigger"] {
++  .ui-context-menu-sub-trigger {
+     &[data-expanded] {
+-      background: var(--surface-raised-base-hover);
++      background: var(--overlay-surface-hover);
+       outline: none;
+       border: none;
+     }
+@@ -87,13 +99,13 @@
+ 
+   [data-slot="context-menu-item-description"] {
+     font-size: var(--font-size-x-small);
+-    color: var(--text-weak);
++    color: var(--overlay-text-muted);
+   }
+ 
+   [data-slot="context-menu-separator"] {
+     height: 1px;
+     margin: 4px -4px;
+-    border-top-color: var(--border-weak-base);
++    border-top-color: var(--overlay-border);
+   }
+ 
+   [data-slot="context-menu-group-label"] {
+@@ -103,11 +115,11 @@
+     font-weight: var(--font-weight-medium);
+     line-height: var(--line-height-large);
+     letter-spacing: var(--letter-spacing-normal);
+-    color: var(--text-weak);
++    color: var(--overlay-text-muted);
+   }
+ 
+   [data-slot="context-menu-arrow"] {
+-    fill: var(--surface-raised-stronger-non-alpha);
++    fill: var(--overlay-surface);
+   }
+ }
+ 
+diff --git a/src/components/context-menu.tsx b/src/components/context-menu.tsx
+index f4566a17a9b1ceea688ed5ae6b6509cf49cd0793..b8f6d7fab05189673994d92583aa1cae19347cb9 100644
+--- a/src/components/context-menu.tsx
++++ b/src/components/context-menu.tsx
+@@ -69,6 +69,7 @@ function ContextMenuContent(props: ParentProps<ContextMenuContentProps>) {
+       {...rest}
+       data-component="context-menu-content"
+       classList={{
++        "ui-context-menu-content": true,
+         ...local.classList,
+         [local.class ?? ""]: !!local.class,
+       }}
+@@ -261,6 +262,7 @@ function ContextMenuSubTrigger(props: ParentProps<ContextMenuSubTriggerProps>) {
+       {...rest}
+       data-slot="context-menu-sub-trigger"
+       classList={{
++        "ui-context-menu-sub-trigger": true,
+         ...local.classList,
+         [local.class ?? ""]: !!local.class,
+       }}
+@@ -277,6 +279,7 @@ function ContextMenuSubContent(props: ParentProps<ContextMenuSubContentProps>) {
+       {...rest}
+       data-component="context-menu-sub-content"
+       classList={{
++        "ui-context-menu-sub-content": true,
+         ...local.classList,
+         [local.class ?? ""]: !!local.class,
+       }}
+diff --git a/src/components/diff-changes.css b/src/components/diff-changes.css
+index a20780488713ebdab09ae1099f56c3cda5c80143..387f57a1ba002cd6790022221c41cf4554ccc692 100644
+--- a/src/components/diff-changes.css
++++ b/src/components/diff-changes.css
+@@ -1,4 +1,4 @@
+-[data-component="diff-changes"] {
++.ui-diff-changes {
+   display: flex;
+   direction: ltr;
+   unicode-bidi: isolate;
+@@ -6,10 +6,10 @@
+   justify-content: flex-end;
+   align-items: center;
+ 
+-  [data-slot="diff-changes-additions"] {
++  .ui-diff-changes-additions {
+     font-family: var(--font-family-mono);
+     font-feature-settings: var(--font-family-mono--font-feature-settings);
+-    font-size: 14px;
++    font-size: var(--font-size-base);
+     font-style: normal;
+     font-weight: var(--font-weight-regular);
+     line-height: var(--line-height-large);
+@@ -18,10 +18,10 @@
+     color: var(--text-diff-add-base);
+   }
+ 
+-  [data-slot="diff-changes-deletions"] {
++  .ui-diff-changes-deletions {
+     font-family: var(--font-family-mono);
+     font-feature-settings: var(--font-family-mono--font-feature-settings);
+-    font-size: 14px;
++    font-size: var(--font-size-base);
+     font-style: normal;
+     font-weight: var(--font-weight-regular);
+     line-height: var(--line-height-large);
+@@ -31,7 +31,48 @@
+   }
+ }
+ 
+-[data-component="diff-changes"][data-variant="bars"] {
++/*
++ * muted-hover variant (T0.2): +N -N sit at --text-weaker at rest and only light
++ * green/red while their enclosing .activity-row is hovered (mouse-capable devices).
++ * tabular-nums so digit changes never shift layout (F1/F9).
++ */
++.ui-diff-changes[data-variant="muted-hover"] {
++  .ui-diff-changes-additions,
++  .ui-diff-changes-deletions {
++    color: var(--text-weaker);
++    font-variant-numeric: tabular-nums;
++    transition: color 0.15s ease;
++  }
++}
++
++@media (hover: hover) {
++  .activity-row:hover
++    [data-component="diff-changes"][data-variant="muted-hover"]
++    .ui-diff-changes-additions,
++  [data-slot="collapsible-trigger"]:hover
++    [data-component="diff-changes"][data-variant="muted-hover"]
++    .ui-diff-changes-additions {
++    color: var(--text-diff-add-base);
++  }
++
++  .activity-row:hover
++    [data-component="diff-changes"][data-variant="muted-hover"]
++    .ui-diff-changes-deletions,
++  [data-slot="collapsible-trigger"]:hover
++    [data-component="diff-changes"][data-variant="muted-hover"]
++    .ui-diff-changes-deletions {
++    color: var(--text-diff-delete-base);
++  }
++}
++
++@media (prefers-reduced-motion: reduce) {
++  [data-component="diff-changes"][data-variant="muted-hover"] .ui-diff-changes-additions,
++  [data-component="diff-changes"][data-variant="muted-hover"] .ui-diff-changes-deletions {
++    transition: none;
++  }
++}
++
++.ui-diff-changes[data-variant="bars"] {
+   width: 18px;
+   height: 14px;
+   flex-shrink: 0;
+diff --git a/src/components/diff-changes.tsx b/src/components/diff-changes.tsx
+index 0794b972869f5cd1b896aa4eb88b65e297e47344..81109170086901015539c9d1ae985b7f245486f2 100644
+--- a/src/components/diff-changes.tsx
++++ b/src/components/diff-changes.tsx
+@@ -3,7 +3,7 @@ import { createMemo, For, Match, Show, Switch } from "solid-js"
+ export function DiffChanges(props: {
+   class?: string
+   changes: { additions: number; deletions: number } | { additions: number; deletions: number }[]
+-  variant?: "default" | "bars"
++  variant?: "default" | "bars" | "muted-hover"
+ }) {
+   const variant = () => props.variant ?? "default"
+ 
+@@ -92,8 +92,8 @@ export function DiffChanges(props: {
+   })
+ 
+   return (
+-    <Show when={variant() === "default" ? total() > 0 : true}>
+-      <div data-component="diff-changes" data-variant={variant()} classList={{ [props.class ?? ""]: true }}>
++    <Show when={variant() === "bars" ? true : total() > 0}>
++      <div data-component="diff-changes" data-variant={variant()} classList={{ "ui-diff-changes": true, [props.class ?? ""]: true }}>
+         <Switch>
+           <Match when={variant() === "bars"}>
+             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 14" fill="none">
+@@ -104,9 +104,13 @@ export function DiffChanges(props: {
+               </g>
+             </svg>
+           </Match>
+-          <Match when={variant() === "default"}>
+-            <span data-slot="diff-changes-additions">{`+${additions()}`}</span>
+-            <span data-slot="diff-changes-deletions">{`-${deletions()}`}</span>
++          <Match when={variant() === "default" || variant() === "muted-hover"}>
++            <Show when={additions() > 0}>
++              <span data-slot="diff-changes-additions" class="ui-diff-changes-additions">{`+${additions().toLocaleString()}`}</span>
++            </Show>
++            <Show when={deletions() > 0}>
++              <span data-slot="diff-changes-deletions" class="ui-diff-changes-deletions">{`-${deletions().toLocaleString()}`}</span>
++            </Show>
+           </Match>
+         </Switch>
+       </div>
+diff --git a/src/components/dock-surface.css b/src/components/dock-surface.css
+index 91fe5022648f157d8678905e4b492bb2cfb11b01..fba0334960febbe7aec5a4e1cb2fd075c64d517c 100644
+--- a/src/components/dock-surface.css
++++ b/src/components/dock-surface.css
+@@ -3,16 +3,18 @@
+   box-shadow: var(--shadow-xs-border);
+   position: relative;
+   z-index: 10;
+-  border-radius: 12px;
++  border-radius: var(--radius-2xl);
+   overflow: clip;
+ }
+ 
+ [data-dock-border-underlay] {
+-  /* Later shadows paint underneath, so this solid ring masks overlapping surfaces without changing border geometry. */
+-  box-shadow:
++  /* Later shadows paint underneath, so this ring masks overlapping surfaces without changing border geometry. */
++  box-shadow: var(
++    --surface-composer-shadow,
+     var(--dock-shell-visual-shadow, var(--shadow-xs-border)),
+     0 0 0 var(--dock-shell-border-underlay-width, 1px)
+-      var(--dock-shell-border-underlay-background, var(--surface-raised-stronger-non-alpha));
++      var(--dock-shell-border-underlay-background, var(--surface-raised-stronger-non-alpha))
++  );
+ }
+ 
+ [data-dock-border-underlay="v2"] {
+@@ -26,7 +28,7 @@
+   border: 1px solid var(--border-weak-base);
+   position: relative;
+   z-index: 0;
+-  border-radius: 12px;
++  border-radius: var(--radius-2xl);
+   overflow: clip;
+ }
+ 
+diff --git a/src/components/dock-surface.tsx b/src/components/dock-surface.tsx
+index 06cf2a5ebada22020871f86b85587fd3376928fc..fd1ce1834f66a260a4449774f514f6d3c010931b 100644
+--- a/src/components/dock-surface.tsx
++++ b/src/components/dock-surface.tsx
+@@ -21,10 +21,15 @@ export function DockShell(props: ComponentProps<"div">) {
+ }
+ 
+ export function DockShellForm(props: ComponentProps<"form">) {
+-  const [split, rest] = splitProps(props, ["children", "class", "classList"])
++  // Keep delegated form submission as an explicit JSX binding. Forwarding it
++  // only through a component-level spread leaves Solid without the compile-time
++  // event binding it needs, so the browser performs a native submit while the
++  // application handler never runs.
++  const [split, rest] = splitProps(props, ["children", "class", "classList", "onSubmit"])
+   return (
+     <form
+       {...rest}
++      onSubmit={split.onSubmit}
+       data-dock-surface="shell"
+       classList={{
+         ...split.classList,
+diff --git a/src/components/dropdown-menu.css b/src/components/dropdown-menu.css
+index f8a9fa60ee35a2ed25f0f58bb808873b97706153..e75f5b27667bfe73b99c545b56f36dc18e8e3acb 100644
+--- a/src/components/dropdown-menu.css
++++ b/src/components/dropdown-menu.css
+@@ -1,13 +1,13 @@
+-[data-component="dropdown-menu-content"],
+-[data-component="dropdown-menu-sub-content"] {
++.ui-dropdown-menu-content,
++.ui-dropdown-menu-sub-content {
+   min-width: 8rem;
+   overflow: hidden;
+-  border-radius: var(--radius-md);
+-  border: 1px solid color-mix(in oklch, var(--border-base) 50%, transparent);
++  border-radius: var(--surface-overlay-radius, var(--radius-md));
++  border: var(--surface-overlay-border, 1px solid var(--overlay-border));
+   background-clip: padding-box;
+-  background-color: var(--surface-raised-stronger-non-alpha);
++  background-color: var(--overlay-surface);
+   padding: 4px;
+-  box-shadow: var(--shadow-md);
++  box-shadow: var(--surface-overlay-shadow, var(--shadow-md));
+   z-index: 50;
+   transform-origin: var(--kb-menu-content-transform-origin);
+ 
+@@ -25,12 +25,12 @@
+   }
+ }
+ 
+-[data-component="dropdown-menu-content"],
+-[data-component="dropdown-menu-sub-content"] {
+-  [data-slot="dropdown-menu-item"],
+-  [data-slot="dropdown-menu-checkbox-item"],
+-  [data-slot="dropdown-menu-radio-item"],
+-  [data-slot="dropdown-menu-sub-trigger"] {
++.ui-dropdown-menu-content,
++.ui-dropdown-menu-sub-content {
++  .ui-dropdown-menu-item,
++  .ui-dropdown-menu-checkbox-item,
++  .ui-dropdown-menu-radio-item,
++  .ui-dropdown-menu-sub-trigger {
+     position: relative;
+     display: flex;
+     align-items: center;
+@@ -42,30 +42,30 @@
+     outline: none;
+ 
+     font-family: var(--font-family-sans);
+-    font-size: var(--font-size-small);
+-    font-weight: var(--font-weight-medium);
+-    line-height: var(--line-height-large);
++    font-size: var(--menu-item-font-size);
++    font-weight: var(--menu-item-font-weight);
++    line-height: var(--menu-item-line-height);
+     letter-spacing: var(--letter-spacing-normal);
+-    color: var(--text-strong);
++    color: var(--overlay-text);
+ 
+     &[data-highlighted] {
+-      background: var(--surface-raised-base-hover);
++      background: var(--overlay-surface-hover);
+     }
+ 
+     &[data-disabled] {
+-      color: var(--text-weak);
++      color: var(--overlay-text-muted);
+       pointer-events: none;
+     }
+   }
+ 
+-  [data-slot="dropdown-menu-checkbox-item"],
+-  [data-slot="dropdown-menu-radio-item"] {
++  .ui-dropdown-menu-checkbox-item,
++  .ui-dropdown-menu-radio-item {
+     padding-inline-end: 28px;
+   }
+ 
+-  [data-slot="dropdown-menu-sub-trigger"] {
++  .ui-dropdown-menu-sub-trigger {
+     &[data-expanded] {
+-      background: var(--surface-raised-base-hover);
++      background: var(--overlay-surface-hover);
+     }
+   }
+ 
+@@ -81,34 +81,42 @@
+     transform: translateY(-50%);
+   }
+ 
+-  [data-slot="dropdown-menu-item-label"] {
++  .ui-dropdown-menu-item-label {
+     flex: 1;
+   }
+ 
+   [data-slot="dropdown-menu-item-description"] {
+     font-size: var(--font-size-x-small);
+-    color: var(--text-weak);
++    color: var(--overlay-text-muted);
+   }
+ 
++  /*
++   * Kobalte renders this as an <hr>, so the UA's `border: 1px inset` applies on
++   * all four sides and stacks with `height` — the rule below used to paint a
++   * ~3px slab bleeding past the panel padding. Zero the border first, then draw
++   * the single hairline, and inset it so it reads as a divider between rows
++   * rather than a band across the whole panel.
++   */
+   [data-slot="dropdown-menu-separator"] {
+-    height: 1px;
+-    margin: 4px -4px;
+-    border-top-color: var(--border-weak-base);
++    height: 0;
++    margin: 4px;
++    border: 0;
++    border-top: 1px solid var(--overlay-border);
+   }
+ 
+-  [data-slot="dropdown-menu-group-label"] {
++  .ui-dropdown-menu-group-label {
+     display: block;
+     padding: 4px 8px;
+     font-family: var(--font-family-sans);
+-    font-size: var(--font-size-x-small);
+-    font-weight: var(--font-weight-medium);
+-    line-height: var(--line-height-large);
++    font-size: var(--menu-group-font-size);
++    font-weight: var(--menu-group-font-weight);
++    line-height: var(--menu-group-line-height);
+     letter-spacing: var(--letter-spacing-normal);
+-    color: var(--text-weak);
++    color: var(--overlay-text-muted);
+   }
+ 
+   [data-slot="dropdown-menu-arrow"] {
+-    fill: var(--surface-raised-stronger-non-alpha);
++    fill: var(--overlay-surface);
+   }
+ }
+ 
+diff --git a/src/components/dropdown-menu.tsx b/src/components/dropdown-menu.tsx
+index 259cb791abba4fb0c3f066703528ff24b259454a..00250c7c0a59016b5bbe847a2dc083e4b9aaa21e 100644
+--- a/src/components/dropdown-menu.tsx
++++ b/src/components/dropdown-menu.tsx
+@@ -68,7 +68,9 @@ function DropdownMenuContent(props: ParentProps<DropdownMenuContentProps>) {
+     <Kobalte.Content
+       {...rest}
+       data-component="dropdown-menu-content"
++      data-surface="overlay"
+       classList={{
++        "ui-dropdown-menu-content": true,
+         ...local.classList,
+         [local.class ?? ""]: !!local.class,
+       }}
+@@ -129,6 +131,7 @@ function DropdownMenuGroupLabel(props: ParentProps<DropdownMenuGroupLabelProps>)
+       {...rest}
+       data-slot="dropdown-menu-group-label"
+       classList={{
++        "ui-dropdown-menu-group-label": true,
+         ...local.classList,
+         [local.class ?? ""]: !!local.class,
+       }}
+@@ -145,6 +148,7 @@ function DropdownMenuItem(props: ParentProps<DropdownMenuItemProps>) {
+       {...rest}
+       data-slot="dropdown-menu-item"
+       classList={{
++        "ui-dropdown-menu-item": true,
+         ...local.classList,
+         [local.class ?? ""]: !!local.class,
+       }}
+@@ -161,6 +165,7 @@ function DropdownMenuItemLabel(props: ParentProps<DropdownMenuItemLabelProps>) {
+       {...rest}
+       data-slot="dropdown-menu-item-label"
+       classList={{
++        "ui-dropdown-menu-item-label": true,
+         ...local.classList,
+         [local.class ?? ""]: !!local.class,
+       }}
+@@ -225,6 +230,7 @@ function DropdownMenuRadioItem(props: ParentProps<DropdownMenuRadioItemProps>) {
+       {...rest}
+       data-slot="dropdown-menu-radio-item"
+       classList={{
++        "ui-dropdown-menu-radio-item": true,
+         ...local.classList,
+         [local.class ?? ""]: !!local.class,
+       }}
+@@ -241,6 +247,7 @@ function DropdownMenuCheckboxItem(props: ParentProps<DropdownMenuCheckboxItemPro
+       {...rest}
+       data-slot="dropdown-menu-checkbox-item"
+       classList={{
++        "ui-dropdown-menu-checkbox-item": true,
+         ...local.classList,
+         [local.class ?? ""]: !!local.class,
+       }}
+@@ -261,6 +268,7 @@ function DropdownMenuSubTrigger(props: ParentProps<DropdownMenuSubTriggerProps>)
+       {...rest}
+       data-slot="dropdown-menu-sub-trigger"
+       classList={{
++        "ui-dropdown-menu-sub-trigger": true,
+         ...local.classList,
+         [local.class ?? ""]: !!local.class,
+       }}
+@@ -276,7 +284,9 @@ function DropdownMenuSubContent(props: ParentProps<DropdownMenuSubContentProps>)
+     <Kobalte.SubContent
+       {...rest}
+       data-component="dropdown-menu-sub-content"
++      data-surface="overlay"
+       classList={{
++        "ui-dropdown-menu-sub-content": true,
+         ...local.classList,
+         [local.class ?? ""]: !!local.class,
+       }}
+diff --git a/src/components/hover-card.css b/src/components/hover-card.css
+index 02d1f10ad1d958de22ab1c8e19f00f8a5598d450..2a4bfd87b771a81c676a5c6aa54dcb7c3e9bb02b 100644
+--- a/src/components/hover-card.css
++++ b/src/components/hover-card.css
+@@ -9,7 +9,7 @@
+   min-width: 200px;
+   max-width: 320px;
+   max-height: calc(100vh - 1rem);
+-  border-radius: 8px;
++  border-radius: var(--radius-lg);
+   background-color: var(--surface-raised-stronger-non-alpha);
+   pointer-events: auto;
+ 
+diff --git a/src/components/icon-button.css b/src/components/icon-button.css
+index 7a47270fe9ae2216ff286f378d42fb04f911e6f0..5449be027326fec840f562904435280b62fd6040 100644
+--- a/src/components/icon-button.css
++++ b/src/components/icon-button.css
+@@ -1,4 +1,4 @@
+-[data-component="icon-button"] {
++.ui-icon-button {
+   display: inline-flex;
+   align-items: center;
+   justify-content: center;
+@@ -11,7 +11,7 @@
+   &[data-variant="primary"] {
+     background-color: var(--icon-strong-base);
+ 
+-    [data-slot="icon-svg"] {
++    .ui-icon-svg {
+       /* color: var(--icon-weak-base); */
+       color: var(--icon-invert-base);
+ 
+@@ -35,7 +35,7 @@
+     &:disabled {
+       background-color: var(--icon-strong-disabled);
+ 
+-      [data-slot="icon-svg"] {
++      .ui-icon-svg {
+         color: var(--icon-invert-base);
+       }
+     }
+@@ -64,7 +64,7 @@
+       background-color: var(--button-secondary-base);
+     }
+ 
+-    [data-slot="icon-svg"] {
++    .ui-icon-svg {
+       color: var(--icon-strong-base);
+     }
+ 
+@@ -79,14 +79,14 @@
+     background-color: transparent;
+     /* color: var(--icon-base); */
+ 
+-    [data-slot="icon-svg"] {
++    .ui-icon-svg {
+       color: var(--icon-base);
+     }
+ 
+     &:hover:not(:disabled) {
+       background-color: var(--surface-base-hover);
+ 
+-      /* [data-slot="icon-svg"] { */
++      /* .ui-icon-svg { */
+       /*   color: var(--icon-hover); */
+       /* } */
+     }
+@@ -95,13 +95,13 @@
+     }
+     &:active:not(:disabled) {
+       background-color: var(--surface-base-active);
+-      /* [data-slot="icon-svg"] { */
++      /* .ui-icon-svg { */
+       /*   color: var(--icon-active); */
+       /* } */
+     }
+     &:selected:not(:disabled) {
+       background-color: var(--surface-base-active);
+-      /* [data-slot="icon-svg"] { */
++      /* .ui-icon-svg { */
+       /*   color: var(--icon-selected); */
+       /* } */
+     }
+@@ -162,20 +162,20 @@
+   }
+ }
+ 
+-[data-component="icon-button"].titlebar-icon {
++.ui-icon-button.titlebar-icon {
+   width: 32px;
+   height: 24px;
+   aspect-ratio: auto;
+ }
+ 
+-[data-component="icon-button"].titlebar-icon[data-variant="ghost"][aria-expanded="true"] {
++.ui-icon-button.titlebar-icon[data-variant="ghost"][aria-expanded="true"] {
+   background-color: var(--surface-raised-base-active);
+ }
+ 
+-[data-component="icon-button"].titlebar-icon[data-variant="ghost"][aria-expanded="true"] [data-slot="icon-svg"] {
++[data-component="icon-button"].titlebar-icon[data-variant="ghost"][aria-expanded="true"] .ui-icon-svg {
+   color: var(--icon-strong-base);
+ }
+ 
+-[data-component="icon-button"].titlebar-icon[data-variant="ghost"][aria-expanded="true"]:hover:not(:disabled) {
++.ui-icon-button.titlebar-icon[data-variant="ghost"][aria-expanded="true"]:hover:not(:disabled) {
+   background-color: var(--surface-raised-base-active);
+ }
+diff --git a/src/components/icon-button.tsx b/src/components/icon-button.tsx
+index 457283aa039c16793c94548bfb05f2b2b40bbf2c..1e72656caf463bf765324aa695cee6ab0cf3f3b6 100644
+--- a/src/components/icon-button.tsx
++++ b/src/components/icon-button.tsx
+@@ -18,7 +18,7 @@ export function IconButton(props: ComponentProps<"button"> & IconButtonProps) {
+       data-icon={props.icon}
+       data-size={split.size || "normal"}
+       data-variant={split.variant || "secondary"}
+-      classList={{
++      classList={{ "ui-icon-button": true,
+         ...split.classList,
+         [split.class ?? ""]: !!split.class,
+       }}
+diff --git a/src/components/image-preview.css b/src/components/image-preview.css
+index 3c47f7a2584264196284fc6349ece2e70fd4eaa6..9e105defa094413101cd8660d4fc4c41bbb6997e 100644
+--- a/src/components/image-preview.css
++++ b/src/components/image-preview.css
+@@ -25,10 +25,7 @@
+       max-height: 100%;
+       border-radius: var(--radius-lg);
+       background: var(--surface-raised-stronger-non-alpha);
+-      box-shadow:
+-        0 15px 45px 0 rgba(19, 16, 16, 0.35),
+-        0 3.35px 10.051px 0 rgba(19, 16, 16, 0.25),
+-        0 0.998px 2.993px 0 rgba(19, 16, 16, 0.2);
++      box-shadow: var(--shadow-image-preview);
+       overflow: hidden;
+ 
+       &:focus-visible {
+diff --git a/src/components/keybind.css b/src/components/keybind.css
+index 420619ae4af72b5eb9be9f771f4c6288260c2179..c3efb43ac2ad692c19f41b98b0c84d4b51515c69 100644
+--- a/src/components/keybind.css
++++ b/src/components/keybind.css
+@@ -5,14 +5,14 @@
+   flex-shrink: 0;
+   height: 20px;
+   padding: 0 8px;
+-  border-radius: 2px;
++  border-radius: var(--radius-xs);
+   background: var(--surface-base);
+   box-shadow: var(--shadow-xxs-border);
+ 
+   /* text-12-regular */
+   font-family: var(--font-family-sans);
+-  font-size: 12px;
++  font-size: var(--font-size-small);
+   font-weight: var(--font-weight-regular);
+-  line-height: 1;
++  line-height: var(--line-height-none);
+   color: var(--text-weak);
+ }
+diff --git a/src/components/list.css b/src/components/list.css
+index a10df733030a88a3233f0aeafafa94c8c48d4db2..08e2c1a28e9cc7f92d57b912e62b48cdbed99f7a 100644
+--- a/src/components/list.css
++++ b/src/components/list.css
+@@ -16,14 +16,14 @@
+   }
+ }
+ 
+-[data-component="list"] {
++.ui-list {
+   display: flex;
+   flex-direction: column;
+   gap: 12px;
+   overflow: hidden;
+   /*padding: 0 12px;*/
+ 
+-  [data-slot="list-search-wrapper"] {
++  .ui-list-search-wrapper {
+     display: flex;
+     flex-shrink: 0;
+     align-items: center;
+@@ -31,7 +31,7 @@
+     align-self: stretch;
+     margin-bottom: 4px;
+ 
+-    > [data-component="icon-button"] {
++    > .ui-icon-button {
+       width: 24px;
+       height: 24px;
+       flex-shrink: 0;
+@@ -46,17 +46,17 @@
+         opacity: 0.7;
+       }
+ 
+-      &:hover:not(:disabled) [data-slot="icon-svg"] {
++      &:hover:not(:disabled) .ui-icon-svg {
+         color: var(--icon-hover);
+       }
+ 
+-      &:active:not(:disabled) [data-slot="icon-svg"] {
++      &:active:not(:disabled) .ui-icon-svg {
+         color: var(--icon-active);
+       }
+     }
+   }
+ 
+-  [data-slot="list-search"] {
++  .ui-list-search {
+     display: flex;
+     flex: 1;
+     padding: 8px;
+@@ -77,13 +77,13 @@
+         width: 100%;
+ 
+         &[data-slot="input-input"] {
+-          line-height: 20px;
++          line-height: var(--line-height-20);
+           max-height: 20px;
+         }
+       }
+     }
+ 
+-    > [data-component="icon-button"] {
++    > .ui-icon-button {
+       width: 20px;
+       height: 20px;
+       background-color: transparent;
+@@ -97,16 +97,16 @@
+         opacity: 0.7;
+       }
+ 
+-      &:hover:not(:disabled) [data-slot="icon-svg"] {
++      &:hover:not(:disabled) .ui-icon-svg {
+         color: var(--icon-hover);
+       }
+ 
+-      &:active:not(:disabled) [data-slot="icon-svg"] {
++      &:active:not(:disabled) .ui-icon-svg {
+         color: var(--icon-active);
+       }
+     }
+ 
+-    > [data-component="icon-button"] {
++    > .ui-icon-button {
+       background-color: transparent;
+ 
+       &:hover:not(:disabled),
+@@ -115,17 +115,17 @@
+         background-color: transparent;
+       }
+ 
+-      &:hover:not(:disabled) [data-slot="icon-svg"] {
++      &:hover:not(:disabled) .ui-icon-svg {
+         color: var(--icon-hover);
+       }
+ 
+-      &:active:not(:disabled) [data-slot="icon-svg"] {
++      &:active:not(:disabled) .ui-icon-svg {
+         color: var(--icon-active);
+       }
+     }
+   }
+ 
+-  [data-slot="list-scroll"] {
++  .ui-list-scroll {
+     display: flex;
+     flex-direction: column;
+     gap: 12px;
+@@ -161,7 +161,7 @@
+ 
+         /* text-14-regular */
+         font-family: var(--font-family-sans);
+-        font-size: 14px;
++        font-size: var(--font-size-base);
+         font-style: normal;
+         font-weight: var(--font-weight-regular);
+         line-height: var(--line-height-large); /* 142.857% */
+@@ -184,7 +184,7 @@
+         padding-bottom: 12px;
+       }
+ 
+-      [data-slot="list-header"] {
++      .ui-list-header {
+         display: flex;
+         z-index: 10;
+         padding: 8px 12px 8px 8px;
+@@ -199,28 +199,18 @@
+ 
+         /* text-14-medium */
+         font-family: var(--font-family-sans);
+-        font-size: 14px;
++        font-size: var(--font-size-base);
+         font-style: normal;
+         font-weight: var(--font-weight-medium);
+         line-height: var(--line-height-large); /* 142.857% */
+         letter-spacing: var(--letter-spacing-normal);
+ 
+-        &::after {
+-          content: "";
+-          position: absolute;
+-          top: 100%;
+-          left: 0;
+-          right: 0;
+-          height: 16px;
+-          background: linear-gradient(to bottom, var(--surface-raised-stronger-non-alpha), transparent);
+-          pointer-events: none;
+-          opacity: 0;
+-          transition: opacity 0.15s ease;
+-        }
+-
+-        &[data-stuck="true"]::after {
+-          opacity: 1;
+-        }
++        /* No fade below a stuck header. The header's own background is opaque,
++           so it already occludes the rows scrolling under it; the 16px gradient
++           was decoration, and it is painted in a FIXED surface token — on any
++           list whose container repaints that surface (the composer's picker
++           does) it resolves to a different colour than the header above it and
++           shows as a grey shadow hanging off the provider name. */
+       }
+ 
+       [data-slot="list-items"] {
+@@ -229,7 +219,7 @@
+         align-items: flex-start;
+         align-self: stretch;
+ 
+-        [data-slot="list-item"] {
++        .ui-list-item {
+           display: flex;
+           position: relative;
+           width: 100%;
+@@ -240,39 +230,39 @@
+ 
+           /* text-14-medium */
+           font-family: var(--font-family-sans);
+-          font-size: 14px;
++          font-size: var(--font-size-base);
+           font-style: normal;
+           font-weight: var(--font-weight-medium);
+           line-height: var(--line-height-large); /* 142.857% */
+           letter-spacing: var(--letter-spacing-normal);
+ 
+-          [data-slot="list-item-selected-icon"] {
++          .ui-list-item-selected-icon {
+             display: inline-flex;
+             align-items: center;
+             justify-content: center;
+             flex-shrink: 0;
+             aspect-ratio: 1/1;
+-            [data-component="icon"] {
++            .ui-icon {
+               color: var(--icon-strong-base);
+             }
+           }
+-          [data-slot="list-item-active-icon"] {
++          .ui-list-item-active-icon {
+             display: none;
+             align-items: center;
+             justify-content: center;
+             flex-shrink: 0;
+             aspect-ratio: 1/1;
+-            [data-component="icon"] {
++            .ui-icon {
+               color: var(--icon-strong-base);
+             }
+           }
+ 
+-          [data-slot="list-item-extra-icon"] {
++          .ui-list-item-extra-icon {
+             color: var(--icon-base);
+             margin-left: -4px;
+           }
+ 
+-          [data-slot="list-item-divider"] {
++          .ui-list-item-divider {
+             position: absolute;
+             bottom: 0;
+             left: var(--list-divider-inset, 16px);
+@@ -282,17 +272,17 @@
+             pointer-events: none;
+           }
+ 
+-          [data-slot="list-item"]:last-child [data-slot="list-item-divider"] {
++          [data-slot="list-item"]:last-child .ui-list-item-divider {
+             display: none;
+           }
+ 
+           &[data-active="true"] {
+             border-radius: var(--radius-md);
+             background: var(--surface-raised-base-hover);
+-            [data-slot="list-item-active-icon"] {
++            .ui-list-item-active-icon {
+               display: inline-flex;
+             }
+-            [data-slot="list-item-extra-icon"] {
++            .ui-list-item-extra-icon {
+               display: block !important;
+               color: var(--icon-strong-base) !important;
+             }
+@@ -305,7 +295,7 @@
+           }
+         }
+ 
+-        [data-slot="list-item-add"] {
++        .ui-list-item-add {
+           display: flex;
+           position: relative;
+           width: 100%;
+@@ -315,13 +305,13 @@
+ 
+           /* text-14-medium */
+           font-family: var(--font-family-sans);
+-          font-size: 14px;
++          font-size: var(--font-size-base);
+           font-style: normal;
+           font-weight: var(--font-weight-medium);
+           line-height: var(--line-height-large); /* 142.857% */
+           letter-spacing: var(--letter-spacing-normal);
+ 
+-          [data-component="input"] {
++          .ui-input {
+             width: 100%;
+           }
+         }
+diff --git a/src/components/list.tsx b/src/components/list.tsx
+index cc5fc0ce5dc5b84f56ba3a4845b015b206c94256..c8e799dbc7400a21cfc896ff5d0b5f4b96b3504b 100644
+--- a/src/components/list.tsx
++++ b/src/components/list.tsx
+@@ -7,11 +7,12 @@ import { Icon, type IconProps } from "./icon"
+ import { IconButton } from "./icon-button"
+ import { TextField } from "./text-field"
+ 
+-function findByKey(container: HTMLElement, key: string) {
++function findByKey(container: HTMLElement, key: string): HTMLElement | undefined {
+   const nodes = container.querySelectorAll<HTMLElement>('[data-slot="list-item"][data-key]')
+   for (const node of nodes) {
+     if (node.getAttribute("data-key") === key) return node
+   }
++  return undefined
+ }
+ 
+ export interface ListSearchProps {
+@@ -206,7 +207,7 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void })
+     const add = addProps()
+     if (!add) return null
+     return (
+-      <div data-slot="list-item-add" classList={{ [add.class ?? ""]: !!add.class }}>
++      <div data-slot="list-item-add" classList={{ "ui-list-item-add": true, [add.class ?? ""]: !!add.class }}>
+         {add.render()}
+       </div>
+     )
+@@ -234,7 +235,7 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void })
+     })
+ 
+     return (
+-      <div data-slot="list-header" data-stuck={state.stuck} ref={(el) => setState("header", el)}>
++      <div data-slot="list-header" class="ui-list-header" data-stuck={state.stuck} ref={(el) => setState("header", el)}>
+         {props.groupHeader?.(groupProps.group) ?? groupProps.group.category}
+       </div>
+     )
+@@ -260,12 +261,12 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void })
+   }
+ 
+   return (
+-    <div data-component="list" classList={{ [props.class ?? ""]: !!props.class }}>
++    <div data-component="list" classList={{ "ui-list": true, [props.class ?? ""]: !!props.class }}>
+       <Show when={!!props.search}>
+-        <div data-slot="list-search-wrapper">
++        <div data-slot="list-search-wrapper" class="ui-list-search-wrapper">
+           <div
+             data-slot="list-search"
+-            classList={{ [searchProps().class ?? ""]: !!searchProps().class }}
++            classList={{ "ui-list-search": true, [searchProps().class ?? ""]: !!searchProps().class }}
+             onPointerDown={(event) => {
+               const container = event.currentTarget
+               if (!(container instanceof HTMLElement)) return
+@@ -311,11 +312,15 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void })
+                 aria-label={i18n.t("ui.list.clearFilter")}
+               />
+             </Show>
++            {/* Inside the field, alongside the clear button — the two trailing
++                controls belong to the input, so they share its fill the way the
++                leading magnifier does. Outside it the action floated on the bare
++                surface and read as unrelated to the search it acts on. */}
++            {searchAction()}
+           </div>
+-          {searchAction()}
+         </div>
+       </Show>
+-      <div ref={setScrollRef} data-slot="list-scroll">
++      <div ref={setScrollRef} data-slot="list-scroll" class="ui-list-scroll">
+         <Show
+           when={flat().length > 0 || showAdd()}
+           fallback={
+@@ -337,7 +342,7 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void })
+                       {(item, i) => {
+                         const node = (
+                           <button
+-                            data-slot="list-item"
++                            data-slot="list-item" class="ui-list-item"
+                             data-key={props.key(item)}
+                             data-active={props.key(item) === active()}
+                             data-selected={item === props.current}
+@@ -356,19 +361,19 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void })
+                           >
+                             {props.children(item)}
+                             <Show when={item === props.current}>
+-                              <span data-slot="list-item-selected-icon">
++                              <span data-slot="list-item-selected-icon" class="ui-list-item-selected-icon">
+                                 <Icon name="check-small" />
+                               </span>
+                             </Show>
+                             <Show when={props.activeIcon}>
+                               {(icon) => (
+-                                <span data-slot="list-item-active-icon">
++                                <span data-slot="list-item-active-icon" class="ui-list-item-active-icon">
+                                   <Icon name={icon()} />
+                                 </span>
+                               )}
+                             </Show>
+                             {props.divider && (i() !== group.items.length - 1 || (showAdd() && isLastGroup())) && (
+-                              <span data-slot="list-item-divider" />
++                              <span data-slot="list-item-divider" class="ui-list-item-divider" />
+                             )}
+                           </button>
+                         )
+diff --git a/src/components/progress.css b/src/components/progress.css
+index c728912f76dbe50cab8690175e5fe35d7921f998..ef50822919c7449b7396f057f5826bc2b9a71bca 100644
+--- a/src/components/progress.css
++++ b/src/components/progress.css
+@@ -10,8 +10,8 @@
+     gap: 8px;
+   }
+ 
+-  [data-slot="progress-label"],
+-  [data-slot="progress-value-label"] {
++  .ui-progress-label,
++  .ui-progress-value-label {
+     font-family: var(--font-family-sans);
+     font-size: var(--font-size-small);
+     font-weight: var(--font-weight-regular);
+@@ -19,11 +19,11 @@
+     letter-spacing: var(--letter-spacing-normal);
+   }
+ 
+-  [data-slot="progress-label"] {
++  .ui-progress-label {
+     color: var(--text-base);
+   }
+ 
+-  [data-slot="progress-value-label"] {
++  .ui-progress-value-label {
+     color: var(--text-weak);
+     font-variant-numeric: tabular-nums;
+   }
+@@ -33,12 +33,12 @@
+     width: 100%;
+     height: 8px;
+     overflow: hidden;
+-    border-radius: 999px;
++    border-radius: var(--radius-pill);
+     border: 1px solid var(--border-weak-base);
+     background-color: var(--surface-base);
+   }
+ 
+-  [data-slot="progress-fill"] {
++  .ui-progress-fill {
+     height: 100%;
+     width: var(--kb-progress-fill-width);
+     border-radius: inherit;
+@@ -46,7 +46,7 @@
+     transition: width 200ms ease;
+   }
+ 
+-  &[data-indeterminate] [data-slot="progress-fill"] {
++  &[data-indeterminate] .ui-progress-fill {
+     width: 35%;
+     animation: progress-indeterminate 1.3s ease-in-out infinite;
+   }
+diff --git a/src/components/progress.tsx b/src/components/progress.tsx
+index 7cbe5d6bcb3056960267164f6c481c91d2413c8a..ab2d819b6446569c31185f075ebf901bce11b5e8 100644
+--- a/src/components/progress.tsx
++++ b/src/components/progress.tsx
+@@ -22,17 +22,17 @@ export function Progress(props: ProgressProps) {
+       <Show when={local.children || local.showValueLabel}>
+         <div data-slot="progress-header">
+           <Show when={local.children}>
+-            <Kobalte.Label data-slot="progress-label" classList={{ "sr-only": local.hideLabel }}>
++            <Kobalte.Label data-slot="progress-label" classList={{ "ui-progress-label": true, "sr-only": local.hideLabel }}>
+               {local.children}
+             </Kobalte.Label>
+           </Show>
+           <Show when={local.showValueLabel}>
+-            <Kobalte.ValueLabel data-slot="progress-value-label" />
++            <Kobalte.ValueLabel data-slot="progress-value-label" class="ui-progress-value-label" />
+           </Show>
+         </div>
+       </Show>
+       <Kobalte.Track data-slot="progress-track">
+-        <Kobalte.Fill data-slot="progress-fill" />
++        <Kobalte.Fill data-slot="progress-fill" class="ui-progress-fill" />
+       </Kobalte.Track>
+     </Kobalte>
+   )
+diff --git a/src/components/radio-group.css b/src/components/radio-group.css
+index e9cc71184633c6c239c4b3ced8c8cf3837eb6eaa..716f244eca43681abe46c97a0d57924ffe031e6e 100644
+--- a/src/components/radio-group.css
++++ b/src/components/radio-group.css
+@@ -1,11 +1,11 @@
+-[data-component="radio-group"] {
++.ui-radio-group {
+   --radio-group-height: 28px;
+   --radio-group-gap: 4px;
+   --radio-group-padding: 2px;
+ 
+   display: inline-flex;
+ 
+-  [data-slot="radio-group-wrapper"] {
++  .ui-radio-group-wrapper {
+     all: unset;
+     background-color: var(--surface-inset-base);
+     border-radius: var(--radius-sm);
+@@ -19,11 +19,11 @@
+     width: fit-content;
+   }
+ 
+-  &[data-fill] [data-slot="radio-group-wrapper"] {
++  &[data-fill] .ui-radio-group-wrapper {
+     width: 100%;
+   }
+ 
+-  [data-slot="radio-group-items"] {
++  .ui-radio-group-items {
+     display: inline-flex;
+     flex-direction: row;
+     gap: var(--radio-group-gap);
+@@ -33,11 +33,11 @@
+     z-index: 1;
+   }
+ 
+-  &[data-fill] [data-slot="radio-group-items"] {
++  &[data-fill] .ui-radio-group-items {
+     width: 100%;
+   }
+ 
+-  [data-slot="radio-group-indicator"] {
++  .ui-radio-group-indicator {
+     background: var(--button-secondary-base);
+     border-radius: var(--radius-sm);
+     box-shadow: var(--shadow-xs-border-base);
+@@ -55,14 +55,14 @@
+     z-index: 0;
+   }
+ 
+-  [data-slot="radio-group-item"] {
++  .ui-radio-group-item {
+     display: flex;
+     height: 100%;
+     min-width: 0;
+     position: relative;
+   }
+ 
+-  &[data-fill] [data-slot="radio-group-item"] {
++  &[data-fill] .ui-radio-group-item {
+     flex: 1;
+   }
+ 
+@@ -78,7 +78,7 @@
+     width: 1px;
+   }
+ 
+-  [data-slot="radio-group-item-label"] {
++  .ui-radio-group-item-label {
+     color: var(--text-weak);
+     cursor: default;
+     display: flex;
+@@ -89,7 +89,7 @@
+     font-weight: var(--font-weight-medium);
+     flex: 1;
+     height: 100%;
+-    line-height: 1;
++    line-height: var(--line-height-none);
+     padding: var(--radio-group-padding);
+     position: relative;
+     transition:
+@@ -98,7 +98,7 @@
+     user-select: none;
+   }
+ 
+-  [data-slot="radio-group-item-control"] {
++  .ui-radio-group-item-control {
+     align-items: center;
+     border-radius: var(--radius-xs);
+     display: inline-flex;
+@@ -119,44 +119,44 @@
+   }
+ 
+   /* Checked state */
+-  [data-slot="radio-group-item-input"][data-checked] + [data-slot="radio-group-item-label"] {
++  [data-slot="radio-group-item-input"][data-checked] + .ui-radio-group-item-label {
+     color: var(--text-strong);
+   }
+ 
+   /* Hover state: match the inset background (adds subtle density) */
+   [data-slot="radio-group-item-input"]:not([data-checked], [data-disabled])
+     + [data-slot="radio-group-item-label"]:hover
+-    [data-slot="radio-group-item-control"] {
++    .ui-radio-group-item-control {
+     background-color: var(--surface-inset-base);
+   }
+ 
+   /* Do not overlay hover on the active segment */
+   [data-slot="radio-group-item-input"][data-checked]
+     + [data-slot="radio-group-item-label"]:hover
+-    [data-slot="radio-group-item-control"] {
++    .ui-radio-group-item-control {
+     background-color: transparent;
+   }
+ 
+   /* Disabled state */
+-  [data-slot="radio-group-item-input"][data-disabled] + [data-slot="radio-group-item-label"] {
++  [data-slot="radio-group-item-input"][data-disabled] + .ui-radio-group-item-label {
+     cursor: not-allowed;
+     opacity: 0.5;
+   }
+ 
+   /* Focus state */
+   [data-slot="radio-group-wrapper"]:has([data-slot="radio-group-item-input"]:focus-visible)
+-    [data-slot="radio-group-indicator"] {
++    .ui-radio-group-indicator {
+     box-shadow: var(--shadow-xs-border-focus);
+   }
+ 
+   /* Hide indicator when nothing is checked */
+   [data-slot="radio-group-wrapper"]:not(:has([data-slot="radio-group-item-input"][data-checked]))
+-    [data-slot="radio-group-indicator"] {
++    .ui-radio-group-indicator {
+     --indicator-opacity: 0;
+   }
+ 
+   /* Vertical orientation */
+-  &[aria-orientation="vertical"] [data-slot="radio-group-items"] {
++  &[aria-orientation="vertical"] .ui-radio-group-items {
+     flex-direction: column;
+   }
+ 
+@@ -166,11 +166,11 @@
+     --radio-group-gap: 3px;
+     --radio-group-padding: 2px;
+ 
+-    [data-slot="radio-group-item-label"] {
+-      font-size: 12px;
++    .ui-radio-group-item-label {
++      font-size: var(--font-size-small);
+     }
+ 
+-    [data-slot="radio-group-item-control"] {
++    .ui-radio-group-item-control {
+       padding: var(--radio-group-control-padding, 0 8px);
+     }
+   }
+diff --git a/src/components/radio-group.tsx b/src/components/radio-group.tsx
+index 9151a24b0f9c481bf1ec957775f0aa7439bf1e7e..d580adeb8b9f6d6d77668b1e5960225c18bfd5c2 100644
+--- a/src/components/radio-group.tsx
++++ b/src/components/radio-group.tsx
+@@ -56,6 +56,7 @@ export function RadioGroup<T>(props: RadioGroupProps<T>) {
+       data-fill={local.fill ? "" : undefined}
+       data-pad={local.pad ?? "normal"}
+       classList={{
++        "ui-radio-group": true,
+         ...local.classList,
+         [local.class ?? ""]: !!local.class,
+       }}
+@@ -63,15 +64,15 @@ export function RadioGroup<T>(props: RadioGroupProps<T>) {
+       defaultValue={local.defaultValue ? getValue(local.defaultValue) : undefined}
+       onChange={(v) => local.onSelect?.(findOption(v))}
+     >
+-      <div role="presentation" data-slot="radio-group-wrapper">
+-        <Kobalte.Indicator data-slot="radio-group-indicator" />
+-        <div role="presentation" data-slot="radio-group-items">
++      <div role="presentation" data-slot="radio-group-wrapper" class="ui-radio-group-wrapper">
++        <Kobalte.Indicator data-slot="radio-group-indicator" class="ui-radio-group-indicator" />
++        <div role="presentation" data-slot="radio-group-items" class="ui-radio-group-items">
+           <For each={local.options}>
+             {(option) => (
+-              <Kobalte.Item value={getValue(option)} data-slot="radio-group-item" data-value={getValue(option)}>
++              <Kobalte.Item value={getValue(option)} data-slot="radio-group-item" class="ui-radio-group-item" data-value={getValue(option)}>
+                 <Kobalte.ItemInput data-slot="radio-group-item-input" />
+-                <Kobalte.ItemLabel data-slot="radio-group-item-label">
+-                  <span data-slot="radio-group-item-control">{getLabel(option)}</span>
++                <Kobalte.ItemLabel data-slot="radio-group-item-label" class="ui-radio-group-item-label">
++                  <span data-slot="radio-group-item-control" class="ui-radio-group-item-control">{getLabel(option)}</span>
+                 </Kobalte.ItemLabel>
+               </Kobalte.Item>
+             )}
+diff --git a/src/components/resize-handle.css b/src/components/resize-handle.css
+index 5d8b90b32909fd66e822322ab1ab09843dbd0d59..b4df3d1923ce9a6de2e3ff964f4c078aff20fefd 100644
+--- a/src/components/resize-handle.css
++++ b/src/components/resize-handle.css
+@@ -1,4 +1,4 @@
+-[data-component="resize-handle"] {
++.ui-resize-handle {
+   position: absolute;
+   z-index: 10;
+ 
+diff --git a/src/components/resize-handle.tsx b/src/components/resize-handle.tsx
+index 52a0cb587173dc4a12ec2233b6987a6dd1eac034..0ac42f4d2d3328e3b1100ec139d6caa49e53c418 100644
+--- a/src/components/resize-handle.tsx
++++ b/src/components/resize-handle.tsx
+@@ -93,6 +93,7 @@ export function ResizeHandle(props: ResizeHandleProps) {
+       data-direction={local.direction}
+       data-edge={local.edge ?? (local.direction === "vertical" ? "start" : "end")}
+       classList={{
++        "ui-resize-handle": true,
+         ...local.classList,
+         [local.class ?? ""]: !!local.class,
+       }}
+diff --git a/src/components/select.css b/src/components/select.css
+index f78fe296f6647b875d225c18eef224ea435d26d1..42eaa248d56bfe2f42307d2d43bcac1a71b5da9d 100644
+--- a/src/components/select.css
++++ b/src/components/select.css
+@@ -1,15 +1,15 @@
+ [data-component="select"] {
+-  [data-slot="select-select-trigger"] {
++  .ui-select-select-trigger {
+     padding-block: 0;
+     padding-inline: 8px 4px;
+     box-shadow: none;
+ 
+-    [data-slot="select-select-trigger-value"] {
++    .ui-select-select-trigger-value {
+       overflow: hidden;
+       text-overflow: ellipsis;
+       white-space: nowrap;
+     }
+-    [data-slot="select-select-trigger-icon"] {
++    .ui-select-select-trigger-icon {
+       width: 16px;
+       height: 16px;
+       display: flex;
+@@ -46,25 +46,25 @@
+   }
+ 
+   &[data-trigger-style="settings"] {
+-    [data-slot="select-select-trigger"] {
++    .ui-select-select-trigger {
+       padding-block: 6px;
+       padding-inline: 12px 6px;
+       box-shadow: none;
+-      border-radius: 6px;
++      border-radius: var(--radius-md);
+       min-width: 160px;
+       height: 32px;
+       justify-content: flex-end;
+       gap: 12px;
+       background-color: transparent;
+ 
+-      [data-slot="select-select-trigger-value"] {
++      .ui-select-select-trigger-value {
+         overflow: hidden;
+         text-overflow: ellipsis;
+         white-space: nowrap;
+         font-size: var(--font-size-base);
+         font-weight: var(--font-weight-regular);
+       }
+-      [data-slot="select-select-trigger-icon"] {
++      .ui-select-select-trigger-icon {
+         width: 16px;
+         height: 20px;
+         display: flex;
+@@ -73,7 +73,7 @@
+         flex-shrink: 0;
+         color: var(--text-weak);
+         background-color: var(--surface-raised-base);
+-        border-radius: 4px;
++        border-radius: var(--radius-sm);
+         transition: transform 0.1s ease-in-out;
+       }
+ 
+@@ -92,21 +92,23 @@
+   }
+ }
+ 
+-[data-component="select-content"] {
++.ui-select-content {
+   min-width: 104px;
+   max-width: 23rem;
+   overflow: hidden;
+-  border-radius: var(--radius-md);
+-  background-color: var(--surface-raised-stronger-non-alpha);
++  border-radius: var(--surface-overlay-radius, var(--radius-md));
++  border: var(--surface-overlay-border, 1px solid var(--overlay-border));
++  background-clip: padding-box;
++  background-color: var(--overlay-surface);
+   padding: 4px;
+-  box-shadow: var(--shadow-xs-border);
++  box-shadow: var(--surface-overlay-shadow, var(--shadow-xs-border));
+   z-index: 60;
+ 
+   &[data-expanded] {
+     animation: select-open 0.15s ease-out;
+   }
+ 
+-  [data-slot="select-select-content-list"] {
++  .ui-select-select-content-list {
+     overflow-y: auto;
+     max-height: 12rem;
+     white-space: nowrap;
+@@ -123,13 +125,23 @@
+     }
+   }
+ 
+-  [data-slot="select-select-item"] {
++  .ui-select-section {
++    padding: 4px 8px 2px;
++    color: var(--overlay-text-muted);
++    font-family: var(--font-family-sans);
++    font-size: var(--font-size-x-small);
++    font-weight: var(--font-weight-medium);
++    line-height: var(--line-height-large);
++    letter-spacing: var(--letter-spacing-normal);
++  }
++
++  .ui-select-select-item {
+     position: relative;
+     display: flex;
+     align-items: center;
+     padding: 2px 8px;
+     gap: 12px;
+-    border-radius: 4px;
++    border-radius: var(--radius-sm);
+     cursor: default;
+ 
+     /* text-12-medium */
+@@ -140,19 +152,30 @@
+     line-height: var(--line-height-large); /* 166.667% */
+     letter-spacing: var(--letter-spacing-normal);
+ 
+-    color: var(--text-strong);
++    /* Body copy — the thing the menu exists to say — so it takes the full-strength
++       overlay role, never the muted one. The muted role is for secondary marks
++       (the group label and the disabled row below). Measured across all 38
++       bundled themes in both schemes: 2/76 pairs sit under 4.5:1 here, the same
++       2 as before the semantic rename, and both are pre-existing
++       (catppuccin-frappe/macchiato in light). */
++    color: var(--overlay-text);
+ 
+     outline: none;
+     user-select: none;
+ 
+     &[data-highlighted] {
+-      background: var(--surface-raised-base-hover);
++      background: var(--overlay-surface-hover);
+     }
+     &[data-disabled] {
+-      background-color: var(--surface-raised-base);
++      color: var(--overlay-text-muted);
++      /* Paints the panel's own surface over the row, so it must track the panel.
++         The generic token this used to name drifted from it in 73 of the 74
++         non-Codex theme/mode pairs — a disabled row was tinted against its own
++         menu (oc-2 light painted #F3F3F3 onto a #ffffff panel). */
++      background-color: var(--overlay-surface);
+       pointer-events: none;
+     }
+-    [data-slot="select-select-item-indicator"] {
++    .ui-select-select-item-indicator {
+       display: flex;
+       align-items: center;
+       justify-content: center;
+@@ -164,21 +187,21 @@
+       outline: none;
+     }
+     &:hover {
+-      background: var(--surface-raised-base-hover);
++      background: var(--overlay-surface-hover);
+     }
+   }
+ }
+ 
+-[data-component="select-content"][data-trigger-style="settings"] {
++.ui-select-content[data-trigger-style="settings"] {
+   min-width: 160px;
+-  border-radius: 8px;
++  border-radius: var(--radius-lg);
+   padding: 0;
+ 
+-  [data-slot="select-select-content-list"] {
++  .ui-select-select-content-list {
+     padding: 4px;
+   }
+ 
+-  [data-slot="select-select-item"] {
++  .ui-select-select-item {
+     /* text-14-regular */
+     font-family: var(--font-family-sans);
+     font-size: var(--font-size-base);
+diff --git a/src/components/select.tsx b/src/components/select.tsx
+index 67becf2d9c4d112a6f07167d227ab11df8f65f60..c273d3a26d26950bd38812b323f881e2b166380c 100644
+--- a/src/components/select.tsx
++++ b/src/components/select.tsx
+@@ -3,8 +3,21 @@ import { createMemo, onCleanup, splitProps, type ComponentProps, type JSX } from
+ import { pipe, groupBy, entries, map } from "remeda"
+ import { Button, ButtonProps } from "./button"
+ import { Icon } from "./icon"
++import { selectItemText } from "../utils/select-item"
+ 
+-export type SelectProps<T> = Omit<ComponentProps<typeof Kobalte<T>>, "value" | "onSelect" | "children"> & {
++/** The shape this select always groups its options into; see `grouped` below. */
++type SelectGroup<T> = { category: string; options: T[] }
++
++/**
++ * Kobalte's root props are a union of its single- and multiple-selection modes,
++ * discriminated on `multiple`. This component is single-selection by
++ * construction -- `current` is one item, `onSelect` yields one item -- and it
++ * always renders grouped options, so both facts belong in the prop type rather
++ * than in a suppression at the element below.
++ */
++type KobalteSingleSelectProps<T> = Extract<ComponentProps<typeof Kobalte<T, SelectGroup<T>>>, { multiple?: false }>
++
++export type SelectProps<T> = Omit<KobalteSingleSelectProps<T>, "value" | "onSelect" | "children"> & {
+   placeholder?: string
+   options: T[]
+   current?: T
+@@ -15,8 +28,11 @@ export type SelectProps<T> = Omit<ComponentProps<typeof Kobalte<T>>, "value" | "
+   onSelect?: (value: T | undefined) => void
+   onHighlight?: (value: T | undefined) => (() => void) | void
+   class?: ComponentProps<"div">["class"]
++  triggerClass?: ComponentProps<"button">["class"]
++  contentClass?: ComponentProps<"div">["class"]
+   classList?: ComponentProps<"div">["classList"]
+   children?: (item: T | undefined) => JSX.Element
++  renderValue?: (item: T) => JSX.Element
+   triggerStyle?: JSX.CSSProperties
+   triggerVariant?: "settings"
+   triggerProps?: Record<string, string | number | boolean | undefined>
+@@ -25,6 +41,8 @@ export type SelectProps<T> = Omit<ComponentProps<typeof Kobalte<T>>, "value" | "
+ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">) {
+   const [local, others] = splitProps(props, [
+     "class",
++    "triggerClass",
++    "contentClass",
+     "classList",
+     "placeholder",
+     "options",
+@@ -37,6 +55,7 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
+     "onHighlight",
+     "onOpenChange",
+     "children",
++    "renderValue",
+     "triggerStyle",
+     "triggerVariant",
+     "triggerProps",
+@@ -53,7 +72,8 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
+     state.key = undefined
+   }
+ 
+-  const keyFor = (item: T) => (local.value ? local.value(item) : (item as string))
++  const keyFor = (item: T) => (local.value ? local.value(item) : selectItemText(item))
++  const labelFor = (item: T) => (local.label ? local.label(item) : selectItemText(item))
+ 
+   const move = (item: T | undefined) => {
+     if (!local.onHighlight) return
+@@ -83,7 +103,6 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
+   })
+ 
+   return (
+-    // @ts-ignore
+     <Kobalte<T, { category: string; options: T[] }>
+       {...others}
+       data-component="select"
+@@ -92,18 +111,19 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
+       gutter={4}
+       value={local.current}
+       options={grouped()}
+-      optionValue={(x) => (local.value ? local.value(x) : (x as string))}
+-      optionTextValue={(x) => (local.label ? local.label(x) : (x as string))}
++      optionValue={keyFor}
++      optionTextValue={labelFor}
+       optionGroupChildren="options"
+       placeholder={local.placeholder}
+       sectionComponent={(local) => (
+-        <Kobalte.Section data-slot="select-section">{local.section.rawValue.category}</Kobalte.Section>
++        <Kobalte.Section data-slot="select-section" class="ui-select-section">{local.section.rawValue.category}</Kobalte.Section>
+       )}
+       itemComponent={(itemProps) => (
+         <Kobalte.Item
+           {...itemProps}
+           data-slot="select-select-item"
+           classList={{
++            "ui-select-select-item": true,
+             ...local.classList,
+             [local.class ?? ""]: !!local.class,
+           }}
+@@ -111,14 +131,10 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
+           onPointerMove={() => move(itemProps.item.rawValue)}
+           onFocus={() => move(itemProps.item.rawValue)}
+         >
+-          <Kobalte.ItemLabel data-slot="select-select-item-label">
+-            {local.children
+-              ? local.children(itemProps.item.rawValue)
+-              : local.label
+-                ? local.label(itemProps.item.rawValue)
+-                : (itemProps.item.rawValue as string)}
++          <Kobalte.ItemLabel data-slot="select-select-item-label" class="ui-select-select-item-label">
++            {local.children ? local.children(itemProps.item.rawValue) : labelFor(itemProps.item.rawValue)}
+           </Kobalte.ItemLabel>
+-          <Kobalte.ItemIndicator data-slot="select-select-item-indicator">
++          <Kobalte.ItemIndicator data-slot="select-select-item-indicator" class="ui-select-select-item-indicator">
+             <Icon name="check-small" size="small" />
+           </Kobalte.ItemIndicator>
+         </Kobalte.Item>
+@@ -141,32 +157,40 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
+         variant={props.variant}
+         style={local.triggerStyle}
+         classList={{
++          "ui-select-select-trigger": true,
+           ...local.classList,
+           [local.class ?? ""]: !!local.class,
++          [local.triggerClass ?? ""]: !!local.triggerClass,
+         }}
+       >
+-        <Kobalte.Value<T> data-slot="select-select-trigger-value" class={local.valueClass}>
++        <Kobalte.Value<T> data-slot="select-select-trigger-value" class={local.valueClass} classList={{ "ui-select-select-trigger-value": true }}>
+           {(state) => {
+             const selected = state.selectedOption() ?? local.current
+             if (!selected) return local.placeholder || ""
+-            if (local.label) return local.label(selected)
+-            return selected as string
++            // `children` renders a MENU ROW; the trigger shows the selected
++            // VALUE. They are different shapes (a row may carry hover affordances,
++            // descriptions or indicators the trigger must not inherit), so a
++            // caller that wants a custom trigger asks for it explicitly.
++            if (local.renderValue) return local.renderValue(selected)
++            return labelFor(selected)
+           }}
+         </Kobalte.Value>
+-        <Kobalte.Icon data-slot="select-select-trigger-icon">
+-          <Icon name={local.triggerVariant === "settings" ? "selector" : "chevron-down"} size="small" />
++        <Kobalte.Icon data-slot="select-select-trigger-icon" class="ui-select-select-trigger-icon">
++          <Icon name="chevron-down" size="small" />
+         </Kobalte.Icon>
+       </Kobalte.Trigger>
+       <Kobalte.Portal>
+         <Kobalte.Content
+           classList={{
++            "ui-select-content": true,
+             ...local.classList,
+             [local.class ?? ""]: !!local.class,
++            [local.contentClass ?? ""]: !!local.contentClass,
+           }}
+           data-component="select-content"
+           data-trigger-style={local.triggerVariant}
+         >
+-          <Kobalte.Listbox data-slot="select-select-content-list" />
++          <Kobalte.Listbox data-slot="select-select-content-list" class="ui-select-select-content-list" />
+         </Kobalte.Content>
+       </Kobalte.Portal>
+     </Kobalte>
+diff --git a/src/components/spinner.css b/src/components/spinner.css
+index 2ca474dc3c3e5f58c16ac2084e4585311e3c60b6..40de455f2035645eac12358b93e19b93c625022f 100644
+--- a/src/components/spinner.css
++++ b/src/components/spinner.css
+@@ -1,4 +1,4 @@
+-[data-component="spinner"] {
++.ui-spinner {
+   color: inherit;
+   flex-shrink: 0;
+   width: 18px;
+diff --git a/src/components/spinner.tsx b/src/components/spinner.tsx
+index f8aacb6e29be4771a6c499bec49ff60d25f4700c..a385199b8e9c803e900b217e42b5cd59b1bdbd67 100644
+--- a/src/components/spinner.tsx
++++ b/src/components/spinner.tsx
+@@ -23,6 +23,7 @@ export function Spinner(props: {
+       viewBox="0 0 15 15"
+       data-component="spinner"
+       classList={{
++        "ui-spinner": true,
+         ...props.classList,
+         [props.class ?? ""]: !!props.class,
+       }}
+diff --git a/src/components/sticky-accordion-header.css b/src/components/sticky-accordion-header.css
+index 68195241b9cd1393f8f6fb6d0e33950760e48d36..1b076bad832a1cc33cfee22868fe07fc8ef38536 100644
+--- a/src/components/sticky-accordion-header.css
++++ b/src/components/sticky-accordion-header.css
+@@ -1,4 +1,4 @@
+-[data-component="sticky-accordion-header"] {
++.ui-sticky-accordion-header {
+   position: sticky;
+   top: calc(var(--sticky-accordion-top, 0px) + var(--sticky-accordion-offset, 0px));
+   z-index: 10;
+diff --git a/src/components/sticky-accordion-header.tsx b/src/components/sticky-accordion-header.tsx
+index b877aa16e7b11394e57fe49aa35414b0d3056d01..56d9a471841d957505fc3ea1a2b7721313b9f0f2 100644
+--- a/src/components/sticky-accordion-header.tsx
++++ b/src/components/sticky-accordion-header.tsx
+@@ -8,6 +8,7 @@ export function StickyAccordionHeader(
+     <Accordion.Header
+       data-component="sticky-accordion-header"
+       classList={{
++        "ui-sticky-accordion-header": true,
+         ...props.classList,
+         [props.class ?? ""]: !!props.class,
+       }}
+diff --git a/src/components/switch.css b/src/components/switch.css
+index 86fc1432894bc9072a9db188fece1248e5ef5ca8..121901abb42b17478c3aa89f845def02a6e38463 100644
+--- a/src/components/switch.css
++++ b/src/components/switch.css
+@@ -17,13 +17,13 @@
+     border-width: 0;
+   }
+ 
+-  [data-slot="switch-control"] {
++  .ui-switch-control {
+     display: inline-flex;
+     align-items: center;
+     width: 28px;
+     height: 16px;
+     flex-shrink: 0;
+-    border-radius: 3px;
++    border-radius: var(--radius-3);
+     border: 1px solid var(--border-weak-base);
+     background: var(--surface-base);
+     transition:
+@@ -31,20 +31,17 @@
+       border-color 150ms;
+   }
+ 
+-  [data-slot="switch-thumb"] {
++  .ui-switch-thumb {
+     width: 14px;
+     height: 14px;
+     box-sizing: content-box;
+ 
+-    border-radius: 2px;
++    border-radius: var(--radius-xs);
+     border: 1px solid var(--border-base);
+     background: var(--icon-invert-base);
+ 
+     /* shadows/shadow-xs */
+-    box-shadow:
+-      0 1px 2px -1px rgba(19, 16, 16, 0.04),
+-      0 1px 2px 0 rgba(19, 16, 16, 0.06),
+-      0 1px 3px 0 rgba(19, 16, 16, 0.08);
++    box-shadow: var(--shadow-xs);
+ 
+     transform: translateX(-1px);
+     transition:
+@@ -66,7 +63,7 @@
+   [data-slot="switch-description"] {
+     color: var(--text-base);
+     font-family: var(--font-family-sans);
+-    font-size: 12px;
++    font-size: var(--font-size-small);
+     font-weight: var(--font-weight-regular);
+     line-height: var(--line-height-normal);
+     letter-spacing: var(--letter-spacing-normal);
+@@ -75,39 +72,39 @@
+   [data-slot="switch-error"] {
+     color: var(--text-error);
+     font-family: var(--font-family-sans);
+-    font-size: 12px;
++    font-size: var(--font-size-small);
+     font-weight: var(--font-weight-regular);
+     line-height: var(--line-height-normal);
+     letter-spacing: var(--letter-spacing-normal);
+   }
+ 
+-  &:hover:not([data-disabled], [data-readonly]) [data-slot="switch-control"] {
++  &:hover:not([data-disabled], [data-readonly]) .ui-switch-control {
+     border-color: var(--border-hover);
+     background-color: var(--surface-hover);
+   }
+ 
+-  &:not([data-readonly]) [data-slot="switch-input"]:focus-visible ~ [data-slot="switch-control"] {
++  &:not([data-readonly]) [data-slot="switch-input"]:focus-visible ~ .ui-switch-control {
+     border-color: var(--border-focus);
+     box-shadow: var(--shadow-xs-border-focus);
+   }
+ 
+-  &[data-checked] [data-slot="switch-control"] {
++  &[data-checked] .ui-switch-control {
+     box-sizing: border-box;
+     border-color: var(--icon-strong-base);
+     background-color: var(--icon-strong-base);
+   }
+ 
+-  &[data-checked] [data-slot="switch-thumb"] {
++  &[data-checked] .ui-switch-thumb {
+     border: none;
+     transform: translateX(12px);
+     background-color: var(--icon-invert-base);
+   }
+ 
+-  &:dir(rtl)[data-checked] [data-slot="switch-thumb"] {
++  &:dir(rtl)[data-checked] .ui-switch-thumb {
+     transform: translateX(-12px);
+   }
+ 
+-  &[data-checked]:hover:not([data-disabled], [data-readonly]) [data-slot="switch-control"] {
++  &[data-checked]:hover:not([data-disabled], [data-readonly]) .ui-switch-control {
+     border-color: var(--border-hover);
+     background-color: var(--surface-hover);
+   }
+@@ -116,16 +113,16 @@
+     cursor: not-allowed;
+   }
+ 
+-  &[data-disabled] [data-slot="switch-control"] {
++  &[data-disabled] .ui-switch-control {
+     border-color: var(--border-disabled);
+     background-color: var(--surface-disabled);
+   }
+ 
+-  &[data-disabled] [data-slot="switch-thumb"] {
++  &[data-disabled] .ui-switch-thumb {
+     background-color: var(--icon-disabled);
+   }
+ 
+-  &[data-invalid] [data-slot="switch-control"] {
++  &[data-invalid] .ui-switch-control {
+     border-color: var(--border-error);
+   }
+ 
+diff --git a/src/components/switch.tsx b/src/components/switch.tsx
+index f4f95baf57d5e945391be16bf8c92c3e1c7630a4..2f39438ced0553d7d1939571268b23cce78edb6e 100644
+--- a/src/components/switch.tsx
++++ b/src/components/switch.tsx
+@@ -21,8 +21,8 @@ export function Switch(props: SwitchProps) {
+         <Kobalte.Description data-slot="switch-description">{local.description}</Kobalte.Description>
+       </Show>
+       <Kobalte.ErrorMessage data-slot="switch-error" />
+-      <Kobalte.Control data-slot="switch-control">
+-        <Kobalte.Thumb data-slot="switch-thumb" />
++      <Kobalte.Control data-slot="switch-control" class="ui-switch-control">
++        <Kobalte.Thumb data-slot="switch-thumb" class="ui-switch-thumb" />
+       </Kobalte.Control>
+     </Kobalte>
+   )
+diff --git a/src/components/tabs.css b/src/components/tabs.css
+index bbdee36ff1ccbf2d07f83716449277af471dbe55..9bb24c0bfcd585915c7684a05e85c6ee0f02b82a 100644
+--- a/src/components/tabs.css
++++ b/src/components/tabs.css
+@@ -1,4 +1,4 @@
+-[data-component="tabs"] {
++.ui-tabs {
+   --tabs-bar-height: 48px;
+   --tabs-compact-pill-height: 24px;
+   --tabs-compact-pill-radius: 6px;
+@@ -11,7 +11,7 @@
+   background-color: var(--background-stronger);
+   overflow: clip;
+ 
+-  [data-slot="tabs-list"] {
++  .ui-tabs-list {
+     height: 48px;
+     width: 100%;
+     position: relative;
+@@ -41,7 +41,7 @@
+     }
+   }
+ 
+-  [data-slot="tabs-trigger-wrapper"] {
++  .ui-tabs-trigger-wrapper {
+     position: relative;
+     height: 100%;
+     display: flex;
+@@ -51,7 +51,7 @@
+ 
+     /* text-14-medium */
+     font-family: var(--font-family-sans);
+-    font-size: 14px;
++    font-size: var(--font-size-base);
+     font-style: normal;
+     font-weight: var(--font-weight-medium);
+     line-height: var(--line-height-large); /* 142.857% */
+@@ -64,7 +64,7 @@
+     border-inline-end: 1px solid var(--border-weak-base);
+     background-color: var(--background-base);
+ 
+-    [data-slot="tabs-trigger"] {
++    .ui-tabs-trigger {
+       display: flex;
+       align-items: center;
+       justify-content: center;
+@@ -80,13 +80,13 @@
+       }
+     }
+ 
+-    [data-slot="tabs-trigger-close-button"] {
++    .ui-tabs-trigger-close-button {
+       display: flex;
+       align-items: center;
+       justify-content: center;
+     }
+ 
+-    [data-component="icon-button"] {
++    .ui-icon-button {
+       margin: -0.25rem;
+     }
+ 
+@@ -102,7 +102,7 @@
+       color: var(--text-strong);
+       background-color: transparent;
+       border-bottom-color: transparent;
+-      [data-slot="tabs-trigger-close-button"] {
++      .ui-tabs-trigger-close-button {
+         opacity: 1;
+       }
+     }
+@@ -113,13 +113,13 @@
+     &:has([data-slot="tabs-trigger-close-button"]) {
+       padding-inline-end: 12px;
+ 
+-      [data-slot="tabs-trigger"] {
++      .ui-tabs-trigger {
+         padding-inline-end: 0;
+       }
+     }
+   }
+ 
+-  [data-slot="tabs-content"] {
++  .ui-tabs-content {
+     overflow-y: auto;
+     flex: 1;
+ 
+@@ -139,7 +139,7 @@
+   #terminal-panel &[data-variant="normal"][data-orientation="horizontal"] {
+     background-color: var(--background-stronger);
+ 
+-    [data-slot="tabs-list"] {
++    .ui-tabs-list {
+       height: var(--tabs-bar-height);
+       padding-inline-start: 12px;
+       padding-inline-end: 0;
+@@ -174,7 +174,7 @@
+       }
+     }
+ 
+-    [data-slot="tabs-trigger-wrapper"] {
++    .ui-tabs-trigger-wrapper {
+       height: var(--tabs-compact-pill-height);
+       margin-block: 0;
+       max-width: 320px;
+@@ -211,14 +211,14 @@
+         padding-right: 8px;
+       }
+ 
+-      [data-slot="tabs-trigger"] {
++      .ui-tabs-trigger {
+         height: 100%;
+         padding: 0 !important;
+       }
+ 
+       &:has([data-slot="tabs-trigger-close-button"]) {
+         padding-inline-end: 5px;
+-        [data-slot="tabs-trigger"] {
++        .ui-tabs-trigger {
+           padding-inline-end: 0 !important;
+         }
+       }
+@@ -243,7 +243,7 @@
+         File tabs: use monochrome icon by default.
+         Full-color icon is shown on hover/selected.
+       */
+-      [data-slot="tabs-trigger"] {
++      .ui-tabs-trigger {
+         .tab-fileicon-color,
+         .tab-fileicon-mono {
+           pointer-events: none;
+@@ -273,13 +273,13 @@
+   }
+ 
+   #terminal-panel &[data-variant="normal"][data-orientation="horizontal"] {
+-    [data-slot="tabs-list"] {
++    .ui-tabs-list {
+       height: 52px;
+       padding-inline-end: 12px;
+       gap: 8px;
+     }
+ 
+-    [data-slot="tabs-trigger-wrapper"] {
++    .ui-tabs-trigger-wrapper {
+       height: 28px;
+       padding-inline: 8px;
+       border: 0;
+@@ -290,7 +290,7 @@
+         display: none;
+       }
+ 
+-      [data-slot="tabs-trigger"] {
++      .ui-tabs-trigger {
+         padding: 0 !important;
+       }
+ 
+@@ -305,12 +305,12 @@
+     }
+ 
+     [data-slot="terminal-tab-title"] {
+-      font-family: Inter, sans-serif;
++      font-family: var(--font-family-sans);
+       font-style: normal;
+-      font-weight: 440;
+-      font-size: 13px;
+-      line-height: 16px;
+-      letter-spacing: -0.04px;
++      font-weight: var(--font-weight-body);
++      font-size: var(--font-size-compact);
++      line-height: var(--line-height-16);
++      letter-spacing: var(--letter-spacing-ui);
+       color: var(--v2-text-text-base);
+       font-variation-settings: "slnt" 0;
+       font-variant-numeric: tabular-nums;
+@@ -318,7 +318,7 @@
+   }
+ 
+   &[data-variant="alt"] {
+-    [data-slot="tabs-list"] {
++    .ui-tabs-list {
+       padding-left: 24px;
+       padding-right: 24px;
+       gap: 12px;
+@@ -334,7 +334,7 @@
+       }
+     }
+ 
+-    [data-slot="tabs-trigger-wrapper"] {
++    .ui-tabs-trigger-wrapper {
+       border: none;
+       color: var(--text-base);
+       background-color: transparent;
+@@ -351,7 +351,7 @@
+       line-height: var(--line-height-x-large); /* 171.429% */
+       letter-spacing: var(--letter-spacing-normal);
+ 
+-      [data-slot="tabs-trigger"] {
++      .ui-tabs-trigger {
+         height: 100%;
+         padding: 4px;
+         background-color: transparent;
+@@ -359,13 +359,13 @@
+         border-bottom-color: transparent;
+       }
+ 
+-      [data-slot="tabs-trigger-close-button"] {
++      .ui-tabs-trigger-close-button {
+         display: flex;
+         align-items: center;
+         justify-content: center;
+       }
+ 
+-      [data-component="icon-button"] {
++      .ui-icon-button {
+         width: 16px;
+         height: 16px;
+         margin: 0;
+@@ -383,20 +383,20 @@
+ 
+       &:has([data-slot="tabs-trigger-close-button"]) {
+         padding-inline-end: 0;
+-        [data-slot="tabs-trigger"] {
++        .ui-tabs-trigger {
+           padding-inline-end: 0;
+         }
+       }
+     }
+ 
+-    /* [data-slot="tabs-content"] { */
++    /* .ui-tabs-content { */
+     /* } */
+   }
+ 
+   &[data-variant="pill"][data-orientation="horizontal"] {
+     background-color: transparent;
+ 
+-    [data-slot="tabs-list"] {
++    .ui-tabs-list {
+       height: auto;
+       padding: 6px 0;
+       gap: 4px;
+@@ -407,7 +407,7 @@
+       }
+     }
+ 
+-    [data-slot="tabs-trigger-wrapper"] {
++    .ui-tabs-trigger-wrapper {
+       height: 32px;
+       border: none;
+       border-radius: var(--radius-sm);
+@@ -422,7 +422,7 @@
+       line-height: var(--line-height-large);
+       letter-spacing: var(--letter-spacing-normal);
+ 
+-      [data-slot="tabs-trigger"] {
++      .ui-tabs-trigger {
+         height: 100%;
+         width: 100%;
+         padding: 0 12px;
+@@ -450,7 +450,7 @@
+   }
+ 
+   &[data-variant="pill"][data-orientation="horizontal"][data-scope="filetree"] {
+-    [data-slot="tabs-list"] {
++    .ui-tabs-list {
+       height: 48px;
+       padding-inline: 12px;
+       gap: 8px;
+@@ -460,7 +460,7 @@
+       border-bottom: 1px solid var(--border-weak-base);
+     }
+ 
+-    [data-slot="tabs-trigger-wrapper"] {
++    .ui-tabs-trigger-wrapper {
+       height: var(--tabs-compact-pill-height);
+       border-radius: var(--tabs-compact-pill-radius);
+       color: var(--text-weak);
+@@ -485,7 +485,7 @@
+   &[data-orientation="vertical"] {
+     flex-direction: row;
+ 
+-    [data-slot="tabs-list"] {
++    .ui-tabs-list {
+       flex-direction: column;
+       width: auto;
+       height: 100%;
+@@ -501,14 +501,14 @@
+       }
+     }
+ 
+-    [data-slot="tabs-trigger-wrapper"] {
++    .ui-tabs-trigger-wrapper {
+       width: 100%;
+       height: 32px;
+       border: none;
+-      border-radius: 8px;
++      border-radius: var(--radius-lg);
+       background-color: transparent;
+ 
+-      [data-slot="tabs-trigger"] {
++      .ui-tabs-trigger {
+         height: 100%;
+         padding: 0 8px;
+         gap: 8px;
+@@ -525,13 +525,13 @@
+       }
+     }
+ 
+-    [data-slot="tabs-content"] {
++    .ui-tabs-content {
+       overflow-x: auto;
+       overflow-y: auto;
+     }
+ 
+     &[data-variant="alt"] {
+-      [data-slot="tabs-list"] {
++      .ui-tabs-list {
+         padding: 8px;
+         gap: 4px;
+         border: none;
+@@ -541,12 +541,12 @@
+         }
+       }
+ 
+-      [data-slot="tabs-trigger-wrapper"] {
++      .ui-tabs-trigger-wrapper {
+         height: 32px;
+         border: none;
+-        border-radius: 8px;
++        border-radius: var(--radius-lg);
+ 
+-        [data-slot="tabs-trigger"] {
++        .ui-tabs-trigger {
+           border: none;
+           padding: 0 8px;
+           gap: 8px;
+@@ -565,7 +565,7 @@
+     }
+ 
+     &[data-variant="settings"] {
+-      [data-slot="tabs-list"] {
++      .ui-tabs-list {
+         width: 150px;
+         min-width: 150px;
+ 
+@@ -593,7 +593,7 @@
+         color: var(--text-weak);
+       }
+ 
+-      [data-slot="tabs-trigger-wrapper"] {
++      .ui-tabs-trigger-wrapper {
+         height: 32px;
+         border: none;
+         border-radius: var(--radius-md);
+@@ -604,7 +604,7 @@
+         font-weight: var(--font-weight-medium);
+         line-height: var(--line-height-large);
+ 
+-        [data-slot="tabs-trigger"] {
++        .ui-tabs-trigger {
+           border: none;
+           padding: 0 8px;
+           gap: 12px;
+@@ -613,7 +613,7 @@
+           height: 100%;
+         }
+ 
+-        [data-component="icon"] {
++        .ui-icon {
+           color: var(--icon-base);
+         }
+ 
+@@ -630,7 +630,7 @@
+           background-color: var(--surface-base-active);
+           color: var(--text-strong);
+ 
+-          [data-component="icon"] {
++          .ui-icon {
+             color: var(--icon-strong-base);
+           }
+ 
+@@ -640,7 +640,7 @@
+         }
+       }
+ 
+-      [data-slot="tabs-content"] {
++      .ui-tabs-content {
+         background-color: var(--surface-stronger-non-alpha);
+       }
+     }
+@@ -685,13 +685,13 @@
+   position: relative;
+ }
+ 
+-body[data-new-layout] #review-panel [data-component="tabs"],
+-body[data-new-layout] #terminal-panel [data-component="tabs"],
+-body[data-new-layout] #review-panel [data-component="tabs"][data-variant="normal"][data-orientation="horizontal"],
+-body[data-new-layout] #terminal-panel [data-component="tabs"][data-variant="normal"][data-orientation="horizontal"] {
++body[data-new-layout] #review-panel .ui-tabs,
++body[data-new-layout] #terminal-panel .ui-tabs,
++body[data-new-layout] #review-panel .ui-tabs[data-variant="normal"][data-orientation="horizontal"],
++body[data-new-layout] #terminal-panel .ui-tabs[data-variant="normal"][data-orientation="horizontal"] {
+   background-color: var(--v2-background-bg-base);
+ 
+-  [data-slot="tabs-list"] {
++  .ui-tabs-list {
+     background-color: var(--v2-background-bg-base);
+ 
+     > .sticky {
+@@ -708,15 +708,15 @@ body[data-new-layout] #terminal-panel [data-component="tabs"][data-variant="norm
+   }
+ }
+ 
+-body[data-new-layout] #review-panel [data-component="tabs"][data-variant="normal"][data-orientation="horizontal"] {
+-  [data-slot="tabs-list"] {
++body[data-new-layout] #review-panel .ui-tabs[data-variant="normal"][data-orientation="horizontal"] {
++  .ui-tabs-list {
+     height: 52px;
+     padding-inline-end: 12px;
+     gap: 8px;
+     --tabs-review-fade: 8px;
+   }
+ 
+-  [data-slot="tabs-trigger-wrapper"] {
++  .ui-tabs-trigger-wrapper {
+     height: 28px;
+     padding-inline: 10px;
+     border: 0;
+@@ -727,14 +727,14 @@ body[data-new-layout] #review-panel [data-component="tabs"][data-variant="normal
+       display: none;
+     }
+ 
+-    [data-slot="tabs-trigger"] {
++    .ui-tabs-trigger {
+       padding: 0 !important;
+     }
+ 
+     &:has([data-slot="tabs-trigger-close-button"]) {
+       padding-inline-end: 8px;
+ 
+-      [data-slot="tabs-trigger-close-button"] {
++      .ui-tabs-trigger-close-button {
+         margin-inline-start: 2px;
+       }
+     }
+@@ -745,13 +745,13 @@ body[data-new-layout] #review-panel [data-component="tabs"][data-variant="normal
+     }
+   }
+ 
+-  [data-slot="tabs-trigger"] {
+-    font-family: Inter, sans-serif;
++  .ui-tabs-trigger {
++    font-family: var(--font-family-sans);
+     font-style: normal;
+-    font-weight: 440;
+-    font-size: 13px;
+-    line-height: 16px;
+-    letter-spacing: -0.04px;
++    font-weight: var(--font-weight-body);
++    font-size: var(--font-size-compact);
++    line-height: var(--line-height-16);
++    letter-spacing: var(--letter-spacing-ui);
+     color: var(--v2-text-text-muted);
+     font-variation-settings: "slnt" 0;
+     font-variant-numeric: tabular-nums;
+@@ -762,9 +762,17 @@ body[data-new-layout] #review-panel [data-component="tabs"][data-variant="normal
+ 
+     .tab-fileicon-color,
+     .tab-fileicon-mono,
+-    [data-slot="icon-svg"] {
++    .ui-icon-svg:not([data-component="icon"]) {
+       margin-inline-start: -2px;
+     }
++
++    /* The shared icon primitive is a single `<svg>` that IS the layout box. The
++     * -2px pull above was authored when it was the INNER svg of a wrapper whose
++     * box stayed put, so it moved the glyph without moving the trigger's
++     * contents. `translate` keeps exactly that: same paint, same layout. */
++    [data-component="icon"] {
++      translate: -2px 0;
++    }
+   }
+ 
+   /* Preview/temporary tabs: beat trigger + .text-14-medium upright defaults */
+@@ -783,12 +791,12 @@ body[data-new-layout] #review-panel [data-component="tabs"] .session-review-v2-t
+   background-color: var(--v2-background-bg-base);
+ }
+ 
+-body[data-new-layout] #review-panel [data-component="tabs"] .session-review-v2-tabs-bar [data-slot="tabs-list"],
++body[data-new-layout] #review-panel [data-component="tabs"] .session-review-v2-tabs-bar .ui-tabs-list,
+ body[data-new-layout]
+   #review-panel
+   [data-component="tabs"][data-variant="normal"][data-orientation="horizontal"]
+   .session-review-v2-tabs-bar
+-  [data-slot="tabs-list"] {
++  .ui-tabs-list {
+   flex: 1 1 0;
+   min-width: 0;
+   width: auto;
+@@ -803,7 +811,7 @@ body[data-new-layout]
+   > .sticky {
+   padding-inline-end: 0;
+ 
+-  [data-component="icon-button-v2"] {
++  .ui-icon-button-v2 {
+     position: relative;
+ 
+     &::after {
+@@ -874,7 +882,7 @@ body[data-new-layout]
+     background: linear-gradient(270deg, var(--v2-background-bg-base), transparent);
+   }
+ 
+-  [data-component="icon-button-v2"]::after {
++  .ui-icon-button-v2::after {
+     display: none;
+   }
+ }
+diff --git a/src/components/tabs.tsx b/src/components/tabs.tsx
+index 0dd5fb3e236e50db5f87a0794f4805597be2ec48..ea7633c4788befccdabff491de4cfe2fe0b7b00e 100644
+--- a/src/components/tabs.tsx
++++ b/src/components/tabs.tsx
+@@ -27,6 +27,7 @@ function TabsRoot(props: TabsProps) {
+       data-variant={split.variant || "normal"}
+       data-orientation={split.orientation || "horizontal"}
+       classList={{
++        "ui-tabs": true,
+         ...split.classList,
+         [split.class ?? ""]: !!split.class,
+       }}
+@@ -40,7 +41,7 @@ function TabsList(props: TabsListProps) {
+     <Kobalte.List
+       {...rest}
+       data-slot="tabs-list"
+-      classList={{
++      classList={{ "ui-tabs-list": true,
+         ...split.classList,
+         [split.class ?? ""]: !!split.class,
+       }}
+@@ -62,7 +63,7 @@ function TabsTrigger(props: ParentProps<TabsTriggerProps>) {
+     <div
+       data-slot="tabs-trigger-wrapper"
+       data-value={props.value}
+-      classList={{
++      classList={{ "ui-tabs-trigger-wrapper": true,
+         ...split.classList,
+         [split.class ?? ""]: !!split.class,
+       }}
+@@ -83,13 +84,13 @@ function TabsTrigger(props: ParentProps<TabsTriggerProps>) {
+         dir={rest.dir ?? "auto"}
+         data-slot="tabs-trigger"
+         data-value={props.value}
+-        classList={{ [split.classes?.button ?? ""]: split.classes?.button }}
++        classList={{ "ui-tabs-trigger": true, [split.classes?.button ?? ""]: split.classes?.button }}
+       >
+         {split.children}
+       </Kobalte.Trigger>
+       <Show when={split.closeButton}>
+         {(closeButton) => (
+-          <div data-slot="tabs-trigger-close-button" data-hidden={split.hideCloseButton}>
++          <div data-slot="tabs-trigger-close-button" class="ui-tabs-trigger-close-button" data-hidden={split.hideCloseButton}>
+             {closeButton()}
+           </div>
+         )}
+@@ -105,6 +106,7 @@ function TabsContent(props: ParentProps<TabsContentProps>) {
+       {...rest}
+       data-slot="tabs-content"
+       classList={{
++        "ui-tabs-content": true,
+         ...split.classList,
+         [split.class ?? ""]: !!split.class,
+       }}
+diff --git a/src/components/tag.css b/src/components/tag.css
+index 0e8b7b9f10475e2b39bc38f23a90db040480f00e..69021397f7c026b078f1f1a5ac7d50dc255db45f 100644
+--- a/src/components/tag.css
++++ b/src/components/tag.css
+@@ -1,4 +1,4 @@
+-[data-component="tag"] {
++.ui-tag {
+   display: inline-flex;
+   align-items: center;
+   justify-content: center;
+@@ -28,7 +28,7 @@
+ 
+     /* text-14-medium */
+     font-family: var(--font-family-sans);
+-    font-size: 14px;
++    font-size: var(--font-size-base);
+     font-style: normal;
+     font-weight: var(--font-weight-medium);
+     line-height: var(--line-height-large); /* 142.857% */
+diff --git a/src/components/tag.tsx b/src/components/tag.tsx
+index c54e4d474794028225bb04bee292a86318341822..28eb1c56fb8f0e56033ddb30c500ab9dac2a2f8c 100644
+--- a/src/components/tag.tsx
++++ b/src/components/tag.tsx
+@@ -12,6 +12,7 @@ export function Tag(props: TagProps) {
+       data-component="tag"
+       data-size={split.size || "normal"}
+       classList={{
++        "ui-tag": true,
+         ...split.classList,
+         [split.class ?? ""]: !!split.class,
+       }}
+diff --git a/src/components/text-field.css b/src/components/text-field.css
+index 47c7f9f94dc4a56cd28cd8ea7ec1574bd6eee032..44ec0175da81f7dcbe7dd7800cf784bdc11b1d11 100644
+--- a/src/components/text-field.css
++++ b/src/components/text-field.css
+@@ -1,4 +1,4 @@
+-[data-component="input"] {
++.ui-input {
+   width: 100%;
+ 
+   [data-slot="input-input"] {
+@@ -7,7 +7,7 @@
+ 
+     /* text-14-regular */
+     font-family: var(--font-family-sans);
+-    font-size: 14px;
++    font-size: var(--font-size-base);
+     font-style: normal;
+     font-weight: var(--font-weight-regular);
+     line-height: var(--line-height-large); /* 142.857% */
+@@ -36,7 +36,7 @@
+       font-size: var(--font-size-small);
+       font-style: normal;
+       font-weight: var(--font-weight-medium);
+-      line-height: 18px; /* 150% */
++      line-height: var(--line-height-18); /* 150% */
+       letter-spacing: var(--letter-spacing-normal);
+     }
+ 
+@@ -54,12 +54,7 @@
+       &:focus-within:not(:has([data-readonly])) {
+         border-color: transparent;
+         /* border/shadow-xs/select */
+-        box-shadow:
+-          0 0 0 3px var(--border-weak-selected),
+-          0 0 0 1px var(--border-selected),
+-          0 1px 2px -1px rgba(19, 16, 16, 0.25),
+-          0 1px 2px 0 rgba(19, 16, 16, 0.08),
+-          0 1px 3px 0 rgba(19, 16, 16, 0.12);
++        box-shadow: var(--shadow-xs-border-select);
+       }
+ 
+       &:has([data-invalid]) {
+@@ -87,7 +82,7 @@
+ 
+       /* text-14-regular */
+       font-family: var(--font-family-sans);
+-      font-size: 14px;
++      font-size: var(--font-size-base);
+       font-style: normal;
+       font-weight: var(--font-weight-regular);
+       line-height: var(--line-height-large); /* 142.857% */
+@@ -127,7 +122,7 @@
+       font-size: var(--font-size-small);
+       font-style: normal;
+       font-weight: var(--font-weight-medium);
+-      line-height: 18px; /* 150% */
++      line-height: var(--line-height-18); /* 150% */
+       letter-spacing: var(--letter-spacing-normal);
+     }
+   }
+diff --git a/src/components/text-field.tsx b/src/components/text-field.tsx
+index 82be20f9ea19f5206d10a14cbe72ef4af451af3f..0ec3a334e1a6478d372657032a3e40a4f8622b99 100644
+--- a/src/components/text-field.tsx
++++ b/src/components/text-field.tsx
+@@ -80,7 +80,7 @@ export function TextField(props: TextFieldProps) {
+ 
+   return (
+     <Kobalte
+-      data-component="input"
++      data-component="input" class="ui-input"
+       data-variant={local.variant || "normal"}
+       name={local.name}
+       defaultValue={local.defaultValue}
+diff --git a/src/components/text-reveal.css b/src/components/text-reveal.css
+index f799962f0947528bfa35eae0322c26c37e997d01..80e12168bb06990c8deb302df22c383e58540b82 100644
+--- a/src/components/text-reveal.css
++++ b/src/components/text-reveal.css
+@@ -19,7 +19,7 @@
+  * Both transition from 0 100% (swap) → 0 0% (settled).
+  */
+ 
+-[data-component="text-reveal"] {
++.ui-text-reveal {
+   --_edge: var(--text-reveal-edge, 17%);
+   --_dur: var(--text-reveal-duration, 450ms);
+   --_spring: var(--text-reveal-spring, cubic-bezier(0.34, 1.08, 0.64, 1));
+@@ -31,20 +31,20 @@
+   min-width: 0;
+   overflow: visible;
+ 
+-  [data-slot="text-reveal-track"] {
++  .ui-text-reveal-track {
+     display: grid;
+     min-height: 20px;
+-    line-height: 20px;
++    line-height: var(--line-height-20);
+     justify-items: start;
+     align-items: center;
+     overflow: visible;
+     transition: width var(--_dur) var(--_spring-soft);
+   }
+ 
+-  [data-slot="text-reveal-entering"],
+-  [data-slot="text-reveal-leaving"] {
++  .ui-text-reveal-entering,
++  .ui-text-reveal-leaving {
+     grid-area: 1 / 1;
+-    line-height: 20px;
++    line-height: var(--line-height-20);
+     white-space: nowrap;
+     justify-self: start;
+     text-align: start;
+@@ -62,7 +62,7 @@
+    * Swap    pos 0 0%   = transparent covers      = hidden
+    * Slides from above: translateY(-travel) → translateY(0)
+    */
+-  [data-slot="text-reveal-entering"] {
++  .ui-text-reveal-entering {
+     mask-image: linear-gradient(to top, white 33%, transparent calc(33% + var(--_edge)));
+     -webkit-mask-image: linear-gradient(to top, white 33%, transparent calc(33% + var(--_edge)));
+     mask-position: 0 100%;
+@@ -80,7 +80,7 @@
+    * Settled pos 0 100% = transparent covers      = hidden
+    * Slides down: translateY(0) → translateY(travel)
+    */
+-  [data-slot="text-reveal-leaving"] {
++  .ui-text-reveal-leaving {
+     mask-image: linear-gradient(to bottom, white 33%, transparent calc(33% + var(--_edge)));
+     -webkit-mask-image: linear-gradient(to bottom, white 33%, transparent calc(33% + var(--_edge)));
+     mask-position: 0 100%;
+@@ -95,14 +95,14 @@
+   /* ── swapping: instant reset ──
+    * Snap entering to hidden (above), leaving to visible (center).
+    */
+-  &[data-swapping="true"] [data-slot="text-reveal-entering"] {
++  &[data-swapping="true"] .ui-text-reveal-entering {
+     mask-position: 0 0%;
+     -webkit-mask-position: 0 0%;
+     transform: translateY(calc(var(--_travel) * -1));
+     transition-duration: 0ms !important;
+   }
+ 
+-  &[data-swapping="true"] [data-slot="text-reveal-leaving"] {
++  &[data-swapping="true"] .ui-text-reveal-leaving {
+     mask-position: 0 0%;
+     -webkit-mask-position: 0 0%;
+     transform: translateY(0);
+@@ -110,12 +110,12 @@
+   }
+ 
+   /* ── not ready: kill all transitions ── */
+-  &[data-ready="false"] [data-slot="text-reveal-track"] {
++  &[data-ready="false"] .ui-text-reveal-track {
+     transition-duration: 0ms !important;
+   }
+ 
+-  &[data-ready="false"] [data-slot="text-reveal-entering"],
+-  &[data-ready="false"] [data-slot="text-reveal-leaving"] {
++  &[data-ready="false"] .ui-text-reveal-entering,
++  &[data-ready="false"] .ui-text-reveal-leaving {
+     transition-duration: 0ms !important;
+   }
+ 
+@@ -123,14 +123,14 @@
+     width: 100%;
+   }
+ 
+-  &[data-truncate="true"] [data-slot="text-reveal-track"] {
++  &[data-truncate="true"] .ui-text-reveal-track {
+     width: 100%;
+     min-width: 0;
+     overflow: hidden;
+   }
+ 
+-  &[data-truncate="true"] [data-slot="text-reveal-entering"],
+-  &[data-truncate="true"] [data-slot="text-reveal-leaving"] {
++  &[data-truncate="true"] .ui-text-reveal-entering,
++  &[data-truncate="true"] .ui-text-reveal-leaving {
+     min-width: 0;
+     width: 100%;
+     overflow: hidden;
+@@ -139,12 +139,12 @@
+ }
+ 
+ @media (prefers-reduced-motion: reduce) {
+-  [data-component="text-reveal"] [data-slot="text-reveal-track"] {
++  [data-component="text-reveal"] .ui-text-reveal-track {
+     transition-duration: 0ms !important;
+   }
+ 
+-  [data-component="text-reveal"] [data-slot="text-reveal-entering"],
+-  [data-component="text-reveal"] [data-slot="text-reveal-leaving"] {
++  [data-component="text-reveal"] .ui-text-reveal-entering,
++  [data-component="text-reveal"] .ui-text-reveal-leaving {
+     transition-duration: 0ms !important;
+   }
+ }
+diff --git a/src/components/text-reveal.tsx b/src/components/text-reveal.tsx
+index 2d2a94e6a37e9fddf72ec5bf67e19e0844c36ea3..7162a3cb4bb18a47feb364108ddecbaa3a7823c5 100644
+--- a/src/components/text-reveal.tsx
++++ b/src/components/text-reveal.tsx
+@@ -128,13 +128,13 @@ export function TextReveal(props: {
+         "--text-reveal-travel": px(props.travel, 0),
+         "--text-reveal-spring": props.spring ?? "cubic-bezier(0.34, 1.08, 0.64, 1)",
+         "--text-reveal-spring-soft": props.springSoft ?? "cubic-bezier(0.34, 1, 0.64, 1)",
+-      }}
++      }} classList={{ "ui-text-reveal": true }}
+     >
+-      <span data-slot="text-reveal-track" style={{ width: props.truncate ? "100%" : width() }}>
+-        <span data-slot="text-reveal-entering" ref={inRef}>
++      <span data-slot="text-reveal-track" class="ui-text-reveal-track" style={{ width: props.truncate ? "100%" : width() }}>
++        <span data-slot="text-reveal-entering" class="ui-text-reveal-entering" ref={inRef}>
+           {cur() ?? "\u00A0"}
+         </span>
+-        <span data-slot="text-reveal-leaving" ref={outRef}>
++        <span data-slot="text-reveal-leaving" class="ui-text-reveal-leaving" ref={outRef}>
+           {old() ?? "\u00A0"}
+         </span>
+       </span>
+diff --git a/src/components/text-shimmer.css b/src/components/text-shimmer.css
+index f042dd2d862cc1e540aa7617fa45c4a7feabd0a4..25f9c463b4acd0071b1e5978eece3bf749865723 100644
+--- a/src/components/text-shimmer.css
++++ b/src/components/text-shimmer.css
+@@ -31,8 +31,8 @@
+   line-height: inherit;
+ }
+ 
+-[data-component="text-shimmer"] [data-slot="text-shimmer-char-base"],
+-[data-component="text-shimmer"] [data-slot="text-shimmer-char-shimmer"] {
++[data-component="text-shimmer"] .ui-text-shimmer-char-base,
++[data-component="text-shimmer"] .ui-text-shimmer-char-shimmer {
+   grid-area: 1 / 1;
+   white-space: pre;
+   transition: opacity var(--text-shimmer-swap) ease-out;
+@@ -41,21 +41,21 @@
+   line-height: inherit;
+ }
+ 
+-[data-component="text-shimmer"] [data-slot="text-shimmer-char-base"] {
++[data-component="text-shimmer"] .ui-text-shimmer-char-base {
+   color: inherit;
+   opacity: 1;
+ }
+ 
+-[data-component="text-shimmer"] [data-slot="text-shimmer-char-shimmer"] {
++[data-component="text-shimmer"] .ui-text-shimmer-char-shimmer {
+   color: var(--text-weaker);
+   opacity: 0;
+ }
+ 
+-[data-component="text-shimmer"][data-active="true"] [data-slot="text-shimmer-char-shimmer"] {
++[data-component="text-shimmer"][data-active="true"] .ui-text-shimmer-char-shimmer {
+   opacity: 1;
+ }
+ 
+-[data-component="text-shimmer"] [data-slot="text-shimmer-char-shimmer"][data-run="true"] {
++[data-component="text-shimmer"] .ui-text-shimmer-char-shimmer {
+   animation-name: text-shimmer-sweep;
+   animation-duration: var(--text-shimmer-duration);
+   animation-iteration-count: infinite;
+@@ -80,7 +80,7 @@
+ }
+ 
+ @supports ((-webkit-background-clip: text) or (background-clip: text)) {
+-  [data-component="text-shimmer"] [data-slot="text-shimmer-char-shimmer"] {
++  [data-component="text-shimmer"] .ui-text-shimmer-char-shimmer {
+     color: transparent;
+     -webkit-text-fill-color: transparent;
+     background-image: var(--text-shimmer-sweep), var(--text-shimmer-base);
+@@ -95,25 +95,25 @@
+     background-clip: text;
+   }
+ 
+-  [data-component="text-shimmer"][data-active="true"] [data-slot="text-shimmer-char-base"] {
++  [data-component="text-shimmer"][data-active="true"] .ui-text-shimmer-char-base {
+     opacity: 0;
+   }
+ }
+ 
+ @media (prefers-reduced-motion: reduce) {
+-  [data-component="text-shimmer"] [data-slot="text-shimmer-char-base"],
+-  [data-component="text-shimmer"] [data-slot="text-shimmer-char-shimmer"] {
++  [data-component="text-shimmer"] .ui-text-shimmer-char-base,
++  [data-component="text-shimmer"] .ui-text-shimmer-char-shimmer {
+     transition-duration: 0ms;
+   }
+ 
+-  [data-component="text-shimmer"] [data-slot="text-shimmer-char-shimmer"] {
++  [data-component="text-shimmer"] .ui-text-shimmer-char-shimmer {
+     animation: none !important;
+     color: inherit;
+     -webkit-text-fill-color: currentColor;
+     background-image: none;
+   }
+ 
+-  [data-component="text-shimmer"] [data-slot="text-shimmer-char-base"] {
++  [data-component="text-shimmer"] .ui-text-shimmer-char-base {
+     opacity: 1 !important;
+   }
+ }
+diff --git a/src/components/text-shimmer.tsx b/src/components/text-shimmer.tsx
+index 3ab077d92df8cc88370401343532894c86fc2199..83e32c64268ac4373f392061ae6208b149411676 100644
+--- a/src/components/text-shimmer.tsx
++++ b/src/components/text-shimmer.tsx
+@@ -1,38 +1,59 @@
+-import { createEffect, createMemo, createSignal, onCleanup, type ValidComponent } from "solid-js"
++import { createEffect, createMemo, createSignal, onCleanup, Show, type ValidComponent } from "solid-js"
+ import { Dynamic } from "solid-js/web"
+ 
+-export const TextShimmer = <T extends ValidComponent = "span">(props: {
++export const TextShimmer = (props: {
+   text: string
+   class?: string
+-  as?: T
++  as?: ValidComponent
+   active?: boolean
+   offset?: number
+ }) => {
+   const text = createMemo(() => props.text ?? "")
+   const active = createMemo(() => props.active ?? true)
+   const offset = createMemo(() => props.offset ?? 0)
+-  const [run, setRun] = createSignal(active())
++  const [swept, setSwept] = createSignal(active())
++  const [lit, setLit] = createSignal(false)
+   const swap = 220
++  let root: HTMLElement | undefined
+   let timer: ReturnType<typeof setTimeout> | undefined
++  let frame: number | undefined
++
++  const cancelFrame = () => {
++    if (frame === undefined) return
++    cancelAnimationFrame(frame)
++    frame = undefined
++  }
+ 
+   createEffect(() => {
+     if (timer) {
+       clearTimeout(timer)
+       timer = undefined
+     }
++    cancelFrame()
+ 
+     if (active()) {
+-      setRun(true)
++      setSwept(true)
++      frame = requestAnimationFrame(() => {
++        frame = undefined
++        // A node inserted this frame has no computed style yet, and rAF callbacks
++        // run before style recalc, so lighting it here would still paint straight
++        // at opacity 1. Reading a layout property computes the 0 the transition
++        // then animates from.
++        void root?.offsetWidth
++        setLit(true)
++      })
+       return
+     }
+ 
++    setLit(false)
+     timer = setTimeout(() => {
+       timer = undefined
+-      setRun(false)
++      setSwept(false)
+     }, swap)
+   })
+ 
+   onCleanup(() => {
++    cancelFrame()
+     if (!timer) return
+     clearTimeout(timer)
+   })
+@@ -40,8 +61,9 @@ export const TextShimmer = <T extends ValidComponent = "span">(props: {
+   return (
+     <Dynamic
+       component={props.as ?? "span"}
++      ref={(el: HTMLElement) => (root = el)}
+       data-component="text-shimmer"
+-      data-active={active() ? "true" : "false"}
++      data-active={lit() ? "true" : "false"}
+       class={props.class}
+       aria-label={text()}
+       style={{
+@@ -50,12 +72,18 @@ export const TextShimmer = <T extends ValidComponent = "span">(props: {
+       }}
+     >
+       <span data-slot="text-shimmer-char">
+-        <span data-slot="text-shimmer-char-base" aria-hidden="true">
+-          {text()}
+-        </span>
+-        <span data-slot="text-shimmer-char-shimmer" data-run={run() ? "true" : "false"} aria-hidden="true">
++        <span data-slot="text-shimmer-char-base" class="ui-text-shimmer-char-base" aria-hidden="true">
+           {text()}
+         </span>
++        {/* The swept copy carries a second full copy of the text and a gradient clipped to
++            those glyphs, and a transcript holds one of these per tool row — 39 of 40 idle
++            in a measured lab session — so it exists only while it is sweeping. It outlives
++            `active` by the swap so the fade-out has something to fade. */}
++        <Show when={swept()}>
++          <span data-slot="text-shimmer-char-shimmer" class="ui-text-shimmer-char-shimmer" aria-hidden="true">
++            {text()}
++          </span>
++        </Show>
+       </span>
+     </Dynamic>
+   )
+diff --git a/src/components/toast.css b/src/components/toast.css
+index a7b40923c82aa5f8b60447397c94231c966e1714..fc20cbcbcc3885c21fd6f825e0f58d2b91282b6f 100644
+--- a/src/components/toast.css
++++ b/src/components/toast.css
+@@ -1,15 +1,12 @@
+ [data-component="toast-region"] {
+   position: fixed;
+-  bottom: 48px;
+-  inset-inline-end: 32px;
++  bottom: 24px;
++  inset-inline-end: 24px;
+   z-index: 1000;
+   display: flex;
+   flex-direction: column;
+-  gap: 8px;
+-  max-width: min(400px, calc(100vw - 64px));
+-  max-height: calc(100dvh - 96px);
+-  width: 100%;
+-  overflow: hidden;
++  width: min(360px, calc(100vw - 48px));
++  max-height: calc(100dvh - 48px);
+   pointer-events: none;
+ 
+   [data-slot="toast-list"] {
+@@ -17,9 +14,11 @@
+     flex-direction: column;
+     gap: 8px;
+     list-style: none;
+-    margin: 0;
+-    padding: 0;
+-    max-height: 100%;
++    /* Scrolling clips overflow, and the card's elevation paints outside its box
++       (a 0.5px stroke plus a 20px blur). Inset by that much so it survives. */
++    padding: 24px;
++    margin: -24px;
++    min-height: 0;
+     overflow-y: auto;
+     scrollbar-width: none;
+ 
+@@ -29,28 +28,23 @@
+   }
+ }
+ 
+-[data-component="toast"] {
++.ui-toast {
+   position: relative;
+   display: flex;
+   align-items: flex-start;
+-  gap: 20px;
+-  padding: 16px 20px;
+-  max-height: min(420px, calc(100dvh - 96px));
++  gap: 12px;
++  padding: 12px 12px 12px 16px;
++  max-height: min(420px, calc(100dvh - 48px));
+   overflow: hidden;
+   pointer-events: auto;
+   transition: all 150ms ease-out;
+ 
+-  border-radius: var(--radius-lg);
+-  border: 1px solid var(--border-weak-base);
+-  background: var(--surface-float-base);
+-  color: var(--text-invert-base);
+-  box-shadow: var(--shadow-md);
+-
+-  [data-slot="toast-inner"] {
+-    display: flex;
+-    align-items: flex-start;
+-    gap: 10px;
+-  }
++  border-radius: var(--surface-overlay-radius, var(--radius-lg));
++  border: var(--surface-overlay-border, 1px solid var(--overlay-border));
++  background-clip: padding-box;
++  background: var(--overlay-surface);
++  color: var(--overlay-text);
++  box-shadow: var(--surface-overlay-shadow, var(--shadow-md));
+ 
+   &[data-opened] {
+     animation: toastPopIn 150ms ease-out;
+@@ -73,27 +67,14 @@
+     animation: toastSwipeOut 100ms ease-out forwards;
+   }
+ 
+-  /* &[data-variant="success"] { */
+-  /*   border-color: var(--color-semantic-positive); */
+-  /* } */
+-  /**/
+-  /* &[data-variant="error"] { */
+-  /*   border-color: var(--color-semantic-danger); */
+-  /* } */
+-  /**/
+-  /* &[data-variant="loading"] { */
+-  /*   border-color: var(--color-semantic-info); */
+-  /* } */
+-
+   [data-slot="toast-icon"] {
+     flex-shrink: 0;
+     display: flex;
+     align-items: center;
+-    justify-content: center;
++    height: var(--line-height-large);
+ 
+-    [data-component="icon"] {
+-      color: var(--text-invert-stronger);
+-      /* color: var(--icon-invert-base); */
++    .ui-icon {
++      color: var(--overlay-icon);
+     }
+   }
+ 
+@@ -104,44 +85,55 @@
+     gap: 2px;
+     min-height: 0;
+     min-width: 0;
+-    overflow-x: hidden;
+-    overflow-y: auto;
+-    scrollbar-width: none;
++    overflow: hidden;
++  }
+ 
+-    &::-webkit-scrollbar {
+-      display: none;
++  [data-slot="toast-title-row"] {
++    display: flex;
++    align-items: center;
++    gap: 6px;
++    min-width: 0;
++
++    [data-slot="toast-title-icon"] {
++      flex-shrink: 0;
++      display: flex;
++
++      .ui-icon-svg {
++        color: var(--overlay-icon);
++      }
+     }
+   }
+ 
+   [data-slot="toast-title"] {
+-    color: var(--text-invert-strong);
++    color: var(--overlay-text);
+     overflow: hidden;
+     text-overflow: ellipsis;
+     white-space: nowrap;
+ 
+-    /* text-14-medium */
+     font-family: var(--font-family-sans);
+-    font-size: 14px;
++    font-size: var(--font-size-base);
+     font-style: normal;
+     font-weight: var(--font-weight-medium);
+-    line-height: var(--line-height-large); /* 142.857% */
++    line-height: var(--line-height-large);
+     letter-spacing: var(--letter-spacing-normal);
+ 
+     margin: 0;
+   }
+ 
+   [data-slot="toast-description"] {
+-    color: var(--text-invert-base);
++    color: var(--overlay-text-muted);
++    display: -webkit-box;
++    -webkit-box-orient: vertical;
++    -webkit-line-clamp: 3;
++    overflow: hidden;
+     text-wrap-style: pretty;
+     overflow-wrap: anywhere;
+-    word-break: break-word;
+ 
+-    /* text-14-regular */
+     font-family: var(--font-family-sans);
+     font-size: var(--font-size-base);
+     font-style: normal;
+     font-weight: var(--font-weight-regular);
+-    line-height: var(--line-height-x-large); /* 171.429% */
++    line-height: var(--line-height-large);
+     letter-spacing: var(--letter-spacing-normal);
+ 
+     margin: 0;
+@@ -151,7 +143,7 @@
+     display: flex;
+     flex-wrap: wrap;
+     gap: 16px;
+-    margin-top: 8px;
++    margin-top: 6px;
+   }
+ 
+   [data-slot="toast-action"] {
+@@ -165,7 +157,7 @@
+     text-overflow: ellipsis;
+     white-space: nowrap;
+ 
+-    color: var(--text-invert-weak);
++    color: var(--overlay-text-muted);
+     font-family: var(--font-family-sans);
+     font-size: var(--font-size-base);
+     font-weight: var(--font-weight-medium);
+@@ -177,12 +169,28 @@
+     }
+ 
+     &:first-child {
+-      color: var(--text-invert-strong);
++      color: var(--overlay-text);
+     }
+   }
+ 
+   [data-slot="toast-close-button"] {
+     flex-shrink: 0;
++    /* 24px button over a 20px title line: -2px keeps the glyph centred on the title. */
++    margin-top: -2px;
++    color: var(--overlay-icon-muted);
++
++    .ui-icon-svg {
++      color: var(--overlay-icon-muted);
++    }
++
++    &:hover:not(:disabled),
++    &:focus-visible:not(:disabled) {
++      background-color: var(--overlay-surface-hover);
++
++      .ui-icon-svg {
++        color: var(--overlay-icon);
++      }
++    }
+   }
+ 
+   [data-slot="toast-progress-track"] {
+@@ -191,15 +199,14 @@
+     left: 0;
+     right: 0;
+     height: 3px;
+-    background-color: var(--surface-base);
+-    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
++    background-color: var(--overlay-surface-hover);
+     overflow: hidden;
+   }
+ 
+   [data-slot="toast-progress-fill"] {
+     height: 100%;
+     width: var(--kb-toast-progress-fill-width);
+-    background-color: var(--color-primary);
++    background-color: var(--primary);
+     transition: width 250ms linear;
+   }
+ }
+diff --git a/src/components/toast.tsx b/src/components/toast.tsx
+index 599cf2a9ea71d8c9c21388cbcce5c3811bd232bc..43b9bdaf910c02fa83b4933d70897fa591e0e28b 100644
+--- a/src/components/toast.tsx
++++ b/src/components/toast.tsx
+@@ -30,6 +30,7 @@ function ToastRoot(props: ToastRootComponentProps) {
+     <Kobalte
+       data-component="toast"
+       classList={{
++        "ui-toast": true,
+         ...props.classList,
+         [props.class ?? ""]: !!props.class,
+       }}
+@@ -54,6 +55,19 @@ function ToastTitle(props: ToastTitleProps & ComponentProps<"div">) {
+   return <Kobalte.Title data-slot="toast-title" {...props} />
+ }
+ 
++function ToastTitleRow(props: { icon?: IconProps["name"]; children: JSX.Element }) {
++  return (
++    <div data-slot="toast-title-row">
++      <Show when={props.icon}>
++        <span data-slot="toast-title-icon" aria-hidden="true">
++          <Icon name={props.icon!} size="small" />
++        </span>
++      </Show>
++      {props.children}
++    </div>
++  )
++}
++
+ function ToastDescription(props: ToastDescriptionProps & ComponentProps<"div">) {
+   return <Kobalte.Description data-slot="toast-description" {...props} />
+ }
+@@ -68,7 +82,7 @@ function ToastCloseButton(props: ToastCloseButtonProps & ComponentProps<"button"
+     <Kobalte.CloseButton
+       data-slot="toast-close-button"
+       as={IconButton}
+-      icon="close"
++      icon="close-small"
+       variant="ghost"
+       aria-label={i18n.t("ui.common.dismiss")}
+       {...props}
+@@ -87,6 +101,7 @@ function ToastProgressFill(props: ComponentProps<typeof Kobalte.ProgressFill>) {
+ export const Toast = Object.assign(ToastRoot, {
+   Region: ToastRegion,
+   Icon: ToastIcon,
++  TitleRow: ToastTitleRow,
+   Content: ToastContent,
+   Title: ToastTitle,
+   Description: ToastDescription,
+@@ -100,6 +115,12 @@ export { toaster }
+ 
+ export type ToastVariant = "default" | "success" | "error" | "loading"
+ 
++/** Severity glyphs for the heading — monochrome; the surface stays neutral. */
++const VARIANT_ICON: Partial<Record<ToastVariant, IconProps["name"]>> = {
++  error: "warning",
++  success: "check-small",
++}
++
+ export interface ToastAction {
+   label: string
+   onClick: "dismiss" | (() => void)
+@@ -129,7 +150,9 @@ export function showToast(options: ToastOptions | string) {
+       </Show>
+       <Toast.Content>
+         <Show when={opts.title}>
+-          <Toast.Title>{opts.title}</Toast.Title>
++          <Toast.TitleRow icon={VARIANT_ICON[opts.variant ?? "default"]}>
++            <Toast.Title>{opts.title}</Toast.Title>
++          </Toast.TitleRow>
+         </Show>
+         <Show when={opts.description}>
+           <Toast.Description>{opts.description}</Toast.Description>
+diff --git a/src/components/tooltip.css b/src/components/tooltip.css
+index f02c2ca639214f1f286887d98166da86aaf4ced2..21a4260e332ba1061f24b829a8b7322af3dba845 100644
+--- a/src/components/tooltip.css
++++ b/src/components/tooltip.css
+@@ -1,4 +1,4 @@
+-[data-component="tooltip-trigger"] {
++.ui-tooltip-trigger {
+   display: flex;
+ }
+ 
+@@ -15,17 +15,17 @@
+   line-height: var(--line-height-large);
+ }
+ 
+-[data-component="tooltip"] {
++.ui-tooltip {
+   z-index: 1000;
+   max-width: 320px;
+-  border-radius: var(--radius-sm);
++  border-radius: var(--surface-overlay-radius, var(--radius-sm));
+   background-color: var(--surface-float-base);
+   color: var(--text-invert-strong);
+   background: var(--surface-float-base);
+   padding: 2px 8px;
+-  border: 1px solid var(--border-weak-base, rgba(0, 0, 0, 0.07));
++  border: var(--surface-overlay-border, 1px solid var(--border-weak-base));
+ 
+-  box-shadow: var(--shadow-md);
++  box-shadow: var(--surface-overlay-shadow, var(--shadow-md));
+   pointer-events: none !important;
+   /* transition: all 150ms ease-out; */
+   /* transform: translate3d(0, 0, 0); */
+diff --git a/src/components/tooltip.tsx b/src/components/tooltip.tsx
+index 6a2f4b55d4526f393849ba4e3fb6da170f1904c4..f52f9d867fd86697eee77d9bfda56011f71ca150 100644
+--- a/src/components/tooltip.tsx
++++ b/src/components/tooltip.tsx
+@@ -134,7 +134,7 @@ export function Tooltip(props: TooltipProps) {
+               arm()
+             }}
+             onPointerLeave={leave}
+-            onFocusOut={() => requestAnimationFrame(() => drop())}
++            onFocusOut={() => requestAnimationFrame(() => drop())} classList={{ "ui-tooltip-trigger": true }}
+           >
+             {local.children}
+           </KobalteTooltip.Trigger>
+@@ -150,7 +150,7 @@ export function Tooltip(props: TooltipProps) {
+                   justClickedTrigger = true
+                 }
+                 e.preventDefault()
+-              }}
++              }} classList={{ "ui-tooltip": true }}
+             >
+               {local.value}
+               {/* <KobalteTooltip.Arrow data-slot="tooltip-arrow" /> */}
+diff --git a/src/components/typewriter.tsx b/src/components/typewriter.tsx
+index 16c85a110fd22cc95c2ccdeb73eb60ed714df081..04582501c8330bb28f379bc8a53f6c198d51d0d9 100644
+--- a/src/components/typewriter.tsx
++++ b/src/components/typewriter.tsx
+@@ -2,7 +2,7 @@ import { createEffect, onCleanup, Show, type ValidComponent } from "solid-js"
+ import { createStore } from "solid-js/store"
+ import { Dynamic } from "solid-js/web"
+ 
+-export const Typewriter = <T extends ValidComponent = "p">(props: { text?: string; class?: string; as?: T }) => {
++export const Typewriter = (props: { text?: string; class?: string; as?: ValidComponent }) => {
+   const [store, setStore] = createStore({
+     typing: false,
+     displayed: "",
