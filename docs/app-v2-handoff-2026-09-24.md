@@ -1,6 +1,6 @@
 # App v2 rebuild — handoff (2026-09-24)
 
-**Where it stands (2026-09-26 09:00, feat/app-v2 408f741e08).** v2 runs on today's server next to today's app, and is ready for the owner's test on 4480 against v1 on 4481. Nothing is pushed, `packages/claxedo-app` is untouched, and there is no swap.
+**Where it stands (2026-09-26).** The owner approved v2 and the swap is done on `v2/swap`; see [The swap](#the-swap-2026-09-26-branch-v2swap-off-feat-app-v2-bc83dbef91). Nothing is pushed.
 
 - **Landed after 05:40:**
   - app plugin MCP tools with owner-only provenance and every harness connected (446612923c);
@@ -27,6 +27,35 @@
 - **Found in the owner's data:** seven fixture cloud projects (`channel_fixture`, `project_channel_*`, `project_failclosed_ok`) written into `~/.claxedo/workspaces.json` and `claxedo.db` on 2026-09-24 10:06 by `claxedo-server`'s `ingress.test.ts` run outside its vitest HOME isolation. Not deleted; the owner decides.
 
 The plan is `docs/plans/2026-09-24-001-refactor-app-rebuild-first-proof-plan.md`. Where it disagrees with the owner's parity rule, the rule wins (see [Better](#1-better-v2-looks-and-behaves-exactly-like-v1)).
+
+## The swap (2026-09-26, branch `v2/swap` off feat/app-v2 bc83dbef91)
+
+The owner tested v2 and approved the swap. `packages/claxedo-app-v2` is now `packages/claxedo-app` (`@claxedo/app`); v1, session-ui and storybook are deleted. `packages/ui` is still here, pending a ruling on moving the kit into the app (below).
+
+**Deleted** (tracked `.ts/.tsx/.js/.mjs` lines, then all tracked lines):
+
+| | Before | After |
+| --- | --- | --- |
+| `packages/claxedo-app` (v1) | 444,875 (484,810) | deleted |
+| `packages/claxedo-app-v2/src/legacy` | 143,796 (147,730) | deleted |
+| `packages/session-ui` | 32,046 (38,536) | deleted |
+| `packages/storybook` | 640 (699) | deleted |
+| `packages/ui` (the kit) | 30,143 (102,824) | unchanged, pending |
+| The app, without `src/legacy` | 116,686 | 115,836 as `packages/claxedo-app`; budget 87,167 / 94,000 |
+
+**What changed besides the deletions:**
+- The e2e harness serves one app: no `--app`, no `e2e/parity`, no v1 coverage map. The a11y baseline lives in `e2e/harness/`, and corpus case `two-turns` has one baseline.
+- The desktop renders only the app (`src/renderer/main.tsx` through the `#app` alias, the desktop account binding forced by `vite.renderer.ts`). The renderer switch, `dev:v2`, `package:mac:v2` and "Claxedo V2 Dev" are gone, and the window refuses every navigation off the app document. The diagnostics contract moved into `claxedo-desktop/src/shared`.
+- Server paths only v1 read are gone: `projectName` on cloud create, the hosted `/project`, `/project/current` and `/project/:id` routes with `hostedProject()`, the hosted name heuristics, and `/api/claxedo/projects/by-directory`. The local `/project` routes stay; Claxedo MCP's tasks tool reads `/project/current`.
+- CI: the v1 e2e jobs, perf-harness steps, storybook and the session-ui mermaid gate are gone. GitHub CI has no app e2e job; the macOS Crabbox lane runs `bun run e2e -- --project=desktop`.
+- Ratchets: the desktop renderer policy measures the app (1,206 modules, 37 packages); desktop main 101 → 102 for the moved diagnostics contract; the helpers baseline is lowered, never raised.
+
+**Verified on the branch:** `bun install`; root `bun run typecheck` (33 of 33); in the app `typecheck`, `typecheck:e2e`, `test`, `build`, `check` (21 of 21); the full e2e suite (183 passed, 67 skipped, 0 failed, 21.8 min); the desktop `typecheck`, `test:broad` (996 pass), `test:bundle-single`, `test:server-boot`, `test:electron-boundary`, and `package:mac -- --dir --publish never`, whose packaged app booted on an isolated profile to onboarding and, with a project, to the rail; the server packages' suites; `test:architecture-ratchets` passes product boundary and fails only the helpers step, 143 findings, each already present on feat/app-v2 (which had 4,235).
+
+**Open after the swap:**
+- The kit move: v2 renders `@opencode-ai/ui` (149 files, 11.6k TS and 9.4k CSS lines reached). Moving it into `src/ui` breaks the app's size, names and comment checks and the 94k budget unless a ruling exempts or re-bases them.
+- The desktop's process-diagnostics subsystem (`src/main/diagnostics`, about 7.9k lines, plus its preload bridge) and its machine remote-access bridge have no renderer consumer now.
+- The u8 packaged smokes ran a v1 Playwright spec and are removed; there is no packaged startup trace for the app yet.
 
 ## 2026-09-25 11:00: the Mac rebooted under load
 

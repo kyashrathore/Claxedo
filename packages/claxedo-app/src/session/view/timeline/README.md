@@ -93,7 +93,7 @@ The row builder is `Timeline.constructMessageRows` (`message-timeline.data.ts`);
 
 ## Why scrolling works this way
 
-- Overscan is 6 rows: a flick leaves 0 blank px at 1400 px/frame and 802 px at 5600 px/frame; 12 rows still leave 443 px and take the worst renderer task from 16 ms to 31 ms (perf-harness `transcript-flick`).
+- Overscan is 6 rows: a flick leaves 0 blank px at 1400 px/frame and 802 px at 5600 px/frame; 12 rows still leave 443 px and take the worst renderer task from 16 ms to 31 ms (the `transcript-flick` scenario).
 - Opening at the end and staying at the end are different promises. `shouldAnchorBottom` opens a session on its latest turn; `followsEnd` holds only while a turn streams, because on a settled transcript a size change is the reader opening a fold or tool row, and re-pinning to the new end (by the row's estimate, before it measures) takes them away from what they clicked.
 - Insert holds and gesture windows mean the reader owns the viewport. A reveal click resizes a row at the reader's position, and its gesture mark keeps the resize anchor from pinning the growth to the bottom.
 - The virtualizer's index extractor is a getter, not a stable closure. The virtualizer memoizes the extractor's output on the extractor's identity plus range and count (virtual-core `getVirtualIndexes`); Solid signals read while the extractor runs are invisible to that memo, so a stable closure serves stale indexes (it once left the timeline mounting one row forever after a reload). Reading the signals at option-read time, inside the adapter's tracked `setOptions`, subscribes the virtualizer and mints a new identity.
@@ -140,7 +140,7 @@ The row builder is `Timeline.constructMessageRows` (`message-timeline.data.ts`);
 - Path chips render mentions as `@path`, and the sigil is stripped before resolving; a path that really starts with `@` (an npm scope folder) is indistinguishable, and the mention reading wins.
 - The context menu's path comes from the chip's text or, for filename slots that render only the basename, from `data-path`; falling back to the slot text would fabricate `<placement>/<basename>` for Open, Copy and Reveal.
 - The open-file event's detail rides on a DOM `CustomEvent`, so it is read structurally.
-- Mermaid rendering is registered once at app start; the session-ui decorator re-sanitizes its output through `sanitizeSvg` before it reaches `innerHTML`.
+- Mermaid rendering is registered once at app start; the transcript's Mermaid decorator re-sanitizes its output through `sanitizeSvg` before it reaches `innerHTML`.
 - A wide table or diagram borrows the pane gutters only when its content is wider than the column, at most 20% of the column on either side, and never beyond the scroll viewport's content box after the rail and environment-card gutters, so shrinking the pane removes bleed first (`markdown-surfaces.css`).
 
 ## Why failed turns read this way

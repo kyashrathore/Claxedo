@@ -2,7 +2,7 @@
 
 The renderers of one session's parts: user and assistant messages, tool rows, work groups and the turn fold, markdown with code, math and Mermaid, file and diff viewers, the Review code view, subagent chips, the message-navigation rail, and the retry card. The timeline (`src/session/view/timeline`) lays the rows out; this domain draws each one.
 
-It is `@opencode-ai/session-ui`'s renderers, **moved, not rebuilt**: only import paths, Claxedo names, and v2 twins where the corpus (flow 30, `e2e/corpus/`) shows no visible difference. A logic change is its own slice, proven by the corpus.
+It is the old app's session renderers, **moved, not rebuilt**: only import paths, Claxedo names, and kit twins where the corpus (flow 30, `e2e/corpus/`) shows no visible difference. A logic change is its own slice, proven by the corpus.
 
 ## Owned concepts
 

@@ -1,6 +1,6 @@
-# Claxedo app (v2)
+# Claxedo app
 
-This package is the rebuilt Claxedo app. These rules apply to everything in it and to `plugins/*`. The repo root `AGENTS.md` still applies; where the two differ, this file wins for this work.
+This package is the Claxedo app. These rules apply to everything in it and to `plugins/*`. The repo root `AGENTS.md` still applies; where the two differ, this file wins for this work.
 
 ## Today's server
 
@@ -10,7 +10,7 @@ The app runs on today's server contracts. `src/server/` is the only place that k
 
 - **Transcript** (`src/transcript/`, `src/session/view/timeline/`):
   - Hundreds of fixes live here. Change its logic only in a slice of its own, proven by the corpus (flow 30) and signed off by the owner.
-  - Mechanical changes (imports, names by the codemod, a v2 twin that renders the same) still run the whole corpus.
+  - Mechanical changes (imports, names by the codemod, a kit twin that renders the same) still run the whole corpus.
   - A fix here adds a corpus case in the same change.
 - **Session list** (`src/session/list/`):
   - One store owns rows, order and reconciliation. Nothing else fetches, caches or patches rows.
@@ -60,7 +60,7 @@ Directives a tool reads are not comments and stay, with no prose added: `// @ts-
 
 - Use Claxedo names only, outside `src/server/wire/`:
   - `sessionId`, not `sessionID` (same for message, part, provider, model, call and project ids). The runtime contract's own fields `sessionID`, `messageID`, `partID`, `providerID` and `modelID` keep their spelling as property keys and accesses; a local, a parameter, a prop or an app type that names one uses the Claxedo spelling;
-  - a `data-component` value, and a `data-slot` value outside the kit (`src/ui`), exists only where something reads it: a stylesheet (the kit's, session-ui's or v2's), a selector in code, an e2e flow or the perf harness; and a selector string in code selects only a value something writes (a JSX attribute, `dataset.x =` or `setAttribute`, in v2, the kit or session-ui). `scripts/checks/claxedo-names.ts` fails an unread value, a computed value whose type is not a union of string literals, and a dead selector;
+  - a `data-component` value, and a `data-slot` value outside the kit (`src/ui`), exists only where something reads it: a stylesheet (the kit's or the app's), a selector in code or an e2e flow; and a selector string in code selects only a value something writes (a JSX attribute, `dataset.x =` or `setAttribute`, in the app or the kit). `scripts/checks/claxedo-names.ts` fails an unread value, a computed value whose type is not a union of string literals, and a dead selector;
   - `@claxedo/*`, never `@opencode-ai/*` outside `src/ui`: today's kit (`@opencode-ai/ui`, `@opencode-ai/session-ui`) is the look, and code reaches it only through `@/ui`;
   - no `oc-` prefixes, no `globalSDK` or `globalSync`, no OpenCode event names, no `directory` routing.
 - Name the domain concept, not the mechanism: `SessionRow`, `TurnStatus`, `startTurn`.
@@ -115,7 +115,7 @@ Directives a tool reads are not comments and stay, with no prose added: `// @ts-
   - idle CPU ≤ 4%;
   - idle memory ≤ 700 MiB;
   - an 8 MiB long-row session ready in ≤ 2.4 s.
-  - The agent-app-benchmark verdict against today's app must lose no row.
+  - The agent-app-benchmark verdict must lose no row against the build before the change.
 - **No polling.** Timers only for bounded backoff and debouncing, each owned by one named module.
 - **Lists longer than 100 rows are virtualized.**
 - **No main-thread task over 50 ms during an interaction.**
@@ -123,7 +123,7 @@ Directives a tool reads are not comments and stay, with no prose added: `// @ts-
 
 ## End-to-end tests
 
-The suite must be robust, better than v1, working, honest and fast.
+The suite must be robust, working, honest and fast.
 
 - **Real stack only.** The real app against the real daemon, runtime, relay and Worker. Fakes only at external boundaries:
   - the scripted model endpoint;

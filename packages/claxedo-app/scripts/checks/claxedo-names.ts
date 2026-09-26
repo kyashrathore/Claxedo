@@ -153,7 +153,7 @@ function retiredAttribute(node: ts.JsxAttribute, inKit: boolean, hooks: SlotHook
   if (values === undefined) return `${hook} has a computed value whose type is not a union of string literals, so no stylesheet or hook can be shown to read it`
   const unread = values.filter((value) => !hooks.selects(hook, value))
   if (unread.length === 0) return undefined
-  return `${hook}="${unread.join('" / "')}" is read by no stylesheet, e2e or perf-harness hook; remove it`
+  return `${hook}="${unread.join('" / "')}" is read by no stylesheet, selector or e2e flow; remove it`
 }
 
 function recordWrites(sf: ts.SourceFile, checker: ts.TypeChecker, hooks: SlotHooks): void {
