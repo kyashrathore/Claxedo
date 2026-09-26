@@ -109,9 +109,10 @@ export class CodexAppServerTransport implements HarnessTransport {
         entry.state = "retiring"
         entry.providerTurn?.queue.fail(error)
       })
+      await broker.rebind(threadId)
+      if (entry.state === "retiring") throw new CodexTransportError("process", "Codex process retired during rebind")
       this.entries.set(input.sessionId, entry)
       this.starting.delete(rpc)
-      await broker.rebind(threadId)
       return session
     } catch (error) {
       this.starting.delete(rpc)

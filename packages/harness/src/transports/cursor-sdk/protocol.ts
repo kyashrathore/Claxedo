@@ -7,7 +7,6 @@ export type WorkerSession = {
   apiKey: string
   model?: string
   mcpServers: Record<string, McpServerConfig>
-  plugins: boolean
 }
 
 export type WorkerCommand =

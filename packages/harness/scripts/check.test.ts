@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
 import { check, type Rule, type Source } from "./check.ts"
 
 const agents = `## Process-wide state
@@ -62,9 +63,15 @@ test("compose is the only production module outside transports that imports tran
 })
 
 test("transport-boundary accepts only its own SDK and shared boundaries", () => {
-  passes("transport-boundary", "src/transports/acp/good.ts", 'import "node:fs"\nimport "@agentclientprotocol/sdk"\nimport "../../contract/x"\nimport "../../translate/x"\nimport "../../profiles/claude/x"\nimport "@claxedo/agent-event-runtime"\n')
+  const documented = readFileSync(new URL("../AGENTS.md", import.meta.url), "utf8")
+  for (const name of ["@claxedo/helpers", "@claxedo/agent-runtime-contract", "@claxedo/agent-event-runtime"]) {
+    expect(documented).toContain(`\`${name}\``)
+    passes("transport-boundary", "src/transports/acp/good.ts", `import "${name}"\nimport "${name}/subpath"\n`)
+  }
+  passes("transport-boundary", "src/transports/acp/good.ts", 'import "node:fs"\nimport "@agentclientprotocol/sdk"\nimport "../../contract/x"\nimport "../../translate/x"\nimport "../../profiles/claude/x"\n')
   fails("transport-boundary", "src/transports/acp/bad.ts", 'import "@cursor/sdk"\n', /Import only this transport/)
   fails("transport-boundary", "src/transports/pi-rpc/bad.ts", 'import "../../broker/x"\n', /Import only this transport/)
+  fails("transport-boundary", "src/transports/acp/bad.ts", 'import "@claxedo/workspace-runtime"\n', /Import only this transport/)
 })
 
 test("rpc is a shared transport mechanism without reverse dependencies", () => {

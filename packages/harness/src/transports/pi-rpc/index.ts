@@ -146,17 +146,18 @@ export class PiRpcTransport implements HarnessTransport {
     return attachedSessionEntry(this.entries, session, () => new TransportError("pi", "session", "Pi session is not attached"))
   }
 
-  private receiveTurn(entry: Entry, broker: TurnBroker, queue: AsyncPushQueue<RoutedEvent>, pending: Set<Promise<void>>): () => void {
+  private receiveTurn(entry: Entry, broker: TurnBroker, queue: AsyncPushQueue<RoutedEvent>, pending: Set<Promise<void>>,
+    dialogAbort: AbortController): () => void {
     const translate = piEvents(entry.session.binding.sessionId)
     return entry.rpc.onEvent((message: PiMessage) => {
       try {
         for (const event of translate(message)) queue.push(event)
         if (message.type === "extension_ui_request") {
-          const task = answerPiDialog(message, entry.rpc, broker, entry.session.binding.sessionId, this.services.clock.now())
+          const task = answerPiDialog(message, entry.rpc, broker, entry.session.binding.sessionId, this.services.clock.now(), dialogAbort.signal)
           pending.add(task)
           void task.then(() => pending.delete(task), (error: unknown) => queue.fail(error))
         }
-        if (message.type === "agent_settled") { entry.settled = true; queue.end() }
+        if (message.type === "agent_settled") { entry.settled = true; dialogAbort.abort(); queue.end() }
       } catch (error) { queue.fail(error) }
     })
   }
@@ -168,7 +169,8 @@ export class PiRpcTransport implements HarnessTransport {
     entry.settled = false
     const queue = new AsyncPushQueue<RoutedEvent>()
     const pending = new Set<Promise<void>>()
-    const remove = this.receiveTurn(entry, broker, queue, pending)
+    const dialogAbort = new AbortController()
+    const remove = this.receiveTurn(entry, broker, queue, pending, dialogAbort)
     const removeFailure = entry.rpc.onFailure((error) => queue.fail(error))
     const onAbort = () => { void this.cancel(session, { turnId: turn.turnId, assistantMessageId: turn.assistantMessageId }, deadline(this.services.clock)).then(
       (result) => { if (result.error) queue.fail(new TransportError("pi", "process", result.error.message)) },
@@ -192,6 +194,7 @@ export class PiRpcTransport implements HarnessTransport {
       this.entries.delete(session.binding.sessionId)
       throw error
     } finally {
+      dialogAbort.abort()
       remove()
       removeFailure()
       broker.signal.removeEventListener("abort", onAbort)
@@ -219,16 +222,19 @@ export class PiRpcTransport implements HarnessTransport {
     const start = mergeStartInput(entry.start, update)
     const profile = selectPiProfile(start.owner, start.credentials, start.directory, start.sessionId, this.options, entry.profile.kind)
     await preparePiProfile(profile, start.model)
+    this.entries.delete(session.binding.sessionId)
     await entry.rpc.retire(deadline(this.services.clock))
     const rpc = await this.launch(start, profile, entry.broker, await this.sessionFile(profile, entry.session.binding.upstreamSessionId))
-    const state = await rpc.request("get_state")
-    if (!state || typeof state !== "object" || !("sessionId" in state) || state.sessionId !== entry.session.binding.upstreamSessionId) {
-      await rpc.retire(deadline(this.services.clock))
-      throw new TransportError("pi", "session", "Pi resumed a different session after credential change")
-    }
+    try {
+      const state = await rpc.request("get_state")
+      if (!state || typeof state !== "object" || !("sessionId" in state) || state.sessionId !== entry.session.binding.upstreamSessionId) {
+        throw new TransportError("pi", "session", "Pi resumed a different session after credential change")
+      }
+    } catch (error) { await rpc.retire(deadline(this.services.clock)); throw error }
     entry.rpc = rpc
     entry.profile = profile
     entry.start = start
+    this.entries.set(session.binding.sessionId, entry)
     return { state: "applied" }
   }
 

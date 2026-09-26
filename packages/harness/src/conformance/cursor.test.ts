@@ -7,8 +7,10 @@ import { reservePort, releasePort } from "../../e2e/harness/ports"
 import { startScriptedCursorBackend } from "../../e2e/harness/cursor/backend"
 import { egressProxyEnv, startEgressGuard, unexpectedEgress } from "../../e2e/harness/egress-guard"
 import { CursorSdkTransport } from "../transports/cursor-sdk"
-import { cursorWorkerEnvironment } from "../transports/cursor-sdk/worker-registry"
+import { CursorWorker, cursorWorkerEnvironment } from "../transports/cursor-sdk/worker-registry"
+import { pollUntil } from "./test-support/poll"
 import type { HarnessSession, SessionBroker } from "../contract"
+import { TransportError } from "../contract/errors"
 
 type CursorBackend = ConformanceBackend & { env: NodeJS.ProcessEnv; server: Awaited<ReturnType<typeof startScriptedCursorBackend>> }
 
@@ -71,6 +73,108 @@ test("an unbound worker sends the SDK turn to the machine owner's endpoint", asy
   } finally { await context.close() }
 })
 
+test.each([
+  [{ kind: "person", userId: "member" } as const, "local" as const],
+  [{ kind: "machine-owner" } as const, "remote" as const],
+])("an unbound %j session at %s cannot use the machine Cursor key", async (owner, locality) => {
+  const state = await backend()
+  await expect(setupConformance({ name: "unbound", backend: async () => ({ ...state, owner, locality,
+    credentials: { providers: {}, secrets: {}, leaseGeneration: "unbound" } }),
+    makeTransport: (services) => new CursorSdkTransport(services, {
+      ...state.env, CURSOR_BACKEND_URL: state.server.url, CURSOR_API_KEY: "owner-placeholder",
+    }) })).rejects.toThrow("Cursor SDK requires an API key")
+})
+
+test("a failed run leaves another session on the shared worker running", async () => {
+  const state = await backend()
+  state.server.script("held", { steps: [{ kind: "text", text: "HELD-FINISHED" }], hold: true })
+  state.server.script("failed", { steps: [], error: { status: 503, message: "scripted failure" } })
+  const context = await setupConformance({ name: "shared", backend: async () => state,
+    makeTransport: (services) => new CursorSdkTransport(services, state.env) })
+  try {
+    const second = await context.transport.start({ ...context.start, sessionId: "s2" },
+      { rebind: async () => {} } as unknown as SessionBroker)
+    const held = (async () => {
+      const events = []
+      for await (const event of context.transport.send(second, context.turn("CURSOR_SCRIPT:held"), context.turnBroker())) events.push(event)
+      return events
+    })().then((events) => ({ events }), (error: unknown) => ({ error }))
+    await pollUntil(() => state.server.requests.some((request) => request.path === "/aiserver.v1.BidiService/BidiAppend"
+      && JSON.stringify(request.decoded).includes("CURSOR_SCRIPT:held")) || undefined, Date.now() + 10_000)
+    const failedEvents = []
+    let rejected = false
+    try {
+      for await (const event of context.transport.send(context.session, context.turn("CURSOR_SCRIPT:failed"), context.turnBroker())) failedEvents.push(event)
+    } catch (error) {
+      expect(error).toBeInstanceOf(Error)
+      rejected = true
+    }
+    expect(rejected || failedEvents.some((event) => event.event.type === "error")).toBe(true)
+    state.server.release("held")
+    const outcome = await held
+    if ("error" in outcome) throw outcome.error
+    expect(outcome.events.some((event) => event.event.type === "finish")).toBe(true)
+  } finally { await context.close() }
+}, 90_000)
+
+test("a held worker run expires at its command deadline and retires the worker", async () => {
+  const state = await backend()
+  state.server.script("held", { steps: [], hold: true })
+  const worker = new CursorWorker(state.env, state.server.url)
+  try {
+    await worker.call({ kind: "open", session: { sessionId: "deadline", directory: state.directory,
+      apiKey: "cursor-conformance-placeholder", model: "scripted", mcpServers: {} } })
+    const running = worker.call({ kind: "run", session: { sessionId: "deadline", directory: state.directory,
+      apiKey: "cursor-conformance-placeholder", model: "scripted", mcpServers: {} },
+      prompt: "CURSOR_SCRIPT:held" }, undefined, { at: Date.now() + 300, signal: new AbortController().signal })
+    const other = worker.call({ kind: "run", session: { sessionId: "deadline-2", directory: state.directory,
+      apiKey: "cursor-conformance-placeholder", model: "scripted", mcpServers: {} },
+      prompt: "CURSOR_SCRIPT:held" }).then(() => undefined, (error: unknown) => error)
+    const outcome = await Promise.race([running.then(() => "answered", () => "expired"),
+      new Promise<string>((resolve) => setTimeout(() => resolve("hung"), 2_000))])
+    expect(outcome).toBe("expired")
+    const affected = await other
+    expect(affected).toBeInstanceOf(TransportError)
+    expect((affected as TransportError).code).toBe("worker")
+    expect(worker.failed).toBe(true)
+  } finally { await worker.retire(); await state.close() }
+}, 30_000)
+
+test("Cursor only advertises child admission it implements", async () => {
+  const state = await backend()
+  try {
+    const transport = new CursorSdkTransport((await import("./test-support/services")).createTestServices(), state.env)
+    expect((await transport.capabilities()).subagents).toBe(false)
+    await transport.dispose()
+  } finally { await state.close() }
+})
+
+test("per-session projected plugin roots are refused before Cursor starts", async () => {
+  const state = await backend()
+  await expect(setupConformance({ name: "plugin-roots", backend: async () => ({ ...state,
+    projection: { generation: "g2", mcpServers: [], notApplied: [], pluginRoots: [
+      { pluginInstanceId: "plugin", root: state.directory, dataRoot: state.directory },
+    ] } }), makeTransport: (services) => new CursorSdkTransport(services, state.env) }))
+    .rejects.toThrow("Cursor cannot project per-session plugin roots")
+})
+
+test("a plugin projection update is refused without changing the live Cursor session", async () => {
+  const state = await backend()
+  const context = await setupConformance({ name: "plugin-update", backend: async () => state,
+    makeTransport: (services) => new CursorSdkTransport(services, state.env) })
+  try {
+    const update = await context.transport.configure(context.session, { projection: {
+      generation: "g2", mcpServers: [], notApplied: [], pluginRoots: [
+        { pluginInstanceId: "plugin", root: state.directory, dataRoot: state.directory },
+      ],
+    } })
+    expect(update).toEqual({ state: "refused", reason: expect.stringContaining("Cursor cannot project per-session plugin roots") })
+    const events = []
+    for await (const event of context.transport.send(context.session, context.turn("CURSOR_SCRIPT:conformance"), context.turnBroker())) events.push(event)
+    expect(events.some((event) => event.event.type === "finish")).toBe(true)
+  } finally { await context.close() }
+})
+
 test("two bindings use separate SDK module registries", async () => {
   const first = await backend()
   const second = await backend()
@@ -128,7 +232,7 @@ test.each([
   } finally { await context.close() }
 }, 90_000)
 
-test("a failed scripted run retires its worker and the next turn completes", async () => {
+test("a failed scripted run leaves the next turn usable", async () => {
   const state = await backend()
   state.server.script("crash", { steps: [], error: { status: 503, message: "scripted Cursor failure" } })
   const context = await setupConformance({ name: "recovery", backend: async () => state,

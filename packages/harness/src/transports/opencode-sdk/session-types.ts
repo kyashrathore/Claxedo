@@ -15,6 +15,8 @@ export type SessionSummary = Readonly<{
   directory: string
   createdAt: number
   updatedAt: number
+  idleAt?: number
+  outcome?: "succeeded" | "failed" | "interrupted"
 
   tokens?: TokenUsage
 }>
@@ -111,6 +113,7 @@ export type OpenCodeSessionPort = Readonly<{
     input: { command: string; text?: string; delivery?: "steer" | "queue" },
   ): Promise<void>
   interrupt(scope: WorkspaceScope, sessionID: string, options?: { continue?: boolean }): Promise<void>
+  wait(scope: WorkspaceScope, sessionID: string): Promise<void>
 
   revertTo(scope: WorkspaceScope, sessionID: string, messageID: string, options?: { files?: boolean }): Promise<void>
 

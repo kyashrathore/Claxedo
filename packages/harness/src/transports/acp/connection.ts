@@ -46,9 +46,9 @@ export async function connectAcp(input: StartInput, options: AcpConnectionOption
     sessionUpdate: (notification) => handlers.update(notification),
     unstable_createElicitation: (request) => initializing ? startup.request(() => handlers.elicitation(request)) : handlers.elicitation(request),
     unstable_completeElicitation: (notification) => handlers.complete(notification),
-  }), inbound)
+  }), inbound.stream)
   let retirement: Promise<void> | undefined
-  const retire = () => { retirement ??= retireStream(process, stream, services); return retirement }
+  const retire = () => { retirement ??= retireStream(process, inbound.cancel, services); return retirement }
   try {
     const handshake = await startup.run(agent.initialize({ protocolVersion: PROTOCOL_VERSION,
       clientCapabilities: { elicitation: { form: {}, url: {} } }, clientInfo: { name: "Claxedo", version: "2" } }))
@@ -63,8 +63,10 @@ export async function connectAcp(input: StartInput, options: AcpConnectionOption
   }
 }
 
-function extensionStream(stream: Stream, handlers: AcpHandlers): Stream {
+function extensionStream(stream: Stream, handlers: AcpHandlers): { stream: Stream; cancel: (reason?: unknown) => Promise<void> } {
   const reader = stream.readable.getReader()
+  let cancellation: Promise<void> | undefined
+  const cancel = (reason?: unknown) => { cancellation ??= reader.cancel(reason); return cancellation }
   const readable = new ReadableStream<StreamMessage>({
     async pull(controller) {
       while (true) {
@@ -78,9 +80,9 @@ function extensionStream(stream: Stream, handlers: AcpHandlers): Stream {
         return
       }
     },
-    cancel(reason) { return reader.cancel(reason) },
+    cancel,
   })
-  return { readable, writable: stream.writable }
+  return { stream: { readable, writable: stream.writable }, cancel }
 }
 
 function knownUpdate(type: string): boolean {
@@ -135,8 +137,9 @@ async function openStream(input: StartInput, options: AcpConnectionOptions, serv
   return { stream: createHttpStream(options.url, { headers: options.headers }) }
 }
 
-async function retireStream(process: OwnedProcess | undefined, stream: Stream, services: HarnessServices): Promise<void> {
-  if (!process) { await stream.writable.abort(); return }
+async function retireStream(process: OwnedProcess | undefined,
+  cancel: (reason?: unknown) => Promise<void>, services: HarnessServices): Promise<void> {
+  if (!process) { await cancel(); return }
   const result = await process.retire({ at: services.clock.now() + 5_000, signal: new AbortController().signal })
   if (!result.stopped) throw new AcpTransportError("ownership", result.error.message)
 }

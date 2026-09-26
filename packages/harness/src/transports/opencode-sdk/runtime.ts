@@ -33,6 +33,7 @@ export type OpenCodeRuntime = Readonly<{
     start(): void
     ready(): Promise<void>
     subscribe(listener: (event: ProjectedEvent) => void): () => void
+    subscribeLoss?(listener: () => void): () => void
     checkpoint(aggregateID: string): number | undefined
   }>
   close(): Promise<void>
@@ -45,9 +46,13 @@ export type OpenCodeRuntimeOptions = OpenCodeHostOptions & Readonly<{
 
 function eventSurface(host: OpenCodeHost) {
   const listeners = new Set<(event: ProjectedEvent) => void>()
+  const lossListeners = new Set<() => void>()
   const pump: EventPump = createEventPump(host, {
     onEvent(event) {
       for (const listener of Array.from(listeners)) listener(event)
+    },
+    onStreamLoss() {
+      for (const listener of Array.from(lossListeners)) listener()
     },
   })
   return {
@@ -59,6 +64,11 @@ function eventSurface(host: OpenCodeHost) {
         listeners.add(listener)
         pump.start()
         return () => listeners.delete(listener)
+      },
+      subscribeLoss(listener: () => void) {
+        lossListeners.add(listener)
+        pump.start()
+        return () => lossListeners.delete(listener)
       },
       checkpoint: (aggregateID: string) => pump.checkpoint(aggregateID),
     },

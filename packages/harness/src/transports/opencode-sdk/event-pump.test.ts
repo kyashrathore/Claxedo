@@ -115,6 +115,25 @@ test("a throwing consumer degrades health but does not kill the pump", async () 
   await pump.stop()
 })
 
+test("a rejected durable event does not advance its checkpoint", async () => {
+  const root = tempRoot()
+  const workspace = path.join(root, "ws")
+  fs.mkdirSync(workspace)
+  const scope = WorkspaceScope.authorize({ workspaceID: "w", directory: workspace })
+  const host = hostAt(root)
+  let rejected: ProjectedEvent | undefined
+  const pump = createEventPump(host, { onEvent(event) {
+    if (!event.durable) return
+    rejected = event
+    throw new Error("projection rejected")
+  } })
+  pump.start()
+  await createSessionPort(host).create(scope, { title: "rejected" })
+  expect(await waitFor(() => rejected !== undefined)).toBe(true)
+  expect(pump.checkpoint(rejected!.durable!.aggregateID)).toBeUndefined()
+  await pump.stop()
+})
+
 test("stop is idempotent and releases the stream", async () => {
   const host = hostAt(tempRoot())
   const pump = createEventPump(host, { onEvent: () => {} })

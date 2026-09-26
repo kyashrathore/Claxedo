@@ -3,7 +3,7 @@ import path from "node:path"
 import { isRecord } from "@claxedo/helpers/guards"
 import { daemonRuntime } from "../harness/daemon"
 import { ensurePinnedPi } from "../harness/pinned-pi"
-import { CONTRACT_DIST, ensureWorkspaceDist, HELPERS_DIST } from "../harness/workspace-dists"
+import { CONTRACT_DIST, ensureWorkspaceDist, HELPERS_DIST, PROCESS_OWNERSHIP_DIST } from "../harness/workspace-dists"
 
 type Flow = { run(): Promise<void> }
 
@@ -47,7 +47,7 @@ function firstLine(error: unknown) {
   return (error instanceof Error ? error.message : String(error)).split("\n")[0]
 }
 
-for (const dist of [HELPERS_DIST, CONTRACT_DIST]) await ensureWorkspaceDist(dist)
+for (const dist of [HELPERS_DIST, CONTRACT_DIST, PROCESS_OWNERSHIP_DIST]) await ensureWorkspaceDist(dist)
 const pi = await ensurePinnedPi()
 console.log(`Pinned Pi ${pi.version}: ${pi.installed ? "installed" : "already installed"}`)
 const runtime = await daemonRuntime()

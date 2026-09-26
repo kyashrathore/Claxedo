@@ -2,22 +2,16 @@ import fs from "node:fs/promises"
 import { constants } from "node:fs"
 import path from "node:path"
 import type { SdkPluginConfig } from "@anthropic-ai/claude-agent-sdk"
+import { realPathWithinRoot } from "@claxedo/helpers/fs"
 import type { PluginProjection } from "../../contract"
+import { CLAUDE_COMMAND_DENY_RULES } from "../../broker/permission-ceilings"
 
 const SETTINGS = ["settings.json", "settings.local.json", "cowork_settings.json"] as const
 const MIRRORED = ["CLAUDE.md", "memory", "agents", "commands", "skills", "plugins", "projects", "todos", "history.jsonl"] as const
 const CLAUDE_WRITTEN = ["projects", "todos", "history.jsonl"] as const
 
-export const CLAUDE_DENY_FLOOR = ["Bash(rm -rf /*)", "Bash(rm -rf ~*)", "Bash(git push --force*)", "Bash(curl *| sh)",
-  "Bash(curl *| bash)", "Bash(wget *| sh)", "Bash(chmod -R 777*)"] as const
-
-export function claudeFloorDenies(toolName: string, input: Record<string, unknown>): boolean {
-  const command = input.command
-  if (toolName !== "Bash" || typeof command !== "string") return false
-  return CLAUDE_DENY_FLOOR.some((rule) => {
-    const pattern = rule.slice("Bash(".length, -1).split("*").map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(".*")
-    return new RegExp(`^${pattern}$`).test(command)
-  })
+export function claudePermissionSettings(allow: string[], ask: string[], deny: string[]) {
+  return { permissions: { allow, ask, deny: [...deny, ...CLAUDE_COMMAND_DENY_RULES] } }
 }
 const CREDENTIAL_KEYS = ["apiKeyHelper", "awsAuthRefresh", "awsCredentialExport"]
 const CREDENTIAL_ENV = /^(ANTHROPIC_|CLAUDE_CODE_)|(^|_)(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|CREDENTIALS)(_|$)/
@@ -45,10 +39,10 @@ export function scrubClaudeSettings(content: string): Record<string, unknown> {
 }
 
 async function copyReadOnly(source: string, target: string, home: string, visited = new Set<string>(), externalSkill = false): Promise<void> {
-  const resolved = await fs.realpath(source)
+  const { resolved, within } = await realPathWithinRoot(source, home)
   const stat = await fs.stat(source)
   let boundary = home
-  if (resolved !== home && !resolved.startsWith(home + path.sep)) {
+  if (!within) {
     if (!externalSkill || !stat.isDirectory()) throw new Error("Claude config mirror link escapes the person's home")
     try { await fs.access(path.join(resolved, "SKILL.md")) }
     catch (error) { throw new Error("Claude external skill link has no SKILL.md", { cause: error }) }

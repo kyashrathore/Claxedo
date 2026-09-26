@@ -16,6 +16,7 @@ export class ClaudeProcess extends EventEmitter implements SpawnedProcess {
   killed = false
   exitCode: number | null = null
   private exited = false
+  private stderrDiagnosed = false
 
   constructor(private readonly services: HarnessServices, options: SpawnOptions, sessionId: string, role: "harness" | "probe" = "harness") {
     super()
@@ -30,7 +31,11 @@ export class ClaudeProcess extends EventEmitter implements SpawnedProcess {
     this.started.then((owned) => {
       this.stdin.pipe(owned.stdin)
       owned.stdout.pipe(this.stdout)
-      owned.stderr.on("data", (chunk: Buffer) => services.log.debug("Claude stderr", { text: chunk.toString() }))
+      owned.stderr.on("data", (chunk: Buffer) => {
+        if (this.stderrDiagnosed) return
+        this.stderrDiagnosed = true
+        services.log.debug("Claude stderr", { redacted: true, bytes: Math.min(chunk.byteLength, 4096) })
+      })
       void owned.exited.then((exit) => {
         this.exitCode = exit.code
         this.exited = true
@@ -40,7 +45,7 @@ export class ClaudeProcess extends EventEmitter implements SpawnedProcess {
   }
 
   private fail(error: unknown): void {
-    this.services.log.error("Claude process failed", { error: errorMessage(error) })
+    this.services.log.error("Claude process failed", { code: error instanceof TransportError ? error.code : "unknown" })
     if (this.listenerCount("error")) this.emit("error", error instanceof Error ? error : new Error(errorMessage(error)))
     this.stdout.destroy()
   }

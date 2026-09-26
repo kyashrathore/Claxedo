@@ -61,6 +61,62 @@ describe(`${name} request broker`, () => {
     expect(await owner.broker.answer("p2-replacement", { kind: "rejected" }, { sessionId: "s1" })).toMatchObject({ refusal: "duplicate" })
   })
 
+
+  test("late ask from an ended turn saves cancellation before publication", async () => {
+    const { ports, turn } = setup()
+    ports.states.set("s1", { brokerGrants: [JSON.stringify(["c1", "run"])] })
+    ports.current.set("s1", { ...authority, turnId: "next" })
+    const waiting = turn.ask(question("late-turn"))
+    const granted = turn.ask(permission("late-grant", "run"))
+    await tick()
+    expect(ports.published).toHaveLength(0)
+    expect(await waiting).toEqual({ kind: "cancelled" })
+    expect(await granted).toEqual({ kind: "cancelled" })
+    expect(ports.readAnswer("s1", "late-turn")).toEqual({ kind: "cancelled" })
+    expect(ports.readAnswer("s1", "late-grant")).toEqual({ kind: "cancelled" })
+  })
+
+  test("turn completion persists cancellation before releasing pending asks", async () => {
+    const { ports, owner, turn } = setup()
+    const waiting = turn.ask(question("ended-turn"))
+    await tick()
+    let release!: () => void
+    const gate = new Promise<void>((done) => { release = done })
+    const persist = ports.persistAnswer.bind(ports)
+    ports.persistAnswer = async (...args) => { await gate; return persist(...args) }
+    let released = false
+    void waiting.then(() => { released = true })
+    const ending = owner.endTurn(authority)
+    await tick()
+    expect(released).toBe(false)
+    release()
+    await ending
+    expect(await waiting).toEqual({ kind: "cancelled" })
+    expect(ports.readAnswer("s1", "ended-turn")).toEqual({ kind: "cancelled" })
+  })
+
+  test("start completion persists cancellation before releasing pending asks", async () => {
+    const { ports, owner } = setup()
+    const start: AgentSessionStartBinding = { sessionId: "s1", operationId: "op", workspaceId: "w1", connectionId: "c1", directory: "/work" }
+    ports.startBinding = start
+    const context = { sessionId: "s1", directory: "/work", workspaceId: "w1", connectionId: "c1", operationId: "op", start, origin }
+    const waiting = createSessionBroker(owner, context).ask(question("ended-start"))
+    await tick()
+    await owner.endStart(context)
+    expect(await waiting).toEqual({ kind: "cancelled" })
+    expect(ports.readAnswer("s1", "ended-start")).toEqual({ kind: "cancelled" })
+  })
+
+  test("turn completion finds an ask made before rebind", async () => {
+    const { ports, owner, turn } = setup()
+    const waiting = turn.ask(question("before-end-rebind"))
+    await tick()
+    const session = createSessionBroker(owner, { sessionId: "s1", workspaceId: "w1", directory: "/work", origin })
+    await session.rebind("up2")
+    await owner.endTurn(authority)
+    expect(await waiting).toEqual({ kind: "cancelled" })
+    expect(ports.readAnswer("s1", "before-end-rebind")).toEqual({ kind: "cancelled" })
+  })
   test("abort answers every turn request cancelled", async () => {
     const { ports, owner, controller, turn } = setup()
     const first = turn.ask(permission("p3"))
@@ -530,7 +586,7 @@ describe(`${name} broker review regressions`, () => {
     ports.startStatus = "created"
     expect(await owner.broker.answer("start-form", { kind: "consent", accepted: true }, { start })).toMatchObject({ refusal: "foreign" })
     expect(() => session.ask(question("late-start"))).toThrow("no longer running")
-    await owner.requests.cancelStart({ sessionId: "s1", directory: "/work", workspaceId: "w1", connectionId: "c1", operationId: "op", start, origin })
+    await owner.endStart({ sessionId: "s1", directory: "/work", workspaceId: "w1", connectionId: "c1", operationId: "op", start, origin })
     await waiting
   })
 
@@ -674,7 +730,7 @@ describe(`${name} broker review regressions`, () => {
       if (pending.request.requestId === "cancel-a") throw new Error("disk full")
       return persist(pending, answer, automatic, grant)
     }
-    await expect(owner.requests.cancelTurn(authority)).rejects.toThrow("could not be cancelled")
+    await expect(owner.endTurn(authority)).rejects.toThrow("could not be cancelled")
     expect(await second).toEqual({ kind: "cancelled" })
   })
 

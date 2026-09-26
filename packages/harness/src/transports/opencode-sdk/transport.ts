@@ -3,6 +3,7 @@ import type { AttachInput, ConfigApplied, ConfigTarget, HarnessServices, Harness
   SessionBroker, StartInput, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef, Deadline } from "../../contract"
 import { openCodeLaunchDocument } from "../../profiles/opencode/index.js"
 import { openCodeCapabilities } from "./capabilities.js"
+import { rollbackOpenCodeSession } from "./open-rollback.js"
 import { providerOverlays } from "./credentials.js"
 import { OpenCodeOwnerMismatchError } from "./errors.js"
 import { TransportError } from "../../contract/errors.js"
@@ -11,7 +12,7 @@ import { eventAssistantMessageID, eventSessionID, terminal } from "./translate/e
 import { createOpenCodeRuntime, type OpenCodeRuntime, type OpenCodeRuntimeOptions } from "./runtime.js"
 import { WorkspaceScope } from "./scope.js"
 import { promptRequest, runOpenCodeTurn } from "./turn.js"
-import { errorMessage, settleAtRequestDeadline } from "@claxedo/helpers"
+import { createKeyedSerializer, errorMessage, settleAtRequestDeadline } from "@claxedo/helpers"
 import { attachedSessionEntry, mergeStartInput, sessionConnectionHealth, sessionMcpServers } from "../../contract"
 
 type Entry = { session: HarnessSession; start: StartInput; broker: SessionBroker; scope: WorkspaceScope;
@@ -22,6 +23,7 @@ export class OpenCodeSdkTransport implements HarnessTransport {
   private readonly runtime: OpenCodeRuntime
   private readonly entries = new Map<string, Entry>()
   private readonly documents = new Map<string, { content: string; users: Set<string> }>()
+  private readonly bindingChanges = createKeyedSerializer()
   private owner?: string
   private disposed = false
 
@@ -37,7 +39,6 @@ export class OpenCodeSdkTransport implements HarnessTransport {
     if (this.disposed) throw new TransportError("opencode", "engine", "OpenCode transport is disposed")
     const key = this.ownerKey(owner)
     if (this.owner !== undefined && this.owner !== key) throw new OpenCodeOwnerMismatchError()
-    this.owner = key
   }
 
   private scope(input: Pick<StartInput, "workspaceId" | "directory">): WorkspaceScope {
@@ -63,28 +64,61 @@ export class OpenCodeSdkTransport implements HarnessTransport {
     this.documents.set(scope.directory, { content, users: new Set([...(current?.users ?? []), input.sessionId]) })
   }
 
+  private bindingKey(input: StartInput): string {
+    return JSON.stringify(Object.entries(providerOverlays(input.credentials)).sort(([left], [right]) => left.localeCompare(right)))
+  }
+
+  private assertBindingCompatible(input: StartInput): void {
+    const selected = this.bindingKey(input)
+    for (const [id, entry] of this.entries) {
+      if (id !== input.sessionId && this.bindingKey(entry.start) !== selected) {
+        throw new TransportError("opencode", "configuration", "OpenCode sessions require one selected account; different selected accounts need separate engines")
+      }
+    }
+  }
+
   private async open(input: StartInput, broker: SessionBroker, upstream?: string): Promise<HarnessSession> {
+    return this.bindingChanges.run("engine", () => this.openBound(input, broker, upstream))
+  }
+
+  private async openBound(input: StartInput, broker: SessionBroker, upstream?: string): Promise<HarnessSession> {
     this.assertOwner(input.owner)
+    if (this.entries.has(input.sessionId)) throw new TransportError("opencode", "session", "OpenCode session is already attached")
+    this.assertBindingCompatible(input)
     const scope = this.scope(input)
-    await this.runtime.bindProviders(providerOverlays(input.credentials))
-    await this.applyProjection(input, scope)
-    const row = upstream ? await this.runtime.sessions.get(scope, upstream)
-      : await this.runtime.sessions.create(scope, input.title ? { title: input.title } : {})
-    if (upstream && row.id !== upstream) throw new TransportError("opencode", "session", "OpenCode attached a different session")
-    const session: HarnessSession = { directory: scope.directory, locality: input.locality,
-      binding: { sessionId: input.sessionId, workspaceId: input.workspaceId, directory: scope.directory,
-        connectionId: "opencode-sdk", upstreamSessionId: row.id } }
-    this.entries.set(input.sessionId, { session, start: input, broker, scope, upstream: row.id, active: false })
+    const prior = this.documents.get(scope.directory)
+    const priorDocument = await (await this.runtime.launch(scope)).read()
+    const priorBinding = this.entries.values().next().value?.start.credentials
+    let row: Awaited<ReturnType<OpenCodeRuntime["sessions"]["create"]>> | undefined
+    let registered = false
     try {
+      await this.runtime.bindProviders(providerOverlays(input.credentials))
+      await this.applyProjection(input, scope)
+      row = upstream ? await this.runtime.sessions.get(scope, upstream)
+        : await this.runtime.sessions.create(scope, input.title ? { title: input.title } : {})
+      if (upstream && row.id !== upstream) throw new TransportError("opencode", "session", "OpenCode attached a different session")
       const firstParty = this.services.firstPartyMcp(input.sessionId, input.locality)
       if (firstParty) {
         const registration = await firstPartyTools(firstParty, input.sessionId)
         await this.runtime.tools.registerSession({ scope, sessionID: row.id, ...registration })
+        registered = true
       }
       await broker.rebind(row.id)
+      this.owner = this.ownerKey(input.owner)
+      const session: HarnessSession = { directory: scope.directory, locality: input.locality,
+        binding: { sessionId: input.sessionId, workspaceId: input.workspaceId, directory: scope.directory,
+          connectionId: "opencode-sdk", upstreamSessionId: row.id } }
+      this.entries.set(input.sessionId, { session, start: input, broker, scope, upstream: row.id, active: false })
+      return session
+    } catch (error) {
+      const failures = await rollbackOpenCodeSession({ runtime: this.runtime, scope, upstream, rowID: row?.id,
+        registered, document: priorDocument, binding: priorBinding })
+      if (prior) this.documents.set(scope.directory, prior)
+      else this.documents.delete(scope.directory)
+      if (failures.length) throw new TransportError("opencode", "session",
+        `OpenCode open failed and rollback failed: ${failures.map((failure) => errorMessage(failure)).join("; ")}`, { cause: error })
+      throw error
     }
-    catch (error) { this.entries.delete(input.sessionId); throw error }
-    return session
   }
 
   start(input: StartInput, broker: SessionBroker): Promise<HarnessSession> { return this.open(input, broker) }
@@ -145,10 +179,17 @@ export class OpenCodeSdkTransport implements HarnessTransport {
   } }
 
   async configure(session: HarnessSession, update: TransportConfigUpdate): Promise<ConfigApplied> {
+    return this.bindingChanges.run("engine", () => this.configureBound(session, update))
+  }
+
+  private async configureBound(session: HarnessSession, update: TransportConfigUpdate): Promise<ConfigApplied> {
     const entry = this.entry(session)
     this.assertOwner(entry.start.owner)
-    if (update.credentials) await this.runtime.bindProviders(providerOverlays(update.credentials))
     const next = mergeStartInput(entry.start, update)
+    if (update.credentials) {
+      this.assertBindingCompatible(next)
+      await this.runtime.bindProviders(providerOverlays(update.credentials))
+    }
     if (update.projection) await this.applyProjection(next, entry.scope)
     entry.start = next
     return { state: "applied" }

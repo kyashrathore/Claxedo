@@ -21,6 +21,7 @@ const SERVER_ENTRY = path.join(SERVER_DIR, "src/deployments/self-hosted-node/ind
 const CLOUD_SERVER_ENTRY = path.join(import.meta.dirname, "cloud-server-entry.ts")
 const SERVER_MANIFEST = path.join(SERVER_DIR, "package.json")
 const TEXT_IMPORTS = pathToFileURL(path.join(REPO_ROOT, "packages/workspace-runtime/src/text-imports.mjs")).href
+const RETIREMENT_FAULT = pathToFileURL(path.join(import.meta.dirname, "retirement-fault.mjs")).href
 
 export type SignedDaemon = {
   publicOrigin: string
@@ -55,6 +56,8 @@ export type DaemonInput = {
   claudeExecutable?: string
   cloud?: boolean
   coldStartWithoutKeys?: boolean
+  resistantChild?: boolean
+  retirementFault?: boolean
 }
 
 type DaemonDirs = { acpScriptDir: string; workspaces: string }
@@ -70,7 +73,7 @@ async function daemonDirs(dataDir: string): Promise<DaemonDirs> {
 
 async function daemonEnv(input: DaemonInput): Promise<NodeJS.ProcessEnv> {
   const isolated = await isolatedEnv(input.dataDir, input.guardUrl)
-  const runtimeKeys = input.cloud && !input.coldStartWithoutKeys ? generateKeyPairSync("ed25519") : undefined
+  const runtimeKeys = !input.coldStartWithoutKeys ? generateKeyPairSync("ed25519") : undefined
   return {
     ...isolated,
     CLAXEDO_OPENCODE_CATALOG_CACHE: await writeScriptedModelCatalog(input.dataDir),
@@ -124,8 +127,9 @@ export async function daemonRuntime(): Promise<DaemonRuntime> {
   return { node, version }
 }
 
-function launchDaemon(runtime: DaemonRuntime, env: NodeJS.ProcessEnv, cwd: string, cloud = false): OwnedProcess {
-  const child = spawn(runtime.node, ["--conditions=development", "--import", TEXT_IMPORTS, "--import", TSX_LOADER, cloud ? CLOUD_SERVER_ENTRY : SERVER_ENTRY], {
+function launchDaemon(runtime: DaemonRuntime, env: NodeJS.ProcessEnv, cwd: string, cloud = false, retirementFault = false): OwnedProcess {
+  const child = spawn(runtime.node, ["--conditions=development", "--import", TEXT_IMPORTS,
+    ...(retirementFault ? ["--import", RETIREMENT_FAULT] : []), "--import", TSX_LOADER, cloud ? CLOUD_SERVER_ENTRY : SERVER_ENTRY], {
     cwd,
     env,
     stdio: ["ignore", "pipe", "pipe"],
@@ -138,7 +142,7 @@ export async function startDaemon(input: DaemonInput): Promise<Daemon> {
   let env = await daemonEnv(input)
   const url = `http://127.0.0.1:${input.port}`
   const runtime = await daemonRuntime()
-  let owned = launchDaemon(runtime, input.cloud ? { ...env, CLAXEDO_EMBEDDED_AUTH: "0", CLAXEDO_SIGNED_CLOUD_AUTH: "0" } : env, input.dataDir, input.cloud)
+  let owned = launchDaemon(runtime, input.cloud ? { ...env, CLAXEDO_EMBEDDED_AUTH: "0", CLAXEDO_SIGNED_CLOUD_AUTH: "0" } : env, input.dataDir, input.cloud, input.retirementFault)
   let cloudToken: string | undefined
   let cloudMemberToken: string | undefined
   const listening = `[claxedo-server] listening on ${url}`
@@ -147,9 +151,9 @@ export async function startDaemon(input: DaemonInput): Promise<Daemon> {
   try {
     await health("daemon")
     if (input.cloud) {
-      await prepareScriptedServer(directTransport, url, { scripted: input.scripted, acpScriptDir: dirs.acpScriptDir, red: input.red })
+      await prepareScriptedServer(directTransport, url, { scripted: input.scripted, acpScriptDir: dirs.acpScriptDir, red: input.red, resistantChild: input.resistantChild })
       await stopProcess(owned.child)
-      owned = launchDaemon(runtime, env, input.dataDir, true)
+      owned = launchDaemon(runtime, env, input.dataDir, true, input.retirementFault)
       await health("signed cloud daemon")
       const signup = await fetch(`${url}/api/auth/sign-up/email`, {
         method: "POST",
@@ -183,10 +187,10 @@ export async function startDaemon(input: DaemonInput): Promise<Daemon> {
       }
       await stopProcess(owned.child)
       env = { ...env, CLAXEDO_OPERATOR_SUBJECTS: body.user.id }
-      owned = launchDaemon(runtime, env, input.dataDir, true)
+      owned = launchDaemon(runtime, env, input.dataDir, true, input.retirementFault)
       await health("cloud daemon with operator")
     } else {
-      await prepareScriptedServer(directTransport, url, { scripted: input.scripted, acpScriptDir: dirs.acpScriptDir, red: input.red })
+      await prepareScriptedServer(directTransport, url, { scripted: input.scripted, acpScriptDir: dirs.acpScriptDir, red: input.red, resistantChild: input.resistantChild })
     }
   } catch (error) {
     await stopProcess(owned.child)
@@ -205,14 +209,14 @@ export async function startDaemon(input: DaemonInput): Promise<Daemon> {
       await stopProcess(owned.child)
       env = { ...env, CLAXEDO_DATA_DIR: await restartedDataDir(input.dataDir) }
       if (options.signed) env = { ...env, ...signedEnv(options.signed) }
-      owned = launchDaemon(runtime, env, input.dataDir, input.cloud)
+      owned = launchDaemon(runtime, env, input.dataDir, input.cloud, input.retirementFault)
       await health(options.signed ? "signed daemon" : "restarted daemon")
     },
     killAndRestart: async (options = {}) => {
       owned.child.kill("SIGKILL")
       await exited(owned.child)
       if (options.pathPrefix) env = { ...env, PATH: `${options.pathPrefix}${path.delimiter}${env.PATH}` }
-      owned = launchDaemon(runtime, env, input.dataDir, input.cloud)
+      owned = launchDaemon(runtime, env, input.dataDir, input.cloud, input.retirementFault)
       await health("restarted daemon after kill")
     },
     close: () => stopProcess(owned.child),
