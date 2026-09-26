@@ -8,6 +8,9 @@ import { startScriptedMcpServer } from "../../e2e/harness/scripted-mcp-server"
 import { egressProxyEnv, startEgressGuard, unexpectedEgress } from "../../e2e/harness/egress-guard"
 import { OpenCodeSdkTransport } from "../transports/opencode-sdk"
 import { OpenCodeOwnerMismatchError } from "../transports/opencode-sdk/errors"
+import type { OpenCodeRuntime } from "../transports/opencode-sdk/runtime"
+import { WorkspaceScope } from "../transports/opencode-sdk/scope"
+import { terminal } from "../transports/opencode-sdk/translate/event"
 import type { TurnInput } from "../contract"
 import { runConformance, setupConformance, type ConformanceBackend } from "./test-support/run"
 
@@ -173,6 +176,109 @@ test("one embedded engine refuses a different owner", async () => {
       context.sessionBroker)).rejects.toBeInstanceOf(OpenCodeOwnerMismatchError)
   } finally { await context.close() }
 }, 60_000)
+
+test("one embedded engine refuses a second selected account before rebinding the first", async () => {
+  const context = await setupConformance({ name: "opencode-account-isolation", backend,
+    makeTransport: (services, state) => transport(services, state as OpenCodeBackend) })
+  try {
+    const rotation = await (context.backend as OpenCodeBackend).rotate!()
+    await expect(context.transport.start({ ...context.start, sessionId: "s2", credentials: rotation.credentials },
+      { ...context.sessionBroker, rebind: async () => undefined })).rejects.toThrow("different selected accounts")
+    const events = await collect(context, context.turn("Reply with exactly FIRSTACCOUNT"))
+    expect(events.some((item) => item.event.type === "finish")).toBe(true)
+    expect((context.backend as OpenCodeBackend).server.requests.some((request) =>
+      request.prompt.includes("FIRSTACCOUNT") && request.authorization === "Bearer opencode-placeholder-one")).toBe(true)
+  } finally { await context.close() }
+}, 60_000)
+
+test("credential rotation waits until other OpenCode sessions using the old account close", async () => {
+  const context = await setupConformance({ name: "opencode-account-rotation-isolation", backend,
+    makeTransport: (services, state) => transport(services, state as OpenCodeBackend) })
+  try {
+    const second = await context.transport.start({ ...context.start, sessionId: "s2" },
+      { ...context.sessionBroker, rebind: async () => undefined })
+    const rotation = await (context.backend as OpenCodeBackend).rotate!()
+    await expect(context.transport.configure(context.session, { credentials: rotation.credentials }))
+      .rejects.toThrow("different selected accounts")
+    await context.transport.close(second)
+    expect((await context.transport.configure(context.session, { credentials: rotation.credentials })).state).toBe("applied")
+    const events = await collect(context, context.turn("Reply with exactly ROTATIONAFTERCLOSE"))
+    expect(events.some((item) => item.event.type === "finish")).toBe(true)
+    expect(rotation.observed()).toBe(true)
+  } finally { await context.close() }
+}, 60_000)
+
+test("a failed OpenCode open releases its launch document ownership", async () => {
+  const context = await setupConformance({ name: "opencode-failed-open", backend,
+    makeTransport: (services, state) => transport(services, state as OpenCodeBackend) })
+  try {
+    const directory = path.join((context.backend as OpenCodeBackend).root, "second")
+    await fs.mkdir(directory)
+    const first = { ...context.start, sessionId: "failed", workspaceId: "second", directory }
+    let failedID: string | undefined
+    await expect(context.transport.start(first, { ...context.sessionBroker,
+      rebind: async (upstream) => { failedID = upstream; throw new Error("rebind refused") } })).rejects.toThrow("rebind refused")
+    const runtime = (context.transport as OpenCodeSdkTransport as unknown as { runtime: OpenCodeRuntime }).runtime
+    const scope = WorkspaceScope.authorize({ workspaceID: "second", directory })
+    expect((await runtime.sessions.list(scope)).sessions.map((session) => session.id)).not.toContain(failedID)
+    const plugin = path.join((context.backend as OpenCodeBackend).root, "replacement-plugin")
+    const skill = path.join(plugin, "skills", "replacement")
+    await fs.mkdir(skill, { recursive: true })
+    await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: replacement\ndescription: Replacement\n---\n")
+    const second = { ...first, sessionId: "replacement", projection: { ...first.projection,
+      pluginRoots: [{ pluginInstanceId: "replacement", root: plugin, dataRoot: plugin }] } }
+    const opened = await context.transport.start(second, { ...context.sessionBroker, rebind: async () => undefined })
+    expect(opened.binding.sessionId).toBe("replacement")
+  } finally { await context.close() }
+}, 60_000)
+
+test("an aborted OpenCode turn settles while the model reply is held", async () => {
+  const context = await setupConformance({ name: "opencode-abort", backend,
+    makeTransport: (services, state) => transport(services, state as OpenCodeBackend) })
+  const state = context.backend as OpenCodeBackend
+  const release = state.server.holdTextReplies("ABORTHELD")
+  let running: Promise<unknown> | undefined
+  try {
+    const controller = new AbortController()
+    running = collectEvents(context.transport.send(context.session, context.turn("Reply with exactly ABORTHELD"),
+      context.turnBroker(controller.signal)))
+    await state.server.textGateReached("ABORTHELD")
+    controller.abort()
+    const settled = await Promise.race([running.then(() => true), new Promise<false>((resolve) => setTimeout(() => resolve(false), 1_000))])
+    expect(settled).toBe(true)
+  } finally { release(); await running; await context.close() }
+}, 60_000)
+
+test("a lost OpenCode terminal event settles from the SDK session snapshot", async () => {
+  const context = await setupConformance({ name: "opencode-lost-terminal", backend,
+    makeTransport: (services, state) => transport(services, state as OpenCodeBackend) })
+  const target = context.transport as OpenCodeSdkTransport as unknown as { runtime: OpenCodeRuntime }
+  const actual = target.runtime
+  try {
+    const lost = new Set<() => void>()
+    target.runtime = { ...actual, events: { ...actual.events,
+      subscribe(listener) {
+        return actual.events.subscribe((event) => {
+          if (terminal(event, context.session.binding.upstreamSessionId)) {
+            for (const notify of lost) notify()
+          } else listener(event)
+        })
+      },
+      subscribeLoss(listener) { lost.add(listener); return () => lost.delete(listener) },
+    } }
+    const events = await collect(context, context.turn("Reply with exactly LOSTTERMINAL"))
+    expect(events.some((item) => item.event.type === "finish")).toBe(true)
+    target.runtime = actual
+    const next = await collect(context, context.turn("Reply with exactly AFTERLOSS"))
+    expect(next.some((item) => item.event.type === "finish")).toBe(true)
+  } finally { target.runtime = actual; await context.close() }
+}, 60_000)
+
+async function collectEvents(events: AsyncIterable<unknown>) {
+  const collected = []
+  for await (const event of events) collected.push(event)
+  return collected
+}
 
 async function waitForRequest(context: Awaited<ReturnType<typeof setupConformance>>, kind: "permission" | "question") {
   for (let attempt = 0; attempt < 500; attempt++) {

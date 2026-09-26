@@ -12,6 +12,7 @@ export type ProjectedEvent = Readonly<{
 
 export type EventPumpOptions = Readonly<{
   onEvent(event: ProjectedEvent): void
+  onStreamLoss?(): void
   backoffMs?: readonly number[]
   sleep?: (ms: number) => Promise<void>
 }>
@@ -83,10 +84,10 @@ class OpenCodeEventPump implements EventPump {
     if (event.durable) {
       const seen = this.checkpoints.get(event.durable.aggregateID)
       if (seen !== undefined && event.durable.seq <= seen) return
-      this.checkpoints.set(event.durable.aggregateID, event.durable.seq)
     }
     try {
       this.options.onEvent(event)
+      if (event.durable) this.checkpoints.set(event.durable.aggregateID, event.durable.seq)
     } catch (error) {
       this.host.setEventHealth("degraded")
       console.error("OpenCode event consumer failed", error)
@@ -124,6 +125,7 @@ class OpenCodeEventPump implements EventPump {
       }
       if (this.stopped) return
       this.host.setEventHealth("degraded")
+      this.options.onStreamLoss?.()
       const wait = this.backoff[Math.min(this.attempt, this.backoff.length - 1)] ?? 0
       this.attempt += 1
       await this.sleep(wait)
