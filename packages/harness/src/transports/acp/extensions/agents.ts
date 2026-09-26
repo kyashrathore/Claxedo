@@ -3,6 +3,8 @@ import type { AgentAgent } from "@claxedo/agent-runtime-contract"
 import type { ConfigTarget, DraftLaunch, HarnessSession } from "../../../contract"
 import type { AcpEntry } from "../index"
 import { AcpTransportError } from "../errors"
+import { acpAgents } from "../options"
+import { acpGroups } from "./groups"
 
 export async function acpAgentList(peer: ClientSideConnection, upstreamSessionId: string): Promise<AgentAgent[]> {
   const response = await peer.extMethod("session/agents/list", { sessionId: upstreamSessionId })
@@ -22,6 +24,10 @@ export async function acpAgentList(peer: ClientSideConnection, upstreamSessionId
 }
 
 export function acpAgentOperations(entry: (session: HarnessSession) => AcpEntry, probe: (draft: DraftLaunch) => Promise<AgentAgent[]>) {
-  return { list: (target: ConfigTarget) => "session" in target
-    ? acpAgentList(entry(target.session).peer.agent, target.session.binding.upstreamSessionId) : probe(target.draft) }
+  return { list: async (target: ConfigTarget): Promise<AgentAgent[]> => {
+    if (!("session" in target)) return probe(target.draft)
+    const current = entry(target.session)
+    return acpGroups(current.peer.handshake).agents
+      ? acpAgentList(current.peer.agent, target.session.binding.upstreamSessionId) : acpAgents(current)
+  } }
 }

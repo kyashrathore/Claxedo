@@ -1,4 +1,4 @@
-import type { McpServer } from "@agentclientprotocol/sdk"
+import type { McpServer, NewSessionRequest, SessionConfigOption, SessionModeState } from "@agentclientprotocol/sdk"
 import type { SessionHandoff } from "@claxedo/agent-runtime-contract"
 import type { AttachInput, SessionBroker } from "../../../contract"
 import type { AcpPeer } from "../connection"
@@ -6,25 +6,32 @@ import { AcpTransportError } from "../errors"
 
 export type MissingSessionContext = (input: AttachInput) => Promise<SessionHandoff>
 
-export async function restoreAcp(peer: AcpPeer, input: AttachInput, mcpServers: McpServer[], broker: SessionBroker, missingContext: MissingSessionContext): Promise<string> {
+export type AcpRestored = {
+  upstreamSessionId: string
+  modes?: SessionModeState | null
+  configOptions?: SessionConfigOption[] | null
+}
+
+export async function restoreAcp(peer: AcpPeer, input: AttachInput, mcpServers: McpServer[], broker: SessionBroker,
+  missingContext: MissingSessionContext, meta?: NewSessionRequest["_meta"]): Promise<AcpRestored> {
   const upstream = input.binding.upstreamSessionId
   const capabilities = peer.handshake.agentCapabilities
   try {
     if (capabilities?.sessionCapabilities?.resume) {
-      await peer.agent.resumeSession({ sessionId: upstream, cwd: input.directory, mcpServers })
-      return upstream
+      const restored = await peer.agent.resumeSession({ sessionId: upstream, cwd: input.directory, mcpServers })
+      return { upstreamSessionId: upstream, modes: restored.modes, configOptions: restored.configOptions }
     }
     if (capabilities?.loadSession) {
-      await peer.agent.loadSession({ sessionId: upstream, cwd: input.directory, mcpServers })
-      return upstream
+      const loaded = await peer.agent.loadSession({ sessionId: upstream, cwd: input.directory, mcpServers })
+      return { upstreamSessionId: upstream, modes: loaded.modes, configOptions: loaded.configOptions }
     }
     throw new AcpTransportError("protocol", "ACP agent declares neither load nor resume")
   } catch (error) {
     if (!lostAttachedSession(error, upstream)) throw error
     const context = await missingContext(input)
     await broker.persistHandoff(context)
-    const result = await peer.agent.newSession({ cwd: input.directory, mcpServers })
-    return result.sessionId
+    const result = await peer.agent.newSession({ cwd: input.directory, mcpServers, ...(meta ? { _meta: meta } : {}) })
+    return { upstreamSessionId: result.sessionId, modes: result.modes, configOptions: result.configOptions }
   }
 }
 
