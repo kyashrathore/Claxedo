@@ -96,7 +96,7 @@ function normalize(id: string | null | undefined) {
   return id === "oc-1" ? "oc-2" : id
 }
 
-function read(key: string) {
+function readStorage(key: string) {
   if (typeof localStorage !== "object") return null
   try {
     return localStorage.getItem(key)
@@ -180,8 +180,8 @@ export const { use: useTheme, useOptional: useThemeOptional, provider: ThemeProv
     defaultTheme?: string
     onThemeApplied?: (theme: DesktopTheme, mode: "light" | "dark", scheme: ColorScheme) => void
   }) => {
-    const themeId = normalize(read(STORAGE_KEYS.THEME_ID) ?? props.defaultTheme) ?? "oc-2"
-    const colorScheme = parseColorScheme(read(STORAGE_KEYS.COLOR_SCHEME)) ?? "system"
+    const themeId = normalize(readStorage(STORAGE_KEYS.THEME_ID) ?? props.defaultTheme) ?? "oc-2"
+    const colorScheme = parseColorScheme(readStorage(STORAGE_KEYS.COLOR_SCHEME)) ?? "system"
     const mode = colorScheme === "system" ? getSystemMode() : colorScheme
     const [store, setStore] = createStore({
       themes: {
@@ -267,9 +267,9 @@ export const { use: useTheme, useOptional: useThemeOptional, provider: ThemeProv
       }
       makeEventListener(mediaQuery, "change", onMedia)
 
-      const rawTheme = read(STORAGE_KEYS.THEME_ID)
+      const rawTheme = readStorage(STORAGE_KEYS.THEME_ID)
       const savedTheme = normalize(rawTheme ?? props.defaultTheme) ?? "oc-2"
-      const savedScheme = parseColorScheme(read(STORAGE_KEYS.COLOR_SCHEME)) ?? "system"
+      const savedScheme = parseColorScheme(readStorage(STORAGE_KEYS.COLOR_SCHEME)) ?? "system"
       if (rawTheme && rawTheme !== savedTheme) {
         write(STORAGE_KEYS.THEME_ID, savedTheme)
         clear()

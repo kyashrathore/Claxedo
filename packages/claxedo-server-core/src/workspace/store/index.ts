@@ -364,7 +364,7 @@ function upsert(ws: Workspace) {
   return ws
 }
 
-function visible(ws: Workspace) {
+function isListable(ws: Workspace) {
   if (ws.kind !== "cloud") return true
   if (!cloudAvailable(ws)) return false
   if (ws.status === "failed") return false
@@ -741,7 +741,7 @@ export async function listProjects() {
   await boot()
   const map = new Map<string, Workspace[]>()
   for (const row of byId.values()) {
-    if (!visible(row)) continue
+    if (!isListable(row)) continue
     const key = row.project_id ?? row.id
     const list = map.get(key)
     if (list) {

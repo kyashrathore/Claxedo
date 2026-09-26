@@ -266,7 +266,7 @@ function encodedFrame(input: MessageEvent["data"]): { binary: boolean; data_base
   return undefined
 }
 
-function send(ws: TunnelWebSocket, message: TunnelMessage) {
+function sendTunnelMessage(ws: TunnelWebSocket, message: TunnelMessage) {
   if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(message))
 }
 
@@ -323,7 +323,7 @@ function tunnelHeaders(input: WorkspaceRelayHostTunnelOptions, token: string) {
 }
 
 function sendWsClose(tunnel: TunnelWebSocket, channelId: string, code: unknown, reason: unknown) {
-  send(tunnel, {
+  sendTunnelMessage(tunnel, {
     type: "ws.close",
     protocol: TUNNEL_PROTOCOL_VERSION,
     channel_id: channelId,
@@ -413,14 +413,14 @@ async function forwardHttp(
   try {
     const target = localTarget(input, message.workspace_id, message.path)
     if (!target) {
-      send(ws, {
+      sendTunnelMessage(ws, {
         type: "http.response.start",
         protocol: TUNNEL_PROTOCOL_VERSION,
         request_id: message.request_id,
         status: 403,
         headers: { "content-type": "application/json" },
       })
-      send(ws, {
+      sendTunnelMessage(ws, {
         type: "http.response.end",
         protocol: TUNNEL_PROTOCOL_VERSION,
         request_id: message.request_id,
@@ -435,7 +435,7 @@ async function forwardHttp(
       signal,
     })
     if (signal.aborted) return
-    send(ws, {
+    sendTunnelMessage(ws, {
       type: "http.response.start",
       protocol: TUNNEL_PROTOCOL_VERSION,
       request_id: message.request_id,
@@ -455,7 +455,7 @@ async function forwardHttp(
           const chunk = await reader.read()
           if (signal.aborted) return
           if (chunk.done) break
-          send(ws, {
+          sendTunnelMessage(ws, {
             type: "http.response.chunk",
             protocol: TUNNEL_PROTOCOL_VERSION,
             request_id: message.request_id,
@@ -467,14 +467,14 @@ async function forwardHttp(
       }
     }
     if (signal.aborted) return
-    send(ws, {
+    sendTunnelMessage(ws, {
       type: "http.response.end",
       protocol: TUNNEL_PROTOCOL_VERSION,
       request_id: message.request_id,
     })
   } catch (err) {
     if (signal.aborted) return
-    send(ws, {
+    sendTunnelMessage(ws, {
       type: "error",
       protocol: TUNNEL_PROTOCOL_VERSION,
       request_id: message.request_id,
@@ -521,7 +521,7 @@ function openChannel(
   upstream.onmessage = (event) => {
     const frame = encodedFrame(event.data)
     if (!frame) return
-    send(tunnel, {
+    sendTunnelMessage(tunnel, {
       type: "ws.frame",
       protocol: TUNNEL_PROTOCOL_VERSION,
       channel_id: message.channel_id,
@@ -648,7 +648,7 @@ export function startWorkspaceRelayHostTunnel(options: WorkspaceRelayHostTunnelO
       lastInboundAt = Date.now()
       emit({ type: "open" })
       if (registrationUpdate) {
-        send(socket, {
+        sendTunnelMessage(socket, {
           type: "host.registration.update",
           protocol: TUNNEL_PROTOCOL_VERSION,
           workspace_ids: registrationUpdate.workspaceIds,
@@ -696,7 +696,7 @@ export function startWorkspaceRelayHostTunnel(options: WorkspaceRelayHostTunnelO
       const parsed = parseTunnelMessage(event.data)
       if (!parsed) return
       if (parsed.type === "ping") {
-        send(socket, makeTunnelPong(parsed))
+        sendTunnelMessage(socket, makeTunnelPong(parsed))
         return
       }
       if (parsed.type === "http.request") {
@@ -796,7 +796,7 @@ export function startWorkspaceRelayHostTunnel(options: WorkspaceRelayHostTunnelO
       if (!workspaceIds.length) throw new Error("At least one workspace is required")
       registrationUpdate = { workspaceIds, token: input.token }
       if (!ws || ws.readyState !== WebSocket.OPEN) return
-      send(ws, {
+      sendTunnelMessage(ws, {
         type: "host.registration.update",
         protocol: TUNNEL_PROTOCOL_VERSION,
         workspace_ids: workspaceIds,

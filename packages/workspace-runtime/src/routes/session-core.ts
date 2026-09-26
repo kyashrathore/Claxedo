@@ -157,7 +157,7 @@ export type SessionRouteContext = Context
 
 type Ctx = SessionRouteContext
 
-async function readSession(
+async function readRuntimeSession(
   opts: Opts,
   c: Ctx,
   directory: RuntimeDirectory,
@@ -220,14 +220,14 @@ async function sessionPermissionCeiling(opts: Opts, c: Ctx, directory: RuntimeDi
   const config = opts.getSessionConfig
     ? await opts.getSessionConfig(c, directory, session.id, adapter)
     : await adapter.getSessionConfig(await requireExecutionBinding(opts, c, directory, session.id, adapter))
-  const parent = session.parentID ? await readSession(opts, c, directory, session.parentID) : undefined
+  const parent = session.parentID ? await readRuntimeSession(opts, c, directory, session.parentID) : undefined
   if (session.parentID && !parent) throw new HTTPException(403, { message: "Parent session not found" })
   return effectivePermissionCeiling(opts, c, directory, parent ?? undefined, config.permissionCeiling)
 }
 
 async function rejectPermissionOverride(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string, adapter: AgentHarnessAdapter, modeId: string | undefined) {
   if (!modeId) return undefined
-  const session = await readSession(opts, c, directory, sessionId, adapter)
+  const session = await readRuntimeSession(opts, c, directory, sessionId, adapter)
   if (!session) return c.json(errorBody("session_not_found", "Session not found"), 404)
   const ceiling = await sessionPermissionCeiling(opts, c, directory, session, adapter)
   if (!ceiling) return undefined
@@ -297,7 +297,7 @@ async function cascadeToChildren(
     if (action === "delete") {
       if (!withSessionChange) throw new Error("Deleting a child requires its session lifecycle claim")
       await withSessionChange(childSessionId, async () => {
-        if (!await readSession(opts, c, directory, childSessionId)) return
+        if (!await readRuntimeSession(opts, c, directory, childSessionId)) return
         const childAdapter = await opts.resolveAdapter(c, { sessionId: childSessionId, directory })
         const binding = await requireExecutionBinding(opts, c, directory, childSessionId, childAdapter)
         const start = opts.sessionStarts?.get(childSessionId)?.binding
@@ -310,7 +310,7 @@ async function cascadeToChildren(
       })
       continue
     }
-    if (!await readSession(opts, c, directory, childSessionId)) continue
+    if (!await readRuntimeSession(opts, c, directory, childSessionId)) continue
     const childAdapter = await opts.resolveAdapter(c, { sessionId: childSessionId, directory })
     const binding = await requireExecutionBinding(opts, c, directory, childSessionId, childAdapter)
     // Archiving a child stops the turn it is running. The runtime keeps the
@@ -1710,7 +1710,7 @@ export function createSessionRoutes(opts: Opts) {
           const refused = await sessionOperationGuard(opts, c, body.parentID, "prompt")
           if (refused) return refused
         }
-        const parent = body.parentID && children ? await readSession(opts, c, directory, body.parentID) : undefined
+        const parent = body.parentID && children ? await readRuntimeSession(opts, c, directory, body.parentID) : undefined
         if (body.parentID && children) {
           if (!parent) return c.json(errorBody("parent_session_not_found", `Parent session ${body.parentID} not found`), 404)
           if (parent.parentID) {
@@ -1776,7 +1776,7 @@ export function createSessionRoutes(opts: Opts) {
               ? c.json(errorBody("session_instructions_unsupported", refusal.message), 501)
               : c.json(errorBody("session_instructions_too_large", refusal.message), 400)
           }
-          const existing = body.id ? await readSession(opts, c, directory, body.id, adapter) : undefined
+          const existing = body.id ? await readRuntimeSession(opts, c, directory, body.id, adapter) : undefined
           // An id this request holds a live reservation for is its own creation
           // resumed, and the plane has no stored session to ask about until it
           // registers. Any other id that already exists is somebody's session:
@@ -1926,7 +1926,7 @@ export function createSessionRoutes(opts: Opts) {
             throw error
           }
           if (body.parentID && children) {
-            const persisted = await readSession(opts, c, directory, session.id, adapter)
+            const persisted = await readRuntimeSession(opts, c, directory, session.id, adapter)
             if (!persisted) throw new Error(`Created child ${session.id} has no persisted session row`)
             session = persisted
           }
@@ -2106,7 +2106,7 @@ export function createSessionRoutes(opts: Opts) {
       const guarded = await sessionOperationGuard(opts, c, sessionId, "session_meta_read")
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
-      const session = await readSession(opts, c, directory, sessionId)
+      const session = await readRuntimeSession(opts, c, directory, sessionId)
       if (!session) return noStoreJson(c, sessionNotFound(), 404)
       await after(opts.afterGetSession?.(c, directory, session))
       return noStoreJson(c, normalizeSession(session, directory))
@@ -2197,7 +2197,7 @@ export function createSessionRoutes(opts: Opts) {
         const adapter = await opts.resolveAdapter(c, { sessionId, directory })
         // Read before deleting: once the row is gone nothing can say whether it
         // was a subsession, and the rail's visible count depends on that.
-        const parentID = (await readSession(opts, c, directory, sessionId, adapter).catch(() => undefined) as { parentID?: string } | undefined)?.parentID
+        const parentID = (await readRuntimeSession(opts, c, directory, sessionId, adapter).catch(() => undefined) as { parentID?: string } | undefined)?.parentID
         const start = opts.sessionStarts?.get(sessionId)?.binding
         await cascadeToChildren(opts, c, directory, sessionId, "delete", {}, withSessionChange)
         await opts.beforeDeleteSession?.(c, directory, sessionId)
@@ -2350,7 +2350,7 @@ export function createSessionRoutes(opts: Opts) {
         const snapshot = await opts.getMessageSnapshot?.(c, directory, sessionId)
         if (snapshot) {
           if (!snapshotRequested) return messagePageResponse(c, snapshot)
-          const session = await readSession(opts, c, directory, sessionId)
+          const session = await readRuntimeSession(opts, c, directory, sessionId)
           if (!session) return noStoreJson(c, sessionNotFound(), 404)
           return noStoreJson(c, { ...snapshot, session: normalizeSession(session, directory) })
         }
@@ -2378,7 +2378,7 @@ export function createSessionRoutes(opts: Opts) {
       const replay = await opts.getMessages?.(c, directory, sessionId)
       if (replay) {
         if (!snapshotRequested) return noStoreJson(c, replay)
-        const session = await readSession(opts, c, directory, sessionId)
+        const session = await readRuntimeSession(opts, c, directory, sessionId)
         if (!session) return noStoreJson(c, sessionNotFound(), 404)
         return noStoreJson(c, { messages: replay, session: normalizeSession(session, directory) })
       }
@@ -2386,7 +2386,7 @@ export function createSessionRoutes(opts: Opts) {
       if (snapshotRequested) {
         const [messages, session] = await Promise.all([
           adapter.getMessages(await requireExecutionBinding(opts, c, directory, sessionId, adapter)),
-          readSession(opts, c, directory, sessionId, adapter),
+          readRuntimeSession(opts, c, directory, sessionId, adapter),
         ])
         if (!session) return noStoreJson(c, sessionNotFound(), 404)
         return noStoreJson(c, { messages, session: normalizeSession(session, directory) })
@@ -2472,7 +2472,7 @@ export function createSessionRoutes(opts: Opts) {
       }
       const modeId = str((await boundedJsonRecord(c)).modeId) ?? ""
       if (!modeId) return c.json({ error: "modeId is required" }, 400)
-      const session = await readSession(opts, c, directory, sessionId, adapter)
+      const session = await readRuntimeSession(opts, c, directory, sessionId, adapter)
       if (!session) return c.json(errorBody("session_not_found", "Session not found"), 404)
       const ceiling = await sessionPermissionCeiling(opts, c, directory, session, adapter)
       if (ceiling) {
@@ -2680,7 +2680,7 @@ export function createSessionRoutes(opts: Opts) {
           const projected = messages.some((message) => asRecord(message.info)?.id === body.messageID)
           const session = projected
             ? undefined
-            : await readSession(opts, c, directory, id, adapter)
+            : await readRuntimeSession(opts, c, directory, id, adapter)
           if (
             projected
             || session?.status === "busy"

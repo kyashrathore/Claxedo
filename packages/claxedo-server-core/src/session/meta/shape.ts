@@ -65,7 +65,7 @@ export function root(input: string, by: Map<string, { parentID?: string }>, seen
  * the reader's last prompt must not erase it, and the session list orders on
  * this column.
  */
-export function laterHumanTurn(incoming: number | null | undefined, stored: number | null | undefined) {
+export function laterHumanTurnAt(incoming: number | null | undefined, stored: number | null | undefined) {
   if (incoming === null || incoming === undefined) return stored ?? null
   if (stored === null || stored === undefined) return incoming
   return Math.max(incoming, stored)

@@ -115,7 +115,7 @@ const REPLACE_TIMEOUT_MS = 2_000
 const REPLACE_POLL_MS = 25
 const SHARING_VIOLATION = new Set(["EPERM", "EACCES", "EBUSY"])
 
-async function replace(temp: string, file: string): Promise<void> {
+async function replaceWithRetry(temp: string, file: string): Promise<void> {
   const deadline = Date.now() + REPLACE_TIMEOUT_MS
   for (;;) {
     try {
@@ -152,7 +152,7 @@ async function stageAndReplace(
     await handle.writeFile(contents)
     if (options.fsync !== false) await handle.sync()
     await handle.close()
-    await replace(temp, file)
+    await replaceWithRetry(temp, file)
   } catch (error) {
     // Every failure after the exclusive create owns the temp, not just a failed
     // rename: a staging file left behind holds the secret at a name no one will

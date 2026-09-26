@@ -86,7 +86,7 @@ function mintHint(controlPlaneUrl: string) {
   ].join("\n")
 }
 
-async function loadState(deps: ConnectDeps): Promise<HostState | undefined> {
+async function loadHostState(deps: ConnectDeps): Promise<HostState | undefined> {
   const loaded = await deps.store.load().catch((error: unknown) => {
     if (error instanceof HostEndpointUrlError) {
       // A recorded relay/authority endpoint that fails the entry checks was
@@ -243,7 +243,7 @@ export async function connect(argv: string[], deps: ConnectDeps = defaultConnect
       }
     }
 
-    let state = await loadState(deps)
+    let state = await loadHostState(deps)
     if (state?.enrollment && args.tokenFile) {
       throw new HostConnectDecisionError(
         `this machine is already enrolled as ${state.enrollment.enrollment_id}; run \`claxedo connect --reset\` before redeeming another invitation`,

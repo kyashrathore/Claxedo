@@ -34,7 +34,7 @@ function str(value: unknown): string | undefined {
 }
 
 /** Read either wire (snake_case) or SDK (camelCase) key. */
-function field(source: Rec | undefined, snake: string, camel: string): unknown {
+function polarField(source: Rec | undefined, snake: string, camel: string): unknown {
   if (!source) return undefined
   return source[snake] !== undefined && source[snake] !== null ? source[snake] : source[camel]
 }
@@ -55,15 +55,15 @@ function subscriptionOrgId(subscription: Rec): string | undefined {
 }
 
 function subscriptionCustomerId(subscription: Rec): string | undefined {
-  return str(field(subscription, "customer_id", "customerId")) ?? str(asRecord(subscription.customer)?.id)
+  return str(polarField(subscription, "customer_id", "customerId")) ?? str(asRecord(subscription.customer)?.id)
 }
 
 function subscriptionProductId(subscription: Rec): string | undefined {
-  return str(field(subscription, "product_id", "productId")) ?? str(asRecord(subscription.product)?.id)
+  return str(polarField(subscription, "product_id", "productId")) ?? str(asRecord(subscription.product)?.id)
 }
 
 function subscriptionModifiedAt(subscription: Rec): number | undefined {
-  return epochMs(field(subscription, "modified_at", "modifiedAt")) ?? epochMs(field(subscription, "created_at", "createdAt"))
+  return epochMs(polarField(subscription, "modified_at", "modifiedAt")) ?? epochMs(polarField(subscription, "created_at", "createdAt"))
 }
 
 export type PolarProductConfig = {
@@ -104,8 +104,8 @@ function subscriptionState(subscription: Rec, source: "customer_state" | "subscr
     subscription_status: status,
     polar_subscription_id: str(subscription.id),
     ...(seats !== undefined ? { seats_licensed: seats } : {}),
-    ...(epochMs(field(subscription, "current_period_end", "currentPeriodEnd")) !== undefined
-      ? { current_period_end: epochMs(field(subscription, "current_period_end", "currentPeriodEnd")) }
+    ...(epochMs(polarField(subscription, "current_period_end", "currentPeriodEnd")) !== undefined
+      ? { current_period_end: epochMs(polarField(subscription, "current_period_end", "currentPeriodEnd")) }
       : {}),
     // customer-state payloads (webhook AND reconciliation getState) omit
     // seats in SDK 0.48.1 — never let them wipe a mirrored seat count.
@@ -138,10 +138,10 @@ export function customerStateToApplyArgs(
   const customerId = str(customer?.id)
   if (!customer || !customerId) return undefined
 
-  const subscriptionsField = field(customer, "active_subscriptions", "activeSubscriptions")
+  const subscriptionsField = polarField(customer, "active_subscriptions", "activeSubscriptions")
   const subscriptions = Array.isArray(subscriptionsField) ? subscriptionsField : []
   const byOrg = new Map<string, OrgBillingStateWrite>()
-  let sourceTs = epochMs(field(customer, "modified_at", "modifiedAt")) ?? 0
+  let sourceTs = epochMs(polarField(customer, "modified_at", "modifiedAt")) ?? 0
   for (const entry of subscriptions) {
     const subscription = asRecord(entry)
     if (!subscription || !relevantProduct(subscription, config)) continue

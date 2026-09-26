@@ -84,14 +84,14 @@ async function retireOwned(target: RetirementTarget, budgets: RetirementBudgets)
   if (verdict.state === "unknown") return {
     leader: "unknown",
     descendants: "unknown",
-    signals: [{ signal: "SIGTERM", scope: scopeOf(), delivered: false, refusal: "identity_unverifiable" }],
+    signals: [{ signal: "SIGTERM", scope: signalScope(), delivered: false, refusal: "identity_unverifiable" }],
     error: { code: "ownership_unverified", message: `could not establish whether pid ${identity.pid} is still the recorded launch: ${verdict.reason}` },
   }
   if (verdict.state === "exited") return { leader: "exited", descendants: await descendantsAfterExit(identity), signals: [] }
   if (verdict.state === "identity_mismatch") return {
     leader: "unknown",
     descendants: "unknown",
-    signals: [{ signal: "SIGTERM", scope: scopeOf(), delivered: false, refusal: "identity_mismatch" }],
+    signals: [{ signal: "SIGTERM", scope: signalScope(), delivered: false, refusal: "identity_mismatch" }],
     error: { code: "signal_denied", message: `pid ${identity.pid} is now a different process; the recorded launch was not signalled` },
   }
   if (process.platform !== "win32" && identity.processGroupId !== identity.pid) return {
@@ -108,14 +108,14 @@ async function retireOwned(target: RetirementTarget, budgets: RetirementBudgets)
   // starts with an already-exited leader gets no such licence: it refused
   // above: nothing in this process ever verified that group, so it reports
   // what it can still see of it and signals nothing.
-  signals.push(await deliver(identity, "SIGTERM"))
+  signals.push(await signalOwnedGroup(identity, "SIGTERM"))
   if (!(await awaitGroupEmpty(identity, budgets.termGraceMs))) {
     await closeNative(target)
     // Closing the native handle is a hangup the program may act on, so the
     // group can empty during it. Signalling a group id nobody holds any more
     // is how an unrelated process gets killed.
     if (await stillOwned(identity)) {
-      signals.push(await deliver(identity, "SIGKILL"))
+      signals.push(await signalOwnedGroup(identity, "SIGKILL"))
       await awaitGroupEmpty(identity, budgets.killVerifyMs)
     }
   }
@@ -166,7 +166,7 @@ async function stillOwned(identity: CreationIdentity) {
   return (await descendantsAfterExit(identity)) === "owned"
 }
 
-function scopeOf(): SignalOutcome["scope"] {
+function signalScope(): SignalOutcome["scope"] {
   return process.platform === "win32" ? "tree" : "group"
 }
 
@@ -180,7 +180,7 @@ async function closeNative(target: RetirementTarget) {
   }
 }
 
-async function deliver(identity: CreationIdentity, signal: NodeJS.Signals): Promise<SignalOutcome> {
+async function signalOwnedGroup(identity: CreationIdentity, signal: NodeJS.Signals): Promise<SignalOutcome> {
   if (process.platform === "win32") return deliverWindowsTree(identity, signal)
   try {
     process.kill(-identity.processGroupId, signal)

@@ -17,7 +17,7 @@ import type { Lock, QueueEntry, StateAdapter } from "chat"
  */
 type Expiring<T> = { value: T; expiresAt: number | undefined }
 
-function live(entry: { expiresAt: number | undefined } | undefined, now: number): boolean {
+function unexpired(entry: { expiresAt: number | undefined } | undefined, now: number): boolean {
   if (!entry) return false
   return entry.expiresAt === undefined || entry.expiresAt > now
 }
@@ -54,7 +54,7 @@ export function createMemoryStateAdapter(): StateAdapter {
     // No runtime check can substitute either — `T` is not known at runtime.
     async get<T = unknown>(key: string): Promise<T | null> {
       const entry = values.get(key)
-      if (!entry || !live(entry, now())) {
+      if (!entry || !unexpired(entry, now())) {
         values.delete(key)
         return null
       }
@@ -65,7 +65,7 @@ export function createMemoryStateAdapter(): StateAdapter {
     },
     async setIfNotExists(key: string, value: unknown, ttlMs?: number): Promise<boolean> {
       const entry = values.get(key)
-      if (live(entry, now())) return false
+      if (unexpired(entry, now())) return false
       values.set(key, { value, expiresAt: withTtl(ttlMs) })
       return true
     },
@@ -75,7 +75,7 @@ export function createMemoryStateAdapter(): StateAdapter {
 
     async appendToList(key: string, value: unknown, options?: { maxLength?: number; ttlMs?: number }) {
       const existing = lists.get(key)
-      const items = existing && live(existing, now()) ? existing.items : []
+      const items = existing && unexpired(existing, now()) ? existing.items : []
       items.push(value)
       if (options?.maxLength && items.length > options.maxLength) {
         items.splice(0, items.length - options.maxLength)
@@ -84,7 +84,7 @@ export function createMemoryStateAdapter(): StateAdapter {
     },
     async getList<T = unknown>(key: string): Promise<T[]> {
       const existing = lists.get(key)
-      if (!existing || !live(existing, now())) {
+      if (!existing || !unexpired(existing, now())) {
         lists.delete(key)
         return []
       }

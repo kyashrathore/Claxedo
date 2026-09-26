@@ -14,7 +14,7 @@ export type OpenCodeConfigurationPort = Readonly<{
   removeCredential(credentialID: string): Promise<void>
 }>
 
-function data(response: unknown): unknown {
+function unwrappedData(response: unknown): unknown {
   const row = rec(response)
   return row && "data" in row ? row.data : response
 }
@@ -22,7 +22,7 @@ function data(response: unknown): unknown {
 export function createConfigurationPort(host: OpenCodeHost): OpenCodeConfigurationPort {
   return {
     async integrations() {
-      const value = data(await (await host.client()).integration.list())
+      const value = unwrappedData(await (await host.client()).integration.list())
       if (!Array.isArray(value)) throw new Error("OpenCode returned an invalid integration list")
       return value.map((item) => {
         const row = rec(item) ?? {}

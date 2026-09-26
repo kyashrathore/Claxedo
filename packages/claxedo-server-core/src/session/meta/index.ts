@@ -14,7 +14,7 @@ import type {
 import {
   host,
   ids,
-  laterHumanTurn,
+  laterHumanTurnAt,
   now,
   root,
   sessionMetaSyncRow,
@@ -210,7 +210,7 @@ export async function putSessionMeta(
       : contentChanged
         ? stamp
         : prev?.updated_at ?? stamp
-    const lastHumanTurnAt = laterHumanTurn(input.lastHumanTurnAt, prev?.last_human_turn_at)
+    const lastHumanTurnAt = laterHumanTurnAt(input.lastHumanTurnAt, prev?.last_human_turn_at)
     const update = {
       session_id: sessionID,
       workspace_id: workspaceID,
@@ -487,7 +487,7 @@ async function upsertRows(rows: Array<ReturnType<typeof sessionMetaSyncRow>>): P
         parent_session_id: item.parent_session_id ?? prev?.parent_session_id ?? null,
         archived_at: item.archived_at,
         updated_at: Math.max(item.updated_at, prev?.updated_at ?? 0),
-        last_human_turn_at: laterHumanTurn(item.last_human_turn_at, prev?.last_human_turn_at),
+        last_human_turn_at: laterHumanTurnAt(item.last_human_turn_at, prev?.last_human_turn_at),
       }
       db.insert(ClaxedoSessionMetaTable).values({
         ...update,
