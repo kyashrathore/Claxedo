@@ -1,3 +1,4 @@
+import { batch } from "solid-js"
 import type { VirtualItem, Virtualizer } from "@tanstack/solid-virtual"
 
 export function estimateLongMarkdownHeight(text: string) {
@@ -18,6 +19,12 @@ export function scheduleConnectedMeasure<T extends HTMLElement>(element: T, meas
   })
 }
 
+export function measureUnmeasuredRows(virtualizer: Virtualizer<HTMLDivElement, HTMLDivElement>, root: HTMLElement) {
+  const unmeasured = [...root.querySelectorAll<HTMLDivElement>("[data-index]")].filter((element) =>
+    !virtualizer.itemSizeCache.has(virtualizer.options.getItemKey(Number(element.dataset.index))))
+  if (unmeasured.length) batch(() => unmeasured.forEach((element) => virtualizer.measureElement(element)))
+}
+
 const timelineInitialEstimatedItemSize = 180
 
 type TimelineResizeAnchorInput = {
@@ -26,6 +33,7 @@ type TimelineResizeAnchorInput = {
   displayed: () => boolean
   shouldAnchorBottom: () => boolean
   hasScrollGesture: () => boolean
+  holdsInViewInserts: () => boolean
   onInViewInsert?: () => void
   followsInsertBeside?: (displacedKey: string) => boolean
 }
@@ -69,12 +77,12 @@ export function createTimelineResizeAnchor() {
       const previous = previousKeys
       previousKeys = keys
       const input = installed
-      if (!input || !previous || keys.length <= previous.length) return
+      if (!input || !previous || keys.length <= previous.length || !input.holdsInViewInserts()) return
       const root = input.root()
       if (!root) return
       let index = 0
       while (index < previous.length && previous[index] === keys[index]) index += 1
-      if (index >= keys.length) return
+      if (index === 0 || index >= keys.length) return
       const anchorKey = index < previous.length ? previous[index] : previous[index - 1]
       const displaced = input.virtualizer.measurementsCache.find((item) => item.key === anchorKey)
       if (displaced && index >= previous.length - 2 && displaced.start < root.scrollTop + root.clientHeight - 1) {

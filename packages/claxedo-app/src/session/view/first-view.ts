@@ -1,6 +1,5 @@
 import { createEffect, createMemo, on, untrack, type Accessor } from "solid-js"
 import type { SessionView } from "@/session"
-import { holdPaneReveal } from "@/workbench"
 import { messageNavVisible } from "./timeline"
 
 function railNeedsOlder(view: SessionView): boolean {
@@ -17,15 +16,13 @@ function fillSettled(view: SessionView, fill: boolean): boolean {
   return !fill || !view.hasOlder() || view.olderPagesLoaded() > 0 || view.olderState().kind === "failed"
 }
 
-export function createFirstView(view: Accessor<SessionView>): Accessor<boolean> {
+export function createFirstViewFill(view: Accessor<SessionView>): Accessor<boolean> {
   const fill = createMemo<boolean | undefined>((decided) => decided ?? fillDecision(view()))
   createEffect(on(fill, (needed) => {
     if (needed) void view().loadOlder()
   }))
-  const ready = createMemo<boolean>((was) => {
+  return createMemo<boolean>((was) => {
     const decided = fill()
-    return was || (decided !== undefined && fillSettled(view(), decided))
-  }, false)
-  holdPaneReveal(() => !ready())
-  return ready
+    return was && (decided === undefined || !fillSettled(view(), decided))
+  }, true)
 }

@@ -305,3 +305,7 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - Dead code went first: the `displayName` read and `harnessDisplayName`, which nothing called, and the switch-paint reveal holds on the hydration run and the models load.
 - The composer measured 10,975 before and 11,141 after: 122 lines are the new tests (the seed, the config replacing it, the label's placeholders), the rest the label as a tested function and the seed patch.
 - Re-based to the measured 11,141 with no headroom, pending the orchestrator's review.
+
+## Owner, 2026-09-27: a switched-to session paints at its latest turn, bottom-anchored
+- Replaces the rail bullet of "a session's first load shows the turn peek rail…" (2026-09-26): the pane no longer waits for the older page.
+- A switched-to session shows as soon as its latest turn is complete and laid out, at the bottom of the view where it stays. The older page loads right after and lands above without moving what is on screen; the rail appears in the frame the page brings the turn count above ten, in a gutter on both sides, so the transcript does not shift.

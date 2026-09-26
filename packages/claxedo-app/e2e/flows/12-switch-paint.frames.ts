@@ -9,6 +9,7 @@ export type PaneFrame = {
   readonly turnLoading: number
   readonly rows: readonly string[]
   readonly scrollTop: number
+  readonly fromEnd: number
   readonly nav: boolean
 }
 
@@ -40,6 +41,7 @@ export async function recordSwitchFrames(app: Page, input: { readonly targetId: 
         turnLoading: root.querySelectorAll('[data-timeline-row="TurnLoading"]').length,
         rows,
         scrollTop: Math.round(scroller?.scrollTop ?? -1),
+        fromEnd: scroller ? Math.round(scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop) : -1,
         nav: !!timeline?.querySelector('[data-component="message-nav"]'),
       }
     }
@@ -70,11 +72,13 @@ export async function recordSwitchFrames(app: Page, input: { readonly targetId: 
 
 export type SwitchReport = {
   readonly states: readonly string[]
-  readonly settledAt: number | undefined
+  readonly revealedAt: { readonly ms: number; readonly frame: number } | undefined
+  readonly settledAt: { readonly ms: number; readonly frame: number } | undefined
   readonly sessions: readonly string[]
   readonly empty: readonly string[]
   readonly overlaid: readonly string[]
-  readonly jumps: readonly string[]
+  readonly moved: readonly string[]
+  readonly shownStates: readonly string[]
   readonly footers: readonly string[]
   readonly railApart: readonly string[]
 }
@@ -87,27 +91,57 @@ function emptyBody(frame: SwitchFrame): boolean {
   return frame.panes.length === 0 || frame.panes.some((pane) => !pane.body || !pane.composer || pane.placeholders > 0 || pane.turnLoading > 0 || pane.rows.length === 0)
 }
 
+function rowTops(pane: PaneFrame): ReadonlyMap<string, string> {
+  return new Map(pane.rows.map((row) => [row.slice(0, row.lastIndexOf("@")), row.slice(row.lastIndexOf("@") + 1)]))
+}
+
+function movedRows(target: readonly SwitchFrame[]): string[] {
+  const first = target[0] ? rowTops(target[0].panes[0]) : new Map<string, string>()
+  const painted = new Map(first)
+  return target.flatMap((frame) => {
+    const now = rowTops(frame.panes[0])
+    const gone = [...first].flatMap(([key, top]) => (now.has(key) ? [] : [`${key}@${top}→gone`]))
+    const moved = [...now].flatMap(([key, top]) => {
+      const was = painted.get(key)
+      if (was === undefined) painted.set(key, top)
+      return was === undefined || was === top ? [] : [`${key}@${was}→${top}`]
+    })
+    const rows = [...gone, ...moved]
+    return rows.length ? [`+${frame.at}ms ${rows.join(" ")}`] : []
+  })
+}
+
 export function switchReport(frames: readonly SwitchFrame[], targetId: string): SwitchReport {
   const states: string[] = []
   const sessions: string[] = []
-  const target = frames.filter((frame) => frame.panes.length === 1 && frame.panes[0].sessionId === targetId)
-  const first = target[0]?.panes[0]
-  const layout = (pane: PaneFrame) => JSON.stringify([pane.rows, pane.scrollTop, pane.nav])
+  const shows = (frame: SwitchFrame) => frame.panes.length === 1 && frame.panes[0].sessionId === targetId
+  const target = frames.filter(shows)
   let last = ""
-  for (const frame of frames) {
+  let settled = -1
+  frames.forEach((frame, index) => {
     const state = describe(frame).replace(/^\+\d+ms /, "")
-    if (state !== last) states.push(describe(frame))
+    if (state !== last) {
+      states.push(describe(frame))
+      settled = index
+    }
     last = state
     const shown = frame.panes[0]?.sessionId
     if (shown && sessions.at(-1) !== shown) sessions.push(shown)
-  }
+  })
+  const revealed = frames.findIndex(shows)
+  const at = (index: number) => (index < 0 ? undefined : { ms: frames[index].at, frame: index })
   return {
     states,
-    settledAt: states.length > 1 ? Number(/^\+(\d+)ms/.exec(states.at(-1) ?? "")?.[1]) : undefined,
+    revealedAt: at(revealed),
+    settledAt: states.length > 1 ? at(settled) : undefined,
     sessions,
     empty: frames.filter(emptyBody).map(describe),
     overlaid: frames.filter((frame) => frame.panes.length > 1).map(describe),
-    jumps: first ? target.filter((frame) => layout(frame.panes[0]) !== layout(first)).map(describe) : [],
+    moved: movedRows(target),
+    shownStates: target.flatMap((frame, index) => {
+      const shown = (pane: PaneFrame) => JSON.stringify([pane.rows, pane.footer, pane.nav])
+      return index > 0 && shown(frame.panes[0]) === shown(target[index - 1].panes[0]) ? [] : [describe(frame)]
+    }),
     footers: [...new Set(target.map((frame) => frame.panes[0].footer))],
     railApart: frames.filter((frame) => frame.panes.length === 1 && frame.rail !== frame.panes[0].sessionId).map(describe),
   }
