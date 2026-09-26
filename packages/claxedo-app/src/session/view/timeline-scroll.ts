@@ -2,7 +2,7 @@ import { createSignal, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { SessionView } from "@/session"
 import type { TranscriptUserMessage } from "@/transcript"
-import { createScrollGestureWindow, messageNavVisible, type MessageTimelineProps } from "./timeline"
+import { createScrollGestureWindow, type MessageTimelineProps } from "./timeline"
 import { createAutoScroll, type AutoScroll } from "./auto-scroll"
 import { createHistoryPaging, type HistoryAnchor } from "./history-paging"
 import { createMessageSeek } from "./message-seek"
@@ -105,11 +105,6 @@ function timelineScrollProps(parts: ScrollParts): TimelineScrollProps {
   }
 }
 
-function railNeedsOlder(view: SessionView) {
-  const turns = (view.conversation()?.messages ?? []).filter((message) => message.role === "user").length
-  return !messageNavVisible(turns)
-}
-
 export type TimelineScroll = ReturnType<typeof createTimelineScroll>
 
 export function createTimelineScroll(input: { readonly view: () => SessionView; readonly active: () => boolean; readonly working: () => boolean }) {
@@ -120,7 +115,7 @@ export function createTimelineScroll(input: { readonly view: () => SessionView; 
   const gesture = createScrollGestureWindow({ scroller: () => scroller })
   const auto = createAutoScroll({ working: input.working, enabled: input.active, overflowAnchor: "none", mayFollow: () => !gesture.active() })
   const schedule = createScrollStateFrame((next) => setScroll(next))
-  const paging = createHistoryPaging({ view: input.view, scroller: () => scroller, userScrolled: auto.userScrolled, anchor: () => handles.anchor, active: input.active, wantsOlder: () => railNeedsOlder(input.view()) })
+  const paging = createHistoryPaging({ view: input.view, scroller: () => scroller, userScrolled: auto.userScrolled, anchor: () => handles.anchor })
   const settle = () => {
     handles.scrollToEnd()
     if (scroller) schedule(scroller)

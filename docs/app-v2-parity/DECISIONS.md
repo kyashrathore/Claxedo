@@ -290,7 +290,7 @@ A **Settings → Projects** section lists the projects and holds their managemen
 ## Owner, 2026-09-26: a session's first load shows the turn peek rail and places subagents without a scroll
 - The owner reported that on first load a "Background subagents" card appears above the latest turn, then goes away once a scroll loads the rest; and that the turn peek rail appears only after a scroll. v1 does the same.
 - **Subagents:** a subagent counts as background only when it has no spawning tool call, or when the whole history is loaded and its call is still absent. While older history is unloaded, it waits to render in its own turn (`src/session/view/subagent-views.ts`).
-- **The rail:** after the first surface paints, while older history exists and the loaded turns are below the rail's threshold (more than ten), v2 loads one older page (50 messages) through the same anchored path a scroll uses (`src/session/view/history-paging.ts`). It decides once per session view, so streaming never re-runs it. v1 loads older history only on a scroll.
+- **The rail:** once the surface read lands, while older history exists and the loaded turns are below the rail's threshold (more than ten), v2 loads one older page (50 messages) before the timeline mounts, and the pane shows the session only when that page has landed (`src/session/view/first-view.ts`), so the first view has the rail and no prepend moves it. It decides once per session view, so streaming never re-runs it. v1 loads older history only on a scroll.
 - The corpus case `two-turns` compares v2 against its own baseline (`two-turns.v2`), because its first load now shows both turns.
 
 ## Owner, 2026-09-26: the swap: v2 becomes packages/claxedo-app; v1, session-ui and storybook are deleted
