@@ -18,7 +18,7 @@ const retryDelay = (retryAfterMs: number | undefined) => Math.min(MAX_RETRY_MS, 
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
-async function connect(request: Request, workspaceId: string): Promise<ConnectionAnswer> {
+async function requestConnection(request: Request, workspaceId: string): Promise<ConnectionAnswer> {
   const response = await request(`/api/workspace/${encodeURIComponent(workspaceId)}/connection`, { method: "POST", body: "{}" })
   if (response.ok) return connectionAnswerFromWire(await response.json(), workspaceId)
   const body = response.clone()
@@ -31,7 +31,7 @@ async function connect(request: Request, workspaceId: string): Promise<Connectio
 export async function startWorkspace(request: Request, workspaceId: string, options: StartOptions = {}): Promise<RelayConnection> {
   const wait = options.wait ?? sleep
   for (let attempt = 0; attempt < START_ATTEMPTS; attempt++) {
-    const answer = await connect(request, workspaceId)
+    const answer = await requestConnection(request, workspaceId)
     if (answer.kind === "ready") return answer.link
     if (answer.kind === "stopped") throw new ServerError({ class: "internal", message: `The start of ${workspaceId} answered that it is stopped` })
     options.onProgress?.({ kind: "provisioning", ...(answer.bootMode ? { bootMode: answer.bootMode } : {}) })

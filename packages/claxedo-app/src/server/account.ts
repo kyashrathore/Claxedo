@@ -5,7 +5,7 @@ export type HostedAccount = {
   readonly run: <N extends HostedOperationName>(operation: N, input?: Readonly<Record<string, unknown>>) => Promise<DecodedHostedResult<N>>
 }
 
-function decoded<N extends HostedOperationName>(operation: N, raw: unknown): DecodedHostedResult<N> {
+function decodeHostedAnswer<N extends HostedOperationName>(operation: N, raw: unknown): DecodedHostedResult<N> {
   try {
     return decodeHostedResult(operation, raw)
   } catch (error) {
@@ -22,7 +22,7 @@ export function createHostedAccount(run: RunHostedOperation): HostedAccount {
       } catch (error) {
         throw hostedOperationError(operation, error)
       }
-      return decoded(operation, raw)
+      return decodeHostedAnswer(operation, raw)
     },
   }
 }

@@ -27,11 +27,11 @@ function attachSocket(socket: WebSocket, input: TerminalAttachInput): TerminalSt
   }
 }
 
-function terminalPath(terminalId: TerminalId) {
+function ptyPath(terminalId: TerminalId) {
   return `${PTY_PATH}/${encodeURIComponent(terminalId)}`
 }
 
-async function createTerminal(transport: Transport, where: RuntimeRoute, input: TerminalCreateInput): Promise<Terminal> {
+async function createPty(transport: Transport, where: RuntimeRoute, input: TerminalCreateInput): Promise<Terminal> {
   const body = {
     title: input.title,
     createRequestId: input.createRequestId,
@@ -49,7 +49,7 @@ async function createTerminal(transport: Transport, where: RuntimeRoute, input: 
 }
 
 async function presenceOf(transport: Transport, where: RuntimeRoute, terminalId: TerminalId): Promise<TerminalPresence> {
-  const response = await transport.runtime(where, terminalPath(terminalId)).catch((error: unknown) => {
+  const response = await transport.runtime(where, ptyPath(terminalId)).catch((error: unknown) => {
     console.warn("Terminal presence could not be read", { terminalId, error })
     return undefined
   })
@@ -66,12 +66,12 @@ export function createTerminalsApi(transport: Transport, workspaces: Workspaces)
       const rows = await transport.runtimeJson<unknown[]>(await route(placementId), PTY_PATH)
       return rows.flatMap((row) => terminalFromWire(row, placementId) ?? [])
     },
-    create: async (input) => createTerminal(transport, await route(input.placementId), input),
+    create: async (input) => createPty(transport, await route(input.placementId), input),
     update: async (placementId, terminalId, input) => {
-      await transport.runtimeJson<unknown>(await route(placementId), terminalPath(terminalId), jsonInit("PUT", input))
+      await transport.runtimeJson<unknown>(await route(placementId), ptyPath(terminalId), jsonInit("PUT", input))
     },
     remove: async (placementId, terminalId) => {
-      await transport.runtimeJson<unknown>(await route(placementId), terminalPath(terminalId), { method: "DELETE" })
+      await transport.runtimeJson<unknown>(await route(placementId), ptyPath(terminalId), { method: "DELETE" })
     },
     presence: async (placementId, terminalId) => presenceOf(transport, await route(placementId), terminalId),
     agents: async (placementId) => {
@@ -83,7 +83,7 @@ export function createTerminalsApi(transport: Transport, workspaces: Workspaces)
       return agentStatusFromWire(body.session?.eventType)
     },
     attach: async (input) => {
-      const path = withQuery(`${terminalPath(input.terminalId)}/connect`, { cursor: input.cursor })
+      const path = withQuery(`${ptyPath(input.terminalId)}/connect`, { cursor: input.cursor })
       return attachSocket(await transport.runtimeSocket(await route(input.placementId), path), input)
     },
   }

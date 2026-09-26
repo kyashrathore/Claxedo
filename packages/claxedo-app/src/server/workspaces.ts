@@ -37,20 +37,20 @@ export type Workspaces = Pick<PlacementsApi, "byId" | "list"> & {
 const BOOTSTRAP_PATH = "/api/claxedo/bootstrap"
 const WORKSPACE_DIRECTORY_PREFIX = "workspace:"
 
-function directoryKey(directory: string) {
+function trimmedDirectory(directory: string) {
   return directory.replace(/\/+$/, "") || "/"
 }
 
 function locatedAt(record: PlacementRecord, directory: string) {
   const workspaceRef = directory.startsWith(WORKSPACE_DIRECTORY_PREFIX) ? directory.slice(WORKSPACE_DIRECTORY_PREFIX.length) : undefined
-  return directoryKey(record.route.directory) === directory
-    || (record.placement.path !== undefined && directoryKey(record.placement.path) === directory)
+  return trimmedDirectory(record.route.directory) === directory
+    || (record.placement.path !== undefined && trimmedDirectory(record.placement.path) === directory)
     || (workspaceRef !== undefined && record.route.workspaceId === workspaceRef)
 }
 
-function recordAt(records: readonly PlacementRecord[], directory: string, workspaceId?: string) {
+function placementRecordAt(records: readonly PlacementRecord[], directory: string, workspaceId?: string) {
   const byWorkspace = workspaceId ? records.find((record) => record.route.workspaceId === workspaceId) : undefined
-  const wanted = directoryKey(directory)
+  const wanted = trimmedDirectory(directory)
   return byWorkspace ?? records.find((record) => locatedAt(record, wanted))
 }
 
@@ -74,7 +74,7 @@ function placementReads(records: () => readonly PlacementRecord[]) {
     list: () => records().map((record) => record.placement),
     address: {
       placementFor: (directory: string, workspaceId?: string) => {
-        const record = recordAt(records(), directory, workspaceId)
+        const record = placementRecordAt(records(), directory, workspaceId)
         return record ? { placementId: record.placement.id, projectId: record.placement.projectId } : undefined
       },
     },

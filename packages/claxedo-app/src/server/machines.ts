@@ -36,7 +36,7 @@ export function thisMachine(declaration: BootstrapDeclaration, loopback: boolean
   return { id: thisMachineId(declaration), name: "This machine", online: true, isThisMachine: true, enrolled: declaration.enrollmentId !== undefined }
 }
 
-async function listMachines(transport: Transport, workspaces: Workspaces): Promise<readonly Machine[]> {
+async function loadMachines(transport: Transport, workspaces: Workspaces): Promise<readonly Machine[]> {
   const { declaration } = await workspaces.load()
   if (!declaration.issuesSessions) return [thisMachine(declaration, transport.loopback) ?? []].flat()
   const body = await transport.json<{ devices?: unknown }>(DEVICES_PATH)
@@ -46,6 +46,6 @@ async function listMachines(transport: Transport, workspaces: Workspaces): Promi
 
 export function machineQueries(transport: Transport, workspaces: Workspaces) {
   return {
-    list: (): FetchQuery<readonly Machine[]> => fetchQuery(queryKeys.machines(transport.serverUrl), () => listMachines(transport, workspaces)),
+    list: (): FetchQuery<readonly Machine[]> => fetchQuery(queryKeys.machines(transport.serverUrl), () => loadMachines(transport, workspaces)),
   }
 }

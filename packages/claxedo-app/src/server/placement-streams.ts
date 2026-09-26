@@ -31,7 +31,7 @@ function liveRemoteRoute(workspaces: Workspaces, id: string) {
   return record?.route.remote && record.placement.reachable ? record.route : undefined
 }
 
-function sync(state: StreamsState) {
+function reconcileStreams(state: StreamsState) {
   const { input, attached, open } = state
   for (const [id, stream] of open) {
     if (attached.has(id) && liveRemoteRoute(input.workspaces, id)) continue
@@ -53,23 +53,23 @@ export function createPlacementStreams(input: StreamsInput): PlacementStreams {
   const state: StreamsState = { input, attached: new Map(), open: new Map() }
   const catalogKey = hashKey(queryKeys.bootstrap(input.transport.serverUrl))
   const unsubscribe = input.queryClient.getQueryCache().subscribe((event) => {
-    if (event.query.queryHash === catalogKey && event.type === "updated") sync(state)
+    if (event.query.queryHash === catalogKey && event.type === "updated") reconcileStreams(state)
   })
   return {
     attach: (id) => {
       state.attached.set(id, (state.attached.get(id) ?? 0) + 1)
-      sync(state)
+      reconcileStreams(state)
       return () => {
         const count = (state.attached.get(id) ?? 1) - 1
         if (count > 0) state.attached.set(id, count)
         else state.attached.delete(id)
-        sync(state)
+        reconcileStreams(state)
       }
     },
     close: () => {
       unsubscribe()
       state.attached.clear()
-      sync(state)
+      reconcileStreams(state)
     },
   }
 }

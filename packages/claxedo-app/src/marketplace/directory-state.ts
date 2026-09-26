@@ -12,7 +12,7 @@ import {
   type DirectorySourceView,
 } from "./sections"
 
-function createQueries() {
+function createDirectoryQueries() {
   const server = useServer()
   const catalog = useQuery(() => ({
     ...server.queries.marketplace.catalog(),
@@ -27,7 +27,7 @@ function createQueries() {
 }
 
 export function createDirectory() {
-  const queries = createQueries()
+  const queries = createDirectoryQueries()
   const [query, setQuery] = createSignal("")
   const [filter, setFilter] = createSignal(ALL)
   const [category, setCategory] = createSignal(ALL)

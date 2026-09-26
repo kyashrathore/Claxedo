@@ -74,13 +74,13 @@ async function fetchAuthorized(config: ServerConfig, url: string, init: RequestI
   }
 }
 
-async function send(config: ServerConfig, url: string, init?: RequestInit): Promise<Response> {
+async function sendAuthorized(config: ServerConfig, url: string, init?: RequestInit): Promise<Response> {
   const response = await fetchAuthorized(config, url, init, false)
   if (config.auth.kind !== "bearer" || !(await rejectedBearer(response))) return response
   return fetchAuthorized(config, url, init, true)
 }
 
-async function readJson<T>(response: Response, label: string): Promise<T> {
+async function readJsonResponse<T>(response: Response, label: string): Promise<T> {
   if (!response.ok) throw await responseError(response, label)
   if (response.status === 204) return undefined as T
   return (await response.json()) as T
@@ -93,7 +93,7 @@ function workspaceProxyPath(route: RuntimeRoute, path: string) {
 export function createTransport(config: ServerConfig): Transport {
   const serverUrl = resolveServerUrl(config)
   const loopback = isLoopbackUrl(serverUrl)
-  const request = (path: string, init?: RequestInit) => send(config, `${serverUrl}${path}`, init)
+  const request = (path: string, init?: RequestInit) => sendAuthorized(config, `${serverUrl}${path}`, init)
   const relay = createRelay(request)
   const runtime = (route: RuntimeRoute, path: string, init?: RequestInit) => {
     if (!route.remote) return request(withQuery(path, { directory: route.directory }), init)
@@ -112,8 +112,8 @@ export function createTransport(config: ServerConfig): Transport {
     request,
     runtime,
     runtimeSocket,
-    json: async (path, init) => readJson(await request(path, init), label(path, init)),
-    runtimeJson: async (route, path, init) => readJson(await runtime(route, path, init), label(path, init)),
+    json: async (path, init) => readJsonResponse(await request(path, init), label(path, init)),
+    runtimeJson: async (route, path, init) => readJsonResponse(await runtime(route, path, init), label(path, init)),
     startRuntime: async (workspaceId, options) => {
       const link = await startWorkspace(request, workspaceId, options)
       if (!loopback) relay.adopt(link)

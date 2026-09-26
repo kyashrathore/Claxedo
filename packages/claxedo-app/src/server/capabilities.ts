@@ -33,7 +33,7 @@ function harnessesFrom(loopback: boolean): readonly HarnessInfo[] {
   return AGENT_HARNESS_IDS.map((id) => harnessInfo(id, loopback ? { available: true } : { available: false, reason: `${id} runs on a machine` }))
 }
 
-function capabilitiesOf(declaration: BootstrapDeclaration, loopback: boolean): Capabilities {
+function capabilitiesFromDeclaration(declaration: BootstrapDeclaration, loopback: boolean): Capabilities {
   const signedIn = declaration.issuesSessions
   const machine = thisMachine(declaration, loopback)
   return {
@@ -49,7 +49,7 @@ export function createCapabilities(transport: Transport, workspaces: Workspaces)
   const [value, setValue] = createSignal<Capabilities | undefined>(undefined)
   const load = async () => {
     const declaration = (await workspaces.load()).declaration
-    setValue(capabilitiesOf(declaration, transport.loopback))
+    setValue(capabilitiesFromDeclaration(declaration, transport.loopback))
   }
   return { value, load }
 }

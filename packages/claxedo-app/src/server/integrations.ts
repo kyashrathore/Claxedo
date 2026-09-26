@@ -87,7 +87,7 @@ function httpsLink(value: string | undefined) {
   return URL.canParse(value) && new URL(value).protocol === "https:" ? value : undefined
 }
 
-function promptOf(value: unknown): IntegrationPrompt[] {
+function integrationPromptFromWire(value: unknown): IntegrationPrompt[] {
   const id = readString(value, "id")
   if (id === undefined) return []
   const placeholder = readString(value, "placeholder")
@@ -100,7 +100,7 @@ function integrationOf(value: unknown): Integration[] {
   if (id === undefined) return []
   const methods = (readArray(value, "methods") ?? []).filter((method): method is "key" | "oauth" => method === "key" || method === "oauth")
   const capabilities = (readArray(value, "capabilities") ?? []).filter((entry): entry is string => typeof entry === "string")
-  return [{ id, name: readString(value, "name") ?? id, methods, capabilities, prompts: (readArray(value, "prompts") ?? []).flatMap(promptOf) }]
+  return [{ id, name: readString(value, "name") ?? id, methods, capabilities, prompts: (readArray(value, "prompts") ?? []).flatMap(integrationPromptFromWire) }]
 }
 
 function connectionOf(value: unknown): Connection[] {
@@ -132,7 +132,7 @@ export function integrationQueries(transport: Transport): IntegrationQueries {
   }
 }
 
-function failureOf(status: number, body: unknown): IntegrationConnectOutcome {
+function connectFailure(status: number, body: unknown): IntegrationConnectOutcome {
   const code = readString(body, "code") ?? readString(readField(body, "error"), "code")
   const verifyReason = readString(body, "reason")
   const detail = { status, ...(code ? { code } : {}), ...(verifyReason ? { verifyReason } : {}) }
@@ -146,11 +146,11 @@ function connectBody(input: IntegrationConnectInput) {
   return input.method === "oauth" ? { ...options, method: "oauth" } : { ...options, fields: input.fields ?? {}, secret: input.secret }
 }
 
-async function connect(transport: Transport, integrationId: string, input: IntegrationConnectInput): Promise<IntegrationConnectOutcome> {
+async function connectIntegration(transport: Transport, integrationId: string, input: IntegrationConnectInput): Promise<IntegrationConnectOutcome> {
   const answer = await ask(transport, `${INTEGRATIONS_PATH}/${encodeURIComponent(integrationId)}/connect`, jsonInit("POST", connectBody(input)))
   if (answer.kind === "unreachable") return { kind: "failed", reason: "unreachable" }
   const body = answer.body
-  if (!answer.ok) return failureOf(answer.status, body)
+  if (!answer.ok) return connectFailure(answer.status, body)
   const url = readString(body, "url")
   const attemptId = readString(body, "attemptId")
   if (input.method !== "oauth") return { kind: "connected" }
@@ -217,7 +217,7 @@ export function createIntegrationsApi(transport: Transport, queryClient: QueryCl
     return outcome
   }
   return {
-    connect: async (integrationId, input) => settled(await connect(transport, integrationId, input)),
+    connect: async (integrationId, input) => settled(await connectIntegration(transport, integrationId, input)),
     awaitGrant: async (grant, alive) => settled(await awaitGrant(transport, grant, alive)),
     disconnect: async (connectionId) => {
       await disconnect(transport, connectionId)

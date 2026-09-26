@@ -64,7 +64,7 @@ function catalogOf(body: unknown): SandboxProviderCatalog {
   return { providers, ...(defaultProviderId ? { defaultProviderId } : {}) }
 }
 
-function failureOf(status: number, body: unknown): SandboxProviderSaveOutcome {
+function saveFailure(status: number, body: unknown): SandboxProviderSaveOutcome {
   const error = readField(body, "error")
   const reason = (readString(error, "reason") ?? readString(readField(error, "data"), "reason"))?.trim()
   const code = `${readString(error, "code") ?? readString(body, "code") ?? ""} ${readString(error, "message") ?? ""}`.toLowerCase()
@@ -90,7 +90,7 @@ export function createSandboxProvidersApi(transport: Transport, queryClient: Que
       const answer = await ask(transport, sandboxDriverAuthPath(providerId), jsonInit("PUT", { auth: values, default: true }))
       if (answer.kind === "unreachable") return { ok: false, failure: "failed" }
       const body = answer.body
-      if (!answer.ok) return failureOf(answer.status, body)
+      if (!answer.ok) return saveFailure(answer.status, body)
       const catalog = catalogOf(body)
       queryClient.setQueryData(queryKeys.sandboxProviders(transport.serverUrl), catalog)
       const verification = verificationOf(readField(body, "verification"))

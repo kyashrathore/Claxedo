@@ -29,7 +29,7 @@ function statusFromLastTurn(row: AgentSession): SessionStatus {
   return { kind: "failed", error: new ServerError({ class: "internal", message: outcome.error }) }
 }
 
-function settled(live: SessionStatus | undefined, row: AgentSession): SessionStatus {
+function settledStatus(live: SessionStatus | undefined, row: AgentSession): SessionStatus {
   return live && live.kind !== "idle" ? live : statusFromLastTurn(row)
 }
 
@@ -64,7 +64,7 @@ export function createStatusOwner(transport: Transport): StatusOwner {
   const failures = createFailures()
   const live = async (route: RuntimeRoute) => statusesOf(await transport.runtimeJson<unknown>(route, STATUS_PATH))
   const read = async (route: RuntimeRoute, ref: SessionRef, row: AgentSession) => {
-    const read = settled((await live(route)).get(ref.sessionId), row)
+    const read = settledStatus((await live(route)).get(ref.sessionId), row)
     const known = failures.get(ref)
     if (!known) return read
     if (read.kind === "failed") return known

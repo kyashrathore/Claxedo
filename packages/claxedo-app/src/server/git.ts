@@ -27,7 +27,7 @@ function diffQuery(scope: DiffScope): Record<string, string> {
   }
 }
 
-function diffStatus(value: unknown): DiffStatus | undefined {
+function diffStatusFromWire(value: unknown): DiffStatus | undefined {
   if (value === "added" || value === "A") return "added"
   if (value === "deleted" || value === "D") return "deleted"
   if (typeof value === "string") return "modified"
@@ -37,7 +37,7 @@ function diffStatus(value: unknown): DiffStatus | undefined {
 function diffFile(value: unknown): DiffFile | undefined {
   const row = value as Record<string, unknown> | null
   if (!row || typeof row.file !== "string") return undefined
-  const status = diffStatus(row.status)
+  const status = diffStatusFromWire(row.status)
   return {
     file: row.file,
     ...(status ? { status } : {}),
@@ -50,7 +50,7 @@ function diffFile(value: unknown): DiffFile | undefined {
   }
 }
 
-function refs(value: unknown): GitRefs {
+function gitRefsFromWire(value: unknown): GitRefs {
   const row = value as Record<string, unknown> | null
   const strings = (input: unknown) => (Array.isArray(input) ? input.filter((item): item is string => typeof item === "string") : [])
   const recent = Array.isArray(row?.recent) ? row.recent : []
@@ -72,7 +72,7 @@ export function gitQueries(transport: Transport, workspaces: Workspaces) {
       const body = await read<{ commits?: unknown }>(placementId, withQuery(`${GIT_PATH}/log`, { limit }))
       return (Array.isArray(body.commits) ? body.commits : []) as readonly GitCommit[]
     })
-  const refsQuery = (placementId: PlacementId): FetchQuery<GitRefs> => fetchQuery(queryKeys.gitRefs(server, placementId), async () => refs(await read<unknown>(placementId, `${DIFF_PATH}/refs`)))
+  const refsQuery = (placementId: PlacementId): FetchQuery<GitRefs> => fetchQuery(queryKeys.gitRefs(server, placementId), async () => gitRefsFromWire(await read<unknown>(placementId, `${DIFF_PATH}/refs`)))
   const bases = (placementId: PlacementId): FetchQuery<GitBases> => fetchQuery(queryKeys.gitBases(server, placementId), async () => {
       const body = await read<{ defaultRef?: unknown; candidates?: unknown }>(placementId, `${DIFF_PATH}/targets`)
       return {
