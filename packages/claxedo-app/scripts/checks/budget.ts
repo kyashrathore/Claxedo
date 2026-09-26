@@ -24,7 +24,7 @@ const parts: readonly Part[] = [
   { name: "Plugin host (re-based to its measured size after the frame split: per-manifest approval and the App plugins settings; DECISIONS 2026-09-26)", budget: 2064, folders: ["src/plugins"] },
   { name: "Web plugin frame: the sandboxed frame runtime and its host bridge (split from the plugin host; DECISIONS 2026-09-26)", budget: 864, folders: ["src/plugins/frame"] },
   { name: "Marketplace (re-based to its measured size: v1's directory ported under the parity rule; DECISIONS 2026-09-26)", budget: 2348, folders: ["src/marketplace"] },
-  { name: "Tasks, an app domain (re-based to its measured size; the plan's 2.5k was the Tasks plugin's; DECISIONS 2026-09-26)", budget: 4414, folders: ["src/tasks"] },
+  { name: "Tasks, an app domain (re-based to its measured size; the plan's 2.5k was the Tasks plugin's; DECISIONS 2026-09-26)", budget: 4416, folders: ["src/tasks"] },
   { name: "Notifications (no plan number; measured 2026-09-25, for review)", budget: 129, folders: ["src/notifications"] },
   { name: "Workspace panel (no plan number; measured 2026-09-25, for review)", budget: 1750, folders: ["src/panel"] },
   { name: "Moved in from the session feature (lands in rail and review)", budget: 600, folders: [] },

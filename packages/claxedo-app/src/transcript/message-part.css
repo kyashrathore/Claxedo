@@ -765,11 +765,6 @@
   flex-direction: column;
   gap: 8px;
 
-  .ui-checkbox {
-    --checkbox-align: flex-start;
-    --checkbox-offset: 0.5px;
-  }
-
   .ui-message-part-todo-content {
     line-height: var(--line-height-normal);
 

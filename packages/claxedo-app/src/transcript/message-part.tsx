@@ -2689,14 +2689,18 @@ ToolRegistry.register({
           <div class="ui-todos">
             <For each={todos()}>
               {(todo: AgentTodo) => (
-                <Checkbox readOnly checked={todo.status === "completed"}>
-                  <span
- class="ui-message-part-todo-content"
-                    data-completed={todo.status === "completed" ? "completed" : undefined}
-                  >
-                    {todo.content}
-                  </span>
-                </Checkbox>
+                <Checkbox
+                  readOnly
+                  checked={todo.status === "completed"}
+                  label={
+                    <span
+                      class="ui-message-part-todo-content"
+                      data-completed={todo.status === "completed" ? "completed" : undefined}
+                    >
+                      {todo.content}
+                    </span>
+                  }
+                />
               )}
             </For>
           </div>

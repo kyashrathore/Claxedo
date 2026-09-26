@@ -132,9 +132,8 @@ function Configurations(props: PresetEditorProps & { readonly fieldText: FieldTe
               data-testid={`preset-editor-slot-${slot}`}
               checked={props.draft.configurations[slot] !== null}
               onChange={(checked: boolean) => setConfiguration(slot, checked ? EMPTY_CONFIGURATION : null)}
-            >
-              {t(SLOT_KEYS[slot])}
-            </Checkbox>
+              label={t(SLOT_KEYS[slot])}
+            />
           )}
         </For>
       </div>

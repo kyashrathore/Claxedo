@@ -49,10 +49,13 @@ function CapabilityGroup(props: {
               checked={chosen(option)}
               disabled={option.unavailable !== undefined && !chosen(option)}
               onChange={() => props.onToggle({ sourceId: option.sourceId, name: option.name })}
-            >
-              {option.name}
-              <Show when={reason(option)}>{(text) => <span class="tsk-error"> {text()}</span>}</Show>
-            </Checkbox>
+              label={
+                <>
+                  {option.name}
+                  <Show when={reason(option)}>{(text) => <span class="tsk-error"> {text()}</span>}</Show>
+                </>
+              }
+            />
           )}
         </For>
       </div>
