@@ -1,9 +1,15 @@
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
-import { settleAtRequestDeadline } from "@claxedo/helpers"
-import type { AdapterCancelOutcome } from "@claxedo/agent-runtime-contract"
+import { errorMessage, settleAtRequestDeadline } from "@claxedo/helpers"
+import type { AdapterCancelOutcome, CleanupFact, RecoveryErrorCode } from "@claxedo/agent-runtime-contract"
 import type { Deadline } from "../../contract"
-import { CodexNoActiveTurnError, CodexTransportError } from "./errors"
+import { CodexDeadlineError, CodexNoActiveTurnError, CodexTransportError } from "./errors"
 import type { CodexRpc, RpcMessage } from "./rpc"
+
+function cleanupFailure(error: unknown): { code: RecoveryErrorCode; message: string } {
+  const code: RecoveryErrorCode = error instanceof CodexDeadlineError ? "deadline_exceeded"
+    : error instanceof CodexTransportError && error.className === "protocol" ? "cancellation_unsupported" : "provider_unreachable"
+  return { code, message: errorMessage(error) }
+}
 
 export class CodexTerminals {
   private readonly byTurn = new Map<string, Set<string>>()
@@ -34,6 +40,10 @@ export class CodexTerminals {
     this.byTurn.set(turnId, ids)
   }
 
+  ranCommand(turnId: string): boolean {
+    return (this.byTurn.get(turnId)?.size ?? 0) > 0
+  }
+
   stop(turnId: string, deadline: Deadline): Promise<AdapterCancelOutcome> {
     const previous = this.stopping.get(turnId)
     if (previous) return previous
@@ -43,13 +53,30 @@ export class CodexTerminals {
     return stopping
   }
 
-  async confirm(turnId: string, outcome: AdapterCancelOutcome, deadline: Deadline): Promise<AdapterCancelOutcome> {
-    if (!this.completed.has(turnId)) await this.waitForCompletion(turnId, deadline)
-    if (outcome.cleanup === "verified_clear") return { execution: "terminal", cleanup: "verified_clear" }
+  private async stopOwned(turnId: string, deadline: Deadline): Promise<AdapterCancelOutcome> {
+    let noActive = false
+    try {
+      await this.rpc.request("turn/interrupt", { threadId: this.threadId, turnId }, this.budget(deadline))
+    } catch (error) {
+      if (!(error instanceof CodexNoActiveTurnError)) throw error
+      noActive = true
+    }
+    const execution = noActive || await this.completion(turnId, deadline) ? "terminal" as const : "unknown" as const
     const ours = this.byTurn.get(turnId)
-    if (!ours?.size) return { execution: "terminal", cleanup: "verified_clear" }
-    const remaining = await this.survivors(ours, deadline)
-    return { execution: "terminal", cleanup: remaining.length ? "owned" : "verified_clear" }
+    if (!ours?.size) return { execution, cleanup: "unknown" }
+    try { return { execution, cleanup: await this.release(turnId, ours, deadline) } }
+    catch (error) { return { execution, cleanup: "unknown", error: cleanupFailure(error) } }
+  }
+
+  private async completion(turnId: string, deadline: Deadline): Promise<boolean> {
+    if (this.completed.has(turnId)) return true
+    try {
+      await this.waitForCompletion(turnId, deadline)
+      return true
+    } catch (error) {
+      if (error instanceof CodexDeadlineError) return false
+      throw error
+    }
   }
 
   private async waitForCompletion(turnId: string, deadline: Deadline): Promise<void> {
@@ -61,32 +88,22 @@ export class CodexTerminals {
     if (this.completed.has(turnId)) complete()
     try {
       await settleAtRequestDeadline("Codex turn completion", { signal: deadline.signal, deadlineAt: deadline.at }, pending,
-        () => waiters.delete(complete), () => new CodexTransportError("process", "Codex turn completion was not observed before the stop deadline"))
+        () => waiters.delete(complete), () => new CodexDeadlineError("Codex turn completion was not observed before the stop deadline"))
     } finally {
       waiters.delete(complete)
       if (!waiters.size) this.completionWaiters.delete(turnId)
     }
   }
 
-  private async stopOwned(turnId: string, deadline: Deadline): Promise<AdapterCancelOutcome> {
-    let noActive = false
-    try {
-      await this.rpc.request("turn/interrupt", { threadId: this.threadId, turnId }, this.budget(deadline))
-    } catch (error) {
-      if (!(error instanceof CodexNoActiveTurnError)) throw error
-      noActive = true
-    }
-    const execution = noActive || this.completed.has(turnId) ? "terminal" as const : "unknown" as const
-    const ours = this.byTurn.get(turnId)
-    if (!ours?.size) return { execution, cleanup: "unknown" }
+  private async release(turnId: string, ours: Set<string>, deadline: Deadline): Promise<CleanupFact> {
     let remaining = await this.survivors(ours, deadline)
     for (const processId of remaining) {
       await this.rpc.request("thread/backgroundTerminals/terminate", { threadId: this.threadId, processId }, this.budget(deadline))
     }
     remaining = await this.survivors(ours, deadline)
-    if (remaining.length) return { execution, cleanup: "owned" }
+    if (remaining.length) return "owned"
     this.byTurn.delete(turnId)
-    return { execution, cleanup: "verified_clear" }
+    return "verified_clear"
   }
 
   private async survivors(ours: Set<string>, deadline: Deadline): Promise<string[]> {
@@ -110,7 +127,7 @@ export class CodexTerminals {
   }
 
   private budget(deadline: Deadline): number {
-    if (deadline.signal.aborted || deadline.at <= Date.now()) throw new CodexTransportError("process", "Codex stop deadline expired")
+    if (deadline.signal.aborted || deadline.at <= Date.now()) throw new CodexDeadlineError("Codex stop deadline expired")
     return Math.max(1, Math.min(30_000, deadline.at - Date.now()))
   }
 }

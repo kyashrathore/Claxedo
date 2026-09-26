@@ -1,20 +1,22 @@
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
-import type { HarnessSession, RoutedEvent, SessionBroker } from "../../contract"
+import type { HarnessSession, RoutedEvent, SessionBroker, TurnBroker } from "../../contract"
 import { CodexEvents } from "./events"
 import { AsyncPushQueue } from "@claxedo/helpers"
 import { CodexTransportError } from "./errors"
 import type { RpcMessage } from "./rpc"
 
-export type CodexProviderTurn = { id: string; queue: AsyncPushQueue<RoutedEvent>; events: CodexEvents }
+export type CodexProviderTurn = { id: string; queue: AsyncPushQueue<RoutedEvent>; events: CodexEvents; turnBroker?: TurnBroker }
 export type ProviderTurnEntry = { session: HarnessSession; broker: SessionBroker; providerTurn?: CodexProviderTurn }
 
 export function admitCodexProviderTurn(entry: ProviderTurnEntry, message: RpcMessage): void {
   const id = asString(asRecordOrEmpty(asRecordOrEmpty(message.params).turn).id)
   if (!id) return
   const queue = new AsyncPushQueue<RoutedEvent>()
-  entry.providerTurn = { id, queue, events: new CodexEvents(entry.session.binding.upstreamSessionId) }
-  for (const event of entry.providerTurn.events.ingest(message)) queue.push(event)
-  void entry.broker.admitProviderTurn({ reason: "goal" }, async function* () {
+  const providerTurn: CodexProviderTurn = { id, queue, events: new CodexEvents(entry.session.binding.upstreamSessionId) }
+  entry.providerTurn = providerTurn
+  for (const event of providerTurn.events.ingest(message)) queue.push(event)
+  void entry.broker.admitProviderTurn({ reason: "goal" }, async function* (turnBroker) {
+    providerTurn.turnBroker = turnBroker
     for (;;) {
       const next = await queue.next()
       if (next.done) return

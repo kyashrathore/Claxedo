@@ -74,6 +74,10 @@ async function elicitation(params: Record<string, unknown>, message: RpcMessage,
     return { action: "cancel" }
 }
 
+export function isCodexRequestMethod(method: string): boolean {
+  return approvalMethods.some((name) => name === method) || method === "item/tool/requestUserInput" || method === "mcpServer/elicitation/request"
+}
+
 export async function answerCodexRequest(message: RpcMessage, broker: RequestBroker, sessionId: string,
   context?: { directory: string; permissionMode?: string }): Promise<unknown> {
   const { method } = message
@@ -82,6 +86,5 @@ export async function answerCodexRequest(message: RpcMessage, broker: RequestBro
   if (approvalMethods.some((name) => name === method)) return approval(method, params, message, broker, sessionId, context)
   if (method === "item/tool/requestUserInput") return question(params, message, broker, sessionId)
   if (method === "mcpServer/elicitation/request") return elicitation(params, message, broker, sessionId)
-  if (method === "item/tool/call") return { contentItems: [{ type: "inputText", text: `Dynamic tool ${asString(params.tool) ?? "call"} is unavailable.` }], success: false }
   throw new CodexRequestRefusal(-32601, `Unsupported Codex request ${method}`)
 }

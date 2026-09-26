@@ -1,57 +1,22 @@
-import { createHash } from "node:crypto"
-import fs from "node:fs/promises"
-import path from "node:path"
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { TurnInput } from "../../contract"
 import { TransportError } from "../../contract/errors"
-import { inside } from "@claxedo/helpers/path"
-import { inlineDataUrl, flattenTurnPrompt } from "../../translate/prompt"
+import { flattenTurnPrompt } from "../../translate/prompt"
+import { attachmentPathLine, isPromptImage, materializeAttachment, promptFiles } from "../../translate/attachments"
 
 type Block = Exclude<SDKUserMessage["message"]["content"], string>[number]
-const images = ["image/gif", "image/jpeg", "image/png", "image/webp"] as const
 
-async function writeAttachment(directory: string, file: { bytes: Buffer; filename?: string }): Promise<string> {
-  const root = await fs.realpath(directory)
-  const folder = path.join(root, ".claxedo", "attachments")
-  const parent = path.join(root, ".claxedo")
-  const parentStat = await fs.lstat(parent).catch((error: unknown) => {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined
-    throw error
-  })
-  if (parentStat?.isSymbolicLink()) throw new TransportError("claude", "configuration", "Claude attachment directory escapes workspace")
-  await fs.mkdir(folder, { recursive: true, mode: 0o700 })
-  if (!inside(root, await fs.realpath(folder))) throw new TransportError("claude", "configuration", "Claude attachment directory escapes workspace")
-  try { await fs.writeFile(path.join(folder, ".gitignore"), "*\n", { flag: "wx", mode: 0o600 }) }
-  catch (error) { if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error }
-  const digest = createHash("sha256").update(file.bytes).digest("hex").slice(0, 12)
-  const name = path.basename(file.filename ?? "attachment").replace(/[^A-Za-z0-9._-]/g, "-").slice(0, 80)
-  const target = path.join(folder, `${digest}-${name}`)
-  try { await fs.writeFile(target, file.bytes, { mode: 0o600, flag: "wx" }) }
-  catch (error) {
-    if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error
-    const existing = await fs.lstat(target)
-    if (!existing.isFile() || !(await fs.readFile(target)).equals(file.bytes)) throw new TransportError("claude", "configuration", "Claude attachment target changed")
-  }
-  return target
-}
+const claudeAttachmentError = (message: string) => new TransportError("claude", "configuration", message)
 
 export async function claudePrompt(turn: TurnInput, directory: string): Promise<SDKUserMessage> {
   const text = flattenTurnPrompt(turn, { system: "prompt", separator: "\n\n" })
+  const { files, references } = promptFiles(turn, claudeAttachmentError)
+  if (references.length) throw claudeAttachmentError("Claude cannot deliver this file URL")
   const blocks: Block[] = []
   const paths: string[] = []
-  const files = turn.prompt.parts.filter((part) => part.type === "file").map((part) => {
-    const data = inlineDataUrl(part.url, { imageOnly: false, strictBase64: true })
-    if (!data) throw new TransportError("claude", "configuration", "Claude cannot deliver this file URL")
-    const mime = part.mime || data.mimeType
-    const bytes = Buffer.from(data.data, "base64")
-    if (bytes.length > 32 * 1024 * 1024) throw new TransportError("claude", "configuration", "Claude attachment exceeds 32 MiB")
-    return { mime, bytes, base64: data.data, filename: part.filename }
-  })
   for (const file of files) {
-    const target = await writeAttachment(directory, file)
-    paths.push(`Attached file (${file.mime}): ${target}`)
-    const imageMime = images.find((mime) => mime === file.mime)
-    if (imageMime) blocks.push({ type: "image", source: { type: "base64", media_type: imageMime, data: file.base64 } })
+    paths.push(attachmentPathLine(await materializeAttachment(directory, file, claudeAttachmentError)))
+    if (isPromptImage(file.mime)) blocks.push({ type: "image", source: { type: "base64", media_type: file.mime, data: file.base64 } })
     if (file.mime === "application/pdf") blocks.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: file.base64 } })
   }
   blocks.push({ type: "text", text: [text, ...paths].filter(Boolean).join("\n") })
