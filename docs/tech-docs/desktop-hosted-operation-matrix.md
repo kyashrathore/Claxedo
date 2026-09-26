@@ -1,8 +1,8 @@
 # Desktop hosted-operation matrix
 
 Status: **reviewed baseline**. The operation set lives in code:
-`HostedOperationName` in `packages/claxedo-app/src/platform/account/account-port.ts`,
-the app's `HOSTED_OPERATIONS` decoder registry beside it, and Electron main's
+`HostedOperationName` in `packages/account-contract/src/operation-name.ts`,
+the `HOSTED_OPERATIONS` decoder registry beside it, and Electron main's
 method-and-path table in
 `packages/claxedo-desktop/src/main/account/hosted-operations.ts`. Tests hold
 those three equal; nothing reads this document. It records why the set is
@@ -316,12 +316,13 @@ which blocks Unit 9 until it gets a typed broker contract. One remains flagged:
 
 ## Enforcement
 
-- `packages/claxedo-app/src/architecture/account-port.guard.test.ts` holds the
+- The old app's `account-port.guard.test.ts` (deleted at the swap) held the
   port union, the app registry and Electron main's table to the same names,
-  refuses request-shaped escape hatches on the port, and refuses any
-  machine-address spelling in either table.
-- `packages/claxedo-app/src/architecture/hosted-operation-inventory.test.ts`
-  requires every module in `features/documents`, `platform/runtime/cloud`,
+  refused request-shaped escape hatches on the port, and refused any
+  machine-address spelling in either table. Of that, only "routes exactly the
+  contract's operations" survives, in the desktop test below.
+- The old app's `hosted-operation-inventory.test.ts` (deleted at the swap)
+  required every module in `features/documents`, `platform/runtime/cloud`,
   `features/workspaces`, `features/settings`, `features/onboarding` and
   `app/routes` that reaches authenticated transport to be declared, either as
   the owner of the hosted operations it names or with the reason its calls are

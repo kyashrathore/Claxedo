@@ -37,7 +37,7 @@ The owner tested v2 and approved the swap. `packages/claxedo-app-v2` is now `pac
 | | Before | After |
 | --- | --- | --- |
 | `packages/claxedo-app` (v1) | 444,875 (484,810) | deleted |
-| `packages/claxedo-app-v2/src/legacy` | 143,796 (147,730) | deleted |
+| the v2 app's `src/legacy` tree | 143,796 (147,730) | deleted |
 | `packages/session-ui` | 32,046 (38,536) | deleted |
 | `packages/storybook` | 640 (699) | deleted |
 | `packages/ui` (the kit) | 30,143 (102,824) | unchanged, pending |
@@ -198,7 +198,7 @@ The build was the same (6d9c0a91a9), and the host was just as quiet. v2 had 0 in
 
 **Invalid observations:** 155 × `driver-handler-error: Timed out waiting for packaged Claxedo semantic condition`; 20 × `driver-handler-error: Claxedo return navigation requires a prior first-visit of the destination in this process`. Invalid rows have no winner, ratio, or change claim. Fast has two insufficient-sample size rows (three samples per app; the rule requires four). The initial fast launch also failed before collecting observations because the fresh worktree lacked the benchmark SDK link; its evidence is retained under `attempt-0-driver-resolution/`. A local ignored `node_modules/agent-app-benchmark` link to the original framework fixed dependency resolution, after which the complete fast pair ran.
 
-**Contract failure evidence and follow-up:** the unchanged `waitForPanelTransitionSettled` (`packages/claxedo-app/perf-harness/src/public-workspace-panel.ts:660`) requires `data-shell-settled="true"` on the existing panel shell. The active V2 producer (`packages/claxedo-app-v2/src/panel/view/panel-frame.tsx:47`) emits no settled-state attribute. The packaged renderer contains the shell and neither `data-shell-settled` nor `shellSettled`; see `panel-contract-evidence.json` and `invalid-diagnosis.md`. This explains the semantic-condition timeout path; failed first visits then invalidate return navigation. Owner: V2 panel/benchmark lane. Restore the canonical settled state from actual panel motion and verify real navigation/panel entrypoints before rerunning; do not synthesize a signal or loosen the observer.
+**Contract failure evidence and follow-up:** the unchanged `waitForPanelTransitionSettled` (the old app's `perf-harness/src/public-workspace-panel.ts:660`, deleted at the swap) requires `data-shell-settled="true"` on the existing panel shell. The active V2 producer at the time (`packages/claxedo-app/src/panel/view/panel-frame.tsx`, then under `claxedo-app-v2`; it reports `data-shell-settled` again since 8ee0fa690a) emitted no settled-state attribute. The packaged renderer contains the shell and neither `data-shell-settled` nor `shellSettled`; see `panel-contract-evidence.json` and `invalid-diagnosis.md`. This explains the semantic-condition timeout path; failed first visits then invalidate return navigation. Owner: V2 panel/benchmark lane. Restore the canonical settled state from actual panel motion and verify real navigation/panel entrypoints before rerunning; do not synthesize a signal or loosen the observer.
 
 **A quiet-host publication run on AC is still owed**, after the contract failure is repaired. Both apps ran on the same shared Mac, but changing background load and sequential measurement can still affect ratios. These results do not establish the performance acceptance gate.
 
@@ -247,7 +247,7 @@ The owner's words: better, performant, easy code, less LOC. Each part gives the 
 - **Screenshots aren't in the repo.** `bun run e2e:parity` regenerates them from one seeded stack.
 
 **The method every parity slice followed:**
-1. **Port, don't restyle.** `git mv` v1's component out of `packages/claxedo-app-v2/src/legacy/` into its v2 domain. Change only its data access, which goes to `@/server` (the adapter) and `@/session` (the stores). Markup, CSS, copy, keyboard handling and timing stay as v1 has them. v2's rebuilt version is deleted in the same commit.
+1. **Port, don't restyle.** `git mv` v1's component out of the v2 app's `src/legacy/` tree (deleted at the swap) into its v2 domain. Change only its data access, which goes to `@/server` (the adapter) and `@/session` (the stores). Markup, CSS, copy, keyboard handling and timing stay as v1 has them. v2's rebuilt version is deleted in the same commit.
 2. **v1's look is the kit.** `@opencode-ai/ui` and `@opencode-ai/session-ui` render as they do in v1: the Codex theme by default, a 16px root.
 3. **Never port v1's performance patches:** held API calls on session switch, fast-tier switching, hydration delays, deferral timers.
 4. **Never port v1's global providers:** sync contexts, `useLanguage`, `authFetch`/`getClaxedoServerUrl`, global SDK clients, layout and route providers.

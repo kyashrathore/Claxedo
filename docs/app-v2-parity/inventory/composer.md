@@ -22,8 +22,8 @@ Screenshots are in `inventory/composer/shots/<screen>-<v1|v2>-<1280|390>.png`.
 - The probes only typed into local drafts (browser localStorage and v2's in-memory store). They never sent, stopped or picked a harness.
 
 **Source prefixes:**
-- v1 = `packages/claxedo-app/src/features/session/`. `app-styles/` = `packages/claxedo-app/src/app/styles/`.
-- v2 = `packages/claxedo-app-v2/src/composer/`.
+- v1 = the old app's `src/features/session/` (deleted at the swap). `app-styles/` = its `src/app/styles/`.
+- v2 = `packages/claxedo-app/src/composer/`.
 
 **Theme note:** v1 renders with its default theme, which has the Codex surface overrides (`ui-overrides.css`), so the composer card is translucent with 20px corners. v2 renders its own default theme.
 

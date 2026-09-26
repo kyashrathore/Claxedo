@@ -41,7 +41,7 @@ These stay removed unless the owner says otherwise:
 **Exception: themes.** v1's themes come back. v1's default theme is Codex, not Claxedo.
 
 ## How to fix
-- **Port v1's UI; don't restyle v2's rebuilt UI.** For a surface that differs, move v1's component from `packages/claxedo-app-v2/src/legacy/` (`git mv`) into its v2 folder. Adapt only its data access, to the adapter (`@/server`) and stores (`@/session`). Then delete v2's rebuilt version.
+- **Port v1's UI; don't restyle v2's rebuilt UI.** For a surface that differs, move v1's component from the v2 app's `src/legacy/` tree (`git mv`; deleted at the swap) into its v2 folder. Adapt only its data access, to the adapter (`@/server`) and stores (`@/session`). Then delete v2's rebuilt version.
 - **v1's look is the kit.** v2 renders with v1's kit components and CSS (`@opencode-ai/ui`: its styles, theme, codex default, 16px root, SF Pro Text 14px/21px). Upstream's newer kit is used only where it renders identically.
 - **Verify every surface** against the matching v1 screenshot in `inventory/<area>/shots/`, and against v1 running at http://127.0.0.1:4481. Navigate and screenshot only on that daemon; it holds the owner's real data.
 

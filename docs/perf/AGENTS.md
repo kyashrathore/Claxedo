@@ -4,7 +4,7 @@ Read [README.md](./README.md) for what shipped. This file is the ledger of what 
 
 The old experiment logs, worktree handoffs, gate-arithmetic tables, idle-memory action table, and experiments index are gone. Git history still has them. Do not reconstruct them as working docs.
 
-The machine-readable twin of this ledger is `packages/claxedo-app/perf-harness/evidence/prior-evidence.json`. The harness rejects a duplicate experiment question unless you declare a new metric or an invalidated current-tree boundary.
+The machine-readable twin of this ledger was the old app's `perf-harness/evidence/prior-evidence.json`, deleted with that harness at the app swap. The harness rejected a duplicate experiment question unless you declared a new metric or an invalidated current-tree boundary.
 
 ## Do not retry unless the condition has changed
 

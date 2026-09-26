@@ -6,8 +6,8 @@ Status: DONE (2026-09-24). 127 rows: **SAME 14 · DIFFERS 10 · MISSING 103 · E
 
 **How to read the counts:** almost every MISSING row traces to four facts: v2's Tasks and Pages plugins are empty stubs, v2 has no Marketplace UI, v2 has no account menu, and v2 has no notification, sound or deep-link code. Rows marked approved "Goes" in the plan: EXT-088, EXT-097, EXT-115 (and the draggable-pane part of EXT-038).
 
-- **v1 code:** `packages/claxedo-app/src` (paths below are relative to it unless they start with `packages/`).
-- **v2 code:** `packages/claxedo-app-v2/src` (not `src/legacy`) and repo-root `plugins/`.
+- **v1 code:** the old app's `src` (deleted at the swap; paths below are relative to it unless they start with `packages/`).
+- **v2 code:** `packages/claxedo-app/src` (not `src/legacy`) and repo-root `plugins/`.
 - **Screenshots:** `scratchpad/lanes/inventory/extras/shots/`, named `<screen>-<v1|v2>-<1280|390>.png`.
 - **Data note:** the owner's daemon has no tasks, no presets and no documents, so the task page, the board with cards, a preset editor and the document editor are described from code; the empty and list states are screenshotted.
 - **v2 root fact behind most rows:** the v2 Tasks plugin (`plugins/tasks/src/app.tsx`) and Pages plugin (`plugins/pages/src/app.tsx`) are both `definePlugin({ activate() {} })` with an empty dictionary. They register nothing: no rail entry, no route, no settings section. v2 has no Marketplace UI either (only `server/marketplace.ts` reads `/api/claxedo/plugins`). `/tasks` and `/marketplace` in v2 render the home state "Nothing is open" (`tasks-list-v2-1280.png`, `marketplace-v2-1280.png`).

@@ -1,6 +1,6 @@
 # Making Claxedo lighter
 
-For current commands, ownership and measurement contracts, use the [performance tools guide](../../packages/claxedo-app/perf-harness/README.md) and `bun run --cwd packages/claxedo-app/perf-harness catalog`. The narrative below records earlier product work.
+The perf harness that owned the commands and measurement contracts was deleted at the app swap. The current measurement tool is `bun run e2e:perf-stream`, described in [the app's e2e guide](../../packages/claxedo-app/e2e/README.md#performance-a-streaming-turn). The narrative below records earlier product work.
 
 In August 2026 we tried to make Claxedo feel light. The product is a coding-agent workbench that ships as a signed web app and a packaged Electron desktop. Both were heavy in ways that were easy to feel and hard to name: a long first download, a slow first session, a desktop that sat well above a gigabyte, a switch between two already-open chats that rebuilt the world.
 

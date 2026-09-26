@@ -4,7 +4,7 @@
 
 **Counts (99 items):** SAME 2 · DIFFERS 51 · MISSING 44 · EXTRA 2. Several DIFFERS rows also note an extra v2 behavior inside them (e.g. SET-003's Open-settings shortcut, SET-013's close ×, SET-170's auth-unavailable note).
 
-**Sources.** v1 = `packages/claxedo-app/src` (paths below are relative to it). v2 = `packages/claxedo-app-v2/src`. Screenshots are in `settings/shots/` (named `<screen>-v1|v2-1280|390[-tall].png`; `-tall` is the same screen with the viewport stretched to the content height). Text dumps of every screen are in `settings/text/`.
+**Sources.** v1 = the old app's `src` (deleted at the swap; paths below are relative to it). v2 = `packages/claxedo-app/src`. Screenshots are in `settings/shots/` (named `<screen>-v1|v2-1280|390[-tall].png`; `-tall` is the same screen with the viewport stretched to the content height). Text dumps of every screen are in `settings/text/`.
 
 **How the running v1 was reached.** On a cold load of `/settings/<section>`, v1 replaces the URL with the active workspace's draft route (`/w/<id>/session`) about 0.4 s after boot (see SET-004). So every v1 Settings screenshot was taken the way a user gets there: account menu → Settings, then the nav rows.
 

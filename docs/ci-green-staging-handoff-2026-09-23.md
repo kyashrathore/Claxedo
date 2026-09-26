@@ -30,8 +30,8 @@ Project / boot-splash fix (`31ea96947b`), and the merges of other sessions' dev 
 2. **Collect the two Windows lanes still running** (below), review each diff, cherry-pick
    onto `integrate/tonight`, verify on macOS, fast-forward `dev`.
 3. **Push `dev` once** (`git push origin HEAD:dev` from the integrate worktree; install
-   `packages/claxedo-app/perf-harness` deps first or the pre-push lint fails on
-   perf-harness "error" types). CI now uses `--continue` and a collecting tier-real loop,
+   the old app's `perf-harness` deps first — since deleted at the app swap — or the
+   pre-push lint fails on perf-harness "error" types). CI now uses `--continue` and a collecting tier-real loop,
    so one run shows every remaining failure.
 4. **Deploy staging** by fast-forwarding `staging` to the pushed commit
    (`git push --no-verify origin <sha>:refs/heads/staging`); watch `deploy-staging`.

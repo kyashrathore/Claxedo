@@ -3,7 +3,7 @@
 Screens covered (screenshots in `projects/shots/`, both apps at 1280×800 and 390×844 touch unless noted):
 first run / welcome (steps 1–3, repository mode, folder dialog), landing with projects, sidebar project list (hover, menu, Workspace grouping, phone drawer), Edit / Rename / Remove dialogs, composer Project / Environment / Workspace / Branch chips, create-project panel, folder dialog (typed, Tab, empty), v2 project page, v2 add-project page (3 steps), v2 placement "Open".
 
-Sources: v1 paths are under `packages/claxedo-app/src/`, v2 under `packages/claxedo-app-v2/src/` (worktree `~/test/opencode-app-v2`). Data seen: the daemon's engine catalog (`GET /project`) lists 8 projects (Claxedo + 7 cloud fixture projects: repo, allowed, continue, denied, original, spoofed, registered); `GET /api/claxedo/projects` lists 1 (Claxedo).
+Sources: v1 paths are under the old app's `src/` (deleted at the swap), v2 under `packages/claxedo-app/src/` (worktree `~/test/opencode-app-v2`). Data seen: the daemon's engine catalog (`GET /project`) lists 8 projects (Claxedo + 7 cloud fixture projects: repo, allowed, continue, denied, original, spoofed, registered); `GET /api/claxedo/projects` lists 1 (Claxedo).
 
 How v1's first run was shown without touching the daemon: a fresh profile with `claxedo.global.dat:server.closedProjects` seeded (what v1's own "Remove project" writes), so v1's sidebar list was empty. Every run blocked POST/PUT/PATCH/DELETE to the daemon (v1 attempted only `POST /project/current`, blocked); nothing was created.
 

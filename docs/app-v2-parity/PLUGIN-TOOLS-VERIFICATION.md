@@ -50,7 +50,7 @@ The Electron boundary stage uses its own Chromium sandbox; nesting it under the 
 | Working directory | Command | Result |
 | --- | --- | --- |
 | Each of `packages/{claxedo-plugin-build,claxedo-mcp,claxedo-local-server,workspace-runtime,agent-sdk-runtime,claxedo-desktop,claxedo-server,session-ui,ui,claxedo-app-v2,storybook}` | `bun run typecheck` | All 11 passed |
-| Repository root | `bun run typecheck --concurrency=1 --continue=always` | 35/36 tasks passed; V1 theme-token lint failed on unchanged `packages/claxedo-app/src/app/styles/index.css:363` and `:381` |
+| Repository root | `bun run typecheck --concurrency=1 --continue=always` | 35/36 tasks passed; V1 theme-token lint failed on the old app's unchanged `src/app/styles/index.css:363` and `:381` (deleted at the swap) |
 | `packages/agent-sdk-runtime` | `bun run build` | Passed |
 | `packages/claxedo-plugin-build` | `bun run test` | 12 passed |
 | `packages/claxedo-mcp` | `bun run test` | 225 passed |
