@@ -1,11 +1,10 @@
-import type { AttachInput, DraftLaunch, StartInput } from "../../contract"
+import type { AttachInput, DraftLaunch, MachineLoginPolicy, StartInput } from "../../contract"
 import { ownerMayUseMachineLogin, selectedProviderProjection } from "../../contract"
 import { TransportError } from "../../contract/errors"
-import type { CursorLoginOptions } from "../../profiles/cursor"
 
 export type CursorCredential = { apiKey: string; backendUrl?: string; key: string; bound: boolean; ownerLogin: boolean }
 
-export function cursorCredential(input: StartInput | AttachInput | DraftLaunch, env: NodeJS.ProcessEnv, login: CursorLoginOptions): CursorCredential {
+export function cursorCredential(input: StartInput | AttachInput | DraftLaunch, env: NodeJS.ProcessEnv, login: MachineLoginPolicy): CursorCredential {
   const projection = selectedProviderProjection(input.credentials, ["cursor-sdk", "cursor"])
   if (projection && "unavailable" in projection) throw new TransportError("cursor", "configuration", `Cursor account unavailable: ${projection.reason}`)
   const ownerLogin = ownerMayUseMachineLogin(input.owner, login)

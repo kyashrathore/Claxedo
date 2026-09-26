@@ -42,7 +42,7 @@ function fakeRuntime(connections: { id: string; label: string }[] = []) {
         }],
         removeCredential: async (id: string) => { removed.push(id) },
       },
-      bindProviders: async (overlays: Record<string, unknown>) => { bound.push(overlays) },
+      bindProviders: async (binding: { overlays: Record<string, unknown> }) => { bound.push(binding.overlays) },
       defineProviders: async (definitions: unknown[]) => { defined.push(definitions) },
     },
   }

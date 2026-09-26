@@ -12,7 +12,7 @@ export { mergeStartInput, configGenerationChanged, applySessionConfigUpdate } fr
 export { modelAndEffortOptions } from "./model-options.js"
 export { configOptionsPreview } from "./config-options.js"
 export { sessionConnectionHealth, sessionRuntimeHealth } from "./health.js"
-export { ownerMayUseMachineLogin, selectedProviderProjection, providerPlaceholder } from "./credentials.js"
+export { ownerMayUseMachineLogin, selectedProviderProjection, providerPlaceholder, type MachineLoginPolicy, type RuntimePlacement } from "./credentials.js"
 export { goalSnapshotFromRecord, nativeGoalPrompt, NATIVE_GOAL_COMMAND } from "./goals.js"
 export { draftProbeKey, DraftProbeCache } from "./probe-cache.js"
 export { BROKER_GRANTS_KEY, namespacedGrantKey, connectionGrantKeys } from "./grants.js"
