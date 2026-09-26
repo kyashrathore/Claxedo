@@ -1,7 +1,8 @@
-import { A, useNavigate } from "@solidjs/router"
+import { useNavigate } from "@solidjs/router"
 import { Match, Show, Switch, type JSX } from "solid-js"
 import { CloudWorkspacesSection } from "@/cloud"
 import type { Project, ProjectId } from "@/server"
+import { RouteLink } from "@/shell"
 import { SettingsGroup, SettingsList, SettingsNote, SettingsRow } from "@/settings"
 import { ClaxedoIcon as Icon, useDialog, Button, Avatar } from "@/ui"
 import { useProjectsText } from "../i18n"
@@ -97,10 +98,10 @@ export function ProjectSettings(props: { readonly id: ProjectId }): JSX.Element 
   }
   return (
     <div class="settings-body" data-project-id={props.id}>
-      <A href={projectSettingsPath()} class="projects-settings-back">
+      <RouteLink href={projectSettingsPath()} class="projects-settings-back">
         <Icon name="arrow-left" />
         <span>{t("projects.settings.all")}</span>
-      </A>
+      </RouteLink>
       <Switch fallback={<SettingsNote tone="danger">{t("projects.missing")}</SettingsNote>}>
         <Match when={view().kind === "loading"}>
           <p class="projects-hint projects-placeholder m-0">{t("projects.loading")}</p>

@@ -1,7 +1,8 @@
-import { Route, Router, useLocation, useNavigate } from "@solidjs/router"
+import { Route, useLocation, useNavigate } from "@solidjs/router"
 import { createContext, createMemo, createSignal, useContext, type Accessor, type JSX } from "solid-js"
 import type { PlacementId, SessionId } from "@/server"
 import { useShellRegistries } from "./registries"
+import { HistoryRouter } from "./history-router"
 import { parseRoute, placementOf, type ShellRoute } from "./routes"
 
 export type SessionPlacementResolver = (session: SessionId) => PlacementId | undefined
@@ -48,7 +49,7 @@ function RoutingProvider(props: { readonly children: JSX.Element }): JSX.Element
 export type ShellRouterComponent = (props: { readonly children?: JSX.Element }) => JSX.Element
 
 export function ShellRouter(props: { readonly router?: ShellRouterComponent; readonly children: JSX.Element }): JSX.Element {
-  const Base = props.router ?? Router
+  const Base = props.router ?? HistoryRouter
   return (
     <Base>
       <Route path="*rest" component={() => <RoutingProvider>{props.children}</RoutingProvider>} />
