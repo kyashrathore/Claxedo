@@ -30,7 +30,7 @@ The plan is `docs/plans/2026-09-24-001-refactor-app-rebuild-first-proof-plan.md`
 
 ## The swap (2026-09-26, branch `v2/swap` off feat/app-v2 bc83dbef91)
 
-The owner tested v2 and approved the swap. `packages/claxedo-app-v2` is now `packages/claxedo-app` (`@claxedo/app`); v1, session-ui and storybook are deleted. `packages/ui` is still here, pending a ruling on moving the kit into the app (below).
+The owner tested v2 and approved the swap. `packages/claxedo-app-v2` is now `packages/claxedo-app` (`@claxedo/app`); v1, session-ui and storybook are deleted. `packages/ui` (the kit) stays; moving it into the app is a separate follow-up.
 
 **Deleted** (tracked `.ts/.tsx/.js/.mjs` lines, then all tracked lines):
 
@@ -40,7 +40,7 @@ The owner tested v2 and approved the swap. `packages/claxedo-app-v2` is now `pac
 | the v2 app's `src/legacy` tree | 143,796 (147,730) | deleted |
 | `packages/session-ui` | 32,046 (38,536) | deleted |
 | `packages/storybook` | 640 (699) | deleted |
-| `packages/ui` (the kit) | 30,143 (102,824) | unchanged, pending |
+| `packages/ui` (the kit) | 30,143 (102,824) | kept; its Tailwind entry no longer scans session-ui |
 | The app, without `src/legacy` | 116,686 | 115,836 as `packages/claxedo-app`; budget 87,167 / 94,000 |
 
 **What changed besides the deletions:**
@@ -53,7 +53,7 @@ The owner tested v2 and approved the swap. `packages/claxedo-app-v2` is now `pac
 **Verified on the branch:** `bun install`; root `bun run typecheck` (33 of 33); in the app `typecheck`, `typecheck:e2e`, `test`, `build`, `check` (21 of 21); the full e2e suite (183 passed, 67 skipped, 0 failed, 21.8 min); the desktop `typecheck`, `test:broad` (996 pass), `test:bundle-single`, `test:server-boot`, `test:electron-boundary`, and `package:mac -- --dir --publish never`, whose packaged app booted on an isolated profile to onboarding and, with a project, to the rail; the server packages' suites; `test:architecture-ratchets` passes product boundary and fails only the helpers step, 143 findings, each already present on feat/app-v2 (which had 4,235).
 
 **Open after the swap:**
-- The kit move: v2 renders `@opencode-ai/ui` (149 files, 11.6k TS and 9.4k CSS lines reached). Moving it into `src/ui` breaks the app's size, names and comment checks and the 94k budget unless a ruling exempts or re-bases them.
+- The kit move, a separate follow-up: the app renders `@opencode-ai/ui` (149 files, 11.6k TS and 9.4k CSS lines reached). Moving it into `src/ui` breaks the app's size, names and comment checks and the 94k budget unless a ruling exempts or re-bases them.
 - The desktop's process-diagnostics subsystem (`src/main/diagnostics`, about 7.9k lines, plus its preload bridge) and its machine remote-access bridge have no renderer consumer now.
 - The u8 packaged smokes ran a v1 Playwright spec and are removed; there is no packaged startup trace for the app yet.
 
