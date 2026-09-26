@@ -30,7 +30,7 @@ type ReadContext = {
 
 type PageTarget = { readonly projectId: ProjectId; readonly after?: string }
 
-async function readPage(context: ReadContext, target: PageTarget): Promise<FetchedPage> {
+async function readSessionListPage(context: ReadContext, target: PageTarget): Promise<FetchedPage> {
   const page = await context.server.sessions.list({ projectId: target.projectId, after: target.after, limit: PAGE_SIZE })
   return { projectId: target.projectId, rows: page.rows, statuses: page.statuses, nextAfter: page.nextAfter, degraded: page.degraded === true }
 }
@@ -43,7 +43,7 @@ async function firstPageTargets(context: ReadContext): Promise<PageTarget[]> {
 async function readWindow(context: ReadContext, targets: readonly PageTarget[]): Promise<FetchedWindow> {
   const sentAt = Date.now()
   const read = await Promise.all(targets.map((target) =>
-    readPage(context, target).then(
+    readSessionListPage(context, target).then(
       (page): FetchedPage | FailedPage => page,
       (cause): FetchedPage | FailedPage => ({ projectId: target.projectId, error: toAppError(cause) }),
     )))
@@ -52,17 +52,17 @@ async function readWindow(context: ReadContext, targets: readonly PageTarget[]):
   return { pages, failures, sentAt }
 }
 
-function isReading(state: ListState): boolean {
+function isListReading(state: ListState): boolean {
   if (state.kind === "fetching" || state.kind === "rereading") return true
   return state.kind === "live" && [...state.more.values()].some((phase) => phase.kind === "loading")
 }
 
 function afterRead(context: ReadContext): void {
-  if (isReading(context.list.state())) return
+  if (isListReading(context.list.state())) return
   const waiting = context.followUp.state()
   if (waiting.kind === "none") return
   context.followUp.send({ type: "taken" })
-  void reread(context, waiting.mode)
+  void rereadList(context, waiting.mode)
 }
 
 async function fetchFirst(context: ReadContext): Promise<void> {
@@ -90,7 +90,7 @@ async function loadMore(context: ReadContext, projectId: ProjectId): Promise<voi
   afterRead(context)
 }
 
-async function reread(context: ReadContext, mode: RereadMode): Promise<void> {
+async function rereadList(context: ReadContext, mode: RereadMode): Promise<void> {
   const { state, send } = context.list
   const kind = state().kind
   if (kind !== "live" && kind !== "failed") return
@@ -104,7 +104,7 @@ async function reread(context: ReadContext, mode: RereadMode): Promise<void> {
 }
 
 function requestReread(context: ReadContext, mode: RereadMode): void {
-  if (!isReading(context.list.state())) return void reread(context, mode)
+  if (!isListReading(context.list.state())) return void rereadList(context, mode)
   context.followUp.send({ type: "requested", mode })
 }
 
@@ -113,7 +113,7 @@ export function createListReads(server: Server, list: Machine<ListState, ListEve
   return {
     fetchFirst: () => fetchFirst(context),
     loadMore: (projectId) => loadMore(context, projectId),
-    reread: (mode) => reread(context, mode),
+    reread: (mode) => rereadList(context, mode),
     requestReread: (mode) => requestReread(context, mode),
   }
 }

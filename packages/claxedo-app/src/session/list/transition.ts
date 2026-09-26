@@ -36,7 +36,7 @@ function withData(state: ListState, next: ListData): ListState {
   return next === state ? state : { ...state, ...next }
 }
 
-function applyServerEvent<S extends ListData>(state: S, event: ServerListEvent): S {
+function applyListEvent<S extends ListData>(state: S, event: ServerListEvent): S {
   switch (event.type) {
     case "sessionUpserted":
       return upsertRow(state, event.row)
@@ -63,7 +63,7 @@ function serverEvent(state: ListState, event: ServerListEvent): ListState {
     const phase = state.more.get(projectId)
     if (phase?.kind === "loading") return { ...state, more: withPhase(state.more, projectId, { kind: "loading", held: [...phase.held, event] }) }
   }
-  return withData(state, applyServerEvent(state, event))
+  return withData(state, applyListEvent(state, event))
 }
 
 const WINDOWING: Record<"extend" | RereadMode, (data: ListData, window: FetchedWindow) => ListData> = {
@@ -74,7 +74,7 @@ const WINDOWING: Record<"extend" | RereadMode, (data: ListData, window: FetchedW
 
 function live(base: ListData, window: FetchedWindow, held: readonly ServerListEvent[], mode: "extend" | RereadMode, more: More): ListState {
   const windowed = pageStatusesRead(WINDOWING[mode](base, window), window)
-  const replayed = held.reduce(applyServerEvent, windowed)
+  const replayed = held.reduce(applyListEvent, windowed)
   return { ...replayed, kind: "live", more }
 }
 

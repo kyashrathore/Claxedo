@@ -73,7 +73,7 @@ function pendingRow(ref: SessionRef, input: SessionCreateInput, at: number): Ses
   }
 }
 
-async function createSession(server: Server, list: Machine<ListState, ListEvent>, input: SessionCreateInput): Promise<SessionRef> {
+async function createPendingSession(server: Server, list: Machine<ListState, ListEvent>, input: SessionCreateInput): Promise<SessionRef> {
   const placement = server.placements.byId(input.placementId)
   if (!placement) throw unknownPlacement(input.placementId)
   const clientRequestId = uuid()
@@ -89,7 +89,7 @@ async function createSession(server: Server, list: Machine<ListState, ListEvent>
   }
 }
 
-function applyServerEvent(list: Machine<ListState, ListEvent>, reads: ListReads, event: ServerEvent): void {
+function routeServerEvent(list: Machine<ListState, ListEvent>, reads: ListReads, event: ServerEvent): void {
   switch (event.type) {
     case "sessionUpserted":
       return list.send(event)
@@ -145,9 +145,9 @@ export function createSessionList(server: Server, requests: RequestsInternal): S
     pageDegraded: (projectId: ProjectId) => degraded().has(projectId),
     loadMore: reads.loadMore,
     reload: () => reads.reread("replace"),
-    create: (input) => createSession(server, list, input),
+    create: (input) => createPendingSession(server, list, input),
     start: () => void reads.fetchFirst(),
-    apply: (event) => applyServerEvent(list, reads, event),
+    apply: (event) => routeServerEvent(list, reads, event),
     readRow: (row) => send({ type: "rowRead", row }),
     readStatus: (ref, status, sentAt) => send({ type: "statusRead", ref, status, sentAt }),
     opened: (sessionId) => send({ type: "sessionOpened", sessionId }),
