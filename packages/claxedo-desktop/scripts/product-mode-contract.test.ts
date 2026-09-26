@@ -128,7 +128,7 @@ describe("desktop server launch wiring", () => {
     const deps = manifest.dependencies ?? {}
 
     expect(Object.keys(deps)).toContain("@claxedo/local-server")
-    expect(Object.keys(deps)).toContain("@claxedo/app-v2")
+    expect(Object.keys(deps)).toContain("@claxedo/app")
     expect(read("scripts/claxedo-server-entry.ts")).not.toContain("../../claxedo-server/src")
   })
 })

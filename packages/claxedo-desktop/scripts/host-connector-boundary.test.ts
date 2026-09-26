@@ -172,7 +172,7 @@ test("no package the renderer is composed from declares or imports Host Connecto
     path.join(PACKAGE_DIR, "src/renderer"),
     path.join(PACKAGE_DIR, "src/preload"),
     path.join(PACKAGE_DIR, "src/shared"),
-    path.join(REPO_PACKAGES, "claxedo-app-v2/src"),
+    path.join(REPO_PACKAGES, "claxedo-app/src"),
   ].filter((tree) => fs.existsSync(tree))
 
   expect(trees.length).toBe(4)
@@ -186,7 +186,7 @@ test("no package the renderer is composed from declares or imports Host Connecto
   expect(importers).toEqual([])
 
   // And no manifest edge, so a future `@/`-aliased import could not resolve.
-  for (const manifest of ["claxedo-app-v2/package.json"]) {
+  for (const manifest of ["claxedo-app/package.json"]) {
     const parsed = JSON.parse(fs.readFileSync(path.join(REPO_PACKAGES, manifest), "utf8")) as {
       dependencies?: Record<string, string>
       devDependencies?: Record<string, string>

@@ -37,7 +37,6 @@ describe("runtime contract", () => {
   test("runtime source directories stay Bun-free", () => {
     const hits = dirs.flatMap((dir) =>
       files(path.join(root, dir))
-        .filter((file) => !file.startsWith(path.join(root, "packages/claxedo-app/src/architecture") + path.sep))
         .flatMap((file) => {
         const text = fs.readFileSync(file, "utf8")
         return banned.filter((item) => text.includes(item)).map((item) => `${path.relative(root, file)} -> ${item}`)

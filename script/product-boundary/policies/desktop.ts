@@ -173,7 +173,7 @@ export const desktopMainComposition: Policy = {
   // owner: Electron main, which sets both at startup. No imports, no package edge.
   // +1 module, +1 package (2026-09-25): `main/renderer-content-security.ts`
   // stamps the v2 renderer's Content-Security-Policy on its documents, built by
-  // `@claxedo/app-v2/content-security-policy` (one file, no imports), the same
+  // `@claxedo/app/content-security-policy` (one file, no imports), the same
   // builder the web build uses, so the desktop and the web lock the app to one
   // exact server origin by one rule. Reviewed owner: Electron main, the only
   // place that knows the daemon's origin before the document loads and the

@@ -88,8 +88,8 @@
         "better-sqlite3": "13.0.1",
       },
     },
-    "packages/claxedo-app-v2": {
-      "name": "@claxedo/app-v2",
+    "packages/claxedo-app": {
+      "name": "@claxedo/app",
       "version": "0.0.59",
       "dependencies": {
         "@claxedo/account-contract": "workspace:*",
@@ -241,7 +241,7 @@
         "@claxedo/account-contract": "workspace:*",
         "@claxedo/agent-runtime-contract": "workspace:*",
         "@claxedo/agent-sdk-runtime": "workspace:*",
-        "@claxedo/app-v2": "workspace:*",
+        "@claxedo/app": "workspace:*",
         "@claxedo/helpers": "workspace:*",
         "@claxedo/host-connector": "workspace:*",
         "@claxedo/local-server": "workspace:*",
@@ -1239,7 +1239,7 @@
 
     "@claxedo/agent-sdk-runtime": ["@claxedo/agent-sdk-runtime@workspace:packages/agent-sdk-runtime"],
 
-    "@claxedo/app-v2": ["@claxedo/app-v2@workspace:packages/claxedo-app-v2"],
+    "@claxedo/app": ["@claxedo/app@workspace:packages/claxedo-app"],
 
     "@claxedo/channels": ["@claxedo/channels@workspace:packages/claxedo-channels"],
 
@@ -5239,7 +5239,7 @@
 
     "@claxedo/agent-sdk-runtime/@tsconfig/bun": ["@tsconfig/bun@1.0.9", "", {}, "sha512-4M0/Ivfwcpz325z6CwSifOBZYji3DFOEpY6zEUt0+Xi2qRhzwvmqQN9XAHJh3OVvRJuAqVTLU2abdCplvp6mwQ=="],
 
-    "@claxedo/app-v2/@tsconfig/bun": ["@tsconfig/bun@1.0.9", "", {}, "sha512-4M0/Ivfwcpz325z6CwSifOBZYji3DFOEpY6zEUt0+Xi2qRhzwvmqQN9XAHJh3OVvRJuAqVTLU2abdCplvp6mwQ=="],
+    "@claxedo/app/@tsconfig/bun": ["@tsconfig/bun@1.0.9", "", {}, "sha512-4M0/Ivfwcpz325z6CwSifOBZYji3DFOEpY6zEUt0+Xi2qRhzwvmqQN9XAHJh3OVvRJuAqVTLU2abdCplvp6mwQ=="],
 
     "@claxedo/host-serving/jose": ["jose@6.0.11", "", {}, "sha512-QxG7EaliDARm1O1S8BGakqncGT9s25bKL1WSf6/oa17Tkqwi8D2ZNglqCF+DsYF88/rV66Q/Q2mFAy697E1DUg=="],
 

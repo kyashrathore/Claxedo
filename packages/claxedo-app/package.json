@@ -1,12 +1,10 @@
 {
-  "name": "@claxedo/app-v2",
+  "name": "@claxedo/app",
   "version": "0.0.59",
   "private": true,
   "description": "Claxedo desktop and web application",
   "type": "module",
   "exports": {
-    ".": "./src/app/entry/index.tsx",
-    "./process-diagnostics-contract": "./src/features/processes/data/local-diagnostics.ts",
     "./content-security-policy": "./content-security-policy.ts"
   },
   "scripts": {

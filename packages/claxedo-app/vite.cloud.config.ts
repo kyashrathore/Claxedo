@@ -184,7 +184,7 @@ export function cloudConfig({ mode }: { mode: string }, binding?: AccountBinding
           replacement: `${shikiThemesDist}index.mjs`,
         },
         {
-          find: "@claxedo/app-v2/ui",
+          find: "@claxedo/app/ui",
           replacement: normalizePath(fileURLToPath(new URL("./src/ui/index.ts", import.meta.url))),
         },
         {

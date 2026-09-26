@@ -11,7 +11,7 @@ export function installPluginRuntime(): void {
     "solid-js/web": solidWeb,
     "solid-js/store": solidStore,
     "@claxedo/plugin-api": pluginApi,
-    "@claxedo/app-v2/ui": kit,
+    "@claxedo/app/ui": kit,
   }
   Object.assign(globalThis, { [PLUGIN_RUNTIME_GLOBAL]: runtime })
 }

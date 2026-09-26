@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { contentSecurityPolicy, ContentSecurityPolicyError } from "@claxedo/app-v2/content-security-policy"
+import { contentSecurityPolicy, ContentSecurityPolicyError } from "@claxedo/app/content-security-policy"
 import { rendererContentSecurityListener, rendererContentSecurityPolicy, type HeadersReceivedResponse } from "./renderer-content-security"
 
 const DOCUMENT = "file:///Applications/Claxedo.app/Contents/Resources/app.asar/out/renderer/index.local.html"

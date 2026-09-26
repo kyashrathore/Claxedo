@@ -10,7 +10,7 @@
  * ready, so the hold overlaps startup instead of adding to it.
  */
 
-import { contentSecurityPolicy } from "@claxedo/app-v2/content-security-policy"
+import { contentSecurityPolicy } from "@claxedo/app/content-security-policy"
 
 export type HeadersReceivedDetails = {
   url: string

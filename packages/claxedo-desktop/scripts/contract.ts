@@ -176,9 +176,9 @@ export function spec(root = ROOT): Spec {
     "../agent-event-runtime/src",
     "../agent-sdk-runtime/package.json",
     "../agent-sdk-runtime/src",
-    "../claxedo-app-v2/package.json",
-    "../claxedo-app-v2/public",
-    "../claxedo-app-v2/src",
+    "../claxedo-app/package.json",
+    "../claxedo-app/public",
+    "../claxedo-app/src",
     // What the desktop actually bundles: the local product and the shared core
     // beneath it. `claxedo-server` is the hosted/self-hosted product and no
     // longer feeds this artifact.

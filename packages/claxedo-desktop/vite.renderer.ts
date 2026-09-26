@@ -2,14 +2,14 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import type { ConfigEnv, UserConfig } from "vite"
 import type { PluginOption } from "vite"
-import { cloudConfig } from "../claxedo-app-v2/vite.cloud.config"
-import { WEB_CONTENT_SECURITY_POLICY_PLUGIN } from "../claxedo-app-v2/vite.content-security-policy"
+import { cloudConfig } from "../claxedo-app/vite.cloud.config"
+import { WEB_CONTENT_SECURITY_POLICY_PLUGIN } from "../claxedo-app/vite.content-security-policy"
 import { desktopRendererBoundaryManifestPlugin } from "./scripts/product-boundary-manifests"
 
 const normalize = (value: string) => value.replaceAll("\\", "/")
 
 export const desktopDir = normalize(fileURLToPath(new URL("./", import.meta.url)))
-const appDir = normalize(fileURLToPath(new URL("../claxedo-app-v2/", import.meta.url)))
+const appDir = normalize(fileURLToPath(new URL("../claxedo-app/", import.meta.url)))
 const rendererRoot = normalize(fileURLToPath(new URL("./src/renderer/", import.meta.url)))
 
 export function desktopRendererChunk(id: string) {

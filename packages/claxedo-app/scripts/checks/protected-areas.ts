@@ -7,7 +7,7 @@ const protectedAreas = [
   { flow: 30, name: "the transcript corpus", folders: ["src/transcript", "src/session/view/timeline"] },
   { flow: 31, name: "the session-list races", folders: ["src/session/list"] },
 ]
-const packagePrefix = "packages/claxedo-app-v2/"
+const packagePrefix = "packages/claxedo-app/"
 
 type Options = { readonly base?: string; readonly ran?: ReadonlySet<number>; readonly paths: readonly string[] }
 
