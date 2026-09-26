@@ -1,6 +1,6 @@
 # Transcript corpus
 
-The corpus is the proof that the transcript moved without changing: every case renders the same in today's app and in v2. Flow 30 (`e2e/flows/30-transcript-corpus.spec.ts`) replays each case through the harness's scripted agent, opens it in both apps, and compares screenshots, the accessibility tree, and the scroll position after each scripted interaction.
+The corpus holds the transcript's behavior still: every case renders the same as its recorded baseline. Flow 30 (`e2e/flows/30-transcript-corpus.spec.ts`) replays each case through the harness's scripted agent, opens it, and compares screenshots, the accessibility tree, and the scroll position after each scripted interaction.
 
 ## Files
 
@@ -41,27 +41,27 @@ The corpus is the proof that the transcript moved without changing: every case r
 - `partKinds` lists what the transcript contains, so the corpus can be checked for every part kind the agents produce.
 - `replay.turns` are played in order through the scripted ACP agent; each turn's `steps` are an `AcpStep[]` (see `e2e/README.md`), and `{{workspace}}` becomes the case's workspace folder. A turn with an `error` step is sent without waiting and settles when its assistant message completes or fails.
 - `ready` is text the last turn shows; the case waits for it before comparing.
-- Turns are sent with ascending message ids, as the app sends them: both apps order a transcript by message id, and the runtime gives a prompt without one a random id.
-- A session opens on the latest turn's text-only surface, then reads the whole turn. The case holds that full read until the first turn row paints, so both apps always paint the surface first; a turn with work then keeps its "Worked for …" header, as it does on a real machine, where the surface wins that race.
+- Turns are sent with ascending message ids, as the app sends them: the app orders a transcript by message id, and the runtime gives a prompt without one a random id.
+- A session opens on the latest turn's text-only surface, then reads the whole turn. The case holds that full read until the first turn row paints, so the app always paints the surface first; a turn with work then keeps its "Worked for …" header, as it does on a real machine, where the surface wins that race.
 - A turn marked `"live": true` streams with the session open: it is sent once the transcript is on screen, and its steps pace their text with `delayMs` and stop at `hold` steps. The case compares what is on screen at each hold, so it proves the streaming renderer, not only the settled one. A live case's durations (the text part's agent and time, the Worked header's label) are hidden from its screenshots and replaced in its trees, since they depend on how long the holds lasted.
 - `interactions` run in order after the transcript is on screen, and the comparison is taken after each one:
   - `scroll` to `top` or `bottom`, `toggleFold` of the n-th Worked header, `reload`;
   - `release` a live turn's `hold`, wait for its `ready` text and a DOM that has stopped changing, and, with `settles`, for the session to go idle;
   - `markRows` remembers the turn rows on screen, and `rowsKept` asserts they are still the same elements;
-  - `markDetached` counts, after a forced collection, the DOM nodes that live outside the document, and `detachedGrowth` asserts that count grew by at most `max` since. Today's app leaks the controls it builds for a streaming table, so it records no budget.
+  - `markDetached` counts, after a forced collection, the DOM nodes that live outside the document, and `detachedGrowth` asserts that count grew by at most `max` since.
 - `invariant` is the sentence the case protects, so a failing comparison reads as a behavior, not a pixel.
 
 ## Running
 
-Today's app is the baseline. Record it, then compare v2 against it:
+Compare against the recorded baseline, or record a new case's:
 
 ```sh
-bun run e2e -- --app=v1 e2e/flows/30-transcript-corpus.spec.ts --update-snapshots=all
-bun run e2e -- --app=v2 e2e/flows/30-transcript-corpus.spec.ts --update-snapshots=none
+bun run e2e -- e2e/flows/30-transcript-corpus.spec.ts --update-snapshots=none
+bun run e2e -- e2e/flows/30-transcript-corpus.spec.ts --update-snapshots=all
 ```
 
-The baseline lands in `e2e/flows/30-transcript-corpus.spec.ts-snapshots/`, per project (`web`, `phone`) and platform. The macOS web baseline is committed. Font rendering differs per machine, so re-record it on the machine that compares, and record a platform or project that has none; a v2 run without a recorded baseline fails and names the command. Differences land in `e2e/results/` as expected, actual and diff images.
+The baseline lands in `e2e/flows/30-transcript-corpus.spec.ts-snapshots/`, per project (`web`, `phone`) and platform. The macOS web baseline is committed. Font rendering differs per machine, so re-record it on the machine that compares, and record a platform or project that has none; a run without a recorded baseline fails and names the command. Differences land in `e2e/results/` as expected, actual and diff images.
 
 ## What must match
 
-After opening and after every interaction, once the DOM has been quiet for 700 ms (a diagram or a highlight upgrade lands after the text it belongs to), for every rendered turn (`[data-component="session-turn"]`, the moved timeline's own row in both apps): its screenshot and its accessibility tree, plus the count of rendered turns and the scroll element's `scrollTop`. The turn rows exclude the session title, which the owner removed from v2. A difference needs the owner's sign-off, recorded next to the case.
+After opening and after every interaction, once the DOM has been quiet for 700 ms (a diagram or a highlight upgrade lands after the text it belongs to), for every rendered turn (`[data-component="session-turn"]`, the timeline's own row): its screenshot and its accessibility tree, plus the count of rendered turns and the scroll element's `scrollTop`. A difference needs the owner's sign-off, recorded next to the case.
