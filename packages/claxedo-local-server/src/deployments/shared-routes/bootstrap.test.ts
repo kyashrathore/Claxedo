@@ -240,7 +240,6 @@ describe("the signed bootstrap project inventory", () => {
       project: [
         {
           id: "proj_1",
-          name: "proj_1",
           worktree: "ws_1",
           sandboxes: ["ws_1"],
           workspaces: {

@@ -137,9 +137,8 @@ describe("project administration on the signed self-hosted server", () => {
     expect(JSON.parse(listedForStranger)).toEqual({ projects: [] })
     expect(listedForStranger).not.toContain("operator-only-secret")
 
-    const query = `?directory=${encodeURIComponent(directory)}`
-    expect((await composed.app.request(`/api/claxedo/projects/by-directory${query}`, { headers: operator.headers })).status).toBe(200)
-    const hidden = await composed.app.request(`/api/claxedo/projects/by-directory${query}`, { headers: stranger.headers })
+    expect((await composed.app.request(`/api/claxedo/projects/${project.id}`, { headers: operator.headers })).status).toBe(200)
+    const hidden = await composed.app.request(`/api/claxedo/projects/${project.id}`, { headers: stranger.headers })
     expect(hidden.status).toBe(404)
     expect(await hidden.json()).toMatchObject({ error: { code: "project_not_found" } })
 
@@ -151,7 +150,7 @@ describe("project administration on the signed self-hosted server", () => {
     expect(rewritten.status).toBe(403)
     expect(await rewritten.json()).toMatchObject({ error: { code: "project_access_denied" } })
 
-    const after = await composed.app.request(`/api/claxedo/projects/by-directory${query}`, { headers: operator.headers })
+    const after = await composed.app.request(`/api/claxedo/projects/${project.id}`, { headers: operator.headers })
     const stored = await after.json() as { project: { name: string; env: Record<string, string> } }
     expect(stored.project).toMatchObject({ name: "Operator Folder", env: { DEPLOY_KEY: "operator-only-secret" } })
   })

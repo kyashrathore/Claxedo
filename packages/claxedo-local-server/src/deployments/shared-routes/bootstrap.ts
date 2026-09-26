@@ -126,7 +126,6 @@ function localBootstrap(url: string, options: Options) {
 function signedBootstrapProjects(workspaces: unknown[], readyCloud: ReadonlySet<string>, servedHere: ReadonlySet<string>) {
   const groups = new Map<string, {
     id: string
-    name: string
     directories: string[]
     workspaces: Record<string, unknown>
   }>()
@@ -145,12 +144,7 @@ function signedBootstrapProjects(workspaces: unknown[], readyCloud: ReadonlySet<
     const remoteDirectory = asString(row?.remote_directory) ?? asString(row?.remoteDirectory)
     const projectId = asString(row?.project_id) ?? asString(row?.projectID) ?? workspaceId
     const workspaceName = asString(row?.workspace_name) ?? asString(row?.workspaceName) ?? asString(row?.display_name) ?? asString(row?.displayName) ?? workspaceId
-    const group = groups.get(projectId) ?? {
-      id: projectId,
-      name: asString(row?.project_name) ?? asString(row?.projectName) ?? asString(row?.display_name) ?? asString(row?.displayName) ?? projectId,
-      directories: [],
-      workspaces: {},
-    }
+    const group = groups.get(projectId) ?? { id: projectId, directories: [], workspaces: {} }
     const backing = authorityRowBacking(row)
     group.directories.push(workspaceId)
     group.workspaces[workspaceId] = {
@@ -165,7 +159,6 @@ function signedBootstrapProjects(workspaces: unknown[], readyCloud: ReadonlySet<
   }
   return [...groups.values()].map((group) => ({
     id: group.id,
-    name: group.name,
     worktree: group.directories[0] ?? group.id,
     sandboxes: group.directories,
     workspaces: group.workspaces,

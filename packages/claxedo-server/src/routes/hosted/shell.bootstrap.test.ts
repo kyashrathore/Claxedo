@@ -80,13 +80,10 @@ describe("GET /api/claxedo/bootstrap on a hosted central", () => {
     await expect(localOnly.json()).resolves.toMatchObject({ deployment: { issuesSessions: false } })
   })
 
-  test("hands a signed caller the project catalog /project serves, beside the posture", async () => {
+  test("hands a signed caller its project catalog beside the posture", async () => {
     const body = await (await bootstrap({ authConfig: signedConfig, token: "token-owner" })).json() as Record<string, unknown>
-    const project = await (await HostedShellRoutes({ authConfig: signedConfig, verifier, listWorkspaces: async () => OWNER_WORKSPACES })
-      .request("http://cp.test/project", { headers: { authorization: "Bearer token-owner" } })).json()
 
     expect(body).toMatchObject({ healthy: true, events: { hostAggregate: false }, deployment: { issuesSessions: true } })
-    expect(body.project).toEqual(project)
     expect(body.project).toMatchObject([{ id: "proj_one", workspaces: { ws_cloud: { id: "ws_cloud", backing: "cloud-vm", directory: "workspace:ws_cloud" } } }])
   })
 

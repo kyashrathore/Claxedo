@@ -385,13 +385,13 @@ const NAME_FREE_ROUTES: readonly string[] = [
 ]
 
 /**
- * The shell's directory shims, which answer a client's own workspace name
- * back to it as a path and look nothing up. Each is held to answering a
+ * The shell's directory shim, which answers a client's own workspace name
+ * back to it as a path and looks nothing up. It is held to answering a
  * stranger who exists, a stranger who does not and the caller identically
  * once the names are collapsed: a route that had resolved the name would
  * answer the two strangers differently.
  */
-const ECHO_ROUTES: readonly string[] = ["GET /path", "GET /project", "GET /project/current"]
+const ECHO_ROUTES: readonly string[] = ["GET /path"]
 
 /**
  * Routes this fixture cannot answer for, each with the answer it gives before

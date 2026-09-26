@@ -75,8 +75,6 @@ export type ProjectStore = {
   folders: boolean
   list(caller: SignedControlPlaneAuth | undefined): Promise<ProjectRecord[]>
   get(id: string): Promise<ProjectRecord | undefined>
-  /** The project whose checkout is `directory`; only a store with folders answers it. */
-  byDirectory?(directory: string): Promise<ProjectRecord | undefined>
   create(input: ProjectCreateInput, caller: SignedControlPlaneAuth | undefined): Promise<ProjectRecord>
   update(id: string, input: ProjectUpdateInput, caller: SignedControlPlaneAuth | undefined): Promise<ProjectRecord | undefined>
   /**

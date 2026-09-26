@@ -265,7 +265,7 @@ describe("resolveHostedOperation", () => {
 
   test("carries only the declared connected-repository source", () => {
     expect(resolveHostedOperation("workspace.create", {
-      projectName: "plugins",
+      projectId: "project-1",
       connectionId: "connection-1",
       repoFullName: "kyashrathore/plugins",
       unreviewed: "must-not-cross-main",
@@ -273,7 +273,7 @@ describe("resolveHostedOperation", () => {
       method: "POST",
       path: "/api/workspace/create",
       body: {
-        projectName: "plugins",
+        projectId: "project-1",
         connectionId: "connection-1",
         repo: { fullName: "kyashrathore/plugins" },
       },
@@ -353,7 +353,7 @@ describe("resolveHostedOperation", () => {
 
   test("nests connected-repo create into the hosted schema shape", () => {
     expect(resolveHostedOperation("workspace.create", {
-      projectName: "demo",
+      projectId: "project-1",
       workspaceName: "main",
       connectionId: "conn_1",
       repoFullName: "acme/demo",
@@ -362,7 +362,7 @@ describe("resolveHostedOperation", () => {
       method: "POST",
       path: "/api/workspace/create",
       body: {
-        projectName: "demo",
+        projectId: "project-1",
         workspaceName: "main",
         connectionId: "conn_1",
         // `driver` is declared, so the signed desktop path forwards the create

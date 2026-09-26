@@ -100,7 +100,6 @@ const createCloudBody = z
   .object({
     orgId: z.string().optional(),
     projectId: z.string().optional(),
-    projectName: z.string().optional(),
     workspaceName: z.string().optional(),
     repoUrl: z.string().optional(),
     repoName: z.string().optional(),
@@ -358,7 +357,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         const workspaceId = newWorkspaceId()
         const projectId = body.projectId?.trim() || workspaceId
         const displayName =
-          body.workspaceName?.trim() || body.projectName?.trim() || body.repoName?.trim() || workspaceId
+          body.workspaceName?.trim() || body.repoName?.trim() || workspaceId
         const directory = body.remoteDirectory?.trim() || "/workspace"
         const homeRegion = normalizeClaxedoRegion(undefined, options.defaultHomeRegion)
 
