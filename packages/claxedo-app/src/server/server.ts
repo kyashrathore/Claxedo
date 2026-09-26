@@ -11,7 +11,7 @@ import { createProviderConnectApi } from "./provider-connect"
 import { createProviderCatalogsApi } from "./provider-catalogs"
 import { createFoldersApi } from "./folders"
 import type { ServerConfig } from "./config"
-import { isRetryable, toAppError } from "./errors"
+import { isRetryableServerError, toAppError } from "./errors"
 import { createEventIntake } from "./event-intake"
 import type { ConnectionState } from "./events"
 import { createGitApi } from "./git"
@@ -44,7 +44,7 @@ function createQueryClient() {
       queries: {
         staleTime: Number.POSITIVE_INFINITY,
         gcTime: QUERY_GC_TIME_MS,
-        retry: (failures, error) => failures < QUERY_RETRY_LIMIT && isRetryable(error),
+        retry: (failures, error) => failures < QUERY_RETRY_LIMIT && isRetryableServerError(error),
         refetchOnWindowFocus: false,
         refetchOnReconnect: false,
       },

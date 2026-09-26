@@ -153,7 +153,11 @@ export function hostedOperationError(operation: string, error: unknown): ServerE
   return new ServerError({ class: "network", message: `${operation} could not reach the account's control plane: ${message}`, cause: error })
 }
 
-export function isRetryable(error: unknown): boolean {
+export function contractMismatch(what: string): ServerError {
+  return new ServerError({ class: "internal", message: `The ${what} answer does not match its contract` })
+}
+
+export function isRetryableServerError(error: unknown): boolean {
   return error instanceof ServerError ? error.retryable : false
 }
 

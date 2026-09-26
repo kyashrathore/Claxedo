@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/solid-query"
 import type { Account, AccountCheck, EffectiveAccounts, MachineLogin } from "./account-types"
 import type { AccountsApi } from "./api"
-import { responseError, ServerError } from "./errors"
+import { contractMismatch, responseError } from "./errors"
 import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
 import { jsonInit, withQuery, type Transport } from "./transport"
@@ -17,16 +17,12 @@ async function unlessUnsupported(transport: Transport, path: string): Promise<un
   return response.json()
 }
 
-function invalid(what: string): ServerError {
-  return new ServerError({ class: "internal", message: `The ${what} answer does not match its contract` })
-}
-
-async function readMachineLogins(transport: Transport, query: { readonly harness?: string; readonly fresh?: boolean }): Promise<readonly MachineLogin[]> {
+async function fetchMachineLogins(transport: Transport, query: { readonly harness?: string; readonly fresh?: boolean }): Promise<readonly MachineLogin[]> {
   const path = withQuery(`${CREDENTIALS_PATH}/machine-logins`, { harness: query.harness, fresh: query.fresh ? 1 : undefined })
   const body = await unlessUnsupported(transport, path)
   if (body === undefined) return []
   const logins = rowsFromWire(body, "machine_logins", machineLoginFromWire)
-  if (!logins) throw invalid("machine login")
+  if (!logins) throw contractMismatch("machine login")
   return logins
 }
 
@@ -40,7 +36,7 @@ export function accountQueries(transport: Transport) {
       if (body === undefined) return { kind: "unsupported" }
       return { kind: "listed", accounts: rowsFromWire(body, "credentials", accountFromWire) ?? [] }
     })
-  const machineLogins = (): FetchQuery<readonly MachineLogin[]> => fetchQuery(queryKeys.machineLogins(server), () => readMachineLogins(transport, {}))
+  const machineLogins = (): FetchQuery<readonly MachineLogin[]> => fetchQuery(queryKeys.machineLogins(server), () => fetchMachineLogins(transport, {}))
   return { list, effective, machineLogins }
 }
 
@@ -63,12 +59,12 @@ export function createAccountsApi(transport: Transport, queryClient: QueryClient
     },
     check: async (id): Promise<AccountCheck> => {
       const check = accountCheckFromWire(await post(`/${encodeURIComponent(id)}/verify`, {}))
-      if (!check) throw invalid("account check")
+      if (!check) throw contractMismatch("account check")
       await changed()
       return check
     },
     checkMachineLogin: async (harness) => {
-      const logins = await readMachineLogins(transport, { harness, fresh: true })
+      const logins = await fetchMachineLogins(transport, { harness, fresh: true })
       queryClient.setQueryData<readonly MachineLogin[]>(queryKeys.machineLogins(server), (current) => [
         ...(current ?? []).filter((login) => login.harness !== harness),
         ...logins,
@@ -76,7 +72,7 @@ export function createAccountsApi(transport: Transport, queryClient: QueryClient
       return logins
     },
     rescan: async () => {
-      const logins = await readMachineLogins(transport, { fresh: true })
+      const logins = await fetchMachineLogins(transport, { fresh: true })
       queryClient.setQueryData<readonly MachineLogin[]>(queryKeys.machineLogins(server), logins)
       await queryClient.invalidateQueries({ queryKey: queryKeys.accounts(server), predicate: (query) => query.queryKey[3] !== "machine-logins" })
     },

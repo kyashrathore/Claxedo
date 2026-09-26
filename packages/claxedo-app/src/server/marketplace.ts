@@ -1,6 +1,6 @@
 import type { QueryClient } from "@tanstack/solid-query"
 import type { MarketplaceApi } from "./api"
-import { responseError, ServerError } from "./errors"
+import { contractMismatch, responseError, ServerError } from "./errors"
 import { fetchQuery } from "./fetch-query"
 import type { ProjectId } from "./ids"
 import type {
@@ -35,18 +35,14 @@ export class PluginSourceError extends ServerError {
   }
 }
 
-function invalid(what: string): ServerError {
-  return new ServerError({ class: "internal", message: `The ${what} answer does not match its contract` })
-}
-
 function catalogPath(projectId: string | undefined, refresh: boolean) {
   const project = projectId ? `/projects/${encodeURIComponent(projectId)}` : ""
   return `${PLUGINS_PATH}${project}${refresh ? "/refresh" : ""}`
 }
 
-async function readCatalog(transport: Transport, projectId: string | undefined, refresh: boolean) {
+async function readPluginCatalog(transport: Transport, projectId: string | undefined, refresh: boolean) {
   const catalog = marketplaceCatalogFromWire(await transport.json(catalogPath(projectId, refresh)))
-  if (!catalog) throw invalid("plugin catalog")
+  if (!catalog) throw contractMismatch("plugin catalog")
   return catalog
 }
 
@@ -61,18 +57,18 @@ export function marketplaceQueries(transport: Transport) {
   return {
     catalog: (projectId?: ProjectId) =>
       fetchQuery<MarketplaceCatalog>(queryKeys.marketplace(server, projectId), () =>
-        readCatalog(transport, projectId, false),
+        readPluginCatalog(transport, projectId, false),
       ),
     sources: () =>
       fetchQuery<readonly PluginSourceRecord[]>(queryKeys.marketplaceSources(server), async () => {
         const sources = pluginSourcesFromWire(await transport.json(`${PLUGINS_PATH}/sources`))
-        if (!sources) throw invalid("plugin source list")
+        if (!sources) throw contractMismatch("plugin source list")
         return sources
       }),
     skill: (request: PluginSkillRequest) =>
       fetchQuery<PluginSkillDocument>(queryKeys.marketplaceSkill(server, request), async () => {
         const document = pluginSkillFromWire(await transport.json(skillPath(request)))
-        if (!document) throw invalid("plugin skill")
+        if (!document) throw contractMismatch("plugin skill")
         return document
       }),
     machineInstalled: () =>
@@ -95,7 +91,7 @@ async function postSource(transport: Transport, input: unknown): Promise<PluginS
     throw new PluginSourceError(await responseError(response, "POST plugin source"), sourceDiagnosticsFromWire(body))
   }
   const source = pluginSourceFromWire(((await response.json()) as { source?: unknown }).source)
-  if (!source) throw invalid("plugin source")
+  if (!source) throw contractMismatch("plugin source")
   return source
 }
 
@@ -107,7 +103,7 @@ function createChanges(transport: Transport, queryClient: QueryClient) {
   }
   const changed = async (body: unknown): Promise<PluginChange> => {
     const change = pluginChangeFromWire(body)
-    if (!change) throw invalid("plugin change")
+    if (!change) throw contractMismatch("plugin change")
     queryClient.setQueriesData<MarketplaceCatalog>({ queryKey: queryKeys.marketplaceAll(server) }, (catalog) =>
       catalog ? { ...catalog, revision: change.revision } : catalog,
     )
@@ -124,7 +120,7 @@ export function createMarketplaceApi(transport: Transport, queryClient: QueryCli
   const { refreshAll, post } = createChanges(transport, queryClient)
   return {
     refresh: async (projectId) => {
-      const catalog = await readCatalog(transport, projectId, true)
+      const catalog = await readPluginCatalog(transport, projectId, true)
       queryClient.setQueryData(queryKeys.marketplace(server, projectId), catalog)
       return catalog
     },

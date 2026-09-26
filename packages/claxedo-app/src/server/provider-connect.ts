@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/solid-query"
 import { readString } from "../lib/record"
 import { ask } from "./answer"
-import { ServerError } from "./errors"
+import { contractMismatch } from "./errors"
 import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
 import { jsonInit, withQuery, type Transport } from "./transport"
@@ -53,7 +53,7 @@ function methodsOf(value: unknown): ProviderAuthMethod[] {
 }
 
 function authMethodsOf(body: unknown): ProviderAuthMethods {
-  if (!body || typeof body !== "object" || Array.isArray(body)) throw new ServerError({ class: "internal", message: "The provider authentication answer does not match its contract" })
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw contractMismatch("provider authentication")
   return Object.fromEntries(Object.entries(body).map(([providerId, methods]) => [providerId, methodsOf(methods)]))
 }
 
