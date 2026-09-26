@@ -1,5 +1,5 @@
 import { connectSubject, connectVars } from "@/lib/harness-catalog"
-import { ClaxedoIconButton as IconButton, useDialog, Dialog } from "@/ui"
+import { ClaxedoIconButton as IconButton, useDialog, Dialog, DialogBody } from "@/ui"
 import { CONTEXT_COPY, type ConnectFormInput } from "../connect-form"
 import { useAccountsText } from "../i18n"
 import { ProviderConnectForm } from "./connect-form"
@@ -29,8 +29,8 @@ function ConnectCard(props: ConnectFormInput & { readonly onClose: () => void })
 export function DialogProviderConnect(props: ConnectFormInput) {
   const dialog = useDialog()
   return (
-    <Dialog size="normal" transition flush fit class="claxedo-modal-backdrop" aria-label={props.context.vendor}>
-      <div class="flex max-h-[80vh] min-h-0 flex-col">
+    <Dialog fit class="claxedo-modal-backdrop" aria-label={props.context.vendor}>
+      <DialogBody class="flex max-h-[80vh] min-h-0 flex-col">
         <ConnectCard
           {...props}
           onConnected={async () => {
@@ -39,7 +39,7 @@ export function DialogProviderConnect(props: ConnectFormInput) {
           }}
           onClose={() => dialog.close()}
         />
-      </div>
+      </DialogBody>
     </Dialog>
   )
 }

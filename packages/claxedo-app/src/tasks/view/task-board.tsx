@@ -1,5 +1,5 @@
 import { For, Show, createSignal, type Accessor, type JSX } from "solid-js"
-import { IconButton } from "@/ui"
+import { Icon, IconButton } from "@/ui"
 import { isTaskCreateStatus, type TaskCreateStatus, type TaskStatus, type TaskSummary } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
 import type { MorePages } from "../data/queries"
@@ -100,7 +100,7 @@ function ColumnHead(props: { readonly status: TaskStatus; readonly count: number
       <Show when={isTaskCreateStatus(props.status) && props.board.onCreate ? props.board.onCreate : undefined}>
         {(create) => (
           <IconButton
-            icon="plus-small"
+            icon={<Icon name="plus-small" size="small" />}
             size="small"
             variant="ghost"
             data-testid={`tasks-board-create-${props.status}`}

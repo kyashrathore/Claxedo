@@ -1,7 +1,7 @@
 import { batch, createSignal, For } from "solid-js"
 import { createStore, produce, type SetStoreFunction } from "solid-js/store"
 import { toAppError, useServer } from "@/server"
-import { ClaxedoIconButton as IconButton, showToast, useDialog, Button, Dialog, ProviderIcon, TextField } from "@/ui"
+import { ClaxedoIconButton as IconButton, showToast, useDialog, Button, Dialog, Icon, ProviderIcon, TextField, DialogBody, DialogHeader, DialogTitle } from "@/ui"
 import { headerRow, modelRow, validateCustomProvider, type FormState } from "../custom-provider"
 import { useAccountsText, type AccountsKey } from "../i18n"
 
@@ -44,16 +44,17 @@ function PairRows(props: { readonly list: RowList; readonly form: FormState; rea
         {(entry, index) => (
           <div class="flex gap-2 items-start" data-row={entry.row}>
             <div class="flex-1">
-              <TextField label={t(copy().first)} hideLabel placeholder={t(copy().firstHint)} value={entry.a} onChange={(value) => set(index(), 0, value)} validationState={entry.errA ? "invalid" : undefined} error={entry.errA} />
+              <TextField label={t(copy().first)} hideLabel placeholder={t(copy().firstHint)} value={entry.a} onChange={(value) => set(index(), 0, value)} invalid={!!entry.errA} error={entry.errA} />
             </div>
             <div class="flex-1">
-              <TextField label={t(copy().second)} hideLabel placeholder={t(copy().secondHint)} value={entry.b} onChange={(value) => set(index(), 1, value)} validationState={entry.errB ? "invalid" : undefined} error={entry.errB} />
+              <TextField label={t(copy().second)} hideLabel placeholder={t(copy().secondHint)} value={entry.b} onChange={(value) => set(index(), 1, value)} invalid={!!entry.errB} error={entry.errB} />
             </div>
             <IconButton type="button" icon="trash" variant="ghost" class="mt-1.5" onClick={() => remove(index())} disabled={rows().length <= 1} aria-label={t(copy().remove)} />
           </div>
         )}
       </For>
-      <Button type="button" size="small" variant="ghost" icon="plus-small" onClick={add} class="self-start">
+      <Button type="button" size="small" variant="ghost" onClick={add} class="self-start">
+        <Icon name="plus-small" size="small" />
         {t(copy().add)}
       </Button>
     </div>
@@ -68,9 +69,9 @@ function ProviderFields(props: { readonly form: FormState; readonly setForm: Set
   }
   return (
     <div class="flex flex-col gap-4">
-      <TextField autofocus label={t("provider.custom.field.providerID.label")} placeholder={t("provider.custom.field.providerID.placeholder")} description={t("provider.custom.field.providerID.description")} value={props.form.providerId} onChange={(value) => set("providerId", value)} validationState={props.form.err.providerId ? "invalid" : undefined} error={props.form.err.providerId} />
-      <TextField label={t("provider.custom.field.name.label")} placeholder={t("provider.custom.field.name.placeholder")} value={props.form.name} onChange={(value) => set("name", value)} validationState={props.form.err.name ? "invalid" : undefined} error={props.form.err.name} />
-      <TextField label={t("provider.custom.field.baseURL.label")} placeholder={t("provider.custom.field.baseURL.placeholder")} value={props.form.baseURL} onChange={(value) => set("baseURL", value)} validationState={props.form.err.baseURL ? "invalid" : undefined} error={props.form.err.baseURL} />
+      <TextField autofocus label={t("provider.custom.field.providerID.label")} placeholder={t("provider.custom.field.providerID.placeholder")} description={t("provider.custom.field.providerID.description")} value={props.form.providerId} onChange={(value) => set("providerId", value)} invalid={!!props.form.err.providerId} error={props.form.err.providerId} />
+      <TextField label={t("provider.custom.field.name.label")} placeholder={t("provider.custom.field.name.placeholder")} value={props.form.name} onChange={(value) => set("name", value)} invalid={!!props.form.err.name} error={props.form.err.name} />
+      <TextField label={t("provider.custom.field.baseURL.label")} placeholder={t("provider.custom.field.baseURL.placeholder")} value={props.form.baseURL} onChange={(value) => set("baseURL", value)} invalid={!!props.form.err.baseURL} error={props.form.err.baseURL} />
       <TextField label={t("provider.custom.field.apiKey.label")} placeholder={t("provider.custom.field.apiKey.placeholder")} description={t("provider.custom.field.apiKey.description")} value={props.form.apiKey} onChange={(value) => set("apiKey", value)} />
     </div>
   )
@@ -96,7 +97,7 @@ function useSave(props: { readonly existing: ReadonlySet<string>; readonly onSav
       await server.providerConnect.saveCustomProvider(output.result)
       await props.onSaved()
       dialog.close()
-      showToast({ variant: "success", icon: "circle-check", title: t("provider.connect.toast.connected.title", { vendor: output.result.config.name }) })
+      showToast({ variant: "success", icon: <Icon name="circle-check" />, title: t("provider.connect.toast.connected.title", { vendor: output.result.config.name }) })
     } catch (error) {
       showToast({ title: t("common.requestFailed"), description: toAppError(error).message })
     } finally {
@@ -112,8 +113,13 @@ export function DialogCustomProvider(props: { readonly existing: ReadonlySet<str
   const [form, setForm] = createStore<FormState>({ providerId: "", name: "", baseURL: "", apiKey: "", models: [modelRow()], headers: [headerRow()], err: {} })
   const { saving, save } = useSave(props, form, setForm)
   return (
-    <Dialog title={<IconButton tabIndex={-1} icon="arrow-left" variant="ghost" onClick={() => dialog.close()} aria-label={t("common.goBack")} />} transition>
-      <div class="flex flex-col gap-6 overflow-y-auto max-h-[60vh]">
+    <Dialog size="large" fit>
+      <DialogHeader>
+        <DialogTitle>
+          <IconButton tabIndex={-1} icon="arrow-left" variant="ghost" onClick={() => dialog.close()} aria-label={t("common.goBack")} />
+        </DialogTitle>
+      </DialogHeader>
+      <DialogBody class="flex flex-col gap-6 overflow-y-auto max-h-[60vh] px-4 pb-4">
         <div class="flex gap-4 items-center">
           <ProviderIcon id="synthetic" class="size-5 shrink-0 icon-strong-base" />
           <div class="text-16-medium text-text-strong">{t("provider.custom.title")}</div>
@@ -129,11 +135,11 @@ export function DialogCustomProvider(props: { readonly existing: ReadonlySet<str
           <ProviderFields form={form} setForm={setForm} />
           <PairRows list="models" form={form} setForm={setForm} />
           <PairRows list="headers" form={form} setForm={setForm} />
-          <Button class="w-auto self-start" type="submit" size="large" variant="primary" disabled={saving()}>
+          <Button class="w-auto self-start" type="submit" size="large" variant="contrast" disabled={saving()}>
             {saving() ? t("common.saving") : t("common.submit")}
           </Button>
         </form>
-      </div>
+      </DialogBody>
     </Dialog>
   )
 }

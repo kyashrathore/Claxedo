@@ -1,5 +1,6 @@
 import { Show } from "solid-js"
-import { ClaxedoIcon as Icon, FileIcon, getDirectory, getFilename } from "@/ui"
+import { ClaxedoIcon as Icon, FileIcon } from "@/ui"
+import { getDirectory, getFilename } from "@/ui/utils"
 import type { AtOption } from "./slash-popover"
 
 export function AtOptionRow(props: {

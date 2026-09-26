@@ -1,4 +1,4 @@
-import { checksum } from "@/ui"
+import { checksum } from "@/ui/utils"
 import DOMPurify from "dompurify"
 import { transcriptLinkUriPattern } from "./transcript-link"
 

@@ -1,4 +1,5 @@
-import { useFilteredList, getDirectory, getFilename, Button, FileIcon, Icon } from "@/ui"
+import { useFilteredList, Button, FileIcon, Icon } from "@/ui"
+import { getDirectory, getFilename } from "@/ui/utils"
 import { createSignal, For, onMount, Show, splitProps, type JSX } from "solid-js"
 import { installLineCommentStyles } from "./line-comment-styles"
 import { useTranscriptI18n } from "./i18n"
@@ -425,7 +426,7 @@ export const LineCommentEditor = (props: LineCommentEditorProps) => {
             <Button size="small" variant="ghost" onClick={split.onCancel}>
               {split.cancelLabel ?? i18n.t("transcript.common.cancel")}
             </Button>
-            <Button size="small" variant="primary" disabled={split.value.trim().length === 0} onClick={submit}>
+            <Button size="small" variant="contrast" disabled={split.value.trim().length === 0} onClick={submit}>
               {split.submitLabel ?? i18n.t("transcript.lineComment.submit")}
             </Button>
           </Show>

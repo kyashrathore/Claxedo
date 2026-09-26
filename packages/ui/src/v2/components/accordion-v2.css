@@ -13,7 +13,7 @@
   background: var(--accordion-v2-bg);
   border-radius: var(--radius-md);
   box-shadow: 0 0 0 0.5px var(--accordion-v2-border);
-  overflow: hidden;
+  overflow: clip;
 
   color: var(--accordion-v2-fg);
 
@@ -136,4 +136,23 @@
   to {
     height: 0;
   }
+}
+
+/* Kobalte writes the measured content box onto the accordion content element
+   itself, and only that element's own animation ever reads it. Unregistered
+   custom properties inherit, so each of those writes invalidated the inherited
+   style of the ENTIRE content subtree: for a mounted diff that is thousands of
+   elements of recalc for a value nothing below the content ever reads.
+   Registering them as non-inheriting keeps the animations working and confines
+   the invalidation to the one element that owns the value. */
+@property --kb-accordion-content-height {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --kb-accordion-content-width {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
 }

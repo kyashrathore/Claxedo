@@ -1,0 +1,82 @@
+Subject: styles: a foundation entry without the component sheets
+
+What: styles/foundation.css holds the layer order, colors, theme, base, utilities
+and animations; styles/index.css is the foundation plus every component sheet, as
+before; the Tailwind entry imports the foundation; component sheets are exported
+as `@opencode-ai/ui/<name>.css`.
+Why: an app loads only the sheets of the components it renders. The Claxedo app
+renders none of app-icon, context-menu, hover-card, inline-input, logo, progress,
+progress-circle, radio-group, tabs or typewriter, yet loaded all ten sheets.
+
+diff --git a/package.json b/package.json
+index db5869f31ca087106c7d3577119e0ada32242b07..f5ca456380d8361a7d4b4c360518b335c74fb2a0 100644
+--- a/package.json
++++ b/package.json
+@@ -52,6 +52,7 @@
+     "./icons/app": "./src/components/app-icons/types.ts",
+     "./fonts/*": "./src/assets/fonts/*",
+     "./audio/*": "./src/assets/audio/*",
++    "./*.css": "./src/components/*.css",
+     "./v2/*.css": "./src/v2/components/*.css",
+     "./v2/*": "./src/v2/components/*.tsx",
+     "./v2/styles/*": "./src/v2/styles/*"
+diff --git a/src/styles/foundation.css b/src/styles/foundation.css
+new file mode 100644
+index 0000000000000000000000000000000000000000..e25886ed58ee6e674fc3ac777332946583ea4d7e
+--- /dev/null
++++ b/src/styles/foundation.css
+@@ -0,0 +1,15 @@
++/* Tokens, base and utilities without the component sheets, for an app that
++   loads only the sheets of the components it renders. index.css adds them all. */
++@layer theme, base, components, utilities;
++
++@import "./colors.css" layer(theme);
++@import "./theme.css" layer(theme);
++
++@import "./base.css" layer(base);
++/* KaTeX's stylesheet (~30 KB raw incl. 21 @font-face rules) deliberately does
++   NOT load here: math only renders through the lazily-imported
++   context/marked-math.ts, which imports it, so the CSS ships with that lazy
++   chunk instead of blocking first paint in every consumer's eager bundle. */
++
++@import "./utilities.css" layer(utilities);
++@import "./animations.css" layer(utilities);
+diff --git a/src/styles/index.css b/src/styles/index.css
+index 1cfad42e09a83782960a0908f129d6d9b9a24cda..73671a8a67de7e37fdad0303dfee6f85a687a1f7 100644
+--- a/src/styles/index.css
++++ b/src/styles/index.css
+@@ -1,13 +1,4 @@
+-@layer theme, base, components, utilities;
+-
+-@import "./colors.css" layer(theme);
+-@import "./theme.css" layer(theme);
+-
+-@import "./base.css" layer(base);
+-/* KaTeX's stylesheet (~30 KB raw incl. 21 @font-face rules) deliberately does
+-   NOT load here: math only renders through the lazily-imported
+-   context/marked-math.ts, which imports it, so the CSS ships with that lazy
+-   chunk instead of blocking first paint in every consumer's eager bundle. */
++@import "./foundation.css";
+ 
+ @import "../components/accordion.css" layer(components);
+ @import "../components/animated-number.css" layer(components);
+@@ -53,6 +44,3 @@
+ @import "../components/toast.css" layer(components);
+ @import "../components/tooltip.css" layer(components);
+ @import "../components/typewriter.css" layer(components);
+-
+-@import "./utilities.css" layer(utilities);
+-@import "./animations.css" layer(utilities);
+diff --git a/src/styles/tailwind/index.css b/src/styles/tailwind/index.css
+index ea58deb120e9a5ce0cb57e6aae60354a50009267..8f72ac42dcc1c4a3f86690f6fa6366a6f3a7c064 100644
+--- a/src/styles/tailwind/index.css
++++ b/src/styles/tailwind/index.css
+@@ -20,7 +20,7 @@
+ @source not inline("[image:<filename>]");
+ @import "./utilities.css";
+ 
+-@import "../index.css";
++@import "../foundation.css";
+ 
+ @theme {
+   --*: initial;

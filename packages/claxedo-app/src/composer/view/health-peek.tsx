@@ -34,7 +34,7 @@ function HealthPeekRow(props: { onCheckAgain: () => void; text: string; action: 
       <div class="flex items-center gap-2 pb-2 text-13-regular">
         <Icon name="warning" class="size-4 m-0.5 shrink-0 text-icon-warning-base" />
         <span class="min-w-0 flex-1 truncate text-text-strong">{props.text}</span>
-        <Button size="small" variant="secondary" onClick={props.onCheckAgain}>
+        <Button size="small" variant="neutral" onClick={props.onCheckAgain}>
           {props.action}
         </Button>
       </div>

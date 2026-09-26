@@ -67,7 +67,6 @@ function PresetItems(props: {
           <For each={slotsOf(entry)}>
             {(slot) => (
               <DropdownMenu.Item
-                class="tsk-menu-item"
                 data-testid={`${props.testIdPrefix}-start-${props.task.id}-${entry.id}-${slot}`}
                 disabled={!startable()}
                 onSelect={() => props.offer.onStart({ presetId: entry.id, slot })}
@@ -99,7 +98,6 @@ function ContinueItem(props: {
           <DropdownMenu.Group>
             <DropdownMenu.GroupLabel>{t("tasks.start.continue")}</DropdownMenu.GroupLabel>
             <DropdownMenu.Item
-              class="tsk-menu-item"
               data-testid={`${props.testIdPrefix}-continue-${props.task.id}`}
               disabled={props.task.archivedAt !== null || props.offer.busy === true}
               onSelect={() => run()()}
@@ -123,7 +121,6 @@ function PresetSettingsItem(props: {
 }): JSX.Element {
   return (
     <DropdownMenu.Item
-      class="tsk-menu-item"
       data-testid={`${props.testIdPrefix}-preset-settings-${props.task.id}`}
       onSelect={() => props.offer.onOpenPresetSettings()}
     >
@@ -191,7 +188,7 @@ export function TaskStartControl(props: {
       <DropdownMenu placement="bottom-end" onOpenChange={props.onMenuOpenChange}>
         <DropdownMenu.Trigger
           as={IconButton}
-          icon="chevron-down"
+          icon={<Icon name="chevron-down" size="small" />}
           size="small"
           data-testid={`${props.testIdPrefix}-start-menu-${props.task.id}`}
           aria-label={t("tasks.start.withPreset", { title: props.task.title })}
@@ -217,7 +214,7 @@ export function TaskRowActions(props: {
     <DropdownMenu placement="bottom-end" onOpenChange={props.onMenuOpenChange}>
       <DropdownMenu.Trigger
         as={IconButton}
-        icon="three-dots"
+        icon={<Icon name="three-dots" size="small" />}
         size="small"
         variant="ghost"
         data-testid={`${props.testIdPrefix}-actions-${props.task.id}`}

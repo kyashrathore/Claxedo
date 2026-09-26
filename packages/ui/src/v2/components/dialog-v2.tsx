@@ -1,14 +1,16 @@
 import { Dialog as Kobalte } from "@kobalte/core/dialog"
 import { type ComponentProps, type JSXElement, type ParentProps, Show, children, splitProps } from "solid-js"
+import { useI18n } from "../../context/i18n"
 import "./dialog-v2.css"
 
 export interface DialogProps extends ParentProps {
-  size?: "normal" | "large" | "x-large"
+  size?: "normal" | "large" | "x-large" | "viewport"
   variant?: "default" | "settings"
   class?: ComponentProps<"div">["class"]
   containerClass?: ComponentProps<"div">["class"]
   classList?: ComponentProps<"div">["classList"]
   fit?: boolean
+  "aria-label"?: string
 }
 
 export interface DialogHeaderProps extends ParentProps {
@@ -51,6 +53,7 @@ export function DialogTitleGroup(props: DialogTitleGroupProps) {
 }
 
 export function DialogHeader(props: DialogHeaderProps) {
+  const i18n = useI18n()
   const [local] = splitProps(props, ["closeLabel", "hideClose", "children"])
   const hideClose = () => local.hideClose === true
 
@@ -58,7 +61,7 @@ export function DialogHeader(props: DialogHeaderProps) {
     <div data-slot="dialog-header" data-hide-close={hideClose() ? "" : undefined}>
       {local.children}
       {!hideClose() && (
-        <Kobalte.CloseButton data-slot="dialog-close-button" aria-label={local.closeLabel ?? "Close"}>
+        <Kobalte.CloseButton data-slot="dialog-close-button" aria-label={local.closeLabel ?? i18n.t("ui.common.close")}>
           <svg
             width="16"
             height="16"
@@ -80,7 +83,7 @@ export function DialogHeader(props: DialogHeaderProps) {
 }
 
 export function Dialog(props: DialogProps) {
-  const [local] = splitProps(props, ["size", "variant", "class", "containerClass", "classList", "fit", "children"])
+  const [local] = splitProps(props, ["size", "variant", "class", "containerClass", "classList", "fit", "children", "aria-label"])
 
   return (
     <div
@@ -92,6 +95,7 @@ export function Dialog(props: DialogProps) {
       <div data-slot="dialog-container" classList={{ "ui-dialog-container": true, [local.containerClass ?? ""]: !!local.containerClass }}>
         <Kobalte.Content
           data-slot="dialog-content"
+          aria-label={local["aria-label"]}
           classList={{
             "ui-dialog-content": true,
             ...local.classList,

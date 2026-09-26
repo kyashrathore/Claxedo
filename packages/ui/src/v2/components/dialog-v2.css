@@ -20,8 +20,8 @@
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    width: 480px;
-    height: 368px;
+    width: min(calc(100vw - 16px), 480px);
+    height: min(calc(100vh - 16px), 368px);
     background: var(--v2-background-bg-layer-01);
     box-shadow: var(--v2-elevation-overlay);
     border-radius: var(--radius-md);
@@ -109,8 +109,8 @@
           width: 20px;
           height: 20px;
           margin-top: -2px;
-          margin-right: -2px;
-          margin-left: auto;
+          margin-inline-end: -2px;
+          margin-inline-start: auto;
           border-radius: var(--radius-sm);
           flex-shrink: 0;
           cursor: pointer;
@@ -155,9 +155,25 @@
     }
   }
 
+  &[data-size="large"] .ui-dialog-container {
+    width: min(calc(100vw - 32px), 640px);
+    height: min(calc(100vh - 32px), 480px);
+  }
+
+  &[data-size="x-large"] .ui-dialog-container {
+    width: min(calc(100vw - 32px), 980px);
+    height: min(calc(100vh - 92px), 600px);
+  }
+
+  &[data-size="viewport"] .ui-dialog-container {
+    width: min(calc(100vw - 64px), 1400px);
+    height: calc(100vh - 64px);
+  }
+
   &[data-fit] {
     .ui-dialog-container {
       height: auto;
+      max-height: min(calc(100vh - 16px), 368px);
 
       .ui-dialog-content {
         min-height: 0;
@@ -165,13 +181,11 @@
     }
   }
 
-  &[data-size="large"] .ui-dialog-container {
-    width: 640px;
-    height: 480px;
+  &[data-fit][data-size="large"] .ui-dialog-container {
+    max-height: min(calc(100vh - 32px), 480px);
   }
 
-  &[data-size="x-large"] .ui-dialog-container {
-    width: min(calc(100vw - 32px), 980px);
-    height: min(calc(100vh - 92px), 600px);
+  &[data-fit][data-size="x-large"] .ui-dialog-container {
+    max-height: min(calc(100vh - 92px), 600px);
   }
 }

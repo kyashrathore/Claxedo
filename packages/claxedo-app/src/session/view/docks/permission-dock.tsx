@@ -123,10 +123,10 @@ function PermissionFooter(props: {
               <Button variant="ghost" size="normal" disabled={props.busy} onClick={() => props.onDecide("reject")}>
                 {t("sessionScreen.permission.deny")}
               </Button>
-              <Button variant="secondary" size="normal" disabled={props.busy} onClick={() => props.onDecide("always")}>
+              <Button variant="neutral" size="normal" disabled={props.busy} onClick={() => props.onDecide("always")}>
                 {t("sessionScreen.permission.allowAlways")}
               </Button>
-              <Button variant="primary" size="normal" disabled={props.busy} onClick={() => props.onDecide("once")}>
+              <Button variant="contrast" size="normal" disabled={props.busy} onClick={() => props.onDecide("once")}>
                 {t("sessionScreen.permission.allowOnce")}
               </Button>
             </>
@@ -135,7 +135,7 @@ function PermissionFooter(props: {
           {(options) => (
             <For each={options()}>
               {(option) => (
-                <Button variant="secondary" size="normal" title={option.description} disabled={props.busy} onClick={() => props.onDecide({ optionId: option.id })}>
+                <Button variant="neutral" size="normal" title={option.description} disabled={props.busy} onClick={() => props.onDecide({ optionId: option.id })}>
                   {option.label}
                 </Button>
               )}

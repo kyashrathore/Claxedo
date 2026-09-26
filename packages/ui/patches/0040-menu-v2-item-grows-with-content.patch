@@ -1,0 +1,20 @@
+Subject: menu-v2: an item grows with its content
+
+What: the menu item's fixed 28px height becomes a 28px minimum.
+Why: a fixed height clips or overlaps any row whose content wraps: a label
+longer than the panel, a description line under the label, a caveat. The
+row's padding, alignment and single-line height are unchanged.
+
+diff --git a/src/v2/components/menu-v2.css b/src/v2/components/menu-v2.css
+index 8d4622aa19..bc5db3abb0 100644
+--- a/src/v2/components/menu-v2.css
++++ b/src/v2/components/menu-v2.css
+@@ -51,7 +51,7 @@
+   flex-direction: row;
+   align-items: center;
+   gap: 8px;
+-  height: 28px;
++  min-height: 28px;
+   padding: 0 12px;
+   background: transparent;
+   border-radius: var(--radius-sm);

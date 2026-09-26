@@ -1,7 +1,7 @@
 import { Show, type JSX } from "solid-js"
 import type { ConfigurationSlot, SessionReference, TaskSessionLinkView, TaskStatus } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
-import { Button, IconButton } from "@/ui"
+import { Button, Icon, IconButton } from "@/ui"
 import type { TaskStartOffer } from "../data/start"
 import { tasksDictionary } from "../i18n"
 import { taskKey, type TaskDetailView } from "../model"
@@ -83,7 +83,7 @@ function SaveRow(props: TaskDetailProps): JSX.Element {
         </Button>
         <Button
           size="small"
-          variant="primary"
+          variant="contrast"
           data-testid="task-detail-save"
           disabled={props.busy}
           onClick={() => props.onSave()}
@@ -127,10 +127,9 @@ function Crumbs(props: TaskDetailProps): JSX.Element {
       <SaveRow {...props} />
       <Show when={props.railCollapsed}>
         <IconButton
-          icon="chevron-double-left"
+          icon={<Icon name="chevron-double-left" size="small" />}
           size="small"
-          variant="ghost"
-          data-icon-interaction="subdued"
+          variant="ghost-muted"
           data-testid="task-detail-rail-expand"
           aria-label={t("tasks.detail.showProperties")}
           aria-expanded={false}

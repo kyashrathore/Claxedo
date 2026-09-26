@@ -197,7 +197,7 @@
 .ui-button-v2[data-variant="loading"] {
   background: var(--v2-background-bg-layer-02);
   color: var(--v2-text-text-base);
-  box-shadow: var(--shadow-xxs-border);
+  box-shadow: inset 0 0 0 0.5px var(--v2-border-border-muted);
   cursor: default;
   pointer-events: none;
 }

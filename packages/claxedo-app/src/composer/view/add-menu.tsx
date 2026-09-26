@@ -1,5 +1,5 @@
 import { For, Show, type Accessor, type JSX } from "solid-js"
-import { Icon, MenuV2 } from "@/ui"
+import { Icon, DropdownMenu } from "@/ui"
 import { COMPOSER_MENU_CLASS } from "./menu-metrics"
 
 const BUILD_AGENT = "build"
@@ -41,8 +41,8 @@ export function PromptAddMenu(props: {
   return (
     <>
       {props.fileAttachmentInput()}
-      <MenuV2 placement="top-start" gutter={8} fitViewport>
-        <MenuV2.Trigger
+      <DropdownMenu placement="top-start" gutter={8} fitViewport>
+        <DropdownMenu.Trigger
           data-action="prompt-add"
           type="button"
           aria-label={props.triggerLabel}
@@ -53,69 +53,69 @@ export function PromptAddMenu(props: {
           class="flex size-7 shrink-0 items-center justify-center rounded-md p-[6px] text-v2-icon-icon-muted transition-colors duration-150 hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-icon-icon-base disabled:pointer-events-none disabled:opacity-50 data-[expanded]:bg-v2-overlay-simple-overlay-hover data-[expanded]:text-v2-icon-icon-base"
         >
           <Icon name="plus" size="small" />
-        </MenuV2.Trigger>
-        <MenuV2.Portal>
-          <MenuV2.Content
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content
             class={`${COMPOSER_MENU_CLASS} overflow-y-auto`}
             style={{ "max-height": "min(420px, var(--kb-popper-content-available-height, 420px))" }}
           >
-            <MenuV2.Group>
-              <MenuV2.GroupLabel>Add</MenuV2.GroupLabel>
-              <MenuV2.Item
+            <DropdownMenu.Group>
+              <DropdownMenu.GroupLabel>Add</DropdownMenu.GroupLabel>
+              <DropdownMenu.Item
                 data-action="prompt-attach"
                 shortcut={props.attachKeybind || undefined}
                 onSelect={props.onAttach}
               >
                 <span class="truncate">{props.attachLabel}</span>
-              </MenuV2.Item>
-              <MenuV2.Item data-action="prompt-commands" shortcut="/" onSelect={props.onCommands}>
+              </DropdownMenu.Item>
+              <DropdownMenu.Item data-action="prompt-commands" shortcut="/" onSelect={props.onCommands}>
                 <span class="truncate">{props.commandsLabel}</span>
-              </MenuV2.Item>
-              <MenuV2.Item data-action="prompt-context" shortcut="@" onSelect={props.onContext}>
+              </DropdownMenu.Item>
+              <DropdownMenu.Item data-action="prompt-context" shortcut="@" onSelect={props.onContext}>
                 <span class="truncate">{props.contextLabel}</span>
-              </MenuV2.Item>
-              <MenuV2.Item data-action="prompt-goal" disabled={props.goalDisabled()} onSelect={props.onGoal}>
+              </DropdownMenu.Item>
+              <DropdownMenu.Item data-action="prompt-goal" disabled={props.goalDisabled()} onSelect={props.onGoal}>
                 <span class="truncate">{props.goalLabel}</span>
-              </MenuV2.Item>
-              <MenuV2.Item data-action="prompt-shell-mode" shortcut="!" onSelect={props.onEnterShell}>
+              </DropdownMenu.Item>
+              <DropdownMenu.Item data-action="prompt-shell-mode" shortcut="!" onSelect={props.onEnterShell}>
                 <span class="truncate">{props.shellLabel}</span>
-              </MenuV2.Item>
-            </MenuV2.Group>
+              </DropdownMenu.Item>
+            </DropdownMenu.Group>
             <Show when={planAgents()}>
               {(agents) => (
                 <>
-                  <MenuV2.Separator />
-                  <MenuV2.CheckboxItem
+                  <DropdownMenu.Separator />
+                  <DropdownMenu.CheckboxItem
                     data-action="prompt-plan-mode"
                     checked={props.currentAgentName() === agents().on}
                     onChange={(checked) => props.onAgentSelect(checked ? agents().on : agents().off)}
                   >
                     <span class="truncate">{props.planModeLabel}</span>
-                  </MenuV2.CheckboxItem>
+                  </DropdownMenu.CheckboxItem>
                 </>
               )}
             </Show>
             <Show when={showAgentRadioGroup()}>
-              <MenuV2.Separator />
-              <MenuV2.RadioGroup
+              <DropdownMenu.Separator />
+              <DropdownMenu.RadioGroup
                 value={props.currentAgentName()}
                 onChange={(value) => {
                   if (value && value !== props.currentAgentName()) props.onAgentSelect(value)
                 }}
               >
-                <MenuV2.GroupLabel>{props.agentGroupLabel}</MenuV2.GroupLabel>
+                <DropdownMenu.GroupLabel>{props.agentGroupLabel}</DropdownMenu.GroupLabel>
                 <For each={props.agentNames()}>
                   {(name) => (
-                    <MenuV2.RadioItem data-action="prompt-agent" value={name} closeOnSelect>
+                    <DropdownMenu.RadioItem data-action="prompt-agent" value={name} closeOnSelect>
                       <span class="truncate capitalize">{name}</span>
-                    </MenuV2.RadioItem>
+                    </DropdownMenu.RadioItem>
                   )}
                 </For>
-              </MenuV2.RadioGroup>
+              </DropdownMenu.RadioGroup>
             </Show>
-          </MenuV2.Content>
-        </MenuV2.Portal>
-      </MenuV2>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu>
     </>
   )
 }

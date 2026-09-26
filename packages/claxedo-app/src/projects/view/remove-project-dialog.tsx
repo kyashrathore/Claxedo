@@ -1,7 +1,7 @@
 import { Show, type Component } from "solid-js"
 import { createFlow, runFlow } from "@/lib/flow"
 import { toAppError, type AppError, type ProjectId } from "@/server"
-import { Dialog, useDialog, Button } from "@/ui"
+import { Dialog, useDialog, Button, DialogBody, DialogHeader, DialogTitle } from "@/ui"
 import { useProjectsText, type ProjectsText } from "../i18n"
 import { useProjectCommands } from "../store"
 
@@ -29,8 +29,11 @@ export const RemoveProjectDialog: Component<{ id: ProjectId; name: string; onRem
   }
 
   return (
-    <Dialog title={t("projects.remove.title")} fit>
-      <div class="flex min-w-[340px] max-w-[440px] flex-col gap-4">
+    <Dialog fit>
+      <DialogHeader>
+        <DialogTitle>{t("projects.remove.title")}</DialogTitle>
+      </DialogHeader>
+      <DialogBody class="flex min-w-[340px] max-w-[440px] flex-col gap-4 px-4 pb-4">
         <p class="whitespace-pre-line text-13-regular text-text-weak">{t("projects.remove.confirm", { name: props.name })}</p>
         <Show when={failure()}>
           {(message) => (
@@ -43,11 +46,11 @@ export const RemoveProjectDialog: Component<{ id: ProjectId; name: string; onRem
           <Button type="button" variant="ghost" onClick={() => dialog.close()}>
             {t("projects.cancel")}
           </Button>
-          <Button type="button" variant="primary" disabled={removing()} onClick={() => void remove()}>
+          <Button type="button" variant="contrast" disabled={removing()} onClick={() => void remove()}>
             {t("projects.remove")}
           </Button>
         </div>
-      </div>
+      </DialogBody>
     </Dialog>
   )
 }

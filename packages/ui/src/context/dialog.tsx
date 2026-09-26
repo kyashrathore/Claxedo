@@ -18,6 +18,7 @@ import {
 } from "solid-js"
 import { Dialog as Kobalte } from "@kobalte/core/dialog"
 import { makeEventListener } from "@solid-primitives/event-listener"
+import "./dialog.css"
 
 type DialogElement = () => JSX.Element
 
@@ -138,10 +139,10 @@ function init() {
         pending = isPending
         return (
           <Kobalte
-            modal
+            modal={stack().at(-1)?.id === id}
             open={!closing()}
             onOpenChange={(open: boolean) => {
-              if (open) return
+              if (open || stack().at(-1)?.id !== id) return
               close(id)
             }}
           >

@@ -1,0 +1,121 @@
+Subject: select: class-keyed option spacing, chevron and indicator rules
+
+What: select-v2's listbox spaces options with `> .ui-select-v2-option +
+.ui-select-v2-option`, the chevron rotates on `.ui-select-v2-chevron` under the
+trigger's [data-expanded], and the selected mark shows on the indicator's class;
+the original select spaces `.ui-select-select-item` the same way.
+Why: `> *:not([role=presentation]) + *:not([role=presentation])` nested under two
+attribute-only compounds gives Blink's ancestor filter nothing to reject under any
+[data-component]/[data-slot] ancestors, so every element below flags its parent as
+affected by `+` rules. The transcript's virtual list sits under both: each row a
+scroll added or removed restyled the whole list, 11,664-14,192 elements over a
+3,000 px wheel scroll against 5,063-5,073 without the sheet. The chevron and mark
+rules keyed on `svg` under `[data-slot]` had the same shape.
+
+diff --git a/src/components/select.css b/src/components/select.css
+index 42eaa248d56bfe2f42307d2d43bcac1a71b5da9d..8adf8a352fa25ab5694f0ed044fb6419440f3cfd 100644
+--- a/src/components/select.css
++++ b/src/components/select.css
+@@ -120,7 +120,7 @@
+       outline: none;
+     }
+ 
+-    > *:not([role="presentation"]) + *:not([role="presentation"]) {
++    > .ui-select-select-item + .ui-select-select-item {
+       margin-top: 2px;
+     }
+   }
+diff --git a/src/v2/components/select-v2.css b/src/v2/components/select-v2.css
+index 5e1afec380b823b6b9014683f0686e352b6caa56..0a2f5c58e43e050c2766d784386d4b9f9e6b5da4 100644
+--- a/src/v2/components/select-v2.css
++++ b/src/v2/components/select-v2.css
+@@ -175,14 +175,12 @@
+   pointer-events: none;
+ }
+ 
+-[data-component="select-v2"] [data-slot="select-v2-chevron"] svg {
+-  display: block;
+-  flex: none;
++.ui-select-v2-chevron {
+   transform: rotate(180deg);
+   transform-origin: 50% 50%;
+ }
+ 
+-[data-component="select-v2"][data-expanded] [data-slot="select-v2-chevron"] svg {
++.ui-select-v2[data-expanded] .ui-select-v2-chevron {
+   transform: rotate(0deg);
+ }
+ 
+@@ -251,7 +249,7 @@
+     outline: none;
+   }
+ 
+-  > *:not([role="presentation"]) + *:not([role="presentation"]) {
++  > .ui-select-v2-option + .ui-select-v2-option {
+     margin-top: 2px;
+   }
+ }
+@@ -278,20 +276,11 @@
+   color: var(--menu-v2-accent);
+ }
+ 
+-[data-slot="select-v2-listbox"] [data-component="menu-v2-item"][data-selected] [data-slot="menu-v2-item-indicator"] {
++.ui-select-v2-option[data-selected] .ui-select-v2-option-indicator {
+   color: var(--menu-v2-accent);
+-}
+-
+-[data-slot="select-v2-listbox"]
+-  [data-component="menu-v2-item"][data-selected]
+-  [data-slot="menu-v2-item-indicator"]
+-  svg {
+   visibility: visible;
+ }
+ 
+-[data-slot="select-v2-listbox"]
+-  [data-component="menu-v2-item"]:not([data-selected])
+-  [data-slot="menu-v2-item-indicator"]
+-  svg {
++.ui-select-v2-option:not([data-selected]) .ui-select-v2-option-indicator {
+   visibility: hidden;
+ }
+diff --git a/src/v2/components/select-v2.tsx b/src/v2/components/select-v2.tsx
+index 2971a5ba3164577f200f7907bfd5eb99465305d6..a1377e959915c185330507933a4accfd90b50213 100644
+--- a/src/v2/components/select-v2.tsx
++++ b/src/v2/components/select-v2.tsx
+@@ -149,6 +149,7 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
+         <Kobalte.Item
+           {...itemProps}
+           data-component="menu-v2-item"
++          class="ui-select-v2-option"
+           onPointerEnter={() => move(itemProps.item.rawValue)}
+           onPointerMove={() => move(itemProps.item.rawValue)}
+           onFocus={() => move(itemProps.item.rawValue)}
+@@ -158,7 +159,7 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
+               ? local.children(itemProps.item.rawValue)
+               : labelFor(itemProps.item.rawValue)}
+           </Kobalte.ItemLabel>
+-          <Kobalte.ItemIndicator data-slot="menu-v2-item-indicator" forceMount>
++          <Kobalte.ItemIndicator data-slot="menu-v2-item-indicator" class="ui-select-v2-option-indicator" forceMount>
+             <CheckSmall />
+           </Kobalte.ItemIndicator>
+         </Kobalte.Item>
+@@ -171,7 +172,8 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
+       onOpenChange={(open) => {
+         local.onOpenChange?.(open)
+         if (!open) stop()
+-      }} classList={{ "ui-select-v2-root": true }}
++      }}
++      classList={{ "ui-select-v2-root": true }}
+     >
+       <Kobalte.Trigger
+         as="div"
+@@ -181,7 +183,8 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
+         data-numeric={local.numeric ? "" : undefined}
+         disabled={local.disabled}
+         data-disabled={local.disabled ? "" : undefined}
+-        classList={{ "ui-select-v2": true,
++        classList={{
++          "ui-select-v2": true,
+           ...local.classList,
+           [local.class ?? ""]: !!local.class,
+         }}

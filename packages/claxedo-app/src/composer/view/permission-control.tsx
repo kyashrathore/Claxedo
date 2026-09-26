@@ -4,7 +4,7 @@ import type { PermissionModeGroups, PermissionModeRow } from "../permission/perm
 import {
   type PermissionModeOption,
 } from "../permission/modes"
-import { ClaxedoIcon as Icon, ClaxedoIconV2 as BareIcon, MenuV2, Tooltip } from "@/ui"
+import { ClaxedoIcon as Icon, ClaxedoIconV2 as BareIcon, DropdownMenu, Tooltip } from "@/ui"
 
 export function PromptPermissionControl(props: {
   enabled: Accessor<boolean>
@@ -20,12 +20,12 @@ export function PromptPermissionControl(props: {
 
   return (
     <Show when={props.enabled()}>
-      <MenuV2 placement="top-start" gutter={8} fitViewport>
+      <DropdownMenu placement="top-start" gutter={8} fitViewport>
         <Tooltip
           placement="top"
           value={props.current()?.description ?? props.groups()?.harness.unavailable ?? props.label}
         >
-          <MenuV2.Trigger
+          <DropdownMenu.Trigger
             data-action="prompt-permission-mode"
             data-mode={props.current()?.id ?? ""}
             type="button"
@@ -49,14 +49,14 @@ export function PromptPermissionControl(props: {
               }}
             />
             <span data-slot="composer-control-label" class="truncate">{triggerText()}</span>
-          </MenuV2.Trigger>
+          </DropdownMenu.Trigger>
         </Tooltip>
-        <MenuV2.Portal>
-          <MenuV2.Content
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content
             class={`${COMPOSER_MENU_CLASS} overflow-y-auto`}
             style={{ "max-height": "min(420px, var(--kb-popper-content-available-height, 420px))" }}
           >
-            <Show when={props.groups()} fallback={<MenuV2.Item disabled>Resolving harness…</MenuV2.Item>}>
+            <Show when={props.groups()} fallback={<DropdownMenu.Item disabled>Resolving harness…</DropdownMenu.Item>}>
               {(groups) => (
                 <>
                   <Show
@@ -69,19 +69,19 @@ export function PromptPermissionControl(props: {
                       </p>
                     }
                   >
-                    <MenuV2.Group>
-                      <MenuV2.GroupLabel>{groups().harness.label}</MenuV2.GroupLabel>
+                    <DropdownMenu.Group>
+                      <DropdownMenu.GroupLabel>{groups().harness.label}</DropdownMenu.GroupLabel>
                       <For each={groups().harness.rows}>
                         {(item) => <ModeRow row={item} current={props.current} onSelect={props.onSelect} />}
                       </For>
-                    </MenuV2.Group>
+                    </DropdownMenu.Group>
                   </Show>
                 </>
               )}
             </Show>
-          </MenuV2.Content>
-        </MenuV2.Portal>
-      </MenuV2>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu>
     </Show>
   )
 }
@@ -103,7 +103,7 @@ function ModeRow(props: {
   const caveat = () => text().caveat
 
   return (
-    <MenuV2.Item
+    <DropdownMenu.Item
       data-permission-mode-row
       data-mode={option().id}
       data-what={option().delivery.kind}
@@ -153,6 +153,6 @@ function ModeRow(props: {
           <BareIcon name="check-small" size="small" />
         </span>
       </span>
-    </MenuV2.Item>
+    </DropdownMenu.Item>
   )
 }

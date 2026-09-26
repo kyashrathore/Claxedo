@@ -2,7 +2,8 @@ import { createMemo, For, Show, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
 import { Tooltip as KobalteTooltip } from "@kobalte/core/tooltip"
-import { ClaxedoIcon as Icon, Accordion, DiffChanges, StickyAccordionHeader, TextReveal, TextShimmer, Spinner, getDirectory, getFilename, useFileComponent } from "@/ui"
+import { ClaxedoIcon as Icon, Accordion, DiffChanges, StickyAccordionHeader, TextReveal, TextShimmer, Spinner, useFileComponent } from "@/ui"
+import { getDirectory, getFilename } from "@/ui/utils"
 import { normalize } from "@/transcript"
 import type { SummaryDiff } from "./message-timeline.data"
 import type { TimelineTranslate } from "./model"
@@ -142,9 +143,6 @@ export function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[]; onUndo?: (
                           <div data-slot="session-turn-diff-meta">
                             <span>
                               <DiffChanges changes={diff} />
-                            </span>
-                            <span data-slot="session-turn-diff-chevron" class="ui-session-turn-diff-chevron">
-                              <Icon name="chevron-down" size="small" />
                             </span>
                           </div>
                         </div>

@@ -84,7 +84,7 @@ export function createPaletteSources(input: PaletteSourcesInput) {
   const files = useFileReads(input.placementId)
   const allowed = createMemo(() => (input.filesOnly() ? [] : paletteCommands(commands.options())))
   const commandEntries = createMemo(() =>
-    allowed().map((option) => commandEntry(option, t("shell.palette.group.commands"), commands.keybind(option.id) || undefined)),
+    allowed().map((option) => commandEntry(option, t("shell.palette.group.commands"), commands.keybindParts(option.id))),
   )
   const commandPicks = createMemo(() => {
     const byId = new Map(commandEntries().map((entry) => [entry.option?.id, entry]))

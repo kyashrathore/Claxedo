@@ -22,7 +22,7 @@ function CommitMenu(props: {
     <DropdownMenu>
       <DropdownMenu.Trigger
         as={Button}
-        variant="secondary"
+        variant="neutral"
         size="small"
         data-testid="source-control-commit-menu"
         aria-label={t("review.sourceControl.commitMenu")}
@@ -31,7 +31,7 @@ function CommitMenu(props: {
         <Icon name="chevron-down" size="small" />
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content class="z-[200]">
+        <DropdownMenu.Content>
           <DropdownMenu.Item disabled={!props.canCommit} onSelect={() => props.onCommit("commit")}>
             <SemanticIcon concept="commit" size="small" />
             {t("review.sourceControl.commit")}
@@ -82,7 +82,7 @@ export function CommitBox(props: {
       <div class="flex items-center gap-px">
         <Button
           data-testid="source-control-commit"
-          variant="secondary"
+          variant="neutral"
           size="small"
           disabled={!canCommit()}
           class="min-w-0 flex-1 rounded-r-none"

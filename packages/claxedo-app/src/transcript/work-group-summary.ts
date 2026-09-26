@@ -1,5 +1,6 @@
 import { canonicalToolName, type AgentToolPart } from "@claxedo/agent-runtime-contract"
-import { type IconProps, getFilename } from "@/ui"
+import { type IconProps } from "@/ui"
+import { getFilename } from "@/ui/utils"
 import type { TranscriptI18n } from "./i18n"
 import { genericToolIcon, toolActionPhrase } from "./basic-tool"
 import { clampLabel } from "./message-part-text"

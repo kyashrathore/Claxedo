@@ -1,9 +1,14 @@
+.ui-text-input-v2.text-input-v2--full-width {
+  width: 100%;
+}
+
 .ui-text-input-v2 {
   box-sizing: border-box;
   display: flex;
   flex-direction: row;
   align-items: stretch;
-  padding: 0 8px 0 0;
+  padding-block: 0;
+  padding-inline: 0 8px;
   gap: 8px;
   width: 280px;
   height: 28px;
@@ -64,7 +69,7 @@
   flex: none;
   align-items: center;
   justify-content: center;
-  padding-left: 8px;
+  padding-inline-start: 8px;
   color: var(--v2-icon-icon-muted);
 }
 
@@ -74,7 +79,7 @@
 }
 
 [data-component="text-input-v2"][data-leading-icon] .ui-text-input-v2-input {
-  padding-left: 0;
+  padding-inline-start: 0;
 }
 
 [data-component="text-input-v2"] .ui-text-input-v2-input {
@@ -82,7 +87,8 @@
   width: 100%;
   min-width: 0;
   height: 100%;
-  padding: 0 0 0 8px;
+  padding-block: 0;
+  padding-inline: 8px 0;
   margin: 0;
   border: 0;
   background: transparent;
@@ -165,7 +171,7 @@
   height: 28px;
   padding: 0;
   border-radius: var(--radius-md);
-  margin-right: -8px;
+  margin-inline-end: -8px;
 }
 
 [data-component="text-input-v2"][data-invalid]:not([data-disabled]) .ui-text-input-v2-input {

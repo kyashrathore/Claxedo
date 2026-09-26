@@ -66,7 +66,7 @@ export function KeybindingsSection() {
     <div class="settings-body">
       <div class="settings-toolbar">
         <TextField label={t("settings.keybindings.search")} hideLabel placeholder={t("settings.keybindings.search")} value={query()} onChange={setQuery} />
-        <Button size="small" variant="secondary" onClick={resetAll} disabled={!commands.overridden()}>{t("settings.keybindings.reset")}</Button>
+        <Button size="small" variant="neutral" onClick={resetAll} disabled={!commands.overridden()}>{t("settings.keybindings.reset")}</Button>
       </div>
       <For each={categories()}>
         {(category) => {

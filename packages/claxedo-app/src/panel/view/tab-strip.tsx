@@ -27,7 +27,7 @@ function AddTabMenu(): JSX.Element {
         <Icon name="plus-small" size="small" />
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content class="z-[200]">
+        <DropdownMenu.Content>
           <DropdownMenu.Item
             onSelect={() =>
               dialog.show(() => <DialogSelectFile mode="files" placementId={panel.placementId()} onOpenFile={openFile} />)

@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { Marked } from "marked"
-import { markedCodeSpanBoundary } from "./marked-code-span"
 import { markedTranscriptAutolink, transcriptLinkPrefixes } from "./marked"
 
 /**
@@ -23,7 +22,7 @@ test("the native renderer carries the same closed prefix list", () => {
   expect([...nativePrefixes].sort()).toEqual([...transcriptLinkPrefixes].sort())
 })
 
-const parser = new Marked(markedCodeSpanBoundary, markedTranscriptAutolink)
+const parser = new Marked(markedTranscriptAutolink)
 
 /**
  * The other half of the agreement, for the destination an author writes rather

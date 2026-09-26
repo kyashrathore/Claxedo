@@ -31,7 +31,7 @@ function SignedOut() {
       <Match when={offered()}>
         <div class="org-sign-in">
           <p class="org-note">{t("access.org.signedOut")}</p>
-          <Button size="small" variant="secondary" onClick={signIn}>
+          <Button size="small" variant="neutral" onClick={signIn}>
             {t("access.org.signIn")}
           </Button>
         </div>

@@ -1,0 +1,15 @@
+/* Tokens, base and utilities without the component sheets, for an app that
+   loads only the sheets of the components it renders. index.css adds them all. */
+@layer theme, base, components, utilities;
+
+@import "./colors.css" layer(theme);
+@import "./theme.css" layer(theme);
+
+@import "./base.css" layer(base);
+/* KaTeX's stylesheet (~30 KB raw incl. 21 @font-face rules) deliberately does
+   NOT load here: math only renders through the lazily-imported
+   context/marked-math.ts, which imports it, so the CSS ships with that lazy
+   chunk instead of blocking first paint in every consumer's eager bundle. */
+
+@import "./utilities.css" layer(utilities);
+@import "./animations.css" layer(utilities);

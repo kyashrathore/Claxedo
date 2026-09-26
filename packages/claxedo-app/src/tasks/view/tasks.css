@@ -92,7 +92,7 @@
   margin: 0;
 }
 
-.tsk-empty-action.ui-button {
+.tsk-empty-action.ui-button-v2 {
   margin-left: -8px;
 }
 
@@ -176,12 +176,6 @@
   min-width: 208px;
 }
 
-.tsk-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .tsk-menu-label {
   flex: 1 1 auto;
   min-width: 0;
@@ -194,12 +188,6 @@
   flex: none;
   color: var(--text-weak);
   font-size: var(--font-size-x-small);
-}
-
-.tsk-menu-check {
-  flex: none;
-  display: inline-flex;
-  color: var(--icon-base);
 }
 
 .tsk-menu-note {
@@ -224,13 +212,13 @@
   overflow: hidden;
 }
 
-.tsk-split > .ui-button,
-.tsk-split .ui-icon-button {
+.tsk-split > .ui-button-v2,
+.tsk-split .ui-icon-button-v2 {
   border-radius: 0;
   box-shadow: none;
 }
 
-.tsk-split .ui-icon-button {
+.tsk-split .ui-icon-button-v2 {
   width: 22px;
   border-left: 1px solid var(--tsk-hairline);
 }
@@ -248,7 +236,7 @@
 @media (hover: hover) and (pointer: fine) {
   .tsk-tr .tsk-row-tools,
   .tsk-card .tsk-row-tools,
-  .tsk-column-head .ui-icon-button {
+  .tsk-column-head .ui-icon-button-v2 {
     opacity: 0;
     transition: opacity 100ms linear;
   }
@@ -257,8 +245,8 @@
   .tsk-tr:focus-within .tsk-row-tools,
   .tsk-card:hover .tsk-row-tools,
   .tsk-card:focus-within .tsk-row-tools,
-  .tsk-column:hover .tsk-column-head .ui-icon-button,
-  .tsk-column-head:focus-within .ui-icon-button,
+  .tsk-column:hover .tsk-column-head .ui-icon-button-v2,
+  .tsk-column-head:focus-within .ui-icon-button-v2,
   .tsk-tr[data-tools-open] .tsk-row-tools,
   .tsk-card[data-tools-open] .tsk-row-tools {
     opacity: 1;
@@ -274,7 +262,7 @@
 @media (prefers-reduced-motion: reduce) {
   .tsk-tr .tsk-row-tools,
   .tsk-card .tsk-row-tools,
-  .tsk-column-head .ui-icon-button {
+  .tsk-column-head .ui-icon-button-v2 {
     transition: none;
   }
 }
@@ -319,7 +307,7 @@
   gap: 2px;
 }
 
-.tsk-filter-tag .ui-icon-button {
+.tsk-filter-tag .ui-icon-button-v2 {
   width: 16px;
   height: 16px;
   margin-right: -4px;
@@ -787,12 +775,12 @@
   margin: 0 0 2px;
 }
 
-.tsk-rail-action.ui-button {
+.tsk-rail-action.ui-button-v2 {
   align-self: flex-start;
   margin-left: -8px;
 }
 
-.tsk-destructive.ui-button {
+.tsk-destructive.ui-button-v2 {
   color: var(--text-diff-delete-base);
 }
 
@@ -872,19 +860,19 @@
   font-weight: var(--font-weight-medium);
 }
 
-.tsk-slot-head > .ui-button {
+.tsk-slot-head > .ui-button-v2 {
   margin-right: -8px;
 }
 
 .tsk-slot-notice,
-.tsk-slot-resend.ui-button {
+.tsk-slot-resend.ui-button-v2 {
   align-self: flex-start;
   margin: 0;
   color: var(--text-weak);
   font-size: var(--font-size-x-small);
 }
 
-.tsk-slot-resend.ui-button {
+.tsk-slot-resend.ui-button-v2 {
   margin-left: -8px;
 }
 
@@ -1034,7 +1022,7 @@
   padding: 2px 0;
 }
 
-.tsk-add .ui-input {
+.tsk-add [data-component="field-v2"] {
   flex: 1 1 auto;
   min-width: 0;
 }

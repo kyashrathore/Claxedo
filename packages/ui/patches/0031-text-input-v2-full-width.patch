@@ -1,0 +1,31 @@
+Subject: text input and textarea v2: a full-width modifier
+
+What: `text-input-v2--full-width` and `textarea-v2--full-width` size the control
+to its container, beside the 280px design width the sheets set.
+Why: the sheets load unlayered, so no layered utility can widen a control; every
+form field in the app fills its column, as the v1 text field (width: 100%) did.
+
+diff --git a/src/v2/components/text-input-v2.css b/src/v2/components/text-input-v2.css
+index 1bdf3c3b393e21bdc7384bef81eed1dc9f9d3c21..14278467663c2e78b004dca6d210ea9e973bf95a 100644
+--- a/src/v2/components/text-input-v2.css
++++ b/src/v2/components/text-input-v2.css
+@@ -1,3 +1,7 @@
++.ui-text-input-v2.text-input-v2--full-width {
++  width: 100%;
++}
++
+ .ui-text-input-v2 {
+   box-sizing: border-box;
+   display: flex;
+diff --git a/src/v2/components/textarea-v2.css b/src/v2/components/textarea-v2.css
+index 0e2446b9666fae880603586c37db8d67839cc995..c72b15d6a72346bb9dd9083fe6578ea868a785a4 100644
+--- a/src/v2/components/textarea-v2.css
++++ b/src/v2/components/textarea-v2.css
+@@ -1,3 +1,7 @@
++.ui-textarea-v2.textarea-v2--full-width {
++  width: 100%;
++}
++
+ .ui-textarea-v2 {
+   box-sizing: border-box;
+   display: flex;

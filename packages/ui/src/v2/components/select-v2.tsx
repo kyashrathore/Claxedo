@@ -30,7 +30,7 @@ const ChevronDown = () => (
 )
 
 const CheckSmall = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <svg class="ui-select-v2-option-check" width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <path
       d="M3.53564 8.17857L6.39279 11.75L12.4642 4.25"
       stroke="currentColor"
@@ -60,6 +60,8 @@ export type SelectV2Props<T> = Omit<
   numeric?: boolean
   children?: (item: T) => JSX.Element
   valueClass?: string
+  /** Attributes for the trigger button: its `id` for a label's `for`, its accessible name, test hooks. */
+  triggerProps?: Record<string, string | number | boolean | undefined>
 }
 
 export function SelectV2<T>(props: SelectV2Props<T>) {
@@ -81,6 +83,7 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
     "numeric",
     "disabled",
     "valueClass",
+    "triggerProps",
     "placement",
     "gutter",
     "sameWidth",
@@ -123,6 +126,7 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
     <Kobalte<T, { category: string; options: T[] }>
       {...others}
       multiple={false}
+      allowDuplicateSelectionEvents={false}
       disabled={local.disabled}
       data-component="select-v2-root"
       placement={local.placement ?? (inline() ? "bottom-end" : "bottom-start")}
@@ -148,6 +152,7 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
         <Kobalte.Item
           {...itemProps}
           data-component="menu-v2-item"
+          class="ui-select-v2-option"
           onPointerEnter={() => move(itemProps.item.rawValue)}
           onPointerMove={() => move(itemProps.item.rawValue)}
           onFocus={() => move(itemProps.item.rawValue)}
@@ -157,7 +162,7 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
               ? local.children(itemProps.item.rawValue)
               : labelFor(itemProps.item.rawValue)}
           </Kobalte.ItemLabel>
-          <Kobalte.ItemIndicator data-slot="menu-v2-item-indicator" forceMount>
+          <Kobalte.ItemIndicator data-slot="menu-v2-item-indicator" class="ui-select-v2-option-indicator" forceMount>
             <CheckSmall />
           </Kobalte.ItemIndicator>
         </Kobalte.Item>
@@ -170,22 +175,24 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
       onOpenChange={(open) => {
         local.onOpenChange?.(open)
         if (!open) stop()
-      }} classList={{ "ui-select-v2-root": true }}
+      }}
+      classList={{ "ui-select-v2-root": true }}
     >
       <Kobalte.Trigger
-        as="div"
+        {...local.triggerProps}
         data-component="select-v2"
         data-appearance={local.appearance ?? "base"}
         data-invalid={local.invalid ? "" : undefined}
         data-numeric={local.numeric ? "" : undefined}
         disabled={local.disabled}
         data-disabled={local.disabled ? "" : undefined}
-        classList={{ "ui-select-v2": true,
+        classList={{
+          "ui-select-v2": true,
           ...local.classList,
           [local.class ?? ""]: !!local.class,
         }}
       >
-        <div data-slot="select-v2-value">
+        <span data-slot="select-v2-value">
           <Kobalte.Value<T> data-slot="select-v2-value-text" class={local.valueClass} classList={{ "ui-select-v2-value-text": true }}>
             {(st) => {
               const selected = st.selectedOption()
@@ -193,7 +200,7 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
               return labelFor(selected)
             }}
           </Kobalte.Value>
-        </div>
+        </span>
         <span data-slot="select-v2-chevron" class="ui-select-v2-chevron" aria-hidden="true">
           <ChevronDown />
         </span>

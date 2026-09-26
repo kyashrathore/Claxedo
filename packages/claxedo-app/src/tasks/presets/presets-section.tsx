@@ -109,7 +109,7 @@ export function PresetsSection(): JSX.Element {
               {t("tasks.preset.showArchived")}
             </Switch>
             <Show when={listOffersCreate()}>
-              <Button variant="primary" size="small" data-testid="preset-list-create" onClick={create}>
+              <Button variant="contrast" size="small" data-testid="preset-list-create" onClick={create}>
                 {t("tasks.preset.new")}
               </Button>
             </Show>

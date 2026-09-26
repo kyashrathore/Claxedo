@@ -2,7 +2,7 @@ import { createSignal, For, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { failureMessage } from "@/lib/failure"
 import { useServer, type PluginCandidate, type PluginHarness } from "@/server"
-import { Button, Dialog, showToast, useDialog } from "@/ui"
+import { Button, Dialog, showToast, useDialog, DialogBody, DialogHeader, DialogTitle } from "@/ui"
 import { marketplaceDictionary } from "../i18n"
 import { pluginLabel } from "../model"
 import { InstallHarnesses, InstallPlacement, harnessRows } from "./install-sections"
@@ -94,8 +94,13 @@ export function InstallPluginSheet(props: {
   }
   const sheet = createInstall({ plugin: props.plugin, revision: props.revision, done: finish })
   return (
-    <Dialog title={<SheetHeader plugin={props.plugin} />} size="large" transition>
-      <div class="flex flex-col">
+    <Dialog size="large" fit>
+      <DialogHeader>
+        <DialogTitle>
+          <SheetHeader plugin={props.plugin} />
+        </DialogTitle>
+      </DialogHeader>
+      <DialogBody class="flex flex-col px-4 pb-4">
         <InstallPlacement />
         <InstallHarnesses rows={rows()} selected={selected()} onChange={setSelected} />
         <Show when={sheet.error()}>
@@ -108,12 +113,12 @@ export function InstallPluginSheet(props: {
         <footer class="flex items-center justify-between gap-2 border-t border-border-weak-base pt-3">
           <span class="text-12-regular text-text-weaker">{t("marketplace.install.stepCount")}</span>
           <div class="flex gap-2">
-            <Button size="large" variant="secondary" disabled={sheet.busy()} onClick={finish}>
+            <Button size="large" variant="neutral" disabled={sheet.busy()} onClick={finish}>
               {t("marketplace.cancel")}
             </Button>
             <Button
               size="large"
-              variant="primary"
+              variant="contrast"
               disabled={sheet.busy()}
               onClick={() => void sheet.install([...selected()])}
             >
@@ -121,7 +126,7 @@ export function InstallPluginSheet(props: {
             </Button>
           </div>
         </footer>
-      </div>
+      </DialogBody>
     </Dialog>
   )
 }

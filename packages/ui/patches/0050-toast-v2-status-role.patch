@@ -1,0 +1,22 @@
+Subject: toast-v2: every toast carries role=status
+
+What: the region's mutation sync sets `role="status"` on each `.toast-v2`
+element beside the inert and tabindex it already keeps in step with
+`data-visible`.
+Why: solid-sonner 0.3.1 renders a toast as a bare `<li>` inside an
+`aria-live="polite"` section, so assistive tech gets the live announcement
+but no role names the toast itself, and a role query for a status finds
+nothing; Kobalte's toast, which this replaces, was `role="status"`.
+
+diff --git a/src/v2/components/toast-v2.tsx b/src/v2/components/toast-v2.tsx
+index dccf3034fc..99b97acdd5 100644
+--- a/src/v2/components/toast-v2.tsx
++++ b/src/v2/components/toast-v2.tsx
+@@ -16,6 +16,7 @@ function ToastV2Region(props: ToastV2RegionProps) {
+     const sync = () => {
+       document.querySelectorAll<HTMLElement>(".toast-v2-region .toast-v2").forEach((element) => {
+         const hidden = element.dataset.visible === "false"
++        element.setAttribute("role", "status")
+         element.inert = hidden
+         element.tabIndex = hidden ? -1 : 0
+       })

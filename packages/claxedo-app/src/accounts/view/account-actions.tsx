@@ -41,7 +41,7 @@ function RestingActions(props: AccountActionsProps) {
     <>
       <Show when={props.account.refused && props.account.ids[0]}>
         {(credentialId) => (
-          <Button size="small" variant="secondary" data-action="agent-reconnect" onClick={() => props.onReconnect(credentialId())}>
+          <Button size="small" variant="neutral" data-action="agent-reconnect" onClick={() => props.onReconnect(credentialId())}>
             {t("settings.providers.agents.reconnectAccount")}
           </Button>
         )}
@@ -74,7 +74,7 @@ function ConfirmRemove(props: AccountActionsProps) {
   return (
     <>
       <span class="text-13-regular text-text-weak">{t("settings.providers.agents.removeAccountConfirm")}</span>
-      <Button size="small" variant="primary" disabled={props.removing !== undefined} data-action="agent-account-remove-confirm" onClick={() => props.onRemove()}>
+      <Button size="small" variant="contrast" disabled={props.removing !== undefined} data-action="agent-account-remove-confirm" onClick={() => props.onRemove()}>
         {props.removing === props.account.key ? t("settings.providers.agents.removingAccount") : t("settings.providers.agents.removeAccount")}
       </Button>
       <Button size="small" variant="ghost" disabled={props.removing !== undefined} data-action="agent-account-remove-cancel" onClick={() => props.onConfirm(false)}>

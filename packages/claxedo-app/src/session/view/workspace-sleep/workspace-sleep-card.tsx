@@ -49,7 +49,7 @@ export function WorkspaceSleepCard(props: { readonly placementId: PlacementId })
             <span class="min-w-0 flex-1 text-text-base">
               {t("sessionScreen.workspace.wakeFailed")} <span class="text-text-weak">{current().error.message}</span>
             </span>
-            <Button variant="secondary" size="small" onClick={() => void retry()}>
+            <Button variant="neutral" size="small" onClick={() => void retry()}>
               {t("sessionScreen.workspace.retryWake")}
             </Button>
           </div>

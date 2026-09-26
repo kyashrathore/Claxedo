@@ -1,0 +1,284 @@
+Subject: scroll view: the thumb reveals on user input only
+
+What: the thumb is revealed by wheel, touch, pen and keyboard, not by a viewport
+`scroll` event, plus the key handling the app's scroll views share.
+Why: assigning scrollTop and virtualizer bottom anchoring dispatch the same event
+as a wheel, so hidden retained surfaces ran 200 ms opacity transitions whenever
+another session activated.
+
+diff --git a/src/components/scroll-view.css b/src/components/scroll-view.css
+index adebf190c5ec07d1a243c263db97d82cfc5248fc..f3664163457fcf554f4aacae60289f5ecba575b1 100644
+--- a/src/components/scroll-view.css
++++ b/src/components/scroll-view.css
+@@ -39,7 +39,7 @@
+   top: 0;
+   bottom: 0;
+   width: 4px;
+-  border-radius: 9999px;
++  border-radius: var(--radius-pill);
+   background-color: var(--border-weak-base);
+   backdrop-filter: blur(4px);
+   transition: background-color 150ms ease;
+@@ -50,15 +50,12 @@
+   background-color: var(--border-strong-base);
+ }
+ 
+-.dark .scroll-view__thumb::after,
+-[data-theme="dark"] .scroll-view__thumb::after {
++[data-color-scheme="dark"] .scroll-view__thumb::after {
+   background-color: var(--border-weak-base);
+ }
+ 
+-.dark .scroll-view__thumb:hover::after,
+-[data-theme="dark"] .scroll-view__thumb:hover::after,
+-.dark .scroll-view__thumb[data-dragging="true"]::after,
+-[data-theme="dark"] .scroll-view__thumb[data-dragging="true"]::after {
++[data-color-scheme="dark"] .scroll-view__thumb:hover::after,
++[data-color-scheme="dark"] .scroll-view__thumb[data-dragging="true"]::after {
+   background-color: var(--border-strong-base);
+ }
+ 
+diff --git a/src/components/scroll-view.test.ts b/src/components/scroll-view.test.ts
+index 84131b1f17f212d84b7e69ac52694b6e94d5d026..fb5239073f16335a7353fb3aa30c8e4d50d4e210 100644
+--- a/src/components/scroll-view.test.ts
++++ b/src/components/scroll-view.test.ts
+@@ -1,5 +1,16 @@
+ import { describe, expect, test } from "bun:test"
+-import { canScrollKey, scrollKey, scrollTopFromThumbPointer } from "./scroll-view"
++import { canScrollKey, scrollKey, scrollTopFromThumbPointer, scrollViewThumbShouldReveal } from "./scroll-view"
++
++describe("scrollViewThumbShouldReveal", () => {
++  test("does not treat programmatic viewport motion as user scrolling", () => {
++    expect(scrollViewThumbShouldReveal("viewport-scroll")).toBe(false)
++  })
++
++  test("preserves the thumb for every real scroll input boundary", () => {
++    const sources = ["wheel", "touch", "pen", "keyboard"] as const
++    expect(sources.every(scrollViewThumbShouldReveal)).toBe(true)
++  })
++})
+ 
+ describe("scrollKey", () => {
+   test("maps plain navigation keys", () => {
+diff --git a/src/components/scroll-view.tsx b/src/components/scroll-view.tsx
+index 5116d94f9ead77392f2e01a74ab31e8ced76d6b0..0d447242fd65976c67f39b30e175cfc3c5e544f0 100644
+--- a/src/components/scroll-view.tsx
++++ b/src/components/scroll-view.tsx
+@@ -8,6 +8,7 @@ import {
+   splitProps,
+   type Accessor,
+   type ComponentProps,
++  type JSX,
+ } from "solid-js"
+ import { Portal } from "solid-js/web"
+ import { createResizeObserver } from "@solid-primitives/resize-observer"
+@@ -16,6 +17,33 @@ import { useI18n } from "../context/i18n"
+ 
+ export type ScrollViewThumbVisibility = "hover" | "scroll"
+ 
++/**
++ * Solid passes event handlers either as a function or as a `[handler, data]`
++ * pair. Forwarding a viewport event to a caller's handler has to cover both.
++ */
++function forwardEvent<E extends Event>(
++  handler: JSX.EventHandlerUnion<HTMLDivElement, E> | undefined,
++  event: E & { currentTarget: HTMLDivElement; target: Element },
++) {
++  if (typeof handler === "function") handler(event)
++  else if (Array.isArray(handler)) handler[0](handler[1], event)
++}
++
++export type ScrollViewThumbRevealSource = "viewport-scroll" | "wheel" | "touch" | "pen" | "keyboard"
++type ScrollViewThumbUserInput = Exclude<ScrollViewThumbRevealSource, "viewport-scroll">
++
++/**
++ * A viewport `scroll` event is a geometry notification, not proof of user
++ * intent. Assigning `scrollTop` and virtualizer bottom anchoring dispatch the
++ * same event as a wheel gesture; revealing the thumb from that event made
++ * hidden retained surfaces run 200 ms opacity transitions whenever another
++ * session activated. User input is observed at its authoritative boundary
++ * instead.
++ */
++export function scrollViewThumbShouldReveal(source: ScrollViewThumbRevealSource) {
++  return source !== "viewport-scroll"
++}
++
+ export interface ScrollViewProps extends ComponentProps<"div"> {
+   viewportRef?: (el: HTMLDivElement) => void
+   orientation?: "vertical" | "horizontal" // currently only vertical is fully implemented for thumb
+@@ -32,9 +60,13 @@ export interface ScrollViewProps extends ComponentProps<"div"> {
+   thumbHoverTarget?: HTMLElement | Accessor<HTMLElement | undefined>
+ }
+ 
+-export const scrollKey = (event: Pick<KeyboardEvent, "key" | "altKey" | "ctrlKey" | "metaKey" | "shiftKey">) => {
+-  if (event.altKey || event.ctrlKey || event.metaKey) return
+-  if (event.shiftKey && event.key !== " ") return
++export type ScrollKeyAction = "page-down" | "page-up" | "home" | "end" | "up" | "down"
++
++export const scrollKey = (
++  event: Pick<KeyboardEvent, "key" | "altKey" | "ctrlKey" | "metaKey" | "shiftKey">,
++): ScrollKeyAction | undefined => {
++  if (event.altKey || event.ctrlKey || event.metaKey) return undefined
++  if (event.shiftKey && event.key !== " ") return undefined
+ 
+   switch (event.key) {
+     case "PageDown":
+@@ -51,10 +83,12 @@ export const scrollKey = (event: Pick<KeyboardEvent, "key" | "altKey" | "ctrlKey
+       return "down"
+     case " ":
+       return event.shiftKey ? "page-up" : "page-down"
++    default:
++      return undefined
+   }
+ }
+ 
+-export function canScrollKey(element: HTMLElement, key: NonNullable<ReturnType<typeof scrollKey>>) {
++export function canScrollKey(element: HTMLElement, key: ScrollKeyAction) {
+   const up = key === "up" || key === "page-up" || key === "home"
+   return up ? element.scrollTop > 0 : element.scrollTop + element.clientHeight < element.scrollHeight
+ }
+@@ -62,7 +96,7 @@ export function canScrollKey(element: HTMLElement, key: NonNullable<ReturnType<t
+ export function scrollKeyOwner(
+   root: HTMLElement,
+   target: EventTarget | null,
+-  key: NonNullable<ReturnType<typeof scrollKey>>,
++  key: ScrollKeyAction,
+ ) {
+   const element = target instanceof Element ? target : undefined
+   const owner = element?.closest<HTMLElement>("[data-scrollable]")
+@@ -71,7 +105,7 @@ export function scrollKeyOwner(
+   return canScrollKey(owner, key) ? owner : root
+ }
+ 
+-export function isScrollKeyTarget(target: EventTarget | null, key: NonNullable<ReturnType<typeof scrollKey>>) {
++export function isScrollKeyTarget(target: EventTarget | null, key: ScrollKeyAction) {
+   const element = target instanceof HTMLElement ? target : undefined
+   if (!element) return true
+   if (["INPUT", "TEXTAREA", "SELECT"].includes(element.tagName) || element.isContentEditable) return false
+@@ -154,7 +188,8 @@ export function ScrollView(props: ScrollViewProps) {
+ 
+   let scrollIdleTimer: ReturnType<typeof setTimeout> | undefined
+ 
+-  const markScrolling = () => {
++  const markScrolling = (source: ScrollViewThumbUserInput) => {
++    if (!scrollViewThumbShouldReveal(source)) return
+     setState("isScrolling", true)
+     if (scrollIdleTimer !== undefined) clearTimeout(scrollIdleTimer)
+     scrollIdleTimer = setTimeout(() => setState("isScrolling", false), 800)
+@@ -170,6 +205,23 @@ export function ScrollView(props: ScrollViewProps) {
+     if (scrollIdleTimer !== undefined) clearTimeout(scrollIdleTimer)
+   })
+ 
++  // Coalesce thumb geometry to one computation per frame. The raw handler ran
++  // on EVERY scroll event and EVERY content resize — during a session switch
++  // the virtualized timeline resizes its content dozens of times a frame while
++  // scrolling programmatically, and each call forces synchronous layout reads
++  // (scrollHeight/clientHeight) interleaved with the virtualizer's writes.
++  let thumbFrame: number | undefined
++  const scheduleThumbUpdate = () => {
++    if (thumbFrame !== undefined) return
++    thumbFrame = requestAnimationFrame(() => {
++      thumbFrame = undefined
++      updateThumb()
++    })
++  }
++  onCleanup(() => {
++    if (thumbFrame !== undefined) cancelAnimationFrame(thumbFrame)
++  })
++
+   const updateThumb = () => {
+     if (!viewportRef) return
+     const { scrollTop, scrollHeight, clientHeight } = viewportRef
+@@ -207,8 +259,11 @@ export function ScrollView(props: ScrollViewProps) {
+     }
+ 
+     createResizeObserver(
+-      () => [viewportRef, viewportRef.firstElementChild, thumbMount()].filter(Boolean) as HTMLElement[],
+-      updateThumb,
++      () =>
++        [viewportRef, viewportRef.firstElementChild, thumbMount()].filter(
++          (element): element is HTMLElement => element instanceof HTMLElement,
++        ),
++      scheduleThumbUpdate,
+     )
+ 
+     updateThumb()
+@@ -299,6 +354,7 @@ export function ScrollView(props: ScrollViewProps) {
+     if (!next) return
+     if (!isScrollKeyTarget(e.target, next)) return
+     if (scrollKeyOwner(viewportRef, e.target, next) !== viewportRef) return
++    markScrolling("keyboard")
+ 
+     const scrollAmount = viewportRef.clientHeight * 0.8
+     const lineAmount = 40
+@@ -314,11 +370,14 @@ export function ScrollView(props: ScrollViewProps) {
+         break
+       case "home":
+         e.preventDefault()
+-        viewportRef.scrollTo({ top: 0, behavior: "smooth" })
++        // Endpoint jumps must land atomically: a smooth animation through a
++        // virtualized list gets cancelled by the virtualizer's measurement
++        // corrections, leaving the scroll wherever the last correction put it.
++        viewportRef.scrollTo({ top: 0, behavior: "instant" })
+         break
+       case "end":
+         e.preventDefault()
+-        viewportRef.scrollTo({ top: viewportRef.scrollHeight, behavior: "smooth" })
++        viewportRef.scrollTo({ top: viewportRef.scrollHeight, behavior: "instant" })
+         break
+       case "up":
+         e.preventDefault()
+@@ -350,28 +409,39 @@ export function ScrollView(props: ScrollViewProps) {
+         class="scroll-view__viewport"
+         data-scrollable
+         onScroll={(e) => {
+-          updateThumb()
+-          markScrolling()
+-          if (typeof events.onScroll === "function") events.onScroll(e as any)
++          scheduleThumbUpdate()
++          // Programmatic anchoring and retained-surface resize corrections
++          // arrive here too. Geometry must stay current, but only an input
++          // boundary below may reveal the user-scrolling affordance.
++          forwardEvent(events.onScroll, e)
+         }}
+         onWheel={(e) => {
+-          markScrolling()
+-          const handler = events.onWheel
+-          if (typeof handler === "function") handler(e as any)
+-          if (Array.isArray(handler)) handler[0](handler[1], e as any)
++          markScrolling("wheel")
++          forwardEvent(events.onWheel, e)
++        }}
++        onTouchStart={(e) => {
++          markScrolling("touch")
++          forwardEvent(events.onTouchStart, e)
++        }}
++        onTouchMove={(e) => {
++          // Refresh the idle window for long drags. Touch end then leaves the
++          // existing 800 ms window for normal kinetic scrolling.
++          markScrolling("touch")
++          forwardEvent(events.onTouchMove, e)
++        }}
++        onTouchEnd={events.onTouchEnd}
++        onTouchCancel={events.onTouchCancel}
++        onPointerDown={(e) => {
++          if (e.pointerType === "pen") markScrolling("pen")
++          forwardEvent(events.onPointerDown, e)
+         }}
+-        onTouchStart={events.onTouchStart as any}
+-        onTouchMove={events.onTouchMove as any}
+-        onTouchEnd={events.onTouchEnd as any}
+-        onTouchCancel={events.onTouchCancel as any}
+-        onPointerDown={events.onPointerDown as any}
+-        onClick={events.onClick as any}
++        onClick={events.onClick}
+         tabIndex={0}
+         role="region"
+         aria-label={i18n.t("ui.scrollView.ariaLabel")}
+         onKeyDown={(e) => {
+           onKeyDown(e)
+-          if (typeof events.onKeyDown === "function") events.onKeyDown(e as any)
++          forwardEvent(events.onKeyDown, e)
+         }}
+       >
+         {local.children}

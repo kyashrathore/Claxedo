@@ -1,4 +1,4 @@
-import { sampledChecksum, readableText } from "@/ui"
+import { sampledChecksum, readableText } from "@/ui/utils"
 import {
   areFilesEqual,
   areOptionsEqual,

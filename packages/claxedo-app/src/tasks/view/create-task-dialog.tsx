@@ -2,7 +2,7 @@ import { createSignal, type JSX } from "solid-js"
 import type { TaskCreateStatus, TaskDraft } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
 import { uuid } from "@/lib/uuid"
-import { Dialog } from "@/ui"
+import { Dialog, DialogBody, DialogHeader, DialogTitle } from "@/ui"
 import { useTasksApi, useTasksInvalidation } from "../data/queries"
 import { refusalOf, type TasksRefusal } from "../data/refusal"
 import { tasksDictionary } from "../i18n"
@@ -48,7 +48,11 @@ export function DialogCreateTask(props: {
     }
   }
   return (
-    <Dialog title={t("tasks.newTask")} fit>
+    <Dialog fit>
+      <DialogHeader>
+        <DialogTitle>{t("tasks.newTask")}</DialogTitle>
+      </DialogHeader>
+      <DialogBody class="px-4 pb-4">
       <TaskCreateForm
         draft={draft()}
         projects={projects()}
@@ -59,6 +63,7 @@ export function DialogCreateTask(props: {
         onSubmit={() => void submit()}
         onCancel={() => props.onClose()}
       />
+      </DialogBody>
     </Dialog>
   )
 }

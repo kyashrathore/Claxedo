@@ -22,10 +22,10 @@ export function CommentMenu(props: {
         <DropdownMenu.Portal>
           <DropdownMenu.Content>
             <DropdownMenu.Item onSelect={() => props.onEdit()}>
-              <DropdownMenu.ItemLabel>{props.labels.edit}</DropdownMenu.ItemLabel>
+              {props.labels.edit}
             </DropdownMenu.Item>
             <DropdownMenu.Item onSelect={() => props.onDelete()}>
-              <DropdownMenu.ItemLabel>{props.labels.remove}</DropdownMenu.ItemLabel>
+              {props.labels.remove}
             </DropdownMenu.Item>
           </DropdownMenu.Content>
         </DropdownMenu.Portal>

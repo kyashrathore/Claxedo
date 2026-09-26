@@ -1,7 +1,8 @@
 import { createMemo, createSignal } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useServer } from "@/server"
-import { ClaxedoIconV2, useDialog, Dialog, FileIcon, List, type ListRef, getDirectory, getFilename } from "@/ui"
+import { useDialog, Dialog, FileIcon, List, type ListRef, DialogBody, DialogHeader, DialogTitle } from "@/ui"
+import { getDirectory, getFilename } from "@/ui/utils"
 import { cleanInput, displayPath, toRow, uniqueRows } from "../folder-paths"
 import { createFolderSearch } from "../folder-search"
 import { useProjectsText } from "../i18n"
@@ -40,21 +41,11 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
   }
 
   return (
-    <Dialog
-      flush
-      title={t("projects.directory.title")}
-      class="theme-directory-picker overlay-palette"
-      action={
-        <button
-          type="button"
-          aria-label={t("projects.close")}
-          class="inline-flex size-7 items-center justify-center rounded-md border-0 bg-transparent p-0 leading-none text-icon-weak-base transition-[background-color,color] duration-100 hover:bg-surface-base-hover hover:text-icon-strong-base focus-visible:bg-surface-base-hover focus-visible:text-icon-strong-base focus-visible:outline-none"
-          onClick={() => dialog.close()}
-        >
-          <ClaxedoIconV2 name="close-small" size="small" />
-        </button>
-      }
-    >
+    <Dialog size="large" fit class="theme-directory-picker overlay-palette">
+      <DialogHeader>
+        <DialogTitle>{t("projects.directory.title")}</DialogTitle>
+      </DialogHeader>
+      <DialogBody>
       <List
         search={{ placeholder: t("projects.directory.search"), autofocus: true }}
         emptyMessage={t("projects.directory.empty")}
@@ -94,6 +85,7 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
           )
         }}
       </List>
+      </DialogBody>
     </Dialog>
   )
 }

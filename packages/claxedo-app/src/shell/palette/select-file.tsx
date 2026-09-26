@@ -2,7 +2,8 @@ import { createSignal, Match, onCleanup, Show, Switch, type JSX } from "solid-js
 import { useTranslator } from "@/i18n"
 import { useAgeClock } from "@/lib/clock"
 import type { PlacementId } from "@/server"
-import { useDialog, ClaxedoIcon as Icon, Dialog, FileIcon, Keybind, List, getDirectory, getFilename } from "@/ui"
+import { useDialog, ClaxedoIcon as Icon, Dialog, FileIcon, Keybind, List, DialogBody } from "@/ui"
+import { getDirectory, getFilename } from "@/ui/utils"
 import { shellDictionary } from "../i18n"
 import { useShellRoute } from "../router"
 import { sessionPath } from "../routes"
@@ -61,8 +62,8 @@ function EntryRow(props: { readonly item: PaletteEntry }): JSX.Element {
               <span class="text-14-regular text-text-weak truncate">{props.item.description}</span>
             </Show>
           </div>
-          <Show when={props.item.keybind}>
-            <Keybind class="rounded-sm">{props.item.keybind}</Keybind>
+          <Show when={props.item.keys}>
+            {(keys) => <Keybind keys={keys()} />}
           </Show>
         </div>
       </Match>
@@ -109,22 +110,24 @@ export function DialogSelectFile(props: DialogSelectFileProps): JSX.Element {
   }
   onCleanup(() => state.committed || state.cleanup?.())
   return (
-    <Dialog flush class="command-palette-dialog !max-h-[480px]" transition aria-label={label()}>
-      <div data-testid={props.mode === "files" ? "file-palette" : "command-palette"}>
-        <List
-          search={{ placeholder: label(), autofocus: true, hideIcon: true }}
-          emptyMessage={t("shell.palette.empty")}
-          loadingMessage={t("shell.loading")}
-          items={items}
-          key={(item) => item.id}
-          filterKeys={["title", "description", "category"]}
-          groupBy={grouped() ? (item) => item.category : () => ""}
-          onMove={move}
-          onSelect={select}
-        >
-          {(item) => <EntryRow item={item} />}
-        </List>
-      </div>
+    <Dialog size="large" fit class="command-palette-dialog" containerClass="command-palette-container" aria-label={label()}>
+      <DialogBody>
+        <div data-testid={props.mode === "files" ? "file-palette" : "command-palette"}>
+          <List
+            search={{ placeholder: label(), autofocus: true, hideIcon: true }}
+            emptyMessage={t("shell.palette.empty")}
+            loadingMessage={t("shell.loading")}
+            items={items}
+            key={(item) => item.id}
+            filterKeys={["title", "description", "category"]}
+            groupBy={grouped() ? (item) => item.category : () => ""}
+            onMove={move}
+            onSelect={select}
+          >
+            {(item) => <EntryRow item={item} />}
+          </List>
+        </div>
+      </DialogBody>
     </Dialog>
   )
 }

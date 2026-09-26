@@ -1,6 +1,6 @@
 {
   "name": "@opencode-ai/ui",
-  "version": "1.18.3",
+  "version": "1.18.32",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -52,6 +52,7 @@
     "./icons/app": "./src/components/app-icons/types.ts",
     "./fonts/*": "./src/assets/fonts/*",
     "./audio/*": "./src/assets/audio/*",
+    "./*.css": "./src/components/*.css",
     "./v2/*.css": "./src/v2/components/*.css",
     "./v2/*": "./src/v2/components/*.tsx",
     "./v2/styles/*": "./src/v2/styles/*"
@@ -62,12 +63,10 @@
     "test": "mkdir -p .artifacts/unit && node ../../scripts/test-deadline.mjs bun test src --only-failures --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
     "dev": "vite",
     "generate:tailwind": "bun run script/tailwind.ts",
-    "extract:icons": "bun run script/extract-opencode-icons.ts",
-    "generate:v2-oc2": "bun run script/build-oc2-v2-overrides.ts"
+    "generate:v2-oc2": "bun run script/build-oc2-v2-overrides.ts",
+    "sync:upstream": "bun run script/sync-upstream.ts"
   },
   "devDependencies": {
-    "@babel/parser": "7.29.7",
-    "@babel/types": "7.29.7",
     "@solidjs/meta": "catalog:",
     "@tsconfig/node22": "catalog:",
     "@types/bun": "catalog:",
@@ -94,7 +93,8 @@
     "motion": "12.34.5",
     "remeda": "catalog:",
     "shiki": "catalog:",
-    "solid-list": "catalog:"
+    "solid-list": "catalog:",
+    "solid-sonner": "catalog:"
   },
   "peerDependencies": {
     "@solidjs/meta": "^0.29.0",

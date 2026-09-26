@@ -155,7 +155,7 @@ function LargeDiff(props: {
         })}
       </div>
       <div data-slot="session-review-large-diff-actions">
-        <Button size="normal" variant="secondary" onClick={() => props.onRenderAnyway(props.file)}>
+        <Button size="normal" variant="neutral" onClick={() => props.onRenderAnyway(props.file)}>
           {t("review.largeDiff.renderAnyway")}
         </Button>
       </div>

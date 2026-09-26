@@ -32,7 +32,8 @@ import type {
   AgentUserMessage,
 } from "@claxedo/agent-runtime-contract"
 import { useData } from "./data"
-import { useFileComponent, useDialog, Accordion, StickyAccordionHeader, Collapsible, FileIcon, Icon, Checkbox, DiffChanges, ImagePreview, getDirectory as _getDirectory, getFilename, checksum, Tooltip, IconButton, IconV2, IconButtonV2, ButtonV2, TooltipV2, TextShimmer, type IconProps } from "@/ui"
+import { useFileComponent, useDialog, Accordion, StickyAccordionHeader, Collapsible, FileIcon, Icon, Checkbox, DiffChanges, ImagePreview, Tooltip, IconButton, Button, TextShimmer, type IconProps } from "@/ui"
+import { getDirectory as _getDirectory, getFilename, checksum } from "@/ui/utils"
 import { type TranscriptI18n, useTranscriptI18n } from "./i18n"
 import { BasicTool, GenericTool, shellExitCode, ToolExitCode } from "./basic-tool"
 import { ScrollableOutput } from "./scrollable-output"
@@ -231,14 +232,13 @@ function MessageActionButton(
     useV2?: boolean
   },
 ) {
-  const icon = () => (props.icon === "copy" ? "outline-copy" : props.icon)
   return (
     <Show
       when={props.useV2}
       fallback={
         <Tooltip value={props.label} placement="top" gutter={4}>
           <IconButton
-            icon={props.icon}
+            icon={<Icon name={props.icon} size="small" />}
             size="normal"
             variant="ghost"
             disabled={props.disabled}
@@ -249,9 +249,9 @@ function MessageActionButton(
         </Tooltip>
       }
     >
-      <TooltipV2 value={props.label} placement="top" gutter={4}>
-        <IconButtonV2
-          icon={<IconV2 name={icon()} size="small" />}
+      <Tooltip value={props.label} placement="top" gutter={4}>
+        <IconButton
+          icon={<Icon name={props.icon} size="small" />}
           size="normal"
           variant="ghost-muted"
           disabled={props.disabled}
@@ -259,7 +259,7 @@ function MessageActionButton(
           onClick={props.onClick}
           aria-label={props["aria-label"]}
         />
-      </TooltipV2>
+      </Tooltip>
     </Show>
   )
 }
@@ -1082,9 +1082,9 @@ function UserMessageComments(props: { comments: UserMessageComment[]; bounded: b
         )}
       </For>
       <Show when={props.bounded && props.comments.length > 5 && !state.expanded}>
-        <ButtonV2 size="small" variant="ghost-muted" onClick={() => setState("expanded", true)}>
+        <Button size="small" variant="ghost-muted" onClick={() => setState("expanded", true)}>
           {i18n.t("transcript.common.showMore")}
-        </ButtonV2>
+        </Button>
       </Show>
     </div>
   )
@@ -1445,7 +1445,6 @@ function ToolFileAccordion(props: { path: string; actions?: JSX.Element; childre
               </div>
               <div data-slot="apply-patch-trigger-actions">
                 {props.actions}
-                <Icon name="chevron-down" size="small" data-slot="accordion-caret" />
               </div>
             </div>
           </Accordion.Trigger>
@@ -2225,16 +2224,16 @@ ToolRegistry.register({
       >
         <div class="ui-bash-output">
           <div class="ui-bash-copy">
-            <TooltipV2 value={copied() ? i18n.t("transcript.message.copied") : i18n.t("transcript.message.copy")} placement="top">
-              <IconButtonV2
-                icon={<IconV2 name={copied() ? "check" : "outline-copy"} size="small" />}
+            <Tooltip value={copied() ? i18n.t("transcript.message.copied") : i18n.t("transcript.message.copy")} placement="top">
+              <IconButton
+                icon={<Icon name={copied() ? "check" : "copy"} size="small" />}
                 size="normal"
                 variant="ghost-muted"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={handleCopy}
                 aria-label={copied() ? i18n.t("transcript.message.copied") : i18n.t("transcript.message.copy")}
               />
-            </TooltipV2>
+            </Tooltip>
           </div>
           <ScrollableOutput class="ui-bash-scroll" revealed={props.revealed} onRevealedChange={props.onRevealedChange}>
             <pre data-slot="bash-pre">
@@ -2338,7 +2337,7 @@ ToolRegistry.register({
               </div>
               <div data-slot="message-part-actions">
                 <Show when={!pending() && props.metadata.filediff}>
-                  <DiffChanges changes={props.metadata.filediff} variant="muted-hover" />
+                  <DiffChanges changes={props.metadata.filediff} />
                 </Show>
               </div>
             </div>
@@ -2543,7 +2542,6 @@ ToolRegistry.register({
                                       <DiffChanges changes={{ additions: file.additions, deletions: file.deletions }} />
                                     </Match>
                                   </Switch>
-                                  <Icon name="chevron-down" size="small" data-slot="accordion-caret" />
                                 </div>
                               </div>
                             </Accordion.Trigger>
@@ -2600,10 +2598,7 @@ ToolRegistry.register({
                 </div>
                 <div data-slot="message-part-actions">
                   <Show when={!pending()}>
-                    <DiffChanges
-                      changes={{ additions: single()!.additions, deletions: single()!.deletions }}
-                      variant="muted-hover"
-                    />
+                    <DiffChanges changes={{ additions: single()!.additions, deletions: single()!.deletions }} />
                   </Show>
                 </div>
               </div>
@@ -2689,14 +2684,18 @@ ToolRegistry.register({
           <div class="ui-todos">
             <For each={todos()}>
               {(todo: AgentTodo) => (
-                <Checkbox readOnly checked={todo.status === "completed"}>
-                  <span
- class="ui-message-part-todo-content"
-                    data-completed={todo.status === "completed" ? "completed" : undefined}
-                  >
-                    {todo.content}
-                  </span>
-                </Checkbox>
+                <Checkbox
+                  readOnly
+                  checked={todo.status === "completed"}
+                  label={
+                    <span
+                      class="ui-message-part-todo-content"
+                      data-completed={todo.status === "completed" ? "completed" : undefined}
+                    >
+                      {todo.content}
+                    </span>
+                  }
+                />
               )}
             </For>
           </div>
@@ -2787,7 +2786,7 @@ ToolRegistry.register({
           subtitle: plan().title,
           action: plan().markdown ? (
             <IconButton
-              icon="open-file"
+              icon={<Icon name="open-file" size="small" />}
               variant="ghost"
               size="small"
               aria-label={i18n.t("transcript.tool.plan.open")}

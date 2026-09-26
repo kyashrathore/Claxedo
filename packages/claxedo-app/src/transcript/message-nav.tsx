@@ -235,7 +235,7 @@ export function MessageNav<M extends MessageNavMessage>(
                 onClick={handleClick}
                 onKeyDown={handleKeyPress}
               >
-                <DiffChanges changes={message.summary?.diffs ?? []} variant="bars" />
+                <DiffChanges changes={message.summary?.diffs ?? []} />
                 <div
                   data-slot="message-nav-title-preview" class="ui-message-nav-title-preview"
                   data-active={message.id === local.current?.id || undefined}

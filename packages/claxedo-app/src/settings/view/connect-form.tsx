@@ -66,7 +66,7 @@ export function ConnectForm(props: {
   return (
     <form class="settings-fields" aria-label={`${t("settings.common.connect")} ${props.integration.name}`} onSubmit={(event) => { event.preventDefault(); void submit("key", false) }}>
       <Show when={props.personalScopeEnabled}>
-        <Select aria-label="Scope" options={[...SCOPES]} current={form.scope} value={(scope) => scope} label={scopeLabel} onSelect={(scope) => scope && setForm("scope", scope)} variant="secondary" size="small" triggerVariant="settings" />
+        <Select aria-label="Scope" options={[...SCOPES]} current={form.scope} value={(scope) => scope} label={scopeLabel} onSelect={(scope) => scope && setForm("scope", scope)} appearance="inline" />
       </Show>
       <Show when={keyMethod()}>
         <For each={props.integration.prompts}>
@@ -87,7 +87,7 @@ export function ConnectForm(props: {
       <Show when={state.state().kind === "confirmReplace"}>
         <div class="settings-inline" role="alertdialog" aria-label={t("settings.connections.replace")}>
           <span class="settings-row-description">{t("settings.connections.replace")}</span>
-          <Button size="small" variant="primary" onClick={confirmReplace}>{t("settings.connections.replaceConfirm")}</Button>
+          <Button size="small" variant="contrast" onClick={confirmReplace}>{t("settings.connections.replaceConfirm")}</Button>
           <Button size="small" variant="ghost" onClick={() => state.send({ type: "cancel" })}>{t("settings.common.cancel")}</Button>
         </div>
       </Show>
@@ -102,10 +102,10 @@ export function ConnectForm(props: {
       </Show>
       <div class="settings-inline">
         <Show when={keyMethod()}>
-          <Button type="submit" size="small" variant="primary" disabled={busy()}>{t("settings.common.connect")}</Button>
+          <Button type="submit" size="small" variant="contrast" disabled={busy()}>{t("settings.common.connect")}</Button>
         </Show>
         <Show when={oauthMethod()}>
-          <Button type="button" size="small" variant={keyMethod() ? "secondary" : "primary"} disabled={busy()} onClick={() => void submit("oauth", false)}>
+          <Button type="button" size="small" variant={keyMethod() ? "neutral" : "contrast"} disabled={busy()} onClick={() => void submit("oauth", false)}>
             {t("settings.connections.oauth")}
           </Button>
         </Show>

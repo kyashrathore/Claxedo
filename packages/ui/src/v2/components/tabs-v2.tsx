@@ -1,6 +1,7 @@
 import { Tabs as Kobalte } from "@kobalte/core/tabs"
 import { Show, splitProps, type JSX } from "solid-js"
 import type { ComponentProps, ParentProps, Component } from "solid-js"
+import { useI18n } from "../../context/i18n"
 import "./tabs-v2.css"
 
 export interface TabsV2Props extends ComponentProps<typeof Kobalte> {
@@ -26,7 +27,6 @@ function TabsV2Root(props: TabsV2Props) {
       data-variant={split.variant || "normal"}
       data-orientation={split.orientation || "horizontal"}
       classList={{
-        "ui-tabs-v2": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}
@@ -40,7 +40,7 @@ function TabsV2List(props: TabsV2ListProps) {
     <Kobalte.List
       {...rest}
       data-slot="tabs-v2-list"
-      classList={{ "ui-tabs-v2-list": true,
+      classList={{
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}
@@ -54,7 +54,7 @@ function TabsV2Trigger(props: ParentProps<TabsV2TriggerProps>) {
     <div
       data-slot="tabs-v2-trigger-wrapper"
       data-value={props.value}
-      classList={{ "ui-tabs-v2-trigger-wrapper": true,
+      classList={{
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}
@@ -70,12 +70,12 @@ function TabsV2Trigger(props: ParentProps<TabsV2TriggerProps>) {
         }
       }}
     >
-      <Kobalte.Trigger {...rest} data-slot="tabs-v2-trigger" data-value={props.value} classList={{ "ui-tabs-v2-trigger": true }}>
+      <Kobalte.Trigger {...rest} data-slot="tabs-v2-trigger" data-value={props.value}>
         <span class="inline-flex items-center gap-2" data-slot="tabs-v2-trigger-content">
           {split.children}
           <Show when={split.subtext}>
             {(subtext) => (
-              <span data-slot="tabs-v2-subtext" class="ml-2 text-xs text-text-weak">
+              <span data-slot="tabs-v2-subtext" class="ms-2 text-xs text-text-weak">
                 {subtext()}
               </span>
             )}
@@ -87,16 +87,16 @@ function TabsV2Trigger(props: ParentProps<TabsV2TriggerProps>) {
 }
 
 function TabsV2CloseButton(props: TabsV2CloseButtonProps) {
+  const i18n = useI18n()
   const [split, rest] = splitProps(props, ["class", "classList", "onClick"])
   return (
     <div
       role="button"
       tabindex={0}
-      aria-label="Close tab"
+      aria-label={i18n.t("ui.tabs.close")}
       data-slot="tabs-v2-close-button"
       {...rest}
       classList={{
-        "ui-tabs-v2-close-button": true,
         [split.class ?? ""]: !!split.class,
         ...split.classList,
       }}

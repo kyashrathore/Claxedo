@@ -79,12 +79,12 @@ function QuestionFooter(props: {
       </div>
       <div data-slot="question-footer-actions">
         <Show when={props.answers.draft.tab > 0}>
-          <Button variant="secondary" size="large" disabled={props.busy} onClick={() => props.answers.back()}>
+          <Button variant="neutral" size="large" disabled={props.busy} onClick={() => props.answers.back()}>
             {t("sessionScreen.action.back")}
           </Button>
         </Show>
         <Button
-          variant={props.answers.last() ? "primary" : "secondary"}
+          variant={props.answers.last() ? "contrast" : "neutral"}
           size="large"
           disabled={props.busy}
           onClick={props.onNext}

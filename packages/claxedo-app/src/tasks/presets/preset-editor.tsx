@@ -132,9 +132,8 @@ function Configurations(props: PresetEditorProps & { readonly fieldText: FieldTe
               data-testid={`preset-editor-slot-${slot}`}
               checked={props.draft.configurations[slot] !== null}
               onChange={(checked: boolean) => setConfiguration(slot, checked ? EMPTY_CONFIGURATION : null)}
-            >
-              {t(SLOT_KEYS[slot])}
-            </Checkbox>
+              label={t(SLOT_KEYS[slot])}
+            />
           )}
         </For>
       </div>
@@ -190,7 +189,7 @@ function IdentityFields(
           aria-label={t("tasks.preset.name")}
           placeholder={t("tasks.preset.namePlaceholder")}
           maxLength={TASKS_BOUNDS.presetNameMax}
-          validationState={props.fieldText("name") ? "invalid" : "valid"}
+          invalid={props.fieldText("name") !== undefined}
           value={props.draft.name}
           onChange={(name: string) => props.patch({ name })}
         />
@@ -233,7 +232,7 @@ export function PresetEditor(props: PresetEditorProps): JSX.Element {
         <Button size="small" variant="ghost" data-testid="preset-editor-cancel" onClick={() => props.onCancel()}>
           {t("tasks.cancel")}
         </Button>
-        <Button type="submit" size="small" variant="primary" data-testid="preset-editor-submit" disabled={props.busy}>
+        <Button type="submit" size="small" variant="contrast" data-testid="preset-editor-submit" disabled={props.busy}>
           {props.submitLabel}
         </Button>
       </div>

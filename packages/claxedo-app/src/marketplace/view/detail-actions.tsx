@@ -26,18 +26,18 @@ function MainAction(props: ActionProps & { readonly acquired: boolean; readonly 
         <Show
           when={props.acquired}
           fallback={
-            <Button size="small" variant="primary" disabled={disabled()} onClick={() => props.onAdd()}>
+            <Button size="small" variant="contrast" disabled={disabled()} onClick={() => props.onAdd()}>
               {t("marketplace.action.add")}
             </Button>
           }
         >
-          <Button size="small" variant="primary" disabled={disabled()} onClick={() => props.onActivate(true)}>
+          <Button size="small" variant="contrast" disabled={disabled()} onClick={() => props.onActivate(true)}>
             {busy(t("marketplace.action.enable"))}
           </Button>
         </Show>
       }
     >
-      <Button size="small" variant="secondary" disabled={disabled()} onClick={() => props.onActivate(false)}>
+      <Button size="small" variant="neutral" disabled={disabled()} onClick={() => props.onActivate(false)}>
         {busy(t("marketplace.action.disable"))}
       </Button>
     </Show>

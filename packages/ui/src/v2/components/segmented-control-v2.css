@@ -2,6 +2,14 @@
   width: 100%;
 }
 
+.ui-segmented-control-v2.segmented-control-v2--fit {
+  width: auto;
+}
+
+.segmented-control-v2--fit .ui-segmented-control-v2-item {
+  flex: 1 1 auto;
+}
+
 .ui-segmented-control-v2 {
   box-sizing: border-box;
   display: flex;

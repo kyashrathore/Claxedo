@@ -223,6 +223,7 @@ export function OpenCodeIcon(props: IconProps) {
       data-slot="icon-svg"
       data-library="opencode"
       data-size={local.size || "normal"}
+      data-directional={directional(local.name)}
       classList={{
         // Style hook twins of the two data attributes above — see icon.css.
         "ui-icon": true,
@@ -315,6 +316,7 @@ export function Icon(props: IconProps) {
           data-icon={local.name}
           data-library="codex"
           data-size={local.size || "normal"}
+          data-directional={directional(local.name)}
           classList={{
             // Style hook twins of the two data attributes above — see icon.css.
             "ui-icon": true,
@@ -376,6 +378,12 @@ const CODEX_CUSTOM_GLYPHS = {
   "codex-custom-providers": "providers",
   "codex-custom-stop": "stop",
 } as const satisfies Record<string, keyof typeof icons>
+
+function directional(name: IconProps["name"]): true | undefined {
+  return name === "arrow-left" || name === "arrow-right" || name === "chevron-left" || name === "chevron-right"
+    ? true
+    : undefined
+}
 
 function codexTransform(name: IconProps["name"]): string | undefined {
   if (isKeyOf(UI_CODEX_ICON_TRANSFORMS, name)) return UI_CODEX_ICON_TRANSFORMS[name]

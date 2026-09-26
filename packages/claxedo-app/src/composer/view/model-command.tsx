@@ -1,4 +1,4 @@
-import { Button, Dialog } from "@/ui"
+import { Button, Dialog, DialogBody, DialogHeader, DialogTitle, Icon } from "@/ui"
 import type { useDialog } from "@/ui"
 import type { ModelChoice } from "@/server"
 import { ModelList, type PickerItem } from "./model-list"
@@ -12,18 +12,20 @@ export type ModelDialogChoice = {
 export function showModelDialog(dialog: ReturnType<typeof useDialog>, labels: { title: string; connect: string }, choice: ModelDialogChoice, connect: () => void) {
   const current = () => choice.items.find((item) => item.id === choice.current?.modelId && item.provider.id === choice.current.providerId)
   dialog.show(() => (
-    <Dialog
-      title={labels.title}
-      action={
-        <Button class="h-7 -my-1 text-14-medium" icon="plus-small" tabIndex={-1} onClick={() => { dialog.close(); connect() }}>
+    <Dialog size="large" fit>
+      <DialogHeader>
+        <DialogTitle>{labels.title}</DialogTitle>
+        <Button class="h-7 -my-1 text-14-medium" tabIndex={-1} onClick={() => { dialog.close(); connect() }}>
+          <Icon name="plus-small" size="small" />
           {labels.connect}
         </Button>
-      }
-    >
+      </DialogHeader>
+      <DialogBody>
       <ModelList
         model={{ list: () => [...choice.items], current, set: (model) => model && choice.choose(model) }}
         onSelect={() => dialog.close()}
       />
+      </DialogBody>
     </Dialog>
   ))
 }

@@ -4,9 +4,7 @@
   gap: 0px;
   height: 100%;
 
-  [data-slot="accordion-item"][data-selected]
-    [data-slot="accordion-header"]
-    .ui-accordion-trigger {
+  .ui-accordion-v2-item[data-selected] .ui-accordion-v2-trigger {
     background-color: var(--surface-base-active);
   }
 
@@ -66,7 +64,7 @@
     }
   }
 
-  [data-slot="accordion-trigger"]:hover .ui-session-review-view-button {
+  .ui-accordion-v2-trigger:hover .ui-session-review-view-button {
     opacity: 1;
   }
 
@@ -103,11 +101,11 @@
     transition: opacity 0.12s ease;
   }
 
-  [data-slot="accordion-trigger"]:is([data-hovered], :focus-within) .ui-session-review-row-summary {
+  .ui-accordion-v2-trigger:is([data-hovered], :focus-within) .ui-session-review-row-summary {
     opacity: 0;
   }
 
-  [data-slot="accordion-trigger"]:is([data-hovered], :focus-within) .ui-session-review-row-controls {
+  .ui-accordion-v2-trigger:is([data-hovered], :focus-within) .ui-session-review-row-controls {
     opacity: 1;
     pointer-events: auto;
   }
@@ -155,10 +153,10 @@
     color: var(--text-weaker);
     transition: color 0.15s ease;
   }
-  [data-slot="accordion-trigger"]:hover .ui-diff-changes-additions {
+  .ui-accordion-v2-trigger:hover .ui-diff-changes-additions {
     color: var(--text-diff-add-base);
   }
-  [data-slot="accordion-trigger"]:hover .ui-diff-changes-deletions {
+  .ui-accordion-v2-trigger:hover .ui-diff-changes-deletions {
     color: var(--text-diff-delete-base);
   }
 
@@ -176,7 +174,7 @@
     transition: transform 0.15s ease;
   }
 
-  [data-slot="accordion-item"][data-expanded] .ui-session-review-diff-chevron {
+  .ui-accordion-v2-item[data-expanded] .ui-session-review-diff-chevron {
     transform: rotate(0deg);
   }
 

@@ -231,7 +231,7 @@ export function ProjectCreateForm(props: ProjectCreateFormProps) {
             {t("projects.cancel")}
           </Button>
         </Show>
-        <Button type="submit" variant="primary" size={control()} disabled={!canSubmit()}>
+        <Button type="submit" variant="contrast" size={control()} disabled={!canSubmit()}>
           {submitLabel()}
         </Button>
       </div>

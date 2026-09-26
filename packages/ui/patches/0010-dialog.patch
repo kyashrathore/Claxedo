@@ -1,0 +1,482 @@
+Subject: dialog: viewport size, strong scrim, flush body, contained failures
+
+What: `size: "viewport"`, `scrim: "strong"`, `flush` (content runs to the card's
+edge), `aria-label` for a title-less dialog (Kobalte names a dialog only from a
+mounted Title; axe aria-dialog-name), `onEscapeKeyDown`, class style hooks, and the
+dialog host wraps each dialog in an ErrorBoundary.
+Why: a dialog mounts from its caller's owner, so a throw inside one reached the
+application's boundary: opening Settings on a backend whose consent endpoint
+answers 404 replaced the whole app with the error page.
+
+diff --git a/src/components/dialog.css b/src/components/dialog.css
+index f17232c3507df31d8fcdcdf9e2780dced5e80a3e..560cedc1293cd880be7a91e529e885de69ace1c1 100644
+--- a/src/components/dialog.css
++++ b/src/components/dialog.css
+@@ -1,12 +1,18 @@
+ /* [data-component="dialog-trigger"] { } */
+ 
+-[data-component="dialog-overlay"] {
++.ui-dialog-overlay {
+   position: fixed;
+   inset: 0;
+   z-index: 50;
+   background-color: hsl(from var(--background-base) h s l / 0.2);
+ }
+ 
++/* The overlay is rendered by the dialog host as the previous sibling of the
++   layer that holds the dialog, so the dialog can only reach it through `:has`. */
++.ui-dialog-overlay:has(+ [data-dialog-layer] [data-component="dialog"][data-scrim="strong"]) {
++  background-color: var(--overlay-scrim-strong);
++}
++
+ [data-component="dialog"] {
+   position: fixed;
+   inset: 0;
+@@ -16,7 +22,7 @@
+   justify-content: center;
+   pointer-events: none;
+ 
+-  [data-slot="dialog-container"] {
++  .ui-dialog-container {
+     position: relative;
+     z-index: 50;
+     width: min(calc(100vw - 16px), 640px);
+@@ -27,7 +33,7 @@
+     justify-items: start;
+     overflow: visible;
+ 
+-    [data-slot="dialog-content"] {
++    .ui-dialog-content {
+       display: flex;
+       flex-direction: column;
+       align-items: flex-start;
+@@ -47,14 +53,15 @@
+ 
+       /* padding: 8px; */
+       /* padding: 8px 8px 0 8px; */
+-      border-radius: var(--radius-xl);
++      border-radius: var(--surface-overlay-radius, var(--radius-xl));
+       background: var(--surface-raised-stronger-non-alpha);
+       background-clip: padding-box;
+-      box-shadow: var(--shadow-lg-border-base);
++      border: var(--surface-overlay-border, none);
++      box-shadow: var(--surface-overlay-shadow, var(--shadow-lg-border-base));
+ 
+       [data-slot="dialog-header"] {
+         display: flex;
+-        padding: 16px 20px;
++        padding: 16px var(--dialog-inset);
+         justify-content: space-between;
+         align-items: center;
+         flex-shrink: 0;
+@@ -74,11 +81,21 @@
+         /* [data-slot="dialog-close-button"] {} */
+       }
+ 
++      /* ── Dialog inset ──────────────────────────────────────────────
++         All three slots share ONE horizontal inset, `--dialog-inset`, so the
++         title, the description and the body content sit on a single left edge.
++         They used to disagree: the header had 20px, the description 24px left /
++         16px right (clawed back to 20 by an inline `margin-left: -4px` in
++         dialog.tsx), and the body had NO padding at all — see the commented-out
++         `padding: 8px` on dialog-content above, which is where this used to
++         live. With the body at zero, all ~46 callers either re-implemented the
++         inset by hand (10px, 16px, 24px, and 24/10 were all in use) or got none
++         and rendered flush to the card edge. Change the token, not the slots. */
++      --dialog-inset: 20px;
++
+       [data-slot="dialog-description"] {
+         display: flex;
+-        padding: 16px;
+-        padding-left: 24px;
+-        padding-top: 0;
++        padding: 0 var(--dialog-inset) 16px;
+         margin-top: -8px;
+         justify-content: space-between;
+         align-items: center;
+@@ -89,20 +106,21 @@
+ 
+         /* text-14-regular */
+         font-family: var(--font-family-sans);
+-        font-size: 14px;
++        font-size: var(--font-size-base);
+         font-style: normal;
+         font-weight: var(--font-weight-regular);
+         line-height: var(--line-height-large); /* 142.857% */
+         letter-spacing: var(--letter-spacing-normal);
+       }
+ 
+-      [data-slot="dialog-body"] {
++      .ui-dialog-body {
+         width: 100%;
+         position: relative;
+         display: flex;
+         flex-direction: column;
+         flex: 1;
+         overflow: hidden;
++        padding: 0 var(--dialog-inset) var(--dialog-inset);
+ 
+         &:focus-visible {
+           outline: none;
+@@ -114,28 +132,49 @@
+     }
+   }
+ 
++  /* Full-bleed bodies: the surface owns its own chrome out to the card edge
++     (palette, `<List>` rows with full-width hover, settings section rules), so
++     the shared inset would double up on padding those rows already carry. The
++     header and description keep theirs — only the body goes flush.
++
++     The selector is written out to the body's full depth on purpose: the base
++     rule above is nested four levels deep, so a shorter `&[data-flush]
++     [data-slot="dialog-body"]` loses on specificity and silently does nothing. */
++  &[data-flush]
++    [data-slot="dialog-container"]
++    [data-slot="dialog-content"]
++    [data-slot="dialog-body"] {
++    padding-left: 0;
++    padding-right: 0;
++  }
++
+   &[data-fit] {
+-    [data-slot="dialog-container"] {
++    .ui-dialog-container {
+       height: auto;
+ 
+-      [data-slot="dialog-content"] {
++      .ui-dialog-content {
+         min-height: 0;
+       }
+     }
+   }
+ 
+-  &[data-size="large"] [data-slot="dialog-container"] {
++  &[data-size="large"] .ui-dialog-container {
+     width: min(calc(100vw - 32px), 800px);
+     height: min(calc(100vh - 32px), 600px);
+   }
+ 
+-  &[data-size="x-large"] [data-slot="dialog-container"] {
++  &[data-size="x-large"] .ui-dialog-container {
+     width: min(calc(100vw - 32px), 980px);
+     height: min(calc(100vh - 92px), 600px);
+   }
++
++  &[data-size="viewport"] .ui-dialog-container {
++    width: min(calc(100vw - 64px), 1400px);
++    height: calc(100vh - 64px);
++  }
+ }
+ 
+-[data-component="dialog"][data-transition] [data-slot="dialog-content"] {
++[data-component="dialog"][data-transition] .ui-dialog-content {
+   animation: contentHide 100ms ease-in forwards;
+ 
+   &[data-expanded] {
+@@ -179,3 +218,26 @@
+     transform: scale(0.98);
+   }
+ }
++
++.ui-dialog-error {
++  pointer-events: auto;
++  display: flex;
++  flex-direction: column;
++  gap: 12px;
++  align-items: flex-start;
++  width: min(calc(100vw - 32px), 420px);
++  padding: 20px;
++  border: 1px solid var(--border-base);
++  border-radius: var(--radius-2xl);
++  background-color: var(--surface-raised-base);
++  color: var(--text-base);
++
++  [data-slot="dialog-error-close"] {
++    padding: 6px 12px;
++    border: 1px solid var(--border-base);
++    border-radius: var(--radius-lg);
++    background-color: transparent;
++    color: var(--text-base);
++    cursor: pointer;
++  }
++}
+diff --git a/src/components/dialog.tsx b/src/components/dialog.tsx
+index 981e3f45d74f0ddab5d8e726f8c23bb1d63de4a8..8f8b176431f2f295190c89d55187f5ba310bddac 100644
+--- a/src/components/dialog.tsx
++++ b/src/components/dialog.tsx
+@@ -7,11 +7,33 @@ export interface DialogProps extends ParentProps {
+   title?: JSXElement
+   description?: JSXElement
+   action?: JSXElement
+-  size?: "normal" | "large" | "x-large"
++  size?: "normal" | "large" | "x-large" | "viewport"
++  /** Dims the page behind this dialog enough to read as a separate surface on dark themes. */
++  scrim?: "strong"
++  /**
++   * Drop the body's horizontal inset so content runs edge to edge.
++   *
++   * For surfaces that own their own chrome to the card's edge — a command
++   * palette, a `<List>` whose rows carry full-width hover states, a settings
++   * pane with full-bleed section rules. Content dialogs (copy, form fields,
++   * buttons) want the default inset, which lines their left edge up with the
++   * title.
++   */
++  flush?: boolean
+   class?: ComponentProps<"div">["class"]
+   classList?: ComponentProps<"div">["classList"]
+   fit?: boolean
+   transition?: boolean
++  onEscapeKeyDown?: ComponentProps<typeof Kobalte.Content>["onEscapeKeyDown"]
++  /**
++   * Accessible name for the dialog when it renders no `<Kobalte.Title>` (i.e.
++   * a header-less dialog). Kobalte's `Dialog.Content` only sets
++   * `aria-labelledby` from a mounted `<Kobalte.Title>`, so a title-less dialog
++   * would otherwise expose no accessible name (axe `aria-dialog-name`). When a
++   * `title` IS provided that title already names the dialog, so this is ignored
++   * to avoid two competing name sources.
++   */
++  "aria-label"?: string
+ }
+ 
+ export function Dialog(props: DialogProps) {
+@@ -20,25 +42,30 @@ export function Dialog(props: DialogProps) {
+     <div
+       data-component="dialog"
+       data-fit={props.fit ? true : undefined}
++      data-flush={props.flush ? true : undefined}
+       data-size={props.size || "normal"}
++      data-scrim={props.scrim}
+       data-transition={props.transition ? true : undefined}
+     >
+-      <div data-slot="dialog-container">
++      <div data-slot="dialog-container" class="ui-dialog-container">
+         <Kobalte.Content
+           data-slot="dialog-content"
++          aria-label={props.title ? undefined : props["aria-label"]}
+           data-no-header={!props.title && !props.action ? "" : undefined}
+           classList={{
++            "ui-dialog-content": true,
+             ...props.classList,
+             [props.class ?? ""]: !!props.class,
+           }}
+           onOpenAutoFocus={(e) => {
+-            const target = e.currentTarget as HTMLElement | null
+-            const autofocusEl = target?.querySelector("[autofocus]") as HTMLElement | null
+-            if (autofocusEl) {
+-              e.preventDefault()
+-              autofocusEl.focus()
+-            }
++            const target = e.currentTarget
++            if (!(target instanceof Element)) return
++            const autofocusEl = target.querySelector("[autofocus]")
++            if (!(autofocusEl instanceof HTMLElement)) return
++            e.preventDefault()
++            autofocusEl.focus()
+           }}
++          onEscapeKeyDown={props.onEscapeKeyDown}
+         >
+           <Show when={props.title || props.action}>
+             <div data-slot="dialog-header">
+@@ -60,11 +87,9 @@ export function Dialog(props: DialogProps) {
+             </div>
+           </Show>
+           <Show when={props.description}>
+-            <Kobalte.Description data-slot="dialog-description" style={{ "margin-left": "-4px" }}>
+-              {props.description}
+-            </Kobalte.Description>
++            <Kobalte.Description data-slot="dialog-description">{props.description}</Kobalte.Description>
+           </Show>
+-          <div data-slot="dialog-body">{props.children}</div>
++          <div data-slot="dialog-body" class="ui-dialog-body">{props.children}</div>
+         </Kobalte.Content>
+       </div>
+     </div>
+diff --git a/src/context/dialog.tsx b/src/context/dialog.tsx
+index c4020307952857e49f14a63d22b06dc687b5126b..d3631046ad362832628f2310cbe7db4c107ae787 100644
+--- a/src/context/dialog.tsx
++++ b/src/context/dialog.tsx
+@@ -10,8 +10,11 @@ import {
+   runWithOwner,
+   useContext,
+   type JSX,
++  onMount,
+   startTransition,
+   For,
++  Suspense,
++  ErrorBoundary,
+ } from "solid-js"
+ import { Dialog as Kobalte } from "@kobalte/core/dialog"
+ import { makeEventListener } from "@solid-primitives/event-listener"
+@@ -25,6 +28,35 @@ type Active = {
+   owner: Owner
+   onClose?: () => void
+   setClosing: (closing: boolean) => void
++  pending: () => boolean
++}
++
++/**
++ * Mounts with the dialog's content, so it is the moment the stack can hand the
++ * screen over. A dialog whose component is loaded lazily suspends the boundary
++ * above until its chunk lands, and nothing it renders reaches the DOM before.
++ */
++function ReadySentinel(props: { ready: () => void }) {
++  onMount(props.ready)
++  return null
++}
++
++/** What a dialog shows in place of content it could not render. */
++function DialogFailure(props: { error: unknown; onClose: () => void }) {
++  const message = () => {
++    const error = props.error
++    if (error instanceof Error && error.message) return error.message
++    if (typeof error === "string" && error) return error
++    return "Something went wrong."
++  }
++  return (
++    <div data-component="dialog-error" role="alert" class="ui-dialog-error" style={{ "pointer-events": "auto" }}>
++      <p data-slot="dialog-error-message">{message()}</p>
++      <button type="button" data-slot="dialog-error-close" data-testid="dialog-error-close" onClick={() => props.onClose()}>
++        Close
++      </button>
++    </div>
++  )
+ }
+ 
+ const Context = createContext<ReturnType<typeof init>>()
+@@ -33,6 +65,7 @@ function init() {
+   const [stack, setStack] = createSignal<Active[]>([])
+   const timer = { current: undefined as ReturnType<typeof setTimeout> | undefined }
+   const lock = { value: false }
++  const retired = new Set<Active>()
+ 
+   onCleanup(() => {
+     if (timer.current === undefined) return
+@@ -40,6 +73,18 @@ function init() {
+     timer.current = undefined
+   })
+ 
++  // A dialog replaced by `show()` keeps its root — and so its portal, and so
++  // the screen — until the replacement has content to put there. A dialog that
++  // loads its component lazily renders nothing for as long as its chunk takes,
++  // so disposing on the call instead leaves the app with no dialog at all for
++  // that whole span.
++  createEffect(() => {
++    const loading = stack().some((item) => item.pending())
++    if (loading || retired.size === 0) return
++    for (const item of retired) item.dispose()
++    retired.clear()
++  })
++
+   const close = (id?: string) => {
+     const items = stack()
+     const current = id ? items.find((item) => item.id === id) : items.at(-1)
+@@ -67,6 +112,7 @@ function init() {
+ 
+     const onKeyDown = (event: KeyboardEvent) => {
+       if (event.key !== "Escape") return
++      if (event.target instanceof Element && event.target.closest("[data-owns-escape]")) return
+       close()
+       event.preventDefault()
+       event.stopPropagation()
+@@ -75,17 +121,21 @@ function init() {
+     makeEventListener(window, "keydown", onKeyDown, { capture: true })
+   })
+ 
+-  const mount = (element: DialogElement, owner: Owner, onClose: (() => void) | undefined, layer: number) => {
++  const mount = (element: DialogElement, owner: Owner, onClose: (() => void) | undefined) => {
+     const id = Math.random().toString(36).slice(2)
+-    const zIndex = 50 + layer * 10
++    const layer = () => Math.max(0, stack().findIndex((item) => item.id === id))
++    const zIndex = () => 50 + layer() * 10
+     let dispose: (() => void) | undefined
+     let setClosing: ((closing: boolean) => void) | undefined
++    let pending: (() => boolean) | undefined
+ 
+     const node = runWithOwner(owner, () =>
+       createRoot((d: () => void) => {
+         dispose = d
+         const [closing, setClosingSignal] = createSignal(false)
+         setClosing = setClosingSignal
++        const [isPending, setPending] = createSignal(true)
++        pending = isPending
+         return (
+           <Kobalte
+             modal={stack().at(-1)?.id === id}
+@@ -98,22 +148,37 @@ function init() {
+             <Kobalte.Portal>
+               <Kobalte.Overlay
+                 data-component="dialog-overlay"
+-                style={{ "z-index": String(zIndex) }}
++                class="ui-dialog-overlay"
++                style={{ "z-index": String(zIndex()) }}
+                 onClick={() => close(id)}
+               />
+               <div
+-                data-dialog-layer={layer}
++                data-dialog-layer={layer()}
+                 style={{
+                   position: "fixed",
+                   inset: "0",
+-                  "z-index": String(zIndex),
++                  "z-index": String(zIndex()),
+                   display: "flex",
+                   "align-items": "center",
+                   "justify-content": "center",
+                   "pointer-events": "none",
+                 }}
+               >
+-                {element()}
++                {/* A dialog is mounted from the caller's owner, so a throw
++                    inside one lands on whatever boundary encloses that caller —
++                    which is the application's own. One Settings pane whose
++                    consent endpoint answered 404 replaced the entire app with
++                    the error page, taking the shell, the toast region and the
++                    workbench header with it. A dialog's failure ends at the
++                    dialog. */}
++                <ErrorBoundary fallback={(error: unknown) => (
++                  <DialogFailure error={error} onClose={() => close(id)} />
++                )}>
++                  <Suspense fallback={null}>
++                    {element()}
++                    <ReadySentinel ready={() => setPending(false)} />
++                  </Suspense>
++                </ErrorBoundary>
+               </div>
+             </Kobalte.Portal>
+           </Kobalte>
+@@ -121,9 +186,9 @@ function init() {
+       }),
+     )
+ 
+-    if (!dispose || !setClosing) return
++    if (!dispose || !setClosing || !pending) return
+ 
+-    const active: Active = { id, node, dispose, owner, onClose, setClosing }
++    const active: Active = { id, node, dispose, owner, onClose, setClosing, pending }
+     setStack((items) => [...items, active])
+   }
+ 
+@@ -133,18 +198,19 @@ function init() {
+       timer.current = undefined
+     }
+     lock.value = false
+-    mount(element, owner, onClose, stack().length)
++    mount(element, owner, onClose)
+   }
+ 
+   const show = (element: DialogElement, owner: Owner, onClose?: () => void) => {
+-    for (const item of stack()) item.dispose()
+-    setStack([])
+     if (timer.current !== undefined) {
+       clearTimeout(timer.current)
+       timer.current = undefined
+     }
+     lock.value = false
+-    mount(element, owner, onClose, 0)
++    const replaced = stack()
++    for (const item of replaced) retired.add(item)
++    mount(element, owner, onClose)
++    setStack((items) => items.filter((item) => !replaced.includes(item)))
+   }
+ 
+   return {

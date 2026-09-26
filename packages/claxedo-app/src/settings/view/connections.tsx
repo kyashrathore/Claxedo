@@ -2,7 +2,7 @@ import { createSignal, For, Show } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useServer, type Connection, type ConnectionScope, type Integration, type IntegrationsCatalog } from "@/server"
 import type { HarnessConnectionRef, HarnessConnectionsCatalog } from "@claxedo/agent-runtime-contract"
-import { showToast, Tag, Button } from "@/ui"
+import { showToast, Tag, Button, Icon } from "@/ui"
 import { useTranslator } from "@/i18n"
 import { verifyFailedMessage } from "../connections"
 import { settingsDictionary, type SettingsKey } from "../i18n"
@@ -92,7 +92,8 @@ function IntegrationBlock(props: {
         <span class="settings-row-title">{props.integration.name}</span>
         <For each={props.integration.capabilities}>{(capability) => <Tag>{capability}</Tag>}</For>
         <span style={{ flex: 1 }} />
-        <Button size="small" variant="secondary" icon="plus-small" onClick={() => props.onConnecting({ integration: props.integration })}>
+        <Button size="small" variant="neutral" onClick={() => props.onConnecting({ integration: props.integration })}>
+          <Icon name="plus-small" size="small" />
           {connections().length > 0 ? t("settings.connections.add") : t("settings.common.connect")}
         </Button>
       </div>
@@ -145,14 +146,14 @@ function ConnectionRow(props: {
       </div>
       <div class="settings-account-actions">
         <Show when={props.connection.status === "degraded"}>
-          <Button size="small" variant="secondary" disabled={props.busy} onClick={() => props.onReverify()}>{t("settings.connections.reverify")}</Button>
+          <Button size="small" variant="neutral" disabled={props.busy} onClick={() => props.onReverify()}>{t("settings.connections.reverify")}</Button>
         </Show>
         <Show when={props.connection.status !== "connected"}>
-          <Button size="small" variant="secondary" onClick={() => props.onReconnect()}>{t("settings.connections.reconnect")}</Button>
+          <Button size="small" variant="neutral" onClick={() => props.onReconnect()}>{t("settings.connections.reconnect")}</Button>
         </Show>
         <Show when={confirming()} fallback={<Button size="small" variant="ghost" disabled={props.busy} onClick={() => setConfirming(true)}>{t("settings.common.disconnect")}</Button>}>
           <span class="settings-row-description">{t("settings.connections.disconnectConfirm")}</span>
-          <Button size="small" variant="primary" disabled={props.busy} onClick={() => { setConfirming(false); props.onDisconnect() }}>{t("settings.connections.confirm")}</Button>
+          <Button size="small" variant="contrast" disabled={props.busy} onClick={() => { setConfirming(false); props.onDisconnect() }}>{t("settings.connections.confirm")}</Button>
           <Button size="small" variant="ghost" onClick={() => setConfirming(false)}>{t("settings.common.cancel")}</Button>
         </Show>
       </div>

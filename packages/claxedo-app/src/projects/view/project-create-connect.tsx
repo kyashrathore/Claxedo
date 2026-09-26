@@ -68,7 +68,7 @@ function TokenForm(props: { look: CreateFormLook; integration: Integration; stat
         class={`${box()} w-full min-w-0 text-text-strong placeholder:text-text-weak/60 focus:outline-none focus:border-border-interactive-base`}
       />
       <div class="flex flex-wrap items-center gap-3">
-        <Button type="button" variant="secondary" size={props.look.comfortable ? "normal" : "small"} disabled={props.state.busy() || !props.state.secret().trim()} onClick={() => void props.state.connect("key")}>
+        <Button type="button" variant="neutral" size={props.look.comfortable ? "normal" : "small"} disabled={props.state.busy() || !props.state.secret().trim()} onClick={() => void props.state.connect("key")}>
           {props.state.busy() ? t("projects.connect.connecting") : t("projects.connect.withToken")}
         </Button>
         <Show when={prompt()?.createUrl}>
@@ -121,7 +121,7 @@ export function ConnectCodeHost(props: { look: CreateFormLook; integration: Inte
         when={state.grant()}
         fallback={
           <Show when={usesOAuth()} fallback={<TokenForm look={props.look} integration={props.integration} state={state} />}>
-            <Button type="button" variant="secondary" size={props.look.comfortable ? "normal" : "small"} class="self-start" disabled={state.busy()} onClick={() => void state.connect("oauth")}>
+            <Button type="button" variant="neutral" size={props.look.comfortable ? "normal" : "small"} class="self-start" disabled={state.busy()} onClick={() => void state.connect("oauth")}>
               {state.busy() ? t("projects.connect.connecting") : t("projects.connect.oauth", { host: props.integration.name })}
             </Button>
           </Show>

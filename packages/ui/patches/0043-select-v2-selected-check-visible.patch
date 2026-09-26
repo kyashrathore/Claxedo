@@ -1,0 +1,37 @@
+Subject: select-v2: the selected option shows its check mark
+
+What: the option's check svg carries `ui-select-v2-option-check`, and a selected
+option draws it at full opacity and scale.
+Why: select-v2 renders its options as menu-v2 items, and menu-v2.css starts every
+indicator svg transparent, scaled to 0.25 and blurred, revealing it only under
+`[data-checked]`. Kobalte's select marks a chosen option `[data-selected]`, never
+`[data-checked]`, so the chosen option's check never appeared. Keyed by class,
+not by the bare svg.
+
+diff --git a/src/v2/components/select-v2.css b/src/v2/components/select-v2.css
+index 3c88d0d759..9fc3445547 100644
+--- a/src/v2/components/select-v2.css
++++ b/src/v2/components/select-v2.css
+@@ -288,3 +288,9 @@
+ .ui-select-v2-option:not([data-selected]) .ui-select-v2-option-indicator {
+   visibility: hidden;
+ }
++
++.ui-select-v2-option[data-selected] .ui-select-v2-option-check {
++  opacity: 1;
++  scale: 1;
++  filter: none;
++}
+diff --git a/src/v2/components/select-v2.tsx b/src/v2/components/select-v2.tsx
+index 49555036db..f629991405 100644
+--- a/src/v2/components/select-v2.tsx
++++ b/src/v2/components/select-v2.tsx
+@@ -30,7 +30,7 @@ const ChevronDown = () => (
+ )
+ 
+ const CheckSmall = () => (
+-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
++  <svg class="ui-select-v2-option-check" width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+     <path
+       d="M3.53564 8.17857L6.39279 11.75L12.4642 4.25"
+       stroke="currentColor"

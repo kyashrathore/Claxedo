@@ -95,10 +95,9 @@ export function TaskRail(props: TaskDetailProps): JSX.Element {
         <div class="tsk-rail-head">
           <h3 class="tsk-section-title tsk-rail-title">{t("tasks.detail.properties")}</h3>
           <IconButton
-            icon="chevron-double-right"
+            icon={<Icon name="chevron-double-right" size="small" />}
             size="small"
-            variant="ghost"
-            data-icon-interaction="subdued"
+            variant="ghost-muted"
             data-testid="task-detail-rail-collapse"
             aria-label={t("tasks.detail.hideProperties")}
             aria-expanded={true}

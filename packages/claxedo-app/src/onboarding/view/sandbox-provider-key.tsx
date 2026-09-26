@@ -66,7 +66,7 @@ function KeyForm(props: { readonly sandbox: SandboxKey; readonly provider: Sandb
         )}
       </For>
       <div class="flex items-center gap-3">
-        <Button type="submit" variant="secondary" size="small" disabled={sandbox().busy() || !canSaveSandboxKey(props.provider, sandbox().values())}>
+        <Button type="submit" variant="neutral" size="small" disabled={sandbox().busy() || !canSaveSandboxKey(props.provider, sandbox().values())}>
           {saveLabel()}
         </Button>
         <Show when={sandbox().verdict()}>

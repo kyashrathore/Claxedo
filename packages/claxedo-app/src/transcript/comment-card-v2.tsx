@@ -1,5 +1,6 @@
 import { createSignal, onCleanup, onMount, Show } from "solid-js"
-import { FileIcon, getFilenameTruncated, TooltipV2 } from "@/ui"
+import { FileIcon, Tooltip } from "@/ui"
+import { getFilenameTruncated } from "@/ui/utils"
 import { AttachmentCardV2 } from "./attachment-card-v2"
 
 export function CommentCardV2(props: {
@@ -28,7 +29,7 @@ export function CommentCardV2(props: {
   })
 
   return (
-    <TooltipV2
+    <Tooltip
       placement="top"
       openDelay={1000}
       value={props.title ?? props.comment}
@@ -57,6 +58,6 @@ export function CommentCardV2(props: {
           </Show>
         </span>
       </AttachmentCardV2>
-    </TooltipV2>
+    </Tooltip>
   )
 }

@@ -1,9 +1,11 @@
 @import "@opencode-ai/ui/styles/tailwind";
 @import "@opencode-ai/ui/v2/styles/tailwind.css";
 
-@source not "../../../../claxedo-desktop/src/renderer";
 @source "../../";
 @source "../../../index.html";
+@source not "../../**/*.test.*";
+@source not inline("[file:<path>]");
+@source not inline("[image:<filename>]");
 
 @font-face {
   font-family: "JetBrainsMono Nerd Font Mono";
@@ -62,70 +64,13 @@
     container-name: session-new-design;
   }
 
-  .ui-dropdown-menu-content.desktop-app-menu,
-  .ui-dropdown-menu-sub-content.desktop-app-menu {
-    min-width: 160px;
-    padding: 2px;
-  }
-
-  .ui-dropdown-menu-content.desktop-app-menu {
-    width: 160px;
-  }
-
-  .ui-dropdown-menu-sub-content.desktop-app-menu {
-    width: max-content;
-    min-width: 240px;
-    max-width: min(320px, calc(100vw - 24px));
-  }
-
-  [data-component="dropdown-menu-content"].desktop-app-menu .ui-dropdown-menu-group-label {
-    display: flex;
-    align-items: center;
-    height: 28px;
-    padding: 0 12px;
-    font-size: var(--font-size-x-small);
-    font-weight: var(--font-weight-medium);
-    line-height: var(--line-height-none);
-    color: var(--text-weak);
-  }
-
-  [data-component="dropdown-menu-content"].desktop-app-menu .ui-dropdown-menu-item,
-  [data-component="dropdown-menu-content"].desktop-app-menu .ui-dropdown-menu-sub-trigger,
-  [data-component="dropdown-menu-sub-content"].desktop-app-menu .ui-dropdown-menu-item,
-  [data-component="dropdown-menu-sub-content"].desktop-app-menu .ui-dropdown-menu-sub-trigger {
-    min-height: 28px;
-    padding: 0 12px;
-    gap: 8px;
-    font-weight: var(--font-weight-regular);
-    line-height: var(--line-height-none);
-  }
-
-  [data-component="dropdown-menu-content"].desktop-app-menu .ui-dropdown-menu-item-label,
-  [data-component="dropdown-menu-sub-content"].desktop-app-menu .ui-dropdown-menu-item-label {
-    white-space: nowrap;
-  }
-
-  [data-slot="desktop-app-menu-keybind"] {
-    margin-left: auto;
-    color: var(--text-weak);
-    font-size: var(--font-size-x-small);
-    font-weight: var(--font-weight-regular);
-    white-space: nowrap;
-  }
-
-  [data-slot="desktop-app-menu-chevron"] {
-    display: flex;
-    margin-left: auto;
-    color: var(--icon-base);
-  }
-
   [data-component="getting-started-actions"] {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
   }
 
-  [data-component="getting-started-actions"] > .ui-button {
+  [data-component="getting-started-actions"] > .ui-button-v2 {
     width: 100%;
   }
 
@@ -135,7 +80,7 @@
       align-items: center;
     }
 
-    [data-component="getting-started-actions"] > .ui-button {
+    [data-component="getting-started-actions"] > .ui-button-v2 {
       width: auto;
     }
   }
@@ -353,8 +298,6 @@
   [data-action="prompt-harness"] [data-slot="composer-control-label"],
   [data-action="prompt-model"] [data-slot="composer-control-label"],
   [data-action="prompt-model-variant"] [data-slot="composer-control-label"],
-  [data-action="prompt-harness"] .ui-select-select-trigger-icon,
-  [data-action="prompt-model-variant"] .ui-select-select-trigger-icon,
   [data-action="prompt-model"] > .ui-icon:last-child,
   [data-action="prompt-harness-model"] > .ui-icon:last-child,
   [data-action="prompt-model"] .composer-model-provider,
@@ -426,7 +369,6 @@
 }
 
 .claxedo-composer-menu.claxedo-composer-menu [data-component="menu-v2-item"],
-.claxedo-composer-menu.claxedo-composer-menu [data-slot="select-select-item"],
 .claxedo-composer-menu.claxedo-composer-menu [data-slot="list-item"] {
   box-sizing: border-box;
   min-height: 28px;
@@ -447,8 +389,7 @@
 }
 
 .claxedo-composer-menu.claxedo-composer-menu [data-slot="menu-v2-group-label"],
-.claxedo-composer-menu.claxedo-composer-menu .ui-list-header,
-.claxedo-composer-menu.claxedo-composer-menu .ui-select-section {
+.claxedo-composer-menu.claxedo-composer-menu .ui-list-header {
   height: 24px;
   padding: 0 10px;
   font-size: var(--font-size-x-small);

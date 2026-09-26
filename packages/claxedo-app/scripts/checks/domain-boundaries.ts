@@ -5,6 +5,7 @@ import { finish, type Violation } from "./lib/report"
 type Unit = { readonly kind: "domain" | "plugin" | "shared" | "root" | "outside"; readonly name: string }
 
 const pluginRegistry = "src/plugins/bundled.ts"
+const kitHelpers = "src/ui/utils.ts"
 
 function main(): never {
   const { root } = parseArgs(process.argv.slice(2))
@@ -42,7 +43,7 @@ function crossing(root: string, file: string, home: Unit, target: string): strin
     return `imports plugin ${unit.name}; only ${pluginRegistry} composes the first-party plugins, and plugins share code only through the plugin api`
   }
   const path = rel(root, target)
-  if (path === `src/${unit.name}/index.ts` || path === `src/${unit.name}/index.tsx`) return undefined
+  if (path === `src/${unit.name}/index.ts` || path === `src/${unit.name}/index.tsx` || path === kitHelpers) return undefined
   return `imports ${path} directly; import the domain through src/${unit.name}/index.ts`
 }
 

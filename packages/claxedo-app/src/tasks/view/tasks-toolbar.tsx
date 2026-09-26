@@ -1,7 +1,7 @@
 import { For, Show, createSignal, type JSX } from "solid-js"
 import { TASK_STATUSES, type TaskStatus } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
-import { Button, Switch, Tag, IconButton, Popover, Select } from "@/ui"
+import { Button, Switch, Tag, Icon, IconButton, Popover, Select } from "@/ui"
 import { tasksDictionary } from "../i18n"
 import type { TaskProject } from "../links"
 import {
@@ -65,7 +65,7 @@ function FilterTags(props: ToolbarProps): JSX.Element {
           <Tag class="tsk-filter-tag">
             {t(TASK_STATUS_KEYS[status()])}
             <IconButton
-              icon="close-small"
+              icon={<Icon name="close-small" size="small" />}
               size="small"
               variant="ghost"
               data-testid="tasks-status-filter-clear"
@@ -98,7 +98,7 @@ function FilterPopover(props: ToolbarProps): JSX.Element {
         <div class="tsk-option">
           <span class="tsk-option-label">{t("tasks.toolbar.project")}</span>
           <Select
-            size="small"
+            appearance="inline"
             options={[...props.projects]}
             current={project()}
             value={(entry: TaskProject) => entry.id}
@@ -113,7 +113,7 @@ function FilterPopover(props: ToolbarProps): JSX.Element {
         <div class="tsk-option">
           <span class="tsk-option-label">{t("tasks.toolbar.status")}</span>
           <Select
-            size="small"
+            appearance="inline"
             options={[...STATUS_CHOICES]}
             current={props.store.state.statusFilter ?? ANY_STATUS}
             value={(choice: StatusChoice) => choice}
@@ -155,7 +155,7 @@ function DisplayPopover(props: { readonly store: TasksStore }): JSX.Element {
         <div class="tsk-option">
           <span class="tsk-option-label">{t("tasks.toolbar.grouping")}</span>
           <Select
-            size="small"
+            appearance="inline"
             options={[...GROUPINGS]}
             current={GROUPINGS.find((entry) => entry.grouped === props.store.state.grouped)}
             value={(entry: Grouping) => String(entry.grouped)}
@@ -169,7 +169,7 @@ function DisplayPopover(props: { readonly store: TasksStore }): JSX.Element {
         <div class="tsk-option">
           <span class="tsk-option-label">{t("tasks.toolbar.date")}</span>
           <Select
-            size="small"
+            appearance="inline"
             options={[...TASK_DATE_FIELDS]}
             current={props.store.state.dateField}
             value={(field: TaskDateField) => field}

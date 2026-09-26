@@ -190,7 +190,7 @@
     transition: opacity 0.15s ease;
     will-change: opacity;
 
-    .ui-tooltip-trigger {
+    .ui-tooltip-v2-trigger {
       display: inline-flex;
       width: fit-content;
     }
@@ -258,7 +258,7 @@
     transition: opacity 0.15s ease;
     will-change: opacity;
 
-    .ui-tooltip-trigger {
+    .ui-tooltip-v2-trigger {
       display: inline-flex;
       width: fit-content;
     }
@@ -765,11 +765,6 @@
   flex-direction: column;
   gap: 8px;
 
-  .ui-checkbox {
-    --checkbox-align: flex-start;
-    --checkbox-offset: 0.5px;
-  }
-
   .ui-message-part-todo-content {
     line-height: var(--line-height-normal);
 
@@ -993,7 +988,7 @@
     align-items: center;
     gap: 8px;
 
-    .ui-button {
+    .ui-button-v2 {
       padding-left: 12px;
       padding-right: 12px;
     }
@@ -1411,8 +1406,8 @@
   }
 }
 
-.ui-accordion[data-scope="apply-patch"] {
-  .ui-accordion-trigger {
+[data-component="accordion-v2"][data-scope="apply-patch"] {
+  .ui-accordion-v2-trigger {
     background-color: var(--v2-background-bg-base) !important;
   }
 
@@ -1771,11 +1766,11 @@ body:not([data-new-layout]) {
   :is([data-component="edit-tool"], [data-component="write-tool"], [data-component="apply-patch-tool"])
     > [data-component="collapsible"]
     > .ui-collapsible-trigger[aria-expanded="true"],
-  [data-component="accordion"][data-scope="apply-patch"] .ui-accordion-trigger {
+  [data-component="accordion-v2"][data-scope="apply-patch"] .ui-accordion-v2-trigger {
     background-color: var(--background-stronger) !important;
   }
 
-  .ui-accordion[data-scope="apply-patch"] {
+  [data-component="accordion-v2"][data-scope="apply-patch"] {
     [data-slot="apply-patch-directory"] {
       color: var(--text-base);
     }

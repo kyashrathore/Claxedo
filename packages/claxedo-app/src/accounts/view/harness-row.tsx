@@ -1,7 +1,7 @@
 import { createMemo, createSignal, For, onMount, Show } from "solid-js"
 import { harnessConnectContext, harnessIcon } from "@/lib/harness-catalog"
 import { useI18n } from "@/i18n"
-import { ClaxedoIcon, useDialog, Button, ProviderIcon, RadioList, RadioListItem } from "@/ui"
+import { ClaxedoIcon, useDialog, Button, ProviderIcon, RadioGroup, RadioItem } from "@/ui"
 import { useWindowName } from "@/usage"
 import { machineLoginWords, storedAccountWords, type AccountWords } from "../account-words"
 import { useAccountsText } from "../i18n"
@@ -57,17 +57,16 @@ function AccountItem(props: { readonly account: AccountWords; readonly row: Harn
   const activity = () => accounts().activity()
   const account = () => props.account
   return (
-    <RadioListItem
-      class="group py-1"
-      value={account().key}
-      disabled={account().disabled}
-      invalid={account().refused}
-      data-account={account().key}
-      data-selected={props.selected ? "true" : "false"}
-      title={account().identity}
-      label={<AccountLabel account={account()} />}
-      description={account().detail === undefined ? undefined : <span class="text-13-regular text-text-weak">{account().detail}</span>}
-    >
+    <div class="group flex items-start gap-2 py-1" data-slot="account-row" data-account={account().key} data-selected={props.selected ? "true" : "false"}>
+      <RadioItem
+        class="min-w-0 flex-1"
+        value={account().key}
+        disabled={account().disabled}
+        data-invalid={account().refused ? "" : undefined}
+        title={account().identity}
+        label={<AccountLabel account={account()} />}
+        description={account().detail === undefined ? undefined : <span class="text-13-regular text-text-weak">{account().detail}</span>}
+      />
       <span class="relative flex shrink-0 items-center justify-end">
         <Show when={account().checkedAt}>
           {(at) => (
@@ -90,7 +89,7 @@ function AccountItem(props: { readonly account: AccountWords; readonly row: Harn
           onRemove={() => void accounts().remove(account().ids).finally(() => setConfirming(false))}
         />
       </span>
-    </RadioListItem>
+    </div>
   )
 }
 
@@ -132,7 +131,7 @@ export function AgentHarnessRow(props: HarnessRowProps) {
       </Show>
       <div class="mb-3 flex flex-col" classList={{ "ml-8": !props.headerless }}>
         <Show when={rows().length > 0}>
-          <RadioList
+          <RadioGroup
             name={`agent-account-${props.harness.id}`}
             aria-label={props.harness.label}
             value={selected()}
@@ -143,7 +142,7 @@ export function AgentHarnessRow(props: HarnessRowProps) {
             }}
           >
             <For each={rows()}>{(account) => <AccountItem account={account} row={props} selected={selected() === account.key} openConnect={openConnect} />}</For>
-          </RadioList>
+          </RadioGroup>
         </Show>
       </div>
     </div>

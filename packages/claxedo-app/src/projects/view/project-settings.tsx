@@ -24,7 +24,7 @@ function ProjectFields(props: { readonly project: Project }): JSX.Element {
     <SettingsGroup
       title={t("projects.settings.group")}
       action={
-        <Button variant="secondary" size="small" onClick={() => dialog.show(() => <DialogEditProject project={props.project} />)}>
+        <Button variant="neutral" size="small" onClick={() => dialog.show(() => <DialogEditProject project={props.project} />)}>
           {t("projects.edit.action")}
         </Button>
       }
@@ -32,7 +32,7 @@ function ProjectFields(props: { readonly project: Project }): JSX.Element {
       <SettingsList>
         <SettingsRow title={t("projects.edit.name")} description={props.project.name} />
         <SettingsRow title={t("projects.edit.icon")}>
-          <Show when={image()} fallback={<Avatar fallback={props.project.name} {...getAvatarColors(color())} class="size-8" />}>
+          <Show when={image()} fallback={<Avatar fallback={props.project.name} {...getAvatarColors(color())} size="large" kind="org" />}>
             {(src) => <img src={src()} alt={t("projects.edit.icon.alt")} class="size-8 rounded object-cover" />}
           </Show>
         </SettingsRow>
@@ -67,7 +67,7 @@ function ProjectRemoval(props: { readonly id: ProjectId; readonly name: string }
   return (
     <SettingsList>
       <SettingsRow title={t("projects.remove.title")} description={t("projects.settings.remove.description")}>
-        <Button variant="secondary" size="small" onClick={remove}>
+        <Button variant="neutral" size="small" onClick={remove}>
           {t("projects.remove")}
         </Button>
       </SettingsRow>

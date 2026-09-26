@@ -1,6 +1,7 @@
 import { Component, For, Show } from "solid-js"
 import type { ComposerTextKey } from "../i18n"
-import { ClaxedoIconButton as IconButton, FileIcon, Tooltip, getDirectory, getFilename, getFilenameTruncated } from "@/ui"
+import { ClaxedoIconButton as IconButton, FileIcon, Tooltip } from "@/ui"
+import { getDirectory, getFilename, getFilenameTruncated } from "@/ui/utils"
 import { ImageMarkBadge } from "@/lib/image-mark-badge"
 import type { FileContextItem } from "../model"
 import type { NumberedImageMark } from "../marks/marks"
