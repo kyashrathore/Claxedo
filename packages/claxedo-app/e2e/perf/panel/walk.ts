@@ -69,6 +69,7 @@ export async function walk(page: Page, runner: Runner, workspace: Workspace, ori
       await settle(page)
       await runner.measure(name, "changes-to-files", run, { kind: "navigator", navigator: "files" }, () => page.locator("button[aria-label='Open Files']").click())
       await settle(page)
+      if (run % 5 === 0) await checkpoint(`after ${run * 2} navigator switches`)
     }
   })
   await section("tabs", async () => {

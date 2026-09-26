@@ -44,11 +44,31 @@ function daemonEnv() {
   return Object.fromEntries(spec.split(",").map((entry) => entry.split("=") as [string, string]))
 }
 
-async function memory(cdp: CDPSession, stack: Stack, label: string) {
+const REGIONS: Record<string, string> = {
+  navigator: "[data-testid='workspace-navigator-overlay']",
+  tab: "[data-testid='workspace-panel-body'] #review-panel",
+  session: "[data-testid='session-page-root']",
+  rail: "[data-testid='session-rail'], nav[aria-label]",
+}
+
+function census(page: Page) {
+  return page.evaluate((regions) => {
+    const count = (root: ParentNode) => root.querySelectorAll("*").length
+    const deep = (root: ParentNode): number => [...root.querySelectorAll("*")].reduce((sum, node) => sum + (node.shadowRoot ? 1 + deep(node.shadowRoot) : 1), 0)
+    const out: Record<string, string> = { body: `${count(document.body)}/${deep(document.body)}` }
+    for (const [name, selector] of Object.entries(regions)) {
+      const roots = [...document.querySelectorAll(selector)]
+      out[name] = roots.length ? `${roots.map((root) => count(root)).reduce((a, b) => a + b, 0)}/${roots.map((root) => deep(root)).reduce((a, b) => a + b, 0)}` : "-"
+    }
+    return Object.entries(out).map(([name, value]) => `${name} ${value}`).join(" ")
+  }, REGIONS)
+}
+
+async function memory(page: Page, cdp: CDPSession, stack: Stack, label: string) {
   await cdp.send("HeapProfiler.collectGarbage")
   const { metrics } = (await cdp.send("Performance.getMetrics")) as { metrics: { name: string; value: number }[] }
   const pick = (name: string) => metrics.find((metric) => metric.name === name)?.value ?? 0
-  console.log(`[memory] ${label}: nodes ${pick("Nodes")} listeners ${pick("JSEventListeners")} heap ${(pick("JSHeapUsedSize") / 1048576).toFixed(1)} MiB / ${(pick("JSHeapTotalSize") / 1048576).toFixed(1)} MiB, daemon cpu ${daemonCpu(stack.daemon.pid())}`)
+  console.log(`[memory] ${label}: nodes ${pick("Nodes")} listeners ${pick("JSEventListeners")} heap ${(pick("JSHeapUsedSize") / 1048576).toFixed(1)} MiB / ${(pick("JSHeapTotalSize") / 1048576).toFixed(1)} MiB, daemon cpu ${daemonCpu(stack.daemon.pid())}; light/deep elements: ${await census(page)}`)
 }
 
 async function main() {
@@ -82,7 +102,7 @@ async function main() {
           for (const variant of order) {
             runner.useVariant(variant.name, variant.distDir)
             for (const workspace of workspaces) {
-              await walk(page, runner, workspace, variant.url, (label) => memory(cdp, stack, `${variant.name} ${workspace.name} round ${round}: ${label}`))
+              await walk(page, runner, workspace, variant.url, (label) => memory(page, cdp, stack, `${variant.name} ${workspace.name} round ${round}: ${label}`))
               await runner.flush()
             }
           }
@@ -90,7 +110,7 @@ async function main() {
       } finally {
         for (const variant of variants.list) await variant.close()
       }
-      await memory(cdp, stack, "end")
+      await memory(page, cdp, stack, "end")
     } finally {
       await browser.close()
     }
