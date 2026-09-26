@@ -299,3 +299,9 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - Deleted: `packages/claxedo-app` (v1), `packages/session-ui`, `packages/storybook`, `src/legacy`, the e2e v1 mode and `e2e/parity`, the desktop's v1 renderer and its v2 switch (`CLAXEDO_DESKTOP_RENDERER`, `dev:v2`, `package:mac:v2`, "Claxedo V2 Dev"), and the server paths only v1 read (`projectName` on cloud create, the hosted `/project` routes, the hosted name heuristics, `/api/claxedo/projects/by-directory`).
 - The corpus case `two-turns` now has a single baseline, the one v2 recorded.
 - `packages/ui` (the kit, `@opencode-ai/ui`) stays: the app reaches it through `src/ui`. Moving it into the app is a separate follow-up (lead, 2026-09-26).
+
+## Lane v2/switch-paint, 2026-09-26: Composer budget re-based for the footer's known selection
+- The owner asked why an existing session's footer says "Select model" or "Select agent" when its model is known. The fix seeds the harness scope from the session read and the last turn before the config answers, and names the known model in the label (`src/composer/README.md`).
+- Dead code went first: the `displayName` read and `harnessDisplayName`, which nothing called, and the switch-paint reveal holds on the hydration run and the models load.
+- The composer measured 10,975 before and 11,141 after: 122 lines are the new tests (the seed, the config replacing it, the label's placeholders), the rest the label as a tested function and the seed patch.
+- Re-based to the measured 11,141 with no headroom, pending the orchestrator's review.

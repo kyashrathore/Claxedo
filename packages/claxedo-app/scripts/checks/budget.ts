@@ -11,7 +11,7 @@ const parts: readonly Part[] = [
   { name: "Server adapter (no budget until its dedicated rebuild; DECISIONS 2026-09-26)", folders: ["src/server"] },
   { name: "Session client, including the session list store", budget: 9500, folders: ["src/session"], except: ["src/session/view"] },
   { name: "Session screen incl. the kept timeline and docks", budget: 14300, folders: ["src/session/view"] },
-  { name: "Composer (re-based to its measured size after the no-comments triage and size splits; DECISIONS 2026-09-25)", budget: 10987, folders: ["src/composer"] },
+  { name: "Composer (re-based to its measured size after the known-selection seed and its tests; DECISIONS 2026-09-26)", budget: 11141, folders: ["src/composer"] },
   { name: "Rail and workbench", budget: 8300, folders: ["src/rail", "src/workbench"] },
   { name: "Browser tabs (re-based to its measured size: the parity ruling kept v1's chrome; DECISIONS 2026-09-26)", budget: 1375, folders: ["src/browser"] },
   { name: "Shell and platform", budget: 6500, folders: ["src/shell", "src/auth", "src/i18n", "src/lib", "src/*"], except: ["src/lib/machine.ts"] },
