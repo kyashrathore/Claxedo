@@ -10,7 +10,7 @@ import { PiRpcTransport, type PiRpcOptions } from "./transports/pi-rpc"
 import { CodexAppServerTransport, type CodexTransportOptions } from "./transports/codex-app-server"
 import { ClaudeSdkTransport } from "./transports/claude-sdk"
 import type { ClaudeSdkOptions } from "./transports/claude-sdk/launch-context"
-import { CursorSdkTransport } from "./transports/cursor-sdk"
+import { CursorSdkTransport, type CursorSdkTransportOptions } from "./transports/cursor-sdk"
 import { OpenCodeSdkTransport } from "./transports/opencode-sdk/transport"
 import type { OpenCodeRuntimeOptions } from "./transports/opencode-sdk/runtime"
 
@@ -19,7 +19,7 @@ export type HarnessCompositionOptions = {
   pi: PiRpcOptions
   codex: CodexTransportOptions
   claude: ClaudeSdkOptions
-  cursor: { env: NodeJS.ProcessEnv }
+  cursor: CursorSdkTransportOptions
   opencode: OpenCodeRuntimeOptions
 }
 
@@ -49,7 +49,7 @@ export function createHarnessComposer(services: HarnessServices, options: Harnes
       if (record.transport === "pi-rpc") return new PiRpcTransport(services, options.pi)
       if (record.transport === "codex-app-server") return new CodexAppServerTransport(services, options.codex)
       if (record.transport === "claude-sdk") return new ClaudeSdkTransport(services, options.claude)
-      if (record.transport === "cursor-sdk") return new CursorSdkTransport(services, options.cursor.env)
+      if (record.transport === "cursor-sdk") return new CursorSdkTransport(services, options.cursor)
       if (record.transport === "opencode-sdk") return new OpenCodeSdkTransport(services, options.opencode)
       throw new TransportError("provider", "connection_unavailable", `Transport is not native: ${record.transport}`)
     },
