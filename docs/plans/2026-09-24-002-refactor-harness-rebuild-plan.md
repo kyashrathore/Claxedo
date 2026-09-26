@@ -580,6 +580,9 @@ The P0.2 expected-red defects below must turn green on the branch. The wire corp
 | H-30 | H7's held queue row moves from `dispatching` to `unknown` after `session.idle` with no published event, so a client sees the change only by polling and the corpus has no synchronized readback | Correctness | the runtime's queue publication in `workspace-runtime` | Publish the queue state change, and H7 awaits it before its readback | P3 | H7.unknown-held corpus recording compares twice |
 | H-31 | H35 native handoff emits a second-turn `session.updated` for one session on one run and omits it on another [two recordings and diff](../../packages/harness/e2e/corpus/races/H35.native-handoff-session-updated.json). A separate [two-run title readback](../../packages/harness/e2e/corpus/readbacks/H35.native-handoff-title.json) exposed an unsynchronized field and was removed from comparison | Correctness | session update publication in `workspace-runtime` | Publish the same session update sequence on every handoff turn | P3 | H35.native-handoff corpus, excluded until fixed |
 | H-32 | H37 options emitted an additional title `session.usage` delta after `message.completed` in one run, while another run did not [two recordings and diff](../../packages/harness/e2e/corpus/races/H37.options-per-turn-usage.json) | Correctness | title-turn usage publication in `workspace-runtime` | Publish the same usage frames for a completed title turn | P3 | H37.options-per-turn corpus, excluded until fixed |
+| H-33 | Stop on a scripted ACP turn commits a terminal operation, but the stored `lastTurn.status` is `completed` instead of `cancelled` (found by H23, on macOS and Windows) | Correctness | today's runtime turn settlement after a Stop | Store the stopped turn as `cancelled` when Stop's operation is terminal | P3 | H23 |
+| H-34 | On Windows, ACP can miss a dying process's creation identity, so retirement stays unresolved and fences the next turn (found by H9 on the Windows lane) | Availability | ACP process retirement over `process-ownership` on Windows | Establish the creation identity at spawn, or prove the process gone without it, so a fast crash never fences the next turn | P3 | H9 on Windows |
+| H-35 | ACP over HTTP threw from `dispose()` while the SDK held the stream's writable lock, so retiring a connection with a write in flight failed (found by the fix-acp-pi lane) | Availability | `harness/src/transports/acp/connection.ts` | Fixed on `hv2/fix-acp-pi` (849212b502): retirement cancels through the owned reader and awaits the remote DELETE | P2 ACP | `ACP HTTP retirement closes a connection with a write in flight` |
 | C-1 | Hosted never delivers provider credentials to a cloud sandbox | Availability | `supervisor/sandbox.ts:108` is the only caller | The delivery path run on hosted, over the existing brokering | P2 cloud | H19 (local and live), H30 |
 | C-2 | Hosted has no settings store and never sends the settings snapshot; its provider screen is a stub | Availability | `config-sync.ts` (self-hosted only); `routes/hosted/shell.ts:170-175` | A D1 settings store, snapshot push and fan-out on hosted | P2 cloud | H28 |
 | C-3 | OpenCode fails in a hosted sandbox | Availability | `runtime-boot.ts:141-143`, `workspace/runtime.ts:564-568` | Composed when a session asks for it | P2 OpenCode, cloud | H19, OpenCode case |
@@ -1239,7 +1242,7 @@ Runs are sharded by harness with separate `CLAXEDO_E2E_PORT_RANGE`s, on crabbox 
 | H20 | Pi credentials by session owner: the owner's turn, a member's turn through a `send` share (spends the owner's profile), a queued re-issue, expired and missing accounts | N |
 | H21 | Two workspaces: an ACP config restart in one doesn't wait on the other | N |
 | H22 | Checkpoint drain with `needs_action` handled as today | B |
-| H23 | Windows: spawn, cancel, retirement | B once the Windows lane exists |
+| H23 | Windows: spawn, cancel, retirement | B once the Windows lane exists; red at H-33 |
 | H24 | Remote ACP: no first-party server, no `Authorization` for it, no stdio servers in `session/new`, load, resume or fork; the notice, if approved | N |
 | H25 | Cursor with two backend bindings at once | N |
 | H26 | ACP restoration: handoff context saved before rebinding | B |
@@ -1273,7 +1276,7 @@ Every slice deletes what it replaces.
   - `packages/process-ownership`, with every importer and packaging site repointed; policies re-measured.
   - The portable e2e harness.
   - The websocket ACP agent, the sandbox driver, the Windows lane, the Cursor backend decision.
-  - `Progress:` process ownership moved (8394b1378b); the portable harness runs H0 over ACP and pinned Pi with zero egress, green twice with a red run (71737a9fc5). The websocket agent, sandbox driver, Windows lane and Cursor decision remain.
+  - `Progress:` process ownership moved (8394b1378b); the portable harness runs H0 over ACP and pinned Pi with zero egress, green twice with a red run (71737a9fc5). The Windows lane runs H0 and H23 on a native Windows box; H23's process-table and targeted-red gates pass, with Stop's stored outcome still red at H-33. H9 exposes H-34 on Windows: ACP can miss a dying process's creation identity and fence the next turn. The websocket agent, sandbox driver and Cursor decision remain.
 - [ ] **P0.2 Baseline.**
   - Translator and wire corpora recorded on `dev`.
   - B flows green on `dev` with targeted red runs.

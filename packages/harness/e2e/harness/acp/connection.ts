@@ -8,7 +8,7 @@ export const SCRIPTED_ACP_WEBSOCKET_HARNESS = { id: SCRIPTED_ACP_WEBSOCKET_CONNE
 
 const AGENT_ENTRY = path.join(import.meta.dirname, "agent.ts")
 
-export function scriptedAcpConnection(input: { bunPath: string; scriptDir: string; red: boolean }) {
+export function scriptedAcpConnection(input: { bunPath: string; scriptDir: string; red: boolean; resistantChild?: boolean }) {
   return {
     connectionId: SCRIPTED_ACP_CONNECTION_ID,
     providerKey: "acp",
@@ -21,6 +21,7 @@ export function scriptedAcpConnection(input: { bunPath: string; scriptDir: strin
         command: input.bunPath,
         args: [AGENT_ENTRY],
         env: { [ACP_SCRIPT_DIR_ENV]: input.scriptDir, ...(input.red ? { [ACP_RED_ENV]: "1" } : {}),
+          ...(input.resistantChild ? { SCRIPTED_ACP_RESISTANT_CHILD: "1" } : {}),
           ...(process.env.CLAXEDO_E2E_ACP_WITHHOLD_ONCE_OPTION === "1" ? { [ACP_WITHHOLD_ONCE_ENV]: "1" } : {}),
           ...(process.env.CLAXEDO_E2E_ACP_FAULT ? { [ACP_FAULT_ENV]: process.env.CLAXEDO_E2E_ACP_FAULT } : {}) },
       },

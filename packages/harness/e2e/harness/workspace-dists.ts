@@ -10,6 +10,7 @@ type WorkspaceDist = { dir: string; artifact: string; build: readonly string[] }
 
 export const HELPERS_DIST: WorkspaceDist = { dir: "claxedo-helpers", artifact: "dist", build: ["scripts/build.ts"] }
 export const CONTRACT_DIST: WorkspaceDist = { dir: "agent-runtime-contract", artifact: "dist/index.mjs", build: ["run", "build"] }
+export const PROCESS_OWNERSHIP_DIST: WorkspaceDist = { dir: "process-ownership", artifact: "dist/launch-gate-child.mjs", build: ["run", "build"] }
 export async function ensureWorkspaceDist(dist: WorkspaceDist): Promise<boolean> {
   const dir = path.join(PACKAGES_DIR, dist.dir)
   const artifact = path.join(dir, dist.artifact)

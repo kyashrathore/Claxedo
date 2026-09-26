@@ -179,9 +179,12 @@ if (import.meta.main) {
   const scriptDir = process.env[ACP_SCRIPT_DIR_ENV]
   if (!scriptDir) throw new Error(`${ACP_SCRIPT_DIR_ENV} is not set`)
   if (process.env.SCRIPTED_ACP_RESISTANT_CHILD === "1") {
-    const child = spawn(process.execPath, ["-e", "process.on('SIGTERM', () => {}); process.send('ready'); setInterval(() => {}, 1000)"],
-      { stdio: ["ignore", "ignore", "ignore", "ipc"] })
-    await new Promise<void>((resolve) => child.once("message", () => resolve()))
+    const child = spawn("node", ["-e", "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"],
+      { stdio: "ignore", detached: process.platform === "win32" })
+    await new Promise<void>((resolve, reject) => {
+      child.once("spawn", () => resolve())
+      child.once("error", reject)
+    })
     fs.writeFileSync(path.join(scriptDir, "writer.pid"), String(child.pid))
   }
   fs.writeFileSync(path.join(scriptDir, "agent.pid"), String(process.pid))
