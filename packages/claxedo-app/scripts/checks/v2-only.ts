@@ -8,7 +8,7 @@ const kitFolders = ["packages/ui"]
 const kitDoor = "src/ui"
 const kitStylesheets: Readonly<Record<string, readonly string[]>> = {
   "src/shell/styles/index.css": ["@opencode-ai/ui/styles/tailwind", "@opencode-ai/ui/v2/styles/tailwind.css"],
-  "src/styles.ts": ["@opencode-ai/ui/v2/menu-v2.css", "@opencode-ai/ui/v2/tooltip-v2.css"],
+  "src/styles.ts": ["@opencode-ai/ui/v2/menu-v2.css"],
 }
 const styleImport = /@import\s+(?:url\()?["']([^"']+)["']/g
 

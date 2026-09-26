@@ -1,4 +1,4 @@
-import { useMarked, transcriptMarkdownExtensions, useDialog, ImagePreview, checksum, reportUiError, Icon, IconButton, TooltipV2 } from "@/ui"
+import { useMarked, transcriptMarkdownExtensions, useDialog, ImagePreview, checksum, reportUiError, Icon, IconButton, Tooltip } from "@/ui"
 import { codeTheme } from "./code-theme"
 import { useTranscriptI18n } from "./i18n"
 import { useOptionalData } from "./data"
@@ -178,7 +178,7 @@ function sameCopyLabels(left: CopyLabels, right: CopyLabels) {
 function MarkdownCopyButton(props: { labels: Accessor<CopyLabels>; copied: Accessor<boolean> }) {
   const label = () => (props.copied() ? props.labels().copied : props.labels().copy)
   return (
-    <TooltipV2 placement="top" value={label()}>
+    <Tooltip placement="top" value={label()}>
       <IconButton
         type="button"
         size="normal"
@@ -191,7 +191,7 @@ function MarkdownCopyButton(props: { labels: Accessor<CopyLabels>; copied: Acces
           </>
         }
       />
-    </TooltipV2>
+    </Tooltip>
   )
 }
 
@@ -275,7 +275,7 @@ function createViewButton(label: string, onClick: () => void) {
   host.setAttribute("data-slot", "markdown-view-button")
   const dispose = render(
     () => (
-      <TooltipV2 placement="top" value={label}>
+      <Tooltip placement="top" value={label}>
         <IconButton
           type="button"
           size="small"
@@ -284,7 +284,7 @@ function createViewButton(label: string, onClick: () => void) {
           icon={<Icon name="expand" size="small" />}
           onClick={onClick}
         />
-      </TooltipV2>
+      </Tooltip>
     ),
     host,
   )

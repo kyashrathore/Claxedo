@@ -190,7 +190,7 @@
     transition: opacity 0.15s ease;
     will-change: opacity;
 
-    .ui-tooltip-trigger {
+    .ui-tooltip-v2-trigger {
       display: inline-flex;
       width: fit-content;
     }
@@ -258,7 +258,7 @@
     transition: opacity 0.15s ease;
     will-change: opacity;
 
-    .ui-tooltip-trigger {
+    .ui-tooltip-v2-trigger {
       display: inline-flex;
       width: fit-content;
     }

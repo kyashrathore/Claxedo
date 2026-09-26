@@ -32,7 +32,7 @@ import type {
   AgentUserMessage,
 } from "@claxedo/agent-runtime-contract"
 import { useData } from "./data"
-import { useFileComponent, useDialog, Accordion, StickyAccordionHeader, Collapsible, FileIcon, Icon, Checkbox, DiffChanges, ImagePreview, getDirectory as _getDirectory, getFilename, checksum, Tooltip, IconButton, Button, TooltipV2, TextShimmer, type IconProps } from "@/ui"
+import { useFileComponent, useDialog, Accordion, StickyAccordionHeader, Collapsible, FileIcon, Icon, Checkbox, DiffChanges, ImagePreview, getDirectory as _getDirectory, getFilename, checksum, Tooltip, IconButton, Button, TextShimmer, type IconProps } from "@/ui"
 import { type TranscriptI18n, useTranscriptI18n } from "./i18n"
 import { BasicTool, GenericTool, shellExitCode, ToolExitCode } from "./basic-tool"
 import { ScrollableOutput } from "./scrollable-output"
@@ -248,7 +248,7 @@ function MessageActionButton(
         </Tooltip>
       }
     >
-      <TooltipV2 value={props.label} placement="top" gutter={4}>
+      <Tooltip value={props.label} placement="top" gutter={4}>
         <IconButton
           icon={<Icon name={props.icon} size="small" />}
           size="normal"
@@ -258,7 +258,7 @@ function MessageActionButton(
           onClick={props.onClick}
           aria-label={props["aria-label"]}
         />
-      </TooltipV2>
+      </Tooltip>
     </Show>
   )
 }
@@ -2224,7 +2224,7 @@ ToolRegistry.register({
       >
         <div class="ui-bash-output">
           <div class="ui-bash-copy">
-            <TooltipV2 value={copied() ? i18n.t("transcript.message.copied") : i18n.t("transcript.message.copy")} placement="top">
+            <Tooltip value={copied() ? i18n.t("transcript.message.copied") : i18n.t("transcript.message.copy")} placement="top">
               <IconButton
                 icon={<Icon name={copied() ? "check" : "copy"} size="small" />}
                 size="normal"
@@ -2233,7 +2233,7 @@ ToolRegistry.register({
                 onClick={handleCopy}
                 aria-label={copied() ? i18n.t("transcript.message.copied") : i18n.t("transcript.message.copy")}
               />
-            </TooltipV2>
+            </Tooltip>
           </div>
           <ScrollableOutput class="ui-bash-scroll" revealed={props.revealed} onRevealedChange={props.onRevealedChange}>
             <pre data-slot="bash-pre">
