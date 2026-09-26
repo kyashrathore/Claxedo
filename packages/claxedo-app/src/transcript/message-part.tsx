@@ -32,7 +32,7 @@ import type {
   AgentUserMessage,
 } from "@claxedo/agent-runtime-contract"
 import { useData } from "./data"
-import { useFileComponent, useDialog, Accordion, StickyAccordionHeader, Collapsible, FileIcon, Icon, Checkbox, DiffChanges, ImagePreview, getDirectory as _getDirectory, getFilename, checksum, Tooltip, IconButton, IconV2, Button, TooltipV2, TextShimmer, type IconProps } from "@/ui"
+import { useFileComponent, useDialog, Accordion, StickyAccordionHeader, Collapsible, FileIcon, Icon, Checkbox, DiffChanges, ImagePreview, getDirectory as _getDirectory, getFilename, checksum, Tooltip, IconButton, Button, TooltipV2, TextShimmer, type IconProps } from "@/ui"
 import { type TranscriptI18n, useTranscriptI18n } from "./i18n"
 import { BasicTool, GenericTool, shellExitCode, ToolExitCode } from "./basic-tool"
 import { ScrollableOutput } from "./scrollable-output"
@@ -231,7 +231,6 @@ function MessageActionButton(
     useV2?: boolean
   },
 ) {
-  const icon = () => (props.icon === "copy" ? "outline-copy" : props.icon)
   return (
     <Show
       when={props.useV2}
@@ -251,7 +250,7 @@ function MessageActionButton(
     >
       <TooltipV2 value={props.label} placement="top" gutter={4}>
         <IconButton
-          icon={<IconV2 name={icon()} size="small" />}
+          icon={<Icon name={props.icon} size="small" />}
           size="normal"
           variant="ghost-muted"
           disabled={props.disabled}
@@ -2227,7 +2226,7 @@ ToolRegistry.register({
           <div class="ui-bash-copy">
             <TooltipV2 value={copied() ? i18n.t("transcript.message.copied") : i18n.t("transcript.message.copy")} placement="top">
               <IconButton
-                icon={<IconV2 name={copied() ? "check" : "outline-copy"} size="small" />}
+                icon={<Icon name={copied() ? "check" : "copy"} size="small" />}
                 size="normal"
                 variant="ghost-muted"
                 onMouseDown={(e) => e.preventDefault()}
