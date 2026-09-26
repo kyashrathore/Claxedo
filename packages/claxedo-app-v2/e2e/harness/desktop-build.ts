@@ -5,7 +5,7 @@ import { newestMtime, run, sourceMtime } from "./app"
 export const DESKTOP_DIR = path.resolve(import.meta.dirname, "../../../claxedo-desktop")
 export const DESKTOP_MAIN = path.join(DESKTOP_DIR, "out/main/index.js")
 const STAMP = path.join(DESKTOP_DIR, "out/claxedo-e2e-desktop.json")
-const DESKTOP_SOURCES = ["src", "scripts", "resources", "electron.vite.config.ts", "vite.renderer.ts", "vite.renderer-v2.ts", "package.json"]
+const DESKTOP_SOURCES = ["src", "scripts", "resources", "electron.vite.config.ts", "vite.renderer.ts", "package.json"]
 
 export type DesktopBuild = { built: boolean; ms: number }
 
@@ -30,9 +30,7 @@ export async function ensureDesktopBuilt(): Promise<DesktopBuild> {
   if (buildIsCurrent(mtime)) return { built: false, ms: Date.now() - started }
   const env = {
     ...process.env,
-    CLAXEDO_DESKTOP_RENDERER: "v2",
     VITE_CLAXEDO_HOSTED_ACTIVATION: "true",
-    VITE_CLAXEDO_AUTH_ADAPTER: "desktop",
   }
   await step("desktop prebuild", "prebuild", env)
   await step("desktop build", "build:inner", env)

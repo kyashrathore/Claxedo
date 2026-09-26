@@ -22,7 +22,7 @@ describe("desktop html contract", () => {
     // built from the wrong template would reproduce every one of them.
     const file = await html("index.local.html")
     expect(file).not.toContain('rel="manifest"')
-    expect(file).toContain('src="./local.tsx"')
+    expect(file).toContain('src="./main.tsx"')
     expect(file).not.toContain('src="./index.tsx"')
     for (const ref of refs(file)) {
       expect(ref.startsWith("/")).toBe(false)

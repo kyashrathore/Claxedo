@@ -7,7 +7,6 @@ import { readBuildManifest } from "../../../script/product-boundary/emitted-mani
 import type { RollupBundleMetadata } from "../../../script/product-boundary/normalize-build-manifest"
 import {
   DESKTOP_ACCOUNT_BOUNDARY_MANIFEST,
-  DESKTOP_HOSTED_CONTRIBUTION_BOUNDARY_MANIFEST,
   DESKTOP_MAIN_BOUNDARY_MANIFEST,
   DESKTOP_RENDERER_BOUNDARY_MANIFEST,
   clearDesktopBoundaryManifests,
@@ -40,7 +39,7 @@ function chunk(input: {
   }
 }
 
-test("desktop plugins split static startup from separately fingerprinted optional chunks", () => {
+test("desktop plugins split main's static startup from its separately fingerprinted account chunk", () => {
   const { workspace, root } = desktopFixture()
   try {
     const mainBundle: RollupBundleMetadata = {
@@ -58,22 +57,15 @@ test("desktop plugins split static startup from separately fingerprinted optiona
     desktopMainBoundaryManifestPlugin(root).generateBundle({}, mainBundle)
 
     const rendererBundle: RollupBundleMetadata = {
-      "assets/local.js": chunk({
-        fileName: "assets/local.js",
-        modules: [path.join(root, "src/renderer/local.tsx")],
-        imports: ["assets/desktop-hosted-contributions-def456.js"],
-        dynamicImports: ["assets/desktop-hosted-contributions-def456.js"],
-      }),
-      "assets/desktop-hosted-contributions-def456.js": chunk({
-        fileName: "assets/desktop-hosted-contributions-def456.js",
-        modules: [path.join(root, "src/renderer/hosted-contributions.ts")],
+      "assets/main.js": chunk({
+        fileName: "assets/main.js",
+        modules: [path.join(root, "src/renderer/main.tsx")],
       }),
     }
-    desktopRendererBoundaryManifestPlugin(root, "v1").generateBundle({}, rendererBundle)
+    desktopRendererBoundaryManifestPlugin(root).generateBundle({}, rendererBundle)
 
-    expect(verifyDesktopBoundaryManifestSet(root, "v1")).toEqual([
+    expect(verifyDesktopBoundaryManifestSet(root)).toEqual([
       DESKTOP_ACCOUNT_BOUNDARY_MANIFEST,
-      DESKTOP_HOSTED_CONTRIBUTION_BOUNDARY_MANIFEST,
       DESKTOP_MAIN_BOUNDARY_MANIFEST,
       DESKTOP_RENDERER_BOUNDARY_MANIFEST,
     ].sort())
@@ -82,19 +74,14 @@ test("desktop plugins split static startup from separately fingerprinted optiona
     const renderer = readBuildManifest(path.join(root, DESKTOP_RENDERER_BOUNDARY_MANIFEST))
     expect(main.modules).not.toContain("packages/claxedo-desktop/src/main/account/index.ts")
     expect(main.edges.dynamic).toEqual(["index.js -> desktop-account-abc123.js"])
-    expect(renderer.modules).not.toContain("packages/claxedo-desktop/src/renderer/hosted-contributions.ts")
-    expect(renderer.edges.dynamic).toEqual([
-      "assets/local.js -> assets/desktop-hosted-contributions-def456.js",
-    ])
+    expect(renderer.entry).toBe("packages/claxedo-desktop/src/renderer/main.tsx")
 
     desktopMainBoundaryManifestPlugin(root).generateBundle({}, { "index.js": mainBundle["index.js"] })
-    desktopRendererBoundaryManifestPlugin(root, "v1").generateBundle({}, { "assets/local.js": rendererBundle["assets/local.js"] })
-    expect(verifyDesktopBoundaryManifestSet(root, "v1")).toEqual([
+    expect(verifyDesktopBoundaryManifestSet(root)).toEqual([
       DESKTOP_MAIN_BOUNDARY_MANIFEST,
       DESKTOP_RENDERER_BOUNDARY_MANIFEST,
     ].sort())
     expect(fs.existsSync(path.join(root, DESKTOP_ACCOUNT_BOUNDARY_MANIFEST))).toBe(false)
-    expect(fs.existsSync(path.join(root, DESKTOP_HOSTED_CONTRIBUTION_BOUNDARY_MANIFEST))).toBe(false)
   } finally {
     fs.rmSync(workspace, { recursive: true, force: true })
   }
@@ -116,61 +103,14 @@ test("desktop manifest verification rejects stale extras and cleanup removes the
     writeBase(DESKTOP_MAIN_BOUNDARY_MANIFEST, "packages/claxedo-desktop/src/main/index.ts", "index.js")
     writeBase(
       DESKTOP_RENDERER_BOUNDARY_MANIFEST,
-      "packages/claxedo-desktop/src/renderer/local.tsx",
-      "assets/local.js",
+      "packages/claxedo-desktop/src/renderer/main.tsx",
+      "assets/main.js",
     )
     writeBase("out/product-boundary/stale.json", "stale.ts", "stale.js")
 
-    expect(() => verifyDesktopBoundaryManifestSet(root, "v1")).toThrow("manifest set mismatch")
+    expect(() => verifyDesktopBoundaryManifestSet(root)).toThrow("manifest set mismatch")
     clearDesktopBoundaryManifests(root)
     expect(fs.existsSync(path.join(root, "out/product-boundary"))).toBe(false)
-  } finally {
-    fs.rmSync(workspace, { recursive: true, force: true })
-  }
-})
-
-test("desktop manifest verification rejects a hosted chunk preloaded by the local document", () => {
-  const { workspace, root } = desktopFixture()
-  try {
-    const writeBase = (file: string, entry: string, chunkName: string, dynamic: string[] = []) => {
-      const target = path.join(root, file)
-      fs.mkdirSync(path.dirname(target), { recursive: true })
-      fs.writeFileSync(target, JSON.stringify({
-        entry,
-        modules: [entry],
-        chunks: [chunkName],
-        edges: { static: [], dynamic },
-      }))
-    }
-    const hostedChunk = "assets/desktop-hosted-contributions-abc123.js"
-    writeBase(
-      DESKTOP_MAIN_BOUNDARY_MANIFEST,
-      "packages/claxedo-desktop/src/main/index.ts",
-      "index.js",
-    )
-    writeBase(
-      DESKTOP_RENDERER_BOUNDARY_MANIFEST,
-      "packages/claxedo-desktop/src/renderer/local.tsx",
-      "assets/main.js",
-      [`assets/main.js -> ${hostedChunk}`],
-    )
-    writeBase(
-      DESKTOP_HOSTED_CONTRIBUTION_BOUNDARY_MANIFEST,
-      "packages/claxedo-desktop/src/renderer/hosted-contributions.ts",
-      hostedChunk,
-    )
-    const html = path.join(root, "out/renderer/index.local.html")
-    fs.mkdirSync(path.dirname(html), { recursive: true })
-    fs.writeFileSync(
-      html,
-      `<script type="module" src="./assets/main.js"></script>\n` +
-        `<link rel="modulepreload" href="./${hostedChunk}">\n`,
-    )
-
-    expect(() => verifyDesktopBoundaryManifestSet(root, "v1")).toThrow("eagerly preloads")
-
-    fs.writeFileSync(html, `<script type="module" src="./assets/main.js"></script>\n`)
-    expect(verifyDesktopBoundaryManifestSet(root, "v1")).toContain(DESKTOP_HOSTED_CONTRIBUTION_BOUNDARY_MANIFEST)
   } finally {
     fs.rmSync(workspace, { recursive: true, force: true })
   }

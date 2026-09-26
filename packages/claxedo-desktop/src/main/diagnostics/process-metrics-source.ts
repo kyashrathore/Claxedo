@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs"
 
-import type { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
+import type { LocalDiagnostics } from "../../shared/local-diagnostics"
 
 import type { ElectronDiagnosticsSource, ElectronRoot } from "./electron-source"
 import { processIdentity } from "./process-identity"

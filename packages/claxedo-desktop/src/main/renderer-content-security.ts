@@ -1,6 +1,6 @@
 /**
- * The v2 renderer's Content-Security-Policy, stamped by main onto its own
- * documents. v2 runs live plugins in this document, and the policy is what keeps
+ * The renderer's Content-Security-Policy, stamped by main onto its own
+ * documents. The app runs live plugins in this document, and the policy is what keeps
  * their `fetch`, sockets, beacons and images to the one daemon this window
  * talks to. It cannot be a build-time `<meta>`: the daemon's port is chosen or
  * adopted at launch, and the policy names the exact origin, never a port range.

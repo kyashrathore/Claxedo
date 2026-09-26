@@ -1,9 +1,9 @@
-import "#app-v2/styles"
+import "#app/styles"
 import { MemoryRouter } from "@solidjs/router"
 import { render } from "solid-js/web"
-import { App } from "#app-v2"
+import { App } from "#app"
 import type { ElectronAPI } from "../preload/types"
-import { desktopApi } from "../renderer/api"
+import { desktopApi } from "./api"
 
 const EXTERNAL_PROTOCOLS: ReadonlySet<string> = new Set(["http:", "https:", "mailto:"])
 

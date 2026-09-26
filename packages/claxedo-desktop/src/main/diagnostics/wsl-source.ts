@@ -1,4 +1,4 @@
-import type { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
+import type { LocalDiagnostics } from "../../shared/local-diagnostics"
 import { execFile } from "node:child_process"
 import { cpus } from "node:os"
 import { join } from "node:path"

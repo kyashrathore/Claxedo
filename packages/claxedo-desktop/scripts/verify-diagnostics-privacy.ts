@@ -13,7 +13,7 @@ function loadTs(): Promise<TsModule> {
 
 const diagnosticsBoundaryFiles = [
   {
-    file: "packages/claxedo-app/src/features/processes/data/local-diagnostics.ts",
+    file: "packages/claxedo-desktop/src/shared/local-diagnostics.ts",
     scopes: ["LocalDiagnostics"],
   },
   {
@@ -69,7 +69,6 @@ export async function verifyDiagnosticsPrivacy(root = resolve(import.meta.dirnam
   ).flat()
   const legacy = await Promise.all([
     "packages/workspace-runtime/src/routes/process.ts",
-    "packages/claxedo-app/src/features/processes/data/client.ts",
   ].map(async (file) => ({
     file,
     source: await Bun.file(resolve(root, file)).text(),

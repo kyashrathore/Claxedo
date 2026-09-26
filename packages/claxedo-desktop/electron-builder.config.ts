@@ -9,7 +9,7 @@ import {
 } from "./scripts/package-structure"
 import { CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME } from "./src/shared/compile-cache"
 import { resolveTargetOsArch } from "./scripts/target-platform"
-import { desktopProduct, parseDesktopRenderer } from "./src/shared/desktop-product"
+import { desktopProduct } from "./src/shared/desktop-product"
 
 const channel = (() => {
   const raw = process.env.CLAXEDO_CHANNEL
@@ -257,7 +257,7 @@ const getBase = (): Configuration => ({
 
 function getConfig() {
   const base = getBase()
-  const product = desktopProduct(channel, parseDesktopRenderer(process.env.CLAXEDO_DESKTOP_RENDERER))
+  const product = desktopProduct(channel)
 
   switch (channel) {
     case "beta": {

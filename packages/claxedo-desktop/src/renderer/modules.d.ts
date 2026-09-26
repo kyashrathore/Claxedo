@@ -1,4 +1,4 @@
-declare module "#app-v2" {
+declare module "#app" {
   import type { JSX } from "solid-js"
   export function App(props: {
     readonly router?: (props: { readonly children?: JSX.Element }) => JSX.Element
@@ -6,4 +6,4 @@ declare module "#app-v2" {
   }): JSX.Element
 }
 
-declare module "#app-v2/styles" {}
+declare module "#app/styles" {}

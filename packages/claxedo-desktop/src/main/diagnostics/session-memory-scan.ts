@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs"
-import type { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
+import type { LocalDiagnostics } from "../../shared/local-diagnostics"
 
 import { readNumber, readString } from "../../shared/json-read"
 

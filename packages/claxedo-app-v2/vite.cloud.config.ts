@@ -4,7 +4,7 @@ import tailwindcss from "@tailwindcss/vite"
 import { fileURLToPath } from "node:url"
 import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { dirname } from "node:path"
-import { resolveAccountBindingSelection } from "./vite.account-binding"
+import { resolveAccountBindingSelection, type AccountBindingId } from "./vite.account-binding"
 import { webContentSecurityPolicyPlugin } from "./vite.content-security-policy"
 
 const normalizePath = (p: string) => p.replace(/\\/g, "/")
@@ -62,10 +62,10 @@ function claxedoWorkspaceSource(): Plugin {
 /**
  * Cloud-specific Vite configuration for Claxedo.
  */
-function cloudConfig({ mode }: { mode: string }): UserConfig {
+export function cloudConfig({ mode }: { mode: string }, binding?: AccountBindingId): UserConfig {
   const env = loadEnv(mode, process.cwd(), "VITE_")
   const accountBinding = resolveAccountBindingSelection(
-    env.VITE_CLAXEDO_AUTH_ADAPTER || process.env.VITE_CLAXEDO_AUTH_ADAPTER,
+    binding ?? (env.VITE_CLAXEDO_AUTH_ADAPTER || process.env.VITE_CLAXEDO_AUTH_ADAPTER),
   )
   // 2593 tracks DEFAULT_CLAXEDO_SERVER_PORT in claxedo-server (see
   // src/deployments/local/port.ts) — the port `claxedo-server dev` listens on.

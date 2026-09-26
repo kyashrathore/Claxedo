@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
+import { LocalDiagnostics } from "../../shared/local-diagnostics"
 import { EventEmitter } from "node:events"
 
 import {

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import type { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
+import type { LocalDiagnostics } from "./local-diagnostics"
 
 import { snapshotDelta } from "../main/diagnostics/ipc"
 import { applyDiagnosticsSnapshotUpdate } from "./diagnostics-snapshot-update"

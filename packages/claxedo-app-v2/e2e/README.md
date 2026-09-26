@@ -196,7 +196,7 @@ Moving `HOME` hides the login keychain from the `security` tool (it answers 44),
 
 ### `desktop` (the Electron app)
 
-Specs tagged `@desktop` (`test("…", { tag: "@desktop" }, async ({ desktop }) => …)`) run only in the `desktop` project; `web` and `phone` skip them. The `desktop` fixture builds `packages/claxedo-desktop` when its sources or the app's are newer than the last build (`bun run prebuild`, then `electron-vite build`, with `CLAXEDO_DESKTOP_RENDERER=v2` for v2; about a minute, recorded as a "desktop build" annotation), then launches `out/main/index.js` through Playwright's Electron driver. The app runs isolated like a stack: `HOME`, `XDG_*`, its user data and its server data in the spec's data directory, an empty `ZDOTDIR`, the egress guard, and its own scripted model server and ACP scripts. Its embedded server listens on a port from the run's range and is prepared exactly like the daemon.
+Specs tagged `@desktop` (`test("…", { tag: "@desktop" }, async ({ desktop }) => …)`) run only in the `desktop` project; `web` and `phone` skip them. The `desktop` fixture builds `packages/claxedo-desktop` when its sources or the app's are newer than the last build (`bun run prebuild`, then `electron-vite build` with `VITE_CLAXEDO_HOSTED_ACTIVATION=true`, so sign-in is offered; about a minute, recorded as a "desktop build" annotation), then launches `out/main/index.js` through Playwright's Electron driver. The app runs isolated like a stack: `HOME`, `XDG_*`, its user data and its server data in the spec's data directory, an empty `ZDOTDIR`, the egress guard, and its own scripted model server and ACP scripts. Its embedded server listens on a port from the run's range and is prepared exactly like the daemon.
 
 The embedded server admits only its application: Electron main stamps a capability on its own renderer's requests, and nothing else can send it. So `desktop.api` and `desktop.makeWorkspace` send through the app's window, with the app's own privileges. The fixture waits for main to publish the server (`awaitInitialization`), which is when that capability is armed.
 
@@ -207,7 +207,7 @@ The embedded server admits only its application: Electron main stamps a capabili
 | `api` | `ClaxedoApi` for the embedded server, sent through `window` |
 | `url`, `dataDir`, `scripted`, `egress`, `acp`, `makeWorkspace(name, projectName?)`, `log()` | As on `stack` |
 
-`bun run dev:v2` in `packages/claxedo-desktop` runs the desktop in development with the v2 renderer. Packaging v2 (`package:mac:v2`) waits on a v2 build without the auth vendor client, which the desktop's unsigned boundary check requires.
+`bun run dev` in `packages/claxedo-desktop` runs the desktop in development, and `bun run package:mac` packages it.
 
 ### Real CLIs
 

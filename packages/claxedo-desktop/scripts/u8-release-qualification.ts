@@ -28,7 +28,6 @@ export const REQUIRED_BOUNDARY_MANIFESTS = [
   "desktop-main",
   "desktop-account",
   "desktop-renderer-local",
-  "desktop-renderer-hosted-contributions",
 ] as const
 export const REQUIRED_LIFECYCLE_GATES = [
   "healthReady",
@@ -545,7 +544,7 @@ export function qualifyU8Release(input: {
     const edges = record(normalized.edges, `boundary manifest ${name}.edges`)
     invariant(Array.isArray(edges.static) && Array.isArray(edges.dynamic), `boundary manifest ${name} has invalid edges`)
   }
-  for (const name of ["desktop-main", "desktop-account", "desktop-renderer-local", "desktop-renderer-hosted-contributions"] as const) {
+  for (const name of ["desktop-main", "desktop-account", "desktop-renderer-local"] as const) {
     const manifest = manifestRecords.find((item) => item.name === name)!
     const contractPath = `out/product-boundary/${name}.json`
     invariant(contractOutput[contractPath] === manifest.sha256, `candidate build contract does not fingerprint boundary manifest ${name}`)

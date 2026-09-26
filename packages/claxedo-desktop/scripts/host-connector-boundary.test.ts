@@ -166,17 +166,16 @@ test("the bundled local-server's import closure never reaches Host Connector", (
 
 test("no package the renderer is composed from declares or imports Host Connector", () => {
   // The renderer bundle is built from the desktop's own renderer/preload plus
-  // `@claxedo/app` and the shared UI packages. If the specifier appears in
-  // none of them, no Vite alias can route to it either.
+  // the app package. If the specifier appears in none of them, no Vite alias
+  // can route to it either.
   const trees = [
     path.join(PACKAGE_DIR, "src/renderer"),
     path.join(PACKAGE_DIR, "src/preload"),
     path.join(PACKAGE_DIR, "src/shared"),
-    path.join(REPO_PACKAGES, "claxedo-app/src"),
-    path.join(REPO_PACKAGES, "ui/src"),
+    path.join(REPO_PACKAGES, "claxedo-app-v2/src"),
   ].filter((tree) => fs.existsSync(tree))
 
-  expect(trees.length).toBe(5)
+  expect(trees.length).toBe(4)
 
   const importers = trees
     .flatMap((tree) => sources(tree))
@@ -187,7 +186,7 @@ test("no package the renderer is composed from declares or imports Host Connecto
   expect(importers).toEqual([])
 
   // And no manifest edge, so a future `@/`-aliased import could not resolve.
-  for (const manifest of ["claxedo-app/package.json", "ui/package.json"]) {
+  for (const manifest of ["claxedo-app-v2/package.json"]) {
     const parsed = JSON.parse(fs.readFileSync(path.join(REPO_PACKAGES, manifest), "utf8")) as {
       dependencies?: Record<string, string>
       devDependencies?: Record<string, string>

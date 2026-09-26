@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
+import type { LocalDiagnostics } from "../src/shared/local-diagnostics"
 
 import {
   DIAGNOSTICS_CPU_OVERHEAD_BUDGET,

@@ -20,7 +20,7 @@ function respond(listener: ReturnType<typeof listen>, details: Parameters<Return
   return new Promise<HeadersReceivedResponse>((resolve) => listener(details, resolve))
 }
 
-describe("the v2 renderer policy", () => {
+describe("the renderer policy", () => {
   test("names exactly the daemon's origin for every network directive", () => {
     const policy = rendererContentSecurityPolicy("http://127.0.0.1:2593")
     expect(directive(policy, "connect-src")).toBe("connect-src 'self' http://127.0.0.1:2593 ws://127.0.0.1:2593")
