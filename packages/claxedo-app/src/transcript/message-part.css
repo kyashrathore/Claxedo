@@ -1406,8 +1406,8 @@
   }
 }
 
-.ui-accordion[data-scope="apply-patch"] {
-  .ui-accordion-trigger {
+[data-component="accordion-v2"][data-scope="apply-patch"] {
+  .ui-accordion-v2-trigger {
     background-color: var(--v2-background-bg-base) !important;
   }
 
@@ -1766,11 +1766,11 @@ body:not([data-new-layout]) {
   :is([data-component="edit-tool"], [data-component="write-tool"], [data-component="apply-patch-tool"])
     > [data-component="collapsible"]
     > .ui-collapsible-trigger[aria-expanded="true"],
-  [data-component="accordion"][data-scope="apply-patch"] .ui-accordion-trigger {
+  [data-component="accordion-v2"][data-scope="apply-patch"] .ui-accordion-v2-trigger {
     background-color: var(--background-stronger) !important;
   }
 
-  .ui-accordion[data-scope="apply-patch"] {
+  [data-component="accordion-v2"][data-scope="apply-patch"] {
     [data-slot="apply-patch-directory"] {
       color: var(--text-base);
     }

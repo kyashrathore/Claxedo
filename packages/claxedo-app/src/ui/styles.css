@@ -2,7 +2,6 @@
 
 @import "./reduced-motion.css" layer(base);
 @import "./touch.css";
-@import "@opencode-ai/ui/accordion.css" layer(components);
 @import "@opencode-ai/ui/animated-number.css" layer(components);
 @import "@opencode-ai/ui/avatar.css" layer(components);
 @import "@opencode-ai/ui/button.css" layer(components);

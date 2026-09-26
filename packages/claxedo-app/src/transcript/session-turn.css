@@ -214,17 +214,6 @@
     gap: 10px;
   }
 
-  [data-slot="session-turn-diff-chevron"] {
-    display: inline-flex;
-    color: var(--icon-weaker);
-    transform: rotate(-90deg);
-    transition: transform 0.15s ease;
-  }
-
-  [data-slot="accordion-item"][data-expanded] .ui-session-turn-diff-chevron {
-    transform: rotate(0deg);
-  }
-
   [data-slot="session-turn-diff-view"] {
     background-color: var(--surface-inset-base);
     width: 100%;

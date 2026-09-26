@@ -1445,7 +1445,6 @@ function ToolFileAccordion(props: { path: string; actions?: JSX.Element; childre
               </div>
               <div data-slot="apply-patch-trigger-actions">
                 {props.actions}
-                <Icon name="chevron-down" size="small" data-slot="accordion-caret" />
               </div>
             </div>
           </Accordion.Trigger>
@@ -2543,7 +2542,6 @@ ToolRegistry.register({
                                       <DiffChanges changes={{ additions: file.additions, deletions: file.deletions }} />
                                     </Match>
                                   </Switch>
-                                  <Icon name="chevron-down" size="small" data-slot="accordion-caret" />
                                 </div>
                               </div>
                             </Accordion.Trigger>

@@ -320,18 +320,18 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
   ))
 
   const Header = (header: { file: string }) => (
-    <div data-component="accordion" class="ui-accordion">
+    <div data-component="accordion-v2">
       <div
-        data-slot="accordion-item" class="ui-accordion-item"
+        data-component="accordion-v2-item" class="ui-accordion-v2-item"
         data-review-header-file={header.file}
         data-expanded={expanded(header.file) ? "" : undefined}
         data-selected={props.focusedFile === header.file ? "" : undefined}
       >
-        <div data-slot="accordion-header">
+        <div data-slot="accordion-v2-header">
           <button
             type="button"
-            data-slot="accordion-trigger"
-            class="ui-accordion-trigger"
+            data-component="accordion-v2-trigger"
+            class="ui-accordion-v2-trigger"
             style={{ height: `${FILE_HEADER_HEIGHT}px` }}
             data-testid={props.headerTestId?.(header.file)}
             data-hovered={headerActive(header.file) ? "" : undefined}
