@@ -9,7 +9,6 @@ import { REPO_ROOT } from "./closure"
 describe("product boundary authoritative checks", () => {
   test("every product policy composes existing gates without recursing into verify:closure", () => {
     expect(Object.keys(AUTHORITATIVE_CHECKS).sort()).toEqual([
-      "@claxedo/app",
       "@claxedo/desktop",
       "@claxedo/host-connector",
       "@claxedo/local-server",
@@ -19,15 +18,10 @@ describe("product boundary authoritative checks", () => {
     const commands = Object.values(AUTHORITATIVE_CHECKS)
       .flat()
       .map((check) => check.command.join(" "))
-    expect(commands.some((command) => command.includes("local-entry-closure.guard.test.ts"))).toBe(true)
     expect(commands.some((command) => command.includes("local-closure.test.ts"))).toBe(true)
     expect(commands.some((command) => command.includes("connector-closure.test.ts"))).toBe(true)
     expect(commands.some((command) => command.includes("deployment-closures.test.ts"))).toBe(true)
-    expect(commands.some((command) => command.includes("renderer-entry-closure.guard.test.ts"))).toBe(true)
     expect(commands.some((command) => command.includes("package-structure.test.ts"))).toBe(true)
-    expect(commands.some((command) => command.includes("build:local"))).toBe(true)
-    expect(commands.some((command) => command.includes("build:marker-control"))).toBe(true)
-    expect(commands.some((command) => command.includes("check:local-bundle"))).toBe(true)
     // The certified Better Auth + D1 Worker is otherwise bundled only at manual
     // release time, so CI must bundle it and boot the built entry.
     expect(commands.some((command) => command.includes("build:workerd-boundary"))).toBe(true)
@@ -43,8 +37,8 @@ describe("product boundary authoritative checks", () => {
       "local-server published and self-hosted closure",
     ])
     expect(AUTHORITATIVE_CHECKS["@claxedo/desktop"]?.map((check) => check.label)).toEqual([
-      "desktop production build with optional contributions",
-      "unsigned renderer and packaged-resource boundaries",
+      "desktop production build with sign-in",
+      "packaged-resource boundaries",
     ])
     expect(AUTHORITATIVE_CHECKS["@claxedo/desktop"]?.[0]?.env).toEqual({ VITE_CLAXEDO_HOSTED_ACTIVATION: "true" })
     expect(AUTHORITATIVE_CHECKS["@claxedo/server"]?.map((check) => check.label)).toEqual([
@@ -60,18 +54,13 @@ describe("product boundary authoritative checks", () => {
 
   test("runs a product's checks in order and stops on the first failure", () => {
     const seen: AuthoritativeCheck[] = []
-    const ok = runAuthoritativeChecks("@claxedo/app", (check) => {
+    const ok = runAuthoritativeChecks("@claxedo/local-server", (check) => {
       seen.push(check)
       return seen.length === 2 ? 7 : 0
     })
 
     expect(ok).toBe(false)
-    expect(seen.map((check) => check.label)).toEqual(["local renderer source closure", "local renderer build"])
-  })
-
-  test("the emitted check always uses the known-positive marker build", () => {
-    const check = AUTHORITATIVE_CHECKS["@claxedo/app"]!.find((item) => item.label === "local emitted-bundle identity")
-    expect(check?.env).toEqual({ CLAXEDO_MARKER_CONTROL_DIR: "dist-marker-control" })
+    expect(seen.map((check) => check.label)).toEqual(["local-server production build", "local-server built entry smoke"])
   })
 
   test("a product with no authoritative command cannot pass", () => {
@@ -84,7 +73,6 @@ describe("product boundary authoritative checks", () => {
     const releaseGatesWorkflow = fs.readFileSync(path.join(REPO_ROOT, ".github/workflows/release-gates.yml"), "utf8")
 
     for (const packageDirectory of [
-      "claxedo-app",
       "claxedo-local-server",
       "claxedo-host-connector",
       "claxedo-server",

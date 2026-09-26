@@ -19,7 +19,6 @@ export const REQUIRED_BROWSER_FLOWS = [
   "workspace-switch",
 ] as const
 export const REQUIRED_BOUNDARY_MANIFESTS = [
-  "app-local",
   "local-server",
   "host-connector",
   "server-cloud-node",

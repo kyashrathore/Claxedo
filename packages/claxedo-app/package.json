@@ -9,9 +9,7 @@
   },
   "scripts": {
     "dev": "VITE_CLAXEDO_AUTH_ADAPTER=better-auth PORT=${PORT:-4445} vite --config vite.cloud.config.ts",
-    "dev:local": "VITE_CLAXEDO_AUTH_ADAPTER=better-auth PORT=${PORT:-4445} vite --config vite.local.config.ts",
     "build": "VITE_CLAXEDO_AUTH_ADAPTER=better-auth node ./node_modules/vite/bin/vite.js build --config vite.cloud.config.ts",
-    "build:local": "VITE_CLAXEDO_AUTH_ADAPTER=better-auth node ./node_modules/vite/bin/vite.js build --config vite.local.config.ts",
     "typecheck": "tsgo --noEmit -p tsconfig.json",
     "typecheck:e2e": "tsgo --noEmit -p tsconfig.e2e.json",
     "test": "bun test --conditions browser src",

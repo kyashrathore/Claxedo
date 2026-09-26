@@ -67,13 +67,5 @@
       ]
     }
   ],
-  "twins": [
-    {
-      "reason": "Two independent replay paths must each sanitize their own buffer: the PTY host replays session.buffer to a reattaching socket, and the renderer replays its own localStorage snapshot on mount. The app cannot import the runtime package's internals. The duplication is deliberate; the drift is not.",
-      "files": [
-        "packages/claxedo-app/src/features/terminal/core/replay-safe-slice.ts",
-        "packages/workspace-runtime/src/pty/safe-slice.ts"
-      ]
-    }
-  ]
+  "twins": []
 }

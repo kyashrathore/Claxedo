@@ -1,5 +1,5 @@
 import type { Policy } from "../policy.ts"
-import { APP_ALIASES, MANIFEST_READS } from "./shared.ts"
+import type { Alias } from "../closure.ts"
 
 const DESKTOP = "packages/claxedo-desktop/src"
 const APP = "packages/claxedo-app/src"
@@ -168,18 +168,23 @@ export const desktopMainComposition: Policy = {
   // with no server, runtime or store closure behind them.
   // +1 module (2026-09-25): `shared/desktop-product.ts`, the one owner of the
   // packaged app id and product name. The builder config reads it to name the
-  // bundle and main reads it to name userData and the Keychain item, so the v2
-  // renderer build ("Claxedo V2 Dev") never opens today's profile. Reviewed
+  // bundle and main reads it to name userData and the Keychain item. Reviewed
   // owner: Electron main, which sets both at startup. No imports, no package edge.
   // +1 module, +1 package (2026-09-25): `main/renderer-content-security.ts`
-  // stamps the v2 renderer's Content-Security-Policy on its documents, built by
+  // stamps the renderer's Content-Security-Policy on its documents, built by
   // `@claxedo/app/content-security-policy` (one file, no imports), the same
   // builder the web build uses, so the desktop and the web lock the app to one
   // exact server origin by one rule. Reviewed owner: Electron main, the only
   // place that knows the daemon's origin before the document loads and the
   // only one a page cannot rewrite.
-  // 101/27, no headroom.
-  ceilings: { modules: 101, packages: 27 },
+  // +1 module (2026-09-26): `shared/local-diagnostics.ts`, the process
+  // diagnostics contract (zod schemas) main's diagnostics collectors, IPC and
+  // preload validate against. It moved here from the old app, where the walk
+  // counted it only as that package's edge. Reviewed owner: the desktop, now
+  // its only user. Packages stay at 27: `zod`, its one import, joins, and the
+  // two app package edges (old app, app-v2) become one, `@claxedo/app`.
+  // 102/27, no headroom.
+  ceilings: { modules: 102, packages: 27 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -282,542 +287,87 @@ export const desktopAccountComposition: Policy = {
 }
 
 /**
- * The UNSIGNED desktop renderer.
+ * How the renderer build resolves the app's specifiers.
  *
- * `local.tsx` is the only renderer entry. Hosted contributions are reached
- * through a dynamic import after Electron reports signed account state; the
- * emitted manifest below follows only the base entry's static chunk graph.
- *
- * This crosses INTO `@claxedo/app` on purpose. The desktop renderer composes
- * that package's shared shell, so "what does the unsigned desktop reach" is
- * unanswerable without following the edge — and the module that matters,
- * `platform/auth/better-auth-browser-auth.ts` (the one file that imports
- * `better-auth/client` and mints a token), is reached by walking straight into
- * `@claxedo/app`'s own source tree; the package's `exports` map has no
- * `"./auth"` subpath to hide behind. A walk that stops at the package
- * boundary reports a clean desktop closure and is wrong; it is exactly how the
- * desktop once shipped a browser identity SDK to every unsigned launch while
- * the app's own local guard stayed green.
- *
- * The source closure deliberately includes the dynamic hosted contribution so
- * it can reject a hosted-identity leak anywhere in the shipped renderer graph.
- * The emitted manifest is the narrower unsigned-startup proof: it cuts at the
- * optional chunk while retaining the dynamic edge as build metadata.
+ * `vite.renderer.ts` builds the renderer from the app's own Vite config, so
+ * these mirror its aliases: `#app` and `#app/styles` are the renderer's door
+ * into the app, `@/` is the app's own source root, and `#account-binding` is
+ * the desktop's account binding, which the renderer config always selects.
+ * Nothing resolves them from a package manifest, so a walk without this list
+ * answers "unresolved" for every app module and reports a clean product it
+ * never opened. `#app/styles` comes before `#app`, whose target is a file.
  */
-export const desktopRendererUnsigned: Policy = {
-  id: "desktop-renderer-unsigned",
-  summary: "@claxedo/desktop unsigned renderer entry (src/renderer/local.tsx)",
+const RENDERER_ALIASES: Alias[] = [
+  { prefix: "#app/styles", target: `${APP}/styles.ts` },
+  { prefix: "#app", target: `${APP}/app.tsx` },
+  { prefix: "#account-binding", target: `${APP}/auth/electron-binding.ts` },
+  { prefix: "#terminal-backend", target: `${APP}/terminal/backend/xterm.ts` },
+  { prefix: "@claxedo/app/ui", target: `${APP}/ui/index.ts` },
+  { prefix: "lru_map", target: `${APP}/transcript/diff/lru-map.ts` },
+  { prefix: "@", target: APP },
+]
+
+/**
+ * The desktop renderer: the app, entered through `src/renderer/main.tsx`.
+ *
+ * This crosses INTO `@claxedo/app` on purpose. The renderer is the app, so
+ * "what does the desktop window reach" is unanswerable without following the
+ * edge. The module that matters is the browser account binding
+ * (`auth/better-auth-binding.ts`, the one file that imports
+ * `better-auth/client`): the desktop signs in through Electron main, and the
+ * renderer config selects the Electron binding, so that module and its
+ * package must never be reached.
+ */
+export const desktopRenderer: Policy = {
+  id: "desktop-renderer",
+  summary: "@claxedo/desktop renderer entry (src/renderer/main.tsx)",
   packageDir: "packages/claxedo-desktop",
-  entry: `${DESKTOP}/renderer/local.tsx`,
+  entry: `${DESKTOP}/renderer/main.tsx`,
   roots: [DESKTOP, APP],
-  aliases: APP_ALIASES,
+  aliases: RENDERER_ALIASES,
   followed: [{ name: "@claxedo/app", dir: "packages/claxedo-app" }],
 
   forbiddenPackages: ["better-auth", "@claxedo/host-connector", "electron"],
   forbiddenModules: [
-    // The module that MINTS a token — the one file that imports
-    // `better-auth/client` and implements the browser auth client. There is no
-    // `@claxedo/app/auth` subpath to reach it through; the package's `exports`
-    // map only ever names `.` and `./process-diagnostics-contract`, so a
-    // source walk finds this module only by following the plain in-package
-    // import graph.
-    `${APP}/platform/auth/better-auth-browser-auth.ts`,
-    // The app's hosted browser entry.
-    `${APP}/app/entry/main.tsx`,
+    `${APP}/auth/better-auth-binding.ts`,
     // Electron main is a different process. A renderer import of `src/main/**`
     // would put the machine private key and the OAuth client secret handling
     // in the window.
     `${DESKTOP}/main/account`,
     `${DESKTOP}/main/host-connector`,
   ],
-  permittedOutsideRoots: MANIFEST_READS,
+  // A plugin's code is a blob: URL built at runtime from the bundle the user
+  // installed, so neither edge is repository source. `plugins/bundle.ts` loads
+  // a desktop plugin into the window; `plugins/frame/document.ts` holds, as a
+  // string, the loader the web's sandboxed plugin frame runs.
+  permittedOpaqueImports: [
+    `${APP}/plugins/bundle.ts -> import(url)`,
+    `${APP}/plugins/frame/document.ts -> import(url)`,
+  ],
 
   control: {
     minModules: 700,
     requiredModules: [
-      `${DESKTOP}/renderer/local.tsx`,
-      `${DESKTOP}/renderer/shell.tsx`,
-      // Reached only by crossing the package boundary. Its absence means the
-      // walk never left `claxedo-desktop` — which is the state in which every
-      // "no hosted identity" answer below is worthless.
-      `${APP}/app/entry/app.tsx`,
-      // Reached only through the `@/` alias from a DESKTOP file
-      // (`renderer/shell.tsx` imports `@/platform/api/api`).
-      `${APP}/platform/api/api.ts`,
+      `${DESKTOP}/renderer/main.tsx`,
+      // Reached only by crossing into the app through `#app`. Its absence means
+      // the walk never left `claxedo-desktop`, which is the state in which
+      // every "no browser identity" answer below is worthless.
+      `${APP}/app.tsx`,
+      `${APP}/auth/electron-binding.ts`,
     ],
     requiredPackages: ["solid-js"],
   },
 
-  // The session-switch architecture splits twenty-five narrow owners out of
-  // already reachable app modules (route/title/pane projections, bounded
-  // prefetch, first-fold/history hydration, progressive release, memory and
-  // files/runtime state); removing the old Markdown preloader offsets one.
-  // Because the desktop follows the local app entry, its reviewed closure is
-  // therefore 921 + 24 = 945 modules with no new package edge.
-  //
-  // The workspace-panel/review performance campaign then splits its own
-  // narrow owners out of the same reachable surface: the review window's
-  // height projection and diff prime, the panel shell's settle fact and body
-  // hydration door, the timeline's displayed-frame loop, the file viewer's
-  // content-backed find, the runtime file-request cache, and the navigator's
-  // hover prefetch, plus the session-ui splits those lean on. The subsequent
-  // virtualized-review validation replaces one owner with separate toggle and
-  // loaded-identity owners, a net increase of one. Reviewed closure is
-  // therefore 945 + 30 = 975 modules. The discovery-driven ACP picker adds
-  // one canonical connection-catalog owner to that already reachable
-  // composer path, bringing the reviewed closure to 976 modules. Subsequent
-  // navigation, runtime ownership, keyboard hint, branch-source, and terminal
-  // status work adds eight named owners while removing four obsolete owners,
-  // bringing the reviewed closure to 980 modules with no new package edge.
-  // Durable archive cleanup adds its canonical projection-cancellation owner.
-  // Session markdown / settings owners (981 + 8 = 989) plus tenant-aware
-  // multiplayer's four local owners (989 + 4 = 993). Org→Team product UI adds
-  // the same six local app owners as app-local: 993 + 6 = 999.
-  // Cloud workspace create / AccountPort bridge / adapters follow app-local:
-  // 999 + 1 (workspace-create-api) + 1 (hosted-control-call) + 3 (integrations/
-  // documents/optional service) + 1 (control-plane fetch) + 1 (SSE stream) + 1
-  // (agent-config extensions) = 1007. The 16 lazy provider-settings locale
-  // dictionaries shared with app-local bring this to 1023. The reviewed
-  // deployable-service split adds the service contribution catalog, the
-  // optional-service contribution roots, bootstrap-owner route, and canonical
-  // private-session reservation client while retiring the monolithic hosted
-  // contribution loader: net +5 modules. `@claxedo/service-contract` is the
-  // one dependency-neutral package addition.
-  // 2026-09-01: +2 `app/shell-revealed.ts` (the one window-once splash flag
-  // both shell boundaries consult) and the unshare path through
-  // `platform/remote-access` (machine-wide enrollment share toggle).
-  // 2026-09-01: +1 `features/workspaces/data/auto-share-local-workspaces.ts`,
-  // the same reconciler app-local took. Enabling remote access on the desktop
-  // now publishes every local workspace the machine holds rather than the ones
-  // a user ticked, and this is the module that keeps the two sets equal.
-  // Reviewed owner: the workspaces data domain (see app-local.ts).
-  // Session open/switch instrumentation (`platform/performance/session-perf.ts`
-  // and its screen-side owner `features/session/ui/session-open-perf.ts`)
-  // adds two modules and no package edge.
-  // `platform/runtime/agent/cached-signed-workspace.ts` — the one reader of the
-  // signed inventory from the shared Query cache: one module, no package edge.
-  // Removing the retired local UI extension view, registry, and loader
-  // subtracts three modules.
-  // The Goal-mode merge adds the same session Goal owners app-local reviews
-  // (composer intent/submission/draft, authority cache/query/controller,
-  // runtime client/ingress, dock, Stop fallback + shared JSON reader):
-  // thirteen modules.
-  // `features/workspaces/data/workspace-catalog.ts` (the single catalog owner):
-  // one more module, no package edge.
-  // Settings scope: the same three Settings scope modules app-local
-  // reviews (`features/settings/scope/settings-scope.tsx`, its pure
-  // `settings-scope-options.ts`, and `features/settings/ui/scope-selector.tsx`)
-  // — the explicit (workspace, harness) selection Providers and Models read
-  // under. Reviewed owner: the settings feature; reachable only through the
-  // already-lazy Settings dialog. Three modules, no package edge; the measured
-  // closure is 1048.
-  // The same two session-event-stream owners app-local reviews
-  // (`platform/runtime/session-event-scope.ts` and
-  // `app/integrations/claxedo-event-targets.ts`) are reachable from the
-  // renderer's own events provider. Two modules, no package edge; the measured
-  // closure is 1050.
-  // `app/providers/global-sdk/route-event-scope.ts` reaches this renderer
-  // through the same global-sdk provider; one module, no package edge; the
-  // measured closure is 1051.
-  // `app/providers/global-sdk/presentation-frames.ts` reaches it the same
-  // way — the meaning half of the global-sdk provider. Reviewed owner: the
-  // global-sdk provider; one module, no package edge; the measured closure is 1052.
-  // `@claxedo/agent-event-runtime`'s `contracts/turn-message-ids` reaches this
-  // renderer through the same session feature modules as the app entry: it is
-  // the one owner of the runtime's turn message-id convention, which the
-  // session transcript reads to place a reply under the message it answers.
-  // Reviewed owner: the agent event contracts package, already in this
-  // closure; one module, no package edge.
-  // -46 modules / -3 packages: retiring the hosted work-ledger service took its
-  // renderer contribution loader and the whole app-side surface graph out of
-  // the unsigned renderer. Re-measured, no headroom.
-  // +6 modules / 0 packages (2026-09-04): the Agent Plugins marketplace became a
-  // Directory (search, source chips, cards, detail pane, add-source form) plus
-  // an install sheet, the shared connections helper, and the signed desktop's
-  // DirectoryApi over hosted operations, replacing the single catalog surface.
-  // Reviewed owner: features/agent-plugins (this product's own surface); every
-  // edge stays inside packages already in the closure. Re-measured, no headroom.
-  // +7 modules / 0 packages (2026-09-04, polish): the Directory split into status,
-  // facts, actions, MCP rows, skill view, overflow menu, pane width, and chrome
-  // modules; every edge stays inside packages already in the closure. Re-measured, no headroom.
-    // +1 module (2026-09-04): the Personal entry pane. Re-measured, no headroom.
-  // +2 modules (2026-09-05): the New Project flow rule and the
-  // folder-versus-cloud chooser reached through the shared project actions
-  // (see app-local.ts for the owner).
-  // +8 modules / 0 packages (2026-09-06, oxlint type-aware sweep). This entry
-  // renders the same app the local product does, so it takes app-local's nine
-  // new named owners and one deletion verbatim — see the ledger in
-  // `app-local.ts` for what each one owns — plus `shared/json-read.ts`, reached
-  // here through `renderer/remote-access/electron-machine-remote-access.ts`.
-  // No new package edge: 56 is unchanged. Re-measured, no headroom.
-  // +1 package (2026-09-06): @claxedo/helpers enters the closure through the
-  // shared app surface (see app-local.ts for the owner). Re-measured after the
-  // test-quality audit merge retired the per-file readers: 1009/57, no headroom.
-  // +1 module / 0 packages (2026-09-07): this entry renders the same app, so it
-  // takes app-local's control-plane session-record owner verbatim — see the
-  // ledger in `app-local.ts`. Re-measured, no headroom.
-  // +1 module / 0 packages (2026-09-07): the same app, so it also takes
-  // app-local's rail session-activity owner verbatim — see that ledger.
-  // Re-measured, no headroom.
-  // +30 modules (2026-09-07): the workspace panel's source-control Changes
-  // column, its git client, status query and mutations, the 17 lazy
-  // source-control locale dictionaries, the process-pane registry behind the
-  // Processes column, and the floating pane presentation, all reached through
-  // the shared app surface (see app-local.ts for the owner). Re-measured, no
-  // headroom.
-  // +2 modules (2026-09-07): the Compared changes group and its diff summary
-  // query, reached through the same Changes column (see app-local.ts for the
-  // owner). Re-measured, no headroom.
-  // +1 module (2026-09-07): the floating card's transcript peek reducer
-  // `features/session/ui/transcript-peek.ts` (see app-local.ts for the owner).
-  // Re-measured, no headroom.
-  // +3 modules (2026-09-08): the same three Settings → Providers owners
-  // app-local reviews — the agents section, the harness catalog section, and
-  // the detection reader over the onboarding scan. No new package edge.
-  // Re-measured, no headroom.
-  // +2 modules (2026-09-08): the same restored custom-provider dialog and its
-  // validation module app-local reviews, reached through the shared provider
-  // picker. No new package edge. Re-measured, no headroom.
-  // +1 module (2026-09-08): the same `/mcp` catalog split app-local reviews —
-  // the feature-owned dialog body plus the app-owned rail picker. No new
-  // package edge. Re-measured, no headroom.
-  // -2 modules (2026-09-08): the same Open in… / Copy path removal app-local
-  // reviews — the control, and the app-name allowlist that moved into
-  // `main/open-in-apps.ts`, which no renderer reaches. Re-measured, no
-  // headroom.
-  // +3 modules (2026-09-08): the same connected-apps UI, consent API and
-  // auth-error owner reviewed by app-local; server-routes replaces the old
-  // client contract. Full verify:closure measured 1056 / 57, no headroom.
-  // +1 module (2026-09-08): local-event-websocket owns the loopback
-  // WebSocket `ClaxedoEventsProvider` reads `cp/events` over, so several
-  // windows do not exhaust the browser's HTTP slots. Measured 1057 / 57.
-  // +1 module (2026-09-09): the same terminal agent catalog / saved-commands
-  // owner app-local reviews, reached from the rail and the terminal creator.
-  // No new package edge. Measured 1058 / 57.
-  // +1 module (2026-09-11): review-workspace-tab-button, the workspace panel's
-  // one tab chip. It splits out of review-workspace.tsx, which the subagent tab
-  // pushed past the 800-line budget, and imports only what that file already
-  // did. It sits in the slot `session-order-hold` opened and never recorded,
-  // which `session-bands` inherited one-for-one and freed when the rail's
-  // ordering moved to the server's list. No new package edge. Measured 1059 / 57.
-  // +3 modules (2026-09-12): the same three owners app-local reviews —
-  // workspace-panel-working-set, pending-prompt-registry, timeline-link-open.
-  // No new package edge. Measured at a clean checkout: 1061 / 57.
-  // +1 module (2026-09-12): the same review-workspace-subagent-tabs owner
-  // app-local reviews. No new package edge. Measured at a clean checkout: 1062 / 57.
-  // +3 −2 modules (2026-09-12): the same Settings → Models rebuild app-local
-  // reviews — the harness model-options loader, the page's query hook and
-  // stylesheet in, the Connect-your-AI dialog and the scope pickers out.
-  // No new package edge. Measured 1063 / 57.
-  // +1 module (2026-09-12): the same timeline-mount-cache owner app-local
-  // reviews. No new package edge.
-  // +2 modules (2026-09-13): the same agent-harness-row and provider-connect-card
-  // owners app-local reviews. No new package edge.
-  // +1 module (2026-09-13): the same harness-catalog owner app-local reviews.
-  // No new package edge.
-  // +1 module (2026-09-13): the same connect-methods owner app-local reviews.
-  // No new package edge.
-  // +1 module (2026-09-13): the same lib/percent.ts owner app-local reviews.
-  // No new package edge.
-  // +1 module (2026-09-14): the same account agent-settings API owner
-  // app-local reviews. No new package edge.
-  //
-  // Tasks and Presets reach this renderer through the shell's secondary port
-  // wiring, under exactly the owners `app-local` reviews — including the
-  // Documents editor the user accepted on 2026-09-13, the first-project canvas
-  // and the contributed settings section. `@claxedo/tasks` is the one package
-  // edge they add; this renderer already carried the Tiptap edges through its
-  // hosted half.
-  //
-  // +2 modules (2026-09-15): the same queued-message owners —
-  // `features/session/queue/queued-messages-controller.ts`,
-  // `features/session/ui/timeline-queued-messages.tsx` and
-  // `composer/ui/submit-queued-edit.ts`, less the composer overlay they
-  // replace — see the app-local ledger. Re-measured, no headroom.
-  //
-  // +1 module (2026-09-15): the same session idle-return scroll owner
-  // `features/session/ui/idle-return-scroll.ts` — see the app-local ledger.
-  // Re-measured, no headroom.
-  //
-  // +2 modules (2026-09-14): the same two task-image owners,
-  // `features/tasks/ui/dialogs/image-drafts.ts` and
-  // `features/tasks/ui/detail/task-attachments.tsx` — see the app-local ledger.
-  // Re-measured, no headroom.
-  //
-  // +1 module (2026-09-16): the same dev-only transcript typography panel
-  // `app/workbench/rail/rail-transcript-typography-panel.tsx` — see the
-  // app-local ledger. Re-measured, no headroom.
-  //
-  // +1 module (2026-09-16): `app/workbench/context/pane-ctx.tsx` — see the
-  // app-local ledger. Re-measured, no headroom.
-  //
-  // +1 module (2026-09-16): `features/tasks/ui/shared/title-field.tsx` — see
-  // the app-local ledger. Re-measured, no headroom.
-  //
-  // +1 module (2026-09-17): `features/session/composer/collapsed-state.ts` —
-  // see the app-local ledger. Re-measured, no headroom.
-  //
-  // +1 module (2026-09-17): `platform/settings/transcript-typography.ts` —
-  // see the app-local ledger. Re-measured, no headroom.
-  //
-  // +1 module (2026-09-17): `features/session/store/session-history-resync.ts`
-  // — see the app-local ledger. Re-measured, no headroom.
-  //
-  // -4 modules (2026-09-17): the second stream reader — see the app-local
-  // ledger.
-  //
-  // +1 module (2026-09-20): `features/settings/remote-access/machine-provider-config.tsx`
-  // — see the app-local ledger. The renderer's port leaves `providerConfig`
-  // absent, so the control never renders here; the module rides in with the
-  // shared surface.
-  //
-  // +1 module (2026-09-20): `app/connection/deployment-posture.ts` — see the
-  // app-local ledger. Only the in-tree reader reaches this renderer; the
-  // pre-render resolver (`app/boot/data/deployment-posture.ts`) is an entry's
-  // call and `renderer/local.tsx` does not make it.
-  //
-  // +17 modules (2026-09-20): `platform/i18n/machines/<locale>.ts` — see the
-  // app-local ledger. The renderer shares the i18n manifest, so every locale
-  // file the manifest imports rides in here too. Measured 1139 modules / 58
-  // packages, with no headroom.
-  // +1 module (2026-09-20): `renderer/external-link.ts` owns the shell's
-  // document-click handoff to the OS, respecting clicks already claimed by
-  // the transcript. Extracted from shell.tsx for DOM integration coverage;
-  // it adds no dependency edges of its own. Measured 1140 / 58, no headroom.
-  // Two retained shared owners: claxedo-tool-href routes tool resources through
-  // existing workspace navigation; draft-session-start persists creation-owner
-  // references and reads canonical session lifecycle status. ACP questions use
-  // the unchanged question dock; its separate UI, worker, query and action
-  // modules have been removed.
-  // +1 module (2026-09-21): `lib/open-link.ts` — see the app-local ledger.
-  // The terminal link fallback reaches it in the shared renderer bundle; the
-  // desktop's own openLink still goes through the scheme-gated `open-link`
-  // IPC in main.
-  // +1 module (2026-09-21): `ui/mermaid.ts` — see the app-local ledger. The
-  // shared renderer bundle carries it for the session timeline and the
-  // documents editor.
-  // +1 module (2026-09-21): `shared/zoom-factor.ts` — the one zoom range,
-  // reached from `renderer/webview-zoom.ts`. The renderer keeps its own record
-  // of the zoom it asked for, and main clamps the IPC argument with the same
-  // constants, so a second range here would let the two disagree. Constants
-  // and `Math`, no dependency edges.
-  // +2 modules (2026-09-21): `features/session/ui/recovery-outcome-copy.ts` and
-  // `features/session/ui/session-recovery.tsx` — see the app-local ledger. The
-  // renderer shares the session feature's composer region, which is what mounts
-  // the panel, so both ride in here too; no new package edge.
-  // +19 modules (2026-09-22): the recovery size split — see the app-local
-  // ledger. The renderer shares the i18n manifest and the session feature, so
-  // the themed dictionary and both extracted owners ride in here too; no new
-  // package edge.
-  // +1 module (2026-09-22): `features/session/ui/message-timeline-list-gestures.ts`
-  // — see the app-local ledger. The renderer mounts the same timeline, so the
-  // split owner rides in here too; no new package edge. Exact measured 1167
-  // modules / 58 packages, with no headroom.
-  // +1 module (2026-09-22): `features/session/ui/model/model-list.tsx` — see
-  // the app-local ledger; the renderer shares the session screen that mounts
-  // the first-turn onboarding, so the split rides in here too. No new package
-  // edge.
-  // +3 modules (2026-09-22): Settings became a shell surface instead of a
-  // dialog — `platform/settings/route.ts`, `features/settings/settings-surface.tsx`
-  // and the nav/content/registry split that replaced `settings-page.tsx`,
-  // `app/dialogs/settings.tsx` and `features/settings/open-settings.tsx`. The
-  // rail lists the sections and the workbench column draws the open one, so
-  // the surface is reachable from the shell rather than from a lazy dialog;
-  // the nav itself is still lazily imported so the panels stay out of the
-  // shell's chunk. Owner: `features/settings`. No new package edge.
-  // +1 module (2026-09-22): `features/settings/ui/settings-header.tsx` — the
-  // settings column's own bar, one tab and the sidebar control, replacing the
-  // workbench header that acts on a workspace. Owner: `features/settings`.
-  // +1 module (2026-09-22): `features/settings/ui/dialog-provider-connect.tsx`
-  // — connecting an account moved out of the row it came from and into a
-  // dialog, so the list stays where the user left it. Owner:
-  // `features/settings`. No new package edge.
-  // +2 modules (2026-09-22): `features/settings/ui/machines-section.tsx` and
-  // `platform/remote-access/machine-online.ts` — the Machines panel is
-  // Settings' own surface now (the fleet list and the enrollment instructions
-  // left the shared onboarding surface, which enrolls one machine and has no
-  // list), and a machine is reported connected by one rule both halves read.
-  // Owner: `features/settings`. No new package edge.
-  // Exact measured 1174 modules / 58 packages, with no headroom.
-  // Both ledgers above landed in one merge on 2026-09-22; the closure was
-  // re-measured over the merged tree rather than added up. Exact measured
-  // 1174 modules / 58 packages, with no headroom.
-  // +1 module (2026-09-22): `app/workbench/workbench/drop-target.ts` — the
-  // workbench's own drop zone, split out of `workbench.tsx` to keep that file
-  // under the 800-line budget when the pane hit test was bounded to the
-  // workbench root. It sits beside the drag helpers it already used and
-  // reaches nothing new. Owner: `app/workbench/workbench`. No new package edge.
-  // -13 modules (2026-09-23): onboarding v1 is gone. The rail no longer
-  // reaches `app/workbench/rail/onboarding-empty-state.tsx`, and with it
-  // `features/onboarding/{registry,setup-shell-state,setup-page,dismissals,
-  // go-further,home-view,navigation,state,destination,destination-surface,
-  // ai-connect-surface}`; the no-project screen is `first-project-canvas.tsx`
-  // alone. No package edge changes. Exact measured 1144 modules / 58 packages,
-  // with no headroom.
-  // Re-measured (2026-09-23) on a clean checkout of that removal: 1145
-  // modules, one more than it recorded; the ledger below starts from the
-  // measured figure.
-  // +5 modules (2026-09-23): the first-run wizard,
-  // `features/onboarding/{wizard,project-step,ai-step,execution-step}.tsx`
-  // and `draft.ts`, hosted by `first-project-canvas.tsx`. It draws the Models
-  // page's account rows and provider sections and the workspaces form through
-  // `features/onboarding/app-ports.ts`, so nothing outside the feature is
-  // newly reached. Owner: `features/onboarding`. No new package edge.
-  // -4 modules (2026-09-23): `features/onboarding/{credential-query,
-  // credential-resolution,credential-sharing,sandbox-provider-query}.ts`, kept
-  // for a wizard that turned out not to read them, are gone. Exact measured
-  // 1146 modules / 58 packages, with no headroom.
-  // +5 modules (2026-09-23): `features/session/image-marks/{marks,flatten}.ts`,
-  // `mark-layer.tsx`, `mark-badge.tsx` and the lazily imported
-  // `image-mark-editor.tsx` — numbered marks and comments on a pasted image.
-  // The composer, the request builder and the transcript's comment strip all
-  // read them, so they sit beside those owners rather than inside the
-  // composer. Owner: `features/session/image-marks`. No new package edge.
-  // +1 module (2026-09-23): `app/workbench/state/surface-activity.ts` — the
-  // tab activity slice the app entry gained, carried here through the same
-  // workbench state. Owner: `app/workbench/state`. No new package edge.
-  // +1 module (2026-09-23): `app/workbench/rail/rail-switcher-card-details.ts`
-  // — the compact tab hover card's reads the app entry gained, carried here
-  // through the same rail. Owner: `app/workbench/rail`. No new package edge.
-  // Both ledgers above landed in one merge on 2026-09-23; the closure was
-  // re-measured over the merged tree.
-  // -1 module (2026-09-23): `features/session/ui/components/session-new-view.tsx`,
-  // the unrendered empty-session view the app entry dropped.
-  // +1 module (2026-09-23): `ui/controls/delayed-loading.tsx` — the shared
-  // loading-indicator grace and episode provider the app entry gained,
-  // carried here through `AppBaseProviders`. Owner: `ui/controls`. No new
-  // package edge.
-  // +1 module (2026-09-23): `app/connection/server-product.ts` — the app
-  // entry's one read of whether the server runs work on its own filesystem,
-  // carried here through the same first-project canvas and provider connect
-  // form. Owner: `app/connection`. No new package edge.
-  // +1 module (2026-09-23): `ui/controls/animate-height.ts` — the animated
-  // card height the app entry's first-run wizard gained, carried here through
-  // the same wizard. Owner: `ui/controls`. No new package edge.
-  // +1 module (2026-09-23): `app/workbench/review/review-workspace-subagent-session.tsx`
-  // — the subagent tab's docked session, split out of the review workspace
-  // this entry already carries. Owner: `app/workbench/review`. No new package
-  // edge.
-  // +1 module (2026-09-23): `app/workbench/rail/workspace-unavailable-surface.tsx`
-  // — the unavailable-workspace pane the app entry gained, carried here
-  // through the same workspaces feature port. Owner: `app/workbench/rail`. No
-  // new package edge.
-  //
-  // -1 module / +1 package (2026-09-25): the hosted-operation names and their
-  // result decoders moved from `platform/account/hosted-operations.ts` into
-  // `@claxedo/account-contract`, the one owner Electron main's route table and
-  // both renderers (v1 and v2) import. A dependency-neutral contract package
-  // (it reaches only `@claxedo/helpers/guards`, already here); no capability
-  // and no transport.
-  //
-  // Exact measured 1156 modules / 59 packages, with no headroom.
-  ceilings: { modules: 1156, packages: 59 },
+  // Measured 2026-09-26 when this renderer became the only one: 1,206
+  // modules and 37 packages, no headroom. The kit (`@opencode-ai/ui`) is one of
+  // the packages; its source is not walked.
+  ceilings: { modules: 1206, packages: 37 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
     minChunks: 1,
-    requiredModules: [
-      `${DESKTOP}/renderer/local.tsx`,
-      `${DESKTOP}/renderer/shell.tsx`,
-      `${APP}/app/entry/app.tsx`,
-      // The base reads this registry and optional activation binds the same
-      // instance through a shared chunk; only the Electron adapter is optional.
-      `${APP}/platform/remote-access/machine-remote-access.ts`,
-    ],
-    forbiddenModules: [
-      `${DESKTOP}/renderer/hosted-contributions.ts`,
-      `${APP}/app/composition/hosted-contribution-loader.ts`,
-      `${DESKTOP}/renderer/remote-access/electron-machine-remote-access-binding.ts`,
-      `${DESKTOP}/renderer/remote-access/electron-machine-remote-access.ts`,
-    ],
-    // This manifest is the renderer's STATIC closure —
-    // `desktopRendererBoundaryManifestPlugin` builds the base entry without
-    // `includeDynamicImports` — and the only edge into Tasks is the dynamic
-    // import in `secondary-feature-ports.ts`, so no Tasks module or chunk can
-    // appear in it. `app-local`'s emitted manifest records the full closure and
-    // is where the Tasks chunk is measured.
-    forbiddenChunkMarkers: ["desktop-hosted-contributions"],
-  },
-}
-
-/** Optional renderer subtree activated only through Electron's AccountPort. */
-export const desktopHostedContribution: Policy = {
-  id: "desktop-hosted-contribution",
-  summary: "@claxedo/desktop optional hosted contribution (src/renderer/hosted-contributions.ts)",
-  packageDir: "packages/claxedo-desktop",
-  entry: `${DESKTOP}/renderer/hosted-contributions.ts`,
-  roots: [DESKTOP, APP],
-  aliases: APP_ALIASES,
-  followed: [{ name: "@claxedo/app", dir: "packages/claxedo-app" }],
-  forbiddenPackages: ["better-auth", "@claxedo/host-connector", "electron"],
-  forbiddenModules: [
-    // The module that MINTS a token (imports `better-auth/client`); see
-    // `desktopRendererUnsigned` above for why there is no `@claxedo/app/auth`
-    // subpath to reach it through instead.
-    `${APP}/platform/auth/better-auth-browser-auth.ts`,
-    `${APP}/app/entry/main.tsx`,
-    `${DESKTOP}/main`,
-  ],
-  permittedOutsideRoots: MANIFEST_READS,
-  control: {
-    minModules: 4,
-    requiredModules: [
-      `${DESKTOP}/renderer/hosted-contributions.ts`,
-      `${APP}/platform/remote-access/machine-remote-access.ts`,
-      `${DESKTOP}/renderer/remote-access/electron-machine-remote-access-binding.ts`,
-      `${DESKTOP}/renderer/remote-access/electron-machine-remote-access.ts`,
-    ],
-    requiredPackages: [],
-  },
-  // Optional service renderers now have independent catalog-driven roots. This
-  // activation entry owns only desktop machine remote access and its shared
-  // contract, so the reviewed closure deliberately shrinks from 322/40: the
-  // Goal-mode session owners are reached from their own service roots, not
-  // from this activation entry.
-  //
-  // It also binds the cloud workspace-startup port, because this is the only
-  // desktop binding of it and shared composer code (`submit-directory.ts`,
-  // `session-actions.tsx`) calls `workspaceStartup()` on desktop too. That
-  // reaches the canonical cloud-startup owners — `workspace-runtime-store`,
-  // `workspace-relay-connection`, and the AccountPort call/decode pair — and
-  // through the store's query cache the one package edge, `@tanstack/solid-query`.
-  // Measured at 43/1; `renderer-entry-closure.guard.test.ts` pins the exact
-  // hosted module set so a sixth is a new edge to review, not a number to bump.
-  // The 43rd module is `platform/identity/harness-selection.ts`, reached from
-  // `agent-runtime-client.ts` since the generic-harness cutover made the
-  // selection (native harness vs configured connection) a typed value.
-  // +4 modules / 0 packages (2026-09-06, oxlint type-aware sweep), on top of the
-  // 43rd above. All four are leaves with no capability of their own, which is
-  // why `renderer-entry-closure.guard.test.ts` above is unchanged: its pinned
-  // set is the `platform/account/`, `platform/runtime/cloud/` and Documents
-  // prefixes, and only one of these four lands in it — `preload-bridge.ts`,
-  // already pinned there. Reviewed owners:
-  //   claxedo-app/src/lib/record.ts — the app's one record predicate/reader set,
-  //     from `workspace-runtime-store.ts`, replacing its inline narrowing;
-  //   claxedo-app/src/lib/server-errors.ts — from `workspace-relay-connection.ts`;
-  //   claxedo-app/src/platform/account/preload-bridge.ts — the `api.account`
-  //     global read, from `hosted-control-call.ts`;
-  //   claxedo-desktop/src/shared/json-read.ts — from
-  //     `renderer/remote-access/electron-machine-remote-access.ts`.
-  // Still one package edge (`@tanstack/solid-query`). Re-measured, no headroom.
-  // The second package edge is `@claxedo/helpers`, the canonical owner of
-  // `isLoopbackHttpUrl`, reached from `platform/api/api.ts`. Its root barrel is
-  // the runtime-neutral surface — no `node:` import can appear there, those live
-  // behind `/fs`, `/path`, `/process`, `/net` — so it is safe on a renderer
-  // graph. Module count is unchanged at 47; only the package edge moved.
-  // -1 module / +1 package (2026-09-25): `platform/account/hosted-operations.ts`
-  // left this graph for `@claxedo/account-contract`, the operation names and
-  // decoders Electron main's route table is typed against; the renderer entry
-  // closure guard's pinned hosted set drops it accordingly.
-  ceilings: { modules: 46, packages: 3 },
-  emitted: {
-    file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-hosted-contributions.json",
-    minModules: 4,
-    minChunks: 1,
-    requiredModules: [
-      `${DESKTOP}/renderer/hosted-contributions.ts`,
-      `${DESKTOP}/renderer/remote-access/electron-machine-remote-access-binding.ts`,
-      `${DESKTOP}/renderer/remote-access/electron-machine-remote-access.ts`,
-    ],
+    requiredModules: [`${DESKTOP}/renderer/main.tsx`, `${APP}/app.tsx`, `${APP}/auth/electron-binding.ts`],
+    forbiddenModules: [`${APP}/auth/better-auth-binding.ts`],
+    forbiddenChunkMarkers: ["vendor-better-auth"],
   },
 }
