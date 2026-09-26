@@ -182,6 +182,40 @@ test("14 clearing a search that opened many folders keeps them open and draws on
   expect((await api.session(workspace.directory, session.id)).title).toBe("Wide")
 })
 
+test("14 a folder row scrolled away behind eight open folders comes back at its level when the tree returns to the top", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("sections")
+  for (let index = 0; index < 160; index += 1) {
+    const file = path.join(workspace.directory, `src/section-${String(index % 16).padStart(3, "0")}/file-${String(index).padStart(5, "0")}.ts`)
+    await fs.mkdir(path.dirname(file), { recursive: true })
+    await fs.writeFile(file, `export const value = ${index}\n`)
+  }
+  await git(workspace.directory, "add", "-A")
+  await git(workspace.directory, "commit", "-qm", "sixteen sections")
+  const session = await api.createSession(workspace.directory, { title: "Sections", harness: SCRIPTED_ACP_HARNESS })
+
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
+  await app.getByRole("button", { name: UI.openPanel }).click()
+  const tree = app.getByRole("complementary", { name: "Workspace panel" }).getByRole("tree")
+  const src = tree.getByRole("treeitem", { name: "src", exact: true })
+  await expect(src).toHaveAttribute("aria-level", "1")
+  await src.click()
+  for (let section = 0; section < 8; section += 1) {
+    await tree.getByRole("treeitem", { name: `section-${String(section).padStart(3, "0")}`, exact: true }).click()
+    await expect(tree.getByRole("treeitem", { name: new RegExp(`^file-${String(section).padStart(5, "0")}\\.ts`) })).toBeVisible()
+  }
+  await expect(src).toHaveCount(0)
+
+  await tree.getByRole("treeitem", { name: "section-007", exact: true }).focus()
+  await app.keyboard.press("Home")
+  await expect(src).toBeFocused()
+  await expect(src).toHaveAttribute("aria-level", "1")
+  await expect(src).toHaveAttribute("aria-expanded", "true")
+  for (const section of ["section-000", "section-001"]) {
+    await expect(tree.getByRole("treeitem", { name: section, exact: true })).toHaveAttribute("aria-level", "2")
+  }
+})
+
 test("14 the files and git state are read again once after a turn that could write, and not after a turn that only read", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("turn-reads")
   const notes = path.join(workspace.directory, "README.md")
