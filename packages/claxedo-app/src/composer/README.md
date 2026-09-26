@@ -33,6 +33,7 @@ The prompt editor and everything that turns a draft into one `PromptInput` for `
 - Harness rows are grouped by `harnessGroup`: the operator ACP and native SDK rows of Claude (and of Codex and Cursor) carry the same label.
 - A Kobalte Select re-fires `onChange` with its current value when its options collection changes identity, and types ahead on a closed, focused trigger; a harness switch migrates the session, so `shouldApplyHarnessSelection` (`view/agent-harness-selection-guard.ts`) applies only changes made with the menu open.
 - A backgrounded pane publishes no composer notice, so it cannot overwrite the visible pane's row.
+- The footer holds its pane's reveal (`holdPaneReveal`) while the selector's scope hydrates (`view/selector-scope.ts`), while its models load (`view/harness-model-availability.ts`) and while the harness's permission modes load (`view/permission-control.tsx`), so a switched-to session first shows its settled footer. Connecting is not held: a harness can take a minute to answer.
 - The fast toggle binds to the model's first service tier: Codex reports exactly one (`priority`, "Fast") on every model that has any.
 - On a model change a selected effort the new model lacks is cleared before the model is set, or it would ride the next prompt behind a control that no longer offers it.
 
