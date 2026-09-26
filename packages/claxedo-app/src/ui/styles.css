@@ -25,7 +25,6 @@
 @import "@opencode-ai/ui/spinner.css" layer(components);
 @import "@opencode-ai/ui/sticky-accordion-header.css" layer(components);
 @import "@opencode-ai/ui/switch.css" layer(components);
-@import "@opencode-ai/ui/tag.css" layer(components);
 @import "@opencode-ai/ui/text-field.css" layer(components);
 @import "@opencode-ai/ui/text-reveal.css" layer(components);
 @import "@opencode-ai/ui/text-strikethrough.css" layer(components);
