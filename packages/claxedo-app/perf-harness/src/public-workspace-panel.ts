@@ -263,7 +263,7 @@ export async function executeWorkspacePanelAction(input: {
   switch (benchmarkCase.action) {
     case "open-panel":
       await ensureFilesOpen(page, fixture)
-      await ensurePanelClosed(page, true)
+      await ensurePanelClosed(page)
       return measurePanelOpen(page, fixture)
     case "close-panel":
       await ensureFilesOpen(page, fixture)
@@ -349,14 +349,14 @@ export async function executeSessionNavigation(input: {
   if (benchmarkCase.navigationType === "first-visit") {
     // Measured history walks dest→dest. Launch already leaves the app on
     // control once; do not bounce back to source/control between destinations.
-    await ensurePanelClosed(page, true)
+    await ensurePanelClosed(page)
     return measureNavigation(page, destination)
   }
 
   if (benchmarkCase.navigationType === "return-visited-panel-closed") {
     // Destination was first-visited earlier in this process. Continue from the
     // current session without an untimed activateExact(control/source).
-    await ensurePanelClosed(page, true)
+    await ensurePanelClosed(page)
     return measureNavigation(page, destination)
   }
 
@@ -696,17 +696,27 @@ async function ensureDiffOpen(page: Page, fixture: FixtureEvidence) {
   await waitForPanelProfile(page, "diff", fixture)
 }
 
-async function ensurePanelClosed(page: Page, requireDisposed = false) {
+/**
+ * A closed panel may keep its body mounted: the rebuilt app retains it so the
+ * next open is warm, and the old app disposes it. Either way nothing of the
+ * panel may be on screen when a measurement starts from the closed state.
+ */
+async function ensurePanelClosed(page: Page) {
   await waitForPanelTransitionSettled(page)
   if ((await panelState(page)).open) {
     await clickVisible(page, "[data-testid='workspace-panel-toggle'][aria-label='Close workspace panel']")
   }
   await waitForPanelClosed(page)
-  if (requireDisposed) {
-    await Bun.sleep(180)
-    const owned = readNumber(await page.evaluate(() => document.querySelectorAll("[data-testid='workspace-panel-shell'] [data-testid='workspace-files-navigator'], [data-testid='workspace-panel-shell'] [data-testid='review-pane-root']").length))
-    if (owned !== 0) throw new Error(`Claxedo closed panel retained ${owned} heavy surface roots`)
-  }
+  await Bun.sleep(180)
+  const shown = readNumber(await page.evaluate(() => Array.from(document.querySelectorAll<HTMLElement>(
+    "[data-testid='workspace-panel-shell'] :is([data-testid='workspace-files-navigator'], [data-testid='review-pane-root'])",
+  )).filter((root) => {
+    const rect = root.getBoundingClientRect()
+    const style = getComputedStyle(root)
+    return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" &&
+      rect.right > 0 && rect.bottom > 0 && rect.left < window.innerWidth - 1 && rect.top < window.innerHeight
+  }).length))
+  if (shown !== 0) throw new Error(`Claxedo closed panel still shows ${shown} panel surfaces`)
 }
 
 async function panelState(page: Page) {
@@ -1190,11 +1200,7 @@ async function fileRowLocator(page: Page, file: string) {
 async function directoryRowLocator(page: Page, label: string, level: number) {
   const selector = `[data-testid='workspace-files-navigator'][data-mode='files'] [role='treeitem'][aria-level='${level}']`
   try {
-    await page.waitForFunction(({ selector: query, expected }) => Array.from(document.querySelectorAll<HTMLElement>(query))
-      .some((row) => {
-        const rect = row.getBoundingClientRect()
-        return rect.width > 0 && rect.height > 0 && row.innerText.trim().split(/\s+/u).includes(expected)
-      }), { selector, expected: label }, { polling: "raf", timeout: READINESS_TIMEOUT_MS })
+    await scrollTreeToRow(page, { kind: "directory", level, label })
   } catch {
     throw new Error(`Claxedo directory row did not appear: level=${level} label=${label}`)
   }
@@ -1205,15 +1211,48 @@ async function directoryRowLocator(page: Page, label: string, level: number) {
 
 async function waitForTreePath(page: Page, expected: string) {
   try {
-    await page.waitForFunction((pathExpected) => Array.from(document.querySelectorAll<HTMLElement>("[data-testid='workspace-files-navigator'][data-mode='files'] [data-file-tree-path]"))
-      .some((row) => {
-        const path = row.dataset.fileTreePath ?? ""
-        const rect = row.getBoundingClientRect()
-        return rect.width > 0 && rect.height > 0 && (path === pathExpected || path.endsWith(`/${pathExpected}`))
-      }), expected, { polling: "raf", timeout: READINESS_TIMEOUT_MS })
+    await scrollTreeToRow(page, { kind: "path", path: expected })
   } catch {
     throw new Error(`Claxedo tree path did not appear: ${expected}`)
   }
+}
+
+type TreeRowTarget =
+  | { readonly kind: "directory"; readonly level: number; readonly label: string }
+  | { readonly kind: "path"; readonly path: string }
+
+/**
+ * Waits for a Files tree row, scrolling the tree the way a user would when the
+ * row is not rendered. A virtualized tree renders only the rows near its
+ * viewport, so a row scrolled out of view is absent from the DOM rather than
+ * hidden. The first miss scrolls to the top; each later frame moves down half
+ * a viewport until the row renders or the tree ends.
+ */
+async function scrollTreeToRow(page: Page, target: TreeRowTarget) {
+  await page.waitForFunction((wanted) => {
+    const navigator = document.querySelector<HTMLElement>("[data-testid='workspace-files-navigator'][data-mode='files']")
+    if (!navigator) return false
+    const rows = Array.from(navigator.querySelectorAll<HTMLElement>(
+      wanted.kind === "directory" ? `[role='treeitem'][aria-level='${wanted.level}']` : "[data-file-tree-path]",
+    ))
+    const found = rows.some((row) => {
+      const rect = row.getBoundingClientRect()
+      if (rect.width <= 0 || rect.height <= 0) return false
+      if (wanted.kind === "directory") return row.innerText.trim().split(/\s+/u).includes(wanted.label)
+      const path = row.dataset.fileTreePath ?? ""
+      return path === wanted.path || path.endsWith(`/${wanted.path}`)
+    })
+    if (found) return true
+    const viewport = navigator.querySelector<HTMLElement & { __claxedoTreeSeek?: string }>("[data-scrollable]")
+    if (!viewport) return false
+    if (viewport.__claxedoTreeSeek !== wanted.seek) {
+      viewport.__claxedoTreeSeek = wanted.seek
+      viewport.scrollTop = 0
+    } else if (viewport.scrollTop + viewport.clientHeight < viewport.scrollHeight) {
+      viewport.scrollTop += Math.max(1, Math.floor(viewport.clientHeight / 2))
+    }
+    return false
+  }, { ...target, seek: crypto.randomUUID() }, { polling: "raf", timeout: READINESS_TIMEOUT_MS })
 }
 
 async function hasFileTab(page: Page, file: string) {
