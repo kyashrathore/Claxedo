@@ -24,12 +24,19 @@ export async function isolatedEnv(home: string, guardUrl: string): Promise<NodeJ
     XDG_STATE_HOME: path.join(home, ".local", "state"),
   }
   await Promise.all(Object.values(xdg).map((dir) => fs.mkdir(dir, { recursive: true })))
+  const windowsHome = process.platform === "win32" ? {
+    USERPROFILE: home,
+    APPDATA: path.join(home, "AppData", "Roaming"),
+    LOCALAPPDATA: path.join(home, "AppData", "Local"),
+  } : {}
+  await Promise.all(Object.values(windowsHome).map((dir) => fs.mkdir(dir, { recursive: true })))
   await fs.writeFile(path.join(home, ".gitconfig"), GIT_IDENTITY)
   await writePricingSnapshot(home)
   return {
     ...inherited(),
     PATH: [STAND_INS, process.env.PATH].filter(Boolean).join(path.delimiter),
     HOME: home,
+    ...windowsHome,
     ...xdg,
     GIT_CONFIG_NOSYSTEM: "1",
     GIT_TERMINAL_PROMPT: "0",
