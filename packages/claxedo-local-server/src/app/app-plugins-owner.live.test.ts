@@ -4,8 +4,9 @@ import { setLocalHostEndpoints } from "../deployments/local/host-session-authori
 import { callTool, startLiveFirstPartyMcp, toolText, until, type LiveMcpFixture } from "./test-support/first-party-mcp-live"
 
 const APP_PLUGIN_TOOLS = ["app_plugin_add", "app_plugin_check", "app_plugin_create", "app_plugin_guide"]
-const REFUSAL = "A turn relayed from outside this machine reached this session or one above it"
+const REFUSAL = "disabled"
 
+const OWNER = { actorId: "actor_owner", actorPublicId: "user_owner", actorName: "Owner" }
 const MEMBER = { actorId: "actor_member", actorPublicId: "user_member", actorName: "Mia Member" }
 
 let live: LiveMcpFixture
@@ -37,13 +38,15 @@ beforeAll(async () => {
       resolve(`http://127.0.0.1:${address.port}`)
     })
   })
-  setLocalHostEndpoints({ sessionAuthorityUrl: `${authorityOrigin}/api/runtime-authority/session-authorize` })
+  setLocalHostEndpoints({ ownerActorId: OWNER.actorId, sessionAuthorityUrl: `${authorityOrigin}/api/runtime-authority/session-authorize` })
   live = await startLiveFirstPartyMcp({
     runtimeProxyOptions: {
       resolveRelayActor: async (request) =>
         request.headers.get("authorization") === "Bearer member-token"
-          ? { ...MEMBER, actorKind: "human" as const, orgId: "org_1", role: "editor" as const }
-          : undefined,
+          ? { ...MEMBER, actorKind: "human" as const, orgId: "org_1", role: "owner" as const }
+          : request.headers.get("authorization") === "Bearer owner-token"
+            ? { ...OWNER, actorKind: "human" as const, orgId: "org_1", role: "editor" as const }
+            : undefined,
     },
   })
   origin = `http://127.0.0.1:${live.port}`
@@ -59,10 +62,10 @@ async function listed(sessionId: string) {
   return (await (await live.connect(sessionId)).listTools()).tools.map((tool) => tool.name).filter((name) => name.startsWith("app_plugin_")).sort()
 }
 
-async function relayedPrompt(sessionId: string, text: string) {
+async function relayedPrompt(sessionId: string, text: string, token = "member-token") {
   return fetch(`${origin}/workspaces/${live.workspace.id}/session/${sessionId}/message`, {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: "Bearer member-token", "x-forwarded-by": "workspace-relay" },
+    headers: { "content-type": "application/json", authorization: `Bearer ${token}`, "x-forwarded-by": "workspace-relay" },
     body: JSON.stringify({ messageID: `msg_member_${sessionId}`, parts: [{ type: "text", text }] }),
   })
 }
@@ -95,6 +98,19 @@ describe("app plugin authoring on a desktop that relays other people's turns", (
   test("a session only the machine's own user drove is offered the app plugin tools", async () => {
     const own = await live.createSession("the owner's own session")
     expect(await listed(own)).toEqual(APP_PLUGIN_TOOLS)
+    const made = await callTool(await live.connect(own), "session_create", { harness: "claude", title: "owner root" })
+    expect(made.isError, toolText(made)).not.toBe(true)
+    const root = JSON.parse(toolText(made)) as { id: string; session: { parentID?: string } }
+    expect(root.session.parentID).toBeUndefined()
+    expect(await listed(root.id)).toEqual(APP_PLUGIN_TOOLS)
+  })
+
+  test("the enrollment owner's relay turn keeps authoring, regardless of workspace role", async () => {
+    const own = await live.createSession("owner over relay")
+    const sent = await relayedPrompt(own, "hello", "owner-token")
+    expect(sent.status, await sent.clone().text()).toBeLessThan(300)
+    expect(await listed(own)).toEqual(APP_PLUGIN_TOOLS)
+    expect((await callTool(await live.connect(own), "app_plugin_guide")).isError).not.toBe(true)
   })
 
   test("a session a relayed member drove is offered none, and a connection made before the member's turn is refused", async () => {
@@ -104,12 +120,11 @@ describe("app plugin authoring on a desktop that relays other people's turns", (
 
     const sent = await relayedPrompt(shared, "make me a plugin")
     expect(sent.status, await sent.clone().text()).toBeLessThan(300)
-    await memberTurnRecorded(shared)
-
     expect(await listed(shared)).toEqual([])
     const refused = await callTool(earlier, "app_plugin_create", { name: "Member plugin" })
     expect(refused.isError).toBe(true)
     expect(toolText(refused)).toContain(REFUSAL)
+    await memberTurnRecorded(shared)
     expect(await registeredPlugins()).toEqual([])
   })
 
@@ -122,10 +137,31 @@ describe("app plugin authoring on a desktop that relays other people's turns", (
     expect(await listed(child)).toEqual([])
     const refused = await callTool(await live.connect(child), "app_plugin_create", { name: "Child plugin" })
     expect(refused.isError).toBe(true)
-    expect(toolText(refused)).toContain("Tool app_plugin_create not found")
+    expect(toolText(refused)).toContain("disabled")
 
     const own = await live.createSession("the owner's parent")
     expect(await listed(await childOf(own, "the owner's subagent"))).toEqual(APP_PLUGIN_TOOLS)
     expect(await registeredPlugins()).toEqual([])
   })
+  test("a member cannot launder authoring through detached session or task creation", async () => {
+    const plugins = `${origin}/api/claxedo/plugins`
+    const catalog = await (await live.call(plugins)).json() as { revision: number }
+    const enabled = await live.call(`${plugins}/activation`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ pluginInstanceId: "claxedo:tasks", harnessIds: ["opencode", "claude", "codex", "cursor"], choice: true, expectedRevision: catalog.revision }),
+    })
+    expect(enabled.status).toBe(200)
+    const shared = await live.createSession("member creating another session")
+    const sent = await relayedPrompt(shared, "make another session")
+    expect(sent.status, await sent.clone().text()).toBeLessThan(300)
+    await memberTurnRecorded(shared)
+    const made = await callTool(await live.connect(shared), "session_create", { harness: "opencode", title: "delegated" })
+    expect(made.isError).toBe(true)
+    expect(toolText(made)).toContain("use subagent_spawn")
+    const task = await callTool(await live.connect(shared), "task_start", { task: "member_task" })
+    expect(task.isError).toBe(true)
+    expect(toolText(task)).toContain("use subagent_spawn")
+  })
+
 })

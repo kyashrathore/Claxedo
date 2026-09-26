@@ -1,3 +1,5 @@
+import { firstPartyMcpProvider, type FirstPartyMcpProvider } from "@claxedo/agent-sdk-runtime/mcp-resolver"
+import { OpenCodeFirstPartyMcp } from "./first-party-mcp"
 import type { OpenCodeLaunchDocument } from "./launch-policy"
 import type {
   AgentAgent,
@@ -342,6 +344,8 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
   /** Session config is durable in the Claxedo store; the SDK receives it per turn. */
   readonly sessionConfigOwner = "runtime" as const
   readonly instructionChannel = "none" as const
+  private firstPartyMcp?: FirstPartyMcpProvider
+  private readonly firstPartyTools: OpenCodeFirstPartyMcp
   private readonly runtime: OpenCodeRuntime
   private readonly workspaceID: string
   private readonly directory: string
@@ -366,6 +370,7 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
   private launched?: Promise<void>
 
   constructor(options: AdapterOptions) {
+    this.firstPartyTools = new OpenCodeFirstPartyMcp(options.runtime.host, options.workspaceID, options.directory)
     this.runtime = options.runtime
     this.workspaceID = options.workspaceID
     this.directory = options.directory
@@ -479,15 +484,24 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
   }
 
   executeTurn(binding: AgentExecutionBinding, input: PromptInput): AsyncIterable<AgentRuntimeStreamEvent> {
-    return this.turn(binding.sessionId, input, binding.directory)
+    return this.withFirstPartyTools(binding, input)
   }
 
-  private async *turn(id: string, input: PromptInput, directory: RuntimeDirectory): AsyncIterable<AgentRuntimeStreamEvent> {
+  private async *withFirstPartyTools(binding: AgentExecutionBinding, input: PromptInput) {
+    if (!input.model) throw new Error("OpenCode turn requires a resolved model")
+    const close = this.firstPartyMcp ? await this.firstPartyTools.connect(binding.sessionId, this.firstPartyMcp) : undefined
+    try {
+      yield* this.turn(binding.sessionId, { ...input, model: input.model }, binding.directory)
+    } finally {
+      await close?.()
+    }
+  }
+
+  private async *turn(id: string, input: PromptInput & { model: NonNullable<PromptInput["model"]> }, directory: RuntimeDirectory): AsyncIterable<AgentRuntimeStreamEvent> {
     const runtime = await this.engine()
     // Before the prompt, because the engine would otherwise run the turn on
     // whatever login this machine holds — under an identity the operator did
     // not choose — and bill it to that account.
-    if (!input.model) throw new Error("OpenCode turn requires a resolved model")
     await runtime.providersBound()
     const unavailable = runtime.providerUnavailableReason(input.model.providerID)
     if (unavailable) throw new ProviderCredentialUnavailableError("opencode", unavailable)
@@ -717,6 +731,7 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
    * bridge.
    */
   async applyConfig(config: Record<string, unknown>) {
+    this.firstPartyMcp = firstPartyMcpProvider(config)
     this.scope(this.directory)
     const plugins = record(record(config.launch).config)
     this.launchDocument = {

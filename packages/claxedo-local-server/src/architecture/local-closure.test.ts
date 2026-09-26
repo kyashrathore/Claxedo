@@ -294,7 +294,7 @@ describe("@claxedo/local-server closure", () => {
     //    plugins above. The authoring skill the OpenCode launch document used
     //    to carry is gone; the MCP tools serve the guide to every harness.
     const { modules, packages } = closure({ runtimeOnly: true })
-    expect(modules.size).toBeLessThanOrEqual(110)
+    expect(modules.size).toBeLessThanOrEqual(109)
     expect(packages.size).toBeLessThanOrEqual(31)
   })
 })

@@ -1,3 +1,5 @@
+import { connectFirstPartyMcp } from "../../../agent-sdk-runtime/src/first-party-mcp-client"
+import { piMcpExtensionSource, PI_MCP_COMMAND } from "../../../agent-sdk-runtime/src/harnesses/pi/first-party-mcp"
 import { afterEach, describe, expect, test } from "vitest"
 import { serve } from "@hono/node-server"
 import { Hono } from "hono"
@@ -18,6 +20,7 @@ type Call = { method: keyof AppPluginsGrant; input: unknown }
 function fakeGrant(overrides: Partial<AppPluginsGrant> = {}) {
   const calls: Call[] = []
   const grant: AppPluginsGrant = {
+    allowed: () => true,
     create: async (input) => {
       calls.push({ method: "create", input })
       return { id: "standup-notes", name: "Standup notes", directory: "/w/.claxedo/plugins/standup-notes", files: ["package.json", "src/app.tsx"] }
@@ -223,4 +226,51 @@ describe("app_plugin_guide", () => {
     for (const tool of ["app_plugin_create", "app_plugin_check", "app_plugin_add"]) expect(result.text).toContain(tool)
     expect(result.text).toContain("Only when the person asked")
   })
+})
+
+test("a connection opened before admission gains tools when admitted and loses all four when ownership changes", async () => {
+  let allowed = false
+  const fixture = fakeGrant({ allowed: () => allowed })
+  const live = await listen(fixture.grant)
+  const client = await connect(live.url)
+  expect((await client.listTools()).tools).toEqual([])
+  allowed = true
+  expect((await client.listTools()).tools.map((tool) => tool.name).sort()).toEqual(APP_PLUGIN_TOOLS)
+  allowed = false
+  expect((await client.listTools()).tools).toEqual([])
+  const result = await client.callTool({ name: "app_plugin_guide", arguments: {} })
+  expect(result.isError).toBe(true)
+  expect(fixture.calls).toEqual([])
+})
+
+
+test("the dependency-free harness transport and emitted Pi extension call the real MCP server", async () => {
+  const fixture = fakeGrant()
+  const { url } = await listen(fixture.grant)
+  const entry = { name: "claxedo", url, headers: { Authorization: "Bearer rt-token" } }
+  const direct = await connectFirstPartyMcp(entry)
+  try {
+    expect((await direct.tools()).map((tool) => tool.name).sort()).toEqual(APP_PLUGIN_TOOLS)
+    expect((await direct.call("app_plugin_guide", {})).content[0]).toMatchObject({ type: "text", text: APP_PLUGIN_GUIDE })
+  } finally { await direct.close() }
+  const extension = await import(`data:text/javascript;base64,${Buffer.from(piMcpExtensionSource()).toString("base64")}`)
+  const commands = new Map<string, { handler(args: string): Promise<void> }>()
+  const tools = new Map<string, { execute(id: string, args: Record<string, unknown>): Promise<unknown> }>()
+  const events = new Map<string, () => Promise<void>>()
+  let active = ["read"]
+  extension.default({
+    registerCommand: (name: string, value: { handler(args: string): Promise<void> }) => commands.set(name, value),
+    registerTool: (tool: { name: string; execute(id: string, args: Record<string, unknown>): Promise<unknown> }) => tools.set(tool.name, tool),
+    getActiveTools: () => active,
+    setActiveTools: (names: string[]) => { active = names },
+    on: (name: string, callback: () => Promise<void>) => events.set(name, callback),
+  })
+  try {
+    await commands.get(PI_MCP_COMMAND)!.handler(JSON.stringify(entry))
+    expect(active.toSorted()).toEqual(["read", ...APP_PLUGIN_TOOLS.map((name) => `mcp__claxedo__${name}`)].toSorted())
+    await tools.get("mcp__claxedo__app_plugin_create")!.execute("call", { name: "Notes" })
+    expect(fixture.calls).toEqual([{ method: "create", input: { name: "Notes" } }])
+    await commands.get(PI_MCP_COMMAND)!.handler("null")
+    expect(active).toEqual(["read"])
+  } finally { await events.get("session_shutdown")!() }
 })

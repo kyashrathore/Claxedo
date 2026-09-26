@@ -281,6 +281,7 @@ export function createClaxedoMcpRoutes(options: ClaxedoMcpMountOptions): Claxedo
     const { transport } = session
     const onmessage = transport.onmessage
     transport.onmessage = (message, extra) => {
+      registry.refresh()
       if (isJSONRPCRequest(message) && message.method === "tools/call") inFlightCalls.add(message.id)
       onmessage?.(message, extra)
     }

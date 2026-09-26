@@ -61,6 +61,7 @@ function servingBody(workspaceIds: string[] = []) {
     credential: {
       hostId: "host_forged",
       enrollmentId: "enr_forged",
+      ownerActorId: "actor_attacker",
       relayUrl: "https://relay.attacker.test",
       hostTunnelToken: "attacker-tunnel-token",
       tokenExpiresAt: Date.now() + 300_000,

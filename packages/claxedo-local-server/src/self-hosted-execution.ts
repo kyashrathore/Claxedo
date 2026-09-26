@@ -18,6 +18,7 @@
 
 export {
   configureEmbeddedWorkspaceRuntime,
+  embeddedSessionDrivenOnlyByMachineUser,
   embeddedWorkspaceRuntimeSessionAuthority,
   ensureEmbeddedWorkspaceRuntime,
   onEmbeddedWorkspaceRuntime,

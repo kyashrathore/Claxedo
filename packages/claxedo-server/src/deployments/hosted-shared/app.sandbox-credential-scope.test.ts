@@ -5,7 +5,7 @@ import type { D1Database } from "@cloudflare/workers-types"
 import { bearerToken } from "@claxedo/server-core/platform/auth/auth"
 import { AuthenticationError, type RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { createInMemoryCliSessionTokenRegistry } from "@claxedo/server-core/platform/auth/cli-session-registry"
-import { runtimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
+import { hostTunnelTokenVerifier, runtimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import type { ControlPlaneRouteContribution } from "@claxedo/server-core/platform/http/route-contribution"
 import { createRuntimeCredentialIssuer } from "@claxedo/workspace-runtime"
 import type { TasksActor, TasksSessionBridgePort } from "@claxedo/tasks"
@@ -118,7 +118,7 @@ function plane(signing: SigningEnv): HostedControlPlane {
   }
   const services = {
     auth: { config: { enabled: true, issuer: "https://issuer.test", jwksUrl: "https://issuer.test/jwks" } },
-    relay: { relayUrl: "https://relay.test", resolverToken: "resolver-token" },
+    relay: { relayUrl: "https://relay.test", resolverToken: "resolver-token", hostTunnelTokenVerifier: hostTunnelTokenVerifier(signing) },
     sandbox: {},
     authority: {
       resolveOrgId: vi.fn(async (auth: { user: { subject: string } }) => ORGS[auth.user.subject] ?? "org-unknown"),
@@ -127,6 +127,7 @@ function plane(signing: SigningEnv): HostedControlPlane {
           ? { ok: true, role: "admin", orgId: "org-1" }
           : { ok: false },
       ),
+      publishHostSessionRows: vi.fn(async () => { throw new Error("No sandbox credential may publish machine rows") }),
       authorizeSessionRead: vi.fn(async () => undefined),
       listSessions: vi.fn(async () => []),
       resolveWorkspaceOwner: vi.fn(async (workspaceId: string) => WORKSPACE_OWNERS[workspaceId]),
@@ -533,7 +534,9 @@ async function probe(
   if (token) headers.authorization = `Bearer ${token}`
   const init: RequestInit = { method, headers }
   if (method !== "GET" && method !== "HEAD") {
-    init.body = probeBody(names.caller, names.stranger, names.placement, `probe-${(requestCounter += 1)}`)
+    init.body = route.path === "/api/claxedo/host/session-rows"
+      ? JSON.stringify({ hostId: "host_probe", rows: [], removed: [] })
+      : probeBody(names.caller, names.stranger, names.placement, `probe-${(requestCounter += 1)}`)
   }
   const pathNames = names.placement === "everywhere" ? names.stranger : names.caller
   const response = await app.request(probeUrl(route.path, pathNames), init)

@@ -136,8 +136,6 @@ describe("desktop-local product contract", () => {
       "/api/claxedo/live-plugins",
       "/api/claxedo/live-plugins/:id",
       "/api/claxedo/live-plugins/:id/:hash/app.js",
-      "/api/claxedo/live-plugins/:id/source",
-      "/api/claxedo/live-plugins/:id/source/file",
       "/api/claxedo/network-policy",
       "/api/claxedo/network-policy/:id",
       "/api/claxedo/network-policy/check",

@@ -207,6 +207,7 @@ describe("a subagent started over the injected first-party MCP", () => {
     const own = await spawn(mine.client)
     const other = await spawn(theirs.client)
 
+    await until(async () => await listChildren(mine.client), (rows) => rows.find((row) => row.sessionId === own.sessionId)?.status === "failed", "the child to finish its first turn")
     const admitted = await callTool(mine.client, "session_send", { session: own.sessionId, text: "keep going, child" })
     expect(admitted.isError, toolText(admitted)).toBeFalsy()
     expect((await readMessages(own.sessionId)).flatMap((row) => row.parts.map((part) => part.text ?? "")).join(""))

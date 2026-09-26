@@ -37,7 +37,7 @@ afterEach(async () => {
 function fresh() {
   events = []
   service = createLivePluginService({ root: path.join(root, "data"), publish: (event) => events.push(event) })
-  authoring = appPluginAuthoring({ roots: [workspace], service: () => service })
+  authoring = appPluginAuthoring({ roots: [workspace], service: () => service, ownerDriven: () => true })
 }
 
 describe("appPluginScaffold", () => {
@@ -132,13 +132,13 @@ describe("appPluginAuthoring", () => {
     const { directory } = await guarded.create({ name: "Notes" })
     ownerDriven = false
     for (const attempt of [guarded.create({ name: "Other" }), guarded.check(directory), guarded.add(directory)]) {
-      await expect(attempt).rejects.toThrow("A turn relayed from outside this machine reached this session")
+      await expect(attempt).rejects.toThrow("Only sessions driven by this machine's owner")
     }
     expect(await fs.readdir(path.join(workspace, APP_PLUGIN_FOLDER))).toEqual(["notes"])
     expect(service.list()).toEqual([])
   })
 
   test("needs at least one folder to bind to", () => {
-    expect(() => appPluginAuthoring({ roots: [] })).toThrow("at least one folder")
+    expect(() => appPluginAuthoring({ roots: [], ownerDriven: () => true })).toThrow("at least one folder")
   })
 })

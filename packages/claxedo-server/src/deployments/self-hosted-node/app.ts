@@ -55,7 +55,7 @@ import { AgentConfigRoutes, sessionMetaProjectionTap } from "@claxedo/local-serv
 import { SessionMetaRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { LocalWorkspaceRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { requireSignedControlPlaneRoute, ShellRoutes } from "@claxedo/local-server/self-hosted-execution"
-import { appPluginAuthoring, LIVE_PLUGINS_ROUTE_PATH, LivePluginRoutes } from "@claxedo/local-server/self-hosted-execution"
+import { embeddedSessionDrivenOnlyByMachineUser, appPluginAuthoring, LIVE_PLUGINS_ROUTE_PATH, LivePluginRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { ProjectRoutes } from "@claxedo/server-core/projects/routes"
 import { localProjectStore, systemRepoAddresses } from "@claxedo/server-core/projects/local-store"
 import { WorkspaceRoutes } from "../../workspace/routes/index"
@@ -1512,7 +1512,12 @@ export function createSelfHostedApp(
             workspaceId: credential.workspaceId,
             ...(services.authority ? { authority: services.authority } : {}),
           })
-          return owned ? appPluginAuthoring({ roots: [workspace.directory] }) : undefined
+          const owner = await services.authority?.resolveWorkspaceOwner?.(credential.workspaceId)
+          const sessionId = credential.sessionId
+          return owned && sessionId ? appPluginAuthoring({
+            roots: [workspace.directory],
+            ownerDriven: () => embeddedSessionDrivenOnlyByMachineUser(credential.workspaceId, sessionId, owner?.actorId),
+          }) : undefined
         },
         // This box runs its own workspaces behind the runtime proxy, which
         // picks the workspace from `x-workspace-id`: stamped for a runtime

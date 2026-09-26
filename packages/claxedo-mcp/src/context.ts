@@ -55,7 +55,7 @@ export type McpToolGrants = Readonly<{ tasks?: readonly TasksOperation[]; appPlu
 export function toolGrants(client: ClaxedoMcpClient): McpToolGrants {
   return {
     ...(client.tasks ? { tasks: client.tasks.operations } : {}),
-    appPlugins: client.appPlugins !== undefined,
+    appPlugins: client.appPlugins?.allowed() === true,
   }
 }
 

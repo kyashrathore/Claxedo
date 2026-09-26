@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as path from "node:path"
+import ts from "typescript-legacy"
 
 import { resolveLocalServerEntry } from "./local-server"
 import { spec } from "./contract"
@@ -29,16 +30,24 @@ const REPO_PACKAGES = path.resolve(PACKAGE_DIR, "..")
 const CONNECTOR = "@claxedo/host-connector"
 const portablePath = (file: string) => file.replaceAll(path.sep, "/")
 
-/** Import and re-export specifiers, with comments removed first. */
 function specifiers(source: string): string[] {
-  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:'"\\])\/\/.*$/gm, "$1")
   const found: string[] = []
-  const statics = /(?:^|[\s;}])(?:import|export)\s+(?:[^'"();]*?\sfrom\s*)?["']([^"']+)["']/g
-  const dynamic = /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g
-  for (const match of code.matchAll(statics)) found.push(match[1])
-  for (const match of code.matchAll(dynamic)) found.push(match[1])
+  const visit = (node: ts.Node) => {
+    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
+      found.push(node.moduleSpecifier.text)
+    }
+    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword && node.arguments[0] && ts.isStringLiteral(node.arguments[0])) {
+      found.push(node.arguments[0].text)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(ts.createSourceFile("entry.ts", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX))
   return found
 }
+
+test("the import scanner ignores guide examples and follows real imports", () => {
+  expect(specifiers('const guide = `import { plugin } from "@claxedo/plugin-api"`; import "real"; export * from "exports"; import("dynamic")')).toEqual(["real", "exports", "dynamic"])
+})
 
 type Closure = { files: Set<string>; packages: Set<string>; unresolved: string[] }
 

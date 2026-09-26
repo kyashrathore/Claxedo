@@ -1,3 +1,4 @@
+import { SessionAuthoringOwnership } from "./session/authoring-ownership"
 import { randomBytes } from "crypto"
 import fs from "fs"
 import { createRequire } from "module"
@@ -843,6 +844,7 @@ export class RuntimeStore {
   private root: string
   private db: SqliteDatabase
   private subagentAdmission = createMemorySubagentAdmissionStore()
+  private authoringOwnership: SessionAuthoringOwnership
   private closed = false
   // A journaled write may outlive its projection. The session stays gated
   // until the projection catches up, so its checkpoint cannot skip the rows
@@ -878,6 +880,7 @@ export class RuntimeStore {
     this.db.exec("PRAGMA busy_timeout = 5000")
     this.db.exec("PRAGMA foreign_keys = ON")
     this.migrate()
+    this.authoringOwnership = new SessionAuthoringOwnership(this.db)
     this.sessionStarts = sqliteSessionStarts(this.db)
     this.hydrateSubagentAdmission()
     this.replay()
@@ -2269,6 +2272,7 @@ export class RuntimeStore {
           record.grant ?? null,
           record.serviceTier ?? null,
         )
+      this.authoringOwnership.record(record.sessionId, record.actor?.actorId)
       return record
     }, "immediate")
   }
@@ -4352,29 +4356,8 @@ export class RuntimeStore {
     return this.hydrateMessages(sessionId, msgs)
   }
 
-  /**
-   * Whether a turn relayed from another caller reached this session or any
-   * session it descends from. Read off the journal's `turn.start` rows, which
-   * are never pruned and carry `actorId` only when the relay boundary named
-   * the caller: the machine's own user sends over loopback and is named by
-   * nothing, and a child's wake stamps an author but no actor.
-   */
-  relayedTurnInLineage(sessionId: string): boolean {
-    return !!this.db
-      .prepare<{ found: number }>(`
-        WITH RECURSIVE lineage(id) AS (
-          SELECT ?
-          UNION
-          SELECT session.parent_id FROM session JOIN lineage ON session.id = lineage.id WHERE session.parent_id IS NOT NULL
-        )
-        SELECT 1 AS found FROM runtime_journal
-        WHERE session_id IN (SELECT id FROM lineage)
-          AND kind = 'control'
-          AND type = 'turn.start'
-          AND json_extract(payload_json, '$.actorId') IS NOT NULL
-        LIMIT 1
-      `)
-      .get(sessionId)
+  relayedTurnInLineage(sessionId: string, ownerActorId?: string): boolean {
+    return this.authoringOwnership.foreignActorInLineage(sessionId, ownerActorId)
   }
 
   getLatestUserMessageId(sessionId: string) {

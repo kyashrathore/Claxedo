@@ -74,6 +74,7 @@ export type AppPluginRegistration = Readonly<{
  * session may write; every method refuses a directory outside them.
  */
 export type AppPluginsGrant = Readonly<{
+  allowed(): boolean
   create(input: Readonly<{ name: string; directory?: string }>): Promise<AppPluginFolder>
   check(directory: string): Promise<AppPluginCheck>
   add(directory: string): Promise<AppPluginRegistration>

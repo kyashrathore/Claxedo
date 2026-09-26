@@ -318,9 +318,27 @@ void describe("RuntimeStore", () => {
     assert.equal(store.relayedTurnInLineage("own"), false)
     assert.equal(store.relayedTurnInLineage("own-child"), false)
     assert.equal(store.relayedTurnInLineage("shared"), true)
+    assert.equal(store.relayedTurnInLineage("shared", "actor_member"), false)
+    assert.equal(store.relayedTurnInLineage("grandchild", "actor_member"), false)
+    assert.equal(store.relayedTurnInLineage("missing"), true)
     assert.equal(store.relayedTurnInLineage("child"), true)
     assert.equal(store.relayedTurnInLineage("grandchild"), true)
     assert.equal(new RuntimeStore(root).relayedTurnInLineage("grandchild"), true)
+  })
+
+  void it("a queued or steered member prompt fences authoring before dispatch and after its queue row is removed", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    store.bindSession({ sessionId: "steered", directory: "/work", agentSessionId: "agent", createdAt: 1 })
+    const queued = store.queuePrompt({ sessionId: "steered", parts: [{ type: "text", text: "make a plugin" }], delivery: "steer",
+      actor: { actorId: "member", actorKind: "human" } })
+    assert.equal(store.relayedTurnInLineage("steered", "owner"), true)
+    store.deleteQueuedPrompt("steered", queued.seq)
+    store.close()
+    const reopened = new RuntimeStore(root)
+    assert.equal(reopened.relayedTurnInLineage("steered", "owner"), true)
+    assert.equal(reopened.relayedTurnInLineage("steered", "member"), false)
+    reopened.close()
   })
 
   void it("persists explicit child Session ownership across updates and reopen", () => {

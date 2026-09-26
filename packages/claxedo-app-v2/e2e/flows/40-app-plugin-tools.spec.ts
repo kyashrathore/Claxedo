@@ -114,3 +114,25 @@ test("40 the app plugin tools refuse a folder outside the session's workspace an
   expect(addRefused).toContain("is outside this session's workspace")
   expect((await listLivePlugins(stack.url)).plugins).toEqual([])
 })
+
+for (const harness of ["codex", "opencode", "pi"] as const) {
+  test(`40 ${harness} reads the app plugin guide through Claxedo MCP`, async ({ stack, api, app }) => {
+    const workspace = await stack.daemon.makeWorkspace(`plugin-guide-${harness}`)
+    const model = harness === "opencode" ? { providerId: "anthropic", modelId: "scripted" } : await api.defaultModel(workspace.directory, harness)
+    const session = await api.createSession(workspace.directory, { title: `${harness} plugin guide`, harness: { id: harness, access: "native" }, model })
+    const token = `GUIDE_${harness.toUpperCase()}`
+    stack.scripted.scriptTool(harness === "codex" ? {
+      name: "exec",
+      namespace: "functions",
+      format: "custom",
+      input: 'const tool = ALL_TOOLS.find((tool) => tool.name.endsWith("__app_plugin_guide")); if (!tool) throw new Error("Claxedo app plugin guide is unavailable"); text(await tools[tool.name]({}));',
+      whenPromptIncludes: token,
+    } : { name: `${TOOL_PREFIX}app_plugin_guide`, input: {}, whenPromptIncludes: token })
+    await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+    await sendPrompt(app, `Read the app plugin guide. Reply with exactly this one token: ${token}`)
+    await expect.poll(async () => assistantText(await api.messages(workspace.directory, session.id)), { timeout: 45_000 }).toContain(token)
+    await expect(app.getByText(token, { exact: true }).last()).toBeVisible()
+    expect(stack.scripted.requests.flatMap((request) => request.tools.map((tool) => tool.name))).toContain(harness === "codex" ? "functions.exec" : `${TOOL_PREFIX}app_plugin_guide`)
+    expect(JSON.stringify(await api.messages(workspace.directory, session.id))).toContain("## Only when the person asked")
+  })
+}

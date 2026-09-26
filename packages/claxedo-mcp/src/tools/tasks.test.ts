@@ -4,7 +4,7 @@ import { Hono } from "hono"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { createClaxedoMcpClient } from "../client/index"
-import type { ClaxedoFetch, TasksOperation } from "../client/contract"
+import type { AppPluginsGrant, ClaxedoFetch, TasksOperation } from "../client/contract"
 import { assertToolAccess, McpAccessDenied, type McpCredential, type McpToolAccess } from "../context"
 import { CLAXEDO_MCP_PATH, createClaxedoMcpRoutes, fullUserCredential, mcpAuditRecord } from "../server"
 import { registerTaskTools } from "./tasks"
@@ -172,6 +172,7 @@ afterEach(async () => {
 })
 
 type MountInput = {
+  appPlugins?: AppPluginsGrant
   service?: ReturnType<typeof tasksService>
   operations?: readonly TasksOperation[]
   crossMachineWrites?: boolean
@@ -200,6 +201,7 @@ async function listen(input: MountInput = {}) {
     createClient: () =>
       createClaxedoMcpClient({
         deployment: "node",
+        ...(input.appPlugins ? { appPlugins: input.appPlugins } : {}),
         local: { fetch: localFetch, workspace: { workspaceId: "ws_local", directory: "/w" } },
         ...(input.service
           ? {
@@ -507,6 +509,22 @@ describe("task_create", () => {
 })
 
 describe("task_start", () => {
+  test.each([false, true])("a local runtime's owner-driven grant is %s before starting a detached task session", async (allowed) => {
+    const service = tasksService()
+    const unused = async (): Promise<never> => { throw new Error("No app plugin operation should run") }
+    const { url } = await listen({ service, appPlugins: { allowed: () => allowed, create: unused, check: unused, add: unused } })
+    const result = await call(await connect(url), "task_start", { task: "tsk_1", preset: "pst_1" })
+    expect(result.isError).toBe(!allowed)
+    if (allowed) {
+      expect(service.calls).toContainEqual(expect.objectContaining({ method: "POST", path: "/api/claxedo/tasks/tasks/tsk_1/sessions" }))
+      expect(JSON.parse(result.text).session).toEqual({ sessionId: "ses_started", workspaceId: "ws_local" })
+    }
+    else {
+      expect(result.text).toContain("use subagent_spawn")
+      expect(service.calls).toEqual([])
+    }
+  })
+
   test("previews the attempt, then starts it with the preview's own digest", async () => {
     const service = tasksService()
     const { url, audits } = await listen({ service, crossMachineWrites: true })

@@ -219,8 +219,8 @@ export function embeddedWorkspaceRuntimeHoldsSession(workspaceId: string, sessio
  * owner's alone: it exists here, and no turn relayed from another person
  * reached it or a session above it. False for a workspace with no runtime up.
  */
-export function embeddedSessionDrivenOnlyByMachineUser(workspaceId: string, sessionId: string) {
-  return hosts.get(workspaceId)?.host.drivenOnlyByMachineUser(sessionId) ?? false
+export function embeddedSessionDrivenOnlyByMachineUser(workspaceId: string, sessionId: string, ownerActorId?: string) {
+  return hosts.get(workspaceId)?.host.drivenOnlyByMachineUser(sessionId, ownerActorId) ?? false
 }
 
 /**

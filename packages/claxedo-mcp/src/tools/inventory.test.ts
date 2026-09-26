@@ -165,6 +165,7 @@ describe("the registered surface", () => {
 
   test("adds the app plugin tools to a session granted authoring, and never to a person's account", () => {
     const appPlugins = {
+      allowed: () => true,
       create: () => Promise.reject(new Error("registered, never called")),
       check: () => Promise.reject(new Error("registered, never called")),
       add: () => Promise.reject(new Error("registered, never called")),

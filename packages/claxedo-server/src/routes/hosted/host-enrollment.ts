@@ -480,6 +480,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
         // holding the credential, and the credential is all of the enrollment
         // it ever receives.
         enrollmentId: caller.enrollmentId,
+        ownerActorId: caller.ownerActorId,
         workspaceIds: ready,
         ...(endpoints.relay ? { relayUrl: endpoints.relay.url } : {}),
       },

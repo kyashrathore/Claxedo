@@ -81,6 +81,7 @@ import {
   type RecoveryRefusal,
   type RecoveryRequest,
 } from "@claxedo/agent-runtime-contract"
+import { localHostOwnerActorId } from "../deployments/local/host-session-authority"
 import { localDocumentsRoutes } from "./local-documents"
 import { appPluginAuthoring } from "../plugins/authoring"
 import { LivePluginRoutes } from "../plugins/routes"
@@ -536,7 +537,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
         const inProcess = (runtimeRequest: Request) => app.fetch(markInProcessDaemonRequest(runtimeRequest))
         const { sessionId } = credential
         const ownerDriven = sessionId
-          ? () => embeddedSessionDrivenOnlyByMachineUser(credential.workspaceId, sessionId)
+          ? () => embeddedSessionDrivenOnlyByMachineUser(credential.workspaceId, sessionId, localHostOwnerActorId())
           : undefined
         const localFetch = inProcessFetch(inProcess, { "x-workspace-id": credential.workspaceId })
         // A session reaches the Tasks routes as itself: the registry issues a
@@ -557,7 +558,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
           deployment: "loopback",
           credential,
           request,
-          ...(ownerDriven?.()
+          ...(ownerDriven
             ? { appPlugins: appPluginAuthoring({ roots: [workspace.directory], ownerDriven }) }
             : {}),
           documents: { fetch: localFetch },

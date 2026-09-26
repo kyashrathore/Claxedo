@@ -65,6 +65,7 @@ function servingCredential(workspaceId: string) {
     credential: {
       hostId: "host_machine-1",
       enrollmentId: "enr_this_machine",
+        ownerActorId: "actor_owner",
       relayUrl: "https://relay.claxedo.test",
       hostTunnelToken: "host-tunnel-token-value",
       tokenExpiresAt: Date.now() + 300_000,

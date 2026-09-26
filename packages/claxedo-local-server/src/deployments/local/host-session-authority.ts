@@ -32,6 +32,7 @@ import type { RuntimeProxyOptions } from "../../workspace/runtime-dispatch/inter
 import { embeddedWorkspaceRuntimeHoldsSession } from "./embedded-workspace-runtime"
 
 export type LocalHostEndpoints = {
+  ownerActorId?: string
   /** The relay's published key set; Relay Host Tokens are verified against it by `kid`. */
   relayJwksUrl?: string
   /** The control plane's session authority, consulted for every private-session decision. */
@@ -44,6 +45,10 @@ let endpoints: LocalHostEndpoints = {}
 
 export function setLocalHostEndpoints(next: LocalHostEndpoints | undefined) {
   endpoints = next ?? {}
+}
+
+export function localHostOwnerActorId() {
+  return endpoints.ownerActorId
 }
 
 export function localHostSessionRowsUrl() {
