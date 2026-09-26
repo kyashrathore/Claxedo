@@ -1,3 +1,4 @@
+import { isNonBlankString } from "@claxedo/helpers/guards"
 import {
   AuthenticationError,
   createControlPlaneAuthenticationAdapter,
@@ -78,10 +79,6 @@ function invalidCredentials(): AuthenticationError {
   return new AuthenticationError(401, "invalid_credentials", "Authentication credential is invalid")
 }
 
-function present(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0
-}
-
 function record(value: unknown): Record<string, unknown> {
   const asObject = asRecord(value)
   if (!asObject) throw invalidCredentials()
@@ -123,7 +120,7 @@ function secondsTimestamp(value: unknown): number | undefined {
 }
 
 function scopeList(value: unknown): string[] {
-  if (!present(value)) throw invalidCredentials()
+  if (!isNonBlankString(value)) throw invalidCredentials()
   const scopes = value.trim().split(/\s+/)
   if (scopes.length === 0 || new Set(scopes).size !== scopes.length) throw invalidCredentials()
   return scopes
@@ -139,7 +136,7 @@ function scopeList(value: unknown): string[] {
 function audienceConfinedTo(value: unknown, required: string, alsoAllowed: readonly string[]): boolean {
   const values = typeof value === "string"
     ? [value]
-    : Array.isArray(value) && value.every(present)
+    : Array.isArray(value) && value.every(isNonBlankString)
       ? value
       : []
   return values.includes(required)
@@ -161,7 +158,7 @@ function browserVerifiedSession(
   const result = record(providerResult)
   const user = record(result.user)
   const session = record(result.session)
-  if (!present(user.id) || !present(session.id)) throw invalidCredentials()
+  if (!isNonBlankString(user.id) || !isNonBlankString(session.id)) throw invalidCredentials()
   const createdAt = timestamp(session.createdAt)
 
   return {
@@ -205,7 +202,7 @@ async function verifyBrowser(
   const result = record(providerResult)
   const user = record(result.user)
   const session = record(result.session)
-  if (!present(user.id) || !present(session.id)) throw invalidCredentials()
+  if (!isNonBlankString(user.id) || !isNonBlankString(session.id)) throw invalidCredentials()
   const createdAt = timestamp(session.createdAt)
   const evidence = await input.resolveAuthenticationEvidence({
     kind: "browser",
@@ -226,7 +223,7 @@ async function verifyNative(
   if (result.active !== true || result.iss !== input.descriptor.issuer || result.token_type !== "Bearer") {
     throw invalidCredentials()
   }
-  if (!present(result.sub)) throw invalidCredentials()
+  if (!isNonBlankString(result.sub)) throw invalidCredentials()
   const selected = nativeClient(input.descriptor, result.client_id)
   const userinfoAudience = `${input.descriptor.issuer}/oauth2/userinfo`
   if (!audienceConfinedTo(result.aud, selected.descriptor.resource, [userinfoAudience])) throw invalidCredentials()
@@ -234,7 +231,7 @@ async function verifyNative(
   const issuedAt = secondsTimestamp(result.iat)
   const providerSessionId = result.sid === undefined
     ? undefined
-    : present(result.sid)
+    : isNonBlankString(result.sid)
       ? result.sid
       : (() => { throw invalidCredentials() })()
 
@@ -246,7 +243,7 @@ async function verifyNative(
     issuedAt,
     providerResult,
   })
-  if (!present(evidence.sessionId) || typeof evidence.authenticatedAt !== "number") throw invalidCredentials()
+  if (!isNonBlankString(evidence.sessionId) || typeof evidence.authenticatedAt !== "number") throw invalidCredentials()
   if (providerSessionId && evidence.sessionId !== providerSessionId) throw invalidCredentials()
 
   return {
@@ -287,7 +284,7 @@ function introspectAccessToken(
 }
 
 function assertComposition(input: BetterAuthD1RequestAuthenticationInput) {
-  if (!present(input.nativeIntrospectionClient.clientId) || !present(input.nativeIntrospectionClient.clientSecret)) {
+  if (!isNonBlankString(input.nativeIntrospectionClient.clientId) || !isNonBlankString(input.nativeIntrospectionClient.clientSecret)) {
     throw new AuthenticationError(
       503,
       "auth_configuration_invalid",

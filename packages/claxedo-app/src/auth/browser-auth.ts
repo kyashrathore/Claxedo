@@ -1,3 +1,4 @@
+import { isNonBlankString } from "@claxedo/helpers/guards"
 import type { Accessor } from "solid-js"
 import type { AuthUser } from "./display-user"
 import { asRecord } from "@/lib/record"
@@ -104,10 +105,6 @@ export function browserAuthUnavailableReason(error: unknown): string {
   return `Sign-in is unavailable: ${detail}`
 }
 
-function present(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0
-}
-
 function exactOrigin(value: string) {
   if (!URL.canParse(value)) return false
   const url = new URL(value)
@@ -136,8 +133,8 @@ function exactUrl(value: string) {
 }
 
 function stringArray(value: unknown): string[] | undefined {
-  if (!Array.isArray(value) || value.some((entry) => !present(entry))) return undefined
-  const entries = value.filter((entry): entry is string => present(entry))
+  if (!Array.isArray(value) || value.some((entry) => !isNonBlankString(entry))) return undefined
+  const entries = value.filter((entry): entry is string => isNonBlankString(entry))
   return new Set(entries).size === entries.length ? entries : undefined
 }
 
@@ -169,20 +166,20 @@ function descriptorMatches(
   const scopes = stringArray(browser.scopes)
   return (
     descriptor.adapter === input.selectedAdapter &&
-    present(descriptor.deploymentId) &&
-    present(descriptor.configurationVersion) &&
+    isNonBlankString(descriptor.deploymentId) &&
+    isNonBlankString(descriptor.configurationVersion) &&
     typeof descriptor.expiresAt === "number" &&
     Number.isFinite(descriptor.expiresAt) &&
     descriptor.expiresAt > Date.now() &&
-    present(descriptor.issuer) &&
+    isNonBlankString(descriptor.issuer) &&
     exactUrl(descriptor.issuer) &&
     !!methods?.length &&
     browser.transport === "cookie" &&
     browser.credentialPolicy === "reject-cookie-and-authorization" &&
     !!trustedOrigins?.includes(input.appOrigin) &&
     trustedOrigins.every(exactOrigin) &&
-    present(browser.clientId) &&
-    present(browser.resource) &&
+    isNonBlankString(browser.clientId) &&
+    isNonBlankString(browser.resource) &&
     exactUrl(browser.resource) &&
     new URL(browser.resource).origin === input.apiOrigin &&
     !!scopes?.length
@@ -193,7 +190,7 @@ function cookieMatches(issuer: string, apiOrigin: string, cookie: Record<string,
   return (
     issuer === `${apiOrigin}/api/auth` &&
     !!cookie &&
-    present(cookie.name) &&
+    isNonBlankString(cookie.name) &&
     cookie.path === "/" &&
     cookie.secure === true &&
     cookie.httpOnly === true &&

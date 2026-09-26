@@ -10,6 +10,7 @@ import {
   assertRecord,
   isBoolean,
   isFiniteNumber,
+  isNonBlankString,
   isNonEmptyString,
   isNonNegativeSafeInteger,
   isRecord,
@@ -69,6 +70,13 @@ describe("string guards", () => {
     expect(nonEmptyString(" a ")).toBe(" a ")
     expect(nonEmptyString("")).toBeUndefined()
     expect(nonEmptyString(0)).toBeUndefined()
+  })
+
+  test("isNonBlankString rejects whitespace-only strings and non-strings", () => {
+    expect(isNonBlankString(" a ")).toBe(true)
+    expect(isNonBlankString(" \t\n")).toBe(false)
+    expect(isNonBlankString("")).toBe(false)
+    expect(isNonBlankString(1)).toBe(false)
   })
 })
 
