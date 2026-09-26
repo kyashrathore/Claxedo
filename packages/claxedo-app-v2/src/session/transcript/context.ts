@@ -39,6 +39,8 @@ export type TranscriptContext = {
   readonly older: Machine<OlderState, OlderEvent>
   readonly olderCursor: Accessor<string | undefined>
   readonly setOlderCursor: Setter<string | undefined>
+  readonly olderPages: Accessor<number>
+  readonly setOlderPages: Setter<number>
   readonly queue: QueueInternal
   readonly goal: SessionGoalStore
   readonly todos: SessionTodosStore
@@ -52,6 +54,7 @@ export function createTranscriptContext(server: Server, ref: SessionRef, deps: T
   const deltas = createDeltaBuffer((delta) => appendDelta(setStoreData, data, delta.messageId, delta.partId, delta.field, delta.delta))
   const setData = committingFirst(setStoreData, deltas)
   const [olderCursor, setOlderCursor] = createSignal<string>()
+  const [olderPages, setOlderPages] = createSignal(0)
   return {
     server,
     ref,
@@ -63,6 +66,8 @@ export function createTranscriptContext(server: Server, ref: SessionRef, deps: T
     older: machine(OLDER_IDLE, olderTransition),
     olderCursor,
     setOlderCursor,
+    olderPages,
+    setOlderPages,
     queue: createQueue(server, ref, (items) => dropQueuedStubs(setData, data, items)),
     goal: createSessionGoal(server, ref),
     todos: createSessionTodos(),

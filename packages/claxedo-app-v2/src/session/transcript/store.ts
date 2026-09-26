@@ -76,6 +76,7 @@ function sessionView(context: TranscriptContext): SessionView {
     controlGoal: goal.control,
     hasOlder: () => context.olderCursor() !== undefined,
     olderState: older.state,
+    olderPagesLoaded: context.olderPages,
     loadOlder: () => loadOlder(context),
     reload: () => readSnapshot(context),
     send: (input) => sendPrompt(context, input),
