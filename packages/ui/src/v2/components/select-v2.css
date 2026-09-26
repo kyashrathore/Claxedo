@@ -175,14 +175,12 @@
   pointer-events: none;
 }
 
-[data-component="select-v2"] [data-slot="select-v2-chevron"] svg {
-  display: block;
-  flex: none;
+.ui-select-v2-chevron {
   transform: rotate(180deg);
   transform-origin: 50% 50%;
 }
 
-[data-component="select-v2"][data-expanded] [data-slot="select-v2-chevron"] svg {
+.ui-select-v2[data-expanded] .ui-select-v2-chevron {
   transform: rotate(0deg);
 }
 
@@ -251,7 +249,7 @@
     outline: none;
   }
 
-  > *:not([role="presentation"]) + *:not([role="presentation"]) {
+  > .ui-select-v2-option + .ui-select-v2-option {
     margin-top: 2px;
   }
 }
@@ -278,20 +276,11 @@
   color: var(--menu-v2-accent);
 }
 
-[data-slot="select-v2-listbox"] [data-component="menu-v2-item"][data-selected] [data-slot="menu-v2-item-indicator"] {
+.ui-select-v2-option[data-selected] .ui-select-v2-option-indicator {
   color: var(--menu-v2-accent);
-}
-
-[data-slot="select-v2-listbox"]
-  [data-component="menu-v2-item"][data-selected]
-  [data-slot="menu-v2-item-indicator"]
-  svg {
   visibility: visible;
 }
 
-[data-slot="select-v2-listbox"]
-  [data-component="menu-v2-item"]:not([data-selected])
-  [data-slot="menu-v2-item-indicator"]
-  svg {
+.ui-select-v2-option:not([data-selected]) .ui-select-v2-option-indicator {
   visibility: hidden;
 }

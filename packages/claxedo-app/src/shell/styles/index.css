@@ -1,9 +1,11 @@
 @import "@opencode-ai/ui/styles/tailwind";
 @import "@opencode-ai/ui/v2/styles/tailwind.css";
 
-@source not "../../../../claxedo-desktop/src/renderer";
 @source "../../";
 @source "../../../index.html";
+@source not "../../**/*.test.*";
+@source not inline("[file:<path>]");
+@source not inline("[image:<filename>]");
 
 @font-face {
   font-family: "JetBrainsMono Nerd Font Mono";

@@ -27,7 +27,6 @@
     .ui-collapsible-arrow {
       opacity: 0;
       transition: opacity 0.15s ease;
-      will-change: opacity;
       transform: translateZ(0);
     }
 
@@ -36,7 +35,6 @@
       color: var(--icon-weaker);
       transform: translateZ(0) rotate(-90deg);
       transition: transform 0.15s ease;
-      will-change: transform;
     }
 
     &:hover .ui-collapsible-arrow {

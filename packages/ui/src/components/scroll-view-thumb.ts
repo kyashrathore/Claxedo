@@ -1,10 +1,9 @@
 import { createEffect, createMemo, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
-import { scrollTopFromThumbPointer } from "@opencode-ai/ui/scroll-view"
 
 export type ScrollViewThumbVisibility = "hover" | "scroll"
 
-export type ThumbRevealSource = "wheel" | "touch" | "pen" | "keyboard"
+export type ScrollThumbRevealSource = "wheel" | "touch" | "pen" | "keyboard"
 
 const trackPadding = 8
 const minThumbHeight = 32
@@ -31,6 +30,23 @@ function thumbGeometry(extent: Extent, scrollTop: number) {
   const maxThumbTop = trackHeight - height
   const top = maxScrollTop > 0 ? (scrollTop / maxScrollTop) * maxThumbTop : 0
   return { height, top: trackPadding + Math.max(0, Math.min(top, maxThumbTop)) }
+}
+
+export function scrollTopFromThumbPointer(input: {
+  pointer: number
+  viewportTop: number
+  grabOffset: number
+  clientHeight: number
+  scrollHeight: number
+  thumbHeight: number
+  /** Viewport height used for max scroll. Defaults to `clientHeight` (track == viewport). */
+  scrollClientHeight?: number
+}) {
+  const padding = 8
+  const maxThumbTop = input.clientHeight - padding * 2 - input.thumbHeight
+  if (maxThumbTop <= 0) return 0
+  const thumbTop = Math.max(0, Math.min(input.pointer - input.viewportTop - padding - input.grabOffset, maxThumbTop))
+  return (thumbTop / maxThumbTop) * Math.max(0, input.scrollHeight - (input.scrollClientHeight ?? input.clientHeight))
 }
 
 function dragThumb(input: ThumbInput, thumb: HTMLDivElement, event: PointerEvent, height: () => number, setDragging: (dragging: boolean) => void) {
@@ -89,7 +105,7 @@ export function createScrollThumb(input: ThumbInput) {
     state,
     visible,
     setHovered: (hovered: boolean) => setState("hovered", hovered),
-    reveal: (_source: ThumbRevealSource) => {
+    reveal: (_source: ScrollThumbRevealSource) => {
       setState("scrolling", true)
       if (idle !== undefined) clearTimeout(idle)
       idle = setTimeout(() => setState("scrolling", false), scrollIdleMs)

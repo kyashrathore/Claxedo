@@ -120,7 +120,7 @@
       outline: none;
     }
 
-    > *:not([role="presentation"]) + *:not([role="presentation"]) {
+    > .ui-select-select-item + .ui-select-select-item {
       margin-top: 2px;
     }
   }

@@ -5,12 +5,12 @@
 
   @media (pointer: coarse) {
     .v2-segmented-control-item,
-    .v2-scroll-view-thumb {
+    .scroll-thumb {
       position: relative;
     }
 
     .v2-segmented-control-item::before,
-    .v2-scroll-view-thumb::before {
+    .scroll-thumb::before {
       content: "";
       position: absolute;
       inset: min(0px, calc(50% - var(--touch-target) / 2));

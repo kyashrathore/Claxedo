@@ -21,13 +21,20 @@ function parseSymbols(rootID: string, markup: string) {
  * invalidation that already dominates interaction latency. `content-visibility:
  * hidden` removes the subtree from style, layout and paint; `<use>` still
  * resolves its instance tree from these symbols by id, so icons are unchanged.
+ *
+ * Hosts live in one `display: contents` shelf at the top of `<body>`, and the
+ * shelf itself is not `aria-hidden`. Kobalte's hide-outside pass (every menu,
+ * dialog and popover) skips an element that is already `aria-hidden` without
+ * recording it and walks into it, writing `aria-hidden` on each `<symbol>`:
+ * about 500 writes to open the account menu and 168 to close it when the hosts
+ * sat directly in `<body>`. The shelf is hidden with one write and not entered.
  */
 export function ensureSvgSpriteHost(rootID: string): SVGSVGElement | undefined {
   if (typeof document === "undefined") return undefined
   const existing = document.getElementById(rootID)
   if (existing instanceof SVGSVGElement) return existing
-  const body = document.body as HTMLElement | null
-  if (!body) return undefined
+  const shelf = spriteShelf()
+  if (!shelf) return undefined
 
   const root = document.createElementNS("http://www.w3.org/2000/svg", "svg")
   root.id = rootID
@@ -37,8 +44,22 @@ export function ensureSvgSpriteHost(rootID: string): SVGSVGElement | undefined {
   root.style.position = "absolute"
   root.style.overflow = "hidden"
   root.style.contentVisibility = "hidden"
-  body.insertBefore(root, body.firstChild)
+  shelf.append(root)
   return root
+}
+
+const shelfID = "svg-sprite-shelf"
+
+function spriteShelf(): HTMLElement | undefined {
+  const existing = document.getElementById(shelfID)
+  if (existing) return existing
+  const body = document.body as HTMLElement | null
+  if (!body) return undefined
+  const shelf = document.createElement("div")
+  shelf.id = shelfID
+  shelf.style.display = "contents"
+  body.insertBefore(shelf, body.firstChild)
+  return shelf
 }
 
 function createSpriteRoot(rootID: string) {

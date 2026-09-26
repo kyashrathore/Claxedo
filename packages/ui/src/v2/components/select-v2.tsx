@@ -149,6 +149,7 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
         <Kobalte.Item
           {...itemProps}
           data-component="menu-v2-item"
+          class="ui-select-v2-option"
           onPointerEnter={() => move(itemProps.item.rawValue)}
           onPointerMove={() => move(itemProps.item.rawValue)}
           onFocus={() => move(itemProps.item.rawValue)}
@@ -158,7 +159,7 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
               ? local.children(itemProps.item.rawValue)
               : labelFor(itemProps.item.rawValue)}
           </Kobalte.ItemLabel>
-          <Kobalte.ItemIndicator data-slot="menu-v2-item-indicator" forceMount>
+          <Kobalte.ItemIndicator data-slot="menu-v2-item-indicator" class="ui-select-v2-option-indicator" forceMount>
             <CheckSmall />
           </Kobalte.ItemIndicator>
         </Kobalte.Item>
@@ -171,7 +172,8 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
       onOpenChange={(open) => {
         local.onOpenChange?.(open)
         if (!open) stop()
-      }} classList={{ "ui-select-v2-root": true }}
+      }}
+      classList={{ "ui-select-v2-root": true }}
     >
       <Kobalte.Trigger
         as="div"
@@ -181,7 +183,8 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
         data-numeric={local.numeric ? "" : undefined}
         disabled={local.disabled}
         data-disabled={local.disabled ? "" : undefined}
-        classList={{ "ui-select-v2": true,
+        classList={{
+          "ui-select-v2": true,
           ...local.classList,
           [local.class ?? ""]: !!local.class,
         }}

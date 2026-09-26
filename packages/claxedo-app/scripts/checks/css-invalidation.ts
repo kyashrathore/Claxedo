@@ -1,8 +1,9 @@
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync, realpathSync } from "node:fs"
+import { dirname, resolve as resolvePath } from "node:path"
 import { applyBaseline, isTestFile, type Baselined, type Candidate } from "./lib/baseline"
-import { codeExtensions, listFiles, parseArgs, styleExtensions } from "./lib/files"
+import { codeExtensions, listFiles, parseArgs, repoRoot, styleExtensions, under } from "./lib/files"
 import { parseStylesheet, type Declaration, type StyleRule } from "./lib/css"
-import { readSource, startLine, ts } from "./lib/parse"
+import { compilerOptions, createResolver, importsOf, readSource, startLine, ts, type Resolver } from "./lib/parse"
 import { finish } from "./lib/report"
 import { carriesState, isFeatureless, isStructural, rightmost } from "./lib/selectors"
 import { walk } from "./lib/tree"
@@ -24,18 +25,65 @@ const baseline: readonly Baselined[] = [
   { file: "src/transcript/session-review.css", matcher: "will-change: opacity", owner: "transcript", reason: "always-on hint for a hover-revealed button; the opacity transition alone suffices" },
   { file: "src/transcript/message-part.css", matcher: "will-change: opacity", owner: "transcript", reason: "always-on hint for hover-revealed message actions; the opacity transition alone suffices" },
   { file: "src/session/view/timeline/markdown-viewer.css", matcher: "will-change: transform", owner: "session", reason: "always-on hint on the viewer's centered placeholder; nothing animates it" },
+  { file: "../ui/src/components/icon-button.css", matcher: "animation: stop-pulse", owner: "ui", reason: "the stop button's pulse while a turn runs; the button is mounted only then" },
+  { file: "../ui/src/components/text-shimmer.css", matcher: "animation-iteration-count: infinite", owner: "ui", reason: "the swept copy sweeps while mounted, and is mounted only while the shimmer is active" },
+  { file: "../ui/src/components/text-shimmer.css", matcher: "will-change: background-position", owner: "ui", reason: "the swept copy is mounted only while the shimmer is active" },
   { file: "src/terminal/view/terminal-status.tsx", matcher: "space-y-3", owner: "terminal", reason: "failed-start message stack; use gap" },
   { file: "src/browser/view/console.tsx", matcher: "divide-y", owner: "browser", reason: "console log rows; use gap or a row border" },
 ]
+
+const kitFolder = "packages/ui"
+const styleImport = /@import\s+(?:url\()?["']([^"']+)["']/g
 
 const utilityToken = /^-?(?:[\w[\]/.-]+:)*(?:space-[xy]-[\w[\].-]+|divide-[xy](?:-[\w[\].-]+)?)$/
 
 function main(): never {
   const { root } = parseArgs(process.argv.slice(2))
-  const sheets = listFiles(root, ["src", "plugins"], styleExtensions)
+  const appSheets = listFiles(root, ["src", "plugins"], styleExtensions)
   const code = listFiles(root, ["src", "plugins"], codeExtensions).filter((file) => !isTestFile(file))
+  const sheets = [...appSheets, ...kitSheets(code, appSheets)]
   const candidates = [...sheets.flatMap(sheetViolations), ...code.flatMap(utilityViolations)]
   finish("css-invalidation", root, applyBaseline(root, baseline, candidates), sheets.length + code.length)
+}
+
+function kitSheets(code: readonly string[], sheets: readonly string[]): string[] {
+  const resolve = createResolver(compilerOptions())
+  const seen = new Set<string>()
+  const found = new Set<string>()
+  const visit = (target: string | undefined): void => {
+    if (!target || !under(repoRoot, target, kitFolder) || seen.has(target)) return
+    seen.add(target)
+    if (target.endsWith(".css")) {
+      found.add(target)
+      for (const next of styleImports(target)) visit(next)
+    } else if (/\.tsx?$/.test(target) && !isTestFile(target)) {
+      for (const next of codeImports(target, resolve)) visit(next)
+    }
+  }
+  for (const file of code) for (const target of codeImports(file, resolve)) visit(target)
+  for (const file of sheets) for (const target of styleImports(file)) visit(target)
+  return [...found].sort()
+}
+
+function codeImports(file: string, resolve: Resolver): (string | undefined)[] {
+  return importsOf(readSource(file).sf).map(({ specifier }) => (specifier.endsWith(".css") ? sheetPath(file, specifier) : resolve(file, specifier)))
+}
+
+function styleImports(file: string): (string | undefined)[] {
+  return [...readFileSync(file, "utf8").matchAll(styleImport)].map((match) => sheetPath(file, match[1] ?? ""))
+}
+
+function sheetPath(from: string, specifier: string): string | undefined {
+  const path = specifier.startsWith(".") ? resolvePath(dirname(from), specifier) : resolvedSheet(from, specifier)
+  return path && existsSync(path) ? realpathSync(path) : undefined
+}
+
+function resolvedSheet(from: string, specifier: string): string | undefined {
+  try {
+    return Bun.resolveSync(specifier, dirname(from))
+  } catch {
+    return undefined
+  }
 }
 
 function sheetViolations(file: string): Candidate[] {

@@ -1,8 +1,8 @@
 import { Show, type JSX } from "solid-js"
-import { useI18n } from "@opencode-ai/ui/context/i18n"
-import { Icon } from "@opencode-ai/ui/icon"
-import { IconButton } from "@opencode-ai/ui/icon-button"
-import { TextField } from "@opencode-ai/ui/text-field"
+import { useI18n } from "../context/i18n"
+import { Icon } from "./icon"
+import { IconButton } from "./icon-button"
+import { TextField } from "./text-field"
 
 export interface ListSearchProps {
   placeholder?: string
