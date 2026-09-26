@@ -48,7 +48,7 @@ function createBuildPolicy(deps: PluginHostDeps): BuildPolicy {
   return { missing, approval, wanted }
 }
 
-function summaryOf(lifecycle: PluginLifecycle, policy: BuildPolicy, preferences: PluginPreferences): PluginSummary {
+function pluginSummaryOf(lifecycle: PluginLifecycle, policy: BuildPolicy, preferences: PluginPreferences): PluginSummary {
   const build = lifecycle.build()
   return {
     id: lifecycle.id,
@@ -73,7 +73,7 @@ export function createPluginHost(deps: PluginHostDeps): PluginHost {
   const { preferences } = deps
   const policy = createBuildPolicy(deps)
   const [lifecycles, setLifecycles] = createSignal<readonly PluginLifecycle[]>([])
-  const summaries = createMemo<readonly PluginSummary[]>(() => lifecycles().map((lifecycle) => summaryOf(lifecycle, policy, preferences)))
+  const summaries = createMemo<readonly PluginSummary[]>(() => lifecycles().map((lifecycle) => pluginSummaryOf(lifecycle, policy, preferences)))
   const required = createMemo<ReadonlySet<PluginCapability>>(() => new Set(lifecycles().flatMap((lifecycle) => lifecycle.build().manifest.requires)))
   const find = (pluginId: string) => lifecycles().find((lifecycle) => lifecycle.id === pluginId)
   const drop = (pluginId: string) => {

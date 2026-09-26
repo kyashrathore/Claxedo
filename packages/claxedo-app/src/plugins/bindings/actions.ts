@@ -4,7 +4,7 @@ import { commandContext, entryId, type BindingScope } from "./services"
 
 type Actions = Pick<PluginApi, "commands" | "mentions">
 
-function commandEntry(scope: BindingScope, command: CommandDefinition): CommandEntry {
+function pluginCommandEntry(scope: BindingScope, command: CommandDefinition): CommandEntry {
   const context = () => commandContext(scope.services)
   const enabled = command.enabled
   return {
@@ -40,7 +40,7 @@ export function actionBindings(scope: BindingScope): Actions {
   const { registries, commands } = scope.services
   return {
     commands: {
-      register: (command) => scope.sink.add(registries.commands, commandEntry(scope, command)),
+      register: (command) => scope.sink.add(registries.commands, pluginCommandEntry(scope, command)),
       run: async (commandId) => {
         const tagged = entryId(scope.manifest.id, commandId)
         commands.trigger(commands.has(tagged) ? tagged : commandId)

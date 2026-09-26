@@ -99,7 +99,7 @@ export function formatKeybind(config: string, label: KeyLabeler): string {
   return isMac ? parts.join("") : parts.join("+")
 }
 
-export function isEditableTarget(target: EventTarget | null): boolean {
+export function isTextEntryTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
   if (target.isContentEditable) return true
   return target.closest("[contenteditable='true'], input, textarea, select") !== null

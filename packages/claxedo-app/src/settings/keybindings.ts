@@ -33,7 +33,7 @@ export function clearsKeybinding(event: KeyboardEvent): boolean {
   return !modified && (event.key === "Backspace" || event.key === "Delete")
 }
 
-export function groupRows(rows: readonly KeybindingRow[]): readonly (readonly [string, readonly KeybindingRow[]])[] {
+export function keybindingGroups(rows: readonly KeybindingRow[]): readonly (readonly [string, readonly KeybindingRow[]])[] {
   const grouped = new Map<string, KeybindingRow[]>()
   for (const row of rows) grouped.set(row.category, [...(grouped.get(row.category) ?? []), row])
   return [...grouped.entries()]

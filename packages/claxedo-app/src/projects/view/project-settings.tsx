@@ -75,7 +75,7 @@ function ProjectRemoval(props: { readonly id: ProjectId; readonly name: string }
   )
 }
 
-function ProjectHeader(props: { readonly project: Project }): JSX.Element {
+function ProjectSettingsHeader(props: { readonly project: Project }): JSX.Element {
   return (
     <header class="projects-settings-row-text">
       <h2 class="projects-settings-name">{props.project.name}</h2>
@@ -115,7 +115,7 @@ export function ProjectSettings(props: { readonly id: ProjectId }): JSX.Element 
         <Match when={project()}>
           {(row) => (
             <>
-              <ProjectHeader project={row()} />
+              <ProjectSettingsHeader project={row()} />
               <ProjectFields project={row()} />
               <ProjectPlacements project={row()} />
               <ProjectRemoval id={props.id} name={row().name} />

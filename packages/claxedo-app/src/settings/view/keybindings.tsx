@@ -4,7 +4,7 @@ import { PALETTE_ID, useCommands, type Commands } from "@/shell"
 import { showToast, Button, LabelledTextField } from "@/ui"
 import { useTranslator } from "@/i18n"
 import { settingsDictionary } from "../i18n"
-import { clearsKeybinding, filterRows, firstRows, groupRows, keybindingFromEvent, type KeybindingRow } from "../keybindings"
+import { clearsKeybinding, filterRows, firstRows, keybindingGroups, keybindingFromEvent, type KeybindingRow } from "../keybindings"
 import { createRevealLimit } from "./reveal"
 import { SettingsGroup, SettingsList } from "./section"
 
@@ -26,7 +26,7 @@ export function KeybindingsSection() {
   const [query, setQuery] = createSignal("")
   const rows = createMemo(() => keybindingRows(commands, { palette: t("settings.keybindings.palette"), general: t("settings.keybindings.group.general") }))
   const rowById = createMemo(() => new Map(rows().map((row) => [row.id, row])))
-  const groups = createMemo(() => groupRows(filterRows(rows(), query())))
+  const groups = createMemo(() => keybindingGroups(filterRows(rows(), query())))
   const limit = createRevealLimit(() => rows().length, FIRST_ROWS, ROWS_PER_FRAME)
   const shown = createMemo(() => firstRows(groups(), limit()))
   const categories = createMemo(() => [...shown().keys()], [], { equals: (a, b) => a.length === b.length && a.every((category, index) => category === b[index]) })

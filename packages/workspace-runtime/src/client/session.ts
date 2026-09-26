@@ -214,13 +214,13 @@ function isRecoveryInspection(body: unknown): body is AgentRuntimeRecoveryInspec
     && Array.isArray(fields.operations)
 }
 
-const sessionPath = (input: SessionInput, suffix = "") => `/session/${encodeURIComponent(input.sessionID)}${suffix}`
+const sessionApiPath = (input: SessionInput, suffix = "") => `/session/${encodeURIComponent(input.sessionID)}${suffix}`
 
 export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionClient {
   const read = <T>(operation: string, input: SessionInput, suffix: string, options?: Options, query?: Record<string, unknown>) =>
-    caller.call<T>({ operation, path: sessionPath(input, suffix), scope: input, query, options })
+    caller.call<T>({ operation, path: sessionApiPath(input, suffix), scope: input, query, options })
   const write = <T>(operation: string, method: string, input: SessionInput, suffix: string, options?: Options, body?: unknown) =>
-    caller.call<T>({ operation, method, path: sessionPath(input, suffix), scope: input, body, options })
+    caller.call<T>({ operation, method, path: sessionApiPath(input, suffix), scope: input, body, options })
   function messages(input: SessionTurnCoverageInput, options?: Options): Reply<AgentTurnCoveragePage>
   function messages(input: SessionMessagePageInput, options?: Options): Reply<AgentMessage[]>
   function messages(input: SessionInput & Record<string, unknown>, options?: Options) {
@@ -238,7 +238,7 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
     get: (input, options) => read("session.get", input, "", options),
     start: (input, options) => caller.call({ operation: "session.start", path: `/session-start/${encodeURIComponent(input.sessionID)}`, scope: input, options }),
     configOptions: (input, options) => read("session.configOptions", input, "/config-options", options),
-    attachment: async (input, options) => (await caller.send({ operation: "session.attachment", path: sessionPath(input, `/message/${encodeURIComponent(input.messageID)}/attachment/${encodeURIComponent(input.attachmentID)}`), scope: input, options })).response,
+    attachment: async (input, options) => (await caller.send({ operation: "session.attachment", path: sessionApiPath(input, `/message/${encodeURIComponent(input.messageID)}/attachment/${encodeURIComponent(input.attachmentID)}`), scope: input, options })).response,
     delete: (input, options) => write("session.delete", "DELETE", input, "", options),
     update: (input, options) => write("session.update", "PATCH", input, "", options, without(input, ["sessionID"])),
     status: (input = {}, options) => caller.call({ operation: "session.status", path: "/session/status", scope: input, options }),
@@ -251,7 +251,7 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
     recovery: {
       inspect: (input, options) => caller.decoded({
         operation: "session.recovery.inspect",
-        path: sessionPath(input, "/recovery"),
+        path: sessionApiPath(input, "/recovery"),
         scope: input,
         options,
         // An inspection the owner answered carries no `kind` and is not an
@@ -263,7 +263,7 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
       submit: (input, options) => caller.decoded({
         operation: "session.recovery.submit",
         method: "POST",
-        path: sessionPath(input, "/recovery"),
+        path: sessionApiPath(input, "/recovery"),
         scope: input,
         body: input.request,
         options,
@@ -271,7 +271,7 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
       }),
       read: (input, options) => caller.decoded({
         operation: "session.recovery.read",
-        path: sessionPath(input, `/recovery/operations/${encodeURIComponent(input.operationId)}`),
+        path: sessionApiPath(input, `/recovery/operations/${encodeURIComponent(input.operationId)}`),
         scope: input,
         options,
         decode: decodeRecoveryOutcome,
@@ -281,7 +281,7 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
     prompt: (input, options) => write("session.prompt", "POST", input, "/message", options, without(input, ["sessionID"])),
     promptAsync: (input, options) => {
       const request = {
-        operation: "session.promptAsync", method: "POST", path: sessionPath(input, "/prompt_async"),
+        operation: "session.promptAsync", method: "POST", path: sessionApiPath(input, "/prompt_async"),
         scope: input, body: without(input, ["sessionID"]), options,
       }
       return input.delivery === "queue" || input.delivery === "steer"

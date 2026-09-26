@@ -6,7 +6,7 @@ import { persistedStore, preferenceKey } from "@/lib/persisted"
 import { useDialog } from "@/ui"
 import { shellDictionary } from "../i18n"
 import { useShellRegistries } from "../registries"
-import { eventSignature, formatKeybind, formatKeybindParts, isEditableTarget, keybindSignature, parseKeybind, type KeyLabel } from "./keybinding"
+import { eventSignature, formatKeybind, formatKeybindParts, isTextEntryTarget, keybindSignature, parseKeybind, type KeyLabel } from "./keybinding"
 import { OPEN_FILE_COMMAND } from "./palette-entries"
 import {
   actionId,
@@ -103,7 +103,7 @@ export function CommandsProvider(props: { readonly children: JSX.Element }): JSX
     const isPalette = paletteSignatures().has(signature)
     const option = keymap().get(signature)
     const modified = event.ctrlKey || event.metaKey || event.altKey
-    const editable = isEditableTarget(event.target)
+    const editable = isTextEntryTarget(event.target)
     if (editable && !isPalette && !EDITABLE_KEYBIND_IDS.includes(actionId(option?.id ?? "")) && !modified && event.key !== "Tab") return
     if (isPalette) {
       event.preventDefault()

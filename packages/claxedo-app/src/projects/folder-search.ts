@@ -34,7 +34,7 @@ function scopedInput(search: Search, value: string): Scoped | undefined {
   return { directory: trimTrailing(base), path: raw }
 }
 
-async function children(search: Search, dir: string): Promise<Entry[]> {
+async function folderChildren(search: Search, dir: string): Promise<Entry[]> {
   const key = trimTrailing(dir)
   if (!(await search.browsable())) return []
   const { queryClient, queries } = search.server
@@ -44,8 +44,8 @@ async function children(search: Search, dir: string): Promise<Entry[]> {
     .catch(logged<Entry[]>("listing", { directory: key }, []))
 }
 
-async function match(search: Search, dir: string, query: string, limit: number) {
-  const items = await children(search, dir)
+async function matchingFolders(search: Search, dir: string, query: string, limit: number) {
+  const items = await folderChildren(search, dir)
   if (!query) return items.slice(0, limit).map((x) => x.absolute)
   const needle = query.toLowerCase()
   return items
@@ -71,7 +71,7 @@ async function walkHead(search: Search, scoped: Scoped, head: readonly string[],
       paths = paths.map(parentOf)
       continue
     }
-    paths = Array.from(new Set((await Promise.all(paths.map((p) => match(search, p, part, 4)))).flat())).slice(0, 12)
+    paths = Array.from(new Set((await Promise.all(paths.map((p) => matchingFolders(search, p, part, 4)))).flat())).slice(0, 12)
     if (paths.length === 0) return undefined
   }
   return paths
@@ -83,14 +83,14 @@ async function walk(search: Search, scoped: Scoped, query: string, raw: string, 
   const tail = segments[segments.length - 1] ?? ""
   const paths = await walkHead(search, scoped, head, active)
   if (!paths) return []
-  const out = (await Promise.all(paths.map((p) => match(search, p, tail, 50)))).flat()
+  const out = (await Promise.all(paths.map((p) => matchingFolders(search, p, tail, 50)))).flat()
   if (!active()) return []
   const deduped = Array.from(new Set(out))
   const base = raw.startsWith("~") ? trimTrailing(scoped.directory) : ""
   if (raw.endsWith("/") || !tail) return (base ? Array.from(new Set([base, ...deduped])) : deduped).slice(0, 50)
   const target = deduped.find((p) => getFilename(p).toLowerCase() === tail.toLowerCase())
   if (!target) return deduped.slice(0, 50)
-  const nested = await match(search, target, "", 30)
+  const nested = await matchingFolders(search, target, "", 30)
   if (!active()) return []
   return (base ? Array.from(new Set([base, ...deduped, ...nested])) : Array.from(new Set([...deduped, ...nested]))).slice(0, 50)
 }

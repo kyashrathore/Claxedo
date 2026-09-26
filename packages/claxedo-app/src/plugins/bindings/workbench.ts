@@ -3,7 +3,7 @@ import type { WorkbenchApi, WorkbenchTab, WorkbenchTabStatus } from "@claxedo/pl
 import type { SessionRowView } from "@/session"
 import { PluginEntryError, type BindingScope } from "./services"
 
-function statusOf(row: SessionRowView | undefined): WorkbenchTabStatus {
+function tabStatusOf(row: SessionRowView | undefined): WorkbenchTabStatus {
   if (!row) return "idle"
   if (row.waitingOnUser) return "attention"
   switch (row.status.kind) {
@@ -28,7 +28,7 @@ function openTabs(scope: BindingScope): readonly WorkbenchTab[] {
     const route = workbench.routeOf(contentId)
     const row = route?.kind === "session" ? sessions.list.view(route.sessionId) : undefined
     const title = runWithOwner(scope.services.owner, () => opened.kind.title(opened.state as never)) ?? ""
-    return [{ id: contentId, title, kind: opened.kind.kind, status: statusOf(row), active: focused === contentId }]
+    return [{ id: contentId, title, kind: opened.kind.kind, status: tabStatusOf(row), active: focused === contentId }]
   })
   return tabs.map((tab, index) => ({ ...tab, index }))
 }
