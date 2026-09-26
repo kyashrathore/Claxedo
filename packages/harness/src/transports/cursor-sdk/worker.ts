@@ -21,7 +21,7 @@ class CursorWorkerRuntime {
       apiKey: session.apiKey,
       ...(session.model ? { model: { id: session.model } } : {}),
       ...(Object.keys(session.mcpServers).length ? { mcpServers: session.mcpServers } : {}),
-      local: { cwd: session.directory, ...(session.plugins ? { settingSources: ["plugins" as const] } : {}) },
+      local: { cwd: session.directory },
     }
     const agent = session.agentId ? await Agent.resume(session.agentId, options) : await Agent.create(options)
     this.agents.set(session.sessionId, agent)

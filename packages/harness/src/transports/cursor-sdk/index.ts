@@ -2,11 +2,11 @@ import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
 import { cursorRuntimeMessage, cursorSdkAdapter } from "@claxedo/agent-event-runtime/harnesses/cursor"
 import type { SDKUserMessage } from "@cursor/sdk"
 import type {
-  AttachInput, ConfigApplied, Deadline, HarnessServices, HarnessSession, HarnessTransport, ResolvedCredentials,
+  AttachInput, ConfigApplied, Deadline, HarnessServices, HarnessSession, HarnessTransport,
   RoutedEvent, SessionBroker, StartInput, TransportCapabilities, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
-import { attachedSessionEntry, mergeStartInput, selectedProviderProjection, sessionMcpServers } from "../../contract"
-import { projectCursorMcpServers, cursorPluginSettings } from "../../profiles/cursor"
+import { attachedSessionEntry, mergeStartInput, ownerMayUseMachineLogin, selectedProviderProjection, sessionMcpServers } from "../../contract"
+import { assertCursorProjection, projectCursorMcpServers } from "../../profiles/cursor"
 import { unrecognizedEvent } from "../../translate/unrecognized"
 import { inlineDataUrl, flattenTurnPrompt } from "../../translate/prompt"
 import { routedIngest } from "../../translate/ingest"
@@ -17,23 +17,25 @@ import { CursorWorkerRegistry } from "./worker-registry"
 
 type Entry = { session: HarnessSession; input: StartInput; key: string; busy: boolean }
 
-function cursorCredential(credentials: ResolvedCredentials, env: NodeJS.ProcessEnv) {
-  const projection = selectedProviderProjection(credentials, ["cursor-sdk", "cursor"])
+function cursorCredential(input: StartInput, env: NodeJS.ProcessEnv) {
+  const projection = selectedProviderProjection(input.credentials, ["cursor-sdk", "cursor"])
   if (projection && "unavailable" in projection) throw new TransportError("cursor", "configuration", `Cursor account unavailable: ${projection.reason}`)
-  const apiKey = projection?.placeholder ?? env.CURSOR_API_KEY?.trim()
+  const ownerLogin = input.owner.kind === "machine-owner" && ownerMayUseMachineLogin(input.owner, {
+    placement: input.locality === "local" ? "loopback" : "cloud", machineOwnerUserId: "", canUseOwnLogin: true,
+  })
+  const apiKey = projection?.placeholder ?? (ownerLogin ? env.CURSOR_API_KEY?.trim() : undefined)
   if (!apiKey) throw new TransportError("cursor", "configuration", "Cursor SDK requires an API key")
   return { apiKey, backendUrl: projection?.baseUrl, key: projection?.baseUrl ?? `owner:${env.CURSOR_BACKEND_URL ?? "default"}` }
 }
 
 function workerSession(input: StartInput, services: HarnessServices, env: NodeJS.ProcessEnv, agentId?: string): WorkerSession {
-  const { apiKey } = cursorCredential(input.credentials, env)
+  const { apiKey } = cursorCredential(input, env)
   const servers = sessionMcpServers(input, services, { includeFirstParty: input.locality === "local",
     duplicate: (name) => new Error(`Duplicate Cursor MCP server ${name}`) })
   return {
     sessionId: input.sessionId, agentId, directory: input.directory, apiKey,
     model: input.model?.modelID && input.model.modelID !== "default" ? input.model.modelID : "auto",
     mcpServers: projectCursorMcpServers(servers),
-    plugins: cursorPluginSettings(input.projection).settingSources !== undefined,
   }
 }
 
@@ -84,16 +86,17 @@ export class CursorSdkTransport implements HarnessTransport {
       modelSelection: { status: "required", models: [] }, effortLevels: { status: "unsupported", models: [] },
       instructionChannel: "prompt-prefix", configOwner: "runtime",
       requests: { permissions: false, questions: false, elicitation: false },
-      steer: false, subagents: true,
+      steer: false, subagents: false,
       goals: { implemented: false, available: false, actions: [], recovery: "blocked", optionalFields: [] },
       fork: false, agents: false, commands: false, todos: false, history: "store", titles: "none",
-      pluginIntake: { mcp: "session", skills: "plugin-dir" }, mcpTransports: { stdio: true, http: true, sse: true },
+      pluginIntake: { mcp: "session", skills: "none" }, mcpTransports: { stdio: true, http: true, sse: true },
       timing: { model: "next-turn", effort: "next-turn", permissionMode: "next-session", credentials: "after-active-turns" },
     }
   }
 
   async start(input: StartInput, broker: SessionBroker): Promise<HarnessSession> {
-    const credential = cursorCredential(input.credentials, this.env)
+    assertCursorProjection(input.projection)
+    const credential = cursorCredential(input, this.env)
     const worker = this.registry.acquire(credential.key, credential.backendUrl)
     let agentId: string | undefined
     try {
@@ -101,7 +104,7 @@ export class CursorSdkTransport implements HarnessTransport {
       agentId = reply.kind === "result" ? reply.value?.agentId : undefined
       if (!agentId) throw new TransportError("cursor", "sdk", "Cursor did not return an agent id")
     } catch (error) {
-      await this.registry.replace(credential.key)
+      if (worker.failed) await this.registry.replace(credential.key)
       throw error
     }
     const session: HarnessSession = { directory: input.directory, locality: input.locality, binding: {
@@ -115,7 +118,8 @@ export class CursorSdkTransport implements HarnessTransport {
   }
 
   async attach(input: AttachInput, broker: SessionBroker): Promise<HarnessSession> {
-    const credential = cursorCredential(input.credentials, this.env)
+    assertCursorProjection(input.projection)
+    const credential = cursorCredential(input, this.env)
     const session: HarnessSession = { directory: input.directory, locality: input.locality, binding: input.binding }
     this.entries.set(input.sessionId, { session, input, key: credential.key, busy: false })
     await broker.rebind(input.binding.upstreamSessionId)
@@ -130,7 +134,7 @@ export class CursorSdkTransport implements HarnessTransport {
     const entry = this.entry(session)
     if (entry.busy) throw new TransportError("cursor", "session", "Cursor turn already active")
     entry.busy = true
-    const credential = cursorCredential(entry.input.credentials, this.env)
+    const credential = cursorCredential(entry.input, this.env)
     const worker = this.registry.acquire(entry.key, credential.backendUrl)
     const queue = new AsyncPushQueue<WorkerReply>()
     const runtime = createAgentEventRuntime({ harness: "cursor", threadId: session.binding.sessionId, adapter: cursorSdkAdapter() })
@@ -152,7 +156,7 @@ export class CursorSdkTransport implements HarnessTransport {
         }
       }
     } catch (error) {
-      await this.registry.replace(entry.key)
+      if (worker.failed) await this.registry.replace(entry.key)
       throw error
     } finally {
       entry.busy = false
@@ -160,17 +164,17 @@ export class CursorSdkTransport implements HarnessTransport {
     }
   }
 
-  async cancel(session: HarnessSession, _turn: TurnRef, _deadline: Deadline) {
+  async cancel(session: HarnessSession, _turn: TurnRef, deadline: Deadline) {
     const entry = this.entry(session)
     if (!entry.busy) return { execution: "terminal" as const, cleanup: "unknown" as const }
     try {
       const worker = this.registry.existing(entry.key)
       if (!worker) throw new TransportError("cursor", "worker", "Cursor worker unavailable during cancellation")
-      await worker.call({ kind: "cancel", sessionId: session.binding.sessionId })
+      await worker.call({ kind: "cancel", sessionId: session.binding.sessionId }, undefined, deadline)
       return { execution: "unknown" as const, cleanup: "unknown" as const }
     } catch (error) {
-      await this.registry.replace(entry.key)
-      return { execution: "unknown" as const, cleanup: "owned" as const,
+      if (!this.registry.existing(entry.key)) await this.registry.replace(entry.key)
+      return { execution: "unknown" as const, cleanup: "unknown" as const,
         error: { code: "provider_unreachable" as const, message: errorMessage(error) } }
     }
   }
@@ -179,7 +183,9 @@ export class CursorSdkTransport implements HarnessTransport {
     const entry = this.entry(session)
     if (entry.busy) return { state: "refused", reason: "Cursor turn active" }
     const input = mergeStartInput(entry.input, update)
-    const credential = cursorCredential(input.credentials, this.env)
+    try { assertCursorProjection(input.projection) }
+    catch (error) { return { state: "refused", reason: errorMessage(error) } }
+    const credential = cursorCredential(input, this.env)
     await this.registry.existing(entry.key)?.call({ kind: "close", sessionId: session.binding.sessionId })
     entry.input = input
     entry.key = credential.key
