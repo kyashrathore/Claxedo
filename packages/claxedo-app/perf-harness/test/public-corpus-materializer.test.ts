@@ -9,7 +9,6 @@ import { WorkspaceScope, type OpenCodeRuntime } from "@claxedo/workspace-runtime
 import { buildWorkspaceFixtureManifest, generateWorkspaceFileBytes } from "agent-app-benchmark/workspace-fixture"
 import {
   materializeClaxedoPublicCorpus,
-  distinctSyntheticSessionTitle,
   distinctSyntheticSessionCreatedAt,
   distinctSyntheticSessionUpdatedAt,
   SYNTHETIC_SESSION_TIME_BASE_MS,
@@ -18,16 +17,6 @@ import {
 import { withClaxedoDataDirectory } from "../src/with-claxedo-data-directory"
 
 describe("distinct synthetic session identity", () => {
-  test("prefixes a per-list serial and rewrites any prior serial", () => {
-    expect(distinctSyntheticSessionTitle("Synthetic benchmark control", 0, "control")).toBe(
-      "1. Synthetic benchmark control",
-    )
-    expect(distinctSyntheticSessionTitle("3. Synthetic benchmark latency", 2, "latency")).toBe(
-      "3. Synthetic benchmark latency",
-    )
-    expect(distinctSyntheticSessionTitle("99. Old global serial", 0, "local")).toBe("1. Old global serial")
-  })
-
   test("staggers created and updated times so list order is stable", () => {
     expect(distinctSyntheticSessionCreatedAt(SYNTHETIC_SESSION_TIME_BASE_MS, 0)).toBe(
       SYNTHETIC_SESSION_TIME_BASE_MS + 60_000,
@@ -76,7 +65,7 @@ describe("public OpenCode corpus materialization", () => {
       expect(result.transcriptBytes).toBe(10)
       expect(result.sessionMapping.control).toBe("ses_bench_control")
       expect(result.readinessTargets.get("control")?.expectedMessageIds).toEqual(["msg_assistant"])
-      expect(result.readinessTargets.get("control")?.title).toBe("1. Control")
+      expect(result.readinessTargets.get("control")?.title).toBe("Control")
       expect(result.mappingDigestSha256).toMatch(/^[0-9a-f]{64}$/)
       const target = result.readinessTargets.get("control")!
       expect(target.expectedPartIds).toEqual(["prt_assistant"])
@@ -155,7 +144,7 @@ describe("public OpenCode corpus materialization", () => {
         type: string
       }>
       database.close()
-      expect(session.title).toBe("1. Control")
+      expect(session.title).toBe("Control")
       expect(session.time_created).toBe(SYNTHETIC_SESSION_TIME_BASE_MS + 60_000)
       expect(session.time_updated).toBe(SYNTHETIC_SESSION_TIME_BASE_MS + 100 + 60_000)
       expect(messages.map((row) => ({ id: row.id, role: row.type }))).toEqual([

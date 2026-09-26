@@ -348,27 +348,20 @@ async function materializeSession(input: {
       sessionInfo = parseSessionInfo(event.data.info)
       if (sessionInfo.id !== input.session.nativeSessionId)
         throw new Error("Claxedo received the wrong native session id")
-      // Authoritative display identity for the rail/page: per-workspace serial +
-      // recent staggered times. Applied after corpus file digest verification.
-      // created_desc then shows contiguous N…1 top→bottom inside one workspace.
-      const displayTitle = distinctSyntheticSessionTitle(
-        sessionInfo.title,
-        input.sessionIndex,
-        input.session.logicalSessionId,
-      )
+      // Staggered times applied after corpus file digest verification make
+      // created_desc list one workspace's sessions in corpus order.
       const displayCreated = distinctSyntheticSessionCreatedAt(SYNTHETIC_SESSION_TIME_BASE_MS, input.sessionIndex)
       const displayUpdated = distinctSyntheticSessionUpdatedAt(SYNTHETIC_SESSION_TIME_BASE_MS + 100, input.sessionIndex)
       input.database.addSession({
         id: sessionInfo.id,
         projectId: input.workspace.projectId,
         directory: input.workspace.directory,
-        title: displayTitle,
+        title: sessionInfo.title,
         created: displayCreated,
         updated: displayUpdated,
       })
       sessionInfo = {
         ...sessionInfo,
-        title: displayTitle,
         time: { ...sessionInfo.time, created: displayCreated, updated: displayUpdated },
       }
     } else if (event.type === "message.updated.1") {
@@ -479,14 +472,7 @@ function normalizeSemanticText(value: string): string {
  */
 export const SYNTHETIC_SESSION_TIME_BASE_MS = Date.UTC(2026, 7, 28, 12, 0, 0)
 
-/** Strip any prior serial and prefix the per-workspace 1-based list rank. */
-export function distinctSyntheticSessionTitle(title: string, sessionIndex: number, logicalSessionId: string) {
-  const stripped = title.trim().replace(/^\d+\.\s+/u, "")
-  const stem = stripped || `Synthetic benchmark ${logicalSessionId}`
-  return `${sessionIndex + 1}. ${stem}`
-}
-
-/** Distinct created times so created_desc order matches serial titles top→bottom. */
+/** Distinct created times so created_desc lists one workspace's sessions in corpus order. */
 export function distinctSyntheticSessionCreatedAt(createdAt: number, sessionIndex: number) {
   return createdAt + (sessionIndex + 1) * 60_000
 }
