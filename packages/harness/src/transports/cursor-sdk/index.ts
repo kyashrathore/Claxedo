@@ -4,13 +4,12 @@ import type { SessionConfigUpdate, SessionTitleRequest } from "@claxedo/agent-ru
 import { errorMessage } from "@claxedo/helpers"
 import type {
   AttachInput, CapabilityContext, ConfigApplied, ConfigOptionsPreview, ConfigPreviewTarget, ConfigTarget, Deadline, DraftLaunch,
-  HarnessServices, HarnessSession, HarnessTransport, RoutedEvent, SessionBroker, StartInput, TransportCapabilities, TransportConfigUpdate,
-  TurnBroker, TurnInput, TurnRef,
+  HarnessServices, HarnessSession, HarnessTransport, MachineLoginPolicy, RoutedEvent, SessionBroker, StartInput, TransportCapabilities,
+  TransportConfigUpdate, TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
 import { attachedSessionEntry, configOptionsPreview, mergeStartInput } from "../../contract"
 import { TransportError } from "../../contract/errors"
 import { composeCursorHome, cursorHomeKey, type CursorPluginOptions } from "../../profiles/cursor"
-import type { MachineLoginPolicy } from "../../contract"
 import { cursorCredential, type CursorCredential } from "./credentials"
 import { CursorGoals } from "./goals"
 import { CursorHostRegistry, type CursorHostKey } from "./host-registry"
