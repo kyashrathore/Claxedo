@@ -280,12 +280,12 @@ describe("the tool names the catalog publishes", () => {
 })
 
 describe("the transcript's first-party roster", () => {
-  // Read as text, not imported: session-ui is a UI package this server package
-  // must not resolve, and its module pulls a .tsx type import this tsconfig cannot compile.
+  // Read as text, not imported: the app is a UI package this server package
+  // must not resolve.
   test("names exactly the tools the groups register, so a renamed or added tool cannot render as a generic row", () => {
-    const source = readFileSync(new URL("../../../session-ui/src/components/claxedo-tool-view.ts", import.meta.url), "utf8")
+    const source = readFileSync(new URL("../../../claxedo-app/src/transcript/claxedo-tool-view.ts", import.meta.url), "utf8")
     const block = source.split("export const CLAXEDO_TOOL_TITLE_KEYS = {")[1]?.split("} as const")[0] ?? ""
-    const roster = [...block.matchAll(/^\s*([a-z_]+):\s*"ui\.claxedoTool\.[a-z_]+",$/gm)].map((match) => match[1]).sort()
+    const roster = [...block.matchAll(/^\s*([a-z_]+):\s*"transcript\.claxedoTool\.[a-z_]+",$/gm)].map((match) => match[1]).sort()
     const registered = claxedoMcpToolGroupInventory().flatMap((group) => group.tools).sort()
     expect(roster.length).toBeGreaterThan(0)
     expect(roster).toEqual(registered)

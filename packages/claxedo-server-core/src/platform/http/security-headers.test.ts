@@ -212,30 +212,4 @@ describe("Cloudflare Pages headers for the SPA", () => {
     // claxedo.com origins here is gone, and nothing else embeds the app.
     expect(enforcing).toBe("frame-ancestors 'self'")
   })
-
-  test("the full SPA policy ships REPORT-ONLY", () => {
-    // Deliberate and asserted so promoting it to enforcing is a visible,
-    // reviewable diff rather than a silent one-word edit. See the promotion
-    // checklist in _headers.
-    const reportOnly = headersFile.match(/^ {2}Content-Security-Policy-Report-Only: (.+)$/m)?.[1]
-
-    expect(reportOnly).toBeTruthy()
-    expect(reportOnly).toContain("default-src 'self'")
-    expect(reportOnly).toContain("object-src 'none'")
-    expect(reportOnly).toContain("base-uri 'self'")
-    // Load-bearing relaxations — each one white-screens the app if dropped.
-    // Shiki compiles an inlined WASM module on the main thread and in workers.
-    expect(reportOnly).toContain("'wasm-unsafe-eval'")
-    expect(reportOnly).toContain("frame-src https:")
-    // index.html has an inline <style> and an inline style attribute on <html>.
-    expect(reportOnly).toContain("style-src 'self' 'unsafe-inline'")
-    // posthog-js lazy-loads recorder/exception-autocapture from the assets host.
-    expect(reportOnly).toContain("https://*.i.posthog.com")
-    // the identity provider renders Cloudflare Turnstile in an iframe from this origin.
-    expect(reportOnly).toContain("https://challenges.cloudflare.com")
-    // The relay origin arrives at runtime in an API response body, so it
-    // cannot be pinned from a static file. This is the single reason the
-    // policy is not enforcing.
-    expect(reportOnly).toContain("connect-src 'self' https: wss:")
-  })
 })

@@ -126,7 +126,7 @@ export function createWorkspaceRuntimeCaller(options: WorkspaceRuntimeClientOpti
    *
    * Unlike a brand or an inexpressible constructor type, the claim IS
    * checkable: it needs a per-operation decoder, the way
-   * `claxedo-app/src/platform/account/hosted-operations.ts` writes them. That
+   * `@claxedo/account-contract` writes one per hosted operation. That
    * is the recorded follow-up, and until then the unchecked read stays on this
    * one line so no call site carries it. Narrowing at each call site instead
    * satisfies the lint rule, validates nothing, and collapses the concrete

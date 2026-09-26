@@ -4,9 +4,8 @@ import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
 import { ask } from "./answer"
 import { jsonInit, type Transport } from "./transport"
+import { SANDBOX_DRIVERS_PATH, sandboxDriverAuthPath } from "./wire/sandbox-drivers"
 import type { FetchQuery } from "./types"
-
-const DRIVERS_PATH = "/api/workspace/drivers"
 
 export type SandboxProviderField = { readonly key: string; readonly label: string; readonly secret: boolean }
 
@@ -82,14 +81,13 @@ function failureOf(status: number, body: unknown): SandboxProviderSaveOutcome {
 }
 
 export function sandboxProviderQueries(transport: Transport): SandboxProviderQueries {
-  return { catalog: () => fetchQuery(queryKeys.sandboxProviders(transport.serverUrl), async () => catalogOf(await transport.json<unknown>(DRIVERS_PATH))) }
+  return { catalog: () => fetchQuery(queryKeys.sandboxProviders(transport.serverUrl), async () => catalogOf(await transport.json<unknown>(SANDBOX_DRIVERS_PATH))) }
 }
 
 export function createSandboxProvidersApi(transport: Transport, queryClient: QueryClient): SandboxProvidersApi {
   return {
     saveKey: async (providerId, values) => {
-      const path = `${DRIVERS_PATH}/${encodeURIComponent(providerId)}/auth`
-      const answer = await ask(transport, path, jsonInit("PUT", { auth: values, default: true }))
+      const answer = await ask(transport, sandboxDriverAuthPath(providerId), jsonInit("PUT", { auth: values, default: true }))
       if (answer.kind === "unreachable") return { ok: false, failure: "failed" }
       const body = answer.body
       if (!answer.ok) return failureOf(answer.status, body)
