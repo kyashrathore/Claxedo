@@ -85,7 +85,7 @@ export function AccountCard(props: { readonly anchor: () => HTMLElement | undefi
   return (
     <DropdownMenu placement="top-start" gutter={6} sameWidth onOpenChange={setOpen} getAnchorRect={(trigger) => (props.anchor() ?? trigger)?.getBoundingClientRect()}>
       <DropdownMenu.Trigger
-        ref={(element: HTMLButtonElement) => (trigger = element)}
+        ref={(element) => (trigger = element)}
         aria-label={view().label}
         title={view().label}
         class="group flex h-9 w-full items-center gap-2 rounded-md border border-transparent bg-surface-raised-base px-2 text-left text-text-strong outline-none transition-colors hover:bg-surface-raised-base-hover focus-visible:border-border-focus data-[expanded]:bg-surface-raised-base-hover"
@@ -98,7 +98,7 @@ export function AccountCard(props: { readonly anchor: () => HTMLElement | undefi
         <Icon name="chevron-down" size="small" class={`shrink-0 rotate-180 text-icon-weak-base opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100${open() ? " opacity-100" : ""}`} />
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content class="z-[220]" style={{ "max-width": "calc(100vw - 16px)" }}>
+        <DropdownMenu.Content style={{ "max-width": "calc(100vw - 16px)" }}>
           <div class="flex items-center gap-2 px-2 py-1" aria-hidden="true">
             <IdentityMark view={view()} size="row" />
             <span class="min-w-0 flex-1 truncate text-13-medium text-text-strong" title={view().label}>
@@ -109,28 +109,28 @@ export function AccountCard(props: { readonly anchor: () => HTMLElement | undefi
           <DropdownMenu.Group>
             <DropdownMenu.Item onSelect={select(() => routing.navigate(settingsPath(USAGE_SECTION)))}>
               <Icon name="gauge" size="small" />
-              <DropdownMenu.ItemLabel>{t("rail.account.usage")}</DropdownMenu.ItemLabel>
+              {t("rail.account.usage")}
             </DropdownMenu.Item>
             <DropdownMenu.Item onSelect={select(() => routing.navigate(settingsPath()))}>
               <Icon name="settings-gear" size="small" />
-              <DropdownMenu.ItemLabel>{t("rail.settings")}</DropdownMenu.ItemLabel>
+              {t("rail.settings")}
             </DropdownMenu.Item>
             <DropdownMenu.Item onSelect={select(() => openExternal(HELP_URL))}>
               <Icon name="help" size="small" />
-              <DropdownMenu.ItemLabel>{t("rail.account.help")}</DropdownMenu.ItemLabel>
+              {t("rail.account.help")}
             </DropdownMenu.Item>
           </DropdownMenu.Group>
           <Show when={view().pending}>
             <DropdownMenu.Item onSelect={signOut}>
               <Icon name="circle-ban-sign" size="small" />
-              <DropdownMenu.ItemLabel>{t("rail.account.cancelSignIn")}</DropdownMenu.ItemLabel>
+              {t("rail.account.cancelSignIn")}
             </DropdownMenu.Item>
           </Show>
           <Show when={view().action}>
             {(action) => (
               <DropdownMenu.Item onSelect={action() === "signin" ? signIn : signOut}>
                 <Icon name="arrow-right" size="small" />
-                <DropdownMenu.ItemLabel>{action() === "signin" ? t("rail.account.signIn") : t("rail.account.logout")}</DropdownMenu.ItemLabel>
+                {action() === "signin" ? t("rail.account.signIn") : t("rail.account.logout")}
               </DropdownMenu.Item>
             )}
           </Show>

@@ -176,12 +176,6 @@
   min-width: 208px;
 }
 
-.tsk-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .tsk-menu-label {
   flex: 1 1 auto;
   min-width: 0;
@@ -194,12 +188,6 @@
   flex: none;
   color: var(--text-weak);
   font-size: var(--font-size-x-small);
-}
-
-.tsk-menu-check {
-  flex: none;
-  display: inline-flex;
-  color: var(--icon-base);
 }
 
 .tsk-menu-note {

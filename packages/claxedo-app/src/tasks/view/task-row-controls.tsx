@@ -67,7 +67,6 @@ function PresetItems(props: {
           <For each={slotsOf(entry)}>
             {(slot) => (
               <DropdownMenu.Item
-                class="tsk-menu-item"
                 data-testid={`${props.testIdPrefix}-start-${props.task.id}-${entry.id}-${slot}`}
                 disabled={!startable()}
                 onSelect={() => props.offer.onStart({ presetId: entry.id, slot })}
@@ -99,7 +98,6 @@ function ContinueItem(props: {
           <DropdownMenu.Group>
             <DropdownMenu.GroupLabel>{t("tasks.start.continue")}</DropdownMenu.GroupLabel>
             <DropdownMenu.Item
-              class="tsk-menu-item"
               data-testid={`${props.testIdPrefix}-continue-${props.task.id}`}
               disabled={props.task.archivedAt !== null || props.offer.busy === true}
               onSelect={() => run()()}
@@ -123,7 +121,6 @@ function PresetSettingsItem(props: {
 }): JSX.Element {
   return (
     <DropdownMenu.Item
-      class="tsk-menu-item"
       data-testid={`${props.testIdPrefix}-preset-settings-${props.task.id}`}
       onSelect={() => props.offer.onOpenPresetSettings()}
     >

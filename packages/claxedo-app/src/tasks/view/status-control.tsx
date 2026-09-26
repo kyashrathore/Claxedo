@@ -58,12 +58,9 @@ export function StatusMenuItems(props: {
     >
       <For each={TASK_STATUSES}>
         {(status) => (
-          <DropdownMenu.RadioItem class="tsk-menu-item" value={status} disabled={props.disabled}>
+          <DropdownMenu.RadioItem value={status} disabled={props.disabled}>
             <TaskStatusIcon status={status} />
             <span class="tsk-menu-label">{t(TASK_STATUS_KEYS[status])}</span>
-            <DropdownMenu.ItemIndicator class="tsk-menu-check">
-              <Icon name="check-small" size="small" />
-            </DropdownMenu.ItemIndicator>
           </DropdownMenu.RadioItem>
         )}
       </For>

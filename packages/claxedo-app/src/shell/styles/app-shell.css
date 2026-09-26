@@ -27,6 +27,10 @@
   z-index: var(--z-modal-popover);
 }
 
+body [data-component="menu-v2-content"] {
+  z-index: var(--z-modal-popover);
+}
+
 @media (max-width: 767px), (pointer: coarse) {
   [data-claxedo] :is(button, [role="button"], [data-component="icon-button"], [data-component="button"]),
   [data-component="settings-surface"] :is(button, [role="button"], [data-component="icon-button"], [data-component="button"]),

@@ -22,13 +22,11 @@ export function OverflowItem(props: {
   readonly children: JSX.Element
 }): JSX.Element {
   return (
-    <DropdownMenu.Item
-      disabled={props.disabled}
-      onSelect={() => props.onSelect()}
-      class="flex-col items-start gap-0.5 whitespace-normal"
-    >
-      <span class="text-13-regular text-text-strong">{props.children}</span>
-      {props.hint ? <span class="text-12-regular text-text-weak">{props.hint}</span> : null}
+    <DropdownMenu.Item disabled={props.disabled} onSelect={() => props.onSelect()}>
+      <span class="flex min-w-0 flex-col gap-0.5 whitespace-normal" classList={{ "py-1.5": !!props.hint }}>
+        <span class="text-13-regular text-text-strong">{props.children}</span>
+        {props.hint ? <span class="text-12-regular leading-4 text-text-weak">{props.hint}</span> : null}
+      </span>
     </DropdownMenu.Item>
   )
 }

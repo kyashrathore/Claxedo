@@ -31,7 +31,7 @@ function CommitMenu(props: {
         <Icon name="chevron-down" size="small" />
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content class="z-[200]">
+        <DropdownMenu.Content>
           <DropdownMenu.Item disabled={!props.canCommit} onSelect={() => props.onCommit("commit")}>
             <SemanticIcon concept="commit" size="small" />
             {t("review.sourceControl.commit")}

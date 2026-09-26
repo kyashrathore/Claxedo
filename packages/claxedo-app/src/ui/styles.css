@@ -8,7 +8,6 @@
 @import "@opencode-ai/ui/collapsible.css" layer(components);
 
 @import "@opencode-ai/ui/dock-surface.css" layer(components);
-@import "@opencode-ai/ui/dropdown-menu.css" layer(components);
 @import "@opencode-ai/ui/file-icon.css" layer(components);
 @import "@opencode-ai/ui/icon.css" layer(components);
 @import "@opencode-ai/ui/icon-button.css" layer(components);
