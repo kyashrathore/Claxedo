@@ -1,7 +1,7 @@
 import { For, Show, createMemo, createSignal, type JSX } from "solid-js"
 import { TASKS_BOUNDS, type TaskStatus, type TaskSummary } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
-import { Button, Icon, LabelledTextField } from "@/ui"
+import { Button, Icon, TextField } from "@/ui"
 import type { MorePages } from "../data/queries"
 import { tasksDictionary } from "../i18n"
 import { LoadMore } from "./load-more"
@@ -81,7 +81,7 @@ function AddSubtask(props: { readonly busy?: boolean; readonly onAdd: (title: st
           submit()
         }}
       >
-        <LabelledTextField
+        <TextField
           ref={(element: HTMLInputElement) => queueMicrotask(() => element.focus())}
           data-testid="task-subtask-title"
           aria-label={t("tasks.subtasks.title")}

@@ -1,7 +1,7 @@
 import { createSignal, Show, type Component } from "solid-js"
 import { createFlow, runFlow } from "@/lib/flow"
 import { toAppError, type CloudWorkspace } from "@/server"
-import { Button, LabelledTextField } from "@/ui"
+import { Button, TextField } from "@/ui"
 import { useCloudText } from "../i18n"
 import type { CloudWorkspaces } from "../store"
 
@@ -29,7 +29,7 @@ export const CreateCloudWorkspace: Component<{ cloud: CloudWorkspaces }> = (prop
   return (
     <form class="flex flex-col gap-2" onSubmit={(event) => void submit(event)} data-testid="create-cloud-workspace">
       <div class="flex flex-wrap gap-2">
-        <LabelledTextField
+        <TextField
           class="min-w-0 flex-1"
           value={name()}
           placeholder={t("cloud.create.name")}
@@ -37,7 +37,7 @@ export const CreateCloudWorkspace: Component<{ cloud: CloudWorkspaces }> = (prop
           hideLabel
           onChange={setName}
         />
-        <LabelledTextField
+        <TextField
           class="min-w-0 flex-1"
           value={branch()}
           placeholder={t("cloud.create.branch")}

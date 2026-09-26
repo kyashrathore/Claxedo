@@ -1,8 +1,8 @@
-import { ClaxedoIcon as Icon, LabelledTextField } from "@/ui"
+import { ClaxedoIcon as Icon, TextField } from "@/ui"
 
 export function SearchField(props: { readonly value: string; readonly onChange: (value: string) => void; readonly placeholder: string; readonly action: string }) {
   return (
-    <LabelledTextField
+    <TextField
       type="text"
       leadingIcon={<Icon name="magnifying-glass" />}
       value={props.value}

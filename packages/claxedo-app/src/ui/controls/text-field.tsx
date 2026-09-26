@@ -2,7 +2,7 @@ import { Show, splitProps } from "solid-js"
 import { FieldV2 } from "@opencode-ai/ui/v2/field-v2"
 import { TextInputV2, type TextInputV2Props } from "@opencode-ai/ui/v2/text-input-v2"
 
-export interface LabelledTextFieldProps
+export interface TextFieldProps
   extends Omit<TextInputV2Props, "value" | "onChange" | "onInput" | "invalid" | "showCopyButton" | "onCopyClick" | "class" | "classList"> {
   label?: string
   hideLabel?: boolean
@@ -15,7 +15,7 @@ export interface LabelledTextFieldProps
   class?: string
 }
 
-export function LabelledTextField(props: LabelledTextFieldProps) {
+export function TextField(props: TextFieldProps) {
   const [local, input] = splitProps(props, ["label", "hideLabel", "description", "error", "invalid", "value", "onChange", "copyable", "class"])
   return (
     <FieldV2 invalid={local.invalid} class={local.class}>
