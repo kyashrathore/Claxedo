@@ -16,19 +16,19 @@ export type ModeTracker = {
 
 const ALTERNATE_SCROLL = 1007
 
-function primary(param: number | number[]): number {
+export function primaryParam(param: number | number[]): number {
   return typeof param === "number" ? param : (param[0] ?? 0)
 }
 
-export function createModeTracker(xterm: XTerm): ModeTracker {
+export function createXtermModeTracker(xterm: XTerm): ModeTracker {
   let alternateScroll = false
   const handlers: IDisposable[] = [
     xterm.parser.registerCsiHandler({ prefix: "?", final: "h" }, (params) => {
-      if (params.some((param) => primary(param) === ALTERNATE_SCROLL)) alternateScroll = true
+      if (params.some((param) => primaryParam(param) === ALTERNATE_SCROLL)) alternateScroll = true
       return false
     }),
     xterm.parser.registerCsiHandler({ prefix: "?", final: "l" }, (params) => {
-      if (params.some((param) => primary(param) === ALTERNATE_SCROLL)) alternateScroll = false
+      if (params.some((param) => primaryParam(param) === ALTERNATE_SCROLL)) alternateScroll = false
       return false
     }),
   ]

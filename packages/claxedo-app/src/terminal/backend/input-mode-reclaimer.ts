@@ -1,4 +1,5 @@
 import type { IDisposable, Terminal as XTerm } from "@xterm/xterm"
+import { primaryParam } from "./modes"
 
 const ESC = "\x1b"
 
@@ -63,13 +64,9 @@ export function createLeakedInputModeReclaimer(): LeakedInputModeReclaimer {
   }
 }
 
-function primary(param: number | number[]): number {
-  return typeof param === "number" ? param : (param[0] ?? 0)
-}
-
 function decModes(reclaimer: LeakedInputModeReclaimer, params: (number | number[])[], armed: boolean): false {
   for (const param of params) {
-    const mode = primary(param)
+    const mode = primaryParam(param)
     if (mode === 1000 || mode === 1002 || mode === 1003) reclaimer.noteArm("mouse", armed)
     else if (mode === 1004) reclaimer.noteArm("focus", armed)
   }
@@ -83,7 +80,7 @@ function kittyHandlers(xterm: XTerm, reclaimer: LeakedInputModeReclaimer): IDisp
       return false
     }),
     xterm.parser.registerCsiHandler({ prefix: "=", final: "u" }, (params) => {
-      reclaimer.noteArm("kitty", primary(params[0] ?? 0) !== 0)
+      reclaimer.noteArm("kitty", primaryParam(params[0] ?? 0) !== 0)
       return false
     }),
     xterm.parser.registerCsiHandler({ prefix: "<", final: "u" }, () => {

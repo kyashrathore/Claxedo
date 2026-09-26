@@ -3,7 +3,7 @@ import "./terminal.css"
 import type { Terminal as XTerm } from "@xterm/xterm"
 import { createTerminalInstance, type TerminalInstance, type TerminalInstanceOptions } from "./renderer"
 import { setupResizeHandlers } from "./resize-handlers"
-import { createModeTracker, type ModeTracker } from "./modes"
+import { createXtermModeTracker, type ModeTracker } from "./modes"
 import { createParserGate, gatedWrite } from "./parser-gate"
 import { createCheckpointRestorer } from "./checkpoint"
 import { createListeners, type BackendListeners } from "./listeners"
@@ -92,7 +92,7 @@ export const createBackend: CreateBackend = async (container, options) => {
   const instance = createTerminalInstance(container, instanceOptions(options))
   const { xterm, fitAddon, serializeAddon } = instance
   const listeners = createListeners()
-  const tracker = createModeTracker(xterm)
+  const tracker = createXtermModeTracker(xterm)
   const parserGate = createParserGate()
   const write = gatedWrite(parserGate, xterm.write.bind(xterm))
   let disposed = false
