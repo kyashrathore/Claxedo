@@ -659,19 +659,6 @@ diff --git a/dist/worker/WorkerPoolManager.js b/dist/worker/WorkerPoolManager.js
 index caf2839d72..716c0e689b 100644
 --- a/dist/worker/WorkerPoolManager.js
 +++ b/dist/worker/WorkerPoolManager.js
-@@ -73,10 +73,10 @@ var WorkerPoolManager = class {
- 		return !this.workersFailed;
- 	}
- 	getFileResultCache(file) {
--		return file.cacheKey != null ? this.fileCache.get(file.cacheKey) : void 0;
-+		return file?.cacheKey != null ? this.fileCache.get(file.cacheKey) : void 0;
- 	}
- 	getDiffResultCache(diff) {
--		return diff.cacheKey != null ? this.diffCache.get(diff.cacheKey) : void 0;
-+		return diff?.cacheKey != null ? this.diffCache.get(diff.cacheKey) : void 0;
- 	}
- 	inspectCaches() {
- 		const { fileCache, diffCache } = this;
 @@ -125,7 +125,7 @@ var WorkerPoolManager = class {
  				const highlighter = await getSharedHighlighter({
  					themes: themeNames,
