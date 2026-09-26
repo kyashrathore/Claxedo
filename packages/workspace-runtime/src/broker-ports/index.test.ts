@@ -346,7 +346,7 @@ describe("store broker ports", () => {
     const completed = await ports.admitProviderTurn("s1", { reason: "provider" }, async () => {})
     if (completed.admitted) expect(await completed.settled).toEqual({ state: "completed" })
     const failed = await ports.admitProviderTurn("s1", { reason: "provider" }, async () => { throw new Error("failed") })
-    if (failed.admitted) expect(await failed.settled).toEqual({ state: "failed", error: "Error: failed" })
+    if (failed.admitted) expect(await failed.settled).toEqual({ state: "failed", error: "failed" })
   })
 
   test("session events and outside-turn usage enter the existing journal projection", async () => {
