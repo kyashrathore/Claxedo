@@ -36,7 +36,7 @@ Never assume its files are ours, and never report a remote stop as proven.
 ## Process-wide state
 
 None, except these owners, each with its reason in its folder's `README.md`:
-- `src/transports/cursor-sdk/worker-registry.ts`: the Cursor worker registry (the SDK freezes its backend per process);
+- `src/transports/acp/pattern-validation.ts`: ACP's validation pool (two workers, 32 MB, shared on purpose).
 
 Adding an owner adds its exact path here; `bun run check` reads this list.
 
