@@ -1,9 +1,12 @@
 import type { InitializeResponse, NewSessionRequest } from "@agentclientprotocol/sdk"
-import type { StartInput } from "../../../contract"
-import { AcpTransportError } from "../errors"
+import type { NotApplied, StartInput } from "../../../contract"
 
 const CLAUDE_AGENT_ACP = "@agentclientprotocol/claude-agent-acp"
 const PLUGIN_OPTIONS_SINCE = [0, 10, 9]
+
+export const ACP_PLUGINS_NOT_APPLIED = "this ACP agent accepts MCP servers only"
+
+export type AcpLaunchExtras = { meta?: NewSessionRequest["_meta"]; notApplied: NotApplied[] }
 
 function acceptsClaudePlugins(agent: InitializeResponse["agentInfo"]): boolean {
   if (agent?.name !== CLAUDE_AGENT_ACP) return false
@@ -13,10 +16,11 @@ function acceptsClaudePlugins(agent: InitializeResponse["agentInfo"]): boolean {
   return differing === -1 || version[differing]! > PLUGIN_OPTIONS_SINCE[differing]!
 }
 
-export function claudeOptionsMeta(handshake: InitializeResponse, input: Pick<StartInput, "locality" | "projection">): NewSessionRequest["_meta"] | undefined {
-  if (input.locality === "remote" || input.projection.pluginRoots.length === 0) return undefined
+export function claudeOptionsMeta(handshake: InitializeResponse, input: Pick<StartInput, "locality" | "projection">): AcpLaunchExtras {
+  const roots = input.projection.pluginRoots
+  if (input.locality === "remote" || roots.length === 0) return { notApplied: [] }
   if (!acceptsClaudePlugins(handshake.agentInfo)) {
-    throw new AcpTransportError("configuration", "ACP agent does not accept Claude plugins")
+    return { notApplied: roots.map((plugin) => ({ item: plugin.pluginInstanceId, reason: "unsupported-by-harness" })) }
   }
-  return { claudeCode: { options: { plugins: input.projection.pluginRoots.map((plugin) => ({ type: "local", path: plugin.root })) } } }
+  return { meta: { claudeCode: { options: { plugins: roots.map((plugin) => ({ type: "local", path: plugin.root })) } } }, notApplied: [] }
 }

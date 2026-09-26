@@ -1,5 +1,5 @@
 import { prefixedRandomId } from "@claxedo/helpers"
-import type { SessionConfigOption, SessionNotification } from "@agentclientprotocol/sdk"
+import type { SessionNotification } from "@agentclientprotocol/sdk"
 import type { DraftLaunch, HarnessServices, StartInput } from "../../contract"
 import { connectAcp, type AcpConnectionOptions, type AcpPeer } from "./connection"
 import type { AcpMcpFilter } from "./index"
@@ -11,9 +11,10 @@ import { acpAgentList } from "./extensions/agents"
 import { acpGroups } from "./extensions/groups"
 import type { AgentAgent } from "@claxedo/agent-runtime-contract"
 import { draftProbeKey, DraftProbeCache, sessionMcpServers } from "../../contract"
+import { acpAgents, acpModeState, type AcpCatalog } from "./options"
 
 type Commands = Extract<SessionNotification["update"], { sessionUpdate: "available_commands_update" }>["availableCommands"]
-type ProbeResult = { options: SessionConfigOption[]; commands: Commands; agents: AgentAgent[] }
+type ProbeResult = { catalog: AcpCatalog; commands: Commands; agents: AgentAgent[] }
 
 export class AcpDraftProbes {
   private readonly peers = new Set<AcpPeer>()
@@ -26,8 +27,8 @@ export class AcpDraftProbes {
     this.cache = new DraftProbeCache(services.clock)
   }
 
-  options(draft: DraftLaunch, mode: "probe" | "peek"): Promise<SessionConfigOption[]> {
-    return this.result(draft, mode, false, false).then((result) => result.options)
+  catalog(draft: DraftLaunch, mode: "probe" | "peek"): Promise<AcpCatalog> {
+    return this.result(draft, mode, false, false).then((result) => result.catalog)
   }
 
   commands(draft: DraftLaunch): Promise<Commands> {
@@ -43,11 +44,11 @@ export class AcpDraftProbes {
     const key = draftProbeKey(draft, needCommands, needAgents)
     const cached = this.cache.get(key)
     if (cached) return cached
-    if (mode === "peek") return Promise.resolve({ options: [], commands: [], agents: [] })
+    if (mode === "peek") return Promise.resolve({ catalog: { options: [], modes: [] }, commands: [], agents: [] })
     return this.cache.set(key, this.run(draft, needCommands, needAgents))
   }
 
-  private async run(draft: DraftLaunch, needCommands: boolean, needAgents: boolean) {
+  private async run(draft: DraftLaunch, needCommands: boolean, needAgents: boolean): Promise<ProbeResult> {
     const input: StartInput = { ...draft, sessionId: prefixedRandomId("probe", "-") }
     let resolveCommands!: (commands: Commands) => void
     const commands = new Promise<Commands>((resolve) => { resolveCommands = resolve })
@@ -66,16 +67,17 @@ export class AcpDraftProbes {
       const servers = this.filterMcp({ servers: projected, locality: input.locality,
         mcpCapabilities: peer.handshake.agentCapabilities?.mcpCapabilities,
         supportsMcpServers: this.connection.supportsMcpServers }).servers
-      const meta = claudeOptionsMeta(peer.handshake, input)
+      const { meta } = claudeOptionsMeta(peer.handshake, input)
       const deadline = new AcpStartupDeadline(this.services.clock, this.connection.startupTimeoutMs ?? 10_000, "draft probe")
       const result = await deadline.run(peer.agent.newSession({ cwd: input.directory, mcpServers: servers.map(acpMcp),
         ...(meta ? { _meta: meta } : {}) }))
-      const agents = needAgents && acpGroups(peer.handshake).agents
+      const catalog: AcpCatalog = { options: result.configOptions ?? [], ...acpModeState(result.modes) }
+      const agents = !needAgents ? [] : acpGroups(peer.handshake).agents
         ? await new AcpStartupDeadline(this.services.clock, this.connection.startupTimeoutMs ?? 10_000, "draft agents")
-          .run(acpAgentList(peer.agent, result.sessionId)) : []
-      if (!needCommands) return { options: result.configOptions ?? [], commands: [], agents }
+          .run(acpAgentList(peer.agent, result.sessionId)) : acpAgents(catalog)
+      if (!needCommands) return { catalog, commands: [], agents }
       const commandUpdate = new AcpStartupDeadline(this.services.clock, this.connection.startupTimeoutMs ?? 10_000, "draft commands")
-      return { options: result.configOptions ?? [], commands: await commandUpdate.run(commands), agents }
+      return { catalog, commands: await commandUpdate.run(commands), agents }
     } finally {
       this.peers.delete(peer)
       await peer.retire()
