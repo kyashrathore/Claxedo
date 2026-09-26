@@ -100,6 +100,7 @@ export type SessionView = {
   readonly controlGoal: (action: GoalAction) => Promise<void>
   readonly hasOlder: Accessor<boolean>
   readonly olderState: Accessor<OlderState>
+  readonly olderPagesLoaded: Accessor<number>
   readonly loadOlder: () => Promise<void>
   readonly reload: () => Promise<void>
   readonly send: (input: PromptInput) => Promise<void>
