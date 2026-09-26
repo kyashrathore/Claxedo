@@ -80,3 +80,16 @@ test("stop drains the admitted Goal turn before clearing it", async () => {
   expect(stopped).toMatchObject({ ok: true, goal: { status: "paused" } })
   expect(order).toEqual(["goal drained", "clear launched"])
 })
+
+test("goal cancellation returns a failed settlement when owned retirement fails", async () => {
+  const state = broker("active")
+  const launcher = { launch: async (spec: Parameters<ClaudeQueryLauncher["launch"]>[0]) => {
+    spec.processes.add({ retire: async () => { throw new Error("retirement failed") } } as unknown as import("./process").ClaudeProcess)
+    return stream({ async *[Symbol.asyncIterator]() {
+      if (!spec.abort.signal.aborted) await new Promise<void>((resolve) => spec.abort.signal.addEventListener("abort", () => resolve(), { once: true }))
+    } })
+  } } as unknown as ClaudeQueryLauncher
+  const goals = new ClaudeGoals(launcher)
+  expect((await goals.start(session(), input, state.value, "Ship")).ok).toBe(true)
+  expect(await goals.cancel("s1")).toEqual({ state: "failed", error: "retirement failed" })
+})

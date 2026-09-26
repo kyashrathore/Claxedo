@@ -1,6 +1,5 @@
 import type { CanUseTool } from "@anthropic-ai/claude-agent-sdk"
 import { permissionDecision, permissionRequest, requestQuestionAnswers, questionRequest, type StartInput, type TurnBroker } from "../../contract"
-import { claudeFloorDenies } from "../../profiles/claude-code"
 import { TransportError } from "../../contract/errors"
 
 const protocolPermissionMap = {
@@ -16,7 +15,6 @@ const protocolPermissionMap = {
 export async function askClaudePermission(input: StartInput, broker: TurnBroker, toolName: string,
   toolInput: Record<string, unknown>, options: Parameters<CanUseTool>[2], turnId?: string) {
   if (options.signal.aborted || broker.signal.aborted) return { behavior: protocolPermissionMap.deny, message: "Turn cancelled" }
-  if (claudeFloorDenies(toolName, toolInput)) return { behavior: protocolPermissionMap.deny, message: "Claude command denied by policy" }
   if (toolName === "AskUserQuestion") {
     const questions = toolInput.questions
     if (!Array.isArray(questions) || !questions.length || questions.some((question) =>

@@ -3,21 +3,14 @@ import { constants } from "node:fs"
 import path from "node:path"
 import type { SdkPluginConfig } from "@anthropic-ai/claude-agent-sdk"
 import type { PluginProjection } from "../../contract"
+import { CLAUDE_COMMAND_DENY_RULES } from "../../broker/permission-ceilings"
 
 const SETTINGS = ["settings.json", "settings.local.json", "cowork_settings.json"] as const
 const MIRRORED = ["CLAUDE.md", "memory", "agents", "commands", "skills", "plugins", "projects", "todos", "history.jsonl"] as const
 const CLAUDE_WRITTEN = ["projects", "todos", "history.jsonl"] as const
 
-export const CLAUDE_DENY_FLOOR = ["Bash(rm -rf /*)", "Bash(rm -rf ~*)", "Bash(git push --force*)", "Bash(curl *| sh)",
-  "Bash(curl *| bash)", "Bash(wget *| sh)", "Bash(chmod -R 777*)"] as const
-
-export function claudeFloorDenies(toolName: string, input: Record<string, unknown>): boolean {
-  const command = input.command
-  if (toolName !== "Bash" || typeof command !== "string") return false
-  return CLAUDE_DENY_FLOOR.some((rule) => {
-    const pattern = rule.slice("Bash(".length, -1).split("*").map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(".*")
-    return new RegExp(`^${pattern}$`).test(command)
-  })
+export function claudePermissionSettings(allow: string[], ask: string[], deny: string[]) {
+  return { permissions: { allow, ask, deny: [...deny, ...CLAUDE_COMMAND_DENY_RULES] } }
 }
 const CREDENTIAL_KEYS = ["apiKeyHelper", "awsAuthRefresh", "awsCredentialExport"]
 const CREDENTIAL_ENV = /^(ANTHROPIC_|CLAUDE_CODE_)|(^|_)(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|CREDENTIALS)(_|$)/
