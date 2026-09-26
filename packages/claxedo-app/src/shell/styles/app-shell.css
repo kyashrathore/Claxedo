@@ -166,6 +166,13 @@ body [data-component="menu-v2-content"] {
   --dialog-v2-fit-max-height: min(calc(100vh - 32px), 512px);
 }
 
+[data-component="dialog-v2"] .ui-dialog-container.install-sheet-container {
+  --dialog-v2-fit-max-height: min(calc(100vh - 32px), 600px);
+  width: min(calc(100vw - 32px), 800px);
+  align-self: flex-start;
+  margin-top: max(16px, calc(50vh - 300px));
+}
+
 body:has([data-slot="dialog-content"].command-palette-dialog) .ui-dialog-overlay {
   background-color: hsl(from var(--background-base) h s l / 0.45);
   animation: claxedoPaletteBackdropHide 100ms ease-in forwards;
