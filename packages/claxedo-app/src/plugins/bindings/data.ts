@@ -1,4 +1,5 @@
 import type { PluginApi, SessionAttachment, SessionRef, SessionStatus } from "@claxedo/plugin-api"
+import { encodeAttachmentData } from "@claxedo/tasks"
 import { uuid } from "@/lib/uuid"
 import { sessionId, type Placement, type PromptAttachment } from "@/server"
 import type { SessionRowView } from "@/session"
@@ -9,15 +10,9 @@ type Data = Pick<PluginApi, "sessions" | "projects" | "context">
 
 const PLACEMENT_PREFERENCE: readonly Placement["kind"][] = ["folder", "worktree", "cloud"]
 
-function base64(bytes: Uint8Array): string {
-  let binary = ""
-  for (let start = 0; start < bytes.length; start += 0x8000) binary += String.fromCharCode(...bytes.subarray(start, start + 0x8000))
-  return btoa(binary)
-}
-
 function promptAttachment(scope: BindingScope, attachment: SessionAttachment): PromptAttachment {
   const mime = attachment.mimeType
-  if (mime.startsWith("image/")) return { kind: "image", dataUrl: `data:${mime};base64,${base64(attachment.bytes)}`, name: attachment.name, mime }
+  if (mime.startsWith("image/")) return { kind: "image", dataUrl: `data:${mime};base64,${encodeAttachmentData(attachment.bytes)}`, name: attachment.name, mime }
   if (mime.startsWith("text/") || mime === "application/json") {
     return { kind: "text", text: new TextDecoder().decode(attachment.bytes), label: attachment.name }
   }
@@ -31,7 +26,7 @@ function placementFor(scope: BindingScope, projectId: string): Placement {
   return preferred
 }
 
-function rowOf(scope: BindingScope, ref: SessionRef): SessionRowView | undefined {
+function sessionRowOf(scope: BindingScope, ref: SessionRef): SessionRowView | undefined {
   return scope.services.sessions.list.view(sessionId(ref.sessionId))
 }
 
@@ -59,9 +54,9 @@ function sessionBindings(scope: BindingScope): PluginApi["sessions"] {
       await sessions.open(ref).send({ clientRequestId: uuid(), text: input.prompt, attachments })
       return { sessionId: ref.sessionId, projectId: ref.projectId }
     },
-    status: (ref) => sessionStatusOf(rowOf(scope, ref)),
+    status: (ref) => sessionStatusOf(sessionRowOf(scope, ref)),
     open: (ref) => {
-      const row = rowOf(scope, ref)
+      const row = sessionRowOf(scope, ref)
       if (!row) throw new PluginEntryError(scope.manifest.id, `session ${ref.sessionId} is not in the session list`)
       routing.navigate(sessionPath(row.ref))
     },
