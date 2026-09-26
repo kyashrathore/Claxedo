@@ -10,10 +10,9 @@ import { runBunBuild } from "../../../script/bun-build"
 import { publishedExportsPlugin } from "../../../script/published-exports-plugin"
 
 // Native modules cannot be bundled — they ship as node_modules content. The
-// public OpenCode SDK's asset-relative graph and the plugin toolchain (esbuild
-// with its platform binary, the native TypeScript compiler and the type roots
-// a plugin is checked against) are staged under resources/node_modules (see
-// electron-builder.config.ts). Everything else is inlined.
+// public OpenCode SDK's asset-relative graph and the isolated plugin-build
+// package are staged under resources/node_modules (see electron-builder.config.ts).
+// Everything else is inlined.
 const EXTERNAL = ["@lydell/node-pty", "better-sqlite3", ...OPENCODE_SDK_EXTERNALS, ...PLUGIN_TOOLCHAIN_EXTERNALS]
 
 const require = createRequire(import.meta.url)
@@ -90,7 +89,7 @@ export async function bundleClaxedoServer(source: string, destination: string) {
   copyCursorSdkLazyChunks(path.join(pending, "chunks"))
   const [platform, arch] = resolveTargetOsArch().split("-")
   stageOpenCodeSdk(path.join(pending, "node_modules"), { platform: platform, arch: arch })
-  stagePluginToolchain(path.join(pending, "node_modules"), { platform: platform, arch: arch })
+  await stagePluginToolchain(path.join(pending, "node_modules"), { platform: platform, arch: arch })
 
   fs.rmSync(destination, { recursive: true, force: true })
   fs.renameSync(pending, destination)

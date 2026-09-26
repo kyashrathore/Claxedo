@@ -14,6 +14,11 @@ import { desktopRendererBoundaryManifestPlugin } from "./scripts/product-boundar
 
 const normalize = (value: string) => value.replaceAll("\\", "/")
 
+export function desktopRendererChunk(id: string) {
+  // Mermaid's two class-diagram entries emit identical dynamic chunks.
+  return /mermaid[^]*\/classDiagram/.test(id) ? "mermaid-classDiagram" : undefined
+}
+
 export const desktopDir = normalize(fileURLToPath(new URL("./", import.meta.url)))
 export const claxedoAppDir = normalize(fileURLToPath(new URL("../claxedo-app/", import.meta.url)))
 const agentEventRuntimeDir = normalize(fileURLToPath(new URL("../agent-event-runtime/", import.meta.url)))
@@ -147,12 +152,7 @@ export function createElectronRenderer(mode: string): UserConfig {
             }
             return "assets/[name]-[hash].js"
           },
-          manualChunks(id) {
-            // Mermaid's classDiagram and classDiagram-v2 are separate dynamic
-            // imports that produce byte-identical chunks. Merge them.
-            // `undefined` leaves everything else to Rollup's own splitting.
-            return /mermaid[^]*\/classDiagram/.test(id) ? "mermaid-classDiagram" : undefined
-          },
+          manualChunks: desktopRendererChunk,
         },
       },
     },

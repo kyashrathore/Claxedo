@@ -5,7 +5,7 @@ import type { PluginOption } from "vite"
 import appV2Config from "../claxedo-app-v2/vite.cloud.config"
 import { WEB_CONTENT_SECURITY_POLICY_PLUGIN } from "../claxedo-app-v2/vite.content-security-policy"
 import { desktopRendererBoundaryManifestPlugin } from "./scripts/product-boundary-manifests"
-import { desktopDir } from "./vite.renderer"
+import { desktopDir, desktopRendererChunk } from "./vite.renderer"
 
 const normalize = (value: string) => value.replaceAll("\\", "/")
 
@@ -24,9 +24,9 @@ function appV2Aliases(config: UserConfig) {
 
 type RendererOutput = NonNullable<NonNullable<UserConfig["build"]>["rollupOptions"]>["output"]
 
-function withoutManualChunks(output: RendererOutput): RendererOutput {
-  if (output === undefined || Array.isArray(output)) return output
-  return { ...output, manualChunks: undefined }
+function desktopOutput(output: RendererOutput): RendererOutput {
+  if (Array.isArray(output)) return output.map((item) => ({ ...item, manualChunks: desktopRendererChunk }))
+  return { ...output, manualChunks: desktopRendererChunk }
 }
 
 function isWebContentSecurityPolicy(plugin: PluginOption) {
@@ -64,7 +64,7 @@ export function createElectronRendererV2(env: ConfigEnv): UserConfig {
       minify: "esbuild",
       rollupOptions: {
         ...app.build?.rollupOptions,
-        output: withoutManualChunks(app.build?.rollupOptions?.output),
+        output: desktopOutput(app.build?.rollupOptions?.output),
         input: {
           main: normalize(path.join(rendererRoot, "index.local.html")),
           loading: normalize(path.join(rendererRoot, "loading.html")),
