@@ -20,7 +20,7 @@ const expressionWrite = /(?<![[\w-])data-(slot|component)=\{([^{}]*)\}/g
 const datasetWrite = /dataset\.(slot|component)\s*=(?!=)\s*["']([^"']+)["']/g
 const setAttributeWrite = /setAttribute\(\s*["']data-(slot|component)["']\s*,\s*["']([^"']+)["']/g
 const stringLiteral = /["'`]([^"'`$]+)["'`]/g
-const skippedFolders = new Set(["node_modules", "dist", ".git", "legacy", "report", "test-results", "results"])
+const skippedFolders = new Set(["node_modules", "dist", ".git", "report", "test-results", "results"])
 
 export function selectorsIn(text: string): Selector[] {
   const found: Selector[] = []

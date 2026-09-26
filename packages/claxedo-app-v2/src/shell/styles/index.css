@@ -4,7 +4,6 @@
 @source not "../../../../claxedo-app/src";
 @source not "../../../../claxedo-desktop/src/renderer";
 @source "../../";
-@source not "../../legacy";
 @source "../../../../session-ui/src";
 @source not "../../../../session-ui/src/**/*.test.*";
 @source not "../../../../session-ui/src/**/*.stories.*";

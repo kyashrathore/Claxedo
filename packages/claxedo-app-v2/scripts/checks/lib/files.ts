@@ -33,24 +33,23 @@ export function listFiles(root: string, scopes: readonly Scope[], extensions: re
   const out: string[] = []
   for (const scope of scopes) {
     const base = scope === "plugins" ? pluginsDirectory(root) : join(root, scope)
-    if (existsSync(base)) walkDirectory(base, scope, root, extensions, out)
+    if (existsSync(base)) walkDirectory(base, scope, extensions, out)
   }
   return out.sort()
 }
 
-function walkDirectory(dir: string, scope: Scope, root: string, extensions: readonly string[], out: string[]): void {
+function walkDirectory(dir: string, scope: Scope, extensions: readonly string[], out: string[]): void {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name)
     if (entry.isDirectory()) {
-      if (!skipsDirectory(full, scope, root)) walkDirectory(full, scope, root, extensions, out)
+      if (!skipsDirectory(full, scope)) walkDirectory(full, scope, extensions, out)
     } else if (entry.isFile() && extensions.some((extension) => entry.name.endsWith(extension))) out.push(full)
   }
 }
 
-function skipsDirectory(full: string, scope: Scope, root: string): boolean {
+function skipsDirectory(full: string, scope: Scope): boolean {
   const name = basename(full)
   if (name === "node_modules" || name === "dist" || name === ".git") return true
-  if (rel(root, full) === `${scope}/legacy`) return true
   return scope === "e2e" && (name === "report" || name === "test-results")
 }
 

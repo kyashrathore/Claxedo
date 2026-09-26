@@ -1,5 +1,0 @@
----
-title: Closing dots
-...
-
-# Body
