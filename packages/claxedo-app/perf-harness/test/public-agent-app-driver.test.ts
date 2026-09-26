@@ -7,6 +7,7 @@ import type { WorkspaceLoad } from "agent-app-benchmark/driver-sdk"
 import {
   createClaxedoPublicDriver,
   parseApplicationArgument,
+  PRIVATE_CORPUS_SCENARIO_IDS,
   PUBLIC_SCENARIO_IDS,
   readPreparedCache,
   writePreparedCache,
@@ -460,7 +461,7 @@ describe("Claxedo public driver", () => {
       expect(cases.length).toBeGreaterThan(0)
       const ids = cases.flatMap((item) => ("destinationSessionId" in item ? [item.destinationSessionId] : []))
       const { driver, panelExecutions, navigationExecutions } = harness(ids)
-      expect((await driver.hello()).scenarios).toEqual([...PUBLIC_SCENARIO_IDS])
+      expect((await driver.hello()).scenarios).toEqual([...PUBLIC_SCENARIO_IDS, ...PRIVATE_CORPUS_SCENARIO_IDS])
       await prepare(driver, scenarioId, scenario)
       if (scenario.kind !== "app-start") {
         await driver.launch({ scenarioId, stateHandle: "sealed-p1", initialSessionId: "control", groupId: "group" })

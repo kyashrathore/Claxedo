@@ -33,12 +33,19 @@ import {
  */
 const RESOURCE_CONTROL_READINESS_TIMEOUT_MS = 5_000
 
-const APP_START_SCENARIO_IDS: readonly string[] = ["app-start-v1", "app-start-fast-v1", "app-start-fast-v2", "app-start-fast-v3"]
+const APP_START_SCENARIO_IDS: readonly string[] = [
+  "app-start-v1",
+  "app-start-fast-v1",
+  "app-start-fast-v2",
+  "app-start-fast-v3",
+  "app-start-real-sessions-v1",
+]
 const SESSION_SWITCH_SCENARIO_IDS: readonly string[] = [
   "session-switch-v1",
   "session-switch-fast-v1",
   "session-switch-fast-v2",
   "session-switch-walk-v1",
+  "session-switch-walk-real-sessions-v1",
 ]
 const SESSION_NAVIGATION_SCENARIO_IDS: readonly string[] = [
   "session-navigation-v1",
@@ -63,6 +70,14 @@ export const PUBLIC_SCENARIO_IDS = [
   "workspace-panel-fast-v1",
   "workspace-panel-fast-v2",
 ] as const
+
+/**
+ * Scenarios over the private corpus of redacted real sessions. They cannot be
+ * registered, so they are served here beside the registered ones.
+ */
+export const PRIVATE_CORPUS_SCENARIO_IDS = ["app-start-real-sessions-v1", "session-switch-walk-real-sessions-v1"] as const
+
+const SERVED_SCENARIO_IDS: readonly string[] = [...PUBLIC_SCENARIO_IDS, ...PRIVATE_CORPUS_SCENARIO_IDS]
 
 /**
  * A launched process as the public driver reports it: exactly what the launcher
@@ -185,10 +200,10 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
   }
 
   return {
-    hello: async () => ({ ...dependencies.hello, scenarios: [...PUBLIC_SCENARIO_IDS] }),
+    hello: async () => ({ ...dependencies.hello, scenarios: [...SERVED_SCENARIO_IDS] }),
     prepare: async (params) => {
       if (prepared) throw new Error("Claxedo driver is already prepared")
-      if (!PUBLIC_SCENARIO_IDS.some((id) => id === params.scenarioId)) {
+      if (!SERVED_SCENARIO_IDS.includes(params.scenarioId)) {
         throw new Error(`Claxedo does not support scenario ${params.scenarioId}`)
       }
       let panelLoadPresets: PublicPanelLoadPresets | undefined
