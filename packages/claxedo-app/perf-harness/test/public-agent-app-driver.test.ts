@@ -444,7 +444,15 @@ describe("Claxedo public driver", () => {
       if (scenario.kind !== "app-start") {
         await driver.launch({ scenarioId, stateHandle: "sealed-p1", initialSessionId: "control", groupId: "group" })
       }
+      let repetition = cases[0] && "repetition" in cases[0] ? cases[0].repetition : undefined
       for (const benchmarkCase of cases) {
+        // The framework launches a fresh process for every repetition's group.
+        const caseRepetition = "repetition" in benchmarkCase ? benchmarkCase.repetition : undefined
+        if (scenario.kind !== "app-start" && caseRepetition !== repetition) {
+          await driver.shutdown()
+          await driver.launch({ scenarioId, stateHandle: "sealed-p1", initialSessionId: "control", groupId: "group" })
+          repetition = caseRepetition
+        }
         const stateHandle =
           "startMode" in benchmarkCase && benchmarkCase.startMode === "new-application-state"
             ? "sealed-p0"
@@ -461,7 +469,11 @@ describe("Claxedo public driver", () => {
           new Set(["light", "moderate", "heavy"]),
         )
       }
-      if (scenarioId === "session-navigation-v1") {
+      if (scenarioId === "workspace-panel-fast-v1") {
+        expect(panelExecutions.map((item) => item.benchmarkCase)).toEqual(cases)
+        expect(new Set(panelExecutions.map((item) => (item.preset as { id: string }).id))).toEqual(new Set(["moderate"]))
+      }
+      if (scenario.kind === "session-navigation") {
         expect(navigationExecutions.map((item) => item.benchmarkCase)).toEqual(cases)
       }
       await driver.shutdown()

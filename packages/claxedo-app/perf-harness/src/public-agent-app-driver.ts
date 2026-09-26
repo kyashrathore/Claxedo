@@ -33,16 +33,22 @@ import {
  */
 const RESOURCE_CONTROL_READINESS_TIMEOUT_MS = 5_000
 
-const APP_START_SCENARIO_IDS: readonly string[] = ["app-start-v1", "app-start-fast-v1"]
-const SESSION_SWITCH_SCENARIO_IDS: readonly string[] = ["session-switch-v1", "session-switch-fast-v1"]
+const APP_START_SCENARIO_IDS: readonly string[] = ["app-start-v1", "app-start-fast-v1", "app-start-fast-v2"]
+const SESSION_SWITCH_SCENARIO_IDS: readonly string[] = ["session-switch-v1", "session-switch-fast-v1", "session-switch-fast-v2"]
+const SESSION_NAVIGATION_SCENARIO_IDS: readonly string[] = ["session-navigation-v1", "session-navigation-fast-v1"]
+const WORKSPACE_PANEL_SCENARIO_IDS: readonly string[] = ["workspace-panel-v1", "workspace-panel-fast-v1"]
 
 export const PUBLIC_SCENARIO_IDS = [
   "app-start-v1",
   "app-start-fast-v1",
+  "app-start-fast-v2",
   "session-switch-v1",
   "session-switch-fast-v1",
+  "session-switch-fast-v2",
   "session-navigation-v1",
+  "session-navigation-fast-v1",
   "workspace-panel-v1",
+  "workspace-panel-fast-v1",
 ] as const
 
 /**
@@ -166,7 +172,7 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
         throw new Error(`Claxedo does not support scenario ${params.scenarioId}`)
       }
       let panelLoadPresets: PublicPanelLoadPresets | undefined
-      if (["session-navigation-v1", "workspace-panel-v1"].includes(params.scenarioId)) {
+      if ([...SESSION_NAVIGATION_SCENARIO_IDS, ...WORKSPACE_PANEL_SCENARIO_IDS].includes(params.scenarioId)) {
         if (!params.workspaceFixtureManifest) {
           throw new Error(`Claxedo ${params.scenarioId} requires a workspace fixture manifest`)
         }
@@ -202,7 +208,7 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
     },
     execute: async (params) => {
       if (params.scenarioId !== preparedScenarioId) throw new Error("Claxedo execute scenario differs from preparation")
-      if (params.scenarioId === "session-navigation-v1") {
+      if (SESSION_NAVIGATION_SCENARIO_IDS.includes(params.scenarioId)) {
         if (
           !active ||
           !("navigationType" in params.case) ||
@@ -237,7 +243,7 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
         }
         return navigationExecution(params.case.caseId, measured)
       }
-      if (params.scenarioId === "workspace-panel-v1") {
+      if (WORKSPACE_PANEL_SCENARIO_IDS.includes(params.scenarioId)) {
         if (
           !active ||
           !("loadProfile" in params.case) ||
@@ -452,12 +458,22 @@ async function makeDefaultDependencies(applicationId: ApplicationId): Promise<Dr
     prepare: async (params) => {
       const runRoot = path.join(path.resolve(params.runDirectory), "driver-state", application.id)
       attemptsRoot = path.join(runRoot, "attempts")
-      const cacheRoot = params.workspaceFixtureManifest ? undefined : process.env.AGENT_APP_BENCHMARK_STATE_CACHE
+      const stateCache = process.env.AGENT_APP_BENCHMARK_STATE_CACHE
+      // Workspace-backed scenarios share one fixture state per fixture digest; launches already
+      // reuse its workspaces read-only within a scenario, so later scenarios may reuse them too.
+      const cacheRoot =
+        stateCache && params.workspaceFixtureDigestSha256
+          ? path.join(stateCache, `fixture-${params.workspaceFixtureDigestSha256}`)
+          : stateCache
+      if (cacheRoot) await mkdir(cacheRoot, { recursive: true, mode: 0o700 })
       const privateRoot = cacheRoot ?? runRoot
       const p0 = path.join(privateRoot, "P0")
       const p1 = path.join(privateRoot, "P1")
       const cached = cacheRoot ? await readPreparedCache(cacheRoot, params.corpusDigestSha256) : undefined
       if (cached) {
+        if (cached.workspaceFixtureDigestSha256 !== params.workspaceFixtureDigestSha256)
+          throw new Error("Claxedo prepared-state cache belongs to a different workspace fixture")
+        workspaceFixture = params.workspaceFixtureManifest ? fixtureEvidence(params.workspaceFixtureManifest) : undefined
         readinessTargets = cached.readinessTargets
         return { materialization: cached, stateHandles: { P0: p0, P1: p1 } }
       }
