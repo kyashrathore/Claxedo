@@ -69,6 +69,7 @@ import { createTimelinePrependAnchor } from "./timeline-prepend-anchor"
 import {
   createTimelineResizeAnchor,
   estimateTimelineRowSize,
+  measureUnmeasuredRows,
   filterVirtualIndexes,
   scheduleConnectedMeasure,
   timelineRowFrameStyle,
@@ -94,12 +95,11 @@ import {
 import { createTimelineLinkOpen } from "./timeline-link-open"
 import { createMessageNavRoom } from "./message-nav-layout"
 import { messageNavCurrentId, messageNavPreview, messageNavVisible } from "./message-nav-preview"
-import { createMessageNavDeferredMount } from "./message-nav-deferred-mount"
 import { scheduleTimelineFirstFoldReveal } from "./timeline-first-fold-reveal"
 import type { MessageTimelineProps } from "./message-timeline-props"
 import type { ConversationMessage } from "@/transcript"
 import { turnActive, type TimelineSessionRow } from "./model"
-import "./message-nav-gutter.css"
+import "./timeline-viewport.css"
 import "./markdown-surfaces.css"
 
 const emptyMessages: ConversationMessage[] = []
@@ -502,8 +502,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const [renderOverscan, setRenderOverscan] = createSignal(1)
   const [initialRevealReady, setInitialRevealReady] = createSignal(warmMeasurements || initialRowCount === 0)
   const [progressiveReady, setProgressiveReady] = createSignal(warmMeasurements || initialRowCount === 0)
-  const messageNavMountReady = createMessageNavDeferredMount(props.active, initialRevealReady, messageNavGutterVisible)
-  holdPaneReveal(() => !initialRevealReady() || timelineRows().some((row) => row._tag === "TurnLoading") || (messageNavGutterVisible() && !messageNavMountReady()))
+  const messageNavMountReady = createMemo<boolean>((mounted) => mounted || (props.active() && initialRevealReady() && messageNavGutterVisible()), false)
+  holdPaneReveal(() => !initialRevealReady() || timelineRows().some((row) => row._tag === "TurnLoading"))
   let initialRowsScheduled = initialRowCount > 0
   let cancelFirstFoldReveal: (() => void) | undefined
   const prepareScrollOverscan = () => {
@@ -521,7 +521,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
   }
   let virtualContent: HTMLDivElement | undefined
   const resizeAnchor = createTimelineResizeAnchor()
-  const followsEnd = () => props.shouldAnchorBottom() && working()
+  const [firstViewSettled, setFirstViewSettled] = createSignal(false)
+  const followsEnd = () => props.shouldAnchorBottom() && (working() || !firstViewSettled())
   const rowKeys = createMemo(() => {
     const keys = timelineRows().map(TimelineRow.key)
     resizeAnchor.noteRowKeys(keys)
@@ -580,12 +581,20 @@ export function MessageTimeline(props: MessageTimelineProps) {
       }
     },
   })
+  createEffect(() => {
+    if (firstViewSettled()) return
+    virtualRowKeys()
+    const root = listRoot()
+    if (root) measureUnmeasuredRows(virtualizer, root)
+    if (props.hasScrollGesture()) setFirstViewSettled(true)
+  })
   resizeAnchor.install({
     virtualizer,
     root: listRoot,
     displayed,
     shouldAnchorBottom: followsEnd,
     hasScrollGesture: props.hasScrollGesture,
+    holdsInViewInserts: firstViewSettled,
     onInViewInsert: () => props.onMarkScrollGesture(),
     followsInsertBeside: TimelineRow.keyIsThinking,
   })
@@ -1399,6 +1408,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         class="relative min-w-0 w-full h-full"
         style={transcriptStyle()}
       >
+        <div data-timeline-bottom-anchor aria-hidden="true" class="flex-1" />
         <Show when={parentId()}>
           <h1 data-subagent-child-heading tabIndex={-1} class="sr-only">
             {childTitle()}
@@ -1415,7 +1425,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
             <SubagentChipRow subagents={ambientSubagents()} />
           </section>
         </Show>
-        <div data-timeline-content ref={props.setContentRef} class="w-full">
+        <div data-timeline-content ref={props.setContentRef} class="w-full shrink-0">
           <div
             data-timeline-virtual-content
             ref={(element) => {
@@ -1439,7 +1449,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
           </div>
           <Show when={props.queued}>
             {(queued) => (
-              <div class="relative" classList={{ "-mt-10": timelineRows().length > 0 }}>
+              <div class="relative" classList={{ "-mt-10": timelineRows().length > 0 && (queuedNotYetInTranscript().length > 0 || queued().loadFailed()) }}>
                 <TimelineQueuedMessages queued={queued()} items={queuedNotYetInTranscript} centered={props.centered} t={host.t} />
               </div>
             )}

@@ -310,3 +310,13 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - The kit's pure helpers reach the app through `@/ui/utils` (ruled): a store or logic module imports them there and never loads the component barrel `@/ui`, which pulls toast-v2's solid-sonner and its import-time `document` listeners into the DOM-less unit tests.
 - Dialog heights (lead, 2026-09-26): the list and form dialogs are as tall as their content up to v1's 512 px and scroll inside past that; the command and file palettes stop at 480 px.
 - The look changes where v2 differs (reviewed before merge on the before/after page); v1 remains the spec for behaviour.
+
+## Lane v2/switch-paint, 2026-09-26: Composer budget re-based for the footer's known selection
+- The owner asked why an existing session's footer says "Select model" or "Select agent" when its model is known. The fix seeds the harness scope from the session read and the last turn before the config answers, and names the known model in the label (`src/composer/README.md`).
+- Dead code went first: the `displayName` read and `harnessDisplayName`, which nothing called, and the switch-paint reveal holds on the hydration run and the models load.
+- The composer measured 10,975 before and 11,141 after: 122 lines are the new tests (the seed, the config replacing it, the label's placeholders), the rest the label as a tested function and the seed patch.
+- Re-based to the measured 11,141 with no headroom, pending the orchestrator's review.
+
+## Owner, 2026-09-27: a switched-to session paints at its latest turn, bottom-anchored
+- Replaces the rail bullet of "a session's first load shows the turn peek rail…" (2026-09-26): the pane no longer waits for the older page.
+- A switched-to session shows as soon as its latest turn is complete and laid out, at the bottom of the view where it stays. The older page loads right after and lands above without moving what is on screen; the rail appears in the frame the page brings the turn count above ten, in a gutter on both sides, so the transcript does not shift.

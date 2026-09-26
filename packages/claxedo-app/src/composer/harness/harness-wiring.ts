@@ -63,6 +63,7 @@ export function wireHydrator(wiring: HarnessWiring, fetchConfigOptions: FetchCon
     markServer: store.markServer,
     applyStatus: statusActions.applyStatus,
     setPollingHydration: statusActions.setPollingHydration,
+    setKnownHydration: statusActions.setKnownHydration,
     setReadyHydration: statusActions.setReadyHydration,
     setCapabilityError: (scope, message) => store.applyPatch(scope, { configError: message, readiness: "error", optionsLoading: false }),
     fetchConfigOptions,

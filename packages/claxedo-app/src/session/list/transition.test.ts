@@ -1,6 +1,7 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
 import { placementId, projectId, sessionId, type ListedStatus, type ProjectId, type SessionRow } from "@/server"
+import { nativeHarness } from "@/lib/harness-selection"
 import { initialListState, type FetchedPage, type FetchedWindow, type ListState } from "./model"
 import { listTransition } from "./transition"
 import { visibleOrder } from "./visible-rows"
@@ -48,6 +49,17 @@ test("a project's rail is its first page, in the server's order, with nothing pa
   )
 
   expect(shown(state)).toEqual(["a1", "a-newer", "a2", "b1"])
+})
+
+test("a session's saved harness and model survive a newer row that does not carry them, and a row that does replaces them", () => {
+  const read = { ...row(ALPHA, "a1", 30), harness: nativeHarness("pi"), model: { providerId: "pi", modelId: "anthropic/claude-opus-4-8" } }
+  const listed = run(initialListState, { type: "fetchStarted" }, { type: "fetched", window: window([page(ALPHA, [row(ALPHA, "a1", 30)])]) }, { type: "rowRead", row: read })
+  const kept = run(listed, { type: "sessionUpserted", row: { ...row(ALPHA, "a1", 30), updatedAt: 40 } })
+  const entry = kept.kind === "live" ? kept.entries.get(sessionId("a1")) : undefined
+  expect(entry?.kind === "confirmed" ? [entry.row.updatedAt, entry.row.harness, entry.row.model] : undefined).toEqual([40, read.harness, read.model])
+  const replaced = run(kept, { type: "sessionUpserted", row: { ...row(ALPHA, "a1", 30), updatedAt: 50, harness: nativeHarness("codex") } })
+  const next = replaced.kind === "live" ? replaced.entries.get(sessionId("a1")) : undefined
+  expect(next?.kind === "confirmed" ? [next.row.harness, next.row.model] : undefined).toEqual([nativeHarness("codex"), undefined])
 })
 
 test("show more extends only its own project, and a page that ends the project shows every row after it", () => {

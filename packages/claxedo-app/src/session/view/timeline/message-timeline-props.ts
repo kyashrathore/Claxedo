@@ -19,6 +19,7 @@ export type MessageTimelineProps = {
   onHistoryScroll: () => void
   onHistoryPull?: () => void
   shouldAnchorBottom: () => boolean
+  olderPending?: Accessor<boolean>
   hasScrollTarget: () => boolean
   restoreFollowing: (following: boolean) => void
   centered: boolean

@@ -13,6 +13,7 @@ import type {
   RuntimeGoalSnapshot,
 } from "@claxedo/agent-runtime-contract"
 import type { SolidQueryOptions } from "@tanstack/solid-query"
+import type { HarnessSelection } from "../lib/harness-selection"
 import type { MachineId, OrgId, PlacementId, ProjectId, RequestId, SessionId, UserId } from "./ids"
 
 export type ErrorClass = "auth" | "rate_limit" | "network" | "not_found" | "conflict" | "invalid" | "internal"
@@ -108,7 +109,8 @@ export type SessionRow = {
   readonly lastHumanTurnAt?: number
   readonly archivedAt?: number
   readonly parentSessionId?: SessionId
-  readonly harness?: string
+  readonly harness?: HarnessSelection
+  readonly model?: ModelChoice
   readonly lastTurn?: AgentTurnOutcome
 }
 

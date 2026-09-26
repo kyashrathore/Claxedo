@@ -171,11 +171,14 @@ export function newerRow(current: SessionRow, incoming: SessionRow): SessionRow 
   if (incoming.updatedAt < current.updatedAt) return undefined
   const lastHumanTurnAt = laterHumanTurn(current, incoming)
   const lastTurn = incoming.lastTurn ?? current.lastTurn
-  if (incoming.createdAt === current.createdAt && incoming.lastHumanTurnAt === lastHumanTurnAt && incoming.lastTurn === lastTurn) return incoming
+  const configured = incoming.harness || !current.harness ? incoming : current
+  if (incoming.createdAt === current.createdAt && incoming.lastHumanTurnAt === lastHumanTurnAt && incoming.lastTurn === lastTurn && configured === incoming) return incoming
   return {
     ...incoming,
     createdAt: current.createdAt,
     ...(lastHumanTurnAt === undefined ? {} : { lastHumanTurnAt }),
     ...(lastTurn === undefined ? {} : { lastTurn }),
+    ...(configured.harness ? { harness: configured.harness } : {}),
+    ...(configured.model ? { model: configured.model } : {}),
   }
 }

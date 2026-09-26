@@ -69,7 +69,7 @@ function retryAction(input: SelectorNoticeInput): NonNullable<ComposerNotice["ac
 export function createSelectorNotice(input: SelectorNoticeInput) {
   const needsProviderSetup = createProviderSetupNeed(input)
   const notice = createMemo<ComposerNotice | undefined>(() => {
-    if (input.active() === false || !input.selection().isHarnessMode) return undefined
+    if (input.active() === false || !input.selection().isHarnessMode || input.selection().readiness === "unresolved") return undefined
     const resolved = resolveHarnessNotice(harnessNoticeInput(input, needsProviderSetup()))
     if (!resolved) return undefined
     const { retry, action, ...rest } = resolved

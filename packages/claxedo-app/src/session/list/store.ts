@@ -1,4 +1,5 @@
 import { createMemo, type Accessor } from "solid-js"
+import { harnessSelectionOf } from "@/lib/harness-selection"
 import { machine, type Machine } from "@/lib/machine"
 import { uuid } from "@/lib/uuid"
 import {
@@ -62,7 +63,14 @@ const unknownPlacement = (placementId: PlacementId): AppError => ({
 })
 
 function pendingRow(ref: SessionRef, input: SessionCreateInput, at: number): SessionRow {
-  return { ref, title: input.title ?? "", createdAt: at, updatedAt: at, harness: input.harness }
+  return {
+    ref,
+    title: input.title ?? "",
+    createdAt: at,
+    updatedAt: at,
+    ...(input.harness ? { harness: harnessSelectionOf(input.harness) } : {}),
+    ...(input.model ? { model: input.model } : {}),
+  }
 }
 
 async function createSession(server: Server, list: Machine<ListState, ListEvent>, input: SessionCreateInput): Promise<SessionRef> {

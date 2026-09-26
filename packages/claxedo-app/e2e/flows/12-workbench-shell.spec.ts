@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test"
 import { acpScriptToken, apiRequests, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI, type AcpStep, type ClaxedoApi, type Stack } from "../harness"
-import { recordSwitchFrames, switchReport } from "./12-switch-paint.frames"
+import { recordSwitchFrames, switchReport, type SwitchReport } from "./12-switch-paint.frames"
 
 function panes(app: Page) {
   return app.getByRole("navigation", { name: "Workbench panes" })
@@ -224,22 +224,37 @@ test("12 a session switch shows the previous session until the next one is laid 
   const elsewhere = await seedTurns(stack, api, there.directory, "Elsewhere", 12)
   const long = await seedTurns(stack, api, here.directory, "Long", 30, { lines: 40 })
   const failed = await seedTurns(stack, api, here.directory, "Failed", 12, { lastFails: true })
+  const pi = await api.createSession(here.directory, { title: "Pi", harness: { id: "pi", access: "native" } })
+  await api.prompt(here.directory, pi.id, "Pi turn: review the fixture.")
   await app.goto(`${stack.url}${sessionRoute(here.id, previous.id)}`)
   await expect(app.getByText("Previous reply line 6.").first()).toBeVisible()
   const settled = apiRequests(app, stack.url)
   await settled()
 
-  for (const [label, next] of [["unvisited", target], ["another workspace", elsewhere], ["long rows", long], ["failed last turn", failed], ["visited", previous]] as const) {
+  const acp = { model: "Scripted ACP default", nameKnown: true }
+  const switches = [
+    { label: "unvisited", next: target, ...acp },
+    { label: "unvisited Pi", next: pi, model: "anthropic/claude-opus-4-8", nameKnown: false },
+    { label: "another workspace", next: elsewhere, ...acp },
+    { label: "long rows", next: long, ...acp },
+    { label: "failed last turn", next: failed, ...acp },
+    { label: "visited", next: previous, ...acp },
+  ]
+  for (const { label, next, model, nameKnown } of switches) {
     await test.step(`switch to the ${label} session`, async () => {
       const frames = await recordSwitchFrames(app, { targetId: next.id, quietFrames: 30 })
       await app.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: next.title, exact: true }).click()
       const seen = switchReport(await frames(), next.id)
       const reads = await settled()
-      await info.attach(`${label} switch`, { body: [...seen.states, "", `settled +${seen.settledAt}ms`, ...reads].join("\n"), contentType: "text/plain" })
+      const timing = (name: string, point: SwitchReport["revealedAt"]) => `${name} +${point?.ms}ms, frame ${point?.frame}`
+      await info.attach(`${label} switch`, { body: [...seen.states, "", timing("revealed", seen.revealedAt), timing("settled", seen.settledAt), ...reads].join("\n"), contentType: "text/plain" })
       expect.soft(seen.empty, "frames with an empty, loading or missing session body").toEqual([])
       expect.soft(seen.overlaid, "frames painting two sessions at once").toEqual([])
-      expect.soft(seen.jumps, `frames where the ${label} session's rows or scroll moved after it first showed`).toEqual([])
-      expect.soft(seen.footers, `composer footer labels of the ${label} session`).toHaveLength(1)
+      expect.soft(seen.moved, `frames where a painted row of the ${label} session moved, or a row of its first frame went away`).toEqual([])
+      expect.soft(seen.shownStates.length, `visible states of the ${label} session from its reveal to its settle:\n${seen.shownStates.join("\n")}`).toBeLessThanOrEqual(2)
+      if (nameKnown) expect.soft(seen.footers, `composer footer labels of the ${label} session`).toHaveLength(1)
+      expect.soft(seen.footers[0], `the ${label} session's first footer names its model`).toContain(model)
+      expect.soft(seen.footers[0], `the ${label} session's first footer`).not.toMatch(/Select (model|agent)/)
       expect.soft(seen.railApart, "frames where the rail selects a session other than the one shown").toEqual([])
       expect.soft(seen.sessions, "sessions shown, in order").toEqual(seen.sessions.length === 1 ? [next.id] : [seen.sessions[0], next.id])
     })

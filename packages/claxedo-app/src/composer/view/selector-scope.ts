@@ -1,5 +1,4 @@
-import { createEffect, createMemo, createSignal, untrack, type Accessor } from "solid-js"
-import { holdPaneReveal } from "@/workbench"
+import { createEffect, createMemo, untrack, type Accessor } from "solid-js"
 import type { HarnessScopeInput, HarnessSelectionController } from "../harness/controller"
 import type { HarnessOptionList } from "../harness/harness-option-list"
 import { isCatalogHarness } from "../harness/profile"
@@ -16,19 +15,14 @@ export function createSelectorScope(input: {
   const sessionId = createMemo(() => scopeInput().sessionId)
   const sessionLocked = createMemo(() => !!input.sessionLocked())
   const scope = createMemo(() => input.scope())
-  const [hydrating, setHydrating] = createSignal(true)
-  let run = 0
   createEffect(() => {
     const nextScope = scope()
     const nextInput = scopeInput()
-    if (input.active() === false || !nextInput.placementId) return setHydrating(false)
-    const current = ++run
-    setHydrating(true)
+    if (input.active() === false || !nextInput.placementId) return
     untrack(() => {
-      void Promise.resolve(input.controller().hydrate(nextScope, nextInput)).finally(() => current === run && setHydrating(false))
+      void input.controller().hydrate(nextScope, nextInput)
     })
   })
-  holdPaneReveal(hydrating)
   return { scope, scopeInput, placementId, sessionId, sessionLocked }
 }
 

@@ -3,7 +3,6 @@ import type { HarnessScopes } from "./harness-scopes"
 import {
   connectionAllowsNoModel,
   draftConnectionAllowsNoModel,
-  harnessDisplayName,
   harnessModelKeyForSubmit,
   harnessModelNameForSubmit,
   harnessModels,
@@ -16,7 +15,6 @@ type Read = (scope: string) => HarnessStoreState
 
 export function harnessSelectionReads(read: Read) {
   return {
-    displayName: (scope: string) => harnessDisplayName(read(scope)),
     harness: (scope: string) => read(scope).harness,
     harnessMode: (scope: string) => read(scope).harnessMode,
     isHarnessMode: (scope: string) => !!read(scope).harness,
