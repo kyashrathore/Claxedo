@@ -69,6 +69,7 @@ function SearchRow(): JSX.Element {
 export function FilesNavigator(props: FilesNavigatorProps): JSX.Element {
   const t = useTranslator(filesDictionary)
   const api = useFilesApi()
+  const files = useFiles()
   const search = createSearchView(
     () => props.placementId,
     () => props.active,
@@ -81,6 +82,10 @@ export function FilesNavigator(props: FilesNavigatorProps): JSX.Element {
   )
   const showTree = () => !search.pending() && !search.empty()
   const [scroller, setScroller] = createSignal<HTMLDivElement>()
+  const bindScroller = (element: HTMLDivElement) => {
+    element.scrollTop = files.scrollTop()
+    setScroller(element)
+  }
   const dataReady = () => source.state("").loaded && source.children("").length > 0
   expandToActivePath({ path: () => props.activePath, active: () => props.active, expand: source.expand })
   return (
@@ -92,7 +97,11 @@ export function FilesNavigator(props: FilesNavigatorProps): JSX.Element {
       class="flex size-full min-h-0 flex-col"
     >
       <SearchRow />
-      <ScrollView class="min-h-0 flex-1" viewportRef={setScroller}>
+      <ScrollView
+        class="min-h-0 flex-1"
+        viewportRef={bindScroller}
+        onScroll={(event) => files.setScrollTop(event.currentTarget.scrollTop)}
+      >
         <Show when={search.pending()}>
           <div class="flex h-24 items-center justify-center">
             <DelayedLoading>

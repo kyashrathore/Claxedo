@@ -1,9 +1,10 @@
 import { createEffect, createSignal, onCleanup, Show, type JSX, type ParentProps } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { useServer } from "@/server"
+import { createExposed } from "../exposed"
 import { panelDictionary } from "../i18n"
 import { usePanel } from "../store"
-import { PANEL_CLOSE_GRACE_MS, PANEL_MOTION } from "../width"
+import { PANEL_MOTION } from "../width"
 import { PanelBody } from "./panel-body"
 import { PanelHeader } from "./panel-header"
 import { PanelResizeHandle } from "./resize-handle"
@@ -18,19 +19,9 @@ function WorkspacePanel(): JSX.Element {
     return placementId ? (server.placements.byId(placementId)?.path ?? "") : ""
   }
   const [dragging, setDragging] = createSignal(false)
-  const [exposed, setExposed] = createSignal(panel.open())
+  const exposed = createExposed(panel.open)
   let aside: HTMLElement | undefined
   const settled = createShellSettle(() => aside, panel.open)
-  let hideTimer: ReturnType<typeof setTimeout> | undefined
-  createEffect(() => {
-    clearTimeout(hideTimer)
-    if (panel.open()) {
-      setExposed(true)
-      return
-    }
-    hideTimer = setTimeout(() => setExposed(false), PANEL_CLOSE_GRACE_MS)
-  })
-  onCleanup(() => clearTimeout(hideTimer))
   createEffect(() => {
     const parent = aside?.parentElement
     if (!exposed() || !parent) return

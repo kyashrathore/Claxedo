@@ -1,20 +1,12 @@
-import {
-  createComponent,
-  createContext,
-  untrack,
-  useContext,
-  type Accessor,
-  type JSX,
-  type ParentProps,
-} from "solid-js"
-import { createStore } from "solid-js/store"
+import { createComponent, createContext, useContext, type Accessor, type JSX, type ParentProps } from "solid-js"
 import type { PlacementId } from "@/server"
-import { useShellRoute } from "@/shell"
+import { createPlacementState } from "@/shell"
 
 type PlacementFiles = {
-  expanded: Record<string, boolean>
-  search: string
-  markdownSource: Record<string, boolean>
+  readonly expanded: Readonly<Record<string, boolean>>
+  readonly search: string
+  readonly markdownSource: Readonly<Record<string, boolean>>
+  readonly scrollTop: number
 }
 
 export type Files = {
@@ -24,46 +16,33 @@ export type Files = {
   readonly setExpanded: (dir: string, expanded: boolean) => void
   readonly search: () => string
   readonly setSearch: (query: string) => void
+  readonly scrollTop: () => number
+  readonly setScrollTop: (top: number) => void
   readonly markdownSource: (path: string) => boolean
   readonly toggleMarkdownSource: (path: string) => void
 }
 
 const FilesContext = createContext<Files>()
 
-const emptyFiles: PlacementFiles = { expanded: {}, search: "", markdownSource: {} }
+const emptyFiles: PlacementFiles = { expanded: {}, search: "", markdownSource: {}, scrollTop: 0 }
 
 export function FilesProvider(props: ParentProps): JSX.Element {
-  const placementId = useShellRoute().placementId
-  const [state, setState] = createStore<Record<string, PlacementFiles>>({})
-  const current = () => {
-    const id = placementId()
-    return id === undefined ? emptyFiles : (state[id] ?? emptyFiles)
-  }
-  const target = () =>
-    untrack(() => {
-      const id = placementId()
-      if (id !== undefined && state[id] === undefined) setState(id, { expanded: {}, search: "", markdownSource: {} })
-      return id
-    })
+  const { placementId, current, write } = createPlacementState(emptyFiles)
   const files: Files = {
     placementId,
     expanded: (dir) => current().expanded[dir] === true,
     expandedDirs: () => Object.keys(current().expanded).filter((dir) => current().expanded[dir] === true),
-    setExpanded: (dir, expanded) => {
-      const id = target()
-      if (id === undefined || untrack(() => state[id]?.expanded[dir] === true) === expanded) return
-      setState(id, "expanded", dir, expanded)
-    },
+    setExpanded: (dir, expanded) =>
+      write((previous) =>
+        (previous.expanded[dir] === true) === expanded ? previous : { ...previous, expanded: { ...previous.expanded, [dir]: expanded } },
+      ),
     search: () => current().search,
-    setSearch: (search) => {
-      const id = target()
-      if (id !== undefined) setState(id, "search", search)
-    },
+    setSearch: (search) => write((previous) => ({ ...previous, search })),
+    scrollTop: () => current().scrollTop,
+    setScrollTop: (scrollTop) => write((previous) => ({ ...previous, scrollTop })),
     markdownSource: (path) => current().markdownSource[path] === true,
-    toggleMarkdownSource: (path) => {
-      const id = target()
-      if (id !== undefined) setState(id, "markdownSource", path, (source) => source !== true)
-    },
+    toggleMarkdownSource: (path) =>
+      write((previous) => ({ ...previous, markdownSource: { ...previous.markdownSource, [path]: previous.markdownSource[path] !== true } })),
   }
   return createComponent(FilesContext.Provider, {
     value: files,

@@ -1,4 +1,4 @@
-import { createMemo, createSignal, Show, type JSX } from "solid-js"
+import { createMemo, createSignal, onMount, Show, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useTranslator } from "@/i18n"
 import {
@@ -14,7 +14,7 @@ import { useErrorText } from "../errors"
 import { createGitActions, type GitAction } from "../git-actions"
 import { reviewDictionary } from "../i18n"
 import { commitScope, shortRef } from "../intent"
-import { defaultScope } from "../model"
+import { defaultScope, type SourceControlSection, type SourceControlSections } from "../model"
 import { useReview } from "../store"
 import { ChangeGroup, type ChangeEntry } from "./change-group"
 import { CommitGraph } from "./commit-graph"
@@ -25,8 +25,6 @@ import { CommitBox, type CommitVariant } from "./source-control-commit-box"
 import "./source-control.css"
 
 const GRAPH_LIMIT = 50
-
-type Section = "compare" | "staged" | "changes" | "graph"
 
 type CompareScope = Extract<DiffScope, { readonly kind: "branch" | "branchWorktree" | "range" }>
 
@@ -60,21 +58,15 @@ function LoadingRows(): JSX.Element {
   )
 }
 
-function createSections() {
-  const [collapsed, setCollapsed] = createSignal<Readonly<Record<Section, boolean>>>({
-    compare: false,
-    staged: false,
-    changes: false,
-    graph: true,
-  })
-  const toggle = (section: Section) => setCollapsed((current) => ({ ...current, [section]: !current[section] }))
-  return { collapsed, toggle }
+type Sections = {
+  readonly collapsed: () => SourceControlSections
+  readonly toggle: (section: SourceControlSection) => void
 }
 
 function WorktreeGroups(props: {
   readonly status: GitStatus
   readonly scope: DiffScope
-  readonly sections: ReturnType<typeof createSections>
+  readonly sections: Sections
   readonly activePath?: string
   readonly pending?: GitAction
   readonly onStage: (paths: string[]) => void
@@ -128,7 +120,11 @@ export function SourceControlView(props: SourceControlViewProps): JSX.Element {
   const review = useReview()
   const errorText = useErrorText()
   const git = createGitActions(() => props.placementId)
-  const sections = createSections()
+  const sections: Sections = { collapsed: review.sections, toggle: review.toggleSection }
+  let groups: HTMLDivElement | undefined
+  onMount(() => {
+    if (groups) groups.scrollTop = review.groupsScrollTop()
+  })
   const target = createMemo(() => compareScopeOf(review.scope()))
   const statusQuery = useQuery(() => ({ ...api.status(props.placementId), enabled: props.active }))
   const logQuery = useQuery(() => ({ ...api.log(props.placementId, GRAPH_LIMIT), enabled: props.active }))
@@ -191,8 +187,10 @@ export function SourceControlView(props: SourceControlViewProps): JSX.Element {
       />
       <div class="flex min-h-0 flex-1 flex-col">
         <div
+          ref={groups}
           data-testid="source-control-groups"
           class="min-h-0 overflow-auto"
+          onScroll={(event) => review.setGroupsScrollTop(event.currentTarget.scrollTop)}
           classList={{ "flex-1": sections.collapsed().graph, "max-h-[65%] shrink": !sections.collapsed().graph }}
         >
           <Show when={!statusQuery.isPending} fallback={<LoadingRows />}>

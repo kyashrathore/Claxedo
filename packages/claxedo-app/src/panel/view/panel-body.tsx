@@ -9,6 +9,7 @@ import { useServer, type PlacementId } from "@/server"
 import { usePreferences } from "@/settings"
 import { useShellRegistries, type PanelView } from "@/shell"
 import { Markdown } from "@/transcript"
+import { createExposed } from "../exposed"
 import { filePathFromTab } from "../focus"
 import { panelDictionary } from "../i18n"
 import { usePanel, type Panel } from "../store"
@@ -22,32 +23,28 @@ function activeFilePath(panel: Panel): string | undefined {
 
 function NavigatorViews(props: { readonly placementId: PlacementId }): JSX.Element {
   const panel = usePanel()
-  const view = () => panel.navigator()
-  const filesVisited = createMemo<boolean>((was) => was || view() === "files", false)
-  const changesVisited = createMemo<boolean>((was) => was || view() === "changes", false)
+  const view = createMemo<ReturnType<Panel["navigator"]>>((last) => panel.navigator() ?? last, null)
   return (
-    <>
-      <Show when={filesVisited()}>
-        <div class="absolute inset-0" classList={{ hidden: view() !== "files" }}>
+    <div class="absolute inset-0">
+      <Switch>
+        <Match when={view() === "files"}>
           <FilesNavigator
             placementId={props.placementId}
-            active={panel.open() && view() === "files"}
+            active={panel.open() && panel.navigator() === "files"}
             activePath={activeFilePath(panel)}
             onOpenFile={(path) => panel.show({ kind: "file", path })}
           />
-        </div>
-      </Show>
-      <Show when={changesVisited()}>
-        <div class="absolute inset-0" classList={{ hidden: view() !== "changes" }}>
+        </Match>
+        <Match when={view() === "changes"}>
           <SourceControlView
             placementId={props.placementId}
-            active={panel.open() && view() === "changes"}
+            active={panel.open() && panel.navigator() === "changes"}
             activePath={panel.reviewFocus()?.path}
             onFileClick={(path) => panel.show({ kind: "review", path })}
           />
-        </div>
-      </Show>
-    </>
+        </Match>
+      </Switch>
+    </div>
   )
 }
 
@@ -57,6 +54,7 @@ function NavigatorColumn(props: { readonly placementId: PlacementId }): JSX.Elem
   const left = () => preferences.appearance.navigatorSide === "left"
   const selected = () => panel.navigator() !== null && !panel.phone()
   const visited = createMemo<boolean>((was) => was || (panel.open() && selected()), false)
+  const shown = createExposed(() => panel.open() && selected())
   return (
     <Show when={visited()}>
       <div
@@ -80,7 +78,9 @@ function NavigatorColumn(props: { readonly placementId: PlacementId }): JSX.Elem
         }}
       >
         <div class="relative h-full w-[min(280px,45cqw)] min-w-[220px]">
-          <NavigatorViews placementId={props.placementId} />
+          <Show when={shown()}>
+            <NavigatorViews placementId={props.placementId} />
+          </Show>
         </div>
       </div>
     </Show>

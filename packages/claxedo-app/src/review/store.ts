@@ -1,8 +1,7 @@
 import { createComponent, createContext, useContext, type Accessor, type JSX, type ParentProps } from "solid-js"
-import { createStore } from "solid-js/store"
-import { useShellRoute } from "@/shell"
+import { createPlacementState } from "@/shell"
 import type { DiffScope, PlacementId } from "@/server"
-import { defaultScope, type DiffStyle } from "./model"
+import { defaultScope, defaultSections, type DiffStyle, type SourceControlSection, type SourceControlSections } from "./model"
 import type { ReviewScrollPosition } from "./scroll-restoration"
 
 type PlacementReview = {
@@ -12,6 +11,8 @@ type PlacementReview = {
   readonly message: string
   readonly style: DiffStyle
   readonly scroll: ReviewScrollPosition
+  readonly sections: SourceControlSections
+  readonly groupsScrollTop: number
 }
 
 export type Review = {
@@ -26,6 +27,10 @@ export type Review = {
   readonly setStyle: (style: DiffStyle) => void
   readonly scroll: () => ReviewScrollPosition
   readonly setScroll: (position: ReviewScrollPosition) => void
+  readonly sections: () => SourceControlSections
+  readonly toggleSection: (section: SourceControlSection) => void
+  readonly groupsScrollTop: () => number
+  readonly setGroupsScrollTop: (top: number) => void
   readonly forced: (file: string) => boolean
   readonly force: (file: string) => void
   readonly message: () => string
@@ -34,23 +39,23 @@ export type Review = {
 
 const ReviewContext = createContext<Review>()
 
-const emptyReview: PlacementReview = { scope: defaultScope, open: [], forced: [], message: "", style: "unified", scroll: { top: 0 } }
+const emptyReview: PlacementReview = {
+  scope: defaultScope,
+  open: [],
+  forced: [],
+  message: "",
+  style: "unified",
+  scroll: { top: 0 },
+  sections: defaultSections,
+  groupsScrollTop: 0,
+}
 
 function toggled(list: readonly string[], item: string): readonly string[] {
   return list.includes(item) ? list.filter((entry) => entry !== item) : [...list, item]
 }
 
 export function ReviewProvider(props: ParentProps): JSX.Element {
-  const placementId = useShellRoute().placementId
-  const [state, setState] = createStore<Record<string, PlacementReview>>({})
-  const current = () => {
-    const id = placementId()
-    return id === undefined ? emptyReview : (state[id] ?? emptyReview)
-  }
-  const write = (update: (previous: PlacementReview) => PlacementReview) => {
-    const id = placementId()
-    if (id !== undefined) setState(id, update(state[id] ?? emptyReview))
-  }
+  const { placementId, current, write } = createPlacementState(emptyReview)
   const review: Review = {
     placementId,
     scope: () => current().scope,
@@ -64,6 +69,11 @@ export function ReviewProvider(props: ParentProps): JSX.Element {
     setStyle: (style) => write((previous) => ({ ...previous, style })),
     scroll: () => current().scroll,
     setScroll: (scroll) => write((previous) => ({ ...previous, scroll })),
+    sections: () => current().sections,
+    toggleSection: (section) =>
+      write((previous) => ({ ...previous, sections: { ...previous.sections, [section]: !previous.sections[section] } })),
+    groupsScrollTop: () => current().groupsScrollTop,
+    setGroupsScrollTop: (groupsScrollTop) => write((previous) => ({ ...previous, groupsScrollTop })),
     forced: (file) => current().forced.includes(file),
     force: (file) => write((previous) => ({ ...previous, forced: [...previous.forced, file] })),
     message: () => current().message,

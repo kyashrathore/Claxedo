@@ -5,6 +5,12 @@ export const defaultScope: DiffScope = { kind: "uncommitted" }
 
 export type DiffStyle = "unified" | "split"
 
+export type SourceControlSection = "compare" | "staged" | "changes" | "graph"
+
+export type SourceControlSections = Readonly<Record<SourceControlSection, boolean>>
+
+export const defaultSections: SourceControlSections = { compare: false, staged: false, changes: false, graph: true }
+
 const GIT_ERROR_KEYS: Readonly<Record<string, ReviewKey>> = {
   git_empty_message: "review.error.git_empty_message",
   git_nothing_staged: "review.error.git_nothing_staged",
