@@ -30,7 +30,7 @@ export function handoverTransition(state: Handover, event: HandoverEvent): Hando
 
 type Tracked = { readonly assigned: ReadonlyMap<string, string | null>; readonly serial: number; readonly state: Handover }
 
-function track(previous: Tracked, layout: WorkbenchState, revealed: number): Tracked {
+function trackAssignments(previous: Tracked, layout: WorkbenchState, revealed: number): Tracked {
   const assigned = new Map(layout.panes.map((pane) => [pane.id, pane.contentId]))
   let { serial, state } = previous
   for (const [paneId, to] of assigned) {
@@ -54,7 +54,7 @@ function effective(state: Handover, layout: WorkbenchState): Handing | undefined
 
 export function createHandover(input: { readonly layout: Accessor<WorkbenchState>; readonly revealed: (contentId: string) => boolean }): Accessor<Handing | undefined> {
   const [revealed, setRevealed] = createSignal(0)
-  const tracked = createMemo<Tracked>((previous) => track(previous, input.layout(), revealed()), { assigned: new Map(), serial: 0, state: SETTLED })
+  const tracked = createMemo<Tracked>((previous) => trackAssignments(previous, input.layout(), revealed()), { assigned: new Map(), serial: 0, state: SETTLED })
   const handing = createMemo(() => effective(tracked().state, input.layout()))
   createEffect(() => {
     const current = handing()
