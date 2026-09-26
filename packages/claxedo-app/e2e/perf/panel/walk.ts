@@ -25,7 +25,7 @@ async function openFileTabs(page: Page, files: readonly string[]) {
   }
 }
 
-export async function walk(page: Page, runner: Runner, workspace: Workspace, origin: string) {
+export async function walk(page: Page, runner: Runner, workspace: Workspace, origin: string, checkpoint: (label: string) => Promise<void>) {
   const name = workspace.name
   const [sessionA, sessionB] = workspace.sessions
   if (!sessionA || !sessionB) throw new Error("two sessions needed")
@@ -93,6 +93,7 @@ export async function walk(page: Page, runner: Runner, workspace: Workspace, ori
   })
   await section("review", async () => {
     await ensureNavigator(page, "changes")
+    await checkpoint("changes navigator shown, files hidden")
     await reviewTab(page).click()
     await page.waitForFunction(() => Number(document.querySelector<HTMLElement>("[data-review-total-files]")?.dataset.reviewRenderedFiles ?? 0) > 0, undefined, { polling: "raf" })
     await settle(page)
@@ -147,4 +148,6 @@ export async function walk(page: Page, runner: Runner, workspace: Workspace, ori
       await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 400)))
     }
   })
+  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 500)))
+  await checkpoint("walk end, panel closed")
 }

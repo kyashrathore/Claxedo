@@ -32,7 +32,7 @@ export type Stack = {
   close(): Promise<void>
 }
 
-export type StackInput = { label: string; red?: boolean }
+export type StackInput = { label: string; red?: boolean; daemonEnv?: Readonly<Record<string, string>> }
 
 export function safeLabel(label: string) {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "spec"
@@ -71,7 +71,7 @@ export async function startStack(input: StackInput): Promise<Stack> {
   }
   let daemon: Daemon
   try {
-    daemon = await startDaemon({ dataDir, distDir, scripted, guardUrl: egress.url, port: daemonPort, red: input.red ?? redRun() })
+    daemon = await startDaemon({ dataDir, distDir, scripted, guardUrl: egress.url, port: daemonPort, red: input.red ?? redRun(), env: input.daemonEnv })
   } catch (error) {
     await egress.close()
     await scripted.close()

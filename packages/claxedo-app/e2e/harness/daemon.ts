@@ -31,6 +31,7 @@ export type Daemon = {
   port: number
   dataDir: string
   acpScriptDir: string
+  pid: () => number | undefined
   log: () => string
   makeWorkspace: (name: string, projectName?: string) => Promise<Workspace>
   restart: (options?: { signed?: SignedDaemon }) => Promise<void>
@@ -44,6 +45,7 @@ export type DaemonInput = {
   guardUrl: string
   port: number
   red: boolean
+  env?: Readonly<Record<string, string>>
 }
 
 type DaemonDirs = { acpScriptDir: string; workspaces: string }
@@ -65,6 +67,7 @@ async function daemonEnv(input: DaemonInput): Promise<NodeJS.ProcessEnv> {
     CLAXEDO_SERVER_PORT: String(input.port),
     CLAXEDO_APP_DIST_DIR: input.distDir,
     TSX_TSCONFIG_PATH: path.join(SERVER_DIR, "tsconfig.json"),
+    ...input.env,
   }
 }
 
@@ -117,6 +120,7 @@ export async function startDaemon(input: DaemonInput): Promise<Daemon> {
     port: input.port,
     dataDir: input.dataDir,
     acpScriptDir: dirs.acpScriptDir,
+    pid: () => owned.child.pid,
     log: () => owned.log(),
     makeWorkspace: (name, projectName) => makeWorkspace(directTransport, url, dirs.workspaces, name, projectName),
     restart: async (options = {}) => {

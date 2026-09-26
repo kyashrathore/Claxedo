@@ -1,4 +1,5 @@
 import { chromium, type CDPSession, type Page } from "@playwright/test"
+import { execFileSync } from "node:child_process"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -32,19 +33,30 @@ async function startVariants(stack: Stack): Promise<{ readonly list: readonly Va
   return { list, rounds: Number(process.env.PANEL_ROUNDS ?? "2") }
 }
 
-async function memory(page: Page, cdp: CDPSession, label: string) {
+function daemonCpu(pid: number | undefined) {
+  if (pid === undefined) return "?"
+  return execFileSync("ps", ["-p", String(pid), "-o", "cputime="], { encoding: "utf8" }).trim()
+}
+
+function daemonEnv() {
+  const spec = process.env.PANEL_DAEMON_ENV
+  if (!spec) return undefined
+  return Object.fromEntries(spec.split(",").map((entry) => entry.split("=") as [string, string]))
+}
+
+async function memory(cdp: CDPSession, stack: Stack, label: string) {
   await cdp.send("HeapProfiler.collectGarbage")
   const { metrics } = (await cdp.send("Performance.getMetrics")) as { metrics: { name: string; value: number }[] }
   const pick = (name: string) => metrics.find((metric) => metric.name === name)?.value ?? 0
-  console.log(`[memory] ${label}: nodes ${pick("Nodes")} listeners ${pick("JSEventListeners")} heap ${(pick("JSHeapUsedSize") / 1048576).toFixed(1)} MiB / ${(pick("JSHeapTotalSize") / 1048576).toFixed(1)} MiB`)
-  void page
+  console.log(`[memory] ${label}: nodes ${pick("Nodes")} listeners ${pick("JSEventListeners")} heap ${(pick("JSHeapUsedSize") / 1048576).toFixed(1)} MiB / ${(pick("JSHeapTotalSize") / 1048576).toFixed(1)} MiB, daemon cpu ${daemonCpu(stack.daemon.pid())}`)
 }
 
 async function main() {
   await fs.mkdir(OUT, { recursive: true })
   console.log(`[panel] out ${OUT}, load ${load()}, runs ${process.env.PANEL_RUNS ?? "5"}`)
   await prepareHarness()
-  const stack = await startStack({ label: "panel-switch" })
+  const stack = await startStack({ label: "panel-switch", daemonEnv: daemonEnv() })
+  console.log(`[panel] daemon env ${JSON.stringify(daemonEnv() ?? {})}`)
   try {
     const api = new ClaxedoApi(stack.url)
     const wanted = (process.env.PANEL_WORKSPACES ?? "bench,large").split(",")
@@ -70,8 +82,7 @@ async function main() {
           for (const variant of order) {
             runner.useVariant(variant.name, variant.distDir)
             for (const workspace of workspaces) {
-              await walk(page, runner, workspace, variant.url)
-              await memory(page, cdp, `${variant.name} after ${workspace.name} walk (round ${round})`)
+              await walk(page, runner, workspace, variant.url, (label) => memory(cdp, stack, `${variant.name} ${workspace.name} round ${round}: ${label}`))
               await runner.flush()
             }
           }
@@ -79,7 +90,7 @@ async function main() {
       } finally {
         for (const variant of variants.list) await variant.close()
       }
-      await memory(page, cdp, "end")
+      await memory(cdp, stack, "end")
     } finally {
       await browser.close()
     }
