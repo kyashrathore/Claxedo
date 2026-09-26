@@ -6,6 +6,7 @@ import { Hono } from "hono"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { mountControlPlaneRouteContributions } from "@claxedo/server-core/platform/http/route-contribution"
 import type { CatalogSourceProvider } from "@claxedo/server-core/agent-plugins/ports"
+import { SUPPORTED_AGENT_PLUGIN_HARNESSES } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import { fileSystemCollectionSource } from "@claxedo/server-core/agent-plugins/artifacts/node-tree"
 import { LocalAgentPluginArtifactStore } from "../artifacts/local-store"
 import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
@@ -316,7 +317,7 @@ describe("unsigned Agent Plugins public route contribution", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         pluginInstanceId: "claxedo:tasks",
-        harnessIds: ["opencode", "claude", "codex", "cursor"],
+        harnessIds: [...SUPPORTED_AGENT_PLUGIN_HARNESSES],
         choice: true,
         expectedRevision: subject.activations.revision(),
       }),

@@ -88,16 +88,6 @@ export class ClaxedoApi {
     return this.call<ProviderCatalog>("GET", "/api/claxedo/agent-config/providers", { query: { nativeHarness } })
   }
 
-  configureMcp(name: string, url: string) {
-    return this.call<{ ok: boolean; name: string }>("POST", `/api/claxedo/agent-config/mcp/${encodeURIComponent(name)}`, {
-      body: { type: "remote", url },
-    })
-  }
-
-  mcpConfig() {
-    return this.call<Record<string, unknown>>("GET", "/api/claxedo/agent-config/mcp")
-  }
-
   resolveWorkspace(directory: string) {
     return this.call<{ workspaceId: string }>("POST", "/api/workspace/resolve", { directory })
   }

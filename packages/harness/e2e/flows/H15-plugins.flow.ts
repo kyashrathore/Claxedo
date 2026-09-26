@@ -10,7 +10,7 @@ export async function run() {
   const stack = await startStack({ label: "h15-claude-plugin" })
   const mcp = await startScriptedMcpServer()
   try {
-    const applied = await applyScriptedPluginProfile(stack.url, mcp.url, ["claude"])
+    const applied = await applyScriptedPluginProfile(stack.url, { harnessIds: ["claude"], servers: { proof: { type: "streamable-http", url: mcp.url } } })
     assert.equal(applied.active, true)
     const api = new ClaxedoApi(stack.url)
     const workspace = await stack.daemon.makeWorkspace("h15-claude-plugin")
@@ -26,7 +26,10 @@ export async function run() {
     stack.scripted.scriptTool({ name: tool.name, input: { marker: "H15CLAUDE" }, whenPromptIncludes: "H15CLAUDE" })
     await api.prompt(workspace.directory, session.id, "Use the installed plugin proof tool with marker H15CLAUDE", { model })
     assert.ok(mcp.calls.some((call) => call.arguments.marker === "H15CLAUDE"), "Claude must call the plugin's projected MCP tool")
-    assert.match(assistantText(await api.messages(workspace.directory, session.id)), /MCP_PROOF:H15CLAUDE/)
+    // The scripted model answers a tool result with a plain acknowledgement, so the
+    // proof is the tool result reaching it, not the assistant's text.
+    assert.ok(stack.scripted.requests.some((request) => request.prompt.includes("MCP_PROOF:H15CLAUDE")), "the plugin tool's result never reached the model")
+    assert.ok(assistantText(await api.messages(workspace.directory, session.id)).length > 0)
     assert.ok(stream.frames.some((frame) => frameType(frame) === "message.part.updated" && frameSessionId(frame) === session.id))
     assert.equal((await api.session(workspace.directory, session.id)).id, session.id)
     assert.deepEqual(unexpectedEgress(stack.egress.attempts), [])

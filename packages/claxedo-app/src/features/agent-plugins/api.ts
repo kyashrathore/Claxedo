@@ -1,7 +1,7 @@
 import { isRecord, readField, readString } from "@/lib/record"
 import { isString } from "@claxedo/helpers/guards"
 
-export const AGENT_PLUGIN_HARNESSES = ["opencode", "claude", "codex", "cursor"] as const
+export const AGENT_PLUGIN_HARNESSES = ["opencode", "claude", "codex", "cursor", "acp"] as const
 export type AgentPluginHarness = (typeof AGENT_PLUGIN_HARNESSES)[number]
 
 export type HarnessActivation = {

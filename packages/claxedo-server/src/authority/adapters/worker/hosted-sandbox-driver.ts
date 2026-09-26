@@ -4,6 +4,10 @@ import { createDaytonaSandboxDriver } from "@claxedo/sandbox-manager/drivers/day
 import { createExeSandboxDriver } from "@claxedo/sandbox-manager/drivers/exe"
 import { createFetchBridgeSandboxDriver } from "@claxedo/sandbox-manager/drivers/fetch-bridge"
 
+import {
+  supervisorBackplaneTokenAudience,
+  supervisorBackplaneTokenIssuer,
+} from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { HostedWorkerCompositionError } from "../../composition-error"
 import { hostedControlPlaneOrigin } from "./control-plane-origin"
 import {
@@ -45,6 +49,18 @@ export function sandboxRuntimeControlEnv(env: HostedWorkerEnv) {
 }
 
 /**
+ * The claims a sandboxed runtime demands of every config push, matching what
+ * `mintSupervisorBackplaneToken` signs. The runtime composes no management
+ * auth at all without both, and then refuses every snapshot the plane sends.
+ */
+export function sandboxRuntimeManagementEnv(): Record<string, string> {
+  return {
+    WORKSPACE_RUNTIME_MANAGEMENT_ISSUER: supervisorBackplaneTokenIssuer,
+    WORKSPACE_RUNTIME_MANAGEMENT_AUDIENCE: supervisorBackplaneTokenAudience,
+  }
+}
+
+/**
  * Full-hosted sandbox driver selection for a Better Auth + D1 Worker.
  *
  * Only the full-hosted composition imports this module, so a
@@ -69,6 +85,7 @@ export function hostedSandboxDriver(env: HostedWorkerEnv): SandboxDriver | undef
       ...(trimToUndefined(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) ? { workspaceDir: trimToUndefined(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) } : {}),
       ...(trimToUndefined(env.CLAXEDO_RUNTIME_RUNNER) ? { nativeHarness: trimToUndefined(env.CLAXEDO_RUNTIME_RUNNER) } : {}),
       controlEnv: sandboxRuntimeControlEnv(env),
+      env: sandboxRuntimeManagementEnv,
     })
   }
 
@@ -88,6 +105,7 @@ export function hostedSandboxDriver(env: HostedWorkerEnv): SandboxDriver | undef
       ...(trimToUndefined(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) ? { workspaceDir: trimToUndefined(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) } : {}),
       ...(trimToUndefined(env.CLAXEDO_RUNTIME_RUNNER) ? { nativeHarness: trimToUndefined(env.CLAXEDO_RUNTIME_RUNNER) } : {}),
       controlEnv: sandboxRuntimeControlEnv(env),
+      env: sandboxRuntimeManagementEnv,
     })
   }
 
@@ -96,6 +114,7 @@ export function hostedSandboxDriver(env: HostedWorkerEnv): SandboxDriver | undef
     if (!apiToken) return undefined
     const control = sandboxRuntimeControlEnv(env)
     const runtimeEnv = {
+      ...sandboxRuntimeManagementEnv(),
       ...(control.relayJwksUrl ? { WORKSPACE_RUNTIME_RELAY_JWKS_URL: control.relayJwksUrl } : {}),
       ...(control.relayVerifyPem ? { WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM: control.relayVerifyPem } : {}),
       ...(control.managementJwksUrl ? { WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL: control.managementJwksUrl } : {}),

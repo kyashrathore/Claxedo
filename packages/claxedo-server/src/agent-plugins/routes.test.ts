@@ -23,6 +23,7 @@ import type {
 import type { CatalogSourceProvider } from "@claxedo/server-core/agent-plugins/ports"
 import { fileSystemCollectionSource } from "@claxedo/server-core/agent-plugins/artifacts/node-tree"
 import {
+  SUPPORTED_AGENT_PLUGIN_HARNESSES,
   isAgentPluginHarnessId,
   type AgentPluginHarnessId,
 } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
@@ -383,6 +384,7 @@ describe("hosted Agent Plugins routes", () => {
         state: "oauth",
         integrationId: `${catalog.candidates[0].pluginInstanceId}:docs`,
       },
+      cloud: { state: "gateway" },
     }])
     expect(JSON.stringify(catalog)).not.toContain("token")
     expect(JSON.stringify(catalog)).not.toContain("connectionId")
@@ -624,7 +626,7 @@ describe("hosted Agent Plugins routes", () => {
       method: "POST",
       body: JSON.stringify({
         pluginInstanceId: "claxedo:tasks",
-        harnessIds: ["opencode", "claude", "codex", "cursor"],
+        harnessIds: [...SUPPORTED_AGENT_PLUGIN_HARNESSES],
         choice: true,
         expectedRevision: before.revision,
         target: { scope: "projects", projectIds: ["project-a"] },
@@ -729,7 +731,7 @@ describe("hosted Agent Plugins routes", () => {
       method: "POST",
       body: JSON.stringify({
         pluginInstanceId: "claxedo:tasks",
-        harnessIds: ["opencode", "claude", "codex", "cursor"],
+        harnessIds: [...SUPPORTED_AGENT_PLUGIN_HARNESSES],
         choice: true,
         expectedRevision: catalog.revision,
       }),

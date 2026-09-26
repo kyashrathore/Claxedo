@@ -5,7 +5,7 @@ import path from "node:path"
 import type { AgentPluginMcpServer } from "@claxedo/server-core/agent-plugins/catalog/types"
 import { pluginInstanceStorageKey } from "../plugin-data"
 import type { AgentPluginHarnessProjectionAdapter, GenerationPluginRoot } from "./types"
-import { projectedMcpServers } from "./mcp-projection"
+import { projectedMcpServers } from "@claxedo/server-core/agent-plugins/runtime/mcp-projection"
 
 const MARKETPLACE = "claxedo-agent-plugins"
 const CACHE_MARKER = ".claxedo-agent-plugins.json"

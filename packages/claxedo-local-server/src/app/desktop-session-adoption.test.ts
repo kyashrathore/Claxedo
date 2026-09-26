@@ -206,10 +206,9 @@ beforeEach(async () => {
     sessionAccessPolicy: localHostSessionAccessPolicy,
     loopbackSessionAuthority: "local",
   })
-  configureAgentConfig({ connectionProviders: [provider] })
+  configureAgentConfig({ connectionConfigs: [provider] })
   await saveUserConfig({
     version: 3,
-    mcp: {},
     connections: {
       [CONNECTION_ID]: {
         connectionId: CONNECTION_ID,

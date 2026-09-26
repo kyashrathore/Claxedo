@@ -95,7 +95,6 @@ describe.skipIf(!existsSync(realBinary))("real claude ACP boot", () => {
     await supervisor.shutdownWorkspaceSupervisor()
     await agent.saveUserConfig({
       version: 3,
-      mcp: {},
       connections: {
         "real-claude-acp": {
           connectionId: "real-claude-acp",

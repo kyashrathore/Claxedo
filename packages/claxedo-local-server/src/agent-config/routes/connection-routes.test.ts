@@ -135,11 +135,10 @@ describe("generic agent connection config API", () => {
     })
   })
 
-  test("deletes a connection, clears its explicit default, and preserves unrelated v3 fields", async () => {
+  test("deletes a connection, clears its explicit default, and preserves the sandbox driver", async () => {
     await fs.mkdir(root, { recursive: true })
     await saveUserConfig({
       version: 3,
-      mcp: { docs: { type: "stdio", command: "docs-mcp" } },
       connections: { "conn-primary": descriptor("conn-primary") },
       defaultConnectionId: "conn-primary",
       sandbox_driver: { default_driver: "daytona" },
@@ -151,7 +150,6 @@ describe("generic agent connection config API", () => {
     const config = await loadUserConfig()
     expect(config.connections).toEqual({})
     expect(config.defaultConnectionId).toBeUndefined()
-    expect(config.mcp.docs).toEqual({ type: "stdio", command: "docs-mcp" })
     expect(config.sandbox_driver).toEqual({ default_driver: "daytona" })
   })
 

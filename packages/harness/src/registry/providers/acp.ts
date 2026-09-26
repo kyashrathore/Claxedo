@@ -1,6 +1,6 @@
 import { decodeModelSelection, type ModelSelection } from "@claxedo/agent-runtime-contract"
 import { configObject, onlyFields, resolveBindings, secretBindings, configStringArray, configStringRecord, configText, type SecretBindings } from "./bindings"
-import { assertCurrentConnection, type ConstructTransport, type CustomHarnessProvider } from "./types"
+import { assertCurrentConnection, type ConnectionConfigHooks, type ConstructTransport, type CustomHarnessProvider } from "./types"
 import { TransportError } from "../../contract/errors"
 
 export type AcpConnection =
@@ -46,7 +46,7 @@ function acpConfigBoolean(input: unknown, field: string): boolean | undefined {
   return input
 }
 
-export function createAcpProvider(construct: ConstructTransport<AcpProviderConfig>): CustomHarnessProvider<AcpProviderConfig> {
+export function acpConnectionConfig(): Required<ConnectionConfigHooks<AcpProviderConfig>> {
   return {
     providerKey: "acp",
     validateConfig(input) {
@@ -71,6 +71,12 @@ export function createAcpProvider(construct: ConstructTransport<AcpProviderConfi
         capabilities: { abort: true, reconnect: false, replay: true, permissions: true, questions: true, todos: false, commands: false, fork: false, revert: false, unrevert: false, configOptions: true, subagents: false },
         ...(config.modelSelection ? { modelSelection: config.modelSelection } : {}) }
     },
+  }
+}
+
+export function createAcpProvider(construct: ConstructTransport<AcpProviderConfig>): CustomHarnessProvider<AcpProviderConfig> {
+  return {
+    ...acpConnectionConfig(),
     resolve({ descriptor, secrets }) {
       const config = descriptor.config
       const materialized = resolveBindings(config.secretBindings, secrets)

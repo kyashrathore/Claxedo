@@ -3,9 +3,9 @@ import { ClaxedoApi, assistantText } from "../harness/api"
 import { SCRIPTED_ACP_HARNESS } from "../harness/acp/connection"
 import { readAcpRequests } from "../harness/acp/requests"
 import { acpScriptToken } from "../harness/acp/script"
+import { applyScriptedPluginProfile } from "../harness/scripted-plugin-profile"
 import { startStack } from "../harness/stack"
 import { frameSessionId, frameType } from "../harness/stream"
-import { directTransport, sendJson } from "../harness/transport"
 
 async function waitForHold(scriptDir: string) {
   const deadline = Date.now() + 10_000
@@ -37,9 +37,14 @@ export async function run() {
     assert.equal((await api.session(workspaceB.directory, sessionB.id)).id, sessionB.id)
     await api.promptAsync(workspaceA.directory, sessionA.id, acpScriptToken("h21-hold"))
     await waitForHold(stack.acp.scriptDir)
+    // The install answers once every running runtime took the change, and
+    // workspace A's runtime takes it only after its held turn; the claim under
+    // test is what B does in the meantime.
+    const change = applyScriptedPluginProfile(stack.url, {
+      harnessIds: ["acp"],
+      servers: { h21_change: { type: "streamable-http", url: "https://mcp.example.test/h21" } },
+    })
     try {
-      await sendJson(directTransport, "POST", `${stack.url}/api/claxedo/agent-config/mcp/h21_change`,
-        { type: "remote", url: "https://mcp.example.test/h21" }, "H21 config change")
       await assert.doesNotReject(Promise.race([
         api.promptAsync(workspaceB.directory, sessionB.id, acpScriptToken("h21-reply")),
         Bun.sleep(8_000).then(() => { throw new Error("workspace B prompt admission waited for workspace A") }),
@@ -55,6 +60,7 @@ export async function run() {
     } finally {
       await stack.acp.release("h21-running")
       await streamA.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === sessionA.id, { label: "H21 A idle after release" })
+      assert.equal((await change).active, true)
     }
     assert.equal(stack.egress.attempts.length, 0)
   } finally {

@@ -1,8 +1,8 @@
 import type {
   ConnectionSecretLease,
   ConnectionSecretResolver,
-  HarnessConnectionDescriptor,
 } from "@claxedo/agent-sdk-runtime"
+import type { HarnessConnectionDescriptor } from "./connections"
 
 export type ConnectionSecretUnavailableReason =
   | "disabled"

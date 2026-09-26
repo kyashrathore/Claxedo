@@ -3,7 +3,7 @@ import path from "node:path"
 import type { AgentPluginMcpServer } from "@claxedo/server-core/agent-plugins/catalog/types"
 import type { AgentPluginHarnessProjectionAdapter, GenerationPluginRoot } from "./types"
 import { pluginInstanceStorageKey } from "../plugin-data"
-import { projectedMcpServers } from "./mcp-projection"
+import { projectedMcpServers } from "@claxedo/server-core/agent-plugins/runtime/mcp-projection"
 
 function expandClaudePlaceholders(value: string) {
   return value

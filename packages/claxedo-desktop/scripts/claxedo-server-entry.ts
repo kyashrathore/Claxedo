@@ -120,7 +120,7 @@ const server = startLocalServer({
   ...(transport ? { processObserver: transport.observer } : {}),
   routeContributions: [...agentPlugins.routeContributions, ...tasks.routeContributions],
   tasksGrants: tasks.grants,
-  harnessLaunch: agentPlugins.harnessLaunch,
+  pluginRuntime: agentPlugins.runtimeContribution,
 })
 const discovery: ClaxedoDaemonDiscovery = {
   service: CLAXEDO_DAEMON_SERVICE,

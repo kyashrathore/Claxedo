@@ -116,7 +116,7 @@ async function ensureRelayProtectedSandbox(
 }
 
 export async function broadcastRuntimeConfig() {
-  await Promise.allSettled(
+  await Promise.all(
     [...runtimes.values()]
       .filter((item) => item.status === "ready" && item.url)
       .map((item) => pushRuntimeConfig(item)),

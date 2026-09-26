@@ -8,7 +8,7 @@ import { Miniflare } from "miniflare"
 import { inspectPluginTree } from "@claxedo/server-core/agent-plugins/artifacts/acquire"
 import { agentPluginTree } from "@claxedo/server-core/agent-plugins/artifacts/tree"
 import { mcpOAuthIntegrationId } from "@claxedo/server-core/agent-plugins/mcp/integration"
-import type { AgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
+import { SUPPORTED_AGENT_PLUGIN_HARNESSES } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import { mountRouteContributions } from "@claxedo/workspace-runtime/route-contribution"
 import { agentPluginWorkspaceRuntimeContribution } from "@claxedo/local-server/agent-plugins/runtime/runtime-contribution"
 import { hostedAgentPluginArtifactStore, type AgentPluginR2Bucket } from "./artifacts/r2-artifact-adapter"
@@ -130,7 +130,7 @@ afterAll(async () => {
 })
 
 function harnesses(enabled: boolean): SignedAgentPluginRuntimeSnapshot["plugins"][number]["harnesses"] {
-  return Object.fromEntries((["opencode", "claude", "codex", "cursor"] as AgentPluginHarnessId[]).map((harnessId) => [harnessId, {
+  return Object.fromEntries(SUPPORTED_AGENT_PLUGIN_HARNESSES.map((harnessId) => [harnessId, {
     revision: enabled ? 1 : 0,
     pluginInstanceId: PLUGIN_INSTANCE_ID,
     harnessId,
@@ -332,12 +332,12 @@ describe("signed Composio Gmail on Miniflare", () => {
     const local = await connect("ws_local")
     const cloud = await connect("ws_cloud")
 
-    expect(local.preparation.secrets).toHaveLength(4)
-    expect(cloud.preparation.secrets).toHaveLength(4)
+    expect(local.preparation.secrets).toHaveLength(SUPPORTED_AGENT_PLUGIN_HARNESSES.length)
+    expect(cloud.preparation.secrets).toHaveLength(SUPPORTED_AGENT_PLUGIN_HARNESSES.length)
     expect(new Set([
       ...(local.preparation.secrets ?? []).map((secret) => secret.name),
       ...(cloud.preparation.secrets ?? []).map((secret) => secret.name),
-    ]).size).toBe(8)
+    ]).size).toBe(2 * SUPPORTED_AGENT_PLUGIN_HARNESSES.length)
     expect(JSON.stringify(local.preparation.secrets)).not.toContain("composio-gmail-access-token")
     expect(JSON.stringify(cloud.preparation.secrets)).not.toContain(COMPOSIO_MCP)
 

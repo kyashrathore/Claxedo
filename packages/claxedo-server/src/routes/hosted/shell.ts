@@ -786,16 +786,6 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
         return authErrorResponse(c, err)
       }
     })
-    // Connection configuration belongs to the operator's local host.
-    .get("/api/claxedo/agent-config/connections", async (c) => {
-      try {
-        const auth = await signedAuth(c, options)
-        if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
-        return c.json({ status: "unsupported", reason: "operator_local_configuration" })
-      } catch (err) {
-        return authErrorResponse(c, err)
-      }
-    })
     // Every session's harness store polls this unconditionally and swallows a
     // 404, so an absent route leaves readiness on its initial state forever.
     .get("/api/claxedo/agent-config/harness", (c) => harnessStatusResponse(c, options))

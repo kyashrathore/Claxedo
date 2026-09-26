@@ -19,7 +19,7 @@ const candidate = (overrides: Record<string, unknown> = {}) => ({
   manifest: { name: "docs", version: "1.0.0" },
   componentDiagnostics: [],
   mcpServers: [],
-  harnesses: { opencode: activation, claude: activation, codex: activation, cursor: activation },
+  harnesses: { opencode: activation, claude: activation, codex: activation, cursor: activation, acp: activation },
   ...overrides,
 })
 

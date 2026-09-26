@@ -25,6 +25,7 @@ export function hostedAgentPluginsModule(input: {
   mcpAuthentication?: AgentPluginMcpCatalogAuthenticationResolver
   mcpClientMetadata?: HostedMcpClientMetadata
   mcpGatewayRoutes?: Hono
+  imageCommands?: readonly string[]
   selfRuntime?: AgentPluginSelfRuntimeReader
   builtInConsentChanged?: (auth: SignedControlPlaneAuth, groupId: string) => Promise<void>
 }): AgentPluginsModule {

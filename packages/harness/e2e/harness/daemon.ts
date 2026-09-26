@@ -22,6 +22,7 @@ const CLOUD_SERVER_ENTRY = path.join(import.meta.dirname, "cloud-server-entry.ts
 const SERVER_MANIFEST = path.join(SERVER_DIR, "package.json")
 const TEXT_IMPORTS = pathToFileURL(path.join(REPO_ROOT, "packages/workspace-runtime/src/text-imports.mjs")).href
 const RETIREMENT_FAULT = pathToFileURL(path.join(import.meta.dirname, "retirement-fault.mjs")).href
+const PLUGIN_INSTALL_COPY_FAULT = pathToFileURL(path.join(import.meta.dirname, "plugin-install-copy-fault.mjs")).href
 
 export type SignedDaemon = {
   publicOrigin: string
@@ -131,7 +132,9 @@ export async function daemonRuntime(): Promise<DaemonRuntime> {
 
 function launchDaemon(runtime: DaemonRuntime, env: NodeJS.ProcessEnv, cwd: string, cloud = false, retirementFault = false): OwnedProcess {
   const child = spawn(runtime.node, ["--conditions=development", "--import", TEXT_IMPORTS,
-    ...(retirementFault ? ["--import", RETIREMENT_FAULT] : []), "--import", TSX_LOADER, cloud ? CLOUD_SERVER_ENTRY : SERVER_ENTRY], {
+    ...(retirementFault ? ["--import", RETIREMENT_FAULT] : []),
+    ...(process.env.CLAXEDO_E2E_PLUGIN_FAULT === "install-time-copy" ? ["--import", PLUGIN_INSTALL_COPY_FAULT] : []),
+    "--import", TSX_LOADER, cloud ? CLOUD_SERVER_ENTRY : SERVER_ENTRY], {
     cwd,
     env,
     stdio: ["ignore", "pipe", "pipe"],

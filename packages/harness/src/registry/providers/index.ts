@@ -1,3 +1,3 @@
-export { createAcpProvider } from "./acp"
-export { createPiRpcProvider } from "./pi-rpc"
-export type { CustomHarnessProvider, HarnessConnectionDescriptor } from "./types"
+export { acpConnectionConfig, createAcpProvider, type AcpConnection, type AcpProviderConfig } from "./acp"
+export { createPiRpcProvider, piRpcConnectionConfig, type PiRpcProviderConfig } from "./pi-rpc"
+export type { ConnectionConfigHooks, CustomHarnessProvider, HarnessConnectionDescriptor } from "./types"

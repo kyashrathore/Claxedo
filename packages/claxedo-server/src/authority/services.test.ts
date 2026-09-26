@@ -606,7 +606,7 @@ describe("control-plane services", () => {
     expect(text).toContain("configureWorkspaceSupervisor({")
     expect(text).toContain("relay_url: services.relay.relayUrl")
     expect(text).toContain("default_sandbox_driver: services.sandbox.defaultDriver")
-    expect(text).toContain("migrateCredentials()")
+    expect(text).not.toContain("migrateCredentials()")
     expect(text).toContain("captureControlPlaneStartupTelemetry(services, { port })")
     expect(text).toContain("export async function shutdownControlPlaneRuntime()")
     expect(text).toContain("shutdownEmbeddedWorkspaceRuntimes()")

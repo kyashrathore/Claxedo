@@ -47,7 +47,6 @@ export async function run() {
     assert.equal(listing.status, 200)
     assert.deepEqual((JSON.parse(listing.body) as { connections: Array<{ connectionId: string; label: string }> }).connections.filter((row) => row.connectionId === "h36-agent").map((row) => row.label), ["Renamed"])
     assert.deepEqual(stack.egress.attempts, [])
-    assert.deepEqual(await api.mcpConfig(), {})
     console.log("H36: connection route rejected malformed, unknown, stale and retargeted descriptors; label rotation persisted")
   } finally {
     await stack.close()
