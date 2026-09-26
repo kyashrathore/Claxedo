@@ -1,18 +1,14 @@
+import { readString } from "@/lib/record"
 import { placementId, terminalId } from "@/server"
 import type { Json, PaneKind } from "@/shell"
 import { useTerminalRuntime } from "./context"
 import type { TerminalPaneState } from "./model"
 import { TerminalPane } from "./view/terminal-pane"
 
-export function isJsonObject(value: Json): value is { readonly [key: string]: Json } {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
 function decodeTerminalPaneState(value: Json): TerminalPaneState | undefined {
-  if (!isJsonObject(value)) return undefined
-  const placement = value.placementId
-  const terminal = value.terminalId
-  if (typeof placement !== "string" || typeof terminal !== "string" || !placement || !terminal) return undefined
+  const placement = readString(value, "placementId")
+  const terminal = readString(value, "terminalId")
+  if (!placement || !terminal) return undefined
   return { placementId: placementId(placement), terminalId: terminalId(terminal) }
 }
 
