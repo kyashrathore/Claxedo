@@ -1,3 +1,4 @@
+import { asString } from "@claxedo/helpers/guards"
 import { isHostedOperationName, type HostedOperationName } from "@claxedo/account-contract"
 import type { HostedAccount } from "./account"
 import { ServerError } from "./errors"
@@ -15,25 +16,20 @@ type OperationRequest = {
 
 const DOCUMENTS = "/documents"
 
-function invalid(operation: string, message: string): ServerError {
+function operationInputError(operation: string, message: string): ServerError {
   return new ServerError({ class: "invalid", message: `${operation}: ${message}` })
 }
 
 function inputOf(operation: string, value: unknown): Input {
   if (value === undefined) return {}
   if (typeof value === "object" && value !== null && !Array.isArray(value)) return value as Input
-  throw invalid(operation, "the input is not an object")
+  throw operationInputError(operation, "the input is not an object")
 }
 
-function text(operation: string, input: Input, key: string): string {
+function requiredTextField(operation: string, input: Input, key: string): string {
   const value = input[key]
   if (typeof value === "string" && value.length > 0) return value
-  throw invalid(operation, `${key} is required`)
-}
-
-function optionalText(input: Input, key: string): string | undefined {
-  const value = input[key]
-  return typeof value === "string" ? value : undefined
+  throw operationInputError(operation, `${key} is required`)
 }
 
 function omitFields(input: Input, ...keys: readonly string[]): Input {
@@ -41,15 +37,15 @@ function omitFields(input: Input, ...keys: readonly string[]): Input {
 }
 
 function documentPath(operation: string, input: Input, ...rest: readonly string[]): string {
-  return [DOCUMENTS, text(operation, input, "id"), ...rest].map((segment, index) => (index === 0 ? segment : encodeURIComponent(segment))).join("/")
+  return [DOCUMENTS, requiredTextField(operation, input, "id"), ...rest].map((segment, index) => (index === 0 ? segment : encodeURIComponent(segment))).join("/")
 }
 
 function scopeQuery(input: Input): OperationRequest["query"] {
   return {
-    project_id: optionalText(input, "project_id"),
-    document_id: optionalText(input, "document_id"),
-    directory: optionalText(input, "directory"),
-    archived: optionalText(input, "archived"),
+    project_id: asString(input.project_id),
+    document_id: asString(input.document_id),
+    directory: asString(input.directory),
+    archived: asString(input.archived),
   }
 }
 
@@ -61,11 +57,11 @@ const OPERATIONS: Readonly<Partial<Record<HostedOperationName, Operation>>> = {
   "documents.get": (name, input) => ({ method: "GET", path: documentPath(name, input) }),
   "documents.create": (_name, input) => ({ method: "POST", path: DOCUMENTS, body: input }),
   "documents.fromRepo": (_name, input) => ({ method: "POST", path: `${DOCUMENTS}/from-repo`, body: input }),
-  "documents.update": (name, input) => ({ method: "PATCH", path: documentPath(name, input), body: omitFields(input, "id", "ifMatch"), ifMatch: optionalText(input, "ifMatch") }),
+  "documents.update": (name, input) => ({ method: "PATCH", path: documentPath(name, input), body: omitFields(input, "id", "ifMatch"), ifMatch: asString(input.ifMatch) }),
   "documents.content.get": (name, input) => ({ method: "GET", path: documentPath(name, input, "content") }),
-  "documents.content.put": (name, input) => ({ method: "PUT", path: documentPath(name, input, "content"), body: omitFields(input, "id", "ifMatch"), ifMatch: text(name, input, "ifMatch") }),
+  "documents.content.put": (name, input) => ({ method: "PUT", path: documentPath(name, input, "content"), body: omitFields(input, "id", "ifMatch"), ifMatch: requiredTextField(name, input, "ifMatch") }),
   "documents.snapshots": (name, input) => ({ method: "GET", path: documentPath(name, input, "snapshots") }),
-  "documents.snapshots.restore": (name, input) => ({ method: "POST", path: documentPath(name, input, "snapshots", text(name, input, "snapshotId"), "restore"), body: {}, ifMatch: text(name, input, "ifMatch") }),
+  "documents.snapshots.restore": (name, input) => ({ method: "POST", path: documentPath(name, input, "snapshots", requiredTextField(name, input, "snapshotId"), "restore"), body: {}, ifMatch: requiredTextField(name, input, "ifMatch") }),
   "documents.agentOpen": (name, input) => ({ method: "POST", path: documentPath(name, input, "agent-open"), body: omitFields(input, "id") }),
   "documents.runtimeConflictResolve": (name, input) => ({ method: "POST", path: documentPath(name, input, "runtime-conflict", "resolve"), body: omitFields(input, "id") }),
   "documents.moveToRepository": (name, input) => ({ method: "POST", path: documentPath(name, input, "move-to-repository"), body: omitFields(input, "id") }),
@@ -75,7 +71,7 @@ export type Operations = { readonly run: (name: string, input: unknown) => Promi
 
 export function hostedOperationRequest(name: string, input: unknown): OperationRequest {
   const operation = isHostedOperationName(name) ? OPERATIONS[name] : undefined
-  if (!operation) throw invalid(name, "this server offers no such operation to the app")
+  if (!operation) throw operationInputError(name, "this server offers no such operation to the app")
   return operation(name, inputOf(name, input))
 }
 
@@ -93,7 +89,7 @@ function onServer(transport: Transport): Operations["run"] {
 function onAccount(account: HostedAccount): Operations["run"] {
   return async (name, input) => {
     hostedOperationRequest(name, input)
-    if (!isHostedOperationName(name)) throw invalid(name, "this server offers no such operation to the app")
+    if (!isHostedOperationName(name)) throw operationInputError(name, "this server offers no such operation to the app")
     return account.run(name, inputOf(name, input))
   }
 }
