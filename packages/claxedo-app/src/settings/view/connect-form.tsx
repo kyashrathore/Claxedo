@@ -66,7 +66,7 @@ export function ConnectForm(props: {
   return (
     <form class="settings-fields" aria-label={`${t("settings.common.connect")} ${props.integration.name}`} onSubmit={(event) => { event.preventDefault(); void submit("key", false) }}>
       <Show when={props.personalScopeEnabled}>
-        <Select aria-label="Scope" options={[...SCOPES]} current={form.scope} value={(scope) => scope} label={scopeLabel} onSelect={(scope) => scope && setForm("scope", scope)} variant="secondary" size="small" triggerVariant="settings" />
+        <Select aria-label="Scope" options={[...SCOPES]} current={form.scope} value={(scope) => scope} label={scopeLabel} onSelect={(scope) => scope && setForm("scope", scope)} appearance="inline" />
       </Show>
       <Show when={keyMethod()}>
         <For each={props.integration.prompts}>

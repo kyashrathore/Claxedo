@@ -298,8 +298,6 @@
   [data-action="prompt-harness"] [data-slot="composer-control-label"],
   [data-action="prompt-model"] [data-slot="composer-control-label"],
   [data-action="prompt-model-variant"] [data-slot="composer-control-label"],
-  [data-action="prompt-harness"] .ui-select-select-trigger-icon,
-  [data-action="prompt-model-variant"] .ui-select-select-trigger-icon,
   [data-action="prompt-model"] > .ui-icon:last-child,
   [data-action="prompt-harness-model"] > .ui-icon:last-child,
   [data-action="prompt-model"] .composer-model-provider,
@@ -371,7 +369,6 @@
 }
 
 .claxedo-composer-menu.claxedo-composer-menu [data-component="menu-v2-item"],
-.claxedo-composer-menu.claxedo-composer-menu [data-slot="select-select-item"],
 .claxedo-composer-menu.claxedo-composer-menu [data-slot="list-item"] {
   box-sizing: border-box;
   min-height: 28px;
@@ -392,8 +389,7 @@
 }
 
 .claxedo-composer-menu.claxedo-composer-menu [data-slot="menu-v2-group-label"],
-.claxedo-composer-menu.claxedo-composer-menu .ui-list-header,
-.claxedo-composer-menu.claxedo-composer-menu .ui-select-section {
+.claxedo-composer-menu.claxedo-composer-menu .ui-list-header {
   height: 24px;
   padding: 0 10px;
   font-size: var(--font-size-x-small);

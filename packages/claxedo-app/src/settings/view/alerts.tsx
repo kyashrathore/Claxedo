@@ -75,7 +75,7 @@ export function SoundsSection() {
                     preferences.setAlertSound(row.kind, choice)
                     sound.play(choice)
                   }}
-                  variant="secondary" size="small" triggerVariant="settings"
+                  appearance="inline"
                 />
               </SettingsRow>
             )}

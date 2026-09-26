@@ -3,7 +3,6 @@
 @import "./reduced-motion.css" layer(base);
 @import "./touch.css";
 @import "@opencode-ai/ui/animated-number.css" layer(components);
-@import "@opencode-ai/ui/button.css" layer(components);
 @import "@opencode-ai/ui/card.css" layer(components);
 @import "@opencode-ai/ui/collapsible.css" layer(components);
 
@@ -19,7 +18,6 @@
 @import "@opencode-ai/ui/resize-handle.css" layer(components);
 @import "@opencode-ai/ui/scroll-view.css" layer(components);
 @import "@opencode-ai/ui/scroll-thumb.css" layer(components);
-@import "@opencode-ai/ui/select.css" layer(components);
 @import "@opencode-ai/ui/spinner.css" layer(components);
 @import "@opencode-ai/ui/sticky-accordion-header.css" layer(components);
 @import "@opencode-ai/ui/text-field.css" layer(components);

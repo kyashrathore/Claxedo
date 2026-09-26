@@ -19,7 +19,7 @@ export function LanguageSection() {
               value={(code) => code}
               label={localeLabel}
               onSelect={(code) => code && i18n.setLocale(code)}
-              variant="secondary" size="small" triggerVariant="settings"
+              appearance="inline"
             />
           </SettingsRow>
         </SettingsList>

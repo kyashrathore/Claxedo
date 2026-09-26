@@ -23,10 +23,6 @@
   z-index: var(--z-modal) !important;
 }
 
-.ui-select-content {
-  z-index: var(--z-modal-popover);
-}
-
 body [data-component="menu-v2-content"] {
   z-index: var(--z-modal-popover);
 }

@@ -95,8 +95,7 @@ export function AppearanceSection() {
               value={(scheme) => scheme}
               label={(scheme) => t(SCHEME_KEY[scheme])}
               onSelect={(scheme) => scheme && theme.setColorScheme(scheme)}
-              variant="secondary" size="small" triggerVariant="settings"
-              triggerStyle={{ "min-width": "220px" }}
+              appearance="inline"
             />
           </SettingsRow>
           <SettingsRow title={t("settings.appearance.theme")} description={t("settings.appearance.theme.description")}>
@@ -107,7 +106,7 @@ export function AppearanceSection() {
               value={(id) => id}
               label={(id) => theme.name(id)}
               onSelect={(id) => id && theme.setTheme(id)}
-              variant="secondary" size="small" triggerVariant="settings"
+              appearance="inline"
             />
           </SettingsRow>
           <Show when={theme.themeId() === "codex"}>
@@ -136,8 +135,7 @@ export function AppearanceSection() {
               value={(side) => side}
               label={(side) => t(SIDE_KEY[side])}
               onSelect={(side) => side && preferences.setAppearance("navigatorSide", side)}
-              variant="secondary" size="small" triggerVariant="settings"
-              triggerStyle={{ "min-width": "220px" }}
+              appearance="inline"
             />
           </SettingsRow>
         </SettingsList>

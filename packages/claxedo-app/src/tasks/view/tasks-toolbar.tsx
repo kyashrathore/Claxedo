@@ -98,7 +98,7 @@ function FilterPopover(props: ToolbarProps): JSX.Element {
         <div class="tsk-option">
           <span class="tsk-option-label">{t("tasks.toolbar.project")}</span>
           <Select
-            size="small"
+            appearance="inline"
             options={[...props.projects]}
             current={project()}
             value={(entry: TaskProject) => entry.id}
@@ -113,7 +113,7 @@ function FilterPopover(props: ToolbarProps): JSX.Element {
         <div class="tsk-option">
           <span class="tsk-option-label">{t("tasks.toolbar.status")}</span>
           <Select
-            size="small"
+            appearance="inline"
             options={[...STATUS_CHOICES]}
             current={props.store.state.statusFilter ?? ANY_STATUS}
             value={(choice: StatusChoice) => choice}
@@ -155,7 +155,7 @@ function DisplayPopover(props: { readonly store: TasksStore }): JSX.Element {
         <div class="tsk-option">
           <span class="tsk-option-label">{t("tasks.toolbar.grouping")}</span>
           <Select
-            size="small"
+            appearance="inline"
             options={[...GROUPINGS]}
             current={GROUPINGS.find((entry) => entry.grouped === props.store.state.grouped)}
             value={(entry: Grouping) => String(entry.grouped)}
@@ -169,7 +169,7 @@ function DisplayPopover(props: { readonly store: TasksStore }): JSX.Element {
         <div class="tsk-option">
           <span class="tsk-option-label">{t("tasks.toolbar.date")}</span>
           <Select
-            size="small"
+            appearance="inline"
             options={[...TASK_DATE_FIELDS]}
             current={props.store.state.dateField}
             value={(field: TaskDateField) => field}

@@ -95,21 +95,20 @@ function ChipRow(props: TaskCreateFormProps & { readonly patch: (input: Partial<
   return (
     <div class="tsk-chiprow">
       <Select
-        size="small"
+        appearance="inline"
         options={[...TASK_CREATE_STATUSES]}
         current={props.draft.status ?? "todo"}
         value={(status: TaskCreateStatus) => status}
         label={(status: TaskCreateStatus) => t(TASK_STATUS_KEYS[status])}
-        renderValue={(status: TaskCreateStatus) => <TaskStatusChip status={status} />}
         triggerProps={{ "data-testid": "task-create-status", "aria-label": t("tasks.create.status") }}
         onSelect={(status) => {
           if (status) props.patch({ status })
         }}
       >
-        {(status) => <Show when={status}>{(chosen) => <TaskStatusChip status={chosen()} />}</Show>}
+        {(status) => <TaskStatusChip status={status} />}
       </Select>
       <Select
-        size="small"
+        appearance="inline"
         options={[...props.projects]}
         current={project()}
         value={(entry: TaskProject) => entry.id}
