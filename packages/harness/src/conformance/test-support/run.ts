@@ -20,6 +20,7 @@ export type ConformanceBackend = {
   projection?: PluginProjection
   expectedMcp?: "session" | "config" | "none"
   locality?: "local" | "remote"
+  permissionMode?: string
   permissionCommand?: string
   textCommand?: string
   configureServices?(services: TestServices): void
@@ -60,7 +61,8 @@ async function setup(input: ConformanceInput) {
   const transport = input.makeTransport(services, backend)
   const start: StartInput = {
     sessionId: "s1", workspaceId: "w1", directory: backend.directory, locality: backend.locality ?? "local", owner: backend.owner,
-    config: { harness: backend.harness, model: backend.model }, model: backend.model,
+    config: { harness: backend.harness, model: backend.model, ...(backend.permissionMode ? { permissionMode: backend.permissionMode } : {}) },
+    model: backend.model,
     projection: backend.projection ?? { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] },
     credentials: backend.credentials,
   }

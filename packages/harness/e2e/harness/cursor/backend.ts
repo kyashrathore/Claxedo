@@ -2,12 +2,20 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { listenOnLoopback } from "../ports"
 import { loadCursorDescriptors, type CursorDescriptors } from "./descriptors"
 
+export type CursorToolStep = { kind: "tool"; tool: string; args: unknown; result?: unknown }
+
 export type CursorScript = {
-  steps: Array<{ kind: "text"; text: string } | { kind: "read"; path: string; result: string }>
+  steps: Array<{ kind: "text"; text: string } | { kind: "read"; path: string; result: string } | { kind: "wait"; ms: number } | CursorToolStep>
   usage?: { inputTokens: number; outputTokens: number }
   error?: { status: number; message: string }
   hold?: boolean
 }
+
+export type CursorRunRequest = { requestId: string; run: unknown }
+
+export type CursorCatalogModel = { id: string; displayName: string; description?: string }
+
+const DEFAULT_CATALOG: CursorCatalogModel[] = [{ id: "scripted", displayName: "Scripted" }, { id: "auto", displayName: "Auto" }]
 
 export type CursorRequest = {
   path: string
@@ -20,8 +28,10 @@ export type CursorRequest = {
 export type ScriptedCursorBackend = {
   url: string
   requests: CursorRequest[]
+  runs: CursorRunRequest[]
   script(name: string, script: CursorScript): void
   defaultScript(name: string): void
+  models(items: CursorCatalogModel[]): void
   refuseRun(name: string, status: number): void
   refusePath(path: string, status: number): void
   release(name: string): void
@@ -58,7 +68,7 @@ function readBody(incoming: IncomingMessage) {
   })()
 }
 
-function sendScript(response: ServerResponse, descriptors: CursorDescriptors, script: CursorScript) {
+async function sendScript(response: ServerResponse, descriptors: CursorDescriptors, script: CursorScript) {
   if (script.error) {
     response.writeHead(script.error.status, { "content-type": "application/json" })
       .end(JSON.stringify({ message: script.error.message }))
@@ -74,14 +84,20 @@ function sendScript(response: ServerResponse, descriptors: CursorDescriptors, sc
       response.write(frame(0, message.fromJson({ interactionUpdate: { textDelta: { text: step.text } } }).toBinary()))
       continue
     }
-    const callId = `scripted-read-${++call}`
+    if (step.kind === "wait") {
+      await new Promise((resolve) => setTimeout(resolve, step.ms))
+      continue
+    }
+    const tool: CursorToolStep = step.kind === "read"
+      ? { kind: "tool", tool: "readToolCall", args: { path: step.path }, result: { success: { path: step.path, content: step.result } } }
+      : step
+    const callId = `scripted-${step.kind}-${++call}`
     response.write(frame(0, message.fromJson({ interactionUpdate: {
-      toolCallStarted: { callId, toolCall: { readToolCall: { args: { path: step.path } } } },
+      toolCallStarted: { callId, toolCall: { [tool.tool]: { args: tool.args } } },
     } }).toBinary()))
+    if (tool.result === undefined) continue
     response.write(frame(0, message.fromJson({ interactionUpdate: {
-      toolCallCompleted: { callId, toolCall: { readToolCall: {
-        args: { path: step.path }, result: { success: { path: step.path, content: step.result } },
-      } } },
+      toolCallCompleted: { callId, toolCall: { [tool.tool]: { args: tool.args, result: tool.result } } },
     } }).toBinary()))
   }
   response.write(frame(0, message.fromJson({ interactionUpdate: { turnEnded: {
@@ -94,8 +110,10 @@ function sendScript(response: ServerResponse, descriptors: CursorDescriptors, sc
 export async function startScriptedCursorBackend(port: number): Promise<ScriptedCursorBackend> {
   const descriptors = await loadCursorDescriptors()
   const requests: CursorRequest[] = []
+  const runs: CursorRunRequest[] = []
   const scripts = new Map<string, CursorScript>()
   let defaultScript: string | undefined
+  let catalog = DEFAULT_CATALOG
   const refused = new Map<string, number>()
   const refusedPaths = new Map<string, number>()
   const streams = new Map<string, PendingStream>()
@@ -113,7 +131,9 @@ export async function startScriptedCursorBackend(port: number): Promise<Scripted
     }
     streams.delete(id)
     selected.delete(id)
-    sendScript(pending.response, descriptors, pending.script)
+    void sendScript(pending.response, descriptors, pending.script).catch((error: unknown) => {
+      pending.response.destroy(error instanceof Error ? error : new Error(String(error)))
+    })
   }
   const server = createServer(async (incoming, outgoing) => {
     try {
@@ -146,9 +166,7 @@ export async function startScriptedCursorBackend(port: number): Promise<Scripted
       if (path === "/auth/exchange_user_api_key") {
         outgoing.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ accessToken: "scripted-access-token" }))
       } else if (path === "/v1/models") {
-        outgoing.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ items: [
-          { id: "scripted", displayName: "Scripted" }, { id: "auto", displayName: "Auto" },
-        ] }))
+        outgoing.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ items: catalog }))
       } else if (path === "/aiserver.v1.AnalyticsService/BootstrapStatsig") {
         outgoing.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({}))
       } else if (path === "/agent.v1.AgentService/RunSSE" && method) {
@@ -168,6 +186,7 @@ export async function startScriptedCursorBackend(port: number): Promise<Scripted
           if (!run) throw new Error("Cursor SDK lacks Run descriptor")
           const client = run.I
           const prompt = client.fromBinary(Buffer.from(append.data, "hex")).toJson()
+          runs.push({ requestId: id, run: prompt })
           const name = scriptName(prompt) ?? defaultScript
           if (!name) throw new Error(`BidiAppend named no CURSOR_SCRIPT: ${JSON.stringify(prompt)}`)
           const script = scripts.get(name)
@@ -201,6 +220,7 @@ export async function startScriptedCursorBackend(port: number): Promise<Scripted
   return {
     url: `http://127.0.0.1:${port}`,
     requests,
+    runs,
     script(name, script) {
       if (scripts.has(name)) throw new Error(`Cursor script ${name} already exists`)
       scripts.set(name, script)
@@ -209,6 +229,7 @@ export async function startScriptedCursorBackend(port: number): Promise<Scripted
       if (!scripts.has(name)) throw new Error(`Unknown Cursor script ${name}`)
       defaultScript = name
     },
+    models(items) { catalog = items },
     refuseRun(name, status) {
       if (!scripts.has(name)) throw new Error(`Unknown Cursor script ${name}`)
       refused.set(name, status)
