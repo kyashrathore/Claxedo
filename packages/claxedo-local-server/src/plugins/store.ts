@@ -1,5 +1,6 @@
 import fs from "node:fs/promises"
 import path from "node:path"
+import { isMissingFile } from "@claxedo/helpers/fs"
 
 export class LivePluginStoreError extends Error {
   readonly file: string
@@ -11,11 +12,7 @@ export class LivePluginStoreError extends Error {
   }
 }
 
-export function isMissingFile(error: unknown): boolean {
-  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === "ENOENT"
-}
-
-export async function readJsonFile(file: string): Promise<unknown | undefined> {
+export async function readJsonFileIfPresent(file: string): Promise<unknown | undefined> {
   let text: string
   try {
     text = await fs.readFile(file, "utf8")

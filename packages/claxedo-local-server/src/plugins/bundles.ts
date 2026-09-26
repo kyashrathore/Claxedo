@@ -4,7 +4,8 @@ import { z } from "zod"
 import { pluginManifestSchema } from "@claxedo/plugin-api"
 import { PLUGIN_BUNDLE_HASH_LENGTH } from "@claxedo/plugin-build"
 import type { LivePluginBundle } from "./machine"
-import { isMissingFile, LivePluginStoreError, readJsonFile, writeJsonFileAtomically } from "./store"
+import { isMissingFile } from "@claxedo/helpers/fs"
+import { LivePluginStoreError, readJsonFileIfPresent, writeJsonFileAtomically } from "./store"
 
 export const BUNDLE_HASH_PATTERN = new RegExp(`^[0-9a-f]{${PLUGIN_BUNDLE_HASH_LENGTH}}$`)
 
@@ -42,7 +43,7 @@ export async function readLivePluginBundle(root: string, id: string, hash: strin
 
 export async function readCurrentLivePluginBundle(root: string, id: string): Promise<LivePluginBundle | undefined> {
   const file = currentFile(root, id)
-  const raw = await readJsonFile(file)
+  const raw = await readJsonFileIfPresent(file)
   if (raw === undefined) return undefined
   const parsed = currentSchema.safeParse(raw)
   if (parsed.success) return parsed.data

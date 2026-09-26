@@ -63,6 +63,7 @@
       "module": "@claxedo/helpers/fs",
       "owner": "packages/claxedo-helpers/src/fs.ts",
       "names": [
+        "isMissingFile",
         "readJsonFile"
       ]
     }

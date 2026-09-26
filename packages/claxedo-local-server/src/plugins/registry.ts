@@ -1,7 +1,7 @@
 import path from "node:path"
 import { z } from "zod"
 import { PLUGIN_ID_PATTERN } from "@claxedo/plugin-api"
-import { LivePluginStoreError, readJsonFile, writeJsonFileAtomically } from "./store"
+import { LivePluginStoreError, readJsonFileIfPresent, writeJsonFileAtomically } from "./store"
 
 const entrySchema = z
   .object({
@@ -21,7 +21,7 @@ export function livePluginRegistryFile(root: string): string {
 
 export async function readLivePluginRegistry(root: string): Promise<LivePluginRegistryEntry[]> {
   const file = livePluginRegistryFile(root)
-  const raw = await readJsonFile(file)
+  const raw = await readJsonFileIfPresent(file)
   if (raw === undefined) return []
   const parsed = registrySchema.safeParse(raw)
   if (parsed.success) return parsed.data.plugins

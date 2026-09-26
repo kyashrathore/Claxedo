@@ -205,6 +205,10 @@ export function writeFileAtomicSync(
   }
 }
 
+export function isMissingFile(error: unknown): boolean {
+  return isRecord(error) && error.code === "ENOENT"
+}
+
 /**
  * Nothing is swallowed: a missing file surfaces the fs ENOENT and malformed
  * JSON surfaces the SyntaxError, both with the path visible. Callers that want

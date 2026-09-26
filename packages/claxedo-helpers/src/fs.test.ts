@@ -12,9 +12,10 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs"
+import { readFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { isOwnerOnlyFile, PrivateFileError, readJsonFile, resolvePem, writeFileAtomic, writeFileAtomicSync, writePrivateFileAtomic } from "./fs"
+import { isMissingFile, isOwnerOnlyFile, PrivateFileError, readJsonFile, resolvePem, writeFileAtomic, writeFileAtomicSync, writePrivateFileAtomic } from "./fs"
 import { expectedOwnerOnlyDescription, ownerOnlyDescription, widenWindowsPath, windowsSddl } from "./private-file.test-support"
 
 let dir: string
@@ -308,6 +309,17 @@ describe("readJsonFile", () => {
     const bad = join(dir, "bad.json")
     writeFileSync(bad, "{")
     expect(() => readJsonFile(bad)).toThrow(SyntaxError)
+  })
+})
+
+describe("isMissingFile", () => {
+  test("is true only for the error a missing path raises", async () => {
+    const missing = await readFile(join(dir, "missing.json")).catch((error: unknown) => error)
+    expect(isMissingFile(missing)).toBe(true)
+    const directory = await readFile(dir).catch((error: unknown) => error)
+    expect(isMissingFile(directory)).toBe(false)
+    expect(isMissingFile(new Error("ENOENT"))).toBe(false)
+    expect(isMissingFile(undefined)).toBe(false)
   })
 })
 
