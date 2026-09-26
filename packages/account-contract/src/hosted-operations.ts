@@ -10,15 +10,10 @@
  * Decoders rather than casts: a hosted response that changed shape fails where
  * it arrives, naming the operation.
  */
-import { asRecord } from "@claxedo/helpers/guards"
+import { asArray, asRecord } from "@claxedo/helpers/guards"
 import type { HostedOperationName } from "./operation-name"
 
 export type { HostedOperationName }
-
-function rows(value: Record<string, unknown>, key: string): unknown[] {
-  const field = value[key]
-  return Array.isArray(field) ? field : []
-}
 
 export type HostedOperationInput = Record<string, string | number | boolean | undefined>
 
@@ -86,9 +81,9 @@ function sessionPeople(raw: unknown): DecodeResult<Record<string, unknown>> {
   if (typeof shape.value.can_manage_shares !== "boolean") {
     return { ok: false, reason: 'expected a boolean "can_manage_shares"' }
   }
-  const teams = rows(shape.value, "teams")
-  const participants = rows(shape.value, "participants")
-  const grants = rows(shape.value, "grants")
+  const teams = asArray(shape.value.teams)
+  const participants = asArray(shape.value.participants)
+  const grants = asArray(shape.value.grants)
   for (const [index, team] of teams.entries()) {
     const row = object(team)
     if (!row.ok) return { ok: false, reason: `expected teams[${index}] to be an object` }
