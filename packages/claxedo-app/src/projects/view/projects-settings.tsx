@@ -1,8 +1,8 @@
-import { useSearchParams } from "@solidjs/router"
+import { A, useSearchParams } from "@solidjs/router"
 import { createUniqueId, For, Match, Show, Switch, type JSX } from "solid-js"
 import { projectId, type Project } from "@/server"
 import { SettingsEmpty, SettingsIntro, SettingsList, SettingsNote } from "@/settings"
-import { RouteLink, type SettingsSection } from "@/shell"
+import type { SettingsSection } from "@/shell"
 import { ClaxedoIcon as Icon, ProjectAvatar } from "@/ui"
 import { useProjectsText } from "../i18n"
 import { sourceLabel } from "../project-source"
@@ -14,7 +14,7 @@ import "./projects.css"
 function ProjectLink(props: { readonly project: Project }): JSX.Element {
   const detailId = createUniqueId()
   return (
-    <RouteLink
+    <A
       href={projectSettingsPath(props.project.id)}
       class="projects-settings-row"
       aria-label={props.project.name}
@@ -27,7 +27,7 @@ function ProjectLink(props: { readonly project: Project }): JSX.Element {
         <span id={detailId} class="projects-settings-row-detail">{sourceLabel(props.project.source)}</span>
       </span>
       <Icon name="chevron-right" />
-    </RouteLink>
+    </A>
   )
 }
 
