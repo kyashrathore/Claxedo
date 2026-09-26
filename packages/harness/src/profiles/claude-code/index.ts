@@ -2,7 +2,7 @@ import fs from "node:fs/promises"
 import { constants } from "node:fs"
 import path from "node:path"
 import type { SdkPluginConfig } from "@anthropic-ai/claude-agent-sdk"
-import { realPathWithinRoot } from "@claxedo/helpers/fs"
+import { lstatIfExists, realPathWithinRoot } from "@claxedo/helpers/fs"
 import type { PluginProjection } from "../../contract"
 import { CLAUDE_COMMAND_DENY_RULES } from "../../broker/permission-ceilings"
 
@@ -16,14 +16,6 @@ export function claudePermissionSettings(allow: string[], ask: string[], deny: s
 const CREDENTIAL_KEYS = ["apiKeyHelper", "awsAuthRefresh", "awsCredentialExport"]
 const CREDENTIAL_ENV = /^(ANTHROPIC_|CLAUDE_CODE_)|(^|_)(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|CREDENTIALS)(_|$)/
 const SECRET_FILE = /^(?:\.claude\.json|auth\.json)$|(?:^|[-_.])(?:credential|credentials|oauth|secret|token|password|keychain)(?:[-_.]|$)/i
-
-async function existing(pathname: string) {
-  try { return await fs.lstat(pathname) }
-  catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined
-    throw error
-  }
-}
 
 export function claudePlugins(projection: PluginProjection): SdkPluginConfig[] {
   return [...new Set(projection.pluginRoots.map((root) => root.root))].map((pluginPath) => ({ type: "local", path: pluginPath }))
@@ -52,7 +44,7 @@ async function copyReadOnly(source: string, target: string, home: string, visite
   const branch = new Set(visited)
   branch.add(resolved)
   if (stat.isDirectory()) {
-    const prior = await existing(target)
+    const prior = await lstatIfExists(target)
     if (prior && !prior.isDirectory()) await fs.rm(target, { recursive: true, force: true })
     await fs.mkdir(target, { recursive: true, mode: 0o700 })
     const names = (await fs.readdir(source)).filter((name) => !SECRET_FILE.test(name))
@@ -62,7 +54,7 @@ async function copyReadOnly(source: string, target: string, home: string, visite
     return
   }
   if (!stat.isFile()) throw new Error("Claude config mirror contains a non-file entry")
-  const prior = await existing(target)
+  const prior = await lstatIfExists(target)
   if (prior?.isFile() && prior.size === stat.size && Math.floor(prior.mtimeMs) === Math.floor(stat.mtimeMs)) return
   if (prior) await fs.rm(target, { recursive: true, force: true })
   await fs.copyFile(source, target, constants.COPYFILE_FICLONE)
@@ -79,8 +71,8 @@ export async function composeClaudeConfigHome(root: string, source: string): Pro
   for (const name of MIRRORED) {
     const from = path.join(home, name)
     const to = path.join(root, name)
-    if (CLAUDE_WRITTEN.some((entry) => entry === name) && await existing(to)) continue
-    if (!(await existing(from))) {
+    if (CLAUDE_WRITTEN.some((entry) => entry === name) && await lstatIfExists(to)) continue
+    if (!(await lstatIfExists(from))) {
       if (!CLAUDE_WRITTEN.some((entry) => entry === name)) await fs.rm(to, { recursive: true, force: true })
       continue
     }

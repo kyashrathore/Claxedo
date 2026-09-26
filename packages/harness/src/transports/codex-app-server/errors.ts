@@ -16,6 +16,10 @@ export class CodexNoActiveTurnError extends CodexTransportError {
   constructor() { super("protocol", "No active turn to interrupt") }
 }
 
+export class CodexDeadlineError extends CodexTransportError {
+  constructor(message: string) { super("process", message) }
+}
+
 export function codexRpcError(error: { code: number; message: string }): CodexTransportError {
   if (/^no active turn to interrupt$/i.test(error.message)) return new CodexNoActiveTurnError()
   return new CodexTransportError("protocol", error.message)

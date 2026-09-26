@@ -1,7 +1,7 @@
 import type { ConfigOperations, DraftLaunch, HarnessSession, StartInput } from "../../contract"
 import { configOptionsPreview } from "../../contract"
-import { CodexTransportError } from "./errors"
 import { codexModelOptions, type CodexModel } from "./models"
+import { codexModeState, requireCodexMode } from "./modes"
 
 type ConfigEntry = { start: StartInput }
 
@@ -10,7 +10,7 @@ export function createCodexConfig<T extends ConfigEntry>(input: {
   models(entry: T): Promise<CodexModel[]>
   probe(draft: DraftLaunch, mode: "probe" | "peek"): Promise<CodexModel[]>
 }): ConfigOperations {
-  return {
+  const operations: ConfigOperations = {
     read: async (session) => input.entry(session).start.config,
     update: async (session, update) => {
       const entry = input.entry(session)
@@ -35,7 +35,9 @@ export function createCodexConfig<T extends ConfigEntry>(input: {
       }
       return configOptionsPreview(codexModelOptions(await input.probe(target.draft, mode), target.draft.config.model?.modelID))
     },
-    permissionModes: async () => ({ modes: [], unsupported: "Codex permission modes are selected per turn", appliesFrom: "next-turn" }),
-    setPermissionMode: async () => { throw new CodexTransportError("configuration", "Codex permission modes are selected per turn") },
+    permissionModes: async (target) => codexModeState("session" in target
+      ? input.entry(target.session).start.config.permissionMode : target.draft.config.permissionMode),
+    setPermissionMode: async (session, modeId) => codexModeState((await operations.update(session, { permissionMode: requireCodexMode(modeId) })).permissionMode),
   }
+  return operations
 }

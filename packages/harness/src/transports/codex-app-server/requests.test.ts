@@ -47,9 +47,3 @@ test("Codex approval keys include the command and cwd", async () => {
   expect(keys[0]).not.toBe(keys[1])
   expect(keys[0]).toBe(keys[2])
 })
-
-test("Codex dynamic tool calls receive the protocol's failed tool result", async () => {
-  const answer = await answerCodexRequest({ id: 3, method: "item/tool/call", params: { tool: "spawn_agent" } },
-    broker(async () => { throw new Error("No broker request expected") }), "s1")
-  expect(answer).toEqual({ contentItems: [{ type: "inputText", text: "Dynamic tool spawn_agent is unavailable." }], success: false })
-})

@@ -1,23 +1,34 @@
 import { expect, test } from "bun:test"
 import { CodexTerminals } from "./terminals"
+import { CodexTransportError } from "./errors"
 import type { CodexRpc } from "./rpc"
 
-test("Codex stop pages the terminal inventory and terminates only this turn's process", async () => {
+const deadline = () => ({ at: Date.now() + 10_000, signal: new AbortController().signal })
+
+function commandTurn(terminals: CodexTerminals, turnId: string, processId: string) {
+  terminals.observe({ method: "item/started", params: { threadId: "thread-1", turnId, item: { type: "commandExecution", processId } } })
+}
+
+test("Codex stop waits for this turn's completion, pages the inventory, and terminates only this turn's process", async () => {
   const calls: { method: string; params: unknown }[] = []
   let terminated = false
+  let terminals!: CodexTerminals
   const rpc = { request: async (method: string, params: unknown) => {
     calls.push({ method, params })
-    if (method === "turn/interrupt") return {}
+    if (method === "turn/interrupt") {
+      queueMicrotask(() => terminals.observe({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-1" } } }))
+      return {}
+    }
     if (method === "thread/backgroundTerminals/terminate") { terminated = true; return {} }
     if (terminated) return { data: [] }
     return "cursor" in (params as Record<string, unknown>) ? { data: [{ processId: "terminal-owned" }] } :
       { data: [{ processId: "terminal-other" }], nextCursor: "page-2" }
   } } as CodexRpc
-  const terminals = new CodexTerminals(rpc, "thread-1")
-  terminals.observe({ method: "item/started", params: { threadId: "thread-1", turnId: "turn-1",
-    item: { type: "commandExecution", processId: "terminal-owned" } } })
-  const result = await terminals.stop("turn-1", { at: Date.now() + 10_000, signal: new AbortController().signal })
-  expect(result).toEqual({ execution: "unknown", cleanup: "verified_clear" })
+  terminals = new CodexTerminals(rpc, "thread-1")
+  commandTurn(terminals, "turn-1", "terminal-owned")
+  expect(terminals.ranCommand("turn-1")).toBe(true)
+  const result = await terminals.stop("turn-1", deadline())
+  expect(result).toEqual({ execution: "terminal", cleanup: "verified_clear" })
   expect(calls.map((call) => call.method)).toEqual(["turn/interrupt", "thread/backgroundTerminals/list",
     "thread/backgroundTerminals/list", "thread/backgroundTerminals/terminate", "thread/backgroundTerminals/list"])
   expect(calls.find((call) => call.method === "thread/backgroundTerminals/terminate")?.params).toEqual({
@@ -25,12 +36,39 @@ test("Codex stop pages the terminal inventory and terminates only this turn's pr
   })
 })
 
-test("Codex confirmation waits for this turn and verifies the remaining terminal inventory", async () => {
-  const rpc = { request: async (method: string) => method === "thread/backgroundTerminals/list" ? { data: [] } : {} } as CodexRpc
-  const terminals = new CodexTerminals(rpc, "thread-1")
-  const deadline = { at: Date.now() + 1_000, signal: new AbortController().signal }
-  const confirmation = terminals.confirm("turn-1", { execution: "unknown", cleanup: "unknown" }, deadline)
+test("an inventory the app-server refuses leaves cleanup unknown instead of failing the stop", async () => {
+  let terminals!: CodexTerminals
+  const rpc = { request: async (method: string) => {
+    if (method === "turn/interrupt") {
+      queueMicrotask(() => terminals.observe({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-1" } } }))
+      return {}
+    }
+    throw new CodexTransportError("protocol", "Invalid request: unknown variant `thread/backgroundTerminals/list`")
+  } } as CodexRpc
+  terminals = new CodexTerminals(rpc, "thread-1")
+  commandTurn(terminals, "turn-1", "terminal-owned")
+  expect(await terminals.stop("turn-1", deadline())).toEqual({ execution: "terminal", cleanup: "unknown",
+    error: { code: "cancellation_unsupported", message: "Invalid request: unknown variant `thread/backgroundTerminals/list`" } })
+})
+
+test("a completed turn that observed no command has nothing to clean up and reads no inventory", async () => {
+  const calls: string[] = []
+  let terminals!: CodexTerminals
+  const rpc = { request: async (method: string) => {
+    calls.push(method)
+    queueMicrotask(() => terminals.observe({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-1" } } }))
+    return {}
+  } } as CodexRpc
+  terminals = new CodexTerminals(rpc, "thread-1")
   terminals.observe({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-other" } } })
-  terminals.observe({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-1" } } })
-  expect(await confirmation).toEqual({ execution: "terminal", cleanup: "verified_clear" })
+  expect(terminals.ranCommand("turn-1")).toBe(false)
+  expect(await terminals.stop("turn-1", deadline())).toEqual({ execution: "terminal", cleanup: "verified_clear" })
+  expect(calls).toEqual(["turn/interrupt"])
+})
+
+test("a completion that never arrives before the deadline leaves execution and cleanup unknown", async () => {
+  const rpc = { request: async () => ({}) } as unknown as CodexRpc
+  const terminals = new CodexTerminals(rpc, "thread-1")
+  expect(await terminals.stop("turn-1", { at: Date.now() + 50, signal: new AbortController().signal }))
+    .toEqual({ execution: "unknown", cleanup: "unknown" })
 })

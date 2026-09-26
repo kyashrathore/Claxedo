@@ -10,6 +10,7 @@ import { pollUntil } from "./poll"
 export type ConformanceBackend = {
   execution?: "process" | "in-process"
   unrunnableTurn(turn: TurnInput): TurnInput
+  cleanupWithoutCommands?: "verified_clear"
   agent?: string
   directory: string
   harness: StartInput["config"]["harness"]
@@ -240,7 +241,8 @@ export function runConformance(input: ConformanceInput): void {
           if (capabilities.timing.credentials === "after-active-turns") expect(update.state).toBe("refused")
           const outcome = await context.transport.cancel(context.session, { turnId: "t1", assistantMessageId: "a1" }, { at: Date.now() + 5_000, signal: controller.signal })
           expect(["terminal", "unknown"].includes(outcome.execution)).toBe(true)
-          expect(outcome.cleanup).not.toBe("verified_clear")
+          if (context.backend.cleanupWithoutCommands) expect(outcome.cleanup).toBe(context.backend.cleanupWithoutCommands)
+          else expect(outcome.cleanup).not.toBe("verified_clear")
           release()
           await running
         }
