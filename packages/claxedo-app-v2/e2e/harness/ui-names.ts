@@ -10,6 +10,7 @@ export const UI = {
   openRail: "Open navigation sidebar",
   openPanel: "Open workspace panel",
   signedOutAccount: "Not signed in",
+  signInAccount: "Sign in",
   palette: "Search files, commands, and sessions",
   workedFor: /^Worked for/,
   explored: /^Explored/,

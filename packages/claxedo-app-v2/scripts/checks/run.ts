@@ -17,6 +17,8 @@ const checks = [
   "protected-areas",
   "e2e-hygiene",
   "budget",
+  "freshness",
+  "css-invalidation",
 ]
 const alwaysShown = new Set(["protected-areas", "budget"])
 const width = 4
