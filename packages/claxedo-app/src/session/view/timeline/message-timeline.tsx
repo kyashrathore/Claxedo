@@ -1448,7 +1448,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
           </div>
           <Show when={props.queued}>
             {(queued) => (
-              <div class="relative" classList={{ "-mt-10": timelineRows().length > 0 }}>
+              <div class="relative" classList={{ "-mt-10": timelineRows().length > 0 && (queuedNotYetInTranscript().length > 0 || queued().loadFailed()) }}>
                 <TimelineQueuedMessages queued={queued()} items={queuedNotYetInTranscript} centered={props.centered} t={host.t} />
               </div>
             )}
