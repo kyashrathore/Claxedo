@@ -1,7 +1,7 @@
 import { createMemo, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { toAppError, useServer, type Project } from "@/server"
-import { useDialog, Button, Dialog, TextField, DialogBody, DialogHeader, DialogTitle } from "@/ui"
+import { useDialog, Button, Dialog, Field, Textarea, TextField, DialogBody, DialogHeader, DialogTitle } from "@/ui"
 import { getFilename } from "@/ui/utils"
 import { useProjectsText } from "../i18n"
 import { EnvironmentEditor, environmentRecord, environmentRows, environmentRowsProblem } from "./environment-editor"
@@ -96,16 +96,18 @@ export function DialogEditProject(props: { project: Project }) {
           <Show when={!store.iconUrl}>
             <ProjectColorField color={store.color} label={store.name || defaultName()} onColor={(color) => setStore("color", color)} />
           </Show>
-          <TextField
-            multiline
-            label={t("projects.edit.startup")}
-            description={t("projects.edit.startup.description")}
-            placeholder={t("projects.edit.startup.placeholder")}
-            value={store.startup}
-            onChange={(v) => setStore("startup", v)}
-            spellcheck={false}
-            class="max-h-40 w-full font-mono text-xs no-scrollbar"
-          />
+          <Field>
+            <Field.Label>{t("projects.edit.startup")}</Field.Label>
+            <Textarea
+              class="textarea-v2--full-width"
+              style={{ "font-family": "var(--font-family-mono)" }}
+              placeholder={t("projects.edit.startup.placeholder")}
+              value={store.startup}
+              onInput={(event) => setStore("startup", event.currentTarget.value)}
+              spellcheck={false}
+            />
+            <Field.Suffix>{t("projects.edit.startup.description")}</Field.Suffix>
+          </Field>
           <div class="flex flex-col gap-2">
             <div class="flex flex-col gap-0.5">
               <span class="text-13-medium text-text-strong">{t("projects.edit.environment")}</span>

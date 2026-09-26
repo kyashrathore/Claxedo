@@ -66,7 +66,6 @@ function FontRows(props: {
               autocorrect="off"
               autocomplete="off"
               autocapitalize="off"
-              class="text-12-regular"
               style={{ "font-family": row.family(props.appearance[row.key]) }}
               onChange={(value) => props.onChange(row.key, value)}
             />

@@ -1,3 +1,7 @@
+.ui-text-input-v2.text-input-v2--full-width {
+  width: 100%;
+}
+
 .ui-text-input-v2 {
   box-sizing: border-box;
   display: flex;

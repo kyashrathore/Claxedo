@@ -189,7 +189,7 @@ function IdentityFields(
           aria-label={t("tasks.preset.name")}
           placeholder={t("tasks.preset.namePlaceholder")}
           maxLength={TASKS_BOUNDS.presetNameMax}
-          validationState={props.fieldText("name") ? "invalid" : "valid"}
+          invalid={props.fieldText("name") !== undefined}
           value={props.draft.name}
           onChange={(name: string) => props.patch({ name })}
         />

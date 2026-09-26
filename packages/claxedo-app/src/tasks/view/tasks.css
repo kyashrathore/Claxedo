@@ -1034,7 +1034,7 @@
   padding: 2px 0;
 }
 
-.tsk-add .ui-input {
+.tsk-add [data-component="field-v2"] {
   flex: 1 1 auto;
   min-width: 0;
 }

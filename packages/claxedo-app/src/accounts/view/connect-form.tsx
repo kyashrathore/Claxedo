@@ -92,7 +92,7 @@ function PasteForm(props: { readonly form: ProviderConnect; readonly credentialI
         name="apiKey"
         value={form().store.value}
         onChange={(value) => form().setStore("value", value)}
-        validationState={form().store.error ? "invalid" : undefined}
+        invalid={!!form().store.error}
         error={form().store.error}
       />
       <Show when={!props.credentialId && !form().hosted()}>
@@ -157,7 +157,7 @@ function OAuthCode(props: { readonly form: ProviderConnect; readonly kind: Conne
         placeholder={t("provider.connect.oauth.code.placeholder")}
         value={form().store.code}
         onChange={(value) => form().setStore("code", value)}
-        validationState={form().store.error ? "invalid" : undefined}
+        invalid={!!form().store.error}
         error={form().store.error}
       />
       <Button class="w-auto" type="submit" size="large" variant="contrast" disabled={form().store.saving}>

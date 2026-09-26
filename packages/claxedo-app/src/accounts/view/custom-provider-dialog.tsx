@@ -44,10 +44,10 @@ function PairRows(props: { readonly list: RowList; readonly form: FormState; rea
         {(entry, index) => (
           <div class="flex gap-2 items-start" data-row={entry.row}>
             <div class="flex-1">
-              <TextField label={t(copy().first)} hideLabel placeholder={t(copy().firstHint)} value={entry.a} onChange={(value) => set(index(), 0, value)} validationState={entry.errA ? "invalid" : undefined} error={entry.errA} />
+              <TextField label={t(copy().first)} hideLabel placeholder={t(copy().firstHint)} value={entry.a} onChange={(value) => set(index(), 0, value)} invalid={!!entry.errA} error={entry.errA} />
             </div>
             <div class="flex-1">
-              <TextField label={t(copy().second)} hideLabel placeholder={t(copy().secondHint)} value={entry.b} onChange={(value) => set(index(), 1, value)} validationState={entry.errB ? "invalid" : undefined} error={entry.errB} />
+              <TextField label={t(copy().second)} hideLabel placeholder={t(copy().secondHint)} value={entry.b} onChange={(value) => set(index(), 1, value)} invalid={!!entry.errB} error={entry.errB} />
             </div>
             <IconButton type="button" icon="trash" variant="ghost" class="mt-1.5" onClick={() => remove(index())} disabled={rows().length <= 1} aria-label={t(copy().remove)} />
           </div>
@@ -69,9 +69,9 @@ function ProviderFields(props: { readonly form: FormState; readonly setForm: Set
   }
   return (
     <div class="flex flex-col gap-4">
-      <TextField autofocus label={t("provider.custom.field.providerID.label")} placeholder={t("provider.custom.field.providerID.placeholder")} description={t("provider.custom.field.providerID.description")} value={props.form.providerId} onChange={(value) => set("providerId", value)} validationState={props.form.err.providerId ? "invalid" : undefined} error={props.form.err.providerId} />
-      <TextField label={t("provider.custom.field.name.label")} placeholder={t("provider.custom.field.name.placeholder")} value={props.form.name} onChange={(value) => set("name", value)} validationState={props.form.err.name ? "invalid" : undefined} error={props.form.err.name} />
-      <TextField label={t("provider.custom.field.baseURL.label")} placeholder={t("provider.custom.field.baseURL.placeholder")} value={props.form.baseURL} onChange={(value) => set("baseURL", value)} validationState={props.form.err.baseURL ? "invalid" : undefined} error={props.form.err.baseURL} />
+      <TextField autofocus label={t("provider.custom.field.providerID.label")} placeholder={t("provider.custom.field.providerID.placeholder")} description={t("provider.custom.field.providerID.description")} value={props.form.providerId} onChange={(value) => set("providerId", value)} invalid={!!props.form.err.providerId} error={props.form.err.providerId} />
+      <TextField label={t("provider.custom.field.name.label")} placeholder={t("provider.custom.field.name.placeholder")} value={props.form.name} onChange={(value) => set("name", value)} invalid={!!props.form.err.name} error={props.form.err.name} />
+      <TextField label={t("provider.custom.field.baseURL.label")} placeholder={t("provider.custom.field.baseURL.placeholder")} value={props.form.baseURL} onChange={(value) => set("baseURL", value)} invalid={!!props.form.err.baseURL} error={props.form.err.baseURL} />
       <TextField label={t("provider.custom.field.apiKey.label")} placeholder={t("provider.custom.field.apiKey.placeholder")} description={t("provider.custom.field.apiKey.description")} value={props.form.apiKey} onChange={(value) => set("apiKey", value)} />
     </div>
   )
