@@ -2,44 +2,74 @@ import { expect, test } from "bun:test"
 import type { AgentCapabilities } from "@claxedo/agent-runtime-contract"
 import type { TransportCapabilities } from "../contract/capabilities"
 import type { TransportKind } from "../contract/transport"
-import { wireAgentCapabilities, wireConnectionCapabilities } from "./wire"
+import { wireAgentCapabilities, wireConnectionCapabilities, type WireOperations } from "./wire"
 
-function capabilities(input: { permissions: boolean; questions: boolean; todos: boolean; subagents: boolean; configOwner?: "harness" | "runtime" }): TransportCapabilities {
+function capabilities(input: { permissions: boolean; questions: boolean; todos: boolean; subagents: boolean;
+  configOwner?: "harness" | "runtime"; history?: "store" | "harness" }): TransportCapabilities {
   return {
     modelSelection: { status: "optional" }, effortLevels: { status: "unsupported", models: [] }, instructionChannel: "prompt-prefix", configOwner: input.configOwner ?? "harness",
-    requests: { permissions: input.permissions, questions: input.questions, elicitation: false }, steer: false,
+    requests: { permissions: input.permissions, questions: input.questions, elicitation: false },
     subagents: input.subagents, goals: { implemented: false, available: false, unavailableReason: "none", actions: [], recovery: "blocked", optionalFields: [] },
-    fork: false, agents: false, commands: false, todos: input.todos, history: "store", titles: "none",
+    todos: input.todos, history: input.history ?? "store", titles: "none",
     pluginIntake: { mcp: "none", skills: "none" }, mcpTransports: { stdio: false, http: false, sse: false },
     timing: { model: "next-turn", effort: "next-turn", permissionMode: "next-turn", credentials: "next-session" },
   }
 }
 
-const oldValues: readonly [string, TransportKind, TransportCapabilities, AgentCapabilities][] = [
-  ["claude", "claude-sdk", capabilities({ permissions: true, questions: true, todos: true, subagents: true }),
-    { harness: "claude", modelSelection: { status: "optional" }, abort: true, reconnect: false, replay: true, permissions: true, questions: true, todos: true, commands: false, fork: false, revert: false, unrevert: false, configOptions: true, subagents: true }],
-  ["codex", "codex-app-server", capabilities({ permissions: true, questions: true, todos: true, subagents: true }),
-    { harness: "codex", modelSelection: { status: "optional" }, abort: true, reconnect: false, replay: true, permissions: true, questions: true, todos: true, commands: false, fork: false, revert: false, unrevert: false, configOptions: true, subagents: true }],
-  ["cursor", "cursor-sdk", capabilities({ permissions: false, questions: false, todos: true, subagents: true }),
-    { harness: "cursor", modelSelection: { status: "optional" }, abort: true, reconnect: false, replay: true, permissions: false, questions: false, todos: true, commands: false, fork: false, revert: false, unrevert: false, configOptions: true, subagents: true }],
-  ["acp-agent", "acp", capabilities({ permissions: true, questions: true, todos: false, subagents: false }),
-    { harness: "acp-agent", modelSelection: { status: "optional" }, abort: true, reconnect: false, replay: true, permissions: true, questions: true, todos: false, commands: false, fork: false, revert: false, unrevert: false, configOptions: true, subagents: false }],
-  ["pi", "pi-rpc", capabilities({ permissions: true, questions: true, todos: false, subagents: false }),
-    { harness: "pi", modelSelection: { status: "optional" }, abort: true, reconnect: false, replay: true, permissions: true, questions: true, todos: false, commands: false, fork: false, revert: false, unrevert: false, configOptions: true, subagents: false }],
+function operations(groups: readonly (keyof WireOperations)[]): WireOperations {
+  return Object.fromEntries(groups.map((group) => [group, {}])) as unknown as WireOperations
+}
+
+const declared: readonly [string, TransportKind, TransportCapabilities, WireOperations, AgentCapabilities][] = [
+  ["claude", "claude-sdk", capabilities({ permissions: true, questions: true, todos: true, subagents: true, configOwner: "runtime" }), operations(["config", "commands"]),
+    { harness: "claude", modelSelection: { status: "optional" }, abort: true, reconnect: false, replay: true, permissions: true, questions: true, todos: true, commands: true, fork: false, revert: false, unrevert: false, configOptions: true, subagents: true }],
+  ["codex", "codex-app-server", capabilities({ permissions: true, questions: true, todos: true, subagents: false, configOwner: "runtime" }), operations(["config"]),
+    { harness: "codex", modelSelection: { status: "optional" }, abort: true, reconnect: false, replay: true, permissions: true, questions: true, todos: true, commands: false, fork: false, revert: false, unrevert: false, configOptions: true, subagents: false }],
+  ["cursor", "cursor-sdk", capabilities({ permissions: false, questions: false, todos: false, subagents: false, configOwner: "runtime" }), operations([]),
+    { harness: "cursor", modelSelection: { status: "optional" }, abort: true, reconnect: false, replay: true, permissions: false, questions: false, todos: false, commands: false, fork: false, revert: false, unrevert: false, configOptions: false, subagents: false }],
+  ["acp-agent", "acp", capabilities({ permissions: true, questions: false, todos: false, subagents: false }), operations(["config", "commands", "fork"]),
+    { harness: "acp-agent", modelSelection: { status: "optional" }, abort: true, reconnect: false, replay: true, permissions: true, questions: false, todos: false, commands: true, fork: true, revert: false, unrevert: false, configOptions: true, subagents: false }],
+  ["pi", "pi-rpc", capabilities({ permissions: false, questions: true, todos: false, subagents: false, configOwner: "runtime" }), operations(["commands"]),
+    { harness: "pi", modelSelection: { status: "optional" }, abort: true, reconnect: false, replay: true, permissions: false, questions: true, todos: false, commands: true, fork: false, revert: false, unrevert: false, configOptions: false, subagents: false }],
+  ["opencode", "opencode-sdk", capabilities({ permissions: true, questions: true, todos: false, subagents: false, configOwner: "runtime" }), operations(["config", "commands", "fork"]),
+    { harness: "opencode", modelSelection: { status: "optional" }, abort: true, reconnect: false, replay: true, permissions: true, questions: true, todos: false, commands: true, fork: true, revert: false, unrevert: false, configOptions: true, subagents: false }],
 ]
 
-test.each(oldValues)("wire values for %s match the old adapter", (harness, transport, source, expected) => {
-  const context = { harness, transport }
-  expect(wireAgentCapabilities(source, context)).toEqual(expected)
+test.each(declared)("wire values for %s come from its capabilities and operation groups", (harness, transport, source, groups, expected) => {
+  const context = { harness, transport, abort: true }
+  expect(wireAgentCapabilities(source, groups, context)).toEqual(expected)
   const { harness: _harness, modelSelection: _modelSelection, ...connection } = expected
-  expect(wireConnectionCapabilities(source, context)).toEqual(connection)
+  expect(wireConnectionCapabilities(source, groups, context)).toEqual(connection)
 })
 
-test("ACP child can report abort unavailable", () => {
-  expect(wireConnectionCapabilities(capabilities({ permissions: true, questions: true, todos: false, subagents: false }), { harness: "child", transport: "acp", abort: false }).abort).toBe(false)
+test("abort is the host's per-session fact: an ACP child reports it unavailable", () => {
+  const source = capabilities({ permissions: true, questions: true, todos: false, subagents: false })
+  expect(wireConnectionCapabilities(source, operations(["config"]), { harness: "child", transport: "acp", abort: false }).abort).toBe(false)
 })
 
-test("wire mapping does not retain OpenCode-only reconnect policy", () => {
+test("abort requires the host's session-specific fact", () => {
+  const source = capabilities({ permissions: true, questions: true, todos: false, subagents: false })
+  expect(() => wireConnectionCapabilities(source, operations(["config"]), { harness: "child", transport: "acp" } as never)).toThrow("abort")
+})
+
+test("runtime-owned config still advertises its options operation", () => {
   const source = capabilities({ permissions: false, questions: false, todos: true, subagents: false, configOwner: "runtime" })
-  expect(wireConnectionCapabilities(source, { harness: "pending", transport: "opencode-sdk" }).reconnect).toBe(false)
+  expect(wireConnectionCapabilities(source, operations(["config"]), { harness: "claude", transport: "claude-sdk", abort: true }).configOptions).toBe(true)
+  expect(wireConnectionCapabilities(source, operations([]), { harness: "claude", transport: "claude-sdk", abort: true }).configOptions).toBe(false)
+})
+
+test("harness-owned history replays only when the transport serves it", () => {
+  const stored = capabilities({ permissions: false, questions: false, todos: true, subagents: false, history: "store" })
+  const owned = capabilities({ permissions: false, questions: false, todos: true, subagents: false, history: "harness" })
+  const context = { harness: "opencode", transport: "opencode-sdk" as const, abort: true }
+  expect(wireConnectionCapabilities(stored, operations([]), context).replay).toBe(true)
+  expect(wireConnectionCapabilities(owned, operations([]), context).replay).toBe(false)
+  expect(wireConnectionCapabilities(owned, operations(["history"]), context).replay).toBe(true)
+})
+
+test("reconnect, revert and unrevert are false for every transport because the contract has no such operation", () => {
+  for (const [harness, transport, source, groups] of declared) {
+    const wire = wireConnectionCapabilities(source, groups, { harness, transport, abort: true })
+    expect([wire.reconnect, wire.revert, wire.unrevert]).toEqual([false, false, false])
+  }
 })

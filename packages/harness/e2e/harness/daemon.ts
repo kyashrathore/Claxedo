@@ -73,7 +73,7 @@ async function daemonDirs(dataDir: string): Promise<DaemonDirs> {
 
 async function daemonEnv(input: DaemonInput): Promise<NodeJS.ProcessEnv> {
   const isolated = await isolatedEnv(input.dataDir, input.guardUrl)
-  const runtimeKeys = !input.coldStartWithoutKeys ? generateKeyPairSync("ed25519") : undefined
+  const runtimeKeys = (input.cloud || process.platform === "win32") && !input.coldStartWithoutKeys ? generateKeyPairSync("ed25519") : undefined
   return {
     ...isolated,
     CLAXEDO_OPENCODE_CATALOG_CACHE: await writeScriptedModelCatalog(input.dataDir),

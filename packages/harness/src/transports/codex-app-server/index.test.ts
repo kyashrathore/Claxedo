@@ -19,6 +19,10 @@ const input: StartInput = {
   credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" },
 }
 
+function rebindTo(directory: string) {
+  return async (upstreamSessionId: string) => Object.freeze({ sessionId: "s1", workspaceId: "w1", directory, connectionId: "codex-app-server", upstreamSessionId })
+}
+
 test("Codex receives every projected MCP server and local first-party server", () => {
   const services = { firstPartyMcp: () => ({ kind: "http", name: "claxedo", url: "http://127.0.0.1:47503" }) } as unknown as HarnessServices
   const config = projectCodexThreadConfig(input, services)
@@ -96,14 +100,13 @@ async function scriptedTransport(options: { holdTurnStart?: boolean; clock?: Clo
     if (heldTurnStart === undefined) throw new Error("No held turn/start")
     processes.at(-1)!.stdout.write(`${JSON.stringify({ id: heldTurnStart, result: { turn: { id: "turn-current" } } })}\n`)
   }
-  return { transport, startInput, started, frames, releaseTurnStart, retired: () => retired,
+  const liveBroker = () => ({ rebind: rebindTo(root), goal: { publish: async () => {} }, reportFailure: () => {} } as unknown as SessionBroker)
+  return { transport, startInput, started, frames, releaseTurnStart, liveBroker, retired: () => retired,
     get stdout() { return processes.at(-1)!.stdout }, spawned: () => processes.length, exitLatest: () => processes.at(-1)!.exit({ code: 1, signal: null }), close }
 }
 
 const turnInput = { turnId: "t1", userMessageId: "u1", assistantMessageId: "a1", origin: { actor: { kind: "person", userId: "owner" }, via: "relay", reissued: false },
   prompt: { agent: "codex", assistantMessageId: "a1", parts: [{ type: "text", text: "Reply" }] }, todos: [] } as TurnInput
-
-const liveBroker = () => ({ rebind: async () => {}, goal: { publish: async () => {} }, reportFailure: () => {} } as unknown as SessionBroker)
 
 test("Codex refuses the external-auth token refresh request as an unsupported method and answers tool calls outside a turn", async () => {
   const peer = await scriptedTransport()
@@ -113,7 +116,7 @@ test("Codex refuses the external-auth token refresh request as an unsupported me
     peer.stdout.write(`${JSON.stringify({ id, method, params })}\n`)
   })
   try {
-    await peer.transport.start(peer.startInput, liveBroker())
+    await peer.transport.start(peer.startInput, peer.liveBroker())
     const written = new Set<number>()
     const poll = async (id: number) => {
       for (let attempt = 0; attempt < 100; attempt++) {
@@ -144,7 +147,7 @@ test("failed Codex rebind leaves no attached entry for the retired process", asy
 test("a preceding Codex turn completion cannot end the current streamed turn", async () => {
   const peer = await scriptedTransport()
   try {
-    const session = await peer.transport.start(peer.startInput, liveBroker())
+    const session = await peer.transport.start(peer.startInput, peer.liveBroker())
     let settled = false
     const running = (async () => { for await (const _event of peer.transport.send(session, turnInput, { signal: new AbortController().signal } as TurnBroker)) {} })()
       .finally(() => { settled = true })
@@ -160,7 +163,7 @@ test("a preceding Codex turn completion cannot end the current streamed turn", a
 test("a malformed frame fails a Codex streamed turn and retires its process", async () => {
   const peer = await scriptedTransport()
   try {
-    const session = await peer.transport.start(peer.startInput, liveBroker())
+    const session = await peer.transport.start(peer.startInput, peer.liveBroker())
     const running = (async () => { for await (const _event of peer.transport.send(session, turnInput,
       { signal: new AbortController().signal } as TurnBroker)) {} })()
     await peer.started
@@ -170,10 +173,24 @@ test("a malformed frame fails a Codex streamed turn and retires its process", as
   } finally { await peer.close() }
 })
 
+test("a Codex turn without a resolved model starts the default model, not the thread's start or config model", async () => {
+  const peer = await scriptedTransport()
+  try {
+    const session = await peer.transport.start({ ...peer.startInput, model: { providerID: "codex", modelID: "start-model" },
+      config: { ...peer.startInput.config, model: { providerID: "codex", modelID: "config-model" } } }, peer.liveBroker())
+    const running = (async () => { for await (const _event of peer.transport.send(session, turnInput, { signal: new AbortController().signal } as TurnBroker)) {} })()
+    await peer.started
+    peer.stdout.write(`${JSON.stringify({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-current", status: "completed" } } })}\n`)
+    await running
+    expect(peer.frames.find((frame) => frame.method === "thread/start")?.params).toMatchObject({ model: "start-model" })
+    expect(peer.frames.find((frame) => frame.method === "turn/start")?.params).toMatchObject({ model: "test-model" })
+  } finally { await peer.close() }
+})
+
 test("a process exit mid-turn fails the streamed turn through the channel's failure listeners", async () => {
   const peer = await scriptedTransport()
   try {
-    const session = await peer.transport.start(peer.startInput, liveBroker())
+    const session = await peer.transport.start(peer.startInput, peer.liveBroker())
     const running = (async () => { for await (const _event of peer.transport.send(session, turnInput,
       { signal: new AbortController().signal } as TurnBroker)) {} })()
     await peer.started
@@ -185,7 +202,7 @@ test("a process exit mid-turn fails the streamed turn through the channel's fail
 test("a cancel that lands before turn/start answers still interrupts the turn once its id is known", async () => {
   const peer = await scriptedTransport({ holdTurnStart: true })
   try {
-    const session = await peer.transport.start(peer.startInput, liveBroker())
+    const session = await peer.transport.start(peer.startInput, peer.liveBroker())
     const controller = new AbortController()
     const running = (async () => { for await (const _event of peer.transport.send(session, turnInput, { signal: controller.signal } as TurnBroker)) {} })()
     await peer.started
@@ -206,7 +223,7 @@ test("Codex hands the spawn owner the whole environment and applies no scrub of 
   services.spawn = async (command, options) => { seen.push({ ...command.env }); return spawn(command, options) }
   ;(peer.transport as unknown as { options: { env?: NodeJS.ProcessEnv } }).options.env = { PATH: "/usr/bin", CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN: "broker-secret" }
   try {
-    await peer.transport.start(peer.startInput, liveBroker())
+    await peer.transport.start(peer.startInput, peer.liveBroker())
     expect(seen[0]?.CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN).toBe("broker-secret")
     expect(seen[0]?.CODEX_HOME).toBeDefined()
   } finally { await peer.close() }
@@ -219,7 +236,7 @@ test("Codex draft probes are keyed on non-secret identity, shared across rotatio
     config: { harness: { id: "codex", access: "native" } }, projection: { generation: "g1", pluginRoots: [], notApplied: [], mcpServers: [] },
     credentials: { providers: { codex: { baseUrl: "http://127.0.0.1:47509/v1", placeholder, authMode: "api-key" } }, secrets: { token: placeholder }, leaseGeneration: "lease-1" } })
   try {
-    expect((await peer.transport.config.options({ draft: draft("secret-one") }, "probe")).length).toBeGreaterThan(0)
+    expect((await peer.transport.config.options({ draft: draft("secret-one") }, "probe")).options.length).toBeGreaterThan(0)
     expect(peer.spawned()).toBe(1)
     await peer.transport.config.options({ draft: draft("secret-two") }, "probe")
     expect(peer.spawned()).toBe(1)

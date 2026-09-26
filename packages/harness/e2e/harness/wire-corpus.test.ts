@@ -45,6 +45,11 @@ test("state and phase values remain literal even when numeric", () => {
     .toEqual({ state: 1790000000000, phase: 1790000000000, observedAt: "<time>" })
 })
 
+test("the Claude Code CLI version and a calendar date are environment facts", () => {
+  expect(normalizeWireCorpus({ raw: { claude_code_version: "2.1.283" }, daily: [{ date: "2026-09-26", title: "2026-09-26" }] }))
+    .toEqual({ raw: { claude_code_version: "<claude-code-version>" }, daily: [{ date: "<date>", title: "2026-09-26" }] })
+})
+
 test("frame comparison keeps order inside an entity and accepts cross-entity interleaving", () => {
   const session = (id: string, phase: string) => ({ data: { payload: { type: "session.lifecycle", sessionID: id, phase } } })
   const frames = [session("ses_11111111", "creating"), session("ses_22222222", "creating"),

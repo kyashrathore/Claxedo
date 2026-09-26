@@ -56,6 +56,12 @@ test("core-boundary enforces direction for relative imports and vendor SDKs", ()
   fails("core-boundary", "src/translate/vendor.ts", 'import "@openai/foo"\n', /Move this dependency/)
 })
 
+test("compose is the only production module outside transports that imports transports", () => {
+  passes("compose-boundary", "src/compose.ts", 'import { AcpTransport } from "./transports/acp"\n')
+  fails("compose-boundary", "src/registry/wrong.ts", 'import { AcpTransport } from "../transports/acp"\n', /Import transports only/)
+  fails("compose-boundary", "src/host.ts", 'import { createHarnessComposer } from "./compose"\n', /package compose export/)
+})
+
 test("transport-boundary accepts only its own SDK and shared boundaries", () => {
   const documented = readFileSync(new URL("../AGENTS.md", import.meta.url), "utf8")
   for (const name of ["@claxedo/helpers", "@claxedo/agent-runtime-contract", "@claxedo/agent-event-runtime"]) {

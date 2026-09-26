@@ -28,12 +28,8 @@ export type TransportCapabilities = {
     questions: boolean
     elicitation: boolean
   }
-  steer: boolean
   subagents: boolean
   goals: GoalCapabilities
-  fork: boolean
-  agents: boolean
-  commands: boolean
   todos: boolean
   history: "store" | "harness"
   titles: "harness" | "side-request" | "none"

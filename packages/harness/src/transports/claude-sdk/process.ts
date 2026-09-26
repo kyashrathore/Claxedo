@@ -22,7 +22,7 @@ export class ClaudeProcess extends EventEmitter implements SpawnedProcess {
     super()
     this.started = services.spawn({ file: options.command, args: options.args, cwd: options.cwd ?? process.cwd(),
       env: stringRecord(options.env) },
-    { role, label: "Claude Code SDK", sessionId }).catch((error: unknown) => {
+    { role, label: "Claude Code SDK", sessionId, signal: options.signal }).catch((error: unknown) => {
       throw new TransportError("claude", "process", "Claude Code spawn failed", { retryable: true, cause: error })
     })
     const onAbort = () => { void this.retire(claudeRetirementDeadline()).catch((error: unknown) => this.fail(error)) }

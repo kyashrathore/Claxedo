@@ -1,4 +1,5 @@
 import type { ConfigOperations, DraftLaunch, HarnessSession, StartInput } from "../../contract"
+import { configOptionsPreview } from "../../contract"
 import { codexModelOptions, type CodexModel } from "./models"
 import { codexModeState, requireCodexMode } from "./modes"
 
@@ -30,9 +31,9 @@ export function createCodexConfig<T extends ConfigEntry>(input: {
     options: async (target, mode) => {
       if ("session" in target) {
         const entry = input.entry(target.session)
-        return codexModelOptions(await input.models(entry), entry.start.config.model?.modelID)
+        return configOptionsPreview(codexModelOptions(await input.models(entry), target.model?.modelID ?? entry.start.config.model?.modelID))
       }
-      return codexModelOptions(await input.probe(target.draft, mode), target.draft.config.model?.modelID)
+      return configOptionsPreview(codexModelOptions(await input.probe(target.draft, mode), target.draft.config.model?.modelID))
     },
     permissionModes: async (target) => codexModeState("session" in target
       ? input.entry(target.session).start.config.permissionMode : target.draft.config.permissionMode),

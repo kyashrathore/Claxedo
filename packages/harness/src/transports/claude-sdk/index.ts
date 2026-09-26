@@ -6,7 +6,7 @@ import type {
   RoutedEvent, SessionBroker, StartInput, TransportCapabilities, TransportConfigUpdate,
   TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
-import { attachedSessionEntry, mergeStartInput } from "../../contract"
+import { attachedSessionEntry, configOptionsPreview, mergeStartInput } from "../../contract"
 import { claudePrompt } from "./attachments"
 import { claudeBinding } from "./credentials"
 import { TransportError } from "../../contract/errors"
@@ -40,9 +40,9 @@ function capability(models?: readonly ModelInfo[]): TransportCapabilities {
       modelID: model.value, levels: model.supportsEffort ? model.supportedEffortLevels ?? [] : [],
     })) } : { status: "unresolved", models: [] },
     instructionChannel: "turn-system-prompt", configOwner: "runtime",
-    requests: { permissions: true, questions: true, elicitation: false }, steer: true, subagents: true,
+    requests: { permissions: true, questions: true, elicitation: false }, subagents: true,
     goals: { implemented: true, available: true, actions: [], recovery: "blocked", optionalFields: ["iteration", "lastReason"] },
-    fork: false, agents: true, commands: true, todos: true, history: "store", titles: "harness",
+    todos: true, history: "store", titles: "harness",
     pluginIntake: { mcp: "session", skills: "plugin-dir" }, mcpTransports: { stdio: true, http: true, sse: true },
     timing: { model: "next-turn", effort: "next-turn", permissionMode: "next-turn", credentials: "next-turn" },
   }
@@ -72,11 +72,8 @@ export class ClaudeSdkTransport implements HarnessTransport {
     if (this.entries.has(input.sessionId)) throw new TransportError("claude", "session", "Claude session already attached")
     claudeBinding(input.credentials, input.owner)
     const session: HarnessSession = { directory: input.directory, locality: input.locality,
-      binding: { sessionId: input.sessionId, workspaceId: input.workspaceId, directory: input.directory,
-        connectionId: "claude-sdk", upstreamSessionId: `claude-sdk:${randomUUID()}` } }
+      binding: await broker.rebind(`claude-sdk:${randomUUID()}`) }
     this.entries.set(input.sessionId, { input, session, broker, processes: new Set() })
-    try { await broker.rebind(session.binding.upstreamSessionId) }
-    catch (error) { this.entries.delete(input.sessionId); throw error }
     return session
   }
 
@@ -84,10 +81,9 @@ export class ClaudeSdkTransport implements HarnessTransport {
     if (this.disposed) throw new TransportError("claude", "session", "Claude transport disposed")
     if (this.entries.has(input.sessionId)) throw new TransportError("claude", "session", "Claude session already attached")
     claudeBinding(input.credentials, input.owner)
-    const session: HarnessSession = { directory: input.directory, locality: input.locality, binding: input.binding }
+    const session: HarnessSession = { directory: input.directory, locality: input.locality,
+      binding: await broker.rebind(input.binding.upstreamSessionId) }
     this.entries.set(input.sessionId, { input, session, broker, processes: new Set() })
-    try { await broker.rebind(input.binding.upstreamSessionId) }
-    catch (error) { this.entries.delete(input.sessionId); throw error }
     return session
   }
 
@@ -99,9 +95,8 @@ export class ClaudeSdkTransport implements HarnessTransport {
 
   private async launch(entry: Entry, turn: TurnInput, broker: TurnBroker, input: ClaudeTurnInput,
     runtime: ReturnType<typeof claudeTranslator>["runtime"], abort: AbortController) {
-    const model = turn.model?.modelID ?? turn.prompt.model?.modelID ?? entry.input.model?.modelID ?? "default"
-    const effort = claudeEffort(requiredClaudeEffort(turn.effort || turn.prompt.variant ? await this.models.load(entry.input, entry.input.sessionId) : [], model,
-      turn.effort ?? turn.prompt.variant))
+    const model = turn.model?.modelID ?? "default"
+    const effort = claudeEffort(requiredClaudeEffort(turn.effort ? await this.models.load(entry.input, entry.input.sessionId) : [], model, turn.effort))
     return this.launcher.launch({ session: entry.session, input: entry.input, broker: entry.broker, turnBroker: broker,
       prompt: input.stream, abort, processes: entry.processes, runtime, assistantMessageId: turn.assistantMessageId, turnId: turn.turnId,
       model, effort, system: turn.system, agent: turn.prompt.agent, partialMessages: true })
@@ -123,7 +118,7 @@ export class ClaudeSdkTransport implements HarnessTransport {
     try {
       const stream = await this.launch(entry, turn, broker, input, runtime, abort)
       for await (const message of stream as AsyncIterable<SDKMessage | SDKActiveGoalMessage>) {
-        const observed = await observeClaudeSessionMessage(message, entry.session, entry.broker, abort.signal)
+        const observed = await observeClaudeSessionMessage(message, entry, entry.broker, abort.signal)
         if (observed.kind === "active-goal") continue
         if (input.observe(observed.message)) continue
         if (observed.message.type === "result") { input.close(); result = observed.message; continue }
@@ -152,15 +147,13 @@ export class ClaudeSdkTransport implements HarnessTransport {
 
   readonly goals = {
     read: async (session: HarnessSession) => this.entry(session).broker.goal.read(),
-    start: async (session: HarnessSession, objective: string, broker: SessionBroker) => {
-      const entry = this.entry(session)
-      return this.goalRuntime.start(session, entry.input, broker, objective)
-    },
+    start: async (session: HarnessSession, objective: string, broker: SessionBroker) =>
+      this.goalRuntime.start(this.entry(session), broker, objective),
     pause: async () => ({ ok: false as const, status: "unsupported" as const, message: "Claude Goal cannot pause" }),
     resume: async () => ({ ok: false as const, status: "unsupported" as const, message: "Claude Goal cannot resume" }),
     stop: async (session: HarnessSession) => {
       const entry = this.entry(session)
-      return this.goalRuntime.stop(session, entry.input, entry.broker)
+      return this.goalRuntime.stop(entry, entry.broker)
     },
     delete: async () => ({ ok: false as const, status: "unsupported" as const, message: "Claude Goal cannot delete" }),
   }
@@ -178,11 +171,12 @@ export class ClaudeSdkTransport implements HarnessTransport {
       entry.input = { ...entry.input, config }
       return entry.input.config
     },
-    options: async (target: import("../../contract").ConfigTarget, mode: "probe" | "peek") => {
+    options: async (target: import("../../contract").ConfigPreviewTarget, mode: "probe" | "peek") => {
       const input = "session" in target ? this.entry(target.session).input : target.draft
+      const requested = "session" in target ? target.model : undefined
       const models = mode === "probe" ? await this.models.load(input, "session" in target ? target.session.binding.sessionId : undefined)
         : this.models.peek(input) ?? []
-      return modelOptions(models, input.model?.modelID ?? "default")
+      return configOptionsPreview(modelOptions(models, requested?.modelID ?? input.model?.modelID ?? "default"))
     },
     permissionModes: async (target: import("../../contract").ConfigTarget) => {
       const selected = "session" in target ? this.entry(target.session).input.config.permissionMode : target.draft.config.permissionMode

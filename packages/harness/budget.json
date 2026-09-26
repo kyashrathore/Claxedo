@@ -11,5 +11,6 @@
   "transports/cursor-sdk": 1600,
   "transports/acp": 2950,
   "transports/pi-rpc": 650,
-  "transports/opencode-sdk": 3000
+  "transports/opencode-sdk": 3000,
+  "compose.ts": 62
 }

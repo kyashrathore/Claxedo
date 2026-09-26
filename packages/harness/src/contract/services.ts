@@ -14,6 +14,7 @@ export type SpawnOptions = {
   role: "harness" | "probe"
   label: string
   sessionId?: string
+  signal: AbortSignal
 }
 
 export type ExitStatus = {

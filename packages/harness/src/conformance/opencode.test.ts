@@ -50,6 +50,7 @@ async function backend(): Promise<OpenCodeBackend> {
     hold: (marker) => server.holdTextReplies(marker),
     held: (marker) => server.textGateReached(marker),
     scriptTool: (name, input) => server.scriptTool({ name, input }),
+    unrunnableTurn: (turn) => ({ ...turn, model: undefined }),
     rotate: async () => {
       const port = await reservePort()
       const next = await startScriptedModelServer({ port, red: false })
@@ -142,8 +143,9 @@ test("two sessions in one directory call first-party tools with their own identi
         url: `http://127.0.0.1:${port}/mcp?session=${sessionId}`, headers: { Authorization: `Bearer first-party-${sessionId}` } }) }
       return state
     }, makeTransport: (services, state) => transport(services, state as OpenCodeBackend) })
+    const first = context
     const second = await context.transport.start({ ...context.start, sessionId: "s2" }, { ...context.sessionBroker,
-      rebind: async () => undefined })
+      rebind: async (upstreamSessionId) => ({ ...first.session.binding, sessionId: "s2", upstreamSessionId }) })
     const state = context.backend as OpenCodeBackend
     state.server.scriptTool({ name: "claxedo_proof", input: {}, whenPromptIncludes: "FIRSTONE" })
     expect(JSON.stringify(await collect(context, context.turn("Call claxedo_proof for FIRSTONE")))).toContain("FIRST_PARTY:s1")
@@ -183,7 +185,8 @@ test("one embedded engine refuses a second selected account before rebinding the
   try {
     const rotation = await (context.backend as OpenCodeBackend).rotate!()
     await expect(context.transport.start({ ...context.start, sessionId: "s2", credentials: rotation.credentials },
-      { ...context.sessionBroker, rebind: async () => undefined })).rejects.toThrow("different selected accounts")
+      { ...context.sessionBroker, rebind: async (upstreamSessionId) => ({ ...context.session.binding, sessionId: "s2", upstreamSessionId }) }))
+      .rejects.toThrow("different selected accounts")
     const events = await collect(context, context.turn("Reply with exactly FIRSTACCOUNT"))
     expect(events.some((item) => item.event.type === "finish")).toBe(true)
     expect((context.backend as OpenCodeBackend).server.requests.some((request) =>
@@ -196,7 +199,7 @@ test("credential rotation waits until other OpenCode sessions using the old acco
     makeTransport: (services, state) => transport(services, state as OpenCodeBackend) })
   try {
     const second = await context.transport.start({ ...context.start, sessionId: "s2" },
-      { ...context.sessionBroker, rebind: async () => undefined })
+      { ...context.sessionBroker, rebind: async (upstreamSessionId) => ({ ...context.session.binding, sessionId: "s2", upstreamSessionId }) })
     const rotation = await (context.backend as OpenCodeBackend).rotate!()
     await expect(context.transport.configure(context.session, { credentials: rotation.credentials }))
       .rejects.toThrow("different selected accounts")
@@ -227,7 +230,8 @@ test("a failed OpenCode open releases its launch document ownership", async () =
     await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: replacement\ndescription: Replacement\n---\n")
     const second = { ...first, sessionId: "replacement", projection: { ...first.projection,
       pluginRoots: [{ pluginInstanceId: "replacement", root: plugin, dataRoot: plugin }] } }
-    const opened = await context.transport.start(second, { ...context.sessionBroker, rebind: async () => undefined })
+    const opened = await context.transport.start(second, { ...context.sessionBroker,
+      rebind: async (upstreamSessionId) => ({ ...context.session.binding, sessionId: second.sessionId, upstreamSessionId }) })
     expect(opened.binding.sessionId).toBe("replacement")
   } finally { await context.close() }
 }, 60_000)
@@ -342,8 +346,8 @@ test("an unavailable selected OpenCode account cannot reach the model or a machi
     const credentials = { ...state.credentials, providers: { proof: { unavailable: true as const, reason: "account_revoked" } },
       leaseGeneration: "revoked" }
     expect((await context.transport.configure(context.session, { credentials })).state).toBe("applied")
-    const events = await collect(context, context.turn("Reply with exactly UNAVAILABLE"))
-    expect(events.some((item) => item.event.type === "error" && item.event.error.includes("account_revoked"))).toBe(true)
+    await expect(collect(context, context.turn("Reply with exactly UNAVAILABLE")))
+      .rejects.toMatchObject({ transport: "opencode", code: "configuration", message: expect.stringContaining("account_revoked") })
     expect(state.server.requests).toHaveLength(0)
   } finally { await context.close() }
 }, 60_000)

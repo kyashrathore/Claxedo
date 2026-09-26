@@ -18,6 +18,7 @@ type ProbeResult = { options: SessionConfigOption[]; commands: Commands; agents:
 export class AcpDraftProbes {
   private readonly peers = new Set<AcpPeer>()
   private readonly cache: DraftProbeCache<ProbeResult>
+  private readonly disposeAbort = new AbortController()
   private disposed = false
 
   constructor(private readonly services: HarnessServices, private readonly connection: AcpConnectionOptions,
@@ -56,7 +57,7 @@ export class AcpDraftProbes {
       complete: () => {}, update: (notification) => {
         if (notification.update.sessionUpdate === "available_commands_update") resolveCommands(notification.update.availableCommands)
       }, extension: () => {}, unknown: () => {},
-    }, "probe")
+    }, { role: "probe", signal: this.disposeAbort.signal })
     if (this.disposed) { await peer.retire(); throw new AcpTransportError("connection", "ACP transport disposed during probe") }
     this.peers.add(peer)
     try {
@@ -83,6 +84,7 @@ export class AcpDraftProbes {
 
   async dispose(): Promise<void> {
     this.disposed = true
+    this.disposeAbort.abort()
     await Promise.all([...this.peers].map((peer) => peer.retire()))
   }
 }

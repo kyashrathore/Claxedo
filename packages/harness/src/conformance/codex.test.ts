@@ -4,7 +4,7 @@ import { createServer } from "node:http"
 import os from "node:os"
 import path from "node:path"
 import { expect, test } from "bun:test"
-import { runConformance, setupConformance, type ConformanceBackend } from "./test-support/run"
+import { runConformance, setupConformance, type ConformanceBackend, withUndeliverableFile } from "./test-support/run"
 import { SESSION_TITLE_SYSTEM_PROMPT } from "../../e2e/harness/config"
 import { ensurePinnedCodex, PINNED_CODEX } from "../../e2e/harness/pinned-codex"
 import { reservePort, releasePort } from "../../e2e/harness/ports"
@@ -46,6 +46,8 @@ async function backend(): Promise<CodexBackend> {
     origin: { actor: { kind: "person", userId: "member" }, via: "relay", reissued: false },
     hold: (marker) => server.holdTextReplies(marker),
     held: (marker) => server.textGateReached(marker),
+    unrunnableTurn: withUndeliverableFile,
+    cleanupWithoutCommands: "verified_clear",
     close: async () => {
       console.log(`Codex outbound attempts: ${JSON.stringify(guard.attempts)}`)
       const unexpected = unexpectedEgress(guard.attempts)
@@ -394,7 +396,7 @@ test("Codex live model list supplies capabilities and session options", async ()
     if (capabilities.modelSelection.status !== "required") throw new Error("Codex model selection unavailable")
     expect(capabilities.modelSelection.models.length).toBeGreaterThan(0)
     expect(capabilities.effortLevels.status).toBe("resolved")
-    const options = await context.transport.config!.options({ session: context.session }, "probe")
+    const { options } = await context.transport.config!.options({ session: context.session }, "probe")
     expect(options.find((option) => option.id === "model")?.selectOptions?.length).toBeGreaterThan(0)
     expect(options.some((option) => option.id === "effort")).toBe(true)
     expect(options.some((option) => option.id === "service_tier")).toBe(true)
@@ -447,7 +449,7 @@ test("Codex turn model overrides start model and validates effort and tier from 
       binary: PINNED_CODEX, homeRoot: path.join((state as CodexBackend).root, "homes"), env: (state as CodexBackend).env,
     }) })
   try {
-    const options = await context.transport.config!.options({ session: context.session }, "probe")
+    const { options } = await context.transport.config!.options({ session: context.session }, "probe")
     const model = options.find((option) => option.id === "model")?.selectOptions?.[0]?.id
     expect(model).toBeDefined()
     const turn = { ...context.turn("MODEL_OVERRIDE"), model: { providerID: "codex", modelID: model! }, effort: "high",
@@ -548,7 +550,7 @@ test("brokered Codex discovers a projected plugin skill through its composed hom
   try {
     const { home } = await prepareCodexProfile({ homeRoot: path.join(state.root, "homes"), owner: state.owner, credentials: state.credentials, projection })
     const owned = await services.spawn({ file: PINNED_CODEX, args: ["app-server", "--listen", "stdio://"], cwd: state.directory,
-      env: { ...state.env, CODEX_HOME: home } as Record<string, string> }, { role: "harness", label: "Codex plugin conformance" })
+      env: { ...state.env, CODEX_HOME: home } as Record<string, string> }, { role: "harness", label: "Codex plugin conformance", signal: new AbortController().signal })
     rpc = new CodexRpc(owned, services.clock)
     await rpc.request("initialize", { clientInfo: { name: "claxedo", version: "0.1.0" }, capabilities: { experimentalApi: true } })
     rpc.notify("initialized")

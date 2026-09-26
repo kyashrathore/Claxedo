@@ -63,7 +63,7 @@ export class CodexTerminals {
     }
     const execution = noActive || await this.completion(turnId, deadline) ? "terminal" as const : "unknown" as const
     const ours = this.byTurn.get(turnId)
-    if (!ours?.size) return { execution, cleanup: "unknown" }
+    if (!ours?.size) return { execution, cleanup: execution === "terminal" ? "verified_clear" : "unknown" }
     try { return { execution, cleanup: await this.release(turnId, ours, deadline) } }
     catch (error) { return { execution, cleanup: "unknown", error: cleanupFailure(error) } }
   }

@@ -50,6 +50,7 @@ export class CodexAppServerTransport implements HarnessTransport {
   private readonly entries = new Map<string, Entry>()
   private readonly starting = new Set<CodexRpc>()
   private readonly probes: DraftProbeCache<CodexModel[]>
+  private readonly disposeAbort = new AbortController()
   private disposed = false
 
   constructor(private readonly services: HarnessServices, private readonly options: CodexTransportOptions) {
@@ -69,7 +70,7 @@ export class CodexAppServerTransport implements HarnessTransport {
     const env = stringRecord(this.options.env ?? process.env)
     env.CODEX_HOME = profile.home
     const owned = await this.services.spawn({ file: this.options.binary, args: ["app-server", "--listen", "stdio://"], cwd: input.directory, env },
-      { role: "harness", label: "Codex app-server", sessionId: input.sessionId })
+      { role: "harness", label: "Codex app-server", sessionId: input.sessionId, signal: this.disposeAbort.signal })
     const rpc = new CodexRpc(owned, this.services.clock)
     this.starting.add(rpc)
     try {
@@ -95,22 +96,26 @@ export class CodexAppServerTransport implements HarnessTransport {
         resumed ? codexThreadResumeParams(resumed, input, config, mode) : codexThreadStartParams(input, config, mode)))
       const threadId = asString(asRecordOrEmpty(result.thread).id) ?? ""
       if (!threadId || (resumed && threadId !== resumed)) throw new CodexTransportError("session", "Codex returned a different or missing thread")
-      const session: HarnessSession = { directory: input.directory, locality: input.locality, binding: {
-        sessionId: input.sessionId, workspaceId: input.workspaceId, directory: input.directory,
-        connectionId: "codex-app-server", upstreamSessionId: threadId,
-      } }
-      const entry: Entry = { state: "ready", start: input, session, broker, rpc, home, brokered,
-        terminals: new CodexTerminals(rpc, threadId), children: new Map(), sideThreads: new Set(), usage: new CodexUsageLedger(), goal: null }
-      rpc.onRequest((message) => this.answer(entry, message))
-      rpc.onMessage((message) => this.outsideTurn(entry, message))
+      let entry: Entry | undefined
+      let retiring = false
+      const early: RpcMessage[] = []
+      rpc.onRequest((message) => entry ? this.answer(entry, message)
+        : Promise.reject(new CodexRequestRefusal(-32000, "Codex session is not bound yet")))
+      rpc.onMessage((message) => { if (entry) this.outsideTurn(entry, message); else early.push(message) })
       rpc.onFailure((error) => {
+        retiring = true
+        if (!entry) return
         entry.state = "retiring"
         entry.providerTurn?.queue.fail(error)
       })
-      await broker.rebind(threadId)
-      if (entry.state === "retiring") throw new CodexTransportError("process", "Codex process retired during rebind")
+      const binding = await broker.rebind(threadId)
+      if (retiring) throw new CodexTransportError("process", "Codex process retired during rebind")
+      const session: HarnessSession = { directory: input.directory, locality: input.locality, binding }
+      entry = { state: "ready", start: input, session, broker, rpc, home, brokered,
+        terminals: new CodexTerminals(rpc, threadId), children: new Map(), sideThreads: new Set(), usage: new CodexUsageLedger(), goal: null }
       this.entries.set(input.sessionId, entry)
       this.starting.delete(rpc)
+      for (const message of early) this.outsideTurn(entry, message)
       return session
     } catch (error) {
       this.starting.delete(rpc)
@@ -281,6 +286,7 @@ export class CodexAppServerTransport implements HarnessTransport {
 
   async dispose(): Promise<void> {
     this.disposed = true
+    this.disposeAbort.abort()
     for (const rpc of this.starting) await rpc.retire(codexRetirementDeadline(this.services))
     for (const entry of this.entries.values()) await this.close(entry.session)
   }

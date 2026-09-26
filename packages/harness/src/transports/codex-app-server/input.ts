@@ -12,9 +12,11 @@ type ThreadStartParams = v2.ThreadStartParams & { dynamicTools: v2.DynamicToolSp
 const codexAttachmentError = (message: string) => new CodexTransportError("configuration", message)
 
 export async function codexTurnInput(turn: TurnInput, directory: string): Promise<v2.UserInput[]> {
+  const { files, references } = promptFiles(turn, codexAttachmentError)
+  if (references.length) throw codexAttachmentError(`Codex cannot deliver the file URL ${references[0]}`)
   const written: MaterializedFile[] = []
-  for (const file of promptFiles(turn, codexAttachmentError).files) written.push(await materializeAttachment(directory, file, codexAttachmentError))
-  const text = [flattenTurnPrompt(turn, { system: "turn", separator: "\n" }), ...written.map(attachmentPathLine)].filter(Boolean).join("\n")
+  for (const file of files) written.push(await materializeAttachment(directory, file, codexAttachmentError))
+  const text = [flattenTurnPrompt(turn, { system: "prefix", separator: "\n" }), ...written.map(attachmentPathLine)].filter(Boolean).join("\n")
   return [{ type: "text", text, text_elements: [] },
     ...written.filter((file) => isPromptImage(file.mime)).map((file): v2.UserInput => ({ type: "localImage", path: file.path }))]
 }

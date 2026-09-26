@@ -2,7 +2,7 @@ import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
 import { cursorRuntimeMessage, cursorSdkAdapter } from "@claxedo/agent-event-runtime/harnesses/cursor"
 import type { SDKUserMessage } from "@cursor/sdk"
 import type {
-  AttachInput, ConfigApplied, Deadline, HarnessServices, HarnessSession, HarnessTransport,
+  AttachInput, ConfigApplied, Deadline, HarnessBinding, HarnessServices, HarnessSession, HarnessTransport,
   RoutedEvent, SessionBroker, StartInput, TransportCapabilities, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
 import { attachedSessionEntry, mergeStartInput, ownerMayUseMachineLogin, selectedProviderProjection, sessionMcpServers } from "../../contract"
@@ -40,7 +40,7 @@ function workerSession(input: StartInput, services: HarnessServices, env: NodeJS
 }
 
 function inlineCursorPrompt(turn: TurnInput): string | SDKUserMessage {
-  const text = flattenTurnPrompt(turn, { system: "turn", separator: "\n\n" })
+  const text = flattenTurnPrompt(turn, { separator: "\n\n", system: "prefix" })
   const images = turn.prompt.parts.flatMap((part) => {
     if (part.type !== "file") return []
     const image = inlineDataUrl(part.url, { imageOnly: true, strictBase64: false })
@@ -86,9 +86,9 @@ export class CursorSdkTransport implements HarnessTransport {
       modelSelection: { status: "required", models: [] }, effortLevels: { status: "unsupported", models: [] },
       instructionChannel: "prompt-prefix", configOwner: "runtime",
       requests: { permissions: false, questions: false, elicitation: false },
-      steer: false, subagents: false,
+      subagents: false,
       goals: { implemented: false, available: false, actions: [], recovery: "blocked", optionalFields: [] },
-      fork: false, agents: false, commands: false, todos: false, history: "store", titles: "none",
+      todos: false, history: "store", titles: "none",
       pluginIntake: { mcp: "session", skills: "none" }, mcpTransports: { stdio: true, http: true, sse: true },
       timing: { model: "next-turn", effort: "next-turn", permissionMode: "next-session", credentials: "after-active-turns" },
     }
@@ -107,12 +107,10 @@ export class CursorSdkTransport implements HarnessTransport {
       if (worker.failed) await this.registry.replace(credential.key)
       throw error
     }
-    const session: HarnessSession = { directory: input.directory, locality: input.locality, binding: {
-      sessionId: input.sessionId, workspaceId: input.workspaceId, directory: input.directory,
-      connectionId: "cursor-sdk", upstreamSessionId: agentId,
-    } }
-    try { await broker.rebind(agentId) }
+    let binding: HarnessBinding
+    try { binding = await broker.rebind(agentId) }
     catch (error) { await worker.call({ kind: "close", sessionId: input.sessionId }); throw error }
+    const session: HarnessSession = { directory: input.directory, locality: input.locality, binding }
     this.entries.set(input.sessionId, { session, input, key: credential.key, busy: false })
     return session
   }
@@ -120,9 +118,9 @@ export class CursorSdkTransport implements HarnessTransport {
   async attach(input: AttachInput, broker: SessionBroker): Promise<HarnessSession> {
     assertCursorProjection(input.projection)
     const credential = cursorCredential(input, this.env)
-    const session: HarnessSession = { directory: input.directory, locality: input.locality, binding: input.binding }
+    const session: HarnessSession = { directory: input.directory, locality: input.locality,
+      binding: await broker.rebind(input.binding.upstreamSessionId) }
     this.entries.set(input.sessionId, { session, input, key: credential.key, busy: false })
-    await broker.rebind(input.binding.upstreamSessionId)
     return session
   }
 

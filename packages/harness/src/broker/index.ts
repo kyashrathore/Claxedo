@@ -3,6 +3,7 @@ import { goalPort, admitProviderTurn } from "./goals"
 import type { BrokerPorts, SessionBrokerContext, TurnBrokerContext } from "./ports"
 import { RequestTable } from "./requests/table"
 import { SubagentBroker } from "./subagents"
+export { createMemorySubagentAdmissionStore } from "./subagents/admission"
 
 export type BrokerOwner = {
   ports: BrokerPorts
@@ -44,13 +45,13 @@ export function createSessionBroker(owner: BrokerOwner, context: SessionBrokerCo
       if (!context.start) throw new Error("Session completion requires a start binding")
       return owner.requests.completeElicitation(context.sessionId, context.start.connectionId, elicitationId)
     },
-    rebind: (upstreamSessionId) => ports.rebind(context.sessionId, upstreamSessionId),
+    rebind: async (upstreamSessionId) => Object.freeze({ ...await ports.rebind(context.sessionId, upstreamSessionId) }),
     persistHandoff: (handoff) => ports.persistHandoff(context.sessionId, handoff),
     admitProviderTurn: (input, run) => admitProviderTurn(
       ports, context.sessionId, input,
-      (turnId, signal) => {
+      (turn, signal) => {
         const authority = ports.currentTurnAuthority(context.sessionId)
-        if (!authority || authority.turnId !== turnId) throw new Error("Provider turn authority unavailable")
+        if (!authority || authority.turnId !== turn.turnId) throw new Error("Provider turn authority unavailable")
         return createTurnBroker(owner, { authority, origin: context.origin, signal })
       },
       run,
@@ -68,4 +69,4 @@ export function createSessionBroker(owner: BrokerOwner, context: SessionBrokerCo
   }
 }
 
-export type { BrokerPorts, SessionBrokerContext, TurnBrokerContext, TurnAuthority } from "./ports"
+export type { AdmittedSubagentObservation, BrokerEvent, BrokerPorts, SessionBrokerContext, TurnBrokerContext, TurnAuthority } from "./ports"

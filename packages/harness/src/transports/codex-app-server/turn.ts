@@ -41,8 +41,7 @@ function listenTurn(entry: Entry, session: HarnessSession, queue: AsyncPushQueue
 async function startTurn(entry: Entry, session: HarnessSession, turn: TurnInput, services: HarnessServices,
   models: () => Promise<CodexModel[]>): Promise<void> {
   const settings = codexTurnSettings(await models(), {
-    model: turn.model?.modelID ?? entry.start.config.model?.modelID ?? entry.start.model?.modelID,
-    effort: turn.effort, serviceTier: turn.prompt.serviceTier,
+    model: turn.model?.modelID, effort: turn.effort, serviceTier: turn.prompt.serviceTier,
   })
   const mode = codexPermissionSettings(entry.start.config.permissionMode)
   const threadId = session.binding.upstreamSessionId

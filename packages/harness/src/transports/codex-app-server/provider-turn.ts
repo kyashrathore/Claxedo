@@ -4,9 +4,10 @@ import { CodexEvents } from "./events"
 import { AsyncPushQueue } from "@claxedo/helpers"
 import { CodexTransportError } from "./errors"
 import type { RpcMessage } from "./rpc"
+import type { CodexUsageLedger } from "./usage"
 
 export type CodexProviderTurn = { id: string; queue: AsyncPushQueue<RoutedEvent>; events: CodexEvents; turnBroker?: TurnBroker }
-export type ProviderTurnEntry = { session: HarnessSession; broker: SessionBroker; providerTurn?: CodexProviderTurn }
+export type ProviderTurnEntry = { session: HarnessSession; broker: SessionBroker; usage: CodexUsageLedger; providerTurn?: CodexProviderTurn }
 
 export function admitCodexProviderTurn(entry: ProviderTurnEntry, message: RpcMessage): void {
   const id = asString(asRecordOrEmpty(asRecordOrEmpty(message.params).turn).id)
@@ -15,8 +16,9 @@ export function admitCodexProviderTurn(entry: ProviderTurnEntry, message: RpcMes
   const providerTurn: CodexProviderTurn = { id, queue, events: new CodexEvents(entry.session.binding.upstreamSessionId) }
   entry.providerTurn = providerTurn
   for (const event of providerTurn.events.ingest(message)) queue.push(event)
-  void entry.broker.admitProviderTurn({ reason: "goal" }, async function* (turnBroker) {
+  void entry.broker.admitProviderTurn({ reason: "goal" }, async function* (turnBroker, turn) {
     providerTurn.turnBroker = turnBroker
+    entry.usage.attach({ sessionId: entry.session.binding.sessionId, directory: entry.session.directory, assistantMessageId: turn.assistantMessageId })
     for (;;) {
       const next = await queue.next()
       if (next.done) return

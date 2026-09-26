@@ -9,7 +9,7 @@ type Block = Exclude<SDKUserMessage["message"]["content"], string>[number]
 const claudeAttachmentError = (message: string) => new TransportError("claude", "configuration", message)
 
 export async function claudePrompt(turn: TurnInput, directory: string): Promise<SDKUserMessage> {
-  const text = flattenTurnPrompt(turn, { system: "prompt", separator: "\n\n" })
+  const text = flattenTurnPrompt(turn, { separator: "\n\n", system: "channel" })
   const { files, references } = promptFiles(turn, claudeAttachmentError)
   if (references.length) throw claudeAttachmentError("Claude cannot deliver this file URL")
   const blocks: Block[] = []

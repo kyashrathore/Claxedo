@@ -51,7 +51,7 @@ test("an inventory the app-server refuses leaves cleanup unknown instead of fail
     error: { code: "cancellation_unsupported", message: "Invalid request: unknown variant `thread/backgroundTerminals/list`" } })
 })
 
-test("a turn with no observed command reports unknown cleanup without reading the inventory", async () => {
+test("a completed turn that observed no command has nothing to clean up and reads no inventory", async () => {
   const calls: string[] = []
   let terminals!: CodexTerminals
   const rpc = { request: async (method: string) => {
@@ -62,11 +62,11 @@ test("a turn with no observed command reports unknown cleanup without reading th
   terminals = new CodexTerminals(rpc, "thread-1")
   terminals.observe({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-other" } } })
   expect(terminals.ranCommand("turn-1")).toBe(false)
-  expect(await terminals.stop("turn-1", deadline())).toEqual({ execution: "terminal", cleanup: "unknown" })
+  expect(await terminals.stop("turn-1", deadline())).toEqual({ execution: "terminal", cleanup: "verified_clear" })
   expect(calls).toEqual(["turn/interrupt"])
 })
 
-test("a completion that never arrives before the deadline leaves execution unknown", async () => {
+test("a completion that never arrives before the deadline leaves execution and cleanup unknown", async () => {
   const rpc = { request: async () => ({}) } as unknown as CodexRpc
   const terminals = new CodexTerminals(rpc, "thread-1")
   expect(await terminals.stop("turn-1", { at: Date.now() + 50, signal: new AbortController().signal }))

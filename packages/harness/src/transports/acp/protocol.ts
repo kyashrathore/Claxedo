@@ -21,7 +21,7 @@ export function acpMcp(server: McpServerSpec): McpServer {
 
 export function acpPrompt(turn: TurnInput): ContentBlock[] {
   const blocks: ContentBlock[] = []
-  const text = flattenTurnPrompt(turn, { system: "turn", separator: "\n\n" })
+  const text = flattenTurnPrompt(turn, { separator: "\n\n", system: "prefix" })
   if (text) blocks.push({ type: "text", text })
   for (const part of turn.prompt.parts) {
     if (part.type !== "file") continue
