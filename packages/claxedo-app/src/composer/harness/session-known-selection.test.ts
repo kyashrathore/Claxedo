@@ -6,8 +6,7 @@ import { createHarnessHydrator } from "./harness-hydrator"
 import { createHarnessStatusActions } from "./harness-status-actions"
 import { createHarnessStore } from "./harness-store"
 import { createScopeCaches } from "./scope-caches"
-import { knownSessionModel } from "./session-known-model"
-import type { HarnessScopeInput } from "./store-policy"
+import { knownSessionModel, type HarnessScopeInput } from "./store-policy"
 
 const placementId = placement("placement-1")
 const pi = nativeHarness("pi")

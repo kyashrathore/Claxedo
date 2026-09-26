@@ -8,7 +8,7 @@ import type { useComposerText } from "./text"
 import { useHarnessConfig } from "./harness/context"
 import { createHarnessSelectionController, createHarnessSubmitController, type HarnessScopeInput, type HarnessSelectionSnapshot } from "./harness/controller"
 import { harnessSelectionId } from "./harness/profile"
-import { knownSessionModel } from "./harness/session-known-model"
+import { knownSessionModel } from "./harness/store-policy"
 import { createComposerPermissionSurface } from "./permission/permission-mode-wiring"
 import { harnessModesUnavailable } from "./role-gate"
 
