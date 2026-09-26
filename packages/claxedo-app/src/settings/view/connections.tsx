@@ -4,6 +4,7 @@ import { useServer, type Connection, type ConnectionScope, type Integration, typ
 import type { HarnessConnectionRef, HarnessConnectionsCatalog } from "@claxedo/agent-runtime-contract"
 import { showToast, Tag, Button, Icon } from "@/ui"
 import { useTranslator } from "@/i18n"
+import { failureMessage } from "@/lib/failure"
 import { verifyFailedMessage } from "../connections"
 import { settingsDictionary, type SettingsKey } from "../i18n"
 import { ConnectForm } from "./connect-form"
@@ -16,8 +17,6 @@ const STATUS_KEY = {
 } as const satisfies Record<Connection["status"], SettingsKey>
 
 const STATUS_TONE = { connected: "success", degraded: "warning", broken: "danger" } as const
-
-const reason = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
 export function ConnectionsSection() {
   const t = useTranslator(settingsDictionary)
@@ -37,7 +36,7 @@ export function ConnectionsSection() {
       await task()
       showToast({ title: done })
     } catch (error) {
-      showToast({ title: t("settings.common.requestFailed"), description: reason(error) })
+      showToast({ title: t("settings.common.requestFailed"), description: failureMessage(error) })
     } finally {
       setBusy(undefined)
     }
@@ -48,7 +47,7 @@ export function ConnectionsSection() {
       <SettingsIntro description={t("settings.connections.description")} />
       <AgentConnections rows={agents.data} error={agents.error} loading={agents.isPending} onRemove={(row) => void act(row.connectionId, () => server.agentConnections.remove(row.connectionId), `${row.label} removed`)} busy={busy()} />
       <SettingsGroup title={t("settings.connections.integrations")}>
-        <Show when={catalog.error}>{(error) => <SettingsNote tone="danger">{reason(error())}</SettingsNote>}</Show>
+        <Show when={catalog.error}>{(error) => <SettingsNote tone="danger">{failureMessage(error())}</SettingsNote>}</Show>
         <Show when={catalog.data} fallback={<SettingsEmpty>{catalog.isPending ? t("settings.common.loading") : t("settings.connections.integrations.empty")}</SettingsEmpty>}>
           {(data) => (
             <SettingsList>
@@ -172,7 +171,7 @@ function AgentConnections(props: {
   const supported = () => (props.rows?.status === "supported" ? props.rows.connections : undefined)
   return (
     <SettingsGroup title={t("settings.connections.agents")} description={t("settings.connections.agents.description")}>
-      <Show when={props.error}>{(error) => <SettingsNote tone="danger">{reason(error())}</SettingsNote>}</Show>
+      <Show when={props.error}>{(error) => <SettingsNote tone="danger">{failureMessage(error())}</SettingsNote>}</Show>
       <Show when={props.rows?.status === "unsupported"}>
         <SettingsNote>{props.rows?.status === "unsupported" && props.rows.reason === "operator_local_configuration" ? t("settings.connections.agents.operator") : props.rows?.status === "unsupported" ? props.rows.reason : ""}</SettingsNote>
       </Show>
