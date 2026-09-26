@@ -90,12 +90,10 @@ test("13 terminal: run a command, its output replays from the server, reload rea
   await expect(terminalPane(app, terminalId)).toHaveCount(0)
   await expect(app.getByRole("button", { name: /^Close terminal: / })).toHaveCount(0)
   await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
-  if (stack.app === "v2") {
-    await test.step("v2 approved: closing a terminal ends its PTY (DECISIONS 18:25)", async () => {
-      await expect(app).not.toHaveURL(TERMINAL_URL)
-      await expect.poll(() => serverTerminalIds(stack.url, workspace.directory)).not.toContain(terminalId)
-    })
-  }
+  await test.step("closing a terminal ends its PTY (DECISIONS 18:25)", async () => {
+    await expect(app).not.toHaveURL(TERMINAL_URL)
+    await expect.poll(() => serverTerminalIds(stack.url, workspace.directory)).not.toContain(terminalId)
+  })
 })
 
 async function expectNoTerminalTab(app: Page) {
@@ -127,7 +125,6 @@ test("13 terminal: a terminal dead after a restart is gone from the rail and the
 })
 
 test("13 terminal: a shell that exits leaves the rail, its pane and the compact tabs", async ({ stack, app }) => {
-  test.skip(stack.app === "v1", "today's app keeps an exited shell's pane and row")
   const workspace = await stack.daemon.makeWorkspace("terminal", "Terminal")
   await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
   const exitedId = await newShell(app)
@@ -160,7 +157,6 @@ test("13 terminal: a daemon restart recreates the open terminal from its history
 })
 
 test("13 terminal: a workspace whose folder is gone reads no terminal list", async ({ stack, app }) => {
-  test.skip(stack.app === "v1", "the owner's 404 cleanup: v2 reads no terminal list for an unreachable placement")
   const live = await stack.daemon.makeWorkspace("live", "Live")
   const gone = await stack.daemon.makeWorkspace("gone", "Gone")
   rmSync(gone.directory, { recursive: true, force: true })

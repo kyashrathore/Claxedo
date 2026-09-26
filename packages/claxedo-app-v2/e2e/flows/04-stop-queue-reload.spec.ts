@@ -85,7 +85,6 @@ function harnessStatusReads(app: Page) {
 }
 
 test("04 an agent that ignores Stop: the composer says it stopped responding until the turn ends", async ({ stack, api, app }) => {
-  test.skip(stack.app !== "v2", "v1 ends the turn at Stop and gates Send as unavailable instead of showing the peek")
   test.setTimeout(60_000)
   const workspace = await stack.daemon.makeWorkspace("deaf")
   await stack.acp.write("deaf", { steps: [{ kind: "text", text: "Started and deaf to Stop" }, { kind: "hold", name: "deaf", ignoresCancel: true }] })
@@ -106,7 +105,6 @@ test("04 an agent that ignores Stop: the composer says it stopped responding unt
 })
 
 test("04 a killed agent: the composer names the closed connection without reading the harness again", async ({ stack, api, app }) => {
-  test.skip(stack.app !== "v2", "v1 keeps showing Connected after its agent dies")
   const { workspace, session } = await openHeldSession(stack, api, app, "killed")
   const reads = harnessStatusReads(app)
   for (const pid of scriptedAgentPids(stack.daemon.port)) process.kill(pid, "SIGKILL")

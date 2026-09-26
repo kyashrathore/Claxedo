@@ -19,14 +19,14 @@ test("30 a reply streaming into a transcript taller than the screen leaves the u
   await app.goto(sessionUrl(stack, workspace.id, session.id))
   await expect(app.getByText("Earlier line 70 keeps", { exact: false })).toBeVisible()
   await app.mouse.move(0, 0)
-  await watchWrites(app, stack.app, "thumb")
+  await watchWrites(app, "thumb")
   await startLiveTurn(stack, api, target, {
     name: "thumb-stream",
     prompt: "Stream another long answer.",
     steps: [{ kind: "hold", name: "thumb-stream-0" }, { kind: "text", text: `${streamed}\n\nLast streamed line.`, chunks: 40, delayMs: 8 }],
   })
   await releaseHold({ stack, api, target, app }, { hold: "thumb-stream-0", ready: "Last streamed line.", settles: true })
-  await expectWritesAtMost(app, stack.app, 0)
+  await expectWritesAtMost(app, 0)
 
   expect(assistantText(await api.messages(workspace.directory, session.id))).toContain("Last streamed line.")
 })
@@ -53,10 +53,10 @@ test("30 a reply streaming behind the collapsed floating transcript shows in ful
   await expect(peek).toHaveAccessibleName("Collapse transcript")
   await peek.click()
   await expect(peek).toHaveAttribute("aria-expanded", "false")
-  await watchWrites(app, stack.app, "timeline")
+  await watchWrites(app, "timeline")
   await stack.acp.release("floating-stream-0")
   await expect.poll(async () => (await api.status(workspace.directory))[session.id]?.type ?? "idle", { timeout: 30_000 }).toBe("idle")
-  await expectWritesAtMost(app, stack.app, 0)
+  await expectWritesAtMost(app, 0)
 
   await peek.click()
   await expect(app.getByText("The hidden reply ends here.")).toBeVisible()
@@ -75,11 +75,11 @@ test("30 scrolling a long transcript adds and removes rows without restyling the
   await app.goto(sessionUrl(stack, workspace.id, session.id))
   await expect(app.getByText("End of answer 24.")).toBeVisible()
   await app.getByRole("region", { name: "scrollable content" }).hover()
-  const restyles = await wholeListRestyles(app, stack.app, async () => {
+  const restyles = await wholeListRestyles(app, async () => {
     for (let tick = 0; tick < 20; tick += 1) await app.mouse.wheel(0, -150)
     await expect(app.getByText("End of answer 24.")).not.toBeInViewport()
   })
-  if (restyles !== undefined) expect(restyles, "whole-list restyles while rows enter and leave").toBe(0)
+  expect(restyles, "whole-list restyles while rows enter and leave").toBe(0)
 
   const messages = await api.messages(workspace.directory, session.id)
   expect(messages.filter((message) => message.info.role === "user")).toHaveLength(24)

@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test"
-import { acpScriptToken, expect, type AppChoice, type ClaxedoApi, type Stack } from "../harness"
+import { acpScriptToken, expect, type ClaxedoApi, type Stack } from "../harness"
 import type { CaseTurn } from "./case"
 
 type Target = { readonly directory: string; readonly sessionId: string }
@@ -88,19 +88,16 @@ function markOf(app: Page, interaction: string): Retained {
   return mark
 }
 
-export async function markDetachedNodes(app: Page, appChoice: AppChoice) {
-  if (appChoice === "v1") return
+export async function markDetachedNodes(app: Page) {
   detachedMarks.set(app, await retained(app))
 }
 
-export async function expectDetachedGrowthAtMost(app: Page, appChoice: AppChoice, max: number) {
-  if (appChoice === "v1") return
+export async function expectDetachedGrowthAtMost(app: Page, max: number) {
   const mark = markOf(app, "detachedGrowth")
   expect((await retained(app)).detached - mark.detached, "DOM nodes that outlive what the page shows").toBeLessThanOrEqual(max)
 }
 
-export async function expectHeapGrowthAtMost(app: Page, appChoice: AppChoice, maxKb: number) {
-  if (appChoice === "v1") return
+export async function expectHeapGrowthAtMost(app: Page, maxKb: number) {
   const mark = markOf(app, "heapGrowth")
   expect((await retained(app)).heapKb - mark.heapKb, "JavaScript heap kept after a forced collection, in KB").toBeLessThanOrEqual(maxKb)
 }

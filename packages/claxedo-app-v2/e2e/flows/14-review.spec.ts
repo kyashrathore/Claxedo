@@ -46,15 +46,11 @@ test("14 review: diff, line comment, commit, push to a bare remote, the comment 
   await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
   await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
   const panel = app.getByRole("complementary", { name: "Workspace panel" })
-  if (stack.app === "v2") {
-    await test.step("DECISIONS 22:05: no edge strip", async () => {
-      await app.getByRole("button", { name: UI.openPanel }).click()
-      await panel.getByRole("button", { name: "Review", exact: true }).click()
-      await panel.getByRole("button", { name: "Open Changes", exact: true }).click()
-    })
-  } else {
-    await app.getByRole("button", { name: "Open changes" }).click()
-  }
+  await test.step("DECISIONS 22:05: no edge strip", async () => {
+    await app.getByRole("button", { name: UI.openPanel }).click()
+    await panel.getByRole("button", { name: "Review", exact: true }).click()
+    await panel.getByRole("button", { name: "Open Changes", exact: true }).click()
+  })
   await panel.getByRole("button", { name: "Toggle diff for README.md" }).click()
   await commentOnLine(panel, "a reviewed line", "Why was this line added?")
   await expect(panel.getByText("Why was this line added?")).toBeVisible()
@@ -120,7 +116,6 @@ test("14 Review keeps its scroll position through a file tab and back", async ({
 })
 
 test("14 searching files narrows the tree to the matches, reads no folder while typing, and clearing keeps their folders open", async ({ stack, api, app }) => {
-  test.skip(stack.app !== "v2", "v1 lists every matching folder on each keystroke")
   const workspace = await stack.daemon.makeWorkspace("search")
   for (const [file, text] of [["src/needle.ts", "a"], ["src/deep/needle-notes.md", "b"], ["src/other.ts", "c"], ["docs/guide.md", "d"], ["top.md", "e"]]) {
     await fs.mkdir(path.dirname(path.join(workspace.directory, file)), { recursive: true })
@@ -153,7 +148,6 @@ test("14 searching files narrows the tree to the matches, reads no folder while 
 })
 
 test("14 clearing a search that opened many folders keeps them open and draws only the rows in view", async ({ stack, api, app }) => {
-  test.skip(stack.app !== "v2", "v1 draws every row of the tree")
   const workspace = await stack.daemon.makeWorkspace("wide")
   for (let folder = 0; folder < 30; folder += 1) {
     for (let item = 0; item < 8; item += 1) {
@@ -189,7 +183,6 @@ test("14 clearing a search that opened many folders keeps them open and draws on
 })
 
 test("14 the files and git state are read again once after a turn that could write, and not after a turn that only read", async ({ stack, api, app }) => {
-  test.skip(stack.app !== "v2", "v1 polls the files and git state")
   const workspace = await stack.daemon.makeWorkspace("turn-reads")
   const notes = path.join(workspace.directory, "README.md")
   await stack.acp.write("read-only", { steps: [{ kind: "tool", tool: "read", title: "Read README.md", locations: [{ path: notes }], text: "turn-reads\n" }, { kind: "text", text: "Only read the README." }] })
@@ -220,7 +213,6 @@ test("14 the files and git state are read again once after a turn that could wri
 })
 
 test("14 switching back to a session whose panel was open shows the files tree as it was, without building it again", async ({ stack, api, app }) => {
-  test.skip(stack.app !== "v2", "v1 builds the panel body again on every return")
   const workspace = await stack.daemon.makeWorkspace("return")
   await fs.mkdir(path.join(workspace.directory, "docs"), { recursive: true })
   await fs.writeFile(path.join(workspace.directory, "docs/notes.md"), "notes\n")

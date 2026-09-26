@@ -15,7 +15,7 @@ test("30 a Mermaid diagram that closes mid-stream is drawn outside the task that
   await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
   await expect(app.getByText("Ready to draw.")).toBeVisible()
   const diagram = app.locator('[data-slot="mermaid-diagram"]')
-  const taskMs = await taskInsertingMs(app, stack.app, '[data-slot="mermaid-diagram"]', async () => {
+  const taskMs = await taskInsertingMs(app, '[data-slot="mermaid-diagram"]', async () => {
     await startLiveTurn(stack, api, target, {
       name: "mermaid-stream",
       prompt: "Draw the pipeline.",
@@ -23,7 +23,7 @@ test("30 a Mermaid diagram that closes mid-stream is drawn outside the task that
     })
     await expect(diagram.locator("svg")).toBeVisible()
   })
-  if (taskMs !== undefined) expect(taskMs, "the task that shows the diagram, in ms at 4x CPU throttling").toBeLessThanOrEqual(50)
+  expect(taskMs, "the task that shows the diagram, in ms at 4x CPU throttling").toBeLessThanOrEqual(50)
   await expect(app.getByText("The diagram is drawn.")).toBeVisible()
 
   expect(assistantText(await api.messages(workspace.directory, session.id))).toContain("The diagram is drawn.")

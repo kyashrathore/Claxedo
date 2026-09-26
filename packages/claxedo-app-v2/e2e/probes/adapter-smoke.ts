@@ -1,5 +1,5 @@
 import { acpScriptToken, SCRIPTED_ACP_HARNESS, startStack } from "../harness"
-import { appChoice, ensureAppBuilt } from "../harness/app"
+import { ensureAppBuilt } from "../harness/app"
 import type { ServerEvent } from "../../src/server/events"
 import type { Placement } from "../../src/server/types"
 import { codeHostConnections } from "../../src/server/integrations"
@@ -201,7 +201,7 @@ async function cleanupChecks(probe: Probe, ref: Parameters<ServerHandle["session
 }
 
 async function main() {
-  await ensureAppBuilt(appChoice(), { serverUrl: "http://127.0.0.1:46800" })
+  await ensureAppBuilt({ serverUrl: "http://127.0.0.1:46800" })
   const stack = await startStack({ label: "adapter-smoke" })
   const proxy = await startTcpProxy(new URL(stack.url))
   const workspace = await stack.daemon.makeWorkspace("adapter")

@@ -9,7 +9,7 @@ import { git } from "../harness/git"
 import { prepareHarness } from "../harness/global-setup"
 import { startStack, type Stack } from "../harness/stack"
 import type { Workspace } from "../harness/workspaces"
-import { startAppOrigin, type AppOrigin } from "../parity/origin"
+import { startAppOrigin, type AppOrigin } from "./origin"
 import { measure } from "./measure"
 import { readOptions, runOrder, type Variant } from "./options"
 import { seedTurnScript } from "./stream-script"
@@ -30,7 +30,7 @@ async function seedSession(api: ClaxedoApi, stack: Stack, workspace: Workspace, 
 async function startOrigin(variant: Variant, daemonUrl: string, closers: (() => Promise<void>)[]): Promise<AppOrigin> {
   const serverUrl = `http://127.0.0.1:${variant.port}`
   const outDir = path.join(import.meta.dirname, "dist", variant.name)
-  const distDir = variant.dist ?? (await ensureAppBuilt(variant.app, { serverUrl, outDir })).distDir
+  const distDir = variant.dist ?? (await ensureAppBuilt({ serverUrl, outDir })).distDir
   const origin = await startAppOrigin({ port: variant.port, distDir, daemonUrl })
   closers.push(() => origin.close())
   return origin

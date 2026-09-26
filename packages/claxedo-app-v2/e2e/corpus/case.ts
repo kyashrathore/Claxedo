@@ -56,5 +56,4 @@ export type CorpusCase = {
   readonly ready: string
   readonly interactions: readonly CaseInteraction[]
   readonly invariant: string
-  readonly deviation?: string
 }

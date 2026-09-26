@@ -3,31 +3,18 @@ import fs from "node:fs"
 import path from "node:path"
 import { captureOutput, exited } from "./process"
 
-export type AppChoice = "v1" | "v2"
-
-const V2_ROOT = path.resolve(import.meta.dirname, "../..")
-const REPO_ROOT = path.resolve(V2_ROOT, "../..")
+const APP_ROOT = path.resolve(import.meta.dirname, "../..")
 const BUILD_STAMP = "claxedo-e2e-build.json"
 const DIST_DIR = "dist-e2e"
 const SOURCE_ENTRIES = ["src", "public", "index.html", "vite.cloud.config.ts", "vite.account-binding.ts", "vite.content-security-policy.ts", "content-security-policy.ts", "browser-preview.html", "cli-callback.html", "package.json", "../../plugins"]
 const SKIPPED_DIRS = new Set(["node_modules"])
 
-export function appChoice(): AppChoice {
-  const value = process.env.CLAXEDO_E2E_APP ?? "v2"
-  if (value === "v1" || value === "v2") return value
-  throw new Error(`CLAXEDO_E2E_APP="${value}" is neither v1 nor v2`)
+export function appDistDir() {
+  return path.join(APP_ROOT, DIST_DIR)
 }
 
-export function appPackageDir(app: AppChoice) {
-  return app === "v1" ? path.join(REPO_ROOT, "packages/claxedo-app") : V2_ROOT
-}
-
-export function appDistDir(app: AppChoice) {
-  return path.join(appPackageDir(app), DIST_DIR)
-}
-
-export function signedDistDir(app: AppChoice) {
-  return path.join(appPackageDir(app), `${DIST_DIR}-signed`)
+export function signedDistDir() {
+  return path.join(APP_ROOT, `${DIST_DIR}-signed`)
 }
 
 export function newestMtime(entry: string): number {
@@ -42,9 +29,8 @@ export function newestMtime(entry: string): number {
   return newest
 }
 
-export function sourceMtime(app: AppChoice) {
-  const pkg = appPackageDir(app)
-  return Math.max(...SOURCE_ENTRIES.map((entry) => newestMtime(path.join(pkg, entry))))
+export function sourceMtime() {
+  return Math.max(...SOURCE_ENTRIES.map((entry) => newestMtime(path.join(APP_ROOT, entry))))
 }
 
 function buildIsCurrent(distDir: string, mtime: number, serverUrl: string) {
@@ -61,22 +47,15 @@ export async function run(label: string, command: string, args: string[], option
   return { code, tail: () => owned.log().split("\n").slice(-60).join("\n") }
 }
 
-export async function ensureWorkspacePackagesBuilt() {
-  if (fs.existsSync(path.join(REPO_ROOT, "packages/claxedo-helpers/dist"))) return
-  const result = await run("bun run build:packages", "bun", ["run", "build:packages", "--", "--continue"], { cwd: REPO_ROOT })
-  if (result.code !== 0) console.warn(`[harness] build:packages exited with ${result.code}; the app build decides whether that matters\n${result.tail()}`)
-}
-
 export type AppBuild = { distDir: string; built: boolean; ms: number }
 
-export async function ensureAppBuilt(app: AppChoice, input: { serverUrl: string; outDir?: string }): Promise<AppBuild> {
+export async function ensureAppBuilt(input: { serverUrl: string; outDir?: string }): Promise<AppBuild> {
   const started = Date.now()
-  const distDir = input.outDir ?? appDistDir(app)
-  const mtime = sourceMtime(app)
+  const distDir = input.outDir ?? appDistDir()
+  const mtime = sourceMtime()
   if (buildIsCurrent(distDir, mtime, input.serverUrl)) return { distDir, built: false, ms: Date.now() - started }
-  if (app === "v1") await ensureWorkspacePackagesBuilt()
-  const build = await run(`${app} build`, "node", ["./node_modules/vite/bin/vite.js", "build", "--config", "vite.cloud.config.ts", "--outDir", distDir, "--emptyOutDir"], {
-    cwd: appPackageDir(app),
+  const build = await run("app build", "node", ["./node_modules/vite/bin/vite.js", "build", "--config", "vite.cloud.config.ts", "--outDir", distDir, "--emptyOutDir"], {
+    cwd: APP_ROOT,
     env: {
       ...process.env,
       VITE_CLAXEDO_SERVER_URL: input.serverUrl,
@@ -84,9 +63,9 @@ export async function ensureAppBuilt(app: AppChoice, input: { serverUrl: string;
       NODE_OPTIONS: "--max-old-space-size=4096",
     },
   })
-  if (build.code !== 0) throw new Error(`${app} build exited with ${build.code}:\n${build.tail()}`)
+  if (build.code !== 0) throw new Error(`app build exited with ${build.code}:\n${build.tail()}`)
   const ms = Date.now() - started
-  const stamp = { app, sourceMtime: mtime, serverUrl: input.serverUrl, builtAt: Date.now(), ms }
+  const stamp = { sourceMtime: mtime, serverUrl: input.serverUrl, builtAt: Date.now(), ms }
   fs.writeFileSync(path.join(distDir, BUILD_STAMP), JSON.stringify(stamp))
   return { distDir, built: true, ms }
 }

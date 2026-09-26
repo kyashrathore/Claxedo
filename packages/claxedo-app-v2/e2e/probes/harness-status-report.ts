@@ -78,7 +78,7 @@ function cell(count: number) {
   return count > 0 ? `yes (${count})` : "no"
 }
 
-export function renderReport(input: { app: string; records: TurnRecord[]; skipped: string[]; startedAt: Date }) {
+export function renderReport(input: { records: TurnRecord[]; skipped: string[]; startedAt: Date }) {
   const header = ["Harness", "Turn", "Outcome", ...WATCHED_EVENTS, "agent.lifecycle", "session.status types"]
   const rows = input.records.map((record) => [
     record.harness,
@@ -94,7 +94,7 @@ export function renderReport(input: { app: string; records: TurnRecord[]; skippe
   return [
     "# P0.7 probe: harness status on the stream the app reads",
     "",
-    `Recorded ${input.startedAt.toISOString()} against the real self-hosted daemon (app=${input.app}), reading \`/api/wr/events?directory=…\`, the stream today's app subscribes to. Each row is one turn; a cell says whether that event type arrived on the stream for that session during the turn, and how many times.`,
+    `Recorded ${input.startedAt.toISOString()} against the real self-hosted daemon, reading \`/api/wr/events?directory=…\`, the stream the app subscribes to. Each row is one turn; a cell says whether that event type arrived on the stream for that session during the turn, and how many times.`,
     "",
     table,
     "",

@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test"
 import { apiRequests, expect, sessionRoute, test, type Stack } from "../harness"
-import { MODELS, openSection, openSettings } from "./15-settings.navigation"
+import { openSection, openSettings } from "./15-settings.navigation"
 
 type Credential = { readonly id: string; readonly provider_id: string; readonly label?: string; readonly is_active?: boolean }
 
@@ -17,8 +17,8 @@ async function credentialNamed(url: string, label: string): Promise<Credential |
 test("15 settings: Models lists each agent's accounts and this computer's logins", async ({ stack, app, isMobile }) => {
   const workspace = await stack.daemon.makeWorkspace("models", "Models")
   await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
-  await openSettings(stack, app, isMobile)
-  await openSection(stack, app, isMobile, MODELS)
+  await openSettings(app, isMobile)
+  await openSection(app, isMobile, "Models")
   const claude = app.getByRole("radiogroup", { name: "Claude Code" })
   const claudeMachineLogin = claude.getByRole("radio", { name: /^This computer's login/ })
   const storedClaudeKey = (await credentials(stack.url)).some((row) => row.provider_id === "anthropic" && row.is_active)
@@ -89,16 +89,11 @@ async function claudeModels(app: Page) {
   return picker
 }
 
-async function openClaudeModelsTab(stack: Stack, app: Page, isMobile: boolean) {
-  if (stack.app === "v2") {
-    await test.step("v2 approved: a cold /settings/<section> link stays on that section (DECISIONS 3)", async () => {
-      await app.goto(`${stack.url}/settings/models`)
-      await expect(app.getByRole("heading", { level: 1, name: "Models" })).toBeVisible()
-    })
-  } else {
-    await openSettings(stack, app, isMobile)
-    await openSection(stack, app, isMobile, MODELS)
-  }
+async function openClaudeModelsTab(stack: Stack, app: Page) {
+  await test.step("a cold /settings/<section> link stays on that section (DECISIONS 3)", async () => {
+    await app.goto(`${stack.url}/settings/models`)
+    await expect(app.getByRole("heading", { level: 1, name: "Models" })).toBeVisible()
+  })
   const claude = harnessSection(app, "Claude Code")
   await claude.getByRole("tab", { name: "Models" }).click()
   return claude
@@ -108,7 +103,7 @@ test("15 settings: a model switched off in Models leaves the composer's picker",
   const workspace = await stack.daemon.makeWorkspace("picker", "Picker")
   const draft = `${stack.url}${sessionRoute(workspace.id)}`
   await app.goto(draft)
-  let claude = await openClaudeModelsTab(stack, app, isMobile)
+  let claude = await openClaudeModelsTab(stack, app)
   const haiku = claude.getByRole("switch", { name: "Haiku" })
   await expect(haiku).toBeChecked()
   await haiku.click({ force: true })
@@ -120,7 +115,7 @@ test("15 settings: a model switched off in Models leaves the composer's picker",
   await expect(picker.getByText("Haiku", { exact: true })).toHaveCount(0)
   await app.keyboard.press("Escape")
 
-  claude = await openClaudeModelsTab(stack, app, isMobile)
+  claude = await openClaudeModelsTab(stack, app)
   await haiku.click({ force: true })
   await expect(haiku).toBeChecked()
   await app.goto(draft)
@@ -128,9 +123,8 @@ test("15 settings: a model switched off in Models leaves the composer's picker",
   await expect(picker.getByText("Haiku", { exact: true }).first()).toBeVisible()
   await app.keyboard.press("Escape")
 
-  if (stack.app === "v1") return
-  await test.step("v2 approved: the picker honors a group's Enable all / Disable all (DECISIONS Orchestrator, 02:25)", async () => {
-    claude = await openClaudeModelsTab(stack, app, isMobile)
+  await test.step("the picker honors a group's Enable all / Disable all (DECISIONS Orchestrator, 02:25)", async () => {
+    claude = await openClaudeModelsTab(stack, app)
     await claude.getByRole("button", { name: "Disable all" }).click()
     await expect(claude.getByRole("switch", { name: "Sonnet", exact: true })).not.toBeChecked()
     await app.goto(draft)
@@ -138,7 +132,7 @@ test("15 settings: a model switched off in Models leaves the composer's picker",
     await expect(picker.getByText("Sonnet", { exact: true })).toHaveCount(0)
     await expect(picker.getByText("Haiku", { exact: true })).toHaveCount(0)
     await app.keyboard.press("Escape")
-    claude = await openClaudeModelsTab(stack, app, isMobile)
+    claude = await openClaudeModelsTab(stack, app)
     await claude.getByRole("button", { name: "Enable all" }).click()
     await app.goto(draft)
     picker = await claudeModels(app)
@@ -147,13 +141,12 @@ test("15 settings: a model switched off in Models leaves the composer's picker",
 })
 
 test("15 settings: Models reads each agent's options, catalog and accounts once", async ({ stack, app, isMobile }) => {
-  test.skip(stack.app !== "v2", "v1 reads the same set; this pins v2's reads to it")
   const workspace = await stack.daemon.makeWorkspace("reads", "Reads")
   await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
-  await openSettings(stack, app, isMobile)
+  await openSettings(app, isMobile)
   const settled = apiRequests(app, stack.url)
   await settled()
-  await openSection(stack, app, isMobile, MODELS)
+  await openSection(app, isMobile, "Models")
   const cursor = harnessSection(app, "Cursor")
   await cursor.getByRole("tab", { name: "Models" }).click()
   await expect(cursor.getByText(/^Loading/)).toBeHidden()

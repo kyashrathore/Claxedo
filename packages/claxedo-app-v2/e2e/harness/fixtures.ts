@@ -1,6 +1,6 @@
 import { test as base, expect, type Page, type TestInfo } from "@playwright/test"
 import { ClaxedoApi } from "./api"
-import { appChoice, ensureAppBuilt, signedDistDir, type AppBuild } from "./app"
+import { ensureAppBuilt, signedDistDir, type AppBuild } from "./app"
 import { launchDesktop, type Desktop, type DesktopAccount } from "./desktop"
 import { recordDestinations, reportDestinations } from "./destinations"
 import { ensureDesktopBuilt, type DesktopBuild } from "./desktop-build"
@@ -60,7 +60,7 @@ export const test = base.extend<HarnessFixtures, HarnessWorkerFixtures>({
   },
   desktopBuild: [
     async ({}, use) => {
-      await use(await ensureDesktopBuilt(appChoice()))
+      await use(await ensureDesktopBuilt())
     },
     { scope: "worker", timeout: 300_000 },
   ],
@@ -68,7 +68,7 @@ export const test = base.extend<HarnessFixtures, HarnessWorkerFixtures>({
     async ({}, use) => {
       const frontPort = await reservePort()
       try {
-        const build = await ensureAppBuilt(appChoice(), { serverUrl: `https://127.0.0.1:${frontPort}`, outDir: signedDistDir(appChoice()) })
+        const build = await ensureAppBuilt({ serverUrl: `https://127.0.0.1:${frontPort}`, outDir: signedDistDir() })
         await use({ ...build, frontPort })
       } finally {
         releasePort(frontPort)

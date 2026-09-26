@@ -1,6 +1,6 @@
 import fs from "node:fs"
 import path from "node:path"
-import { ensureWorkspacePackagesBuilt, newestMtime, run, sourceMtime, type AppChoice } from "./app"
+import { newestMtime, run, sourceMtime } from "./app"
 
 export const DESKTOP_DIR = path.resolve(import.meta.dirname, "../../../claxedo-desktop")
 export const DESKTOP_MAIN = path.join(DESKTOP_DIR, "out/main/index.js")
@@ -9,14 +9,14 @@ const DESKTOP_SOURCES = ["src", "scripts", "resources", "electron.vite.config.ts
 
 export type DesktopBuild = { built: boolean; ms: number }
 
-function desktopSourceMtime(app: AppChoice) {
-  return Math.max(sourceMtime(app), ...DESKTOP_SOURCES.map((entry) => newestMtime(path.join(DESKTOP_DIR, entry))))
+function desktopSourceMtime() {
+  return Math.max(sourceMtime(), ...DESKTOP_SOURCES.map((entry) => newestMtime(path.join(DESKTOP_DIR, entry))))
 }
 
-function buildIsCurrent(app: AppChoice, mtime: number) {
+function buildIsCurrent(mtime: number) {
   if (!fs.existsSync(STAMP) || !fs.existsSync(DESKTOP_MAIN)) return false
-  const recorded = JSON.parse(fs.readFileSync(STAMP, "utf8")) as { app?: string; sourceMtime?: number }
-  return recorded.app === app && typeof recorded.sourceMtime === "number" && recorded.sourceMtime >= mtime
+  const recorded = JSON.parse(fs.readFileSync(STAMP, "utf8")) as { sourceMtime?: number }
+  return typeof recorded.sourceMtime === "number" && recorded.sourceMtime >= mtime
 }
 
 async function step(label: string, script: string, env: NodeJS.ProcessEnv) {
@@ -24,19 +24,18 @@ async function step(label: string, script: string, env: NodeJS.ProcessEnv) {
   if (result.code !== 0) throw new Error(`${label} exited with ${result.code}:\n${result.tail()}`)
 }
 
-export async function ensureDesktopBuilt(app: AppChoice): Promise<DesktopBuild> {
+export async function ensureDesktopBuilt(): Promise<DesktopBuild> {
   const started = Date.now()
-  const mtime = desktopSourceMtime(app)
-  if (buildIsCurrent(app, mtime)) return { built: false, ms: Date.now() - started }
-  if (app === "v1") await ensureWorkspacePackagesBuilt()
+  const mtime = desktopSourceMtime()
+  if (buildIsCurrent(mtime)) return { built: false, ms: Date.now() - started }
   const env = {
     ...process.env,
-    CLAXEDO_DESKTOP_RENDERER: app === "v2" ? "v2" : undefined,
-    VITE_CLAXEDO_HOSTED_ACTIVATION: app === "v2" ? "true" : undefined,
+    CLAXEDO_DESKTOP_RENDERER: "v2",
+    VITE_CLAXEDO_HOSTED_ACTIVATION: "true",
     VITE_CLAXEDO_AUTH_ADAPTER: "desktop",
   }
   await step("desktop prebuild", "prebuild", env)
-  await step(`desktop ${app} build`, "build:inner", env)
-  fs.writeFileSync(STAMP, JSON.stringify({ app, sourceMtime: desktopSourceMtime(app), builtAt: Date.now() }))
+  await step("desktop build", "build:inner", env)
+  fs.writeFileSync(STAMP, JSON.stringify({ sourceMtime: desktopSourceMtime(), builtAt: Date.now() }))
   return { built: true, ms: Date.now() - started }
 }

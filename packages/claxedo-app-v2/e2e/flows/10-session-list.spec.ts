@@ -32,13 +32,11 @@ function rowTitles(app: Page): Promise<string[]> {
 }
 
 async function sessionAction(stack: Stack, app: Page, workspace: Workspace, session: SessionRow, action: string): Promise<void> {
-  if (stack.app === "v2") {
-    await test.step(`v2 approved: ${action} from the rail row's menu, no title bar (DECISIONS Owner, 17:15)`, async () => {
-      await app.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: session.title, exact: true }).click({ button: "right" })
-      await app.getByRole("menuitem", { name: action }).click()
-    })
-    return
-  }
+  await test.step(`${action} from the rail row's menu, no title bar (DECISIONS Owner, 17:15)`, async () => {
+    await app.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: session.title, exact: true }).click({ button: "right" })
+    await app.getByRole("menuitem", { name: action }).click()
+  })
+  return
   await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
   await app.getByRole("main").getByRole("button", { name: "More options" }).click()
   await app.getByRole("menuitem", { name: action }).click()
@@ -101,7 +99,6 @@ test("10 session list: the project's rows, live status, rename, archive and dele
 })
 
 test("10 a background turn, in a session visited before, changes only its own rail row and wakes no animation frame", async ({ stack, api, app }) => {
-  test.skip(stack.app !== "v2", "v1 re-renders every rail row and polls statuses")
   const workspace = await stack.daemon.makeWorkspace("isolation", "Isolation")
   const create = (title: string) => api.createSession(workspace.directory, { title, harness: SCRIPTED_ACP_HARNESS })
   const open = await create("Open")

@@ -1,7 +1,6 @@
 import path from "node:path"
-import type { AppChoice } from "../harness/app"
 
-export type Variant = { name: string; app: AppChoice; dist?: string; port: number }
+export type Variant = { name: string; dist?: string; port: number }
 
 export type Options = {
   variants: Variant[]
@@ -18,9 +17,9 @@ const ORIGIN_PORT_BASE = 48280
 
 export function readOptions(argv: string[]): Options {
   const value = (name: string) => argv.find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3)
-  const variants = (value("variants") ?? "v1,v2").split(",").map((spec, index): Variant => {
+  const variants = (value("variants") ?? "app").split(",").map((spec, index): Variant => {
     const [name, dist, port] = spec.split(":") as [string, string | undefined, string | undefined]
-    return { name, app: name.startsWith("v1") ? "v1" : "v2", dist, port: port ? Number(port) : ORIGIN_PORT_BASE + index }
+    return { name, dist, port: port ? Number(port) : ORIGIN_PORT_BASE + index }
   })
   return {
     variants,

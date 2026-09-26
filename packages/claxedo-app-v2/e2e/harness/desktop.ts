@@ -5,7 +5,6 @@ import path from "node:path"
 import { releaseAcpHold, writeAcpScript, type AcpScript } from "./acp/script"
 import { ClaxedoApi } from "./api"
 import { serveConnectionSink, type ConnectionSink } from "./connection-sink"
-import { appChoice, type AppChoice } from "./app"
 import { DESKTOP_DIR, DESKTOP_MAIN } from "./desktop-build"
 import { startEgressGuard, type EgressGuard } from "./egress-guard"
 import type { TlsTrust } from "./tls-front"
@@ -21,7 +20,6 @@ import { makeWorkspace, type Workspace } from "./workspaces"
 const SHELL_DOCUMENT = /index\.local\.html$/
 
 export type Desktop = {
-  app: AppChoice
   electron: ElectronApplication
   window: Page
   url: string
@@ -148,7 +146,6 @@ type DesktopParts = {
 function desktopHandle(world: DesktopWorld, parts: DesktopParts): Desktop {
   const url = `http://127.0.0.1:${world.serverPort}`
   return {
-    app: appChoice(),
     electron: parts.app,
     window: parts.window,
     url,

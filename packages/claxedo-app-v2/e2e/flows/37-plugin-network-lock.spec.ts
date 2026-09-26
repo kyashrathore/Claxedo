@@ -58,7 +58,7 @@ async function watchViolations(app: Page) {
   return () => app.evaluate(() => (window as unknown as { probeViolations: string[] }).probeViolations)
 }
 
-test("37 network lock: a script in the app page reaches its own server and nothing else, and loads https images as today's app does", async ({ stack, app }) => {
+test("37 network lock: a script in the app page reaches its own server and nothing else, and loads https images", async ({ stack, app }) => {
   const sink = await stack.connectionSink()
   const targets = targetsFor(stack.url, sink)
   const violations = await watchViolations(app)

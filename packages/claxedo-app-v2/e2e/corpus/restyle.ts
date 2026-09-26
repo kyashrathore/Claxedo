@@ -1,6 +1,4 @@
 import type { CDPSession, Page } from "@playwright/test"
-import type { AppChoice } from "../harness"
-
 const CATEGORIES = ["devtools.timeline", "disabled-by-default-devtools.timeline.invalidationTracking"]
 const LIST = "[data-timeline-virtual-content]"
 
@@ -13,11 +11,7 @@ async function listNodeId(cdp: CDPSession, app: Page) {
   return node.backendNodeId
 }
 
-export async function wholeListRestyles(app: Page, appChoice: AppChoice, act: () => Promise<void>): Promise<number | undefined> {
-  if (appChoice === "v1") {
-    await act()
-    return undefined
-  }
+export async function wholeListRestyles(app: Page, act: () => Promise<void>): Promise<number> {
   const cdp = await app.context().newCDPSession(app)
   try {
     const list = await listNodeId(cdp, app)

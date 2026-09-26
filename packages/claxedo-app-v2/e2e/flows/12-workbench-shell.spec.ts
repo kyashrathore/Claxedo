@@ -151,7 +151,6 @@ test("12 Tasks and Marketplace share one page tab that shows the last one opened
 })
 
 test("12 a boot reads neither Tasks nor pi's provider catalog, an open reads each thing once, and a revisit reads nothing", async ({ stack, api, app }) => {
-  test.skip(stack.app !== "v2", "v1 reads connections, harness options and the transcript twice on an open")
   const workspace = await stack.daemon.makeWorkspace("reads", "Reads")
   await api.createSession(workspace.directory, { title: "Alpha", harness: SCRIPTED_ACP_HARNESS })
   await api.createSession(workspace.directory, { title: "Beta", harness: SCRIPTED_ACP_HARNESS })

@@ -63,6 +63,5 @@
       "to": "top"
     }
   ],
-  "invariant": "Only the turn with work gets a Worked header, and the user bubbles match.",
-  "deviation": "Owner, 2026-09-26: a session's first load shows the turn peek rail and places subagents without a scroll"
+  "invariant": "Only the turn with work gets a Worked header, and the user bubbles match."
 }

@@ -4,6 +4,5 @@ import { TSX_LOADER } from "../harness/node-loader"
 
 const child = spawn("node", ["--import", TSX_LOADER, path.join(import.meta.dirname, "stream.ts"), ...process.argv.slice(2)], {
   stdio: "inherit",
-  env: { ...process.env, CLAXEDO_E2E_APP: "v2" },
 })
 child.on("exit", (code, signal) => process.exit(code ?? (signal ? 1 : 0)))

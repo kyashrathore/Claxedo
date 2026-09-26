@@ -3,9 +3,9 @@ import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { expect, type Page } from "@playwright/test"
 
-export type V1Surface = "home" | "session-page" | "settings-surface" | "command-palette" | "prompt-input-focused"
+export type Surface = "home" | "session-page" | "settings-surface" | "command-palette" | "prompt-input-focused"
 
-const V1_BASELINE = fileURLToPath(new URL("../../../claxedo-app/e2e/playwright/a11y-baseline.json", import.meta.url))
+const BASELINE = fileURLToPath(new URL("./a11y-baseline.json", import.meta.url))
 const SETTLE_WITHIN_MS = 5_000
 
 function endingAnimations(page: Page): Promise<number> {
@@ -22,10 +22,10 @@ export async function settled(page: Page): Promise<void> {
   await expect.poll(() => endingAnimations(page), { message: "entry animations finish" }).toBe(0)
 }
 
-export async function expectWithinV1Baseline(page: Page, surface: V1Surface): Promise<void> {
+export async function expectWithinBaseline(page: Page, surface: Surface): Promise<void> {
   await settled(page)
-  const allowed = (JSON.parse(readFileSync(V1_BASELINE, "utf8")) as Record<string, readonly string[] | undefined>)[surface]
-  expect(allowed, `v1's a11y-baseline.json lists ${surface}`).toBeDefined()
+  const allowed = (JSON.parse(readFileSync(BASELINE, "utf8")) as Record<string, readonly string[] | undefined>)[surface]
+  expect(allowed, `a11y-baseline.json lists ${surface}`).toBeDefined()
   const results = await new AxeBuilder({ page }).analyze()
   const added = [...new Set(results.violations.map((violation) => violation.id))].filter((id) => !allowed?.includes(id))
   expect(added.map((id) => `${surface}: ${id}`)).toEqual([])

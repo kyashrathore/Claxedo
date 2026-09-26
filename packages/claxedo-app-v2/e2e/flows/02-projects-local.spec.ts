@@ -73,15 +73,6 @@ async function renameProject(stack: Stack, app: Page, id: string, from: string, 
     await dialog.getByRole("button", { name: "Save" }).click()
     await expect(dialog).toHaveCount(0)
   }
-  if (stack.app === "v1") {
-    await railMenu(app, from).open()
-    await app.getByRole("menuitem", { name: "Edit" }).click()
-    await edit()
-    await app.reload()
-    await railMenu(app, to).show()
-    await expect(railMenu(app, to).header).toBeVisible()
-    return
-  }
   await test.step("DECISIONS 17:26: a project is edited in Settings → Projects", async () => {
     await app.goto(`${stack.url}/settings/projects`)
     await app.getByRole("region", { name: "Projects" }).getByRole("link", { name: from, exact: true }).click()
@@ -93,12 +84,6 @@ async function renameProject(stack: Stack, app: Page, id: string, from: string, 
 }
 
 async function removeProject(stack: Stack, app: Page, id: string, name: string) {
-  if (stack.app === "v1") {
-    await railMenu(app, name).open()
-    await app.getByRole("menuitem", { name: "Remove project" }).click()
-    await expect(railMenu(app, name).header).toHaveCount(0)
-    return
-  }
   await test.step("DECISIONS 12: Remove asks first, then removes the project everywhere", async () => {
     await app.goto(`${stack.url}/settings/projects?project=${encodeURIComponent(id)}`)
     await app.getByRole("button", { name: "Remove", exact: true }).click()

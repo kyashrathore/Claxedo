@@ -2,7 +2,7 @@ import type { Page } from "@playwright/test"
 import {
   acpScriptToken,
   expect,
-  expectWithinV1Baseline,
+  expectWithinBaseline,
   SCRIPTED_ACP_HARNESS,
   test,
   type ClaxedoApi,
@@ -38,16 +38,12 @@ async function drawer(stack: Stack, api: ClaxedoApi, app: Page, arranged: Arrang
   const nav = app.getByRole("navigation", { name: UI.rail })
   await nav.getByRole("button", { name: "First" }).tap()
   await expect(app).toHaveURL(new RegExp(`/s/${arranged.first.id}$`))
-  if (stack.app === "v2") {
-    await test.step("v2 approved: no session title bar (DECISIONS Owner, 17:15)", async () => {
-      await expect(app.getByText("The first session's reply")).toBeVisible()
-    })
-  } else {
-    await expect(app.getByRole("heading", { level: 1, name: "First" })).toBeVisible()
-  }
+  await test.step("no session title bar (DECISIONS Owner, 17:15)", async () => {
+    await expect(app.getByText("The first session's reply")).toBeVisible()
+  })
   await expect(open).toBeVisible()
   await expectNoHorizontalScroll(app)
-  await expectWithinV1Baseline(app, "session-page")
+  await expectWithinBaseline(app, "session-page")
   await open.tap()
   await nav.getByRole("button", { name: "Second" }).tap()
   await expect(app).toHaveURL(new RegExp(`/s/${arranged.second.id}$`))

@@ -37,7 +37,6 @@ The corpus is the proof that the transcript moved without changing: every case r
 }
 ```
 
-- `deviation`, when set, names the DECISIONS entry that makes v2 differ from today's app on this case. v2 is then compared with its own recorded baseline (`<id>.v2`), not today's.
 - `source` says where the case came from: an inventory row (`inventory/session.md`), a seed session, a fix commit, a comment, or a session-ui unit test.
 - `partKinds` lists what the transcript contains, so the corpus can be checked for every part kind the agents produce.
 - `replay.turns` are played in order through the scripted ACP agent; each turn's `steps` are an `AcpStep[]` (see `e2e/README.md`), and `{{workspace}}` becomes the case's workspace folder. A turn with an `error` step is sent without waiting and settles when its assistant message completes or fails.

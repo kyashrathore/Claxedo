@@ -3,7 +3,7 @@ import { existsSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { releaseAcpHold, writeAcpScript, type AcpScript } from "./acp/script"
-import { appChoice, appDistDir, type AppChoice } from "./app"
+import { appDistDir } from "./app"
 import { startDaemon, type Daemon } from "./daemon"
 import { startEgressGuard, type EgressGuard } from "./egress-guard"
 import { serveGitRemote, type GitRemote } from "./git-remote"
@@ -15,7 +15,6 @@ import { startScriptedModelServer, type ScriptedModelServer } from "./scripted-m
 import { openEventStream, type EventStream, type EventStreamOptions } from "./stream"
 
 export type Stack = {
-  app: AppChoice
   url: string
   dataDir: string
   daemon: Daemon
@@ -44,10 +43,9 @@ export function redRun() {
 }
 
 export async function startStack(input: StackInput): Promise<Stack> {
-  const app = appChoice()
-  const distDir = appDistDir(app)
+  const distDir = appDistDir()
   if (!existsSync(path.join(distDir, "index.html"))) {
-    throw new Error(`${app} is not built at ${distDir}; run the suite through e2e/run.ts so global setup builds it`)
+    throw new Error(`the app is not built at ${distDir}; run the suite through e2e/run.ts so global setup builds it`)
   }
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-e2e-${safeLabel(input.label)}-`))
   const fixed = fixedDaemonPort()
@@ -94,7 +92,6 @@ export async function startStack(input: StackInput): Promise<Stack> {
     }
   }
   return {
-    app,
     url: daemon.url,
     dataDir,
     daemon,

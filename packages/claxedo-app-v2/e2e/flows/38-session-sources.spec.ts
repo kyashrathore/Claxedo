@@ -51,7 +51,6 @@ async function createAll(api: ClaxedoApi, directory: string, titles: readonly st
 test.skip(({ isMobile }) => isMobile, "flow 38 runs at desktop width; flow 33 owns the phone rail")
 
 test("38 a project's rail is one order across its folder and its worktree, a true prefix at every Show more", async ({ stack, api, app }) => {
-  test.skip(stack.app !== "v2", "v1 cuts each placement at its own tail")
   const workspace = await stack.daemon.makeWorkspace("sources", "Sources")
   const worktree = await worktreeOf(stack, workspace.id)
   await createAll(api, worktree, ["Worktree 1", "Worktree 2", "Worktree 3"])
@@ -71,7 +70,6 @@ test("38 a project's rail is one order across its folder and its worktree, a tru
 })
 
 test("38 a boot reads one page per project and no status, permission, question or wake", async ({ stack, api, app }) => {
-  test.skip(stack.app !== "v2", "v1 reads each placement's page and statuses")
   const projects = [await stack.daemon.makeWorkspace("boot-a", "Boot A"), await stack.daemon.makeWorkspace("boot-b", "Boot B")]
   for (const project of projects) await createAll(api, project.directory, [`${project.projectId} one`, `${project.projectId} two`])
   await app.goto("about:blank")
@@ -87,7 +85,6 @@ test("38 a boot reads one page per project and no status, permission, question o
 })
 
 test("38 a project whose page cannot be read leaves every other project's rows, and a retry loads it", async ({ stack, api, app }) => {
-  test.skip(stack.app !== "v2", "v1 blanks the rail on one failed read")
   const healthy = await stack.daemon.makeWorkspace("healthy", "Healthy")
   const broken = await stack.daemon.makeWorkspace("broken", "Broken")
   await createAll(api, healthy.directory, ["Healthy one"])
@@ -112,7 +109,6 @@ test("38 a project whose page cannot be read leaves every other project's rows, 
 })
 
 test("38 terminals are read only for an expanded project's live placements", async ({ stack, api, app }) => {
-  test.skip(stack.app !== "v2", "v1 lists every placement's terminals at boot")
   const quiet = await stack.daemon.makeWorkspace("terminals-quiet", "Terminals Quiet")
   const first = await stack.daemon.makeWorkspace("terminals-a", "Terminals A")
   const second = await stack.daemon.makeWorkspace("terminals-b", "Terminals B")

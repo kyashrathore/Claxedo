@@ -104,20 +104,15 @@ test("08 a failed read of pending requests leaves the transcript on screen", asy
   await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
   await expect(app.getByText("RQX", { exact: true })).toBeVisible()
   const card = app.getByRole("alert").filter({ hasText: "Could not load pending permissions or questions. Retry to continue." })
-  if (stack.app === "v2") {
-    await test.step("v2 approved: the failed read shows its Retry card, and Retry clears it (DECISIONS Orchestrator, 00:35)", async () => {
-      await expect(card).toBeVisible()
-      failing = false
-      await card.getByRole("button", { name: "Retry" }).click()
-      await expect(card).toHaveCount(0)
-    })
-  } else {
+  await test.step("the failed read shows its Retry card, and Retry clears it (DECISIONS Orchestrator, 00:35)", async () => {
+    await expect(card).toBeVisible()
+    failing = false
+    await card.getByRole("button", { name: "Retry" }).click()
     await expect(card).toHaveCount(0)
-  }
+  })
 })
 
 test("08 a question dock and a permission dock mount alone: the composer and the todo dock stay mounted behind them", async ({ stack, api, app }) => {
-  test.skip(stack.app !== "v2", "v1 unmounts the composer while a request is pending")
   const workspace = await stack.daemon.makeWorkspace("docks-alone")
   await stack.acp.write("docks", {
     steps: [

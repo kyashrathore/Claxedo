@@ -1,16 +1,10 @@
 import type { Page } from "@playwright/test"
-import type { AppChoice } from "../harness"
-
 const CATEGORIES = ["devtools.timeline", "disabled-by-default-devtools.timeline", "blink.console"]
 const STAMP = "corpus-inserted"
 
 type TraceEvent = { name?: string; ph?: string; ts?: number; dur?: number; pid?: number; tid?: number; args?: { name?: string; data?: { message?: string } } }
 
-export async function taskInsertingMs(app: Page, appChoice: AppChoice, selector: string, act: () => Promise<void>): Promise<number | undefined> {
-  if (appChoice === "v1") {
-    await act()
-    return undefined
-  }
+export async function taskInsertingMs(app: Page, selector: string, act: () => Promise<void>): Promise<number> {
   await app.evaluate(({ selector, stamp }) => {
     new MutationObserver((list, observer) => {
       for (const mutation of list) {

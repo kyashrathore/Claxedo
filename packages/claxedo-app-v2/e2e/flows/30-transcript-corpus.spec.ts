@@ -166,19 +166,19 @@ async function interact(live: { stack: Stack; api: ClaxedoApi; target: Target; a
       await expectRowsKept(app)
       return
     case "markDetached":
-      await markDetachedNodes(app, stack.app)
+      await markDetachedNodes(app)
       return
     case "detachedGrowth":
-      await expectDetachedGrowthAtMost(app, stack.app, interaction.max)
+      await expectDetachedGrowthAtMost(app, interaction.max)
       return
     case "heapGrowth":
-      await expectHeapGrowthAtMost(app, stack.app, interaction.maxKb)
+      await expectHeapGrowthAtMost(app, interaction.maxKb)
       return
     case "watchWrites":
-      await watchWrites(app, stack.app, interaction.scope)
+      await watchWrites(app, interaction.scope)
       return
     case "writesAtMost":
-      await expectWritesAtMost(app, stack.app, interaction.max)
+      await expectWritesAtMost(app, interaction.max)
       return
     case "switchSessions":
       await switchSessions(live, { title: corpusCase.title, ready: corpusCase.ready, times: interaction.times })
@@ -215,23 +215,16 @@ async function holdLatestTurnRead(app: Page) {
   }
 }
 
-function baselineOf(stack: Stack, corpusCase: CorpusCase): string {
-  return stack.app === "v2" && corpusCase.deviation ? `${corpusCase.id}.v2` : corpusCase.id
-}
-
-function requireBaseline(stack: Stack, corpusCase: CorpusCase) {
-  if (stack.app !== "v2") return
-  const baseline = path.join(test.info().snapshotDir, baselineOf(stack, corpusCase))
-  if (fs.existsSync(baseline)) return
-  if (corpusCase.deviation && test.info().config.updateSnapshots !== "none") return
-  const app = corpusCase.deviation ? "v2" : "v1"
-  throw new Error(`Record the ${app} baseline first: bun run e2e -- --app=${app} ${path.relative(process.cwd(), test.info().file)} --update-snapshots=all`)
+function requireBaseline(corpusCase: CorpusCase) {
+  if (fs.existsSync(path.join(test.info().snapshotDir, corpusCase.id))) return
+  if (test.info().config.updateSnapshots !== "none") return
+  throw new Error(`Record the baseline first: bun run e2e -- ${path.relative(process.cwd(), test.info().file)} --update-snapshots=all`)
 }
 
 for (const corpusCase of loadCases()) {
   test(`30 transcript corpus: ${corpusCase.id}`, async ({ stack, api, app }) => {
-    requireBaseline(stack, corpusCase)
-    const baseline = baselineOf(stack, corpusCase)
+    requireBaseline(corpusCase)
+    const baseline = corpusCase.id
     const { workspace, target, turns, live } = await arrange(stack, api, corpusCase)
     await app.setViewportSize({ width: app.viewportSize()?.width ?? 1280, height: TALL_VIEWPORT })
     const fullRead = await holdLatestTurnRead(app)
@@ -251,7 +244,7 @@ for (const corpusCase of loadCases()) {
   })
 }
 
-test("30 an opened session shows its last turn's work folded under Worked, as today's app does", async ({ stack, api, app }) => {
+test("30 an opened session shows its last turn's work folded under Worked", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("reopen")
   await stack.acp.write("work", {
     steps: [

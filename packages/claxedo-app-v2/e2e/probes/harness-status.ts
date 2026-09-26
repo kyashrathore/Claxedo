@@ -1,7 +1,6 @@
 import {
   acpScriptToken,
   ApiError,
-  appChoice,
   ClaxedoApi,
   frameSessionId,
   frameType,
@@ -121,7 +120,6 @@ async function modelTurns(probe: Probe, name: string, session: SessionHarness) {
 
 async function main() {
   const startedAt = new Date()
-  const app = appChoice()
   await prepareHarness()
   const stack = await startStack({ label: "probe-harness-status" })
   try {
@@ -134,7 +132,7 @@ async function main() {
     await modelTurns(probe, "pi", PI)
     await cliTurns(probe, "claude", CLAUDE)
     await cliTurns(probe, "codex", CODEX)
-    const file = await writeReport(renderReport({ app, records: probe.records, skipped: probe.skipped, startedAt }))
+    const file = await writeReport(renderReport({ records: probe.records, skipped: probe.skipped, startedAt }))
     console.log(`[probe] wrote ${file}`)
   } finally {
     await stack.close()
