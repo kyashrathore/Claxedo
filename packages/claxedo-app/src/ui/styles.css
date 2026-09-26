@@ -8,7 +8,6 @@
 @import "@opencode-ai/ui/button.css" layer(components);
 @import "@opencode-ai/ui/card.css" layer(components);
 @import "@opencode-ai/ui/collapsible.css" layer(components);
-@import "@opencode-ai/ui/dialog.css" layer(components);
 @import "@opencode-ai/ui/diff-changes.css" layer(components);
 @import "@opencode-ai/ui/dock-surface.css" layer(components);
 @import "@opencode-ai/ui/dropdown-menu.css" layer(components);
@@ -33,5 +32,4 @@
 @import "@opencode-ai/ui/text-reveal.css" layer(components);
 @import "@opencode-ai/ui/text-shimmer.css" layer(components);
 @import "@opencode-ai/ui/text-strikethrough.css" layer(components);
-@import "@opencode-ai/ui/toast.css" layer(components);
 @import "@opencode-ai/ui/tooltip.css" layer(components);

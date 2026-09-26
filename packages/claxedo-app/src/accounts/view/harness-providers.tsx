@@ -25,7 +25,7 @@ export function createHarnessProviders(harness: () => string) {
       await server.providerConnect.disconnect(harness(), provider.id)
       showToast({
         variant: "success",
-        icon: "circle-check",
+        icon: <Icon name="circle-check" />,
         title: t("provider.disconnect.toast.disconnected.title", { provider: provider.name }),
         description: t("provider.disconnect.toast.disconnected.description", { provider: provider.name }),
       })

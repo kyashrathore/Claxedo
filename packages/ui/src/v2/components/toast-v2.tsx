@@ -16,6 +16,7 @@ function ToastV2Region(props: ToastV2RegionProps) {
     const sync = () => {
       document.querySelectorAll<HTMLElement>(".toast-v2-region .toast-v2").forEach((element) => {
         const hidden = element.dataset.visible === "false"
+        element.setAttribute("role", "status")
         element.inert = hidden
         element.tabIndex = hidden ? -1 : 0
       })
