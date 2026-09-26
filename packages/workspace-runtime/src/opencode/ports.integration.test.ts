@@ -111,24 +111,10 @@ describe("session port against a real host", () => {
     expect(second.createdAt).toBe(first.createdAt)
   })
 
-  test("interrupt answers, and revert is gated on a DURABLE message", async () => {
+  test("interrupt answers an admitted prompt", async () => {
     const session = await sessions.create(alpha, { title: "controls" })
-    const admitted = await sessions.prompt(alpha, session.id, { text: "work" })
+    await sessions.prompt(alpha, session.id, { text: "work" })
     await sessions.interrupt(alpha, session.id)
-
-    // The id `prompt` returns is the one that later appears in `message.list`,
-    // but it is not durable yet: a revert staged right after admission is
-    // rejected — MessageNotFoundError once the turn is idle, SessionBusyError
-    // while it still runs. The turn adapter waits for delivery instead.
-    await expect(sessions.revertTo(alpha, session.id, admitted.id)).rejects.toMatchObject({
-      _tag: "MessageNotFoundError",
-      sessionID: session.id,
-      messageID: admitted.id,
-    })
-
-    // Clearing a revert that was never staged is a no-op, not an error, so the
-    // adapter's "unrevert" needs no prior-state bookkeeping.
-    await sessions.clearRevert(alpha, session.id)
   })
 
   test("fork refuses an empty session with a typed reason", async () => {

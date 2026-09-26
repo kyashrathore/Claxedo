@@ -89,7 +89,7 @@ test("a bound provider's request reaches the binding and carries its placeholder
   const { root, cleanup } = fixture()
   const { runtime, scope } = engine(root)
   try {
-    await runtime.bindProviders({ proof: { baseURL: brokerUrl, apiKey: "broker-placeholder" } })
+    await runtime.bindProviders({ overlays: { proof: { baseURL: brokerUrl, apiKey: "broker-placeholder" } }, unbound: "engine" })
 
     await turn(runtime, scope, () => broker.requests.length > 0)
 
@@ -111,11 +111,11 @@ test("a withdrawn account sends nothing to the binding it used to name", async (
   const { root, cleanup } = fixture()
   const { runtime, scope } = engine(root)
   try {
-    await runtime.bindProviders({ proof: { baseURL: brokerUrl, apiKey: "broker-placeholder" } })
+    await runtime.bindProviders({ overlays: { proof: { baseURL: brokerUrl, apiKey: "broker-placeholder" } }, unbound: "engine" })
     await turn(runtime, scope, () => broker.requests.length > 0)
     expect(broker.requests).toHaveLength(1)
 
-    await runtime.bindProviders({ proof: { unavailable: true, reason: "auth_failed" } })
+    await runtime.bindProviders({ overlays: { proof: { unavailable: true, reason: "auth_failed" } }, unbound: "engine" })
     await turn(runtime, scope, () => broker.requests.length > 1)
 
     expect(broker.requests).toHaveLength(1)
@@ -133,11 +133,11 @@ test("a provider nobody bound sends nothing to the broker", async () => {
   const { root, cleanup } = fixture()
   const { runtime, scope } = engine(root)
   try {
-    await runtime.bindProviders({ proof: { baseURL: brokerUrl, apiKey: "broker-placeholder" } })
+    await runtime.bindProviders({ overlays: { proof: { baseURL: brokerUrl, apiKey: "broker-placeholder" } }, unbound: "engine" })
     await turn(runtime, scope, () => broker.requests.length > 0)
     expect(broker.requests).toHaveLength(1)
 
-    await runtime.bindProviders({})
+    await runtime.bindProviders({ overlays: {}, unbound: "engine" })
     await turn(runtime, scope, () => broker.requests.length > 1)
 
     expect(broker.requests).toHaveLength(1)
@@ -159,7 +159,7 @@ test("a broker refusal reaches the operator in the broker's own words", async ()
   const { root, cleanup } = fixture()
   const { runtime, scope } = engine(root)
   try {
-    await runtime.bindProviders({ proof: { baseURL: brokerUrl, apiKey: "broker-placeholder" } })
+    await runtime.bindProviders({ overlays: { proof: { baseURL: brokerUrl, apiKey: "broker-placeholder" } }, unbound: "engine" })
 
     const sessionId = await turn(runtime, scope, () => broker.requests.length > 0)
     let failure: string | undefined
@@ -185,7 +185,7 @@ test("a bound provider ignores the apiKey and baseURL its config content carries
   const { root, cleanup } = fixture()
   const { runtime, scope } = engine(root, { apiKey: "from-config", baseURL: configUrl })
   try {
-    await runtime.bindProviders({ proof: { baseURL: bindingUrl, apiKey: "placeholder" } })
+    await runtime.bindProviders({ overlays: { proof: { baseURL: bindingUrl, apiKey: "placeholder" } }, unbound: "engine" })
     await turn(runtime, scope, () => fromConfig.requests.length + fromBinding.requests.length > 0)
     expect(fromConfig.requests).toEqual([])
     expect(fromBinding.requests).toEqual([{ path: "/v1/chat/completions", authorization: "Bearer placeholder", model: "proof" }])
@@ -209,7 +209,7 @@ test("a bound provider ignores the apiKey and baseURL the workspace's opencode.j
   }))
   const { runtime, scope } = engine(root)
   try {
-    await runtime.bindProviders({ proof: { baseURL: bindingUrl, apiKey: "placeholder" } })
+    await runtime.bindProviders({ overlays: { proof: { baseURL: bindingUrl, apiKey: "placeholder" } }, unbound: "engine" })
     await turn(runtime, scope, () => fromConfig.requests.length + fromBinding.requests.length > 0)
     expect(fromConfig.requests).toEqual([])
     expect(fromBinding.requests).toEqual([{ path: "/v1/chat/completions", authorization: "Bearer placeholder", model: "proof" }])

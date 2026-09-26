@@ -4,7 +4,7 @@ import type { AttachInput, ConfigApplied, ConfigOptionsPreview, ConfigPreviewTar
 import { openCodeLaunchDocument } from "../../profiles/opencode/index.js"
 import { openCodeCapabilities } from "./capabilities.js"
 import { rollbackOpenCodeSession } from "./open-rollback.js"
-import { providerOverlays } from "./credentials.js"
+import { engineProviderBinding, engineProviderBindingKey } from "./credentials.js"
 import { OpenCodeOwnerMismatchError } from "./errors.js"
 import { TransportError } from "../../contract/errors.js"
 import { firstPartyTools } from "./first-party-tools.js"
@@ -13,7 +13,8 @@ import { createOpenCodeRuntime, type OpenCodeRuntime, type OpenCodeRuntimeOption
 import { WorkspaceScope } from "./scope.js"
 import { promptRequest, runOpenCodeTurn } from "./turn.js"
 import { createKeyedSerializer, errorMessage, settleAtRequestDeadline } from "@claxedo/helpers"
-import { attachedSessionEntry, configOptionsPreview, mergeStartInput, sessionConnectionHealth, sessionMcpServers } from "../../contract"
+import { attachedSessionEntry, configOptionsPreview, mergeStartInput, modelAndEffortOptions, sessionConnectionHealth,
+  sessionMcpServers } from "../../contract"
 
 type Entry = { session: HarnessSession; start: StartInput; broker: SessionBroker; scope: WorkspaceScope;
   upstream: string; active: boolean; assistantMessageID?: string }
@@ -56,22 +57,14 @@ export class OpenCodeSdkTransport implements HarnessTransport {
     const document = openCodeLaunchDocument(input.projection, servers)
     const content = JSON.stringify(document)
     const current = this.documents.get(scope.directory)
-    if (current && current.content !== content && [...current.users].some((id) => id !== input.sessionId)) {
-      throw new TransportError("opencode", "configuration", "OpenCode sessions in one directory require one MCP and skill catalog")
-    }
-    const store = await this.runtime.launch(scope)
-    await store.write(document)
+    if (current?.content !== content) await (await this.runtime.launch(scope)).write(document)
     this.documents.set(scope.directory, { content, users: new Set([...(current?.users ?? []), input.sessionId]) })
   }
 
-  private bindingKey(input: StartInput): string {
-    return JSON.stringify(Object.entries(providerOverlays(input.credentials)).sort(([left], [right]) => left.localeCompare(right)))
-  }
-
   private assertBindingCompatible(input: StartInput): void {
-    const selected = this.bindingKey(input)
+    const selected = engineProviderBindingKey(input)
     for (const [id, entry] of this.entries) {
-      if (id !== input.sessionId && this.bindingKey(entry.start) !== selected) {
+      if (id !== input.sessionId && engineProviderBindingKey(entry.start) !== selected) {
         throw new TransportError("opencode", "configuration", "OpenCode sessions require one selected account; different selected accounts need separate engines")
       }
     }
@@ -88,11 +81,11 @@ export class OpenCodeSdkTransport implements HarnessTransport {
     const scope = this.scope(input)
     const prior = this.documents.get(scope.directory)
     const priorDocument = await (await this.runtime.launch(scope)).read()
-    const priorBinding = this.entries.values().next().value?.start.credentials
+    const priorStart = this.entries.values().next().value?.start
     let row: Awaited<ReturnType<OpenCodeRuntime["sessions"]["create"]>> | undefined
     let registered = false
     try {
-      await this.runtime.bindProviders(providerOverlays(input.credentials))
+      await this.runtime.bindProviders(engineProviderBinding(input))
       await this.applyProjection(input, scope)
       row = upstream ? await this.runtime.sessions.get(scope, upstream)
         : await this.runtime.sessions.create(scope, input.title ? { title: input.title } : {})
@@ -110,7 +103,7 @@ export class OpenCodeSdkTransport implements HarnessTransport {
       return session
     } catch (error) {
       const failures = await rollbackOpenCodeSession({ runtime: this.runtime, scope, upstream, rowID: row?.id,
-        registered, document: priorDocument, binding: priorBinding })
+        registered, document: priorDocument, ...(priorStart ? { prior: priorStart } : {}) })
       if (prior) this.documents.set(scope.directory, prior)
       else this.documents.delete(scope.directory)
       if (failures.length) throw new TransportError("opencode", "session",
@@ -185,11 +178,15 @@ export class OpenCodeSdkTransport implements HarnessTransport {
     this.assertOwner(entry.start.owner)
     const next = mergeStartInput(entry.start, update)
     if (update.credentials) {
-      this.assertBindingCompatible(next)
-      await this.runtime.bindProviders(providerOverlays(update.credentials))
+      if (engineProviderBindingKey(next) !== engineProviderBindingKey(entry.start)) await this.runtime.bindProviders(engineProviderBinding(next))
+      for (const other of this.entries.values()) other.start = { ...other.start, credentials: update.credentials }
     }
-    if (update.projection) await this.applyProjection(next, entry.scope)
-    entry.start = next
+    if (update.projection) {
+      await this.applyProjection(next, entry.scope)
+      for (const other of this.entries.values()) {
+        if (other.scope.directory === entry.scope.directory) other.start = { ...other.start, projection: update.projection }
+      }
+    }
     return { state: "applied" }
   }
 
@@ -264,8 +261,11 @@ export class OpenCodeSdkTransport implements HarnessTransport {
     },
     options: async (target: ConfigPreviewTarget): Promise<ConfigOptionsPreview> => {
       const models = await this.runtime.catalog.models(this.targetScope(target))
-      return configOptionsPreview([{ id: "model", name: "Model", selectOptions: models.map((model) =>
-        ({ id: `${model.providerID}/${model.id}`, name: model.name ?? model.id })) }])
+      const current = "session" in target ? target.model ?? this.entry(target.session).start.config.model : target.draft.config.model
+      return configOptionsPreview(modelAndEffortOptions({
+        models: models.map((model) => ({ id: `${model.providerID}/${model.id}`, name: model.name ?? model.id })),
+        ...(current ? { selected: `${current.providerID}/${current.modelID}` } : {}),
+      }))
     },
     permissionModes: async () => ({ modes: [], unsupported: "OpenCode does not expose a session permission mode", appliesFrom: "next-turn" as const }),
     setPermissionMode: async () => { throw new TransportError("opencode", "configuration", "OpenCode does not expose a session permission mode") },

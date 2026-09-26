@@ -11,10 +11,11 @@ import { OpenCodeOwnerMismatchError } from "../transports/opencode-sdk/errors"
 import type { OpenCodeRuntime } from "../transports/opencode-sdk/runtime"
 import { WorkspaceScope } from "../transports/opencode-sdk/scope"
 import { terminal } from "../transports/opencode-sdk/translate/event"
-import type { TurnInput } from "../contract"
+import type { RoutedEvent, TurnInput } from "../contract"
 import { runConformance, setupConformance, type ConformanceBackend } from "./test-support/run"
 
-type OpenCodeBackend = ConformanceBackend & { root: string; server: Awaited<ReturnType<typeof startScriptedModelServer>> }
+type ScriptedServer = Awaited<ReturnType<typeof startScriptedModelServer>>
+type OpenCodeBackend = ConformanceBackend & { root: string; server: ScriptedServer; rotated: ScriptedServer[] }
 
 async function backend(): Promise<OpenCodeBackend> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-conformance-"))
@@ -28,10 +29,10 @@ async function backend(): Promise<OpenCodeBackend> {
   const proxy = egressProxyEnv(guard.url)
   const previous = Object.fromEntries(Object.keys(proxy).map((key) => [key, process.env[key]]))
   Object.assign(process.env, proxy)
-  const rotated: Array<{ port: number; server: Awaited<ReturnType<typeof startScriptedModelServer>> }> = []
+  const rotated: Array<{ port: number; server: ScriptedServer }> = []
   let permissionPrimed = false
   return {
-    execution: "in-process", root, directory, server, expectedMcp: "config",
+    execution: "in-process", root, directory, server, expectedMcp: "config", get rotated() { return rotated.map((item) => item.server) },
     harness: { id: "opencode", access: "native" }, model: { providerID: "proof", modelID: "proof" },
     credentials: { providers: { proof: { baseUrl: server.v1Url, placeholder: "opencode-placeholder-one", authMode: "api-key" } },
       secrets: {}, leaseGeneration: "one" },
@@ -77,14 +78,37 @@ async function backend(): Promise<OpenCodeBackend> {
   }
 }
 
-function transport(services: ConstructorParameters<typeof OpenCodeSdkTransport>[0], state: OpenCodeBackend) {
+const PROOF_MODEL = { name: "Proof", limit: { context: 32_000, output: 1_024 } }
+
+function proofProvider(extra: Record<string, unknown> = {}, models: Record<string, unknown> = {}) {
+  return { npm: "@ai-sdk/openai-compatible", name: "Proof", models: { proof: PROOF_MODEL, ...models }, ...extra }
+}
+
+function transport(services: ConstructorParameters<typeof OpenCodeSdkTransport>[0], state: OpenCodeBackend,
+  config: Record<string, unknown> = {}) {
   return new OpenCodeSdkTransport(services, { databasePath: path.join(state.root, "opencode.db"),
     configContent: JSON.stringify({ model: "proof/proof", small_model: "proof/proof", enabled_providers: ["proof"],
-      provider: { proof: { npm: "@ai-sdk/openai-compatible", name: "Proof",
-        models: { proof: { name: "Proof", limit: { context: 32_000, output: 1_024 } } } } },
+      provider: { proof: proofProvider() },
       agent: { pi: { description: "Conformance", prompt: "Follow the instruction exactly" } },
       permission: { shell: "ask", question: "allow" },
+      ...config,
     }) })
+}
+
+async function writeSkill(root: string, plugin: string, skill: string, marker: string): Promise<string> {
+  const directory = path.join(root, plugin)
+  await fs.mkdir(path.join(directory, "skills", skill), { recursive: true })
+  await fs.writeFile(path.join(directory, "skills", skill, "SKILL.md"), `---\nname: ${skill}\ndescription: ${marker}\n---\n${marker}\n`)
+  return directory
+}
+
+function withEnv(name: string, value: string): () => void {
+  const previous = process.env[name]
+  process.env[name] = value
+  return () => {
+    if (previous === undefined) delete process.env[name]
+    else process.env[name] = previous
+  }
 }
 
 runConformance({ name: "opencode-sdk", backend,
@@ -94,10 +118,7 @@ test("OpenCode loads projected MCP and skills through engine hooks without writi
   const mcp = await startScriptedMcpServer()
   const context = await setupConformance({ name: "opencode-mcp", backend: async () => {
     const state = await backend()
-    const plugin = path.join(state.root, "plugin")
-    const skill = path.join(plugin, "skills", "conform-skill")
-    await fs.mkdir(skill, { recursive: true })
-    await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: conform-skill\ndescription: Conformance plugin\n---\nSKILL_MARKER\n")
+    const plugin = await writeSkill(state.root, "plugin", "conform-skill", "SKILL_MARKER")
     return { ...state, projection: { generation: "mcp", pluginRoots: [
       { pluginInstanceId: "conform", root: plugin, dataRoot: plugin },
     ], notApplied: [], mcpServers: [
@@ -194,21 +215,31 @@ test("one embedded engine refuses a second selected account before rebinding the
   } finally { await context.close() }
 }, 60_000)
 
-test("credential rotation waits until other OpenCode sessions using the old account close", async () => {
-  const context = await setupConformance({ name: "opencode-account-rotation-isolation", backend,
+test("an account switch rebinds the engine once for every session of the owner", async () => {
+  const context = await setupConformance({ name: "opencode-account-switch", backend,
     makeTransport: (services, state) => transport(services, state as OpenCodeBackend) })
+  const target = context.transport as OpenCodeSdkTransport as unknown as { runtime: OpenCodeRuntime }
+  const actual = target.runtime
   try {
     const second = await context.transport.start({ ...context.start, sessionId: "s2" },
       { ...context.sessionBroker, rebind: async (upstreamSessionId) => ({ ...context.session.binding, sessionId: "s2", upstreamSessionId }) })
-    const rotation = await (context.backend as OpenCodeBackend).rotate!()
-    await expect(context.transport.configure(context.session, { credentials: rotation.credentials }))
-      .rejects.toThrow("different selected accounts")
-    await context.transport.close(second)
+    const state = context.backend as OpenCodeBackend
+    const rotation = await state.rotate!()
+    let rebinds = 0
+    target.runtime = { ...actual, bindProviders: (...args) => { rebinds += 1; return actual.bindProviders(...args) } }
     expect((await context.transport.configure(context.session, { credentials: rotation.credentials })).state).toBe("applied")
-    const events = await collect(context, context.turn("Reply with exactly ROTATIONAFTERCLOSE"))
-    expect(events.some((item) => item.event.type === "finish")).toBe(true)
-    expect(rotation.observed()).toBe(true)
-  } finally { await context.close() }
+    expect((await context.transport.configure(second, { credentials: rotation.credentials })).state).toBe("applied")
+    expect(rebinds).toBe(1)
+    const rotated = state.rotated.at(-1)!
+    const secondEvents = []
+    for await (const event of context.transport.send(second, context.turn("Reply with exactly SWITCHTWO"), context.turnBroker())) secondEvents.push(event)
+    expect(secondEvents.some((item) => item.event.type === "finish")).toBe(true)
+    expect(rotated.requests.some((request) => request.prompt.includes("SWITCHTWO") && request.authorization === "Bearer opencode-placeholder-two")).toBe(true)
+    const firstEvents = await collect(context, context.turn("Reply with exactly SWITCHONE"))
+    expect(firstEvents.some((item) => item.event.type === "finish")).toBe(true)
+    expect(rotated.requests.some((request) => request.prompt.includes("SWITCHONE") && request.authorization === "Bearer opencode-placeholder-two")).toBe(true)
+    expect(state.server.requests.some((request) => request.prompt.includes("SWITCH"))).toBe(false)
+  } finally { target.runtime = actual; await context.close() }
 }, 60_000)
 
 test("a failed OpenCode open releases its launch document ownership", async () => {
@@ -278,8 +309,8 @@ test("a lost OpenCode terminal event settles from the SDK session snapshot", asy
   } finally { target.runtime = actual; await context.close() }
 }, 60_000)
 
-async function collectEvents(events: AsyncIterable<unknown>) {
-  const collected = []
+async function collectEvents(events: AsyncIterable<RoutedEvent>) {
+  const collected: RoutedEvent[] = []
   for await (const event of events) collected.push(event)
   return collected
 }
@@ -349,5 +380,159 @@ test("an unavailable selected OpenCode account cannot reach the model or a machi
     await expect(collect(context, context.turn("Reply with exactly UNAVAILABLE")))
       .rejects.toMatchObject({ transport: "opencode", code: "configuration", message: expect.stringContaining("account_revoked") })
     expect(state.server.requests).toHaveLength(0)
+  } finally { await context.close() }
+}, 60_000)
+
+test("a person's session neither lists nor runs an engine provider nobody bound", async () => {
+  const strayPort = await reservePort()
+  const stray = await startScriptedModelServer({ port: strayPort, red: false })
+  const restore = withEnv("CLAXEDO_OPENCODE_STRAY_API_KEY", "stray-env-key")
+  let context: Awaited<ReturnType<typeof setupConformance>> | undefined
+  try {
+    context = await setupConformance({ name: "opencode-unbound-provider", backend,
+      makeTransport: (services, state) => transport(services, state as OpenCodeBackend, {
+        enabled_providers: ["proof", "stray"],
+        provider: { proof: proofProvider(), stray: { npm: "@ai-sdk/openai-compatible", name: "Stray",
+          env: ["CLAXEDO_OPENCODE_STRAY_API_KEY"], options: { baseURL: stray.v1Url }, models: { stray: PROOF_MODEL } } },
+      }) })
+    const selection = (await context.transport.capabilities({ directory: context.backend.directory, sessionId: "s1" })).modelSelection
+    if (selection.status !== "required") throw new Error(`OpenCode model selection is ${selection.status}`)
+    expect(selection.models.map((model) => model.providerId)).not.toContain("stray")
+    const events: unknown[] = []
+    const opened = context
+    const failure = await (async () => {
+      const turn = { ...opened.turn("Reply with exactly STRAYRUN"), model: { providerID: "stray", modelID: "stray" } }
+      for await (const event of opened.transport.send(opened.session, turn, opened.turnBroker())) events.push(event)
+    })().then(() => undefined, (error: unknown) => error)
+    expect(failure).toMatchObject({ transport: "opencode", code: "configuration" })
+    expect(events).toEqual([])
+    expect(stray.requests).toHaveLength(0)
+  } finally {
+    restore()
+    await context?.close()
+    await stray.close()
+    releasePort(strayPort)
+  }
+}, 60_000)
+
+test("a bound provider runs on its placeholder while its own variable is set", async () => {
+  const restore = withEnv("CLAXEDO_OPENCODE_PROOF_API_KEY", "proof-env-key")
+  let context: Awaited<ReturnType<typeof setupConformance>> | undefined
+  try {
+    context = await setupConformance({ name: "opencode-bound-env", backend,
+      makeTransport: (services, state) => transport(services, state as OpenCodeBackend, {
+        provider: { proof: proofProvider({ env: ["CLAXEDO_OPENCODE_PROOF_API_KEY"] }) } }) })
+    const events = await collect(context, context.turn("Reply with exactly BOUNDENV"))
+    expect(events.some((item) => item.event.type === "finish")).toBe(true)
+    const request = (context.backend as OpenCodeBackend).server.requests.find((row) => row.prompt.includes("BOUNDENV"))
+    expect(request?.authorization).toBe("Bearer opencode-placeholder-one")
+  } finally {
+    restore()
+    await context?.close()
+  }
+}, 60_000)
+
+test("a projection change reaches every OpenCode session in the folder", async () => {
+  const context = await setupConformance({ name: "opencode-folder-projection", backend,
+    makeTransport: (services, state) => transport(services, state as OpenCodeBackend) })
+  try {
+    const state = context.backend as OpenCodeBackend
+    const second = await context.transport.start({ ...context.start, sessionId: "s2" },
+      { ...context.sessionBroker, rebind: async (upstreamSessionId) => ({ ...context.session.binding, sessionId: "s2", upstreamSessionId }) })
+    const plugin = await writeSkill(state.root, "folder-plugin", "folder-skill", "FOLDER_SKILL_MARKER")
+    const projection = { ...context.start.projection, generation: "folder",
+      pluginRoots: [{ pluginInstanceId: "folder", root: plugin, dataRoot: plugin }] }
+    expect((await context.transport.configure(context.session, { projection })).state).toBe("applied")
+    state.server.scriptToolSequence("FOLDERSKILL", [{ name: "skill", input: { id: "folder-skill" } }])
+    const events = []
+    for await (const event of context.transport.send(second, context.turn("Use folder-skill for FOLDERSKILL"), context.turnBroker())) events.push(event)
+    expect(JSON.stringify(events)).toContain("FOLDER_SKILL_MARKER")
+    expect((await context.transport.configure(second, { projection })).state).toBe("applied")
+  } finally { await context.close() }
+}, 60_000)
+
+test("a broker abort interrupts the engine once and reports the interrupted outcome", async () => {
+  const context = await setupConformance({ name: "opencode-abort-interrupt", backend,
+    makeTransport: (services, state) => transport(services, state as OpenCodeBackend) })
+  const state = context.backend as OpenCodeBackend
+  const target = context.transport as OpenCodeSdkTransport as unknown as { runtime: OpenCodeRuntime }
+  const actual = target.runtime
+  const release = state.server.holdTextReplies("ABORTINTERRUPT")
+  let running: Promise<RoutedEvent[]> | undefined
+  try {
+    let interrupts = 0
+    target.runtime = { ...actual, sessions: { ...actual.sessions,
+      interrupt: (...args) => { interrupts += 1; return actual.sessions.interrupt(...args) } } }
+    const controller = new AbortController()
+    running = collectEvents(context.transport.send(context.session, context.turn("Reply with exactly ABORTINTERRUPT"),
+      context.turnBroker(controller.signal)))
+    await state.server.textGateReached("ABORTINTERRUPT")
+    controller.abort()
+    const events = await running
+    expect(interrupts).toBe(1)
+    expect(events.filter((item) => item.event.type === "error")).toEqual([])
+    expect(events.some((item) => item.event.type === "finish")).toBe(true)
+    const scope = WorkspaceScope.authorize({ workspaceID: "w1", directory: context.backend.directory })
+    expect((await actual.sessions.get(scope, context.session.binding.upstreamSessionId)).outcome).toBe("interrupted")
+  } finally { target.runtime = actual; release(); await running; await context.close() }
+}, 60_000)
+
+test("a lost stream with no terminal outcome rejects the turn instead of yielding an error event", async () => {
+  const context = await setupConformance({ name: "opencode-lost-without-outcome", backend,
+    makeTransport: (services, state) => transport(services, state as OpenCodeBackend) })
+  const target = context.transport as OpenCodeSdkTransport as unknown as { runtime: OpenCodeRuntime }
+  const actual = target.runtime
+  try {
+    const lost = new Set<() => void>()
+    target.runtime = { ...actual,
+      events: { ...actual.events,
+        subscribe(listener) {
+          return actual.events.subscribe((event) => {
+            if (terminal(event, context.session.binding.upstreamSessionId)) { for (const notify of lost) notify() }
+            else listener(event)
+          })
+        },
+        subscribeLoss(listener) { lost.add(listener); return () => lost.delete(listener) },
+      },
+      sessions: { ...actual.sessions, get: async (scope, id) => {
+        const { outcome: _outcome, ...row } = await actual.sessions.get(scope, id)
+        return row
+      } } }
+    const events: RoutedEvent[] = []
+    const failure = await (async () => {
+      for await (const event of context.transport.send(context.session, context.turn("Reply with exactly LOSTNOOUTCOME"), context.turnBroker())) events.push(event)
+    })().then(() => undefined, (error: unknown) => error)
+    expect(failure).toMatchObject({ transport: "opencode", code: "engine" })
+    expect(events.filter((item) => item.event.type === "error")).toEqual([])
+  } finally { target.runtime = actual; await context.close() }
+}, 60_000)
+
+test("a turn runs the resolved effort rather than the stored variant", async () => {
+  const variants = { high: { reasoningEffort: "high" }, low: { reasoningEffort: "low" } }
+  const context = await setupConformance({ name: "opencode-effort", backend,
+    makeTransport: (services, state) => transport(services, state as OpenCodeBackend, {
+      provider: { proof: proofProvider({}, { proof: { ...PROOF_MODEL, variants } }) } }) })
+  try {
+    const state = context.backend as OpenCodeBackend
+    await context.transport.config!.update(context.session, { variant: "low" })
+    const events = await collect(context, { ...context.turn("Reply with exactly EFFORTHIGH"), effort: "high" })
+    expect(events.some((item) => item.event.type === "finish")).toBe(true)
+    const request = state.server.requests.find((row) => row.prompt.includes("EFFORTHIGH"))
+    expect((request?.body as Record<string, unknown> | undefined)?.reasoning_effort).toBe("high")
+  } finally { await context.close() }
+}, 60_000)
+
+test("config options name the session's model, a requested model, and a draft's model", async () => {
+  const context = await setupConformance({ name: "opencode-config-options", backend,
+    makeTransport: (services, state) => transport(services, state as OpenCodeBackend, {
+      provider: { proof: proofProvider({}, { "proof-mini": { ...PROOF_MODEL, name: "Proof Mini" } }) } }) })
+  try {
+    const config = context.transport.config!
+    const options = (target: Parameters<typeof config.options>[0]) => config.options(target, "probe")
+    expect((await options({ session: context.session })).resolvedModel).toEqual({ id: "proof/proof", name: "Proof" })
+    expect((await options({ session: context.session, model: { providerID: "proof", modelID: "proof-mini" } })).resolvedModel)
+      .toEqual({ id: "proof/proof-mini", name: "Proof Mini" })
+    const { sessionId: _sessionId, title: _title, instructions: _instructions, ...draft } = context.start
+    expect((await options({ draft })).resolvedModel).toEqual({ id: "proof/proof", name: "Proof" })
   } finally { await context.close() }
 }, 60_000)

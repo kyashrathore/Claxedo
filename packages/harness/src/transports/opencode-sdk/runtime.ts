@@ -6,7 +6,7 @@ import { createInteractionPort, type OpenCodeInteractionPort } from "./interacti
 import { createSessionPort, type OpenCodeSessionPort } from "./session-port.js"
 import { createToolPort, type OpenCodeToolPort } from "./tool-port.js"
 import { createLaunchPolicy, type LaunchPolicyStore } from "./launch-policy.js"
-import { createProviderBindingPolicy, type ProviderBindingOverlay } from "./provider-binding.js"
+import { createProviderBindingPolicy, type ProviderBinding } from "./provider-binding.js"
 import { createProviderDefinitionPolicy, type ProviderDefinition } from "./provider-definition.js"
 import { createProviderPolicy, type ProviderConfigStore } from "./provider-policy.js"
 import type { WorkspaceScope } from "./scope.js"
@@ -20,7 +20,7 @@ export type OpenCodeRuntime = Readonly<{
 
   defineProviders(definitions: readonly ProviderDefinition[]): Promise<void>
 
-  bindProviders(overlays: Record<string, ProviderBindingOverlay>): Promise<void>
+  bindProviders(binding: ProviderBinding): Promise<void>
 
   providerUnavailableReason(providerID: string): string | undefined
 
@@ -109,7 +109,7 @@ export function createOpenCodeRuntime(options: OpenCodeRuntimeOptions): OpenCode
     configuration: createConfigurationPort(host),
     providerConfig: (scope) => policy.store(host, scope),
     defineProviders: (next) => definitions.apply(next),
-    bindProviders: (overlays) => bindings.apply(overlays),
+    bindProviders: (binding) => bindings.apply(binding),
     providerUnavailableReason: (providerID) => bindings.unavailableReason(providerID),
     providersBound: providersBound ?? (() => Promise.resolve()),
     launch: (scope) => launch.store(host, scope),
