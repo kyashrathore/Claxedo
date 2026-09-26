@@ -42,7 +42,7 @@ export { KeybindV2 as Keybind, type KeybindV2Props as KeybindProps } from "@open
 export { List } from "@opencode-ai/ui/list"
 export { ProjectAvatar } from "@opencode-ai/ui/v2/project-avatar-v2"
 export { Spinner } from "@opencode-ai/ui/spinner"
-export { TextField, type TextFieldProps } from "./controls/text-field"
+export { LabelledTextField, type LabelledTextFieldProps } from "./controls/text-field"
 export { TextareaV2 as Textarea, type TextareaV2Props as TextareaProps } from "@opencode-ai/ui/v2/textarea-v2"
 export { useTheme, type ColorScheme, type DesktopTheme, type ThemeVariant } from "@opencode-ai/ui/theme"
 export { oc2Theme } from "@opencode-ai/ui/theme/default-theme"

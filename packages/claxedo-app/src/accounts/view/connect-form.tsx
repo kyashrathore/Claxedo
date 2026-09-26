@@ -1,5 +1,5 @@
 import { For, Match, Show, Switch, type JSX } from "solid-js"
-import { ClaxedoIcon as Icon, Button, Spinner, TextField } from "@/ui"
+import { ClaxedoIcon as Icon, Button, Spinner, LabelledTextField } from "@/ui"
 import { CONTEXT_COPY, createProviderConnect, type ProviderConnect, type ConnectFormInput } from "../connect-form"
 import { useAccountsText } from "../i18n"
 import { ConnectCommand } from "./connect-command"
@@ -84,7 +84,7 @@ function PasteForm(props: { readonly form: ProviderConnect; readonly credentialI
           </Button>
         )}
       </Show>
-      <TextField
+      <LabelledTextField
         autofocus
         type="text"
         label={token() ? t("provider.connect.token.label", { vendor: vendor() }) : t("provider.connect.apiKey.label", { vendor: vendor() })}
@@ -96,7 +96,7 @@ function PasteForm(props: { readonly form: ProviderConnect; readonly credentialI
         error={form().store.error}
       />
       <Show when={!props.credentialId && !form().hosted()}>
-        <TextField
+        <LabelledTextField
           type="text"
           label={t("provider.connect.label.label")}
           placeholder={t("provider.connect.label.placeholder")}
@@ -122,7 +122,7 @@ function OAuthAuto(props: { readonly form: ProviderConnect; readonly kind: Conne
         <ExternalLink href={authorization()?.url ?? ""}>{t("provider.connect.oauth.auto.visit.link")}</ExternalLink>
         {t(CONTEXT_COPY.autoVisitSuffix[props.kind], props.form.vars())}
       </div>
-      <TextField label={t("provider.connect.oauth.auto.confirmationCode")} value={(authorization()?.instructions ?? "").replace(/^Enter code:\s*/i, "")} readOnly copyable />
+      <LabelledTextField label={t("provider.connect.oauth.auto.confirmationCode")} value={(authorization()?.instructions ?? "").replace(/^Enter code:\s*/i, "")} readOnly copyable />
       <div class="flex items-center gap-2">
         <Spinner />
         <span>{t("provider.connect.status.waiting")}</span>
@@ -150,7 +150,7 @@ function OAuthCode(props: { readonly form: ProviderConnect; readonly kind: Conne
         <ExternalLink href={form().store.authorization?.url ?? ""}>{t("provider.connect.oauth.code.visit.link")}</ExternalLink>
         {t(CONTEXT_COPY.codeVisitSuffix[props.kind], form().vars())}
       </div>
-      <TextField
+      <LabelledTextField
         autofocus
         type="text"
         label={t("provider.connect.oauth.code.label", { method: form().selected()?.label ?? "" })}

@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js"
-import { TextField } from "@/ui"
+import { LabelledTextField } from "@/ui"
 import { useOnboardingText, type OnboardingText } from "../i18n"
 import type { ExecutionChoice } from "../steps"
 import { SandboxProviderKey } from "./sandbox-provider-key"
@@ -27,8 +27,8 @@ function ConnectMachine(props: { readonly localExecution: boolean }) {
   return (
     <div class="flex flex-col gap-3">
       <p class="text-13-regular text-text-weak">{t("onboarding.execution.machine.intro")}</p>
-      <TextField label={t("onboarding.execution.machine.invite")} value={INVITE_COMMAND} readOnly copyable />
-      <TextField label={t("onboarding.execution.machine.connect")} value={CONNECT_COMMAND} readOnly copyable />
+      <LabelledTextField label={t("onboarding.execution.machine.invite")} value={INVITE_COMMAND} readOnly copyable />
+      <LabelledTextField label={t("onboarding.execution.machine.connect")} value={CONNECT_COMMAND} readOnly copyable />
       <p class="text-12-regular text-text-weak">{t(props.localExecution ? "onboarding.execution.machine.local" : "onboarding.execution.machine.hosted")}</p>
     </div>
   )

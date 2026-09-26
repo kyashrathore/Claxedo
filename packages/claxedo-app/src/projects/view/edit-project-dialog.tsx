@@ -1,7 +1,7 @@
 import { createMemo, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { toAppError, useServer, type Project } from "@/server"
-import { useDialog, Button, Dialog, Field, Textarea, TextField, DialogBody, DialogHeader, DialogTitle } from "@/ui"
+import { useDialog, Button, Dialog, Field, Textarea, LabelledTextField, DialogBody, DialogHeader, DialogTitle } from "@/ui"
 import { getFilename } from "@/ui/utils"
 import { useProjectsText } from "../i18n"
 import { EnvironmentEditor, environmentRecord, environmentRows, environmentRowsProblem } from "./environment-editor"
@@ -72,7 +72,7 @@ export function DialogEditProject(props: { project: Project }) {
       <DialogBody class="px-4 pb-4">
       <form onSubmit={handleSubmit} class="flex flex-col gap-6">
         <div class="flex flex-col gap-4">
-          <TextField autofocus type="text" label={t("projects.edit.name")} placeholder={folderName()} value={store.name} onChange={(v) => setStore("name", v)} />
+          <LabelledTextField autofocus type="text" label={t("projects.edit.name")} placeholder={folderName()} value={store.name} onChange={(v) => setStore("name", v)} />
           <ProjectIconField
             state={{ iconUrl: store.iconUrl, iconHover: store.iconHover, dragOver: store.dragOver, color: store.color, label: store.name || defaultName() }}
             onHover={(hover) => setStore("iconHover", hover)}

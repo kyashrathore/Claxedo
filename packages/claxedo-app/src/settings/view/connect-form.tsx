@@ -1,5 +1,5 @@
 import { createSignal, For, onCleanup, Show } from "solid-js"
-import { Button, Select, TextField } from "@/ui"
+import { Button, Select, LabelledTextField } from "@/ui"
 import { useTranslator } from "@/i18n"
 import { useServer, type ConnectionScope, type Integration, type IntegrationConnectInput } from "@/server"
 import { connectError, connectMachine, createConnectForm, grantError } from "../connections"
@@ -71,7 +71,7 @@ export function ConnectForm(props: {
       <Show when={keyMethod()}>
         <For each={props.integration.prompts}>
           {(prompt) => (
-            <TextField
+            <LabelledTextField
               type={prompt.secret ? "password" : "text"}
               autocomplete="off"
               label={prompt.label}

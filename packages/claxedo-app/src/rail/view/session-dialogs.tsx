@@ -1,7 +1,7 @@
 import { createSignal, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { failureMessage } from "@/lib/failure"
-import { Dialog, showToast, useDialog, TextField, Button, DialogBody, DialogHeader, DialogTitle } from "@/ui"
+import { Dialog, showToast, useDialog, LabelledTextField, Button, DialogBody, DialogHeader, DialogTitle } from "@/ui"
 import { railDictionary } from "../i18n"
 
 function useSubmit(run: () => Promise<void>, failureTitle: () => string) {
@@ -33,7 +33,7 @@ export function RenameSessionDialog(props: { readonly title: string; readonly on
       </DialogHeader>
       <DialogBody class="px-4 pb-4">
       <form class="flex min-w-[340px] flex-col gap-4" onSubmit={(event) => void form.submit(event)}>
-        <TextField label={t("rail.renameLabel")} hideLabel value={title()} onChange={setTitle} autofocus />
+        <LabelledTextField label={t("rail.renameLabel")} hideLabel value={title()} onChange={setTitle} autofocus />
         <div class="flex justify-end gap-2">
           <Button type="button" variant="ghost" size="large" onClick={form.cancel}>
             {t("rail.cancel")}

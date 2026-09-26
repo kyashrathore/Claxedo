@@ -1,5 +1,5 @@
 import { For, Show } from "solid-js"
-import { Select, Switch, useTheme, type ColorScheme, TextField } from "@/ui"
+import { Select, Switch, useTheme, type ColorScheme, LabelledTextField } from "@/ui"
 import { useTranslator } from "@/i18n"
 import { settingsDictionary, type SettingsKey } from "../i18n"
 import { CODE_FONT_PLACEHOLDER, codeFontFamily, TERMINAL_FONT_PLACEHOLDER, terminalFontFamily, UI_FONT_PLACEHOLDER, uiFontFamily } from "../fonts"
@@ -56,7 +56,7 @@ function FontRows(props: {
       {(row) => (
         <SettingsRow title={t(row.title)} description={t(row.description)}>
           <div class="settings-font-field">
-            <TextField
+            <LabelledTextField
               data-action={row.action}
               label={t(row.title)}
               hideLabel

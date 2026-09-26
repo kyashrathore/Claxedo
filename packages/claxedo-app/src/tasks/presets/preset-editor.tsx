@@ -7,7 +7,7 @@ import {
   type PresetPlacement,
 } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
-import { Button, Checkbox, Switch, TextField } from "@/ui"
+import { Button, Checkbox, Switch, LabelledTextField } from "@/ui"
 import { fieldReasonKey, type FieldReasons } from "../data/refusal"
 import { tasksDictionary } from "../i18n"
 import { SLOT_KEYS } from "../model"
@@ -184,7 +184,7 @@ function IdentityFields(
     <>
       <div class="tsk-field">
         <span class="tsk-label">{t("tasks.preset.name")}</span>
-        <TextField
+        <LabelledTextField
           data-testid="preset-editor-name"
           aria-label={t("tasks.preset.name")}
           placeholder={t("tasks.preset.namePlaceholder")}
