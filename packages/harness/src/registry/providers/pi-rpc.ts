@@ -1,5 +1,5 @@
 import { configObject, onlyFields, resolveBindings, secretBindings, configStringArray, configStringRecord, configText, type SecretBindings } from "./bindings"
-import { transportNotBuilt, type CustomHarnessProvider } from "./types"
+import { assertCurrentConnection, type ConstructTransport, type CustomHarnessProvider } from "./types"
 
 export type PiRpcProviderConfig = {
   label: string
@@ -10,7 +10,7 @@ export type PiRpcProviderConfig = {
   secretBindings?: SecretBindings
 }
 
-export function createPiRpcProvider(): CustomHarnessProvider<PiRpcProviderConfig> {
+export function createPiRpcProvider(construct: ConstructTransport<PiRpcProviderConfig>): CustomHarnessProvider<PiRpcProviderConfig> {
   return {
     providerKey: "pi-rpc",
     validateConfig(input) {
@@ -33,8 +33,12 @@ export function createPiRpcProvider(): CustomHarnessProvider<PiRpcProviderConfig
     },
     resolve({ descriptor, secrets }) {
       const config = descriptor.config
-      return { config: { ...config, env: { ...config.env, ...resolveBindings(config.secretBindings, secrets) } } }
+      return { connectionId: descriptor.connectionId, configRevision: descriptor.configRevision,
+        config: { ...config, env: { ...config.env, ...resolveBindings(config.secretBindings, secrets) } } }
     },
-    createTransport() { return transportNotBuilt("pi-rpc") },
+    createTransport(input) {
+      assertCurrentConnection(input, "pi-rpc")
+      return construct(input.resolved.config, input.services)
+    },
   }
 }

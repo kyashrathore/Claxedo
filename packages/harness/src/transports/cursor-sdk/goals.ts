@@ -1,9 +1,10 @@
 import type { AgentGoalMutationResult, RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
-import type { HarnessSession, ProviderTurnSettlement, RoutedEvent, SessionBroker, TurnBroker } from "../../contract"
+import type { HarnessSession, ProviderTurnSettlement, RoutedEvent, SessionBroker, TurnBroker, TurnRef } from "../../contract"
+import { nativeGoalPrompt } from "../../contract"
 
 type Running = { turnId: string; abort: AbortController; settled: Promise<ProviderTurnSettlement>; broker: SessionBroker; stopped: boolean }
 
-export type GoalRun = (turnBroker: TurnBroker, prompt: string) => AsyncIterable<RoutedEvent>
+export type GoalRun = (turnBroker: TurnBroker, turn: TurnRef, prompt: string) => AsyncIterable<RoutedEvent>
 
 function settledStatus(outcome: ProviderTurnSettlement): RuntimeGoalSnapshot["status"] {
   if (outcome.state === "completed") return "complete"
@@ -17,13 +18,13 @@ export class CursorGoals {
     const sessionId = session.binding.sessionId
     if (this.running.has(sessionId)) return { ok: false, status: "conflict", message: "Cursor Goal is running" }
     const abort = new AbortController()
-    const admitted = await broker.admitProviderTurn({ reason: "goal" }, (turnBroker) =>
-      run({ ...turnBroker, signal: AbortSignal.any([turnBroker.signal, abort.signal]) }, `/goal ${objective}`))
+    const admitted = await broker.admitProviderTurn({ reason: "goal" }, (turnBroker, turn) =>
+      run({ ...turnBroker, signal: AbortSignal.any([turnBroker.signal, abort.signal]) }, turn, nativeGoalPrompt(objective)))
     if (!admitted.admitted) return { ok: false, status: "conflict", message: `Cursor Goal admission ${admitted.reason}` }
     const now = Date.now()
     const goal: RuntimeGoalSnapshot = { sessionId, objective, status: "active", createdAt: now, updatedAt: now }
     await broker.goal.publish(goal)
-    const running: Running = { turnId: admitted.turnId, abort, settled: admitted.settled, broker, stopped: false }
+    const running: Running = { turnId: admitted.turn.turnId, abort, settled: admitted.settled, broker, stopped: false }
     this.running.set(sessionId, running)
     void admitted.settled.then((outcome) => this.settle(sessionId, running, outcome)).catch((error: unknown) => broker.reportFailure(error))
     return { ok: true, goal }

@@ -7,6 +7,7 @@ export type Rule =
   | "no-comments"
   | "size"
   | "core-boundary"
+  | "compose-boundary"
   | "transport-boundary"
   | "no-policy-in-transports"
   | "process-wide-state"
@@ -197,6 +198,12 @@ export function check(sources: Source[], agentsText: string, budgets: Record<str
         const vendor = vendorPrefixes.some(prefix => target === prefix.slice(0, -1) || target.startsWith(prefix))
         if (local && (target.startsWith("src/transports/") || target.startsWith("src/profiles/") || vendor)) {
           add(path, line, "core-boundary", "Move this dependency behind the contract or broker boundary")
+        }
+        if (production && path !== "src/compose.ts" && !transport && target.startsWith("src/transports/")) {
+          add(path, line, "compose-boundary", "Import transports only from src/compose.ts")
+        }
+        if (target === "src/compose" && path !== "src/compose.test.ts") {
+          add(path, line, "compose-boundary", "Use the package compose export; do not import src/compose.ts internally")
         }
         if (transport) {
           const own = target === `src/transports/${transport}` || target.startsWith(`src/transports/${transport}/`)

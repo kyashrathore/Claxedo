@@ -1,6 +1,6 @@
 import { decodeModelSelection, type ModelSelection } from "@claxedo/agent-runtime-contract"
 import { configObject, onlyFields, resolveBindings, secretBindings, configStringArray, configStringRecord, configText, type SecretBindings } from "./bindings"
-import { transportNotBuilt, type CustomHarnessProvider } from "./types"
+import { assertCurrentConnection, type ConstructTransport, type CustomHarnessProvider } from "./types"
 import { TransportError } from "../../contract/errors"
 
 export type AcpConnection =
@@ -46,7 +46,7 @@ function acpConfigBoolean(input: unknown, field: string): boolean | undefined {
   return input
 }
 
-export function createAcpProvider(): CustomHarnessProvider<AcpProviderConfig> {
+export function createAcpProvider(construct: ConstructTransport<AcpProviderConfig>): CustomHarnessProvider<AcpProviderConfig> {
   return {
     providerKey: "acp",
     validateConfig(input) {
@@ -77,8 +77,11 @@ export function createAcpProvider(): CustomHarnessProvider<AcpProviderConfig> {
       const connection = config.connection.kind === "process"
         ? { ...config.connection, env: { ...config.connection.env, ...materialized } }
         : { ...config.connection, headers: { ...config.connection.headers, ...materialized } }
-      return { config: { ...config, connection } }
+      return { connectionId: descriptor.connectionId, configRevision: descriptor.configRevision, config: { ...config, connection } }
     },
-    createTransport() { return transportNotBuilt("acp") },
+    createTransport(input) {
+      assertCurrentConnection(input, "acp")
+      return construct(input.resolved.config, input.services)
+    },
   }
 }

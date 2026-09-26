@@ -2,17 +2,18 @@ import { createHash, randomUUID } from "node:crypto"
 import fs from "node:fs/promises"
 import path from "node:path"
 import type { McpServerConfig, SettingSource } from "@cursor/sdk"
-import { realPathWithinRoot } from "@claxedo/helpers/fs"
+import { lstatIfExists, realPathWithinRoot } from "@claxedo/helpers/fs"
 import { asRecord } from "@claxedo/helpers/guards"
 import type { McpServerSpec, PluginProjection, SkillRoot, TurnActor } from "../../contract"
 import type { RuntimePlacement } from "../../registry/credentials"
-import { existingEntry, mirrorConfigEntry } from "../config-mirror"
+import { mirrorConfigTree, type ConfigMirrorOptions } from "../config-mirror"
 
 const OWNER = "claxedo-agent-plugins"
 const PREFIX = "claxedo--"
 const MARKER = ".claxedo-agent-plugin.json"
 const MIRRORED = ["mcp.json", "settings.json", "sandbox.json", "hooks.json", "rules", "skills", "skills-cursor", "agents"] as const
 const SECRET_FILE = /^(?:mcp-auth\.json|auth\.json)$|(?:^|[-_.])(?:credential|credentials|oauth|auth|secret|token|password|keychain)(?:[-_.]|$)/i
+const mirror: ConfigMirrorOptions = { secretFile: SECRET_FILE, externalSkills: true }
 
 export type CursorLoginOptions = { placement: RuntimePlacement; machineOwnerUserId: string; canUseOwnLogin: boolean }
 
@@ -113,7 +114,7 @@ export async function projectCursorPlugins(projection: Pick<PluginProjection, "p
   for (const plugin of projection.pluginRoots) {
     const name = managedPluginName(plugin)
     if (desired.has(name)) throw new Error(`Duplicate Cursor plugin ${plugin.pluginInstanceId}`)
-    if (!existing.has(name) && await existingEntry(path.join(folder, name))) {
+    if (!existing.has(name) && await lstatIfExists(path.join(folder, name))) {
       throw new Error(`Cursor plugin destination ${path.join(folder, name)} is not owned by Claxedo`)
     }
     desired.set(name, plugin)
@@ -123,27 +124,27 @@ export async function projectCursorPlugins(projection: Pick<PluginProjection, "p
 }
 
 async function mirrorPersonalPlugins(personalFolder: string, folder: string, personalRoot: string): Promise<void> {
-  const names = (await existingEntry(personalFolder))?.isDirectory()
+  const names = (await lstatIfExists(personalFolder))?.isDirectory()
     ? (await fs.readdir(personalFolder)).filter((name) => !name.startsWith(".") && !name.startsWith(PREFIX)) : []
   for (const name of await fs.readdir(folder)) {
     if (name.startsWith(".") || name.startsWith(PREFIX) || names.includes(name)) continue
     await fs.rm(path.join(folder, name), { recursive: true, force: true })
   }
   for (const name of names) {
-    await mirrorConfigEntry(path.join(personalFolder, name), path.join(folder, name), personalRoot, { secretFile: SECRET_FILE })
+    await mirrorConfigTree(path.join(personalFolder, name), path.join(folder, name), personalRoot, mirror, path.join("plugins", "local", name))
   }
 }
 
 async function mirrorPersonalConfig(personal: string | undefined, cursorDir: string): Promise<void> {
-  const root = personal && (await existingEntry(personal))?.isDirectory() ? await fs.realpath(personal) : undefined
+  const root = personal && (await lstatIfExists(personal))?.isDirectory() ? await fs.realpath(personal) : undefined
   for (const name of MIRRORED) {
     const target = path.join(cursorDir, name)
     const source = root ? path.join(root, name) : undefined
-    if (!source || !(await existingEntry(source))) {
+    if (!source || !(await lstatIfExists(source))) {
       await fs.rm(target, { recursive: true, force: true })
       continue
     }
-    await mirrorConfigEntry(source, target, root!, { secretFile: SECRET_FILE, ...(name === "skills" ? { externalSkillRoot: source } : {}) })
+    await mirrorConfigTree(source, target, root!, mirror, name)
   }
   const folder = path.join(cursorDir, "plugins", "local")
   await fs.mkdir(folder, { recursive: true, mode: 0o700 })

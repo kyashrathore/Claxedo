@@ -221,6 +221,8 @@ function normalize(value: unknown, ids: Map<string, string>, specials: Map<strin
   if (typeof value === "number" && key === "pid") return special(specials, "pid", String(value), scope)
   if (typeof value !== "string") return value
   if (/(?:^ts$|^time$|^created$|^updated$|^archived$|at$|time$|timestamp|duration|elapsed|since|until)/i.test(key)) return "<time>"
+  if (key === "claude_code_version") return "<claude-code-version>"
+  if (key === "date" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return "<date>"
   if (key === "title" && /^Terminal [a-f0-9]{4}$/i.test(value)) return special(specials, "terminal-title", value, scope)
   if ((key === "processId" || key === "pid") && /^\d+$/.test(value)) return special(specials, "pid", value, scope)
   if ((key === "process_key" || key === "processKey") && /^[a-z][a-z0-9-]*:[a-f0-9]{32,}$/i.test(value)) {

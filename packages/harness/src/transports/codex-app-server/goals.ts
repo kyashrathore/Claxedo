@@ -45,13 +45,12 @@ async function interrupt(resolve: ResolveGoalEntry, session: HarnessSession): Pr
   const entry = resolve(session)
   const turnId = entry.providerTurn?.id ?? entry.turn?.id
   if (!turnId) return
-  const deadline = { at: Date.now() + 10_000, signal: new AbortController().signal }
-  const stopped = await entry.terminals.stop(turnId, deadline)
-  const confirmed = stopped.execution === "terminal" && stopped.cleanup === "verified_clear"
-    ? stopped : await entry.terminals.confirm(turnId, stopped, deadline)
-  if (confirmed.execution !== "terminal" || confirmed.cleanup !== "verified_clear") {
-    throw new CodexTransportError("process", "Codex turn interruption or background cleanup is unverified")
-  }
+  const stopped = await entry.terminals.stop(turnId, { at: Date.now() + 10_000, signal: new AbortController().signal })
+  if (stopped.execution !== "terminal") throw new CodexTransportError("process", "Codex turn was not confirmed stopped before the goal transition")
+  if (stopped.cleanup === "verified_clear" || !entry.terminals.ranCommand(turnId)) return
+  await entry.broker.publish({ type: "harness-notice", code: "codex.background_commands_unverified", severity: "warn",
+    message: "Background commands started by the stopped Codex turn may still be running",
+    details: { turnId, cleanup: stopped.cleanup, ...(stopped.error ? { error: stopped.error } : {}) } })
 }
 
 export function createCodexGoals(resolve: ResolveGoalEntry): NativeGoalOperations {

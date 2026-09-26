@@ -3,7 +3,7 @@ import os from "node:os"
 import path from "node:path"
 import { expect, test } from "bun:test"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
-import { runConformance, setupConformance, type ConformanceBackend } from "./test-support/run"
+import { runConformance, setupConformance, type ConformanceBackend, withUndeliverableFile } from "./test-support/run"
 import { reservePort, releasePort } from "../../e2e/harness/ports"
 import { startScriptedCursorBackend } from "../../e2e/harness/cursor/backend"
 import { egressProxyEnv, startEgressGuard, unexpectedEgress } from "../../e2e/harness/egress-guard"
@@ -35,7 +35,8 @@ async function backend(): Promise<CursorBackend> {
     harness: { id: "cursor", access: "native" }, model: { providerID: "cursor", modelID: "scripted" },
     credentials: { providers: { cursor: { baseUrl: server.url, placeholder: "cursor-conformance-placeholder", authMode: "bearer" } },
       secrets: {}, leaseGeneration: "conformance" },
-    owner: { kind: "machine-owner" }, expectedMcp: "session", textCommand: "CURSOR_SCRIPT:conformance", permissionMode: "unsandboxed",
+    owner: { kind: "machine-owner" }, expectedMcp: "session", textCommand: "CURSOR_SCRIPT:conformance",
+    unrunnableTurn: withUndeliverableFile,
     close: async () => {
       console.log(`Cursor outbound attempts: ${JSON.stringify(guard.attempts)}`)
       const unexpected = unexpectedEgress(guard.attempts)
@@ -160,7 +161,7 @@ test("a failed run leaves another session on the shared host running", async () 
   const context = await setupConformance({ name: "shared", backend: async () => state, makeTransport: transportFor(state) })
   try {
     const second = await context.transport.start({ ...context.start, sessionId: "s2" },
-      { rebind: async () => {} } as unknown as SessionBroker)
+      { rebind: async (upstreamSessionId: string) => ({ ...context.session.binding, sessionId: "s2", upstreamSessionId }) } as unknown as SessionBroker)
     const held = collect(context, context.turn("CURSOR_SCRIPT:held"), second).then((events) => ({ events }), (error: unknown) => ({ error }))
     await pollUntil(() => state.server.requests.some((request) => request.path === "/aiserver.v1.BidiService/BidiAppend"
       && JSON.stringify(request.decoded).includes("CURSOR_SCRIPT:held")) || undefined, Date.now() + 10_000)
@@ -184,7 +185,7 @@ test("a silent run expires by inactivity, is cancelled alone, and the shared hos
   const state = await backend()
   state.server.script("held", { steps: [], hold: true })
   const services = createTestServices()
-  const registry = new CursorHostRegistry(services, state.env)
+  const registry = new CursorHostRegistry(services, state.env, new AbortController().signal)
   const home = path.join(state.root, "deadline-home")
   await fs.mkdir(home, { recursive: true })
   const session = { sessionId: "deadline", directory: state.directory, apiKey: "cursor-conformance-placeholder", model: "scripted",
@@ -213,7 +214,7 @@ test("a run that keeps streaming outlives its inactivity window", async () => {
     { kind: "text", text: "THREE" }, { kind: "wait", ms: 600 }, { kind: "text", text: "FOUR" },
   ] })
   const services = createTestServices()
-  const registry = new CursorHostRegistry(services, state.env)
+  const registry = new CursorHostRegistry(services, state.env, new AbortController().signal)
   const home = path.join(state.root, "slow-home")
   await fs.mkdir(home, { recursive: true })
   const session = { sessionId: "slow", directory: state.directory, apiKey: "cursor-conformance-placeholder", model: "scripted",
@@ -256,7 +257,8 @@ test("two bindings use separate SDK hosts", async () => {
   try {
     const one = await setupConformance({ name: "first", backend: async () => first, makeTransport: () => transport })
     const secondSession = await transport.start({ ...one.start, sessionId: "s2", workspaceId: "w2",
-      directory: second.directory, credentials: second.credentials }, { rebind: async () => {} } as unknown as SessionBroker)
+      directory: second.directory, credentials: second.credentials }, { rebind: async (upstreamSessionId: string) =>
+        ({ sessionId: "s2", workspaceId: "w2", directory: second.directory, connectionId: "cursor-sdk", upstreamSessionId }) } as unknown as SessionBroker)
     const [firstEvents, secondEvents] = await Promise.all([
       collect(one, one.turn("CURSOR_SCRIPT:conformance")), collect(one, one.turn("CURSOR_SCRIPT:conformance"), secondSession)])
     expect(firstEvents.some((item) => item.event.type === "finish")).toBe(true)
@@ -322,11 +324,11 @@ test("offers Cursor's permission modes and refuses an unknown one", async () => 
     const modes = await context.transport.config?.permissionModes({ session: context.session })
     expect(modes?.modes.map((mode) => mode.id)).toEqual(["review", "auto-review", "unsandboxed"])
     expect(modes?.modes.map((mode) => mode.level)).toEqual(["ask", "auto", "full"])
-    expect(modes).toMatchObject({ currentModeId: "unsandboxed", appliesFrom: "next-turn" })
-    const draft = draftOf(context)
-    const unset = await context.transport.config?.permissionModes({ draft: { ...draft, config: { harness: draft.config.harness } } })
-    expect(unset?.currentModeId).toBe("auto-review")
+    expect(modes).toEqual({ modes: modes!.modes, appliesFrom: "next-turn" })
+    expect(await context.transport.config?.permissionModes({ draft: draftOf(context) })).toEqual({ modes: modes!.modes, appliesFrom: "next-turn" })
     await expect(context.transport.config!.setPermissionMode(context.session, "yolo")).rejects.toThrow("Unknown Cursor permission mode yolo")
+    expect((await context.transport.config!.read(context.session)).permissionMode).toBeUndefined()
+    expect((await context.transport.config!.setPermissionMode(context.session, "unsandboxed")).currentModeId).toBe("unsandboxed")
     expect((await context.transport.config!.read(context.session)).permissionMode).toBe("unsandboxed")
   } finally { await context.close() }
 }, 60_000)
@@ -347,12 +349,14 @@ test.each(["review", "auto-review"])("selecting %s reaches the SDK's sandbox gat
 
 test("a session created in review mode is refused by the SDK's sandbox gate on its first turn", async () => {
   const state = await backend()
-  const context = await setupConformance({ name: "review-start", backend: async () => ({ ...state, permissionMode: "review" }),
-    makeTransport: transportFor(state) })
+  const context = await setupConformance({ name: "review-start", backend: async () => state, makeTransport: transportFor(state) })
   try {
-    expect((await context.transport.config!.permissionModes({ session: context.session })).currentModeId).toBe("review")
-    expect(await refusal(collect(context, context.turn("CURSOR_SCRIPT:conformance")))).toMatch(/sandboxing is not supported in this environment/)
+    const review = await context.transport.start({ ...context.start, sessionId: "s2", config: { ...context.start.config, permissionMode: "review" } },
+      { rebind: async (upstreamSessionId: string) => ({ ...context.session.binding, sessionId: "s2", upstreamSessionId }) } as unknown as SessionBroker)
+    expect((await context.transport.config!.permissionModes({ session: review })).currentModeId).toBe("review")
+    expect(await refusal(collect(context, context.turn("CURSOR_SCRIPT:conformance"), review))).toMatch(/sandboxing is not supported in this environment/)
     expect(state.server.requests.filter((request) => request.path === "/agent.v1.AgentService/RunSSE")).toHaveLength(0)
+    expect((await collect(context, context.turn("CURSOR_SCRIPT:conformance"))).some((item) => item.event.type === "finish")).toBe(true)
   } finally { await context.close() }
 }, 60_000)
 
@@ -416,16 +420,19 @@ test("config.options probes Cursor.models.list through the binding and pins auto
   state.server.models([{ id: "scripted", displayName: "Scripted", description: "Scripted model" }, { id: "second", displayName: "Second" }])
   const context = await setupConformance({ name: "models", backend: async () => state, makeTransport: transportFor(state) })
   try {
-    expect(await context.transport.config?.options({ session: context.session }, "peek")).toEqual([])
+    expect(await context.transport.config?.options({ session: context.session }, "peek")).toEqual({ options: [] })
     const catalogReads = () => state.server.requests.filter((request) => request.path === "/v1/models").length
     const before = catalogReads()
-    const options = await context.transport.config?.options({ session: context.session }, "probe")
-    const model = options?.find((option) => option.id === "model")
+    const preview = await context.transport.config!.options({ session: context.session }, "probe")
+    const model = preview.options.find((option) => option.id === "model")
     expect(model?.selectOptions?.map((option) => option.id)).toEqual(["auto", "scripted", "second"])
     expect(model?.currentValue).toBe("scripted")
+    expect(preview.resolvedModel).toEqual({ id: "scripted", name: "Scripted" })
     expect(catalogReads()).toBe(before + 1)
-    expect(await context.transport.config?.options({ session: context.session }, "peek")).toEqual(options)
-    expect(await context.transport.config?.options({ session: context.session }, "probe")).toEqual(options)
+    expect(await context.transport.config?.options({ session: context.session }, "peek")).toEqual(preview)
+    expect(await context.transport.config?.options({ session: context.session }, "probe")).toEqual(preview)
+    expect((await context.transport.config!.options({ session: context.session, model: { providerID: "cursor", modelID: "second" } }, "peek")).resolvedModel)
+      .toEqual({ id: "second", name: "Second" })
     expect(catalogReads()).toBe(before + 1)
     const capabilities = await context.transport.capabilities({ directory: state.directory, sessionId: context.session.binding.sessionId })
     expect(capabilities.modelSelection).toEqual({ status: "required", models: [
@@ -506,7 +513,7 @@ test("non-image attachments are materialized in the workspace and images travel 
       { type: "file", mime: "image/png", filename: "shot.png", url: `data:image/png;base64,${image}` },
     ] } }
     expect((await collect(context, turn)).some((item) => item.event.type === "finish")).toBe(true)
-    const folder = await fs.realpath(path.join(state.directory, ".claxedo", "attachments"))
+    const folder = path.join(state.directory, ".claxedo", "attachments")
     const files = (await fs.readdir(folder)).filter((name) => name !== ".gitignore")
     const written = files.find((name) => name.endsWith("-notes.txt"))
     expect(written).toBeDefined()
@@ -516,7 +523,7 @@ test("non-image attachments are materialized in the workspace and images travel 
     expect(run).toContain(`Attached file (text/plain): ${path.join(folder, written!)}`)
     expect(run).toContain(`"data":"${image}"`)
     expect(await refusal(collect(context, { ...base, prompt: { ...base.prompt, parts: [{ type: "file", mime: "text/plain", url: "https://example.invalid/notes.txt" }] } })))
-      .toBe("CursorTransportError: Cursor cannot deliver this file URL")
+      .toBe("CursorTransportError: Cursor cannot deliver the file URL https://example.invalid/notes.txt")
   } finally { await context.close() }
 }, 60_000)
 

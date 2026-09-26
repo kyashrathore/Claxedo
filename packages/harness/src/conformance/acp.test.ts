@@ -14,6 +14,7 @@ import { expect, test } from "bun:test"
 import { createRequestBroker, createSessionBroker, createTurnBroker } from "../broker"
 import { MemoryPorts, authority, origin } from "./test-support/memory-ports"
 import { createTestServices } from "./test-support/services"
+import { assertListedCommandsRun } from "./test-support/commands"
 
 type AcpBackend = ConformanceBackend & {
   root: string
@@ -39,6 +40,7 @@ async function backend(kind: "process" | "websocket" | "streamable-http", restor
   ] })
   await writeAcpScript(directory, "subagent", { steps: [{ kind: "subagent", name: "Researcher", task: "Inspect the file",
     steps: [{ kind: "text", text: "Child result" }] }] })
+  await writeAcpScript(directory, "refused", { steps: [{ kind: "error", message: "Scripted ACP refused this prompt" }] })
   const server = kind === "websocket" ? await startScriptedAcpWebSocket(directory, { restoreMode, holdMethod, startupQuestion, groups })
     : kind === "streamable-http" ? await startScriptedAcpHttp(directory, { restoreMode, startupQuestion, groups }) : undefined
   const connection = kind === "websocket" && server
@@ -79,6 +81,7 @@ async function backend(kind: "process" | "websocket" | "streamable-http", restor
       },
     } : {}),
     expectedMcp: supportsMcpServers ? "session" : "none", textCommand: acpScriptToken("text"), permissionCommand: acpScriptToken("permission"),
+    unrunnableTurn: (turn) => ({ ...turn, prompt: { ...turn.prompt, parts: [{ type: "text", text: acpScriptToken("refused") }] } }),
     close: async () => { await server?.close(); await fs.rm(root, { recursive: true, force: true }) },
   }
 }
@@ -94,6 +97,19 @@ for (const kind of ["process", "websocket", "streamable-http"] as const) {
     },
   })
 }
+
+test("every listed ACP command runs as a slash prompt", async () => {
+  const context = await setupConformance({ name: "acp command proof", backend: () => backend("process"),
+    makeTransport(services, state) {
+      return new AcpTransport(services, (state as AcpBackend).connection, filterMcpServers,
+        async () => { throw new Error("No saved transcript") })
+    } })
+  try {
+    await assertListedCommandsRun({ transport: context.transport, session: context.session, turn: context.turn,
+      turnBroker: context.turnBroker, args: () => acpScriptToken("text"),
+      observe: (_name, events) => expect(events.some(({ event }) => JSON.stringify(event).includes("PICONFORM"))).toBe(true) })
+  } finally { await context.close() }
+}, 60_000)
 
 runConformance({
   name: "acp websocket load",
@@ -124,7 +140,7 @@ test("a missing native ACP session persists saved context before rebinding", asy
       expect(handoff).toMatchObject({ transcript: "Saved conversation" })
       order.push("persist")
     }
-    context.ports.rebind = async () => { order.push("rebind") }
+    context.ports.rebind = async (_sessionId, upstreamSessionId) => { order.push("rebind"); return { ...context.started.binding, upstreamSessionId } }
     const attached = await context.transport.attach({ ...context.start,
       binding: { ...context.session.binding, upstreamSessionId: "missing-session" } }, context.sessionBroker)
     expect(attached.binding.upstreamSessionId).not.toBe("missing-session")
@@ -290,8 +306,8 @@ test("ACP harness and probe spawns carry observer metadata without launch secret
     const { sessionId: _sessionId, title: _title, instructions: _instructions, ...draft } = context.start
     await context.transport.config?.options({ draft }, "probe")
     expect(descriptors).toEqual([
-      { role: "harness", label: "ACP", sessionId: "s1" },
-      { role: "probe", label: "ACP", sessionId: expect.stringMatching(/^probe-/) },
+      { role: "harness", label: "ACP", sessionId: "s1", signal: expect.any(AbortSignal) },
+      { role: "probe", label: "ACP", sessionId: expect.stringMatching(/^probe-/), signal: expect.any(AbortSignal) },
     ])
     expect(JSON.stringify(descriptors)).not.toContain("sensitive-value")
   } finally { await context.close() }
@@ -423,12 +439,12 @@ test("a draft ACP probe cancels startup questions, deduplicates, and retires its
     config: { harness: state.harness, model: state.model }, model: state.model, credentials: state.credentials,
     projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] } }
   try {
-    expect(await transport.config.options({ draft }, "peek")).toEqual([])
+    expect(await transport.config.options({ draft }, "peek")).toEqual({ options: [] })
     const [first, second] = await Promise.all([
       transport.config.options({ draft }, "probe"), transport.config.options({ draft }, "probe"),
     ])
     expect(first).toEqual(second)
-    expect(first.some((item) => item.id === "mode")).toBe(true)
+    expect(first.options.some((item) => item.id === "mode")).toBe(true)
     expect(await transport.config.options({ draft }, "probe")).toEqual(first)
     expect(await transport.config.options({ draft }, "peek")).toEqual(first)
     expect((await transport.config.permissionModes({ draft })).modes.map((mode) => mode.id)).toEqual(["default", "review"])
@@ -993,7 +1009,6 @@ for (const group of ["steer", "agents", "goals", "health"] as const) {
       try {
         const caps = await context.transport.capabilities({ directory: context.backend.directory, sessionId: "s1" })
         if (group === "steer") {
-          expect(caps.steer).toBe(present)
           expect(context.transport.steer !== undefined).toBe(present)
           if (present) {
             const running = (async () => {
@@ -1013,7 +1028,6 @@ for (const group of ["steer", "agents", "goals", "health"] as const) {
             await running
           }
         } else if (group === "agents") {
-          expect(caps.agents).toBe(present)
           expect(context.transport.agents !== undefined).toBe(present)
           if (present) expect(await context.transport.agents?.list({ session: context.session })).toHaveLength(2)
         } else if (group === "goals") {

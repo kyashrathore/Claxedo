@@ -5,7 +5,7 @@ import os from "node:os"
 import path from "node:path"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
-import { runConformance, type ConformanceBackend } from "./test-support/run"
+import { runConformance, type ConformanceBackend, withUndeliverableFile } from "./test-support/run"
 import { reservePort, releasePort } from "../../e2e/harness/ports"
 import { startScriptedModelServer } from "../../e2e/harness/scripted-model-server"
 import { ClaudeSdkTransport } from "../transports/claude-sdk"
@@ -104,6 +104,7 @@ async function backend(): Promise<ClaudeBackend> {
       secrets: {}, leaseGeneration: "conformance" },
     onSetup: ({ ports }) => configurePorts(ports, { harness: { id: "claude", access: "native" },
       model: { providerID: "anthropic", modelID: "default" } }),
+    unrunnableTurn: withUndeliverableFile,
     hold: (marker) => {
       const release = server.holdTextReplies(marker)
       if (marker === "PISTEER") void server.textGateReached(marker).then(() => setTimeout(release, 300))
@@ -156,7 +157,7 @@ test.each(["allow_once", "allow_always", "deny", "reject_always"])("Claude permi
     const session = await transport.start({ sessionId: "s1", workspaceId: "w1", directory: state.directory, locality: "local", owner: state.owner,
       config: { harness: state.harness, model: state.model }, model: state.model, credentials: state.credentials,
       projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] } }, broker)
-    ports.current.set("s1", { ...authority, directory: state.directory, upstreamSessionId: session.binding.upstreamSessionId })
+    const committed = () => ({ ...session, binding: ports.bindings.get("s1") ?? session.binding })
     const target = path.join(state.directory, "permission-result.txt")
     const originalSettings = await fs.readFile(path.join(state.userConfigRoot, "settings.json"))
     state.scriptTool?.("Bash", { command: `printf approved > ${target}` })
@@ -173,7 +174,7 @@ test.each(["allow_once", "allow_always", "deny", "reject_always"])("Claude permi
     }
     expect(pending?.request.kind).toBe("permission")
     if (!pending) throw new Error("Claude did not ask permission")
-    expect(pending.upstreamSessionId).toBe(session.binding.upstreamSessionId)
+    expect(pending.upstreamSessionId).toBe(committed().binding.upstreamSessionId)
     if (decision === "allow_always") {
       ports.failPersist = true
       expect(await owner.broker.answer(pending.request.requestId, { kind: "permission", decision }, { sessionId: "s1" }))
@@ -195,10 +196,10 @@ test.each(["allow_once", "allow_always", "deny", "reject_always"])("Claude permi
       state.server.scriptToolSequence("again", [{ name: "Bash", input: { command: `printf approved > ${target}` } }])
       const next = { ...turn, turnId: "t2", userMessageId: "u2", assistantMessageId: "a2",
         prompt: { ...turn.prompt, assistantMessageId: "a2", parts: [{ type: "text" as const, text: "Run the scripted Bash tool again" }] } }
-      ports.current.set("s1", { ...authority, directory: state.directory, upstreamSessionId: session.binding.upstreamSessionId, turnId: "t2" })
+      ports.current.set("s1", { ...authority, directory: state.directory, upstreamSessionId: committed().binding.upstreamSessionId, turnId: "t2" })
       const nextBroker = createTurnBroker(owner, { authority: { ...authority, directory: state.directory,
-        upstreamSessionId: session.binding.upstreamSessionId, turnId: "t2" }, origin, signal: new AbortController().signal })
-      for await (const _event of transport.send(session, next, nextBroker)) {}
+        upstreamSessionId: committed().binding.upstreamSessionId, turnId: "t2" }, origin, signal: new AbortController().signal })
+      for await (const _event of transport.send(committed(), next, nextBroker)) {}
       expect(owner.broker.list({ sessionId: "s1" })).toHaveLength(0)
       expect(await fs.readFile(target, "utf8")).toBe("approved")
     }
@@ -233,7 +234,7 @@ test("Claude native Goal starts through provider admission and confirms clear", 
     const until = Date.now() + 10_000
     while (!broker.goal.read() && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 50))
     expect(broker.goal.read()).not.toBeNull()
-    const stopped = await transport.goals.stop(session)
+    const stopped = await transport.goals.stop({ ...session, binding: ports.bindings.get("s1") ?? session.binding })
     expect(stopped.ok).toBe(true)
     expect(broker.goal.read()?.status).toBe("paused")
   } finally { release(); await transport.dispose(); await state.close() }
@@ -257,13 +258,13 @@ test("a requested Claude agent changes the real CLI query", async () => {
     const session = await transport.start({ sessionId: "s1", workspaceId: "w1", directory: state.directory, locality: "local",
       owner: state.owner, config: { harness: state.harness, model: state.model }, model: state.model,
       credentials: state.credentials, projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] } }, broker)
-    ports.current.set("s1", { ...authority, directory: state.directory, upstreamSessionId: session.binding.upstreamSessionId })
     const turnBroker = createTurnBroker(owner, { authority: { ...authority, directory: state.directory,
       upstreamSessionId: session.binding.upstreamSessionId }, origin, signal: new AbortController().signal })
     const turn = { turnId: "t1", userMessageId: "u1", assistantMessageId: "a1", origin, model: state.model,
       prompt: { agent: "reviewer", assistantMessageId: "a1", parts: [{ type: "text" as const, text: "Review this work" }] }, todos: [] }
     for await (const _event of transport.send(session, turn, turnBroker)) {}
-    expect((await transport.agents.list({ session })).some((agent) => agent.name === "reviewer")).toBe(true)
+    const committed = { ...session, binding: ports.bindings.get("s1") ?? session.binding }
+    expect((await transport.agents.list({ session: committed })).some((agent) => agent.name === "reviewer")).toBe(true)
     expect(state.server.requests.some((request) => request.model.includes("haiku"))).toBe(true)
   } finally { await transport.dispose(); await state.close() }
 }, 60_000)

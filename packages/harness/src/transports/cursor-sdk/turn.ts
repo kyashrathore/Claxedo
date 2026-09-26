@@ -6,7 +6,7 @@ import { asRecord } from "@claxedo/helpers/guards"
 import type { SDKImage, SDKMessage, SDKUserMessage } from "@cursor/sdk"
 import type { HarnessServices, RoutedEvent, TurnBroker, TurnInput } from "../../contract"
 import { TransportError } from "../../contract/errors"
-import { attachmentErrorFor, attachmentPathLine, materializeAttachment, turnAttachments } from "../../translate/attachments"
+import { attachmentPathLine, isPromptImage, materializeAttachment, promptFiles } from "../../translate/attachments"
 import { routedIngest } from "../../translate/ingest"
 import { flattenTurnPrompt } from "../../translate/prompt"
 import { unrecognizedEvent } from "../../translate/unrecognized"
@@ -15,17 +15,17 @@ import type { HostReply, HostSession } from "./protocol"
 
 type Runtime = ReturnType<typeof createAgentEventRuntime>
 
-const INLINE_IMAGE_MIMES = ["image/gif", "image/jpeg", "image/png", "image/webp"]
-
-const attachmentError = attachmentErrorFor("cursor")
+const cursorAttachmentError = (message: string) => new TransportError("cursor", "configuration", message)
 
 export async function cursorPrompt(turn: TurnInput, directory: string): Promise<string | SDKUserMessage> {
-  const lines = [flattenTurnPrompt(turn, { system: "turn", separator: "\n\n" })]
+  const lines = [flattenTurnPrompt(turn, { separator: "\n\n", system: "prefix" })]
+  const { files, references } = promptFiles(turn, cursorAttachmentError)
+  if (references.length) throw cursorAttachmentError(`Cursor cannot deliver the file URL ${references[0]}`)
   const images: SDKImage[] = []
-  for (const file of turnAttachments(turn, attachmentError)) {
-    const written = await materializeAttachment(directory, file, attachmentError)
+  for (const file of files) {
+    const written = await materializeAttachment(directory, file, cursorAttachmentError)
     lines.push(attachmentPathLine(written))
-    if (INLINE_IMAGE_MIMES.includes(file.mime)) images.push({ data: file.base64, mimeType: file.mime })
+    if (isPromptImage(file.mime)) images.push({ data: file.base64, mimeType: file.mime })
   }
   const text = lines.filter(Boolean).join("\n")
   return images.length ? { text, images } : text

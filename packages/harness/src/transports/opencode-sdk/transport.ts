@@ -1,6 +1,6 @@
 import type { AgentAgent, AgentCommand, SessionConfig, SessionConfigUpdate } from "@claxedo/agent-runtime-contract"
-import type { AttachInput, ConfigApplied, ConfigTarget, HarnessServices, HarnessSession, HarnessTransport,
-  SessionBroker, StartInput, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef, Deadline } from "../../contract"
+import type { AttachInput, ConfigApplied, ConfigOptionsPreview, ConfigPreviewTarget, ConfigTarget, HarnessServices, HarnessSession,
+  HarnessTransport, SessionBroker, StartInput, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef, Deadline } from "../../contract"
 import { openCodeLaunchDocument } from "../../profiles/opencode/index.js"
 import { openCodeCapabilities } from "./capabilities.js"
 import { rollbackOpenCodeSession } from "./open-rollback.js"
@@ -13,7 +13,7 @@ import { createOpenCodeRuntime, type OpenCodeRuntime, type OpenCodeRuntimeOption
 import { WorkspaceScope } from "./scope.js"
 import { promptRequest, runOpenCodeTurn } from "./turn.js"
 import { createKeyedSerializer, errorMessage, settleAtRequestDeadline } from "@claxedo/helpers"
-import { attachedSessionEntry, mergeStartInput, sessionConnectionHealth, sessionMcpServers } from "../../contract"
+import { attachedSessionEntry, configOptionsPreview, mergeStartInput, sessionConnectionHealth, sessionMcpServers } from "../../contract"
 
 type Entry = { session: HarnessSession; start: StartInput; broker: SessionBroker; scope: WorkspaceScope;
   upstream: string; active: boolean; assistantMessageID?: string }
@@ -103,11 +103,9 @@ export class OpenCodeSdkTransport implements HarnessTransport {
         await this.runtime.tools.registerSession({ scope, sessionID: row.id, ...registration })
         registered = true
       }
-      await broker.rebind(row.id)
+      const binding = await broker.rebind(row.id)
       this.owner = this.ownerKey(input.owner)
-      const session: HarnessSession = { directory: scope.directory, locality: input.locality,
-        binding: { sessionId: input.sessionId, workspaceId: input.workspaceId, directory: scope.directory,
-          connectionId: "opencode-sdk", upstreamSessionId: row.id } }
+      const session: HarnessSession = { directory: scope.directory, locality: input.locality, binding }
       this.entries.set(input.sessionId, { session, start: input, broker, scope, upstream: row.id, active: false })
       return session
     } catch (error) {
@@ -264,10 +262,10 @@ export class OpenCodeSdkTransport implements HarnessTransport {
       entry.start = { ...entry.start, config: next }
       return next
     },
-    options: async (target: ConfigTarget): Promise<readonly { id: string; name: string; selectOptions: { id: string; name: string }[] }[]> => {
+    options: async (target: ConfigPreviewTarget): Promise<ConfigOptionsPreview> => {
       const models = await this.runtime.catalog.models(this.targetScope(target))
-      return [{ id: "model", name: "Model", selectOptions: models.map((model) =>
-        ({ id: `${model.providerID}/${model.id}`, name: model.name ?? model.id })) }]
+      return configOptionsPreview([{ id: "model", name: "Model", selectOptions: models.map((model) =>
+        ({ id: `${model.providerID}/${model.id}`, name: model.name ?? model.id })) }])
     },
     permissionModes: async () => ({ modes: [], unsupported: "OpenCode does not expose a session permission mode", appliesFrom: "next-turn" as const }),
     setPermissionMode: async () => { throw new TransportError("opencode", "configuration", "OpenCode does not expose a session permission mode") },

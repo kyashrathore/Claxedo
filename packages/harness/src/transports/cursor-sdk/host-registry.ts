@@ -114,11 +114,11 @@ type Slot = { host: CursorHost; users: number }
 export class CursorHostRegistry {
   private readonly hosts = new Map<string, Slot>()
 
-  constructor(private readonly services: HarnessServices, private readonly env: NodeJS.ProcessEnv) {}
+  constructor(private readonly services: HarnessServices, private readonly env: NodeJS.ProcessEnv, private readonly signal: AbortSignal) {}
 
   private async spawn(key: CursorHostKey): Promise<CursorHost> {
     const owned = await this.services.spawn({ file: process.execPath, args: [HOST_SCRIPT], cwd: key.home,
-      env: cursorHostEnvironment(this.env, key.home, key.backendUrl) }, { role: "harness", label: "Cursor SDK host" })
+      env: cursorHostEnvironment(this.env, key.home, key.backendUrl) }, { role: "harness", label: "Cursor SDK host", signal: this.signal })
     return new CursorHost(owned, this.services.clock, this.services.log)
   }
 

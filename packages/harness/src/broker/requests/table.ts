@@ -280,6 +280,10 @@ export class RequestTable implements RequestBroker {
     this.urlConsents.complete(sessionId, connectionId, elicitationId)
   }
 
+  closeSession(sessionId: string): void {
+    this.urlConsents.clearSession(sessionId)
+  }
+
   private async retryTermination(entry: Entry): Promise<AnswerResult> {
     try { await this.finishTermination(entry); return requestRefusal("duplicate") }
     catch { return requestRefusal("persistence") }
