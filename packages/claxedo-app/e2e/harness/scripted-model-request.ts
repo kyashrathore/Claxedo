@@ -1,4 +1,5 @@
 import type { IncomingMessage } from "node:http"
+import { asRecord } from "@claxedo/helpers/guards"
 import type { MessageCreateParams } from "@anthropic-ai/sdk/resources/messages"
 import type { ChatCompletionCreateParams } from "openai/resources/chat/completions"
 import type { ResponseCreateParams } from "openai/resources/responses/responses"
@@ -18,10 +19,6 @@ const TITLE_INSTRUCTION = JSON.stringify(SESSION_TITLE_SYSTEM_PROMPT).slice(1, -
 const GOAL_EVALUATOR_PROMPT = "You are an independent completion evaluator."
 const CLAUDE_GOAL_EVALUATOR_PROMPT =
   "Based on the conversation transcript above, has the following stopping condition been satisfied?"
-
-export function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined
-}
 
 export function lastMarker(prompt: string): string | undefined {
   return [...prompt.matchAll(MARKER_PROMPT)].at(-1)?.[1]

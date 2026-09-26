@@ -1,7 +1,7 @@
 import { createServer, type Server, type ServerResponse } from "node:http"
 import { respondChat, respondMessages, respondResponses, writeErrorReply, type ScriptedReply, type StreamPacing } from "./scripted-model-replies"
+import { asRecord } from "@claxedo/helpers/guards"
 import {
-  asRecord,
   dialectFor,
   hasToolResult,
   isAutoModeClassifier,
