@@ -33,7 +33,7 @@ export function SessionTimeline(props: {
   const labels = { subagent: t("sessionScreen.subagent.label"), task: t("sessionScreen.subagent.task") }
   const resolveSubagents = (parentSessionId: string, toolCallId?: string, hostableCallIds?: ReadonlySet<string>) =>
     parentSessionId === props.view.ref.sessionId
-      ? subagentViews({ entries: props.view.subagents(), parentSessionId, labels, toolCallId, hostableCallIds })
+      ? subagentViews({ entries: props.view.subagents(), parentSessionId, labels, toolCallId, hostableCallIds, historyComplete: !props.view.hasOlder() })
       : []
   return (
     <TranscriptKitProviders>

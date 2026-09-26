@@ -25,12 +25,22 @@ function resolutionOf(entry: SessionSubagent, kind: SubagentView["transcriptKind
   return kind === "live" || kind === "file" || kind === "messages" ? "not-yet-bound" : "unavailable"
 }
 
-function ambientOf(entry: SessionSubagent, hostableCallIds: ReadonlySet<string> | undefined): boolean {
+function ambientOf(entry: SessionSubagent, hostableCallIds: ReadonlySet<string> | undefined, historyComplete: boolean): boolean {
   if (entry.toolCallEdges.size === 0) return true
-  return hostableCallIds !== undefined && ![...entry.toolCallEdges.keys()].some((id) => hostableCallIds.has(id))
+  if (hostableCallIds === undefined || !historyComplete) return false
+  return ![...entry.toolCallEdges.keys()].some((id) => hostableCallIds.has(id))
 }
 
-function subagentView(entry: SessionSubagent, parentSessionId: string, labels: SubagentLabels, toolCallId?: string, hostableCallIds?: ReadonlySet<string>): SubagentView {
+type ViewContext = {
+  readonly parentSessionId: string
+  readonly labels: SubagentLabels
+  readonly toolCallId?: string
+  readonly hostableCallIds?: ReadonlySet<string>
+  readonly historyComplete: boolean
+}
+
+function subagentView(entry: SessionSubagent, context: ViewContext): SubagentView {
+  const { parentSessionId, labels, toolCallId, hostableCallIds } = context
   const transcriptKind = transcriptOf(entry)
   const role = toolCallId ? entry.toolCallEdges.get(toolCallId) : undefined
   return {
@@ -45,18 +55,12 @@ function subagentView(entry: SessionSubagent, parentSessionId: string, labels: S
     ...(entry.childSessionId ? { childSessionId: entry.childSessionId } : {}),
     transcriptKind,
     resolution: resolutionOf(entry, transcriptKind),
-    ambient: ambientOf(entry, hostableCallIds),
+    ambient: ambientOf(entry, hostableCallIds, context.historyComplete),
   }
 }
 
-export function subagentViews(input: {
-  readonly entries: readonly SessionSubagent[]
-  readonly parentSessionId: string
-  readonly labels: SubagentLabels
-  readonly toolCallId?: string
-  readonly hostableCallIds?: ReadonlySet<string>
-}): SubagentView[] {
+export function subagentViews(input: ViewContext & { readonly entries: readonly SessionSubagent[] }): SubagentView[] {
   return input.entries
     .filter((entry) => input.toolCallId === undefined || entry.toolCallEdges.has(input.toolCallId))
-    .map((entry) => subagentView(entry, input.parentSessionId, input.labels, input.toolCallId, input.hostableCallIds))
+    .map((entry) => subagentView(entry, input))
 }

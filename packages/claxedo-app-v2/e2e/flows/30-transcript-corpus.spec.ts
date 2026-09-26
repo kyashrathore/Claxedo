@@ -127,13 +127,13 @@ function isLive(corpusCase: CorpusCase): boolean {
   return corpusCase.replay.agent === "acp" && corpusCase.replay.turns.some((turn) => turn.live)
 }
 
-async function compareStage(app: Page, corpusCase: CorpusCase, stage: string) {
+async function compareStage(app: Page, corpusCase: CorpusCase, baseline: string, stage: string) {
   await app.mouse.move(0, 0)
   await quietDom(app)
   const box = await withBackground(app, await rowsBox(app))
   expect(box, `${corpusCase.id} renders its turn rows at ${stage}`).toBeDefined()
   if (!box) return
-  await expect.soft(app).toHaveScreenshot([corpusCase.id, `${stage}.png`], {
+  await expect.soft(app).toHaveScreenshot([baseline, `${stage}.png`], {
     clip: box,
     animations: "disabled",
     caret: "hide",
@@ -150,7 +150,7 @@ async function compareStage(app: Page, corpusCase: CorpusCase, stage: string) {
   const stable = `scrollTop: ${top}\nbackground subagents:\n${background}\n${trees.join("\n")}\n`.replace(CLOCK_TIME, "<time>")
     .replace(UUID, "<id>")
   const tree = isLive(corpusCase) ? stable.replace(LIVE_DURATION, "$1<duration>") : stable
-  expect.soft(tree).toMatchSnapshot([corpusCase.id, `${stage}-tree.txt`])
+  expect.soft(tree).toMatchSnapshot([baseline, `${stage}-tree.txt`])
 }
 
 async function interact(live: { stack: Stack; api: ClaxedoApi; target: Target; app: Page }, corpusCase: CorpusCase, interaction: CaseInteraction) {
@@ -215,15 +215,23 @@ async function holdLatestTurnRead(app: Page) {
   }
 }
 
-function requireV1Baseline(stack: Stack, corpusCase: CorpusCase) {
+function baselineOf(stack: Stack, corpusCase: CorpusCase): string {
+  return stack.app === "v2" && corpusCase.deviation ? `${corpusCase.id}.v2` : corpusCase.id
+}
+
+function requireBaseline(stack: Stack, corpusCase: CorpusCase) {
   if (stack.app !== "v2") return
-  const baseline = path.join(test.info().snapshotDir, corpusCase.id)
-  if (!fs.existsSync(baseline)) throw new Error(`Record today's app first: bun run e2e -- --app=v1 ${path.relative(process.cwd(), test.info().file)} --update-snapshots=all`)
+  const baseline = path.join(test.info().snapshotDir, baselineOf(stack, corpusCase))
+  if (fs.existsSync(baseline)) return
+  if (corpusCase.deviation && test.info().config.updateSnapshots !== "none") return
+  const app = corpusCase.deviation ? "v2" : "v1"
+  throw new Error(`Record the ${app} baseline first: bun run e2e -- --app=${app} ${path.relative(process.cwd(), test.info().file)} --update-snapshots=all`)
 }
 
 for (const corpusCase of loadCases()) {
   test(`30 transcript corpus: ${corpusCase.id}`, async ({ stack, api, app }) => {
-    requireV1Baseline(stack, corpusCase)
+    requireBaseline(stack, corpusCase)
+    const baseline = baselineOf(stack, corpusCase)
     const { workspace, target, turns, live } = await arrange(stack, api, corpusCase)
     await app.setViewportSize({ width: app.viewportSize()?.width ?? 1280, height: TALL_VIEWPORT })
     const fullRead = await holdLatestTurnRead(app)
@@ -232,11 +240,11 @@ for (const corpusCase of loadCases()) {
     await fullRead.release()
     for (const turn of live) await startLiveTurn(stack, api, target, turn)
     await expect(app.getByText(corpusCase.ready).first()).toBeVisible()
-    await compareStage(app, corpusCase, "open")
+    await compareStage(app, corpusCase, baseline, "open")
     for (const [index, interaction] of corpusCase.interactions.entries()) {
       await interact({ stack, api, target, app }, corpusCase, interaction)
       await expect(app.getByText(corpusCase.ready).first()).toBeAttached()
-      await compareStage(app, corpusCase, `${index + 1}-${interaction.kind}`)
+      await compareStage(app, corpusCase, baseline, `${index + 1}-${interaction.kind}`)
     }
     const messages = await api.messages(target.directory, target.sessionId)
     expect(messages.filter((message) => message.info.role === "user")).toHaveLength(turns)
