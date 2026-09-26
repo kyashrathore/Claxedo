@@ -1,4 +1,4 @@
-import { translateStopReason } from "@claxedo/agent-event-runtime/harnesses/acp"
+import { translateStopReason } from "./translate/translate-session-update"
 import type { SessionNotification, SessionConfigOption, SessionMode } from "@agentclientprotocol/sdk"
 import type {
   AttachInput, ConfigApplied, ConfigTarget, Deadline, HarnessServices, HarnessSession, HarnessTransport, McpServerSpec,

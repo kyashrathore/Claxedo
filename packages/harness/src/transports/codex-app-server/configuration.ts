@@ -1,4 +1,4 @@
-import type { JsonValue } from "@claxedo/agent-event-runtime/harnesses/codex"
+import type { JsonValue } from "./translate"
 import type { HarnessServices, McpServerSpec, StartInput } from "../../contract"
 import { CodexTransportError } from "./errors"
 import { sessionMcpServers } from "../../contract"

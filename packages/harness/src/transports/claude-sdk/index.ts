@@ -19,7 +19,7 @@ import { ClaudeProcess } from "./process"
 import { ClaudeQueryLauncher } from "./query-options"
 import { observeClaudeSessionMessage } from "./session-events"
 import { ClaudeTurnInput } from "./turn-input"
-import { claudeTranslator, translateClaude } from "./translate"
+import { claudeTranslator, translateClaude } from "./events"
 
 type Entry = {
   input: StartInput

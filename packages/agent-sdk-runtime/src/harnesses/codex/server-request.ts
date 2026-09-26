@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto"
 import type { AgentQuestionAnswer } from "@claxedo/agent-runtime-contract"
-import { codexMcpApproval } from "@claxedo/agent-event-runtime/harnesses/codex"
+import { codexMcpApproval } from "@claxedo/harness/codex-app-server/translate"
 import type { JsonRecord, SdkRuntimeDriverHost } from "../shared/sdk-runtime-driver"
 import { asRecord } from "@claxedo/helpers/guards"
 import { text } from "../shared/sdk-runtime-values"

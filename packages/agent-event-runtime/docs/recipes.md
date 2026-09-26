@@ -11,7 +11,7 @@ import {
   createAgentEventRuntime,
   type RawHarnessEvent,
 } from "@claxedo/agent-event-runtime"
-import { claudeSdkAdapter } from "@claxedo/agent-event-runtime/harnesses/claude"
+import { claudeSdkAdapter } from "@claxedo/harness/claude-sdk/translate"
 
 const runtime = createAgentEventRuntime({
   harness: "claude-sdk",
@@ -34,8 +34,8 @@ for (const event of result.events) {
 ## Use A Projection
 
 ```ts
-import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
-import { claudeSdkAdapter } from "@claxedo/agent-event-runtime/harnesses/claude"
+import { createAgentEventRuntime } from "@claxedo/harness/translate"
+import { claudeSdkAdapter } from "@claxedo/harness/claude-sdk/translate"
 import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/client-presentation"
 
 const runtime = createAgentEventRuntime({
@@ -109,8 +109,8 @@ export function exampleAdapter(): HarnessEventAdapter<State> {
 ## Snapshot And Restore
 
 ```ts
-import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
-import { claudeSdkAdapter } from "@claxedo/agent-event-runtime/harnesses/claude"
+import { createAgentEventRuntime } from "@claxedo/harness/translate"
+import { claudeSdkAdapter } from "@claxedo/harness/claude-sdk/translate"
 
 const first = createAgentEventRuntime({
   harness: "claude-sdk",

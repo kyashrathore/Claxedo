@@ -126,7 +126,7 @@ callers can omit them and use the defaults.
 
 ## Adding A Harness Adapter
 
-1. Add a folder under `src/harnesses/<harness>`.
+1. Add the translator under `packages/harness/src/transports/<kind>/translate/`.
 2. Export an adapter factory from that folder (existing adapters use the
    `<harness>Adapter()` naming style, e.g. `claudeSdkAdapter()`).
 3. Keep harness payload parsing local to the adapter.

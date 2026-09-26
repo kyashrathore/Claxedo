@@ -5,9 +5,9 @@ import {
   requireAgentExecutionBinding,
   type AgentExecutionBinding,
 } from "@claxedo/agent-runtime-contract"
-import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
+import { createAgentEventRuntime } from "@claxedo/harness/translate"
 import { projectSessionCommands } from "@claxedo/agent-event-runtime/client-presentation"
-import { createAcpEventTranslator, translateStopReason } from "@claxedo/agent-event-runtime/harnesses/acp"
+import { createAcpEventTranslator, translateStopReason } from "@claxedo/harness/acp/translate"
 import {
   buildAssistantMessage,
   buildUserMessage,

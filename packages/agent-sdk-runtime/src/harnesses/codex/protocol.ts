@@ -174,6 +174,7 @@ export function codexIdleTimeoutMs() {
 }
 
 export const CODEX_DYNAMIC_TOOLS = [{
+  type: "function",
   name: "spawn_agent",
   description: "Spawn a child Codex agent to execute one bounded task.",
   inputSchema: {

@@ -1,8 +1,5 @@
 import type { CompatEnvelope } from "./compat-events"
-import {
-  AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
-  type AgentRuntimeEvent,
-} from "@claxedo/agent-event-runtime"
+import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION, type AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
 
 type Subscriber = (event: CompatEnvelope) => void
 type RuntimeSubscriber = (event: RuntimeEventEnvelope) => void

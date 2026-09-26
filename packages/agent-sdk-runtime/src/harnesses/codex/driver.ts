@@ -1,13 +1,10 @@
 import type { SessionTitleRequest } from "@claxedo/agent-runtime-contract"
 import { createIdleReaper } from "@claxedo/process-ownership/process-lifecycle"
 import path from "path"
-import {
-  createAgentEventRuntime,
-  type AgentEventRuntime,
-} from "@claxedo/agent-event-runtime"
+import { createAgentEventRuntime, type AgentEventRuntime } from "@claxedo/harness/translate"
 import {
   codexAppServerAdapter,
-} from "@claxedo/agent-event-runtime/harnesses/codex"
+} from "@claxedo/harness/codex-app-server/translate"
 import { createCodexThreadProjection } from "./thread-projection"
 import { createCodexThreadRegistry } from "./thread-registry"
 import type { AgentConfigOption } from "../../index"

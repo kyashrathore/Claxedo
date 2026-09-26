@@ -20,28 +20,18 @@ npm install @claxedo/agent-event-runtime
 ## Quickstart
 
 ```ts
-import { createAgentEventRuntime, type RawHarnessEvent } from "@claxedo/agent-event-runtime"
-import { claudeSdkAdapter } from "@claxedo/agent-event-runtime/harnesses/claude"
+import { agentRuntimeEvent, type AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
+import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/client-presentation"
 
-const runtime = createAgentEventRuntime({
-  harness: "claude-sdk",
-  threadId: "thread_123",
-  adapter: claudeSdkAdapter(),
-})
-
-const raw: RawHarnessEvent = {
-  source: "claude-sdk",
-  payload: { type: "result", subtype: "success" },
-}
-
-for (const event of runtime.ingest(raw).events) console.log(event.type)
+const projection = createClientPresentationProjection({ sessionId: "ses_1", directory: "/work", assistantMessageId: "msg_1" })
+const event: AgentRuntimeEvent = agentRuntimeEvent.textDelta({ delta: "hello" })
+for (const frame of projection.ingest(event)) console.log(frame.payload.type)
 ```
 
-`runtime.ingest()` translates one raw harness frame into zero or more
-canonical `AgentRuntimeEvent` values. Swap in `codexAppServerAdapter()` or
-`cursorSdkAdapter()` from the matching `harnesses/*` subpath to translate a
-different harness's event stream the same way; the ACP harness adapter is
-`createAcpEventTranslator()` from `harnesses/acp`.
+The harness translators and the translation runner (`createAgentEventRuntime`)
+live in `@claxedo/harness`: each transport's `translate/` folder and
+`@claxedo/harness/translate`. This package keeps the event contracts, the
+snapshot helpers and the projections.
 
 ## Agent-First Public Docs
 
@@ -60,11 +50,7 @@ Entry point status:
 
 - Stable: `@claxedo/agent-event-runtime`,
   `@claxedo/agent-event-runtime/contracts`
-- Integration: `@claxedo/agent-event-runtime/harnesses/acp`,
-  `@claxedo/agent-event-runtime/harnesses/claude`,
-  `@claxedo/agent-event-runtime/harnesses/codex`,
-  `@claxedo/agent-event-runtime/harnesses/cursor`,
-  `@claxedo/agent-event-runtime/projections/debug-trace`
+- Integration: `@claxedo/agent-event-runtime/projections/debug-trace`
 - Compatibility:
   `@claxedo/agent-event-runtime/client-presentation`
 

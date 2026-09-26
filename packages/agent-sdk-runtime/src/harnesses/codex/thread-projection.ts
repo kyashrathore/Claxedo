@@ -1,9 +1,9 @@
-import { CODEX_DESCENDANT_ERROR_METHOD } from "@claxedo/agent-event-runtime/harnesses/codex"
+import { CODEX_DESCENDANT_ERROR_METHOD } from "@claxedo/harness/codex-app-server/translate"
 import {
   codexCollabAgentCall,
   codexSubagentActivity,
   codexStartedSubagent,
-} from "@claxedo/agent-event-runtime/harnesses/codex"
+} from "@claxedo/harness/codex-app-server/translate"
 import { asRecord } from "@claxedo/helpers/guards"
 import type { JsonRecord, SdkRuntimeTurnInput } from "../shared/sdk-runtime-adapter"
 import { codexHostSubagentObservation } from "./host-subagent"

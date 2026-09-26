@@ -1,9 +1,6 @@
 import type { ProviderBinding } from "@claxedo/agent-runtime-contract"
-import {
-  createAgentEventRuntime,
-  type AgentEventRuntime,
-  type RuntimeGoalSnapshot,
-} from "@claxedo/agent-event-runtime"
+import { type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import { createAgentEventRuntime, type AgentEventRuntime } from "@claxedo/harness/translate"
 import {
   CLAUDE_QUESTION_DISMISSED,
   CLAUDE_SUBAGENT_USAGE_METHOD,
@@ -13,7 +10,7 @@ import {
   createClaudeTaskLedger,
   foldNestedSubagentFrame,
   type ClaudeTaskLedger,
-} from "@claxedo/agent-event-runtime/harnesses/claude"
+} from "@claxedo/harness/claude-sdk/translate"
 import { randomUUID } from "crypto"
 import { createClaudeSubagentUsage } from "./subagent-usage"
 import { claudeCommandGrant, hasClaudeCommandGrant, withClaudeCommandGrant } from "./permission-state"

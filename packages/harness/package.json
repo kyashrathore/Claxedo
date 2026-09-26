@@ -29,6 +29,42 @@
       "types": "./dist/contract/index.d.ts",
       "import": "./dist/contract/index.js"
     },
+    "./translate": {
+      "development": "./src/translate/index.ts",
+      "bun": "./src/translate/index.ts",
+      "types": "./dist/translate/index.d.ts",
+      "import": "./dist/translate/index.js"
+    },
+    "./acp/translate": {
+      "development": "./src/transports/acp/translate/index.ts",
+      "bun": "./src/transports/acp/translate/index.ts",
+      "types": "./dist/transports/acp/translate/index.d.ts",
+      "import": "./dist/transports/acp/translate/index.js"
+    },
+    "./claude-sdk/translate": {
+      "development": "./src/transports/claude-sdk/translate/index.ts",
+      "bun": "./src/transports/claude-sdk/translate/index.ts",
+      "types": "./dist/transports/claude-sdk/translate/index.d.ts",
+      "import": "./dist/transports/claude-sdk/translate/index.js"
+    },
+    "./codex-app-server/translate": {
+      "development": "./src/transports/codex-app-server/translate/index.ts",
+      "bun": "./src/transports/codex-app-server/translate/index.ts",
+      "types": "./dist/transports/codex-app-server/translate/index.d.ts",
+      "import": "./dist/transports/codex-app-server/translate/index.js"
+    },
+    "./cursor-sdk/translate": {
+      "development": "./src/transports/cursor-sdk/translate/index.ts",
+      "bun": "./src/transports/cursor-sdk/translate/index.ts",
+      "types": "./dist/transports/cursor-sdk/translate/index.d.ts",
+      "import": "./dist/transports/cursor-sdk/translate/index.js"
+    },
+    "./pi-rpc/translate": {
+      "development": "./src/transports/pi-rpc/translate/index.ts",
+      "bun": "./src/transports/pi-rpc/translate/index.ts",
+      "types": "./dist/transports/pi-rpc/translate/index.d.ts",
+      "import": "./dist/transports/pi-rpc/translate/index.js"
+    },
     "./opencode-sdk": {
       "development": "./src/transports/opencode-sdk/index.ts",
       "bun": "./src/transports/opencode-sdk/index.ts",
@@ -46,12 +82,13 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p e2e/tsconfig.json",
+    "build": "bun run generate:codex-protocol && tsc -p tsconfig.build.json",
+    "typecheck": "bun run generate:codex-protocol && tsc --noEmit -p tsconfig.json && tsc --noEmit -p e2e/tsconfig.json",
     "check": "bun scripts/check.ts",
     "test": "bun run check && bun test src scripts e2e/harness",
     "flows": "bun e2e/flows/run.ts",
-    "corpus": "bun e2e/harness/corpus.ts"
+    "corpus": "bun e2e/harness/corpus.ts",
+    "generate:codex-protocol": "bun scripts/generate-codex-protocol.ts"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "1.3.0",
@@ -67,6 +104,7 @@
   "devDependencies": {
     "@anthropic-ai/sdk": "0.115.0",
     "@claxedo/sandbox-manager": "workspace:*",
+    "@openai/codex": "0.156.1",
     "@tsconfig/node-lts": "22.0.4",
     "@types/bun": "catalog:",
     "@types/node": "catalog:",

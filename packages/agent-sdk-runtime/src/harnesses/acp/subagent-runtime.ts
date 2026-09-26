@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
-import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
-import { createAcpEventTranslator } from "@claxedo/agent-event-runtime/harnesses/acp"
+import { createAgentEventRuntime } from "@claxedo/harness/translate"
+import { createAcpEventTranslator } from "@claxedo/harness/acp/translate"
 import { createSubagentAdmissionBoundary } from "../../subagent-admission"
 import { createSubagentChildren, type SubagentChild } from "../shared/subagent-lifecycle"
 import { createChildEventRouter } from "../shared/child-event-routing"

@@ -6,7 +6,7 @@ import { claudeStreamEndedWithoutResult } from "./errors"
 import { ClaudeProcess } from "./process"
 import { ClaudeQueryLauncher } from "./query-options"
 import { observeClaudeSessionMessage } from "./session-events"
-import { claudeTranslator, translateClaude } from "./translate"
+import { claudeTranslator, translateClaude } from "./events"
 import { errorMessage } from "@claxedo/helpers"
 
 type Running = { turnId: string; abort: AbortController; settled: Promise<ProviderTurnSettlement> }

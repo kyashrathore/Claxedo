@@ -92,7 +92,7 @@ import {
 Use subpaths for harness adapter and projection implementations:
 
 ```ts
-import { claudeSdkAdapter } from "@claxedo/agent-event-runtime/harnesses/claude"
+import { claudeSdkAdapter } from "@claxedo/harness/claude-sdk/translate"
 import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/client-presentation"
 ```
 

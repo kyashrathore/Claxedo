@@ -5,7 +5,7 @@ import {
   codexStartedSubagent,
   codexSubagentActivity,
   codexUsageGrowth,
-} from "@claxedo/agent-event-runtime/harnesses/codex"
+} from "@claxedo/harness/codex-app-server/translate"
 import { asRecord } from "@claxedo/helpers/guards"
 import { Log } from "../../log"
 import type { JsonRecord } from "../shared/sdk-runtime-driver"

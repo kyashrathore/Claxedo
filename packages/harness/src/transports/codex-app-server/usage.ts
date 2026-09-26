@@ -1,5 +1,5 @@
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
-import { codexReportedModel, codexUsageGrowth } from "@claxedo/agent-event-runtime/harnesses/codex"
+import { codexReportedModel, codexUsageGrowth } from "./translate"
 import type { OutsideTurnUsage } from "../../contract"
 import type { RpcMessage } from "./rpc"
 

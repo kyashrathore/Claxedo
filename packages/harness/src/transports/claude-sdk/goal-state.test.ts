@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import type { SessionBroker } from "../../contract"
 import { activeGoal, goalSessionStore, transcriptGoal } from "./goal-state"
-import { claudeTranslator } from "./translate"
+import { claudeTranslator } from "./events"
 
 test("Claude active_goal carries the SDK objective, iteration and timestamp", () => {
   const goal = activeGoal("s1", { type: "active_goal", value: { condition: "Ship", iterations: 3,

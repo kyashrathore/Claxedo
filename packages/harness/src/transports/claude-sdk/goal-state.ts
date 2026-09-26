@@ -3,7 +3,7 @@ import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/agent-runtime-contract"
 import { goalSnapshotFromRecord, type SessionBroker } from "../../contract"
 import { TransportError } from "../../contract/errors"
-import { claudeTranslator } from "./translate"
+import { claudeTranslator } from "./events"
 
 export function activeGoal(sessionId: string, message: SDKActiveGoalMessage): RuntimeGoalSnapshot | null {
   if (!message.value) return null

@@ -1,5 +1,5 @@
-import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
-import { cursorRuntimeMessage, cursorSdkAdapter, cursorSubagentObservations } from "@claxedo/agent-event-runtime/harnesses/cursor"
+import { createAgentEventRuntime } from "../../translate/runtime"
+import { cursorRuntimeMessage, cursorSdkAdapter, cursorSubagentObservations } from "./translate"
 import type { SubagentTranscript } from "@claxedo/agent-runtime-contract"
 import { AsyncPushQueue } from "@claxedo/helpers"
 import { asRecord } from "@claxedo/helpers/guards"

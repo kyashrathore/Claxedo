@@ -5,7 +5,7 @@ import { claudeLaunchContext, type ClaudeSdkOptions } from "./launch-context"
 import { permissionOptions } from "./permissions"
 import { ClaudeProcess } from "./process"
 import { askClaudePermission } from "./requests"
-import type { claudeTranslator } from "./translate"
+import type { claudeTranslator } from "./events"
 import { connectionGrantKeys, sessionMcpServers } from "../../contract"
 
 const protocolClaudePermissionMap = { deny: "deny" } as const

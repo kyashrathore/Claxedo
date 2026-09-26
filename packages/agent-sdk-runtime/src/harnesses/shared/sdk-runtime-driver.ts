@@ -1,5 +1,6 @@
 import type { AgentPermissionModeState, GoalCapabilities, ProviderProjection, SessionConfig, SessionTitleRequest, SubagentObservation } from "@claxedo/agent-runtime-contract"
-import type { AgentEventRuntime, RawHarnessEvent, RuntimeGoalSnapshot, SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
+import type { RawHarnessEvent, RuntimeGoalSnapshot, SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
+import type { AgentEventRuntime } from "@claxedo/harness/translate"
 import type { AgentConfigOption, PromptInput } from "../../index"
 import type {
   AgentQuestionAnswer,

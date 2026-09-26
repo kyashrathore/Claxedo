@@ -1,6 +1,6 @@
 import type { AgentConfigOption } from "@claxedo/agent-runtime-contract"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
-import type { v2 } from "@claxedo/agent-event-runtime/harnesses/codex"
+import type { v2 } from "./translate"
 import { CodexTransportError } from "./errors"
 import { modelAndEffortOptions } from "../../contract"
 import type { CodexRpc } from "./rpc"

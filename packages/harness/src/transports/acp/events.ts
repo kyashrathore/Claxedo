@@ -1,5 +1,5 @@
-import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
-import { createAcpEventTranslator } from "@claxedo/agent-event-runtime/harnesses/acp"
+import { createAgentEventRuntime } from "../../translate/runtime"
+import { createAcpEventTranslator } from "./translate/event-translator"
 import type { SessionNotification } from "@agentclientprotocol/sdk"
 import type { HarnessSession, RoutedEvent } from "../../contract"
 import { AsyncPushQueue } from "@claxedo/helpers"

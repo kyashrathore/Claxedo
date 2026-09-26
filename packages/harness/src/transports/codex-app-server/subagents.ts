@@ -1,7 +1,7 @@
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import { errorMessage, prefixedRandomId } from "@claxedo/helpers"
 import type { SubagentStatus } from "@claxedo/agent-runtime-contract"
-import type { v2 } from "@claxedo/agent-event-runtime/harnesses/codex"
+import type { v2 } from "./translate"
 import type { ChildSessionRef, TurnBroker } from "../../contract"
 import { CodexEvents } from "./events"
 import { CodexTransportError } from "./errors"
@@ -9,6 +9,7 @@ import { codexPermissionSettings, codexTurnSandboxPolicy, type CodexPermissionSe
 import type { CodexRpc, RpcMessage } from "./rpc"
 
 export const codexDynamicTools: v2.DynamicToolSpec[] = [{
+  type: "function",
   name: "spawn_agent",
   description: "Spawn a child Codex agent to execute one bounded task.",
   inputSchema: { type: "object", properties: {

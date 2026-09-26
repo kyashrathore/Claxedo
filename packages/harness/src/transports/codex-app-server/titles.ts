@@ -1,6 +1,6 @@
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import type { SessionTitleRequest } from "@claxedo/agent-runtime-contract"
-import type { v2 } from "@claxedo/agent-event-runtime/harnesses/codex"
+import type { v2 } from "./translate"
 import type { HarnessServices, SessionBroker, StartInput } from "../../contract"
 import { projectCodexThreadConfig } from "./configuration"
 import { CodexTransportError } from "./errors"

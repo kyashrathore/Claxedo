@@ -11,7 +11,7 @@ import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import { removeTestTempDir } from "../shared/test-temp-dir"
 import type { ActiveTurn, SdkRuntimeDriverHost, SdkRuntimeTurnInput } from "../shared/sdk-runtime-driver"
 import type { ClaudeSdkDriverOptions } from "./driver"
-import { createClaudeTaskLedger } from "@claxedo/agent-event-runtime/harnesses/claude"
+import { createClaudeTaskLedger } from "@claxedo/harness/claude-sdk/translate"
 import type { AgentRuntimeEvent, RawHarnessEvent } from "@claxedo/agent-event-runtime"
 import {
   claudePluginConfigs,

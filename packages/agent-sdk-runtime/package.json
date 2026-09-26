@@ -141,8 +141,9 @@
     "@anthropic-ai/sdk": "0.115.0",
     "@claxedo/agent-event-runtime": "workspace:*",
     "@claxedo/agent-runtime-contract": "workspace:*",
-    "@claxedo/process-ownership": "workspace:*",
+    "@claxedo/harness": "workspace:*",
     "@claxedo/helpers": "workspace:*",
+    "@claxedo/process-ownership": "workspace:*",
     "@cursor/sdk": "1.0.24",
     "smol-toml": "1.7.1"
   },

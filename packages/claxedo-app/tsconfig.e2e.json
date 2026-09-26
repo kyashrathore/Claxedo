@@ -48,7 +48,14 @@
       "@claxedo/workspace-runtime/config": ["../workspace-runtime/src/config.ts"],
       "@claxedo/workspace-runtime/host": ["../workspace-runtime/src/host.ts"],
       "@claxedo/workspace-runtime/relay": ["../workspace-runtime/src/relay.ts"],
-      "@claxedo/sandbox-contract": ["../sandbox-contract/src/index.ts"]
+      "@claxedo/sandbox-contract": ["../sandbox-contract/src/index.ts"],
+      // `e2e/fixtures/generate-harness-fixtures.ts` replays the harness translators;
+      // same source-alias convention as the workspace-runtime entries above.
+      "@claxedo/harness/translate": ["../harness/src/translate/index.ts"],
+      "@claxedo/harness/acp/translate": ["../harness/src/transports/acp/translate/index.ts"],
+      "@claxedo/harness/claude-sdk/translate": ["../harness/src/transports/claude-sdk/translate/index.ts"],
+      "@claxedo/harness/codex-app-server/translate": ["../harness/src/transports/codex-app-server/translate/index.ts"],
+      "@claxedo/harness/cursor-sdk/translate": ["../harness/src/transports/cursor-sdk/translate/index.ts"]
     }
   },
   // No source exclusions: every authored file under e2e/ is typechecked.

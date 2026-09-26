@@ -1,5 +1,5 @@
-import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
-import { codexAppServerAdapter } from "@claxedo/agent-event-runtime/harnesses/codex"
+import { createAgentEventRuntime } from "../../translate/runtime"
+import { codexAppServerAdapter } from "./translate"
 import type { RoutedEvent, SessionBroker } from "../../contract"
 import type { RpcMessage } from "./rpc"
 import { unrecognizedEvent } from "../../translate/unrecognized"

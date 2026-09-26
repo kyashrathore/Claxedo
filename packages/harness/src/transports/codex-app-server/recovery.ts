@@ -1,4 +1,4 @@
-import type { v2 } from "@claxedo/agent-event-runtime/harnesses/codex"
+import type { v2 } from "./translate"
 import { errorMessage } from "@claxedo/helpers"
 import { CodexTransportError, isMissingCodexThread } from "./errors"
 import type { CodexRpc } from "./rpc"

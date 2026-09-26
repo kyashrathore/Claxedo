@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import type { ServerRequest } from "@claxedo/agent-event-runtime/harnesses/codex"
+import type { ServerRequest } from "./translate"
 import type { TurnBroker, TurnRequest, RequestAnswer } from "../../contract"
 import { answerCodexRequest } from "./requests"
 

@@ -1,4 +1,4 @@
-import { claudeChildCorrelationKey, type ClaudeSubagentUsage } from "@claxedo/agent-event-runtime/harnesses/claude"
+import { claudeChildCorrelationKey, type ClaudeSubagentUsage } from "@claxedo/harness/claude-sdk/translate"
 import type { SessionKey, SessionStoreEntry } from "@anthropic-ai/claude-agent-sdk"
 import { asRecord } from "@claxedo/helpers/guards"
 import { text } from "../shared/sdk-runtime-values"

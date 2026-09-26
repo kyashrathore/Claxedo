@@ -17,22 +17,6 @@
       "status": "stable",
       "purpose": "Canonical event, raw harness event, diagnostics, and deterministic helper contracts."
     },
-    "@claxedo/agent-event-runtime/harnesses/acp": {
-      "status": "integration",
-      "purpose": "ACP harness event translation."
-    },
-    "@claxedo/agent-event-runtime/harnesses/claude": {
-      "status": "integration",
-      "purpose": "Claude Agent SDK event translation."
-    },
-    "@claxedo/agent-event-runtime/harnesses/codex": {
-      "status": "integration",
-      "purpose": "Codex app-server protocol event translation."
-    },
-    "@claxedo/agent-event-runtime/harnesses/cursor": {
-      "status": "integration",
-      "purpose": "Cursor SDK event translation."
-    },
     "@claxedo/agent-event-runtime/projections/debug-trace": {
       "status": "integration",
       "purpose": "Debug trace projection from canonical events."
@@ -68,29 +52,11 @@
       "kind": "type",
       "purpose": "Ingress envelope for harness-native event frames."
     },
-    "HarnessEventAdapter": {
-      "status": "stable",
-      "import": "@claxedo/agent-event-runtime",
-      "kind": "type",
-      "purpose": "Harness event translation boundary."
-    },
-    "createAgentEventRuntime": {
-      "status": "stable",
-      "import": "@claxedo/agent-event-runtime",
-      "kind": "function",
-      "purpose": "Stateful event runtime for one harness/thread pair."
-    },
     "RuntimeProjection": {
       "status": "stable",
       "import": "@claxedo/agent-event-runtime",
       "kind": "type",
       "purpose": "Projection boundary from canonical events to output views."
-    },
-    "claudeSdkAdapter": {
-      "status": "integration",
-      "import": "@claxedo/agent-event-runtime/harnesses/claude",
-      "kind": "function",
-      "purpose": "Claude Agent SDK harness event adapter."
     },
     "createClientPresentationProjection": {
       "status": "compatibility",

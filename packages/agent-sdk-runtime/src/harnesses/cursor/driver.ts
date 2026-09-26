@@ -1,15 +1,12 @@
 import type { ProviderProjection, SessionTitleRequest } from "@claxedo/agent-runtime-contract"
 import { credentialBrokerErrorCode } from "@claxedo/agent-runtime-contract"
-import {
-  createAgentEventRuntime,
-  type AgentEventRuntime,
-  type RuntimeGoalSnapshot,
-} from "@claxedo/agent-event-runtime"
+import { type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import { createAgentEventRuntime, type AgentEventRuntime } from "@claxedo/harness/translate"
 import {
   cursorRuntimeMessage,
   cursorSdkAdapter,
   cursorSubagentObservations,
-} from "@claxedo/agent-event-runtime/harnesses/cursor"
+} from "@claxedo/harness/cursor-sdk/translate"
 import type {
   McpServerConfig as CursorMcpServerConfig,
   SDKAgent as CursorSDKAgent,

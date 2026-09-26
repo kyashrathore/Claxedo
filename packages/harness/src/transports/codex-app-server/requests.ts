@@ -1,4 +1,4 @@
-import { codexMcpApproval } from "@claxedo/agent-event-runtime/harnesses/codex"
+import { codexMcpApproval } from "./translate"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import { elicitationAnswer, elicitationRequest, permissionDecision, permissionRequest, permissionSelection, requestQuestionAnswers, questionRequest, type TurnBroker } from "../../contract"
 import type { RpcMessage } from "./rpc"

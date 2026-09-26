@@ -33,12 +33,12 @@ import { mkdirSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { createAgentEventRuntime, type HarnessEventAdapter } from "@claxedo/agent-event-runtime"
+import { createAgentEventRuntime, type HarnessEventAdapter } from "@claxedo/harness/translate"
 import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/client-presentation"
-import { createAcpEventTranslator } from "@claxedo/agent-event-runtime/harnesses/acp"
-import { claudeSdkAdapter } from "@claxedo/agent-event-runtime/harnesses/claude"
-import { codexAppServerAdapter } from "@claxedo/agent-event-runtime/harnesses/codex"
-import { cursorSdkAdapter } from "@claxedo/agent-event-runtime/harnesses/cursor"
+import { createAcpEventTranslator } from "@claxedo/harness/acp/translate"
+import { claudeSdkAdapter } from "@claxedo/harness/claude-sdk/translate"
+import { codexAppServerAdapter } from "@claxedo/harness/codex-app-server/translate"
+import { cursorSdkAdapter } from "@claxedo/harness/cursor-sdk/translate"
 
 type RawEvent = { source: string; method?: string; payload: unknown }
 type CompatEnvelope = { directory: string; payload: { type: string; properties?: unknown; id?: string } }

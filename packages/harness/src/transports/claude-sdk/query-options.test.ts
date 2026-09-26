@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { query, type Query } from "@anthropic-ai/claude-agent-sdk"
 import type { HarnessServices, HarnessSession, SessionBroker, StartInput, TurnBroker } from "../../contract"
-import { claudeTranslator } from "./translate"
+import { claudeTranslator } from "./events"
 import type { ClaudeProcess } from "./process"
 import { ClaudeQueryLauncher } from "./query-options"
 

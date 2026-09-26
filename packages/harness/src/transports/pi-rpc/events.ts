@@ -1,5 +1,5 @@
-import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
-import { piRpcAdapter } from "@claxedo/agent-event-runtime/harnesses/pi"
+import { createAgentEventRuntime } from "../../translate/runtime"
+import { piRpcAdapter } from "./translate"
 import type { RoutedEvent } from "../../contract"
 import type { PiMessage } from "./rpc"
 import { piUiEvent } from "./ui"

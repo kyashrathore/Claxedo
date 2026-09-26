@@ -1,5 +1,5 @@
 import type { AgentPermissionMode, AgentPermissionModeState } from "@claxedo/agent-runtime-contract"
-import type { v2 } from "@claxedo/agent-event-runtime/harnesses/codex"
+import type { v2 } from "./translate"
 import { CodexTransportError } from "./errors"
 
 export type CodexPermissionSettings = { approvalPolicy: v2.AskForApproval; sandbox: v2.SandboxMode }

@@ -1,4 +1,4 @@
-import type { JsonValue, v2 } from "@claxedo/agent-event-runtime/harnesses/codex"
+import type { JsonValue, v2 } from "./translate"
 import type { StartInput, TurnInput } from "../../contract"
 import { CodexTransportError } from "./errors"
 import { flattenTurnPrompt } from "../../translate/prompt"
