@@ -1,0 +1,19 @@
+scrollTop: 0
+background subagents:
+(none)
+row 0:
+- text: Say hello. acp-script:two-turns-0 Build · <time>
+- button "Copy message"
+row 1:
+- paragraph: Hello there.
+- button "Copy response"
+- text: Build · 0s
+row 2:
+- text: Search for TODO. acp-script:two-turns-1 Build · <time>
+- button "Copy message"
+row 3:
+- button "Worked for 0s"
+row 4:
+- paragraph: Found one TODO.
+- button "Copy response"
+- text: Build · 0s
