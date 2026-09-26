@@ -94,7 +94,7 @@ export function InstallPluginSheet(props: {
   }
   const sheet = createInstall({ plugin: props.plugin, revision: props.revision, done: finish })
   return (
-    <Dialog size="large">
+    <Dialog size="large" fit>
       <DialogHeader>
         <DialogTitle>
           <SheetHeader plugin={props.plugin} />

@@ -1,0 +1,56 @@
+Subject: dialog-v2: a fitted dialog grows with its content up to its size
+
+What: `fit` comes after the size rules, so it also applies to `large` and `x-large`
+dialogs, and it bounds the card by its size's height as a maximum instead of
+dropping the bound: a fitted card is as tall as its content, up to 368 px
+(normal), 480 px (large) or 600 px (x-large), and scrolls inside past that.
+Why: the size rules came after `fit` with the same specificity, so a
+`fit size="large"` dialog kept the fixed 480 px height and `fit` did nothing
+there, and a fitted dialog's only bound was the viewport. A palette with two
+matching rows drew a 480 px card with a mostly empty area under them.
+
+diff --git a/src/v2/components/dialog-v2.css b/src/v2/components/dialog-v2.css
+index 79892dfa28..6f4da28228 100644
+--- a/src/v2/components/dialog-v2.css
++++ b/src/v2/components/dialog-v2.css
+@@ -155,16 +155,6 @@
+     }
+   }
+ 
+-  &[data-fit] {
+-    .ui-dialog-container {
+-      height: auto;
+-
+-      .ui-dialog-content {
+-        min-height: 0;
+-      }
+-    }
+-  }
+-
+   &[data-size="large"] .ui-dialog-container {
+     width: min(calc(100vw - 32px), 640px);
+     height: min(calc(100vh - 32px), 480px);
+@@ -179,4 +169,23 @@
+     width: min(calc(100vw - 64px), 1400px);
+     height: calc(100vh - 64px);
+   }
++
++  &[data-fit] {
++    .ui-dialog-container {
++      height: auto;
++      max-height: min(calc(100vh - 16px), 368px);
++
++      .ui-dialog-content {
++        min-height: 0;
++      }
++    }
++  }
++
++  &[data-fit][data-size="large"] .ui-dialog-container {
++    max-height: min(calc(100vh - 32px), 480px);
++  }
++
++  &[data-fit][data-size="x-large"] .ui-dialog-container {
++    max-height: min(calc(100vh - 92px), 600px);
++  }
+ }

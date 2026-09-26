@@ -12,7 +12,7 @@ export type ModelDialogChoice = {
 export function showModelDialog(dialog: ReturnType<typeof useDialog>, labels: { title: string; connect: string }, choice: ModelDialogChoice, connect: () => void) {
   const current = () => choice.items.find((item) => item.id === choice.current?.modelId && item.provider.id === choice.current.providerId)
   dialog.show(() => (
-    <Dialog size="large">
+    <Dialog size="large" fit>
       <DialogHeader>
         <DialogTitle>{labels.title}</DialogTitle>
         <Button class="h-7 -my-1 text-14-medium" tabIndex={-1} onClick={() => { dialog.close(); connect() }}>

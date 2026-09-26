@@ -65,7 +65,7 @@ export function DialogEditProject(props: { project: Project }) {
   }
 
   return (
-    <Dialog size="large">
+    <Dialog size="large" fit>
       <DialogHeader>
         <DialogTitle>{t("projects.edit.title")}</DialogTitle>
       </DialogHeader>

@@ -110,7 +110,7 @@ export function DialogSelectFile(props: DialogSelectFileProps): JSX.Element {
   }
   onCleanup(() => state.committed || state.cleanup?.())
   return (
-    <Dialog size="large" class="command-palette-dialog !max-h-[480px]" aria-label={label()}>
+    <Dialog size="large" fit class="command-palette-dialog" aria-label={label()}>
       <DialogBody>
         <div data-testid={props.mode === "files" ? "file-palette" : "command-palette"}>
           <List

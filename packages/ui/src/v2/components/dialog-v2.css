@@ -155,16 +155,6 @@
     }
   }
 
-  &[data-fit] {
-    .ui-dialog-container {
-      height: auto;
-
-      .ui-dialog-content {
-        min-height: 0;
-      }
-    }
-  }
-
   &[data-size="large"] .ui-dialog-container {
     width: min(calc(100vw - 32px), 640px);
     height: min(calc(100vh - 32px), 480px);
@@ -178,5 +168,24 @@
   &[data-size="viewport"] .ui-dialog-container {
     width: min(calc(100vw - 64px), 1400px);
     height: calc(100vh - 64px);
+  }
+
+  &[data-fit] {
+    .ui-dialog-container {
+      height: auto;
+      max-height: min(calc(100vh - 16px), 368px);
+
+      .ui-dialog-content {
+        min-height: 0;
+      }
+    }
+  }
+
+  &[data-fit][data-size="large"] .ui-dialog-container {
+    max-height: min(calc(100vh - 32px), 480px);
+  }
+
+  &[data-fit][data-size="x-large"] .ui-dialog-container {
+    max-height: min(calc(100vh - 92px), 600px);
   }
 }

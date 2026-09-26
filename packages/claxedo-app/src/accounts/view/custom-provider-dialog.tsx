@@ -113,7 +113,7 @@ export function DialogCustomProvider(props: { readonly existing: ReadonlySet<str
   const [form, setForm] = createStore<FormState>({ providerId: "", name: "", baseURL: "", apiKey: "", models: [modelRow()], headers: [headerRow()], err: {} })
   const { saving, save } = useSave(props, form, setForm)
   return (
-    <Dialog size="large">
+    <Dialog size="large" fit>
       <DialogHeader>
         <DialogTitle>
           <IconButton tabIndex={-1} icon="arrow-left" variant="ghost" onClick={() => dialog.close()} aria-label={t("common.goBack")} />
