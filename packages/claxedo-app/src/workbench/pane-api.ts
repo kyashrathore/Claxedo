@@ -52,7 +52,7 @@ export function createPaneApi(host: PaneApiHost): PaneApi {
       const pane = host.layout().panes.find((candidate) => candidate.id === paneId)
       if (!pane) return
       if (pane.contentId) host.closeContent(pane.contentId)
-      else host.apply((layout) => reducers.split.close(layout, paneId, { destroyContent: false }))
+      else host.apply((layout) => reducers.split.closePane(layout, paneId, { destroyContent: false }))
     },
   }
 }

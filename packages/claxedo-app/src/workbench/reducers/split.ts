@@ -14,7 +14,7 @@ import {
   validRoot,
 } from "./tree-helpers"
 
-export function split(state: WorkbenchState, targetPaneId: string, edge: Edge, contentId: string): WorkbenchState {
+export function splitPane(state: WorkbenchState, targetPaneId: string, edge: Edge, contentId: string): WorkbenchState {
   const target = state.panes.find((p) => p.id === targetPaneId)
   if (!target) return state
   if (target.contentId === contentId) return state
@@ -54,7 +54,7 @@ function rebuiltRoot(root: SplitNode | undefined, panes: readonly Pane[]): Split
   return rebuilt
 }
 
-export function close(state: WorkbenchState, paneId: string, opts: { destroyContent: boolean }): WorkbenchState {
+export function closePane(state: WorkbenchState, paneId: string, opts: { destroyContent: boolean }): WorkbenchState {
   const pane = state.panes.find((p) => p.id === paneId)
   if (!pane) return state
   const closedContentId = pane.contentId
@@ -72,7 +72,7 @@ export function close(state: WorkbenchState, paneId: string, opts: { destroyCont
   return next
 }
 
-export function move(state: WorkbenchState, contentId: string, fromPaneId: string, toPaneId: MovePaneTarget): WorkbenchState {
+export function moveContent(state: WorkbenchState, contentId: string, fromPaneId: string, toPaneId: MovePaneTarget): WorkbenchState {
   const fromIndex = state.panes.findIndex((p) => p.id === fromPaneId)
   if (fromIndex === -1) return state
   if (state.panes[fromIndex].contentId !== contentId) return state
@@ -97,7 +97,7 @@ export function move(state: WorkbenchState, contentId: string, fromPaneId: strin
   return { ...state, panes, focusedPaneId: toPaneId }
 }
 
-export function focus(state: WorkbenchState, paneId: string): WorkbenchState {
+export function focusPane(state: WorkbenchState, paneId: string): WorkbenchState {
   const pane = state.panes.find((p) => p.id === paneId)
   if (!pane) return state
   if (state.focusedPaneId === paneId && (!pane.contentId || state.contentRecency[0] === pane.contentId)) return state
@@ -107,7 +107,7 @@ export function focus(state: WorkbenchState, paneId: string): WorkbenchState {
   return { ...state, focusedPaneId: paneId, contentRecency }
 }
 
-export function resize(state: WorkbenchState, path: SplitPath, ratio: number): WorkbenchState {
+export function resizeSplit(state: WorkbenchState, path: SplitPath, ratio: number): WorkbenchState {
   const target = nodeAtPath(state.split.root, path)
   if (!target || target.t !== "split") return state
   const newRoot = setSizeAtPath(state.split.root, path, ratio)

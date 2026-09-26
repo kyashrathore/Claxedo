@@ -41,7 +41,7 @@ export type WorkbenchStore = WorkbenchApi &
 
 function closeContentReducer(state: WorkbenchState, contentId: string): WorkbenchState {
   const paneId = selectors.contentPane(state, contentId)
-  const closed = paneId ? reducers.split.close(state, paneId, { destroyContent: true }) : reducers.contents.remove(state, contentId)
+  const closed = paneId ? reducers.split.closePane(state, paneId, { destroyContent: true }) : reducers.contents.remove(state, contentId)
   const next = closed.contentRecency[0]
   return closed.panes.length === 0 && next ? reducers.navigation.show(closed, next) : closed
 }
@@ -66,7 +66,7 @@ function pruned(contents: Readonly<Record<string, PaneContent>>, contentIds: rea
   return kept
 }
 
-function readRecord(value: unknown): WorkbenchRecord | undefined {
+function readWorkbenchRecord(value: unknown): WorkbenchRecord | undefined {
   if (!isRecord(value)) return undefined
   const contents = readContents(value.contents)
   let layout = validate(value.layout)
@@ -174,7 +174,7 @@ export function createWorkbenchStore(key: string, kinds: Accessor<readonly AnyPa
   const [record, setRecord] = persistedSignal<WorkbenchRecord>(
     key,
     { layout: constructWorkbenchState.empty(), contents: {} },
-    readRecord,
+    readWorkbenchRecord,
   )
   const layout = () => record().layout
   const closed = createClosedListeners()
