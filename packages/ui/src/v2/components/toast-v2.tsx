@@ -128,6 +128,30 @@ function CloseIcon() {
   )
 }
 
+function SuccessIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M3.5 8.25L6.5 11.25L12.5 4.75" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" />
+    </svg>
+  )
+}
+
+function WarningIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M8 2.5L14 13H2L8 2.5Z" stroke="currentColor" stroke-linejoin="round" />
+      <path d="M8 6.5V9.25" stroke="currentColor" stroke-linecap="round" />
+      <circle cx="8" cy="11.1" r="0.6" fill="currentColor" />
+    </svg>
+  )
+}
+
+function severityIcon(variant: ToastV2Options["variant"]) {
+  if (variant === "success") return <SuccessIcon />
+  if (variant === "error" || variant === "warning") return <WarningIcon />
+  return undefined
+}
+
 export const ToastV2 = Object.assign(ToastV2Root, {
   Region: ToastV2Region,
   Icon: ToastV2Icon,
@@ -172,7 +196,7 @@ export interface ToastV2Options {
   title?: string
   description?: string
   icon?: JSX.Element
-  variant?: "default" | "success" | "error" | "loading"
+  variant?: "default" | "success" | "warning" | "error" | "loading"
   duration?: number
   persistent?: boolean
   actions?: ToastV2Action[]
@@ -224,7 +248,7 @@ function publishToastV2(entry: ActiveToastV2) {
   toast(entry.options.title ?? "", {
     id: entry.id,
     description: entry.options.description,
-    icon: entry.options.icon,
+    icon: entry.options.icon ?? severityIcon(entry.options.variant),
     action: entry.actions,
     closeButton: true,
     duration: entry.options.persistent ? Number.POSITIVE_INFINITY : entry.options.duration,

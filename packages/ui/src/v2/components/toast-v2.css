@@ -65,6 +65,18 @@
     color: var(--v2-icon-icon-base);
   }
 
+  &.toast-v2--success > [data-icon] {
+    color: var(--v2-state-fg-success);
+  }
+
+  &.toast-v2--warning > [data-icon] {
+    color: var(--v2-state-fg-warning);
+  }
+
+  &.toast-v2--error > [data-icon] {
+    color: var(--v2-state-fg-danger);
+  }
+
   > [data-content] {
     grid-column: 1;
     grid-row: 1;
