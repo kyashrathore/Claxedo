@@ -49,7 +49,7 @@ Upstream's v2 library (anomalyco/opencode `packages/ui/src/v2` at 1d6c3c0e29) is
 
 | Component | Props (one line) |
 | --- | --- |
-| `Button` (the kit's, from `@opencode-ai/ui/button`, so buttons look as they do today) | Kobalte button props, `size?: small \| normal \| large`, `variant?: primary \| secondary \| ghost`, `icon?: kit icon name` |
+| `Button` (the kit's `ButtonV2`, from `@opencode-ai/ui/v2/button-v2`) | Kobalte button props, `size?: small \| normal \| large` (24/28/32 px), `variant?: neutral \| contrast \| ghost \| ghost-muted \| danger \| warning \| outline \| loading`, `icon?: v2 glyph name`; a library glyph goes in as the first child, `<Icon name=... size="small" />` |
 | `Dialog` (the kit's) | `title?`, `description?`, `action?`, `size?: normal \| large \| x-large \| viewport`, `fit?`, `flush?`, `scrim?: strong`, `class?`; the body is its children |
 | `DialogProvider`, `useDialog()` (the kit's) | `useDialog()` returns `{ active, show(element, onClose?), push(element, onClose?), close() }` |
 | `IconButton` (the kit's `IconButtonV2`, from `@opencode-ai/ui/v2/icon-button-v2`) | Kobalte button props, `icon: JSX.Element` (callers pass `<Icon name=... size="small" />`), `size?: small \| normal \| large` (20/24/28 px), `variant?: neutral \| contrast \| ghost \| ghost-muted`. `ClaxedoIconButton` stays the app's own control on the kit's `icon-button` sheet |

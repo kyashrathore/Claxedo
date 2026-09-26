@@ -81,7 +81,7 @@ export function TasksView(props: TasksViewProps): JSX.Element {
         title={t("tasks.title")}
         count={rows.visible().length}
         action={
-          <Button variant="primary" size="small" data-testid="tasks-create" onClick={() => openCreate()}>
+          <Button variant="contrast" size="small" data-testid="tasks-create" onClick={() => openCreate()}>
             {t("tasks.newTask")}
           </Button>
         }

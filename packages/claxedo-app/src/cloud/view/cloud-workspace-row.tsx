@@ -41,18 +41,18 @@ export const CloudWorkspaceItem: Component<{
       <div class="flex flex-wrap gap-2">
         <Show when={props.row.state.kind === "ready" ? props.onOpen : undefined}>
           {(open) => (
-            <Button variant="primary" onClick={() => open()(props.row.id)}>
+            <Button variant="contrast" onClick={() => open()(props.row.id)}>
               {t("cloud.open")}
             </Button>
           )}
         </Show>
         <Show when={canStart(props.row.state)}>
-          <Button variant="secondary" onClick={() => void props.cloud.start(props.row.id)}>
+          <Button variant="neutral" onClick={() => void props.cloud.start(props.row.id)}>
             {t("cloud.start")}
           </Button>
         </Show>
         <Show when={canStop(props.row.state)}>
-          <Button variant="secondary" onClick={() => void props.cloud.stop(props.row.id)}>
+          <Button variant="neutral" onClick={() => void props.cloud.stop(props.row.id)}>
             {t("cloud.stop")}
           </Button>
         </Show>
@@ -65,7 +65,7 @@ export const CloudWorkspaceItem: Component<{
           }
         >
           <span class="cloud-hint self-center">{t("cloud.remove.confirm", { name: props.row.name })}</span>
-          <Button variant="primary" disabled={deleting()} onClick={() => void remove()}>
+          <Button variant="contrast" disabled={deleting()} onClick={() => void remove()}>
             {deleting() ? t("cloud.deleting") : t("cloud.remove.button")}
           </Button>
           <Button variant="ghost" disabled={deleting()} onClick={() => setConfirming(false)}>

@@ -24,7 +24,7 @@ function ProjectFields(props: { readonly project: Project }): JSX.Element {
     <SettingsGroup
       title={t("projects.settings.group")}
       action={
-        <Button variant="secondary" size="small" onClick={() => dialog.show(() => <DialogEditProject project={props.project} />)}>
+        <Button variant="neutral" size="small" onClick={() => dialog.show(() => <DialogEditProject project={props.project} />)}>
           {t("projects.edit.action")}
         </Button>
       }
@@ -67,7 +67,7 @@ function ProjectRemoval(props: { readonly id: ProjectId; readonly name: string }
   return (
     <SettingsList>
       <SettingsRow title={t("projects.remove.title")} description={t("projects.settings.remove.description")}>
-        <Button variant="secondary" size="small" onClick={remove}>
+        <Button variant="neutral" size="small" onClick={remove}>
           {t("projects.remove")}
         </Button>
       </SettingsRow>

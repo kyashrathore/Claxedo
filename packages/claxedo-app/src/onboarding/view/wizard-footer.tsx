@@ -42,12 +42,12 @@ export function WizardFooter(props: { readonly wizard: OnboardingWizard; readonl
         <Show
           when={wizard().step() === "execution"}
           fallback={
-            <Button type="button" variant="primary" size="normal" disabled={nextDisabled()} onClick={() => wizard().advance()}>
+            <Button type="button" variant="contrast" size="normal" disabled={nextDisabled()} onClick={() => wizard().advance()}>
               {t("onboarding.next")}
             </Button>
           }
         >
-          <Button type="button" variant="primary" size="normal" disabled={nextDisabled() || wizard().finishing()} onClick={() => void wizard().finish()}>
+          <Button type="button" variant="contrast" size="normal" disabled={nextDisabled() || wizard().finishing()} onClick={() => void wizard().finish()}>
             {finishLabel(t, wizard().finishing(), props.localExecution)}
           </Button>
         </Show>

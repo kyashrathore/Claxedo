@@ -58,7 +58,7 @@ export const PlacementList: Component<{ projectId: Accessor<ProjectId> }> = (pro
                     <span class="truncate text-sm">{placement.label}</span>
                     <span class="projects-hint truncate">{placementDetail(t, placement)}</span>
                   </div>
-                  <Button variant="secondary" size="small" onClick={() => open(placement.id)}>
+                  <Button variant="neutral" size="small" onClick={() => open(placement.id)}>
                     {t("projects.placement.open")}
                   </Button>
                 </li>

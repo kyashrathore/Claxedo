@@ -18,7 +18,7 @@ function ConfirmDialog(props: { readonly confirmation: Confirmation; readonly de
           <Button type="button" variant="ghost" onClick={() => props.decide(false)}>
             {props.confirmation.cancelLabel ?? t("plugins.cancel")}
           </Button>
-          <Button type="button" variant="primary" onClick={() => props.decide(true)}>
+          <Button type="button" variant="contrast" onClick={() => props.decide(true)}>
             {props.confirmation.confirmLabel ?? t("plugins.confirm")}
           </Button>
         </div>

@@ -1,7 +1,7 @@
 import { batch, createSignal, For } from "solid-js"
 import { createStore, produce, type SetStoreFunction } from "solid-js/store"
 import { toAppError, useServer } from "@/server"
-import { ClaxedoIconButton as IconButton, showToast, useDialog, Button, Dialog, ProviderIcon, TextField } from "@/ui"
+import { ClaxedoIconButton as IconButton, showToast, useDialog, Button, Dialog, Icon, ProviderIcon, TextField } from "@/ui"
 import { headerRow, modelRow, validateCustomProvider, type FormState } from "../custom-provider"
 import { useAccountsText, type AccountsKey } from "../i18n"
 
@@ -53,7 +53,8 @@ function PairRows(props: { readonly list: RowList; readonly form: FormState; rea
           </div>
         )}
       </For>
-      <Button type="button" size="small" variant="ghost" icon="plus-small" onClick={add} class="self-start">
+      <Button type="button" size="small" variant="ghost" onClick={add} class="self-start">
+        <Icon name="plus-small" size="small" />
         {t(copy().add)}
       </Button>
     </div>
@@ -129,7 +130,7 @@ export function DialogCustomProvider(props: { readonly existing: ReadonlySet<str
           <ProviderFields form={form} setForm={setForm} />
           <PairRows list="models" form={form} setForm={setForm} />
           <PairRows list="headers" form={form} setForm={setForm} />
-          <Button class="w-auto self-start" type="submit" size="large" variant="primary" disabled={saving()}>
+          <Button class="w-auto self-start" type="submit" size="large" variant="contrast" disabled={saving()}>
             {saving() ? t("common.saving") : t("common.submit")}
           </Button>
         </form>

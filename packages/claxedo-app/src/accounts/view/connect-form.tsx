@@ -76,7 +76,7 @@ function PasteForm(props: { readonly form: ProviderConnect; readonly credentialI
       <Show when={form().selected()?.command}>{(command) => <ConnectCommand command={command()} />}</Show>
       <Show when={form().selected()?.spec.url}>
         {(url) => (
-          <Button class="w-auto" type="button" size="large" variant="secondary" data-action="provider-connect-open-key-page" onClick={() => openExternal(url())}>
+          <Button class="w-auto" type="button" size="large" variant="neutral" data-action="provider-connect-open-key-page" onClick={() => openExternal(url())}>
             <span class="flex items-center gap-1.5">
               {t("provider.connect.method.openKeyPage")}
               <Icon name="open-external" size="small" />
@@ -105,7 +105,7 @@ function PasteForm(props: { readonly form: ProviderConnect; readonly credentialI
           onChange={(value) => form().setStore("label", value)}
         />
       </Show>
-      <Button class="w-auto" type="submit" size="large" variant="primary" disabled={form().store.saving}>
+      <Button class="w-auto" type="submit" size="large" variant="contrast" disabled={form().store.saving}>
         {t("common.continue")}
       </Button>
     </form>
@@ -160,7 +160,7 @@ function OAuthCode(props: { readonly form: ProviderConnect; readonly kind: Conne
         validationState={form().store.error ? "invalid" : undefined}
         error={form().store.error}
       />
-      <Button class="w-auto" type="submit" size="large" variant="primary" disabled={form().store.saving}>
+      <Button class="w-auto" type="submit" size="large" variant="contrast" disabled={form().store.saving}>
         {t("common.continue")}
       </Button>
     </form>
@@ -175,7 +175,7 @@ function OAuthStart(props: { readonly form: ProviderConnect }) {
         class="w-auto"
         type="button"
         size="large"
-        variant="primary"
+        variant="contrast"
         disabled={props.form.store.saving}
         data-action="provider-connect-oauth-start"
         onClick={() => {

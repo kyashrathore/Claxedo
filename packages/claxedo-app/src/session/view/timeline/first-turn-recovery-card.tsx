@@ -182,7 +182,7 @@ export function FirstTurnRecoveryCard(props: {
       <Button
         class="mt-2"
         size="small"
-        variant="secondary"
+        variant="neutral"
         disabled={pending()}
         aria-busy={pending()}
         onClick={() => void act()}

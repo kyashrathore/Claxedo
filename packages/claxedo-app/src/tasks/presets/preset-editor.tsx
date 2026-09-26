@@ -232,7 +232,7 @@ export function PresetEditor(props: PresetEditorProps): JSX.Element {
         <Button size="small" variant="ghost" data-testid="preset-editor-cancel" onClick={() => props.onCancel()}>
           {t("tasks.cancel")}
         </Button>
-        <Button type="submit" size="small" variant="primary" data-testid="preset-editor-submit" disabled={props.busy}>
+        <Button type="submit" size="small" variant="contrast" data-testid="preset-editor-submit" disabled={props.busy}>
           {props.submitLabel}
         </Button>
       </div>

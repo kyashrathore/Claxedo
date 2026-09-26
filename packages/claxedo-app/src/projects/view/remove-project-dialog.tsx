@@ -43,7 +43,7 @@ export const RemoveProjectDialog: Component<{ id: ProjectId; name: string; onRem
           <Button type="button" variant="ghost" onClick={() => dialog.close()}>
             {t("projects.cancel")}
           </Button>
-          <Button type="button" variant="primary" disabled={removing()} onClick={() => void remove()}>
+          <Button type="button" variant="contrast" disabled={removing()} onClick={() => void remove()}>
             {t("projects.remove")}
           </Button>
         </div>

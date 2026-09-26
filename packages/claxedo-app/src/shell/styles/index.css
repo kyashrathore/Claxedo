@@ -127,7 +127,7 @@
     gap: 0.75rem;
   }
 
-  [data-component="getting-started-actions"] > .ui-button {
+  [data-component="getting-started-actions"] > .ui-button-v2 {
     width: 100%;
   }
 
@@ -137,7 +137,7 @@
       align-items: center;
     }
 
-    [data-component="getting-started-actions"] > .ui-button {
+    [data-component="getting-started-actions"] > .ui-button-v2 {
       width: auto;
     }
   }

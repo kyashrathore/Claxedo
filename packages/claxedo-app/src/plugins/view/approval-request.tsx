@@ -66,7 +66,7 @@ function ApprovalDialog(props: { readonly plugin: PluginSummary; readonly platfo
           <Button type="button" variant="ghost" onClick={() => props.decide(false)}>
             {t("plugins.cancel")}
           </Button>
-          <Button type="button" variant="primary" onClick={() => props.decide(true)}>
+          <Button type="button" variant="contrast" onClick={() => props.decide(true)}>
             {t("plugins.approval.accept")}
           </Button>
         </div>

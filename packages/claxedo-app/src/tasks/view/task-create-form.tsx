@@ -219,7 +219,7 @@ export function TaskCreateForm(props: TaskCreateFormProps): JSX.Element {
         <Button
           type="submit"
           size="small"
-          variant="primary"
+          variant="contrast"
           data-testid="task-create-submit"
           disabled={
             props.busy ||

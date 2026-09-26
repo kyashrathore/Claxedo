@@ -34,7 +34,7 @@ export function RenameSessionDialog(props: { readonly title: string; readonly on
           <Button type="button" variant="ghost" size="large" onClick={form.cancel}>
             {t("rail.cancel")}
           </Button>
-          <Button type="submit" variant="primary" size="large" disabled={form.busy() || title().trim().length === 0}>
+          <Button type="submit" variant="contrast" size="large" disabled={form.busy() || title().trim().length === 0}>
             {t("rail.save")}
           </Button>
         </div>
@@ -56,7 +56,7 @@ export function DeleteSessionDialog(props: { readonly title: string; readonly on
           <Button type="button" variant="ghost" size="large" onClick={form.cancel}>
             {t("rail.cancel")}
           </Button>
-          <Button type="submit" variant="primary" size="large" disabled={form.busy()}>
+          <Button type="submit" variant="contrast" size="large" disabled={form.busy()}>
             {t("rail.deleteButton")}
           </Button>
         </div>

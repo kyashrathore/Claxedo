@@ -22,7 +22,7 @@ function CommitMenu(props: {
     <DropdownMenu>
       <DropdownMenu.Trigger
         as={Button}
-        variant="secondary"
+        variant="neutral"
         size="small"
         data-testid="source-control-commit-menu"
         aria-label={t("review.sourceControl.commitMenu")}
@@ -82,7 +82,7 @@ export function CommitBox(props: {
       <div class="flex items-center gap-px">
         <Button
           data-testid="source-control-commit"
-          variant="secondary"
+          variant="neutral"
           size="small"
           disabled={!canCommit()}
           class="min-w-0 flex-1 rounded-r-none"

@@ -105,7 +105,7 @@ export function AddSourceForm(props: {
             onInput={(event) => form.setRef(event.currentTarget.value)}
           />
         </label>
-        <Button type="submit" size="normal" variant="primary" disabled={form.busy()}>
+        <Button type="submit" size="normal" variant="contrast" disabled={form.busy()}>
           {form.busy() ? t("marketplace.source.checking") : t("marketplace.source.add")}
         </Button>
         <Button type="button" size="normal" variant="ghost" onClick={() => props.onCancel()}>

@@ -95,7 +95,7 @@ export function UsageSection(): JSX.Element {
         <Match when={usage.load().kind === "failed"}>
           <div class="usage-failure" role="alert">
             <p>{t("usage.failed")}</p>
-            <Button size="small" variant="secondary" onClick={() => usage.refresh()}>{t("usage.retry")}</Button>
+            <Button size="small" variant="neutral" onClick={() => usage.refresh()}>{t("usage.retry")}</Button>
           </div>
         </Match>
         <Match when={ready()}>

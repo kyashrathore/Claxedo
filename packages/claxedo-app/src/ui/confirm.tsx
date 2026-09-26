@@ -1,5 +1,5 @@
 import type { JSX } from "solid-js"
-import { Button } from "@opencode-ai/ui/button"
+import { ButtonV2 as Button } from "@opencode-ai/ui/v2/button-v2"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import type { useDialog } from "@opencode-ai/ui/context/dialog"
 
@@ -23,7 +23,7 @@ function ConfirmBody(props: {
           <Button variant="ghost" onClick={() => props.onCancel()}>
             {props.options.cancelLabel}
           </Button>
-          <Button variant="primary" onClick={() => props.onConfirm()}>
+          <Button variant="contrast" onClick={() => props.onConfirm()}>
             {props.options.confirmLabel}
           </Button>
         </div>

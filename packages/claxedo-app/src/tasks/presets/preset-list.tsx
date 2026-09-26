@@ -120,7 +120,7 @@ export function PresetList(props: PresetListProps): JSX.Element {
                   <span>{t("tasks.preset.none")}</span>
                   <Button
                     size="small"
-                    variant="secondary"
+                    variant="neutral"
                     data-testid="preset-list-create"
                     onClick={() => props.onCreate()}
                   >

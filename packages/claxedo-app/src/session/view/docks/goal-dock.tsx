@@ -40,7 +40,7 @@ function GoalDeleteDialog(props: { action: DockAction<GoalControl>; remove: () =
             {t("sessionScreen.action.cancel")}
           </Button>
           <Button
-            variant="primary"
+            variant="contrast"
             size="large"
             disabled={removing()}
             onClick={() => void props.action.run("remove", props.remove).then((removed) => removed && dialog.close())}
@@ -121,7 +121,7 @@ export function GoalDock(props: { goal: GoalSnapshot; actions: GoalActions }) {
               </Button>
             </Show>
             <Show when={controls().resume}>
-              <Button variant="secondary" size="normal" disabled={busy()} onClick={() => run("resume")}>
+              <Button variant="neutral" size="normal" disabled={busy()} onClick={() => run("resume")}>
                 {label("resume", "sessionScreen.goal.resume")}
               </Button>
             </Show>

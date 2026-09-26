@@ -83,7 +83,7 @@ function SaveRow(props: TaskDetailProps): JSX.Element {
         </Button>
         <Button
           size="small"
-          variant="primary"
+          variant="contrast"
           data-testid="task-detail-save"
           disabled={props.busy}
           onClick={() => props.onSave()}

@@ -103,7 +103,7 @@ export function ImageMarkEditor(props: ImageMarkEditorProps) {
           <Button size="large" variant="ghost" onClick={() => dialog.close()}>
             {t("common.cancel")}
           </Button>
-          <Button size="large" variant="primary" onClick={save}>
+          <Button size="large" variant="contrast" onClick={save}>
             {t("common.save")}
           </Button>
         </div>

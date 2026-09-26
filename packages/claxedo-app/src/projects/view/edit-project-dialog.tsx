@@ -123,7 +123,7 @@ export function DialogEditProject(props: { project: Project }) {
           <Button type="button" variant="ghost" size="large" onClick={() => dialog.close()}>
             {t("projects.cancel")}
           </Button>
-          <Button type="submit" variant="primary" size="large" disabled={store.saving}>
+          <Button type="submit" variant="contrast" size="large" disabled={store.saving}>
             {store.saving ? t("projects.saving") : t("projects.save")}
           </Button>
         </div>

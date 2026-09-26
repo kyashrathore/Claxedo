@@ -86,7 +86,7 @@ export function MachinesSection() {
             title={t("settings.machines.remoteAccess.unavailable")}
             description={t("settings.machines.remoteAccess.unavailable.description")}
           >
-            <Button size="small" variant="secondary" disabled>
+            <Button size="small" variant="neutral" disabled>
               {t("settings.machines.remoteAccess.enable")}
             </Button>
           </SettingsRow>

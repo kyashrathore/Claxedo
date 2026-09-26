@@ -108,12 +108,12 @@ export function InstallPluginSheet(props: {
         <footer class="flex items-center justify-between gap-2 border-t border-border-weak-base pt-3">
           <span class="text-12-regular text-text-weaker">{t("marketplace.install.stepCount")}</span>
           <div class="flex gap-2">
-            <Button size="large" variant="secondary" disabled={sheet.busy()} onClick={finish}>
+            <Button size="large" variant="neutral" disabled={sheet.busy()} onClick={finish}>
               {t("marketplace.cancel")}
             </Button>
             <Button
               size="large"
-              variant="primary"
+              variant="contrast"
               disabled={sheet.busy()}
               onClick={() => void sheet.install([...selected()])}
             >

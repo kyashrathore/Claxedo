@@ -30,7 +30,7 @@ function CardTrailing(props: {
             fallback={<Show when={props.status}>{(status) => <PluginStatusLine status={status()} />}</Show>}
           >
             {(action) => (
-              <Button size="small" variant="secondary" disabled={action().disabled} onClick={() => action().run()}>
+              <Button size="small" variant="neutral" disabled={action().disabled} onClick={() => action().run()}>
                 {action().label}
               </Button>
             )}

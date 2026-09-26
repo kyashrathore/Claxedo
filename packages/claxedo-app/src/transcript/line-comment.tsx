@@ -425,7 +425,7 @@ export const LineCommentEditor = (props: LineCommentEditorProps) => {
             <Button size="small" variant="ghost" onClick={split.onCancel}>
               {split.cancelLabel ?? i18n.t("transcript.common.cancel")}
             </Button>
-            <Button size="small" variant="primary" disabled={split.value.trim().length === 0} onClick={submit}>
+            <Button size="small" variant="contrast" disabled={split.value.trim().length === 0} onClick={submit}>
               {split.submitLabel ?? i18n.t("transcript.lineComment.submit")}
             </Button>
           </Show>

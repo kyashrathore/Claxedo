@@ -46,7 +46,7 @@ export const CreateCloudWorkspace: Component<{ cloud: CloudWorkspaces }> = (prop
           spellcheck={false}
           onChange={setBranch}
         />
-        <Button type="submit" variant="primary" disabled={creating()}>
+        <Button type="submit" variant="contrast" disabled={creating()}>
           {creating() ? t("cloud.creating") : t("cloud.new")}
         </Button>
       </div>
