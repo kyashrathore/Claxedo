@@ -36,6 +36,10 @@ export function readArray(value: unknown, key: string): unknown[] | undefined {
   return Array.isArray(field) ? field : undefined
 }
 
+export function isStringList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string")
+}
+
 export function onlyStrings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []
 }

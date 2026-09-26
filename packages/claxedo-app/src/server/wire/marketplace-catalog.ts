@@ -1,3 +1,5 @@
+import { isRecord, isString } from "@claxedo/helpers/guards"
+import { isStringList } from "../../lib/record"
 import type {
   MarketplaceCatalog,
   PluginActivation,
@@ -18,31 +20,19 @@ export const PLUGIN_HARNESSES: readonly PluginHarness[] = ["opencode", "claude",
 
 const SOURCE_KINDS: readonly PluginSourceKind[] = ["claxedo", "personal", "organization"]
 
-function record(value: unknown): value is Row {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-function isString(value: unknown): value is string {
-  return typeof value === "string"
-}
-
-function optionalString(value: unknown) {
+function isOptionalString(value: unknown) {
   return value === undefined || value === null || isString(value)
 }
 
-function optionalBoolean(value: unknown) {
+function isOptionalBoolean(value: unknown) {
   return value === undefined || typeof value === "boolean"
 }
 
-function nullableBoolean(value: unknown) {
+function isNullableBoolean(value: unknown) {
   return value === undefined || value === null || typeof value === "boolean"
 }
 
-function stringList(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every(isString)
-}
-
-function harness(value: unknown): value is PluginHarness {
+function isHarness(value: unknown): value is PluginHarness {
   return PLUGIN_HARNESSES.some((candidate) => candidate === value)
 }
 
@@ -50,138 +40,138 @@ export function isPluginSourceKind(value: unknown): value is PluginSourceKind {
   return SOURCE_KINDS.some((kind) => kind === value)
 }
 
-function activation(value: unknown): value is PluginActivation {
-  if (!record(value) || !record(value.effective)) return false
+function isActivation(value: unknown): value is PluginActivation {
+  if (!isRecord(value) || !isRecord(value.effective)) return false
   const effective = value.effective
   return (
-    nullableBoolean(value.explicit) &&
-    nullableBoolean(value.projectOverride) &&
-    nullableBoolean(value.userDefault) &&
-    optionalBoolean(value.organizationDefault) &&
-    optionalBoolean(value.claxedoDefault) &&
+    isNullableBoolean(value.explicit) &&
+    isNullableBoolean(value.projectOverride) &&
+    isNullableBoolean(value.userDefault) &&
+    isOptionalBoolean(value.organizationDefault) &&
+    isOptionalBoolean(value.claxedoDefault) &&
     (effective.status === "ready" || effective.status === "artifact-unavailable") &&
     typeof effective.effective === "boolean" &&
     isString(effective.winner) &&
-    optionalString(effective.artifactDigest)
+    isOptionalString(effective.artifactDigest)
   )
 }
 
-function icon(value: unknown): value is PluginIcon | undefined {
+function isIcon(value: unknown): value is PluginIcon | undefined {
   if (value === undefined) return true
-  if (!record(value)) return false
+  if (!isRecord(value)) return false
   if (value.kind === "url") return isString(value.url)
   return value.kind === "monogram" && isString(value.text)
 }
 
-function source(value: unknown): value is PluginSource | null {
+function isSource(value: unknown): value is PluginSource | null {
   if (value === null) return true
   return (
-    record(value) &&
+    isRecord(value) &&
     isString(value.id) &&
     isPluginSourceKind(value.kind) &&
     isString(value.label) &&
-    optionalString(value.repository)
+    isOptionalString(value.repository)
   )
 }
 
-function toolGroups(value: unknown): value is PluginToolGroup[] | undefined {
+function isToolGroups(value: unknown): value is PluginToolGroup[] | undefined {
   if (value === undefined) return true
   return (
     Array.isArray(value) &&
     value.every(
       (group) =>
-        record(group) &&
+        isRecord(group) &&
         isString(group.id) &&
         isString(group.pluginInstanceId) &&
         typeof group.enabled === "boolean" &&
-        stringList(group.tools),
+        isStringList(group.tools),
     )
   )
 }
 
-function skills(value: unknown): value is PluginSkill[] {
+function isSkills(value: unknown): value is PluginSkill[] {
   return (
     Array.isArray(value) &&
-    value.every((skill) => record(skill) && isString(skill.name) && isString(skill.description) && isString(skill.path))
+    value.every((skill) => isRecord(skill) && isString(skill.name) && isString(skill.description) && isString(skill.path))
   )
 }
 
-function authentication(value: unknown): boolean {
-  if (!record(value)) return false
+function isAuthentication(value: unknown): boolean {
+  if (!isRecord(value)) return false
   if (value.state === "local" || value.state === "harness" || value.state === "public") return true
   if (value.state === "unavailable") return isString(value.reason)
   return (
     value.state === "oauth" &&
     isString(value.integrationId) &&
-    (value.issuers === undefined || stringList(value.issuers))
+    (value.issuers === undefined || isStringList(value.issuers))
   )
 }
 
-function mcpServers(value: unknown): value is PluginMcpServer[] {
+function isMcpServers(value: unknown): value is PluginMcpServer[] {
   return (
     Array.isArray(value) &&
     value.every(
       (server) =>
-        record(server) &&
+        isRecord(server) &&
         isString(server.name) &&
         (server.type === "stdio" || server.type === "streamable-http" || server.type === "sse") &&
-        authentication(server.authentication),
+        isAuthentication(server.authentication),
     )
   )
 }
 
-function diagnostics(value: unknown): boolean {
+function isDiagnostics(value: unknown): boolean {
   return (
     Array.isArray(value) &&
-    value.every((item) => record(item) && isString(item.code) && isString(item.path) && isString(item.message))
+    value.every((item) => isRecord(item) && isString(item.code) && isString(item.path) && isString(item.message))
   )
 }
 
-function manifest(value: unknown): boolean {
+function isManifest(value: unknown): boolean {
   if (value === null) return true
-  return record(value) && isString(value.name) && optionalString(value.version) && optionalString(value.description)
+  return isRecord(value) && isString(value.name) && isOptionalString(value.version) && isOptionalString(value.description)
 }
 
 function candidateIdentity(value: Row): boolean {
   return (
     isString(value.pluginInstanceId) &&
-    optionalBoolean(value.builtIn) &&
-    optionalString(value.sourceId) &&
+    isOptionalBoolean(value.builtIn) &&
+    isOptionalString(value.sourceId) &&
     (value.sourceKind === null || value.sourceKind === undefined || isPluginSourceKind(value.sourceKind)) &&
-    source(value.source) &&
-    icon(value.icon) &&
-    (value.categories === undefined || stringList(value.categories)) &&
-    optionalBoolean(value.featured)
+    isSource(value.source) &&
+    isIcon(value.icon) &&
+    (value.categories === undefined || isStringList(value.categories)) &&
+    isOptionalBoolean(value.featured)
   )
 }
 
 function candidateArtifact(value: Row): boolean {
   return (
-    optionalString(value.sourceRevision) &&
-    optionalString(value.relativePath) &&
-    optionalString(value.candidateDigest) &&
+    isOptionalString(value.sourceRevision) &&
+    isOptionalString(value.relativePath) &&
+    isOptionalString(value.candidateDigest) &&
     typeof value.sourceAvailable === "boolean" &&
-    optionalString(value.retainedDigest) &&
-    optionalBoolean(value.artifactAvailable) &&
-    optionalString(value.artifactError) &&
+    isOptionalString(value.retainedDigest) &&
+    isOptionalBoolean(value.artifactAvailable) &&
+    isOptionalString(value.artifactError) &&
     typeof value.updateAvailable === "boolean"
   )
 }
 
-function candidate(value: unknown): value is PluginCandidate {
-  if (!record(value) || !candidateIdentity(value) || !candidateArtifact(value)) return false
-  if (!toolGroups(value.groups) || !skills(value.skills) || !manifest(value.manifest)) return false
-  if (!diagnostics(value.componentDiagnostics) || !mcpServers(value.mcpServers)) return false
+function isCandidate(value: unknown): value is PluginCandidate {
+  if (!isRecord(value) || !candidateIdentity(value) || !candidateArtifact(value)) return false
+  if (!isToolGroups(value.groups) || !isSkills(value.skills) || !isManifest(value.manifest)) return false
+  if (!isDiagnostics(value.componentDiagnostics) || !isMcpServers(value.mcpServers)) return false
   const harnesses = value.harnesses
-  return record(harnesses) && PLUGIN_HARNESSES.every((id) => activation(harnesses[id]))
+  return isRecord(harnesses) && PLUGIN_HARNESSES.every((id) => isActivation(harnesses[id]))
 }
 
-function catalogErrors(value: unknown): boolean {
+function isCatalogErrors(value: unknown): boolean {
   return (
     Array.isArray(value) &&
     value.every(
       (error) =>
-        record(error) &&
+        isRecord(error) &&
         isString(error.sourceId) &&
         isString(error.relativePath) &&
         isString(error.code) &&
@@ -190,27 +180,27 @@ function catalogErrors(value: unknown): boolean {
   )
 }
 
-function projects(value: unknown): boolean {
+function isProjects(value: unknown): boolean {
   return (
     value === undefined ||
     (Array.isArray(value) &&
-      value.every((project) => record(project) && isString(project.id) && isString(project.label)))
+      value.every((project) => isRecord(project) && isString(project.id) && isString(project.label)))
   )
 }
 
 export function marketplaceCatalogFromWire(value: unknown): MarketplaceCatalog | undefined {
-  if (!record(value) || typeof value.revision !== "number" || !Number.isSafeInteger(value.revision)) return undefined
-  if (!Array.isArray(value.supportedHarnesses) || !value.supportedHarnesses.every(harness)) return undefined
-  if (!projects(value.projects) || !optionalString(value.selectedProjectId)) return undefined
-  if (!optionalBoolean(value.canManageOrganizationDefaults) || !optionalBoolean(value.canManageOrganizationConnections))
+  if (!isRecord(value) || typeof value.revision !== "number" || !Number.isSafeInteger(value.revision)) return undefined
+  if (!Array.isArray(value.supportedHarnesses) || !value.supportedHarnesses.every(isHarness)) return undefined
+  if (!isProjects(value.projects) || !isOptionalString(value.selectedProjectId)) return undefined
+  if (!isOptionalBoolean(value.canManageOrganizationDefaults) || !isOptionalBoolean(value.canManageOrganizationConnections))
     return undefined
-  if (!Array.isArray(value.candidates) || !value.candidates.every(candidate) || !catalogErrors(value.errors))
+  if (!Array.isArray(value.candidates) || !value.candidates.every(isCandidate) || !isCatalogErrors(value.errors))
     return undefined
   return value as MarketplaceCatalog
 }
 
 export function pluginSkillFromWire(value: unknown): PluginSkillDocument | undefined {
-  if (!record(value) || !isString(value.name) || !isString(value.description) || !isString(value.markdown))
+  if (!isRecord(value) || !isString(value.name) || !isString(value.description) || !isString(value.markdown))
     return undefined
   return { name: value.name, description: value.description, markdown: value.markdown }
 }
