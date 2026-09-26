@@ -196,7 +196,7 @@
 
 @media (forced-colors: active) {
   :is(
-    [data-component="dialog"] [data-slot="dialog-content"],
+    [data-component="dialog-v2"] .ui-dialog-container,
     [data-component="dropdown-menu-content"],
     [data-component="dropdown-menu-sub-content"],
     [data-component="context-menu-content"],
@@ -496,7 +496,9 @@ html[data-theme="codex"] body:not([data-new-layout]) :is([data-component="user-m
 }
 
 html[data-theme="codex"] [data-component="menu-v2-content"],
-html[data-theme="codex"] .ui-tooltip-v2 {
+html[data-theme="codex"] .ui-tooltip-v2,
+html[data-theme="codex"] .toast-v2,
+html[data-theme="codex"] [data-component="dialog-v2"] .ui-dialog-container {
   --v2-background-bg-layer-01: var(--overlay-surface);
   --v2-text-text-base: var(--overlay-text);
   --v2-text-text-muted: var(--overlay-text-muted);

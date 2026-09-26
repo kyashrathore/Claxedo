@@ -1,7 +1,7 @@
 import { createMemo, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { toAppError, useServer, type Project } from "@/server"
-import { useDialog, Button, Dialog, TextField } from "@/ui"
+import { useDialog, Button, Dialog, TextField, DialogBody, DialogHeader, DialogTitle } from "@/ui"
 import { getFilename } from "@/ui/utils"
 import { useProjectsText } from "../i18n"
 import { EnvironmentEditor, environmentRecord, environmentRows, environmentRowsProblem } from "./environment-editor"
@@ -65,7 +65,11 @@ export function DialogEditProject(props: { project: Project }) {
   }
 
   return (
-    <Dialog title={t("projects.edit.title")} class="w-full max-w-[480px] mx-auto">
+    <Dialog size="large">
+      <DialogHeader>
+        <DialogTitle>{t("projects.edit.title")}</DialogTitle>
+      </DialogHeader>
+      <DialogBody class="px-4 pb-4">
       <form onSubmit={handleSubmit} class="flex flex-col gap-6">
         <div class="flex flex-col gap-4">
           <TextField autofocus type="text" label={t("projects.edit.name")} placeholder={folderName()} value={store.name} onChange={(v) => setStore("name", v)} />
@@ -129,6 +133,7 @@ export function DialogEditProject(props: { project: Project }) {
           </Button>
         </div>
       </form>
+      </DialogBody>
     </Dialog>
   )
 }

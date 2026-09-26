@@ -18,6 +18,7 @@ import {
 } from "solid-js"
 import { Dialog as Kobalte } from "@kobalte/core/dialog"
 import { makeEventListener } from "@solid-primitives/event-listener"
+import "./dialog.css"
 
 type DialogElement = () => JSX.Element
 

@@ -1,7 +1,7 @@
 import { batch, createSignal, For } from "solid-js"
 import { createStore, produce, type SetStoreFunction } from "solid-js/store"
 import { toAppError, useServer } from "@/server"
-import { ClaxedoIconButton as IconButton, showToast, useDialog, Button, Dialog, Icon, ProviderIcon, TextField } from "@/ui"
+import { ClaxedoIconButton as IconButton, showToast, useDialog, Button, Dialog, Icon, ProviderIcon, TextField, DialogBody, DialogHeader, DialogTitle } from "@/ui"
 import { headerRow, modelRow, validateCustomProvider, type FormState } from "../custom-provider"
 import { useAccountsText, type AccountsKey } from "../i18n"
 
@@ -97,7 +97,7 @@ function useSave(props: { readonly existing: ReadonlySet<string>; readonly onSav
       await server.providerConnect.saveCustomProvider(output.result)
       await props.onSaved()
       dialog.close()
-      showToast({ variant: "success", icon: "circle-check", title: t("provider.connect.toast.connected.title", { vendor: output.result.config.name }) })
+      showToast({ variant: "success", icon: <Icon name="circle-check" />, title: t("provider.connect.toast.connected.title", { vendor: output.result.config.name }) })
     } catch (error) {
       showToast({ title: t("common.requestFailed"), description: toAppError(error).message })
     } finally {
@@ -113,8 +113,13 @@ export function DialogCustomProvider(props: { readonly existing: ReadonlySet<str
   const [form, setForm] = createStore<FormState>({ providerId: "", name: "", baseURL: "", apiKey: "", models: [modelRow()], headers: [headerRow()], err: {} })
   const { saving, save } = useSave(props, form, setForm)
   return (
-    <Dialog title={<IconButton tabIndex={-1} icon="arrow-left" variant="ghost" onClick={() => dialog.close()} aria-label={t("common.goBack")} />} transition>
-      <div class="flex flex-col gap-6 overflow-y-auto max-h-[60vh]">
+    <Dialog size="large">
+      <DialogHeader>
+        <DialogTitle>
+          <IconButton tabIndex={-1} icon="arrow-left" variant="ghost" onClick={() => dialog.close()} aria-label={t("common.goBack")} />
+        </DialogTitle>
+      </DialogHeader>
+      <DialogBody class="flex flex-col gap-6 overflow-y-auto max-h-[60vh] px-4 pb-4">
         <div class="flex gap-4 items-center">
           <ProviderIcon id="synthetic" class="size-5 shrink-0 icon-strong-base" />
           <div class="text-16-medium text-text-strong">{t("provider.custom.title")}</div>
@@ -134,7 +139,7 @@ export function DialogCustomProvider(props: { readonly existing: ReadonlySet<str
             {saving() ? t("common.saving") : t("common.submit")}
           </Button>
         </form>
-      </div>
+      </DialogBody>
     </Dialog>
   )
 }

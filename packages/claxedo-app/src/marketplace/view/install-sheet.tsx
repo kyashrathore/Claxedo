@@ -2,7 +2,7 @@ import { createSignal, For, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { failureMessage } from "@/lib/failure"
 import { useServer, type PluginCandidate, type PluginHarness } from "@/server"
-import { Button, Dialog, showToast, useDialog } from "@/ui"
+import { Button, Dialog, showToast, useDialog, DialogBody, DialogHeader, DialogTitle } from "@/ui"
 import { marketplaceDictionary } from "../i18n"
 import { pluginLabel } from "../model"
 import { InstallHarnesses, InstallPlacement, harnessRows } from "./install-sections"
@@ -94,8 +94,13 @@ export function InstallPluginSheet(props: {
   }
   const sheet = createInstall({ plugin: props.plugin, revision: props.revision, done: finish })
   return (
-    <Dialog title={<SheetHeader plugin={props.plugin} />} size="large" transition>
-      <div class="flex flex-col">
+    <Dialog size="large">
+      <DialogHeader>
+        <DialogTitle>
+          <SheetHeader plugin={props.plugin} />
+        </DialogTitle>
+      </DialogHeader>
+      <DialogBody class="flex flex-col px-4 pb-4">
         <InstallPlacement />
         <InstallHarnesses rows={rows()} selected={selected()} onChange={setSelected} />
         <Show when={sheet.error()}>
@@ -121,7 +126,7 @@ export function InstallPluginSheet(props: {
             </Button>
           </div>
         </footer>
-      </div>
+      </DialogBody>
     </Dialog>
   )
 }

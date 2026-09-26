@@ -1,5 +1,5 @@
 import { Show } from "solid-js"
-import { useDialog, Dialog, Button } from "@/ui"
+import { useDialog, Dialog, Button, DialogBody, DialogHeader, DialogTitle } from "@/ui"
 import type { ImageMark, ImagePart as ImageAttachmentPart } from "../model"
 import { useComposerText } from "../text"
 import { MarkCommentBox, commentBoxPosition } from "./comment-box"
@@ -43,8 +43,11 @@ export function ImageMarkEditor(props: ImageMarkEditorProps) {
   }
 
   return (
-    <Dialog title={t("prompt.imageMarks.title")} size="viewport" scrim="strong">
-      <div class="flex flex-1 min-h-0 flex-col gap-3">
+    <Dialog size="viewport" class="claxedo-modal-backdrop">
+      <DialogHeader>
+        <DialogTitle>{t("prompt.imageMarks.title")}</DialogTitle>
+      </DialogHeader>
+      <DialogBody class="flex flex-1 min-h-0 flex-col gap-3 px-4 pb-4">
         <div ref={fit.setStage} class="flex flex-1 min-h-0 min-w-0 items-center justify-center">
           <div class="relative select-none" style={fit.shown()}>
             <img
@@ -107,7 +110,7 @@ export function ImageMarkEditor(props: ImageMarkEditorProps) {
             {t("common.save")}
           </Button>
         </div>
-      </div>
+      </DialogBody>
     </Dialog>
   )
 }

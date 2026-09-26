@@ -4,12 +4,13 @@ import { useI18n } from "../../context/i18n"
 import "./dialog-v2.css"
 
 export interface DialogProps extends ParentProps {
-  size?: "normal" | "large" | "x-large"
+  size?: "normal" | "large" | "x-large" | "viewport"
   variant?: "default" | "settings"
   class?: ComponentProps<"div">["class"]
   containerClass?: ComponentProps<"div">["class"]
   classList?: ComponentProps<"div">["classList"]
   fit?: boolean
+  "aria-label"?: string
 }
 
 export interface DialogHeaderProps extends ParentProps {
@@ -82,7 +83,7 @@ export function DialogHeader(props: DialogHeaderProps) {
 }
 
 export function Dialog(props: DialogProps) {
-  const [local] = splitProps(props, ["size", "variant", "class", "containerClass", "classList", "fit", "children"])
+  const [local] = splitProps(props, ["size", "variant", "class", "containerClass", "classList", "fit", "children", "aria-label"])
 
   return (
     <div
@@ -94,6 +95,7 @@ export function Dialog(props: DialogProps) {
       <div data-slot="dialog-container" classList={{ "ui-dialog-container": true, [local.containerClass ?? ""]: !!local.containerClass }}>
         <Kobalte.Content
           data-slot="dialog-content"
+          aria-label={local["aria-label"]}
           classList={{
             "ui-dialog-content": true,
             ...local.classList,

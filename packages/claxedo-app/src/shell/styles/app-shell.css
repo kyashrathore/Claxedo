@@ -15,7 +15,7 @@
 }
 
 [data-component="dialog-overlay"],
-[data-component="dialog"] {
+[data-component="dialog-v2"] {
   z-index: var(--z-modal) !important;
 }
 
@@ -591,14 +591,14 @@ body:has([data-slot="dialog-content"].command-palette-dialog) .ui-dialog-overlay
   display: none;
 }
 
-[data-component="dialog"]:has(> [data-slot="dialog-container"] > .workspace-page-dialog-shell)
+[data-component="dialog-v2"]:has(> [data-slot="dialog-container"] > .workspace-page-dialog-shell)
   > [data-slot="dialog-container"] {
   width: min(calc(100vw - 32px), 1120px);
   height: min(calc(100vh - 72px), 860px);
 }
 
 @media (max-width: 767px) {
-  [data-component="dialog"]:has(> [data-slot="dialog-container"] > .workspace-page-dialog-shell)
+  [data-component="dialog-v2"]:has(> [data-slot="dialog-container"] > .workspace-page-dialog-shell)
     > .ui-dialog-container {
     width: 100vw;
     height: 100dvh;

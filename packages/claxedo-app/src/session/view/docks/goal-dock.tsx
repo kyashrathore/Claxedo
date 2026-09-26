@@ -1,5 +1,5 @@
 import { For, Show, createSignal } from "solid-js"
-import { ClaxedoIcon as Icon, Button, Dialog } from "@/ui"
+import { ClaxedoIcon as Icon, Button, Dialog, DialogBody, DialogHeader, DialogTitle } from "@/ui"
 import { useDialog } from "@/ui"
 import type { SessionScreenTextKey } from "../i18n"
 import { useSessionScreenText } from "../text"
@@ -29,8 +29,11 @@ function GoalDeleteDialog(props: { action: DockAction<GoalControl>; remove: () =
   const dialog = useDialog()
   const removing = () => props.action.runningAction() === "remove"
   return (
-    <Dialog title={t("sessionScreen.goal.deleteTitle")} fit>
-      <div class="flex flex-col gap-4">
+    <Dialog fit>
+      <DialogHeader>
+        <DialogTitle>{t("sessionScreen.goal.deleteTitle")}</DialogTitle>
+      </DialogHeader>
+      <DialogBody class="flex flex-col gap-4 px-4 pb-4">
         <p class="text-14-regular text-text-strong">{t("sessionScreen.goal.deleteConfirm")}</p>
         <Show when={props.action.error()}>
           {(error) => <p role="alert" class="text-12-regular text-icon-critical-base">{error().message}</p>}
@@ -48,7 +51,7 @@ function GoalDeleteDialog(props: { action: DockAction<GoalControl>; remove: () =
             {t(removing() ? "sessionScreen.action.loading" : "sessionScreen.goal.delete")}
           </Button>
         </div>
-      </div>
+      </DialogBody>
     </Dialog>
   )
 }

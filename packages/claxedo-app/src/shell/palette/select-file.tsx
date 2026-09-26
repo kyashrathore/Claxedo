@@ -2,7 +2,7 @@ import { createSignal, Match, onCleanup, Show, Switch, type JSX } from "solid-js
 import { useTranslator } from "@/i18n"
 import { useAgeClock } from "@/lib/clock"
 import type { PlacementId } from "@/server"
-import { useDialog, ClaxedoIcon as Icon, Dialog, FileIcon, Keybind, List } from "@/ui"
+import { useDialog, ClaxedoIcon as Icon, Dialog, FileIcon, Keybind, List, DialogBody } from "@/ui"
 import { getDirectory, getFilename } from "@/ui/utils"
 import { shellDictionary } from "../i18n"
 import { useShellRoute } from "../router"
@@ -110,22 +110,24 @@ export function DialogSelectFile(props: DialogSelectFileProps): JSX.Element {
   }
   onCleanup(() => state.committed || state.cleanup?.())
   return (
-    <Dialog flush class="command-palette-dialog !max-h-[480px]" transition aria-label={label()}>
-      <div data-testid={props.mode === "files" ? "file-palette" : "command-palette"}>
-        <List
-          search={{ placeholder: label(), autofocus: true, hideIcon: true }}
-          emptyMessage={t("shell.palette.empty")}
-          loadingMessage={t("shell.loading")}
-          items={items}
-          key={(item) => item.id}
-          filterKeys={["title", "description", "category"]}
-          groupBy={grouped() ? (item) => item.category : () => ""}
-          onMove={move}
-          onSelect={select}
-        >
-          {(item) => <EntryRow item={item} />}
-        </List>
-      </div>
+    <Dialog size="large" class="command-palette-dialog !max-h-[480px]" aria-label={label()}>
+      <DialogBody>
+        <div data-testid={props.mode === "files" ? "file-palette" : "command-palette"}>
+          <List
+            search={{ placeholder: label(), autofocus: true, hideIcon: true }}
+            emptyMessage={t("shell.palette.empty")}
+            loadingMessage={t("shell.loading")}
+            items={items}
+            key={(item) => item.id}
+            filterKeys={["title", "description", "category"]}
+            groupBy={grouped() ? (item) => item.category : () => ""}
+            onMove={move}
+            onSelect={select}
+          >
+            {(item) => <EntryRow item={item} />}
+          </List>
+        </div>
+      </DialogBody>
     </Dialog>
   )
 }
