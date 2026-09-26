@@ -78,10 +78,7 @@ function matches(selector: Selector, value: string): boolean {
 function readerFolders(root: string): string[] {
   const own = [join(root, "src"), join(root, "e2e"), pluginsDirectory(root)]
   if (root !== packageRoot) return [...own, join(root, "readers")]
-  return [
-    ...own,
-    join(repoRoot, "packages/ui/src"),
-  ]
+  return [...own, join(root, "perf-harness"), join(repoRoot, "packages/ui/src")]
 }
 
 function writerFolders(root: string): string[] {

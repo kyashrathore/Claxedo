@@ -10,6 +10,7 @@ import { createDiffContent } from "../diff-content"
 import { useErrorText } from "../errors"
 import { reviewDictionary, type ReviewKey } from "../i18n"
 import { isBaseReviewMode, scopeOf, selectionOf, type ReviewSelection } from "../intent"
+import { loadedDiffIdentity } from "../loaded-diff-identity"
 import { useReview } from "../store"
 import { createReviewScrollRestoration } from "../scroll-restoration"
 import { createCodeViewComments } from "./code-view-comments"
@@ -133,7 +134,7 @@ function ReviewEmpty(props: { readonly placementId: PlacementId; readonly select
 
 function createPaintAccounting(files: () => readonly string[]) {
   const loaded = createMemo(() => files())
-  const identity = createMemo(() => JSON.stringify([...loaded()].sort()))
+  const identity = createMemo(() => loadedDiffIdentity(loaded()))
   const [hunks, setHunks] = createSignal(0)
   createEffect(on(identity, () => setHunks(0), { defer: true }))
   return { loaded, identity, hunks, painted: () => setHunks((count) => count + 1) }

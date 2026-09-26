@@ -358,10 +358,11 @@ export const desktopRenderer: Policy = {
     requiredPackages: ["solid-js"],
   },
 
-  // Measured 2026-09-26 when this renderer became the only one: 1,206
-  // modules and 37 packages, no headroom. The kit (`@opencode-ai/ui`) is one of
-  // the packages; its source is not walked.
-  ceilings: { modules: 1206, packages: 37 },
+  // 1,207 modules and 37 packages, no headroom. The Review tab's
+  // `review/loaded-diff-identity.ts` is its own module because the benchmark
+  // driver imports it to compute the identity it waits for. The kit
+  // (`@opencode-ai/ui`) is one of the packages; its source is not walked.
+  ceilings: { modules: 1207, packages: 37 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

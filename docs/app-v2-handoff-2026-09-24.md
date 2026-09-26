@@ -740,3 +740,59 @@ Every other lane is stopped: adapter, session-data, kit, tools, settings-access,
 **Unmet / owners.**
 1. The Claxedo driver must list the fast ids and should cache the fixture-backed state. The patch is `scratchpad/driver-fast-scenarios.patch` in the bench-fast session scratchpad (`/private/tmp/claude-501/-Users-yashvardhansingh-test-opencode/b8fc7026-28c0-4b62-97e7-6646f6620b5a/scratchpad/`), 2 files, +35/−7, with its test. It applies cleanly to `v2/bench-final`, and the driver test passes (17/17) on a scratch copy. The validation used that copy; the monorepo is untouched. Owner: whoever lands the driver.
 2. v2's Files tree renders no rows at the moderate and heavy loads on `23f688c2a0`. This also invalidated 85/120 panel observations in full-a4. Owner: the v2 panel lane.
+
+## Benchmark: fast preset on the final tip
+
+**Direct answer.** With the driver restored on `v2/bench-driver`, the fast preset measures every row for both apps: 20 of 20 rows valid, 0 invalid observations. One run took 6m 41s on a loaded Mac on battery, so the 5-minute target was not met on this host; no case waited out a timeout.
+
+**What ran.**
+- **Apps.** v1 is the archived `publication-run-5/apps/v1/Claxedo Dev.app`. The new app is `Claxedo Dev.app`, packaged from this branch at `6f88ec9971` (ad-hoc signed). The later driver commits change no app source.
+- **Driver.** `CLAXEDO_ROOT` pointed at this worktree, so the benchmark loaded `packages/claxedo-app/perf-harness`.
+- **Command.** `node bin/agent-app-benchmark.mjs compare --preset claxedo-v1-vs-v2-fast --id claxedo-fast-tip-6f88ec9971-r4 --output-root <dir>`, then `verdict --output-root <dir>`, from the benchmark repo at `d910dd9`.
+
+| Run | Wall clock | 1-min load min–median–max | Power |
+|---|---:|---|---|
+| 1 | 6m 41s | 13.08–18.09–24.38 | battery (45% → 38%) |
+
+The validation runs had a median load of 4.4–6.3 on AC. In this run, each step took 1.2–1.8 times as long as in those runs.
+
+Ratios are v1 median / new-app median, so a ratio above 1 favours the new app. The last column compares each verdict with the three validation runs above (build `23f688c2a0`).
+
+| Row | v1 median | New app median | v1/new ratio [95% CI] | Verdict | vs. validation runs |
+|---|---:|---:|---|---|---|
+| App start, fresh profile | 1.63 s | 2.18 s | 0.75 [0.48–1.23] | n.r.d. | same: no reliable win |
+| App start, existing profile | 2.94 s | 1.76 s | 1.68 [1.01–2.54] | n.r.d. | was new app ×3; p=0.114 at n=4 under this load |
+| Switch to unvisited session, same workspace | 58.3 ms | 33.4 ms | 1.75 [1.29–10.1] | new app | same |
+| Switch to unvisited session, other workspace | 62.8 ms | 28.9 ms | 2.17 [1.52–6.28] | new app | same |
+| Return to visited session, same workspace | 18.0 ms | 24.6 ms | 0.73 [0.69–0.74] | v1 | same |
+| Return to visited session, other workspace | 17.4 ms | 16.3 ms | 1.07 [0.83–1.15] | n.r.d. | was v1 ×3; the new app now returns in about 16 ms instead of 50 ms |
+| Switch to 1 MiB session | 49.5 ms | 33.1 ms | 1.50 [1.15–1.79] | new app | same |
+| Switch to 8 MiB session | 49.7 ms | 30.1 ms | 1.65 [1.49–2.00] | new app | same |
+| Switch to 1 MiB of long text rows | 130.2 ms | 73.7 ms | 1.77 [1.11–2.81] | new app | same |
+| History navigation: first visit, 1 MiB | 699.6 ms | 42.9 ms | 16.3 [5.18–113.0] | new app | was n.r.d. / new app / new app |
+| History navigation: return, panel closed, 1 MiB | 24.4 ms | 15.6 ms | 1.56 [0.99–2.08] | n.r.d. | was new app ×3; p=0.095 at n=5 |
+| Return to visited session, workspace panel open (moderate) | 41.1 ms | 23.6 ms | 1.74 [1.34–1.83] | new app | new: withheld before |
+| Workspace panel open-panel (moderate) | 135.4 ms | 59.0 ms | 2.29 [1.97–2.43] | new app | new: withheld before |
+| Workspace panel files-to-review (moderate) | 14.7 ms | 15.0 ms | 1.02 [0.94–1.12] | tie | new: withheld before |
+| Workspace panel review-to-files (moderate) | 15.8 ms | 24.2 ms | 0.65 [0.63–0.68] | v1 | new: withheld before |
+| Workspace panel open-file (moderate) | 36.8 ms | 40.6 ms | 0.90 [0.63–1.03] | n.r.d. | new: withheld before |
+| Workspace panel collapse-all (moderate) | 33.4 ms | 24.4 ms | 1.37 [1.04–1.45] | new app | new: withheld before |
+| Memory (RSS) idle after launch | 1013 MiB | 739 MiB | 1.37 | new app | same |
+| Memory (RSS) idle after the switching workload | 1047 MiB | 769 MiB | 1.36 | new app | same |
+| CPU while idle | 16.9% | 3.1% | 5.46 [1.08–241.1] | new app | same |
+
+**Panel design notes.**
+- **The new app retains its panel body.** Closing the panel hides the Files and Review roots but keeps them mounted, so the next open is warm. v1 disposes them on close and rebuilds them on open. Part of open-panel's 2.29× comes from that design, not from a faster cold build.
+- **The driver's precondition changed.** It now requires a closed panel to be hidden rather than disposed: the panel is closed and settled, and none of its surfaces is on screen. This applies to both apps.
+- **The Files tree is virtualized.** When a row it needs is not in the DOM, the driver scrolls the tree from the top until the row renders. v1 renders every row, so it never scrolls.
+- **v1 still wins Review to Files.** The new app lands one display frame later (24.2 against 15.8 ms).
+
+**Driver defects that invalidated rows, now fixed.** `1af9895c17` restored the driver from `0ff4ff0d96^`. That source predates three fixes that exist only on `v2/bench-final`, so they are cherry-picked here:
+- **`713124e073`: a Review row is the outermost element carrying its file.** v1 also marks each file's header, so the driver counted 48 rows against 24 rendered files. As a result, v1's Diff readiness never held: "Claxedo Diff panel did not reach stable canonical readiness". All v1 panel rows were withheld, and so was the panel-open return.
+- **`5d90ca9a61`: a shell taken out of layout counts as closed.** The new app closes with `display: none`, but the driver expected a shell translated past the right edge. The new app's history rows failed with "Claxedo workspace panel did not close" (`rect` left 0, width 0).
+- **`c77feed464`: shutdown waits for the daemon's own exit.**
+
+Two runs on the driver without these fixes (7m 51s and 8m 03s, median load about 17) failed the same cases in the same way, and they are discarded. One of them also had a single failure of the new app's panel-open return: "Claxedo Files panel did not reach stable above-fold readiness: {rows: 0, stable: 0}". It did not recur in the other run or in the run above.
+
+**Unmet.**
+- **The 5-minute target.** It is unproven on this host at this load. Step times scaled with the load, and no case timed out. The next run on a lighter host should show whether it fits.

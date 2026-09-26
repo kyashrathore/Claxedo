@@ -1,0 +1,20 @@
+{
+  "name": "@claxedo/perf-harness",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "public-agent-driver": "bun src/public-agent-app-driver.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test ./test",
+    "verify": "bun run typecheck && bun run test"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "20.0.11",
+    "@types/bun": "1.3.13",
+    "playwright-core": "1.61.1",
+    "typescript": "7.0.2"
+  },
+  "dependencies": {
+    "agent-app-benchmark": "link:agent-app-benchmark"
+  }
+}
