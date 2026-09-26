@@ -7,6 +7,7 @@ import path from "node:path"
 import { serveDriver, type DriverHandlers, type PrepareParams } from "agent-app-benchmark/driver-sdk"
 import type { WorkspaceFixtureManifest, WorkspaceLoad } from "agent-app-benchmark/driver-sdk"
 import { measureSessionActivation } from "./agent-browser-observer"
+import { ensureFrontWindow } from "./front-window"
 import { readFlag, readText } from "./page-value"
 import { launchPackagedClaxedo, type ClaxedoLaunch, type OwnedProcess as LaunchedProcess } from "./agent-claxedo-launcher"
 import { isRecord, numberField, recordField, recordsField, textField } from "./json-fields"
@@ -586,6 +587,7 @@ async function makeDefaultDependencies(applicationId: ApplicationId): Promise<Dr
     },
     activate: async (target, readinessTimeoutMs) => {
       if (!current) throw new Error("Claxedo renderer is not running")
+      await ensureFrontWindow(current.page, current.application.pid)
       const result = await measureSessionActivation(current.page, target, { readinessTimeoutMs })
       if (result.state !== "exact") throw new Error(`Claxedo session activation failed: ${result.reason}`)
       return {

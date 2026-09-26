@@ -6,6 +6,7 @@ import { installAgentBrowserObserver, measureSessionActivation, type PaintedMess
 import { readProcessTable, sameProcessIdentity, toIdleRows, type ProcessSnapshot } from "./agent-process-family";
 import { IdleProcessFamilyTracker } from "./idle-process-family";
 import { connectCdpPage, type BenchmarkPage } from "./agent-cdp-page";
+import { ensureFrontWindow } from "./front-window";
 import { optionalRecord, readBoolean, readFlag, readNumber, readRecord, readRecords, readSize, readText } from "./page-value";
 import { AGENT_APP_WINDOW } from "./agent-display-contract";
 import { writeJson } from "./storage";
@@ -534,6 +535,7 @@ export async function launchPackagedClaxedo(input: {
     }
     const readinessTarget = input.readinessTargets[0];
     if (!readinessTarget) throw new Error("Packaged Claxedo readiness requires a canonical session target");
+    await ensureFrontWindow(connectedPage, application.pid);
     const semanticReadiness = await measureSessionActivation(connectedPage, readinessTarget);
     if (semanticReadiness.state !== "exact") {
       throw new Error(`Packaged Claxedo strict semantic readiness failed: ${semanticReadiness.reason}`);
