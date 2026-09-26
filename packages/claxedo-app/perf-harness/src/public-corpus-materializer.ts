@@ -331,7 +331,9 @@ async function materializeSession(input: {
   let messageCount = 0
   let sessionInfo: SessionInfo | undefined
   let currentMessage: MessageInfo | undefined
-  let latestAssistant: { messageId: string; partId: string; textSha256: string } | undefined
+  let latestAssistant:
+    | { messageId: string; partIds: string[]; textSha256ByPart: Record<string, string>; textSha256?: string }
+    | undefined
   const lines = createInterface({ input: createReadStream(file), crlfDelay: Infinity })
   for await (const line of lines) {
     if (line.length === 0) continue
@@ -388,11 +390,15 @@ async function materializeSession(input: {
       input.database.setPart(id, currentMessage.id, expectedSequence, data)
       input.database.recordEvent({ id: event.id, type: "message.part.updated", properties: event.data })
       transcriptBytes += partPayloadBytes(part)
-      if (currentMessage.role === "assistant" && part.type === "text" && typeof part.text === "string") {
-        latestAssistant = {
-          messageId: currentMessage.id,
-          partId: part.id,
-          textSha256: createHash("sha256").update(normalizeSemanticText(part.text)).digest("hex"),
+      if (currentMessage.role === "assistant") {
+        if (latestAssistant?.messageId !== currentMessage.id) {
+          latestAssistant = { messageId: currentMessage.id, partIds: [], textSha256ByPart: {} }
+        }
+        latestAssistant.partIds.push(part.id)
+        if (part.type === "text" && typeof part.text === "string") {
+          const textSha256 = createHash("sha256").update(normalizeSemanticText(part.text)).digest("hex")
+          latestAssistant.textSha256ByPart[part.id] = textSha256
+          latestAssistant.textSha256 = textSha256
         }
       }
     } else {
@@ -403,7 +409,7 @@ async function materializeSession(input: {
   if (fileHash.digest("hex") !== input.session.fileDigestSha256 || expectedSequence !== input.session.eventCount) {
     throw new Error(`Claxedo corpus file integrity failed for ${input.session.logicalSessionId}`)
   }
-  if (!sessionInfo || !latestAssistant || transcriptBytes !== input.session.transcriptBytes) {
+  if (!sessionInfo || !latestAssistant?.textSha256 || transcriptBytes !== input.session.transcriptBytes) {
     throw new Error(`Claxedo corpus semantics failed for ${input.session.logicalSessionId}`)
   }
   return {
@@ -422,8 +428,8 @@ async function materializeSession(input: {
       title: sessionInfo.title,
       expectedMessageIds: [latestAssistant.messageId],
       expectedContentSha256: { [latestAssistant.messageId]: latestAssistant.textSha256 },
-      expectedTextPartSha256: { [latestAssistant.partId]: latestAssistant.textSha256 },
-      expectedPartIds: [latestAssistant.partId],
+      expectedTextPartSha256: latestAssistant.textSha256ByPart,
+      expectedPartIds: latestAssistant.partIds,
     },
     messageCount,
     transcriptBytes,

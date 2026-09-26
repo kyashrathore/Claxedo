@@ -167,6 +167,27 @@ describe("public OpenCode corpus materialization", () => {
     }
   })
 
+  test("a latest turn that paints a tool row before its text expects every part of that turn", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "claxedo-public-corpus-tool-turn-"))
+    try {
+      const corpus = await writeCorpus(root, false, true)
+      const result = await materializeClaxedoPublicCorpus({
+        corpusDirectory: corpus.directory,
+        corpusManifestPath: corpus.manifestPath,
+        expectedCorpusDigestSha256: corpus.corpusDigestSha256,
+        expectedEventSchemaDigestSha256: corpus.eventSchemaDigestSha256,
+        dataDirectory: path.join(root, "state", "data"),
+        workspaceDirectory: path.join(root, "workspaces"),
+      })
+      const target = result.readinessTargets.get("control")!
+      expect(target.expectedPartIds).toEqual(["prt_step", "prt_tool", "prt_assistant"])
+      expect(Object.keys(target.expectedTextPartSha256)).toEqual(["prt_assistant"])
+      expect(target.expectedContentSha256.msg_assistant).toBe(target.expectedTextPartSha256.prt_assistant)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   test("rejects reordered events before committing native state", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "claxedo-public-corpus-invalid-"))
     try {
@@ -280,7 +301,7 @@ describe("public OpenCode corpus materialization", () => {
   })
 })
 
-async function writeCorpus(root: string, reorder = false) {
+async function writeCorpus(root: string, reorder = false, toolBeforeText = false) {
   const directory = path.join(root, "corpus")
   await mkdir(path.join(directory, "sessions"), { recursive: true })
   const sessionID = "ses_bench_control"
@@ -291,6 +312,27 @@ async function writeCorpus(root: string, reorder = false) {
     aggregateID: sessionID,
     data,
   })
+  const toolInput = { command: "ls" }
+  const toolOutput = "ok"
+  const leadingParts = toolBeforeText
+    ? [
+        { id: "prt_step", type: "step-start" },
+        {
+          id: "prt_tool",
+          type: "tool",
+          callID: "call_1",
+          tool: "bash",
+          state: {
+            status: "completed",
+            input: toolInput,
+            output: toolOutput,
+            title: "ls",
+            metadata: {},
+            time: { start: 1_700_000_000_003, end: 1_700_000_000_004 },
+          },
+        },
+      ]
+    : []
   const events = [
     event("evt_0", "session.created.1", 0, {
       sessionID,
@@ -346,7 +388,14 @@ async function writeCorpus(root: string, reorder = false) {
         finish: "stop",
       },
     }),
-    event("evt_4", "message.part.updated.1", 4, {
+    ...leadingParts.map((part, index) =>
+      event(`evt_lead_${index}`, "message.part.updated.1", 4 + index, {
+        sessionID,
+        part: { ...part, sessionID, messageID: "msg_assistant" },
+        time: 1_700_000_000_004,
+      }),
+    ),
+    event("evt_4", "message.part.updated.1", 4 + leadingParts.length, {
       sessionID,
       part: {
         id: "prt_assistant",
@@ -375,8 +424,8 @@ async function writeCorpus(root: string, reorder = false) {
         nativeSessionId: sessionID,
         workspaceId: "workspace-a",
         role: "control",
-        transcriptBytes: 10,
-        eventCount: 5,
+        transcriptBytes: 10 + (toolBeforeText ? JSON.stringify(toolInput).length + toolOutput.length : 0),
+        eventCount: 5 + leadingParts.length,
         file,
         fileDigestSha256: createHash("sha256").update(bytes).digest("hex"),
       },
