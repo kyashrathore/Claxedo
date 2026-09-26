@@ -237,6 +237,7 @@ test("12 a session switch shows the previous session until the next one is laid 
       const reads = await settled()
       await info.attach(`${label} switch`, { body: [...seen.states, "", `settled +${seen.settledAt}ms`, ...reads].join("\n"), contentType: "text/plain" })
       expect.soft(seen.empty, "frames with an empty, loading or missing session body").toEqual([])
+      expect.soft(seen.overlaid, "frames painting two sessions at once").toEqual([])
       expect.soft(seen.jumps, `frames where the ${label} session's rows or scroll moved after it first showed`).toEqual([])
       expect.soft(seen.footers, `composer footer labels of the ${label} session`).toHaveLength(1)
       expect.soft(seen.railApart, "frames where the rail selects a session other than the one shown").toEqual([])

@@ -18,7 +18,7 @@ export function timelineVirtualEntry<Item, Row>(input: {
 }
 
 export function timelineInitialRevealVisibility(input: { ready: boolean }) {
-  return input.ready ? "visible" : "hidden"
+  return input.ready ? undefined : "hidden"
 }
 
 export function timelineInitialRevealShouldScroll(input: { hasScrollGesture: boolean; shouldAnchorBottom: boolean }) {

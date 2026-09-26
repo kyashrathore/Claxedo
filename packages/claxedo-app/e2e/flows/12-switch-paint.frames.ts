@@ -18,18 +18,13 @@ type RecorderWindow = Window & { __claxedoSwitchFrames?: Promise<SwitchFrame[]> 
 
 export async function recordSwitchFrames(app: Page, input: { readonly targetId: string; readonly quietFrames: number }): Promise<() => Promise<SwitchFrame[]>> {
   await app.evaluate(({ targetId, quietFrames }) => {
-    const shown = (element: Element) => {
-      const host = element.closest("[data-workbench-content]")
-      if (!host || host.getAttribute("aria-hidden") === "true") return false
-      const style = getComputedStyle(element)
-      const box = element.getBoundingClientRect()
-      return style.visibility !== "hidden" && style.display !== "none" && Number(style.opacity) > 0 && box.width > 0 && box.height > 0
-    }
+    const painted = (element: Element) => element.checkVisibility({ opacityProperty: true, visibilityProperty: true })
+    const shown = (root: Element) => [root, ...root.querySelectorAll("[data-session-timeline-root], [data-timeline-key]")].some(painted)
     const pane = (root: HTMLElement): PaneFrame => {
       const scroller = root.querySelector<HTMLElement>('[data-slot="session-timeline-scroll"] [data-scrollable]')
       const timeline = root.querySelector<HTMLElement>("[data-session-timeline-root]")
       const view = scroller?.getBoundingClientRect()
-      const rows = timeline && getComputedStyle(timeline).visibility !== "hidden" && view
+      const rows = timeline && painted(timeline) && view
         ? [...root.querySelectorAll<HTMLElement>("[data-timeline-key]")]
             .map((row) => ({ key: row.dataset.timelineKey ?? "", box: row.getBoundingClientRect() }))
             .filter((row) => row.box.height > 0 && row.box.bottom > view.top && row.box.top < view.bottom)
@@ -78,6 +73,7 @@ export type SwitchReport = {
   readonly settledAt: number | undefined
   readonly sessions: readonly string[]
   readonly empty: readonly string[]
+  readonly overlaid: readonly string[]
   readonly jumps: readonly string[]
   readonly footers: readonly string[]
   readonly railApart: readonly string[]
@@ -88,8 +84,7 @@ function describe(frame: SwitchFrame): string {
 }
 
 function emptyBody(frame: SwitchFrame): boolean {
-  const pane = frame.panes[0]
-  return frame.panes.length !== 1 || !pane.body || !pane.composer || pane.placeholders > 0 || pane.turnLoading > 0 || pane.rows.length === 0
+  return frame.panes.length === 0 || frame.panes.some((pane) => !pane.body || !pane.composer || pane.placeholders > 0 || pane.turnLoading > 0 || pane.rows.length === 0)
 }
 
 export function switchReport(frames: readonly SwitchFrame[], targetId: string): SwitchReport {
@@ -111,6 +106,7 @@ export function switchReport(frames: readonly SwitchFrame[], targetId: string): 
     settledAt: states.length > 1 ? Number(/^\+(\d+)ms/.exec(states.at(-1) ?? "")?.[1]) : undefined,
     sessions,
     empty: frames.filter(emptyBody).map(describe),
+    overlaid: frames.filter((frame) => frame.panes.length > 1).map(describe),
     jumps: first ? target.filter((frame) => layout(frame.panes[0]) !== layout(first)).map(describe) : [],
     footers: [...new Set(target.map((frame) => frame.panes[0].footer))],
     railApart: frames.filter((frame) => frame.panes.length === 1 && frame.rail !== frame.panes[0].sessionId).map(describe),
