@@ -1,6 +1,7 @@
 import type { SDKActiveGoalMessage, SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { AgentGoalMutationResult } from "@claxedo/agent-runtime-contract"
 import type { HarnessSession, ProviderTurnSettlement, RoutedEvent, SessionBroker, StartInput, TurnBroker, TurnRef } from "../../contract"
+import { nativeGoalPrompt } from "../../contract"
 import { ClaudeProcess } from "./process"
 import { ClaudeQueryLauncher } from "./query-options"
 import { observeClaudeSessionMessage } from "./session-events"
@@ -20,7 +21,7 @@ export class ClaudeGoals {
     const { input } = entry
     if (this.running.has(input.sessionId)) return { ok: false, status: "conflict", message: "Claude Goal is running" }
     const abort = new AbortController()
-    const admitted = await broker.admitProviderTurn({ reason: "goal" }, (turnBroker, turn) => this.run(entry, broker, turnBroker, turn, `/goal ${objective}`, abort))
+    const admitted = await broker.admitProviderTurn({ reason: "goal" }, (turnBroker, turn) => this.run(entry, broker, turnBroker, turn, nativeGoalPrompt(objective), abort))
     if (!admitted.admitted) return { ok: false, status: "conflict", message: `Claude Goal admission ${admitted.reason}` }
     const running = { turnId: admitted.turn.turnId, abort, settled: admitted.settled }
     this.running.set(input.sessionId, running)
@@ -44,7 +45,7 @@ export class ClaudeGoals {
     const timeout = setTimeout(() => abort.abort(), 30_000)
     try {
       let confirmed = false
-      for await (const _event of this.run(entry, broker, undefined, undefined, "/goal clear", abort, true, () => { confirmed = true })) {}
+      for await (const _event of this.run(entry, broker, undefined, undefined, nativeGoalPrompt("clear"), abort, true, () => { confirmed = true })) {}
       if (!confirmed) throw new Error("Claude did not confirm clearing the native Goal")
       const paused = { ...goal, status: "paused" as const, updatedAt: Date.now() }
       await broker.goal.publish(paused)

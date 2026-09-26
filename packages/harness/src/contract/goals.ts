@@ -1,6 +1,12 @@
 import { isRuntimeGoalStatus, type RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 
+export const NATIVE_GOAL_COMMAND = "/goal"
+
+export function nativeGoalPrompt(objective: string): string {
+  return `${NATIVE_GOAL_COMMAND} ${objective}`
+}
+
 export function goalSnapshotFromRecord(sessionId: string, value: unknown, options: {
   invalid: () => Error
   now?: number
