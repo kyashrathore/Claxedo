@@ -15,7 +15,8 @@
     "test": "bun test --conditions browser src",
     "check": "bun scripts/checks/run.ts",
     "e2e": "bun ./e2e/run.ts",
-    "e2e:perf-stream": "bun ./e2e/perf/run.ts"
+    "e2e:perf-stream": "bun ./e2e/perf/run.ts",
+    "test:perf-harness": "bun run --cwd perf-harness verify"
   },
   "license": "MIT",
   "devDependencies": {

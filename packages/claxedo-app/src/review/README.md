@@ -11,6 +11,7 @@ Owns: the workspace panel's Review tab and its Changes column, ported from v1. T
 - **Changes column** (`view/source-control-view.tsx`): the commit message and split commit button ("Commit", "Commit & Push", "Amend last commit"; commit needs a message and staged files), the push row ("Publish Branch", "Push N" or "Up to date"), the compared files while the scope compares refs, "Staged changes" and "Changes" with stage and unstage, and the collapsed "Graph" of the last 50 commits. A row opens its diff in the Review tab in that group's scope.
 - **Git actions** (`git-actions.ts`): one `@/lib/flow` for stage, unstage, commit and push, so the column knows which one runs and shows the last failure under the commit button.
 - **Diff style**: unified or split, one preference for the user.
+- **Loaded-diff identity** (`loaded-diff-identity.ts`): the sorted paths whose diffs the Review tab has loaded, written as its `data-review-loaded-diff-identity`. The benchmark driver computes the value it waits for with the same function.
 
 ## Invariants
 

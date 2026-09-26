@@ -121,6 +121,12 @@ Directives a tool reads are not comments and stay, with no prose added: `// @ts-
 - **No main-thread task over 50 ms during an interaction.**
 - **Every cache has a size cap, and every subscription is disposed with its owner.**
 
+## Benchmark driver
+
+- `perf-harness/` is the agent-app-benchmark's Claxedo driver. The benchmark loads it from that path, so it stays there. It has its own manifest, is not a workspace member, and is verified with `bun run test:perf-harness`.
+- Its readiness predicates read the app's hooks. Removing or renaming a `data-testid`, `data-slot` or `data-component` it selects breaks the benchmark; `claxedo-names` counts `perf-harness/` as a reader.
+- The same driver measures the archived v1 app and this app, so its preconditions describe what a user sees, not one app's internals.
+
 ## End-to-end tests
 
 The suite must be robust, working, honest and fast.
