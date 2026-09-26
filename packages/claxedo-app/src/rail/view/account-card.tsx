@@ -59,7 +59,7 @@ function IdentityMark(props: { readonly view: AccountView; readonly size: "trigg
           </span>
         }
       >
-        <Avatar fallback={props.view.label} src={props.view.image} size="small" class="shrink-0" aria-hidden="true" />
+        <Avatar fallback={props.view.label} src={props.view.image} size="normal" aria-hidden="true" />
       </Show>
     </Show>
   )

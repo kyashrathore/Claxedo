@@ -40,7 +40,7 @@ export function ProjectIconField(props: {
               when={props.state.iconUrl}
               fallback={
                 <div class="size-full flex items-center justify-center">
-                  <Avatar fallback={props.state.label} {...getAvatarColors(props.state.color)} class="size-full text-4xl" />
+                  <Avatar fallback={props.state.label} {...getAvatarColors(props.state.color)} kind="org" style={{ width: "100%", height: "100%", "--avatar-font-size": "2.25rem" }} />
                 </div>
               }
             >
@@ -95,7 +95,7 @@ export function ProjectColorField(props: { color: string; label: string; onColor
               }}
               onClick={() => props.onColor(color)}
             >
-              <Avatar fallback={props.label} {...getAvatarColors(color)} class="size-full rounded" />
+              <Avatar fallback={props.label} {...getAvatarColors(color)} kind="org" style={{ width: "100%", height: "100%" }} />
             </button>
           )}
         </For>

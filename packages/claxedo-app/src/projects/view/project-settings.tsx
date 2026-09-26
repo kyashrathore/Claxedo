@@ -32,7 +32,7 @@ function ProjectFields(props: { readonly project: Project }): JSX.Element {
       <SettingsList>
         <SettingsRow title={t("projects.edit.name")} description={props.project.name} />
         <SettingsRow title={t("projects.edit.icon")}>
-          <Show when={image()} fallback={<Avatar fallback={props.project.name} {...getAvatarColors(color())} class="size-8" />}>
+          <Show when={image()} fallback={<Avatar fallback={props.project.name} {...getAvatarColors(color())} size="large" kind="org" />}>
             {(src) => <img src={src()} alt={t("projects.edit.icon.alt")} class="size-8 rounded object-cover" />}
           </Show>
         </SettingsRow>

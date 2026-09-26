@@ -35,7 +35,7 @@ export { Tag, type TagProps } from "@opencode-ai/ui/tag"
 export { ToastV2 as Toast, showToastV2 as showToast, toasterV2 as toaster, type ToastV2Action as ToastAction, type ToastV2Options as ToastOptions, type ToastV2RegionProps as ToastRegionProps } from "@opencode-ai/ui/v2/toast-v2"
 export type ToastVariant = NonNullable<import("@opencode-ai/ui/v2/toast-v2").ToastV2Options["variant"]>
 export { TooltipV2 as Tooltip, type TooltipV2Props as TooltipProps } from "@opencode-ai/ui/v2/tooltip-v2"
-export { Avatar } from "@opencode-ai/ui/avatar"
+export { Avatar, type AvatarProps } from "@opencode-ai/ui/v2/avatar-v2"
 export { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 export { FileIcon } from "@opencode-ai/ui/file-icon"
 export { Keybind } from "@opencode-ai/ui/keybind"
