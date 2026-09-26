@@ -1,3 +1,4 @@
+import { primaryPlacement } from "@/projects"
 import type { Placement, PlacementId, Project, ProjectId } from "@/server"
 
 export type ProjectSection = {
@@ -20,13 +21,9 @@ function caption(project: Project): string {
   return `${project.name} · ${folder}`
 }
 
-function primaryPlacement(placements: readonly Placement[]): Placement | undefined {
-  return placements.find((placement) => placement.kind === "folder") ?? placements[0]
-}
-
 export function projectSection(project: Project, placements: readonly Placement[]): ProjectSection {
   const owned = placements.filter((placement) => placement.projectId === project.id)
-  const primary = primaryPlacement(owned)
+  const primary = primaryPlacement(placements, project.id)
   return {
     key: project.id,
     projectId: project.id,
