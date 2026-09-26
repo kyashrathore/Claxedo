@@ -1,10 +1,15 @@
 import fs from "node:fs"
 
 type Result = {
+  variant?: string
   workspace: string
   interaction: string
   run: number
   inputToReadyMs: number
+  readyFrame?: number
+  clickToReadyMs?: number
+  inputToClickMs?: number
+  readyFrameFromClick?: number
   inputToReadyFrameEndMs: number
   inputToSettledMs: number
   inputToShellSettledMs?: number
@@ -23,17 +28,22 @@ const median = (values: number[]) => {
 }
 
 const files = process.argv.slice(2)
-const labels = files.map((file) => file.split("/").at(-2) ?? file)
-const sets = files.map((file) => JSON.parse(fs.readFileSync(file, "utf8")) as Result[])
+const loaded = files.map((file) => JSON.parse(fs.readFileSync(file, "utf8")) as Result[])
+const variantNames = [...new Set(loaded.flat().map((result) => result.variant ?? "app"))]
+const labels = variantNames.length > 1 ? variantNames : files.map((file) => file.split("/").at(-2) ?? file)
+const sets = variantNames.length > 1 ? variantNames.map((name) => loaded.flat().filter((result) => (result.variant ?? "app") === name)) : loaded
 const keys = [...new Set(sets.flat().map((result) => `${result.workspace}\t${result.interaction}`))]
-console.log(["workspace", "interaction", ...labels.flatMap((label) => [`${label} ready med/max`, "frameEnd med", "settled med", "worst med/max", "over16.7 med", "quiet worst med/max", "quiet over", "n"])].join(" | "))
+console.log(["workspace", "interaction", ...labels.flatMap((label) => [`${label} ready med/max`, "frame# med/max", "click->ready med", "click frame# med/max", "frameEnd med", "settled med", "worst med/max", "over16.7 med", "quiet worst med/max", "quiet over", "n"])].join(" | "))
 for (const key of keys) {
   const [workspace, interaction] = key.split("\t")
   const cells = sets.map((set) => {
     const rows = set.filter((result) => result.workspace === workspace && result.interaction === interaction)
-    if (!rows.length) return ["-", "-", "-", "-", "-", "-", "-", "0"]
+    if (!rows.length) return ["-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "0"]
     return [
       `${median(rows.map((row) => row.inputToReadyMs)).toFixed(1)}/${Math.max(...rows.map((row) => row.inputToReadyMs)).toFixed(1)}`,
+      `${median(rows.map((row) => row.readyFrame ?? -1))}/${Math.max(...rows.map((row) => row.readyFrame ?? -1))}`,
+      median(rows.map((row) => row.clickToReadyMs ?? -1)).toFixed(1),
+      `${median(rows.map((row) => row.readyFrameFromClick ?? -1))}/${Math.max(...rows.map((row) => row.readyFrameFromClick ?? -1))}`,
       median(rows.map((row) => row.inputToReadyFrameEndMs)).toFixed(1),
       median(rows.map((row) => row.inputToSettledMs)).toFixed(1),
       `${median(rows.map((row) => row.worstFrameMs)).toFixed(1)}/${Math.max(...rows.map((row) => row.worstFrameMs)).toFixed(1)}`,

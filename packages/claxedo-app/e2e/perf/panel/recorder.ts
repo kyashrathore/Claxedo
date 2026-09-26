@@ -18,7 +18,9 @@ export type Loaf = {
 
 export type Recording = {
   readonly inputAt: number
+  readonly actAt: number | undefined
   readonly readyAt: number | undefined
+  readonly readyFrame: number | undefined
   readonly readyFrameEnd: number | undefined
   readonly settledAt: number | undefined
   readonly shellSettledAt: number | undefined
@@ -42,7 +44,9 @@ export function installRecorder() {
   type State = {
     predicate: Predicate | undefined
     inputAt: number | undefined
+    actAt: number | undefined
     readyAt: number | undefined
+    readyFrame: number | undefined
     readyFrameEnd: number | undefined
     settledAt: number | undefined
     shellSettledAt: number | undefined
@@ -57,7 +61,7 @@ export function installRecorder() {
     deadline: number
   }
   const state: State = {
-    predicate: undefined, inputAt: undefined, readyAt: undefined, readyFrameEnd: undefined, settledAt: undefined, shellSettledAt: undefined,
+    predicate: undefined, inputAt: undefined, actAt: undefined, readyAt: undefined, readyFrame: undefined, readyFrameEnd: undefined, settledAt: undefined, shellSettledAt: undefined,
     frames: [], loafs: [], longTasks: [], signatures: [], stable: 0, previous: "", resolve: undefined, reject: undefined, deadline: 0,
   }
   const visible = (element: Element | null | undefined) => {
@@ -71,7 +75,7 @@ export function installRecorder() {
     const navigator = [...document.querySelectorAll<HTMLElement>("[data-testid='workspace-files-navigator'][data-mode='files']")].find(visible)
     const rows = navigator?.querySelectorAll("[data-file-tree-path]").length ?? 0
     const ready = !!navigator && navigator.dataset.fileTreeDataReady === "true" && rows > 0 && !navigator.querySelector("[data-file-tree-loading], [aria-label='Loading files']")
-    return { ready, signature: ready ? `files:${rows}:${navigator?.innerText.length}` : "" }
+    return { ready, signature: ready ? `files:${rows}:${navigator?.innerText.length}` : "", debug: `files:nav=${!!navigator}:ready=${navigator?.dataset.fileTreeDataReady}:rows=${rows}:h=${navigator?.getBoundingClientRect().height}` }
   }
   const changesReady = () => {
     const overlay = document.querySelector<HTMLElement>("[data-testid='workspace-navigator-overlay'][data-navigator-kind='changes'][data-open='true']")
@@ -113,7 +117,7 @@ export function installRecorder() {
   }
   const fileTabReady = (path: string) => {
     const root = [...document.querySelectorAll<HTMLElement>("[data-testid='tab-file-root']")].find((element) => element.dataset.tabFilePath === path && visible(element))
-    const body = !!root && (hasLine(root) || !!root.querySelector("img, [data-component='markdown'], .markdown"))
+    const body = !!root && (hasLine(root) || !!root.querySelector("img, [data-component='markdown']"))
     const ready = body && root.dataset.tabFileState === "ready"
     return { ready, signature: ready ? `file:${path}:${root?.dataset.tabFileRenderState}:${root?.innerText.length}` : "", debug: `file:${path}:${root?.dataset.tabFileState}:${root?.dataset.tabFileRenderState}:${body}` }
   }
@@ -132,7 +136,7 @@ export function installRecorder() {
       case "panel-open-files": {
         const files = filesReady()
         const ready = host?.dataset.open === "true" && visible(host) && files.ready
-        return { ready, signature: ready ? `${files.signature}:${getComputedStyle(host!).transform}` : "" }
+        return { ready, signature: ready ? `${files.signature}:${getComputedStyle(host!).transform}` : "", debug: `open=${host?.dataset.open}:display=${host?.style.display}:vis=${visible(host)} ${files.debug}` }
       }
       case "panel-closed": {
         const rect = host?.getBoundingClientRect()
@@ -164,7 +168,7 @@ export function installRecorder() {
   }
   const finish = () => {
     const recording: Recording = {
-      inputAt: state.inputAt ?? -1, readyAt: state.readyAt, readyFrameEnd: state.readyFrameEnd, settledAt: state.settledAt, shellSettledAt: state.shellSettledAt,
+      inputAt: state.inputAt ?? -1, actAt: state.actAt, readyAt: state.readyAt, readyFrame: state.readyFrame, readyFrameEnd: state.readyFrameEnd, settledAt: state.settledAt, shellSettledAt: state.shellSettledAt,
       frames: state.frames, loafs: state.loafs, longTasks: state.longTasks, signatures: state.signatures, timeOrigin: performance.timeOrigin,
     }
     const resolve = state.resolve
@@ -173,23 +177,18 @@ export function installRecorder() {
     state.reject = undefined
     resolve?.(recording)
   }
-  const frame = (at: number) => {
-    requestAnimationFrame(frame)
-    if (!state.predicate) return
-    if (state.inputAt === undefined) {
-      if (performance.now() > state.deadline) {
-        state.reject?.(new Error("no trusted input arrived"))
-        state.predicate = undefined
-      }
-      return
-    }
-    state.frames.push(at)
-    if (state.readyAt !== undefined && state.readyFrameEnd === undefined) state.readyFrameEnd = at
+  const painted = new MessageChannel()
+  const afterPaint = (message: MessageEvent<number>) => {
+    if (!state.predicate || state.inputAt === undefined) return
+    const index = message.data
+    const at = state.frames[index - 1] ?? 0
     const host = shell()
     if (state.shellSettledAt === undefined && host?.dataset.shellSettled === "true" && at > state.inputAt + 20) state.shellSettledAt = at
-    const { ready, signature } = evaluate(state.predicate)
+    const { ready, signature, debug } = evaluate(state.predicate)
+    if (!ready && debug && state.readyAt === undefined) state.signatures.push(`f${index}:${debug}`)
     if (ready && state.readyAt === undefined) {
       state.readyAt = at
+      state.readyFrame = index
       performance.mark("rec:ready")
     }
     state.stable = ready && signature === state.previous ? state.stable + 1 : ready ? 1 : 0
@@ -206,14 +205,36 @@ export function installRecorder() {
       state.predicate = undefined
     }
   }
+  painted.port1.onmessage = afterPaint
+  const frame = (at: number) => {
+    requestAnimationFrame(frame)
+    if (!state.predicate) return
+    if (state.inputAt === undefined) {
+      if (performance.now() > state.deadline) {
+        state.reject?.(new Error("no trusted input arrived"))
+        state.predicate = undefined
+      }
+      return
+    }
+    state.frames.push(at)
+    if (state.readyAt !== undefined && state.readyFrameEnd === undefined) state.readyFrameEnd = at
+    painted.port2.postMessage(state.frames.length)
+  }
   requestAnimationFrame(frame)
   const onInput = (event: Event) => {
     if (!event.isTrusted || !state.predicate || state.inputAt !== undefined) return
     state.inputAt = event.timeStamp
     performance.mark("rec:input")
   }
+  const onAct = (event: Event) => {
+    if (!event.isTrusted || !state.predicate || state.inputAt === undefined || state.actAt !== undefined) return
+    state.actAt = event.timeStamp
+    performance.mark("rec:act")
+  }
   window.addEventListener("pointerdown", onInput, { capture: true })
   window.addEventListener("keydown", onInput, { capture: true })
+  window.addEventListener("click", onAct, { capture: true })
+  window.addEventListener("keydown", onAct, { capture: true })
   const observer = new PerformanceObserver((list) => {
     for (const entry of list.getEntries()) {
       if (entry.entryType === "longtask") {
@@ -233,7 +254,9 @@ export function installRecorder() {
     arm: (predicate) => {
       state.predicate = predicate
       state.inputAt = undefined
+      state.actAt = undefined
       state.readyAt = undefined
+      state.readyFrame = undefined
       state.readyFrameEnd = undefined
       state.settledAt = undefined
       state.shellSettledAt = undefined

@@ -642,3 +642,51 @@ index e8d3cc9..934c14d 100644
 +export { AnnotationLineMap, AnnotationSide, AnnotationSpan, AppliedThemeStyleCache, BaseCodeOptions, BaseDiffOptions, BaseDiffOptionsWithDefaults, type BundledLanguage, ChangeContent, ChangeTypes, CodeColumnType, type CodeToHastOptions, CodeViewCustomItem, CodeViewDiffItem, CodeViewFileItem, CodeViewItem, CodeViewItemScrollTarget, CodeViewLayout, CodeViewLineScrollTarget, CodeViewPositionScrollTarget, CodeViewRangeScrollTarget, CodeViewScrollBehavior, CodeViewScrollTarget, ConflictResolverTypes, ContextContent, type CreatePatchOptionsNonabortable, CustomPreProperties, type DecorationItem, DiffAcceptRejectHunkConfig, DiffAcceptRejectHunkType, DiffFileInput, DiffIndicators, DiffLineAnnotation, DiffLineEventBaseProps, DiffTokenEventBaseProps, DiffsHighlighter, DiffsThemeNames, ExpansionDirections, ExtensionFormatMap, FileContents, FileDiffContentsLoader, FileDiffLoadedChangedFiles, FileDiffLoadedFiles, FileDiffLoadedPureRenamedFile, FileDiffMetadata, FileHeaderRenderMode, ForceDiffPlainTextOptions, ForceFilePlainTextOptions, GapSpan, HighlightedToken, HighlighterTypes, Hunk, HunkData, HunkExpansionRegion, HunkLineType, HunkSeparators, type LanguageRegistration, LineAnnotation, LineDiffTypes, LineEventBaseProps, LineInfo, LineSpans, LineTypes, MaybeDiffFileInput, MergeConflictActionPayload, MergeConflictMarkerRow, MergeConflictMarkerRowType, MergeConflictRegion, MergeConflictResolution, NumericScrollLineAnchor, ObservedAnnotationNodes, ObservedGridNodes, ParsedPatch, PendingCodeViewLayoutReset, PostRenderPhase, PrePropertiesConfig, ProcessFileConflictData, RenderDiffFilesResult, RenderDiffOptions, RenderDiffResult, RenderFileMetadata, RenderFileOptions, RenderFileResult, RenderHeaderFilenameSuffixCallback, RenderHeaderMetadataCallback, RenderHeaderPrefixCallback, RenderRange, RenderWindow, RenderedDiffASTCache, RenderedFileASTCache, SelectedLineRange, SelectionPoint, SelectionSide, SharedRenderState, type ShikiTransformer, SmoothScrollSettings, StickySpecs, SupportedLanguages, type ThemeRegistration, type ThemeRegistrationResolved, ThemeTypes, ThemedDiffResult, ThemedFileResult, type ThemedToken, ThemesType, TokenEventBase, VirtualFileMetrics, VirtualWindowSpecs };
  //# sourceMappingURL=types.d.ts.map
 \ No newline at end of file
+diff --git a/dist/highlighter/shared_highlighter.js b/dist/highlighter/shared_highlighter.js
+index e231d3c239..cbb904a4d2 100644
+--- a/dist/highlighter/shared_highlighter.js
++++ b/dist/highlighter/shared_highlighter.js
+@@ -15,7 +15,7 @@ async function getSharedHighlighter({ themes, langs, preferredHighlighter = "shi
+ 	highlighter ??= createHighlighter({
+ 		themes: [],
+ 		langs: ["text"],
+-		engine: preferredHighlighter === "shiki-wasm" ? createOnigurumaEngine(import("shiki/wasm")) : createJavaScriptRegexEngine()
++		engine: preferredHighlighter === "shiki-wasm" ? createOnigurumaEngine(import("shiki/wasm")) : createJavaScriptRegexEngine({ forgiving: true })
+ 	});
+ 	const instance = isHighlighterLoading(highlighter) ? await highlighter : highlighter;
+ 	highlighter = instance;
+diff --git a/dist/worker/WorkerPoolManager.js b/dist/worker/WorkerPoolManager.js
+index caf2839d72..716c0e689b 100644
+--- a/dist/worker/WorkerPoolManager.js
++++ b/dist/worker/WorkerPoolManager.js
+@@ -73,10 +73,10 @@ var WorkerPoolManager = class {
+ 		return !this.workersFailed;
+ 	}
+ 	getFileResultCache(file) {
+-		return file.cacheKey != null ? this.fileCache.get(file.cacheKey) : void 0;
++		return file?.cacheKey != null ? this.fileCache.get(file.cacheKey) : void 0;
+ 	}
+ 	getDiffResultCache(diff) {
+-		return diff.cacheKey != null ? this.diffCache.get(diff.cacheKey) : void 0;
++		return diff?.cacheKey != null ? this.diffCache.get(diff.cacheKey) : void 0;
+ 	}
+ 	inspectCaches() {
+ 		const { fileCache, diffCache } = this;
+@@ -125,7 +125,7 @@ var WorkerPoolManager = class {
+ 				const highlighter = await getSharedHighlighter({
+ 					themes: themeNames,
+ 					langs: ["text"],
+-					preferredHighlighter: this.preferredHighlighter
++					preferredHighlighter: "shiki-js"
+ 				});
+ 				if (!isCurrentRequest()) return;
+ 				this.highlighter = highlighter;
+@@ -260,7 +260,7 @@ var WorkerPoolManager = class {
+ 						const [highlighter] = await Promise.all([getSharedHighlighter({
+ 							themes,
+ 							langs: ["text", ...languages],
+-							preferredHighlighter: this.preferredHighlighter
++							preferredHighlighter: "shiki-js"
+ 						}), this.initializeWorkers(resolvedThemes, resolvedLanguages)]);
+ 						if (!this.isCurrentLifecycle(lifecycleGeneration)) {
+ 							this.terminateWorkers();
