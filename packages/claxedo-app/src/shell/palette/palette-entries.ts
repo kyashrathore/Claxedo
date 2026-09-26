@@ -7,7 +7,7 @@ export type PaletteEntry = {
   readonly type: "command" | "file" | "session"
   readonly title: string
   readonly description?: string
-  readonly keybind?: string
+  readonly keys?: string[]
   readonly category: string
   readonly option?: CommandOption
   readonly path?: string
@@ -19,8 +19,8 @@ export const ENTRY_LIMIT = 5
 export const OPEN_FILE_COMMAND = "file.open"
 const COMMON_COMMAND_IDS = ["session.new", "workspace.new", "session.previous", "session.next", "terminal.new", "review.toggle"] as const
 
-export function commandEntry(option: CommandOption, category: string, keybind: string | undefined): PaletteEntry {
-  return { id: `command:${option.id}`, type: "command", title: option.title, description: option.description, keybind, category, option }
+export function commandEntry(option: CommandOption, category: string, keys: string[]): PaletteEntry {
+  return { id: `command:${option.id}`, type: "command", title: option.title, description: option.description, keys: keys.length > 0 ? keys : undefined, category, option }
 }
 
 export function fileEntry(path: string, category: string): PaletteEntry {

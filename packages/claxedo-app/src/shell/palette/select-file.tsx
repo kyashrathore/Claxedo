@@ -62,8 +62,8 @@ function EntryRow(props: { readonly item: PaletteEntry }): JSX.Element {
               <span class="text-14-regular text-text-weak truncate">{props.item.description}</span>
             </Show>
           </div>
-          <Show when={props.item.keybind}>
-            <Keybind class="rounded-sm">{props.item.keybind}</Keybind>
+          <Show when={props.item.keys}>
+            {(keys) => <Keybind keys={keys()} />}
           </Show>
         </div>
       </Match>
