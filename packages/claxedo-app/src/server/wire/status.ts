@@ -1,7 +1,7 @@
 import type { AgentRuntimeStatus } from "@claxedo/agent-runtime-contract"
 import { turnError } from "../errors"
 import type { RetryAction, SessionStatus } from "../types"
-import { isRecord } from "../../lib/record"
+import { isRecord } from "@claxedo/helpers/guards"
 
 function retryActionFromWire(value: unknown): RetryAction | undefined {
   if (!isRecord(value)) return undefined

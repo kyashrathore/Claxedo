@@ -10,7 +10,8 @@ import { createServer } from "node:net"
 import { createInterface } from "node:readline"
 import pidtree from "pidtree"
 
-import { asRecord, readArray, readNumber, readRecord, readString, readUnknown } from "../src/shared/json-read"
+import { asRecord } from "@claxedo/helpers/guards"
+import { readArray, readNumber, readRecord, readString, readUnknown } from "../src/shared/json-read"
 
 import { createProcessMetricsSource } from "../src/main/diagnostics/process-metrics-source"
 import { createIsolatedPosixProcessMetricsWorker } from "../src/main/diagnostics/process-metrics-worker"

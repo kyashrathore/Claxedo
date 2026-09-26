@@ -1,7 +1,7 @@
 import { isRuntimeGoalStatus } from "@claxedo/agent-runtime-contract"
 import { ServerError } from "../errors"
 import type { GoalAction, SessionGoal, SessionGoalState } from "../types"
-import { isRecord } from "../../lib/record"
+import { isRecord } from "@claxedo/helpers/guards"
 
 export const GOAL_UNAVAILABLE = "goal_runtime_unavailable"
 

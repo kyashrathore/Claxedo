@@ -1,5 +1,5 @@
 import type { HarnessOptionChoice, HarnessOptions, HarnessOptionSelect, HarnessOptionsSource } from "../harness-types"
-import { isRecord } from "../../lib/record"
+import { isRecord } from "@claxedo/helpers/guards"
 
 type ConfigOption = { readonly category: unknown; readonly type: unknown; readonly currentValue: unknown; readonly options: unknown; readonly selectOptions: unknown }
 

@@ -1,7 +1,5 @@
 import { isRecord } from "@claxedo/helpers/guards"
 
-export { asRecord, isRecord } from "@claxedo/helpers/guards"
-
 export function recordOrEmpty(value: unknown): Record<string, unknown> {
   return isRecord(value) ? value : {}
 }

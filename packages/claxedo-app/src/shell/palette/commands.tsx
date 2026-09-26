@@ -1,7 +1,7 @@
 import { createContext, createMemo, onCleanup, onMount, useContext, type JSX } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { useTranslator } from "@/i18n"
-import { isRecord } from "@/lib/record"
+import { isRecord } from "@claxedo/helpers/guards"
 import { persistedStore, preferenceKey } from "@/lib/persisted"
 import { useDialog } from "@/ui"
 import { shellDictionary } from "../i18n"

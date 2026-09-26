@@ -3,7 +3,8 @@ import path from "node:path"
 
 import { isCreationIdentity, sameCreationIdentity, type CreationIdentity } from "@claxedo/agent-sdk-runtime/launch"
 
-import { asRecord, isNonEmptyString, readUnknown } from "../shared/json-read"
+import { asRecord, isNonEmptyString } from "@claxedo/helpers/guards"
+import { readUnknown } from "../shared/json-read"
 import { createDaemonFetch } from "./daemon-request"
 import { nodeErrorCode } from "../shared/node-error"
 

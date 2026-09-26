@@ -1,6 +1,6 @@
 import type { LocalDiagnostics } from "../../shared/local-diagnostics"
 
-import { asRecord } from "../../shared/json-read"
+import { asRecord } from "@claxedo/helpers/guards"
 
 export type WindowsCimRow = {
   pid: number

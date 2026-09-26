@@ -17,7 +17,8 @@ import { ACCOUNT_CREDENTIAL_RECORD } from "./marker"
 import type { RefreshOutcome } from "./desktop-native-auth"
 import { fetchWithDeadline } from "./hosted-transport"
 
-import { isRecord, readNumber, readString } from "../../shared/json-read"
+import { isRecord } from "@claxedo/helpers/guards"
+import { readNumber, readString } from "../../shared/json-read"
 import { nodeErrorCode } from "../../shared/node-error"
 
 /**

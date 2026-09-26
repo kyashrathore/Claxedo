@@ -1,5 +1,5 @@
 import { ErrorBoundary, type JSX } from "solid-js"
-import { isRecord } from "./record"
+import { isRecord } from "@claxedo/helpers/guards"
 import "./failure.css"
 
 export function failureMessage(error: unknown): string {

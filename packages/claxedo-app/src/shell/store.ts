@@ -1,6 +1,7 @@
 import type { SetStoreFunction, Store } from "solid-js/store"
 import { persistedStore, preferenceKey } from "@/lib/persisted"
-import { isRecord, readFiniteNumber } from "@/lib/record"
+import { isRecord } from "@claxedo/helpers/guards"
+import { readFiniteNumber } from "@/lib/record"
 import type { SideRegion } from "./model"
 
 export const SIDEBAR_MIN_WIDTH = 220

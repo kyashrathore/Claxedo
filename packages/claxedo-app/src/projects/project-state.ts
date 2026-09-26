@@ -1,5 +1,5 @@
 import { preferenceKey, persistedStore } from "@/lib/persisted"
-import { isRecord } from "@/lib/record"
+import { isRecord } from "@claxedo/helpers/guards"
 import type { ProjectId } from "@/server"
 
 type StoredProject = { id: string }

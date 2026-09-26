@@ -21,7 +21,7 @@
  * no-op at the daemon, so this is safe to run on every beat.
  */
 
-import { asRecord } from "../../shared/json-read"
+import { asRecord } from "@claxedo/helpers/guards"
 import type { DaemonFetch } from "../daemon-request"
 import type { HostConnectorProviderConfigReady } from "./child-protocol"
 

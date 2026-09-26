@@ -2,7 +2,7 @@ import { createHash } from "node:crypto"
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 
-import { isRecord } from "../../shared/json-read"
+import { isRecord } from "@claxedo/helpers/guards"
 
 export const HOST_CONNECTOR_CHILD_MANIFEST_SCHEMA = "claxedo.host-connector-child/v1"
 

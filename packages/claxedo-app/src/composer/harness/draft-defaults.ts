@@ -2,7 +2,7 @@ import { checksum } from "@/ui/utils"
 import type { ModelChoice } from "@/server"
 import { harnessSelectionKey, isHarnessSelection, type HarnessSelection } from "@/lib/harness-selection"
 import { isCatalogHarnessId } from "@/lib/harness-selection"
-import { asRecord } from "@/lib/record"
+import { asRecord } from "@claxedo/helpers/guards"
 
 const VERSION = 3
 const KEY = "session.draft-default.v1"

@@ -1,7 +1,7 @@
 import { createContext, createEffect, useContext, type JSX } from "solid-js"
 import type { Store } from "solid-js/store"
 import { persistedStore, preferenceKey } from "@/lib/persisted"
-import { isRecord } from "@/lib/record"
+import { isRecord } from "@claxedo/helpers/guards"
 import { DEFAULT_SOUND, isSoundChoice, type AlertKind, type AlertPreferences, type SoundChoice } from "@/notifications"
 import { codeFontFamily, uiFontFamily } from "./fonts"
 

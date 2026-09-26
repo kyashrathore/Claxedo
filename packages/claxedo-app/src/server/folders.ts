@@ -1,4 +1,5 @@
-import { isRecord, onlyStrings, readString } from "../lib/record"
+import { isRecord } from "@claxedo/helpers/guards"
+import { onlyStrings, readString } from "../lib/record"
 import { ServerError } from "./errors"
 import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"

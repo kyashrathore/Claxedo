@@ -1,6 +1,6 @@
 import { children, createMemo, createSignal, Show, type JSX } from "solid-js"
 import type { ClaxedoMessageAuthor } from "@claxedo/agent-event-runtime/client-presentation"
-import { asRecord } from "@/lib/record"
+import { asRecord } from "@claxedo/helpers/guards"
 
 type MessageWithAuthor = {
   role: string

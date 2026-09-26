@@ -1,7 +1,6 @@
-import { isNonBlankString } from "@claxedo/helpers/guards"
+import { asRecord, isNonBlankString } from "@claxedo/helpers/guards"
 import type { Accessor } from "solid-js"
 import type { AuthUser } from "./display-user"
-import { asRecord } from "@/lib/record"
 
 export const BROWSER_AUTH_ADAPTERS = ["better-auth"] as const
 export const BROWSER_AUTH_METHODS = ["google", "github", "email-password"] as const

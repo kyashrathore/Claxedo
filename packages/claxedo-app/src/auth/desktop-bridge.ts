@@ -1,4 +1,5 @@
-import { asRecord, readField, readString } from "@/lib/record"
+import { asRecord } from "@claxedo/helpers/guards"
+import { readField, readString } from "@/lib/record"
 import type { AuthUser } from "./display-user"
 
 export type DesktopAccountState =

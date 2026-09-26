@@ -1,6 +1,6 @@
 import { batch, type Accessor } from "solid-js"
 import { persistedSignal } from "@/lib/persisted"
-import { isRecord } from "@/lib/record"
+import { isRecord } from "@claxedo/helpers/guards"
 import type { AnyPaneKind, Json, PaneKind, PaneRoute } from "@/shell"
 import { constructWorkbenchState } from "./construct"
 import { createDragController, type DragController } from "./drag/pointer-drag"

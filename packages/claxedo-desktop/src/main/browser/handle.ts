@@ -37,7 +37,8 @@ import {
   type ConsoleQuery,
   type ConsoleStackFrame,
 } from "./console-buffer"
-import { isRecord, readArray, readNumber, readRecord, readString, readUnknown } from "../../shared/json-read"
+import { isRecord } from "@claxedo/helpers/guards"
+import { readArray, readNumber, readRecord, readString, readUnknown } from "../../shared/json-read"
 
 export type BrowserHandleState = "detached" | "attaching" | "attached" | "reattaching"
 

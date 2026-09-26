@@ -1,4 +1,4 @@
-import { asRecord } from "../lib/record"
+import { asRecord } from "@claxedo/helpers/guards"
 import type { AppError, ErrorClass } from "./types"
 
 declare module "@tanstack/solid-query" {

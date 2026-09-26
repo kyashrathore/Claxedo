@@ -1,4 +1,4 @@
-import { isRecord } from "../../lib/record"
+import { isRecord } from "@claxedo/helpers/guards"
 import { machineId, placementId, projectId } from "../ids"
 import type { Placement, Project } from "../types"
 import type { PlacementRecord } from "./placements"

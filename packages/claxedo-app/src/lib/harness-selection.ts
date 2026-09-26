@@ -1,4 +1,4 @@
-import { isRecord } from "./record"
+import { isRecord } from "@claxedo/helpers/guards"
 export const NATIVE_HARNESS_IDS = ["claude", "codex", "cursor", "pi", "opencode"] as const
 
 export const CATALOG_HARNESS_IDS = ["opencode"] as const

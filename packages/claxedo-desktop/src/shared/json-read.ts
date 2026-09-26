@@ -12,17 +12,8 @@
  * These readers are the single place that decision is made: they never throw,
  * never assert, and return `undefined` for anything that is not present in
  * the expected shape. Callers compose them into one parse per payload.
- *
- * The record predicates are the workspace-wide ones, re-exported so callers
- * keep one import for the whole reader set.
  */
 import { asRecord, isRecord } from "@claxedo/helpers/guards"
-
-export { asRecord, isRecord } from "@claxedo/helpers/guards"
-
-export function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0
-}
 
 export function readUnknown(source: unknown, key: string): unknown {
   return isRecord(source) ? source[key] : undefined

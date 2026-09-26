@@ -4,7 +4,8 @@ import { $ } from "bun"
 import { createRequire } from "node:module"
 import path from "node:path"
 
-import { isRecord, readString, readUnknown } from "../src/shared/json-read"
+import { isRecord } from "@claxedo/helpers/guards"
+import { readString, readUnknown } from "../src/shared/json-read"
 
 type JsonObject = Record<string, unknown>
 

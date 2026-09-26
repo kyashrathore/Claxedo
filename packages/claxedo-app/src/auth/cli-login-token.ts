@@ -1,6 +1,6 @@
-import { asRecord, readField } from "@/lib/record"
+import { readField } from "@/lib/record"
 import { trimToUndefined } from "@claxedo/helpers/string"
-import { asFiniteNumber } from "@claxedo/helpers/guards"
+import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 import type { AuthUser } from "./display-user"
 import { authResponseBody } from "./better-auth-error"
 import { apiOrigin } from "./origins"

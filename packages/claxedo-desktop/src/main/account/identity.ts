@@ -34,7 +34,7 @@ export function userInfoUrlFromTokenUrl(tokenUrl: string): string | undefined {
  * subject is a failed identity lookup, so the account owner can retry it.
  */
 
-import { asRecord } from "../../shared/json-read"
+import { asRecord } from "@claxedo/helpers/guards"
 
 export function identityFromUserInfo(body: unknown): AccountIdentity {
   const record = asRecord(body)

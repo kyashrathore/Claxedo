@@ -1,7 +1,7 @@
 import { prefixedRandomId } from "@claxedo/helpers/crypto"
 import { ServerError } from "./errors"
 import { jsonInit, type Transport } from "./transport"
-import { isRecord } from "../lib/record"
+import { isRecord } from "@claxedo/helpers/guards"
 
 export type SessionReservation = { readonly sessionId: string; readonly operationId: string }
 

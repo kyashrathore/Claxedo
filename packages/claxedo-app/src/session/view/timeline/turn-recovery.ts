@@ -1,5 +1,5 @@
 import { providerErrorDetail, providerUsageLimitDetail, type DispatchContext } from "./provider-error-detail"
-import { asRecord } from "@/lib/record"
+import { asRecord } from "@claxedo/helpers/guards"
 import { credentialBrokerErrorCode, CREDENTIAL_BROKER_ERRORS, type AgentAssistantMessage, type AgentUserMessage } from "@claxedo/agent-runtime-contract"
 
 export type SessionErrorClass = "credential" | "harness" | "model" | "usage_limit" | "workspace" | "session" | "unknown"

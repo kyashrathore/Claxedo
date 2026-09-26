@@ -1,4 +1,4 @@
-import { isRecord } from "../../shared/json-read"
+import { isRecord } from "@claxedo/helpers/guards"
 import type { TokenSet } from "./oauth-flow"
 
 /** Structural mirror of the server's provider-neutral native binding. */

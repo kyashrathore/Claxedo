@@ -1,6 +1,6 @@
 import { ServerError } from "../errors"
 import type { WorkspaceBootMode } from "../cloud-types"
-import { isRecord } from "../../lib/record"
+import { isRecord } from "@claxedo/helpers/guards"
 
 export type RelayConnection = {
   readonly workspaceId: string

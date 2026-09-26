@@ -1,5 +1,5 @@
 import { isHarnessSelection, type HarnessSelection } from "../../lib/harness-selection"
-import { asRecord } from "../../lib/record"
+import { asRecord } from "@claxedo/helpers/guards"
 import type { HarnessConnectionState, HarnessHealth, HarnessState, SessionConfig } from "../harness-types"
 
 const harnessStatuses: readonly unknown[] = ["configured", "ready", "applying", "error"] satisfies readonly NonNullable<HarnessState["status"]>[]

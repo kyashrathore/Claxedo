@@ -6,7 +6,8 @@
  * environment variables, renderer IPC values, or log fields.
  */
 
-import { asRecord, isNonEmptyString, readUnknown } from "../../shared/json-read"
+import { asRecord, isNonEmptyString } from "@claxedo/helpers/guards"
+import { readUnknown } from "../../shared/json-read"
 
 export type HostConnectorChildState =
   | { status: "idle" }

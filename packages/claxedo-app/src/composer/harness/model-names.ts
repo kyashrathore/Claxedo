@@ -1,5 +1,5 @@
 import { produce } from "solid-js/store"
-import { isRecord } from "@/lib/record"
+import { isRecord } from "@claxedo/helpers/guards"
 import { persistedStore, preferenceKey } from "@/lib/persisted"
 import type { ModelChoice } from "@/server"
 import { useModelPreferences } from "./context"

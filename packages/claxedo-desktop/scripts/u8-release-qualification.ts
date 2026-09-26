@@ -4,7 +4,7 @@ import { createHash } from "node:crypto"
 import * as fs from "node:fs"
 import * as path from "node:path"
 
-import { isRecord } from "../src/shared/json-read"
+import { isRecord } from "@claxedo/helpers/guards"
 
 export const U8_RELEASE_BASELINE_SCHEMA = "claxedo-u8-release-baseline/v1" as const
 export const U8_RELEASE_EVIDENCE_SCHEMA = "claxedo-u8-release-evidence/v1" as const

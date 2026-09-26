@@ -1,4 +1,4 @@
-import { isRecord } from "@/lib/record"
+import { isRecord } from "@claxedo/helpers/guards"
 import { constructWorkbenchState } from "./construct"
 import type { Pane, Snapshot, SplitNode, SplitTree, WorkbenchState } from "./types"
 import { snapshotIsValid } from "./reducers/snapshot-helpers"

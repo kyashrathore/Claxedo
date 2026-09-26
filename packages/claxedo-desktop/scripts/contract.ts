@@ -4,7 +4,8 @@ import * as path from "node:path"
 
 import { resolveChannel, type Channel } from "./utils"
 import { MAIN_RENDERER_DOCUMENT } from "../src/main/navigation-guard"
-import { isRecord, readString } from "../src/shared/json-read"
+import { isRecord } from "@claxedo/helpers/guards"
+import { readString } from "../src/shared/json-read"
 
 export type Spec = {
   file: string
