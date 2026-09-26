@@ -41,7 +41,7 @@ test("15 settings: Models lists each agent's accounts and this computer's logins
     await dialog.getByRole("button", { name: "Continue" }).click()
     await expect(dialog).toHaveCount(0)
   }
-  const row = (label: string) => cursor.locator('[data-slot="radio-list-item"]').filter({ hasText: label })
+  const row = (label: string) => cursor.locator('[data-slot="account-row"]').filter({ hasText: label })
   const first = cursor.getByRole("radio", { name: /^Flow fifteen A/ })
   const second = cursor.getByRole("radio", { name: /^Flow fifteen B/ })
   await addKey("Flow fifteen A")

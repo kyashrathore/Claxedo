@@ -17,7 +17,6 @@
 @import "@opencode-ai/ui/list.css" layer(components);
 @import "@opencode-ai/ui/popover.css" layer(components);
 @import "@opencode-ai/ui/provider-icon.css" layer(components);
-@import "@opencode-ai/ui/radio-list.css" layer(components);
 @import "@opencode-ai/ui/resize-handle.css" layer(components);
 @import "@opencode-ai/ui/scroll-view.css" layer(components);
 @import "@opencode-ai/ui/scroll-thumb.css" layer(components);
