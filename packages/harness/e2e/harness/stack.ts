@@ -44,7 +44,7 @@ export function safeLabel(label: string) {
 export async function startStack(input: StackInput): Promise<Stack> {
   const red = input.red ?? process.env.CLAXEDO_E2E_RED === "1"
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-e2e-${safeLabel(input.label)}-`))
-  const pathPrefix = input.codexInventoryFault ? await staleCodexInventory(dataDir) : undefined
+  const inventoryFault = input.codexInventoryFault ? await staleCodexInventory(dataDir) : undefined
   const steerFault = input.steerReplyFault ? await withholdSteerReply(dataDir, input.steerReplyFault) : undefined
   const rpcFault = input.piRpcFault ? await injectPiRpcFault(dataDir) : undefined
   const claudeFault = input.claudeSteerFault ? await interruptClaudeSteer(dataDir) : undefined
@@ -88,8 +88,9 @@ export async function startStack(input: StackInput): Promise<Stack> {
       coldStartWithoutKeys: input.coldStartWithoutKeys,
       resistantChild: input.resistantChild,
       retirementFault: input.retirementFault,
-      pathPrefix: steerFault?.bin ?? pathPrefix,
       ...(input.steerReplyFault === "pi" ? { piExecutable: steerFault!.executable } : {}),
+      ...(input.steerReplyFault === "codex" ? { codexExecutable: steerFault!.executable } : {}),
+      ...(inventoryFault ? { codexExecutable: inventoryFault.executable } : {}),
       ...(rpcFault ? { piExecutable: rpcFault.executable } : {}),
       ...(claudeFault ? { claudeExecutable: claudeFault.executable } : {}),
     })

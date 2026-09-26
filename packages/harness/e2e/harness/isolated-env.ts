@@ -2,6 +2,8 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { egressProxyEnv } from "./egress-guard"
 import { PINNED_PI } from "./pinned-pi"
+import { PINNED_CODEX } from "./pinned-codex"
+import { PINNED_CLAUDE } from "./pinned-claude"
 import { writePricingSnapshot } from "./usage-pricing"
 
 const STAND_INS = path.join(import.meta.dirname, "stand-ins")
@@ -42,6 +44,8 @@ export async function isolatedEnv(home: string, guardUrl: string): Promise<NodeJ
     GIT_TERMINAL_PROMPT: "0",
     ...AGENTS_STAY_OFFLINE,
     PI_EXECUTABLE: PINNED_PI,
+    CODEX_EXECUTABLE: PINNED_CODEX,
+    CLAUDE_CODE_EXECUTABLE: PINNED_CLAUDE,
     ...(process.env.H11_DROP_ACP_IMAGE === "1" ? { H11_DROP_ACP_IMAGE: "1" } : {}),
     ...(process.env.H1_DROP_ACP_TOOL_OUTPUT === "1" ? { H1_DROP_ACP_TOOL_OUTPUT: "1" } : {}),
     ...(process.env.H13_DROP_ACP_USAGE === "1" ? { H13_DROP_ACP_USAGE: "1" } : {}),

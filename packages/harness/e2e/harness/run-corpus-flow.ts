@@ -2,6 +2,8 @@ import { readFile } from "node:fs/promises"
 import path from "node:path"
 import { daemonRuntime } from "./daemon"
 import { ensurePinnedPi } from "./pinned-pi"
+import { ensurePinnedCodex } from "./pinned-codex"
+import { ensurePinnedClaude } from "./pinned-claude"
 import { CONTRACT_DIST, ensureWorkspaceDist, HELPERS_DIST } from "./workspace-dists"
 
 const name = process.argv[2]
@@ -14,6 +16,8 @@ if (defects[id]) throw new Error(`${name} is expected red for ${defects[id].join
 
 for (const dist of [HELPERS_DIST, CONTRACT_DIST]) await ensureWorkspaceDist(dist)
 const pi = await ensurePinnedPi()
+await ensurePinnedCodex()
+await ensurePinnedClaude()
 console.log(`Pinned Pi ${pi.version}: ${pi.installed ? "installed" : "already installed"}`)
 const runtime = await daemonRuntime()
 console.log(`Daemon runtime: Node ${runtime.version} (${runtime.node})`)

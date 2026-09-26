@@ -91,7 +91,7 @@ function makeTransport(services: Parameters<Parameters<typeof runConformance>[0]
 
 runConformance({ name: "codex-app-server", backend, makeTransport })
 
-test("Codex Stop on a turn that ran a command reports a terminal turn with honest cleanup", async () => {
+test("Codex Stop on a turn that ran a command terminates its background terminals and verifies them clear", async () => {
   const recorder = recordingBackend()
   const context = await setupConformance({ name: "codex-stop-command", backend: recorder.backend, makeTransport })
   try {
@@ -108,13 +108,14 @@ test("Codex Stop on a turn that ran a command reports a terminal turn with hones
     release()
     await running
     expect(outcome.execution).toBe("terminal")
-    expect(outcome.cleanup).toBe("unknown")
+    expect(outcome.cleanup).toBe("verified_clear")
     expect(recorder.frames.some((frame) => frame.method === "turn/interrupt")).toBe(true)
-    expect(recorder.frames.some((frame) => frame.method === "thread/backgroundTerminals/list")).toBe(true)
+    expect(recorder.frames.filter((frame) => frame.method === "thread/backgroundTerminals/list").length).toBeGreaterThanOrEqual(2)
+    expect(recorder.frames.some((frame) => frame.method === "thread/backgroundTerminals/terminate")).toBe(true)
   } finally { await context.close() }
 }, 60_000)
 
-test("Codex goal pause and stop proceed after a goal turn ran a command, with a background-command notice", async () => {
+test("Codex goal pause and stop proceed after a goal turn ran a command, once its terminals verify clear", async () => {
   const context = await setupConformance({ name: "codex-goal-command", backend, makeTransport })
   try {
     const state = context.backend as CodexBackend
@@ -123,8 +124,7 @@ test("Codex goal pause and stop proceed after a goal turn ran a command, with a 
     expect((await context.transport.goals!.start(context.session, "Run the scripted command CODEXGOALCOMMAND", context.sessionBroker)).ok).toBe(true)
     await context.backend.held!("Process running with session ID")
     expect((await context.transport.goals!.pause(context.session)).ok).toBe(true)
-    const notice = context.ports.sessionEvents.find((row) => (row.event as { type?: string }).type === "harness-notice")
-    expect(notice?.event).toMatchObject({ type: "harness-notice", code: "codex.background_commands_unverified" })
+    expect(context.ports.sessionEvents.some((row) => (row.event as { type?: string; code?: string }).code === "codex.background_commands_unverified")).toBe(false)
     expect((await context.transport.goals!.read(context.session))?.status).toBe("paused")
     expect((await context.transport.goals!.stop(context.session)).ok).toBe(true)
     expect(await context.transport.goals!.read(context.session)).toBeNull()

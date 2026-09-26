@@ -101,7 +101,8 @@ export function resolveCodexExecutable(
   platform: NodeJS.Platform = process.platform,
   arch: NodeJS.Architecture = process.arch,
 ): string | undefined {
-  const resolved = resolveOnPath("codex", platform, env)
+  const override = env.CODEX_EXECUTABLE?.trim()
+  const resolved = override || resolveOnPath("codex", platform, env)
   if (!resolved) return undefined
   return platform === "win32" ? resolveWindowsNativeBinary(resolved, arch) : resolved
 }

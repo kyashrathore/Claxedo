@@ -53,6 +53,7 @@ export type DaemonInput = {
   red: boolean
   pathPrefix?: string
   piExecutable?: string
+  codexExecutable?: string
   claudeExecutable?: string
   cloud?: boolean
   coldStartWithoutKeys?: boolean
@@ -96,6 +97,7 @@ async function daemonEnv(input: DaemonInput): Promise<NodeJS.ProcessEnv> {
     TSX_TSCONFIG_PATH: path.join(SERVER_DIR, "tsconfig.json"),
     ...(input.pathPrefix ? { PATH: `${input.pathPrefix}${path.delimiter}${isolated.PATH}` } : {}),
     ...(input.piExecutable ? { PI_EXECUTABLE: input.piExecutable } : {}),
+    ...(input.codexExecutable ? { CODEX_EXECUTABLE: input.codexExecutable } : {}),
     ...(input.claudeExecutable ? { CLAUDE_CODE_EXECUTABLE: input.claudeExecutable } : {}),
   }
 }

@@ -8,6 +8,7 @@ import { promisify } from "node:util"
 import { runConformance, type ConformanceBackend, withUndeliverableFile } from "./test-support/run"
 import { reservePort, releasePort } from "../../e2e/harness/ports"
 import { startScriptedModelServer } from "../../e2e/harness/scripted-model-server"
+import { ensurePinnedClaude, PINNED_CLAUDE } from "../../e2e/harness/pinned-claude"
 import { ClaudeSdkTransport } from "../transports/claude-sdk"
 import { createRequestBroker, createSessionBroker, createTurnBroker } from "../broker"
 import { MemoryPorts, authority } from "./test-support/memory-ports"
@@ -82,7 +83,7 @@ async function attachedClaude(state: ClaudeBackend, previous?: { ports: MemoryPo
   const owner = createRequestBroker(ports)
   const origin = { actor: state.owner, via: "relay" as const, reissued: false }
   const broker = createSessionBroker(owner, { sessionId: "s1", directory: state.directory, workspaceId: "w1", origin })
-  const transport = new ClaudeSdkTransport(watchedServices(services, state), { executable: "claude", configRoot: state.configRoot,
+  const transport = new ClaudeSdkTransport(watchedServices(services, state), { executable: PINNED_CLAUDE, configRoot: state.configRoot,
     userConfigRoot: state.userConfigRoot, env: state.env })
   const start = { sessionId: "s1", workspaceId: "w1", directory: state.directory, locality: "local" as const, owner: state.owner,
     config: { harness: state.harness, model: state.model }, model: state.model, credentials: state.credentials,
@@ -120,6 +121,7 @@ async function attachedClaude(state: ClaudeBackend, previous?: { ports: MemoryPo
 }
 
 async function backend(): Promise<ClaudeBackend> {
+  await ensurePinnedClaude()
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "claude-conformance-"))
   const directory = path.join(root, "work")
   const userConfigRoot = path.join(root, "user-claude")
@@ -195,7 +197,7 @@ runConformance({
   backend,
   makeTransport(services, state) {
     const claude = state as ClaudeBackend
-    return new ClaudeSdkTransport(watchedServices(services, claude), { executable: "claude",
+    return new ClaudeSdkTransport(watchedServices(services, claude), { executable: PINNED_CLAUDE,
       configRoot: claude.configRoot, userConfigRoot: claude.userConfigRoot, env: claude.env })
   },
 })
@@ -210,7 +212,7 @@ test.each(["allow_once", "allow_always", "deny", "reject_always"])("Claude permi
   const owner = createRequestBroker(ports)
   const origin = { actor: state.owner, via: "relay" as const, reissued: false }
   const broker = createSessionBroker(owner, { sessionId: "s1", directory: state.directory, workspaceId: "w1", origin })
-  const transport = new ClaudeSdkTransport(watchedServices(services, state), { executable: "claude", configRoot: state.configRoot,
+  const transport = new ClaudeSdkTransport(watchedServices(services, state), { executable: PINNED_CLAUDE, configRoot: state.configRoot,
     userConfigRoot: state.userConfigRoot, env: state.env })
   try {
     const session = await transport.start({ sessionId: "s1", workspaceId: "w1", directory: state.directory, locality: "local", owner: state.owner,
@@ -281,7 +283,7 @@ test("Claude native Goal starts through provider admission and confirms clear", 
   const owner = createRequestBroker(ports)
   const origin = { actor: state.owner, via: "relay" as const, reissued: false }
   const broker = createSessionBroker(owner, { sessionId: "s1", workspaceId: "w1", directory: state.directory, origin })
-  const transport = new ClaudeSdkTransport(watchedServices(services, state), { executable: "claude", configRoot: state.configRoot,
+  const transport = new ClaudeSdkTransport(watchedServices(services, state), { executable: PINNED_CLAUDE, configRoot: state.configRoot,
     userConfigRoot: state.userConfigRoot, env: state.env })
   const release = state.server.holdTextReplies("CLAUDEGOAL")
   try {
@@ -308,7 +310,7 @@ test("a requested Claude agent changes the real CLI query", async () => {
   const owner = createRequestBroker(ports)
   const origin = { actor: state.owner, via: "relay" as const, reissued: false }
   const broker = createSessionBroker(owner, { sessionId: "s1", workspaceId: "w1", directory: state.directory, origin })
-  const transport = new ClaudeSdkTransport(watchedServices(services, state), { executable: "claude", configRoot: state.configRoot,
+  const transport = new ClaudeSdkTransport(watchedServices(services, state), { executable: PINNED_CLAUDE, configRoot: state.configRoot,
     userConfigRoot: state.userConfigRoot, env: state.env })
   try {
     await fs.mkdir(path.join(state.userConfigRoot, "agents"))
@@ -338,7 +340,7 @@ test("a saved Claude grant survives transport recreation and stays in its sessio
     projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] },
     credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" } })
   const options = { signal: new AbortController().signal, blockedPath: "/work" } as Parameters<CanUseTool>[2]
-  const transport = () => new ClaudeSdkTransport(services, { executable: "claude", configRoot: "/tmp/claude-grants",
+  const transport = () => new ClaudeSdkTransport(services, { executable: PINNED_CLAUDE, configRoot: "/tmp/claude-grants",
     userConfigRoot: "/tmp/claude-owner", env: {} })
   const first = transport()
   const firstSessions = [] as Awaited<ReturnType<typeof first.start>>[]

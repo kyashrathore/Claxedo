@@ -1,10 +1,11 @@
 import { execFileSync } from "node:child_process"
 import fs from "node:fs/promises"
 import path from "node:path"
+import { PINNED_CODEX } from "./pinned-codex"
 
 export async function staleCodexInventory(dataDir: string) {
   const bin = path.join(dataDir, "codex-inventory-fault-bin")
-  const actual = execFileSync("which", ["codex"], { encoding: "utf8" }).trim()
+  const actual = PINNED_CODEX
   const node = process.env.CLAXEDO_E2E_NODE
   if (!node || !actual) throw new Error("The Codex inventory fault needs CLAXEDO_E2E_NODE and an installed Codex CLI")
   await fs.mkdir(bin)
@@ -59,5 +60,5 @@ process.on("SIGTERM", () => child.kill("SIGTERM"))
 child.on("exit", (code, signal) => process.exit(signal ? 1 : code ?? 1))
 `
   await fs.writeFile(path.join(bin, "codex"), wrapper, { mode: 0o755 })
-  return bin
+  return { bin, executable: path.join(bin, "codex") }
 }

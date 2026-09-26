@@ -3,9 +3,10 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { writeLineProxyFault } from "./line-proxy-fault"
 import { PINNED_PI } from "./pinned-pi"
+import { PINNED_CODEX } from "./pinned-codex"
 
 export async function withholdSteerReply(dataDir: string, harness: "pi" | "codex") {
-  const actual = harness === "pi" ? PINNED_PI : execFileSync("which", ["codex"], { encoding: "utf8" }).trim()
+  const actual = harness === "pi" ? PINNED_PI : PINNED_CODEX
   const bin = path.join(dataDir, `${harness}-steer-fault-bin`)
   await fs.mkdir(bin)
   const gate = path.join(bin, "withhold")

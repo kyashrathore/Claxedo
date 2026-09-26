@@ -3,9 +3,10 @@ import { existsSync, readFileSync } from "node:fs"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { promisify } from "node:util"
+import { CODEX_VERSION } from "./config"
 
 const execFileAsync = promisify(execFile)
-export const CODEX_VERSION = "0.133.0"
+export { CODEX_VERSION }
 const PREFIX = path.resolve(import.meta.dirname, "../.artifacts/codex")
 const MANIFEST = path.join(PREFIX, "node_modules/@openai/codex/package.json")
 export const PINNED_CODEX = path.join(PREFIX, "node_modules/.bin/codex")

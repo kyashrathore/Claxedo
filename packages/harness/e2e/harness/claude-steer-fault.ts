@@ -1,10 +1,11 @@
 import { execFileSync } from "node:child_process"
 import fs from "node:fs/promises"
 import path from "node:path"
+import { PINNED_CLAUDE } from "./pinned-claude"
 
 export async function interruptClaudeSteer(dataDir: string) {
   const bin = path.join(dataDir, "claude-steer-fault-bin")
-  const actual = execFileSync("which", ["claude"], { encoding: "utf8" }).trim()
+  const actual = PINNED_CLAUDE
   const node = process.env.CLAXEDO_E2E_NODE
   if (!node || !actual) throw new Error("The Claude steer fault needs CLAXEDO_E2E_NODE and an installed Claude CLI")
   await fs.mkdir(bin)
