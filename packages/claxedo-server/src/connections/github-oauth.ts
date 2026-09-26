@@ -14,20 +14,13 @@
  * without one.
  */
 import { githubIntegration, type GitHubIntegrationOptions } from "@claxedo/connections"
+import { envText } from "@claxedo/helpers"
 
 type Env = Record<string, string | undefined>
 
-const read = (env: Env, ...names: string[]) => {
-  for (const name of names) {
-    const value = env[name]?.trim()
-    if (value) return value
-  }
-  return undefined
-}
-
 export function githubIntegrationForEnv(env: Env, options: GitHubIntegrationOptions = {}) {
-  const clientId = read(env, "CLAXEDO_INTEGRATION_GITHUB_CLIENT_ID", "GITHUB_CLIENT_ID")
-  const clientSecret = read(env, "CLAXEDO_INTEGRATION_GITHUB_CLIENT_SECRET", "GITHUB_CLIENT_SECRET")
+  const clientId = envText(env, "CLAXEDO_INTEGRATION_GITHUB_CLIENT_ID") ?? envText(env, "GITHUB_CLIENT_ID")
+  const clientSecret = envText(env, "CLAXEDO_INTEGRATION_GITHUB_CLIENT_SECRET") ?? envText(env, "GITHUB_CLIENT_SECRET")
   return githubIntegration({
     ...options,
     ...(clientId ? { clientId } : {}),
