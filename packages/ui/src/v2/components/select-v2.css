@@ -288,3 +288,9 @@
 .ui-select-v2-option:not([data-selected]) .ui-select-v2-option-indicator {
   visibility: hidden;
 }
+
+.ui-select-v2-option[data-selected] .ui-select-v2-option-check {
+  opacity: 1;
+  scale: 1;
+  filter: none;
+}
