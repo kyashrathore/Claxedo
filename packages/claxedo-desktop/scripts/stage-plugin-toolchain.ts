@@ -1,14 +1,12 @@
 import fs from "node:fs"
 import { createRequire } from "node:module"
 import path from "node:path"
+import { runBunBuild } from "../../../script/bun-build"
 
 const PLUGIN_BUILD_DIR = path.resolve(import.meta.dirname, "../../claxedo-plugin-build")
 const PLUGIN_API_DIR = path.resolve(import.meta.dirname, "../../claxedo-plugin-api")
 
-// esbuild's JavaScript API spawns its platform binary, resolved next to its own
-// package at runtime; inlined into the server bundle it throws on first use, so
-// every live plugin build failed with "Cannot find module 'esbuild'".
-export const PLUGIN_TOOLCHAIN_EXTERNALS = ["esbuild"]
+export const PLUGIN_TOOLCHAIN_EXTERNALS = ["@claxedo/plugin-build"]
 
 const DECLARATION = /\.d\.[cm]?ts$/
 
@@ -41,15 +39,23 @@ const declarations = (relative: string) => relative === "package.json" || DECLAR
 const pluginApiSource = (relative: string) =>
   relative === "package.json" || (relative.startsWith(`src${path.sep}`) && relative.endsWith(".ts") && !relative.endsWith(".test.ts"))
 
-/**
- * The closure `@claxedo/plugin-build` reaches by Node resolution at runtime,
- * staged as real packages beside the server bundle: esbuild and its binary for
- * a plugin's build, and for `checkPluginApp`'s typecheck the native TypeScript
- * compiler plus the declarations its `paths` name — Solid, the plugin API as
- * source, and zod, which the plugin API's manifest schema imports. Only
- * declarations are staged for the type roots: nothing executes them.
- */
-export function stagePluginToolchain(nodeModules: string, target: { platform: string; arch: string }) {
+/** Keep both the resolver and its dependencies inside the plugin-build package. */
+export async function stagePluginToolchain(nodeModules: string, target: { platform: string; arch: string }) {
+  const root = path.join(nodeModules, "@claxedo/plugin-build")
+  const dependencies = path.join(root, "node_modules")
+  fs.rmSync(root, { recursive: true, force: true })
+  await runBunBuild("Failed to bundle plugin toolchain", {
+    entrypoints: [path.join(PLUGIN_BUILD_DIR, "src/index.ts")],
+    outdir: root,
+    target: "node",
+    format: "esm",
+    naming: "index.js",
+    // esbuild locates and spawns its binary relative to its own package.
+    external: ["esbuild"],
+  })
+  fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({
+    name: "@claxedo/plugin-build", type: "module", exports: "./index.js",
+  }))
   const esbuild = packageDirectory("esbuild", PLUGIN_BUILD_DIR)
   const esbuildBinary = `@esbuild/${target.platform}-${target.arch}`
   const compiler = `@typescript/typescript-${target.platform}-${target.arch}`
@@ -61,6 +67,6 @@ export function stagePluginToolchain(nodeModules: string, target: { platform: st
     { name: "zod", source: packageDirectory("zod", PLUGIN_API_DIR), keep: declarations },
     { name: "@claxedo/plugin-api", source: PLUGIN_API_DIR, keep: pluginApiSource },
   ]
-  for (const { name, source, keep } of packages) copyPackage(source, path.join(nodeModules, name), keep)
+  for (const { name, source, keep } of packages) copyPackage(source, path.join(dependencies, name), keep)
   return packages.map(({ name }) => name)
 }
