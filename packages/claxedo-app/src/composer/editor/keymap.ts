@@ -110,7 +110,7 @@ const enterShell: KeyHandler = (deps, event) => {
   return true
 }
 
-const escape: KeyHandler = (deps, event) => {
+const escapeKey: KeyHandler = (deps, event) => {
   if (event.key !== "Escape" || !handleEscape(deps, event)) return false
   event.preventDefault()
   event.stopPropagation()
@@ -169,7 +169,7 @@ const submit: KeyHandler = (deps, event) => {
   return true
 }
 
-const HANDLERS: readonly KeyHandler[] = [pickFiles, enterShell, escape, leaveShell, newline, composingEnter, popoverKeys, cancelKey, historyArrows, submit]
+const HANDLERS: readonly KeyHandler[] = [pickFiles, enterShell, escapeKey, leaveShell, newline, composingEnter, popoverKeys, cancelKey, historyArrows, submit]
 
 export function createEditorKeyDown<TEvent extends EditorKeyEvent>(deps: EditorKeymapDeps<TEvent>) {
   return (event: TEvent) => {

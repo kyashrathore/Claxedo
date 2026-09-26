@@ -93,7 +93,7 @@ export function wireModelWriter(wiring: HarnessWiring, fetchConfigOptions: Fetch
       if (!harness || isCatalogHarness(harness) || !await hasConfigOptions(harness)) return
       await fetchConfigOptions(scope, harness, params)
     },
-    rememberDraftModel: (scope, model, input, labels) => void rememberDraftModel(wiring, scope, model, input, labels),
+    rememberDraftModel: (scope, model, input, labels) => void rememberDraftModelInWorkspace(wiring, scope, model, input, labels),
     runtime: { setSessionModel: (ref, model) => api.updateSessionConfig(ref, { model: { providerId: model.providerId, modelId: model.modelId } }) },
     cache: wiring.caches.sessionModel,
   })
@@ -110,7 +110,7 @@ export function wireSwitcher(wiring: HarnessWiring, fetchConfigOptions: FetchCon
       const identity = draftDefaultIdentity(api, input)
       if (identity) store.beginDraftHarnessChoice(scope, identity, type)
     },
-    rememberDraftHarness: (scope, type, input) => void rememberDraftHarness(wiring, scope, type, input),
+    rememberDraftHarness: (scope, type, input) => void rememberDraftHarnessInWorkspace(wiring, scope, type, input),
     fetchConfigOptions: (scope, type, input) => void fetchConfigOptions(scope, type, input),
     hasConfigOptions: wiring.hasConfigOptions,
     cache: wiring.caches.switcher,
@@ -123,12 +123,12 @@ function draftDefaultIdentity(api: HarnessConfigApi, input?: HarnessScopeInput) 
   return workspaceKey ? { serverUrl: api.serverUrl, workspaceKey } : undefined
 }
 
-export function rememberDraftHarness({ api, store }: HarnessWiring, scope: string, type: HarnessType, input?: HarnessScopeInput) {
+function rememberDraftHarnessInWorkspace({ api, store }: HarnessWiring, scope: string, type: HarnessType, input?: HarnessScopeInput) {
   const identity = draftDefaultIdentity(api, input)
   return identity ? store.rememberDraftHarness(scope, identity, type, input?.saveDraftDefault !== false) : false
 }
 
-export function rememberDraftModel({ api, store }: HarnessWiring, scope: string, model: ModelChoice, input?: HarnessScopeInput, labels?: DraftDefaultLabels) {
+export function rememberDraftModelInWorkspace({ api, store }: HarnessWiring, scope: string, model: ModelChoice, input?: HarnessScopeInput, labels?: DraftDefaultLabels) {
   const identity = draftDefaultIdentity(api, input)
   return identity ? store.rememberDraftModel(scope, identity, model, labels, input?.saveDraftDefault !== false) : false
 }

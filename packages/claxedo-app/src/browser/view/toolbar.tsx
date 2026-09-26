@@ -48,7 +48,7 @@ function NavigationButtons(props: { readonly tab: BrowserTab }): JSX.Element {
   )
 }
 
-function ToolbarRow(props: { readonly tab: BrowserTab }): JSX.Element {
+function BrowserToolbarRow(props: { readonly tab: BrowserTab }): JSX.Element {
   const t = useTranslator(browserDictionary)
   const inspecting = () => props.tab.state().kind === "picking"
   return (
@@ -83,10 +83,10 @@ function ToolbarRow(props: { readonly tab: BrowserTab }): JSX.Element {
 
 export function Toolbar(props: { readonly tab: BrowserTab }): JSX.Element {
   return (
-    <Show when={browserToolbarSlot()} fallback={<ToolbarRow tab={props.tab} />}>
+    <Show when={browserToolbarSlot()} fallback={<BrowserToolbarRow tab={props.tab} />}>
       {(host) => (
         <Portal mount={host()}>
-          <ToolbarRow tab={props.tab} />
+          <BrowserToolbarRow tab={props.tab} />
         </Portal>
       )}
     </Show>

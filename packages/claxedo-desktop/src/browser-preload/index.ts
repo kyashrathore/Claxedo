@@ -365,7 +365,7 @@ function ensurePopoverRoot(): ShadowRoot | null {
   return popoverShadow
 }
 
-function closePopover(): void {
+function closeGuestPopover(): void {
   if (activePopover) {
     activePopover.remove()
     activePopover = null
@@ -418,7 +418,7 @@ function positionPopover(popover: HTMLElement, anchor: DOMRect): void {
 }
 
 function showPopover(el: Element): void {
-  closePopover()
+  closeGuestPopover()
   clearHighlight()
   const root = ensurePopoverRoot()
   if (!root) {
@@ -485,7 +485,7 @@ function showPopover(el: Element): void {
   // so it appears in the screenshot; on dismiss (no screenshot) we clear it
   // immediately and re-arm the picker so the user can pick another element.
   const dismiss = () => {
-    closePopover()
+    closeGuestPopover()
     clearHighlight()
     getReactGrabAPI()?.activate?.()
   }
@@ -501,7 +501,7 @@ function showPopover(el: Element): void {
     // renderer's current (pre-mutation) surface — popover still showing,
     // highlight not yet composited. Two rAFs guarantee the next paint has
     // committed before we trigger the host-side capture.
-    closePopover()
+    closeGuestPopover()
     // Highlight intentionally stays — it's the visual anchor in the screenshot.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -929,7 +929,7 @@ function applyMode(mode: PickerMode): void {
   // Picker is off — drop any lingering highlight from the most recent submit
   // (whose screenshot the host has by now captured) or stale state.
   clearHighlight()
-  closePopover()
+  closeGuestPopover()
 }
 
 ipcRenderer.on("claxedo-picker:set-mode", (_event, mode: PickerMode) => {

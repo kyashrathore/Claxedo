@@ -52,7 +52,7 @@ function createProjectPaging(props: ProjectBlockProps) {
   }
 }
 
-function LoadMore(props: { readonly loading: boolean; readonly onLoad: () => void }): JSX.Element {
+function SessionLoadMore(props: { readonly loading: boolean; readonly onLoad: () => void }): JSX.Element {
   const t = useTranslator(railDictionary)
   return (
     <button
@@ -103,7 +103,7 @@ function ProjectSessions(
         <SessionListNotice variant="empty">{t("rail.noMatches")}</SessionListNotice>
       </Show>
       <Show when={props.paging.more()}>
-        <LoadMore loading={props.paging.loadingMore()} onLoad={props.paging.loadMore} />
+        <SessionLoadMore loading={props.paging.loadingMore()} onLoad={props.paging.loadMore} />
       </Show>
       <Show when={props.paging.pageError()}>
         <SessionListNotice variant="error" actionLabel={t("rail.retry")} onAction={props.paging.loadMore}>

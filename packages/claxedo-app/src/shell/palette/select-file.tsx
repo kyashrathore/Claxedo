@@ -17,7 +17,7 @@ export type DialogSelectFileProps = {
   readonly onOpenFile: (path: string) => void
 }
 
-function FileRow(props: { readonly path: string }): JSX.Element {
+function PaletteFileRow(props: { readonly path: string }): JSX.Element {
   return (
     <div class="w-full flex items-center justify-between rounded-md pl-1">
       <div class="flex items-center gap-x-3 grow min-w-0">
@@ -53,7 +53,7 @@ function SessionRow(props: { readonly item: PaletteEntry }): JSX.Element {
 
 function EntryRow(props: { readonly item: PaletteEntry }): JSX.Element {
   return (
-    <Switch fallback={<FileRow path={props.item.path ?? ""} />}>
+    <Switch fallback={<PaletteFileRow path={props.item.path ?? ""} />}>
       <Match when={props.item.type === "command"}>
         <div class="w-full flex items-center justify-between gap-4">
           <div class="flex items-center gap-2 min-w-0">

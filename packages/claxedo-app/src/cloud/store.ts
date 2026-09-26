@@ -30,7 +30,7 @@ export type CloudWorkspaces = {
 
 type Pending = { readonly event: CloudWorkspaceEvent; readonly at: CloudWorkspaceStatus["kind"] }
 
-function rowState(workspace: CloudWorkspace, pending: Pending | undefined): CloudWorkspaceStatus {
+function displayedStatus(workspace: CloudWorkspace, pending: Pending | undefined): CloudWorkspaceStatus {
   if (!pending || pending.at !== workspace.status.kind) return workspace.status
   return cloudWorkspaceTransition(workspace.status, pending.event)
 }
@@ -55,7 +55,7 @@ export function useCloudWorkspaces(projectId: Accessor<ProjectId>, enabled: Acce
     if (query.data !== undefined) {
       const rows = query.data
         .filter((workspace) => workspace.projectId === projectId())
-        .map((workspace) => ({ ...workspace, state: rowState(workspace, pending[workspace.id]) }))
+        .map((workspace) => ({ ...workspace, state: displayedStatus(workspace, pending[workspace.id]) }))
       return { kind: "ready", rows }
     }
     if (query.error) return { kind: "failed", error: query.error }

@@ -26,7 +26,7 @@ export type PermissionModeGroups = {
   }
 }
 
-const row = (option: PermissionModeOption): PermissionModeRow => {
+const permissionModeRow = (option: PermissionModeOption): PermissionModeRow => {
   if (permissionModeDeliverable(option.delivery.kind)) return { option, selectable: true }
   return {
     option,
@@ -75,7 +75,7 @@ function modeGroups(input: PermissionModeInput): PermissionModeGroups | undefine
   return {
     harness: {
       label: harnessGroupLabel(harness),
-      rows: options.harness.modes.map(row),
+      rows: options.harness.modes.map(permissionModeRow),
       ...(options.harness.unavailable ? { unavailable: options.harness.unavailable } : {}),
       ...(options.harness.loading ? { loading: true } : {}),
     },

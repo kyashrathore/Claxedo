@@ -56,7 +56,7 @@ export function sessionModelSyncKey(input: HarnessScopeInput) {
   return JSON.stringify([input.placementId, input.sessionId])
 }
 
-function turnModel(message: TranscriptMessage): ModelChoice | undefined {
+function messageModel(message: TranscriptMessage): ModelChoice | undefined {
   const providerId = message.providerID ?? message.model?.providerID
   const modelId = message.modelID ?? message.model?.modelID
   if (!providerId || !modelId) return undefined
@@ -66,7 +66,7 @@ function turnModel(message: TranscriptMessage): ModelChoice | undefined {
 export function knownSessionModel(harness: HarnessType, row: SessionRow | undefined, messages: readonly TranscriptMessage[]): ModelChoice | undefined {
   if (row?.model) return row.model
   for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const model = turnModel(messages[index])
+    const model = messageModel(messages[index])
     if (model) return isCatalogHarness(harness) || model.providerId === harnessSelectionId(harness) ? model : undefined
   }
   return undefined

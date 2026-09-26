@@ -187,8 +187,8 @@ function decodeLabels(input: unknown): DraftDefaultLabels | undefined {
   if (input === undefined) return undefined
   const row = asRecord(input)
   if (!row) return undefined
-  const provider = label(row.provider)
-  const model = label(row.model)
+  const provider = storedLabel(row.provider)
+  const model = storedLabel(row.model)
   if (row.provider !== undefined && !provider) return undefined
   if (row.model !== undefined && !model) return undefined
   return { ...(provider ? { provider } : {}), ...(model ? { model } : {}) }
@@ -228,7 +228,7 @@ function id(input: unknown) {
   return value
 }
 
-function label(input: unknown) {
+function storedLabel(input: unknown) {
   if (typeof input !== "string") return undefined
   const value = input.trim()
   if (!value || value.length > MAX_LABEL_LENGTH) return undefined

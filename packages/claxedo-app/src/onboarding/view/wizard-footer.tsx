@@ -3,7 +3,7 @@ import { useOnboardingText, type OnboardingText } from "../i18n"
 import type { OnboardingWizard } from "../wizard"
 import { Button } from "@/ui"
 
-function reason(t: OnboardingText, wizard: OnboardingWizard, localExecution: boolean): string | undefined {
+function blockedReason(t: OnboardingText, wizard: OnboardingWizard, localExecution: boolean): string | undefined {
   const failure = wizard.failure()
   if (failure) return failure
   if (wizard.step() === "ai" && !wizard.aiReady()) return t(localExecution ? "onboarding.reason.ai.local" : "onboarding.reason.ai.hosted")
@@ -28,7 +28,7 @@ export function WizardFooter(props: { readonly wizard: OnboardingWizard; readonl
         class={`min-w-0 flex-1 text-12-regular ${wizard().failure() ? "text-icon-warning-base" : "text-text-weak"}`}
         role={wizard().failure() ? "alert" : undefined}
       >
-        {reason(t, wizard(), props.localExecution) ?? ""}
+        {blockedReason(t, wizard(), props.localExecution) ?? ""}
       </p>
       <div class="flex shrink-0 items-center gap-2">
         <Button type="button" variant="ghost" size="normal" onClick={() => wizard().back()} disabled={wizard().finishing()}>

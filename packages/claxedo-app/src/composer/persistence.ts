@@ -9,7 +9,7 @@ export type ComposerPersistence = {
   readonly save: (key: string, entry: PersistedEntry) => void
 }
 
-function selectionOf(value: unknown): FileSelection | undefined {
+function storedSelection(value: unknown): FileSelection | undefined {
   const startLine = readFiniteNumber(value, "startLine")
   const endLine = readFiniteNumber(value, "endLine")
   if (startLine === undefined || endLine === undefined) return undefined
@@ -48,7 +48,7 @@ function partOf(value: unknown): PromptPart | undefined {
   }
   if (value.type === "file") {
     const path = readString(value, "path")
-    const selection = selectionOf(value.selection)
+    const selection = storedSelection(value.selection)
     return path ? { type: "file", path, content, start, end, ...(selection ? { selection } : {}) } : undefined
   }
   return undefined
@@ -70,7 +70,7 @@ function contextOf(value: unknown): ContextItem | undefined {
   }
   const path = readString(value, "path")
   if (value.type !== "file" || !path) return undefined
-  const selection = selectionOf(value.selection)
+  const selection = storedSelection(value.selection)
   const comment = readString(value, "comment")
   const commentId = readString(value, "commentId")
   const origin = value.commentOrigin === "review" || value.commentOrigin === "file" ? value.commentOrigin : undefined
@@ -93,7 +93,7 @@ function rangeOf(value: unknown): LineRange | undefined {
   return start === undefined || end === undefined ? undefined : { start, end }
 }
 
-function commentOf(value: unknown): HistoryComment | undefined {
+function storedComment(value: unknown): HistoryComment | undefined {
   const id = readString(value, "id")
   const path = readString(value, "path")
   const comment = readString(value, "comment")
@@ -110,7 +110,7 @@ function historyEntriesOf(value: unknown): HistoryEntry[] {
   return value.flatMap((entry) => {
     const prompt = promptOf(isRecord(entry) ? entry.prompt : undefined)
     if (!prompt) return []
-    const comments = (readArray(entry, "comments") ?? []).flatMap((comment) => commentOf(comment) ?? [])
+    const comments = (readArray(entry, "comments") ?? []).flatMap((comment) => storedComment(comment) ?? [])
     return [{ prompt, comments }]
   })
 }

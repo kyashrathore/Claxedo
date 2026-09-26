@@ -76,10 +76,10 @@ function applyOptions<ScopeInput>(input: LoaderInput<ScopeInput>, request: Reque
   }
   const resolvingDefault = request.draftDefault && input.resolveDraftDefault ? request.draftDefault : undefined
   input.applyPatch(scope, resolvingDefault ? withoutSelection(decision.patch, payload.stale) : decision.patch)
-  if (resolvingDefault && !payload.stale) resolveDraftDefault(input, resolvingDefault, type, decision)
+  if (resolvingDefault && !payload.stale) requestDraftDefault(input, resolvingDefault, type, decision)
 }
 
-function resolveDraftDefault<ScopeInput>(input: LoaderInput<ScopeInput>, application: DraftDefaultApplication, type: HarnessType, decision: HarnessOptionsDecision) {
+function requestDraftDefault<ScopeInput>(input: LoaderInput<ScopeInput>, application: DraftDefaultApplication, type: HarnessType, decision: HarnessOptionsDecision) {
   const providerId = harnessSelectionId(type)
   input.resolveDraftDefault?.(application, {
     supportedHarnesses: [type],

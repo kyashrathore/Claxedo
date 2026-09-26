@@ -5,7 +5,7 @@ import { createConfigOptionsProbe } from "./config-options-probe"
 import type { DraftDefaultStorage } from "./draft-defaults"
 import { createHarnessStore } from "./harness-store"
 import { harnessOptionsReads, harnessSelectionReads } from "./harness-store-reads"
-import { rememberDraftModel, resolveCurrentDraftDefault, wireHydrator, wireModelWriter, wireOptionsLoader, wireSwitcher, type FetchConfigOptions, type HarnessWiring } from "./harness-wiring"
+import { rememberDraftModelInWorkspace, resolveCurrentDraftDefault, wireHydrator, wireModelWriter, wireOptionsLoader, wireSwitcher, type FetchConfigOptions, type HarnessWiring } from "./harness-wiring"
 import { createScopeCaches } from "./scope-caches"
 import { applyPushedHarnessHealth, commitHeldHarness, probeHarnessHealth } from "./session-harness"
 
@@ -31,7 +31,7 @@ export function createHarnessConfigStore(server: Server, storage: DraftDefaultSt
     probeHealth: probeHarnessHealth.bind(null, wiring),
     markUnavailable: (scope: string) => store.setReadiness(scope, "error"),
     promote: store.promote,
-    rememberDraftModel: rememberDraftModel.bind(null, wiring),
+    rememberDraftModel: rememberDraftModelInWorkspace.bind(null, wiring),
     resolveDraftDefault: resolveCurrentDraftDefault.bind(null, wiring),
     setModel: modelWriter.setModel,
     settledModel: modelWriter.settledModel,
