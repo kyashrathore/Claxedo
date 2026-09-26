@@ -1,31 +1,19 @@
+import { withAlpha, type HexColor } from "@opencode-ai/ui/theme"
 import { TERMINAL_FONT_FAMILY } from "../backend/options"
 import type { TerminalColors } from "../backend/types"
 
 type Mode = "light" | "dark"
 
-const SEEDS: Record<Mode, { background: string; foreground: string }> = {
+const SEEDS: Record<Mode, { background: HexColor; foreground: HexColor }> = {
   light: { background: "#fcfcfc", foreground: "#211e1e" },
   dark: { background: "#191515", foreground: "#d4d4d4" },
 }
 
 const SELECTION_ALPHA: Record<Mode, number> = { light: 0.2, dark: 0.25 }
 
-function hexColor(value: string): string | undefined {
-  if (/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(value)) return value
-  return /^#[0-9a-f]{8}$/i.test(value) ? value.slice(0, 7) : undefined
-}
-
-function withAlpha(hex: string, alpha: number): string {
-  const digits =
-    hex.length === 4
-      ? hex
-          .slice(1)
-          .split("")
-          .map((digit) => digit + digit)
-          .join("")
-      : hex.slice(1, 7)
-  const [r, g, b] = [0, 2, 4].map((offset) => Number.parseInt(digits.slice(offset, offset + 2), 16))
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+function hexColor(value: string): HexColor | undefined {
+  if (/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(value)) return value as HexColor
+  return /^#[0-9a-f]{8}$/i.test(value) ? (value.slice(0, 7) as HexColor) : undefined
 }
 
 function currentMode(): Mode {
@@ -38,7 +26,7 @@ function cssVariable(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 }
 
-function colorValue(name: string): string | undefined {
+function cssColor(name: string): string | undefined {
   const value = cssVariable(name)
   return hexColor(value) ?? (/^rgba?\(/i.test(value) ? value : undefined)
 }
@@ -46,8 +34,8 @@ function colorValue(name: string): string | undefined {
 export function terminalColors(): TerminalColors {
   const mode = currentMode()
   const seeds = SEEDS[mode]
-  const background = colorValue("--background-stronger") ?? seeds.background
-  const foreground = colorValue("--text-stronger") ?? seeds.foreground
+  const background = cssColor("--background-stronger") ?? seeds.background
+  const foreground = cssColor("--text-stronger") ?? seeds.foreground
   return {
     background,
     foreground,
