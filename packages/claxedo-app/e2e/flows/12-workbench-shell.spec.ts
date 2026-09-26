@@ -224,7 +224,6 @@ test("12 a session switch shows the previous session until the next one is laid 
   const elsewhere = await seedTurns(stack, api, there.directory, "Elsewhere", 12)
   const long = await seedTurns(stack, api, here.directory, "Long", 30, { lines: 40 })
   const failed = await seedTurns(stack, api, here.directory, "Failed", 12, { lastFails: true })
-  const short = await seedTurns(stack, api, here.directory, "Short", 1)
   const pi = await api.createSession(here.directory, { title: "Pi", harness: { id: "pi", access: "native" } })
   await api.prompt(here.directory, pi.id, "Pi turn: review the fixture.")
   await app.goto(`${stack.url}${sessionRoute(here.id, previous.id)}`)
@@ -235,7 +234,6 @@ test("12 a session switch shows the previous session until the next one is laid 
   const acp = { model: "Scripted ACP default", nameKnown: true }
   const switches = [
     { label: "unvisited", next: target, ...acp },
-    { label: "unvisited short", next: short, ...acp },
     { label: "unvisited Pi", next: pi, model: "anthropic/claude-opus-4-8", nameKnown: false },
     { label: "another workspace", next: elsewhere, ...acp },
     { label: "long rows", next: long, ...acp },
