@@ -74,12 +74,12 @@ function findMonorepoRoot(start: string): string | undefined {
   return undefined
 }
 
-async function ask(rl: readline.Interface, question: string, fallback: string): Promise<string> {
+async function promptWithDefault(rl: readline.Interface, question: string, fallback: string): Promise<string> {
   const answer = (await rl.question(`${question} [${fallback}]: `)).trim()
   return answer || fallback
 }
 
-async function select(rl: readline.Interface, title: string, choices: SelectChoice[], fallback: string): Promise<string> {
+async function promptChoice(rl: readline.Interface, title: string, choices: SelectChoice[], fallback: string): Promise<string> {
   console.log(`\n${title}`)
   const selectable = choices.filter((c) => !c.disabledReason)
   for (const choice of choices) {
@@ -99,10 +99,10 @@ async function select(rl: readline.Interface, title: string, choices: SelectChoi
   const disabled = choices.find((c) => c.value === raw && c.disabledReason)
   if (disabled) {
     console.log(`  ${disabled.label} isn't available: ${disabled.disabledReason}`)
-    return select(rl, title, choices, fallback)
+    return promptChoice(rl, title, choices, fallback)
   }
   console.log("  Unrecognized choice, try again.")
-  return select(rl, title, choices, fallback)
+  return promptChoice(rl, title, choices, fallback)
 }
 
 function run(command: string, args: string[], opts: { cwd?: string; stdin?: string } = {}): Promise<{ code: number; out: string }> {
@@ -240,11 +240,11 @@ export async function deploy(args: string[]) {
 
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
   try {
-    const platform = options.yes ? "fly" : await select(rl, "Deploy where?", PLATFORM_CHOICES, "fly")
+    const platform = options.yes ? "fly" : await promptChoice(rl, "Deploy where?", PLATFORM_CHOICES, "fly")
     if (platform !== "fly") throw new Error(`platform "${platform}" is not available in v1`)
 
-    const app = flyApp(options.app ?? (options.yes ? "claxedo-selfhost" : await ask(rl, "App name (globally unique on Fly)", "claxedo-selfhost")))
-    const region = flyRegion(options.region ?? (options.yes ? "sin" : await ask(rl, "Fly region", "sin")))
+    const app = flyApp(options.app ?? (options.yes ? "claxedo-selfhost" : await promptWithDefault(rl, "App name (globally unique on Fly)", "claxedo-selfhost")))
+    const region = flyRegion(options.region ?? (options.yes ? "sin" : await promptWithDefault(rl, "Fly region", "sin")))
 
     const configPath = path.join(root, `${app}.fly.toml`)
     await mkdir(path.dirname(configPath), { recursive: true })

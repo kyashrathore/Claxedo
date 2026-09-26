@@ -183,7 +183,7 @@ function threadOf(event: { payload: unknown }, context: HarnessEventAdapterConte
   return text(payload(event).threadId) ?? context.threadId
 }
 
-function sessionId(event: { payload: unknown }, context: HarnessEventAdapterContext) {
+function codexSessionId(event: { payload: unknown }, context: HarnessEventAdapterContext) {
   return text(payload(event).sessionId) ?? threadOf(event, context)
 }
 
@@ -529,12 +529,12 @@ function completionEvents(
   if (status === "cancelled" || status === "interrupted") {
     return [
       { type: "session-status", status: "idle" },
-      { type: "cancelled", sessionId: sessionId(event, context) },
+      { type: "cancelled", sessionId: codexSessionId(event, context) },
     ] satisfies AgentRuntimeEvent[]
   }
   return [
     { type: "session-status", status: "idle" },
-    { type: "finish", sessionId: sessionId(event, context) },
+    { type: "finish", sessionId: codexSessionId(event, context) },
   ] satisfies AgentRuntimeEvent[]
 }
 
@@ -1005,7 +1005,7 @@ export function codexAppServerAdapter(options: { threadModel?: CodexThreadModel 
             state: endThreadTurn(state, event, context),
             events: [
               { type: "session-status", status: "idle" },
-              { type: "finish", sessionId: sessionId(event, context) },
+              { type: "finish", sessionId: codexSessionId(event, context) },
             ],
           }
 

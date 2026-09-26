@@ -179,7 +179,7 @@ export type HostConnectorChildMessage =
   | { type: "response"; requestId: string; ok: true; status: HostConnectorChildState }
   | { type: "response"; requestId: string; ok: false; error: string }
 
-function requestId(input: Record<string, unknown>): string | undefined {
+function requestIdOf(input: Record<string, unknown>): string | undefined {
   return isNonEmptyString(input.requestId) ? input.requestId : undefined
 }
 
@@ -293,7 +293,7 @@ export function parseHostConnectorParentMessage(value: unknown): HostConnectorPa
   if (!input || !isNonEmptyString(input.type)) return undefined
 
   if (input.type === "bootstrap") {
-    const id = requestId(input)
+    const id = requestIdOf(input)
     if (!id || typeof input.heartbeatIntervalMs !== "number" || !Number.isFinite(input.heartbeatIntervalMs)) return undefined
     if (!isNonEmptyString(input.controlPlaneUrl)) return undefined
     const restored = input.identity === undefined ? undefined : identity(input.identity)
@@ -333,7 +333,7 @@ export function parseHostConnectorParentMessage(value: unknown): HostConnectorPa
   }
 
   if (input.type === "share-workspace") {
-    const id = requestId(input)
+    const id = requestIdOf(input)
     if (!id || !isNonEmptyString(input.workspaceId)) return undefined
     if (input.displayName !== undefined && typeof input.displayName !== "string") return undefined
     return {
@@ -345,18 +345,18 @@ export function parseHostConnectorParentMessage(value: unknown): HostConnectorPa
   }
 
   if (input.type === "unshare-workspace") {
-    const id = requestId(input)
+    const id = requestIdOf(input)
     if (!id || !isNonEmptyString(input.workspaceId)) return undefined
     return { type: "unshare-workspace", requestId: id, workspaceId: input.workspaceId }
   }
 
   if (input.type === "identity-stored" || input.type === "sealing-key-stored" || input.type === "stop") {
-    const id = requestId(input)
+    const id = requestIdOf(input)
     return id ? { type: input.type, requestId: id } : undefined
   }
 
   if (input.type === "provider-config-stored") {
-    const id = requestId(input)
+    const id = requestIdOf(input)
     if (!id || typeof input.ok !== "boolean") return undefined
     if (input.ok) return { type: "provider-config-stored", requestId: id, ok: true }
     return typeof input.error === "string"
@@ -365,7 +365,7 @@ export function parseHostConnectorParentMessage(value: unknown): HostConnectorPa
   }
 
   if (input.type === "account-result") {
-    const id = requestId(input)
+    const id = requestIdOf(input)
     if (!id || typeof input.ok !== "boolean") return undefined
     return input.ok
       ? { type: "account-result", requestId: id, ok: true, value: input.value }
@@ -391,20 +391,20 @@ export function parseHostConnectorChildMessage(value: unknown): HostConnectorChi
   }
 
   if (input.type === "identity-created") {
-    const id = requestId(input)
+    const id = requestIdOf(input)
     const created = identity(input.identity)
     return id && created ? { type: "identity-created", requestId: id, identity: created } : undefined
   }
 
   if (input.type === "sealing-key-created") {
-    const id = requestId(input)
+    const id = requestIdOf(input)
     return id && isJsonWebKey(input.sealingPrivateKeyJwk)
       ? { type: "sealing-key-created", requestId: id, sealingPrivateKeyJwk: input.sealingPrivateKeyJwk }
       : undefined
   }
 
   if (input.type === "provider-config") {
-    const id = requestId(input)
+    const id = requestIdOf(input)
     const config = hostConnectorProviderConfig(input)
     return id && config ? { type: "provider-config", requestId: id, ...config } : undefined
   }
@@ -417,7 +417,7 @@ export function parseHostConnectorChildMessage(value: unknown): HostConnectorChi
   }
 
   if (input.type === "account-operation") {
-    const id = requestId(input)
+    const id = requestIdOf(input)
     const operation = Object.values(HOST_ENROLLMENT_OPERATIONS).find((name) => name === input.name)
     const operationInput = input.input === undefined ? undefined : asRecord(input.input)
     if (!id || !operation || (input.input !== undefined && !operationInput)) return undefined
@@ -441,7 +441,7 @@ export function parseHostConnectorChildMessage(value: unknown): HostConnectorChi
   }
 
   if (input.type === "response") {
-    const id = requestId(input)
+    const id = requestIdOf(input)
     if (!id || typeof input.ok !== "boolean") return undefined
     if (!input.ok) return typeof input.error === "string" ? { type: "response", requestId: id, ok: false, error: input.error } : undefined
     const status = connectorState(input.status)

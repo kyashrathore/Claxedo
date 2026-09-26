@@ -135,7 +135,7 @@ export function registerSessionTools(registry: ToolRegistrar) {
       },
       access: runtimeToolAccess("sessions_list", { audiences: ["runtime", "user"], scope: "read" }),
     },
-    async (args, ctx) => toolJson({ workspaces: await listSessions(ctx, args.workspace, args.limit ?? 50) }),
+    async (args, ctx) => toolJson({ workspaces: await listWorkspaceSessions(ctx, args.workspace, args.limit ?? 50) }),
   )
 
   registry.tool(
@@ -390,7 +390,7 @@ type WorkspaceSessions = Readonly<{
   sessions?: unknown[]
 }>
 
-async function listSessions(ctx: McpToolContext, only: string | undefined, limit: number): Promise<readonly WorkspaceSessions[]> {
+async function listWorkspaceSessions(ctx: McpToolContext, only: string | undefined, limit: number): Promise<readonly WorkspaceSessions[]> {
   const rows = await reachableWorkspaces(ctx, only)
   return await Promise.all(rows.map((row) => workspaceSessions(ctx, row, limit)))
 }
