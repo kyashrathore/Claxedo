@@ -679,3 +679,64 @@ Every other lane is stopped: adapter, session-data, kit, tools, settings-access,
 - **Restart the daemon after server changes.** The app guards wire shapes strictly, so an old daemon empties lists instead of erroring.
 - **Merges silently revert.** Read the outside-folders report after every merge.
 - **Green is a claim.** A flow that passes on v2 alone proves nothing about parity. Every baseline flow is written v1-first and must pass on v1 before it judges v2. It branches only for an approved deviation, titled with its DECISIONS entry.
+
+
+## Benchmark: the fast realistic preset
+
+**Direct answer.** `claxedo-v1-vs-v2-fast` is now the only Claxedo comparison preset. It lives on `~/test/agent-app-benchmark` branch `claxedo-fast-realistic` (not pushed; head `d910dd9`), and the 22-minute `claxedo-v1-vs-v2` preset is gone. Three runs against the archived packaged apps (build `23f688c2a0`) each took about 7 minutes. 180 s of each was v2's panel failing at the moderate load. With a working v2 panel the same runs would take about 4m40s–4m50s; that is an estimate, not a measurement. Docs: `docs/presets/claxedo-v1-vs-v2-fast.md` in the benchmark repo.
+
+**What runs.** Scenarios `app-start-fast-v2`, `session-switch-fast-v2`, `session-navigation-fast-v1` and `workspace-panel-fast-v1` over the new corpus `opencode-completed-sessions-fast-v2`, a slice of the full corpus: 1 and 8 MiB sessions plus one 1 MiB long-row session. 1 MiB is the p95 and 8 MiB is past the p99 of rendered session payload in the owner's local OpenCode, Claude Code and Codex histories. Samples per app:
+- 4 per start mode;
+- 12 per switch lane;
+- 6 per size and long-row row;
+- 5 per navigation row;
+- 4 per panel action (open, Files→Review, Review→Files, open file, Collapse All at moderate);
+- one memory process.
+
+**Validation, three runs (shared host, AC).**
+
+| Run | Wall clock | 1-min load min–median–max | Power |
+|---|---:|---|---|
+| 1 | 7m 02s | 4.25–6.3–12.86 | ac |
+| 2 | 7m 00s | 3.63–5.68–8.52 | ac |
+| 3 | 6m 53s | 2.44–4.43–8.71 | ac |
+
+| Row | v1 median (ms) per run | v2 median (ms) per run | v1/v2 ratio [95% CI] per run | Verdict per run | Stable |
+|---|---|---|---|---|---|
+| App start, fresh profile | 1.10 s / 1.18 s / 1.10 s | 1.12 s / 1.09 s / 1.08 s | 0.99 [0.96–1.05] / 1.08 [1.03–1.17] / 1.02 [1.00–1.08] | tie / v2 / tie | no (noisy) |
+| App start, existing profile | 1.78 s / 1.81 s / 1.78 s | 986.6 / 981.0 / 972.6 | 1.80 [1.14–1.95] / 1.85 [1.79–1.87] / 1.83 [1.77–1.88] | v2 / v2 / v2 | yes |
+| Switch to unvisited session, same workspace | 40.3 / 41.5 / 40.8 | 24.9 / 24.7 / 25.0 | 1.61 [1.31–2.01] / 1.68 [1.37–4.06] / 1.63 [1.33–3.98] | v2 / v2 / v2 | yes |
+| Switch to unvisited session, other workspace | 49.9 / 42.3 / 41.2 | 24.8 / 25.1 / 24.8 | 2.01 [1.38–9.42] / 1.69 [1.40–5.03] / 1.67 [1.32–3.38] | v2 / v2 / v2 | yes |
+| Return to visited session, same workspace | 16.3 / 16.4 / 16.4 | 37.9 / 25.4 / 50.1 | 0.43 [0.32–0.79] / 0.65 [0.31–0.82] / 0.33 [0.32–0.49] | v1 / v1 / v1 | yes |
+| Return to visited session, other workspace | 16.4 / 16.4 / 16.4 | 51.5 / 50.0 / 49.9 | 0.32 [0.29–0.32] / 0.33 [0.31–0.34] / 0.33 [0.32–0.34] | v1 / v1 / v1 | yes |
+| Switch to 1 MiB session | 33.1 / 37.3 / 33.4 | 25.1 / 24.8 / 24.9 | 1.32 [1.27–1.62] / 1.50 [1.28–1.68] / 1.34 [1.12–1.51] | v2 / v2 / v2 | yes |
+| Switch to 8 MiB session | 33.4 / 33.3 / 33.0 | 25.6 / 25.0 / 24.8 | 1.31 [1.26–1.62] / 1.33 [1.28–1.65] / 1.33 [1.29–1.36] | v2 / v2 / v2 | yes |
+| Switch to 1 MiB of long text rows | 97.5 / 104.0 / 98.0 | 51.5 / 51.9 / 50.4 | 1.89 [1.13–2.75] / 2.01 [1.12–3.05] / 1.95 [1.10–2.95] | v2 / v2 / v2 | yes |
+| History navigation: First visit, 1 MiB | 48.3 / 91.1 / 50.0 | 33.6 / 25.7 / 33.8 | 1.44 [0.99–14.41] / 3.54 [2.30–19.92] / 1.48 [1.23–3.40] | n.r.d. / v2 / v2 | no (noisy) |
+| History navigation: Return, panel closed, 1 MiB | 24.4 / 23.8 / 24.4 | 16.1 / 16.2 / 16.2 | 1.52 [1.43–1.57] / 1.47 [1.38–1.56] / 1.51 [1.35–1.73] | v2 / v2 / v2 | yes |
+| Return to visited session, workspace panel open (moderate) | 32.3 / 32.3 / 32.1 | – (0/5) / – (0/5) / – (0/5) | – / – / – | withheld / withheld / withheld | yes |
+| Workspace panel open-panel (moderate) | 134.9 / 134.1 / 134.1 | – (0/4) / – (0/4) / – (0/4) | – / – / – | withheld / withheld / withheld | yes |
+| Workspace panel files-to-review (moderate) | 15.7 / 15.1 / 15.6 | – (0/4) / – (0/4) / – (0/4) | – / – / – | withheld / withheld / withheld | yes |
+| Workspace panel review-to-files (moderate) | 16.5 / 16.8 / 16.4 | – (0/4) / – (0/4) / – (0/4) | – / – / – | withheld / withheld / withheld | yes |
+| Workspace panel open-file (moderate) | 25.1 / 31.9 / 33.4 | – (0/4) / – (0/4) / – (0/4) | – / – / – | withheld / withheld / withheld | yes |
+| Workspace panel collapse-all (moderate) | 24.9 / 24.7 / 24.6 | – (0/4) / – (0/4) / – (0/4) | – / – / – | withheld / withheld / withheld | yes |
+| Memory (RSS) idle after launch (MiB) | 1014 / 1012 / 1011 | 741 / 739 / 745 | 1.37 / 1.37 / 1.36 | v2 / v2 / v2 | yes |
+| Memory (RSS) idle after the switching workload (MiB) | 1043 / 1044 / 1038 | 789 / 786 / 786 | 1.32 / 1.33 / 1.32 | v2 / v2 / v2 | yes |
+| CPU while idle (%) | 17.1 / 12.5 / 17.5 | 1.4 / 0.4 / 1.2 | 12.49 [1.60–62.12] / 30.74 [2.26–∞] / 14.48 [1.38–59.10] | v2 / v2 / v2 | yes |
+
+- **Noisy rows:** fresh start, where the ratio sits on the 5% margin, and the first history visit, where v1's first navigation after launch is slow in some processes.
+- **v1 wins:** both returns to a visited session, in every run. v1 has 0 invalid observations in every run.
+- **v2 invalid:** 25 per run. Of those, 6 are real failures ("Claxedo directory row did not appear: level=1 label=src", each waiting 30 s), and 19 are later cases of the same withheld rows, recorded as not attempted.
+
+**Honesty and logging.**
+- The verdict rules are unchanged, and the table now prints `n=valid/attempted`.
+- Every observation is appended to `observations.jsonl` before the next case starts, and `progress.md` is rewritten after each one.
+- A failed step is recorded and the schedule continues.
+- `verdict --output-root` renders a killed run, with rows marked `incomplete` (n = attempted of scheduled).
+- `compare --resume` keeps sealed steps and reruns the interrupted one.
+- Proof: the run was killed with SIGKILL 29 s into step 5 (partial table: 4 of 8 steps, navigation rows `n=3 of 5`). `--resume` kept steps 1–4, reran step 5 from its start, and finished all 8. The 16 results pass `result validate` and the site builds.
+- Host load, power and the top processes (with the apps' own helpers labelled) are in `host-conditions.jsonl`. They are logged, never a gate.
+
+**Unmet / owners.**
+1. The Claxedo driver must list the fast ids and should cache the fixture-backed state. The patch is `scratchpad/driver-fast-scenarios.patch` in the bench-fast session scratchpad (`/private/tmp/claude-501/-Users-yashvardhansingh-test-opencode/b8fc7026-28c0-4b62-97e7-6646f6620b5a/scratchpad/`), 2 files, +35/−7, with its test. It applies cleanly to `v2/bench-final`, and the driver test passes (17/17) on a scratch copy. The validation used that copy; the monorepo is untouched. Owner: whoever lands the driver.
+2. v2's Files tree renders no rows at the moderate and heavy loads on `23f688c2a0`. This also invalidated 85/120 panel observations in full-a4. Owner: the v2 panel lane.
