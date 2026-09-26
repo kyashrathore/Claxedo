@@ -1,10 +1,13 @@
 import type { ConfigOperations, DraftLaunch, HarnessSession } from "../../contract"
+import { configOptionsPreview } from "../../contract"
 import type { SessionConfig } from "@claxedo/agent-runtime-contract"
 import type { AcpEntry } from "./index"
+import { acpOption, acpPermissionModes, type AcpCatalog } from "./options"
+import { acpApplySessionConfig, acpSetPermissionMode } from "./sync"
 
 export function acpConfig(entryFor: (session: HarnessSession) => AcpEntry,
-  probe: (draft: DraftLaunch, mode: "probe" | "peek") => Promise<AcpEntry["options"]>): ConfigOperations {
-  const operations: ConfigOperations = {
+  probe: (draft: DraftLaunch, mode: "probe" | "peek") => Promise<AcpCatalog>): ConfigOperations {
+  return {
     read: async (session) => entryFor(session).start.config,
     update: async (session, update) => {
       const entry = entryFor(session)
@@ -20,24 +23,15 @@ export function acpConfig(entryFor: (session: HarnessSession) => AcpEntry,
         ...(update.group !== undefined ? { group: update.group ?? undefined } : {}),
         ...(update.handoff !== undefined ? { handoff: update.handoff ?? undefined } : {}),
       }
+      await acpApplySessionConfig(entry, config)
       entry.start = { ...entry.start, config }
       return entry.start.config
     },
     options: async (target, mode) => {
-      const options = "session" in target ? entryFor(target.session).options : await probe(target.draft, mode)
-      return options.map(({ id, name, type, category, currentValue, description }) => ({ id, name, type,
-        ...(category ? { category } : {}), currentValue, ...(description ? { description } : {}) }))
+      const catalog = "session" in target ? entryFor(target.session) : await probe(target.draft, mode)
+      return configOptionsPreview(catalog.options.map(acpOption))
     },
-    permissionModes: async (target) => {
-      const options = "session" in target ? entryFor(target.session).options : await probe(target.draft, "probe")
-      return { appliesFrom: "next-turn", modes: options.filter((option) => option.category === "mode").flatMap((option) =>
-        option.type === "select" ? option.options.flatMap((item) => "value" in item ? [{ id: item.value, name: item.name }] : item.options.map((value) => ({ id: value.value, name: value.name }))) : []) }
-    },
-    setPermissionMode: async (session, modeId) => {
-      const entry = entryFor(session)
-      await entry.peer.agent.setSessionMode({ sessionId: session.binding.upstreamSessionId, modeId })
-      return operations.permissionModes({ session })
-    },
+    permissionModes: async (target) => acpPermissionModes("session" in target ? entryFor(target.session) : await probe(target.draft, "probe")),
+    setPermissionMode: (session, modeId) => acpSetPermissionMode(entryFor(session), modeId),
   }
-  return operations
 }

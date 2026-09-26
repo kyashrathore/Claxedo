@@ -2,79 +2,76 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
-import { realPathWithinRoot, writePrivateFileAtomic } from "@claxedo/helpers/fs"
-import type { PluginProjection, ResolvedCredentials } from "../../contract"
+import { writePrivateFileAtomic } from "@claxedo/helpers/fs"
+import type { PluginProjection, ResolvedCredentials, TurnActor } from "../../contract"
+import { CLAXEDO_MARKETPLACE, codexHomeKey, copyTreeAtomically, mirrorOwnerCodexHome } from "./home"
 
-const MARKETPLACE = "claxedo-agent-plugins"
 const START = "# BEGIN CLAXEDO CODEX PROFILE"
 const END = "# END CLAXEDO CODEX PROFILE"
 
 export type CodexProfile = { home: string; brokered: boolean }
+
+export type CodexProfileInput = {
+  homeRoot: string
+  owner: TurnActor
+  credentials: ResolvedCredentials
+  projection: PluginProjection
+  ownerHome?: string
+}
 
 function validatedCodexPluginSegment(name: string): string {
   if (!/^[A-Za-z0-9._-]+$/.test(name) || name === "." || name === "..") throw new Error(`Invalid Codex plugin name ${name}`)
   return name
 }
 
+async function readOptional(file: string): Promise<string> {
+  return fs.readFile(file, "utf8").catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return ""
+    throw error
+  })
+}
+
 async function marketplace(home: string, projection: PluginProjection): Promise<string> {
-  if (!projection.pluginRoots.length) return ""
   const source = path.join(home, "marketplace")
+  const cache = path.join(home, "plugins", "cache", CLAXEDO_MARKETPLACE)
+  if (!projection.pluginRoots.length) {
+    await fs.rm(source, { recursive: true, force: true })
+    await fs.rm(cache, { recursive: true, force: true })
+    return ""
+  }
   const manifest = path.join(source, ".agents", "plugins")
-  const cache = path.join(home, "plugins", "cache", MARKETPLACE)
   await fs.mkdir(manifest, { recursive: true, mode: 0o700 })
+  await fs.mkdir(path.join(source, "plugins"), { recursive: true, mode: 0o700 })
   await fs.mkdir(cache, { recursive: true, mode: 0o700 })
   const names = new Set<string>()
   const plugins = []
   for (const item of projection.pluginRoots) {
-    const manifestFile = path.join(item.root, ".codex-plugin", "plugin.json")
-    const manifest: unknown = JSON.parse(await fs.readFile(manifestFile, "utf8"))
-    const fields = asRecordOrEmpty(manifest)
+    const fields = asRecordOrEmpty(JSON.parse(await fs.readFile(path.join(item.root, ".codex-plugin", "plugin.json"), "utf8")))
     const name = validatedCodexPluginSegment(asString(fields.name) ?? "")
     const version = validatedCodexPluginSegment(asString(fields.version) ?? "1.0.0")
     if (names.has(name)) throw new Error(`Duplicate Codex plugin ${name}`)
     names.add(name)
-    const pluginSource = path.join(source, "plugins", name)
-    await fs.mkdir(path.dirname(pluginSource), { recursive: true, mode: 0o700 })
     const pluginRoot = await fs.realpath(item.root)
-    const filter = async (pathname: string) => {
-      if (!(await realPathWithinRoot(pathname, pluginRoot)).within) throw new Error(`Codex plugin link escapes its root: ${pathname}`)
-      return true
-    }
-    await fs.cp(item.root, pluginSource, { recursive: true, force: true, dereference: true, filter })
-    const destination = path.join(cache, name, version)
-    await fs.mkdir(path.dirname(destination), { recursive: true, mode: 0o700 })
-    await fs.cp(item.root, destination, { recursive: true, force: true, dereference: true, filter })
+    await copyTreeAtomically(item.root, path.join(source, "plugins", name), pluginRoot)
+    await fs.mkdir(path.join(cache, name), { recursive: true, mode: 0o700 })
+    await copyTreeAtomically(item.root, path.join(cache, name, version), pluginRoot)
+    for (const stale of await fs.readdir(path.join(cache, name))) if (stale !== version) await fs.rm(path.join(cache, name, stale), { recursive: true, force: true })
     plugins.push({ name, source: { source: "local", path: `./plugins/${name}` } })
   }
-  await fs.writeFile(path.join(manifest, "marketplace.json"), JSON.stringify({ name: MARKETPLACE, plugins }), { mode: 0o600 })
+  for (const folder of [path.join(source, "plugins"), cache]) {
+    for (const stale of await fs.readdir(folder)) if (!names.has(stale)) await fs.rm(path.join(folder, stale), { recursive: true, force: true })
+  }
+  await writePrivateFileAtomic(path.join(manifest, "marketplace.json"), JSON.stringify({ name: CLAXEDO_MARKETPLACE, plugins }))
   return [
-    `[marketplaces.${MARKETPLACE}]`,
+    `[marketplaces.${CLAXEDO_MARKETPLACE}]`,
     'source_type = "local"',
     `source = ${JSON.stringify(source)}`,
-    ...plugins.flatMap(({ name }) => [`[plugins.${JSON.stringify(`${name}@${MARKETPLACE}`)}]`, "enabled = true"]),
+    ...plugins.flatMap(({ name }) => [`[plugins.${JSON.stringify(`${name}@${CLAXEDO_MARKETPLACE}`)}]`, "enabled = true"]),
   ].join("\n")
 }
 
-export async function prepareCodexProfile(input: {
-  home: string
-  credentials: ResolvedCredentials
-  projection: PluginProjection
-  ownerHome?: string
-}): Promise<CodexProfile> {
-  const selected = input.credentials.providers.codex
-  if (selected && "unavailable" in selected) throw new Error(`Codex account unavailable: ${selected.reason}`)
-  const brokered = Boolean(selected)
-  const home = brokered ? input.home : input.ownerHome ?? process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex")
-  if (!brokered && input.projection.pluginRoots.length === 0) return { home, brokered }
-  const existing = await fs.lstat(home).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") return undefined
-    throw error
-  })
-  if (existing?.isSymbolicLink()) throw new Error("Codex home cannot be a symlink")
-  await fs.mkdir(home, { recursive: true, mode: 0o700 })
-  if (brokered) await fs.chmod(home, 0o700)
-  const fragments = [await marketplace(home, input.projection)]
-  if (selected && !("unavailable" in selected)) fragments.unshift([
+function brokerFragment(selected: { baseUrl: string; apiPath?: string; placeholder: string }): string {
+  return [
     "check_for_update_on_startup = false",
     'model_provider = "broker"',
     "[model_providers.broker]",
@@ -83,18 +80,35 @@ export async function prepareCodexProfile(input: {
     'wire_api = "responses"',
     "requires_openai_auth = false",
     `http_headers = { Authorization = ${JSON.stringify(`Bearer ${selected.placeholder}`)} }`,
-  ].join("\n"))
-  const target = path.join(home, "config.toml")
-  const current = brokered ? "" : await fs.readFile(target, "utf8").catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") return ""
+  ].join("\n")
+}
+
+function withoutClaxedoBlock(content: string): string {
+  const begin = content.indexOf(START)
+  const end = content.indexOf(END)
+  if ((begin === -1) !== (end === -1) || (begin >= 0 && end < begin)) throw new Error("Codex profile block is damaged")
+  return begin < 0 ? content.trimEnd() : `${content.slice(0, begin)}${content.slice(end + END.length)}`.trim()
+}
+
+export async function prepareCodexProfile(input: CodexProfileInput): Promise<CodexProfile> {
+  const selected = input.credentials.providers.codex
+  if (selected && "unavailable" in selected) throw new Error(`Codex account unavailable: ${selected.reason}`)
+  const brokered = Boolean(selected)
+  const ownerHome = input.ownerHome ?? process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex")
+  const home = path.join(input.homeRoot, codexHomeKey(input.owner, selected && !("unavailable" in selected) ? selected : undefined, input.projection))
+  const existing = await fs.lstat(home).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return undefined
     throw error
   })
-  const begin = current.indexOf(START)
-  const end = current.indexOf(END)
-  if ((begin === -1) !== (end === -1) || (begin >= 0 && end < begin)) throw new Error("Codex profile block is damaged")
-  const retained = begin < 0 ? current.trimEnd() : `${current.slice(0, begin)}${current.slice(end + END.length)}`.trim()
+  if (existing?.isSymbolicLink()) throw new Error("Codex home cannot be a symlink")
+  await fs.mkdir(home, { recursive: true, mode: 0o700 })
+  await fs.chmod(home, 0o700)
+  if (!brokered) await mirrorOwnerCodexHome(ownerHome, home)
+  const fragments = [await marketplace(home, input.projection)]
+  if (selected && !("unavailable" in selected)) fragments.unshift(brokerFragment(selected))
+  const retained = brokered ? "" : withoutClaxedoBlock(await readOptional(path.join(ownerHome, "config.toml")))
   const block = fragments.filter(Boolean).join("\n\n")
   const next = [retained, block ? `${START}\n${block}\n${END}` : ""].filter(Boolean).join("\n\n")
-  await writePrivateFileAtomic(target, `${next}\n`)
+  await writePrivateFileAtomic(path.join(home, "config.toml"), `${next}\n`)
   return { home, brokered }
 }

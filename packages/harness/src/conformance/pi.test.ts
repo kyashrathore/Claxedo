@@ -3,11 +3,13 @@ import os from "node:os"
 import path from "node:path"
 import { expect, test } from "bun:test"
 import { createTestServices } from "./test-support/services"
-import { runConformance, setupConformance, type ConformanceBackend } from "./test-support/run"
+import { runConformance, setupConformance, type ConformanceBackend, withUndeliverableFile } from "./test-support/run"
+import { assertListedCommandsRun } from "./test-support/commands"
 import { ensurePinnedPi, PINNED_PI } from "../../e2e/harness/pinned-pi"
 import { reservePort, releasePort } from "../../e2e/harness/ports"
 import { startScriptedModelServer } from "../../e2e/harness/scripted-model-server"
 import { PiRpcTransport } from "../transports/pi-rpc"
+import { SESSION_TITLE_SYSTEM_PROMPT } from "../../e2e/harness/config"
 
 type PiBackend = ConformanceBackend & { root: string; agentDir: string; server: Awaited<ReturnType<typeof startScriptedModelServer>> }
 
@@ -59,6 +61,7 @@ async function backend(): Promise<PiBackend> {
     hold: (marker) => server.holdTextReplies(marker),
     held: (marker) => server.textGateReached(marker),
     scriptTool: (name, input) => server.scriptTool({ name, input }),
+    unrunnableTurn: withUndeliverableFile,
     close: async () => { await server.close(); releasePort(port); await fs.rm(root, { recursive: true, force: true }) },
   }
 }
@@ -107,7 +110,7 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
 });`)
   const context = await setupConformance({
     name: "pi orphan dialog", backend: async () => ({ root, directory: root, harness: { id: "pi", access: "native" },
-      model: { providerID: "pi", modelID: "openai/gpt-4.1" }, owner: { kind: "machine-owner" },
+      model: { providerID: "pi", modelID: "openai/gpt-4.1" }, owner: { kind: "machine-owner" }, unrunnableTurn: withUndeliverableFile,
       credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" },
       close: async () => { await fs.rm(root, { recursive: true, force: true }) } }),
     makeTransport(services, state) {
@@ -148,6 +151,31 @@ runConformance({
   },
 })
 
+test("a listed Pi extension command runs as a slash prompt", async () => {
+  const context = await setupConformance({ name: "pi command proof", backend,
+    makeTransport(services, state) {
+      const pi = state as PiBackend
+      return new PiRpcTransport(services, { binary: PINNED_PI, placement: "loopback", machineOwnerUserId: "owner",
+        canUseOwnLogin: true, stateRoot: path.join(pi.root, "claxedo"), ownerAgentDir: pi.agentDir,
+        runtime: process.execPath, env: process.env })
+    } })
+  try {
+    await assertListedCommandsRun({ transport: context.transport, session: context.session, turn: context.turn,
+      turnBroker: context.turnBroker, proves: (name) => name === "conformance-ui", args: () => "choose",
+      whileRunning: async () => {
+        let question = context.owner.broker.list({ sessionId: "s1" }).find((row) => row.request.kind === "question")
+        for (let attempt = 0; !question && attempt < 500; attempt++) {
+          await new Promise((resolve) => setTimeout(resolve, 10))
+          question = context.owner.broker.list({ sessionId: "s1" }).find((row) => row.request.kind === "question")
+        }
+        expect(question).toBeDefined()
+        if (question) expect((await context.owner.broker.answer(question.request.requestId,
+          { kind: "answers", answers: [["Allow"]] }, { sessionId: "s1" })).ok).toBe(true)
+      },
+      observe: (_name, events) => expect(events.some(({ event }) => event.type === "session-title" && event.title === "Pi allowed")).toBe(true) })
+  } finally { await context.close() }
+}, 60_000)
+
 test("Pi script uses the composed runtime even when PATH starts with a failing node", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-script-runtime-"))
   const bin = path.join(root, "bin")
@@ -169,7 +197,8 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
     const session = await transport.start({ sessionId: "s1", workspaceId: "w1", directory: root, locality: "local",
       owner: { kind: "machine-owner" }, config: { harness: { id: "pi", access: "native" } },
       projection: { generation: "g1", pluginRoots: [], mcpServers: [], notApplied: [] },
-      credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" } }, { rebind: async () => {} } as never)
+      credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" } }, { rebind: async (upstreamSessionId: string) =>
+        ({ sessionId: "s1", workspaceId: "w1", directory: root, connectionId: "pi-rpc", upstreamSessionId }) } as never)
     expect(session.binding.upstreamSessionId).toBe("composed-runtime")
     await transport.close(session)
     await expect(fs.access(marker)).rejects.toMatchObject({ code: "ENOENT" })
@@ -211,3 +240,127 @@ runConformance({
     })
   },
 })
+
+function piTransport(services: ReturnType<typeof createTestServices>, state: ConformanceBackend) {
+  const pi = state as PiBackend
+  return new PiRpcTransport(services, { binary: PINNED_PI, placement: "loopback", machineOwnerUserId: "owner",
+    canUseOwnLogin: true, stateRoot: path.join(pi.root, "claxedo"), ownerAgentDir: pi.agentDir, runtime: process.execPath, env: process.env })
+}
+
+function alive(pid: number): boolean {
+  try { process.kill(pid, 0); return true }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === "ESRCH") return false; throw error }
+}
+
+test("a Pi process death mid-turn fails the turn through the channel's exit", async () => {
+  const context = await setupConformance({ name: "pi process death", backend, makeTransport: piTransport })
+  try {
+    const release = context.backend.hold!("PIDEATH")
+    const running = (async () => {
+      for await (const _event of context.transport.send(context.session, context.turn("Reply with exactly this one token: PIDEATH"), context.turnBroker())) {}
+    })()
+    const settled = running.then(() => "completed", (error: unknown) => String(error))
+    await context.backend.held!("PIDEATH")
+    const pi = context.services.processes.at(-1)!
+    process.kill(pi.pid, "SIGKILL")
+    expect(await Promise.race([settled, new Promise<"pending">((resolve) => setTimeout(() => resolve("pending"), 5_000))])).toContain("Pi process exited")
+    release()
+    expect(await pi.exited).toMatchObject({ signal: "SIGKILL" })
+  } finally { await context.close() }
+}, 30_000)
+
+test("Pi reads back a clamped thinking level and refuses the turn", async () => {
+  const context = await setupConformance({ name: "pi clamped effort", backend, makeTransport: piTransport })
+  try {
+    const before = (context.backend as PiBackend).server.requests.length
+    const run = async () => {
+      for await (const _event of context.transport.send(context.session, { ...context.turn("Reply with exactly this one token: PICLAMP"), effort: "xhigh" }, context.turnBroker())) {}
+    }
+    await expect(run()).rejects.toThrow("Pi does not run openai/gpt-4.1 at thinking level xhigh; it kept off")
+    expect((context.backend as PiBackend).server.requests.length).toBe(before)
+  } finally { await context.close() }
+}, 30_000)
+
+test("Pi lists its models and thinking levels through the config group", async () => {
+  const context = await setupConformance({ name: "pi config group", backend, makeTransport: piTransport })
+  try {
+    const config = context.transport.config!
+    const preview = await config.options({ session: context.session }, "probe")
+    expect(preview.resolvedModel).toEqual({ id: "openai/gpt-4.1", name: "GPT-4.1" })
+    const model = preview.options.find((option) => option.id === "model")
+    expect(model?.selectOptions?.some((choice) => choice.id === "openai/o3")).toBe(true)
+    expect(preview.options.find((option) => option.category === "thought_level")).toBeUndefined()
+    expect(await config.options({ session: context.session }, "peek")).toEqual(preview)
+    const reasoning = await config.options({ session: context.session, model: { providerID: "pi", modelID: "openai/o3" } }, "probe")
+    expect(reasoning.resolvedModel?.id).toBe("openai/o3")
+    const effort = reasoning.options.find((option) => option.category === "thought_level")
+    expect(effort?.selectOptions?.map((choice) => choice.id)).toEqual(["low", "medium", "high"])
+    expect(["low", "medium", "high"]).toContain(String(effort?.currentValue))
+    const { sessionId: _sessionId, title: _title, instructions: _instructions, ...draft } = context.start
+    expect(await config.options({ draft }, "probe")).toEqual(preview)
+    expect(await config.permissionModes({ session: context.session })).toEqual({ modes: [], unsupported: "Pi has no permission modes", appliesFrom: "next-turn" })
+    await expect(config.setPermissionMode(context.session, "auto")).rejects.toThrow("Pi has no permission modes")
+    expect(context.services.processes.filter((child) => child !== context.services.processes[0])).toHaveLength(2)
+    for (const probe of context.services.processes.slice(1)) expect(await probe.exited).toBeDefined()
+  } finally { await context.close() }
+}, 60_000)
+
+test("Pi names a session through the Claxedo title extension and hides its command", async () => {
+  const context = await setupConformance({ name: "pi title", backend, makeTransport: piTransport })
+  try {
+    const pi = context.backend as PiBackend
+    await fs.access(path.join(pi.root, "claxedo", "extensions", "claxedo-session-title.ts"))
+    for await (const _event of context.transport.send(context.session, context.turn("Reply with exactly this one token: PITITLE"), context.turnBroker())) {}
+    const commands = await context.transport.commands!.list({ session: context.session })
+    expect(commands.some((command) => command.name === "conformance-ui")).toBe(true)
+    expect(commands.some((command) => command.name === "claxedo-title")).toBe(false)
+    const title = await context.transport.naming!.generateTitle!(context.session, { directory: context.backend.directory, system: SESSION_TITLE_SYSTEM_PROMPT,
+      user: "<conversation>\nUser: Reply with exactly this one token: PITITLE\n</conversation>", model: context.backend.model, signal: AbortSignal.timeout(20_000) })
+    expect(title).toBe("Session PITITLE")
+    const entry = (context.transport as unknown as { entries: Map<string, { rpc: { request(type: string): Promise<unknown> } }> }).entries.get("s1")!
+    expect((await entry.rpc.request("get_state") as { sessionName?: string }).sessionName).toBe("Session PITITLE")
+    expect((await context.transport.capabilities({ directory: context.backend.directory })).titles).toBe("side-request")
+    await fs.access(path.join(pi.agentDir, "extensions", "conformance.ts"))
+    expect((await fs.readdir(pi.agentDir)).filter((name) => name.endsWith(".ts"))).toEqual([])
+  } finally { await context.close() }
+}, 60_000)
+
+test("a failed Pi retirement during configure keeps the session and its process for close", async () => {
+  let pid: number | undefined
+  const context = await setupConformance({
+    name: "pi retirement refused",
+    async backend() {
+      const state = await backend()
+      return { ...state, configureServices(services) {
+        const spawn = services.spawn.bind(services)
+        services.spawn = async (command, options) => {
+          const child = await spawn(command, options)
+          if (options.role !== "harness" || pid !== undefined) return child
+          pid = child.pid
+          let refused = false
+          const retire = child.retire.bind(child)
+          return { ...child, retire: async (deadline) => {
+            if (refused) return retire(deadline)
+            refused = true
+            return { stopped: false, error: { code: "test", message: "retirement refused once" } }
+          } }
+        }
+      } }
+    },
+    makeTransport: piTransport,
+  })
+  try {
+    for await (const _event of context.transport.send(context.session, context.turn("Reply with exactly this one token: PIRETIRE"), context.turnBroker())) {}
+    await expect(context.transport.configure(context.session, { credentials: { ...context.backend.credentials, leaseGeneration: "changed" } }))
+      .rejects.toThrow("retirement refused once")
+    expect(alive(pid!)).toBe(true)
+    expect(context.transport.health?.connection(context.backend.directory, "s1").state).toBe("ready")
+    expect(context.transport.health?.runtime(context.backend.directory, "s1").status).toBe("degraded")
+    await context.transport.close(context.session)
+    expect(await context.services.processes[0]!.exited).toBeDefined()
+    expect(alive(pid!)).toBe(false)
+  } finally {
+    await context.close()
+    if (pid !== undefined && alive(pid)) process.kill(pid, "SIGKILL")
+  }
+}, 30_000)

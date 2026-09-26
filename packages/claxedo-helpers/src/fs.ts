@@ -1,8 +1,8 @@
 import { Buffer } from "node:buffer"
 import { randomUUID } from "node:crypto"
 import { readFileSync } from "node:fs"
-import { mkdirSync, openSync, writeSync, closeSync, renameSync, unlinkSync } from "node:fs"
-import { mkdir, open, readFile, realpath, rename, stat, unlink } from "node:fs/promises"
+import { mkdirSync, openSync, writeSync, closeSync, renameSync, unlinkSync, type Stats } from "node:fs"
+import { lstat, mkdir, open, readFile, realpath, rename, stat, unlink } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
 
 import { sleep } from "./async"
@@ -15,6 +15,14 @@ export { PrivateFileError } from "./windows-private-file"
 export async function realPathWithinRoot(source: string, root: string): Promise<{ resolved: string; within: boolean }> {
   const resolved = await realpath(source)
   return { resolved, within: inside(root, resolved) }
+}
+
+export async function lstatIfExists(pathname: string): Promise<Stats | undefined> {
+  try { return await lstat(pathname) }
+  catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined
+    throw error
+  }
 }
 
 /**

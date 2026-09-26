@@ -5,6 +5,7 @@ import { singleFlightUntil } from "@claxedo/helpers"
 
 export function createSpawnService(ownership: LaunchOwnershipStore): HarnessServices["spawn"] {
   return async (command: SpawnCommand, options: SpawnOptions): Promise<OwnedProcess> => {
+    if (options.signal.aborted) throw new Error(`Spawn of ${options.label} was aborted before it started`)
     const launch = await launchOwnedProcess({
       ownership,
       role: "harness",
@@ -14,6 +15,10 @@ export function createSpawnService(ownership: LaunchOwnershipStore): HarnessServ
       env: harnessSpawnEnv(command.env),
     })
     const { child } = launch
+    if (options.signal.aborted) {
+      await launch.retire({ termGraceMs: 1_000, killVerifyMs: 1_000 })
+      throw new Error(`Spawn of ${options.label} was aborted before its process was handed back`)
+    }
     if (!child.stdin || !child.stdout || !child.stderr || launch.payloadPid === undefined) {
       await launch.retire({ termGraceMs: 1_000, killVerifyMs: 1_000 })
       throw new Error(`Launch ${launch.launchId} has no payload process or standard streams`)

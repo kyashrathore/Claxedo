@@ -1,16 +1,23 @@
+import { pathToFileURL } from "node:url"
+import path from "node:path"
 import type {
-  ContentBlock, CreateElicitationRequest, CreateElicitationResponse, ElicitationContentValue, McpServer,
+  ContentBlock, CreateElicitationRequest, CreateElicitationResponse, ElicitationContentValue, McpServer, PromptCapabilities,
   RequestPermissionRequest, RequestPermissionResponse,
 } from "@agentclientprotocol/sdk"
 import type { McpServerSpec, RequestAnswer, SessionBroker, TurnBroker, TurnInput } from "../../contract"
 import type { PermissionDecision } from "@claxedo/agent-runtime-contract"
 import { AcpTransportError } from "./errors"
 import { elicitationAnswer, elicitationRequest, permissionRequest, permissionSelection } from "../../contract"
-import { inlineDataUrl, flattenTurnPrompt } from "../../translate/prompt"
+import { flattenTurnPrompt } from "../../translate/prompt"
+import { attachmentPathLine, isPromptImage, materializeAttachment, promptFiles, type MaterializedFile, type PromptFile } from "../../translate/attachments"
 
 const protocolPermissionMapping: Record<PermissionDecision, string> = {
   allow_once: "allow_once", allow_always: "allow_always", deny: "reject_once", reject_always: "reject_always",
 }
+
+export type AcpPromptDelivery = { capabilities: PromptCapabilities | null | undefined; sharedDirectory?: string }
+
+const acpAttachmentError = (message: string) => new AcpTransportError("configuration", message)
 
 export function acpMcp(server: McpServerSpec): McpServer {
   if (server.kind === "stdio") return { name: server.name, command: server.command,
@@ -19,15 +26,27 @@ export function acpMcp(server: McpServerSpec): McpServer {
     headers: Object.entries(server.headers ?? {}).map(([name, value]) => ({ name, value })) }
 }
 
-export function acpPrompt(turn: TurnInput): ContentBlock[] {
-  const blocks: ContentBlock[] = []
-  const text = flattenTurnPrompt(turn, { system: "turn", separator: "\n\n" })
-  if (text) blocks.push({ type: "text", text })
-  for (const part of turn.prompt.parts) {
-    if (part.type !== "file") continue
-    const image = inlineDataUrl(part.url, { imageOnly: true, strictBase64: false })
-    if (image) blocks.push({ type: "image", ...image })
+function acpAttachmentBlock(file: PromptFile | MaterializedFile, index: number, capabilities: AcpPromptDelivery["capabilities"]): ContentBlock {
+  const written = "path" in file ? file.path : undefined
+  if (capabilities?.image && isPromptImage(file.mime)) {
+    return { type: "image", mimeType: file.mime, data: file.base64, ...(written ? { uri: pathToFileURL(written).href } : {}) }
   }
+  if (capabilities?.audio && file.mime.startsWith("audio/")) return { type: "audio", mimeType: file.mime, data: file.base64 }
+  if (capabilities?.embeddedContext) {
+    return { type: "resource", resource: { uri: written ? pathToFileURL(written).href : `wr://attachment/${index}`, blob: file.base64, mimeType: file.mime } }
+  }
+  if (written) return { type: "resource_link", uri: pathToFileURL(written).href, name: file.filename ?? path.basename(written), mimeType: file.mime }
+  throw acpAttachmentError(`ACP agent cannot receive a ${file.mime} attachment: it negotiated no inline content and does not share the workspace`)
+}
+
+export async function acpPrompt(turn: TurnInput, delivery: AcpPromptDelivery): Promise<ContentBlock[]> {
+  const { files } = promptFiles(turn, acpAttachmentError)
+  const attachments: (PromptFile | MaterializedFile)[] = []
+  for (const file of files) attachments.push(delivery.sharedDirectory ? await materializeAttachment(delivery.sharedDirectory, file, acpAttachmentError) : file)
+  const lines = attachments.flatMap((file) => "path" in file ? [attachmentPathLine(file)] : [])
+  const text = [flattenTurnPrompt(turn, { separator: "\n\n", system: "prefix" }), ...lines].filter(Boolean).join("\n")
+  const blocks: ContentBlock[] = text ? [{ type: "text", text }] : []
+  attachments.forEach((file, index) => blocks.push(acpAttachmentBlock(file, index, delivery.capabilities)))
   return blocks
 }
 

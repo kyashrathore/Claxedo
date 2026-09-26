@@ -42,18 +42,25 @@ export async function acpFlushUpdates(entry: AcpEntry,
   entry.pendingUpdates = undefined
 }
 
+function acpCatalogUpdate(entry: AcpEntry, update: SessionNotification["update"]): void {
+  if (update.sessionUpdate === "available_commands_update") {
+    entry.commands = update.availableCommands.map((item) => ({ name: item.name, description: item.description }))
+  }
+  if (update.sessionUpdate === "config_option_update") entry.options = update.configOptions
+  if (update.sessionUpdate === "current_mode_update") { entry.currentModeId = update.currentModeId; entry.modeUpdates++ }
+}
+
 async function deliverAcpUpdate(entry: AcpEntry, notification: SessionNotification,
   observe: (update: SessionNotification["update"]) => Promise<void>): Promise<void> {
+  const side = entry.sideSessions.get(notification.sessionId)
+  if (side) { side(notification.update); return }
   if (notification.sessionId !== entry.session.binding.upstreamSessionId) {
     await observe(notification.update)
     entry.quiet?.touch()
     entry.receive?.(notification)
     return
   }
-  if (notification.update.sessionUpdate === "available_commands_update") {
-    entry.commands = notification.update.availableCommands.map((item) => ({ name: item.name, description: item.description }))
-  }
-  if (notification.update.sessionUpdate === "config_option_update") entry.options = notification.update.configOptions
+  acpCatalogUpdate(entry, notification.update)
   await observe(notification.update)
   entry.quiet?.touch()
   if (entry.receive) entry.receive(notification)

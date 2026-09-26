@@ -17,7 +17,8 @@ function groupHasLiveMember(pgid: number): boolean {
   })
 }
 
-function childProcess(command: SpawnCommand, _options: SpawnOptions): OwnedProcess {
+function childProcess(command: SpawnCommand, options: SpawnOptions): OwnedProcess {
+  if (options.signal.aborted) throw new Error(`Spawn of ${options.label} was aborted before it started`)
   const child = nodeSpawn(command.file, [...command.args], {
     cwd: command.cwd, env: command.env, stdio: ["pipe", "pipe", "pipe"], detached: process.platform !== "win32",
   })

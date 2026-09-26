@@ -26,7 +26,7 @@ export function promptRequest(turn: TurnInput) {
       files.push({ ref: row.url, ...(typeof row.filename === "string" ? { name: row.filename } : {}) })
     } else throw new TransportError("opencode", "configuration", `OpenCode prompt part ${String(row.type)} has no mapping`)
   }
-  return { text: flattenTurnPrompt(turn, { system: "turn", separator: "\n" }),
+  return { text: flattenTurnPrompt(turn, { separator: "\n", system: "prefix" }),
     ...(files.length ? { files } : {}), delivery: "steer" as const }
 }
 
@@ -46,7 +46,7 @@ function listenOpenCodeEvents(runtime: OpenCodeRuntime, state: OpenCodeTurnState
 
 async function admitOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnState, turn: TurnInput, signal: AbortSignal): Promise<{
   usage: ReturnType<typeof createTurnUsage>; admittedAt: number }> {
-  const model = turn.model ?? state.start.config.model
+  const model = turn.model
   if (!model) throw new TransportError("opencode", "configuration", "OpenCode turn requires a resolved model")
   assertProviderAvailable(state.start.credentials, model.providerID)
   await runtime.providersBound()
@@ -120,8 +120,6 @@ export async function* runOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCode
         yield* reconcileOpenCodeTurn(runtime, state, usage, admittedAt, error instanceof StreamLost, broker.signal)
       } else throw error
     }
-  } catch (error) {
-    yield route({ type: "error", error: errorMessage(error), harness: "opencode" })
   } finally {
     unsubscribe()
     unsubscribeLoss()

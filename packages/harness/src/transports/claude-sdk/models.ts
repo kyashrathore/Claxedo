@@ -2,32 +2,22 @@ import { query, type AgentInfo, type ModelInfo, type Query, type SlashCommand } 
 import type { AgentConfigOption } from "@claxedo/agent-runtime-contract"
 import type { DraftLaunch, HarnessServices, StartInput } from "../../contract"
 import { TransportError } from "../../contract/errors"
-import { modelAndEffortOptions } from "../../contract"
+import { draftProbeKey, DraftProbeCache, modelAndEffortOptions } from "../../contract"
 import { claudeLaunchContext, type ClaudeSdkOptions } from "./launch-context"
 import { ClaudeProcess } from "./process"
 
 export class ClaudeModelCatalog {
-  private readonly rows = new Map<string, readonly ModelInfo[]>()
-  private readonly inFlight = new Map<string, Promise<readonly ModelInfo[]>>()
+  private readonly cache: DraftProbeCache<readonly ModelInfo[]>
 
-  constructor(private readonly services: HarnessServices, private readonly options: ClaudeSdkOptions) {}
-
-  private key(input: StartInput | DraftLaunch): string {
-    return JSON.stringify([input.directory, input.owner.kind === "person" ? input.owner.userId : "machine-owner", input.credentials.leaseGeneration])
+  constructor(private readonly services: HarnessServices, private readonly options: ClaudeSdkOptions) {
+    this.cache = new DraftProbeCache(services.clock)
   }
 
-  peek(input: StartInput | DraftLaunch): readonly ModelInfo[] | undefined { return this.rows.get(this.key(input)) }
+  peek(input: StartInput | DraftLaunch): readonly ModelInfo[] | undefined { return this.cache.peek(draftProbeKey(input)) }
 
-  async load(input: StartInput | DraftLaunch, sessionId?: string): Promise<readonly ModelInfo[]> {
-    const key = this.key(input)
-    const cached = this.peek(input)
-    if (cached) return cached
-    const running = this.inFlight.get(key)
-    if (running) return running
-    const probe = this.probe(input, sessionId)
-    this.inFlight.set(key, probe)
-    try { return await probe }
-    finally { this.inFlight.delete(key) }
+  load(input: StartInput | DraftLaunch, sessionId?: string): Promise<readonly ModelInfo[]> {
+    const key = draftProbeKey(input)
+    return this.cache.get(key) ?? this.cache.set(key, this.discover(input, sessionId, (stream) => stream.supportedModels()))
   }
 
   async commands(input: StartInput | DraftLaunch, sessionId?: string): Promise<SlashCommand[]> {
@@ -36,12 +26,6 @@ export class ClaudeModelCatalog {
 
   async agents(input: StartInput | DraftLaunch, sessionId?: string): Promise<AgentInfo[]> {
     return this.discover(input, sessionId, (stream) => stream.supportedAgents())
-  }
-
-  private async probe(input: StartInput | DraftLaunch, sessionId?: string): Promise<readonly ModelInfo[]> {
-    const models = await this.discover(input, sessionId, (stream) => stream.supportedModels())
-    this.rows.set(this.key(input), models)
-    return models
   }
 
   private async discover<T>(input: StartInput | DraftLaunch, sessionId: string | undefined,
