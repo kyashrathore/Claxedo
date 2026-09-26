@@ -31,7 +31,7 @@ import { pathToFileURL } from "node:url"
 
 import { app, BrowserWindow, session } from "electron"
 
-import { readRecord, readString, readUnknown } from "../../src/shared/json-read"
+import { readField, readRecord, readString } from "@claxedo/helpers/readers"
 import { CLAXEDO_DAEMON_CAPABILITY_HEADER } from "../../src/main/daemon-request"
 import { mainIpcCallerGuard, trustWindowWithBridge } from "../../src/main/ipc-caller-guard"
 import { MAIN_RENDERER_DOCUMENT } from "../../src/main/navigation-guard"
@@ -341,7 +341,7 @@ async function main() {
   // absent measurement, not as a passing one.
   const probed: unknown = await trusted.webContents.executeJavaScript(pageProbe(daemon.origin, "trusted"))
   const socket = readRecord(probed, "socket")
-  const socketOpened = readUnknown(socket, "opened") === true
+  const socketOpened = readField(socket, "opened") === true
   const socketFirstMessage = readString(socket, "first") ?? null
   const surfaces = readString({ text: await trusted.webContents.executeJavaScript(PAGE_SURFACES) }, "text") ?? ""
 

@@ -11,7 +11,7 @@
  * with no repository in it.
  */
 
-import { readRecord, readString } from "../../shared/json-read"
+import { readRecord, readString } from "@claxedo/helpers/readers"
 import type { DaemonFetch } from "../daemon-request"
 
 export type LocalWorkspaceDescription = {

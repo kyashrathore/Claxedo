@@ -1,6 +1,6 @@
 import { LocalDiagnostics } from "../../shared/local-diagnostics"
 
-import { readUnknown } from "../../shared/json-read"
+import { readField } from "@claxedo/helpers/readers"
 import type { Profiler } from "./profiler"
 
 export type DiagnosticsIpcRouter = {
@@ -175,7 +175,7 @@ export function registerProcessDiagnosticsIpc(
         // positional arguments on the older `did-navigate`; read whichever
         // arrived rather than asserting the first argument into a shape.
         const flag = (key: string) => {
-          const value = readUnknown(args[0], key)
+          const value = readField(args[0], key)
           return typeof value === "boolean" ? value : undefined
         }
         const isMainFrame = flag("isMainFrame") ?? args[3] === true

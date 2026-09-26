@@ -1,6 +1,6 @@
 import { createInterface } from "node:readline"
 
-import { readArray, readNumber, readUnknown } from "../../shared/json-read"
+import { readArray, readField, readFiniteNumber } from "@claxedo/helpers/readers"
 import { validPid } from "./process-identity"
 import { isProcessTreeEntry, lowerDiagnosticsWorkerPriority } from "./process-metrics-worker"
 import { createPosixProcessMetricsWorker } from "./process-metrics-worker-runtime"
@@ -29,7 +29,7 @@ async function handle(line: string) {
   } catch {
     return
   }
-  const id = readNumber(request, "id")
+  const id = readFiniteNumber(request, "id")
   if (id === undefined || !Number.isInteger(id)) return
   try {
     const value = await dispatch(request)
@@ -40,18 +40,18 @@ async function handle(line: string) {
 }
 
 function dispatch(request: unknown): Promise<unknown> | void {
-  const method = readUnknown(request, "method")
+  const method = readField(request, "method")
   if (method === "reconcile") {
     const rootPids = readArray(request, "rootPids")
     if (rootPids) return worker.reconcile(rootPids.filter(validPid))
   }
   if (method === "sample") {
     const entries = readArray(request, "entries")
-    const at = readNumber(request, "at")
+    const at = readFiniteNumber(request, "at")
     if (entries && at !== undefined) return worker.sample(entries.filter(isProcessTreeEntry), at)
   }
   if (method === "probeCreation") {
-    const pid = readNumber(request, "pid")
+    const pid = readFiniteNumber(request, "pid")
     if (validPid(pid)) return worker.probeCreation(pid)
   }
   if (method === "clear") return worker.clear()

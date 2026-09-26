@@ -1,5 +1,4 @@
-import { isRecord, isString } from "@claxedo/helpers/guards"
-import { isStringList } from "../../lib/record"
+import { isRecord, isString, isStringList } from "@claxedo/helpers/guards"
 import type {
   MarketplaceCatalog,
   PluginActivation,

@@ -32,7 +32,7 @@ import {
 import { fetchHosted } from "./hosted-transport"
 import { accountPerfMark, accountPerfNow } from "./account-perf"
 import type { CliCredentialFilePort } from "./cli-credential-file"
-import { readNumber, readRecord, readString } from "../../shared/json-read"
+import { readFiniteNumber, readRecord, readString } from "@claxedo/helpers/readers"
 
 export type { RefreshOutcome } from "./desktop-native-auth"
 
@@ -93,7 +93,7 @@ function connectionRetryResult(
 ): { status: "provisioning"; retryAfterMs: number } | undefined {
   if (name !== "workspace.connection.mint" && name !== "workspace.connection.refresh") return undefined
   if (response.status !== 409 && response.status !== 429) return undefined
-  const bodyDelay = readNumber(hostedError(value), "retryAfterMs")
+  const bodyDelay = readFiniteNumber(hostedError(value), "retryAfterMs")
   if (bodyDelay !== undefined) return { status: "provisioning", retryAfterMs: bodyDelay }
   const header = response.headers.get("Retry-After")?.trim()
   if (header && /^\d+$/.test(header)) {

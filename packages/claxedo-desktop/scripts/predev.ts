@@ -10,7 +10,7 @@ import * as fs from "fs"
 import { createRequire } from "node:module"
 import * as path from "path"
 
-import { readString } from "../src/shared/json-read"
+import { readString } from "@claxedo/helpers/readers"
 
 import { buildPublishedPackages, publishedPackageDistDirs } from "./published-packages"
 import { bundleClaxedoServer, resolveDeferredServerEntry } from "./bundle-claxedo-server"

@@ -44,7 +44,7 @@ import {
   type RetirementResult,
 } from "@claxedo/agent-sdk-runtime/launch"
 
-import { readArray, readNumber, readRecord, readString, readUnknown } from "../shared/json-read"
+import { readArray, readField, readFiniteNumber, readRecord, readString } from "@claxedo/helpers/readers"
 import { nodeErrorCode } from "../shared/node-error"
 import { CLAXEDO_DAEMON_PROTOCOL, DAEMON_PROTOCOL_HEADER, type ClaxedoDaemonDiscovery } from "./server-daemon-discovery"
 import type { DaemonFetch } from "./daemon-request"
@@ -346,7 +346,7 @@ function daemonRecoveryInspection(body: unknown): DaemonRecoveryInspection {
   const preview = readRecord(body, "preview")
   const owners = readArray(body, "owners")
   const operations = readArray(body, "operations")
-  const residencyPins = readNumber(body, "residencyPins")
+  const residencyPins = readFiniteNumber(body, "residencyPins")
   const receipt = readString(body, "receipt")
   if (machineId === undefined || generation === undefined || scopeRevision === undefined || !target || !preview
     || !owners || !operations || residencyPins === undefined || (receipt !== "durable" && receipt !== "volatile")) {
@@ -369,7 +369,7 @@ function daemonRecoveryInspection(body: unknown): DaemonRecoveryInspection {
       const state = readString(owner, "state")
       const detail = readString(owner, "detail")
       return id !== undefined && kind !== undefined && ownerGeneration !== undefined && state !== undefined
-        ? [{ id, kind, generation: ownerGeneration, state, pins: readUnknown(owner, "pins") === true,
+        ? [{ id, kind, generation: ownerGeneration, state, pins: readField(owner, "pins") === true,
             ...(detail === undefined ? {} : { detail }) }]
         : []
     }),

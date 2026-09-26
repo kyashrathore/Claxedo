@@ -7,7 +7,7 @@
  */
 
 import { asRecord, isNonEmptyString } from "@claxedo/helpers/guards"
-import { readUnknown } from "../../shared/json-read"
+import { readField } from "@claxedo/helpers/readers"
 
 export type HostConnectorChildState =
   | { status: "idle" }
@@ -192,7 +192,7 @@ function requestIdOf(input: Record<string, unknown>): string | undefined {
  * themselves (see `identity-store.ts`).
  */
 export function isJsonWebKey(value: unknown): value is JsonWebKey {
-  return isNonEmptyString(readUnknown(value, "kty"))
+  return isNonEmptyString(readField(value, "kty"))
 }
 
 function identity(value: unknown): HostConnectorBootstrapIdentity | undefined {

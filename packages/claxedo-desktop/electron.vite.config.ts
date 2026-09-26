@@ -130,8 +130,8 @@ export default defineConfig(({ mode, command }) => {
               return id.endsWith("/src/main/account/index.ts") ? "desktop-account" : undefined
             },
             // Without this Rollup folds the manual chunk's whole static subtree
-            // into it, so `shared/json-read` (also imported by both worker
-            // entries) landed in `desktop-account-*.js` next to
+            // into it, so a module both worker entries also import (the field
+            // readers) landed in `desktop-account-*.js` next to
             // `import { app, safeStorage, shell } from "electron"`. The
             // workers run under ELECTRON_RUN_AS_NODE, where `electron` has no
             // named exports, and died at module instantiation.

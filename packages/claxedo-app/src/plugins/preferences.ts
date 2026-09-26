@@ -1,8 +1,7 @@
 import { createSignal, type Accessor } from "solid-js"
 import { PLUGIN_CAPABILITIES, type PluginCapability } from "@claxedo/plugin-api"
 import { persistedSignal, preferenceKey } from "@/lib/persisted"
-import { isRecord } from "@claxedo/helpers/guards"
-import { isStringList } from "@/lib/record"
+import { isRecord, isStringList } from "@claxedo/helpers/guards"
 import type { Approval } from "./approval"
 
 type PluginSwitches = { readonly off: readonly string[] }

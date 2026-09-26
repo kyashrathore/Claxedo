@@ -15,7 +15,7 @@ import {
 import { dirname, join } from "node:path"
 import { pathToFileURL } from "node:url"
 
-import { readArray, readString, readUnknown } from "./json-read"
+import { readArray, readField, readString } from "@claxedo/helpers/readers"
 import { nodeErrorCode } from "./node-error"
 
 /**
@@ -182,7 +182,7 @@ export function compileCacheEntryName(sourceName: string, type: CompileCacheCode
 export function parseCompileCacheManifest(raw: string): CompileCacheManifest {
   const parsed: unknown = JSON.parse(raw)
   if (!parsed || typeof parsed !== "object") throw new Error("compile cache manifest is not an object")
-  const version = readUnknown(parsed, "version")
+  const version = readField(parsed, "version")
   if (version !== 1) throw new Error(`unsupported compile cache manifest version ${String(version)}`)
   const entries = readArray(parsed, "entries")
   if (!entries) throw new Error("compile cache manifest has no entries")
@@ -190,9 +190,9 @@ export function parseCompileCacheManifest(raw: string): CompileCacheManifest {
     version: 1,
     entries: entries.map((entry) => {
       const file = readString(entry, "file")
-      const type = readUnknown(entry, "type")
+      const type = readField(entry, "type")
       const blob = readString(entry, "blob")
-      const bytes = readUnknown(entry, "bytes")
+      const bytes = readField(entry, "bytes")
       if (!file) throw new Error("compile cache entry is missing its file")
       if (type !== "esm" && type !== "commonjs") throw new Error(`unknown compile cache entry type ${String(type)}`)
       if (!blob) throw new Error("compile cache entry is missing its blob")

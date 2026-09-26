@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/solid-query"
 import type { HostedAccount } from "./account"
 import { linkAccountCatalog, type LinkedCatalog } from "./account-link"
-import { readArray } from "../lib/record"
+import { readArray } from "@claxedo/helpers/readers"
 import { toAppError } from "./errors"
 import { queryKeys } from "./query-keys"
 import { accountCatalogFromWire, type AccountCatalog } from "./wire/account-catalog"

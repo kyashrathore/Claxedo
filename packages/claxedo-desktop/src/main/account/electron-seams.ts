@@ -18,7 +18,7 @@ import type { RefreshOutcome } from "./desktop-native-auth"
 import { fetchWithDeadline } from "./hosted-transport"
 
 import { isRecord } from "@claxedo/helpers/guards"
-import { readNumber, readString } from "../../shared/json-read"
+import { readFiniteNumber, readString } from "@claxedo/helpers/readers"
 import { nodeErrorCode } from "../../shared/node-error"
 
 /**
@@ -376,7 +376,7 @@ function parseTokenPayload(value: unknown): TokenPayload | undefined {
     access_token: readString(value, "access_token"),
     id_token: readString(value, "id_token"),
     refresh_token: readString(value, "refresh_token"),
-    expires_in: readNumber(value, "expires_in"),
+    expires_in: readFiniteNumber(value, "expires_in"),
     token_type: readString(value, "token_type"),
     error: readString(value, "error"),
   }

@@ -29,7 +29,7 @@ test("a worker whose static closure reaches electron fails the build by name", (
     }),
     "chunks/desktop-account-abc.js": chunk({
       fileName: "chunks/desktop-account-abc.js",
-      modules: [path.join(desktopRoot, "src/shared/json-read.ts"), path.join(desktopRoot, "src/main/account/index.ts")],
+      modules: [path.join(workspaceRoot, "packages/claxedo-helpers/src/readers.ts"), path.join(desktopRoot, "src/main/account/index.ts")],
       imports: ["electron"],
     }),
   }
@@ -43,17 +43,17 @@ test("electron behind a dynamic import, or in an unrelated chunk, is not a worke
     "process-metrics-worker.js": chunk({
       fileName: "process-metrics-worker.js",
       modules: [workerEntry],
-      imports: ["chunks/json-read-abc.js", "node:readline"],
+      imports: ["chunks/readers-abc.js", "node:readline"],
       dynamicImports: ["chunks/desktop-account-abc.js"],
     }),
-    "chunks/json-read-abc.js": chunk({
-      fileName: "chunks/json-read-abc.js",
-      modules: [path.join(desktopRoot, "src/shared/json-read.ts")],
+    "chunks/readers-abc.js": chunk({
+      fileName: "chunks/readers-abc.js",
+      modules: [path.join(workspaceRoot, "packages/claxedo-helpers/src/readers.ts")],
     }),
     "index.js": chunk({
       fileName: "index.js",
       modules: [path.join(desktopRoot, "src/main/index.ts")],
-      imports: ["electron", "chunks/json-read-abc.js"],
+      imports: ["electron", "chunks/readers-abc.js"],
     }),
     "chunks/desktop-account-abc.js": chunk({
       fileName: "chunks/desktop-account-abc.js",

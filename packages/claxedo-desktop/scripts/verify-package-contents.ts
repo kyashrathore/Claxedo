@@ -36,7 +36,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { spawnSync } from "node:child_process"
 
-import { readRecord } from "../src/shared/json-read"
+import { readRecord } from "@claxedo/helpers/readers"
 
 import { ALL_NATIVE_MODULES, isDeclaredStructuralEntry, requiredPackagedBoundaryEntries } from "./package-structure"
 import { verifyHostConnectorChildArtifact } from "../src/main/host-connector/child-artifact"

@@ -1,4 +1,4 @@
-import { readString } from "./json-read"
+import { readString } from "@claxedo/helpers/readers"
 
 /**
  * The `code` of a Node syscall failure (`ENOENT`, `EEXIST`, `EADDRINUSE`, …).

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 
-import { readNumber, readString, readUnknown } from "../../shared/json-read"
+import { readField, readFiniteNumber, readString } from "@claxedo/helpers/readers"
 import type { BoundDesktopCredential } from "./auth-descriptor"
 import { parseBoundDesktopCredential } from "./auth-descriptor"
 import { secureStorageVerdict, storedCredentialDisposition, type StoredCredential } from "./secure-storage"
@@ -51,12 +51,12 @@ function parseEnvelope(contents: string): EncryptedDesktopCredential | undefined
   try {
     const value: unknown = JSON.parse(contents)
     const revision = readString(value, "revision")
-    const state = readUnknown(value, "state")
+    const state = readField(value, "state")
     const ciphertext = readString(value, "ciphertext")
     const backend = readString(value, "backend")
-    const expiresAt = readNumber(value, "expiresAt")
+    const expiresAt = readFiniteNumber(value, "expiresAt")
     if (
-      readUnknown(value, "format") !== "claxedo-desktop-native-v2" ||
+      readField(value, "format") !== "claxedo-desktop-native-v2" ||
       !revision ||
       (state !== "active" && state !== "revocation-pending") ||
       ciphertext === undefined ||

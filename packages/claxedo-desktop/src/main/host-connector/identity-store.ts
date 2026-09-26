@@ -5,7 +5,7 @@ import { asRecord } from "@claxedo/helpers/guards"
 
 import type { SafeStorageApi } from "../account/credential-store"
 import { secureStorageVerdict } from "../account/secure-storage"
-import { readString } from "../../shared/json-read"
+import { readString } from "@claxedo/helpers/readers"
 import {
   hostConnectorProviderConfig,
   isJsonWebKey,

@@ -1,5 +1,5 @@
 import { asRecord } from "@claxedo/helpers/guards"
-import { readString } from "@/lib/record"
+import { readString } from "@claxedo/helpers/readers"
 import type { TimelineFocus, TimelinePlatform } from "./model"
 
 const loopbackHosts: readonly string[] = ["localhost", "127.0.0.1", "0.0.0.0", "[::1]"]

@@ -1,6 +1,6 @@
 import { resolve } from "node:path"
 
-import { readArray, readRecord, readString } from "../src/shared/json-read"
+import { readArray, readRecord, readString } from "@claxedo/helpers/readers"
 
 export const acceptedDiagnosticsDependencies = {
   pidusage: {

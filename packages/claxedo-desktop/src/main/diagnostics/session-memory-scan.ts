@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs"
 import type { LocalDiagnostics } from "../../shared/local-diagnostics"
 
-import { readNumber, readString } from "../../shared/json-read"
+import { readFiniteNumber, readString } from "@claxedo/helpers/readers"
 
 export type SessionMemoryDatabase = {
   prepare(sql: string): { all(): unknown[] }
@@ -57,7 +57,7 @@ async function scanDatabase(
       const sessionId = readString(row, "id")
       if (!sessionId) return []
       const title = readString(row, "title")
-      const updatedAt = readNumber(row, "updatedAt")
+      const updatedAt = readFiniteNumber(row, "updatedAt")
       return [{
         sessionId,
         ...(title ? { title: safeLabel(title) } : {}),
@@ -65,9 +65,9 @@ async function scanDatabase(
         profile: safeLabel(input.profile),
         ...(updatedAt ? { updatedAt: Math.max(0, Math.floor(updatedAt)) } : {}),
         buckets: normalizeBuckets({
-          chatBytes: readNumber(row, "chatBytes"),
-          imageBytes: readNumber(row, "imageBytes"),
-          compactionBytes: readNumber(row, "compactionBytes"),
+          chatBytes: readFiniteNumber(row, "chatBytes"),
+          imageBytes: readFiniteNumber(row, "imageBytes"),
+          compactionBytes: readFiniteNumber(row, "compactionBytes"),
         }),
       } satisfies LocalDiagnostics.StoredSessionMemory]
     })

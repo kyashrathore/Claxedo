@@ -1,4 +1,4 @@
-import { readField, readString } from "@/lib/record"
+import { readField, readString } from "@claxedo/helpers/readers"
 
 export async function authResponseBody(response: Response): Promise<unknown> {
   return response.headers.get("content-type")?.includes("application/json") ? await response.json() : undefined

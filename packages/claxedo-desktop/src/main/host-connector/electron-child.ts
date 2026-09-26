@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs"
 import { dirname, join } from "node:path"
 import type { SafeStorageApi } from "../account/credential-store"
-import { readString } from "../../shared/json-read"
+import { readString } from "@claxedo/helpers/readers"
 import { hostConnectorChildResourceDir, verifyHostConnectorChildArtifact } from "./child-artifact"
 import type { HostConnectorSharedWorkspace } from "./child-protocol"
 import {

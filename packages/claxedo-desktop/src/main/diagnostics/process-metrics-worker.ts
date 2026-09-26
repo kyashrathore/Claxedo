@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { createInterface } from "node:readline"
 import { LocalDiagnostics } from "../../shared/local-diagnostics"
 
-import { readArray, readNumber, readString, readUnknown } from "../../shared/json-read"
+import { readArray, readField, readFiniteNumber, readString } from "@claxedo/helpers/readers"
 
 import {
   parseWindowsCimRow,
@@ -56,33 +56,33 @@ export type ProcessMetricSample = ProcessTreeEntry & {
  * were described twice and could drift apart.
  */
 export function isProcessTreeEntry(value: unknown): value is ProcessTreeEntry {
-  const ppid = readNumber(value, "ppid")
+  const ppid = readFiniteNumber(value, "ppid")
   return (
-    validPid(readNumber(value, "pid")) &&
+    validPid(readFiniteNumber(value, "pid")) &&
     ppid !== undefined &&
     Number.isInteger(ppid) &&
     ppid >= 0 &&
-    validPid(readNumber(value, "rootPid"))
+    validPid(readFiniteNumber(value, "rootPid"))
   )
 }
 
 function isReconcileReply(value: unknown): value is { entries: ProcessTreeEntry[]; truncated: boolean } {
   const entries = readArray(value, "entries")
-  return !!entries && entries.every(isProcessTreeEntry) && typeof readUnknown(value, "truncated") === "boolean"
+  return !!entries && entries.every(isProcessTreeEntry) && typeof readField(value, "truncated") === "boolean"
 }
 
 function isProcessMetricSample(value: unknown): value is ProcessMetricSample {
   if (!isProcessTreeEntry(value)) return false
-  if (!LocalDiagnostics.CreationIdentity.safeParse(readUnknown(value, "creation")).success) return false
-  const cpuMachinePercent = readUnknown(value, "cpuMachinePercent")
+  if (!LocalDiagnostics.CreationIdentity.safeParse(readField(value, "creation")).success) return false
+  const cpuMachinePercent = readField(value, "cpuMachinePercent")
   if (cpuMachinePercent !== undefined && typeof cpuMachinePercent !== "number") return false
-  const rssBytes = readUnknown(value, "rssBytes")
+  const rssBytes = readField(value, "rssBytes")
   if (rssBytes !== undefined && typeof rssBytes !== "number") return false
-  const memoryImpact = readUnknown(value, "memoryImpact")
+  const memoryImpact = readField(value, "memoryImpact")
   if (memoryImpact === undefined) return true
-  const bytes = readNumber(memoryImpact, "bytes")
+  const bytes = readFiniteNumber(memoryImpact, "bytes")
   return (
-    LocalDiagnostics.MemoryImpactKind.safeParse(readUnknown(memoryImpact, "kind")).success &&
+    LocalDiagnostics.MemoryImpactKind.safeParse(readField(memoryImpact, "kind")).success &&
     bytes !== undefined &&
     Number.isSafeInteger(bytes) &&
     bytes >= 0
@@ -258,14 +258,14 @@ export function createIsolatedPosixProcessMetricsWorker(options: {
       lines.forEach((line) => {
         try {
           const envelope: unknown = JSON.parse(line)
-          const id = readNumber(envelope, "id")
+          const id = readFiniteNumber(envelope, "id")
           if (id === undefined || !Number.isInteger(id)) return
           const request = pending.get(id)
           if (!request) return
           pending.delete(id)
           clearTimeout(request.timer)
-          if (readUnknown(envelope, "ok") === true) {
-            request.resolve(readUnknown(envelope, "value"))
+          if (readField(envelope, "ok") === true) {
+            request.resolve(readField(envelope, "value"))
             return
           }
           request.reject(new Error("process metrics worker failed"))
@@ -533,7 +533,7 @@ export function createWindowsCimQuery(
       try {
         const envelope: unknown = JSON.parse(line)
         const rows = readArray(envelope, "rows")
-        if (readUnknown(envelope, "ok") !== true || !rows || rows.length > MAX_DIAGNOSTICS_PIDS) {
+        if (readField(envelope, "ok") !== true || !rows || rows.length > MAX_DIAGNOSTICS_PIDS) {
           // The worker's own reason when it sent one, so a CIM failure is
           // distinguishable from a malformed envelope. Everything past the
           // colon comes from the worker's capped message field.

@@ -15,6 +15,7 @@ import {
   isNonNegativeSafeInteger,
   isRecord,
   isString,
+  isStringList,
   nonEmptyString,
   numberClaim,
   stringClaim,
@@ -126,5 +127,14 @@ describe("asArray", () => {
     const source = [1]
     expect(asArray(source)).toBe(source)
     expect(asArray("x")).toEqual([])
+  })
+})
+
+describe("isStringList", () => {
+  test("accepts an empty or all-string array only", () => {
+    expect(isStringList([])).toBe(true)
+    expect(isStringList(["a", ""])).toBe(true)
+    expect(isStringList(["a", 1])).toBe(false)
+    expect(isStringList("a")).toBe(false)
   })
 })

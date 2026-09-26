@@ -1,4 +1,4 @@
-import { readField } from "@/lib/record"
+import { readField } from "@claxedo/helpers/readers"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 import type { AuthUser } from "./display-user"

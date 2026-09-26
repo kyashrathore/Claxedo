@@ -1,5 +1,5 @@
 import { asRecord } from "@claxedo/helpers/guards"
-import { readString } from "@/lib/record"
+import { readString } from "@claxedo/helpers/readers"
 import { sameArrayItems, samePartsRecord, sameTurnOutcome } from "./timeline-row-equality"
 import {
   batch,

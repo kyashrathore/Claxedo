@@ -1,4 +1,4 @@
-import { readString } from "../../shared/json-read"
+import { readString } from "@claxedo/helpers/readers"
 import {
   assertDesktopCredentialBinding,
   DesktopAuthDescriptorError,

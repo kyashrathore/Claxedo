@@ -11,7 +11,7 @@ import { createInterface } from "node:readline"
 import pidtree from "pidtree"
 
 import { asRecord } from "@claxedo/helpers/guards"
-import { readArray, readNumber, readRecord, readString, readUnknown } from "../src/shared/json-read"
+import { readArray, readField, readFiniteNumber, readRecord, readString } from "@claxedo/helpers/readers"
 
 import { createProcessMetricsSource } from "../src/main/diagnostics/process-metrics-source"
 import { createIsolatedPosixProcessMetricsWorker } from "../src/main/diagnostics/process-metrics-worker"
@@ -676,7 +676,7 @@ async function renderedTaskEvidence(client: CdpClient) {
   // Each member is a boolean the expression above computed; a page that did
   // not render the dialog answers `{}`, and every flag reads as "not observed"
   // rather than arriving typed and undefined.
-  const flag = (key: string) => readUnknown(value, key) === true
+  const flag = (key: string) => readField(value, key) === true
   return {
     intervalIdentified: flag("intervalIdentified"),
     electronContributor: flag("electronContributor"),
@@ -927,7 +927,7 @@ async function createCdpClient(url: string): Promise<CdpClient> {
   }
   socket.addEventListener("message", (event) => {
     const message: unknown = JSON.parse(String(event.data))
-    const id = readNumber(message, "id")
+    const id = readFiniteNumber(message, "id")
     if (id === undefined) return
     const request = pending.get(id)
     if (!request) return
@@ -938,7 +938,7 @@ async function createCdpClient(url: string): Promise<CdpClient> {
       request.reject(new Error(readString(error, "message") ?? "CDP command failed"))
       return
     }
-    request.resolve(readUnknown(message, "result"))
+    request.resolve(readField(message, "result"))
   })
   const command = (method: string, params: Record<string, unknown> = {}) =>
     new Promise<unknown>((resolveCommand, reject) => {
@@ -978,7 +978,7 @@ async function createCdpClient(url: string): Promise<CdpClient> {
           "Packaged renderer evaluation failed",
         )
       }
-      return readUnknown(readUnknown(output, "result"), "value")
+      return readField(readField(output, "result"), "value")
     },
     close() {
       rejectPending(new Error("Packaged renderer CDP closed"))
@@ -1168,7 +1168,7 @@ async function measureDiagnosticsTreeCpu(enabled: boolean) {
           maxage: 0,
           ...(process.platform === "darwin" ? { usePs: true } : {}),
         }).catch(() => undefined)
-        const cpu = readNumber(stats, "cpu")
+        const cpu = readFiniteNumber(stats, "cpu")
         if (cpu !== undefined) result[pid] = { cpu }
       }
       return result
@@ -1311,7 +1311,7 @@ function createCdpFlowSource(rootPids: number[]): DiagnosticsSource {
   lines.on("line", (line) => {
     try {
       const input: unknown = JSON.parse(line)
-      const at = readNumber(input, "at")
+      const at = readFiniteNumber(input, "at")
       const processes = readArray(input, "processes")
       if (at === undefined || !processes) return
       latest = {

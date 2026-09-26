@@ -1,4 +1,4 @@
-import { readString } from "@/lib/record"
+import { readString } from "@claxedo/helpers/readers"
 import { authResponseBody, betterAuthApiError } from "./better-auth-error"
 import { apiOrigin } from "./origins"
 

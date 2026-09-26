@@ -38,7 +38,7 @@ import {
   type ConsoleStackFrame,
 } from "./console-buffer"
 import { isRecord } from "@claxedo/helpers/guards"
-import { readArray, readNumber, readRecord, readString, readUnknown } from "../../shared/json-read"
+import { readArray, readField, readFiniteNumber, readRecord, readString } from "@claxedo/helpers/readers"
 
 export type BrowserHandleState = "detached" | "attaching" | "attached" | "reattaching"
 
@@ -638,10 +638,8 @@ export class BrowserHandle {
 
 // ─── CDP payload parsers ────────────────────────────────────────────────────
 //
-// Every CDP payload arrives untyped (see `../../shared/json-read`); these functions turn
-// the handful of shapes this class cares about into the console buffer's
-// vocabulary. Each call site used to declare its own hand-written copy of the
-// CDP shape and cast the payload to it instead.
+// Every CDP payload arrives untyped; these functions turn the handful of
+// shapes this class reads into the console buffer's vocabulary without a cast.
 
 /** `Runtime.StackTrace` → the console buffer's frame shape. */
 function parseStackTrace(stackTrace: unknown): ConsoleStackFrame[] | undefined {
@@ -650,8 +648,8 @@ function parseStackTrace(stackTrace: unknown): ConsoleStackFrame[] | undefined {
   return callFrames.map((frame) => ({
     url: readString(frame, "url"),
     function: readString(frame, "functionName"),
-    line: readNumber(frame, "lineNumber"),
-    column: readNumber(frame, "columnNumber"),
+    line: readFiniteNumber(frame, "lineNumber"),
+    column: readFiniteNumber(frame, "columnNumber"),
   }))
 }
 
@@ -665,7 +663,7 @@ function parseExceptionDetails(
   fallbackMessage: string,
 ): { message: string; stack: ConsoleStackFrame[] | undefined } {
   const exception = readRecord(details, "exception")
-  const thrownValue = readUnknown(exception, "value")
+  const thrownValue = readField(exception, "value")
   const message =
     readString(exception, "description") ??
     readString(details, "text") ??
@@ -708,7 +706,7 @@ function mapLogLevel(l: string | undefined): ConsoleLevel {
 
 /** `Runtime.RemoteObject` → the one-line string the console buffer stores. */
 function describeRemoteObject(arg: unknown): string {
-  const value = readUnknown(arg, "value")
+  const value = readField(arg, "value")
   if (value !== undefined) return stringifyRemoteValue(value)
   return readString(arg, "description") ?? readString(arg, "type") ?? ""
 }

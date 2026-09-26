@@ -20,6 +20,7 @@ const ENTRIES: readonly { readonly entry: string; readonly target: "browser" | "
   { entry: "index", target: "browser" },
   { entry: "crypto", target: "browser" },
   { entry: "guards", target: "browser" },
+  { entry: "readers", target: "browser" },
   { entry: "string", target: "browser" },
   { entry: "route-param", target: "browser" },
   { entry: "claxedo-credentials", target: "node" },

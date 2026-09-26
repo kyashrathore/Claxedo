@@ -184,7 +184,11 @@ export const desktopMainComposition: Policy = {
   // its only user. Packages stay at 27: `zod`, its one import, joins, and the
   // two app package edges (old app, app-v2) become one, `@claxedo/app`.
   // 102/27, no headroom.
-  ceilings: { modules: 102, packages: 27 },
+  // -1 module (2026-09-27): `shared/json-read.ts` is gone. Its field readers
+  // are `@claxedo/helpers/readers`, the one owner the app reads through too;
+  // `@claxedo/helpers` was already a package edge and sits outside `roots`.
+  // 101/27, no headroom.
+  ceilings: { modules: 101, packages: 27 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -265,7 +269,10 @@ export const desktopAccountComposition: Policy = {
   // mirrors never leaves this composition, and its only import beyond siblings
   // is `@claxedo/helpers/claxedo-credentials`, the file's shape and path —
   // already a package edge of this closure. Re-measured, no headroom: 20/7.
-  ceilings: { modules: 20, packages: 7 },
+  // -1 module (2026-09-27): `shared/json-read.ts` is gone; `account-service.ts`
+  // reads through `@claxedo/helpers/readers`, outside `roots`, on a package
+  // edge this closure already had. 19/7, no headroom.
+  ceilings: { modules: 19, packages: 7 },
   // The emitted list names the credential-bearing half only. `hosted-operations.ts`
   // and `account-ipc.ts` are reached from the base entry through
   // `lazy-account.ts`, so Rollup places them in `index.js`, and

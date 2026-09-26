@@ -9,7 +9,7 @@
  * carries diagnostics-transport messages.
  */
 
-import { readNumber, readUnknown } from "./json-read"
+import { readField, readFiniteNumber } from "@claxedo/helpers/readers"
 
 const READY_TYPE = "claxedo-server-ready" as const
 
@@ -23,8 +23,8 @@ export function claxedoServerReadyMessage(port: number): ClaxedoServerReadyMessa
 }
 
 export function parseClaxedoServerReadyMessage(input: unknown): ClaxedoServerReadyMessage | null {
-  if (readUnknown(input, "type") !== READY_TYPE) return null
-  const port = readNumber(input, "port")
+  if (readField(input, "type") !== READY_TYPE) return null
+  const port = readFiniteNumber(input, "port")
   if (port === undefined || !Number.isInteger(port)) return null
   return { type: READY_TYPE, port }
 }

@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto"
 
 import { parseRecoveryOutcome, type RecoveryMachineTarget, type RecoveryOperation } from "@claxedo/agent-runtime-contract"
 
-import { readArray, readNumber, readRecord, readString } from "../src/shared/json-read"
+import { readArray, readFiniteNumber, readRecord, readString } from "@claxedo/helpers/readers"
 import { claxedoServerForkOptions } from "../src/main/server-child-process"
 import { createDaemonFetch, type DaemonFetch } from "../src/main/daemon-request"
 import { CLAXEDO_DAEMON_PROTOCOL, DAEMON_PROTOCOL_HEADER, type ClaxedoDaemonDiscovery } from "../src/main/server-daemon-discovery"
@@ -241,7 +241,7 @@ async function inspectMachine(daemon: DaemonFetch) {
   const machineId = readString(target, "machineId")
   const ownerGeneration = readString(target, "ownerGeneration")
   const scopeRevision = readString(body, "scopeRevision")
-  const residencyPins = readNumber(body, "residencyPins")
+  const residencyPins = readFiniteNumber(body, "residencyPins")
   if (readString(target, "scope") !== "machine" || !machineId || !ownerGeneration || !scopeRevision || residencyPins === undefined) {
     throw new Error(`the daemon answered no machine inventory: ${JSON.stringify(body)}`)
   }

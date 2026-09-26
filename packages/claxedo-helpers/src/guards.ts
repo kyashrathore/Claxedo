@@ -112,3 +112,7 @@ export function numberClaim(payload: Record<string, unknown>, key: string): numb
 export function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? (value as unknown[]) : []
 }
+
+export function isStringList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(isString)
+}

@@ -31,7 +31,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { readString } from "../src/shared/json-read"
+import { readString } from "@claxedo/helpers/readers"
 
 import { claxedoServerExecArgv } from "../src/main/server-runtime-policy"
 import { claxedoServerStartup } from "./claxedo-server-startup"

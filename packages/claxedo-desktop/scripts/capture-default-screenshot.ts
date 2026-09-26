@@ -5,7 +5,7 @@ import { createRequire } from "node:module"
 import path from "node:path"
 
 import { isRecord } from "@claxedo/helpers/guards"
-import { readString, readUnknown } from "../src/shared/json-read"
+import { readField, readString } from "@claxedo/helpers/readers"
 
 type JsonObject = Record<string, unknown>
 
@@ -71,7 +71,7 @@ try {
   })
 
   const readiness = await waitForReady(client)
-  const fatal = readUnknown(readiness, "fatal")
+  const fatal = readField(readiness, "fatal")
   if (fatal) {
     throw new Error(`desktop renderer reported fatal error: ${JSON.stringify(fatal)}`)
   }
@@ -180,7 +180,7 @@ async function connectCdp(target: DevtoolsTarget) {
 async function waitForReady(client: Awaited<ReturnType<typeof connectCdp>>) {
   for (let i = 0; i < 160; i++) {
     const readiness = await evaluateReadiness(client)
-    if (readUnknown(readiness, "fatal") || readUnknown(readiness, "ready")) return readiness
+    if (readField(readiness, "fatal") || readField(readiness, "ready")) return readiness
     await delay(250)
   }
   const readiness = await evaluateReadiness(client)

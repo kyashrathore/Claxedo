@@ -32,6 +32,13 @@
       "import": "./dist/guards.mjs",
       "default": "./dist/guards.mjs"
     },
+    "./readers": {
+      "development": "./src/readers.ts",
+      "bun": "./src/readers.ts",
+      "types": "./dist/readers.d.ts",
+      "import": "./dist/readers.mjs",
+      "default": "./dist/readers.mjs"
+    },
     "./crypto": {
       "development": "./src/crypto.ts",
       "bun": "./src/crypto.ts",

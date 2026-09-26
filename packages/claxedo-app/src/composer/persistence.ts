@@ -1,5 +1,5 @@
 import { isRecord } from "@claxedo/helpers/guards"
-import { readArray, readFiniteNumber, readString } from "@/lib/record"
+import { readArray, readFiniteNumber, readString } from "@claxedo/helpers/readers"
 import type { FileSelection } from "@/lib/file-selection"
 import type { ContextItem, Draft, History, HistoryComment, HistoryEntry, ImageMark, LineRange, Prompt, PromptPart } from "./model"
 

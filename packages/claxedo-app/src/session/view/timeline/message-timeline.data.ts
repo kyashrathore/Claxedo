@@ -1,6 +1,6 @@
 import { untrack } from "solid-js"
 import { asRecord, isRecord } from "@claxedo/helpers/guards"
-import { readField, readString } from "@/lib/record"
+import { readField, readString } from "@claxedo/helpers/readers"
 import {
   parseCommentNote,
   parseImageMarkNote,

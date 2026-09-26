@@ -4,7 +4,7 @@ import path from "node:path"
 import { isCreationIdentity, sameCreationIdentity, type CreationIdentity } from "@claxedo/agent-sdk-runtime/launch"
 
 import { asRecord, isNonEmptyString } from "@claxedo/helpers/guards"
-import { readUnknown } from "../shared/json-read"
+import { readField } from "@claxedo/helpers/readers"
 import { createDaemonFetch } from "./daemon-request"
 import { nodeErrorCode } from "../shared/node-error"
 
@@ -103,15 +103,15 @@ export async function verifyClaxedoDaemonDiscovery(
     if (!response.ok) return undefined
     const identity: unknown = await response.json()
     if (
-      readUnknown(identity, "service") !== record.service ||
-      readUnknown(identity, "protocol") !== record.protocol ||
-      readUnknown(identity, "generation") !== record.generation ||
-      readUnknown(identity, "pid") !== record.pid
+      readField(identity, "service") !== record.service ||
+      readField(identity, "protocol") !== record.protocol ||
+      readField(identity, "generation") !== record.generation ||
+      readField(identity, "pid") !== record.pid
     ) return undefined
     // The record's identity is what a later signal would be checked against, so
     // a listener that disagrees about its own process is not the daemon that
     // wrote the file, however well its token and generation match.
-    if (record.identity && !reportsRecordedIdentity(record.identity, readUnknown(identity, "identity"))) return undefined
+    if (record.identity && !reportsRecordedIdentity(record.identity, readField(identity, "identity"))) return undefined
     return url
   } catch {
     return undefined

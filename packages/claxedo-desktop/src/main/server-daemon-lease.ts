@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { readNumber, readRecord, readString, readUnknown } from "../shared/json-read"
+import { readField, readFiniteNumber, readRecord, readString } from "@claxedo/helpers/readers"
 import { createDaemonFetch } from "./daemon-request"
 import {
   CLAXEDO_DAEMON_PROTOCOL,
@@ -143,7 +143,7 @@ export async function holdClaxedoDaemonLease(
           body: JSON.stringify({
             requestId: `electron-main-drain-${randomUUID()}`,
             action: "drain_daemon",
-            target: readUnknown(machine, "target"),
+            target: readField(machine, "target"),
             scopeRevision,
             attempt: 1,
           }),
@@ -156,7 +156,7 @@ export async function holdClaxedoDaemonLease(
 
 function parseLease(value: unknown) {
   const id = readString(value, "id")
-  const expiresAt = readNumber(value, "expiresAt")
+  const expiresAt = readFiniteNumber(value, "expiresAt")
   if (!id || expiresAt === undefined) throw new Error("daemon returned an invalid lease")
   return { id, expiresAt }
 }

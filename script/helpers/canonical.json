@@ -13,8 +13,19 @@
         "isFiniteNumber",
         "isRecord",
         "isString",
+        "isStringList",
         "nonEmptyString",
         "numberClaim"
+      ]
+    },
+    {
+      "module": "@claxedo/helpers/readers",
+      "owner": "packages/claxedo-helpers/src/readers.ts",
+      "names": [
+        "readArray",
+        "readField",
+        "readFiniteNumber",
+        "readString"
       ]
     },
     {

@@ -51,7 +51,7 @@
 
 import type { IpcMainInvokeEvent } from "electron"
 
-import { readString, readUnknown } from "../../shared/json-read"
+import { readField, readString } from "@claxedo/helpers/readers"
 import type { HostConnectorSharedWorkspace } from "./child-protocol"
 import type { HostConnectorStatus } from "./child-supervisor"
 import { toStatusEvent, type HostConnectorContext, type HostConnectorStatusEvent } from "./status-channel"
@@ -148,7 +148,7 @@ export function registerHostConnectorIpc(input: {
     if (!workspaceId) return undefined
     // A label of the wrong type rejects the whole share rather than being
     // silently dropped: the renderer does not get to send half a message.
-    const displayName = readUnknown(value, "displayName")
+    const displayName = readField(value, "displayName")
     if (displayName !== undefined && typeof displayName !== "string") return undefined
     return { workspaceId, ...(displayName === undefined ? {} : { displayName }) }
   }

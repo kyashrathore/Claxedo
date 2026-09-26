@@ -1,5 +1,5 @@
 import { failureMessage } from "@/lib/failure"
-import { readArray, readBoolean, readFiniteNumber, readString } from "@/lib/record"
+import { readArray, readBoolean, readFiniteNumber, readString } from "@claxedo/helpers/readers"
 import { uuid } from "@/lib/uuid"
 import type { BrowserBridge, BrowserWebview } from "../bridge"
 import {

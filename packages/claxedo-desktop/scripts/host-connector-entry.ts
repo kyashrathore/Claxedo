@@ -14,7 +14,7 @@ import {
 } from "@claxedo/host-connector/machine-seal"
 import { createMachineSignedTransport, type FetchLike } from "@claxedo/host-connector/machine-transport"
 
-import { readRecord, readUnknown } from "../src/shared/json-read"
+import { readField, readRecord } from "@claxedo/helpers/readers"
 
 import {
   HOST_ENROLLMENT_OPERATIONS,
@@ -133,8 +133,8 @@ export function runHostConnectorChild(port: ChildPort, deps: ChildDeps = { fetch
   const enrollMachine = async (keys: HostKeyPair, hostId: string, displayName?: string) => {
     const nonceOperation = HOST_ENROLLMENT_OPERATIONS.createRequest
     const challenge = await requestAccountOperation(nonceOperation, { hostId })
-    const requestId = requireString(readUnknown(challenge, "request_id"), "request_id", nonceOperation)
-    const nonce = requireString(readUnknown(challenge, "nonce"), "nonce", nonceOperation)
+    const requestId = requireString(readField(challenge, "request_id"), "request_id", nonceOperation)
+    const nonce = requireString(readField(challenge, "nonce"), "nonce", nonceOperation)
 
     const enrollOperation = HOST_ENROLLMENT_OPERATIONS.enroll
     const enrollment = readRecord(
@@ -147,7 +147,7 @@ export function runHostConnectorChild(port: ChildPort, deps: ChildDeps = { fetch
       }),
       "enrollment",
     )
-    return requireString(readUnknown(enrollment, "enrollment_id"), "enrollment_id", enrollOperation)
+    return requireString(readField(enrollment, "enrollment_id"), "enrollment_id", enrollOperation)
   }
 
   /**

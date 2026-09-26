@@ -1,5 +1,5 @@
 import type { AgentPresentationMessage } from "@claxedo/agent-runtime-contract"
-import { readField, readString } from "@/lib/record"
+import { readField, readString } from "@claxedo/helpers/readers"
 import type { TranscriptMessage, TranscriptPart } from "@/server"
 import type { PendingUserMessage, SessionMessage } from "./model"
 

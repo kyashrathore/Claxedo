@@ -22,7 +22,7 @@ import { existsSync } from "node:fs"
 import path from "node:path"
 
 import { isBrowserTabEnabled } from "./flag"
-import { readString } from "../../shared/json-read"
+import { readString } from "@claxedo/helpers/readers"
 import { configureAgentBrowserPartition, installAgentBrowserNavigationGuards } from "./partition"
 import { BrowserRegistry } from "./registry"
 import { AGENT_BROWSER_PARTITION, createWillAttachWebviewHandler } from "./will-attach-webview"

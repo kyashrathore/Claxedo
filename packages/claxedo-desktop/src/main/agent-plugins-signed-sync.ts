@@ -17,7 +17,7 @@
 
 const REFRESH_INTERVAL_MS = 10 * 60_000
 const REFRESH_LEAD_MS = 5 * 60_000
-import { readNumber, readString, readUnknown } from "../shared/json-read"
+import { readField, readFiniteNumber, readString } from "@claxedo/helpers/readers"
 import type { HostedOperationName } from "./account/hosted-operations"
 import type { DaemonFetch } from "./daemon-request"
 
@@ -68,15 +68,15 @@ export function setupAgentPluginsSignedSync(input: {
     if (!signed || stopped) return
     try {
       const result = await input.runAccountOperation("agentPlugins.runtimeSelf")
-      const status = readNumber(result, "status")
+      const status = readFiniteNumber(result, "status")
       if (status === undefined || status < 200 || status >= 300) {
         throw new Error(`control plane answered ${String(status)}`)
       }
-      const answerBody = readUnknown(result, "body")
+      const answerBody = readField(result, "body")
       const state = await push(answerBody)
       const revision = readString(answerBody, "revision")
       input.log.info(`[agent-plugins] signed world applied revision=${String(revision)} -> ${state.slice(0, 120)}`)
-      const expiresAt = readNumber(answerBody, "expiresAt")
+      const expiresAt = readFiniteNumber(answerBody, "expiresAt")
       const untilExpiry = expiresAt ? Math.max(RETRY_INTERVAL_MS, expiresAt - Date.now() - REFRESH_LEAD_MS) : REFRESH_INTERVAL_MS
       schedule(Math.min(REFRESH_INTERVAL_MS, untilExpiry))
     } catch (error) {

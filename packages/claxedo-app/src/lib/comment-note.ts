@@ -1,4 +1,4 @@
-import { readField, readFiniteNumber, readString } from "@/lib/record"
+import { readField, readFiniteNumber, readString } from "@claxedo/helpers/readers"
 import type { FileSelection } from "./file-selection"
 
 export type PromptComment = {

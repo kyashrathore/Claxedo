@@ -1,5 +1,5 @@
 import { createMemo, Show, type JSX } from "solid-js"
-import { readString } from "@/lib/record"
+import { readString } from "@claxedo/helpers/readers"
 import { useShellRegistries } from "../registries"
 import { parseRoute } from "../routes"
 import type { PageEntry, PaneKind, PaneProps } from "../types"

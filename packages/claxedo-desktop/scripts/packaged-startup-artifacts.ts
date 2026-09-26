@@ -7,7 +7,7 @@ import {
   compileCacheEntrySource,
   parseCompileCacheManifest,
 } from "../src/shared/compile-cache"
-import { readRecord, readString } from "../src/shared/json-read"
+import { readRecord, readString } from "@claxedo/helpers/readers"
 
 type AsarFile = { size: number; offset: number; unpacked: boolean }
 

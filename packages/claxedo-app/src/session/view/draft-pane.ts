@@ -1,4 +1,4 @@
-import { readString } from "@/lib/record"
+import { readString } from "@claxedo/helpers/readers"
 import { placementId, projectId } from "@/server"
 import type { Json, PaneKind } from "@/shell"
 import { DraftSessionScreen, type DraftSessionState } from "./draft-session-screen"

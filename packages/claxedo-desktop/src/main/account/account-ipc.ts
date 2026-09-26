@@ -15,7 +15,7 @@
 import { randomUUID } from "node:crypto"
 import type { IpcMainInvokeEvent } from "electron"
 import { asRecord } from "@claxedo/helpers/guards"
-import { readRecord, readString } from "../../shared/json-read"
+import { readRecord, readString } from "@claxedo/helpers/readers"
 import {
   HOSTED_OPERATION_NAMES,
   hostedOperationChannel,

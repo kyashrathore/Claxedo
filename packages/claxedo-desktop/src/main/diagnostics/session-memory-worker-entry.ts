@@ -1,7 +1,7 @@
 import { createInterface } from "node:readline"
 import { createRequire } from "node:module"
 
-import { readArray, readString, readUnknown } from "../../shared/json-read"
+import { readArray, readField, readString } from "@claxedo/helpers/readers"
 import { LocalDiagnostics } from "../../shared/local-diagnostics"
 import { lowerDiagnosticsWorkerPriority } from "./process-metrics-worker"
 import {
@@ -25,8 +25,8 @@ lines.once("line", (line) => {
 async function run(line: string) {
   try {
     const request: unknown = JSON.parse(line)
-    const warmSessions = LocalDiagnostics.WarmSessionMemory.array().max(512).parse(readUnknown(request, "warmSessions"))
-    const paths = pathsInput(readUnknown(request, "paths"))
+    const warmSessions = LocalDiagnostics.WarmSessionMemory.array().max(512).parse(readField(request, "warmSessions"))
+    const paths = pathsInput(readField(request, "paths"))
     const result = await scanSessionMemoryStores({
       paths,
       warmSessions,

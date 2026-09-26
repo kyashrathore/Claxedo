@@ -1,5 +1,5 @@
 import type { QueryClient } from "@tanstack/solid-query"
-import { readArray, readBoolean, readField, readString } from "../lib/record"
+import { readArray, readBoolean, readField, readString } from "@claxedo/helpers/readers"
 import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
 import { ask } from "./answer"
