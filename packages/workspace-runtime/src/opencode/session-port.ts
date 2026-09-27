@@ -181,6 +181,13 @@ export type OpenCodeSessionPort = Readonly<{
 export type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject
 export type JsonObject = { [key: string]: JsonValue }
 
+/** The engine's schema requires these times, so a record without one is refused rather than dated 0. */
+function engineTime(value: unknown, record: string, field: string) {
+  const at = num(value)
+  if (at === undefined) throw new Error(`OpenCode returned ${record} with no ${field}`)
+  return at
+}
+
 /**
  * Project an SDK session record, refusing anything outside the caller's scope.
  *
@@ -200,8 +207,8 @@ function project(scope: WorkspaceScope, input: unknown): SessionSummary {
     ...(title === undefined ? {} : { title }),
     ...(parentID === undefined ? {} : { parentID }),
     directory: scope.directory,
-    createdAt: num(time?.created) ?? 0,
-    updatedAt: num(time?.updated) ?? 0,
+    createdAt: engineTime(time?.created, "a session", "time.created"),
+    updatedAt: engineTime(time?.updated, "a session", "time.updated"),
     ...(tokens === undefined ? {} : { tokens }),
   }
 }
@@ -222,7 +229,7 @@ function projectMessage(input: unknown): SessionMessage {
   return {
     id: str(row.id) ?? "",
     type: str(row.type) ?? "",
-    createdAt: num(time?.created) ?? 0,
+    createdAt: engineTime(time?.created, "a message", "time.created"),
     ...(text === undefined ? {} : { text }),
     ...(agent === undefined ? {} : { agent }),
     ...(providerID && modelId ? { model: { providerID, id: modelId } } : {}),
@@ -362,7 +369,7 @@ export function createSessionPort(host: OpenCodeHost): OpenCodeSessionPort {
       return {
         id: str(row.id) ?? "",
         sessionID: str(row.sessionID) ?? sessionID,
-        createdAt: num(row.timeCreated) ?? 0,
+        createdAt: engineTime(row.timeCreated, "a prompt admission", "timeCreated"),
         text: str(rec(row.payload)?.text) ?? request.text,
         ...(delivery === "steer" || delivery === "queue" ? { delivery } : {}),
       }
